@@ -12,7 +12,7 @@ otherwise goes on to the form.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Self
 
@@ -57,7 +57,7 @@ class ListItem:
     dimmed: bool = False
 
 
-def _clamped(cursor: int | None, count: int) -> int:
+def clamped(cursor: int | None, count: int) -> int:
     return max(0, min(cursor or 0, count - 1)) if count else 0
 
 
@@ -65,7 +65,7 @@ def _index(items: Sequence[ListItem], item_id: str) -> int:
     return next((index for index, item in enumerate(items) if item.id == item_id), 0)
 
 
-def _moved(name: str, cursor: int, count: int) -> int | None:
+def moved_to(name: str, cursor: int, count: int) -> int | None:
     """The cursor after ``name`` (up, down, home, end), clamped; ``None`` for any other key."""
     match name:
         case "up":
@@ -79,7 +79,7 @@ def _moved(name: str, cursor: int, count: int) -> int | None:
     return None
 
 
-def _item_row(
+def item_row(
     frame: Frame,
     inner: int,
     item: ListItem,
@@ -87,8 +87,12 @@ def _item_row(
     cursor: bool,
     chosen: bool,
     lead: Sequence[tuple[str, Style]],
+    marks: Collection[int] = (),
 ) -> Text:
-    """One list row: ``lead`` cells, the label, the detail; highlighted when it is the cursor."""
+    """One list row: ``lead`` cells, the label, the detail; highlighted when it is the cursor.
+
+    ``marks`` are the label positions a search matched.
+    """
     if cursor:
         label_style = role_style(frame, "screen.highlight")
         trail_style = label_style
@@ -108,10 +112,11 @@ def _item_row(
         trail=item.detail,
         trail_style=trail_style,
         base=role_style(frame, "screen.highlight") if cursor else None,
+        marks=marks,
     )
 
 
-def _mark_lead(
+def mark_lead(
     frame: Frame, item: ListItem, *, cursor: bool, chosen: bool, show: bool
 ) -> list[tuple[str, Style]]:
     """The cells before a single-choice label: the ``chosen`` symbol on the value, else blanks."""
@@ -137,15 +142,30 @@ def _edge_style(frame: Frame, *, cursor: bool) -> Style:
     return role_style(frame, "screen.highlight" if cursor else "screen.muted")
 
 
-def _rows_budget(frame: Frame) -> int:
+def check_lead(frame: Frame, *, on: bool, cursor: bool) -> list[tuple[str, Style]]:
+    """The cells before a multiple-choice label: ``[``, ``checked`` or ``unchecked``, ``]``."""
+    layers = ("screen.highlight",) if cursor else ()
+    edge = _edge_style(frame, cursor=cursor)
+    mark = (
+        (
+            frame.symbol("checked"),
+            role_style(frame, *layers, "screen.success", "screen.emphasis"),
+        )
+        if on
+        else (frame.symbol("unchecked"), edge)
+    )
+    return [("[", edge), mark, ("]", edge), (" ", edge)]
+
+
+def rows_budget(frame: Frame) -> int:
     return max(3, min(MAX_ROWS, frame.height - 6))
 
 
-def _window_rows(
+def window_rows(
     frame: Frame, items: Sequence[ListItem], cursor: int, make_row: Callable[[int, ListItem], Text]
 ) -> list[Text]:
     """The rows of the window that keeps row ``cursor`` in view; a long list is not drawn whole."""
-    size = _rows_budget(frame)
+    size = rows_budget(frame)
     start = window_start(len(items), cursor, size)
     return [make_row(index, items[index]) for index in range(start, min(start + size, len(items)))]
 
@@ -223,7 +243,7 @@ class Select:
 
     def __post_init__(self) -> None:
         start = _index(self.choices, self.value) if self.cursor is None else self.cursor
-        object.__setattr__(self, "cursor", _clamped(start, len(self.choices)))
+        object.__setattr__(self, "cursor", clamped(start, len(self.choices)))
 
     @property
     def shown(self) -> str:
@@ -249,7 +269,7 @@ class Select:
                 return replace(self, open=True, cursor=_index(self.choices, self.value)), []
             return self, []
         cursor = self.cursor or 0
-        moved = _moved(name, cursor, len(self.choices))
+        moved = moved_to(name, cursor, len(self.choices))
         if moved is not None:
             return (replace(self, cursor=moved) if moved != cursor else self), []
         if name == "enter":
@@ -278,17 +298,17 @@ class Select:
                 body.append(rule)
             cursor = self.cursor or 0
             body.extend(
-                _window_rows(
+                window_rows(
                     frame,
                     self.choices,
                     cursor,
-                    lambda index, item: _item_row(
+                    lambda index, item: item_row(
                         frame,
                         inner,
                         item,
                         cursor=index == cursor,
                         chosen=item.id == self.value,
-                        lead=_mark_lead(
+                        lead=mark_lead(
                             frame,
                             item,
                             cursor=index == cursor,
@@ -325,7 +345,7 @@ class SingleList:
 
     def __post_init__(self) -> None:
         start = _index(self.items, self.value) if self.cursor is None else self.cursor
-        object.__setattr__(self, "cursor", _clamped(start, len(self.items)))
+        object.__setattr__(self, "cursor", clamped(start, len(self.items)))
 
     def with_error(self, text: str) -> Self:
         """This list showing ``text`` as its error (empty clears it)."""
@@ -340,7 +360,7 @@ class SingleList:
         if not isinstance(message, Key) or not self.items:
             return self, []
         cursor = self.cursor or 0
-        moved = _moved(message.name, cursor, len(self.items))
+        moved = moved_to(message.name, cursor, len(self.items))
         if moved is not None:
             return (replace(self, cursor=moved) if moved != cursor else self), []
         if message.name in (" ", "enter") and self.items[cursor].id != self.value:
@@ -353,17 +373,17 @@ class SingleList:
         """The box with one row per item (a window around the cursor when there are many)."""
         inner = inner_width(frame, width)
         cursor = self.cursor or 0
-        rows = _window_rows(
+        rows = window_rows(
             frame,
             self.items,
             cursor,
-            lambda index, item: _item_row(
+            lambda index, item: item_row(
                 frame,
                 inner,
                 item,
                 cursor=focused and index == cursor,
                 chosen=item.id == self.value,
-                lead=_mark_lead(
+                lead=mark_lead(
                     frame,
                     item,
                     cursor=focused and index == cursor,
@@ -395,7 +415,7 @@ class MultiList:
     error: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "cursor", _clamped(self.cursor, len(self.items)))
+        object.__setattr__(self, "cursor", clamped(self.cursor, len(self.items)))
 
     @property
     def value(self) -> tuple[str, ...]:
@@ -415,7 +435,7 @@ class MultiList:
         if not isinstance(message, Key) or not self.items:
             return self, []
         cursor = self.cursor or 0
-        moved = _moved(message.name, cursor, len(self.items))
+        moved = moved_to(message.name, cursor, len(self.items))
         if moved is not None:
             return (replace(self, cursor=moved) if moved != cursor else self), []
         if message.name == " ":
@@ -429,7 +449,7 @@ class MultiList:
         """The box with one bracketed row per item."""
         inner = inner_width(frame, width)
         cursor = self.cursor or 0
-        rows = _window_rows(
+        rows = window_rows(
             frame,
             self.items,
             cursor,
@@ -442,23 +462,13 @@ class MultiList:
 
     def _row(self, frame: Frame, inner: int, item: ListItem, cursor: bool) -> Text:
         on = item.id in self.selected
-        layers = ("screen.highlight",) if cursor else ()
-        edge = _edge_style(frame, cursor=cursor)
-        mark = (
-            (
-                frame.symbol("checked"),
-                role_style(frame, *layers, "screen.success", "screen.emphasis"),
-            )
-            if on
-            else (frame.symbol("unchecked"), edge)
-        )
-        return _item_row(
+        return item_row(
             frame,
             inner,
             item,
             cursor=cursor,
             chosen=on,
-            lead=[("[", edge), mark, ("]", edge), (" ", edge)],
+            lead=check_lead(frame, on=on, cursor=cursor),
         )
 
 
