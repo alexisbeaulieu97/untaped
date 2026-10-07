@@ -381,6 +381,12 @@ def test_an_unrelated_message_returns_the_same_object(index: int) -> None:
         assert cmds == []
 
 
+def test_the_choice_components_are_always_valid() -> None:
+    for component in _all():
+        assert component.validate() == ""  # type: ignore[attr-defined]
+    assert _buttons().validate() == ""
+
+
 def test_the_choice_components_are_marked_experimental() -> None:
     for cls in (Check, Cycle, ListItem, MultiList, Select, SingleList):
         assert isinstance(function_mark(cls), Experimental)
