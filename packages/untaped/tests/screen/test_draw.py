@@ -15,6 +15,7 @@ from rich.text import Text
 from screen.gallery import render_styled
 from untaped.screen.components.box import field_box
 from untaped.screen.components.draw import (
+    MATCH,
     divider,
     inner_width,
     option_row,
@@ -353,3 +354,29 @@ def test_an_entry_whose_inspection_fails_is_offered_as_a_file(
     monkeypatch.setattr(os, "scandir", lambda path: listing)
 
     assert complete_paths("/x/") == ("/x/b/", "/x/a")
+
+def test_option_row_draws_the_marked_positions_bold_and_underlined() -> None:
+    row = option_row(
+        DEFAULT, 20, label="acme/api", label_style=Style(color="white"), marks={0, 1, 5, 6, 7}
+    )
+
+    marked = [row.plain[span.start : span.end] for span in row.spans if span.style == MATCH]
+    assert marked == ["ac", "api"]  # neighbouring positions are one run
+    assert row.cell_len == 20
+
+
+def test_marks_beyond_the_label_or_cut_off_by_the_ellipsis_style_nothing_else() -> None:
+    row = option_row(
+        DEFAULT,
+        12,
+        label="acme/api-gateway",
+        label_style=Style.null(),
+        trail="detail",
+        marks={2, 40},
+    )
+
+    assert [row.plain[s.start : s.end] for s in row.spans if s.style == MATCH] == ["m"]
+    assert row.cell_len == 12
+    short = option_row(DEFAULT, 5, label="acme/api-gateway", label_style=Style.null(), marks={10})
+    assert short.cell_len == 5
+    assert not [span for span in short.spans if span.style == MATCH]
