@@ -159,6 +159,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Footer",
         "Form",
         "Frame",
+        "Help",
         "Interrupt",
         "Key",
         "ListItem",

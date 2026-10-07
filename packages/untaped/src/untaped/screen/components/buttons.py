@@ -75,7 +75,10 @@ class Buttons:
 
     @property
     def boxed_width(self) -> int:
-        """The cells the buttons need side by side in boxes (below it, draw them unboxed)."""
+        """The cells the buttons need side by side in boxes (below it, draw them unboxed).
+
+        Every button takes its label and four cells, a ghost one (its padding) too.
+        """
         return sum(cell_len(button.label) + 4 for button in self.items) + max(
             0, len(self.items) - 1
         )

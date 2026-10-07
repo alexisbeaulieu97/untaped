@@ -64,6 +64,7 @@ from untaped.screen.core import (
     Cmd,
     CmdError,
     Frame,
+    Help,
     Interrupt,
     Key,
     NextField,
@@ -161,7 +162,7 @@ def _update(
         case Back() | Interrupt():
             # Esc and ctrl-c nothing else wanted: ask before discarding a selection.
             new = handle(state, "ctrl-c")
-        case NextField() | PrevField() | Activate() | Submit():
+        case NextField() | PrevField() | Activate() | Submit() | Help():
             new = replace(state, error="") if state.error else state  # any key dismisses it
         case _:
             return state, []
@@ -239,6 +240,11 @@ _KEYS = (
 )
 
 
+def _tab_label(state: PickerState) -> str | None:
+    """Tab moves between the panes, except where it means something else (completing, answering)."""
+    return None if state.editing is not None or state.quitting else "pane"
+
+
 def _enter_label(state: PickerState) -> str | None:
     """What enter does where it is worth saying: edit a text setting, press Create."""
     owner, key = state.row
@@ -254,7 +260,7 @@ def _enter_label(state: PickerState) -> str | None:
 #: What the shared keys do here, for the footer and the help overlay. They stay the SDK's
 #: keys; the screen only says what they mean in the picker.
 _SHARED_LABELS: Mapping[str, str | Callable[[PickerState], str | None]] = {
-    "tab": "pane",
+    "tab": _tab_label,
     "enter": _enter_label,
     "ctrl-s": "create",
 }

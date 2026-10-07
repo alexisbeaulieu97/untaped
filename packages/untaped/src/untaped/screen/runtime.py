@@ -44,6 +44,7 @@ from untaped.screen.core import (
     CmdError,
     Footer,
     Frame,
+    Help,
     Key,
     Paste,
     Quit,
@@ -234,6 +235,7 @@ class Runtime[M, R]:
             return
         if shared.message is None:
             self.help_open = True
+            self._update(Help())
         elif not self._update(shared.message) and shared.unhandled is not None:
             self._inbox.append(shared.unhandled)
 

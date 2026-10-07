@@ -780,3 +780,40 @@ def test_ctrl_r_while_a_refresh_runs_still_dismisses_the_error() -> None:
     errored = replace(state, error="select at least one item")
     after, cmds = screen.update(errored, _Refresh())
     assert (after.error, after.refreshing, cmds) == ("", True, [])
+
+
+def _refreshing(**extra: object) -> PickRequest:
+    return _many(refresh=lambda _force: PickCatalog(MANY, note="refreshed 2h ago"), **extra)
+
+
+@pytest.mark.parametrize("size", [(80, 24), (60, 24)])
+@pytest.mark.parametrize(
+    "keys",
+    [("down",), ("tab", "down"), ("tab", "down", "down"), ("tab", "down", "down", "down"), ()],
+)
+def test_the_footer_keeps_esc_and_help_with_a_refresh_source(
+    size: tuple[int, int], keys: tuple[str, ...]
+) -> None:
+    footer = _lines(_run(_refreshing(), *keys, size=size).frame)[-1]
+    assert footer.rstrip().endswith("esc back · ? help"), footer
+    assert cell_len(footer) <= size[0]
+
+
+def test_what_the_footer_drops_stays_in_the_overlay() -> None:
+    frame = _run(_refreshing(), "tab", "?", size=(60, 24)).frame
+    for entry in ("ctrl-r", "refresh", "ctrl-s", "create"):
+        assert entry in frame
+
+
+def test_tab_is_not_called_pane_while_editing_or_answering_the_discard_question() -> None:
+    assert "tab pane" in _lines(_run(_many(), "tab").frame)[-1]
+    editing = _lines(_run(_many(), "tab", "down", "down", "enter").frame)[-1]
+    assert "tab" not in editing
+    asking = _lines(_run(_many(), "down", " ", "ctrl-c").frame)[-1]
+    assert "tab" not in asking
+
+
+def test_the_help_overlay_dismisses_the_error() -> None:
+    run = _run(_request(), "tab", "ctrl-s", "?")
+    assert "Keys" in run.frame
+    assert run.model.error == ""

@@ -258,3 +258,20 @@ def test_screen_refuses_to_relabel_a_key_that_is_not_shared(key: str) -> None:
 def test_screen_accepts_labels_for_the_shared_keys_but_help() -> None:
     labels = {key: "mine" for key in SHARED_KEYS if key != "?"}
     assert dict(make_screen(shared_labels=labels).shared_labels) == labels
+
+
+def test_footer_drops_the_last_entries_before_esc_and_help_when_too_narrow() -> None:
+    footer = Footer(
+        (Binding("x", "extra", None), Binding("y", "more", None)),
+        labels={"ctrl-s": "create"},
+    )
+    theme = BUILTIN_THEMES["default"]
+    full = footer.line(Frame(80, 10, theme)).plain.rstrip()
+    assert full == "x extra · y more · ctrl-s create · esc back · ? help"
+    assert (
+        footer.line(Frame(46, 10, theme)).plain.rstrip() == "x extra · y more · esc back · ? help"
+    )
+    assert footer.line(Frame(30, 10, theme)).plain.rstrip() == "x extra · esc back · ? help"
+    assert footer.line(Frame(20, 10, theme)).plain.rstrip() == "esc back · ? help"
+    assert footer.line(Frame(9, 10, theme)).cell_len == 9  # nothing left to drop: cut as before
+    assert "ctrl-s" in rendered_text(footer.overlay(Frame(60, 20, theme)), 60, 20)
