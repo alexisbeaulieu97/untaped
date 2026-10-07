@@ -182,7 +182,7 @@
 - Repo caches (workspace, ansible, github) work from agent shells that set
   git's `safe.bareRepository=explicit`, such as GitHub Copilot CLI, instead of
   failing with "cannot use bare repository".
-  ([#533](https://github.com/alexisbeaulieu97/untaped/issues/533))
+  ([#534](https://github.com/alexisbeaulieu97/untaped/pull/534))
 - `auth set`, `auth migrate` and `setup` test the chosen store with a throwaway value
   first (`pass`: gpg encrypt and decrypt; `secret-tool`: store and read back) and
   stop with the cause instead of failing token by token; `pass` is skipped when

@@ -83,16 +83,22 @@ def _no_writes_to_the_repo_root() -> Iterator[None]:
 def _explicit_bare_repositories(
     _hermetic_environment: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Run every test the way hardened agent shells run untaped.
+    """Run every test with the git config GitHub Copilot CLI injects.
 
-    GitHub Copilot CLI injects ``safe.bareRepository=explicit`` through
-    ``GIT_CONFIG_COUNT``; git then refuses a bare repository it would find
-    from ``cwd``, so a cache call that forgets ``--git-dir`` fails here
-    first. A test that sets its own ``GIT_CONFIG_COUNT`` replaces this one.
+    Copilot sets these through ``GIT_CONFIG_COUNT``. ``safe.bareRepository=explicit``
+    makes git refuse a bare repository it would find from ``cwd``, so a cache
+    call that forgets ``--git-dir`` fails here first. A test that sets its own
+    ``GIT_CONFIG_COUNT`` replaces this config.
     """
-    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
-    monkeypatch.setenv("GIT_CONFIG_KEY_0", "safe.bareRepository")
-    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "explicit")
+    injected = {
+        "safe.bareRepository": "explicit",
+        "credential.interactive": "never",
+        "core.fsmonitor": "false",
+    }
+    monkeypatch.setenv("GIT_CONFIG_COUNT", str(len(injected)))
+    for index, (key, value) in enumerate(injected.items()):
+        monkeypatch.setenv(f"GIT_CONFIG_KEY_{index}", key)
+        monkeypatch.setenv(f"GIT_CONFIG_VALUE_{index}", value)
 
 
 @pytest.fixture
