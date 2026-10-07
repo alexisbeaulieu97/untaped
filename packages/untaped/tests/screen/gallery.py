@@ -121,3 +121,70 @@ def style_of(segments: Sequence[Segment], needle: str) -> Style:
 def role(theme: ThemeSpec, name: str) -> Style:
     """The Rich style of screen role ``name`` in ``theme``."""
     return role_style(Frame(80, 24, theme), name)
+
+
+def gallery_fields() -> tuple[tuple[str, Any, str], ...]:
+    """Every component, as ``(name, component, text that shows while it has focus)``."""
+    from pydantic import SecretStr
+
+    from untaped.screen.components.buttons import Button, Buttons
+    from untaped.screen.components.choices import (
+        Check,
+        Cycle,
+        ListItem,
+        MultiList,
+        Select,
+        SingleList,
+    )
+    from untaped.screen.components.form import Form
+    from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
+    from untaped.screen.components.layout import Panes
+    from untaped.screen.components.lists import SearchList, Tags, Tree, TreeRow
+    from untaped.screen.components.tabs import Tab, Tabs
+
+    names = tuple(ListItem(name, name) for name in ("awx", "jira", "github", "ansible"))
+    many = tuple(ListItem(f"n{n}", f"item {n:03d}") for n in range(300))
+    caps = SingleList("", names, "github", show_chosen=False)
+    inner = Form(
+        (("url", TextInput("Pane URL", "https://x.test")), ("note", TextInput("Pane note")))
+    )
+    rows = (
+        TreeRow("all", "all items", "3 set", (TreeRow("all.branch", "branch", "main"),)),
+        TreeRow("api", "acme/api", "inherit"),
+    )
+    return (
+        ("text", TextInput("Base URL", "https://x.test", help="The address."), "Base URL"),
+        ("path", PathInput("Path", "/no/such/gallery/dir"), "Path"),
+        ("secret", SecretInput("Token", SecretStr("")), "Token"),
+        ("number", NumberInput("Timeout", "30", minimum=1, maximum=600), "Timeout"),
+        ("check", Check("Verify TLS", True), "Verify TLS"),
+        ("select", Select("Region", names, "jira"), "Region"),
+        ("single", SingleList("Output", names, "awx"), "Output"),
+        ("multi", MultiList("Services", names, frozenset({"awx"})), "Services"),
+        ("cycle", Cycle("Mode", ("a", "b", "c"), "b"), "Mode"),
+        (
+            "tabs",
+            Tabs(
+                "Token source",
+                (
+                    Tab("keychain", "Keychain", (("token", SecretInput("Stored token")),)),
+                    Tab("command", "Command", (("command", TextInput("Run command")),)),
+                ),
+            ),
+            "Token source",
+        ),
+        ("search", SearchList("Repos", many, multi=True, note="refreshed"), "Repos"),
+        ("tags", Tags("Capabilities", names, ("awx",)), "Capabilities"),
+        ("tree", Tree("Settings", rows, frozenset({"all"})), "Settings"),
+        (
+            "buttons",
+            Buttons((Button("save", "Save", "primary"), Button("cancel", "Cancel", "ghost"))),
+            "Cancel",
+        ),
+        # last: Panes wraps focus between its two panes, so a tab never leaves it
+        (
+            "panes",
+            Panes(caps, inner, left_title="Left pane", right_title="Right pane"),
+            "Left pane",
+        ),
+    )

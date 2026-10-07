@@ -10,7 +10,8 @@ row of text is cut or padded to the cells it has. The caret is the
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
+from dataclasses import replace
 
 from rich.cells import cell_len
 from rich.errors import StyleSyntaxError
@@ -27,6 +28,7 @@ __all__ = [
     "option_row",
     "role_style",
     "text_line",
+    "unboxed",
     "window_start",
 ]
 
@@ -56,6 +58,11 @@ def inner_width(frame: Frame, width: int | None) -> int:
     return max(1, total - 4) if frame.box() is not None else max(1, total)
 
 
+def unboxed(frame: Frame) -> Frame:
+    """``frame`` with the border off: what a component drawn inside another box is given."""
+    return replace(frame, theme=frame.theme.model_copy(update={"border": "none"}))
+
+
 def divider(frame: Frame, inner: int) -> Text | None:
     """A rule across the box, drawn with the box's own horizontal; ``None`` without a box."""
     outline = frame.box()
@@ -79,12 +86,15 @@ def option_row(
     trail: str = "",
     trail_style: Style | None = None,
     base: Style | None = None,
+    marks: Collection[int] = (),
 ) -> Text:
     """One row of exactly ``inner`` cells: ``lead`` glyphs, the label, a right-aligned ``trail``.
 
     ``base`` styles the whole row, padding included, so the cursor row's
-    highlight reaches both edges. The label is cut with the theme's ellipsis
-    when the row is too narrow; the trail is dropped first when it does not fit.
+    highlight reaches both edges. ``marks`` are positions in ``label`` drawn
+    with the ``screen.match`` role (what a search matched). The label is cut with the
+    theme's ellipsis when the row is too narrow; the trail is dropped first when
+    it does not fit.
     """
     line = Text(style=base or Style.null())
     used = 0
@@ -97,11 +107,26 @@ def option_row(
         room -= trail_cells + 1
     else:
         trail = ""
-    line.append_text(fit_text(Text(label, style=label_style), max(room, 0), frame.ellipsis()))
+    shown = Text(label, style=label_style)
+    match = role_style(frame, "screen.match")
+    for first, stop in _runs(marks, len(label)):
+        shown.stylize(match, first, stop)
+    line.append_text(fit_text(shown, max(room, 0), frame.ellipsis()))
     if trail:
         line.append(" ")
         line.append(trail, style=trail_style or Style.null())
     return fit_text(line, inner, frame.ellipsis())
+
+
+def _runs(positions: Collection[int], length: int) -> list[tuple[int, int]]:
+    """``positions`` inside ``length`` as ``(first, stop)`` runs of neighbouring characters."""
+    runs: list[tuple[int, int]] = []
+    for position in sorted(p for p in positions if 0 <= p < length):
+        if runs and runs[-1][1] == position:
+            runs[-1] = (runs[-1][0], position + 1)
+        else:
+            runs.append((position, position + 1))
+    return runs
 
 
 def text_line(

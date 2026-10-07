@@ -45,6 +45,10 @@ SCREEN_SYMBOLS: dict[str, str] = {
     "cycle.right": "\u203a",
     "tab.active": "\u2501",
     "tab.inactive": "\u2500",
+    "tree.open": "\u25be",
+    "tree.closed": "\u25b8",
+    "tag.add": "+",
+    "tag.remove": "\u2715",
 }
 
 #: ASCII fallbacks the ``plain`` theme layers over :data:`SCREEN_SYMBOLS`
@@ -64,6 +68,10 @@ PLAIN_SCREEN_SYMBOLS: dict[str, str] = {
     "cycle.right": ">",
     "tab.active": "=",
     "tab.inactive": "-",
+    "tree.open": "v",
+    "tree.closed": ">",
+    "tag.add": "+",
+    "tag.remove": "x",
 }
 
 DEFAULT_SYMBOLS: dict[str, str] = {**STATUS_SYMBOLS, **SCREEN_SYMBOLS}
@@ -91,6 +99,7 @@ SCREEN_ROLE_NAMES: tuple[str, ...] = (
     "screen.error",
     "screen.caret",
     "screen.emphasis",
+    "screen.match",
 )
 ROLE_NAMES: tuple[str, ...] = (*TABLE_ROLE_NAMES, *SCREEN_ROLE_NAMES)
 
@@ -106,6 +115,7 @@ ZINC_SCREEN_ROLES: dict[str, str] = {
     "screen.error": "#f87171",
     "screen.caret": "reverse",
     "screen.emphasis": "bold",
+    "screen.match": "bold underline",
 }
 
 #: Screen roles of the themes limited to named 16-colour styles.
@@ -120,6 +130,7 @@ NAMED_SCREEN_ROLES: dict[str, str] = {
     "screen.error": "red",
     "screen.caret": "reverse",
     "screen.emphasis": "bold",
+    "screen.match": "bold underline",
 }
 
 

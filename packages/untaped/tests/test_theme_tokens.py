@@ -36,9 +36,10 @@ def test_every_builtin_theme_defines_the_caret_and_emphasis_roles_as_today_s_loo
     name: str,
 ) -> None:
     roles = BUILTIN_THEMES[name].color_roles
-    assert {"screen.caret", "screen.emphasis"} <= set(SCREEN_ROLE_NAMES)
+    assert {"screen.caret", "screen.emphasis", "screen.match"} <= set(SCREEN_ROLE_NAMES)
     assert Style.parse(roles["screen.caret"]) == Style(reverse=True)
     assert Style.parse(roles["screen.emphasis"]) == Style(bold=True)
+    assert Style.parse(roles["screen.match"]) == Style(bold=True, underline=True)
 
 
 def test_the_caret_and_emphasis_roles_are_declared_for_writes() -> None:
@@ -81,6 +82,20 @@ def test_cycle_and_tab_tokens_have_a_glyph_and_an_ascii_fallback() -> None:
     assert (plain["cycle.left"], plain["cycle.right"]) == ("<", ">")
     assert default["tab.active"] != default["tab.inactive"]
     assert plain["tab.active"] != plain["tab.inactive"]
+
+
+def test_tree_tokens_have_a_glyph_and_an_ascii_fallback() -> None:
+    default = BUILTIN_THEMES["default"].symbols
+    plain = BUILTIN_THEMES["plain"].symbols
+    assert (default["tree.open"], default["tree.closed"]) == ("\u25be", "\u25b8")
+    assert (plain["tree.open"], plain["tree.closed"]) == ("v", ">")
+
+
+def test_tag_tokens_have_a_glyph_and_an_ascii_fallback() -> None:
+    default = BUILTIN_THEMES["default"].symbols
+    plain = BUILTIN_THEMES["plain"].symbols
+    assert (default["tag.add"], default["tag.remove"]) == ("+", "\u2715")
+    assert (plain["tag.add"], plain["tag.remove"]) == ("+", "x")
 
 
 @pytest.mark.parametrize("name", THEMES)
