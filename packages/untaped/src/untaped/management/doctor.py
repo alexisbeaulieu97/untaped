@@ -36,6 +36,7 @@ from pydantic import BaseModel, ValidationError
 from untaped.capabilities.registry import (
     ApplicationSpec,
     CapabilityContext,
+    CapabilitySpec,
     CompositionResult,
     DoctorCheck,
     DoctorResult,
@@ -76,7 +77,9 @@ from untaped.settings import (
     profile_section_models,
     resolve_config_path,
     resolve_state_path,
+    resolve_with_overlay,
     section_stabilities,
+    settings_overlay,
 )
 from untaped.skills import SkillState, outdated_skills, project_root
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
@@ -284,18 +287,18 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
             checks=tuple(shell.doctor_checks),
         )
     ]
-    for registered in result.capabilities:
-        spec = registered.spec
-        scopes.append(
-            _SectionScope(
-                capability=spec.name,
-                section=spec.config_section,
-                profile_model=spec.profile_model,
-                state_model=spec.state_model,
-                checks=tuple(spec.doctor_checks),
-            )
-        )
+    scopes.extend(_capability_scope(registered.spec) for registered in result.capabilities)
     return scopes
+
+
+def _capability_scope(spec: CapabilitySpec) -> _SectionScope:
+    return _SectionScope(
+        capability=spec.name,
+        section=spec.config_section,
+        profile_model=spec.profile_model,
+        state_model=spec.state_model,
+        checks=tuple(spec.doctor_checks),
+    )
 
 
 def collect_doctor_rows(
@@ -372,6 +375,56 @@ def selected_check_rows(
         if row["capability"] in selected
         or (row["check"] == "deprecated-keys" and row["status"] != _PASS)
     ]
+
+
+def online_probe_rows(
+    result: CompositionResult,
+    profile: str,
+    capability: str,
+    values: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """``capability``'s online checks against ``values``, which nothing has written yet.
+
+    ``values`` are candidate settings for the capability's section in
+    ``profile`` (a ``None`` value unsets that key), laid over the loaded config
+    for the duration of the call (:func:`untaped.settings.settings_overlay`);
+    ``profile`` need not exist yet. Only the ``online=True`` checks run: the
+    offline ones (connection settings, the plaintext-token warning) would
+    misreport on candidate values, and there are no state or config-file rows.
+    Settings that do not validate come back as the one failing ``validate
+    settings`` row. Never writes: not the config, not a token store.
+
+    ``setup`` runs this on a worker thread inside a copy of its own context;
+    the overlay lives in that copy only.
+    """
+    spec = next(
+        (
+            registered.spec
+            for registered in result.capabilities
+            if registered.spec.name == capability
+        ),
+        None,
+    )
+    if spec is None:
+        raise ConfigError(f"no composed capability named {capability!r} to check")
+    scope = _capability_scope(spec)
+    with profile_scope(profile), settings_overlay(profile, scope.section, values):
+        settings, error = _validate_section(scope, *_overlaid_effective())
+        if error is not None:
+            return [_row("settings", scope.capability, _FAIL, "validate settings", error)]
+        return [
+            _run_check(scope, check_item, settings, profile=profile)
+            for check_item in scope.checks
+            if check_item.online
+        ]
+
+
+def _overlaid_effective() -> tuple[dict[str, Any] | None, str | None]:
+    """The selected profile's effective values with the overlay over them, or why not."""
+    try:
+        return resolve_with_overlay(read_config_dict()).effective, None
+    except ConfigError as exc:
+        return None, str(exc)
 
 
 def _check_rows(
@@ -696,6 +749,7 @@ def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
 __all__ = [
     "build_root_doctor_app",
     "collect_doctor_rows",
+    "online_probe_rows",
     "report_check_rows",
     "selected_check_rows",
 ]

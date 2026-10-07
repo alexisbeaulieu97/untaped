@@ -101,7 +101,7 @@ that asks for or reveals a token (`auth set`, `config set ….token
 - Every `run` but `profile create` starts with `--profile NAME`. Keep it:
   dropping it acts on the active profile instead.
 - Without a terminal, `untaped setup` exits 2; that is expected. Use
-  `setup plan` and hand the wizard to the user.
+  `setup plan` and hand `untaped setup` to the user.
 - Upstream AWX needs `untaped --profile NAME config set awx.api_prefix
   /api/v2/`; AAP uses the default.
 - A token from an environment variable counts as set only alongside a

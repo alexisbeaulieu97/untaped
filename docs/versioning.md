@@ -70,9 +70,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `PathInput`, `SecretInput`, `NumberInput`, `Check`, `Select`, `SingleList`,
   `MultiList`, `ListItem`, `Cycle`, `Tabs`, `Tab`, `Buttons`, `Button`,
   `Pressed`, `SearchList`, `Tree`, `TreeRow`, `Tags`, `Viewport`, `Form`,
-  `Submitted` and `Panes`), `UiContext.run`, and `untaped.testing.drive_screen`
-  with `untaped.testing.ScreenKeys` and `untaped.testing.ScreenRun`. See
-  [Screens](./screens.md).
+  `Submitted` and `Panes`), `UiContext.run`, `UiContext.require_screen_terminal`,
+  and `untaped.testing.drive_screen` with `untaped.testing.ScreenKeys` and
+  `untaped.testing.ScreenRun`. See [Screens](./screens.md).
 
 ## Breaking changes
 

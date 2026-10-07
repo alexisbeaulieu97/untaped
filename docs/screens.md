@@ -205,6 +205,14 @@ views.
 leaves them unset). `allow_empty` lets it confirm with nothing selected; a
 request that has a title still requires one.
 
+`untaped setup` is a screen built from the same components: a `TextInput` for
+the profile, a `SingleList` of capabilities beside a `Form` of `TextInput`,
+`Tabs` (the token source) and `Buttons`, in `Panes`. It keeps its own
+`shared_labels` (tab, enter and ctrl-s) and offers `Save anyway` per capability.
+A command that builds its screen only after reading config or probing a store
+asks `ui.require_screen_terminal(command=..., alternative=...)` first, so a run
+without a terminal exits 2 having touched nothing.
+
 Pieces it needed are public: a `Panes` side may be a drawing (a function
 `(frame, focused) -> renderable`) for a pane whose model the screen owns;
 `SearchList(entries=...)` takes matches the screen ranked itself, and

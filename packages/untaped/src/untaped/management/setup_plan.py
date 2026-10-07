@@ -7,7 +7,7 @@ its invalid settings), then (with ``--online``) each online check. A row's
 is a value to ask the user for); ``by`` says who runs it: ``user`` for
 a step that asks for or reveals a token, so a token never passes through
 an agent. Service state comes from :mod:`untaped.management.setup_state`
-(shared with the wizard) and the online rows are the capabilities' own
+(shared with the setup screen) and the online rows are the capabilities' own
 online doctor checks.
 """
 
@@ -34,6 +34,9 @@ Row = dict[str, object]
 State = Literal["done", "todo", "failed", "skipped"]
 
 KIND = "untaped.setup_step"
+#: The interactive command and its non-interactive face, as a run without a terminal names them.
+SETUP_COMMAND = "untaped setup"
+SETUP_ALTERNATIVE = "untaped setup plan --format json"
 TABLE_COLUMNS = ["step", "state", "by", "detail", "run"]
 
 
@@ -160,7 +163,7 @@ def _token_row(
             run = command_argv("auth migrate", profile=profile)
             return _row(step, name, "failed", f"{detail}; move it to {store_name}", run)
         if takes_command:
-            # No store here: the wizard replaces it with a command or a variable.
+            # No store here: the setup screen replaces it with a command or a variable.
             run = command_argv(["setup", "--only", name], profile=holder)
             return _row(step, name, "failed", f"{detail}; replace it", run, by="user")
         instead = token_instead(settings, section=section)
@@ -246,4 +249,4 @@ def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
     return "user" if secret else "agent"
 
 
-__all__ = ["KIND", "emit_plan", "pending", "plan_rows"]
+__all__ = ["KIND", "SETUP_ALTERNATIVE", "SETUP_COMMAND", "emit_plan", "pending", "plan_rows"]

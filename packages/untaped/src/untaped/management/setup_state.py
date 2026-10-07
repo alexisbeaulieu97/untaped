@@ -3,13 +3,13 @@
 A service is a composed capability whose profile model has ``base_url`` and
 ``token`` fields. Both commands resolve each one's current state here, the
 way ``doctor`` does (the profile's values with ``UNTAPED_*`` overrides
-layered on top), so the wizard, the plan and doctor cannot disagree about
+layered on top), so the setup screen, the plan and doctor cannot disagree about
 what is set up.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel
@@ -74,8 +74,8 @@ class ServiceState:
     configured: bool
     """Whether the section is set up (:func:`untaped.doctor_checks.service_configured`)."""
 
-    plaintext: str | None = None
-    """The token stored in plain text in the profile's own config, if any."""
+    plaintext: str | None = field(default=None, repr=False)
+    """The token stored in plain text in the profile's own config, if any (never in a repr)."""
 
     own_command: list[str] | None = None
     """The profile's own ``token_command``, if any."""
@@ -124,4 +124,16 @@ def service_state(
     )
 
 
-__all__ = ["ServiceState", "profile_view", "service_state", "setup_services"]
+def service_states(
+    services: dict[str, CapabilitySpec], profile: str, raw: dict[str, Any]
+) -> dict[str, ServiceState]:
+    """Every service's state in ``profile``, from the parsed config ``raw``."""
+    values = profile_view(raw, profile)
+    own = active_settings_layout().profile_data(raw, profile) or {}
+    return {
+        name: service_state(spec, values.get(spec.config_section), own, profile, raw)
+        for name, spec in services.items()
+    }
+
+
+__all__ = ["ServiceState", "profile_view", "service_state", "service_states", "setup_services"]

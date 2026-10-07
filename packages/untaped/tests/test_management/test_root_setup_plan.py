@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -35,9 +34,14 @@ from untaped.capabilities.registry import (
     DoctorResult,
 )
 from untaped.management import setup_plan
-from untaped.prompts import PromptChoice
 from untaped.sdk import TokenCommand, TokenSources, connection_check, online_check
-from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
+from untaped.testing import (
+    CliResult,
+    ScreenKeys,
+    ScriptedPromptBackend,
+    invoke_cli,
+    provider_candidate,
+)
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -155,7 +159,7 @@ def test_a_plaintext_token_fails_and_moves_with_auth_migrate(
         assert "s3cret" not in _cli("setup", "plan", "--format", fmt).output
 
 
-def test_a_plaintext_token_without_a_store_goes_back_to_the_wizard(_isolated_config: Path) -> None:
+def test_a_plaintext_token_without_a_store_goes_back_to_setup(_isolated_config: Path) -> None:
     _configure(_isolated_config, "{base_url: https://wiz, token: s3cret}")
     token = _step(_plan(), "wiz.token")
     assert (token["state"], token["by"]) == ("failed", "user")
@@ -288,20 +292,6 @@ def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
     }
 
 
-class DefaultsRecorder(ScriptedPromptBackend):
-    """Scripted backend that records the wizard's preselected services."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.defaults: list[Any] = []
-
-    def multiselect(
-        self, message: str, choices: Sequence[PromptChoice[Any]], *, defaults: Sequence[Any]
-    ) -> list[Any]:
-        self.defaults = list(defaults)
-        return super().multiselect(message, choices, defaults=defaults)
-
-
 @pytest.mark.parametrize(
     ("wiz", "env", "configured", "rejected"),
     [
@@ -317,7 +307,7 @@ class DefaultsRecorder(ScriptedPromptBackend):
         ),
     ],
 )
-def test_plan_wizard_and_doctor_agree(
+def test_plan_setup_screen_and_doctor_agree(
     _isolated_config: Path,
     monkeypatch: pytest.MonkeyPatch,
     wiz: str,
@@ -343,11 +333,15 @@ def test_plan_wizard_and_doctor_agree(
     if token_done:
         assert (online["state"] == "failed") is (api["status"] == "fail")
         assert online["run"] == (api["fix"] or [])
-    backend = DefaultsRecorder(texts=["default"], multiselects=[[]])
+    backend = ScriptedPromptBackend(screens=[ScreenKeys("esc")])
     root = bootstrap.build_root_app(candidates=(provider_candidate(_wiz()),))
-    wizard = invoke_cli(root.meta, ["setup"], interactive=True, prompt_backend=backend)
-    assert wizard.exit_code == 0, wizard.output
-    assert backend.defaults == (["wiz"] if configured else [])
+    setup = invoke_cli(
+        root.meta, ["setup"], interactive=True, prompt_backend=backend, terminal=True
+    )
+    assert setup.exit_code == 0, setup.output
+    # The screen lists the service as configured exactly when the plan and doctor do.
+    (row,) = backend.ran[0].init()[0].rows
+    assert (row.status != "not configured") is configured
 
 
 def test_an_env_configured_service_completes_the_plan(monkeypatch: pytest.MonkeyPatch) -> None:
