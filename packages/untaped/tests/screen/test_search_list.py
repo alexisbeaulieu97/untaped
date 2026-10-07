@@ -152,6 +152,21 @@ def test_an_unfocused_list_shows_no_cursor_row_and_no_caret() -> None:
     assert not any(s.style is not None and s.style.bgcolor == fill for s in segments)
 
 
+def test_caret_and_highlight_can_be_drawn_one_at_a_time() -> None:
+    fill = role(DEFAULT, "screen.highlight").bgcolor
+
+    def parts(**flags: bool) -> tuple[bool, bool]:
+        segments = _view(SearchList("Repos", REPOS, query="web", **flags))
+        return (
+            any(s.style is not None and s.style.reverse for s in segments),
+            any(s.style is not None and s.style.bgcolor == fill for s in segments),
+        )
+
+    assert parts() == (True, True)
+    assert parts(highlight=False) == (True, False)
+    assert parts(caret=False) == (False, True)
+
+
 # --- keys --------------------------------------------------------------------------
 
 
