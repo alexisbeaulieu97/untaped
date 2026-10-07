@@ -133,7 +133,8 @@ a theme change reaches every screen. The names are declared; the
 Every glyph and colour a component draws is a token, the caret and bold
 emphasis too: `screen.caret` (reverse by default) styles the caret and the
 character under it, and `screen.emphasis` (bold by default) the chosen value,
-the on/off symbols and the primary button's label, so a theme can restyle them.
+the on/off symbols and the primary button's label, and `screen.match` (bold and
+underlined by default) the letters a search matched, so a theme can restyle them.
 Two things stay structural text and are not tokens: the `[` and `]` around a
 `MultiList` mark, and the terminal's `dim` attribute, which a dimmed item layers
 over the muted colour.
@@ -169,6 +170,22 @@ is text, tab accepts a completion before it moves focus, esc closes an open
 | `Cycle` | a value changed with left and right, or inherited |
 | `Tabs`, `Tab` | tabs that each show their own fields; `value` is the active tab's |
 | `Buttons`, `Button` | actions; activating one sends `Pressed(id)`. A primary button always has the bright ring and a bold label, a secondary one the muted border, a ghost one is plain text; focus is the cursor highlight on the focused button's label row |
+| `SearchList` | a search box over a long list: typing filters (fuzzy, matched letters bold and underlined), enter toggles or picks |
+| `Tree`, `TreeRow` | rows that expand into children; right and left open, close and step out |
+| `Tags` | the chosen items as removable badges, with a `SearchList` menu to add more |
+| `Form` | named fields in focus order with per-field validation; `Submit` sends `Submitted(values)` |
+| `Panes` | two components in bordered panes (side by side from 100 columns, stacked below), focus moving between them |
+| `Viewport` | a scrolling window over long content: which rows show, scrolling by key, following a cursor |
+
+A `Form` hands tab and shift-tab to its parent at either end, so a `Panes` (or
+your screen) takes the move after the last field; a field that consumes a key
+keeps it. `Submit` (ctrl-s), or enter on a field that has no use for it, validates
+every field, shows each error, focuses the first bad one and sends
+`Submitted(values)` when all pass; enter on a `Buttons` row presses the button
+instead. Lists (`SearchList`, `Tree`, `Tags`, and the choice lists) build only
+the rows in view, so a thousand items cost no more than ten; `Viewport` does
+that arithmetic (which rows show, scrolling, following a cursor) for your own
+views.
 
 `field_for(descriptor, value=..., help=...)` maps a setting's type to its
 component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to

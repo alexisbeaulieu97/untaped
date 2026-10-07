@@ -79,6 +79,8 @@
   descriptors gain `metadata`, `optional` and `description` (additive;
   `untaped.config_schema` is internal, but `field_for` takes the descriptor).
   ([#526](https://github.com/alexisbeaulieu97/untaped/pull/526))
+- Screens (experimental): `SearchList`, `Viewport`, `Tree`, `Tags`, `Form` and
+  `Panes`. ([#527](https://github.com/alexisbeaulieu97/untaped/pull/527))
 
 ### Changed
 

@@ -21,7 +21,7 @@ from untaped.picker import (
     PickResult,
     PickSetting,
 )
-from untaped.picker.fuzzy import Ranked, rank
+from untaped.screen.fuzzy import Ranked, rank
 
 Focus = Literal["title", "search", "list", "selected"]
 Outcome = Literal["running", "confirmed", "cancelled"]
@@ -77,11 +77,11 @@ def initial_state(request: PickRequest) -> PickerState:
 
 
 _VisibleKey = tuple[str, tuple[PickItem, ...], Callable[[str], PickItem | None] | None]
-_last_visible: list[tuple[_VisibleKey, list[Ranked]]] = []
+_last_visible: list[tuple[_VisibleKey, list[Ranked[PickItem]]]] = []
 """One-slot cache; the key holds ``items`` itself, so identity checks stay valid."""
 
 
-def visible(state: PickerState) -> list[Ranked]:
+def visible(state: PickerState) -> list[Ranked[PickItem]]:
     """The left-pane rows for the current query, best match first (memoised)."""
     if _last_visible:
         (query, items, adhoc), ranked = _last_visible[0]
@@ -92,7 +92,7 @@ def visible(state: PickerState) -> list[Ranked]:
     return ranked
 
 
-def _visible(state: PickerState) -> list[Ranked]:
+def _visible(state: PickerState) -> list[Ranked[PickItem]]:
     items = state.items
     query = state.query.strip()
     if state.request.adhoc is not None and query:
