@@ -126,6 +126,11 @@ class ThemeSpec(BaseModel):
 #: time (e.g. an unknown ``ui.theme``) are rejected before landing on disk.
 CONFIG_WRITE_CONTEXT = "untaped_config_write"
 
+#: Optional write-context entry naming the key being written (``ui.symbols``).
+#: When present, the declared-name checks run only for that key, so a stray
+#: name already on disk never blocks writing another ``ui`` key.
+CONFIG_WRITTEN_KEY_CONTEXT = "untaped_config_written_key"
+
 
 class UiSettings(BaseModel):
     """Per-profile UI presentation preferences (the ``ui`` section of a profile).
@@ -209,7 +214,8 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
             "info": "bold bright_blue",
             "warning": "bold yellow",
             "error": "bold bright_red",
-            **{**NAMED_SCREEN_ROLES, "screen.accent": "bold bright_cyan"},
+            **NAMED_SCREEN_ROLES,
+            "screen.accent": "bold bright_cyan",
         },
     ),
     "quiet": ThemeSpec(
@@ -250,9 +256,14 @@ def _undeclared(names: Iterable[str], declared: Sequence[str]) -> list[str]:
     return sorted(name for name in names if name not in declared)
 
 
-def _undeclared_message(field: str, label: str, names: list[str], declared: Sequence[str]) -> str:
-    stray = ", ".join(f"ui.{field}.{name}" for name in names)
-    return f"unknown name {stray}. Valid {label}: {', '.join(sorted(declared))}"
+_TOKEN_LABELS = {"symbols": "symbols", "color_roles": "color roles"}
+
+
+def _undeclared_message(
+    field: str, names: list[str], declared: Sequence[str], *, prefix: bool
+) -> str:
+    stray = ", ".join(f"ui.{field}.{name}" if prefix else name for name in names)
+    return f"unknown name {stray}. Valid {_TOKEN_LABELS[field]}: {', '.join(sorted(declared))}"
 
 
 def _reject_undeclared_on_write(
@@ -261,10 +272,12 @@ def _reject_undeclared_on_write(
     context = info.context
     if not (isinstance(context, dict) and context.get(CONFIG_WRITE_CONTEXT)):
         return
+    written = context.get(CONFIG_WRITTEN_KEY_CONTEXT)
+    if written is not None and written != f"ui.{field}":
+        return
     names = _undeclared(value, declared)
     if names:
-        label = "symbols" if field == "symbols" else "color roles"
-        raise ValueError(_undeclared_message(field, label, names, declared))
+        raise ValueError(_undeclared_message(field, names, declared, prefix=False))
 
 
 def check_declared_tokens(ui: UiSettings) -> None:
@@ -274,13 +287,10 @@ def check_declared_tokens(ui: UiSettings) -> None:
     reaches the same rule through :class:`UiSettings`'s write-time validators.
     """
     problems = []
-    for field, label, declared in (
-        ("symbols", "symbols", SYMBOL_NAMES),
-        ("color_roles", "color roles", ROLE_NAMES),
-    ):
+    for field, declared in (("symbols", SYMBOL_NAMES), ("color_roles", ROLE_NAMES)):
         names = _undeclared(getattr(ui, field), declared)
         if names:
-            problems.append(_undeclared_message(field, label, names, declared))
+            problems.append(_undeclared_message(field, names, declared, prefix=True))
     if problems:
         raise ConfigError("; ".join(problems))
 

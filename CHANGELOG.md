@@ -61,8 +61,8 @@
   report each setting's `stability`.
   ([#519](https://github.com/alexisbeaulieu97/untaped/pull/519))
 - `ui.symbols` and `ui.color_roles` gain the names screens use (`chosen`,
-  `checked`, ..., `screen.accent`, ...); `config list` and the config reference
-  list them. ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
+  `checked`, ..., `screen.accent`, ...); the config reference
+  lists them. ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
 
 ### Changed
 

@@ -13,6 +13,7 @@ from pydantic import BaseModel, SecretStr
 
 from test_management.support import GithubProfile, asset, compose, make_spec, write_config
 from untaped import bootstrap
+from untaped.management.config import build_root_config_app
 from untaped.management.doctor import build_root_doctor_app
 from untaped.sdk import (
     TokenCommand,
@@ -80,6 +81,24 @@ def test_an_unknown_ui_symbol_name_fails_the_ui_row(_isolated_config: Path) -> N
     assert row["status"] == "fail"
     assert "ui.symbols.zzz" in row["detail"]
     assert "success" in row["detail"]
+
+
+def test_a_stray_ui_name_loads_leniently_and_only_fails_the_ui_row(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    http:\n      timeout_seconds: 3\n"
+        "    ui:\n      symbols: {zzz: y}\n",
+    )
+    listed = CliInvoker().invoke(
+        build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose()), ["list"]
+    )
+    assert listed.exit_code == 0, listed.output
+    rows = _rows(exit_code=1)
+    assert _row(rows, "settings", "validate ui")["status"] == "fail"
+    assert _row(rows, "settings", "validate http")["status"] == "pass"
+    assert [r["title"] for r in rows if r["status"] == "fail"] == ["validate ui"]
 
 
 def test_an_unknown_ui_color_role_name_fails_the_ui_row(_isolated_config: Path) -> None:

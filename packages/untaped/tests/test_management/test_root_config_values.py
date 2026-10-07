@@ -336,3 +336,19 @@ def test_unset_removes_the_whole_mapping(_isolated_config: Path) -> None:
     result = _invoke(["unset", "ui.symbols"])
     assert result.exit_code == 0, result.output
     assert "symbols" not in (_default_profile(_isolated_config).get("ui") or {})
+
+
+def test_a_stray_ui_symbol_name_does_not_block_writing_another_ui_key(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {zzz: q}\n")
+    result = _invoke(["set", "ui.format", "json"])
+    assert result.exit_code == 0, result.output
+    assert _default_profile(_isolated_config)["ui"] == {"symbols": {"zzz": "q"}, "format": "json"}
+
+
+def test_writing_ui_symbols_still_rejects_a_stray_name(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {zzz: q}\n")
+    result = _invoke(["set", "ui.symbols", '{"zzz":"q"}'])
+    assert result.exit_code != 0
+    assert "unknown name zzz" in result.output
