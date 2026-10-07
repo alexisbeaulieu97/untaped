@@ -134,6 +134,44 @@ One color decision (`NO_COLOR`, `COLORTERM`, `TERM`) reaches both Rich and the
 terminal library. Under `NO_COLOR` the cursor row keeps only bold, so a screen
 must not rely on color alone.
 
+## Components
+
+Ready-made components are frozen dataclasses with one shape. The constructor
+is the component's `init`, `update(message)` returns the component and its
+commands, and `view(frame, focused=..., width=...)` draws it; the parent (the
+screen, a `Tabs`) owns focus and passes it in. A screen keeps components in its
+model and delegates: `field, cmds = model.name.update(message)`. Each has
+`value`, `error`, `with_error(text)` and `validate()`, which returns the error
+text (empty when fine) and never sets it. `Field` is that contract as a type.
+
+A component returns the same object for a message it does not consume, so the
+keys above reach the screen only when it passed: a `?` typed in a `TextInput`
+is text, tab accepts a completion before it moves focus, esc closes an open
+`Select` before it goes back, and enter opens one before it submits.
+
+| Component | Holds |
+|---|---|
+| `TextInput` | a line of text, with an optional list of completions |
+| `PathInput` | a `TextInput` that completes filesystem paths |
+| `SecretInput` | a `SecretStr`, masked; the secret never reaches a frame or a `repr` |
+| `NumberInput` | a number with optional bounds; `value` is the parsed number |
+| `Check` | a boolean, shown as the `on` or `off` symbol alone |
+| `Select` | one choice, closed until enter opens it |
+| `SingleList`, `MultiList` | one or many choices, all showing, as `ListItem` rows |
+| `Cycle` | a value changed with left and right, or inherited |
+| `Tabs`, `Tab` | tabs that each show their own fields; `value` is the active tab's |
+| `Buttons`, `Button` | actions; activating one sends `Pressed(id)` |
+
+`field_for(descriptor, value=..., help=...)` maps a setting's type to its
+component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to
+`NumberInput`, paths to `PathInput`, `SecretStr` to `SecretInput`, `str` to
+`TextInput`) and raises `TypeError` naming the setting for any other type.
+
+The look comes from the theme: the label sits in the top border, the caret is
+drawn, help is muted below, an error is a red border and message, and the only
+fill is the highlighted cursor row. With `ui.border: none` a field is its label
+line, its value and its help line.
+
 ## Testing
 
 `untaped.testing.drive_screen(screen, keys, size=(100, 30))` runs a screen
