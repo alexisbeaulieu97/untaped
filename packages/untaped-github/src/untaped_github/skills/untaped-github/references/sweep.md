@@ -96,8 +96,9 @@ lists each kind's fields.
   `failed` (with `error`); a failure exits 1, or 5 when a fetch timed out.
 - `cache status` emits one `github.corpus_repo` row per cached repo and
   prints the count, total size and freshness spread.
-- `cache worktree OWNER/NAME` checks out a cached ref and prints its path. It
-  works offline and only for refs already in the corpus.
+- `cache worktree OWNER/NAME` checks out a cached ref and prints its path;
+  `--format raw` prints just the path, for `$(…)`. It works offline and only
+  for refs already in the corpus.
 - `cache delete` takes `OWNER/NAME` arguments or `--all`, not both.
   Repeatable `--org` narrows the selection. There is no `--team`, because the
   corpus does not record team membership.

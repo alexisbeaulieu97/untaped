@@ -314,6 +314,15 @@ def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None
     assert (Path(row["path"]) / "README.md").is_file()
 
 
+def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo) -> None:
+    _populate(source_repo, "acme/api")
+
+    result = CliInvoker().invoke(app, ["cache", "worktree", "acme/api", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    assert (Path(result.stdout.strip()) / "README.md").is_file()
+
+
 @pytest.mark.parametrize(
     ("repo", "message"),
     [
