@@ -7,7 +7,7 @@ import re
 import pytest
 from rich import box
 
-from untaped.screen.core import SHARED_KEYS, Binding, Cmd, Frame, Screen, is_inline
+from untaped.screen.core import SHARED_KEYS, Binding, Cmd, Footer, Frame, Screen, is_inline
 from untaped.stability import Experimental, function_mark
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
 
@@ -142,3 +142,32 @@ def test_frame_refuses_an_undeclared_name() -> None:
 def test_frame_box_follows_the_border_style(border: str, expected: box.Box | None) -> None:
     theme = ThemeSpec(border=border)  # type: ignore[arg-type]
     assert Frame(80, 24, theme).box() is expected
+
+
+def test_footer_lists_the_bindings_then_back_and_help() -> None:
+    footer = Footer((Binding("ctrl-r", "refresh", None), Binding("x", "extra", None)))
+    assert footer.entries() == (
+        ("ctrl-r", "refresh"),
+        ("x", "extra"),
+        ("esc", "back"),
+        ("?", "help"),
+    )
+
+
+def test_footer_line_is_exactly_the_frame_width() -> None:
+    footer = Footer((Binding("ctrl-r", "refresh", None),))
+    for width in (5, 20, 80):
+        line = footer.line(Frame(width, 10, BUILTIN_THEMES["default"]))
+        assert line.cell_len == width
+    wide = footer.line(Frame(80, 10, BUILTIN_THEMES["default"]))
+    assert wide.plain.rstrip() == "ctrl-r refresh · esc back · ? help"
+
+
+def test_footer_keys_are_words_not_arrow_glyphs() -> None:
+    footer = Footer((Binding("up", "move", None), Binding("left", "back a level", None)))
+    assert all(key.isascii() for key, _label in footer.entries())
+
+
+def test_footer_saving_replaces_the_hints() -> None:
+    line = Footer(saving=True).line(Frame(30, 10, BUILTIN_THEMES["plain"]))
+    assert line.plain.rstrip() == "saving..."
