@@ -101,7 +101,7 @@ def test_setup_without_a_terminal_is_a_usage_error(_isolated_config: Path) -> No
 
 
 def test_setup_without_a_terminal_touches_neither_the_config_nor_the_keychain(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
 
@@ -116,6 +116,7 @@ def test_setup_without_a_terminal_touches_neither_the_config_nor_the_keychain(
     assert result.exit_code == 2
     assert "needs a terminal" in result.stderr
     assert stores.calls() == []
+    assert not _isolated_config.exists()
 
 
 def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
