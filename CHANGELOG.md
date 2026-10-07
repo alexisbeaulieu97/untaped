@@ -127,7 +127,8 @@
   instead, or waive a line with `# untaped: allow terminal-boundary`.
   ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 - `PromptBackend` gains `run_screen`; a custom backend needs the method to
-  type-check. ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
+  type-check (it may set `needs_terminal = False`, as `ScriptedPromptBackend`
+  does, to run screens without a terminal). ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 
 ### Deprecated
 

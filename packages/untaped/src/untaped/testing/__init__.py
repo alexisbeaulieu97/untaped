@@ -285,7 +285,7 @@ class ScriptedPromptBackend:
 
     ``screens`` answers :meth:`UiContext.run`: each entry is the screen's
     result (returned as ``Quit(entry)``), a :class:`Quit` (its result is
-    returned, like the screen's own), a :class:`Cancel`, an exception
+    returned, like the screen's own), a :class:`Cancel` (or the class itself), an exception
     instance or class (raised), or :class:`ScreenKeys` (replayed through
     :func:`drive_screen` with commands run synchronously, so a command-level
     test can run a real screen). ``ran`` keeps the screens it was asked to
@@ -364,6 +364,8 @@ class ScriptedPromptBackend:
             isinstance(entry, type) and issubclass(entry, BaseException)
         ):
             raise entry
+        if entry is Cancel:
+            return Cancel()
         if isinstance(entry, Quit | Cancel):
             return cast("Quit[R] | Cancel", entry)
         if isinstance(entry, ScreenKeys):

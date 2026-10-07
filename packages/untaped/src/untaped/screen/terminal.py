@@ -259,7 +259,8 @@ def _exit_on_termination() -> Iterator[Callable[[Application[Any]], None]]:
     still in the alternate screen and raw mode. The handler instead exits the
     application with ``SystemExit(128 + signal)`` so prompt_toolkit restores the
     terminal on the way out; the handlers installed before are put back after.
-    Only the main thread can handle signals; anywhere else this does nothing.
+    Only the main thread can handle signals, and a signal ignored on purpose
+    (``nohup``) stays ignored; in either case this does nothing.
     """
     previous: dict[signal.Signals, Any] = {}
 
@@ -269,6 +270,8 @@ def _exit_on_termination() -> Iterator[Callable[[Application[Any]], None]]:
         loop = asyncio.get_running_loop()
         for sig in _TERMINATION:
             before = signal.getsignal(sig)
+            if before is signal.SIG_IGN:
+                continue  # ignored on purpose (nohup): keep it ignored
             try:
                 loop.add_signal_handler(sig, _terminate, application, sig)
             except NotImplementedError, RuntimeError, ValueError:

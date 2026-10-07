@@ -38,7 +38,16 @@ def _mypy(tmp_path: Path) -> tuple[int, str]:
     source = tmp_path / "plugin.py"
     source.write_text(SNIPPET, encoding="utf-8")
     proc = subprocess.run(
-        [sys.executable, "-m", "mypy", "--config-file", str(REPO / "pyproject.toml"), str(source)],
+        [
+            sys.executable,
+            "-m",
+            "mypy",
+            "--config-file",
+            str(REPO / "pyproject.toml"),
+            "--cache-dir",
+            str(tmp_path / ".mypy_cache"),
+            str(source),
+        ],
         capture_output=True,
         text=True,
         check=False,
