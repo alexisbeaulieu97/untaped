@@ -187,6 +187,10 @@ the rows in view, so a thousand items cost no more than ten; `Viewport` does
 that arithmetic (which rows show, scrolling, following a cursor) for your own
 views.
 
+`ui.pick_many`, the workspace picker, is a screen built from `Panes`,
+`SearchList`, `Tree`, `TextInput` and `Buttons`; its `PickRequest` names the
+`command` and `alternative` the no-terminal refusal shows.
+
 `field_for(descriptor, value=..., help=...)` maps a setting's type to its
 component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to
 `NumberInput`, paths to `PathInput`, `SecretStr` to `SecretInput`, `str` to
