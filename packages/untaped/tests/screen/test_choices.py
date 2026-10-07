@@ -289,12 +289,12 @@ def test_check_shows_only_a_colored_symbol() -> None:
         assert not any(word in run.frame.lower() for word in ("true", "false", "enabled", "on "))
 
 
-def test_check_toggles_on_space_and_enter_and_nothing_else() -> None:
+def test_check_toggles_on_space_only_and_leaves_enter_to_the_form() -> None:
     run = run_solo(Check("Verify TLS"), " ")
     assert field_of(run).value is True
     run = run_solo(Check("Verify TLS", True), "enter")
-    assert field_of(run).value is False
-    assert run.model.unhandled == ()
+    assert field_of(run).value is True  # enter does not toggle
+    assert run.model.unhandled == (Activate(),)  # it reaches the form: activate or submit
     component = Check("Verify TLS")
     assert component.update(Key("x"))[0] is component
     assert component.update(Key("esc"))[0] is component
@@ -385,6 +385,14 @@ def test_the_choice_components_are_always_valid() -> None:
     for component in _all():
         assert component.validate() == ""  # type: ignore[attr-defined]
     assert _buttons().validate() == ""
+
+
+def test_every_choice_component_shows_an_error_and_clears_it() -> None:
+    for component in _all():
+        shown = component.with_error("Nope.")  # type: ignore[attr-defined]
+        assert shown.error == "Nope."
+        assert shown.with_error("").error == ""
+        assert "Nope." in run_solo(shown).frame
 
 
 def test_the_choice_components_are_marked_experimental() -> None:
@@ -661,3 +669,158 @@ def test_plain_tabs_and_buttons_frames_are_pure_ascii() -> None:
 def test_tabs_and_buttons_are_marked_experimental() -> None:
     for cls in (Tab, Tabs, Button, Buttons, Pressed):
         assert isinstance(function_mark(cls), Experimental)
+
+
+# --- review fixes -----------------------------------------------------------------
+
+
+def _cells(segments: list, needle: str, *, after: int = 0) -> list:
+    """The segments inside the box on the line holding ``needle`` (the whole line without a box)."""
+    cells = [segment for segment in _row(segments, needle, after=after) if segment.text != "\n"]
+    if cells and cells[0].text in ("\u2502", "|"):
+        return cells[2:-2]  # the border and its padding
+    return cells
+
+
+def _cursor_row_components() -> list[tuple[str, object, int]]:
+    items = tuple(ListItem(name, name, detail="x") for name in ("awx", "jira", "github"))
+    return [
+        ("multi unchecked", MultiList("C", items, frozenset({"awx"}), cursor=1), 0),
+        ("multi checked", MultiList("C", items, frozenset({"jira"}), cursor=1), 0),
+        ("single unchosen", SingleList("C", items, "awx", cursor=1), 0),
+        ("single chosen", SingleList("C", items, "jira", cursor=1), 0),
+        ("select unchosen", Select("C", items, "awx", open=True, cursor=1), 3),
+        ("select chosen", Select("C", items, "jira", open=True, cursor=1), 3),
+    ]
+
+
+@pytest.mark.parametrize("theme", THEMES)
+@pytest.mark.parametrize(
+    ("name", "component", "after"), _cursor_row_components(), ids=lambda value: str(value)[:20]
+)
+def test_the_cursor_row_is_one_highlight_in_every_theme_with_nothing_hidden_in_it(
+    theme: str, name: str, component: object, after: int
+) -> None:
+    highlight = role(BUILTIN_THEMES[theme], "screen.highlight")
+    success = role(BUILTIN_THEMES[theme], "screen.success").color
+    cells = _cells(_segments(component, theme), "jira", after=after)
+
+    assert cells
+    marks = [
+        s for s in cells if s.style is not None and s.style.color == success != highlight.color
+    ]
+    for segment in cells:
+        style = segment.style
+        assert style is not None
+        assert style.bgcolor == highlight.bgcolor, (name, segment)  # the fill reaches every cell
+        assert bool(style.reverse) == bool(highlight.reverse), (name, segment)
+        assert style.color is None or style.color != style.bgcolor, (name, segment)  # not hidden
+        if segment not in marks:
+            assert style.color == highlight.color, (name, segment)  # bright text, brackets too
+            assert style.bold == highlight.bold, (name, segment)
+
+
+@pytest.mark.parametrize("theme", ["high-contrast", "classic", "quiet", "plain", "default"])
+def test_the_brackets_of_the_cursor_row_are_as_bright_as_its_label(theme: str) -> None:
+    items = tuple(ListItem(name, name) for name in ("awx", "jira"))
+    cells = _cells(_segments(MultiList("C", items, cursor=1), theme), "jira")
+
+    brackets = [s for s in cells if s.text in ("[", "]")]
+    label = next(s for s in cells if "jira" in s.text)
+    assert len(brackets) == 2
+    assert all(s.style == label.style for s in brackets)
+
+
+def test_a_select_shows_the_label_of_the_item_and_never_its_id() -> None:
+    items = (ListItem("us-1", "US East"), ListItem("eu-2", "EU Central"))
+    select = Select("Region", items, "eu-2")
+
+    assert select.shown == "EU Central"
+    closed = run_solo(select).frame
+    assert "EU Central" in closed
+    assert "eu-2" not in closed
+    opened = run_solo(select, "enter").frame
+    assert "US East" in opened
+    assert "us-1" not in opened
+    assert "eu-2" not in opened
+    assert field_of(run_solo(select, "enter", "up", "enter")).value == "us-1"  # the value is the id
+    assert Select("Region", items, "unlisted").shown == "unlisted"
+
+
+def test_a_single_list_starts_with_its_cursor_on_the_value() -> None:
+    assert SingleList("O", OUTPUTS, "yaml").cursor == 2
+    assert SingleList("O", OUTPUTS, "json").cursor == 1
+    assert SingleList("O", OUTPUTS, "unlisted").cursor == 0
+    assert SingleList("O", OUTPUTS, "yaml", cursor=0).cursor == 0  # an explicit cursor wins
+    highlight = role(DEFAULT, "screen.highlight")
+    segments = _segments(SingleList("O", OUTPUTS, "yaml"))
+    assert style_of(_row(segments, "yaml"), "yaml").bgcolor == highlight.bgcolor
+    assert style_of(_row(segments, "table"), "table").bgcolor is None
+
+
+@pytest.mark.parametrize(
+    ("height", "rows"), [(4, 3), (8, 3), (9, 3), (10, 4), (12, 6), (14, 8), (40, 8)]
+)
+def test_a_list_shows_as_many_rows_as_the_frame_has_room_for(height: int, rows: int) -> None:
+    items = tuple(ListItem(f"row{n:02d}", f"row{n:02d}") for n in range(30))
+    frame = Frame(60, height, DEFAULT)
+
+    for component in (SingleList("L", items, cursor=15), MultiList("L", items, cursor=15)):
+        rendered = render_styled(component.view(frame, focused=True, width=30), width=30)
+        text = "".join(segment.text for segment in rendered)
+        assert text.count("row") == rows, (height, text)
+        assert "row15" in text  # the cursor row is always one of them
+
+
+def _focus_marks(segments: list) -> tuple[list, list]:
+    """The caret segments and the accent-coloured label segments of a rendered strip."""
+    carets = [s for s in segments if s.style is not None and s.style.reverse]
+    accent = role(DEFAULT, "screen.accent").color
+    return carets, [s for s in segments if s.style is not None and s.style.color == accent]
+
+
+def _two_field_tabs(**changes: object) -> Tabs:
+    return Tabs(
+        "Strip",
+        (
+            Tab(
+                "one",
+                "One",
+                (("first", TextInput("First", "aa")), ("second", TextInput("Second", "bb"))),
+            ),
+            Tab("two", "Two"),
+        ),
+        **changes,  # type: ignore[arg-type]
+    )
+
+
+def test_tabs_pass_focus_only_to_the_focused_slot() -> None:
+    for slot, caret_on in ((1, "a"), (2, "b")):
+        carets, accent = _focus_marks(_segments(_two_field_tabs(focus=slot), width=40))
+
+        assert [c.text for c in carets] == [" "]  # one caret, past the end of one value
+        labels = [s.text.strip() for s in accent]
+        focused_label = "First" if caret_on == "a" else "Second"
+        other_label = "Second" if caret_on == "a" else "First"
+        assert focused_label in labels
+        assert other_label not in labels  # the other field's label stays muted
+        assert "Strip" in labels  # the strip's own title is emphasised with its focus
+    carets, accent = _focus_marks(_segments(_two_field_tabs(focus=0), width=40))
+    assert carets == []  # the header has focus: no field draws a caret
+    assert "One" in [s.text.strip() for s in accent]  # the active tab name, accent while focused
+    carets, accent = _focus_marks(_segments(_two_field_tabs(focus=2), focused=False, width=40))
+    assert carets == []
+    assert not {"First", "Second", "Strip"} & {s.text.strip() for s in accent}
+
+
+def test_the_active_tab_is_accented_only_while_the_header_has_focus() -> None:
+    value = role(DEFAULT, "screen.value").color
+    accent = role(DEFAULT, "screen.accent").color
+    header = _segments(_two_field_tabs(focus=0), width=40)
+    fields = _segments(_two_field_tabs(focus=1), width=40)
+
+    assert style_of(header, "One").color == accent
+    assert style_of(header, "One").bold
+    assert style_of(fields, "One").color == value
+    assert style_of(fields, "One").bold
+    assert style_of(header, "Two").color == role(DEFAULT, "screen.muted").color

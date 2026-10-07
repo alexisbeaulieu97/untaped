@@ -64,6 +64,11 @@ class TextInput:
     the box under the value while the field is focused, up and down choose one,
     tab accepts it and esc closes the list. With no list open, tab and esc are
     left to the screen (next field, back).
+
+    Nothing is offered until the user edits the value, so a value the field
+    starts with (a saved path, a default) is never rewritten by a tab that was
+    meant to move on; the candidates are kept with the text they were computed
+    for and ignored once the value is something else.
     """
 
     label: str
@@ -74,24 +79,32 @@ class TextInput:
     placeholder: str = ""
     validator: Callable[[str], str] | None = None
     complete: Completer | None = None
-    matches: tuple[str, ...] | None = field(default=None, repr=False)
+    matches: tuple[str, ...] = field(default=(), repr=False)
+    matched: str | None = field(default=None, repr=False)
     choice: int = field(default=0, repr=False)
     dismissed: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cursor", _position(self.cursor, len(self.value)))
-        if self.matches is None:
-            object.__setattr__(self, "matches", self._candidates(self.value))
 
     def _candidates(self, text: str) -> tuple[str, ...]:
         if self.complete is None:
             return ()
         return tuple(candidate for candidate in self.complete(text) if candidate != text)
 
+    def _open_matches(self) -> tuple[str, ...]:
+        """The candidates for the value as it is now: none when they were computed for other text.
+
+        ``matches`` is stored together with the text it was computed for
+        (``matched``); a value changed behind the component's back (``replace(field,
+        value=...)``) leaves them stale, and stale candidates are never offered.
+        """
+        return self.matches if self.matched == self.value else ()
+
     @property
     def completing(self) -> bool:
         """Whether a completion list is open (there are candidates and esc did not close it)."""
-        return bool(self.matches) and not self.dismissed
+        return bool(self._open_matches()) and not self.dismissed
 
     def with_error(self, text: str) -> Self:
         """This input showing ``text`` as its error (empty clears it)."""
@@ -128,19 +141,21 @@ class TextInput:
             cursor=cursor,
             error="",
             matches=self._candidates(text),
+            matched=text,
             choice=0,
             dismissed=False,
         )
 
     def _complete_key(self, name: str) -> Self | None:
-        matches = self.matches or ()
+        matches = self._open_matches()
+        choice = min(self.choice, len(matches) - 1)
         if name == "tab":
-            text = matches[self.choice]
+            text = matches[choice]
             return self._with_text(text, len(text))
         if name == "esc":
             return replace(self, dismissed=True)
         if name in ("up", "down"):
-            moved = max(0, min(self.choice + (1 if name == "down" else -1), len(matches) - 1))
+            moved = max(0, min(choice + (1 if name == "down" else -1), len(matches) - 1))
             return replace(self, choice=moved) if moved != self.choice else self
         return None
 
@@ -160,7 +175,8 @@ class TextInput:
             )
         ]
         if focused and self.completing:
-            body.extend(_candidate_rows(frame, inner, self.matches or (), self.choice))
+            matches = self._open_matches()
+            body.extend(_candidate_rows(frame, inner, matches, min(self.choice, len(matches) - 1)))
         return field_box(
             frame,
             self.label,
@@ -200,7 +216,10 @@ class PathInput(TextInput):
     """A :class:`TextInput` that completes filesystem paths.
 
     Directories come first and end in a separator; the text the user typed
-    (``~`` included) is kept, only the last segment is completed.
+    (``~`` included) is kept, only the last segment is completed. The
+    directory is listed on every edit, synchronously, but only as far as
+    :data:`~untaped.screen.components.paths.MAX_SCANNED` entries, so a huge
+    directory keeps typing cheap (and may not list every match).
     """
 
     complete: Completer | None = complete_paths
@@ -282,9 +301,11 @@ class NumberInput:
     """A number in a labelled box; the text is what is typed, ``value`` what it parses to.
 
     Only digits, signs and (for ``integer=False``) the decimal point and
-    exponent can be typed or pasted. :meth:`validate` reports text that does not
-    parse and a number outside ``minimum`` and ``maximum`` (both inclusive); an
-    empty field is valid and its ``value`` is ``None``.
+    exponent can be typed; a paste is accepted whole or not at all (``1.5``
+    pasted into an integer field is ignored, not turned into ``15``).
+    :meth:`validate` reports text that does not parse and a number outside
+    ``minimum`` and ``maximum`` (both inclusive); an empty field is valid and
+    its ``value`` is ``None``.
     """
 
     label: str
@@ -336,7 +357,7 @@ class NumberInput:
         return ""
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
-        """Apply an editing key or a paste, keeping only characters a number can hold."""
+        """Apply an editing key or a paste; what a number cannot hold is ignored whole."""
         allowed = _INTEGER_CHARS if self.integer else _FLOAT_CHARS
         buffer = EditBuffer(self.text, _position(self.cursor, len(self.text)))
         match message:

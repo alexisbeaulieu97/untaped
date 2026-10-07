@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import SecretStr
 
 from screen.gallery import field_of, lines, render_styled, role, run_solo, style_of
+from untaped.screen.components.choices import Check, ListItem, Select
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
 from untaped.screen.core import Cancel, Frame, Key, NextField, Paste, Resize
 from untaped.stability import Experimental, function_mark
 from untaped.theme import BUILTIN_THEMES
 
 THEMES = sorted(BUILTIN_THEMES)
+
+
+def _typed(component: Any, *keys: str) -> Any:
+    """``component`` after ``keys`` were typed into it (no screen, so nothing else reacts)."""
+    for key in keys:
+        component = component.update(Key(key))[0]
+    return component
 
 
 def _view(component: object, theme: str = "default", *, width: int = 40, focused: bool = True):
@@ -188,32 +198,33 @@ def _fruit(prefix: str) -> list[str]:
 
 
 def test_a_completion_list_opens_under_the_value_while_focused() -> None:
-    run = run_solo(TextInput("Fruit", "a", complete=_fruit))
+    run = run_solo(TextInput("Fruit", complete=_fruit), "a")
     assert "apple" in run.frame
     assert "apricot" in run.frame
     assert "banana" not in run.frame
 
-    assert "apple" not in run_solo(TextInput("Fruit", "a", complete=_fruit), focused=False).frame
+    unfocused = run_solo(TextInput("Fruit", complete=_fruit), "a", focused=False)
+    assert "apple" not in unfocused.frame
 
 
 def test_a_candidate_equal_to_the_value_is_not_offered() -> None:
-    assert TextInput("Fruit", "banana", complete=_fruit).completing is False
+    assert _typed(TextInput("Fruit", "banan", complete=_fruit), "a").completing is False
 
 
 def test_up_and_down_choose_a_candidate_and_tab_accepts_it() -> None:
-    run = run_solo(TextInput("Fruit", "a", complete=_fruit), "down", "tab")
+    run = run_solo(TextInput("Fruit", complete=_fruit), "a", "down", "tab")
 
     assert field_of(run).value == "apricot"
     assert field_of(run).cursor == len("apricot")
 
 
 def test_tab_accepts_a_completion_before_moving_focus() -> None:
-    run = run_solo(TextInput("Fruit", "ap", complete=_fruit), "tab")
+    run = run_solo(TextInput("Fruit", "a", complete=_fruit), "p", "tab")
 
     assert field_of(run).value == "apple"
     assert run.model.unhandled == ()  # no NextField reached the screen
 
-    run = run_solo(TextInput("Fruit", "ap", complete=_fruit), "tab", "tab")
+    run = run_solo(TextInput("Fruit", "a", complete=_fruit), "p", "tab", "tab")
     assert run.model.unhandled == (NextField(),)  # nothing left to accept: tab moves on
 
 
@@ -224,12 +235,12 @@ def test_tab_with_no_completions_is_left_to_the_screen() -> None:
 
 
 def test_esc_closes_an_open_completion_list_first() -> None:
-    run = run_solo(TextInput("Fruit", "a", complete=_fruit), "esc")
+    run = run_solo(TextInput("Fruit", complete=_fruit), "a", "esc")
     assert run.outcome is None
     assert "apple" not in run.frame
     assert field_of(run).completing is False
 
-    run = run_solo(TextInput("Fruit", "a", complete=_fruit), "esc", "esc")
+    run = run_solo(TextInput("Fruit", complete=_fruit), "a", "esc", "esc")
     assert run.outcome == Cancel()  # closed: Back still works
 
     run = run_solo(TextInput("Name", "a"), "esc")
@@ -237,7 +248,7 @@ def test_esc_closes_an_open_completion_list_first() -> None:
 
 
 def test_typing_reopens_a_closed_completion_list() -> None:
-    run = run_solo(TextInput("Fruit", "a", complete=_fruit), "esc", "p")
+    run = run_solo(TextInput("Fruit", complete=_fruit), "a", "esc", "p")
 
     assert field_of(run).completing
     assert "apple" in run.frame
@@ -246,15 +257,15 @@ def test_typing_reopens_a_closed_completion_list() -> None:
 def test_up_and_down_without_a_list_and_at_the_ends_return_the_same_object() -> None:
     plain = TextInput("Name", "a")
     assert plain.update(Key("down"))[0] is plain
-    open_list = TextInput("Fruit", "a", complete=_fruit)
+    open_list = _typed(TextInput("Fruit", complete=_fruit), "a")
     assert open_list.update(Key("up"))[0] is open_list  # already on the first candidate
     last = open_list.update(Key("down"))[0]
     assert last.update(Key("down"))[0] is last
 
 
 def test_a_long_candidate_list_shows_a_window_around_the_choice() -> None:
-    many = TextInput("Item", "i", complete=lambda text: [f"item{n:02d}" for n in range(20)])
-    run = run_solo(many, *["down"] * 12, size=(60, 30))
+    many = TextInput("Item", complete=lambda text: [f"item{n:02d}" for n in range(20)])
+    run = run_solo(many, "i", *["down"] * 12, size=(60, 30))
 
     assert "item12" in run.frame
     assert "item00" not in run.frame
@@ -271,19 +282,20 @@ def test_path_input_completes_directories(tmp_path: Path) -> None:
     (tmp_path / ".hidden").mkdir()
     typed = f"{tmp_path}/al"
 
-    run = run_solo(PathInput("Path", typed))
+    run = run_solo(PathInput("Path", typed[:-1]), "l")
     assert field_of(run).matches == (
         f"{tmp_path}/alpha/",
         f"{tmp_path}/alpine/",
         f"{tmp_path}/alpha.txt",
     )  # directories first, each ending in a separator
 
-    run = run_solo(PathInput("Path", typed), "tab")
+    run = run_solo(PathInput("Path", typed[:-1]), "l", "tab")
     assert field_of(run).value == f"{tmp_path}/alpha/"
 
-    assert PathInput("Path", f"{tmp_path}/").matches is not None
-    assert not any(".hidden" in match for match in PathInput("Path", f"{tmp_path}/").matches or ())
-    assert PathInput("Path", f"{tmp_path}/.h").matches == (f"{tmp_path}/.hidden/",)
+    after_slash = _typed(PathInput("Path", str(tmp_path)), "/")
+    assert after_slash.matches
+    assert not any(".hidden" in match for match in after_slash.matches)
+    assert _typed(PathInput("Path", f"{tmp_path}/."), "h").matches == (f"{tmp_path}/.hidden/",)
 
 
 def test_path_input_keeps_the_tilde_the_user_typed(
@@ -293,15 +305,15 @@ def test_path_input_keeps_the_tilde_the_user_typed(
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     (tmp_path / "Documents").mkdir()
 
-    run = run_solo(PathInput("Path", "~/Doc"), "tab")
+    run = run_solo(PathInput("Path", "~/Do"), "c", "tab")
 
     assert field_of(run).value == "~/Documents/"  # never rewritten to the home directory
 
 
 def test_path_input_offers_nothing_for_an_empty_or_unreadable_path(tmp_path: Path) -> None:
     assert PathInput("Path").matches == ()
-    assert PathInput("Path", f"{tmp_path}/missing/x").matches == ()
-    assert PathInput("Path", "").completing is False
+    assert _typed(PathInput("Path", f"{tmp_path}/missing/"), "x").matches == ()
+    assert _typed(PathInput("Path"), "a", "backspace").completing is False
 
 
 # --- secrets ----------------------------------------------------------------------
@@ -361,7 +373,7 @@ def test_an_empty_secret_shows_no_mask() -> None:
 
 
 def test_numbers_accept_only_characters_a_number_holds() -> None:
-    run = run_solo(NumberInput("Timeout"), "1", "a", "2", ".", "e", "x", "-", Paste("3a4\n"))
+    run = run_solo(NumberInput("Timeout"), "1", "a", "2", ".", "e", "x", "-", Paste("34\n"))
 
     assert field_of(run).text == "12-34"
     assert field_of(run_solo(NumberInput("Rate", integer=False), "1", ".", "5")).text == "1.5"
@@ -415,8 +427,8 @@ def test_a_number_error_is_drawn_and_cleared_by_typing() -> None:
 def _gallery() -> list[object]:
     return [
         TextInput("Base URL", "https://example.com", help="The address.", placeholder="url"),
-        TextInput("Fruit", "a", complete=_fruit),
-        PathInput("Path", "/"),
+        _typed(TextInput("Fruit", complete=_fruit), "a"),
+        _typed(PathInput("Path"), "/"),
         SecretInput("Token", SecretStr("secret")),
         NumberInput("Timeout", "30", minimum=1, maximum=600),
         TextInput("Bad", "x").with_error("Nope."),
@@ -470,7 +482,7 @@ def test_a_number_moves_its_caret_and_edits_in_place() -> None:
 
 
 def test_other_keys_while_a_completion_list_is_open_still_edit_the_text() -> None:
-    run = run_solo(TextInput("Fruit", "a", complete=_fruit), "left", "ctrl-r", "p")
+    run = run_solo(TextInput("Fruit", complete=_fruit), "a", "left", "ctrl-r", "p")
 
     assert field_of(run).value == "pa"
     assert field_of(run).cursor == 1
@@ -481,3 +493,123 @@ def test_a_box_free_field_without_a_label_draws_only_its_value() -> None:
     run = run_solo(TextInput("", "just value"), theme=BUILTIN_THEMES["quiet"])
 
     assert lines(run.frame) == ["just value"]
+
+
+# --- review fixes -----------------------------------------------------------------
+
+
+def test_a_prefilled_path_is_left_alone_by_tab_and_the_screen_moves_on(tmp_path: Path) -> None:
+    (tmp_path / "child").mkdir()
+    for prefilled in (str(tmp_path), f"{tmp_path}/chi", f"{tmp_path}/"):
+        run = run_solo(PathInput("Path", prefilled), "tab")
+
+        assert field_of(run).value == prefilled  # not rewritten to "dir/" or a candidate
+        assert run.model.unhandled == (NextField(),)
+        assert field_of(run).completing is False
+        assert "child" not in run.frame  # no list until the user edits
+
+
+def test_the_list_opens_on_the_first_edit_of_a_prefilled_path_and_tab_then_accepts(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "child").mkdir()
+    run = run_solo(PathInput("Path", f"{tmp_path}/chi"), "l", "tab")
+
+    assert field_of(run).value == f"{tmp_path}/child/"
+    assert run.model.unhandled == ()
+
+
+def test_a_prefilled_text_input_with_a_completer_is_not_rewritten_by_tab() -> None:
+    run = run_solo(TextInput("Fruit", "ap", complete=_fruit), "tab")
+
+    assert field_of(run).value == "ap"
+    assert run.model.unhandled == (NextField(),)
+
+
+def test_candidates_computed_for_other_text_are_never_offered_or_accepted() -> None:
+    opened = _typed(TextInput("Fruit", complete=_fruit), "a")
+    assert opened.completing
+
+    for value in ("zzz", "", "ap", "a "):
+        stale = replace(opened, value=value)
+        run = run_solo(stale, "tab")
+
+        assert stale.completing is False
+        assert field_of(run).value == value  # the stale candidate did not replace it
+        assert run.model.unhandled == (NextField(),)
+        assert "apple" not in run_solo(stale).frame
+    assert "apple" in run_solo(opened).frame
+
+
+def test_a_choice_past_the_candidates_is_held_to_the_last_one() -> None:
+    opened = _typed(TextInput("Fruit", complete=_fruit), "a")
+
+    assert replace(opened, choice=9).update(Key("tab"))[0].value == "apricot"
+    assert replace(opened, choice=9).update(Key("down"))[0].choice == 1
+    assert replace(opened, choice=9).update(Key("up"))[0].choice == 0
+
+
+def test_a_number_paste_is_all_or_nothing() -> None:
+    assert field_of(run_solo(NumberInput("N", integer=False), Paste("1.5"))).text == "1.5"
+    assert field_of(run_solo(NumberInput("N"), Paste("1.5"))).text == ""  # not "15"
+    assert field_of(run_solo(NumberInput("N", integer=False), Paste("1e3"))).text == "1e3"
+    assert field_of(run_solo(NumberInput("N"), Paste("1e3"))).text == ""  # not "13"
+    assert field_of(run_solo(NumberInput("N"), "7", Paste("1,000"))).text == "7"  # not "71000"
+    assert field_of(run_solo(NumberInput("N"), Paste(" 42\n"))).text == "42"  # surroundings go
+    assert field_of(run_solo(NumberInput("N"), "7", Paste("1\n2"))).text == "7"
+    untouched = NumberInput("N", "7")
+    assert untouched.update(Paste("x"))[0] is untouched
+
+
+def test_a_number_is_valid_at_exactly_its_inclusive_bounds() -> None:
+    for text in ("1", "600"):
+        assert NumberInput("T", text, minimum=1, maximum=600).validate() == ""
+    assert NumberInput("T", "0", minimum=1, maximum=600).validate() != ""
+    assert NumberInput("T", "601", minimum=1, maximum=600).validate() != ""
+    for text in ("0.25", "1.5"):
+        assert NumberInput("T", text, integer=False, minimum=0.25, maximum=1.5).validate() == ""
+    assert NumberInput("T", "5", minimum=5).validate() == ""
+    assert NumberInput("T", "5", maximum=5).validate() == ""
+
+
+def test_a_float_takes_an_exponent_and_an_integer_does_not() -> None:
+    run = run_solo(NumberInput("N", integer=False), *"1e-3")
+    assert (field_of(run).text, field_of(run).value) == ("1e-3", 0.001)
+    run = run_solo(NumberInput("N", integer=False), *"2.5E+4")
+    assert (field_of(run).text, field_of(run).value) == ("2.5E+4", 25000.0)
+    assert field_of(run_solo(NumberInput("N"), *"1e3")).text == "13"
+    assert NumberInput("N", "1e", integer=False).validate() == "Must be a number."
+    assert NumberInput("N", "1e999", integer=False).value is None  # not finite
+
+
+def test_secret_draws_exactly_one_mask_per_character() -> None:
+    for count in (0, 1, 5, 12):
+        secret = SecretStr("x" * count)
+        assert run_solo(SecretInput("Token", secret)).frame.count("\u2022") == count
+        plain = run_solo(SecretInput("Token", secret), theme=BUILTIN_THEMES["plain"])
+        assert plain.frame.count("*") == count
+    run = run_solo(SecretInput("Token"), *"abcd", "backspace")
+    assert run.frame.count("\u2022") == 3
+
+
+def test_an_edit_clears_the_error_of_a_secret_a_check_and_a_select() -> None:
+    secret = SecretInput("Token").with_error("Needed.")
+    assert secret.update(Key("left"))[0].error == "Needed."  # a caret move keeps it
+    assert secret.update(Key("a"))[0].error == ""
+    assert secret.update(Paste("abc"))[0].error == ""
+
+    check = Check("Verify").with_error("Needed.")
+    assert check.update(Key("x"))[0] is check
+    assert check.update(Key(" "))[0].error == ""
+
+    select = Select("Region", (ListItem("a", "A"), ListItem("b", "B")), "a").with_error("Needed.")
+    opened = select.update(Key("enter"))[0]
+    assert opened.error == "Needed."  # opening is not an edit
+    assert opened.update(Key("down"))[0].update(Key("enter"))[0].error == ""
+
+
+def test_ctrl_w_with_a_trailing_space_removes_the_word_and_the_space() -> None:
+    run = run_solo(TextInput("Name", "one two "), "ctrl-w")
+    assert (field_of(run).value, field_of(run).cursor) == ("one ", 4)
+    run = run_solo(TextInput("Name", "one two   "), "ctrl-w", "ctrl-w")
+    assert field_of(run).value == ""

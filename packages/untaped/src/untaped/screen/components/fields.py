@@ -151,8 +151,9 @@ def _bounds(metadata: tuple[Any, ...], *, integer: bool) -> tuple[float | None, 
 
 
 def _number_text(value: object) -> str:
+    """The text a number starts as; a float is its ``repr``, so a no-op edit keeps its value."""
     if isinstance(value, str):
         return value
     if isinstance(value, bool) or not isinstance(value, int | float):
         return ""
-    return str(value) if isinstance(value, int) else format(value, "g")
+    return str(value) if isinstance(value, int) else repr(value)

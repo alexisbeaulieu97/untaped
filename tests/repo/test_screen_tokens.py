@@ -6,8 +6,12 @@ a docstring that quotes a glyph is fine, and an f-string part is checked) over
 the modules listed in ``SCREEN_MODULES`` fails on:
 
 - a string constant that is a symbol of the default or ``plain`` theme (``"✓"``,
-  ``">"``, ``"..."``) or contains one of their non-ASCII glyphs; a symbol's
-  *name* (``"chosen"``) and letters (``"x"``) are fine;
+  ``">"``, ``"..."``) or contains one of their non-ASCII glyphs, or any other
+  decorative non-ASCII character: a symbol or punctuation mark (Unicode
+  category ``S*`` or ``P*``: ``"●"``, ``"✔"``, ``"→"``, ``"—"``) or a character
+  of the box-drawing, block, geometric-shape, dingbat or arrow blocks; a
+  symbol's *name* (``"chosen"``), letters (``"x"``, ``"é"``) and ASCII
+  punctuation in a sentence are fine;
 - a string constant that is a Rich colour, with or without attribute words
   (``"#fafafa"``, ``"bold red"``, ``"on bright_black"``, ``"color(3)"``);
 - a ``box`` constant (``box.ROUNDED``, ``rich.box.ASCII``) or an import from
@@ -21,6 +25,7 @@ from __future__ import annotations
 
 import ast
 import re
+import unicodedata
 
 import pytest
 
@@ -57,6 +62,28 @@ _ASCII_SYMBOL_CHARS = {
 } | {" "}
 
 
+#: Unicode blocks whose characters are drawing, whatever their category says.
+_DECORATIVE_RANGES = (
+    (0x2190, 0x21FF),  # arrows
+    (0x2500, 0x257F),  # box drawing
+    (0x2580, 0x259F),  # block elements
+    (0x25A0, 0x25FF),  # geometric shapes
+    (0x2700, 0x27BF),  # dingbats
+    (0x2900, 0x297F),  # supplemental arrows-B
+    (0x2B00, 0x2BFF),  # miscellaneous symbols and arrows
+)
+
+
+def _is_decorative(char: str) -> bool:
+    """Whether ``char`` is a non-ASCII symbol, punctuation mark or drawing character."""
+    if char.isascii():
+        return False
+    code = ord(char)
+    return unicodedata.category(char)[0] in ("S", "P") or any(
+        low <= code <= high for low, high in _DECORATIVE_RANGES
+    )
+
+
 def _docstrings(tree: ast.AST) -> set[int]:
     found: set[int] = set()
     for node in ast.walk(tree):
@@ -72,7 +99,7 @@ def _docstrings(tree: ast.AST) -> set[int]:
 
 
 def _is_symbol(text: str) -> bool:
-    if any(char in _GLYPH_CHARS for char in text):
+    if any(char in _GLYPH_CHARS or _is_decorative(char) for char in text):
         return True
     stripped = text.strip()
     if not stripped:
@@ -162,6 +189,20 @@ def test_the_default_and_plain_symbol_sets_are_what_the_rule_checks() -> None:
         'MARK = " - "',
         'LINE = f"{x} • {y}"',
         'draw("x", "…")',
+        'MARK = "●"',
+        'MARK = "✔"',
+        'MARK = "→"',
+        'MARK = "—"',
+        'RULE = "─"',
+        'RULE = "━━"',
+        'FILL = "█"',
+        'FILL = "░"',
+        'SHAPE = "◆"',
+        'SHAPE = "■"',
+        'DING = "✱"',
+        'ARROW = "⇒"',
+        'LINE = f"{x} ● {y}"',
+        'LABEL = "Save ✔"',
     ],
 )
 def test_a_hard_coded_symbol_fails(source: str) -> None:
@@ -201,6 +242,7 @@ def test_a_hard_coded_box_fails(source: str) -> None:
         'KEY = "ctrl-u"\nOTHER = "shift-tab"',
         'LETTER = "x"\nTEXT = "Must be between 1 and 600."',
         'CHARS = "0123456789+-.eE"',
+        'LABEL = "caf\u00e9 \u65e5\u672c\u8a9e"',
         "outline = frame.box()\nrule = outline.row_horizontal",
         'STYLE = "bold"',
     ],

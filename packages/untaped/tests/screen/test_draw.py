@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
 from pathlib import Path
+from types import TracebackType
 
 import pytest
 from rich.cells import cell_len
@@ -19,7 +22,7 @@ from untaped.screen.components.draw import (
     text_line,
     window_start,
 )
-from untaped.screen.components.paths import MAX_CANDIDATES, complete_paths
+from untaped.screen.components.paths import MAX_CANDIDATES, MAX_SCANNED, complete_paths
 from untaped.screen.components.text import EditBuffer
 from untaped.screen.core import Frame
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
@@ -124,7 +127,8 @@ def test_the_edit_buffer_clamps_and_edits() -> None:
 
 def test_the_edit_buffer_filters_what_a_number_may_hold() -> None:
     assert EditBuffer().key("a", allowed="123") == EditBuffer()
-    assert EditBuffer().paste("1x2\n3", allowed="123") == EditBuffer("123", 3)
+    assert EditBuffer().paste("123\n", allowed="123") == EditBuffer("123", 3)  # a trailing break
+    assert EditBuffer("a", 1).paste(" 12 ", allowed="123") == EditBuffer("a12", 3)
 
 
 def test_field_box_labels_the_top_border_and_puts_help_below() -> None:
@@ -154,3 +158,166 @@ def test_complete_paths_is_capped_and_survives_a_missing_directory(tmp_path: Pat
     assert len(complete_paths(f"{tmp_path}/f")) == MAX_CANDIDATES
     assert complete_paths(f"{tmp_path}/nope/f") == ()
     assert complete_paths("") == ()
+
+
+def test_a_number_paste_is_all_or_nothing_and_trims_its_surroundings() -> None:
+    assert EditBuffer("1", 1).paste("1.5", allowed="0123456789") == EditBuffer("1", 1)
+    assert EditBuffer("1", 1).paste("1,000", allowed="0123456789") == EditBuffer("1", 1)
+    assert EditBuffer().paste("1 000", allowed="0123456789 ") == EditBuffer("1 000", 5)
+    assert EditBuffer().paste("1\n2", allowed="0123456789") == EditBuffer()  # an inner break
+
+
+def test_ctrl_w_removes_the_word_before_the_caret_and_the_spaces_after_it() -> None:
+    assert EditBuffer("one two ", 8).key("ctrl-w") == EditBuffer("one ", 4)
+    assert EditBuffer("one two   ", 10).key("ctrl-w") == EditBuffer("one ", 4)
+    assert EditBuffer("one two", 7).key("ctrl-w") == EditBuffer("one ", 4)
+    assert EditBuffer("   ", 3).key("ctrl-w") == EditBuffer("   ", 3)  # nothing to remove
+    assert EditBuffer("one two", 4).key("ctrl-w") == EditBuffer("two", 0)
+
+
+# --- the caret and the ellipsis -----------------------------------------------------
+
+
+def _reversed_text(line: Text) -> str:
+    """The characters of ``line`` drawn with the caret's reverse attribute."""
+    return "".join(
+        line.plain[span.start : span.end]
+        for span in line.spans
+        if span.style and "reverse" in str(span.style)
+    )
+
+
+@pytest.mark.parametrize(("inner", "cursor"), [(2, 0), (3, 3), (3, 2), (4, 4), (5, 4), (6, 2)])
+def test_the_caret_never_spreads_onto_the_ellipsis(inner: int, cursor: int) -> None:
+    line = text_line(DEFAULT, inner, "abcdefghij", cursor, focused=True)
+
+    assert line.cell_len == inner
+    assert "\u2026" in line.plain  # the text is cut
+    assert "\u2026" not in _reversed_text(line)
+    assert len(_reversed_text(line)) == 1  # the caret is one character
+
+
+@pytest.mark.parametrize("cursor", [10, 9, 8, 7, 5])
+def test_moving_the_caret_left_from_the_end_does_not_slide_the_text(cursor: int) -> None:
+    text = "abcdefghij"
+    line = text_line(DEFAULT, 6, text, cursor, focused=True)
+    at_end = text_line(DEFAULT, 6, text, len(text), focused=True)
+
+    assert line.plain == at_end.plain  # the view holds still while the caret stays in it
+    assert _reversed_text(line) == (text[cursor] if cursor < len(text) else " ")
+
+
+def test_the_caret_is_always_visible_and_the_row_is_exactly_as_wide() -> None:
+    text = "abcdefghijklmnopqrstuvwxyz"
+    for inner in (1, 2, 3, 5, 8, 20):
+        for cursor in range(len(text) + 1):
+            line = text_line(DEFAULT, inner, text, cursor, focused=True)
+            assert line.cell_len == inner
+            if inner >= 3:
+                assert len(_reversed_text(line)) == 1, (inner, cursor, line.plain)
+
+
+def test_wide_characters_scroll_by_cells_not_characters() -> None:
+    text = "\u65e5\u672c\u8a9e\u30c6\u30b9\u30c8" * 3  # 18 characters, 36 cells
+    for inner in (9, 12, 15):
+        for cursor in (0, 5, 9, 17, 18):
+            line = text_line(DEFAULT, inner, text, cursor, focused=True)
+            assert line.cell_len == inner, (inner, cursor)
+            assert _reversed_text(line)  # the caret shows
+    at_end = text_line(DEFAULT, 9, text, len(text), focused=True)
+    assert at_end.plain == text[-4:] + " "  # four 2-cell characters and the caret cell
+    assert _reversed_text(at_end) == " "
+
+
+# --- completing paths ---------------------------------------------------------------
+
+
+class _Entry:
+    def __init__(self, name: str, *, directory: bool | OSError) -> None:
+        self.name = name
+        self._directory = directory
+
+    def is_dir(self) -> bool:
+        if isinstance(self._directory, OSError):
+            raise self._directory
+        return self._directory
+
+
+class _Listing:
+    """What ``os.scandir`` returns, over ``entries``, counting how many were pulled."""
+
+    def __init__(self, entries: Iterator[_Entry]) -> None:
+        self._entries = entries
+        self.pulled = 0
+
+    def __enter__(self) -> _Listing:
+        return self
+
+    def __exit__(
+        self,
+        kind: type[BaseException] | None,
+        error: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        return None
+
+    def __iter__(self) -> Iterator[_Entry]:
+        for entry in self._entries:
+            self.pulled += 1
+            yield entry
+
+
+def test_completion_puts_directories_first_whatever_order_the_filesystem_lists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("b_dir", "d_dir"):
+        (tmp_path / name).mkdir()
+    for name in ("a_file", "c_file"):
+        (tmp_path / name).write_text("x")
+    real = os.scandir
+    expected = [f"{tmp_path}/{name}" for name in ("b_dir/", "d_dir/", "a_file", "c_file")]
+
+    for reverse in (False, True):
+
+        def listing(path: str, *, reverse: bool = reverse) -> _Listing:
+            with real(path) as entries:
+                found = sorted(entries, key=lambda entry: entry.name, reverse=reverse)
+            return _Listing(iter(found))  # type: ignore[arg-type]
+
+        monkeypatch.setattr(os, "scandir", listing)
+        assert list(complete_paths(f"{tmp_path}/")) == expected
+
+
+def test_completion_stops_scanning_a_huge_directory_and_still_caps_its_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = _Listing(_Entry(f"item{n:05d}", directory=False) for n in range(5 * MAX_SCANNED))
+    monkeypatch.setattr(os, "scandir", lambda path: listing)
+
+    found = complete_paths("/some/dir/item")
+
+    assert len(found) == MAX_CANDIDATES
+    assert listing.pulled <= MAX_SCANNED + 1  # it never walked the other four fifths
+
+
+def test_one_entry_that_cannot_be_inspected_does_not_hide_the_others(tmp_path: Path) -> None:
+    (tmp_path / "loop").symlink_to("loop")  # is_dir() raises "too many levels of symbolic links"
+    (tmp_path / "real").mkdir()
+    (tmp_path / "file").write_text("x")
+
+    assert complete_paths(f"{tmp_path}/") == (
+        f"{tmp_path}/real/",
+        f"{tmp_path}/file",
+        f"{tmp_path}/loop",
+    )
+
+
+def test_an_entry_whose_inspection_fails_is_offered_as_a_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = _Listing(
+        iter([_Entry("a", directory=PermissionError("no")), _Entry("b", directory=True)])
+    )
+    monkeypatch.setattr(os, "scandir", lambda path: listing)
+
+    assert complete_paths("/x/") == ("/x/b/", "/x/a")

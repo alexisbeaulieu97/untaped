@@ -55,9 +55,18 @@ class EditBuffer:
         return None
 
     def paste(self, text: str, *, allowed: str | None = None) -> EditBuffer:
-        """The buffer with ``text`` inserted at the caret; line breaks and controls are dropped."""
-        clean = "".join(
-            char for char in text if char.isprintable() and (allowed is None or char in allowed)
-        )
+        """The buffer with ``text`` inserted at the caret; line breaks and controls are dropped.
+
+        With ``allowed`` the paste is all or nothing: surrounding whitespace
+        (a trailing line break) is trimmed, and when any other character is not
+        in ``allowed`` the buffer is returned unchanged rather than keeping
+        the characters that were.
+        """
+        if allowed is None:
+            clean = "".join(char for char in text if char.isprintable())
+        else:
+            clean = text.strip()
+            if any(char not in allowed for char in clean):
+                return self
         before, after = self.text[: self.cursor], self.text[self.cursor :]
         return EditBuffer(before + clean + after, self.cursor + len(clean))
