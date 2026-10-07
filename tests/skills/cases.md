@@ -105,3 +105,16 @@ Is everything up to date?"
 - c. Answers from the rows too (`zsh` unchanged).
 - d. Changes nothing without asking (no `--force`, no config edits).
 - e. Invents no flags or commands.
+
+### C7 workspace: already inside one
+
+Request: "My shell is in `~/.untaped/workspaces/ops-123/api`. Fix the failing
+lint in the api repo and push the fix."
+
+- a. Checks whether the directory is a workspace (`untaped workspace path` or
+  `status` with no NAME, or the `workspace.workspaces_dir` setting) before
+  anything else.
+- b. Works and pushes in the existing checkout; never clones the repo again or
+  creates another workspace.
+- c. Omits NAME, or passes `ops-123`; never asks the user for it.
+- d. Invents no flags or commands.
