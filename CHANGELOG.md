@@ -63,6 +63,9 @@
 - `ui.symbols` and `ui.color_roles` gain the names screens use (`chosen`,
   `checked`, ..., `screen.accent`, ...); the config reference
   lists them. ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
+- SDK (experimental): screens, an Elm-style runtime for full-screen terminal UIs
+  (`Screen`, `Cmd`, `UiContext.run`, `untaped.testing.drive_screen`); see
+  [Screens](docs/screens.md). ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
 
 ### Changed
 
@@ -118,6 +121,8 @@
 - `config set ui.symbols|ui.color_roles` and `doctor` reject names that no
   theme defines; a stray name already in `config.yml` keeps working.
   ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
+- `PromptBackend` gains `run_screen`; a custom backend needs the method to
+  type-check. ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
 
 ### Deprecated
 

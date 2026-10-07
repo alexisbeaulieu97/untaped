@@ -60,6 +60,12 @@ changelog entry that says so. Currently experimental:
   `UNTAPED_*` variables `workspace run` sets.
 - `dotfiles`: its commands, the `dotfiles.yml` manifest, its record kinds,
   the `status.json` and `attention` files, and the `dotfiles.*` settings.
+- Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,
+  `Footer` and the message classes `Key`, `Paste`, `Resize`, `CmdError`,
+  `Quit`, `Cancel`, `Back`, `Interrupt`, `NextField`, `PrevField`, `Activate`
+  and `Submit`), `UiContext.run`, and `untaped.testing.drive_screen` with
+  `untaped.testing.ScreenKeys` and `untaped.testing.ScreenRun`. See
+  [Screens](./screens.md).
 
 ## Breaking changes
 

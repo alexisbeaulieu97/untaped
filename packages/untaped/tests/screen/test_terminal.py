@@ -20,7 +20,7 @@ from prompt_toolkit.output import ColorDepth, DummyOutput, Output
 from prompt_toolkit.output.vt100 import Vt100_Output
 
 from untaped.screen.core import Cancel, Cmd, Frame, Key, Paste, Quit, Resize, Screen
-from untaped.screen.terminal import build_application, run_terminal_screen
+from untaped.screen.terminal import TerminalHost, build_application, run_terminal_screen
 from untaped.testing.screens import rendered_text
 from untaped.theme import BUILTIN_THEMES
 
@@ -481,3 +481,30 @@ def test_updates_run_on_the_event_loop_thread() -> None:
     typing = Typing()
     _run(typing, "ab" + ENTER)
     assert len(set(typing.threads)) == 1
+
+
+def test_a_host_that_is_not_running_ignores_calls() -> None:
+    host = TerminalHost()
+    ran: list[str] = []
+    host.post(lambda: ran.append("post"))  # no loop yet: nowhere to run it
+    host.spawn(lambda: ran.append("suspend"), kind="suspend")
+    host.redraw()
+    host.finish()
+    assert ran == []
+
+
+def test_the_host_finishes_the_application_once() -> None:
+    typing = Typing()
+    with create_pipe_input() as pipe:
+        application, host, runtime = build_application(
+            typing.screen, input=pipe, output=DummyOutput(), theme=THEME
+        )
+
+        def start() -> None:
+            host.bind_loop()
+            host.apply(runtime.start)
+            runtime.outcome = Quit("done")
+            host.finish()
+            host.finish()  # a second finish must not try to exit again
+
+        assert application.run(pre_run=start) == Quit("done")

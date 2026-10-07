@@ -10,12 +10,14 @@ capability's own settings are covered by its bullet).
 
 from __future__ import annotations
 
+import inspect
 import re
+from types import ModuleType
 
 from repo.support import REPO_ROOT
-from untaped import bootstrap
+from untaped import bootstrap, sdk, testing
 from untaped.capabilities.registry import ProviderCandidate
-from untaped.stability import Experimental, marks
+from untaped.stability import Experimental, function_mark, marks
 
 _BULLET = re.compile(r"^- `([^`]+)`:", re.MULTILINE)
 
@@ -48,6 +50,40 @@ def versioning_problems(text: str, marked: set[str]) -> list[str]:
             for path in sorted(listed - marked)
         ),
     ]
+
+
+def experimental_objects(module: ModuleType) -> set[str]:
+    """The names in ``module.__all__`` that carry ``@experimental``, and ``Class.attr`` ones.
+
+    A public attribute of an exported class counts when it is marked itself
+    (``UiContext.run``); an unmarked class with marked members is not listed.
+    """
+    found: set[str] = set()
+    for name in module.__all__:
+        obj = getattr(module, name)
+        if isinstance(function_mark(obj), Experimental):
+            found.add(name)
+        if inspect.isclass(obj):
+            found.update(
+                f"{name}.{attr}"
+                for attr, member in vars(obj).items()
+                if not attr.startswith("_") and isinstance(function_mark(member), Experimental)
+            )
+    return found
+
+
+def unlisted_objects(text: str, names: set[str], *, prefix: str = "") -> list[str]:
+    """The ``names`` that ``## Experimental`` does not put in backticks.
+
+    ``prefix`` (``untaped.testing.``) is also accepted in front of a name, for
+    objects that live outside ``untaped.sdk``.
+    """
+    section = experimental_section(text)
+    return sorted(
+        name
+        for name in names
+        if f"`{name}`" not in section and not (prefix and f"`{prefix}{name}`" in section)
+    )
 
 
 def _bullets(*paths: str) -> str:
@@ -106,3 +142,50 @@ def test_a_setting_the_page_does_not_name_fails() -> None:
     text = _bullets("awx test").replace("things.", "the `awx.test_parallel` setting.")
 
     assert unnamed_settings(text, {"awx.test_parallel", "awx.other"}) == ["awx.other"]
+
+
+def test_every_experimental_sdk_object_is_on_the_versioning_page() -> None:
+    text = (REPO_ROOT / "docs" / "versioning.md").read_text(encoding="utf-8")
+    marked = experimental_objects(sdk)
+
+    assert marked >= {"Screen", "Cmd", "Quit", "Footer", "UiContext.run"}
+    assert unlisted_objects(text, marked) == []
+
+
+def test_every_experimental_testing_object_is_on_the_versioning_page() -> None:
+    text = (REPO_ROOT / "docs" / "versioning.md").read_text(encoding="utf-8")
+    marked = experimental_objects(testing)
+
+    assert marked >= {"drive_screen", "ScreenKeys", "ScreenRun"}
+    assert unlisted_objects(text, marked, prefix="untaped.testing.") == []
+
+
+def test_a_marked_object_the_page_does_not_name_fails() -> None:
+    page = _bullets("awx test").replace("things.", "the `Screen` and `UiContext.run` API.")
+
+    assert unlisted_objects(page, {"Screen", "UiContext.run", "Cmd"}) == ["Cmd"]
+    assert unlisted_objects(page, {"drive_screen"}, prefix="untaped.testing.") == ["drive_screen"]
+    assert (
+        unlisted_objects(
+            page.replace("`Screen`", "`untaped.testing.drive_screen`"),
+            {"drive_screen"},
+            prefix="untaped.testing.",
+        )
+        == []
+    )
+
+
+def test_experimental_objects_are_found_by_their_marks() -> None:
+    class Holder:
+        @staticmethod
+        def plain() -> None: ...
+
+        @sdk.experimental
+        def marked(self) -> None: ...
+
+    module = ModuleType("fake")
+    module.__all__ = ["Holder", "Free"]  # type: ignore[attr-defined]
+    module.Holder = Holder  # type: ignore[attr-defined]
+    module.Free = sdk.experimental(type("Free", (), {}))  # type: ignore[attr-defined]
+
+    assert experimental_objects(module) == {"Free", "Holder.marked"}

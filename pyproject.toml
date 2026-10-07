@@ -170,6 +170,8 @@ ignore_names = [
     "end_of_options_delimiter",
     "group_parameters",
     "ttimeoutlen",
+    "__getattr__",  # PEP 562 module hooks of untaped.sdk's lazy exports
+    "__dir__",
     "__signature__",
     "__annotations__",
     "code_generator_class",

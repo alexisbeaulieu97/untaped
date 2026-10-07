@@ -236,12 +236,12 @@ free, but a command that writes declares it with `@writes`, or
 ## Enforcement
 
 `untaped.testing.check_conventions(NAME)` runs these checks for one
-capability; each capability's tests call it. Its `import-boundary` rule
-enforces the import rules at the top of this page and in
-[Depending on another capability](#depending-on-another-capability); its
-stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
-`# untaped: allow <rule>` on the flagged node's first line allows that one
-violation, except the default-table-columns and stability rules.
+capability; each capability's tests call it. `import-boundary` enforces the
+import rules above and in [Depending on another capability](#depending-on-another-capability);
+`terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md));
+the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
+`# untaped: allow <rule>` on the flagged node's first line allows one violation,
+except the default-table-columns and stability rules.
 
 ## Depending on another capability
 
