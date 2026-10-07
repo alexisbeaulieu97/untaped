@@ -29,6 +29,8 @@ from pydantic import BaseModel, SecretStr
 from pydantic_core import PydanticUndefined
 from release import packages
 
+from untaped.theme import ROLE_NAMES, SYMBOL_NAMES
+
 if TYPE_CHECKING:
     from untaped.stability import Stability
 
@@ -52,8 +54,12 @@ DESCRIPTIONS: dict[str, str] = {
     "ui.detail_view": "How a single record renders in `table` format; overrides the theme.",
     "ui.hide_empty_columns": "Leave out `table` columns that are empty on every row "
     "(on unless the theme turns it off); a column named in `--columns` always shows.",
-    "ui.symbols": "Symbol overrides merged over the theme's symbols.",
-    "ui.color_roles": "Color-role overrides merged over the theme's colors.",
+    "ui.symbols": "Symbol overrides merged over the theme's symbols. Names: "
+    + ", ".join(f"`{name}`" for name in SYMBOL_NAMES)
+    + ". `config set` and `doctor` reject any other name.",
+    "ui.color_roles": "Color-role overrides merged over the theme's colors. Names: "
+    + ", ".join(f"`{name}`" for name in ROLE_NAMES)
+    + ". `config set` and `doctor` reject any other name.",
     "skills.updates": "What each run does when installed agent skills differ from this "
     "version: `warn` (print a warning), `auto` (update them in place), or `off`.",
     "workspace.cache_dir": "Bare-clone cache that workspace worktrees are created from. "
