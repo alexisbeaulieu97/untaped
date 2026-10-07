@@ -45,6 +45,8 @@ SCREEN_SYMBOLS: dict[str, str] = {
     "cycle.right": "\u203a",
     "tab.active": "\u2501",
     "tab.inactive": "\u2500",
+    "tree.open": "\u25be",
+    "tree.closed": "\u25b8",
 }
 
 #: ASCII fallbacks the ``plain`` theme layers over :data:`SCREEN_SYMBOLS`
@@ -64,6 +66,8 @@ PLAIN_SCREEN_SYMBOLS: dict[str, str] = {
     "cycle.right": ">",
     "tab.active": "=",
     "tab.inactive": "-",
+    "tree.open": "v",
+    "tree.closed": ">",
 }
 
 DEFAULT_SYMBOLS: dict[str, str] = {**STATUS_SYMBOLS, **SCREEN_SYMBOLS}

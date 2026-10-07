@@ -1,11 +1,12 @@
-"""The long lists: ``SearchList`` (a search box over a list, fuzzy matches highlighted).
+"""The long lists: ``SearchList`` and ``Tree``.
 
 ``SearchList`` is a labelled box holding a search line, a window of rows and
 a count line. Typing edits the query without a prefix key, the rows are the
 items that match it best first (dimmed ones last, as
 :func:`~untaped.screen.fuzzy.rank` orders them) with the matched letters in
 bold and underline, and only the rows in the window are built, so a list of
-thousands draws as fast as a short one.
+thousands draws as fast as a short one. ``Tree`` is rows that expand into
+their children, windowed the same way.
 """
 
 from __future__ import annotations
@@ -26,7 +27,13 @@ from untaped.screen.components.choices import (
     mark_lead,
     moved_to,
 )
-from untaped.screen.components.draw import divider, inner_width, role_style, text_line
+from untaped.screen.components.draw import (
+    divider,
+    inner_width,
+    option_row,
+    role_style,
+    text_line,
+)
 from untaped.screen.components.layout import window
 from untaped.screen.components.text import EditBuffer
 from untaped.screen.core import Cmd, Frame, Key, Paste
@@ -34,13 +41,14 @@ from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked, rank
 from untaped.stability import experimental
 
-__all__ = ["SearchList"]
+__all__ = ["SearchList", "Tree", "TreeRow"]
 
 #: The most list rows a ``SearchList`` shows at once, and the fewest it is squeezed to.
 MAX_ROWS = 10
 MIN_ROWS = 3
-#: The rows of a frame the box, the search line and the count line take.
+#: The rows of a frame a search list's box, search line and count line take, and a tree's box.
 _CHROME = 8
+_TREE_CHROME = 5
 
 type _Entry = Ranked[ListItem]
 
@@ -215,3 +223,152 @@ class SearchList:
         line = Text(" " * max(0, inner - cell_len(counts)) + counts)
         line.stylize(role_style(frame, "screen.muted"))
         return fit_text(line, inner, frame.ellipsis())
+
+
+@experimental
+@dataclass(frozen=True)
+class TreeRow:
+    """One row of a :class:`Tree`: ``id`` is unique in the tree, ``summary`` is shown right-aligned.
+
+    A row with ``children`` can be expanded; one without is a leaf.
+    """
+
+    id: str
+    label: str
+    summary: str = ""
+    children: tuple[TreeRow, ...] = ()
+
+
+@dataclass(frozen=True)
+class _Shown:
+    """A row on screen: how deep it sits and where its parent row is in the shown list."""
+
+    row: TreeRow
+    depth: int
+    parent: int | None
+
+
+def _shown(rows: tuple[TreeRow, ...], expanded: frozenset[str]) -> list[_Shown]:
+    """The rows that are visible: every top row and the children of each expanded row, in order."""
+    shown: list[_Shown] = []
+
+    def walk(level: tuple[TreeRow, ...], depth: int, parent: int | None) -> None:
+        for row in level:
+            index = len(shown)
+            shown.append(_Shown(row, depth, parent))
+            if row.children and row.id in expanded:
+                walk(row.children, depth + 1, index)
+
+    walk(rows, 0, None)
+    return shown
+
+
+@experimental
+@dataclass(frozen=True)
+class Tree:
+    """Rows that expand into their children, in a labelled box; only a window of them is built.
+
+    ``expanded`` holds the ids of the open rows and ``cursor`` indexes the
+    visible rows. Up, down, home and end move; right opens a closed row (and
+    steps into an open one), left closes an open row (and steps out to the
+    parent of a closed one), enter toggles a row that has children. A key a row
+    cannot use, such as right on a leaf, is left to the parent, so a screen can
+    give left and right another meaning there. ``value`` is the id of the row
+    under the cursor (``""`` for an empty tree).
+    """
+
+    label: str
+    rows: tuple[TreeRow, ...]
+    expanded: frozenset[str] = frozenset()
+    cursor: int = 0
+    help: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cursor", clamped(self.cursor, len(self._on_screen())))
+
+    def _on_screen(self) -> list[_Shown]:
+        return _shown(self.rows, self.expanded)
+
+    @property
+    def value(self) -> str:
+        """The id of the row under the cursor (empty when the tree is empty)."""
+        visible = self._on_screen()
+        return visible[self.cursor].row.id if visible else ""
+
+    def with_error(self, text: str) -> Self:
+        """This tree showing ``text`` as its error (empty clears it)."""
+        return replace(self, error=text)
+
+    def validate(self) -> str:
+        """Always fine: a tree holds no input."""
+        return ""
+
+    def update(self, message: object) -> tuple[Self, list[Cmd]]:
+        """Move the cursor, expand or collapse the row under it, or step to its parent."""
+        if not isinstance(message, Key):
+            return self, []
+        visible = self._on_screen()
+        if not visible:
+            return self, []
+        step = moved_to(message.name, self.cursor, len(visible))
+        if step is not None:
+            return (replace(self, cursor=step) if step != self.cursor else self), []
+        current = visible[self.cursor]
+        row, opened = current.row, current.row.id in self.expanded
+        match message.name:
+            case "right" if row.children:
+                if opened:
+                    return replace(self, cursor=self.cursor + 1), []
+                return replace(self, expanded=self.expanded | {row.id}), []
+            case "left" if row.children and opened:
+                return replace(self, expanded=self.expanded - {row.id}), []
+            case "left" if current.parent is not None:
+                return replace(self, cursor=current.parent), []
+            case "enter" if row.children:
+                return replace(self, expanded=self.expanded ^ {row.id}), []
+        return self, []
+
+    def view(
+        self, frame: Frame, *, focused: bool = False, width: int | None = None
+    ) -> RenderableType:
+        """The box: one line per visible row, indented by depth, in a window around the cursor."""
+        inner = inner_width(frame, width)
+        size = max(MIN_ROWS, min(MAX_ROWS, frame.height - _TREE_CHROME))
+        first, shown = window(self._on_screen(), self.cursor, size)
+        rows = [
+            self._row(frame, inner, entry, focused and first + offset == self.cursor)
+            for offset, entry in enumerate(shown)
+        ]
+        if not rows:
+            rows.append(Text(""))
+        return field_box(
+            frame,
+            self.label,
+            Group(*rows),
+            focused=focused,
+            error=self.error,
+            help=self.help,
+            width=width,
+        )
+
+    def _row(self, frame: Frame, inner: int, entry: _Shown, cursor: bool) -> Text:
+        row = entry.row
+        layers = ("screen.highlight",) if cursor else ()
+        edge = role_style(frame, *layers, "screen.muted")
+        opened = row.id in self.expanded
+        if row.children:
+            marker = frame.symbol("tree.open" if opened else "tree.closed")
+        else:
+            marker = " " * cell_len(frame.symbol("tree.open"))
+        label_style = role_style(frame, "screen.highlight" if cursor else "screen.value")
+        return option_row(
+            frame,
+            inner,
+            lead=[(" " * (2 * entry.depth), edge), (marker, edge), (" ", edge)],
+            label=row.label,
+            label_style=label_style,
+            trail=row.summary,
+            trail_style=label_style if cursor else role_style(frame, "screen.muted"),
+            base=role_style(frame, "screen.highlight") if cursor else None,
+        )
