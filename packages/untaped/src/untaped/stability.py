@@ -503,6 +503,44 @@ def mark_errors(model: type[BaseModel], *, state: bool = False) -> list[str]:
     return errors
 
 
+type SettingStability = Literal["stable", "experimental", "deprecated"]
+
+
+def setting_mark(
+    key: str,
+    *,
+    sections: Mapping[str, type[BaseModel]],
+    section_stability: Mapping[str, Stability | None],
+) -> Stability | None:
+    """The effective mark of setting ``key`` (``section.field``), or ``None`` when stable.
+
+    The field's own mark wins; otherwise the setting inherits the mark of the
+    capability that owns its section. Pure: the registry-reading wrapper is
+    :func:`untaped.settings.setting_stability`.
+    """
+    section, _, rest = key.partition(".")
+    model = sections.get(section)
+    own = None if model is None else field_marks(model).get(rest)
+    return own if own is not None else section_stability.get(section)
+
+
+def stability_name(mark: Stability | None) -> SettingStability:
+    """``mark`` as the word ``config list`` and ``config get`` show."""
+    if mark is None:
+        return "stable"
+    return "experimental" if isinstance(mark, Experimental) else "deprecated"
+
+
+def stability_of(
+    key: str,
+    *,
+    sections: Mapping[str, type[BaseModel]],
+    section_stability: Mapping[str, Stability | None],
+) -> SettingStability:
+    """The effective stability of setting ``key``: :func:`setting_mark` as a word."""
+    return stability_name(setting_mark(key, sections=sections, section_stability=section_stability))
+
+
 # --- renamed commands and options -------------------------------------------
 
 

@@ -127,7 +127,8 @@ def _register_shell_and_capabilities(result: CompositionResult) -> None:
     specs: list[ApplicationSpec | CapabilitySpec] = [SHELL_SPEC]
     specs.extend(capability.spec for capability in result.capabilities)
     for spec in specs:
-        register_profile_settings(spec.config_section, spec.profile_model)
+        stability = spec.stability if isinstance(spec, CapabilitySpec) else None
+        register_profile_settings(spec.config_section, spec.profile_model, stability)
         if spec.state_model is not None:
             register_state_settings(spec.config_section, spec.state_model)
 

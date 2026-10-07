@@ -34,7 +34,7 @@ from untaped.config_schema import unwrap_optional
 from untaped.errors import ConfigError
 from untaped.messages import deprecated_message
 from untaped.profile_resolver import DEFAULT_PROFILE
-from untaped.stability import Deprecated, field_marks, mark_errors
+from untaped.stability import Deprecated, Stability, field_marks, mark_errors, replacement_text
 
 DECLARATIONS = ("renamed_keys", "retired_keys")
 
@@ -384,8 +384,17 @@ def profile_sections(
                 yield str(name), section, model, section_data
 
 
-def scan_keys(raw: Mapping[str, Any], sections: Mapping[str, type[BaseModel]]) -> list[FoundKey]:
-    """Every old key ``config migrate`` would move, and every deprecated setting, per profile."""
+def scan_keys(
+    raw: Mapping[str, Any],
+    sections: Mapping[str, type[BaseModel]],
+    stabilities: Mapping[str, Stability | None] | None = None,
+) -> list[FoundKey]:
+    """Every old key ``config migrate`` would move, and every deprecated setting, per profile.
+
+    ``stabilities`` maps a section to its capability's mark: every key set in
+    the section of a deprecated capability is reported as deprecated, with the
+    capability's replacement text.
+    """
     found: list[FoundKey] = []
     for profile, section, model, data in profile_sections(raw, sections):
         mappings = key_mappings(model)
@@ -397,7 +406,28 @@ def scan_keys(raw: Mapping[str, Any], sections: Mapping[str, type[BaseModel]]) -
         for key, message in sorted(mappings.deprecated.items()):
             if _lookup(data, key) is not _MISSING:
                 found.append(FoundKey(profile, section, key, None, "deprecated", message))
+        capability = (stabilities or {}).get(section)
+        if isinstance(capability, Deprecated):
+            reported = {
+                item.old for item in found if (item.profile, item.section) == (profile, section)
+            }
+            use = replacement_text(capability, None)
+            found.extend(
+                FoundKey(profile, section, key, None, "deprecated", use)
+                for key in _leaf_keys(data)
+                if key not in reported
+            )
     return found
+
+
+def _leaf_keys(data: Mapping[str, Any], prefix: str = "") -> Iterator[str]:
+    """The dotted path of every leaf set in ``data``, in order."""
+    for key, value in data.items():
+        path = f"{prefix}{key}"
+        if isinstance(value, Mapping) and value:
+            yield from _leaf_keys(value, f"{path}.")
+        else:
+            yield path
 
 
 @dataclass(frozen=True)
