@@ -300,10 +300,12 @@ class _PanesRender:
                 [segment for block in blocks for segment in block[row]]
                 for row in range(len(blocks[0]))
             )
+            yield Segment.line()  # end the last row, so whatever follows starts on its own line
             return
         gap = [] if self.frame.box() is not None else [[Segment(" ")]]
         stacked = [*blocks[0], *gap, *blocks[1]]
         yield from _joined(stacked)
+        yield Segment.line()
 
     def _block(
         self,
