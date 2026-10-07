@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped.messages import EXPERIMENTAL_LINE
+from untaped.testing import CliInvoker, invoke_root
 from untaped_awx.application import WatchJob
 from untaped_awx.application.suites.runner import RunTestSuite
 from untaped_awx.cli import app
@@ -63,11 +64,15 @@ def test_test_help_lists_subcommands(cli: CliInvoker) -> None:
 
 
 @pytest.mark.parametrize("path", [[], ["run"], ["list"], ["validate"], ["init"], ["prune"]])
-def test_experimental_commands_say_so_in_help(cli: CliInvoker, path: list[str]) -> None:
+def test_experimental_commands_end_their_help_with_the_experimental_line(
+    cli: CliInvoker, path: list[str]
+) -> None:
     # the README's Versioning section promises every experimental command says so in --help.
-    result = cli.invoke(app, ["test", *path, "--help"])
-    assert result.exit_code == 0, result.output
-    assert "Experimental: may change in a minor release." in result.stdout
+    direct = cli.invoke(app, ["test", *path, "--help"])
+    through_root = invoke_root(["awx", "test", *path, "--help"])
+    for result in (direct, through_root):
+        assert result.exit_code == 0, result.output
+        assert result.stdout.rstrip().endswith(EXPERIMENTAL_LINE)
 
 
 def test_run_against_missing_file_emits_clean_error(

@@ -75,6 +75,7 @@ from untaped.settings import (
 )
 from untaped.shell_settings import ShellProfileSettings
 from untaped.skills import InstallableSkill
+from untaped.stability import ROOT_PARAMETERS_GROUP, apply_marks, mark_app, panel_for
 from untaped.verbose import reset as _reset_verbose
 
 #: Unified executable name; also the identity reported before dispatch selects
@@ -218,6 +219,7 @@ def build_root_app(
     candidates = list(candidates) if candidates is not None else list(discover_candidates())
     result = compose_root(candidates=candidates)
     root = _shell_app()
+    root.meta.group_parameters = ROOT_PARAMETERS_GROUP  # keyed, so Parameters sorts last
     if not result.capabilities and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
@@ -267,6 +269,7 @@ def _mount(app: App, sub: App, *, name: str) -> None:
     if name in app:
         del app[name]
     app.command(sub, name=name)
+    apply_marks(sub, path=(name,))
 
 
 class _LazyCapabilityCommand(CommandSpec):
@@ -285,7 +288,13 @@ class _LazyCapabilityCommand(CommandSpec):
 
     def __init__(self, capability: RegisteredCapability, mount_parent: App) -> None:
         spec = capability.spec
-        super().__init__(import_path=f"<capability {spec.name}>", name=spec.name, help=spec.help)
+        super().__init__(
+            import_path=f"<capability {spec.name}>",
+            name=spec.name,
+            help=spec.help,
+            # placed in its panel without importing the capability
+            group=None if spec.stability is None else panel_for(spec.stability),
+        )
         self._capability = capability
         self._mount_parent = mount_parent
 
@@ -301,6 +310,9 @@ class _LazyCapabilityCommand(CommandSpec):
             app[flag].show = False
         if app._name_transform is None:
             app.name_transform = self._mount_parent.name_transform
+        if self._capability.spec.stability is not None:
+            mark_app(app, self._capability.spec.stability, source="spec")
+        apply_marks(app, path=(self._capability.spec.name,))
         self._resolved = app
         return app
 
@@ -335,6 +347,8 @@ def _mount_capability(root: App, capability: RegisteredCapability) -> None:
     """Mount one composed capability, lazily when its factory was deferred."""
     spec = capability.spec
     if capability.app is not None:
+        if spec.stability is not None:
+            mark_app(capability.app, spec.stability, source="spec")
         _mount(root, capability.app, name=spec.name)
         return
     if spec.name in root:

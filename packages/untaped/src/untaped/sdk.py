@@ -32,7 +32,6 @@ from untaped.cli import (
     YesOption,
     clamp_parallel,
     create_app,
-    deprecated_alias,
     echo,
     emit,
     existing_file,
@@ -108,6 +107,7 @@ from untaped.repo_cache import (
     scoped_auth_header,
 )
 from untaped.settings import HttpSettings, get_config_section
+from untaped.stability import deprecated, deprecated_alias, experimental
 from untaped.state import StateCollection, StateMap
 from untaped.stdin import (
     StdinInput,
@@ -246,7 +246,9 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "online_check",
     # conventions
     "ExitCode",
+    "deprecated",
     "deprecated_alias",
+    "experimental",
     "plural",
     "q",
     "writes",

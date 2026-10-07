@@ -144,8 +144,8 @@ profile; before any profile exists, only `default` may be named.
 
 `--profile` is a root option and goes anywhere in the command: before the
 capability, between command names (`untaped github --profile work whoami`) or
-after the command. So do `--verbose`/`-v` and `--quiet`/`-q`. Tokens after
-`--` belong to the command and are never read as `untaped` options.
+after the command. So do `--verbose`/`-v`, `--quiet`/`-q` and `--deprecated`.
+Tokens after `--` belong to the command and are never read as `untaped` options.
 
 - `default` is created by the first setting write. Other profiles must exist
   before a write targets them.

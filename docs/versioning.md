@@ -48,9 +48,10 @@ These may change in any release:
 
 ## Experimental
 
-A command or format still being shaped is marked experimental in its `--help`
-and its guide. It may change in a minor release, with a changelog entry that
-says so. Currently experimental:
+A command or format still being shaped is marked experimental. It sits in an
+Experimental panel of its parent's `--help`, its own `--help` ends with a line
+saying so, and its guide says so. It may change in a minor release, with a
+changelog entry that says so. Currently experimental:
 
 - `awx test`: its commands, the suite file format, the `awx.test_case` and
   `awx.test_result` records, and the `awx.test_timeout_seconds` and
@@ -62,6 +63,9 @@ says so. Currently experimental:
 
 ## Breaking changes
 
+- A command that goes away with no successor is marked deprecated: it is
+  listed by `untaped --deprecated --help`, ends its `--help` with a line saying
+  so, and warns on every run until the next major release removes it.
 - A renamed command or flag keeps working as a hidden, deprecated alias until
   the next major release, and prints a warning naming the new spelling.
 - A renamed setting, and its `UNTAPED_*` variable, keeps working as a

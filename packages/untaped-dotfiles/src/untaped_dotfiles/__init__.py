@@ -6,7 +6,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset, executable_check
+from untaped.sdk import CapabilitySpec, SkillAsset, executable_check, experimental
 from untaped_dotfiles.settings import DotfilesSettings, DotfilesState
 
 if TYPE_CHECKING:
@@ -25,10 +25,8 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="dotfiles",
     app_factory=build_app,
-    help=(
-        "Place dotfiles from subscribed repos, with a policy per item per machine. "
-        "Experimental: may change in a minor release."
-    ),
+    help="Place dotfiles from subscribed repos, with a policy per item per machine.",
+    stability=experimental,
     config_section="dotfiles",
     profile_model=DotfilesSettings,
     state_model=DotfilesState,
