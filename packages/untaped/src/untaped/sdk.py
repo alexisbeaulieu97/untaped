@@ -326,15 +326,19 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
 ]
 
 
-def __getattr__(name: str) -> object:
-    """Resolve a screen name on first use and keep it, so later lookups are plain."""
-    module = _SCREEN_EXPORTS.get(name)
-    if module is None:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(_importlib.import_module(module), name)
-    globals()[name] = value
-    return value
+if not _typing.TYPE_CHECKING:
+    # Hidden from the type checker, which resolves the screen names from the
+    # imports above: a module-level ``__getattr__`` would type every other
+    # attribute (a plugin's typo) as ``object`` instead of an error.
 
+    def __getattr__(name: str) -> object:
+        """Resolve a screen name on first use and keep it, so later lookups are plain."""
+        module = _SCREEN_EXPORTS.get(name)
+        if module is None:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        value = getattr(_importlib.import_module(module), name)
+        globals()[name] = value
+        return value
 
-def __dir__() -> list[str]:
-    return sorted({*globals(), *_SCREEN_EXPORTS})
+    def __dir__() -> list[str]:
+        return sorted({*globals(), *_SCREEN_EXPORTS})

@@ -350,12 +350,12 @@ next major release removes it.
 **Deprecated setting**: a setting still read as before, with a warning,
 until the next major release removes it.
 
-**Screen**: an interactive terminal UI built on the SDK's runtime.
-_Avoid_: TUI app, program, view.
-
 **Fix**: the `untaped` command a doctor row names to resolve what it found.
 _Avoid_: repair, remedy.
 
 **Automatic fix**: a fix that needs no value and no input, so
 `untaped doctor fix` runs it.
 _Avoid_: autofix.
+
+**Screen**: an interactive terminal UI built on the SDK's runtime.
+_Avoid_: TUI app, program, view.

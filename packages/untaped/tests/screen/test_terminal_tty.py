@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import select
+import signal
 import sys
+import termios
 import threading
 import time
 from typing import TextIO
@@ -164,3 +166,50 @@ def test_ui_run_draws_on_the_controlling_terminal_when_stdin_is_piped(
         "piped data",
         "",
     )  # nothing went to the files
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP], ids=["sigterm", "sighup"])
+def test_a_termination_signal_restores_the_terminal_and_exits(
+    sig: signal.Signals,
+) -> None:
+    """``kill`` and a closing terminal must not leave the alternate screen and raw mode behind."""
+    if threading.current_thread() is not threading.main_thread():
+        pytest.skip("signal handlers are installed on the main thread only")
+
+    def guard(number: int, _frame: object) -> None:
+        # What a missing adapter handler leaves: fail the test instead of killing the run.
+        raise AssertionError(f"signal {number} reached the handler installed before the screen")
+
+    before = signal.signal(sig, guard)
+    screen: Screen[str, str] = Screen(
+        init=lambda: ("", [Cmd(lambda: os.kill(os.getpid(), sig))]),  # `kill` from outside
+        update=lambda model, message: (model, []),
+        view=lambda model, frame: "waiting",
+        title="Pty",
+        command="untaped pty",
+        alternative="untaped pty --format json",
+    )
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+    try:
+        with open(path, encoding="utf-8") as tty_in, open(path, "w", encoding="utf-8") as tty_out:
+            cooked = termios.tcgetattr(tty_in)[3] & (termios.ICANON | termios.ECHO)
+            assert cooked == termios.ICANON | termios.ECHO
+            with pytest.raises(SystemExit) as raised:
+                run_terminal_screen(
+                    screen,
+                    input=create_input(tty_in),
+                    output=create_output(tty_out),
+                    theme=BUILTIN_THEMES["default"],
+                    environ={"TERM": "xterm-256color"},
+                )
+            assert raised.value.code == 128 + sig
+            assert termios.tcgetattr(tty_in)[3] & (termios.ICANON | termios.ECHO) == cooked
+        seen = _drain(master, until=b"\x1b[?1049l")
+        assert b"\x1b[?1049h" in seen
+        assert b"\x1b[?1049l" in seen  # the alternate screen was left
+        assert signal.getsignal(sig) is guard  # and the handler from before is back
+    finally:
+        signal.signal(sig, before)
+        os.close(master)
+        os.close(slave)

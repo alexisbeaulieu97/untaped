@@ -65,7 +65,8 @@
   lists them. ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
 - SDK (experimental): screens, an Elm-style runtime for full-screen terminal UIs
   (`Screen`, `Cmd`, `UiContext.run`, `untaped.testing.drive_screen`); see
-  [Screens](docs/screens.md). ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
+  [Screens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/screens.md).
+  ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 
 ### Changed
 
@@ -121,6 +122,10 @@
 - `config set ui.symbols|ui.color_roles` and `doctor` reject names that no
   theme defines; a stray name already in `config.yml` keeps working.
   ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
+- `untaped.testing.check_conventions` now flags a plugin's `prompt_toolkit`
+  imports (`terminal-boundary`); build the interface with `untaped.sdk` screens
+  instead, or waive a line with `# untaped: allow terminal-boundary`.
+  ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 - `PromptBackend` gains `run_screen`; a custom backend needs the method to
   type-check. ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 
