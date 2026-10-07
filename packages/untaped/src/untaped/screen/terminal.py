@@ -24,23 +24,25 @@ import contextvars
 import os
 import threading
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, TextIO
 
 from prompt_toolkit.application import Application, run_in_terminal
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.input import Input
+from prompt_toolkit.input.defaults import create_input
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.output import ColorDepth, Output
+from prompt_toolkit.output.defaults import create_output
 
 from untaped.screen.color import ColorMode, detect_color, ptk_depth_name, rich_system
 from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import CmdKind, Runtime, capture_console
 from untaped.theme import ThemeSpec
 
-__all__ = ["TerminalHost", "build_application", "run_terminal_screen"]
+__all__ = ["TerminalHost", "build_application", "run_screen_on", "run_terminal_screen"]
 
 type Outcome[R] = Quit[R] | Cancel
 
@@ -204,6 +206,19 @@ def run_terminal_screen[M, R](
         host.apply(runtime.start)
 
     return application.run(pre_run=start)
+
+
+def run_screen_on[M, R](
+    screen: Screen[M, R], *, stdin: TextIO, stderr: TextIO, theme: ThemeSpec
+) -> Outcome[R]:
+    """:func:`run_terminal_screen` reading ``stdin`` and drawing on ``stderr``.
+
+    The streams are the ones ``UiContext`` prompts on: the process's own, or
+    the controlling terminal opened for the block.
+    """
+    return run_terminal_screen(
+        screen, input=create_input(stdin), output=create_output(stderr), theme=theme
+    )
 
 
 def _paint[M, R](
