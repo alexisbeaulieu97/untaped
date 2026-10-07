@@ -230,6 +230,12 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     A token from the environment (:func:`token_override_env`) is not a file,
     so it never warns; nor does a model ``auth set`` cannot serve.
     """
+    from untaped.settings import active_overlay  # noqa: PLC0415 - imports each other lazily
+
+    # ``setup`` checks a candidate token that is not written yet, possibly on a
+    # worker thread over its screen: nothing to warn about, nowhere to print it.
+    if active_overlay() is not None:
+        return
     if (
         section in _warned
         or not takes_token_command(type(settings))
