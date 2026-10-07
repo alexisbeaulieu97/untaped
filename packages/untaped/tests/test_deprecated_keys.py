@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
 
 from untaped.deprecated_keys import KeyUse, key_mappings, mapping_errors, rename_keys
 from untaped.errors import ConfigError
+from untaped.stability import deprecated
 
 
 class Sweep(BaseModel):
@@ -22,10 +23,9 @@ class Section(BaseModel):
         "sweep.sync_concurrency": "sweep.parallel",
     }
     retired_keys: ClassVar[dict[str, str]] = {"ancient_path": "older_path"}
-    deprecated_settings: ClassVar[dict[str, str]] = {"legacy": "use mode: legacy is ignored"}
 
     cache_dir: str = "cache"
-    legacy: bool = False
+    legacy: Annotated[bool, deprecated(replacement="mode")] = False
     symbols: dict[str, str] = Field(default_factory=dict)
     sweep: Sweep = Field(default_factory=Sweep)
 
@@ -63,7 +63,7 @@ def test_chains_through_both_mappings() -> None:
         "ancient_path": 3,
         "sweep.sync_concurrency": 1,
     }
-    assert mappings.deprecated == {"legacy": "use mode: legacy is ignored"}
+    assert mappings.deprecated == {"legacy": "mode"}
 
 
 def test_a_model_without_declarations_maps_nothing() -> None:
@@ -106,11 +106,6 @@ def test_a_model_without_declarations_maps_nothing() -> None:
             {"renamed_keys": {"a": "cache_dir"}, "retired_keys": {"a": "cache_dir"}},
             "'a' is in both renamed_keys and retired_keys",
         ),
-        ({"deprecated_settings": {"old": "use x"}}, "deprecated setting 'old' is not a setting"),
-        (
-            {"deprecated_settings": {"cache_dir": " "}},
-            "deprecated setting 'cache_dir' needs a message",
-        ),
         ({"renamed_keys": {"old": 3}}, "renamed_keys must map non-empty strings"),
     ],
 )
@@ -142,7 +137,7 @@ def test_old_key_is_read_as_the_new_one() -> None:
     assert data == {"cache_dir": "/c", "legacy": True}
     assert uses == (
         KeyUse("corpus_path", "cache_dir", "renamed"),
-        KeyUse("legacy", "legacy", "deprecated", message="use mode: legacy is ignored"),
+        KeyUse("legacy", "legacy", "deprecated", message="mode"),
     )
 
 

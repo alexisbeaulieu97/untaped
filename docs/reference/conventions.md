@@ -373,7 +373,6 @@ with dotted paths relative to the section:
 ```python
 renamed_keys: ClassVar[Mapping[str, str]] = {"sweep.sync_concurrency": "sweep.parallel"}
 retired_keys: ClassVar[Mapping[str, str]] = {}
-deprecated_settings: ClassVar[Mapping[str, str]] = {"legacy": "use mode: legacy is ignored"}
 ```
 
 - A key in `renamed_keys`, and its `UNTAPED_*` variable, is read as the new
@@ -382,12 +381,13 @@ deprecated_settings: ClassVar[Mapping[str, str]] = {"legacy": "use mode: legacy 
 - A target is a current setting or another old key, so renames chain; a
   renamed key never points at a retired one. Entries are never deleted and
   old names never reused.
-- A rename keeps the meaning. A change of unit, type or choices is a new key,
-  and the old field becomes a `deprecated_settings` entry, still read with
-  its message as the warning, until the next major release.
+- A rename keeps the meaning. A change of unit, type or choices is a new key;
+  mark the old leaf field `Annotated[bool, deprecated(replacement="mode")]`
+  (outermost `Annotated`; never a model or state field). It is still read,
+  with a warning naming the replacement (a key or prose), until the next major.
 
 Each warning prints once per process. Composition quarantines a provider
-whose declarations break these rules (`bad-settings-keys`).
+whose declarations or marks break these rules (`bad-settings-keys`).
 
 ## SDK stability
 

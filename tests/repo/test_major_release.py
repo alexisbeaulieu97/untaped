@@ -47,19 +47,22 @@ def is_major_release(version: str, changelog: str) -> bool:
 
 
 def settings_leftovers(sections: Mapping[str, type[BaseModel]]) -> list[str]:
-    """Each section declaring ``renamed_keys`` or ``deprecated_settings``."""
+    """Each section declaring ``renamed_keys``."""
     return [
-        f"{section}: {declaration} {sorted(getattr(model, declaration))}"
+        f"{section}: renamed_keys {sorted(model.renamed_keys)}"
         for section, model in sections.items()
-        for declaration in ("renamed_keys", "deprecated_settings")
-        if getattr(model, declaration, None)
+        if getattr(model, "renamed_keys", None)
     ]
 
 
 def mark_leftovers(root: App, result: CompositionResult) -> list[str]:
-    """Every capability, group or command marked ``deprecated``."""
+    """Every capability, group, command or setting marked ``deprecated``."""
     return [
-        f"untaped {mark.where}: deprecated {mark.target}"
+        (
+            f"{mark.where}: deprecated setting"
+            if mark.target == "setting"
+            else f"untaped {mark.where}: deprecated {mark.target}"
+        )
         for mark in marks(root, result, resolve=True)
         if isinstance(mark.stability, Deprecated)
     ]
@@ -150,23 +153,15 @@ class _Renamed(BaseModel):
     new: int = 0
 
 
-class _Deprecated(BaseModel):
-    deprecated_settings: ClassVar[dict[str, str]] = {"legacy": "use new"}
-    legacy: bool = False
-
-
 class _Retired(BaseModel):
     retired_keys: ClassVar[dict[str, str]] = {"old": "new"}
     new: int = 0
 
 
 def test_settings_leftovers_name_each_section_but_not_retired_keys() -> None:
-    sections = {"a": _Renamed, "b": _Deprecated, "c": _Retired}
+    sections = {"a": _Renamed, "c": _Retired}
 
-    assert settings_leftovers(sections) == [
-        "a: renamed_keys ['old']",
-        "b: deprecated_settings ['legacy']",
-    ]
+    assert settings_leftovers(sections) == ["a: renamed_keys ['old']"]
 
 
 def test_mark_leftovers_report_a_deprecated_capability_group_and_command() -> None:
@@ -193,6 +188,21 @@ def test_mark_leftovers_report_a_deprecated_capability_group_and_command() -> No
         "untaped svc sunset: deprecated command",
         "untaped svc old: deprecated command",
     ]
+
+
+class _Marked(BaseModel):
+    old: Annotated[bool, deprecated(replacement="new")] = False
+    trial: Annotated[int, experimental] = 1
+    new: bool = False
+
+
+def test_mark_leftovers_report_a_deprecated_setting_but_not_an_experimental_one() -> None:
+    spec = make_spec(name="svc", factory=lambda: create_app(name="svc", help="S."), profile=_Marked)
+    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+
+    found = mark_leftovers(root, bootstrap.composition())
+
+    assert [line for line in found if line.startswith("svc.")] == ["svc.old: deprecated setting"]
 
 
 def test_the_deprecated_alias_command_blocks_a_major_release() -> None:
@@ -282,6 +292,6 @@ def test_sdk_leftovers_look_through_properties_and_method_wrappers() -> None:
 def test_the_deprecated_shell_aliases_setting_blocks_a_major_release(
     first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
 ) -> None:
-    bootstrap.build_root_app(candidates=first_party_candidates)
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
 
-    assert "shell: deprecated_settings ['aliases']" in settings_leftovers(profile_section_models())
+    assert "shell.aliases: deprecated setting" in mark_leftovers(root, bootstrap.composition())

@@ -11,6 +11,7 @@ from untaped.config_schema import FieldDescriptor
 from untaped.deprecated_keys import rename_keys
 from untaped.errors import ConfigError
 from untaped.profile_resolver import DEFAULT_PROFILE
+from untaped.stability import Deprecated, replacement_text, stability_name
 
 _UNRESOLVED: Any = object()
 
@@ -97,6 +98,7 @@ class ListAllProfilesSettings:
                         source=Source(kind="profile", profile=profile_name),
                         profile=profile_name,
                         note=notes.get(path),
+                        **_stability_fields(self._repo, descriptor),
                     )
                 )
         return entries
@@ -153,7 +155,15 @@ def setting_entry_for_descriptor(
         source=source,
         profile=source.profile if include_profile else None,
         note=None if old is None else _deprecated_note(old),
+        **_stability_fields(repo, descriptor),
     )
+
+
+def _stability_fields(repo: SettingsReader, descriptor: FieldDescriptor) -> dict[str, Any]:
+    """The entry fields that say how stable ``descriptor`` is and what replaces it."""
+    mark = repo.mark(descriptor)
+    use = replacement_text(mark, None) if isinstance(mark, Deprecated) else None
+    return {"stability": stability_name(mark), "use": use}
 
 
 def _deprecated_note(old: str) -> str:

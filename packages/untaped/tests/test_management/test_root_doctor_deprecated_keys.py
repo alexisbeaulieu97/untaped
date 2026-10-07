@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from test_management.support import compose, make_spec, write_config
 from untaped import bootstrap
 from untaped.management.doctor import build_root_doctor_app, selected_check_rows
+from untaped.stability import deprecated
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -29,10 +30,9 @@ class OldProfile(BaseModel):
         "sweep.sync_concurrency": "sweep.parallel",
     }
     retired_keys: ClassVar[dict[str, str]] = {"repo_path": "cache_dir"}
-    deprecated_settings: ClassVar[dict[str, str]] = {"legacy": "use cache_dir"}
 
     cache_dir: str = "cache"
-    legacy: bool = False
+    legacy: Annotated[bool, deprecated(replacement="cache_dir")] = False
     sweep: Sweep = Field(default_factory=Sweep)
 
 

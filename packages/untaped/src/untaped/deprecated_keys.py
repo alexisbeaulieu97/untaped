@@ -1,14 +1,17 @@
 """Renamed, retired and deprecated config keys of a settings section.
 
-A section model declares three ClassVars, each mapping dotted paths relative
+A section model declares two ClassVars, each mapping dotted paths relative
 to the section:
 
 - ``renamed_keys`` (``{"old": "new"}``): the old key is still read, as the
   new one, with a warning, until the next major release;
 - ``retired_keys`` (same shape): the old key is no longer read, but
-  ``config migrate`` still renames it;
-- ``deprecated_settings`` (``{"field": "message"}``): a current field that is
-  still read with its old meaning, with a warning carrying the message.
+  ``config migrate`` still renames it.
+
+A current field that is still read with its old meaning is marked on the
+field instead: ``Annotated[T, deprecated(replacement="use X")]`` (see
+:mod:`untaped.stability`); it is read with a warning that names the
+replacement.
 
 This module is the one home for the rules those declarations follow, for
 rewriting one layer of section data to current names, and for the
@@ -27,12 +30,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from untaped.config_schema import unwrap_optional
+from untaped.config_schema import unwrap_optional, walk_settings
 from untaped.errors import ConfigError
 from untaped.messages import deprecated_message
 from untaped.profile_resolver import DEFAULT_PROFILE
+from untaped.stability import Deprecated, Stability, field_marks, mark_errors, replacement_text
 
-DECLARATIONS = ("renamed_keys", "retired_keys", "deprecated_settings")
+DECLARATIONS = ("renamed_keys", "retired_keys")
 
 KeyUseKind = Literal["renamed", "ignored", "retired", "deprecated"]
 
@@ -53,8 +57,8 @@ class KeyMappings:
     distance: Mapping[str, int]
     """Hops from each old key to its current field (the closest hop wins)."""
 
-    deprecated: Mapping[str, str]
-    """Current field → message, for each deprecated setting."""
+    deprecated: Mapping[str, str | None]
+    """Current field → replacement text (``None`` when it has none), for each deprecated setting."""
 
     def __bool__(self) -> bool:
         return bool(self.migratable or self.deprecated)
@@ -75,7 +79,7 @@ class KeyUse:
     """For an ``ignored`` key: the spelling whose value was kept."""
 
     message: str | None = None
-    """For a ``deprecated`` setting: its declared message."""
+    """For a ``deprecated`` setting: its replacement text, if it names one."""
 
 
 NO_KEY_MAPPINGS = KeyMappings({}, {}, frozenset(), {}, {})
@@ -137,15 +141,11 @@ def mapping_errors(model: type[BaseModel]) -> list[str]:
         for name in DECLARATIONS
         if _declared(nested, name)
     )
+    errors.extend(mark_errors(model))
     if not any(declared.values()):
         return errors
     leaves = set(_leaf_paths(model))
     errors.extend(_mapping_errors(declared["renamed_keys"], declared["retired_keys"], leaves))
-    for key, message in sorted(declared["deprecated_settings"].items()):
-        if key not in leaves:
-            errors.append(f"deprecated setting {key!r} is not a setting")
-        elif not message.strip():
-            errors.append(f"deprecated setting {key!r} needs a message")
     return errors
 
 
@@ -230,11 +230,15 @@ def key_mappings(model: type[BaseModel]) -> KeyMappings:
     errors = mapping_errors(model)
     if errors:
         raise ConfigError(f"invalid key declarations on {model.__name__}: {errors[0]}")
-    if not any(_declared(model, name) for name in DECLARATIONS):
+    deprecated = {
+        path: (mark.replacement if isinstance(mark.replacement, str) else None)
+        for path, mark in field_marks(model).items()
+        if isinstance(mark, Deprecated)
+    }
+    if not deprecated and not any(_declared(model, name) for name in DECLARATIONS):
         return NO_KEY_MAPPINGS
     renamed = _valid(model, "renamed_keys")
     retired = _valid(model, "retired_keys")
-    deprecated = _valid(model, "deprecated_settings")
     mapped = {**retired, **renamed}
     ends = {key: _chain_end(key, mapped) for key in mapped}
     migratable = {key: end[0] for key, end in ends.items() if end is not None}
@@ -243,7 +247,7 @@ def key_mappings(model: type[BaseModel]) -> KeyMappings:
         migratable=migratable,
         retired=frozenset(retired),
         distance={key: end[1] for key, end in ends.items() if end is not None},
-        deprecated=dict(deprecated),
+        deprecated=deprecated,
     )
 
 
@@ -356,6 +360,7 @@ class FoundKey:
 
     kind: Literal["renamed", "retired", "deprecated"]
     message: str | None = None
+    """For a deprecated setting: its replacement text, if it names one."""
 
 
 def profile_sections(
@@ -379,8 +384,17 @@ def profile_sections(
                 yield str(name), section, model, section_data
 
 
-def scan_keys(raw: Mapping[str, Any], sections: Mapping[str, type[BaseModel]]) -> list[FoundKey]:
-    """Every old key ``config migrate`` would move, and every deprecated setting, per profile."""
+def scan_keys(
+    raw: Mapping[str, Any],
+    sections: Mapping[str, type[BaseModel]],
+    stabilities: Mapping[str, Stability | None] | None = None,
+) -> list[FoundKey]:
+    """Every old key ``config migrate`` would move, and every deprecated setting, per profile.
+
+    ``stabilities`` maps a section to its capability's mark: every key set in
+    the section of a deprecated capability is reported as deprecated, with the
+    capability's replacement text.
+    """
     found: list[FoundKey] = []
     for profile, section, model, data in profile_sections(raw, sections):
         mappings = key_mappings(model)
@@ -392,6 +406,18 @@ def scan_keys(raw: Mapping[str, Any], sections: Mapping[str, type[BaseModel]]) -
         for key, message in sorted(mappings.deprecated.items()):
             if _lookup(data, key) is not _MISSING:
                 found.append(FoundKey(profile, section, key, None, "deprecated", message))
+        capability = (stabilities or {}).get(section)
+        if isinstance(capability, Deprecated):
+            reported = {
+                item.old for item in found if (item.profile, item.section) == (profile, section)
+            }
+            use = replacement_text(capability, None)
+            keys = (".".join(d.path) for d in walk_settings(model, include_collections=True))
+            found.extend(
+                FoundKey(profile, section, key, None, "deprecated", use)
+                for key in keys
+                if key not in reported and _lookup(data, key) is not _MISSING
+            )
     return found
 
 
@@ -476,7 +502,7 @@ def use_warning(use: KeyUse, *, old: str, new: str, kept: str | None = None) -> 
         advice = "" if kept == new else f"; use {new}"
         return f"{old} is deprecated and ignored because {kept} is also set{advice}"
     if use.kind == "deprecated":
-        return f"{old} is deprecated and will be removed in the next major release; {use.message}"
+        return deprecated_message(old, use.message)
     return None
 
 

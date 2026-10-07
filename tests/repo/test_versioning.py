@@ -3,7 +3,9 @@
 The bullet list under "## Experimental" is kept by hand, because it also names
 record kinds, file formats and environment variables no mark knows. This
 checks it rather than generating it: every experimental capability, group or
-command is a bullet, and every bullet that starts with a command path is marked.
+command is a bullet, every bullet that starts with a command path is marked, and
+every experimental setting is named in backticks somewhere in the section (a
+capability's own settings are covered by its bullet).
 """
 
 from __future__ import annotations
@@ -28,6 +30,12 @@ def experimental_section(text: str) -> str:
 def bullet_paths(text: str) -> set[str]:
     """The command paths the bullets of ``## Experimental`` start with (``awx test``)."""
     return set(_BULLET.findall(experimental_section(text)))
+
+
+def unnamed_settings(text: str, keys: set[str]) -> list[str]:
+    """The settings of ``keys`` that ``## Experimental`` does not name in backticks."""
+    section = experimental_section(text)
+    return sorted(key for key in keys if f"`{key}`" not in section)
 
 
 def versioning_problems(text: str, marked: set[str]) -> list[str]:
@@ -71,9 +79,30 @@ def test_every_experimental_mark_of_the_repo_is_on_the_versioning_page(
     marked = {
         mark.where
         for mark in marks(root, bootstrap.composition(), resolve=True)
-        if isinstance(mark.stability, Experimental)
+        if mark.target != "setting" and isinstance(mark.stability, Experimental)
     }
     text = (REPO_ROOT / "docs" / "versioning.md").read_text(encoding="utf-8")
 
     assert marked >= {"awx test", "workspace", "dotfiles"}
     assert versioning_problems(text, marked) == []
+
+
+def test_every_experimental_setting_of_the_repo_is_on_the_versioning_page(
+    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+    keys = {
+        mark.where
+        for mark in marks(root, bootstrap.composition())
+        if mark.target == "setting" and isinstance(mark.stability, Experimental)
+    }
+    text = (REPO_ROOT / "docs" / "versioning.md").read_text(encoding="utf-8")
+
+    assert keys >= {"awx.test_timeout_seconds", "awx.test_parallel"}
+    assert unnamed_settings(text, keys) == []
+
+
+def test_a_setting_the_page_does_not_name_fails() -> None:
+    text = _bullets("awx test").replace("things.", "the `awx.test_parallel` setting.")
+
+    assert unnamed_settings(text, {"awx.test_parallel", "awx.other"}) == ["awx.other"]

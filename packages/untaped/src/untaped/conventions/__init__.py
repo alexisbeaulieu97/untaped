@@ -163,7 +163,7 @@ def core_violations() -> list[str]:
     return sorted(
         [
             *help_tree_violations(root, sorted(ROOT_COMMANDS)),
-            *stability_violations(root, result, ROOT_COMMANDS),
+            *stability_violations(root, result, ROOT_COMMANDS, sections=sections),
             *message_violations(management, list(source_files(management))),
             *(
                 line

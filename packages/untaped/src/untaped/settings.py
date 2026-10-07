@@ -27,6 +27,7 @@ from untaped.deprecated_keys import KeyUse, key_mappings, rename_keys, use_warni
 from untaped.errors import ConfigError, first_validation_error
 from untaped.messages import hint
 from untaped.settings_layout import ProfilesSettingsLayout, SectionModels
+from untaped.stability import Stability
 from untaped.theme import CONFIG_WRITE_CONTEXT, UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
@@ -88,15 +89,19 @@ class _ConfigRegistry:
     def __init__(self) -> None:
         self.profile_sections: dict[str, type[BaseModel]] = {}
         self.state_sections: dict[str, type[BaseModel]] = {}
+        self.section_stability: dict[str, Stability | None] = {}
 
     def reset(self) -> None:
         self.profile_sections = {}
         self.state_sections = {}
+        self.section_stability = {}
         get_settings.cache_clear()
         get_settings_model.cache_clear()
         get_profile_settings_model.cache_clear()
 
-    def register_profile_settings(self, section: str, model: type[BaseModel]) -> None:
+    def register_profile_settings(
+        self, section: str, model: type[BaseModel], stability: Stability | None = None
+    ) -> None:
         _reject_reserved_section(section)
         existing = self.profile_sections.get(section)
         if existing is not None and existing is not model:
@@ -105,6 +110,7 @@ class _ConfigRegistry:
         if state_model is not None:
             validate_disjoint_settings_sections(section, model, state_model)
         self.profile_sections[section] = model
+        self.section_stability[section] = stability
         get_settings.cache_clear()
         get_settings_model.cache_clear()
         get_profile_settings_model.cache_clear()
@@ -188,9 +194,20 @@ def active_settings_layout() -> ProfilesSettingsLayout:
     return _PROFILES_LAYOUT
 
 
-def register_profile_settings(section: str, model: type[BaseModel]) -> None:
-    """Register a tool's profile-scoped section (lives under ``profiles.<name>``)."""
-    _CONFIG_REGISTRY.register_profile_settings(section, model)
+def register_profile_settings(
+    section: str, model: type[BaseModel], stability: Stability | None = None
+) -> None:
+    """Register a tool's profile-scoped section (lives under ``profiles.<name>``).
+
+    ``stability`` is the owning capability's mark; its settings inherit it
+    unless a field carries a mark of its own.
+    """
+    _CONFIG_REGISTRY.register_profile_settings(section, model, stability)
+
+
+def section_stabilities() -> Mapping[str, Stability | None]:
+    """Each registered profile section's capability mark (``None`` for an unmarked one)."""
+    return _CONFIG_REGISTRY.section_stability
 
 
 def registered_profile_model(section: str) -> type[BaseModel] | None:

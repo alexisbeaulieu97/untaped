@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from untaped.sdk import TokenCommand, TokenSources
+from untaped.sdk import TokenCommand, TokenSources, experimental
 
 
 class AwxSettings(BaseModel):
@@ -27,8 +27,8 @@ class AwxSettings(BaseModel):
     api_prefix: str = "/api/controller/v2/"
     default_organization: str | None = None
     page_size: int = Field(default=200, gt=0)
-    test_timeout_seconds: float = Field(default=1800, gt=0)
-    test_parallel: int = Field(default=4, gt=0)
+    test_timeout_seconds: Annotated[float, experimental, Field(gt=0)] = 1800
+    test_parallel: Annotated[int, experimental, Field(gt=0)] = 4
 
     @field_validator("api_prefix")
     @classmethod

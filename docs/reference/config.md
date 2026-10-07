@@ -37,7 +37,7 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `shell.aliases` | mapping | empty | `UNTAPED_SHELL__ALIASES` | Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. Managed by `alias` commands. Deprecated: use a shell alias or function. |
+| `shell.aliases` | mapping | empty | `UNTAPED_SHELL__ALIASES` | Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. Managed by `alias` commands. Deprecated: removed in the next major release; use a shell alias or function. |
 
 ## `ansible`
 
@@ -75,18 +75,18 @@ overridden for one process with the environment variable shown.
 | `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
 | `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. |
-| `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. |
-| `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. |
+| `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. Experimental: may change in a minor release. |
+| `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. Experimental: may change in a minor release. |
 
 ## `dotfiles`
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `dotfiles.repos_dir` | path | `~/.untaped/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). |
-| `dotfiles.kept_dir` | path | `~/.untaped/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. |
-| `dotfiles.state_dir` | path | `~/.untaped/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json`, `attention` and the advisory lock. |
-| `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in manifests. |
-| `dotfiles.os` | `macos` \| `linux` \| `windows` (optional) | unset | `UNTAPED_DOTFILES__OS` | This machine's OS for `os` filters; detected when unset. |
+| `dotfiles.repos_dir` | path | `~/.untaped/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). Experimental: may change in a minor release. |
+| `dotfiles.kept_dir` | path | `~/.untaped/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. Experimental: may change in a minor release. |
+| `dotfiles.state_dir` | path | `~/.untaped/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json`, `attention` and the advisory lock. Experimental: may change in a minor release. |
+| `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in manifests. Experimental: may change in a minor release. |
+| `dotfiles.os` | `macos` \| `linux` \| `windows` (optional) | unset | `UNTAPED_DOTFILES__OS` | This machine's OS for `os` filters; detected when unset. Experimental: may change in a minor release. |
 
 ## `dotfiles` state
 
@@ -142,11 +142,11 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `workspace.cache_dir` | path | `~/.untaped/workspace-cache` | `UNTAPED_WORKSPACE__CACHE_DIR` | Bare-clone cache that workspace worktrees are created from. Worktrees depend on it: don't delete it while workspaces are active. |
-| `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). |
-| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. |
-| `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. |
-| `workspace.protocol` | `https` \| `ssh` | `https` | `UNTAPED_WORKSPACE__PROTOCOL` | Clone URL the GitHub inventory supplies: `https` or `ssh`. |
+| `workspace.cache_dir` | path | `~/.untaped/workspace-cache` | `UNTAPED_WORKSPACE__CACHE_DIR` | Bare-clone cache that workspace worktrees are created from. Worktrees depend on it: don't delete it while workspaces are active. Experimental: may change in a minor release. |
+| `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). Experimental: may change in a minor release. |
+| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. Experimental: may change in a minor release. |
+| `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. Experimental: may change in a minor release. |
+| `workspace.protocol` | `https` \| `ssh` | `https` | `UNTAPED_WORKSPACE__PROTOCOL` | Clone URL the GitHub inventory supplies: `https` or `ssh`. Experimental: may change in a minor release. |
 
 ## `workspace` state
 
