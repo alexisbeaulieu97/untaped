@@ -19,6 +19,7 @@ from untaped.screen.core import (
     key_label,
 )
 from untaped.stability import Experimental, function_mark
+from untaped.testing.screens import rendered_text
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
 
 
@@ -219,3 +220,41 @@ def test_footer_keys_are_words_not_arrow_glyphs() -> None:
 def test_footer_saving_replaces_the_hints() -> None:
     line = Footer(saving=True).line(Frame(30, 10, BUILTIN_THEMES["plain"]))
     assert line.plain.rstrip() == "saving..."
+
+
+# --- shared-key labels -------------------------------------------------------------
+
+
+def test_footer_lists_relabelled_shared_keys_between_the_bindings_and_back() -> None:
+    footer = Footer(
+        (Binding("x", "extra", None),),
+        labels={"ctrl-s": "create", "tab": "pane", "esc": "leave"},
+    )
+    assert footer.entries() == (
+        ("x", "extra"),
+        ("tab", "pane"),
+        ("ctrl-s", "create"),
+        ("esc", "leave"),
+        ("?", "help"),
+    )
+
+
+def test_the_help_overlay_writes_a_shared_key_with_its_label_and_the_rest_with_the_default() -> (
+    None
+):
+    footer = Footer(labels={"ctrl-s": "create"})
+    text = rendered_text(footer.overlay(Frame(60, 20, BUILTIN_THEMES["default"])), 60, 20)
+    assert "create" in text
+    assert "submit" not in text
+    assert "next field" in text
+
+
+@pytest.mark.parametrize("key", ["?", "x", "ctrl-r", "up"])
+def test_screen_refuses_to_relabel_a_key_that_is_not_shared(key: str) -> None:
+    with pytest.raises(ValueError, match="cannot be relabelled"):
+        make_screen(shared_labels={key: "mine"})
+
+
+def test_screen_accepts_labels_for_the_shared_keys_but_help() -> None:
+    labels = {key: "mine" for key in SHARED_KEYS if key != "?"}
+    assert dict(make_screen(shared_labels=labels).shared_labels) == labels

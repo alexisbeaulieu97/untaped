@@ -171,6 +171,16 @@ def test_a_long_tree_shows_only_the_window_around_the_cursor() -> None:
     assert "row 245" in middle.frame
 
 
+def test_window_rows_sets_the_window_whatever_the_frame_height() -> None:
+    rows = tuple(TreeRow(f"r{n:03d}", f"row {n:03d}") for n in range(50))
+    for height in (5, 12, 60):
+        frame = render_styled(
+            Tree("T", rows, window_rows=4).view(Frame(60, height, DEFAULT), focused=True, width=40),
+            width=40,
+        )
+        assert sum("row " in segment.text for segment in frame) == 4
+
+
 # --- look --------------------------------------------------------------------------
 
 

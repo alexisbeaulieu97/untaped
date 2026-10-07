@@ -29,7 +29,10 @@ from untaped.screen.components.draw import role_style
 from untaped.screen.core import Activate, Cmd, Frame, Key
 from untaped.stability import experimental
 
-__all__ = ["Button", "Buttons", "Pressed"]
+__all__ = ["BOX_ROWS", "Button", "Buttons", "Pressed"]
+
+#: The rows a row of boxed buttons takes (a border, the label, a border).
+BOX_ROWS = 3
 
 
 @experimental
@@ -69,6 +72,13 @@ class Buttons:
     def value(self) -> str:
         """The ``id`` of the focused button (empty without buttons)."""
         return self.items[self.focus].id if self.items else ""
+
+    @property
+    def boxed_width(self) -> int:
+        """The cells the buttons need side by side in boxes (below it, draw them unboxed)."""
+        return sum(cell_len(button.label) + 4 for button in self.items) + max(
+            0, len(self.items) - 1
+        )
 
     def with_error(self, text: str) -> Self:
         """This row showing ``text`` under the buttons (empty clears it)."""
