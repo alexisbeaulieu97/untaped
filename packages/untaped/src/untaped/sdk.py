@@ -7,10 +7,10 @@ concurrency, shared options, message wording, record bases, token sources
 and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks are a major release.
 
-The screen names (``Screen``, ``Cmd``, ``Key``, ...) are exported lazily, on first
-use, so ``import untaped.sdk`` loads no screen code and no prompt_toolkit and
-stays within the startup import budget; they are experimental
-(``docs/versioning.md``).
+The screen names (``Screen``, ``Cmd``, ``Key``, the components such as ``TextInput``
+and ``field_for``, ...) are exported lazily, on first use, so ``import untaped.sdk``
+loads no screen code and no prompt_toolkit and stays within the startup import
+budget; they are experimental (``docs/versioning.md``).
 """
 
 from __future__ import annotations
@@ -130,6 +130,18 @@ from untaped.ui import UiContext, ui_context
 from untaped.yaml_roundtrip import yaml_mapping_indent
 
 if _typing.TYPE_CHECKING:
+    from untaped.screen.components.buttons import Button, Buttons, Pressed
+    from untaped.screen.components.choices import (
+        Check,
+        Cycle,
+        ListItem,
+        MultiList,
+        Select,
+        SingleList,
+    )
+    from untaped.screen.components.fields import Field, field_for
+    from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
+    from untaped.screen.components.tabs import Tab, Tabs
     from untaped.screen.core import (
         Activate,
         Back,
@@ -150,9 +162,9 @@ if _typing.TYPE_CHECKING:
         Submit,
     )
 
-#: Screen names, resolved on first access (PEP 562) from the module that defines them.
-_SCREEN_EXPORTS: dict[str, str] = dict.fromkeys(
-    (
+#: Screen names by the module that defines them, resolved on first access (PEP 562).
+_SCREEN_MODULES: dict[str, tuple[str, ...]] = {
+    "untaped.screen.core": (
         "Activate",
         "Back",
         "Binding",
@@ -171,8 +183,22 @@ _SCREEN_EXPORTS: dict[str, str] = dict.fromkeys(
         "Screen",
         "Submit",
     ),
-    "untaped.screen.core",
-)
+    "untaped.screen.components.inputs": ("NumberInput", "PathInput", "SecretInput", "TextInput"),
+    "untaped.screen.components.choices": (
+        "Check",
+        "Cycle",
+        "ListItem",
+        "MultiList",
+        "Select",
+        "SingleList",
+    ),
+    "untaped.screen.components.tabs": ("Tab", "Tabs"),
+    "untaped.screen.components.buttons": ("Button", "Buttons", "Pressed"),
+    "untaped.screen.components.fields": ("Field", "field_for"),
+}
+_SCREEN_EXPORTS: dict[str, str] = {
+    name: module for module, names in _SCREEN_MODULES.items() for name in names
+}
 
 __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
     # composition
@@ -309,20 +335,37 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Activate",
     "Back",
     "Binding",
+    "Button",
+    "Buttons",
     "Cancel",
+    "Check",
     "Cmd",
     "CmdError",
+    "Cycle",
+    "Field",
     "Footer",
     "Frame",
     "Interrupt",
     "Key",
+    "ListItem",
+    "MultiList",
     "NextField",
+    "NumberInput",
     "Paste",
+    "PathInput",
+    "Pressed",
     "PrevField",
     "Quit",
     "Resize",
     "Screen",
+    "SecretInput",
+    "Select",
+    "SingleList",
     "Submit",
+    "Tab",
+    "Tabs",
+    "TextInput",
+    "field_for",
 ]
 
 

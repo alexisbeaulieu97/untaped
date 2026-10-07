@@ -59,6 +59,25 @@ def test_sdk_import_loads_no_screen_module() -> None:
     assert _loaded_heavy_modules(snippet) == ""
 
 
+def test_screen_components_load_without_the_adapter_or_prompt_toolkit() -> None:
+    """Components are plain Rich and core code: loading them never loads a terminal library."""
+    snippet = (
+        "import untaped.sdk\n"
+        "untaped.sdk.TextInput\n"
+        "untaped.sdk.field_for\n"
+        "assert 'untaped.screen.components.inputs' in sys.modules\n"
+        "assert 'untaped.screen.components.fields' in sys.modules\n"
+        "assert 'untaped.screen.terminal' not in sys.modules\n"
+    )
+    assert _loaded_heavy_modules(snippet) == ""
+    every = (
+        "import untaped.screen.components.inputs, untaped.screen.components.choices, "
+        "untaped.screen.components.tabs, untaped.screen.components.buttons, "
+        "untaped.screen.components.fields\n"
+    )
+    assert "prompt_toolkit" not in _loaded_heavy_modules(every)
+
+
 def test_screen_core_does_not_load_prompt_toolkit() -> None:
     snippet = (
         "import untaped.screen.core, untaped.screen.runtime, untaped.screen.color\n"
