@@ -170,13 +170,16 @@ class CorpusSyncOutcome(OutcomeRecord):
 
 
 class WorktreeResult(BaseModel):
-    """A materialized worktree path for a cached repository ref."""
+    """A materialized worktree path for a cached repository ref.
+
+    ``path`` leads so ``--format raw`` prints it, for ``$(…)`` capture.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
+    path: str
     repo: str
     ref: str
-    path: str
 
 
 class IssueResult(BaseModel):
