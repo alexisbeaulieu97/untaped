@@ -1,4 +1,4 @@
-"""The long lists: ``SearchList`` and ``Tree``.
+"""The long lists: ``SearchList``, ``Tree`` and ``Tags``.
 
 ``SearchList`` is a labelled box holding a search line, a window of rows and
 a count line. Typing edits the query without a prefix key, the rows are the
@@ -6,12 +6,14 @@ items that match it best first (dimmed ones last, as
 :func:`~untaped.screen.fuzzy.rank` orders them) with the matched letters in
 bold and underline, and only the rows in the window are built, so a list of
 thousands draws as fast as a short one. ``Tree`` is rows that expand into
-their children, windowed the same way.
+their children, windowed the same way. ``Tags`` is the chosen items as
+removable badges with a search list to add more, for a choice among too many
+items to show.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Self
 
 from rich.cells import cell_len
@@ -28,11 +30,13 @@ from untaped.screen.components.choices import (
     moved_to,
 )
 from untaped.screen.components.draw import (
+    BOLD,
     divider,
     inner_width,
     option_row,
     role_style,
     text_line,
+    unboxed,
 )
 from untaped.screen.components.layout import window
 from untaped.screen.components.text import EditBuffer
@@ -41,7 +45,7 @@ from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked, rank
 from untaped.stability import experimental
 
-__all__ = ["SearchList", "Tree", "TreeRow"]
+__all__ = ["SearchList", "Tags", "Tree", "TreeRow"]
 
 #: The most list rows a ``SearchList`` shows at once, and the fewest it is squeezed to.
 MAX_ROWS = 10
@@ -372,3 +376,130 @@ class Tree:
             trail_style=label_style if cursor else role_style(frame, "screen.muted"),
             base=role_style(frame, "screen.highlight") if cursor else None,
         )
+
+
+#: The most lines of badges a ``Tags`` shows; more are cut with the ellipsis.
+MAX_BADGE_LINES = 3
+
+
+@experimental
+@dataclass(frozen=True)
+class Tags:
+    """The chosen items as removable badges in a labelled box, with a search list to add more.
+
+    ``selected`` holds the chosen ids in the order they were added; ``value`` is
+    that tuple. Backspace or delete removes the last badge; enter opens the menu
+    (a single :class:`SearchList` of the items not chosen yet) while the field
+    is focused, where a pick adds the badge and closes the menu, and esc clears
+    its query and then closes it. Esc, enter and the editing keys are left to the
+    screen whenever the field has no use for them (a closed menu and no badge
+    for esc; no item left to add for enter).
+    """
+
+    label: str
+    items: tuple[ListItem, ...]
+    selected: tuple[str, ...] = ()
+    menu_open: bool = False
+    menu: SearchList | None = field(default=None, repr=False)
+    help: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.menu_open:
+            object.__setattr__(self, "menu", None)
+        elif self.menu is None:
+            object.__setattr__(self, "menu", self._fresh_menu())
+
+    @property
+    def value(self) -> tuple[str, ...]:
+        """The chosen ids, in the order they were added."""
+        return self.selected
+
+    def _available(self) -> tuple[ListItem, ...]:
+        return tuple(item for item in self.items if item.id not in self.selected)
+
+    def _fresh_menu(self) -> SearchList:
+        return SearchList("", self._available())
+
+    def with_error(self, text: str) -> Self:
+        """This field showing ``text`` as its error (empty clears it)."""
+        return replace(self, error=text)
+
+    def validate(self) -> str:
+        """Always fine: any choice, none included, is valid."""
+        return ""
+
+    def update(self, message: object) -> tuple[Self, list[Cmd]]:
+        """Open the menu, remove the last badge, or (with the menu open) drive the menu."""
+        if self.menu is not None:
+            return self._in_menu(self.menu, message), []
+        if not isinstance(message, Key):
+            return self, []
+        if message.name == "enter" and self._available():
+            return replace(self, menu_open=True, menu=self._fresh_menu()), []
+        if message.name in ("backspace", "delete") and self.selected:
+            return replace(self, selected=self.selected[:-1], error=""), []
+        return self, []
+
+    def _in_menu(self, menu: SearchList, message: object) -> Self:
+        updated, _ = menu.update(message)
+        if updated is not menu:
+            if picked := updated.value:
+                return replace(
+                    self,
+                    selected=(*self.selected, str(picked)),
+                    menu_open=False,
+                    menu=None,
+                    error="",
+                )
+            return replace(self, menu=updated)
+        if isinstance(message, Key) and message.name == "esc":
+            return replace(self, menu_open=False, menu=None)
+        return self
+
+    def view(
+        self, frame: Frame, *, focused: bool = False, width: int | None = None
+    ) -> RenderableType:
+        """The box: badges and the add hint, and while open and focused the menu under a rule."""
+        inner = inner_width(frame, width)
+        body: list[RenderableType] = [*self._badges(frame, inner, focused)]
+        if self.menu is not None and focused:
+            if (rule := divider(frame, inner)) is not None:
+                body.append(rule)
+            body.append(self.menu.view(unboxed(frame), focused=True, width=inner))
+        return field_box(
+            frame,
+            self.label,
+            Group(*body),
+            focused=focused,
+            error=self.error,
+            help=self.help,
+            width=width,
+        )
+
+    def _badges(self, frame: Frame, inner: int, focused: bool) -> list[Text]:
+        """The badges, then the add hint, wrapped to ``inner`` cells and cut after a few lines."""
+        labels = {item.id: item.label for item in self.items}
+        cells = [
+            Text.assemble(
+                (labels.get(item_id, item_id), role_style(frame, "screen.value") + BOLD),
+                " ",
+                (frame.symbol("tag.remove"), role_style(frame, "screen.muted")),
+            )
+            for item_id in self.selected
+        ]
+        hint = role_style(frame, "screen.accent" if focused else "screen.muted")
+        cells.append(Text(f"{frame.symbol('tag.add')} add", style=hint))
+        lines = [Text()]
+        for cell in cells:
+            cell = fit_text(cell, min(cell.cell_len, inner), frame.ellipsis())
+            if lines[-1].cell_len and lines[-1].cell_len + 2 + cell.cell_len > inner:
+                lines.append(Text())
+            if lines[-1].cell_len:
+                lines[-1].append("  ")
+            lines[-1].append_text(cell)
+        if len(lines) > MAX_BADGE_LINES:
+            lines = lines[:MAX_BADGE_LINES]
+            lines[-1].append(f" {frame.ellipsis()}", style=role_style(frame, "screen.muted"))
+            lines[-1] = fit_text(lines[-1], inner, frame.ellipsis())
+        return lines
