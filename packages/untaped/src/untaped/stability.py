@@ -488,13 +488,20 @@ def field_marks(model: type[BaseModel]) -> dict[str, Stability]:
     return found
 
 
+def pydantic_deprecated_fields(model: type[BaseModel]) -> list[str]:
+    """The dotted paths of the fields of ``model`` that use pydantic's own ``deprecated=``."""
+    return [path for path, field, _ in _section_fields(model) if field.deprecated]
+
+
 def mark_errors(model: type[BaseModel], *, state: bool = False) -> list[str]:
     """One sentence per mark on ``model`` that would not take effect; ``[]`` when none.
 
     A mark must sit in the outermost ``Annotated`` of a leaf field of a profile
     model (``Annotated[int | None, experimental]``), never inside a union or
     generic argument, on a model-typed field, on a state model's field
-    (``state=True``), or beside pydantic's own ``deprecated=``.
+    (``state=True``). A field with pydantic's own ``deprecated=`` is a style
+    problem for ``check_conventions`` (:func:`pydantic_deprecated_fields`), not
+    one that stops a provider loading.
     """
     errors: list[str] = []
     for path, field, is_model in _section_fields(model):
@@ -513,10 +520,6 @@ def mark_errors(model: type[BaseModel], *, state: bool = False) -> list[str]:
             errors.append(f"setting {path!r} is a model; mark its fields instead")
         if len(marks_here) > 1:
             errors.append(f"setting {path!r} has more than one stability mark")
-        if field.deprecated:
-            errors.append(
-                f"setting {path!r} uses pydantic's deprecated=; use untaped's deprecated(...)"
-            )
         errors.extend(
             f"the replacement of the mark on setting {path!r} must be text"
             for mark in marks_here

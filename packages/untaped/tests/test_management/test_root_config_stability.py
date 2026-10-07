@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from test_management.support import compose, make_spec, write_config
 from untaped import bootstrap
@@ -51,11 +51,17 @@ class Beta(BaseModel):
     old: Annotated[bool, deprecated(replacement="beta.size")] = False
 
 
+class Tls(BaseModel):
+    verify: bool = True
+
+
 class Sunset(BaseModel):
     """Section ``sunset`` of a deprecated capability."""
 
     host: str = "h"
     port: int = 80
+    headers: dict[str, str] = Field(default_factory=dict)
+    tls: Tls = Field(default_factory=Tls)
 
 
 class Moved(BaseModel):
@@ -237,6 +243,18 @@ def test_columns_apply_to_every_table(_isolated_config: Path) -> None:
         assert " note " not in header
 
 
+def test_hide_empty_columns_applies_to_each_table(monkeypatch: pytest.MonkeyPatch) -> None:
+    for text in (_tables()[""], _tables()["Experimental"]):
+        assert " profile " not in text.splitlines()[1]
+
+    monkeypatch.setenv("UNTAPED_UI__HIDE_EMPTY_COLUMNS", "false")
+    tables = _tables()
+
+    for text in (tables[""], tables["Experimental"]):
+        assert " profile " in text.splitlines()[1]
+        assert " note " not in text.splitlines()[1]
+
+
 def test_a_column_can_be_added_to_every_table() -> None:
     tables = _tables("--columns", "+stability")
 
@@ -329,6 +347,23 @@ def test_doctor_lists_every_key_set_in_a_deprecated_capabilitys_section(
     assert "sunset.host (profile default, deprecated): use a newer service" in detail
     assert "sunset.port (profile default, deprecated): use a newer service" in detail
     assert "beta." not in detail
+
+
+def test_doctor_reports_a_deprecated_capabilitys_keys_not_their_contents(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    sunset:\n      headers:\n        X-A: '1'\n        X-B: '2'\n"
+        "      tls:\n        verify: false\n      typo_key: 1\n",
+    )
+
+    detail = _doctor_detail()
+
+    assert detail.count("sunset.headers ") == 1
+    assert "sunset.headers.X-A" not in detail
+    assert "sunset.tls.verify (profile default, deprecated)" in detail
+    assert "typo_key" not in detail
 
 
 def test_reading_a_deprecated_capabilitys_settings_warns_nothing(_isolated_config: Path) -> None:

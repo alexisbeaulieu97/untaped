@@ -8,8 +8,9 @@
   rule (a chain, a collision…), or a stability mark sits where it takes no effect
   (inside a union, on a model or on a state field).
 
-Only profile models and the models their fields reach are checked, never a
-state model. Violations are ``<file>:<line>::<rule>::<detail>``;
+Only profile models and the models their fields reach are checked, and a
+state model only for stability marks. Violations are
+``<file>:<line>::<rule>::<detail>``;
 ``# untaped: allow settings-naming`` on a field's line waives that field.
 """
 
