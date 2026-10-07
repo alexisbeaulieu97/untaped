@@ -14,6 +14,7 @@ import pytest
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.messages import EXPERIMENTAL_LINE
+from untaped.stability import enable_show_deprecated, reset_show_deprecated
 from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -129,8 +130,14 @@ def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visib
     # Hiding it would let the help-tree and stability walks skip it.
     assert root["alias"].show is not False
     completion = root.generate_completion(shell="bash")
-    assert "alias" not in completion.split()
-    assert "config" in completion
+    assert '"alias"' not in completion
+    assert '"config"' in completion
+    token = enable_show_deprecated()
+    try:
+        # The same call lists it once the flag is on, so the check above can fail.
+        assert '"alias"' in root.generate_completion(shell="bash")
+    finally:
+        reset_show_deprecated(token)
 
 
 def test_awx_test_sits_in_awxs_experimental_panel(
