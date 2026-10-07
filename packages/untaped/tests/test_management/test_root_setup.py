@@ -100,6 +100,24 @@ def test_setup_without_a_terminal_is_a_usage_error(_isolated_config: Path) -> No
     assert not _isolated_config.exists()
 
 
+def test_setup_without_a_terminal_touches_neither_the_config_nor_the_keychain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+
+    def touched(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("read before the terminal was checked")
+
+    monkeypatch.setattr("untaped.management.setup.pick_store", touched)
+    monkeypatch.setattr("untaped.management.setup.read_config_dict", touched)
+
+    result = _setup(None, terminal=False)
+
+    assert result.exit_code == 2
+    assert "needs a terminal" in result.stderr
+    assert stores.calls() == []
+
+
 def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

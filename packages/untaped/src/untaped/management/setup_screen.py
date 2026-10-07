@@ -7,10 +7,12 @@ before it writes: the form's values become a :class:`Candidate`, the
 capability's online checks run against them inside a settings overlay (nothing
 is stored yet, :func:`untaped.management.doctor.online_probe_rows`), and only a
 pass runs the write, as a write command, so quitting never leaves it half done.
-A failed check shows its reason under the form and offers ``Save anyway``. A
-Command token source is run first as a suspend command, so a ``pass`` or ``op``
-prompt gets the real terminal; its token then sits in the process cache for the
-background check.
+A failed check shows its reason under the form and offers ``Save anyway``, for
+that capability until its form changes or saves (each capability keeps its own).
+A Command token source is run first, on every check, as a suspend command, so a
+``pass`` or ``op`` prompt gets the real terminal; its token then sits in the
+process cache for the background check. Leaving the profile field loads the
+profile typed there, so the field and the forms never disagree.
 
 What the old wizard printed while it wrote comes back as notes, which the
 command prints after the screen closes with the doctor rows of what was
@@ -29,7 +31,7 @@ from __future__ import annotations
 
 import shlex
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import cache
 from typing import Any, Literal
 
@@ -37,11 +39,12 @@ from pydantic import SecretStr
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.auth import CommandToken, takes_token_command, token_env_names
+from untaped.auth import CommandToken, forget_token_command, takes_token_command, token_env_names
 from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
 from untaped.management.doctor import online_probe_rows
+from untaped.management.setup_plan import SETUP_ALTERNATIVE, SETUP_COMMAND
 from untaped.management.setup_state import ServiceState, service_states
 from untaped.management.setup_write import Candidate, Note, overlay_values, write_candidate
 from untaped.messages import hint
@@ -173,8 +176,8 @@ class SetupModel:
     phase: Phase = "idle"
     pending: Candidate | None = None
     """The candidate being checked or saved, or the one whose check failed."""
-    failed: str | None = None
-    """The capability whose form offers ``Save anyway``."""
+    failed: Mapping[str, Candidate] = field(default_factory=dict)
+    """Per capability, the candidate whose check failed: its form offers ``Save anyway``."""
     leaving: Literal["quit", "interrupt"] | None = None
     """A quit asked for while a save runs: it ends the screen once the write finished."""
     saved: tuple[tuple[str, str], ...] = ()
@@ -209,16 +212,40 @@ def setup_screen(
         update=app.update,
         view=app.view,
         title="Set up untaped",
-        command="untaped setup",
-        alternative="untaped setup plan --format json",
+        command=SETUP_COMMAND,
+        alternative=SETUP_ALTERNATIVE,
         keys=(
             Binding("up", "previous", None, when=lambda model: model.focus == "list"),
             Binding("down", "next", None, when=lambda model: model.focus == "list"),
             Binding("left", "previous choice", None, when=lambda model: model.focus == "form"),
             Binding("right", "next choice", None, when=lambda model: model.focus == "form"),
         ),
+        shared_labels=_SHARED_LABELS,
         layout="full",
     )
+
+
+def _tab_label(model: SetupModel) -> str | None:
+    """Tab walks the profile field, the list and the form; in the form it is the default."""
+    return {"profile": "list", "list": "form", "form": None}[model.focus]
+
+
+def _enter_label(model: SetupModel) -> str | None:
+    """Enter loads the profile or opens a form; in a form it is the field's (or button's) own."""
+    return {"profile": "load", "list": "open", "form": None}[model.focus]
+
+
+def _save_label(model: SetupModel) -> str | None:
+    """Ctrl-s saves the form (checking first); in the profile field it loads, so not offered."""
+    return None if model.focus == "profile" else "save"
+
+
+#: What the shared keys do here, for the footer and the help overlay.
+_SHARED_LABELS: Mapping[str, str | Callable[[SetupModel], str | None]] = {
+    "tab": _tab_label,
+    "enter": _enter_label,
+    "ctrl-s": _save_label,
+}
 
 
 class _Setup:
@@ -340,6 +367,8 @@ class _Setup:
 
     def _edit(self, model: SetupModel, message: Key | Paste) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "profile":
+            if model.phase != "idle":
+                return model, []  # the field and the forms must agree: no typing mid-load or save
             field, cmds = model.profile.update(message)
             return (model if field is model.profile else replace(model, profile=field)), cmds
         if model.focus == "list":
@@ -362,15 +391,15 @@ class _Setup:
         updated, cmds = form.update(message)
         if updated is form and not cmds:
             return model, []
-        if model.failed == model.name and updated.value != form.value:
+        if model.name in model.failed and updated.value != form.value:
             # The values changed: the failed check no longer says anything about them.
             updated = _reset(updated.with_error(""))
-            model = replace(model, failed=None)
+            model = replace(model, failed=_without(model.failed, model.name))
         return replace(model, forms={**model.forms, model.name: updated}), list(cmds)
 
     def _next(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "profile":
-            return replace(model, focus="list"), []
+            return self._leave_profile(model, "list")
         if model.focus == "list":
             return replace(model, focus="form"), []
         return self._in_form(model, NextField())
@@ -383,7 +412,7 @@ class _Setup:
             return moved, cmds
         if model.focus == "list":
             return replace(model, focus="profile"), []
-        return model, []
+        return self._leave_profile(model, "profile")
 
     def _activate(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "profile":
@@ -394,7 +423,9 @@ class _Setup:
 
     def _submit(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "profile":
-            return model, []
+            # A typed profile is loaded first (as on enter); saving is a second ctrl-s, once
+            # the forms are the new profile's.
+            return self._leave_profile(model, "profile")
         return self._in_form(replace(model, focus="form"), Submit())
 
     def _back(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
@@ -411,6 +442,17 @@ class _Setup:
         return model, [Cmd.send(Quit(_result(model, interrupted=how == "interrupt")))]
 
     # --- profile --------------------------------------------------------------
+
+    def _leave_profile(self, model: SetupModel, then: Focus) -> tuple[SetupModel, list[Cmd]]:
+        """The profile field loses the keyboard: what is typed there is loaded, as on enter.
+
+        The field and the forms never disagree: a name that differs from ``current`` loads (and
+        focuses the list once loaded); the same name just moves the focus to ``then``.
+        """
+        loaded, cmds = self._load(model)
+        if cmds or loaded is not model:
+            return loaded, cmds  # loading, or the name was refused
+        return replace(model, focus=then), []
 
     def _load(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
         name = model.profile.value.strip()
@@ -439,7 +481,7 @@ class _Setup:
                 forms=self._forms(states, profile),
                 phase="idle",
                 pending=None,
-                failed=None,
+                failed={},
                 focus="list",
             ),
             [],
@@ -463,8 +505,10 @@ class _Setup:
         def prime() -> object:
             # Runs with the real terminal; the token is cached for the probe.
             section = spec.config_section
+            argv = list(candidate.argv or ())
+            forget_token_command(argv)  # every check runs the command, a retry included
             try:
-                CommandToken(list(candidate.argv or ()), section=section).get_secret_value()
+                CommandToken(argv, section=section).get_secret_value()
             except ConfigError as exc:
                 return Probed(name, (("fail", str(exc)),))
             return Primed(name)
@@ -473,7 +517,7 @@ class _Setup:
             model,
             phase="probing",
             pending=candidate,
-            failed=None,
+            failed=_without(model.failed, name),
             rows=_status(model.rows, name, "checking"),
             forms={**model.forms, name: _reset(model.forms[name].with_error(""))},
         )
@@ -509,12 +553,13 @@ class _Setup:
             return self._write(model, replace(candidate, checked="passed" if rows else "unchecked"))
         form = model.forms[name].with_error(failing[0] or "the check failed")
         form = _with_buttons(form, _anyway_buttons())
+        failed = replace(candidate, checked="failed")
         return (
             replace(
                 model,
                 phase="idle",
-                pending=replace(candidate, checked="failed"),
-                failed=name,
+                pending=failed,
+                failed={**model.failed, name: failed},
                 rows=_status(model.rows, name, "failed"),
                 forms={**model.forms, name: form},
                 selected=self._index(name),
@@ -527,14 +572,17 @@ class _Setup:
         if button == "save":
             return model, [Cmd.send(Submit())]
         if button == "save_anyway":
-            candidate = model.pending
-            if model.phase != "idle" or model.failed != model.name or candidate is None:
+            candidate = model.failed.get(model.name)
+            if model.phase != "idle" or candidate is None:
                 return model, []
             return self._write(model, candidate)
         # Cancel: forget the failed check and go back to the list.
         form = _reset(model.forms[model.name].with_error(""))
         return replace(
-            model, forms={**model.forms, model.name: form}, failed=None, focus="list"
+            model,
+            forms={**model.forms, model.name: form},
+            failed=_without(model.failed, model.name),
+            focus="list",
         ), []
 
     def _write(self, model: SetupModel, candidate: Candidate) -> tuple[SetupModel, list[Cmd]]:
@@ -555,7 +603,7 @@ class _Setup:
                 model,
                 phase="saving",
                 pending=candidate,
-                failed=None,
+                failed=_without(model.failed, name),
                 rows=_status(model.rows, name, "saving"),
             ),
             [Cmd(save, write=True, name="save")],
@@ -574,7 +622,7 @@ class _Setup:
             model,
             phase="idle",
             pending=None,
-            failed=None,
+            failed=_without(model.failed, name),
             rows=_status(model.rows, name, status),
             states=states,
             forms={
@@ -605,6 +653,7 @@ class _Setup:
         form = _reset(model.forms[name].with_error(text))
         return replace(
             model,
+            failed=_without(model.failed, name),
             rows=_status(model.rows, name, "failed"),
             forms={**model.forms, name: form},
             selected=self._index(name),
@@ -684,6 +733,11 @@ def _initial_status(state: ServiceState) -> str:
     if state.configured:
         return "configured" if state.token_source is not None else "missing token"
     return "not configured"
+
+
+def _without(failed: Mapping[str, Candidate], name: str) -> dict[str, Candidate]:
+    """``failed`` without ``name``: that capability's failed check no longer applies."""
+    return {key: candidate for key, candidate in failed.items() if key != name}
 
 
 def _status(rows: tuple[CapRow, ...], name: str, status: str) -> tuple[CapRow, ...]:

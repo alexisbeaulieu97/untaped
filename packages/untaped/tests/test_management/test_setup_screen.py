@@ -13,6 +13,7 @@ import re
 import stat
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -365,7 +366,7 @@ def test_cancel_forgets_the_failed_check_and_returns_to_the_list(
     run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "right", "enter"])
 
     assert run.model.focus == "list"
-    assert run.model.failed is None
+    assert run.model.failed == {}
     assert "Save anyway" not in _flat(run.frame)
     assert not _isolated_config.exists()
 
@@ -847,9 +848,15 @@ def test_token_never_in_a_frame(
     else:
         keys = _keys("https://wiz", right=1, command=_token_program(tmp_path, token=SECRET))
 
-    run = drive_screen(_build(spec), keys)
-    failing = drive_screen(_build(spec), keys[:-1])  # typed, not submitted
+    # Both screens are built first: the run migrates a plaintext token, and the second screen
+    # must still start from the original config (the token in the model's states).
+    finishing, unfinished = _build(spec), _build(spec)
+    run = drive_screen(finishing, keys)
+    failing = drive_screen(unfinished, keys[:-1])  # typed, not submitted
 
+    if branch == "move":
+        # The precondition: the model does hold the plaintext, so only its repr keeps it out.
+        assert failing.model.states["wiz"].plaintext == SECRET
     for each in (run, failing):
         assert all(SECRET not in frame for frame in each.frames)
         assert SECRET not in repr(each.model)
@@ -961,3 +968,195 @@ def test_scripted_keys_run_the_screen_end_to_end(_isolated_config: Path) -> None
     run = drive_screen(_build(_legacy()), keys)
 
     assert _result(run).touched == ("legacy",)
+
+
+# --- the profile field and the forms agree ---------------------------------------
+
+
+_TWO_PROFILES = (
+    "profiles:\n  default:\n    wiz:\n      base_url: https://default.example\n"
+    "  prod:\n    wiz:\n      base_url: https://prod.example\n"
+)
+
+
+@pytest.mark.parametrize("key", ["tab", "shift-tab"])
+def test_leaving_the_profile_field_loads_what_is_typed(_isolated_config: Path, key: str) -> None:
+    write_config(_isolated_config, _TWO_PROFILES)
+
+    run = drive_screen(_build(), ["shift-tab", "ctrl-u", Paste("prod"), key])
+
+    assert run.commands_run == ("load_profile",)
+    assert run.model.current == "prod"
+    assert run.model.profile.value == "prod"
+    assert "https://prod.example" in _flat(run.frame)
+
+
+def test_ctrl_s_in_the_profile_field_loads_it_and_never_saves_to_the_old_profile(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, _TWO_PROFILES)
+    config = _isolated_config.read_bytes()
+
+    run = drive_screen(_build(_legacy()), ["shift-tab", "ctrl-u", Paste("prod"), "ctrl-s"])
+
+    assert run.commands_run == ("load_profile",)
+    assert run.model.current == "prod"
+    assert run.model.saved == ()
+    assert _isolated_config.read_bytes() == config
+
+
+def test_saving_after_leaving_the_profile_field_writes_the_typed_profile(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, _TWO_PROFILES)
+
+    run = drive_screen(
+        _build(_legacy()),
+        ["shift-tab", "ctrl-u", Paste("prod"), "tab", *_keys("https://legacy", token="t"), "esc"],
+    )
+
+    assert _result(run).profile == "prod"
+    config = read_config_dict(_isolated_config)["profiles"]
+    assert config["prod"]["legacy"]["base_url"] == "https://legacy"
+    assert "legacy" not in config["default"]
+
+
+def test_leaving_an_unchanged_or_empty_profile_field_does_not_load() -> None:
+    same = drive_screen(_build(), ["shift-tab", "tab"])
+    assert (same.commands_run, same.model.focus) == ((), "list")
+    stay = drive_screen(_build(), ["shift-tab", "shift-tab"])
+    assert (stay.commands_run, stay.model.focus) == ((), "profile")
+    empty = drive_screen(_build(), ["shift-tab", "ctrl-u", "tab"])
+    assert empty.commands_run == () and empty.model.focus == "profile"
+    assert "Enter a profile name." in empty.frame
+
+
+def test_the_profile_field_cannot_be_edited_while_a_save_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    runtime, _host = _held(_build())
+    _send(runtime, _keys("https://wiz", token="tok"))
+    assert runtime.model.phase == "probing"
+
+    _send(runtime, ["esc", "shift-tab", "x", Paste("y")])
+
+    assert runtime.model.profile.value == runtime.model.current == "default"
+
+
+# --- Save anyway is per capability -----------------------------------------------
+
+
+def test_save_anyway_survives_another_capability_saving(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    FAIL.append(True)  # listed by name: envy, then wiz; only wiz has an online check
+    keys: list[ScreenKey] = [
+        "down",
+        *_keys("https://wiz", token="bad"),  # wiz fails its check
+        "esc",
+        "up",
+        *_keys("https://envy", right=2),  # envy saves (it has no online check): the Env tab
+        "down",
+        "enter",  # back in wiz's form, on the token field it failed on
+        "tab",  # the buttons: Save anyway
+        "enter",
+    ]
+
+    run = drive_screen(_build(_envy(), _wiz()), keys)
+
+    assert _wiz_section_for(_isolated_config, "envy")["base_url"] == "https://envy"
+    assert _wiz_section(_isolated_config)["base_url"] == "https://wiz"
+    assert run.model.saved == (("default", "envy"), ("default", "wiz"))
+    assert run.model.failed == {}
+
+
+def test_a_failure_is_kept_for_each_capability(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    FAIL.append(True)
+
+    run = drive_screen(_build(_legacy(), _wiz()), ["down", *_keys("https://wiz", token="bad")])
+
+    assert set(run.model.failed) == {"wiz"}
+    assert "Save anyway" in _flat(run.frame)
+
+
+def _pressed_save_anyway(
+    model: SetupModel, screen: Screen[SetupModel, SetupResult]
+) -> tuple[SetupModel, list[Any]]:
+    from untaped.screen.components.buttons import Pressed
+
+    updated, cmds = screen.update(model, Pressed("save_anyway"))
+    return updated, list(cmds)
+
+
+def test_save_anyway_does_nothing_unless_this_capability_failed_and_nothing_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    FAIL.append(True)
+    screen = _build(_legacy(), _wiz())
+    failed = drive_screen(screen, ["down", *_keys("https://wiz", token="bad")]).model
+    assert set(failed.failed) == {"wiz"}
+
+    # It writes for the failed capability ...
+    written, cmds = _pressed_save_anyway(failed, screen)
+    assert [cmd.name for cmd in cmds] == ["save"] and written.phase == "saving"
+    # ... not while a check or a save runs ...
+    busy = replace(failed, phase="probing")
+    assert _pressed_save_anyway(busy, screen) == (busy, [])
+    # ... and not for a capability that did not fail (a stale button).
+    other = replace(failed, selected=0)
+    assert other.name == "legacy"
+    assert _pressed_save_anyway(other, screen) == (other, [])
+    nothing = replace(failed, failed={})
+    assert _pressed_save_anyway(nothing, screen) == (nothing, [])
+
+
+# --- the footer ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("width", [100, 80, 60])
+def test_the_footer_names_what_the_keys_do_and_keeps_back_and_help(width: int) -> None:
+    on_list = drive_screen(_build(), [], size=(width, 30))
+    in_form = drive_screen(_build(), ["enter"], size=(width, 30))
+    in_profile = drive_screen(_build(), ["shift-tab"], size=(width, 30))
+
+    for run in (on_list, in_form, in_profile):
+        assert run.frame.splitlines()[-1].rstrip().endswith("esc back · ? help"), run.frame
+    if width >= 100:
+        assert "enter open" in on_list.frame.splitlines()[-1]
+        assert "ctrl-s save" in on_list.frame.splitlines()[-1]
+    if width >= 80:
+        assert "ctrl-s save" in in_form.frame.splitlines()[-1]
+        assert "enter load" in in_profile.frame.splitlines()[-1]
+        assert "ctrl-s" not in in_profile.frame.splitlines()[-1]
+
+
+# --- every check runs the token command ------------------------------------------
+
+
+def test_a_retry_runs_the_token_command_again(tmp_path: Path) -> None:
+    from untaped.auth import clear_token_cache
+
+    clear_token_cache()
+    runs = tmp_path / "runs"
+    script = tmp_path / "bin" / "count-token"
+    script.parent.mkdir()
+    script.write_text(
+        f"#!{sys.executable}\nfrom pathlib import Path\np = Path({str(runs)!r})\n"
+        "p.write_text(p.read_text() + 'x' if p.exists() else 'x')\nprint('tok')\n",
+        encoding="utf-8",
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    FAIL.append(True)  # the first check rejects the token
+
+    # Submit, then submit the same values again (focus is on the command field).
+    run = drive_screen(_build(), [*_keys("https://wiz", command=str(script)), "ctrl-s"])
+
+    assert runs.read_text() == "xx"
+    assert run.commands_run == ("prime", "probe", "prime", "probe")
+    clear_token_cache()

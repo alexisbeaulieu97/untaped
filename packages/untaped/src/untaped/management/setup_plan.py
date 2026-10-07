@@ -34,6 +34,9 @@ Row = dict[str, object]
 State = Literal["done", "todo", "failed", "skipped"]
 
 KIND = "untaped.setup_step"
+#: The interactive command and its non-interactive face, as a run without a terminal names them.
+SETUP_COMMAND = "untaped setup"
+SETUP_ALTERNATIVE = "untaped setup plan --format json"
 TABLE_COLUMNS = ["step", "state", "by", "detail", "run"]
 
 
@@ -246,4 +249,4 @@ def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
     return "user" if secret else "agent"
 
 
-__all__ = ["KIND", "emit_plan", "pending", "plan_rows"]
+__all__ = ["KIND", "SETUP_ALTERNATIVE", "SETUP_COMMAND", "emit_plan", "pending", "plan_rows"]
