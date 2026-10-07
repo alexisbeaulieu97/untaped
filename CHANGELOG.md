@@ -62,7 +62,7 @@
   ([#519](https://github.com/alexisbeaulieu97/untaped/pull/519))
 - `ui.symbols` and `ui.color_roles` gain the names screens use (`chosen`,
   `checked`, ..., `screen.accent`, ...); `config list` and the config reference
-  list them. ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  list them. ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
 
 ### Changed
 
@@ -117,7 +117,7 @@
   ([#519](https://github.com/alexisbeaulieu97/untaped/pull/519))
 - `config set ui.symbols|ui.color_roles` and `doctor` reject names that no
   theme defines; a stray name already in `config.yml` keeps working.
-  ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  ([#521](https://github.com/alexisbeaulieu97/untaped/pull/521))
 
 ### Deprecated
 
