@@ -360,7 +360,7 @@ def _confirm(state: PickerState) -> PickerState:
         problem = f"{label} is required" if not title else validate(title) if validate else None
         if problem:
             return replace(state, focus="title", error=problem)
-    if not state.selected:
+    if not state.selected and not state.request.allow_empty:
         return replace(state, error="select at least one item")
     return replace(state, outcome="confirmed")
 
