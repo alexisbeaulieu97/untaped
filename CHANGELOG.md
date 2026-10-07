@@ -156,7 +156,7 @@
   (esc cancels); the answer stays in the scrollback as one plain
   `question: answer` line (a secret as its mask, a multiselect as the chosen
   labels), nothing is left when the prompt is cancelled.
-  ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  ([#532](https://github.com/alexisbeaulieu97/untaped/pull/532))
 - The workspace picker (`workspace create`, `workspace add`) is full screen and
   follows the theme's colors, symbols and border style (`ui.symbols` gains
   `heading` and `dash`). Selections show as `[✓]` like other multi-choice lists,
