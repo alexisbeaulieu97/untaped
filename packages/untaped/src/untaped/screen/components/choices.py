@@ -162,10 +162,17 @@ def rows_budget(frame: Frame) -> int:
 
 
 def window_rows(
-    frame: Frame, items: Sequence[ListItem], cursor: int, make_row: Callable[[int, ListItem], Text]
+    frame: Frame,
+    items: Sequence[ListItem],
+    cursor: int,
+    make_row: Callable[[int, ListItem], Text],
+    size: int | None = None,
 ) -> list[Text]:
-    """The rows of the window that keeps row ``cursor`` in view; a long list is not drawn whole."""
-    size = rows_budget(frame)
+    """The rows of the window that keeps row ``cursor`` in view; a long list is not drawn whole.
+
+    ``size`` is the window's height; by default it follows the frame (:func:`rows_budget`).
+    """
+    size = size or rows_budget(frame)
     start = window_start(len(items), cursor, size)
     return [make_row(index, items[index]) for index in range(start, min(start + size, len(items)))]
 
@@ -332,7 +339,8 @@ class SingleList:
     The cursor is only the highlighted row; up and down move it, space or enter
     picks the item under it (enter on the value already chosen is left to the
     form). ``show_chosen=False`` leaves out the marker column. ``value`` is the
-    chosen item's ``id`` (empty for none).
+    chosen item's ``id`` (empty for none). ``window_rows`` is the window's height
+    (by default it follows the frame, as a search list's does).
     """
 
     label: str
@@ -342,6 +350,7 @@ class SingleList:
     show_chosen: bool = True
     help: str = ""
     error: str = ""
+    window_rows: int | None = None
 
     def __post_init__(self) -> None:
         start = _index(self.items, self.value) if self.cursor is None else self.cursor
@@ -391,6 +400,7 @@ class SingleList:
                     show=self.show_chosen,
                 ),
             ),
+            self.window_rows,
         )
         return field_box(
             frame, self.label, Group(*rows), focused=focused, error=self.error, help=self.help,
@@ -405,6 +415,7 @@ class MultiList:
 
     Up and down move the cursor and space toggles the item under it; enter is
     left to the form. ``value`` is the tuple of selected ``id`` s in item order.
+    ``window_rows`` is the window's height (by default it follows the frame).
     """
 
     label: str
@@ -413,6 +424,7 @@ class MultiList:
     cursor: int | None = None
     help: str = ""
     error: str = ""
+    window_rows: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "cursor", clamped(self.cursor, len(self.items)))
@@ -454,6 +466,7 @@ class MultiList:
             self.items,
             cursor,
             lambda index, item: self._row(frame, inner, item, focused and index == cursor),
+            self.window_rows,
         )
         return field_box(
             frame, self.label, Group(*rows), focused=focused, error=self.error, help=self.help,
