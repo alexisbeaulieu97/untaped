@@ -41,6 +41,10 @@ SCREEN_SYMBOLS: dict[str, str] = {
     "mask": "\u2022",
     "ellipsis": "\u2026",
     "separator": "\u00b7",
+    "cycle.left": "\u2039",
+    "cycle.right": "\u203a",
+    "tab.active": "\u2501",
+    "tab.inactive": "\u2500",
 }
 
 #: ASCII fallbacks the ``plain`` theme layers over :data:`SCREEN_SYMBOLS`
@@ -56,6 +60,10 @@ PLAIN_SCREEN_SYMBOLS: dict[str, str] = {
     "mask": "*",
     "ellipsis": "...",
     "separator": "-",
+    "cycle.left": "<",
+    "cycle.right": ">",
+    "tab.active": "=",
+    "tab.inactive": "-",
 }
 
 DEFAULT_SYMBOLS: dict[str, str] = {**STATUS_SYMBOLS, **SCREEN_SYMBOLS}
