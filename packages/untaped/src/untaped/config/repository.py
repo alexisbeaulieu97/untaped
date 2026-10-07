@@ -376,7 +376,12 @@ class SettingsFileRepository:
         the file must be valid on its own.
         """
         effective = active_settings_layout().effective(data, profile=profile)
-        validate_settings_section(effective, descriptor.path[0], self._profile_model())
+        validate_settings_section(
+            effective,
+            descriptor.path[0],
+            self._profile_model(),
+            written_key=".".join(descriptor.path),
+        )
 
 
 def _relative(descriptor: FieldDescriptor) -> str:

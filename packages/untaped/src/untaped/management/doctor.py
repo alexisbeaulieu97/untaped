@@ -79,7 +79,7 @@ from untaped.settings import (
     section_stabilities,
 )
 from untaped.skills import SkillState, outdated_skills, project_root
-from untaped.theme import OutputFormat, UiSettings, resolve_theme
+from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
 from untaped.token_store import pass_problem
 
 _PASS = "pass"
@@ -568,6 +568,7 @@ def _core_row(
         value = check_settings_field(field, effective.get(field))
         if isinstance(value, UiSettings):
             resolve_theme(value)
+            check_declared_tokens(value)
         if isinstance(value, HttpSettings):
             resolve_verify(value)
     except ConfigError as exc:

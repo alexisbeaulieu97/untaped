@@ -13,6 +13,7 @@ from pydantic import BaseModel, SecretStr
 
 from test_management.support import GithubProfile, asset, compose, make_spec, write_config
 from untaped import bootstrap
+from untaped.management.config import build_root_config_app
 from untaped.management.doctor import build_root_doctor_app
 from untaped.sdk import (
     TokenCommand,
@@ -36,12 +37,12 @@ class ApiProfile(BaseModel):
     token_command: TokenCommand = None
 
 
-def _rows(*specs: Any) -> list[dict[str, Any]]:
+def _rows(*specs: Any, exit_code: int = 0) -> list[dict[str, Any]]:
     app = build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(*specs)
     )
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == exit_code, result.output
     rows: list[dict[str, Any]] = json.loads(result.stdout)
     return rows
 
@@ -64,7 +65,7 @@ def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
         "profiles:\n  default:\n    github:\n      tokn: x\n      base_url: https://g\n"
-        "    http:\n      timout: 3\n    ui:\n      symbols: {ok: y}\n"
+        "    http:\n      timout: 3\n    ui:\n      symbols: {success: y}\n"
         "  work:\n    nope: 1\n",
     )
     row = _row(_rows(make_spec("github", profile_model=GithubProfile)), "unknown-keys")
@@ -72,6 +73,46 @@ def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
     assert row["detail"] == (
         "ignored: profiles.default.github.tokn, profiles.default.http.timout, profiles.work.nope"
     )
+
+
+def test_an_unknown_ui_symbol_name_fails_the_ui_row(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {zzz: y}\n")
+    row = _row(_rows(exit_code=1), "settings", "validate ui")
+    assert row["status"] == "fail"
+    assert "ui.symbols.zzz" in row["detail"]
+    assert "success" in row["detail"]
+
+
+def test_a_stray_ui_name_loads_leniently_and_only_fails_the_ui_row(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    http:\n      timeout_seconds: 3\n"
+        "    ui:\n      symbols: {zzz: y}\n",
+    )
+    listed = CliInvoker().invoke(
+        build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose()), ["list"]
+    )
+    assert listed.exit_code == 0, listed.output
+    rows = _rows(exit_code=1)
+    assert _row(rows, "settings", "validate ui")["status"] == "fail"
+    assert _row(rows, "settings", "validate http")["status"] == "pass"
+    assert [r["title"] for r in rows if r["status"] == "fail"] == ["validate ui"]
+
+
+def test_an_unknown_ui_color_role_name_fails_the_ui_row(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    ui:\n      color_roles: {zzz: red}\n"
+    )
+    row = _row(_rows(exit_code=1), "settings", "validate ui")
+    assert row["status"] == "fail"
+    assert "ui.color_roles.zzz" in row["detail"]
+
+
+def test_a_declared_ui_symbol_name_passes_the_ui_row(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {success: y}\n")
+    assert _row(_rows(), "settings", "validate ui")["status"] == "pass"
 
 
 def test_known_keys_pass(_isolated_config: Path) -> None:
