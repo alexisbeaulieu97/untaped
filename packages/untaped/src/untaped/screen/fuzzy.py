@@ -1,13 +1,39 @@
-"""Fuzzy ranking for the picker: subsequence scoring with matched positions."""
+"""Fuzzy ranking for searchable lists: subsequence scoring with matched positions.
+
+:func:`rank` orders anything that has a ``label``, a ``description`` and a
+``dimmed`` flag (the picker's ``PickItem``, a component's ``ListItem``), so
+every searchable list matches the same way. It imports nothing from Rich or
+prompt_toolkit.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
-from untaped.picker import PickItem
+__all__ = ["Match", "Rankable", "Ranked", "fuzzy_match", "rank"]
 
 _BOUNDARIES = frozenset("/-_. ")
+
+
+class Rankable(Protocol):
+    """What :func:`rank` reads from an item: the text it matches and whether it sorts last."""
+
+    @property
+    def label(self) -> str:
+        """The text a term matches fuzzily (and the one a view highlights)."""
+        ...
+
+    @property
+    def description(self) -> str:
+        """Longer text a term can match as a substring."""
+        ...
+
+    @property
+    def dimmed(self) -> bool:
+        """Whether the item is unavailable and sorts after every other match."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -19,10 +45,10 @@ class Match:
 
 
 @dataclass(frozen=True)
-class Ranked:
+class Ranked[T: Rankable]:
     """An item that matched, with the label positions to highlight."""
 
-    item: PickItem
+    item: T
     positions: tuple[int, ...]
 
 
@@ -63,14 +89,14 @@ def _subsequence(needle: str, haystack: str) -> Match | None:
     return Match(score - len(haystack) // 10, tuple(positions))
 
 
-def rank(query: str, items: Sequence[PickItem]) -> list[Ranked]:
+def rank[T: Rankable](query: str, items: Sequence[T]) -> list[Ranked[T]]:
     """Items matching every whitespace-separated term, best first, dimmed last.
 
     A term matches the label fuzzily or the description as a substring (worth
     less). With no terms, the catalog order is kept, dimmed items last.
     """
     terms = query.lower().split()
-    scored: list[tuple[bool, int, int, Ranked]] = []
+    scored: list[tuple[bool, int, int, Ranked[T]]] = []
     for index, item in enumerate(items):
         found = _score(terms, item)
         if found is not None:
@@ -80,7 +106,7 @@ def rank(query: str, items: Sequence[PickItem]) -> list[Ranked]:
     return [entry[3] for entry in scored]
 
 
-def _score(terms: list[str], item: PickItem) -> tuple[int, tuple[int, ...]] | None:
+def _score(terms: list[str], item: Rankable) -> tuple[int, tuple[int, ...]] | None:
     """Score lowercased ``terms`` against one item, or ``None`` if one misses."""
     total = 0
     positions: set[int] = set()
