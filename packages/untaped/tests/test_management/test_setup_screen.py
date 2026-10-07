@@ -1031,17 +1031,19 @@ def test_leaving_an_unchanged_or_empty_profile_field_does_not_load() -> None:
     assert "Enter a profile name." in empty.frame
 
 
-def test_the_profile_field_cannot_be_edited_while_a_save_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    install_fake_stores(tmp_path, monkeypatch, "pass")
-    runtime, _host = _held(_build())
-    _send(runtime, _keys("https://wiz", token="tok"))
-    assert runtime.model.phase == "probing"
+@pytest.mark.parametrize("phase", ["loading", "probing", "saving"])
+def test_the_profile_field_cannot_be_edited_while_a_check_a_save_or_a_load_runs(phase: str) -> None:
+    screen = _build()
+    on_field = drive_screen(screen, ["shift-tab"]).model
+    assert on_field.focus == "profile"
+    busy = replace(on_field, phase=phase)  # type: ignore[arg-type]
 
-    _send(runtime, ["esc", "shift-tab", "x", Paste("y")])
+    for message in (Key("x"), Paste("y")):
+        assert screen.update(busy, message) == (busy, [])
 
-    assert runtime.model.profile.value == runtime.model.current == "default"
+    # The same messages do edit it when nothing runs.
+    typed, _ = screen.update(on_field, Key("x"))
+    assert typed.profile.value == "defaultx"
 
 
 # --- Save anyway is per capability -----------------------------------------------
@@ -1108,11 +1110,13 @@ def test_save_anyway_does_nothing_unless_this_capability_failed_and_nothing_runs
     # ... not while a check or a save runs ...
     busy = replace(failed, phase="probing")
     assert _pressed_save_anyway(busy, screen) == (busy, [])
-    # ... and not for a capability that did not fail (a stale button).
+    # ... and not for a capability that did not fail (a stale button), even though a candidate
+    # is pending: here wiz failed, legacy is selected.
     other = replace(failed, selected=0)
-    assert other.name == "legacy"
+    assert other.name == "legacy" and other.pending is not None and "legacy" not in other.failed
     assert _pressed_save_anyway(other, screen) == (other, [])
     nothing = replace(failed, failed={})
+    assert nothing.pending is not None
     assert _pressed_save_anyway(nothing, screen) == (nothing, [])
 
 

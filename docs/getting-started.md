@@ -41,9 +41,9 @@ move a plaintext one there, give a command that prints it (`token_command`),
 use an environment variable, or keep the current one. Saving checks the
 service online with what you typed before anything is written; if the check
 fails, the reason is shown under the form and you can fix the values, or
-`Save anyway`. An exported `UNTAPED_<SECTION>__TOKEN`
-(for example `UNTAPED_GITHUB__TOKEN`) wins over the token you type in that
-check, as it does in `doctor`. Esc leaves the screen; ctrl-c leaves it too and exits 130.
+`Save anyway`. An exported `UNTAPED_<SECTION>__TOKEN` (for example
+`UNTAPED_GITHUB__TOKEN`) wins over the token you type in that check, as it does
+in `doctor`. Esc leaves the screen; ctrl-c leaves it too and exits 130.
 Naming a new profile in the profile field creates it on its first save.
 Afterwards `setup` prints what it wrote and the doctor checks of the services
 you configured, and exits 1 if one fails.
