@@ -153,6 +153,7 @@ def test_empty_flag_needs_a_name() -> None:
     result = run(app, ["create", "--empty"], interactive=True, prompt_backend=backend)
     assert result.exit_code == 2
     assert "workspace name is required" in result.output
+    assert "pass NAME before the options" in result.output
     assert backend.calls == []
 
 
