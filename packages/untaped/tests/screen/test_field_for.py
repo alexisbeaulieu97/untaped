@@ -16,6 +16,7 @@ from untaped.screen.components.choices import Check, Select, SingleList
 from untaped.screen.components.fields import Field as FieldProtocol
 from untaped.screen.components.fields import field_for
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
+from untaped.screen.core import Key
 from untaped.settings import Settings
 from untaped.stability import Experimental, function_mark
 
@@ -90,9 +91,19 @@ def test_the_starting_value_is_the_argument_else_the_default_else_empty() -> Non
     assert field_for(_descriptor(str, has_default=False)).value == ""
     assert field_for(_descriptor(Path, default=Path("/tmp/x"))).value == "/tmp/x"
     assert field_for(_descriptor(int, default=30)).text == "30"  # type: ignore[attr-defined]
-    assert field_for(_descriptor(float, default=1800.0)).text == "1800"  # type: ignore[attr-defined]
+    assert field_for(_descriptor(float, default=1800.0)).text == "1800.0"  # type: ignore[attr-defined]
     assert field_for(_descriptor(float, default=0.5)).text == "0.5"  # type: ignore[attr-defined]
     assert field_for(_descriptor(int)).text == ""  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("number", [0.1 + 0.2, 1234567.891, 1e-07, 1e16, 3.0, 0.1])
+def test_a_float_starts_as_its_exact_text_so_a_no_op_edit_keeps_the_value(number: float) -> None:
+    field = field_for(_descriptor(float, default=number))
+
+    assert field.value == number  # type: ignore[attr-defined]
+    typed = field.update(Key("1"))[0].update(Key("backspace"))[0]  # an edit and its undo
+    assert typed.value == number  # type: ignore[attr-defined]
+    assert field.validate() == ""
 
 
 def test_a_literal_starts_on_its_default_and_ignores_a_value_it_does_not_list() -> None:

@@ -120,10 +120,19 @@ def _mark_lead(
         return []
     symbol = frame.symbol("chosen")
     layers = ("screen.highlight",) if cursor else ()
-    edge = role_style(frame, *layers, "screen.muted")
+    edge = _edge_style(frame, cursor=cursor)
     if chosen:
         return [(symbol, role_style(frame, *layers, "screen.success") + BOLD), (" ", edge)]
     return [(" " * cell_len(symbol), edge), (" ", edge)]
+
+
+def _edge_style(frame: Frame, *, cursor: bool) -> Style:
+    """The muted style of a row's markers and brackets; the bare highlight on the cursor row.
+
+    Layering muted over the highlight would draw them in the fill's own colour in
+    themes whose muted colour is the highlight's background.
+    """
+    return role_style(frame, "screen.highlight" if cursor else "screen.muted")
 
 
 def _rows_budget(frame: Frame) -> int:
@@ -144,7 +153,8 @@ def _window_rows(
 class Check:
     """A boolean in a labelled box: the ``on`` symbol in the success colour or ``off`` in error.
 
-    No text says which; the symbol is the state. Space or enter toggles it.
+    No text says which; the symbol is the state. Space toggles it; enter is left
+    to the form (it activates or submits).
     """
 
     label: str
@@ -161,8 +171,8 @@ class Check:
         return ""
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
-        """Toggle on space or enter."""
-        if isinstance(message, Key) and message.name in (" ", "enter"):
+        """Toggle on space; every other key, enter included, is left alone."""
+        if isinstance(message, Key) and message.name == " ":
             return replace(self, value=not self.value, error=""), []
         return self, []
 
@@ -427,7 +437,7 @@ class MultiList:
     def _row(self, frame: Frame, inner: int, item: ListItem, cursor: bool) -> Text:
         on = item.id in self.selected
         layers = ("screen.highlight",) if cursor else ()
-        edge = role_style(frame, *layers, "screen.muted")
+        edge = _edge_style(frame, cursor=cursor)
         mark = (
             (frame.symbol("checked"), role_style(frame, *layers, "screen.success") + BOLD)
             if on

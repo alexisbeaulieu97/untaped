@@ -151,11 +151,11 @@ is text, tab accepts a completion before it moves focus, esc closes an open
 
 | Component | Holds |
 |---|---|
-| `TextInput` | a line of text, with an optional list of completions |
-| `PathInput` | a `TextInput` that completes filesystem paths |
+| `TextInput` | a line of text, with an optional list of completions that opens once the user edits (a starting value is never rewritten by tab) |
+| `PathInput` | a `TextInput` that completes filesystem paths (the first 500 entries of the directory) |
 | `SecretInput` | a `SecretStr`, masked; the secret never reaches a frame or a `repr` |
 | `NumberInput` | a number with optional bounds; `value` is the parsed number |
-| `Check` | a boolean, shown as the `on` or `off` symbol alone |
+| `Check` | a boolean, shown as the `on` or `off` symbol alone; space toggles it, enter is left to the screen |
 | `Select` | one choice, closed until enter opens it |
 | `SingleList`, `MultiList` | one or many choices, all showing, as `ListItem` rows |
 | `Cycle` | a value changed with left and right, or inherited |

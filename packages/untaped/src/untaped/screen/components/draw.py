@@ -133,17 +133,50 @@ def text_line(
             shown = shown[1:]
         line.append(shown, style=muted)
         return fit_text(line, inner, frame.ellipsis())
-    start = 0
-    if focused:
-        room = inner - 2 if inner >= 3 else max(inner - 1, 0)
-        while start < cursor and cell_len(text[start:cursor]) > room:
-            start += 1
+    if not focused:
+        return fit_text(Text(text, style=value), inner, frame.ellipsis())
+    start = _scroll_start(text, cursor, inner)
     visible = text[start:]
-    line = Text(visible, style=value)
-    if focused:
-        offset = cursor - start
-        if offset < len(visible):
-            line.stylize(CARET, offset, offset + 1)
-        else:
-            line.append(" ", style=CARET)
-    return fit_text(line, inner, frame.ellipsis())
+    line = fit_text(Text(visible, style=value), inner, frame.ellipsis())
+    # The caret is styled after the cut: a span that reached the last kept cell
+    # would otherwise be stretched over the ellipsis by ``fit_text``.
+    offset = cursor - start
+    if offset < _kept_chars(visible, inner, frame.ellipsis()):
+        line.stylize(CARET, offset, offset + 1)
+    return line
+
+
+def _scroll_start(text: str, cursor: int, inner: int) -> int:
+    """Where the visible part of ``text`` starts so the caret shows and the view holds still.
+
+    While the caret is in the last cells of the text the view is anchored to its
+    end, with one cell kept free for a caret past the end (so the caret moves
+    along the row instead of the text sliding under a caret stuck at the right
+    edge); further left, the caret sits with some text before it and the cut
+    with the ellipsis on its right.
+    """
+    if cursor < len(text) and cell_len(text) <= inner:
+        return 0  # it all fits, nothing to scroll
+    start, used = len(text), 1  # the caret's own cell is always kept free
+    while start > 0 and used + cell_len(text[start - 1]) <= inner:
+        start -= 1
+        used += cell_len(text[start])
+    if start <= cursor:
+        return start
+    width = cell_len(text[cursor : cursor + 1])
+    lookback = max(0, min(inner // 2, inner - 1 - width))
+    start = cursor
+    while start > 0 and cell_len(text[start - 1 : cursor]) <= lookback:
+        start -= 1
+    return start
+
+
+def _kept_chars(visible: str, inner: int, ellipsis: str) -> int:
+    """How many leading characters of ``visible`` ``fit_text`` keeps (a caret may follow them)."""
+    if cell_len(visible) <= inner:
+        return len(visible) + 1
+    kept, used = 0, 0
+    while kept < len(visible) and used + cell_len(visible[kept]) <= inner - cell_len(ellipsis):
+        used += cell_len(visible[kept])
+        kept += 1
+    return kept
