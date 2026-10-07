@@ -7,6 +7,7 @@ import select
 import sys
 import threading
 import time
+from typing import TextIO
 
 import pytest
 
@@ -123,3 +124,43 @@ def test_escape_on_a_pty_cancels() -> None:
     os.close(master)
     os.close(slave)
     assert result == [Cancel()]
+
+
+def test_ui_run_draws_on_the_controlling_terminal_when_stdin_is_piped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The real backend, end to end: piped stdin and redirected stderr, one pty for both."""
+    import io
+
+    from untaped.ui import UiContext
+
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+
+    def controlling_terminal(*, write: bool = False) -> TextIO:
+        return open(path, "w" if write else "r", encoding="utf-8")
+
+    monkeypatch.setattr("untaped.ui.open_controlling_terminal", controlling_terminal)
+    ui = UiContext(stdin=io.StringIO("piped data"), stderr=io.StringIO())
+    result: list[object] = []
+
+    def work() -> None:
+        try:
+            result.append(ui.run(_screen("inline")))
+        except BaseException as error:
+            result.append(error)
+
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start()
+    seen = _drain(master, until=b"typed:")
+    os.write(master, b"ok\r")
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    os.close(master)
+    os.close(slave)
+    assert result == ["ok"]
+    assert b"typed:" in seen
+    assert (ui.stdin.read(), ui.stderr.getvalue()) == (
+        "piped data",
+        "",
+    )  # nothing went to the files
