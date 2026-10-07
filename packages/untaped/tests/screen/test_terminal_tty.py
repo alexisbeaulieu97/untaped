@@ -8,6 +8,7 @@ import signal
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import TextIO
 
 import pytest
@@ -214,3 +215,71 @@ def test_a_termination_signal_restores_the_terminal_and_exits(
         signal.signal(sig, before)
         os.close(master)
         os.close(slave)
+
+
+def test_an_answered_inline_prompt_leaves_its_record_line_on_the_terminal() -> None:
+    from untaped.prompts import PromptToolkitPromptBackend
+
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+    with open(path, encoding="utf-8") as tty_in, open(path, "w", encoding="utf-8") as tty_out:
+        result: list[object] = []
+
+        def work() -> None:
+            backend = PromptToolkitPromptBackend(stdin=tty_in, stderr=tty_out)
+            try:
+                result.append(backend.text("Name", default=None))
+            except BaseException as error:
+                result.append(error)
+
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        _drain(master, until=b"Name")
+        os.write(master, b"dev\r")
+        seen = _drain(master, until=b"Name: dev\n")
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+    os.close(master)
+    os.close(slave)
+    assert result == ["dev"]
+    assert seen.endswith(b"Name: dev\r\n")
+
+
+def test_a_prompt_draws_on_the_terminal_when_stderr_is_redirected_to_a_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``untaped ... 2>log`` with a terminal on stdin: the frames never reach the log."""
+    from untaped.ui import UiContext
+
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+
+    def controlling_terminal(*, write: bool = False) -> TextIO:
+        return open(path, "w" if write else "r", encoding="utf-8")
+
+    monkeypatch.setattr("untaped.ui.open_controlling_terminal", controlling_terminal)
+    log = tmp_path / "log"
+    with open(path, encoding="utf-8") as tty_in, log.open("w", encoding="utf-8") as stderr:
+        ui = UiContext(stdin=tty_in, stderr=stderr)
+        result: list[object] = []
+
+        def work() -> None:
+            try:
+                result.append(ui.text("Name"))
+            except BaseException as error:
+                result.append(error)
+
+        thread = threading.Thread(target=work, daemon=True)
+        thread.start()
+        seen = _drain(master, until=b"Name")
+        os.write(master, b"dev\r")
+        seen += _drain(master, until=b"Name: dev\r\n")
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert (ui.stdin, ui.stderr) == (tty_in, stderr)  # put back after the prompt
+    os.close(master)
+    os.close(slave)
+    assert result == ["dev"]
+    assert b"Name" in seen
+    assert seen.endswith(b"Name: dev\r\n")  # the record line is on the terminal too
+    assert log.read_text(encoding="utf-8") == ""

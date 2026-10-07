@@ -65,14 +65,17 @@ screen returns a value only by sending `Quit(result)`; `Cancel()` or an
 unhandled esc ends it without one, and an unhandled ctrl-c ends it as an
 interrupt. `layout` is `"full"` (the default: the alternate screen, the whole
 terminal) or `"inline"` (below the cursor, erased when done); use inline only
-for a single question.
+for a single question. An inline screen leaves nothing behind; the built-in
+prompts (`ui.text`, `ui.confirm`, ...) print the answer as one plain
+`question: answer` line after they close, and a screen that wants a record does
+the same.
 
 ## Messages and keys
 
 `update` receives `Key(name)` (a printable character is its own name, a space
 is `" "`; any other key is one of `up`, `down`, `left`, `right`, `home`, `end`,
 `tab`, `shift-tab`, `enter`, `esc`, `backspace`, `delete`, `ctrl-u`, `ctrl-w`,
-`ctrl-s`, `ctrl-c` or `ctrl-r`, the names a `Binding` and `drive_screen` also
+`ctrl-s`, `ctrl-c`, `ctrl-d` or `ctrl-r`, the names a `Binding` and `drive_screen` also
 accept), `Paste(text)`, `Resize(width, height)`, a command's message and
 `CmdError(error)` when a command raised. The shared keys are the SDK's, and a
 screen cannot rebind them:
@@ -123,7 +126,8 @@ it. A command that raises arrives as `CmdError`, never as a crash.
 
 ## Without a terminal
 
-`ui.run` (and `ui.pick_many`, which is a screen too) uses stdin and stderr when
+`ui.run` (and `ui.pick_many`, which is a screen too, and the one-shot prompts, once
+stdin is a terminal) uses stdin and stderr when
 both are terminals. Otherwise (piped stdin, a redirected stderr) it draws on the
 controlling terminal, so a screen never paints into a file. Only when none can
 be opened does it fail with a usage error that names the screen's `command` and
@@ -221,6 +225,17 @@ Pieces it needed are public: a `Panes` side may be a drawing (a function
 itself gets the controlling terminal when stdin is piped; `workspace create`
 and `workspace add` check `ui.can_prompt` first and take their flag path
 instead, so only a redirected stderr is something they now draw through.
+
+The one-shot prompts (`ui.text`, `ui.secret`, `ui.select`, `ui.multiselect`,
+`ui.confirm`) are inline screens built from `TextInput`, `SecretInput`,
+`SingleList`, `SearchList` and `MultiList`, so they look and key like every
+other screen. Esc cancels one (its footer says `esc cancel`, `esc clear` while a
+search query is typed), and so does ctrl-d on an empty answer, as on a line
+prompt. The window of a list is cut to the terminal's height. Like `ui.run`, a
+prompt needs a terminal on stdin (a piped stdin is refused with a usage error,
+unless `ui.terminal` or `confirm_action` secured one) and draws on stderr when
+that is a terminal and on the controlling terminal when it is redirected, so a
+prompt never paints into a log.
 
 `field_for(descriptor, value=..., help=...)` maps a setting's type to its
 component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to
