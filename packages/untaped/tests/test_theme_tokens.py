@@ -83,6 +83,13 @@ def test_cycle_and_tab_tokens_have_a_glyph_and_an_ascii_fallback() -> None:
     assert plain["tab.active"] != plain["tab.inactive"]
 
 
+def test_tree_tokens_have_a_glyph_and_an_ascii_fallback() -> None:
+    default = BUILTIN_THEMES["default"].symbols
+    plain = BUILTIN_THEMES["plain"].symbols
+    assert (default["tree.open"], default["tree.closed"]) == ("\u25be", "\u25b8")
+    assert (plain["tree.open"], plain["tree.closed"]) == ("v", ">")
+
+
 @pytest.mark.parametrize("name", THEMES)
 def test_screen_roles_are_valid_rich_styles(name: str) -> None:
     roles = BUILTIN_THEMES[name].color_roles
