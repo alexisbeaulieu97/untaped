@@ -9,13 +9,14 @@ from typing import Annotated
 
 import pytest
 from cyclopts import App, Group, Parameter
+from pydantic import BaseModel, Field
 
 from test_capabilities.capharness import make_spec
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec
 from untaped.cli import create_app
 from untaped.conventions.stability import stability_violations
-from untaped.stability import Deprecated, Experimental, deprecated, experimental
+from untaped.stability import Deprecated, Experimental, deprecated, experimental, marks
 from untaped.testing import provider_candidate
 
 
@@ -362,3 +363,80 @@ def test_the_root_commands_pass(name: str) -> None:
     root = bootstrap.build_root_app(candidates=[])
 
     assert stability_violations(root, bootstrap.composition(), [name]) == []
+
+
+class _Clean(BaseModel):
+    plain: int = 1
+    trial: Annotated[int, experimental, Field(description="How many.")] = 2
+    old: Annotated[bool, deprecated(replacement="svc.plain")] = False
+    gone: Annotated[bool, deprecated(replacement="a shell alias")] = False
+
+
+class _HandTyped(BaseModel):
+    trial: Annotated[int, experimental, Field(description="Deprecated: use plain.")] = 2
+
+
+class _BadKey(BaseModel):
+    old: Annotated[bool, deprecated(replacement="svc.nothing")] = False
+    other: Annotated[bool, deprecated(replacement="untaped nothing here")] = False
+
+
+class _Nested(BaseModel):
+    trial: Annotated[int, experimental] = 1
+    old: Annotated[bool, deprecated()] = False
+
+
+def _setting_violations(
+    model: type[BaseModel], *, stability: Experimental | Deprecated | None = None
+) -> list[str]:
+    spec = replace(make_spec(name="svc", factory=_app, profile=model), stability=stability)
+    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+    return stability_violations(root, bootstrap.composition(), ["svc"], spec=spec)
+
+
+def test_settings_marks_in_the_right_places_have_no_violations() -> None:
+    assert _setting_violations(_Clean) == []
+
+
+def test_experimental_under_experimental_is_nested_but_deprecated_is_not() -> None:
+    assert _setting_violations(_Nested, stability=experimental) == [
+        "svc.trial::nested-mark::experimental under experimental svc"
+    ]
+
+
+def test_hand_typed_mark_in_a_settings_description() -> None:
+    assert _setting_violations(_HandTyped) == ["svc.trial::hand-typed-mark::description"]
+
+
+def test_bad_replacement_on_a_setting_mark() -> None:
+    assert _setting_violations(_BadKey) == [
+        "svc.old::bad-replacement::`svc.nothing` is not a current setting",
+        "svc.other::bad-replacement::`untaped nothing here` does not resolve to a command",
+    ]
+
+
+def test_anything_under_a_deprecated_capability_is_nested_for_settings() -> None:
+    assert _setting_violations(_Nested, stability=deprecated()) == [
+        "svc.old::nested-mark::deprecated under deprecated svc",
+        "svc.trial::nested-mark::experimental under deprecated svc",
+    ]
+
+
+def test_marks_lists_a_settings_mark_with_its_key_and_replacement() -> None:
+    spec = make_spec(name="svc", factory=_app, profile=_Clean)
+    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+
+    found = [m for m in marks(root, bootstrap.composition()) if m.target == "setting"]
+
+    assert [(m.where, type(m.stability).__name__, m.replacement) for m in found] == [
+        ("shell.aliases", "Deprecated", "a shell alias or function"),
+        ("svc.trial", "Experimental", None),
+        ("svc.old", "Deprecated", "`svc.plain`"),
+        ("svc.gone", "Deprecated", "a shell alias"),
+    ]
+
+
+def test_the_core_sections_pass() -> None:
+    root = bootstrap.build_root_app(candidates=[])
+
+    assert stability_violations(root, bootstrap.composition(), [], sections=["shell"]) == []

@@ -55,6 +55,11 @@
   are listed by the new `untaped --deprecated --help` and warn once per run.
   `check_conventions` checks the marks.
   ([#518](https://github.com/alexisbeaulieu97/untaped/pull/518))
+- Plugins can mark a settings field the same way
+  (`Annotated[int, experimental]`, `Annotated[bool, deprecated(replacement=…)]`),
+  and a capability's settings inherit its mark. `config list` and `config get`
+  report each setting's `stability`.
+  ([#465](https://github.com/alexisbeaulieu97/untaped/issues/465))
 
 ### Changed
 
@@ -98,6 +103,14 @@
 - Root options placed around `--help` now apply (`untaped awx --deprecated
   --help`, `untaped --help --verbose`).
   ([#518](https://github.com/alexisbeaulieu97/untaped/pull/518))
+- `config list` prints the experimental settings under an `Experimental`
+  heading and the deprecated ones that are set (or all, with `untaped
+  --deprecated`) under `Deprecated`, with a `note` column only there;
+  `--format json` stays one list. A settings model marks a deprecated field
+  with `deprecated(replacement=…)` instead of the unreleased
+  `deprecated_settings` declaration; the `shell.aliases`, `awx.test_timeout_seconds`
+  and `awx.test_parallel` settings are marked.
+  ([#465](https://github.com/alexisbeaulieu97/untaped/issues/465))
 
 ### Deprecated
 

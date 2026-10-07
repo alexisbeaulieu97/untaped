@@ -27,7 +27,7 @@ from untaped.deprecated_keys import KeyUse, key_mappings, rename_keys, use_warni
 from untaped.errors import ConfigError, first_validation_error
 from untaped.messages import hint
 from untaped.settings_layout import ProfilesSettingsLayout, SectionModels
-from untaped.stability import SettingStability, Stability, stability_of
+from untaped.stability import Stability
 from untaped.theme import CONFIG_WRITE_CONTEXT, UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
@@ -208,13 +208,6 @@ def register_profile_settings(
 def section_stabilities() -> Mapping[str, Stability | None]:
     """Each registered profile section's capability mark (``None`` for an unmarked one)."""
     return _CONFIG_REGISTRY.section_stability
-
-
-def setting_stability(key: str) -> SettingStability:
-    """The effective stability of the registered setting ``section.field``."""
-    return stability_of(
-        key, sections=profile_section_models(), section_stability=section_stabilities()
-    )
 
 
 def registered_profile_model(section: str) -> type[BaseModel] | None:

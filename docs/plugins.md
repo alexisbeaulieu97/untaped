@@ -241,6 +241,8 @@ def put_command() -> None: ...
 - A deprecated command shows with `untaped --deprecated --help` and warns once
   per run. `check_conventions` rejects a hand-typed `Experimental:` or
   `Deprecated:`, a misplaced or redundant mark and a stale replacement.
+- Mark a setting on its field, as `Annotated[int, experimental]`; it
+  inherits its capability's mark, and `config list` lists it apart.
 
 ## Packaged skills
 
