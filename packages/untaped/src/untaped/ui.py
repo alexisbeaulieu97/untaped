@@ -23,7 +23,6 @@ from untaped.prompts import (
     handle_prompt_exception,
     open_controlling_terminal,
     prompt_backend_override,
-    prompt_style_from_roles,
 )
 from untaped.quiet import is_quiet
 from untaped.render import (
@@ -89,14 +88,15 @@ class UiContext:
     def prompt_backend(self) -> PromptBackend:
         """The interactive prompt backend, built lazily on first use.
 
-        Constructing the default backend imports ``prompt_toolkit``; deferring
-        it here keeps that cost off any rendering-only or piped invocation that
-        never prompts. An injected backend (tests, alternative frontends) is
-        returned as-is. The default is cached only while its input and error
-        streams remain the same, so reopened terminals never reuse closed streams.
-        A ContextVar override (installed by the test harness
-        via ``untaped.testing``) wins over the lazy default so scripted prompts
-        reach contexts the test never constructed itself.
+        The default backend runs every prompt as a screen on the terminal
+        adapter, which imports ``prompt_toolkit`` only when a prompt runs, so
+        a rendering-only or piped invocation that never prompts pays nothing.
+        Building it here, on first use, keeps it that way. An injected backend
+        (tests, alternative frontends) is returned as-is. The default is cached
+        only while its input and error streams remain the same, so reopened
+        terminals never reuse closed streams. A ContextVar override (installed
+        by the test harness via ``untaped.testing``) wins over the lazy default
+        so scripted prompts reach contexts the test never constructed itself.
         """
         backend = self._prompt_backend
         if backend is not None:
@@ -113,7 +113,6 @@ class UiContext:
         backend = PromptToolkitPromptBackend(
             stdin=self.stdin,
             stderr=self.stderr,
-            style=prompt_style_from_roles(self.theme.color_roles),
             theme=self.theme,
         )
         self._default_prompt_backend = backend
