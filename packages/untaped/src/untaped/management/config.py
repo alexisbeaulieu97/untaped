@@ -28,12 +28,13 @@ from untaped.cli import (
     DryRunOption,
     FormatOption,
     create_app,
+    echo,
     emit,
     report_errors,
     writes,
 )
 from untaped.config.editor import run_config_editor
-from untaped.config.models import SettingOutcome, setting_entry_row
+from untaped.config.models import SettingEntry, SettingOutcome, SettingRow, setting_entry_row
 from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
@@ -48,6 +49,7 @@ from untaped.settings import (
     model_sections,
     resolve_config_path,
 )
+from untaped.stability import show_deprecated
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
@@ -300,8 +302,60 @@ def _list(
             for error in list_settings.errors.values():
                 # The error already names the section (or env var) and file.
                 ui.message("warning", f"{error} (its keys show unvalidated values)")
-        rows = [setting_entry_row(e, human=fmt in ("table", "raw")) for e in entries]
-        emit(rows, fmt=fmt, columns=columns, kind="untaped.setting")
+        human = fmt in ("table", "raw")
+        if fmt != "table" or columns == ["?"]:
+            rows = [setting_entry_row(e, human=human) for e in entries]
+            emit(rows, fmt=fmt, columns=columns, kind="untaped.setting")
+            return
+        _emit_split_tables(entries, columns=columns)
+
+
+_STABLE_COLUMNS = tuple(column for column in SettingRow.table_columns if column != "note")
+
+
+def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None) -> None:
+    """Print the stable settings, then the experimental ones, then the deprecated ones.
+
+    A deprecated setting at its default is left out unless ``--deprecated``;
+    set in a file or the environment it is listed, as is every setting read
+    through an old spelling (whatever its stability, so the deprecated
+    spelling is never missed). Each table has its own columns, so
+    ``ui.hide_empty_columns`` and ``--columns`` apply per table, and only the
+    deprecated table carries ``note``.
+    """
+    stable: list[SettingEntry] = []
+    experimental: list[SettingEntry] = []
+    deprecated: list[SettingEntry] = []
+    for entry in entries:
+        if entry.note is not None or (entry.stability == "deprecated" and _shown(entry)):
+            deprecated.append(entry)
+        elif entry.stability == "experimental":
+            experimental.append(entry)
+        elif entry.stability == "stable":
+            stable.append(entry)
+    tables = [
+        (None, stable, _STABLE_COLUMNS),
+        ("Experimental", experimental, _STABLE_COLUMNS),
+        ("Deprecated", deprecated, SettingRow.table_columns),
+    ]
+    present = [table for table in tables if table[1]] or tables[:1]
+    for index, (heading, group, table_columns) in enumerate(present):
+        if index:
+            echo()
+        if heading is not None:
+            echo(heading)
+        emit(
+            [setting_entry_row(entry, human=True) for entry in group],
+            fmt="table",
+            columns=columns,
+            kind="untaped.setting",
+            table_columns=table_columns,
+        )
+
+
+def _shown(entry: SettingEntry) -> bool:
+    """Whether a deprecated setting is listed: set somewhere, or ``--deprecated``."""
+    return entry.source.kind in ("profile", "env") or show_deprecated()
 
 
 def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: bool) -> None:

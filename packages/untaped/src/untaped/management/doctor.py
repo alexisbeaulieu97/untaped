@@ -76,6 +76,7 @@ from untaped.settings import (
     profile_section_models,
     resolve_config_path,
     resolve_state_path,
+    section_stabilities,
 )
 from untaped.skills import SkillState, outdated_skills, project_root
 from untaped.theme import OutputFormat, UiSettings, resolve_theme
@@ -467,7 +468,7 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
 def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
     """Warn about old keys and deprecated settings in any profile."""
     title = "deprecated config keys"
-    found = scan_keys(raw, profile_section_models())
+    found = scan_keys(raw, profile_section_models(), section_stabilities())
     if not found:
         return _row("deprecated-keys", shell.name, _PASS, title, "no deprecated keys")
     parts = []
