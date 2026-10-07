@@ -25,6 +25,7 @@ every use and, on a settings field, becomes pydantic field deprecation.
 from __future__ import annotations
 
 import re
+import typing
 import weakref
 from collections.abc import Callable, Iterator, Mapping
 from contextvars import ContextVar, Token
@@ -33,7 +34,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from cyclopts import App, Group
 from cyclopts.command_spec import CommandSpec
+from pydantic import BaseModel
+from pydantic.fields import FieldInfo
 
+from untaped.config_schema import unwrap_optional
 from untaped.messages import EXPERIMENTAL_LINE, deprecated_line
 
 if TYPE_CHECKING:
@@ -411,6 +415,92 @@ def _collect(
                 target = "group" if any(True for _ in _children(sub, resolve=False)) else "command"
             found.append(_record(" ".join(here), target, mark, root))
         _collect(sub, root, here, capabilities, found, resolve=resolve)
+
+
+# --- marks on settings -------------------------------------------------------
+
+
+def _own_marks(field: FieldInfo) -> list[Stability]:
+    """The marks in the outermost ``Annotated`` of a field (``FieldInfo.metadata``)."""
+    return [item for item in field.metadata if isinstance(item, Experimental | Deprecated)]
+
+
+def _mark_inside_type(annotation: object) -> bool:
+    """Whether a mark sits inside the type itself, where pydantic drops it.
+
+    ``Annotated[int, experimental] | None`` and ``list[Annotated[int, ...]]``
+    keep their marks in ``FieldInfo.annotation``; ``Annotated[int | None,
+    experimental]`` moves its mark to ``FieldInfo.metadata``.
+    """
+    return any(
+        isinstance(arg, Experimental | Deprecated) or _mark_inside_type(arg)
+        for arg in typing.get_args(annotation)
+    )
+
+
+def _section_fields(
+    model: type[BaseModel], prefix: str = ""
+) -> Iterator[tuple[str, FieldInfo, bool]]:
+    """``(dotted path, field, is a model)`` for every field, recursing into nested models."""
+    for name, field in model.model_fields.items():
+        nested = unwrap_optional(field.annotation)
+        is_model = isinstance(nested, type) and issubclass(nested, BaseModel)
+        yield f"{prefix}{name}", field, is_model
+        if is_model:
+            yield from _section_fields(nested, f"{prefix}{name}.")
+
+
+def field_marks(model: type[BaseModel]) -> dict[str, Stability]:
+    """The marks on the leaf fields of a section ``model``, by dotted path.
+
+    Only a mark in the outermost ``Annotated`` of a leaf counts; a misplaced
+    one is reported by :func:`mark_errors` and ignored here.
+    """
+    found: dict[str, Stability] = {}
+    for path, field, is_model in _section_fields(model):
+        marks_here = _own_marks(field)
+        if len(marks_here) == 1 and not is_model:
+            found[path] = marks_here[0]
+    return found
+
+
+def mark_errors(model: type[BaseModel], *, state: bool = False) -> list[str]:
+    """One sentence per mark on ``model`` that would not take effect; ``[]`` when none.
+
+    A mark must sit in the outermost ``Annotated`` of a leaf field of a profile
+    model (``Annotated[int | None, experimental]``), never inside a union or
+    generic argument, on a model-typed field, on a state model's field
+    (``state=True``), or beside pydantic's own ``deprecated=``.
+    """
+    errors: list[str] = []
+    for path, field, is_model in _section_fields(model):
+        marks_here = _own_marks(field)
+        inside = _mark_inside_type(field.annotation)
+        if state:
+            if marks_here or inside:
+                errors.append(f"setting {path!r} is state: state fields take no stability marks")
+            continue
+        if inside:
+            errors.append(
+                f"the mark on setting {path!r} sits inside its type, where pydantic drops it; "
+                "put it in the outermost Annotated, as Annotated[int | None, experimental]"
+            )
+        if marks_here and is_model:
+            errors.append(f"setting {path!r} is a model; mark its fields instead")
+        if len(marks_here) > 1:
+            errors.append(f"setting {path!r} has more than one stability mark")
+        if field.deprecated:
+            errors.append(
+                f"setting {path!r} uses pydantic's deprecated=; use untaped's deprecated(...)"
+            )
+        errors.extend(
+            f"the replacement of the mark on setting {path!r} must be text"
+            for mark in marks_here
+            if isinstance(mark, Deprecated)
+            and mark.replacement is not None
+            and not isinstance(mark.replacement, str)
+        )
+    return errors
 
 
 # --- renamed commands and options -------------------------------------------

@@ -4,8 +4,9 @@
   ``docs/reference/conventions.md#names``: a ``Path`` that does not end in
   ``_dir`` or ``_path``, a number named after ``concurrency``/``workers``/
   ``jobs``/``threads`` instead of ``parallel``, a duration without its unit;
-- ``settings-renames`` — ``renamed_keys``/``retired_keys``/
-  ``deprecated_settings`` break a declaration rule (a chain, a collision…).
+- ``settings-renames`` — ``renamed_keys``/``retired_keys`` break a declaration
+  rule (a chain, a collision…), or a stability mark sits where it takes no effect
+  (inside a union, on a model or on a state field).
 
 Only profile models and the models their fields reach are checked, never a
 state model. Violations are ``<file>:<line>::<rule>::<detail>``;
@@ -26,6 +27,7 @@ from pydantic import BaseModel
 from untaped.config_schema import unwrap_optional
 from untaped.conventions.allow import allowed
 from untaped.deprecated_keys import mapping_errors
+from untaped.stability import mark_errors
 
 NAMING = "settings-naming"
 RENAMES = "settings-renames"
@@ -53,14 +55,25 @@ def name_problem(name: str, annotation: Any) -> str | None:
     return None
 
 
-def settings_name_violations(section: str, model: type[BaseModel], root: Path) -> list[str]:
+def settings_name_violations(
+    section: str,
+    model: type[BaseModel],
+    root: Path,
+    *,
+    state: type[BaseModel] | None = None,
+) -> list[str]:
     """Violations of ``model`` (the ``section`` model) and the models it reaches.
 
-    Paths are relative to ``root`` when the model's file is under it.
+    Paths are relative to ``root`` when the model's file is under it. The
+    section's ``state`` model, when given, is checked only for stability marks.
     """
     errors = mapping_errors(model)
     where = _class_location(model, root) if errors else ""
     found = [f"{where}::{RENAMES}::{error}" for error in errors]
+    if state is not None:
+        state_errors = mark_errors(state, state=True)
+        state_where = _class_location(state, root) if state_errors else ""
+        found.extend(f"{state_where}::{RENAMES}::{error}" for error in state_errors)
     found.extend(_naming_violations(section, model, root))
     return found
 
