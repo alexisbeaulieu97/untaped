@@ -13,6 +13,7 @@ import pytest
 
 from untaped.cli import create_app, report_errors
 from untaped.errors import ConfigError, OperationCancelledError, PromptInterruptedError, UsageError
+from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
 from untaped.prompts import (
     open_controlling_terminal,
     reset_terminal_override,
@@ -278,6 +279,86 @@ def test_the_terminal_override_serves_both_modes() -> None:
         assert open_controlling_terminal(write=True).read() == "seen"
     finally:
         reset_terminal_override(token)
+
+
+# --- the picker is a screen too ---------------------------------------------------
+
+
+class _OnATerminal(ScriptedPromptBackend):
+    """A scripted backend that, like the real one, needs a terminal to draw on."""
+
+    needs_terminal = True
+
+
+_PICK_REQUEST = PickRequest(heading="Pick", catalog=PickCatalog((PickItem(id="a", label="a"),)))
+_PICKED = PickResult(title="", defaults={}, picks=(Picked(item=PickItem(id="a", label="a")),))
+
+
+def test_pick_many_opens_the_controlling_terminal_when_stdin_is_piped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened = Opened([], [])
+    monkeypatch.setattr("untaped.ui.open_controlling_terminal", opened)
+    stdin, stderr = io.StringIO("piped"), TtyStringIO()
+    ui = UiContext(stdin=stdin, stderr=stderr, prompt_backend=_OnATerminal(picks=[_PICKED]))
+
+    assert ui.pick_many(_PICK_REQUEST) is _PICKED
+    assert opened.modes == [False, True]
+    assert (ui.stdin, ui.stderr) == (stdin, stderr)
+    assert all(handle.closed for handle in opened.handles)
+
+
+def test_pick_many_uses_the_streams_when_both_are_terminals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened = Opened([], [])
+    monkeypatch.setattr("untaped.ui.open_controlling_terminal", opened)
+    ui = UiContext(
+        stdin=TtyStringIO(),
+        stderr=TtyStringIO(),
+        prompt_backend=_OnATerminal(picks=[_PICKED]),
+    )
+    assert ui.pick_many(_PICK_REQUEST) is _PICKED
+    assert opened.modes == []
+
+
+def test_pick_many_needs_no_terminal_for_a_scripted_backend() -> None:
+    # The harness has no controlling terminal and stderr is not a terminal either.
+    ui = UiContext(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(picks=[_PICKED]))
+    assert ui.pick_many(_PICK_REQUEST) is _PICKED
+
+
+def _refused(request: PickRequest) -> str:
+    app = create_app(name="demo")
+
+    @app.default
+    def go() -> None:
+        with report_errors():
+            UiContext(stdin=io.StringIO()).pick_many(request)
+
+    result = CliInvoker().invoke(app, [])  # the harness has no controlling terminal
+    assert result.exit_code == 2
+    return result.stderr
+
+
+def test_pick_many_without_any_terminal_uses_the_fallback_message() -> None:
+    assert (
+        "`this command` needs a terminal; use `its non-interactive options (see --help)`"
+        in _refused(_PICK_REQUEST)
+    )
+
+
+def test_pick_many_without_any_terminal_names_the_commands_own_alternative() -> None:
+    named = PickRequest(
+        heading="Pick",
+        catalog=_PICK_REQUEST.catalog,
+        command="untaped workspace create",
+        alternative="untaped workspace create NAME --repo URL",
+    )
+    assert (
+        "`untaped workspace create` needs a terminal; "
+        "use `untaped workspace create NAME --repo URL`" in _refused(named)
+    )
 
 
 # --- scripted screens -------------------------------------------------------------

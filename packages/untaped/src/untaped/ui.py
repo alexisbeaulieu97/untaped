@@ -114,6 +114,7 @@ class UiContext:
             stdin=self.stdin,
             stderr=self.stderr,
             style=prompt_style_from_roles(self.theme.color_roles),
+            theme=self.theme,
         )
         self._default_prompt_backend = backend
         return backend
@@ -441,21 +442,36 @@ class UiContext:
         return values
 
     def pick_many(self, request: PickRequest) -> PickResult:
-        """Run the two-pane multi-select picker.
+        """Run the two-pane multi-select picker, a full-screen screen like every other.
 
-        Raises :class:`OperationCancelledError` when the user quits, and
-        :class:`UsageError` without a TTY on stdin.
+        With piped stdin or a redirected stderr it draws on the controlling
+        terminal (see :meth:`screen_terminal`). Raises
+        :class:`OperationCancelledError` when the user quits, and
+        :class:`UsageError` naming ``request.command`` and ``request.alternative``
+        (a generic message when unset) when there is no terminal at all.
         """
-        self._ensure_promptable()
+        from untaped.picker import GENERIC_ALTERNATIVE, GENERIC_COMMAND  # noqa: PLC0415
+
         ids = [item.id for item in request.catalog.items]
         if len(set(ids)) != len(ids):
             raise ConfigError(
                 "picker items must have unique ids", category="failed", system="untaped"
             )
-        try:
-            picked = self.prompt_backend.pick_many(request)
-        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
-            raise handle_prompt_exception(exc) from exc
+        # An injected backend can say it needs no terminal; the default one always does.
+        injected = self._prompt_backend or prompt_backend_override()
+        needs_terminal = getattr(injected, "needs_terminal", True)
+        with (
+            self.screen_terminal(
+                command=request.command or GENERIC_COMMAND,
+                alternative=request.alternative or GENERIC_ALTERNATIVE,
+            )
+            if needs_terminal
+            else nullcontext(self)
+        ):
+            try:
+                picked = self.prompt_backend.pick_many(request)
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
         if picked is None:
             raise OperationCancelledError
         return picked
