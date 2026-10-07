@@ -66,6 +66,7 @@ _KEYS: dict[str, str] = {
     "c-w": "ctrl-w",
     "c-s": "ctrl-s",
     "c-c": "ctrl-c",
+    "c-d": "ctrl-d",
     "c-r": "ctrl-r",
 }
 
