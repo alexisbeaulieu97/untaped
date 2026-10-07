@@ -84,7 +84,7 @@ screen cannot rebind them:
 | tab, shift-tab | `NextField`, `PrevField` | ignored |
 | enter | `Activate` | ignored |
 | ctrl-s | `Submit` | ignored |
-| ? | none | opens the help overlay |
+| ? | `Help` (news only) | opens the help overlay |
 
 A key goes to `update` first (where the focused component lives), then to the
 screen's own `keys` (`Binding(key, label, message)`, active while its `when`
@@ -100,7 +100,9 @@ help overlay and adds it to the footer (the overlay otherwise says "submit" and
 "next field", and the footer lists only the bindings, `esc` and `?`). A value
 may be a function of the model returning the label, or `None` for the default
 label and no footer entry, so `enter` can read "edit" only where it edits. It
-changes only what is written, never what the key does.
+changes only what is written, never what the key does. When the footer is too narrow, the last entries before
+`esc back` and `? help` are dropped (they stay in the overlay), so those two
+always show.
 
 ## Commands
 
@@ -201,7 +203,13 @@ views.
 `SearchList`, `Tree`, `TextInput` and `Buttons`; its `PickRequest` names the
 `command` and `alternative` the no-terminal refusal shows (generic ones when it
 leaves them unset). `allow_empty` lets it confirm with nothing selected; a
-request that has a title still requires one. A caller that calls `ui.pick_many`
+request that has a title still requires one.
+
+Pieces it needed are public: a `Panes` side may be a drawing (a function
+`(frame, focused) -> renderable`) for a pane whose model the screen owns;
+`SearchList(entries=...)` takes matches the screen ranked itself, and
+`SearchList`/`Tree` take `window_rows`; `Buttons.boxed_width` and
+`buttons.BOX_ROWS` say what a boxed row needs. A caller that calls `ui.pick_many`
 itself gets the controlling terminal when stdin is piped; `workspace create`
 and `workspace add` check `ui.can_prompt` first and take their flag path
 instead, so only a redirected stderr is something they now draw through.

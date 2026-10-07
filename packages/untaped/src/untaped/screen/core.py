@@ -36,6 +36,7 @@ __all__ = [
     "CmdError",
     "Footer",
     "Frame",
+    "Help",
     "Interrupt",
     "Key",
     "NextField",
@@ -221,6 +222,16 @@ class PrevField:
 @dataclass(frozen=True)
 class Activate:
     """Enter after the focused component and the screen's bindings passed on it."""
+
+
+@experimental
+@dataclass(frozen=True)
+class Help:
+    """``?`` opened the help overlay (nothing before it wanted the key).
+
+    Delivered to ``update`` for its news only: the overlay opens whatever
+    ``update`` returns, so a screen can dismiss a message on any key.
+    """
 
 
 @experimental
@@ -434,22 +445,38 @@ class Footer:
         )
 
     def line(self, frame: Frame) -> Text:
-        """The footer as one line of exactly ``frame.width`` cells."""
+        """The footer as one line of exactly ``frame.width`` cells.
+
+        When the entries do not fit, the last ones before ``esc back`` and
+        ``? help`` are dropped one by one (they stay in the help overlay), so
+        those two always show.
+        """
         from rich.text import Text  # noqa: PLC0415 - keeps Rich out of import time
 
         from untaped.screen.fit import fit_text  # noqa: PLC0415
 
-        line = Text()
         if self.saving:
-            line.append(f"saving{frame.ellipsis()}", style=frame.style("screen.accent"))
-        else:
-            separator = f" {frame.symbol('separator')} "
-            for index, (key, label) in enumerate(self.entries()):
-                if index:
-                    line.append(separator, style=frame.style("screen.border"))
-                line.append(key, style=frame.style("screen.accent"))
-                line.append(f" {label}", style=frame.style("screen.muted"))
-        return fit_text(line, frame.width, frame.ellipsis())
+            line = Text(f"saving{frame.ellipsis()}", style=frame.style("screen.accent"))
+            return fit_text(line, frame.width, frame.ellipsis())
+        entries = list(self.entries())
+        while True:
+            line = self._joined(frame, entries)
+            if line.cell_len <= frame.width or len(entries) <= 2:
+                return fit_text(line, frame.width, frame.ellipsis())
+            del entries[-3]  # the entry just before ``esc`` and ``?``
+
+    @staticmethod
+    def _joined(frame: Frame, entries: Sequence[tuple[str, str]]) -> Text:
+        from rich.text import Text  # noqa: PLC0415
+
+        line = Text()
+        separator = f" {frame.symbol('separator')} "
+        for index, (key, label) in enumerate(entries):
+            if index:
+                line.append(separator, style=frame.style("screen.border"))
+            line.append(key, style=frame.style("screen.accent"))
+            line.append(f" {label}", style=frame.style("screen.muted"))
+        return line
 
     def overlay(self, frame: Frame) -> RenderableType:
         """The help overlay: every active binding and every shared key, one per line."""

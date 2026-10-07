@@ -345,3 +345,17 @@ def test_a_screen_relabels_shared_keys_in_its_footer_and_overlay() -> None:
     assert "create" in overlay
     assert "submit" not in overlay
     assert "activate" in overlay
+
+
+def test_help_is_delivered_to_update_when_the_overlay_opens() -> None:
+    from untaped.screen.core import Help
+
+    seen: list[object] = []
+
+    def update(model: int, message: object) -> tuple[int, list[Cmd]]:
+        seen.append(message)
+        return model, []
+
+    run = drive_screen(make_screen(update=update, view=lambda m, f: "body"), ["?"])
+    assert Help() in seen
+    assert "Keys" in run.frame
