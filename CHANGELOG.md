@@ -83,7 +83,7 @@
   `Panes`. ([#527](https://github.com/alexisbeaulieu97/untaped/pull/527))
 - SDK: `PickRequest` takes optional `command` and `alternative`, which
   `ui.pick_many` names when there is no terminal to draw on.
-  ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  ([#530](https://github.com/alexisbeaulieu97/untaped/pull/530))
 
 ### Changed
 
@@ -150,7 +150,7 @@
   follows the theme's colors, symbols and border style (`ui.symbols` gains
   `heading` and `dash`); it draws on the controlling terminal when stdin is
   piped, and esc outside the search asks before discarding a selection.
-  ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  ([#530](https://github.com/alexisbeaulieu97/untaped/pull/530))
 
 ### Deprecated
 
