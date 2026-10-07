@@ -22,6 +22,7 @@ from untaped.theme import BUILTIN_THEMES, ROLE_NAMES, SYMBOL_NAMES, ThemeSpec
 if TYPE_CHECKING:
     from rich.box import Box
     from rich.console import RenderableType
+    from rich.text import Text
 
 __all__ = [
     "KEY_NAMES",
@@ -32,6 +33,7 @@ __all__ = [
     "Cancel",
     "Cmd",
     "CmdError",
+    "Footer",
     "Frame",
     "Interrupt",
     "Key",
@@ -350,3 +352,67 @@ class Screen[M, R]:
                     f"key {binding.key!r} is shared by every screen and cannot be bound; "
                     f"shared keys: {', '.join(SHARED_KEYS)}"
                 )
+
+
+@experimental
+@dataclass(frozen=True)
+class Footer:
+    """The key hints under a screen and the help overlay, both built from bindings.
+
+    ``bindings`` are the screen's active ones (the runtime filters on ``when``).
+    The footer lists them, then ``esc back`` and ``? help``; while the runtime
+    waits for a write after the screen quit, it reads ``saving`` and the
+    ellipsis token instead. The separator and ellipsis are theme tokens, and
+    keys appear as words, never arrow glyphs.
+    """
+
+    bindings: tuple[Binding, ...] = ()
+    saving: bool = False
+
+    def entries(self) -> tuple[tuple[str, str], ...]:
+        """The ``(key, label)`` pairs the footer shows, in order."""
+        return (
+            *((binding.key, binding.label) for binding in self.bindings),
+            ("esc", SHARED_KEYS["esc"].label),
+            ("?", SHARED_KEYS["?"].label),
+        )
+
+    def line(self, frame: Frame) -> Text:
+        """The footer as one line of exactly ``frame.width`` cells."""
+        from rich.text import Text  # noqa: PLC0415 - keeps Rich out of import time
+
+        from untaped.screen.fit import fit_text  # noqa: PLC0415
+
+        line = Text()
+        if self.saving:
+            line.append(f"saving{frame.ellipsis()}", style=frame.style("screen.accent"))
+        else:
+            separator = f" {frame.symbol('separator')} "
+            for index, (key, label) in enumerate(self.entries()):
+                if index:
+                    line.append(separator, style=frame.style("screen.border"))
+                line.append(key, style=frame.style("screen.accent"))
+                line.append(f" {label}", style=frame.style("screen.muted"))
+        return fit_text(line, frame.width, frame.ellipsis())
+
+    def overlay(self, frame: Frame) -> RenderableType:
+        """The help overlay: every active binding and every shared key, one per line."""
+        from rich.table import Table  # noqa: PLC0415
+        from rich.text import Text  # noqa: PLC0415
+
+        table = Table(
+            show_header=False,
+            box=frame.box(),
+            border_style=frame.style("screen.border"),
+            title="Keys",
+            title_style=frame.style("screen.accent"),
+            caption="esc closes help",
+            caption_style=frame.style("screen.muted"),
+        )
+        table.add_column(style=frame.style("screen.accent"), no_wrap=True)
+        table.add_column(style=frame.style("screen.value"))
+        for binding in self.bindings:
+            table.add_row(Text(binding.key), Text(binding.label))
+        for shared in SHARED_KEYS.values():
+            table.add_row(Text(shared.key), Text(shared.label))
+        return table
