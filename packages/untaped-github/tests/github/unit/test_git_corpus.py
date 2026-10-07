@@ -71,7 +71,7 @@ class _Corpus:
     def has_ref(self, ref: str) -> bool:
         return (
             subprocess.run(
-                ["git", "show-ref", "--verify", "--quiet", ref], cwd=self.bare
+                ["git", "--git-dir", str(self.bare), "show-ref", "--verify", "--quiet", ref]
             ).returncode
             == 0
         )
@@ -176,8 +176,9 @@ def _record_fetches(
     real_run = subprocess.run
 
     def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-        if args[1:2] == ["fetch"]:
-            fetches.append(args[1:])
+        argv = args[2:] if args[1].startswith("--git-dir=") else args[1:]
+        if argv[:1] == ["fetch"]:
+            fetches.append(argv)
             stderr = (fail or {}).get(len(fetches))
             if stderr is not None:
                 return subprocess.CompletedProcess(args, 128, stdout=b"", stderr=stderr.encode())
