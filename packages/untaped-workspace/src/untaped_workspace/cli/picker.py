@@ -167,7 +167,7 @@ def choose_repos(
         )
     if empty or flags or not ui.can_prompt:
         if name is None:
-            hint = "pass NAME before the options" if flags else NO_NAME_HINT
+            hint = "pass NAME before the options" if flags or empty else NO_NAME_HINT
             raise UsageError("a workspace name is required", hint=hint)
         if not flags:
             if record is not None:
