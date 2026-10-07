@@ -194,6 +194,17 @@ def test_ctrl_s_requires_a_selection() -> None:
     assert press(state, "down").error == ""
 
 
+def test_ctrl_s_confirms_no_selection_when_the_request_allows_it() -> None:
+    state = press(_state(allow_empty=True), "ctrl-s")
+    assert (state.outcome, state.error) == ("confirmed", "")
+    assert result(state).picks == ()
+
+
+def test_allow_empty_still_requires_the_title() -> None:
+    state = press(_state(allow_empty=True, title_label="name"), "ctrl-s")
+    assert (state.outcome, state.error) == ("running", "name is required")
+
+
 def test_ctrl_s_requires_the_title_when_there_is_a_title_field() -> None:
     state = press(_state(title_label="name"), "down", "down", " ", "ctrl-s")
     assert (state.outcome, state.focus) == ("running", "title")

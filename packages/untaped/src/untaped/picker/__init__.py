@@ -60,7 +60,8 @@ class PickRequest:
     (``force=False``) and on ctrl-r (``force=True``); it is never called
     concurrently (ctrl-r is ignored while one runs), but may still be running
     after the picker returns. ``adhoc(query)`` may turn the typed query into
-    an extra item (a URL).
+    an extra item (a URL). ``allow_empty`` lets the user confirm with nothing
+    selected.
     """
 
     heading: str
@@ -72,6 +73,7 @@ class PickRequest:
     subtitle: Callable[[str, Mapping[str, str]], str] | None = None
     refresh: Callable[[bool], PickCatalog] | None = None
     adhoc: Callable[[str], PickItem | None] | None = None
+    allow_empty: bool = False
 
 
 @dataclass(frozen=True)

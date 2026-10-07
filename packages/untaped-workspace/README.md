@@ -56,8 +56,9 @@ untaped workspace add PROJ-123
 
 `add` takes repos by name, from a pipe, or, with no repos in a terminal, from
 a picker over the GitHub inventory, the repo cache and any git URL you paste.
-`create` opens the same picker. `create NAME` alone, with no repos, makes an
-empty workspace to `add` to later.
+`create` opens the same picker, which also creates the workspace with no
+repos selected. `create NAME --empty` (or `create NAME` alone without a
+terminal) makes an empty workspace to `add` to later.
 
 ## Find a workspace
 
