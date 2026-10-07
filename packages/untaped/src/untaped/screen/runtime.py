@@ -12,10 +12,15 @@ What it owns, in one place:
 - **Dispatch order** for a key: the screen's ``update`` first (the focused
   component lives there), then the screen's bindings, then the shared keys.
   "Handled" means ``update`` returned a different model object or any command.
-- **Commands** run with the context captured when they were issued (Python 3.14
-  threads start with an empty context). A raising command becomes a
-  :class:`CmdError`. Write commands run one at a time, in order, and finish
-  even when the screen quits; the rest are abandoned on quit.
+- **Context.** Python 3.14 threads and ``call_soon_threadsafe`` callbacks do not
+  inherit the caller's context variables, so the runtime owns the context:
+  :meth:`Runtime.start` captures it, every call it posts to the host (a command's
+  completion, hence the ``update`` it triggers and the commands that issues) runs
+  in a copy of it, and each command runs in the context captured when it was
+  issued. A chain of commands therefore sees the caller's variables throughout.
+- **Commands**: a raising command becomes a :class:`CmdError`. Write commands
+  run one at a time, in order, and finish even when the screen quits; the rest
+  are abandoned on quit.
 - **The frame**: the view above a pinned footer, or the help overlay.
 """
 
@@ -48,7 +53,7 @@ from untaped.screen.core import (
 )
 from untaped.theme import ThemeSpec
 
-__all__ = ["Host", "Runtime", "SyncHost", "capture_console"]
+__all__ = ["CmdKind", "Host", "Runtime", "SyncHost", "capture_console"]
 
 type CmdKind = Literal["background", "write", "suspend"]
 
@@ -61,7 +66,12 @@ class Host(Protocol):
         ...
 
     def post(self, call: Callable[[], None]) -> None:
-        """Run ``call`` on the loop thread, later."""
+        """Run ``call`` on the loop thread, later.
+
+        The runtime hands over a ``call`` that already runs under the runtime's
+        context, so the host need not (and cannot usefully) carry the poster's
+        context variables across threads.
+        """
         ...
 
     def redraw(self) -> None:
@@ -77,8 +87,8 @@ def capture_console(
     width: int,
     height: int,
     *,
-    color_system: Literal["standard", "256", "truecolor"] | None = None,
-    no_color: bool = True,
+    color_system: Literal["standard", "256", "truecolor"] | None,
+    no_color: bool,
 ) -> Console:
     """The one console that renders screens, into a buffer.
 
@@ -129,14 +139,17 @@ class Runtime[M, R]:
         self._write_running = False
         self._suspend_running = False
         self._finished = False
+        self._context = contextvars.Context()
 
     @property
     def saving(self) -> bool:
         """Whether the screen quit and the runtime waits for write commands."""
+        # ``bool()`` keeps the property a bool: ``or`` would hand back the deque.
         return self.outcome is not None and (self._write_running or bool(self._writes))
 
     def start(self) -> None:
-        """Run ``screen.init`` and issue its commands."""
+        """Capture the caller's context, run ``screen.init`` and issue its commands."""
+        self._context = contextvars.copy_context()
         model, cmds = self.screen.init()
         self.model = model
         self._issue(cmds)
@@ -236,7 +249,6 @@ class Runtime[M, R]:
     def _issue(self, cmds: Sequence[Cmd]) -> None:
         for cmd in cmds:
             self._issue_one(cmd)
-        self._pump()
 
     def _issue_one(self, cmd: Cmd) -> None:
         if is_inline(cmd):
@@ -247,8 +259,10 @@ class Runtime[M, R]:
         context = contextvars.copy_context()
         if cmd.write:
             self._writes.append((cmd, context))
+            self._pump()  # start it now, so commands begin in the order they were issued
         elif cmd.suspend:
             self._suspends.append((cmd, context))
+            self._pump()
         else:
             self._spawn(cmd, context, "background")
 
@@ -273,7 +287,8 @@ class Runtime[M, R]:
             except Exception as error:
                 result = CmdError(error)
             finally:
-                self.host.post(lambda: self._complete(kind, result))
+                # A fresh copy per call: a context cannot be entered twice at once.
+                self.host.post(lambda: self._context.copy().run(self._complete, kind, result))
 
         self.host.spawn(job, kind=kind)
 
@@ -283,7 +298,7 @@ class Runtime[M, R]:
             self._write_running = False
         elif kind == "suspend":
             self._suspend_running = False
-        if result is not None and self.outcome is None:
+        if result is not None:  # a message after the outcome is dropped by ``_dispatch``
             self._inbox.append(result)
             self._drain()
         self._pump()

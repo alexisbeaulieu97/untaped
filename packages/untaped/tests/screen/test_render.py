@@ -2,28 +2,23 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from rich.text import Text
 
-from screen.support import Model, Probe, frame_text
-from untaped.screen.core import Frame, Key, Screen
+from screen.support import Probe, make_screen
+from untaped.screen.core import Binding, Frame, Key, Screen
 from untaped.screen.runtime import Runtime, SyncHost, capture_console
-from untaped.theme import BUILTIN_THEMES
+from untaped.testing.screens import rendered_text
+from untaped.theme import BUILTIN_THEMES, ThemeSpec
 
 
-def _screen(view_text: str, *, layout: str = "full") -> Screen[Model, str]:
-    return Screen(
-        init=lambda: (Model(), []),
-        update=lambda model, message: (model, []),
-        view=lambda model, frame: view_text,
-        title="Render",
-        command="untaped render",
-        alternative="untaped render --format json",
-        layout=layout,  # type: ignore[arg-type]
-    )
+def _screen(view_text: str, *, layout: str = "full") -> Screen[Any, Any]:
+    return make_screen(view=lambda model, frame: view_text, layout=layout)
 
 
-def _runtime(screen: Screen[Model, str], size: tuple[int, int] = (40, 8)) -> Runtime[Model, str]:
+def _runtime(screen: Screen[Any, Any], size: tuple[int, int] = (40, 8)) -> Runtime[Any, Any]:
     runtime = Runtime(screen, SyncHost(), theme=BUILTIN_THEMES["default"], size=size)
     runtime.start()
     return runtime
@@ -32,7 +27,7 @@ def _runtime(screen: Screen[Model, str], size: tuple[int, int] = (40, 8)) -> Run
 @pytest.mark.parametrize("text", ["[WIP] fix [/]", ":smile:", "[bold]x"])
 def test_a_view_string_is_literal_text(text: str) -> None:
     runtime = _runtime(_screen(text))
-    assert frame_text(runtime.renderable(), 40, 8).splitlines()[0] == text
+    assert rendered_text(runtime.renderable(), 40, 8).splitlines()[0] == text
 
 
 def test_the_highlighter_is_off() -> None:
@@ -45,21 +40,14 @@ def test_the_highlighter_is_off() -> None:
 
 
 def test_a_text_view_keeps_its_own_style() -> None:
-    screen = Screen(
-        init=lambda: (Model(), []),
-        update=lambda model, message: (model, []),
-        view=lambda model, frame: Text("styled", style="bold"),
-        title="Render",
-        command="untaped render",
-        alternative="untaped render --format json",
-    )
+    screen = make_screen(view=lambda model, frame: Text("styled", style="bold"))
     console = capture_console(40, 8, color_system="truecolor", no_color=False)
     console.print(_runtime(screen).renderable(), end="")
     assert "\x1b[1mstyled" in console.file.getvalue()  # type: ignore[attr-defined]
 
 
 def test_footer_is_pinned_to_the_last_row() -> None:
-    lines = frame_text(_runtime(_screen("top")).renderable(), 40, 8).splitlines()
+    lines = rendered_text(_runtime(_screen("top")).renderable(), 40, 8).splitlines()
     assert len(lines) == 8
     assert lines[0] == "top"
     assert lines[-1] == "esc back · ? help"
@@ -69,25 +57,17 @@ def test_footer_is_pinned_to_the_last_row() -> None:
 def test_the_view_is_given_the_rows_above_the_footer() -> None:
     seen: list[Frame] = []
 
-    def view(model: Model, frame: Frame) -> str:
+    def view(model: int, frame: Frame) -> str:
         seen.append(frame)
         return "x"
 
-    screen = Screen(
-        init=lambda: (Model(), []),
-        update=lambda model, message: (model, []),
-        view=view,
-        title="Render",
-        command="untaped render",
-        alternative="untaped render --format json",
-    )
-    _runtime(screen, (50, 10)).renderable()
+    _runtime(make_screen(view=view), (50, 10)).renderable()
     assert (seen[-1].width, seen[-1].height) == (50, 9)
     assert seen[-1].theme is BUILTIN_THEMES["default"]
 
 
 def test_an_inline_screen_has_no_fixed_height() -> None:
-    lines = frame_text(_runtime(_screen("one line", layout="inline")).renderable(), 40, 8)
+    lines = rendered_text(_runtime(_screen("one line", layout="inline")).renderable(), 40, 8)
     assert lines.splitlines() == ["one line", "esc back · ? help"]
 
 
@@ -95,15 +75,39 @@ def test_a_long_footer_is_cut_with_the_ellipsis() -> None:
     probe = Probe()
     runtime = Runtime(probe.screen, SyncHost(), theme=BUILTIN_THEMES["default"], size=(10, 4))
     runtime.start()
-    last = frame_text(runtime.renderable(), 10, 4).splitlines()[-1]
-    assert last == "esc back ·…"[:10] or last.endswith("…")
-    assert len(last) <= 10
+    last = rendered_text(runtime.renderable(), 10, 4).splitlines()[-1]
+    assert last == "esc back …"
 
 
 def test_the_help_overlay_follows_the_themes_border() -> None:
     plain = Runtime(_screen("x"), SyncHost(), theme=BUILTIN_THEMES["plain"], size=(40, 14))
     plain.start()
     plain.send(Key("?"))
-    text = frame_text(plain.renderable(), 40, 14)
+    text = rendered_text(plain.renderable(), 40, 14)
     assert "+-" in text
     assert text.isascii()
+
+
+def test_the_help_overlay_without_a_border_draws_no_box() -> None:
+    theme = ThemeSpec(border="none")
+    runtime = Runtime(_screen("x"), SyncHost(), theme=theme, size=(40, 14))
+    runtime.start()
+    runtime.send(Key("?"))
+    text = rendered_text(runtime.renderable(), 40, 14)
+    assert not any(char in text for char in "+|─│╭╮╰╯┌┐└┘")
+    assert "esc" in text
+    assert "esc closes help" in text
+
+
+def test_the_help_overlay_names_the_space_bar() -> None:
+    screen = make_screen(keys=(Binding(" ", "toggle", object()),))
+    runtime = Runtime(screen, SyncHost(), theme=BUILTIN_THEMES["default"], size=(40, 14))
+    runtime.start()
+    runtime.send(Key("?"))
+    lines = rendered_text(runtime.renderable(), 40, 14).splitlines()
+    assert any("space" in line and "toggle" in line for line in lines)
+
+
+def test_capture_console_needs_its_colour_choices_spelled_out() -> None:
+    with pytest.raises(TypeError):
+        capture_console(10, 2)  # type: ignore[call-arg]

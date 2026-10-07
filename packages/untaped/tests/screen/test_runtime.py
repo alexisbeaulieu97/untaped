@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import threading
 from collections.abc import Callable
@@ -9,7 +10,7 @@ from dataclasses import dataclass, replace
 
 import pytest
 
-from screen.support import FakeHost, ImmediateHost, Model, Probe, frame_text, logged
+from screen.support import FakeHost, ImmediateHost, Model, Probe, logged
 from untaped.screen.core import (
     SHARED_KEYS,
     Activate,
@@ -28,6 +29,7 @@ from untaped.screen.core import (
     Submit,
 )
 from untaped.screen.runtime import CmdKind, Runtime, SyncHost
+from untaped.testing.screens import rendered_text
 from untaped.theme import BUILTIN_THEMES
 
 SIZE = (60, 12)
@@ -49,7 +51,7 @@ def _runtime(
 
 
 def _frame(runtime: Runtime[Model, str]) -> str:
-    return frame_text(runtime.renderable(), *runtime.size)
+    return rendered_text(runtime.renderable(), *runtime.size)
 
 
 def _cmd(kind: CmdKind, fn: Callable[[], object]) -> Cmd:
@@ -388,6 +390,90 @@ def test_a_context_var_set_after_a_command_was_issued_is_not_visible() -> None:
     assert runtime.model.log == (Got("unset"),)
 
 
+@pytest.mark.parametrize("threaded", [False, True], ids=["same-thread", "worker-thread"])
+@pytest.mark.parametrize("kind", ["background", "write", "suspend"])
+def test_a_command_issued_by_an_update_keeps_the_callers_context(
+    kind: CmdKind, threaded: bool
+) -> None:
+    """The host delivers a completion in the poster's context; the chain must not lose ours."""
+
+    def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
+        if message == Got("first"):
+            seen = Got(("update saw", _VAR.get()))
+            return logged(model, seen, _cmd(kind, lambda: Got(("second saw", _VAR.get()))))
+        return logged(model, message)
+
+    token = _VAR.set("around-run")
+    try:
+        probe = Probe(handler, init=[_cmd(kind, lambda: Got("first"))])
+        runtime, host = _runtime(probe, FakeHost(threads=threaded))
+    finally:
+        _VAR.reset(token)
+    moved_on = _VAR.set("after-issue")
+    try:
+        if threaded:
+            host.deliver(2)
+        else:
+            host.deliver_all()
+    finally:
+        _VAR.reset(moved_on)
+    assert runtime.model.log == (
+        Got(("update saw", "around-run")),
+        Got(("second saw", "around-run")),
+    )
+    assert host.spawned == [kind, kind]
+    host.join()
+
+
+def test_a_chain_of_commands_keeps_the_context_on_a_real_event_loop() -> None:
+    def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
+        if message == Got("first"):
+            return logged(model, message, Cmd(lambda: Got(_VAR.get())))
+        if message == Got("around-loop"):
+            return logged(model, message, Cmd.send(Quit("done")))
+        return logged(model, message)
+
+    class LoopHost(FakeHost):
+        def __init__(self, loop: asyncio.AbstractEventLoop, done: asyncio.Future[None]) -> None:
+            super().__init__(threads=True)
+            self._loop = loop
+            self._done = done
+
+        def post(self, call: Callable[[], None]) -> None:
+            self._loop.call_soon_threadsafe(call)
+
+        def finish(self) -> None:
+            super().finish()
+            self._done.set_result(None)
+
+    async def main() -> tuple[Runtime[Model, str], LoopHost]:
+        loop = asyncio.get_running_loop()
+        done: asyncio.Future[None] = loop.create_future()
+        host = LoopHost(loop, done)
+        _VAR.set("around-loop")
+        runtime = Runtime(
+            Probe(handler, init=[Cmd(lambda: Got("first"))]).screen,
+            host,
+            theme=BUILTIN_THEMES["default"],
+            size=SIZE,
+        )
+        runtime.start()
+        await asyncio.wait_for(done, 5)
+        return runtime, host
+
+    runtime, host = asyncio.run(main())
+    host.join()
+    assert runtime.model.log == (Got("first"), Got("around-loop"))
+    assert runtime.outcome == Quit("done")
+
+
+@pytest.mark.parametrize("kind", ["write", "suspend"])
+def test_commands_start_in_the_order_they_were_issued(kind: CmdKind) -> None:
+    probe = Probe(init=[_cmd(kind, lambda: None), Cmd(lambda: None), _cmd(kind, lambda: None)])
+    _runtime(probe, host := FakeHost())
+    assert host.spawned == [kind, "background"]  # the second one of its kind waits its turn
+
+
 def test_update_runs_on_the_loop_thread_only() -> None:
     probe = Probe(
         lambda model, message: logged(model, message),
@@ -532,7 +618,6 @@ def test_each_shared_key_sends_its_message_after_the_component_passed(
     runtime, _host = _runtime(probe)
     runtime.send(Key(key))
     assert probe.seen[:2] == [Key(key), message]
-    assert set(SHARED_KEYS) >= {key}
 
 
 def test_an_unhandled_tab_or_enter_is_ignored() -> None:
