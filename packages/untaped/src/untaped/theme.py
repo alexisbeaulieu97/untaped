@@ -89,6 +89,8 @@ SCREEN_ROLE_NAMES: tuple[str, ...] = (
     "screen.value",
     "screen.success",
     "screen.error",
+    "screen.caret",
+    "screen.emphasis",
 )
 ROLE_NAMES: tuple[str, ...] = (*TABLE_ROLE_NAMES, *SCREEN_ROLE_NAMES)
 
@@ -102,6 +104,8 @@ ZINC_SCREEN_ROLES: dict[str, str] = {
     "screen.value": "#fafafa",
     "screen.success": "#4ade80",
     "screen.error": "#f87171",
+    "screen.caret": "reverse",
+    "screen.emphasis": "bold",
 }
 
 #: Screen roles of the themes limited to named 16-colour styles.
@@ -114,6 +118,8 @@ NAMED_SCREEN_ROLES: dict[str, str] = {
     "screen.value": "white",
     "screen.success": "green",
     "screen.error": "red",
+    "screen.caret": "reverse",
+    "screen.emphasis": "bold",
 }
 
 

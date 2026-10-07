@@ -325,6 +325,21 @@ def test_cycle_wraps_and_shows_inherit() -> None:
     assert field_of(run).value == "json"
 
 
+def test_cycle_holds_any_values_and_shows_their_labels() -> None:
+    cycle = Cycle("Loud", (None, True, False), None, labels=("unset", "on", "off"))
+
+    assert "unset" in run_solo(cycle).frame
+    after = field_of(run_solo(cycle, "right"))
+    assert after.value is True
+    assert "on" in run_solo(after).frame
+    assert field_of(run_solo(cycle, "left")).value is False
+    assert field_of(run_solo(cycle, "right", "right", "right")).value is None  # wrapped
+    inherited = replace(cycle, value=True, inherited=True)
+    assert "inherit (on)" in run_solo(inherited).frame
+    unlabelled = Cycle("N", (1, 2), 2)
+    assert "2" in run_solo(unlabelled).frame  # without labels a value shows as itself
+
+
 def test_cycle_ignores_every_other_key_and_has_nothing_to_cycle_without_choices() -> None:
     component = Cycle("Format", ("a", "b"), "a")
     for key in ("up", "enter", "x", " "):
@@ -628,15 +643,88 @@ def test_primary_and_secondary_are_boxed_and_ghost_is_plain_text() -> None:
     assert lines(frame)[0].count("╭") == 2
 
 
-def test_the_focused_button_has_the_focus_border_and_the_accent_label() -> None:
-    segments = render_styled(_buttons().view(Frame(60, 8, DEFAULT), focused=True), width=60)
+def _borders(segments: list, theme: str) -> list:
+    """The styles of the top-left corners of the first row of boxes, left to right."""
+    corner = Frame(60, 8, BUILTIN_THEMES[theme]).box().top_left  # type: ignore[union-attr]
+    first_line = segments[: next(i for i, s in enumerate(segments) if s.text == "\n")]
+    return [s.style for s in first_line if corner in s.text and s.style is not None]
 
-    assert style_of(segments, "╭").color == role(DEFAULT, "screen.focus").color
-    assert style_of(segments, "Save").color == role(DEFAULT, "screen.accent").color
-    assert style_of(segments, "Cancel").color == role(DEFAULT, "screen.muted").color
-    unfocused = render_styled(_buttons().view(Frame(60, 8, DEFAULT), focused=False), width=60)
-    assert style_of(unfocused, "╭").color == role(DEFAULT, "screen.border").color
-    assert style_of(unfocused, "Save").bold  # primary stays bold
+
+@pytest.mark.parametrize("theme", [name for name in THEMES if name != "quiet"])
+@pytest.mark.parametrize("focused", [True, False])
+def test_a_primary_button_always_has_the_bright_ring_and_a_secondary_the_muted_border(
+    theme: str, focused: bool
+) -> None:
+    for focus in range(3):
+        segments = _segments(replace(_buttons(), focus=focus), theme, focused=focused, width=60)
+        primary, secondary = _borders(segments, theme)
+
+        assert primary.color == role(BUILTIN_THEMES[theme], "screen.accent").color
+        assert secondary.color == role(BUILTIN_THEMES[theme], "screen.border").color
+        assert primary != secondary  # the ring is what tells primary from secondary
+        assert primary.bold  # bright
+        # focus never recolours a border: it is the highlight on the label row
+        assert (primary, secondary) == tuple(_borders(_segments(_buttons(), theme), theme))
+
+
+@pytest.mark.parametrize("theme", THEMES)
+@pytest.mark.parametrize(("focus", "label"), [(0, "Save"), (1, "Save anyway"), (2, "Cancel")])
+def test_the_focused_button_has_the_highlight_fill_and_bright_text_on_its_label_row(
+    theme: str, focus: int, label: str
+) -> None:
+    spec = BUILTIN_THEMES[theme]
+    highlight = role(spec, "screen.highlight")
+    segments = _segments(replace(_buttons(), focus=focus), theme, width=60)
+
+    style = style_of(segments, label)
+    assert style.bgcolor == highlight.bgcolor  # the one allowed fill
+    assert style.color == highlight.color  # bright text
+    assert bool(style.reverse) == bool(highlight.reverse)
+    if focus == 0:
+        assert style.bold  # primary stays bold on the highlight
+    if spec.border != "none":
+        # the fill covers the whole label row, padding included
+        cell = next(seg for seg in segments if label in seg.text and seg.style == style)
+        assert cell.text == f" {label} "
+
+    unfocused = style_of(_segments(_buttons(), theme, focused=False, width=60), label)
+    assert unfocused.bgcolor is None
+    assert not unfocused.reverse
+    if focus == 0:
+        assert unfocused.bold
+    if focus == 2:
+        assert unfocused.color == role(spec, "screen.muted").color  # a ghost button is muted text
+
+
+def test_a_theme_that_overrides_the_emphasis_role_restyles_every_emphasised_text() -> None:
+    spec = DEFAULT.model_copy(
+        update={"color_roles": {**DEFAULT.color_roles, "screen.emphasis": "italic"}}
+    )
+    frame = Frame(60, 20, spec)
+
+    def styled(component: object, needle: str):
+        view = component.view(frame, focused=False, width=46)  # type: ignore[attr-defined]
+        return style_of(render_styled(view, width=46), needle)
+
+    for component, needle in (
+        (_buttons(), "Save"),
+        (Check("Verify", True), BUILTIN_THEMES["default"].symbols["on"]),
+        (MultiList("Caps", (ListItem("a", "alpha"),), frozenset({"a"})), "\u2713"),
+        (SingleList("Out", OUTPUTS, "table"), "table"),
+    ):
+        style = styled(component, needle)
+        assert style.italic, (type(component).__name__, style)
+        assert not style.bold, (type(component).__name__, style)
+
+
+def test_only_the_focused_button_is_filled() -> None:
+    highlight = role(DEFAULT, "screen.highlight")
+    for focus, label in ((0, "Save"), (1, "Save anyway"), (2, "Cancel")):
+        segments = _segments(replace(_buttons(), focus=focus), width=60)
+        filled = [
+            s.text for s in segments if s.style is not None and s.style.bgcolor == highlight.bgcolor
+        ]
+        assert filled == [f" {label} "]
 
 
 def test_without_a_box_buttons_are_a_line_with_the_chosen_symbol_before_the_focused_one() -> None:

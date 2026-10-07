@@ -110,6 +110,38 @@ def test_an_empty_focused_line_reverses_the_first_placeholder_character() -> Non
     assert text_line(DEFAULT, 20, "", 0, focused=False).plain == " " * 20
 
 
+def _themed(**roles: str) -> Frame:
+    spec = BUILTIN_THEMES["default"]
+    return Frame(60, 20, spec.model_copy(update={"color_roles": {**spec.color_roles, **roles}}))
+
+
+def _carets(line: Text) -> list[Style]:
+    """The styles of the spans that sit on the caret's character."""
+    return [span.style for span in line.spans if not isinstance(span.style, str)]
+
+
+@pytest.mark.parametrize("text", ["", "abc"])
+def test_a_theme_that_overrides_the_caret_role_changes_the_caret_style(text: str) -> None:
+    plain = text_line(DEFAULT, 20, text, 1 if text else 0, focused=True, placeholder="name")
+    themed = text_line(
+        _themed(**{"screen.caret": "underline"}),
+        20,
+        text,
+        1 if text else 0,
+        focused=True,
+        placeholder="name",
+    )
+
+    assert any(style.reverse for style in _carets(plain))
+    assert not any(style.reverse for style in _carets(themed))
+    assert any(style.underline for style in _carets(themed))
+
+
+def test_the_default_caret_is_the_reversed_text_colour() -> None:
+    assert role_style(DEFAULT, "screen.caret") == Style(reverse=True)
+    assert role_style(DEFAULT, "screen.emphasis") == Style(bold=True)
+
+
 def test_the_edit_buffer_clamps_and_edits() -> None:
     assert EditBuffer("abc", 9) == EditBuffer("abc", 3)
     assert EditBuffer("abc", -2).cursor == 0

@@ -20,7 +20,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from untaped.screen.components.box import field_box
-from untaped.screen.components.draw import BOLD, inner_width, role_style
+from untaped.screen.components.draw import inner_width, role_style
 from untaped.screen.components.fields import Field
 from untaped.screen.core import Cmd, Frame, Key, NextField, PrevField
 from untaped.screen.fit import fit_text
@@ -158,7 +158,9 @@ def _header(
         size = cell if index < len(tabs) - 1 else max(1, inner - cell * (len(tabs) - 1))
         on = tab.id == active
         if on:
-            style = role_style(frame, "screen.accent" if focused else "screen.value") + BOLD
+            style = role_style(
+                frame, "screen.accent" if focused else "screen.value", "screen.emphasis"
+            )
         else:
             style = role_style(frame, "screen.muted")
         label = Text(" " * max(0, (size - cell_len(tab.label)) // 2))

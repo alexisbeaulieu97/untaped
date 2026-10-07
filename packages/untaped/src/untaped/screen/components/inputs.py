@@ -304,8 +304,9 @@ class NumberInput:
     exponent can be typed; a paste is accepted whole or not at all (``1.5``
     pasted into an integer field is ignored, not turned into ``15``).
     :meth:`validate` reports text that does not parse and a number outside
-    ``minimum`` and ``maximum`` (both inclusive); an empty field is valid and
-    its ``value`` is ``None``.
+    ``minimum`` and ``maximum`` (both inclusive) or not above ``above`` / not
+    below ``below`` (both exclusive). An empty field is valid and its ``value``
+    is ``None``, unless the input is ``required``.
     """
 
     label: str
@@ -313,6 +314,9 @@ class NumberInput:
     minimum: float | None = None
     maximum: float | None = None
     integer: bool = True
+    above: float | None = None
+    below: float | None = None
+    required: bool = False
     cursor: int | None = None
     help: str = ""
     error: str = ""
@@ -343,7 +347,11 @@ class NumberInput:
     def validate(self) -> str:
         """The error text for the current text (empty when it is fine or empty)."""
         if not self.text.strip():
-            return ""
+            return (
+                ("Enter a whole number." if self.integer else "Enter a number.")
+                if self.required
+                else ""
+            )
         number = self._parse()
         if number is None:
             return "Must be a whole number." if self.integer else "Must be a number."
@@ -354,6 +362,10 @@ class NumberInput:
             return f"Must be at least {_shown(low)}."
         if high is not None and number > high:
             return f"Must be at most {_shown(high)}."
+        if self.above is not None and number <= self.above:
+            return f"Must be greater than {_shown(self.above)}."
+        if self.below is not None and number >= self.below:
+            return f"Must be less than {_shown(self.below)}."
         return ""
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:

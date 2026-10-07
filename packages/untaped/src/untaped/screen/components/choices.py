@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from typing import Self
+from typing import Any, Self
 
 from rich.cells import cell_len
 from rich.console import Group, RenderableType
@@ -23,7 +23,6 @@ from rich.text import Text
 
 from untaped.screen.components.box import field_box
 from untaped.screen.components.draw import (
-    BOLD,
     DIM,
     divider,
     inner_width,
@@ -95,7 +94,7 @@ def _item_row(
         trail_style = label_style
     else:
         label_style = (
-            role_style(frame, "screen.value") + BOLD
+            role_style(frame, "screen.value", "screen.emphasis")
             if chosen
             else role_style(frame, "screen.muted") + (DIM if item.dimmed else Style.null())
         )
@@ -122,7 +121,10 @@ def _mark_lead(
     layers = ("screen.highlight",) if cursor else ()
     edge = _edge_style(frame, cursor=cursor)
     if chosen:
-        return [(symbol, role_style(frame, *layers, "screen.success") + BOLD), (" ", edge)]
+        return [
+            (symbol, role_style(frame, *layers, "screen.success", "screen.emphasis")),
+            (" ", edge),
+        ]
     return [(" " * cell_len(symbol), edge), (" ", edge)]
 
 
@@ -181,9 +183,13 @@ class Check:
     ) -> RenderableType:
         """The box holding the coloured symbol."""
         if self.value:
-            symbol = Text(frame.symbol("on"), style=role_style(frame, "screen.success") + BOLD)
+            symbol = Text(
+                frame.symbol("on"), style=role_style(frame, "screen.success", "screen.emphasis")
+            )
         else:
-            symbol = Text(frame.symbol("off"), style=role_style(frame, "screen.error") + BOLD)
+            symbol = Text(
+                frame.symbol("off"), style=role_style(frame, "screen.error", "screen.emphasis")
+            )
         return field_box(
             frame,
             self.label,
@@ -439,7 +445,10 @@ class MultiList:
         layers = ("screen.highlight",) if cursor else ()
         edge = _edge_style(frame, cursor=cursor)
         mark = (
-            (frame.symbol("checked"), role_style(frame, *layers, "screen.success") + BOLD)
+            (
+                frame.symbol("checked"),
+                role_style(frame, *layers, "screen.success", "screen.emphasis"),
+            )
             if on
             else (frame.symbol("unchecked"), edge)
         )
@@ -461,15 +470,26 @@ class Cycle:
     Left and right step through ``choices`` and wrap at the ends; the first
     change makes the value the field's own. ``inherited`` draws the value as
     coming from a default (``inherit (value)``) until then. ``choices`` are the
-    strings the component holds and shows.
+    values the component holds (strings, or anything else, such as ``None``,
+    ``True`` and ``False``); it shows each as itself, or as the word at the same
+    place in ``labels`` when those are given.
     """
 
     label: str
-    choices: tuple[str, ...]
-    value: str = ""
+    choices: tuple[Any, ...]
+    value: Any = ""
     inherited: bool = False
     help: str = ""
     error: str = ""
+    labels: tuple[str, ...] = ()
+
+    def _shown(self, value: Any) -> str:
+        """The text of ``value``: its label when it is a choice that has one."""
+        if value in self.choices:
+            index = self.choices.index(value)
+            if index < len(self.labels):
+                return self.labels[index]
+        return str(value)
 
     def with_error(self, text: str) -> Self:
         """This cycle showing ``text`` as its error (empty clears it)."""
@@ -501,10 +521,12 @@ class Cycle:
         muted = role_style(frame, "screen.muted")
         line = Text()
         if self.inherited:
-            line.append(f"{frame.symbol('separator')} inherit ({self.value})", style=muted)
+            line.append(
+                f"{frame.symbol('separator')} inherit ({self._shown(self.value)})", style=muted
+            )
         else:
             line.append(f"{frame.symbol('cycle.left')} ", style=muted)
-            line.append(self.value, style=role_style(frame, "screen.value"))
+            line.append(self._shown(self.value), style=role_style(frame, "screen.value"))
             line.append(f" {frame.symbol('cycle.right')}", style=muted)
         return field_box(
             frame, self.label, line, focused=focused, error=self.error, help=self.help, width=width

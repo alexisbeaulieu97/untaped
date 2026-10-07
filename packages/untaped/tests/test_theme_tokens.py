@@ -32,6 +32,24 @@ def test_every_builtin_theme_defines_every_declared_symbol_and_screen_role(name:
 
 
 @pytest.mark.parametrize("name", THEMES)
+def test_every_builtin_theme_defines_the_caret_and_emphasis_roles_as_today_s_look(
+    name: str,
+) -> None:
+    roles = BUILTIN_THEMES[name].color_roles
+    assert {"screen.caret", "screen.emphasis"} <= set(SCREEN_ROLE_NAMES)
+    assert Style.parse(roles["screen.caret"]) == Style(reverse=True)
+    assert Style.parse(roles["screen.emphasis"]) == Style(bold=True)
+
+
+def test_the_caret_and_emphasis_roles_are_declared_for_writes() -> None:
+    ui = validate_settings_section(
+        {"ui": {"color_roles": {"screen.caret": "underline", "screen.emphasis": "italic"}}}, "ui"
+    )
+    assert ui.color_roles == {"screen.caret": "underline", "screen.emphasis": "italic"}
+    assert resolve_theme(ui).color_roles["screen.caret"] == "underline"
+
+
+@pytest.mark.parametrize("name", THEMES)
 def test_every_screen_symbol_is_one_cell_wide(name: str) -> None:
     symbols = BUILTIN_THEMES[name].symbols
     for token in SCREEN_SYMBOLS:
