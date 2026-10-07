@@ -72,6 +72,9 @@
   (`Screen`, `Cmd`, `UiContext.run`, `untaped.testing.drive_screen`); see
   [Screens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/screens.md).
   ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
+- Screens (experimental): input components (`TextInput`, `SecretInput`,
+  `Select`, `Tabs`, ...) and `field_for`, which maps a setting's type to its
+  component. ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
 
 ### Changed
 
