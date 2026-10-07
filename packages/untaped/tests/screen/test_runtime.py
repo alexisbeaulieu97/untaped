@@ -104,6 +104,55 @@ def test_a_host_that_completes_commands_at_once_keeps_the_order() -> None:
     assert host.finishes == 1
 
 
+def test_a_chain_of_commands_works_on_a_host_that_completes_at_once() -> None:
+    """A completion that issues a command nests another completion, each in its own context."""
+
+    class FirstDeferred(ImmediateHost):
+        first: Callable[[], None] | None = None
+
+        def spawn(self, job: Callable[[], None], *, kind: CmdKind) -> None:
+            if self.first is None and not self.spawned:
+                self.spawned.append(kind)
+                self.first = job
+            else:
+                super().spawn(job, kind=kind)
+
+    def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
+        if message == Paste("go"):
+            return logged(model, message, Cmd(lambda: Got(1)))
+        if message == Got(1):
+            return logged(model, message, Cmd(lambda: Got(2)))
+        return logged(model, message)
+
+    host = FirstDeferred()
+    runtime, _host = _runtime(Probe(handler), host)
+    runtime.send(Paste("go"))
+    assert host.first is not None
+    host.first()  # the first completion arrives on the loop; the next ones nest inside it
+    assert runtime.model.log == (Paste("go"), Got(1), Got(2))
+
+
+def test_a_context_variable_set_by_update_does_not_outlive_its_message() -> None:
+    var: contextvars.ContextVar[str] = contextvars.ContextVar("leak", default="unset")
+
+    def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
+        if message == Paste("go"):
+            return logged(model, message, Cmd(lambda: Got(1)), Cmd(lambda: Got(2)))
+        if message == Got(1):
+            var.set("set")
+            return logged(model, message, Cmd(lambda: Got(("cmd", var.get()))))
+        if message == Got(2):
+            return logged(model, Got(("update", var.get())), Cmd(lambda: Got(("cmd2", var.get()))))
+        return logged(model, message)
+
+    runtime, host = _runtime(Probe(handler))
+    runtime.send(Paste("go"))
+    host.deliver_all()  # each completion is handled on its own
+    assert Got(("update", "unset")) in runtime.model.log
+    assert Got(("cmd", "set")) in runtime.model.log  # the command issued with the var set
+    assert Got(("cmd2", "unset")) in runtime.model.log  # a command issued by the next completion
+
+
 def test_a_message_sent_while_one_is_handled_waits_its_turn() -> None:
     holder: list[Runtime[Model, str]] = []
 
