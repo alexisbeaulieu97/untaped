@@ -191,7 +191,8 @@
 - `github cache worktree --format raw` prints the worktree path, so
   `$(untaped github cache worktree OWNER/NAME --format raw)` works; it printed
   the repository name.
-  ([#535](https://github.com/alexisbeaulieu97/untaped/issues/535))
+  ([#540](https://github.com/alexisbeaulieu97/untaped/pull/540),
+  [#535](https://github.com/alexisbeaulieu97/untaped/issues/535))
 - Repo caches (workspace, ansible, github) work from agent shells that set
   git's `safe.bareRepository=explicit`, such as GitHub Copilot CLI, instead of
   failing with "cannot use bare repository".
