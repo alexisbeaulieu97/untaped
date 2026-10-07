@@ -16,6 +16,7 @@ from untaped.config_schema import (
 )
 from untaped.records import OutcomeRecord, Record, TableGlyph
 from untaped.redaction import redact_url_password
+from untaped.stability import SettingStability
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,10 @@ class SettingEntry(BaseModel):
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
     note: str | None = None
     """Why the value deserves a look, e.g. ``from deprecated github.corpus_path``."""
+    stability: SettingStability = "stable"
+    """The setting's own mark, else its capability's."""
+    use: str | None = None
+    """For a deprecated setting: what replaces it, as help shows it."""
 
 
 class SettingOutcome(OutcomeRecord):
@@ -102,7 +107,11 @@ class SettingRow(Record):
     profile: str | None
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
     note: str | None = None
-    """Set when the value came from a deprecated key or variable."""
+    """Set when the value came from a deprecated key or variable, or the setting is
+    deprecated and names a replacement."""
+    stability: SettingStability = "stable"
+    """``stable``, ``experimental`` or ``deprecated``; the table is split by it, so
+    it is not a column."""
 
 
 def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
@@ -117,7 +126,8 @@ def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
         default=_human(entry.default) if human else entry.default,
         source=entry.source.label,
         profile=entry.profile,
-        note=entry.note,
+        note=entry.note or (None if entry.use is None else f"use {entry.use}"),
+        stability=entry.stability,
     )
 
 

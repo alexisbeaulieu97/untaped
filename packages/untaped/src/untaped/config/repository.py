@@ -36,9 +36,11 @@ from untaped.settings import (
     get_profile_settings_model,
     load_settings_section,
     model_sections,
+    section_stabilities,
     validate_settings_section,
 )
 from untaped.settings_layout import ResolvedConfig
+from untaped.stability import Stability, setting_mark
 from untaped.yaml_roundtrip import KeyRename
 
 SpellingRemoved = Callable[[str], None]
@@ -151,6 +153,14 @@ class SettingsFileRepository:
     def section_model(self, section: str) -> type[BaseModel] | None:
         """The settings model of ``section``, if it is one."""
         return self._section_models().get(section)
+
+    def mark(self, descriptor: FieldDescriptor) -> Stability | None:
+        """The effective stability mark of ``descriptor``: its own, else its capability's."""
+        return setting_mark(
+            descriptor.key,
+            sections=self._section_models(),
+            section_stability=section_stabilities(),
+        )
 
     def deprecated_source(self, descriptor: FieldDescriptor) -> str | None:
         """The old key or variable that supplied ``descriptor``'s value, if any.

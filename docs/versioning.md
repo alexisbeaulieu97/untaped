@@ -71,6 +71,9 @@ changelog entry that says so. Currently experimental:
 - A renamed setting, and its `UNTAPED_*` variable, keeps working as a
   deprecated key until the next major release, with a warning naming the new
   key.
+- A deprecated setting keeps working too, and `untaped config list` lists it
+  under `Deprecated` once it is set; experimental settings sit under
+  `Experimental`, and `--format json` carries each setting's `stability`.
 - Anything else that breaks a stable contract waits for the next major
   release: a changed default, a removed command or flag, a changed positional
   argument, a removed setting, and a renamed or removed environment variable,

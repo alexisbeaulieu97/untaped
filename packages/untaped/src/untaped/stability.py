@@ -25,6 +25,7 @@ every use and, on a settings field, becomes pydantic field deprecation.
 from __future__ import annotations
 
 import re
+import typing
 import weakref
 from collections.abc import Callable, Iterator, Mapping
 from contextvars import ContextVar, Token
@@ -33,7 +34,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from cyclopts import App, Group
 from cyclopts.command_spec import CommandSpec
+from pydantic import BaseModel
+from pydantic.fields import FieldInfo
 
+from untaped.config_schema import unwrap_optional
 from untaped.messages import EXPERIMENTAL_LINE, deprecated_line
 
 if TYPE_CHECKING:
@@ -356,7 +360,7 @@ def _apply(
 # --- the query ---------------------------------------------------------------
 
 
-type MarkTarget = Literal["capability", "group", "command"]
+type MarkTarget = Literal["capability", "group", "command", "setting"]
 
 
 @dataclass(frozen=True)
@@ -364,7 +368,7 @@ class Mark:
     """One mark: where it sits, what it marks, and what it says."""
 
     where: str
-    """The command path (``awx test``) or capability name."""
+    """The command path (``awx test``), capability name or setting key (``awx.test_parallel``)."""
     target: MarkTarget
     stability: Stability
     replacement: str | None
@@ -372,11 +376,14 @@ class Mark:
 
 
 def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> list[Mark]:
-    """Every mark in the composition: capability specs, groups and commands.
+    """Every mark in the composition: capability specs, groups, commands and settings.
 
     Takes the composition, not only the app, because a spec mark is not on a
-    lazy app. ``resolve=True`` imports every lazy capability first (tests and
-    generators only). Holds no state outside its arguments.
+    lazy app. A setting is recorded only for a mark of its own field; one
+    inherited from its capability is that capability's record (ask
+    :func:`setting_mark` for a setting's effective mark). ``resolve=True``
+    imports every lazy capability first (tests and generators only); the
+    settings come from the sections the composition registered.
     """
     found: list[Mark] = []
     for capability in result.capabilities:
@@ -385,7 +392,16 @@ def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> lis
             found.append(_record(spec.name, "capability", spec.stability, root))
     capabilities = frozenset(capability.spec.name for capability in result.capabilities)
     _collect(root, root, (), capabilities, found, resolve=resolve)
+    found.extend(_setting_marks(root))
     return found
+
+
+def _setting_marks(root: App) -> Iterator[Mark]:
+    from untaped.settings import profile_section_models  # noqa: PLC0415
+
+    for section, model in profile_section_models().items():
+        for path, stability in field_marks(model).items():
+            yield _record(f"{section}.{path}", "setting", stability, root)
 
 
 def _record(where: str, target: MarkTarget, stability: Stability, root: App) -> Mark:
@@ -414,6 +430,132 @@ def _collect(
             )
             found.append(_record(" ".join(here), target, mark, root))
         _collect(sub, root, here, capabilities, found, resolve=resolve)
+
+
+# --- marks on settings -------------------------------------------------------
+
+
+def _own_marks(field: FieldInfo) -> list[Stability]:
+    """The marks in the outermost ``Annotated`` of a field (``FieldInfo.metadata``)."""
+    return [item for item in field.metadata if isinstance(item, Experimental | Deprecated)]
+
+
+def _mark_inside_type(annotation: object) -> bool:
+    """Whether a mark sits inside the type itself, where pydantic drops it.
+
+    ``Annotated[int, experimental] | None`` and ``list[Annotated[int, ...]]``
+    keep their marks in ``FieldInfo.annotation``; ``Annotated[int | None,
+    experimental]`` moves its mark to ``FieldInfo.metadata``.
+    """
+    return any(
+        isinstance(arg, Experimental | Deprecated) or _mark_inside_type(arg)
+        for arg in typing.get_args(annotation)
+    )
+
+
+def _section_fields(
+    model: type[BaseModel], prefix: str = ""
+) -> Iterator[tuple[str, FieldInfo, bool]]:
+    """``(dotted path, field, is a model)`` for every field, recursing into nested models."""
+    for name, field in model.model_fields.items():
+        nested = unwrap_optional(field.annotation)
+        is_model = isinstance(nested, type) and issubclass(nested, BaseModel)
+        yield f"{prefix}{name}", field, is_model
+        if is_model:
+            yield from _section_fields(nested, f"{prefix}{name}.")
+
+
+def field_descriptions(model: type[BaseModel]) -> dict[str, str]:
+    """The ``description`` of each described leaf field of a section ``model``, by dotted path."""
+    return {
+        path: field.description
+        for path, field, is_model in _section_fields(model)
+        if field.description and not is_model
+    }
+
+
+def field_marks(model: type[BaseModel]) -> dict[str, Stability]:
+    """The marks on the leaf fields of a section ``model``, by dotted path.
+
+    Only a mark in the outermost ``Annotated`` of a leaf counts; a misplaced
+    one is reported by :func:`mark_errors` and ignored here.
+    """
+    found: dict[str, Stability] = {}
+    for path, field, is_model in _section_fields(model):
+        marks_here = _own_marks(field)
+        if len(marks_here) == 1 and not is_model:
+            found[path] = marks_here[0]
+    return found
+
+
+def pydantic_deprecated_fields(model: type[BaseModel]) -> list[str]:
+    """The dotted paths of the fields of ``model`` that use pydantic's own ``deprecated=``."""
+    return [path for path, field, _ in _section_fields(model) if field.deprecated]
+
+
+def mark_errors(model: type[BaseModel], *, state: bool = False) -> list[str]:
+    """One sentence per mark on ``model`` that would not take effect; ``[]`` when none.
+
+    A mark must sit in the outermost ``Annotated`` of a leaf field of a profile
+    model (``Annotated[int | None, experimental]``), never inside a union or
+    generic argument, on a model-typed field, on a state model's field
+    (``state=True``). A field with pydantic's own ``deprecated=`` is a style
+    problem for ``check_conventions`` (:func:`pydantic_deprecated_fields`), not
+    one that stops a provider loading.
+    """
+    errors: list[str] = []
+    for path, field, is_model in _section_fields(model):
+        marks_here = _own_marks(field)
+        inside = _mark_inside_type(field.annotation)
+        if state:
+            if marks_here or inside:
+                errors.append(f"setting {path!r} is state: state fields take no stability marks")
+            continue
+        if inside:
+            errors.append(
+                f"the mark on setting {path!r} sits inside its type, where pydantic drops it; "
+                "put it in the outermost Annotated, as Annotated[int | None, experimental]"
+            )
+        if marks_here and is_model:
+            errors.append(f"setting {path!r} is a model; mark its fields instead")
+        if len(marks_here) > 1:
+            errors.append(f"setting {path!r} has more than one stability mark")
+        errors.extend(
+            f"the replacement of the mark on setting {path!r} must be text"
+            for mark in marks_here
+            if isinstance(mark, Deprecated)
+            and mark.replacement is not None
+            and not isinstance(mark.replacement, str)
+        )
+    return errors
+
+
+type SettingStability = Literal["stable", "experimental", "deprecated"]
+
+
+def setting_mark(
+    key: str,
+    *,
+    sections: Mapping[str, type[BaseModel]],
+    section_stability: Mapping[str, Stability | None],
+) -> Stability | None:
+    """The effective mark of setting ``key`` (``section.field``), or ``None`` when stable.
+
+    The field's own mark wins; otherwise the setting inherits the mark of the
+    capability that owns its section. Pure: ``section_stability`` is what
+    :func:`untaped.settings.section_stabilities` returns.
+    """
+    section, _, rest = key.partition(".")
+    model = sections.get(section)
+    own = None if model is None else field_marks(model).get(rest)
+    return own if own is not None else section_stability.get(section)
+
+
+def stability_name(mark: Stability | None) -> SettingStability:
+    """``mark`` as the word ``config list`` and ``config get`` show."""
+    if mark is None:
+        return "stable"
+    return "experimental" if isinstance(mark, Experimental) else "deprecated"
 
 
 # --- renamed commands and options -------------------------------------------

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from test_management.support import compose, make_spec, write_config
 from untaped import bootstrap
 from untaped.management.config import build_root_config_app
+from untaped.stability import deprecated
 from untaped.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -31,12 +32,11 @@ class MigratedProfile(BaseModel):
         "sweep.sync_concurrency": "sweep.parallel",
     }
     retired_keys: ClassVar[dict[str, str]] = {"ancient_path": "corpus_path"}
-    deprecated_settings: ClassVar[dict[str, str]] = {"legacy": "use cache_dir"}
 
     cache_dir: str = "cache"
     git_fetch_parallel: int = 8
     probe_parallel: int = 8
-    legacy: bool = False
+    legacy: Annotated[bool, deprecated(replacement="cache_dir")] = False
     sweep: Sweep = Field(default_factory=Sweep)
 
 

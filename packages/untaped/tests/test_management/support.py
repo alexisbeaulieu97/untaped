@@ -19,6 +19,7 @@ from untaped.capabilities.registry import (
 from untaped.cli import create_app
 from untaped.sdk import HttpStatusError, TokenCommand, TokenSources, online_check
 from untaped.settings import get_settings
+from untaped.stability import Stability
 from untaped.testing import provider_candidate
 
 # NOTE: section models are module-level on purpose. The settings registry
@@ -105,6 +106,7 @@ def make_spec(
     state_model: type[BaseModel] | None = None,
     skills: tuple[SkillAsset, ...] = (),
     doctor_checks: tuple[DoctorCheck, ...] = (),
+    stability: Stability | None = None,
 ) -> CapabilitySpec:
     """Return a minimal capability spec double mounting an empty sub-app."""
 
@@ -119,6 +121,7 @@ def make_spec(
         state_model=state_model,
         skills=skills,
         doctor_checks=doctor_checks,
+        stability=stability,
     )
 
 

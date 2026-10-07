@@ -143,9 +143,9 @@ def test_discovery_runs_before_settings_registration(monkeypatch: pytest.MonkeyP
 
     real_register = bootstrap.register_profile_settings
 
-    def spy_register(section: str, model: object) -> None:
+    def spy_register(section: str, model: object, stability: object = None) -> None:
         events.append(f"register:{section}")
-        real_register(section, model)  # type: ignore[arg-type]
+        real_register(section, model, stability)  # type: ignore[arg-type]
 
     monkeypatch.setattr(bootstrap, "discover_candidates", fake_discover)
     monkeypatch.setattr(bootstrap, "register_profile_settings", spy_register)
