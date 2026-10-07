@@ -44,7 +44,7 @@ _PROFILE_HELP = (
 )
 _VERBOSE_HELP = "Stream underlying tool output live and enable debug logging."
 _QUIET_HELP = "Suppress progress and success/info messages (errors still print)."
-_DEPRECATED_HELP = "Show deprecated commands (and settings) too."
+_DEPRECATED_HELP = "Show deprecated commands too."
 
 #: Tokens that make a run print help or the version instead of running a command.
 _HELP_FLAGS = ("--help", "-h")
@@ -265,7 +265,7 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
     keeps the lenient spelling working and gives help the canonical chain.
     Exact names, cyclopts aliases and ambiguous spellings are left for
     cyclopts to handle. Spellings registered with
-    :func:`untaped.cli.deprecated_alias` are rewritten too, with a warning:
+    :func:`untaped.stability.deprecated_alias` are rewritten too, with a warning:
     command aliases along the chain, then option aliases of the selected
     command (up to a ``--`` separator).
     """

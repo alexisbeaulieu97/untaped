@@ -198,7 +198,7 @@ def test_mark_leftovers_report_a_deprecated_capability_group_and_command() -> No
 def test_the_deprecated_alias_command_blocks_a_major_release() -> None:
     root = bootstrap.build_root_app(candidates=[])
 
-    assert "untaped alias: deprecated command" in mark_leftovers(root, bootstrap.composition())
+    assert "untaped alias: deprecated group" in mark_leftovers(root, bootstrap.composition())
 
 
 def test_alias_leftovers_name_the_command() -> None:

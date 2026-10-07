@@ -42,14 +42,6 @@ def _app() -> App:
     return app
 
 
-def _command(app: App, name: str, **marks: object) -> Callable[..., None]:
-    def command() -> None:
-        """A command."""
-
-    command.__name__ = name
-    return app.command(command, name=name)
-
-
 def test_a_clean_capability_with_marks_has_no_violations() -> None:
     def factory() -> App:
         app = _app()
@@ -355,6 +347,21 @@ def test_bad_replacement_on_a_capability_spec() -> None:
     assert _violations(_app, stability=deprecated(replacement="untaped gone")) == [
         "svc::bad-replacement::`untaped gone` does not resolve to a command"
     ]
+
+
+def test_checking_a_capability_never_imports_a_lazy_sibling() -> None:
+    built: list[str] = []
+
+    def sibling_factory() -> App:
+        built.append("other")
+        return create_app(name="other", help="Other.")
+
+    sibling = replace(
+        make_spec(name="other", factory=sibling_factory), help="Other.", stability=experimental
+    )
+
+    assert _violations(_app, others=(sibling,)) == []
+    assert built == []
 
 
 @pytest.mark.parametrize("name", ["config", "alias"])

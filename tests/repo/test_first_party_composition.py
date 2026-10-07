@@ -110,6 +110,29 @@ def test_experimental_capabilities_sit_in_the_root_experimental_panel(
     assert "workspace" not in panels["Commands"] and "dotfiles" not in panels["Commands"]
 
 
+def test_the_deprecated_flag_adds_the_deprecated_panel_before_parameters(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    panels = _panels(CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout)
+
+    assert list(panels) == ["Commands", "Experimental", "Deprecated", "Parameters"]
+    assert "alias" in panels["Deprecated"] and "alias" not in panels["Commands"]
+
+
+def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visible(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    # Hiding it would let the help-tree and stability walks skip it.
+    assert root["alias"].show is not False
+    completion = root.generate_completion(shell="bash")
+    assert "alias" not in completion.split()
+    assert "config" in completion
+
+
 def test_awx_test_sits_in_awxs_experimental_panel(
     first_party_candidates: tuple[ProviderCandidate, ...],
 ) -> None:

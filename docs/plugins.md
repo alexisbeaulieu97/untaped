@@ -199,8 +199,8 @@ Config keys are fully qualified (`acme.greeting`). A capability reads and
 writes only its own section; `http.*` and `ui.*` are shared root settings, and
 `untaped config set` rejects state fields.
 
-The root supplies `--profile`, `--verbose` and `--quiet`. Raise errors inside
-`report_errors()` so the root prints its standard diagnostics and
+The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise
+errors inside `report_errors()` so the root prints its standard diagnostics and
 [exit codes](./reference/exit-codes.md). Give your error classes a `category`
 and `system` (your section name) as class defaults; see
 [Raise with a category](./reference/conventions.md#raise-with-a-category-or-inherit-one).
