@@ -36,9 +36,10 @@ def test_every_builtin_theme_defines_the_caret_and_emphasis_roles_as_today_s_loo
     name: str,
 ) -> None:
     roles = BUILTIN_THEMES[name].color_roles
-    assert {"screen.caret", "screen.emphasis"} <= set(SCREEN_ROLE_NAMES)
+    assert {"screen.caret", "screen.emphasis", "screen.match"} <= set(SCREEN_ROLE_NAMES)
     assert Style.parse(roles["screen.caret"]) == Style(reverse=True)
     assert Style.parse(roles["screen.emphasis"]) == Style(bold=True)
+    assert Style.parse(roles["screen.match"]) == Style(bold=True, underline=True)
 
 
 def test_the_caret_and_emphasis_roles_are_declared_for_writes() -> None:

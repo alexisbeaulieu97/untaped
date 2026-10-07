@@ -96,16 +96,16 @@ def test_typing_edits_the_focused_field_and_leaves_the_others() -> None:
 def test_a_field_consuming_a_key_blocks_the_shared_key() -> None:
     form = Form(
         (
-            ("fruit", TextInput("Fruit", "a", complete=lambda text: ["apple"] * (text == "a"))),
+            ("fruit", TextInput("Fruit", complete=lambda text: ["apple"] * (text == "a"))),
             ("other", TextInput("Other")),
         )
     )
-    run = run_solo(form, "tab")  # tab accepts the completion before it moves focus
+    run = run_solo(form, "a", "tab")  # tab accepts the completion before it moves focus
 
     assert field_of(run).focus == 0
     assert field_of(run).value["fruit"] == "apple"
     assert run.model.unhandled == ()
-    assert field_of(run_solo(form, "tab", "tab")).focus == 1
+    assert field_of(run_solo(form, "a", "tab", "tab")).focus == 1
 
 
 def test_esc_closes_an_open_select_inside_a_form_before_it_goes_back() -> None:

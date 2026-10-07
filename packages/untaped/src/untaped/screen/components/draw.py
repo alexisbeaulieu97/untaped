@@ -23,7 +23,6 @@ from untaped.screen.fit import fit_text
 
 __all__ = [
     "DIM",
-    "MATCH",
     "divider",
     "inner_width",
     "option_row",
@@ -36,8 +35,6 @@ __all__ = [
 #: The one attribute that is not a theme role: a dimmed item is the muted colour with the
 #: terminal's dim attribute over it, so it stays a step apart from a plain muted one on any theme.
 DIM = Style(dim=True)
-#: The characters of a label a search matched, over whatever colour the row has.
-MATCH = Style(bold=True, underline=True)
 
 
 def role_style(frame: Frame, *roles: str) -> Style:
@@ -95,7 +92,7 @@ def option_row(
 
     ``base`` styles the whole row, padding included, so the cursor row's
     highlight reaches both edges. ``marks`` are positions in ``label`` drawn
-    with :data:`MATCH` (what a search matched). The label is cut with the
+    with the ``screen.match`` role (what a search matched). The label is cut with the
     theme's ellipsis when the row is too narrow; the trail is dropped first when
     it does not fit.
     """
@@ -111,8 +108,9 @@ def option_row(
     else:
         trail = ""
     shown = Text(label, style=label_style)
+    match = role_style(frame, "screen.match")
     for first, stop in _runs(marks, len(label)):
-        shown.stylize(MATCH, first, stop)
+        shown.stylize(match, first, stop)
     line.append_text(fit_text(shown, max(room, 0), frame.ellipsis()))
     if trail:
         line.append(" ")
