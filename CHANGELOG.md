@@ -153,7 +153,9 @@
   does, to run screens without a terminal). ([#525](https://github.com/alexisbeaulieu97/untaped/pull/525))
 - Prompts (text, secret, select, multiselect, confirm) share the screens' look
   and the theme's colors: a labelled box with the keys of every other screen
-  (esc cancels), erased when answered instead of left in the scrollback.
+  (esc cancels); the answer stays in the scrollback as one plain
+  `question: answer` line (a secret as its mask, a multiselect as the chosen
+  labels), nothing is left when the prompt is cancelled.
   ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
 - The workspace picker (`workspace create`, `workspace add`) is full screen and
   follows the theme's colors, symbols and border style (`ui.symbols` gains

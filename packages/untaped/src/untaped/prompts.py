@@ -154,17 +154,26 @@ class PromptToolkitPromptBackend:
     def confirm(self, message: str, *, default: bool) -> bool:
         from untaped.screen.prompts import confirm_screen  # noqa: PLC0415
 
-        return self._answer(confirm_screen(message, default))
+        answer = self._answer(confirm_screen(message, default))
+        self._record(f"{message} {'[Y/n]' if default else '[y/N]'}", "y" if answer else "n")
+        return answer
 
     def text(self, message: str, *, default: str | None) -> str:
         from untaped.screen.prompts import text_screen  # noqa: PLC0415
 
-        return self._answer(text_screen(message, default))
+        answer = self._answer(text_screen(message, default))
+        self._record(message, answer)
+        return answer
 
     def secret(self, message: str, *, confirmation: bool) -> str:
         from untaped.screen.prompts import secret_screen  # noqa: PLC0415
 
         value, repeated = self._answer(secret_screen(message, confirmation=confirmation))
+        # The record is the mask, one symbol per character as the old line prompt left it.
+        mask = self._mask()
+        self._record(message, mask * len(value.get_secret_value()))
+        if confirmation:
+            self._record("Confirm value", mask * len(repeated.get_secret_value()))
         if confirmation and value.get_secret_value() != repeated.get_secret_value():
             raise ConfigError("prompt values did not match", category="invalid")
         return value.get_secret_value()
@@ -179,7 +188,15 @@ class PromptToolkitPromptBackend:
     ) -> T:
         from untaped.screen.prompts import select_screen  # noqa: PLC0415
 
-        return self._answer(select_screen(message, choices, default, search=search))
+        # The screen answers with a row's position, so the record names the row chosen even
+        # when two rows share a value.
+        rows = [
+            PromptChoice(index, item.label, item.description) for index, item in enumerate(choices)
+        ]
+        default_row = next((i for i, item in enumerate(choices) if item.value == default), None)
+        index = self._answer(select_screen(message, rows, default_row, search=search))
+        self._record(message, choices[index].label)
+        return choices[index].value
 
     def multiselect(
         self,
@@ -190,9 +207,15 @@ class PromptToolkitPromptBackend:
     ) -> list[T]:
         from untaped.screen.prompts import multiselect_screen  # noqa: PLC0415
 
-        return self._answer(
-            multiselect_screen(message, choices, defaults), cancelled=_cancelled_error
+        rows = [
+            PromptChoice(index, item.label, item.description) for index, item in enumerate(choices)
+        ]
+        checked = [i for i, item in enumerate(choices) if item.value in defaults]
+        picked = self._answer(
+            multiselect_screen(message, rows, checked), cancelled=_cancelled_error
         )
+        self._record(message, ", ".join(choices[index].label for index in picked))
+        return [choices[index].value for index in picked]
 
     def pick_many(self, request: PickRequest) -> PickResult | None:
         """Run the two-pane picker as a screen on this backend's terminal streams.
@@ -220,6 +243,23 @@ class PromptToolkitPromptBackend:
         from untaped.theme import BUILTIN_THEMES  # noqa: PLC0415
 
         return self.theme or BUILTIN_THEMES["default"]
+
+    def _mask(self) -> str:
+        from untaped.theme import DEFAULT_SYMBOLS  # noqa: PLC0415
+
+        symbols = self._theme().symbols
+        return symbols.get("mask") or DEFAULT_SYMBOLS["mask"]
+
+    def _record(self, question: str, answer: str) -> None:
+        """Print ``<question>: <answer>`` so the scrollback keeps what the erased prompt showed.
+
+        Plain text on the stream the prompt drew on, never through markup; control
+        characters are dropped so an answer cannot move the cursor or recolour the terminal.
+        Only an answered prompt records: a cancel or an interrupt raises before this runs.
+        """
+        line = f"{question}: {answer}"
+        self.stderr.write("".join(ch for ch in line if ch.isprintable()) + "\n")
+        self.stderr.flush()
 
     def _answer[M, R](
         self, screen: Screen[M, R], *, cancelled: Callable[[], BaseException] = EOFError
