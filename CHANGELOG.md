@@ -91,7 +91,7 @@
   the left, the selected one's form on the right, and each capability's
   connection is checked online before anything is saved (`Save anyway` keeps
   the old behavior). Ctrl-c exits 130 after reporting what was saved.
-  ([#PR](https://github.com/alexisbeaulieu97/untaped/pull/PR))
+  ([#531](https://github.com/alexisbeaulieu97/untaped/pull/531))
 - `doctor` and `setup` JSON, YAML and pipe rows no longer append the fix
   command to `detail`; read `fix` instead, and plugin code that reads
   `DoctorResult.fix` must also handle an argv list.
