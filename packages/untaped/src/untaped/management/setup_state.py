@@ -3,7 +3,7 @@
 A service is a composed capability whose profile model has ``base_url`` and
 ``token`` fields. Both commands resolve each one's current state here, the
 way ``doctor`` does (the profile's values with ``UNTAPED_*`` overrides
-layered on top), so the wizard, the plan and doctor cannot disagree about
+layered on top), so the setup screen, the plan and doctor cannot disagree about
 what is set up.
 """
 

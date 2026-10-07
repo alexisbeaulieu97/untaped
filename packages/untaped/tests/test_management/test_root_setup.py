@@ -1,25 +1,26 @@
-"""``untaped setup``: the interactive wizard that configures a profile.
+"""``untaped setup``: the command around the setup screen.
 
-It offers every composed capability whose profile model has ``base_url``
-and ``token``, writes through the same validated path as ``config set``,
-then runs those capabilities' checks, online ones included.
+The screen itself (keys, checks, what each token source writes) is tested in
+``test_setup_screen.py``. These cases run the command end to end through
+``invoke_cli``, with the screen scripted by keys or replaced by its result, and
+cover what the command adds: the terminal requirement, what it prints after the
+screen closes (notes, doctor rows, the closing line) and its exit codes.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
-from pydantic import BaseModel, SecretStr
 
 from test_management.stores import FakeStores, install_fake_stores
 from test_management.support import (
     FAIL,
     PROBES,
+    EnvProfile,
     ExtProfile,
-    LegacyProfile,
     WizProfile,
     make_spec,
     wiz_api_check,
@@ -27,58 +28,48 @@ from test_management.support import (
 )
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
-from untaped.sdk import (
-    TokenCommand,
-    TokenSources,
+from untaped.management.setup_screen import SetupResult
+from untaped.screen.core import Cancel, Paste
+from untaped.testing import (
+    CliResult,
+    ScreenKeys,
+    ScriptedPromptBackend,
+    invoke_cli,
+    provider_candidate,
 )
-from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
+from untaped.testing.screens import ScreenKey
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
-def _setup(backend: ScriptedPromptBackend | None, *args: str) -> CliResult:
-    wiz = make_spec(
-        "wiz",
-        profile_model=WizProfile,
-        doctor_checks=(wiz_api_check(),),
-    )
+def _wiz_spec() -> Any:
+    return make_spec("wiz", profile_model=WizProfile, doctor_checks=(wiz_api_check(),))
+
+
+def _setup(backend: ScriptedPromptBackend | None, *args: str, terminal: bool = True) -> CliResult:
     plain = make_spec("plain", profile_model=ExtProfile)
-    root = bootstrap.build_root_app(candidates=(provider_candidate(wiz), provider_candidate(plain)))
+    root = bootstrap.build_root_app(
+        candidates=(provider_candidate(_wiz_spec()), provider_candidate(plain))
+    )
     return invoke_cli(
         root.meta,
         ["setup", "--format", "json", *args],
         interactive=backend is not None,
         prompt_backend=backend,
+        terminal=terminal,
     )
 
 
-class EnvProfile(BaseModel):
-    """Service double with a conventional token variable (section ``envy``)."""
-
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("ENVY_TOKEN",))
-
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
+def _keys(url: str, *, token: str | None = None, right: int = 0) -> list[ScreenKey]:
+    """List -> form: the URL, the token tab (``right`` steps in), its field, then save."""
+    keys: list[ScreenKey] = ["enter", "ctrl-u", Paste(url), "tab", *(["right"] * right)]
+    if token is not None:
+        keys += ["tab", Paste(token)]
+    return [*keys, "enter"]
 
 
-class ChoiceRecorder(ScriptedPromptBackend):
-    """Scripted backend that also records each select's choice values."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.offered: list[list[str]] = []
-
-    def select(
-        self,
-        message: str,
-        choices: Any,
-        *,
-        default: Any | None,
-        search: bool,
-    ) -> Any:
-        self.offered.append([choice.value for choice in choices])
-        return super().select(message, choices, default=default, search=search)
+def _scripted(*keys: ScreenKey) -> ScriptedPromptBackend:
+    return ScriptedPromptBackend(screens=[ScreenKeys(*keys)])
 
 
 @pytest.fixture(autouse=True)
@@ -100,37 +91,31 @@ def _wiz(path: Path, profile: str = "default") -> dict[str, Any]:
 
 
 def test_setup_without_a_terminal_is_a_usage_error(_isolated_config: Path) -> None:
-    result = _setup(None)
+    result = _setup(None, terminal=False)
+
     assert result.exit_code == 2
-    assert "setup requires an interactive terminal" in result.stderr
-    assert "run `untaped setup plan --format json`" in result.stderr
+    assert "`untaped setup` needs a terminal; use `untaped setup plan --format json`" in (
+        result.stderr
+    )
     assert not _isolated_config.exists()
 
 
-def test_setup_configures_the_service_and_checks_it(
+def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    backend = ScriptedPromptBackend(
-        texts=["default", "https://wiz"],
-        multiselects=[["wiz"]],
-        selections=["store"],
-        secrets=[" tok "],
-    )
+    backend = _scripted(*_keys("https://wiz", token=" tok "), "esc")
+
     result = _setup(backend)
+
     assert result.exit_code == 0, result.output
     assert _wiz(_isolated_config) == {
         "base_url": "https://wiz",
         "token_command": ["pass", "show", "untaped/default/wiz"],
     }
     assert stores.entries() == {"untaped/default/wiz": "tok"}
-    assert backend.calls == [
-        ("text", "Profile to configure"),
-        ("multiselect", "Capabilities to configure"),
-        ("text", "wiz base URL"),
-        ("select", "wiz token"),
-        ("secret", "wiz token"),
-    ]
+    assert [screen.title for screen in backend.ran] == ["Set up untaped"]
+    # The record of the run is on stdout, after the screen: the doctor rows of what it set up.
     rows = {row["check"]: row for row in json.loads(result.stdout)}
     assert rows["wiz.api"] == {
         "check": "wiz.api",
@@ -142,186 +127,36 @@ def test_setup_configures_the_service_and_checks_it(
         "automatic": False,
     }
     assert {row["capability"] for row in rows.values()} == {"wiz"}
-    assert PROBES == ["probed"]
+    assert PROBES == ["probed", "probed"]  # the check before saving, then the doctor row
+    assert "profile default is ready" in result.stderr
 
 
-def test_setup_tests_the_store_before_asking_for_the_token(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    monkeypatch.setenv("STUB_MODE", "gpg-roundtrip")
-    backend = ScriptedPromptBackend(
-        texts=["default", "https://wiz"],
-        multiselects=[["wiz"]],
-        selections=["store"],
-        secrets=["tok"],
-    )
-    result = _setup(backend)
-    assert result.exit_code == 5
-    assert "gpg decrypt failed for the pass store" in result.stderr
-    assert ("secret", "wiz token") not in backend.calls
-    assert stores.entries() == {}
-    assert not _isolated_config.exists() or "wiz" not in _isolated_config.read_text()
-
-
-def test_setup_creates_a_new_profile_with_a_token_command(_isolated_config: Path) -> None:
+def test_setup_ends_with_the_checklist(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
-    backend = ScriptedPromptBackend(
-        texts=["prod", "https://wiz.prod", "pass show wiz token"],
-        multiselects=[["wiz"]],
-        selections=["command"],
+    backend = _scripted("enter", "ctrl-u", Paste("https://wiz"), "tab", "right", "enter", "esc")
+    root = bootstrap.build_root_app(candidates=(provider_candidate(_wiz_spec()),))
+
+    result = invoke_cli(
+        root.meta, ["setup"], interactive=True, prompt_backend=backend, terminal=True
     )
-    result = _setup(backend)
+
     assert result.exit_code == 0, result.output
-    config = read_config_dict(_isolated_config)
-    assert config["active"] == "default"
-    assert config["profiles"]["prod"]["wiz"] == {
-        "base_url": "https://wiz.prod",
-        "token_command": ["pass", "show", "wiz", "token"],
-    }
-    assert "profile prod is ready" in result.stderr
-    assert "untaped --profile prod" in result.stderr
-    assert "untaped profile use prod" in result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0] == "wiz"
+    assert any(line.split()[:2] == ["✓", "wiz.api"] for line in lines)
+    assert "\nsetup: " in result.stderr
 
 
-def test_an_inherited_plaintext_token_only_offers_keeping_it(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    wiz:\n      token: shared\nactive: default\n"
-    )
-    backend = ChoiceRecorder(
-        texts=["prod", "https://wiz.prod"], multiselects=[["wiz"]], selections=["keep"]
-    )
-    result = _setup(backend)
-    assert result.exit_code == 0, result.output
-    # default's token wins over anything prod sets, so nothing else would work.
-    assert backend.offered == [["keep"]]
-    assert "would leave it in charge, so only keeping the current token" in result.stderr
-    assert "untaped auth migrate" in result.stderr
-    assert _wiz(_isolated_config, "prod") == {"base_url": "https://wiz.prod"}
-
-
-def test_using_the_env_var_drops_the_profiles_stored_token(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    envy = make_spec("envy", profile_model=EnvProfile)
-    assert _auth_set(envy, "tok").exit_code == 0
-    backend = ChoiceRecorder(
-        texts=["default", "https://envy"], multiselects=[["envy"]], selections=["env"]
-    )
-    result = _setup_specs(backend, envy)
-    assert result.exit_code == 0, result.output
-    # The command would win over $ENVY_TOKEN, so it and its entry go.
-    assert read_config_dict(_isolated_config)["profiles"]["default"]["envy"] == {
-        "base_url": "https://envy"
-    }
-    assert stores.entries() == {}
-    assert "deleted the replaced envy token from pass (untaped/default/envy)" in result.stderr
-
-
-@pytest.mark.parametrize("prod", ["{}", "{envy: {token_command: [pass, show, untaped/prod/envy]}}"])
-def test_an_inherited_token_command_hides_the_env_var(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, prod: str
-) -> None:
-    install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    envy:\n      token_command: [op, read, x]\n"
-        f"  prod: {prod}\nactive: default\n",
-    )
-    envy = make_spec("envy", profile_model=EnvProfile)
-    backend = ChoiceRecorder(
-        texts=["prod", "https://envy", "op read y"], multiselects=[["envy"]], selections=["command"]
-    )
-    result = _setup_specs(backend, envy)
-    assert result.exit_code == 0, result.output
-    # Dropping prod's own command would hand over to default's, not $ENVY_TOKEN.
-    assert "env" not in backend.offered[0]
-
-
-def test_an_unreachable_replaced_store_only_warns(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool", "pass")
-    envy = make_spec("envy", profile_model=EnvProfile)
-    assert _auth_set(envy, "old").exit_code == 0  # stored with secret-tool
-    # The Secret Service goes away: setup falls through to pass.
-    monkeypatch.setenv("STUB_MODE", "no-service")
-    backend = ChoiceRecorder(
-        texts=["default", "https://envy"],
-        multiselects=[["envy"]],
-        selections=["store"],
-        secrets=["new"],
-    )
-    result = _setup_specs(backend, envy)
-    assert result.exit_code == 0, result.output
-    assert "could not delete the replaced envy token from secret-tool" in result.stderr
-    assert "delete it yourself" in result.stderr
-    section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
-    assert section["token_command"] == ["pass", "show", "untaped/default/envy"]
-    assert stores.entries() == {"default/envy": "old", "untaped/default/envy": "new"}
-
-
-def test_a_new_command_deletes_the_replaced_stored_token(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    envy = make_spec("envy", profile_model=EnvProfile)
-    assert _auth_set(envy, "tok").exit_code == 0
-    backend = ChoiceRecorder(
-        texts=["default", "https://envy", "op read y"],
-        multiselects=[["envy"]],
-        selections=["command"],
-    )
-    result = _setup_specs(backend, envy)
-    assert result.exit_code == 0, result.output
-    assert stores.entries() == {}
-    assert "deleted the replaced envy token from pass (untaped/default/envy)" in result.stderr
-    section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
-    assert section["token_command"] == ["op", "read", "y"]
-
-
-def test_a_malformed_token_command_writes_nothing(_isolated_config: Path) -> None:
-    backend = ScriptedPromptBackend(
-        texts=["default", "https://wiz", 'pass show "wiz'],
-        multiselects=[["wiz"]],
-        selections=["command"],
-    )
-    result = _setup(backend)
-    assert result.exit_code == 1
-    assert "invalid wiz token command" in result.stderr
-    assert "Traceback" not in result.output
-    assert not _isolated_config.exists()
-
-
-def test_setup_can_keep_the_current_token(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      base_url: https://old\n      token: kept\n",
-    )
-    backend = ScriptedPromptBackend(
-        texts=["default", "https://new"], multiselects=[["wiz"]], selections=["keep"]
-    )
-    result = _setup(backend)
-    assert result.exit_code == 0, result.output
-    assert _wiz(_isolated_config) == {"base_url": "https://new", "token": "kept"}
-
-
-def test_a_failed_check_fails_setup_and_names_the_fix(
+def test_a_failed_check_saved_anyway_fails_setup_and_names_the_fix(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
-    backend = ScriptedPromptBackend(
-        texts=["default", "https://wiz"],
-        multiselects=[["wiz"]],
-        selections=["store"],
-        secrets=["bad"],
-    )
+    # The check fails; tab goes to the buttons and enter saves anyway.
+    backend = _scripted(*_keys("https://wiz", token="bad"), "tab", "enter", "esc")
+
     result = _setup(backend)
+
     assert result.exit_code == 1
     row = next(row for row in json.loads(result.stdout) if row["check"] == "wiz.api")
     assert row["fix"] == ["--profile", "default", "auth", "set", "wiz"]
@@ -329,129 +164,141 @@ def test_a_failed_check_fails_setup_and_names_the_fix(
     assert stores.entries() == {"untaped/default/wiz": "bad"}
 
 
-def test_selecting_nothing_changes_nothing(_isolated_config: Path) -> None:
-    backend = ScriptedPromptBackend(texts=["default"], multiselects=[[]])
-    result = _setup(backend)
-    assert result.exit_code == 0, result.output
-    assert "no capabilities selected; no changes made" in result.stderr
-    assert not _isolated_config.exists()
-
-
-def _auth_set(spec: Any, token: str) -> CliResult:
-    """``auth set <spec>`` with ``token`` on stdin, for a starting state."""
-    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
-    section = spec.config_section
-    return invoke_cli(root.meta, ["auth", "set", section, "--stdin"], input=token)
-
-
-def _setup_specs(backend: ScriptedPromptBackend, *specs: Any) -> CliResult:
-    root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
-    return invoke_cli(
-        root.meta, ["setup", "--format", "json"], interactive=True, prompt_backend=backend
-    )
-
-
-def test_a_plaintext_token_defaults_to_moving_it_to_the_store(
+def test_a_failed_check_cancelled_writes_nothing(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n      token: old\n",
-    )
-    backend = ChoiceRecorder(
-        texts=["default", "https://wiz"], multiselects=[["wiz"]], selections=["move"]
-    )
+    FAIL.append(True)
+    backend = _scripted(*_keys("https://wiz", token="bad"), "tab", "right", "enter", "esc")
+
     result = _setup(backend)
+
     assert result.exit_code == 0, result.output
-    assert backend.offered == [["move", "keep", "store", "command", "env"]]
-    assert _wiz(_isolated_config) == {
-        "base_url": "https://wiz",
-        "token_command": ["pass", "show", "untaped/default/wiz"],
-    }
-    assert stores.entries() == {"untaped/default/wiz": "old"}
-    assert "old" not in _isolated_config.read_text()
+    assert "no capabilities selected; no changes made" in result.stderr
+    assert stores.entries() == {}
+    assert not _isolated_config.exists()
 
 
-def test_without_a_store_setup_never_offers_plain_text(_isolated_config: Path) -> None:
-    envy = make_spec("envy", profile_model=EnvProfile)
-    backend = ChoiceRecorder(
-        texts=["default", "https://envy"], multiselects=[["envy"]], selections=["env"]
-    )
-    result = _setup_specs(backend, envy)
+def test_leaving_without_saving_changes_nothing(_isolated_config: Path) -> None:
+    result = _setup(_scripted("esc"))
+
     assert result.exit_code == 0, result.output
-    assert backend.offered == [["command", "env"]]
-    section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
-    assert section == {"base_url": "https://envy"}
-    assert "export $ENVY_TOKEN" in result.stderr
+    assert "no capabilities selected; no changes made" in result.stderr
+    assert result.stdout == ""
+    assert not _isolated_config.exists()
 
 
-def test_a_model_without_token_command_still_takes_a_typed_token(_isolated_config: Path) -> None:
-    legacy = make_spec("legacy", profile_model=LegacyProfile)
-    backend = ChoiceRecorder(
-        texts=["default", "https://legacy"],
-        multiselects=[["legacy"]],
-        selections=["enter"],
-        secrets=["tok"],
-    )
-    result = _setup_specs(backend, legacy)
-    assert result.exit_code == 0, result.output
-    assert backend.offered == [["enter"]]
-    section = read_config_dict(_isolated_config)["profiles"]["default"]["legacy"]
-    assert section == {"base_url": "https://legacy", "token": "tok"}
-
-
-def test_choices_list_the_store_first_for_a_new_service(
+def test_ctrl_c_after_a_save_prints_what_was_saved_and_exits_130(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
-    envy = make_spec("envy", profile_model=EnvProfile)
-    backend = ChoiceRecorder(
-        texts=["default", "https://envy", "op read x"],
-        multiselects=[["envy"]],
-        selections=["command"],
-    )
-    result = _setup_specs(backend, envy)
-    assert result.exit_code == 0, result.output
-    assert backend.offered == [["store", "command", "env"]]
 
+    result = _setup(_scripted(*_keys("https://wiz", token="tok"), "ctrl-c"))
 
-def test_only_preselects_the_services_and_skips_the_multiselect(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    install_fake_stores(tmp_path, monkeypatch, "pass")
-    backend = ScriptedPromptBackend(
-        texts=["default", "https://wiz"], selections=["store"], secrets=["tok"]
-    )
-    result = _setup(backend, "--only", "wiz")
-    assert result.exit_code == 0, result.output
-    assert ("multiselect", "Capabilities to configure") not in backend.calls
+    assert result.exit_code == 130
     assert _wiz(_isolated_config)["base_url"] == "https://wiz"
+    assert any(row["check"] == "wiz.api" for row in json.loads(result.stdout))
+
+
+def test_ctrl_c_wins_over_a_failed_row(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    FAIL.append(True)
+
+    result = _setup(_scripted(*_keys("https://wiz", token="bad"), "tab", "enter", "ctrl-c"))
+
+    assert result.exit_code == 130
+    row = next(row for row in json.loads(result.stdout) if row["check"] == "wiz.api")
+    assert row["status"] == "fail"  # the record is still printed
+
+
+def test_ctrl_c_with_nothing_saved_exits_130(_isolated_config: Path) -> None:
+    result = _setup(_scripted("ctrl-c"))
+
+    assert result.exit_code == 130
+    assert not _isolated_config.exists()
+
+
+def test_a_cancelled_screen_exits_1(_isolated_config: Path) -> None:
+    result = _setup(ScriptedPromptBackend(screens=[Cancel()]))
+
+    assert result.exit_code == 1
+    assert not _isolated_config.exists()
+
+
+def test_only_lists_just_those_services(_isolated_config: Path) -> None:
+    backend = _scripted("esc")
+
+    _setup(backend, "--only", "wiz")
+
+    screen = backend.ran[0]
+    model, _ = screen.init()
+    assert [row.name for row in model.rows] == ["wiz"]
 
 
 def test_only_rejects_a_name_that_is_not_a_service(_isolated_config: Path) -> None:
     result = _setup(ScriptedPromptBackend(), "--only", "plain")
+
     assert result.exit_code == 2
     assert "service not found: 'plain'; known: wiz" in result.stderr
 
 
-def test_setup_ends_with_the_checklist(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
-    backend = ScriptedPromptBackend(
-        texts=["default", "https://wiz", "pass show wiz token"],
-        multiselects=[["wiz"]],
-        selections=["command"],
+# --- post-processing of the screen's result ---------------------------------------
+
+
+def test_notes_print_in_order_before_the_rows(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n")
+    done = SetupResult(
+        "default",
+        ("wiz",),
+        (("success", "created profile: prod"), ("info", "export $WIZ_TOKEN in your shell")),
     )
-    root = bootstrap.build_root_app(
-        candidates=(
-            provider_candidate(
-                make_spec("wiz", profile_model=WizProfile, doctor_checks=(wiz_api_check(),))
-            ),
-        )
-    )
-    result = invoke_cli(root.meta, ["setup"], interactive=True, prompt_backend=backend)
+
+    result = _setup(ScriptedPromptBackend(screens=[done]))
+
     assert result.exit_code == 0, result.output
-    lines = result.stdout.splitlines()
-    assert lines[0] == "wiz"
-    assert any(line.split()[:2] == ["✓", "wiz.api"] for line in lines)
-    assert "\nsetup: " in result.stderr
+    assert result.stderr.index("created profile: prod") < result.stderr.index("export $WIZ_TOKEN")
+    assert result.stderr.index("export $WIZ_TOKEN") < result.stderr.index("setup:")
+
+
+def test_a_profile_other_than_the_active_one_says_how_to_use_it(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default: {}\n  prod:\n    wiz:\n      base_url: https://wiz.prod\n"
+        "active: default\n",
+    )
+
+    result = _setup(ScriptedPromptBackend(screens=[SetupResult("prod", ("wiz",), ())]))
+
+    assert result.exit_code == 0, result.output
+    assert "profile prod is ready" in result.stderr
+    assert "untaped --profile prod" in result.stderr
+    assert "untaped profile use prod" in result.stderr
+
+
+def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) -> None:
+    result = _setup(ScriptedPromptBackend(screens=[SetupResult("default", (), (("info", "hi"),))]))
+
+    assert result.exit_code == 0, result.output
+    assert "hi" in result.stderr and "no capabilities selected; no changes made" in result.stderr
+    assert result.stdout == ""
+
+
+def test_rows_cover_only_the_touched_capabilities(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n")
+    envy = make_spec("envy", profile_model=EnvProfile)
+    root = bootstrap.build_root_app(
+        candidates=(provider_candidate(_wiz_spec()), provider_candidate(envy))
+    )
+    backend = ScriptedPromptBackend(screens=[SetupResult("default", ("wiz",), ())])
+
+    result = invoke_cli(
+        root.meta,
+        ["setup", "--format", "json"],
+        interactive=True,
+        prompt_backend=backend,
+        terminal=True,
+    )
+
+    assert {row["capability"] for row in json.loads(result.stdout)} == {"wiz"}

@@ -7,7 +7,7 @@ its invalid settings), then (with ``--online``) each online check. A row's
 is a value to ask the user for); ``by`` says who runs it: ``user`` for
 a step that asks for or reveals a token, so a token never passes through
 an agent. Service state comes from :mod:`untaped.management.setup_state`
-(shared with the wizard) and the online rows are the capabilities' own
+(shared with the setup screen) and the online rows are the capabilities' own
 online doctor checks.
 """
 
@@ -160,7 +160,7 @@ def _token_row(
             run = command_argv("auth migrate", profile=profile)
             return _row(step, name, "failed", f"{detail}; move it to {store_name}", run)
         if takes_command:
-            # No store here: the wizard replaces it with a command or a variable.
+            # No store here: the setup screen replaces it with a command or a variable.
             run = command_argv(["setup", "--only", name], profile=holder)
             return _row(step, name, "failed", f"{detail}; replace it", run, by="user")
         instead = token_instead(settings, section=section)
