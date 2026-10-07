@@ -20,7 +20,7 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from untaped.screen.components.box import field_box
-from untaped.screen.components.draw import inner_width, role_style
+from untaped.screen.components.draw import inner_width, role_style, unboxed
 from untaped.screen.components.fields import Field
 from untaped.screen.core import Cmd, Frame, Key, NextField, PrevField
 from untaped.screen.fit import fit_text
@@ -137,7 +137,7 @@ class Tabs:
             *_header(frame, inner, self.tabs, self.active, focused and self.focus == 0),
             Text(""),
         ]
-        bare = replace(frame, theme=frame.theme.model_copy(update={"border": "none"}))
+        bare = unboxed(frame)
         for slot, (_, field) in enumerate(self.current.fields, start=1):
             body.append(field.view(bare, focused=focused and self.focus == slot, width=inner))
         if self.current.note:

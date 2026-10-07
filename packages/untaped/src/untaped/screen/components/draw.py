@@ -11,6 +11,7 @@ row of text is cut or padded to the cells it has. The caret is the
 from __future__ import annotations
 
 from collections.abc import Collection, Sequence
+from dataclasses import replace
 
 from rich.cells import cell_len
 from rich.errors import StyleSyntaxError
@@ -28,6 +29,7 @@ __all__ = [
     "option_row",
     "role_style",
     "text_line",
+    "unboxed",
     "window_start",
 ]
 
@@ -57,6 +59,11 @@ def inner_width(frame: Frame, width: int | None) -> int:
     """The cells inside a field box that is ``width`` wide (the frame's width when ``None``)."""
     total = width or frame.width
     return max(1, total - 4) if frame.box() is not None else max(1, total)
+
+
+def unboxed(frame: Frame) -> Frame:
+    """``frame`` with the border off: what a component drawn inside another box is given."""
+    return replace(frame, theme=frame.theme.model_copy(update={"border": "none"}))
 
 
 def divider(frame: Frame, inner: int) -> Text | None:
