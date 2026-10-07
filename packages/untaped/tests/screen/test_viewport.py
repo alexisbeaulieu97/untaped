@@ -40,6 +40,10 @@ def test_around_leaves_a_block_that_fits_at_the_top_alone() -> None:
     assert Viewport(40).around(0, 10, 10).start(10) == 0
 
 
+def test_around_does_not_scroll_for_a_block_ending_exactly_at_the_window_bottom() -> None:
+    assert Viewport(40, 5).around(7, 10, 10).start(10) == 0
+
+
 def test_around_centres_a_block_below_the_fold() -> None:
     viewport = Viewport(40).around(20, 24, 10)
 

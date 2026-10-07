@@ -14,6 +14,8 @@ items to show.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from functools import cached_property
+from itertools import chain
 from typing import Self
 
 from rich.cells import cell_len
@@ -39,7 +41,7 @@ from untaped.screen.components.draw import (
 )
 from untaped.screen.components.layout import window
 from untaped.screen.components.text import EditBuffer
-from untaped.screen.core import Cmd, Frame, Key, Paste
+from untaped.screen.core import Cmd, Frame, Key, NextField, Paste, PrevField
 from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked, rank
 from untaped.stability import experimental
@@ -288,15 +290,17 @@ class Tree:
     error: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "cursor", clamped(self.cursor, len(self._on_screen())))
+        object.__setattr__(self, "cursor", clamped(self.cursor, len(self._on_screen)))
 
+    @cached_property
     def _on_screen(self) -> list[_Shown]:
+        """The visible rows, walked once per tree (``update`` makes a new tree for any change)."""
         return _shown(self.rows, self.expanded)
 
     @property
     def value(self) -> str:
         """The id of the row under the cursor (empty when the tree is empty)."""
-        visible = self._on_screen()
+        visible = self._on_screen
         return visible[self.cursor].row.id if visible else ""
 
     def with_error(self, text: str) -> Self:
@@ -311,7 +315,7 @@ class Tree:
         """Move the cursor, expand or collapse the row under it, or step to its parent."""
         if not isinstance(message, Key):
             return self, []
-        visible = self._on_screen()
+        visible = self._on_screen
         if not visible:
             return self, []
         step = moved_to(message.name, self.cursor, len(visible))
@@ -338,7 +342,7 @@ class Tree:
         """The box: one line per visible row, indented by depth, in a window around the cursor."""
         inner = inner_width(frame, width)
         size = max(MIN_ROWS, min(MAX_ROWS, frame.height - _TREE_CHROME))
-        first, shown = window(self._on_screen(), self.cursor, size)
+        first, shown = window(self._on_screen, self.cursor, size)
         rows = [
             self._row(frame, inner, entry, focused and first + offset == self.cursor)
             for offset, entry in enumerate(shown)
@@ -392,7 +396,9 @@ class Tags:
     is focused, where a pick adds the badge and closes the menu, and esc clears
     its query and then closes it. Esc, enter and the editing keys are left to the
     screen whenever the field has no use for them (a closed menu and no badge
-    for esc; no item left to add for enter).
+    for esc; no item left to add for enter). While the menu is open enter is
+    always its own, even with no row to pick, and tab or shift-tab close it and
+    then move focus on.
     """
 
     label: str
@@ -431,7 +437,7 @@ class Tags:
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Open the menu, remove the last badge, or (with the menu open) drive the menu."""
         if self.menu is not None:
-            return self._in_menu(self.menu, message), []
+            return self._in_menu(self.menu, message)
         if not isinstance(message, Key):
             return self, []
         if message.name == "enter" and self._available():
@@ -440,21 +446,31 @@ class Tags:
             return replace(self, selected=self.selected[:-1], error=""), []
         return self, []
 
-    def _in_menu(self, menu: SearchList, message: object) -> Self:
+    def _in_menu(self, menu: SearchList, message: object) -> tuple[Self, list[Cmd]]:
+        if isinstance(message, NextField | PrevField):
+            # Close the menu, then hand the move on so the form moves focus off a closed field.
+            return replace(self, menu_open=False, menu=None), [Cmd.send(message)]
         updated, _ = menu.update(message)
         if updated is not menu:
             if picked := updated.value:
-                return replace(
-                    self,
-                    selected=(*self.selected, str(picked)),
-                    menu_open=False,
-                    menu=None,
-                    error="",
+                return (
+                    replace(
+                        self,
+                        selected=(*self.selected, str(picked)),
+                        menu_open=False,
+                        menu=None,
+                        error="",
+                    ),
+                    [],
                 )
-            return replace(self, menu=updated)
-        if isinstance(message, Key) and message.name == "esc":
-            return replace(self, menu_open=False, menu=None)
-        return self
+            return replace(self, menu=updated), []
+        if isinstance(message, Key):
+            if message.name == "esc":
+                return replace(self, menu_open=False, menu=None), []
+            if message.name == "enter":
+                # An open menu keeps enter even with no row to pick, so a form never submits.
+                return replace(self, menu=menu), []
+        return self, []
 
     def view(
         self, frame: Frame, *, focused: bool = False, width: int | None = None
@@ -478,8 +494,9 @@ class Tags:
 
     def _badges(self, frame: Frame, inner: int, focused: bool) -> list[Text]:
         """The badges, then the add hint, wrapped to ``inner`` cells and cut after a few lines."""
-        labels = {item.id: item.label for item in self.items}
-        cells = [
+        chosen = set(self.selected)
+        labels = {item.id: item.label for item in self.items if item.id in chosen}
+        cells = (
             Text.assemble(
                 (
                     labels.get(item_id, item_id),
@@ -489,11 +506,13 @@ class Tags:
                 (frame.symbol("tag.remove"), role_style(frame, "screen.muted")),
             )
             for item_id in self.selected
-        ]
+        )
         hint = role_style(frame, "screen.accent" if focused else "screen.muted")
-        cells.append(Text(f"{frame.symbol('tag.add')} add", style=hint))
+        add = Text(f"{frame.symbol('tag.add')} add", style=hint)
         lines = [Text()]
-        for cell in cells:
+        for cell in chain(cells, [add]):
+            if len(lines) > MAX_BADGE_LINES:
+                break  # the rest would be cut anyway, so build no more badges
             cell = fit_text(cell, min(cell.cell_len, inner), frame.ellipsis())
             if lines[-1].cell_len and lines[-1].cell_len + 2 + cell.cell_len > inner:
                 lines.append(Text())
