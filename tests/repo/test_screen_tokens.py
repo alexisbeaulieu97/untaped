@@ -33,7 +33,10 @@ from repo.support import REPO_ROOT
 from untaped.theme import BUILTIN_THEMES
 
 #: Repo-relative globs of the modules held to the rule.
-SCREEN_MODULES = ("packages/untaped/src/untaped/screen/components/*.py",)
+SCREEN_MODULES = (
+    "packages/untaped/src/untaped/screen/components/*.py",
+    "packages/untaped/src/untaped/picker/screen.py",
+)
 EXEMPT_HOMES = (
     "packages/untaped/src/untaped/screen/core.py",
     "packages/untaped/src/untaped/theme.py",

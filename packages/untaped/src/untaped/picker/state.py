@@ -1,9 +1,9 @@
 """Pure state machine behind the picker: one key name in, a new frozen state out.
 
 Nothing here touches a terminal, so every interaction is unit-testable. The
-prompt_toolkit front end (:mod:`untaped.picker.app`) maps real keys to names
-such as ``up``, ``enter`` or ``ctrl-s`` (or one printable character) and calls
-:func:`handle`.
+picker screen (:mod:`untaped.picker.screen`) hands each key name such as ``up``,
+``enter`` or ``ctrl-s`` (or one printable character) to :func:`handle`, and
+draws the state with the screen components.
 """
 
 from __future__ import annotations
@@ -77,29 +77,44 @@ def initial_state(request: PickRequest) -> PickerState:
 
 
 _VisibleKey = tuple[str, tuple[PickItem, ...], Callable[[str], PickItem | None] | None]
-_last_visible: list[tuple[_VisibleKey, list[Ranked[PickItem]]]] = []
+_last_visible: list[tuple[_VisibleKey, tuple[PickItem, ...], list[Ranked[PickItem]]]] = []
 """One-slot cache; the key holds ``items`` itself, so identity checks stay valid."""
 
 
 def visible(state: PickerState) -> list[Ranked[PickItem]]:
     """The left-pane rows for the current query, best match first (memoised)."""
+    return _memoised(state)[1]
+
+
+def candidates(state: PickerState) -> tuple[PickItem, ...]:
+    """The items the query is matched against: the catalog, with the ad-hoc item first (memoised).
+
+    The same tuple object comes back while the query and the catalog stay put, so
+    a view can rank it again (to highlight what matched) and hit its own cache.
+    """
+    return _memoised(state)[0]
+
+
+def _memoised(state: PickerState) -> tuple[tuple[PickItem, ...], list[Ranked[PickItem]]]:
     if _last_visible:
-        (query, items, adhoc), ranked = _last_visible[0]
+        (query, items, adhoc), pool, ranked = _last_visible[0]
         if query == state.query and items is state.items and adhoc is state.request.adhoc:
-            return ranked
-    ranked = _visible(state)
-    _last_visible[:] = [((state.query, state.items, state.request.adhoc), ranked)]
-    return ranked
+            return pool, ranked
+    pool = _candidates(state)
+    ranked = rank(state.query, pool)
+    key = (state.query, state.items, state.request.adhoc)
+    _last_visible[:] = [(key, pool, ranked)]
+    return pool, ranked
 
 
-def _visible(state: PickerState) -> list[Ranked[PickItem]]:
+def _candidates(state: PickerState) -> tuple[PickItem, ...]:
     items = state.items
     query = state.query.strip()
     if state.request.adhoc is not None and query:
         extra = state.request.adhoc(query)
         if extra is not None and all(item.id != extra.id for item in items):
             items = (extra, *items)
-    return rank(state.query, items)
+    return items
 
 
 def rows(state: PickerState) -> list[Row]:

@@ -6,10 +6,10 @@ statement, function-level ones included) over each package's ``src``, the
 example plugin and ``scripts`` fails on any other module that imports
 ``prompt_toolkit`` or one of its submodules.
 
-Two modules predate the adapter and keep their own prompt_toolkit code until
-the screens replace it. Each exception carries its reason and is checked for
-staleness: it fails once its module stops importing prompt_toolkit, so the
-change that removes the import must delete the entry.
+One module predates the adapter and keeps its own prompt_toolkit code until
+the one-shot prompts become screens. Each exception carries its reason and is
+checked for staleness: it fails once its module stops importing prompt_toolkit,
+so the change that removes the import must delete the entry.
 """
 
 from __future__ import annotations
@@ -25,9 +25,6 @@ EXCEPTIONS: dict[str, str] = {
     "packages/untaped/src/untaped/prompts.py": (
         "the one-shot prompts (text, secret, select, multiselect, confirm) still run on "
         "prompt_toolkit until they are rebuilt as screens"
-    ),
-    "packages/untaped/src/untaped/picker/app.py": (
-        "the workspace picker still runs on its own application until it moves onto the runtime"
     ),
 }
 
