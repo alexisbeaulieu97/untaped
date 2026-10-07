@@ -200,6 +200,12 @@ def test_ctrl_s_confirms_no_selection_when_the_request_allows_it() -> None:
     assert result(state).picks == ()
 
 
+def test_create_button_confirms_no_selection_when_the_request_allows_it() -> None:
+    state = press(_state(allow_empty=True), "tab", "down", "down", "down")
+    assert state.row == (CREATE, None)
+    assert press(state, "enter").outcome == "confirmed"
+
+
 def test_allow_empty_still_requires_the_title() -> None:
     state = press(_state(allow_empty=True, title_label="name"), "ctrl-s")
     assert (state.outcome, state.error) == ("running", "name is required")

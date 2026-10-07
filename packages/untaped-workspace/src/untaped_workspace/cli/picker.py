@@ -155,19 +155,17 @@ def choose_repos(
     ``record`` is the workspace ``add`` targets (``None`` for ``create``).
     Without a terminal and without flags, ``create`` makes an empty workspace
     and ``add`` is a usage error naming the flags. ``empty`` (``create --empty``)
-    makes an empty workspace without the picker and refuses repo flags.
+    makes an empty workspace without the picker and refuses repo, branch and
+    base flags.
     """
     name = record.name if record is not None else name
     flags = bool(repo or read_only or stdin)
-    if empty:
-        if flags:
-            raise UsageError(
-                "--empty takes no repos", hint="drop --empty, or --repo, --read-only and --stdin"
-            )
-        if name is None:
-            raise UsageError("a workspace name is required", hint="pass NAME before the options")
-        return name, []
-    if flags or not ui.can_prompt:
+    if empty and (flags or branch or base):
+        raise UsageError(
+            "--empty takes no repos",
+            hint="drop --empty, or --repo, --read-only, --stdin, --branch and --base",
+        )
+    if empty or flags or not ui.can_prompt:
         if name is None:
             hint = "pass NAME before the options" if flags else NO_NAME_HINT
             raise UsageError("a workspace name is required", hint=hint)
