@@ -1,7 +1,7 @@
 name: PR
 
 # Checks on the pull request itself (scripts/check_pr.py): its drift review
-# and its changelog line. A separate workflow so that editing the PR body
+# and its changelog fragment. A separate workflow so that editing the PR body
 # re-runs only this.
 "on":
   pull_request:
@@ -38,3 +38,9 @@ jobs:
 
       - name: Drift review and changelog
         run: uv run --no-sync python scripts/check_pr.py "$GITHUB_EVENT_PATH"
+
+      - name: Changelog draft
+        # Every fragment's PR link derives; the draft is the next release's section.
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: uv run --no-sync python scripts/changelog.py draft --pr "$PR_NUMBER"

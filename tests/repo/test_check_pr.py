@@ -25,8 +25,11 @@ Before: x. After: y.
 - Repo rules: n/a
 - Issues: Closes #12
 """
-BASE_LOG = "# Changelog\n\n## 10.0.0\n\n- old\n"
-HEAD_LOG = "# Changelog\n\n## Unreleased\n\n### Fixed\n\n- new\n\n## 10.0.0\n\n- old\n"
+FRAGMENT = "changelog.d/new-thing.fixed.md"
+FRAGMENTS = {FRAGMENT: "Something is fixed.\n"}
+BREAKING = {"changelog.d/gone.removed.md": "**Breaking (awx):** `x` is removed.\n"}
+UPGRADING = {"changelog.d/gone.upgrading.md": "awx: replace `x` with `y`.\n"}
+PYPROJECT = '[project]\nname = "untaped"\nversion = "10.0.0"\n'
 SRC = ["packages/untaped-awx/src/untaped_awx/cli/commands.py"]
 
 
@@ -35,56 +38,70 @@ def _answer(body: str, item: str, answer: str) -> str:
 
 
 def test_a_filled_review_with_a_changelog_line_passes() -> None:
-    assert check_pr.problems(FILLED, SRC, BASE_LOG, HEAD_LOG) == []
+    assert check_pr.problems(FILLED, SRC, FRAGMENTS) == []
 
 
 def test_the_template_fails_until_it_is_filled() -> None:
     template = (REPO_ROOT / ".github" / "pull_request_template.md").read_text(encoding="utf-8")
     assert check_pr.drift_review(template) == dict.fromkeys(check_pr.DRIFT_ITEMS, "")
-    assert len(check_pr.problems(template, [], BASE_LOG, BASE_LOG)) == len(check_pr.DRIFT_ITEMS)
+    assert len(check_pr.problems(template, [], {})) == len(check_pr.DRIFT_ITEMS)
 
 
 def test_a_body_without_the_section_fails() -> None:
-    assert check_pr.problems("Before: x.", [], BASE_LOG, BASE_LOG) == [
+    assert check_pr.problems("Before: x.", [], {}) == [
         "the PR body has no '## Drift review' section (see the PR template)"
     ]
 
 
 def test_a_commented_out_answer_is_empty() -> None:
     body = _answer(FILLED, "Repo rules", "<!-- todo -->")
-    assert check_pr.problems(body, [], BASE_LOG, BASE_LOG) == [
+    assert check_pr.problems(body, [], {}) == [
         "drift review: answer 'Repo rules' (what you checked, or 'n/a')"
     ]
 
 
 @pytest.mark.parametrize(
-    ("changed", "head", "changelog_answer", "fails"),
+    ("changed", "fragments", "changelog_answer", "fails"),
     [
-        (SRC, BASE_LOG, "added", True),
-        (SRC, BASE_LOG, "none, internal refactor", False),
-        (SRC, BASE_LOG, "None: tests only", False),
-        (SRC, BASE_LOG, "none", True),
-        (SRC, BASE_LOG, "nonetheless added", True),
-        (SRC, HEAD_LOG, "added", False),
-        (["docs/scripting.md", "packages/untaped-awx/tests/x.py"], BASE_LOG, "n/a", False),
-        # A line outside ``## Unreleased`` does not count.
-        (SRC, BASE_LOG.replace("- old", "- old\n- new"), "added", True),
-        # Deleting an entry adds none.
-        (SRC, HEAD_LOG.replace("- new\n", ""), "added", True),
+        (SRC, {}, "added", True),
+        (SRC, {}, "none, internal refactor", False),
+        (SRC, {}, "None: tests only", False),
+        (SRC, {}, "none", True),
+        (SRC, {}, "nonetheless added", True),
+        (SRC, FRAGMENTS, "added", False),
+        (["docs/scripting.md", "packages/untaped-awx/tests/x.py"], {}, "n/a", False),
     ],
 )
-def test_shipped_code_needs_a_changelog_line_or_a_reason(
-    changed: list[str], head: str, changelog_answer: str, fails: bool
+def test_shipped_code_needs_a_fragment_or_a_reason(
+    changed: list[str], fragments: dict[str, str], changelog_answer: str, fails: bool
 ) -> None:
     body = _answer(FILLED, "Changelog", changelog_answer)
-    found = check_pr.problems(body, changed, BASE_LOG, head)
+    found = check_pr.problems(body, changed, fragments)
     assert bool(found) is fails
-    assert all("CHANGELOG.md" in problem for problem in found)
+    assert all("changelog.d/" in problem for problem in found)
 
 
-def test_unreleased_reads_only_its_own_section() -> None:
-    assert check_pr.unreleased(HEAD_LOG) == "### Fixed\n\n- new"
-    assert check_pr.unreleased(BASE_LOG) == ""
+def test_a_breaking_fragment_needs_an_upgrading_fragment() -> None:
+    (problem,) = check_pr.problems(FILLED, [], BREAKING)
+    assert "gone.removed.md is Breaking" in problem
+    assert ".upgrading.md" in problem
+    assert check_pr.problems(FILLED, [], {**BREAKING, **UPGRADING}) == []
+    assert check_pr.problems(FILLED, [], FRAGMENTS) == []
+
+
+def test_only_a_release_pr_edits_the_changelog() -> None:
+    for path in ("CHANGELOG.md", "changelog/9.x.md"):
+        (problem,) = check_pr.problems(FILLED, [path], {})
+        assert path in problem
+        assert "add a fragment in changelog.d/ instead" in problem
+        assert check_pr.problems(FILLED, [path], {}, release=True) == []
+
+
+def test_a_release_pr_leaves_no_fragment_behind() -> None:
+    (problem,) = check_pr.problems(FILLED, [], {}, release=True, leftover=[FRAGMENT])
+    assert FRAGMENT in problem
+    assert "changelog.py build" in problem
+    assert check_pr.problems(FILLED, [], {}, leftover=[FRAGMENT]) == []
 
 
 def test_contributing_lists_the_template_items() -> None:
@@ -106,7 +123,7 @@ def test_main_reads_the_event_and_the_checkout(
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")
-    (repo / "CHANGELOG.md").write_text(BASE_LOG)
+    _write(repo / "packages/untaped/pyproject.toml", PYPROJECT)
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "base")
     base = _rev(repo, "HEAD")
@@ -118,22 +135,34 @@ def test_main_reads_the_event_and_the_checkout(
     monkeypatch.chdir(repo)
 
     assert check_pr.main([str(event)]) == 1
-    assert "CHANGELOG.md" in capsys.readouterr().err
+    assert "changelog.d/" in capsys.readouterr().err
 
-    (repo / "CHANGELOG.md").write_text(HEAD_LOG)
+    _write(repo / FRAGMENT, "Something is fixed.\n")
+    _commit(repo, "fragment")
+    assert check_pr.main([str(event)]) == 0
+
+    _write(repo / "packages/untaped/pyproject.toml", PYPROJECT.replace("10.0.0", "10.1.0"))
+    _write(repo / "CHANGELOG.md", "# Changelog\n")
+    _commit(repo, "release")
+    assert check_pr.main([str(event)]) == 1  # a release PR with a fragment left over
+    assert "changelog.py build" in capsys.readouterr().err
+    (repo / FRAGMENT).unlink()
+    _commit(repo, "built")
+    waived = _answer(FILLED, "Changelog", "none, the release")
+    event.write_text(json.dumps({"pull_request": {"base": {"sha": base}, "body": waived}}))
     assert check_pr.main([str(event)]) == 0
 
 
 def test_main_measures_a_merge_commit_against_its_first_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """main moved after the event's base.sha: its changelog line is not this PR's."""
+    """main moved after the event's base.sha: its fragment is not this PR's."""
     repo = tmp_path / "repo"
     (repo / "packages/untaped-x/src").mkdir(parents=True)
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")
-    (repo / "CHANGELOG.md").write_text(BASE_LOG)
+    _write(repo / "packages/untaped/pyproject.toml", PYPROJECT)
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "base")
     stale = _rev(repo, "HEAD")
@@ -142,14 +171,25 @@ def test_main_measures_a_merge_commit_against_its_first_parent(
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "change")
     _git(repo, "checkout", "-q", "main")
-    (repo / "CHANGELOG.md").write_text(HEAD_LOG)  # another PR's line lands on main
-    _git(repo, "commit", "-qam", "other")
+    _write(repo / FRAGMENT, "Another PR's fragment.\n")  # lands on main
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "other")
     _git(repo, "merge", "-q", "--no-edit", "pr")  # the merge ref Actions checks out
     event = tmp_path / "event.json"
     event.write_text(json.dumps({"pull_request": {"base": {"sha": stale}, "body": FILLED}}))
     monkeypatch.chdir(repo)
 
     assert check_pr.main([str(event)]) == 1
+
+
+def _commit(repo: Path, message: str) -> None:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", message)
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def _rev(repo: Path, ref: str) -> str:

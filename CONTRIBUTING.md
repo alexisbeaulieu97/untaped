@@ -156,16 +156,40 @@ answer each item, in order, in the PR template's **Drift review** section
 - **Docs, skills and READMEs.** Every page that describes what changed still
   says something true, in the fact's one home (see Workflow), and names any
   new command, option or setting.
-- **Changelog.** A user-visible change has one entry under `## Unreleased`:
-  a sentence saying what a user notices or must do, ending with its PR link;
-  details belong in the PR and the docs. Refactors and test-only changes get
-  none. A change to `packages/*/src` without one answers `none, <why>`.
+- **Changelog.** A user-visible change adds a fragment,
+  `changelog.d/<slug>.<type>.md`: a sentence saying what a user notices or
+  must do; details belong in the PR and the docs. Refactors and test-only
+  changes get none. A change to `packages/*/src` without one answers
+  `none, <why>`. See [Changelog fragments](#changelog-fragments).
 - **Duplicated helpers.** Nothing new repeats a helper in `untaped.sdk`,
   core or another capability; move a misplaced helper instead of forking it.
 - **Repo rules.** The Workflow rules above that no linter checks: lazy
   imports, git and locks through core, `SecretStr`, module docstrings.
 - **Issues.** `Closes #N` for the issue the PR finishes, and any open issue
   the diff makes stale or already finishes.
+
+### Changelog fragments
+
+Never edit `CHANGELOG.md` in a feature PR; it lists released versions only.
+`<type>` is `added`, `changed`, `deprecated`, `removed`, `fixed` or
+`upgrading`, and `<slug>` is free kebab-case (`settings-marks`). The file holds
+one entry: the sentence, wrapped at 80 columns, with no leading `- `, heading
+or blank line. A breaking change keeps the `**Breaking (scope):**` prefix and
+comes with an `upgrading` fragment saying what a user or script must do. Two
+user-visible changes are two fragments; a change to something still
+unreleased edits its fragment.
+
+```text
+changelog.d/doctor-fix.added.md:
+`untaped doctor fix` runs every automatic fix, re-checks, and reports what
+changed.
+```
+
+The release adds each entry's PR link itself (`([#N](…))`, from the PR that
+merged the fragment); an entry that ends with its own link group, such as an
+issue link, keeps it. `scripts/changelog.py check` validates the fragments
+(a pre-commit hook), and `scripts/changelog.py draft` prints the next
+release's section.
 
 ### Dead code
 
@@ -178,7 +202,7 @@ signatures are ignored in `[tool.vulture]`, not listed.
 
 Plan releases with GitHub milestones, one for the next minor and one for the
 next major; each issue sits in the milestone it should ship in. Features
-merge to `main` when ready, each with its changelog line, so `main` stays
+merge to `main` when ready, each with its changelog fragment, so `main` stays
 releasable as a minor. A breaking change waits in the next major's milestone,
 and its PR merges only once that major is the next release; where it can, a
 deprecation warning ships in a minor first. A release is cut when its
@@ -212,15 +236,20 @@ It touches these and nothing else:
   `packages/*/pyproject.toml`, and on a major `examples/untaped-hello`'s
   `untaped` range (`>=X,<X+1`);
 - `uv.lock` (`uv lock`);
-- `CHANGELOG.md` and `changelog/`: rename `## Unreleased` to `## X.Y.Z`;
-  on a major, move the previous major's sections to `changelog/<X-1>.x.md`
-  and link it under `## Older releases`.
+- `CHANGELOG.md`, `changelog/` and `changelog.d/`: run
+  `uv run python scripts/changelog.py build X.Y.Z`, which writes `## X.Y.Z`,
+  deletes the fragments and, on a major, moves the previous major's sections
+  to `changelog/<X-1>.x.md` and links it under `## Older releases`. Preview
+  the section first with `changelog.py draft`. A pre-release (`X.Y.Zrc1`)
+  writes `## X.Y.Zrc1`; a later build of the same version retitles that
+  section and adds new fragments. Only a release PR may edit these paths, and
+  it fails while any fragment is left.
 
 A major release's changelog section (see [Versioning](docs/versioning.md))
-opens with `### Upgrading`: one item for each Breaking bullet, saying what a
-user or script must do about it. Changes add those items under `## Unreleased` as
-they land; the release PR checks the list is current before renaming the
-section.
+opens with `### Upgrading`: one item for each Breaking entry, saying what a
+user or script must do about it. Each Breaking change adds its `upgrading`
+fragment as it lands (the PR check requires it), and `build` refuses an
+`upgrading` fragment in a minor or patch release.
 
 ### Rehearse
 
@@ -335,6 +364,10 @@ until the next major release.
 
 **Retired key**: an old name of a setting that is no longer read;
 `untaped config migrate` still renames it.
+
+**Changelog fragment**: one user-visible change, written as a file in
+`changelog.d/` and gathered into `CHANGELOG.md` at release.
+_Avoid_: news file, changelog entry (for the file).
 
 **Stability**: whether a command or setting is stable, experimental or
 deprecated.

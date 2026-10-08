@@ -453,3 +453,13 @@ def test_pr_workflow_checks_the_pull_request_body_and_changelog() -> None:
     steps = _steps("pr.yml", "pr-checks")
     assert steps[_find(steps, uses="actions/checkout")]["with"]["fetch-depth"] == 0
     _find(steps, run='uv run --no-sync python scripts/check_pr.py "$GITHUB_EVENT_PATH"')
+    draft = steps[
+        _find(steps, run='uv run --no-sync python scripts/changelog.py draft --pr "$PR_NUMBER"')
+    ]
+    assert draft["env"] == {"PR_NUMBER": "${{ github.event.pull_request.number }}"}
+
+
+def test_ci_derives_the_changelog_draft_on_main() -> None:
+    steps = _steps("ci.yml", "lint-and-test")
+    draft = steps[_find(steps, run="uv run python scripts/changelog.py draft")]
+    assert draft["if"] == "github.event_name == 'push'"
