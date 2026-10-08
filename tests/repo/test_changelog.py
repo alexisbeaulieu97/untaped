@@ -200,6 +200,16 @@ def test_a_slug_deleted_and_added_again_takes_the_latest_pr(repo: Path) -> None:
     assert _entries(repo) == {"added": [f"- Again. ([#9]({PR}/9))"]}
 
 
+def test_a_slug_deleted_by_a_release_is_not_on_main_until_added_again(repo: Path) -> None:
+    _merge_pr(repo, 7, {"changelog.d/one.added.md": "First.\n"})
+    _git(repo, "rm", "-q", "changelog.d/one.added.md")
+    _commit(repo, "built")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _write(repo, "changelog.d/one.added.md", "Again.\n")
+
+    assert _entries(repo, pr=12) == {"added": [f"- Again. ([#12]({PR}/12))"]}
+
+
 def test_a_fragment_added_outside_a_pr_merge_fails_loudly(repo: Path) -> None:
     _write(repo, "changelog.d/direct.added.md", "Pushed.\n")
     _commit(repo, "oops, pushed to main")
@@ -380,6 +390,16 @@ def test_build_writes_the_files_and_removes_the_fragments(repo: Path) -> None:
         .startswith("# Changelog: untaped 10.x")
     )
     assert not (repo / "changelog.d").exists()
+
+
+def test_build_refuses_to_overwrite_an_archive(repo: Path) -> None:
+    _write(repo, "CHANGELOG.md", RELEASED)
+    _write(repo, "changelog/10.x.md", "old\n")
+    _merge_pr(repo, 7, {"changelog.d/a.upgrading.md": "Do.\n"})
+
+    with pytest.raises(changelog.ChangelogError, match=r"changelog/10\.x\.md already exists"):
+        changelog.build(repo, "11.0.0")
+    assert (repo / "changelog.d/a.upgrading.md").exists()
 
 
 def test_build_refuses_a_fragment_that_is_not_on_main(

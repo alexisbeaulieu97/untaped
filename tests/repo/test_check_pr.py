@@ -10,6 +10,7 @@ from pathlib import Path
 import check_pr
 import pytest
 
+import changelog
 from repo.support import REPO_ROOT
 
 FILLED = """\
@@ -97,6 +98,10 @@ def test_only_a_release_pr_edits_the_changelog() -> None:
         assert check_pr.problems(FILLED, [path], {}, release=True) == []
 
 
+def test_the_pr_that_moves_unreleased_into_fragments_may_edit_the_changelog() -> None:
+    assert check_pr.problems(FILLED, ["CHANGELOG.md"], {}, migration=True) == []
+
+
 def test_a_release_pr_leaves_no_fragment_behind() -> None:
     (problem,) = check_pr.problems(FILLED, [], {}, release=True, leftover=[FRAGMENT])
     assert FRAGMENT in problem
@@ -124,6 +129,7 @@ def test_main_reads_the_event_and_the_checkout(
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")
     _write(repo / "packages/untaped/pyproject.toml", PYPROJECT)
+    _write(repo / "CHANGELOG.md", "# Changelog\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "base")
     base = _rev(repo, "HEAD")
@@ -148,6 +154,7 @@ def test_main_reads_the_event_and_the_checkout(
     assert "changelog.py build" in capsys.readouterr().err
     (repo / FRAGMENT).unlink()
     _commit(repo, "built")
+    assert changelog.fragment_type(FRAGMENT) == "fixed"  # a deleted fragment is not counted
     waived = _answer(FILLED, "Changelog", "none, the release")
     event.write_text(json.dumps({"pull_request": {"base": {"sha": base}, "body": waived}}))
     assert check_pr.main([str(event)]) == 0
@@ -163,6 +170,7 @@ def test_main_measures_a_merge_commit_against_its_first_parent(
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")
     _write(repo / "packages/untaped/pyproject.toml", PYPROJECT)
+    _write(repo / "CHANGELOG.md", "# Changelog\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "base")
     stale = _rev(repo, "HEAD")

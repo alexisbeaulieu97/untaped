@@ -174,7 +174,7 @@ def _git(root: Path, *args: str) -> str:
 
 
 def main_history(root: Path) -> dict[str, Added]:
-    """For each fragment path, the latest first-parent commit on ``origin/main`` that added it.
+    """For each fragment on ``origin/main``, the latest first-parent commit there that added it.
 
     Empty when there is no ``origin/main``: nothing is on main then.
     """
@@ -194,6 +194,14 @@ def main_history(root: Path) -> dict[str, Added]:
         )
     except GitCommandError:
         return {}
+    try:
+        on_main = set(
+            _git(root, "ls-tree", "-r", "--name-only", "origin/main", "--", FRAGMENT_DIR).split(
+                "\n"
+            )
+        )
+    except GitCommandError:
+        return {}
     chunks = [chunk for chunk in out.split("\0") if chunk.strip()]
     found: dict[str, Added] = {}
     for position, chunk in enumerate(chunks):  # newest first
@@ -201,7 +209,8 @@ def main_history(root: Path) -> dict[str, Added]:
         sha, _, subject = header.partition(" ")
         added = Added(sha, subject, rank=len(chunks) - position)
         for path in filter(None, (p.strip() for p in paths)):
-            found.setdefault(path, added)
+            if path in on_main:  # a slug a release deleted is not on main until re-added there
+                found.setdefault(path, added)
     return found
 
 

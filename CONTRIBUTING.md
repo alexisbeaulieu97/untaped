@@ -160,7 +160,8 @@ answer each item, in order, in the PR template's **Drift review** section
   `changelog.d/<slug>.<type>.md`: a sentence saying what a user notices or
   must do; details belong in the PR and the docs. Refactors and test-only
   changes get none. A change to `packages/*/src` without one answers
-  `none, <why>`. See [Changelog fragments](#changelog-fragments).
+  `none, <why>`; answer with the fragment's path. See
+  [Changelog fragments](#changelog-fragments).
 - **Duplicated helpers.** Nothing new repeats a helper in `untaped.sdk`,
   core or another capability; move a misplaced helper instead of forking it.
 - **Repo rules.** The Workflow rules above that no linter checks: lazy
@@ -173,7 +174,7 @@ answer each item, in order, in the PR template's **Drift review** section
 Never edit `CHANGELOG.md` in a feature PR; it lists released versions only.
 `<type>` is `added`, `changed`, `deprecated`, `removed`, `fixed` or
 `upgrading`, and `<slug>` is free kebab-case (`settings-marks`). The file holds
-one entry: the sentence, wrapped at 80 columns, with no leading `- `, heading
+one entry: the sentence, wrapped at 78 columns (the bullet adds two), with no leading `- `, heading
 or blank line. A breaking change keeps the `**Breaking (scope):**` prefix and
 comes with an `upgrading` fragment saying what a user or script must do. Two
 user-visible changes are two fragments; a change to something still
@@ -242,8 +243,8 @@ It touches these and nothing else:
   to `changelog/<X-1>.x.md` and links it under `## Older releases`. Preview
   the section first with `changelog.py draft`. A pre-release (`X.Y.Zrc1`)
   writes `## X.Y.Zrc1`; a later build of the same version retitles that
-  section and adds new fragments. Only a release PR may edit these paths, and
-  it fails while any fragment is left.
+  section and adds new fragments. Only a release PR may edit these paths, and it fails
+  while any fragment is left.
 
 A major release's changelog section (see [Versioning](docs/versioning.md))
 opens with `### Upgrading`: one item for each Breaking entry, saying what a
