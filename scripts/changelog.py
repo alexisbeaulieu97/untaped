@@ -14,7 +14,7 @@ Usage: ``uv run python scripts/changelog.py [--root DIR] <command>``.
   fragments.
 
 A fragment is ``changelog.d/<slug>.<type>.md`` holding one entry: the
-sentence as it should read, wrapped at 80 columns, with no leading ``- ``, no
+sentence as it should read, wrapped at 78 columns, with no leading ``- ``, no
 heading and no blank line. The renderer adds the bullet, indents the
 continuation lines and appends the link ``([#N](…/pull/N))`` where N is the PR
 whose merge commit on ``origin/main`` added the file. An entry that ends with

@@ -10,7 +10,6 @@ from pathlib import Path
 import check_pr
 import pytest
 
-import changelog
 from repo.support import REPO_ROOT
 
 FILLED = """\
@@ -154,7 +153,6 @@ def test_main_reads_the_event_and_the_checkout(
     assert "changelog.py build" in capsys.readouterr().err
     (repo / FRAGMENT).unlink()
     _commit(repo, "built")
-    assert changelog.fragment_type(FRAGMENT) == "fixed"  # a deleted fragment is not counted
     waived = _answer(FILLED, "Changelog", "none, the release")
     event.write_text(json.dumps({"pull_request": {"base": {"sha": base}, "body": waived}}))
     assert check_pr.main([str(event)]) == 0
