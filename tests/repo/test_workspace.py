@@ -53,7 +53,7 @@ def test_root_config_lists_every_package() -> None:
     distributions = set(release.packages(REPO_ROOT))
     assert set(config["tool"]["uv"]["sources"]) == distributions
     assert sorted(config["tool"]["coverage"]["run"]["source"]) == src
-    scripts = ["scripts/check_pr.py", "scripts/release.py"]
+    scripts = ["scripts/changelog.py", "scripts/check_pr.py", "scripts/release.py"]
     assert sorted(config["tool"]["mypy"]["files"]) == sorted([*src, *scripts])
     vulture = config["tool"]["vulture"]["paths"]
     assert sorted(vulture) == sorted([*src, "scripts/vulture_allowlist.py"])
