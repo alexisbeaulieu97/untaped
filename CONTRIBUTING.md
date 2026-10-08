@@ -174,8 +174,8 @@ answer each item, in order, in the PR template's **Drift review** section
 Never edit `CHANGELOG.md` in a feature PR; it lists released versions only.
 `<type>` is `added`, `changed`, `deprecated`, `removed`, `fixed` or
 `upgrading`, and `<slug>` is free kebab-case (`settings-marks`). The file holds
-one entry: the sentence, wrapped at 78 columns (the bullet adds two), with no leading `- `, heading
-or blank line. A breaking change keeps the `**Breaking (scope):**` prefix and
+one entry: the sentence, wrapped at 78 columns (the bullet adds two), with
+no leading `- `, heading or blank line. A breaking change keeps the `**Breaking (scope):**` prefix and
 comes with an `upgrading` fragment saying what a user or script must do. Two
 user-visible changes are two fragments; a change to something still
 unreleased edits its fragment.
@@ -243,8 +243,8 @@ It touches these and nothing else:
   to `changelog/<X-1>.x.md` and links it under `## Older releases`. Preview
   the section first with `changelog.py draft`. A pre-release (`X.Y.Zrc1`)
   writes `## X.Y.Zrc1`; a later build of the same version retitles that
-  section and adds new fragments. Only a release PR may edit these paths, and it fails
-  while any fragment is left.
+  section and adds new fragments. Only a release PR may edit these paths, and
+  it fails while any fragment is left.
 
 A major release's changelog section (see [Versioning](docs/versioning.md))
 opens with `### Upgrading`: one item for each Breaking entry, saying what a
