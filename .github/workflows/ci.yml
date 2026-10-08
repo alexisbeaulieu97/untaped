@@ -58,6 +58,11 @@ jobs:
       - name: Pre-commit hooks
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
+      - name: Changelog draft
+        # After a merge, every fragment on main must still derive its PR link.
+        if: github.event_name == 'push'
+        run: uv run python scripts/changelog.py draft
+
       - name: mypy
         run: uv run mypy
 
