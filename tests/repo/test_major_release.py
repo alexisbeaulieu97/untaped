@@ -41,10 +41,10 @@ from untaped.stability import (
 from untaped.testing import provider_candidate
 
 
-def is_major_release(version: str, changelog: str, fragments: Sequence[str]) -> bool:
-    """Whether ``version`` with this ``changelog`` and fragments is a major release in prep."""
+def is_major_release(version: str, text: str, fragments: Sequence[str]) -> bool:
+    """Whether ``version`` with this changelog ``text`` and fragments is a major release in prep."""
     parsed = Version(version)
-    built = re.search(rf"^## {re.escape(version)}$", changelog, re.MULTILINE) is not None
+    built = re.search(rf"^## {re.escape(version)}$", text, re.MULTILINE) is not None
     return parsed.minor == 0 and parsed.micro == 0 and built and not fragments
 
 
