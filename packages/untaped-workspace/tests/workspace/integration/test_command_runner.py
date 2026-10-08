@@ -103,15 +103,14 @@ def _wait_for(paths: list[Path], limit: float = 10.0) -> None:
         time.sleep(0.02)
 
 
-def _wait_registered(runner: SubprocessRunner, count: int = 1, limit: float = 10.0) -> None:
-    """Wait until the runner tracks ``count`` live commands.
+def _wait_registered(runner: SubprocessRunner, limit: float = 10.0) -> None:
+    """Wait until the runner has registered a live command.
 
-    A command's STARTED file can appear before the runner thread registers its
-    process, and ``cancel()`` only signals registered ones. The runner exposes no
-    public view of them, so this reads ``_live`` (the one deliberate private access).
+    STARTED can appear before the runner thread adds the process to ``_live``, and
+    ``cancel()`` signals only registered ones. Reads ``_live``: the runner has no public view.
     """
     deadline = time.monotonic() + limit
-    while len(runner._live) < count:
+    while not runner._live:
         assert time.monotonic() < deadline, "runner never registered the command"
         time.sleep(0.02)
 
