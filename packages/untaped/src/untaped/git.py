@@ -74,6 +74,8 @@ _GIST_LIMIT = 300
 _TERM_GRACE_S = 2.0
 # Process groups of the git commands running now, for forward_signals().
 _LIVE_GROUPS: dict[int, None] = {}
+# Signals forward_signals() passed on, for a group registered just after one.
+_FORWARDED: list[int] = []
 _REDACTED = "<redacted>"
 _LOG = logging.getLogger("untaped.git")
 # ``scheme://user[:password]@``: the whole userinfo can be a token.
@@ -404,6 +406,7 @@ def _run_process(
     :data:`_TERM_GRACE_S`, so no helper outlives the call. Signals sent to
     untaped's own process group reach git only through :func:`forward_signals`.
     """
+    forwarded = len(_FORWARDED)
     with subprocess.Popen(
         cmd,
         cwd=cwd,
@@ -415,6 +418,9 @@ def _run_process(
     ) as process:
         try:
             _LIVE_GROUPS[process.pid] = None
+            # A signal forwarded between Popen and registration missed this group.
+            for sig in _FORWARDED[forwarded:]:
+                _signal_group(process.pid, sig)
             out, err = process.communicate(input, timeout=timeout)
         except BaseException:
             _stop_group(process)
@@ -473,6 +479,7 @@ def forward_signals() -> None:
 
 
 def _forward_signal(previous: Callable[..., object] | int, signum: int, frame: object) -> None:
+    _FORWARDED.append(signum)
     for pgid in list(_LIVE_GROUPS):
         _signal_group(pgid, signum)
     if callable(previous):
