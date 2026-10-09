@@ -156,13 +156,7 @@ class SelectionResolver:
                     f"expected {expected_kind!r}",
                     category="invalid",
                 )
-            id_ = envelope.record.get("id")
-            if not isinstance(id_, int) or isinstance(id_, bool) or id_ <= 0:
-                raise ConfigError(
-                    f"line {envelope.lineno}: pipe record requires a positive integer id",
-                    category="invalid",
-                )
-            record = as_dict(self._client.get(spec, id_))
+            record = as_dict(self._client.get(spec, pipe_record_id(envelope)))
             self._validate(spec, record, scope)
             selected.append(_selected(spec, record, scope))
         return _dedupe(selected)
@@ -316,7 +310,22 @@ def validate_scope(
             current = referenced
 
 
-__all__ = ["SelectedResource", "SelectionRequest", "SelectionResolver"]
+def pipe_record_id(envelope: PipeEnvelope) -> int:
+    """The positive integer ``id`` a piped record names its resource by.
+
+    A typed record is a fixed identity: consumers act on its ``id`` and never
+    re-resolve its name, which may be shared across organizations or stale.
+    """
+    id_ = envelope.record.get("id")
+    if not isinstance(id_, int) or isinstance(id_, bool) or id_ <= 0:
+        raise ConfigError(
+            f"line {envelope.lineno}: pipe record requires a positive integer id",
+            category="invalid",
+        )
+    return id_
+
+
+__all__ = ["SelectedResource", "SelectionRequest", "SelectionResolver", "pipe_record_id"]
 
 
 def _scope_path(spec: ResourceSpec, path: str) -> str:
