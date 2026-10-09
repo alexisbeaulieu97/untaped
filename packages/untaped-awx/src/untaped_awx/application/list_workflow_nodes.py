@@ -69,7 +69,7 @@ class ListWorkflowNodes:
                     continue
                 if child_id in new_ancestors:
                     self._warn(
-                        f"cycle: workflow {child_id} already visited; skipping",
+                        f"workflow {child_id}: already visited (a cycle); skipped",
                     )
                     continue
                 if child_id in listed:

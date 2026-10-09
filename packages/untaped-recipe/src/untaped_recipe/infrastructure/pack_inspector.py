@@ -20,8 +20,8 @@ class PackInspector:
     project root for the inspector's lifetime.
     """
 
-    def __init__(self, *, library_root: Path) -> None:
-        self._resolver = HookResolver(library_root=library_root)
+    def __init__(self, *, library_dir: Path) -> None:
+        self._resolver = HookResolver(library_dir=library_dir)
         self._locks = LockFreshness()
 
     def read_hook_project(self, project_root: Path) -> PackManifest:

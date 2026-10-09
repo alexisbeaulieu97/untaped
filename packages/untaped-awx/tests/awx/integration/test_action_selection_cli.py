@@ -669,9 +669,9 @@ def test_ctrl_c_while_waiting_stops_promptly_and_lists_only_running_executions(
     assert time.monotonic() - started < 2.5
     assert result.exit_code == 130, result.output
     running, finished = (job["id"] for job in fake_aap.list_records("jobs"))
-    assert f"job {running} keeps running" in result.stderr
+    assert f"job {running}): interrupted, keeps running" in result.stderr
     assert f"job {finished} " not in result.stderr
-    assert f"untaped awx jobs wait {running} --kind job" in result.stderr
+    assert f"hint: run `untaped awx jobs wait {running} --kind job`" in result.stderr
 
 
 def test_interrupted_executions_are_warning_diagnostics(
@@ -692,7 +692,7 @@ def test_interrupted_executions_are_warning_diagnostics(
     records = [json.loads(line) for line in result.stderr.splitlines() if line.startswith("{")]
     [record] = [r for r in records if "interrupted" in r["message"]]
     assert record["level"] == "warning"
-    assert record["message"] == f"interrupted: deploy: job {job['id']} keeps running"
+    assert record["message"] == f"deploy (job {job['id']}): interrupted, keeps running"
     assert any(r["level"] == "hint" for r in records)
 
 
@@ -718,8 +718,8 @@ def test_ctrl_c_during_submission_names_executions_already_submitted(
 
     assert result.exit_code == 130, result.output
     (job,) = fake_aap.list_records("jobs")
-    assert f"job {job['id']} keeps running" in result.stderr
-    assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
+    assert f"job {job['id']}): interrupted, keeps running" in result.stderr
+    assert f"hint: run `untaped awx jobs wait {job['id']} --kind job`" in result.stderr
 
 
 def test_ctrl_c_while_waiting_with_cancel_cancels_the_running_executions(
@@ -739,7 +739,7 @@ def test_ctrl_c_while_waiting_with_cancel_cancels_the_running_executions(
 
     assert result.exit_code == 130, result.output
     running, finished = (job["id"] for job in fake_aap.list_records("jobs"))
-    assert f"interrupted: deploy: job {running} cancel requested" in result.stderr
+    assert f"warning: deploy (job {running}): interrupted, cancel requested" in result.stderr
     assert f"job {finished} " not in result.stderr
     assert "jobs wait" not in result.stderr
     assert [(i, a) for _, i, a, _ in fake_aap.actions_called if a == "cancel"] == [
@@ -771,7 +771,7 @@ def test_ctrl_c_during_submission_with_cancel_cancels_executions_already_submitt
 
     assert result.exit_code == 130, result.output
     (job,) = fake_aap.list_records("jobs")
-    assert f"job {job['id']} cancel requested" in result.stderr
+    assert f"job {job['id']}): interrupted, cancel requested" in result.stderr
     assert "jobs wait" not in result.stderr
     assert job["status"] == "canceled"
 
@@ -800,8 +800,8 @@ def test_second_ctrl_c_while_cancelling_still_names_the_executions(
 
     assert result.exit_code == 130, result.output
     (job,) = fake_aap.list_records("jobs")
-    assert f"interrupted: deploy: job {job['id']} keeps running" in result.stderr
-    assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
+    assert f"deploy (job {job['id']}): interrupted, keeps running" in result.stderr
+    assert f"hint: run `untaped awx jobs wait {job['id']} --kind job`" in result.stderr
 
 
 @pytest.mark.parametrize("abandoned_by", ["timeout", "polling error"])
@@ -823,8 +823,8 @@ def test_ctrl_c_while_cancelling_after_the_wait_names_the_executions(
 
     assert result.exit_code == 130, result.output
     (job,) = fake_aap.list_records("jobs")
-    assert f"interrupted: deploy: job {job['id']} keeps running" in result.stderr
-    assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
+    assert f"deploy (job {job['id']}): interrupted, keeps running" in result.stderr
+    assert f"hint: run `untaped awx jobs wait {job['id']} --kind job`" in result.stderr
 
 
 def test_ctrl_c_while_cancelling_before_the_wait_names_the_executions(
@@ -842,8 +842,8 @@ def test_ctrl_c_while_cancelling_before_the_wait_names_the_executions(
 
     assert result.exit_code == 130, result.output
     (job,) = fake_aap.list_records("jobs")
-    assert f"interrupted: deploy: job {job['id']} was launched" in result.stderr
-    assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
+    assert f"deploy (job {job['id']}): interrupted, was launched" in result.stderr
+    assert f"hint: run `untaped awx jobs wait {job['id']} --kind job`" in result.stderr
 
 
 def test_job_that_ends_before_its_cancel_reports_its_final_status(

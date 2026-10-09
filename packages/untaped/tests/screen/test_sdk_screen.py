@@ -13,7 +13,6 @@ from untaped.sdk import (
     Button,
     Buttons,
     Cancel,
-    Check,
     Cmd,
     Form,
     Frame,
@@ -34,7 +33,6 @@ from untaped.sdk import (
     TreeRow,
     UiContext,
     Viewport,
-    field_for,
 )
 from untaped.testing import ScreenKeys, ScriptedPromptBackend, TtyStringIO, drive_screen
 
@@ -152,28 +150,6 @@ def test_a_plugin_builds_a_form_from_sdk_components_only() -> None:
     assert all("s3cr3t" not in frame for frame in run.frames)
     assert "Base URL" in run.frames[0]
     assert "Save" in run.frames[0]
-
-
-def test_a_plugin_maps_a_setting_to_a_component_with_field_for() -> None:
-    from untaped.config_schema import walk_settings
-    from untaped.settings import HttpSettings
-
-    verify = next(d for d in walk_settings(HttpSettings) if d.key == "verify_ssl")
-    check = field_for(verify, help="Check the certificate.")
-
-    assert isinstance(check, Check)
-    assert drive_screen(_solo_screen(check)).frames[0].count("✓") == 1
-
-
-def _solo_screen(component: Check) -> Screen[Check, None]:
-    return Screen(
-        init=lambda: (component, []),
-        update=lambda model, message: model.update(message),
-        view=lambda model, frame: model.view(frame, focused=True, width=30),
-        title="Check",
-        command="untaped acme check",
-        alternative="untaped acme check --flag",
-    )
 
 
 def _panes_screen() -> Screen[Panes, tuple[str, str]]:

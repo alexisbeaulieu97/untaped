@@ -31,7 +31,8 @@ from untaped.cli import (
 )
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
-from untaped.errors import ConfigError
+from untaped.diagnostics import note_failure
+from untaped.errors import ConfigError, most_severe
 from untaped.messages import hint, plural
 from untaped.plugins.registry import CompositionResult, settings_model
 from untaped.profile_resolver import (
@@ -232,7 +233,8 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
         """Move every plaintext token in ``config.yml``, in every profile, to a store.
 
         Each token is stored and read back before it is removed from the
-        file; one that fails stays where it was, and the command exits 1.
+        file; one that fails stays where it was, and the command exits
+        non-zero, with the code of the most severe failure's category.
         """
         with report_errors():
             _migrate(result, store=store, dry_run=dry_run, fmt=fmt, columns=columns)
@@ -438,12 +440,15 @@ def _migrate(
         )
     if not dry_run:
         chosen.preflight()
-    rows, store_hint = _move_all(pending, chosen, dry_run=dry_run)
+    rows, failures = _move_all(pending, chosen, dry_run=dry_run)
     emit(rows, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
-    failed = sum(row["action"] == "failed" for row in rows)
-    if failed:
+    if failures:
+        worst = most_severe(failures)
         raise ConfigError(
-            f"{plural(failed, 'token')} could not be moved and stay in the config", hint=store_hint
+            f"{plural(len(failures), 'token')} could not be moved and stay in the config",
+            category=worst.category,
+            system=worst.system,
+            hint=next((exc.hint for exc in failures if exc.hint), None),
         )
     if not dry_run:
         ui.success(f"moved {plural(len(rows), 'token')} to {chosen.name}")
@@ -451,11 +456,11 @@ def _migrate(
 
 def _move_all(
     pending: Sequence[tuple[str, str, str]], store: TokenStore, *, dry_run: bool
-) -> tuple[list[dict[str, object]], str | None]:
-    """Move each token; also the store's fix hint when a failure carried one."""
+) -> tuple[list[dict[str, object]], list[ConfigError]]:
+    """Move each token; also the failures, each already a ``failed`` row."""
     repo = SettingsFileRepository()
     rows: list[dict[str, object]] = []
-    store_hint: str | None = None
+    failures: list[ConfigError] = []
     for profile, section, token in pending:
         row: dict[str, object] = {"section": section, "profile": profile}
         try:
@@ -465,11 +470,14 @@ def _move_all(
                 continue
             where = save_token(repo, section, profile, token, store)
         except ConfigError as exc:
-            store_hint = store_hint or exc.hint
-            rows.append({**row, "store": None, "action": "failed", "detail": str(exc)})
+            failures.append(exc)
+            error = note_failure(exc).model_dump(mode="json")
+            rows.append(
+                {**row, "store": None, "action": "failed", "detail": str(exc), "error": error}
+            )
             continue
         rows.append({**row, "store": where, "action": "moved"})
-    return rows, store_hint
+    return rows, failures
 
 
 _AUTH_OUTCOME = "untaped.auth_outcome"

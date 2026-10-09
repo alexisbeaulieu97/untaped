@@ -15,6 +15,8 @@ from untaped.cli import create_app, report_errors
 from untaped.errors import ConfigError, OperationCancelledError, PromptInterruptedError, UsageError
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
 from untaped.prompts import (
+    PromptBackend,
+    PromptChoice,
     open_controlling_terminal,
     reset_terminal_override,
     set_terminal_override,
@@ -129,9 +131,48 @@ def test_a_backend_that_needs_a_terminal_still_gets_the_refusal() -> None:
         ui.run(_screen())
 
 
+class _BeforeScreens:
+    """A custom backend written against 10.0: every prompt, no ``run_screen``."""
+
+    needs_terminal = False
+
+    def confirm(self, message: str, *, default: bool) -> bool:
+        return default
+
+    def text(self, message: str, *, default: str | None) -> str:
+        return default or ""
+
+    def secret(self, message: str, *, confirmation: bool) -> str:
+        return ""
+
+    def select[T](
+        self, message: str, choices: Sequence[PromptChoice[T]], *, default: T | None, search: bool
+    ) -> T:
+        return choices[0].value
+
+    def multiselect[T](
+        self, message: str, choices: Sequence[PromptChoice[T]], *, defaults: Sequence[T]
+    ) -> list[T]:
+        return list(defaults)
+
+    def pick_many(self, request: PickRequest) -> PickResult | None:
+        return None
+
+
+def test_a_backend_without_run_screen_is_still_a_backend_and_run_names_the_method() -> None:
+    backend: PromptBackend = _BeforeScreens()  # type-checks: run_screen is optional
+    ui = UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
+    assert ui.confirm("ok?", default=True)
+    with pytest.raises(ConfigError, match=r"_BeforeScreens.*run_screen"):
+        ui.run(_screen())
+
+
 def test_the_no_terminal_message_is_built_in_one_place() -> None:
     assert no_terminal_message("untaped x", "untaped x plan") == (
         "`untaped x` needs a terminal; use `untaped x plan`"
+    )
+    assert no_terminal_message("", "") == (
+        "this command needs a terminal; use its non-interactive options (see --help)"
     )
 
 
@@ -343,7 +384,7 @@ def _refused(request: PickRequest) -> str:
 
 def test_pick_many_without_any_terminal_uses_the_fallback_message() -> None:
     assert (
-        "`this command` needs a terminal; use `its non-interactive options (see --help)`"
+        "this command needs a terminal; use its non-interactive options (see --help)"
         in _refused(_PICK_REQUEST)
     )
 

@@ -1,11 +1,11 @@
 """What ``untaped setup`` writes for one service once its check passed (or the user said so).
 
-:func:`write_candidate` is the old wizard's per-service body, unchanged in what
-it writes: create the profile once, set ``base_url``, then the branch the user
-chose for the token (``store``, ``move``, ``enter``, ``command``, ``env`` or
-``keep``), retiring the entry a replaced preset command read. It runs as the
-screen's write command, so it prints nothing: the lines the wizard used to
-print come back as notes for the screen to print after it closes.
+:func:`write_candidate` writes one service: create the profile once, set
+``base_url``, then the branch the user chose for the token (``store``,
+``move``, ``enter``, ``command``, ``env`` or ``keep``), retiring the entry a
+replaced preset command read. It runs as the screen's write command, so it
+prints nothing: its lines come back as notes for the screen to print after it
+closes.
 
 :class:`Candidate` is what the user asked for, in one place: the check reads it
 as overlay values (:func:`overlay_values`) and the write reads it as branches,
@@ -37,7 +37,7 @@ from untaped.token_store import TokenStore, entry_name, preset_entry
 __all__ = ["Candidate", "Note", "overlay_values", "write_candidate"]
 
 type Note = tuple[MessageKind, str]
-"""A line the wizard printed while writing, kept to print after the screen closes."""
+"""A line about a write, kept to print after the screen closes."""
 
 type Checked = Literal["passed", "unchecked", "failed"]
 """What the check said about the candidate: it passed, there was none to run, or the user
@@ -93,7 +93,7 @@ def write_candidate(
     store: TokenStore | None,
     preflight: Callable[[], None],
 ) -> list[Note]:
-    """Write ``candidate`` the way the wizard did; return the lines it would have printed.
+    """Write ``candidate``; return the lines to print about it.
 
     The store is tested first (``preflight``, once per run), so a store that
     cannot work leaves nothing behind, not even a new profile. Raises

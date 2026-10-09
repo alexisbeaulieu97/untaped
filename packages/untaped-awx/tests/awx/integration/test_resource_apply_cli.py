@@ -636,6 +636,7 @@ def test_a_partial_write_keeps_the_category_of_its_cause(
         category,
         "awx",
     )
+    assert "error: JobTemplate/fresh: " in result.stderr
     if status == 401:
         assert "auth set awx" in (row["error"]["hint"] or "")
 

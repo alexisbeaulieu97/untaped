@@ -50,12 +50,12 @@ picker.
 - Each selected repo has a mode (write or read-only), a base (completes from
   cached branches) and a branch (empty uses `workspace.branch_template`).
   `--branch` and `--base` without repo flags prefill these.
-- Keys: `space` toggles a repo, `/` searches, `tab` switches pane, `enter` edits a
-  setting and `←`/`→` change it, `ctrl-s` creates or adds the selection
-  (`create` also with nothing selected: an empty workspace),
-  `ctrl-r` refreshes the inventory, `esc` clears the search (never quits),
-  `ctrl-c` quits (asking first when anything is selected) and creates
-  nothing.
+- Keys: `space` toggles a repo (`enter` too, in the list), `/` searches,
+  `tab` switches pane, `enter` edits a setting in the selected pane and
+  `←`/`→` change it, `ctrl-s` creates or adds the selection (`create` also
+  with nothing selected: an empty workspace), `ctrl-r` refreshes the
+  inventory, `esc` clears a typed search and otherwise quits like `ctrl-c`,
+  which asks first when anything is selected and creates nothing.
 
 ## Branches and bases
 

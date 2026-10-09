@@ -3,7 +3,7 @@
 Usage: ``uv run python scripts/changelog.py [--root DIR] <command>``.
 
 - ``check`` validates every fragment in ``changelog.d/`` (file name, type,
-  format, link line). It runs as a pre-commit hook.
+  format, line width, link line). It runs as a pre-commit hook.
 - ``draft [--pr N]`` prints the next release's section with each entry's PR
   link derived. A fragment not on ``origin/main`` yet gets ``--pr N`` (CI
   passes the event's) or, without it, a visible placeholder link.
@@ -14,8 +14,9 @@ Usage: ``uv run python scripts/changelog.py [--root DIR] <command>``.
   fragments.
 
 A fragment is ``changelog.d/<slug>.<type>.md`` holding one entry: the
-sentence as it should read, wrapped at 78 columns, with no leading ``- ``, no
-heading and no blank line. The renderer adds the bullet, indents the
+sentence as it should read, wrapped at 78 columns (a line holding one longer
+token, such as a URL, may exceed it), with no leading ``- ``, no heading and
+no blank line. The renderer adds the bullet, indents the
 continuation lines and appends the link ``([#N](…/pull/N))`` where N is the PR
 whose merge commit on ``origin/main`` added the file. An entry that ends with
 its own link group (issue links, several PRs) keeps it and gets none.
@@ -41,6 +42,8 @@ FRAGMENT_DIR = "changelog.d"
 #: Fragment types in the order their sections render.
 TYPES = ("upgrading", "added", "changed", "deprecated", "removed", "fixed")
 WIDTH = 80
+#: A fragment line's limit: the rendered bullet or indent adds two columns.
+FRAGMENT_WIDTH = WIDTH - 2
 PLACEHOLDER = "PR"
 
 _NAME = re.compile(r"^(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<type>[a-z]+)\.md$")
@@ -124,6 +127,11 @@ def parse_fragment(name: str, content: str) -> tuple[Fragment | None, list[str]]
             errors.append("has a blank line; an entry is one paragraph")
         if lines[0] != lines[0].lstrip():
             errors.append("starts with whitespace")
+        errors += [
+            f"line {number} is {len(line)} columns; wrap at {FRAGMENT_WIDTH}"
+            for number, line in enumerate(lines, 1)
+            if len(line) > FRAGMENT_WIDTH and len(line.split()) > 1  # one long token can't wrap
+        ]
         tail_start = text.rfind("([#")
         malformed = (
             tail_start != -1

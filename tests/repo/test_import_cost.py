@@ -64,7 +64,7 @@ def test_screen_components_load_without_the_adapter_or_prompt_toolkit() -> None:
     snippet = (
         "import untaped.sdk\n"
         "untaped.sdk.TextInput\n"
-        "untaped.sdk.field_for\n"
+        "untaped.sdk.Field\n"
         "assert 'untaped.screen.components.inputs' in sys.modules\n"
         "assert 'untaped.screen.components.fields' in sys.modules\n"
         "assert 'untaped.screen.terminal' not in sys.modules\n"

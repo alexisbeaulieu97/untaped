@@ -1,9 +1,8 @@
-"""Tests for the root ``untaped plugin list`` command (Wave 1.4, spec §7.3).
+"""Tests for the root ``untaped plugin list`` command.
 
 Reports one record per candidate provider — ``name/status/distribution/
 version`` — from the composition outcome, in name order. The listing never
-touches settings, so invalid plugin values cannot block it (spec §4
-failure isolation).
+touches settings, so invalid plugin values cannot block it.
 """
 
 from __future__ import annotations
@@ -141,7 +140,7 @@ def test_table_headers_name_the_listing_contract() -> None:
 
 
 def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> None:
-    """The §4 isolation case: broken Jira values still list every plugin."""
+    """Broken Jira values still list every plugin."""
     write_config(
         _isolated_config,
         "profiles:\n  default:\n    jira:\n      timeout: not-a-number\n",

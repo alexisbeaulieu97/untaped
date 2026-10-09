@@ -77,7 +77,7 @@ def run_save_batch(
         raise UntapedError(f"cannot create {out_dir}: {exc.strerror or exc}") from exc
     for outcome in outcomes:
         if outcome.action == "skipped":
-            ctx.progress_ui().message("warning", f"skipping {outcome.kind}: {outcome.detail}")
+            ctx.progress_ui().message("warning", f"{outcome.kind}: skipped, {outcome.detail}")
             continue
         if outcome.resource is None or outcome.filename is None:  # pragma: no cover
             raise AwxApiError(f"invalid save outcome for {outcome.kind}: missing resource")

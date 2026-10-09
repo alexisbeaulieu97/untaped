@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from untaped.picker import PickCatalog, PickItem, PickRequest, PickSetting
+from untaped.picker import state as picker_state
 from untaped.picker.state import (
     ALL,
     CREATE,
@@ -98,11 +99,12 @@ def test_up_from_the_first_row_returns_to_search() -> None:
     assert state.focus == "search"
 
 
-def test_esc_clears_the_query_and_never_quits() -> None:
+def test_esc_clears_a_query_then_asks_before_discarding() -> None:
     state = press(typed(_state(), "web"), "down", " ", "esc")
     assert (state.query, state.focus, state.outcome) == ("", "search", "running")
-    state = press(state, "esc", "esc")
-    assert state.outcome == "running"
+    assert not state.quitting
+    state, used = picker_state.press(state, "esc")
+    assert not used  # an empty query leaves esc to the screen's Back
     assert state.selected == ("acme/web",)
 
 

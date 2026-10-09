@@ -842,10 +842,19 @@ def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyP
 
 
 def test_the_root_mounts_exactly_the_reserved_management_commands() -> None:
-    from untaped.plugins.registry import RESERVED_COMMAND_GROUPS, ROOT_COMMANDS
+    from untaped.plugins.registry import RESERVED_COMMAND_GROUPS, ROOT_MANAGEMENT_COMMANDS
 
     root = bootstrap.build_root_app(candidates=[])
 
-    mounted = {name for name in root if not name.startswith("-")}
-    assert mounted == ROOT_COMMANDS
-    assert ROOT_COMMANDS <= RESERVED_COMMAND_GROUPS
+    mounted = [name for name in root if not name.startswith("-")]
+    assert mounted == list(ROOT_MANAGEMENT_COMMANDS)
+    assert set(mounted) <= RESERVED_COMMAND_GROUPS
+
+
+def test_no_plugin_can_claim_a_management_command() -> None:
+    root = bootstrap.build_root_app(candidates=[])
+    management = [name for name in root if not name.startswith("-")]
+    assert "auth" in management
+    for name in management:
+        bootstrap.build_root_app(candidates=[make_candidate(make_spec(name))])
+        assert [r.reason for r in bootstrap.composition().quarantine] == ["reserved-name"], name

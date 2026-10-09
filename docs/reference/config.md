@@ -8,8 +8,8 @@ state lives in `~/.untaped/state.yml` and is written only by the owning
 plugin's commands. See [Configuration](../configuration.md) for the file
 layout, profiles and precedence.
 
-Set a profile setting with `untaped config set KEY VALUE` (secrets:
-`untaped config set KEY --prompt`; how values are parsed is in
+Set a profile setting with `untaped config set KEY VALUE` (a token:
+`untaped auth set SECTION`; how values are parsed is in
 [Settings](../configuration.md#settings)). Each profile setting can be
 overridden for one process with the environment variable shown.
 
@@ -157,19 +157,19 @@ overridden for one process with the environment variable shown.
 
 ## Renamed settings
 
-A deprecated key is still read with a warning; a retired one is no longer read. See [Renamed settings](../configuration.md#renamed-settings).
+A renamed key is still read with a warning; a retired one is no longer read. See [Renamed settings](../configuration.md#renamed-settings).
 
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
-| `http.timeout` | `UNTAPED_HTTP__TIMEOUT` | `http.timeout_seconds` | deprecated |
-| `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | deprecated |
-| `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | deprecated |
-| `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | `ansible.cache_dir` | deprecated |
-| `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | `ansible.stale_after_seconds` | deprecated |
-| `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | deprecated |
-| `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | `github.cache_dir` | deprecated |
-| `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | deprecated |
-| `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | deprecated |
+| `http.timeout` | `UNTAPED_HTTP__TIMEOUT` | `http.timeout_seconds` | renamed |
+| `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | renamed |
+| `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | renamed |
+| `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | `ansible.cache_dir` | renamed |
+| `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | `ansible.stale_after_seconds` | renamed |
+| `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | renamed |
+| `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | `github.cache_dir` | renamed |
+| `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | renamed |
+| `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | renamed |
 
 ## See also
 

@@ -1,4 +1,4 @@
-"""Internal plugin composition kernel (spec §§1-5).
+"""Internal plugin composition kernel.
 
 Implements the provider pipeline: discovery and metadata pre-checks, provider
 resolution, declaration validation, quarantine of every claimant of a contested
@@ -41,7 +41,7 @@ from untaped.stability import Stability, check_stability, mark_errors
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
 
-#: Entry-point group every plugin is discovered from (spec §7.2).
+#: Entry-point group every plugin is discovered from.
 PLUGINS_ENTRY_POINT_GROUP = "untaped.plugins"
 
 #: A plugin name: lowercase words joined by single hyphens. The name is also
@@ -53,19 +53,27 @@ RESERVED_PLUGIN_NAMES = frozenset(
     {"untaped", "core", "sdk", "contracts", "plugins", "extensions", "profiles", "default", "shell"}
 )
 
-#: The management commands the root mounts beside the plugins.
-ROOT_COMMANDS = frozenset(
-    {"config", "profile", "skills", "doctor", "setup", "auth", "alias", "plugin"}
+#: Management commands the root app mounts beside the plugins, in mount
+#: order. ``bootstrap`` mounts exactly these.
+ROOT_MANAGEMENT_COMMANDS = (
+    "config",
+    "profile",
+    "skills",
+    "doctor",
+    "setup",
+    "auth",
+    "alias",
+    "plugin",
 )
 
 #: Root commands core mounts or keeps for itself; a plugin's CLI group is its
 #: name, so no plugin may be named after one.
-RESERVED_COMMAND_GROUPS = ROOT_COMMANDS | {"rank", "contracts"}
+RESERVED_COMMAND_GROUPS = frozenset({*ROOT_MANAGEMENT_COMMANDS, "rank", "contracts"})
 
 
 @dataclass(frozen=True)
 class SkillAsset:
-    """A packaged agent skill shipped by a plugin (spec §3)."""
+    """A packaged agent skill shipped by a plugin."""
 
     name: str
     source: Path
@@ -80,7 +88,7 @@ class SkillAsset:
 
 @dataclass(frozen=True)
 class DoctorCheck:
-    """A health check contributed by the shell or a plugin (spec §3).
+    """A health check contributed by the shell or a plugin.
 
     An ``online`` check contacts a remote service, so only
     ``untaped doctor --online`` runs it; every other check stays offline.
@@ -94,7 +102,7 @@ class DoctorCheck:
 
 @dataclass(frozen=True)
 class DoctorResult:
-    """Outcome of one doctor-check body (spec §3).
+    """Outcome of one doctor-check body.
 
     ``ok=False`` is a failed row (doctor exits 1). ``ok=True`` with
     ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
@@ -122,7 +130,7 @@ class DoctorResult:
 
 @dataclass(frozen=True)
 class PluginContext:
-    """Frozen per-invocation snapshot handed to a doctor-check body (spec §3)."""
+    """Frozen per-invocation snapshot handed to a doctor-check body."""
 
     settings: BaseModel | None
 
@@ -171,7 +179,7 @@ class ApplicationSpec:
 
 @dataclass(frozen=True)
 class PluginSpec:
-    """One composable plugin unit (spec §1).
+    """One composable plugin unit.
 
     ``name`` is also the plugin's config section and CLI group. Every part
     is optional: ``app_factory`` builds the commands mounted under the name
@@ -240,7 +248,7 @@ def plugin_dir(spec: PluginSpec) -> Path:
 
 @dataclass(frozen=True)
 class ProviderRef:
-    """How a composed plugin arrived (spec §3)."""
+    """How a composed plugin arrived."""
 
     distribution: str
     entry_point: str
@@ -248,7 +256,7 @@ class ProviderRef:
 
 @dataclass(frozen=True)
 class RegisteredPlugin:
-    """A fully validated, committed plugin (spec §3)."""
+    """A fully validated, committed plugin."""
 
     spec: PluginSpec
     provider_ref: ProviderRef
@@ -259,7 +267,7 @@ class RegisteredPlugin:
     app: App | None = None
 
 
-#: Every valid quarantine/diagnostic reason code lives here (spec §5 table).
+#: Every valid quarantine/diagnostic reason code lives here.
 VALID_REASONS = frozenset(
     {
         "reserved-name",
@@ -279,7 +287,7 @@ VALID_REASONS = frozenset(
 
 @dataclass(frozen=True)
 class QuarantineRecord:
-    """Why a provider was excluded (spec §3).
+    """Why a provider was excluded.
 
     ``name`` is the candidate's entry-point (plugin) name.
     """
@@ -303,8 +311,8 @@ class ProviderCandidate:
 
     ``distribution_version``, ``entry_point_group``, and ``requires_dist``
     are captured at discovery via :mod:`importlib.metadata` without importing
-    provider code (spec §7.2); the §7.3 listing reports
-    ``distribution_version`` for candidates.
+    provider code; ``untaped plugin list`` reports ``distribution_version``
+    for candidates.
     """
 
     distribution: str
@@ -441,7 +449,7 @@ def _check_requires_dist(candidate: ProviderCandidate, state: _CompositionState)
 
 
 def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[ProviderCandidate, ...]:
-    """Discover every plugin candidate from entry points (spec §7.2).
+    """Discover every plugin candidate from entry points.
 
     Reads distribution version, entry-point group, and Requires-Dist strings
     via :mod:`importlib.metadata` without importing any provider code.
@@ -738,7 +746,7 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> PluginSp
     """
     # Metadata-only gates precede any import: group and Requires-Dist
     # admission are decided from distribution metadata without executing
-    # provider code (spec §5 Phase A).
+    # provider code.
     _check_entry_point_group(candidate)
     _check_requires_dist(candidate, state)
     try:

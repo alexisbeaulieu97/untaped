@@ -425,6 +425,22 @@ def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
     assert online["run"] == ["--profile", "default", "auth", "migrate"]
 
 
+@pytest.mark.parametrize("spelling", [["--profile", "default"], ["--profile=default"]])
+def test_a_fix_that_sets_a_token_is_the_users_however_it_names_the_profile(
+    _isolated_config: Path, spelling: list[str]
+) -> None:
+    def run(_ctx: PluginContext) -> DoctorResult:
+        return DoctorResult(
+            id="wiz.api", ok=False, detail="no", fix=[*spelling, "auth", "set", "wiz"]
+        )
+
+    check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
+    wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
+    _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
+    online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
+    assert (online["state"], online["by"]) == ("failed", "user")
+
+
 _VALUES = {"<URL>": "https://wiz.example", "<COMMAND>": '["x"]', "<PATH>": "/ca.pem"}
 
 

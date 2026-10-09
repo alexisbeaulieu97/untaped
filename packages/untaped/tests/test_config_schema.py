@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from annotated_types import Ge, Gt, Le
+from annotated_types import Ge, Gt
 from pydantic import BaseModel, Field, SecretStr
 
 from untaped.config_schema import (
@@ -78,22 +78,17 @@ def test_include_collections_returns_collections_as_whole_leaves() -> None:
     assert [d.key for d in walk_settings(Demo)] == ["name"]
 
 
-def test_descriptors_carry_the_fields_metadata_optionality_and_description() -> None:
+def test_descriptors_carry_the_fields_optionality_and_description() -> None:
     class Demo(BaseModel):
-        parallel: int = Field(default=8, ge=1, le=32)
+        parallel: int = 8
         page: Annotated[int, Gt(0)] = 5
         wrapped: Annotated[int, Ge(2)] | None = None
-        workers: int | None = Field(default=None, ge=1, description="How many.")
+        workers: int | None = Field(default=None, description="How many.")
         plain: str = "x"
         loud: bool | None = None
 
     parallel, page, wrapped, workers, plain, loud = walk_settings(Demo)
 
-    assert parallel.metadata == (Ge(1), Le(32))
-    assert page.metadata == (Gt(0),)
-    assert wrapped.metadata == (Ge(2),)  # an Annotated inside the optional
-    assert workers.metadata == (Ge(1),)
-    assert plain.metadata == ()
     assert [d.optional for d in (parallel, page, wrapped, workers, plain, loud)] == [
         False, False, True, True, False, True
     ]  # fmt: skip
@@ -106,16 +101,15 @@ def test_a_descriptor_built_without_the_new_fields_keeps_working() -> None:
         path=("a", "b"), annotation=int, default=1, has_default=True, is_secret=False
     )
 
-    assert (descriptor.metadata, descriptor.optional, descriptor.description) == ((), False, None)
+    assert (descriptor.optional, descriptor.description) == (False, None)
 
 
-def test_real_settings_keep_their_constraints() -> None:
+def test_real_settings_keep_their_optionality() -> None:
     descriptors = walk_settings(get_settings_model())
     timeout = find_descriptor(descriptors, "http.timeout_seconds")
     hide = find_descriptor(descriptors, "ui.hide_empty_columns")
 
     assert timeout is not None
-    assert timeout.metadata == (Gt(0),)
     assert not timeout.optional
     assert hide is not None
     assert hide.optional

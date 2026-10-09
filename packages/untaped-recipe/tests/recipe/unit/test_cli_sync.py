@@ -11,7 +11,7 @@ import pytest
 import untaped_recipe.cli.library_commands as library_commands
 from untaped.testing import CliInvoker, ScriptedPromptBackend, invoke_cli
 from untaped_recipe.cli import app
-from untaped_recipe.cli.common import library_root
+from untaped_recipe.cli.common import library_dir
 from untaped_recipe.infrastructure.pack_store import PackLibrary
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -38,7 +38,7 @@ def _add(source: Path) -> None:
 
 
 def _installed_recipe(name: str) -> Path:
-    return library_root() / "packs" / name / "recipes" / "seed.yml"
+    return library_dir() / "packs" / name / "recipes" / "seed.yml"
 
 
 _CHANGED = "version: 1\ndescription: changed\nsteps: []\n"
@@ -242,7 +242,7 @@ def test_sync_refetches_git_sources_at_the_recorded_rev(
         }
     ]
     assert _installed_recipe("alpha").read_text() == _CHANGED
-    assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
+    assert PackLibrary(library_dir=library_dir()).packs()[0].commit == _NEW_SHA
 
 
 def _add_hook(root: Path, body: str = "    return content\n") -> None:
@@ -286,7 +286,7 @@ def test_sync_confirmation_shows_the_commit_move_and_changed_hook_code(
     assert dry_run.exit_code == 0, dry_run.output
     assert declined.exit_code == 1, declined.output
     assert "cancelled; no changes made" in declined.stderr
-    installed = library_root() / "packs" / "alpha" / "src" / "alpha_hooks" / "tweak.py"
+    installed = library_dir() / "packs" / "alpha" / "src" / "alpha_hooks" / "tweak.py"
     assert "'x'" not in installed.read_text()
 
 
@@ -298,7 +298,7 @@ def test_sync_records_a_moved_commit_when_content_is_unchanged(
     _write_pack(upstream, name="alpha")
     url = "https://example.test/alpha.git"
     # None: a row written before commits were recorded.
-    PackLibrary(library_root=library_root()).add(
+    PackLibrary(library_dir=library_dir()).add(
         upstream, source=url, rev="main", commit=recorded, name="alpha", force=False
     )
 
@@ -310,7 +310,7 @@ def test_sync_records_a_moved_commit_when_content_is_unchanged(
     monkeypatch.setattr(library_commands, "checkout_commit", lambda checkout: _NEW_SHA)
 
     dry_run = invoke_cli(app, ["packs", "sync", "alpha", "--dry-run", "--format", "json"])
-    unchanged_commit = PackLibrary(library_root=library_root()).packs()[0].commit
+    unchanged_commit = PackLibrary(library_dir=library_dir()).packs()[0].commit
     result = invoke_cli(app, ["packs", "sync", "alpha", "--format", "json"])
 
     assert dry_run.exit_code == 0, dry_run.output
@@ -324,7 +324,7 @@ def test_sync_records_a_moved_commit_when_content_is_unchanged(
         "commit": _NEW_SHA,
         "detail": None,
     }
-    assert PackLibrary(library_root=library_root()).packs()[0].commit == _NEW_SHA
+    assert PackLibrary(library_dir=library_dir()).packs()[0].commit == _NEW_SHA
 
 
 def test_sync_preview_says_when_hook_code_is_unchanged(tmp_path: Path) -> None:
@@ -361,7 +361,7 @@ def test_sync_refuses_a_legacy_relative_source(
 ) -> None:
     _write_pack(tmp_path / "alpha", name="alpha")
     # Older installs recorded a local source as typed, relative to the shell.
-    PackLibrary(library_root=library_root()).add(
+    PackLibrary(library_dir=library_dir()).add(
         tmp_path / "alpha", source="alpha", rev=None, name="alpha", force=False
     )
     elsewhere = tmp_path / "elsewhere"

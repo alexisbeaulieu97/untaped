@@ -143,22 +143,22 @@ def _is_hook_code(relative: str) -> bool:
 
 
 class PackLibrary:
-    """Manage installed recipe packs under one library root."""
+    """Manage installed recipe packs under one library directory."""
 
-    def __init__(self, *, library_root: Path) -> None:
-        self._library_root = library_root
+    def __init__(self, *, library_dir: Path) -> None:
+        self._library_dir = library_dir
         self._packs_cache: list[InstalledPack] | None = None
         self._load_errors: dict[str, str] = {}
 
     @property
     def packs_dir(self) -> Path:
         """Directory containing installed pack copies."""
-        return self._library_root / "packs"
+        return self._library_dir / "packs"
 
     @property
     def index_path(self) -> Path:
         """Path to the library pack source index."""
-        return self._library_root / "packs.toml"
+        return self._library_dir / "packs.toml"
 
     def add(
         self,
@@ -215,8 +215,8 @@ class PackLibrary:
         after validation is refused rather than followed.
         """
         token = uuid.uuid4().hex
-        staging = self._library_root / f".pack-staging-{token}"
-        retired = self._library_root / f".pack-retired-{token}"
+        staging = self._library_dir / f".pack-staging-{token}"
+        retired = self._library_dir / f".pack-retired-{token}"
         try:
             shutil.copytree(
                 source_dir,
@@ -462,7 +462,7 @@ class PackLibrary:
         return index
 
     def _write_index(self, index: dict[str, _IndexEntry]) -> None:
-        self._library_root.mkdir(parents=True, exist_ok=True)
+        self._library_dir.mkdir(parents=True, exist_ok=True)
         doc = tomlkit.document()
         for name, entry in sorted(index.items()):
             table = tomlkit.table()

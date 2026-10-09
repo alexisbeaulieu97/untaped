@@ -18,17 +18,15 @@ stale or a setting has no description.
 from __future__ import annotations
 
 import sys
-import types
-import typing
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
 from packaging.utils import canonicalize_name
 from pydantic import BaseModel, SecretStr
-from pydantic_core import PydanticUndefined
 from release import packages
 
+from untaped.config_schema import walk_settings
 from untaped.theme import ROLE_NAMES, SYMBOL_NAMES
 
 if TYPE_CHECKING:
@@ -167,8 +165,8 @@ state lives in `~/.untaped/state.yml` and is written only by the owning
 plugin's commands. See [Configuration](../configuration.md) for the file
 layout, profiles and precedence.
 
-Set a profile setting with `untaped config set KEY VALUE` (secrets:
-`untaped config set KEY --prompt`; how values are parsed is in
+Set a profile setting with `untaped config set KEY VALUE` (a token:
+`untaped auth set SECTION`; how values are parsed is in
 [Settings](../configuration.md#settings)). Each profile setting can be
 overridden for one process with the environment variable shown.
 """
@@ -187,45 +185,31 @@ class Row:
 
     key: str
     annotation: Any
+    """The leaf type, ``X`` for ``X | None``."""
     default: Any
     description: str | None
+    optional: bool = False
+    """Whether the setting is ``X | None``."""
     mark: Stability | None = None
     """The setting's own mark, else its plugin's."""
 
 
 def _leaf_rows(model: type[BaseModel], prefix: tuple[str, ...]) -> list[Row]:
-    """One :class:`Row` per leaf field, recursing into nested models."""
-    rows: list[Row] = []
-    for name, field in model.model_fields.items():
-        path = (*prefix, name)
-        annotation = _unwrap_optional(field.annotation)
-        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            rows.extend(_leaf_rows(annotation, path))
-            continue
-        if field.default is not PydanticUndefined:
-            default: Any = field.default
-        elif field.default_factory is not None:
-            default = field.default_factory()  # type: ignore[call-arg]
-        else:
-            default = None
-        key = ".".join(path)
-        rows.append(Row(key, field.annotation, default, field.description or DESCRIPTIONS.get(key)))
-    return rows
+    """One :class:`Row` per leaf field (collections included), recursing into nested models."""
+    return [
+        Row(
+            d.key,
+            d.annotation,
+            d.default,
+            d.description or DESCRIPTIONS.get(d.key),
+            optional=d.optional,
+        )
+        for d in walk_settings(model, prefix, include_collections=True)
+    ]
 
 
-def _unwrap_optional(annotation: Any) -> Any:
-    if get_origin(annotation) in (typing.Union, types.UnionType):
-        args = [arg for arg in get_args(annotation) if arg is not type(None)]
-        if len(args) == 1:
-            return args[0]
-    return annotation
-
-
-def _type_name(annotation: Any) -> str:
-    optional = get_origin(annotation) in (typing.Union, types.UnionType) and type(None) in get_args(
-        annotation
-    )
-    inner = _unwrap_optional(annotation)
+def _type_name(row: Row) -> str:
+    inner, optional = row.annotation, row.optional
     origin = get_origin(inner)
     if inner is SecretStr:
         name = "secret"
@@ -383,14 +367,14 @@ def _renamed_table() -> list[str]:
         for section, section_model in sections.items():
             mappings = key_mappings(section_model)
             for old, new in sorted(mappings.migratable.items()):
-                kind = "retired" if old in mappings.retired else "deprecated"
+                kind = "retired" if old in mappings.retired else "renamed"
                 key = f"{section}.{old}"
                 rows.append(f"| `{key}` | `{_env_name(key)}` | `{section}.{new}` | {kind} |")
     if not rows:
         return []
     return [
         "## Renamed settings\n",
-        "A deprecated key is still read with a warning; a retired one is no longer read. See "
+        "A renamed key is still read with a warning; a retired one is no longer read. See "
         "[Renamed settings](../configuration.md#renamed-settings).\n",
         "| Old key | Old environment variable | New key | Status |\n|---|---|---|---|",
         *rows,
@@ -409,16 +393,14 @@ def render() -> str:
         if is_state:
             parts.append("| Key | Type | Description |\n|---|---|---|")
             for row in rows:
-                parts.append(
-                    f"| `{row.key}` | {_type_name(row.annotation)} | {_description(row)} |"
-                )
+                parts.append(f"| `{row.key}` | {_type_name(row)} | {_description(row)} |")
         else:
             parts.append(
                 "| Key | Type | Default | Environment | Description |\n|---|---|---|---|---|"
             )
             for row in rows:
                 parts.append(
-                    f"| `{row.key}` | {_type_name(row.annotation)} | {_default_text(row.default)} "
+                    f"| `{row.key}` | {_type_name(row)} | {_default_text(row.default)} "
                     f"| `{_env_name(row.key)}` | {_description(row)} |"
                 )
         parts.append("")

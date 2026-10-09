@@ -1,10 +1,10 @@
-"""Plugin distribution-metadata enforcement (spec §§5, 7).
+"""Plugin distribution-metadata enforcement.
 
 This module is the CI-mode metadata validator: it runs on every pull
 request as part of the default ``pytest`` run. Compose mode stays lenient
 for every provider (quarantine, never raise), first-party ones included.
 
-Every provider (§7.2, checked without importing provider code): plugins
+Every provider (checked without importing provider code): plugins
 declared in the ``untaped.plugins`` entry-point group, each
 entry-point name equal to its plugin ``name``, a non-empty
 distribution name, and ``Requires-Dist`` on ``untaped`` admitting the
@@ -60,7 +60,7 @@ def test_bad_candidate_metadata_quarantines(
 def test_metadata_is_checked_before_import(
     monkeypatch: pytest.MonkeyPatch, candidate_kwargs: dict[str, object]
 ) -> None:
-    """Bad metadata must quarantine without importing provider code (spec §5)."""
+    """Bad metadata must quarantine without importing provider code."""
     calls: list[str] = []
     real_import = registry.import_module
 

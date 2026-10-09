@@ -1,4 +1,4 @@
-"""Tests for the root ``untaped skills …`` command group (Wave 1.4).
+"""Tests for the root ``untaped skills …`` command group.
 
 The root group lists the union of the shell plus every composed
 plugin's skills. ``install`` accepts short selectors (``demo`` for an

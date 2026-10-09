@@ -9,7 +9,7 @@ import pytest
 
 from untaped.testing import CliInvoker
 from untaped_recipe.cli import app
-from untaped_recipe.cli.common import library_root
+from untaped_recipe.cli.common import library_dir
 from untaped_recipe.infrastructure.pack_store import PackLibrary
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -50,7 +50,7 @@ def _write_passing_case(root: Path) -> Path:
 
 
 def _install(source: Path) -> None:
-    PackLibrary(library_root=library_root()).add(
+    PackLibrary(library_dir=library_dir()).add(
         source, source=str(source), rev=None, name=None, force=False
     )
 
@@ -211,7 +211,7 @@ def test_update_writes_goldens_into_installed_pack(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     row = json.loads(result.stdout)[0]
     assert row["status"] == "updated"
-    golden = library_root() / "packs" / "demo" / "tests" / "emit" / "basic" / "expected"
+    golden = library_dir() / "packs" / "demo" / "tests" / "emit" / "basic" / "expected"
     assert (golden / "out.txt").read_text(encoding="utf-8") == "payload\n"
     assert "Recipe test update: 1 updated, 0 unchanged, 0 errored" in result.stderr
 

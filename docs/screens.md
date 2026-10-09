@@ -209,43 +209,26 @@ views.
 leaves them unset). `allow_empty` lets it confirm with nothing selected; a
 request that has a title still requires one.
 
-`untaped setup` is a screen built from the same components: a `TextInput` for
-the profile, a `SingleList` of plugins beside a `Form` of `TextInput`,
-`Tabs` (the token source) and `Buttons`, in `Panes`. It keeps its own
-`shared_labels` (tab, enter and ctrl-s) and offers `Save anyway` per plugin.
-A command that builds its screen only after reading config or probing a store
-asks `ui.require_screen_terminal(command=..., alternative=...)` first, so a run
+`untaped setup` is built from the same components. A command that builds its
+screen only after reading config or probing a store asks
+`ui.require_screen_terminal(command=..., alternative=...)` first, so a run
 without a terminal exits 2 having touched nothing.
 
-Pieces it needed are public: a `Panes` side may be a drawing (a function
-`(frame, focused) -> renderable`) for a pane whose model the screen owns;
-`SearchList(entries=...)` takes matches the screen ranked itself, and
-`SearchList`/`Tree` take `window_rows`; `Buttons.boxed_width` and
-`buttons.BOX_ROWS` say what a boxed row needs. A caller that calls `ui.pick_many`
-itself gets the controlling terminal when stdin is piped; `workspace create`
-and `workspace add` check `ui.can_prompt` first and take their flag path
-instead, so only a redirected stderr is something they now draw through.
+A `Panes` side may also be a drawing (a function `(frame, focused) ->
+renderable`) for a pane whose model the screen owns; `SearchList` and `Tree`
+take `window_rows` to fit a smaller pane, and `Buttons.boxed_width` says how
+wide a boxed row is.
 
 The one-shot prompts (`ui.text`, `ui.secret`, `ui.select`, `ui.multiselect`,
 `ui.confirm`) are inline screens built from `TextInput`, `SecretInput`,
 `SingleList`, `SearchList` and `MultiList`, so they look and key like every
 other screen. Esc cancels one (its footer says `esc cancel`, `esc clear` while a
 search query is typed), and so does ctrl-d on an empty answer, as on a line
-prompt. The window of a list is cut to the terminal's height. Like `ui.run`, a
-prompt needs a terminal on stdin (a piped stdin is refused with a usage error,
-unless `ui.terminal` or `confirm_action` secured one) and draws on stderr when
-that is a terminal and on the controlling terminal when it is redirected, so a
-prompt never paints into a log.
-
-`field_for(descriptor, value=..., help=...)` maps a setting's type to its
-component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to
-`NumberInput`, paths to `PathInput`, `SecretStr` to `SecretInput`, `str` to
-`TextInput`) and raises `TypeError` naming the setting for any other type.
-It reads the descriptor's `metadata`, `optional` and `description`: a number's
-`ge`/`gt`/`le`/`lt` bounds are enforced, a number that is not optional cannot be
-left empty while an optional one (`int | None`) may be (its value is `None`),
-an optional `bool` is a three-state `Cycle` (unset, on, off; `None`, `True`,
-`False`), and the field's description is the help line when you pass none.
+prompt. The window of a list is cut to the terminal's height. Unlike `ui.run`,
+a prompt needs a terminal on stdin (a piped stdin is refused with a usage
+error, unless `ui.terminal` or `confirm_action` secured one); like it, a prompt
+draws on stderr when that is a terminal and on the controlling terminal when it
+is redirected, so it never paints into a log.
 
 The look comes from the theme: the label sits in the top border, the caret is
 drawn, help is muted below, an error is a red border and message, and the only

@@ -29,7 +29,7 @@ from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
-    library_root,
+    library_dir,
     merge_vars,
     report_config_errors,
     settings,
@@ -130,10 +130,10 @@ def run_command(
 ) -> None:
     """Run one hook once against explicit fixture context without writing files."""
     with report_config_errors():
-        root = library_root()
+        root = library_dir()
         project, name = _split_project_hook_ref(name, project)
         local_hook_project = _local_hook_project(project)
-        resolver = HookResolver(library_root=root)
+        resolver = HookResolver(library_dir=root)
         ref = resolver.resolve(name, local_hook_project)
         try:
             verb = select_verb(ref.exports, file_given=file is not None, kind=kind)

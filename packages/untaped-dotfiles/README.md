@@ -77,7 +77,8 @@ user timer on Linux); `untaped dotfiles sync` is what it runs.
 
 ## Show it in the prompt
 
-`status` reads nothing from the network. It writes the
+`status` reads nothing from the network. Run without item names or
+`--repo`, it writes the
 [status files](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#dotfiles),
 so a prompt segment needs only the shell:
 

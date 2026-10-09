@@ -10,7 +10,7 @@ from cyclopts import App
 
 from untaped.testing import CliInvoker
 from untaped_recipe.cli import app
-from untaped_recipe.cli.common import library_root
+from untaped_recipe.cli.common import library_dir
 from untaped_recipe.infrastructure.pack_store import PackLibrary
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -49,7 +49,7 @@ def _write_pack(root: Path) -> None:
 def _install(tmp_path: Path) -> None:
     source = tmp_path / "acme"
     _write_pack(source)
-    PackLibrary(library_root=library_root()).add(
+    PackLibrary(library_dir=library_dir()).add(
         source, source=str(source), rev=None, name=None, force=False
     )
 
@@ -107,7 +107,7 @@ def test_each_noun_lists_gets_and_edits_its_own_kind(
     for argv in (["edit", "acme/editorconfig"], ["packs", "edit", "acme"]):
         assert invoker.invoke(app, argv).exit_code == 0
     assert invoker.invoke(app, ["hooks", "edit", "acme/probe"]).exit_code == 0
-    pack_root = library_root() / "packs" / "acme"
+    pack_root = library_dir() / "packs" / "acme"
     assert opened == [
         pack_root / "recipes" / "editorconfig" / "recipe.yml",
         pack_root / "pyproject.toml",
@@ -209,7 +209,7 @@ def test_packs_list_pipe_composes_into_sync_and_remove(tmp_path: Path) -> None:
     assert [(row["name"], row["action"]) for row in json.loads(removed.stdout)] == [
         ("acme", "removed")
     ]
-    assert not (library_root() / "packs" / "acme").exists()
+    assert not (library_dir() / "packs" / "acme").exists()
 
 
 @pytest.mark.parametrize(
