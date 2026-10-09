@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -358,22 +359,30 @@ def test_a_major_build_archives_the_previous_major() -> None:
     )
 
 
-def test_the_older_releases_line_wraps_like_the_file_does() -> None:
+def _real_changelog() -> tuple[str, int, list[int]]:
+    """CHANGELOG.md, its current major and the archived majors it links, newest first."""
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    current = int(re.search(r"(?m)^## (\d+)\.", text)[1])  # type: ignore[index]
+    body = text.split("## Older releases\n\n", 1)[1]
+    return text, current, [int(m) for m in re.findall(r"\[(\d+)\.x\]", body)]
+
+
+def test_the_older_releases_line_wraps_like_the_file_does() -> None:
+    text, _, archived = _real_changelog()
     body = text.split("## Older releases\n\n", 1)[1].strip()
 
-    assert changelog.older_releases([9, 8, 7, 6, 5, 4]) == body
+    assert changelog.older_releases(archived) == body
 
 
 def test_the_real_changelog_survives_a_major_build() -> None:
-    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    text, current, archived = _real_changelog()
 
-    built, archives = changelog.build_text(text, "11.0.0", {"upgrading": ["- do"]})
+    built, archives = changelog.build_text(text, f"{current + 1}.0.0", {"upgrading": ["- do"]})
 
-    assert list(archives) == [10]
-    assert archives[10].count("\n## ") == 1  # 10.0.0
-    assert "## 10.0.0" not in built
-    assert "file: [10.x](changelog/10.x.md),\n[9.x](changelog/9.x.md)," in built
+    assert list(archives) == [current]
+    assert archives[current].count("\n## ") == text.count(f"\n## {current}.")
+    assert f"\n## {current}." not in built
+    assert built.endswith(changelog.older_releases([current, *archived]) + "\n")
 
 
 def test_build_writes_the_files_and_removes_the_fragments(repo: Path) -> None:
