@@ -9,14 +9,14 @@ from cyclopts import App
 from pydantic import BaseModel, SecretStr
 
 from untaped import bootstrap
-from untaped.capabilities.registry import (
-    CapabilitySpec,
+from untaped.cli import create_app
+from untaped.plugins.registry import (
     CompositionResult,
     DoctorCheck,
     DoctorResult,
+    PluginSpec,
     SkillAsset,
 )
-from untaped.cli import create_app
 from untaped.sdk import HttpStatusError, TokenCommand, TokenSources, online_check
 from untaped.settings import get_settings
 from untaped.stability import Stability
@@ -28,7 +28,7 @@ from untaped.testing import provider_candidate
 
 
 class GithubProfile(BaseModel):
-    """Fake capability profile model (section ``github``)."""
+    """Fake plugin settings model (section ``github``)."""
 
     token: SecretStr | None = None
     base_url: str = "https://api.github.com"
@@ -36,13 +36,13 @@ class GithubProfile(BaseModel):
 
 
 class GithubState(BaseModel):
-    """Fake capability state model (section ``github``)."""
+    """Fake plugin state model (section ``github``)."""
 
     cursor: str | None = None
 
 
 class JiraProfile(BaseModel):
-    """Fake capability profile model (section ``jira``)."""
+    """Fake plugin settings model (section ``jira``)."""
 
     token: SecretStr | None = None
     base_url: str = "https://jira.example.com"
@@ -50,14 +50,14 @@ class JiraProfile(BaseModel):
 
 
 class StrictProfile(BaseModel):
-    """Profile model with a required field (section ``strict``)."""
+    """Settings model with a required field (section ``strict``)."""
 
     endpoint: str
     token: SecretStr | None = None
 
 
 class ExtProfile(BaseModel):
-    """Minimal profile model for generic capability doubles."""
+    """Minimal settings model for generic plugin doubles."""
 
     token: str = "default-token"
 
@@ -111,31 +111,29 @@ def wiz_api_check() -> DoctorCheck:
 def make_spec(
     name: str,
     *,
-    section: str | None = None,
-    profile_model: type[BaseModel] = ExtProfile,
-    state_model: type[BaseModel] | None = None,
+    settings: type[BaseModel] = ExtProfile,
+    state: type[BaseModel] | None = None,
     skills: tuple[SkillAsset, ...] = (),
     doctor_checks: tuple[DoctorCheck, ...] = (),
     stability: Stability | None = None,
-) -> CapabilitySpec:
-    """Return a minimal capability spec double mounting an empty sub-app."""
+) -> PluginSpec:
+    """Return a minimal plugin spec double mounting an empty sub-app."""
 
     def _factory() -> App:
-        return create_app(name=name, help=f"{name} capability.")
+        return create_app(name=name, help=f"{name} plugin.")
 
-    return CapabilitySpec(
+    return PluginSpec(
         name=name,
         app_factory=_factory,
-        config_section=section or name,
-        profile_model=profile_model,
-        state_model=state_model,
+        settings=settings,
+        state=state,
         skills=skills,
         doctor_checks=doctor_checks,
         stability=stability,
     )
 
 
-def compose(*specs: CapabilitySpec) -> CompositionResult:
+def compose(*specs: PluginSpec) -> CompositionResult:
     """Compose ``specs`` as providers (registers settings sections)."""
     return bootstrap.compose_root(candidates=[provider_candidate(spec) for spec in specs])
 

@@ -395,7 +395,7 @@ def test_ci_bare_install_runs_the_root_commands_and_shows_the_install_hint() -> 
         f"{exe} skills list",
         f"{exe} config list",
         f"{exe} profile list",
-        f'{exe} capabilities 2>&1 >/dev/null | grep -F "untaped[all]"',
+        f'{exe} plugin list 2>&1 >/dev/null | grep -F "untaped[all]"',
     ]
     assert [line for line in lines[smoke + 1 :] if not line.startswith("#")] == commands
     assert lines[0] == "set -euo pipefail"
@@ -409,18 +409,18 @@ def test_ci_runs_core_tests_with_only_the_core_wheel() -> None:
         "uv build --package untaped --no-sources --out-dir dist",
         'uv venv -q --python 3.14 "$RUNNER_TEMP/core"',
         # --no-emit-workspace leaves out every first-party package (the dev
-        # group's untaped[all] included); pruning each capability package
+        # group's untaped[all] included); pruning each plugin package
         # also leaves out its third-party dependencies.
         'prune=(); for pkg in packages/untaped-*/; do prune+=(--prune "$(basename "$pkg")"); done',
         "uv export --frozen --only-group dev --no-hashes --no-emit-workspace"
         ' "${prune[@]}" > "$RUNNER_TEMP/dev-requirements.txt"',
         'uv pip install --python "$RUNNER_TEMP/core/bin/python"'
         ' dist/untaped-*-py3-none-any.whl -r "$RUNNER_TEMP/dev-requirements.txt"',
-        # Capability-only dependencies (awx and recipe's jinja2, recipe's tomlkit) are absent.
+        # Plugin-only dependencies (awx and recipe's jinja2, recipe's tomlkit) are absent.
         '"$RUNNER_TEMP/core/bin/python" -c'
         " 'import importlib.util, sys;"
         ' leaked = [m for m in ("jinja2", "tomlkit") if importlib.util.find_spec(m)];'
-        ' sys.exit(f"capability dependencies installed: {leaked}" if leaked else 0)\'',
+        ' sys.exit(f"plugin dependencies installed: {leaked}" if leaked else 0)\'',
         '"$RUNNER_TEMP/core/bin/python" -m pytest -q -n auto -p no:cacheprovider'
         " --rootdir . -c pyproject.toml packages/untaped/tests",
     ]

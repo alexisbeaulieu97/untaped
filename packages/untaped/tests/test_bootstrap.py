@@ -1,4 +1,4 @@
-"""Tests for the unified capability composition root.
+"""Tests for the unified plugin composition root.
 
 Discovery and validation happen before settings registration or app mounting;
 the root also keeps invocation-scoped option and reset behavior.
@@ -22,12 +22,12 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
-from test_capabilities.capharness import make_candidate, make_spec
+from test_plugins.plugin_harness import make_candidate, make_spec
 from untaped import bootstrap
 from untaped.app_context import app_context
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
+from untaped.plugins.registry import PluginSpec, ProviderCandidate
 from untaped.profile_resolver import profile_override, set_profile_override
 from untaped.quiet import is_quiet
 from untaped.settings import get_settings, reset_config_registry_for_tests
@@ -42,15 +42,14 @@ class _ExtProfile(BaseModel):
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
-def _spec(name: str, app: App) -> CapabilitySpec:
+def _spec(name: str, app: App) -> PluginSpec:
     def _factory() -> App:
         return app
 
-    return CapabilitySpec(
+    return PluginSpec(
         name=name,
         app_factory=_factory,
-        config_section=name,
-        profile_model=_ExtProfile,
+        settings=_ExtProfile,
     )
 
 
@@ -62,7 +61,7 @@ def _token_body_for(section: str) -> Callable[[], None]:
 
 
 def _who_app(name: str, body: Callable[[], None]) -> App:
-    app = create_app(name=name, help=f"{name} capability.")
+    app = create_app(name=name, help=f"{name} plugin.")
     app.command(body, name="who")
     return app
 
@@ -76,9 +75,9 @@ def _write_config(path: Path, text: str) -> None:
     get_settings.cache_clear()
 
 
-def test_zero_capability_root_lists_no_capabilities() -> None:
+def test_zero_plugin_root_lists_no_plugins() -> None:
     composition = bootstrap.compose_root(candidates=())
-    assert composition.capabilities == ()
+    assert composition.plugins == ()
     assert composition.quarantine == ()
 
     root = bootstrap.build_root_app(candidates=())
@@ -207,7 +206,7 @@ def test_root_options_apply_between_nested_command_names(
     def body() -> None:
         echo(f"{app_context().section('ext', _ExtProfile).token} quiet={is_quiet()}")
 
-    ext = create_app(name="ext", help="ext capability.")
+    ext = create_app(name="ext", help="ext plugin.")
     grp = create_app(name="grp", help="A nested group.")
     grp.command(body, name="who")
     ext.command(grp, name="grp")
@@ -240,7 +239,7 @@ def test_root_options_after_end_of_options_reach_the_command(
     def run(cmd: str, /) -> None:
         echo(f"{cmd} profile={profile_override()}")
 
-    ext = create_app(name="ext", help="ext capability.")
+    ext = create_app(name="ext", help="ext plugin.")
     ext.command(run, name="run")
     root = bootstrap.build_root_app(candidates=[make_candidate(_spec("ext", ext))])
 
@@ -336,16 +335,15 @@ def test_quarantined_providers_warn_and_the_root_boots(
 
     def rival_factory() -> App:
         built.append("rival")
-        return create_app(name="rival", help="rival capability.")
+        return create_app(name="rival", help="rival plugin.")
 
     # Two providers claiming one name are both quarantined; neither is built.
     rivals = [
         make_candidate(
-            CapabilitySpec(
+            PluginSpec(
                 name="rival",
                 app_factory=rival_factory,
-                config_section=section,
-                profile_model=_ExtProfile,
+                settings=_ExtProfile,
             ),
             distribution,
         )
@@ -358,7 +356,7 @@ def test_quarantined_providers_warn_and_the_root_boots(
     candidates = [good, *rivals, raising]
 
     composition = bootstrap.compose_root(candidates=candidates)
-    assert [cap.spec.name for cap in composition.capabilities] == ["good"]
+    assert [cap.spec.name for cap in composition.plugins] == ["good"]
     assert [(r.name, r.distribution, r.reason) for r in composition.quarantine] == [
         ("awx", "untaped", "malformed-entry-point"),
         ("rival", "acme-dist", "duplicate-name"),
@@ -371,7 +369,7 @@ def test_quarantined_providers_warn_and_the_root_boots(
     err = capsys.readouterr().err
     assert "'awx' from 'untaped' quarantined [malformed-entry-point]" in err
     assert (
-        "'rival' from 'acme-dist' quarantined [duplicate-name]: duplicate capability "
+        "'rival' from 'acme-dist' quarantined [duplicate-name]: duplicate plugin "
         "name: 'rival' (claimed by 'acme-dist', 'example-dist')"
     ) in err
 
@@ -419,17 +417,17 @@ def test_quarantine_warning_is_text_without_a_structured_format(
     with pytest.raises(SystemExit):
         bootstrap.run_root(["config", "list"], candidates=(broken,))
     assert capsys.readouterr().err.startswith(
-        "warning: capability 'broken' from 'broken-dist' quarantined"
+        "warning: plugin 'broken' from 'broken-dist' quarantined"
     )
 
 
-def test_each_quarantined_capability_warns_once_by_name(
+def test_each_quarantined_plugin_warns_once_by_name(
     broken_first_party_candidates: Callable[[], tuple[ProviderCandidate, ...]],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     bootstrap.compose_root(candidates=broken_first_party_candidates())
     assert capsys.readouterr().err.splitlines() == [
-        f"warning: capability {name!r} from 'untaped' quarantined [malformed-entry-point]: "
+        f"warning: plugin {name!r} from 'untaped' quarantined [malformed-entry-point]: "
         f"could not resolve entry point 'untaped_missing_{name}:p' of distribution 'untaped': "
         f"No module named 'untaped_missing_{name}'"
         for name in ("awx", "jira")
@@ -546,31 +544,30 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
 
 def _counting_spec(
     name: str, calls: list[str], *, help: str | None = None, result: object = None
-) -> CapabilitySpec:
+) -> PluginSpec:
     def _factory() -> App:
         calls.append(name)
         if result is not None:
             return result  # type: ignore[return-value]
         return _who_app(name, _token_body_for(name))
 
-    return CapabilitySpec(
+    return PluginSpec(
         name=name,
         app_factory=_factory,
-        config_section=name,
-        profile_model=_ExtProfile,
+        settings=_ExtProfile,
         help=help,
     )
 
 
 def test_lazy_factory_runs_only_on_dispatch_and_once() -> None:
     calls: list[str] = []
-    spec = _counting_spec("lazy", calls, help="Lazy capability.")
+    spec = _counting_spec("lazy", calls, help="Lazy plugin.")
     root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
     assert calls == []
 
     listed = CliInvoker().invoke(root.meta, ["--help"])
     assert listed.exit_code == 0, listed.output
-    assert "Lazy capability." in listed.stdout
+    assert "Lazy plugin." in listed.stdout
     assert calls == []
 
     for _ in range(2):
@@ -595,17 +592,16 @@ def test_eager_factories_are_called_once_per_composition() -> None:
     assert second_calls == ["ext"]
 
 
-def _raising_spec(name: str, calls: list[str]) -> CapabilitySpec:
+def _raising_spec(name: str, calls: list[str]) -> PluginSpec:
     def _boom() -> App:
         calls.append(name)
         raise RuntimeError("cli import failed")
 
-    return CapabilitySpec(
+    return PluginSpec(
         name=name,
         app_factory=_boom,
-        config_section=name,
-        profile_model=_ExtProfile,
-        help=f"{name} capability.",
+        settings=_ExtProfile,
+        help=f"{name} plugin.",
     )
 
 
@@ -615,7 +611,7 @@ def test_a_failing_lazy_factory_fails_only_its_command_in_one_root() -> None:
     root = bootstrap.build_root_app(
         candidates=[
             provider_candidate(_raising_spec("bad", bad_calls), distribution="bad-dist"),
-            provider_candidate(_counting_spec("good", good_calls, help="Good capability.")),
+            provider_candidate(_counting_spec("good", good_calls, help="Good plugin.")),
         ]
     )
     assert bad_calls == [] and good_calls == []  # nothing built at startup
@@ -623,7 +619,7 @@ def test_a_failing_lazy_factory_fails_only_its_command_in_one_root() -> None:
 
     bad = CliInvoker().invoke(root.meta, ["bad", "who"])
     assert bad.exit_code == 4
-    assert "capability 'bad' from 'bad-dist' could not build its commands" in bad.stderr
+    assert "plugin 'bad' from 'bad-dist' could not build its commands" in bad.stderr
     assert "cli import failed" in bad.stderr
 
     good = CliInvoker().invoke(root.meta, ["good", "who"])
@@ -643,21 +639,21 @@ def test_a_failed_lazy_factory_runs_once_and_fails_every_dispatch() -> None:
 
 def test_a_lazy_factory_returning_a_non_app_exits_4_on_help_too() -> None:
     calls: list[str] = []
-    bad = _counting_spec("bad", calls, help="Bad capability.", result="not-an-app")
+    bad = _counting_spec("bad", calls, help="Bad plugin.", result="not-an-app")
     root = bootstrap.build_root_app(candidates=[provider_candidate(bad)])
     result = CliInvoker().invoke(root.meta, ["bad", "--help"])
     assert result.exit_code == 4
     assert "returned str, expected cyclopts App" in result.stderr
 
 
-def test_completion_survives_a_capability_whose_lazy_factory_fails(
+def test_completion_survives_a_plugin_whose_lazy_factory_fails(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     bad_calls: list[str] = []
     root = bootstrap.build_root_app(
         candidates=[
             provider_candidate(_raising_spec("brokencap", bad_calls), distribution="bad-dist"),
-            provider_candidate(_counting_spec("goodcap", [], help="Good capability.")),
+            provider_candidate(_counting_spec("goodcap", [], help="Good plugin.")),
         ]
     )
     capsys.readouterr()
@@ -695,12 +691,12 @@ def test_run_root_reports_a_failing_lazy_factory_as_json_with_exit_4(
         4,
     )
     assert error["message"] == (
-        "capability 'bad' from 'bad-dist' could not build its commands: "
-        "app factory of capability 'bad' raised: cli import failed"
+        "plugin 'bad' from 'bad-dist' could not build its commands: "
+        "app factory of plugin 'bad' raised: cli import failed"
     )
 
 
-#: Private cyclopts internals ``_LazyCapabilityCommand`` and ``apply_marks`` rely on. Drift here
+#: Private cyclopts internals ``_LazyPluginCommand`` and ``apply_marks`` rely on. Drift here
 #: (a cyclopts upgrade within ``>=4.16,<5``) must fail loudly, not render oddly.
 _CYCLOPTS_PRIVATE_INTERNALS = (
     "cyclopts.core._apply_parent_defaults_to_app",
@@ -741,7 +737,7 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
         if not present
     ]
     assert not missing, (
-        "cyclopts internal API drift: bootstrap._LazyCapabilityCommand relies on "
+        "cyclopts internal API drift: bootstrap._LazyPluginCommand relies on "
         f"{', '.join(missing)}; update it (or pin cyclopts) before upgrading"
     )
 
@@ -750,7 +746,7 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
     ("candidates", "expect_hint", "expect_quarantine"),
     [
         pytest.param([], True, False, id="bare"),
-        pytest.param([provider_candidate(make_spec("demo"))], False, False, id="capability"),
+        pytest.param([provider_candidate(make_spec("demo"))], False, False, id="plugin"),
         # entry-point/spec name mismatch
         pytest.param(
             [make_candidate(make_spec("demo"), name="other")], False, True, id="quarantined"
@@ -777,10 +773,88 @@ def test_bare_management_commands_work(argv: list[str]) -> None:
     assert CliInvoker().invoke(root.meta, argv).exit_code == 0
 
 
-def test_no_capability_can_claim_a_management_command() -> None:
+def test_a_plugin_with_only_a_name_mounts_and_registers_nothing() -> None:
+    from untaped.management.doctor import collect_doctor_rows
+    from untaped.settings import _CONFIG_REGISTRY
+
+    root = bootstrap.build_root_app(candidates=[provider_candidate(PluginSpec(name="bare"))])
+
+    assert [plugin.spec.name for plugin in bootstrap.composition().plugins] == ["bare"]
+    assert "bare" not in root
+    assert "bare" not in _CONFIG_REGISTRY.profile_sections
+    assert "bare" not in _CONFIG_REGISTRY.state_sections
+    listed = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
+    assert [(row["name"], row["status"]) for row in json.loads(listed.stdout)] == [
+        ("bare", "ready")
+    ]
+    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, bootstrap.composition())
+    assert [row for row in rows if row["plugin"] == "bare"] == []
+
+
+def test_a_plugin_with_state_only_registers_its_state_section() -> None:
+    from untaped.settings import _CONFIG_REGISTRY
+
+    class _OnlyState(BaseModel):
+        last_run: str = ""
+
+    bootstrap.compose_root(
+        candidates=[provider_candidate(PluginSpec(name="kept", state=_OnlyState))]
+    )
+
+    assert _CONFIG_REGISTRY.state_sections["kept"] is _OnlyState
+    assert "kept" not in _CONFIG_REGISTRY.profile_sections
+
+
+class _ToolsProfile(BaseModel):
+    greeting: str = "hi"
+    token: str | None = None
+
+
+def test_a_hyphenated_plugin_reads_its_overrides_with_underscores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from untaped.auth import token_override_env, token_override_name
+    from untaped.settings import env_var_name, get_config_section
+
+    spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
+    bootstrap.compose_root(candidates=[provider_candidate(spec)])
+    monkeypatch.setenv("UNTAPED_ACME_TOOLS__GREETING", "from env")
+    monkeypatch.setenv("UNTAPED_ACME_TOOLS__TOKEN", "env-token")
+    get_settings.cache_clear()
+
+    settings = get_config_section("acme-tools", _ToolsProfile)
+
+    assert (settings.greeting, settings.token) == ("from env", "env-token")
+    assert env_var_name(["acme-tools", "greeting"]) == "UNTAPED_ACME_TOOLS__GREETING"
+    assert token_override_name("acme-tools") == "UNTAPED_ACME_TOOLS__TOKEN"
+    assert token_override_env("acme-tools") == "UNTAPED_ACME_TOOLS__TOKEN"
+
+
+def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.settings import get_config_section
+
+    spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
+    bootstrap.compose_root(candidates=[provider_candidate(spec)])
+    monkeypatch.setenv("UNTAPED_ACME_TOOLS", '{"greeting": "blob"}')
+    get_settings.cache_clear()
+
+    assert get_config_section("acme-tools", _ToolsProfile).greeting == "blob"
+
+
+def test_the_root_mounts_exactly_the_reserved_management_commands() -> None:
+    from untaped.plugins.registry import RESERVED_COMMAND_GROUPS, ROOT_MANAGEMENT_COMMANDS
+
+    root = bootstrap.build_root_app(candidates=[])
+
+    mounted = [name for name in root if not name.startswith("-")]
+    assert mounted == list(ROOT_MANAGEMENT_COMMANDS)
+    assert set(mounted) <= RESERVED_COMMAND_GROUPS
+
+
+def test_no_plugin_can_claim_a_management_command() -> None:
     root = bootstrap.build_root_app(candidates=[])
     management = [name for name in root if not name.startswith("-")]
     assert "auth" in management
     for name in management:
-        bootstrap.build_root_app(candidates=[make_candidate(make_spec(name, section=f"ok-{name}"))])
-        assert [r.reason for r in bootstrap.composition().quarantine] == ["reserved-root"], name
+        bootstrap.build_root_app(candidates=[make_candidate(make_spec(name))])
+        assert [r.reason for r in bootstrap.composition().quarantine] == ["reserved-name"], name

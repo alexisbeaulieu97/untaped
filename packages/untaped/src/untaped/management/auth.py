@@ -19,7 +19,6 @@ from typing import Annotated, Any, Literal
 from cyclopts import App, Parameter
 
 from untaped.auth import takes_token_command, token_env_names, token_override_env
-from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -35,6 +34,7 @@ from untaped.config_file import read_config_dict
 from untaped.diagnostics import note_failure
 from untaped.errors import ConfigError, most_severe
 from untaped.messages import hint, plural
+from untaped.plugins.registry import CompositionResult, settings_model
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
     resolve_profiles,
@@ -69,18 +69,15 @@ class _TokenSection:
 
 
 def _token_sections(result: CompositionResult) -> dict[str, _TokenSection]:
-    """Every composed section whose profile model has ``token`` and ``token_command``."""
-    return {
-        registered.spec.config_section: _token_section(registered.spec)
-        for registered in result.capabilities
-        if "token" in registered.spec.profile_model.model_fields
-        and takes_token_command(registered.spec.profile_model)
+    """Every composed section whose settings model has ``token`` and ``token_command``."""
+    models = {
+        registered.spec.name: settings_model(registered.spec) for registered in result.plugins
     }
-
-
-def _token_section(spec: CapabilitySpec) -> _TokenSection:
-    model = spec.profile_model
-    return _TokenSection(spec.config_section, token_env_names(model.model_construct()))
+    return {
+        name: _TokenSection(name, token_env_names(model.model_construct()))
+        for name, model in models.items()
+        if "token" in model.model_fields and takes_token_command(model)
+    }
 
 
 def save_token(

@@ -40,7 +40,7 @@ def _doctor(*args: str) -> Any:
     app = build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC,
         builtin_for=lambda _name: None,
-        result=compose(make_spec("old", profile_model=OldProfile)),
+        result=compose(make_spec("old", settings=OldProfile)),
     )
     return CliInvoker().invoke(app, list(args))  # type: ignore[arg-type]
 
@@ -110,11 +110,11 @@ def test_no_old_keys_pass(_isolated_config: Path) -> None:
 
 
 def test_setup_keeps_a_warning_row(_isolated_config: Path) -> None:
-    result = compose(make_spec("old", profile_model=OldProfile))
+    result = compose(make_spec("old", settings=OldProfile))
 
     def checks() -> set[str]:
         rows = selected_check_rows(bootstrap.SHELL_SPEC, result, "default", frozenset({"old"}))
-        return {str(row["check"]) for row in rows if row["capability"] != "old"}
+        return {str(row["check"]) for row in rows if row["plugin"] != "old"}
 
     write_config(_isolated_config, "profiles:\n  default: {}\n")
     assert checks() == set()

@@ -1,7 +1,7 @@
 """Registry-backed configuration loaded from ``~/.untaped/config.yml``.
 
 The unified composition root owns YAML/env loading and the in-process registry
-of typed capability settings sections over the profiles layout. Capability
+of typed plugin settings sections over the profiles layout. Plugin
 state lives in a separate ``state.yml`` (:func:`resolve_state_path`).
 """
 
@@ -186,7 +186,7 @@ def model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
 
 
 def profile_section_models() -> SectionModels:
-    """``section -> model`` for every profile section: core, the shell and each capability."""
+    """``section -> model`` for every profile section: core, the shell and each plugin."""
     return model_sections(get_profile_settings_model())
 
 
@@ -203,19 +203,19 @@ def register_profile_settings(
 ) -> None:
     """Register a tool's profile-scoped section (lives under ``profiles.<name>``).
 
-    ``stability`` is the owning capability's mark; its settings inherit it
+    ``stability`` is the owning plugin's mark; its settings inherit it
     unless a field carries a mark of its own.
     """
     _CONFIG_REGISTRY.register_profile_settings(section, model, stability)
 
 
 def section_stabilities() -> Mapping[str, Stability | None]:
-    """Each registered profile section's capability mark (``None`` for an unmarked one)."""
+    """Each registered profile section's plugin mark (``None`` for an unmarked one)."""
     return _CONFIG_REGISTRY.section_stability
 
 
 def registered_profile_model(section: str) -> type[BaseModel] | None:
-    """The profile model registered for ``section``, if any."""
+    """The settings model registered for ``section``, if any."""
     return _CONFIG_REGISTRY.profile_sections.get(section)
 
 
@@ -237,13 +237,13 @@ def validate_disjoint_settings_sections(
 
 
 def _reject_reserved_section(section: str) -> None:
-    """Reject a tool section name that collides with an SDK base field.
+    """Reject a tool section name that core owns (:data:`RESERVED_SECTIONS`).
 
     ``http``/``ui``/``skills`` are base fields on :class:`Settings`;
     registering a tool section with one of those names would shadow the SDK
     field in the dynamically built model and break config resolution.
     """
-    if section in Settings.model_fields:
+    if section in RESERVED_SECTIONS:
         raise ConfigError(f"reserved SDK settings section: {section!r}")
 
 
@@ -261,7 +261,7 @@ class SettingsOverlay:
     """Candidate values for one section of one profile, layered over the loaded config.
 
     A ``None`` value means "unset this key" (a command token source removes the
-    ``token``). Internal: ``setup`` checks a capability against what the user
+    ``token``). Internal: ``setup`` checks a plugin against what the user
     typed before anything is written.
     """
 
@@ -383,8 +383,14 @@ def _warn_use(use: KeyUse, *, section: str) -> None:
 
 
 def env_var_name(path: Iterable[str]) -> str:
-    """The ``UNTAPED_*`` variable that sets the setting at ``path`` (``("github", "token")``)."""
-    return "UNTAPED_" + "__".join(path).upper()
+    """The ``UNTAPED_*`` variable that sets the setting at ``path`` (``("github", "token")``).
+
+    The one place an environment name is built. A hyphen becomes an
+    underscore, as in the plugin's import package (``acme-tools`` reads
+    ``UNTAPED_ACME_TOOLS__KEY``): plugin names hold no ``_``, so the
+    spelling stays unambiguous, and ``__`` stays the nesting delimiter.
+    """
+    return "UNTAPED_" + "__".join(part.replace("-", "_") for part in path).upper()
 
 
 def _env_name(section: str, key: str) -> str:
@@ -399,7 +405,7 @@ def _env_is_set(name: str) -> bool:
 def _env_spelling(section: str, key: str) -> str:
     """How the environment spells ``key``: its variable when set, else a key in the JSON blob."""
     name = _env_name(section, key)
-    return name if _env_is_set(name) else f"{key} in UNTAPED_{section.upper()}"
+    return name if _env_is_set(name) else f"{key} in {env_var_name([section])}"
 
 
 class _RenamingEnvSource(EnvSettingsSource):
@@ -409,6 +415,26 @@ class _RenamingEnvSource(EnvSettingsSource):
     variables (and an ``UNTAPED_<SECTION>`` JSON blob) without checking the
     inner names, so old names arrive here and are renamed like YAML keys.
     """
+
+    def _load_env_vars(self) -> Mapping[str, str | None]:
+        """The environment, with a hyphenated section's variables under its field name.
+
+        pydantic-settings looks a section up by its field name, so
+        ``UNTAPED_ACME_TOOLS__KEY`` (see :func:`env_var_name`) is read as
+        ``UNTAPED_ACME-TOOLS__KEY``.
+        """
+        env_vars = dict(super()._load_env_vars())
+        for section in self.settings_cls.model_fields:
+            if "-" not in section:
+                continue
+            spelled = env_var_name([section])
+            field = f"{self.env_prefix}{section}"
+            if not self.case_sensitive:
+                spelled, field = spelled.lower(), field.lower()
+            moved = [key for key in env_vars if key.partition("__")[0] == spelled]
+            for key in moved:
+                env_vars[field + key[len(spelled) :]] = env_vars.pop(key)
+        return env_vars
 
     def __call__(self) -> dict[str, Any]:
         data = super().__call__()
@@ -542,14 +568,20 @@ def splice_registered_state(
 
 
 #: Top-level keys of ``config.yml`` and ``state.yml`` that core owns (the
-#: profile layout and the on-disk format stamp), never usable as capability
+#: profile layout and the on-disk format stamp), never usable as plugin
 #: state names.
 RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
 
 
+#: Config sections core owns: the ``Settings`` fields, the top-level layout
+#: keys and ``extensions`` (kept for contract settings). No tool section or
+#: state section may take one.
+RESERVED_SECTIONS = frozenset({"extensions", *Settings.model_fields, *RESERVED_STATE_SECTIONS})
+
+
 def check_state_section_name(section: str) -> None:
     """Reject a state section name that collides with ``config.yml``'s own keys."""
-    if not section or section in RESERVED_STATE_SECTIONS or section in Settings.model_fields:
+    if not section or section in RESERVED_SECTIONS:
         raise ConfigError(f"reserved or invalid state section name: {section!r}")
 
 
@@ -637,7 +669,7 @@ def validate_config_file(candidate: Path) -> None:
     """Validate ``candidate`` as if it were the config file, without loading it.
 
     Checks exactly what :func:`get_settings` would (environment overrides and
-    capability state included) against the candidate's content instead of
+    plugin state included) against the candidate's content instead of
     the active config file's. Raises :class:`ConfigError`.
     """
 
@@ -737,7 +769,7 @@ class _EnvOverInit(BaseSettings):
 def check_settings_field(name: str, node: Any, *, model: type[BaseModel] | None = None) -> Any:
     """Validate one top-level field from an effective YAML ``node`` plus env.
 
-    ``model`` validates a capability section; without it ``name`` must be a
+    ``model`` validates a plugin section; without it ``name`` must be a
     core :class:`Settings` field (``http``/``ui``/``skills``). ``node``
     ``None`` means the YAML does not set the field. Diagnostic helper for
     ``doctor``: raises :class:`ConfigError` via :func:`settings_error_message`
@@ -802,7 +834,7 @@ def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
     """Return one typed settings section, building a one-off model if needed.
 
     Only ``section`` (plus its own state section) is validated, so an invalid
-    sibling section never breaks an unrelated capability. A token-bearing
+    sibling section never breaks an unrelated plugin. A token-bearing
     section gets its token fallbacks applied (:func:`untaped.auth.resolve_token`).
     """
     settings_cls: type[Settings] | None = None

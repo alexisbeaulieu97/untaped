@@ -1,7 +1,7 @@
 # untaped
 
 **untaped** is a batteries-included CLI for DevOps workflows. `untaped[all]`
-gives you seven capabilities that share one config file, the same profiles, and
+gives you seven plugins that share one config file, the same profiles, and
 the same output and piping rules:
 
 - **`workspace`**: task workspaces: one directory of git worktrees across
@@ -16,7 +16,7 @@ the same output and piping rules:
   item per machine (experimental).
 
 Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
-`skills`, `doctor` and `capabilities`.
+`skills`, `doctor` and `plugin`.
 
 ## Install
 
@@ -51,7 +51,7 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 ## Documentation
 
 - [Getting started](./docs/getting-started.md): install, tokens, profiles,
-  a first command in each capability, and piping.
+  a first command in each plugin, and piping.
 - [Configuration](./docs/configuration.md): the config and state files,
   profiles, settings, TLS and tokens.
 - [Scripting](./docs/scripting.md): pipes, structured output and stderr
@@ -66,13 +66,13 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
   [output records](./docs/reference/records.md),
   [exit codes](./docs/reference/exit-codes.md) and
   [environment variables](./docs/reference/environment.md).
-- [Building a capability provider](./docs/plugins.md): add a capability from
+- [Building a plugin provider](./docs/plugins.md): add a plugin from
   your own package, with its [conventions](./docs/reference/conventions.md)
   and [how composition works](./docs/composition.md).
 - [Building a screen](./docs/screens.md): an interactive terminal UI on the
   SDK's runtime, with the keys, theme and tests it shares.
 
-Each capability's guide: [workspace](./packages/untaped-workspace/README.md),
+Each plugin's guide: [workspace](./packages/untaped-workspace/README.md),
 [github](./packages/untaped-github/README.md), [jira](./packages/untaped-jira/README.md),
 [awx](./packages/untaped-awx/README.md), [ansible](./packages/untaped-ansible/README.md),
 [recipe](./packages/untaped-recipe/README.md) and

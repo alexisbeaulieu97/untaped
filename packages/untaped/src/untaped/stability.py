@@ -3,8 +3,8 @@
 Every stability fact about a command lives here. The author marks the object
 once (``@experimental`` or ``@deprecated(replacement=...)`` on a command
 function, ``create_app(stability=...)`` on a group, ``stability=`` on a
-:class:`~untaped.capabilities.registry.CapabilitySpec` for a whole
-capability), and core supplies the panel in the parent's ``--help``, the last
+:class:`~untaped.plugins.registry.PluginSpec` for a whole
+plugin), and core supplies the panel in the parent's ``--help``, the last
 help line, the run-time warning and the conventions checks:
 
 - the markers and their validation (:func:`check_stability`);
@@ -41,7 +41,7 @@ from untaped.config_schema import unwrap_optional
 from untaped.messages import EXPERIMENTAL_LINE, deprecated_line
 
 if TYPE_CHECKING:
-    from untaped.capabilities.registry import CompositionResult
+    from untaped.plugins.registry import CompositionResult
 
 _ROOT_NAME = "untaped"
 _FUNCTION_ATTR = "__untaped_stability__"
@@ -84,11 +84,11 @@ class Deprecated(_Marker):
 
 
 experimental = Experimental()
-"""Mark a command, group or capability experimental (``@experimental``, ``stability=``)."""
+"""Mark a command, group or plugin experimental (``@experimental``, ``stability=``)."""
 
 
 def deprecated(*, replacement: Callable[..., Any] | App | str | None = None) -> Deprecated:
-    """Mark a command, group or capability deprecated, naming what replaces it.
+    """Mark a command, group or plugin deprecated, naming what replaces it.
 
     ``replacement`` is keyword-only, so a bare ``@deprecated`` fails at import.
     Use it as ``@deprecated(replacement=set_command)`` under ``@app.command``
@@ -247,7 +247,7 @@ def children(app: App, *, resolve: bool) -> Iterator[tuple[str, App]]:
     """The mounted subcommands of ``app``, the way cyclopts' ``groups_from_app`` walks them.
 
     An unresolved lazy command is skipped unless ``resolve`` (reading it would
-    import its capability). A sub-app mounted under two names appears once.
+    import its plugin). A sub-app mounted under two names appears once.
     """
     seen: set[int] = set()
     for name in app:
@@ -331,11 +331,11 @@ def apply_marks(app: App, *, path: tuple[str, ...] = ()) -> None:
     """Give every marked command under ``app`` its panel and help line (idempotent).
 
     ``path`` is where ``app`` hangs from the root (``()`` for the root,
-    ``(name,)`` for a mounted capability or root command). It sets the group
+    ``(name,)`` for a mounted plugin or root command). It sets the group
     and epilogue on the wrapper app cyclopts builds for each marked command
     function, and makes every app inside a marked subtree that has an epilogue
     of its own end with the stability line, so an author epilogue never hides
-    it. It never resolves a lazy capability.
+    it. It never resolves a lazy plugin.
     """
     _apply(app, app, (_ROOT_NAME, *path), None, set())
 
@@ -360,7 +360,7 @@ def _apply(
 # --- the query ---------------------------------------------------------------
 
 
-type MarkTarget = Literal["capability", "group", "command", "setting"]
+type MarkTarget = Literal["plugin", "group", "command", "setting"]
 
 
 @dataclass(frozen=True)
@@ -368,7 +368,7 @@ class Mark:
     """One mark: where it sits, what it marks, and what it says."""
 
     where: str
-    """The command path (``awx test``), capability name or setting key (``awx.test_parallel``)."""
+    """The command path (``awx test``), plugin name or setting key (``awx.test_parallel``)."""
     target: MarkTarget
     stability: Stability
     replacement: str | None
@@ -376,22 +376,22 @@ class Mark:
 
 
 def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> list[Mark]:
-    """Every mark in the composition: capability specs, groups, commands and settings.
+    """Every mark in the composition: plugin specs, groups, commands and settings.
 
     Takes the composition, not only the app, because a spec mark is not on a
     lazy app. A setting is recorded only for a mark of its own field; one
-    inherited from its capability is that capability's record (ask
+    inherited from its plugin is that plugin's record (ask
     :func:`setting_mark` for a setting's effective mark). ``resolve=True``
-    imports every lazy capability first (tests and generators only); the
+    imports every lazy plugin first (tests and generators only); the
     settings come from the sections the composition registered.
     """
     found: list[Mark] = []
-    for capability in result.capabilities:
-        spec = capability.spec
+    for plugin in result.plugins:
+        spec = plugin.spec
         if spec.stability is not None:
-            found.append(_record(spec.name, "capability", spec.stability, root))
-    capabilities = frozenset(capability.spec.name for capability in result.capabilities)
-    _collect(root, root, (), capabilities, found, resolve=resolve)
+            found.append(_record(spec.name, "plugin", spec.stability, root))
+    plugins = frozenset(plugin.spec.name for plugin in result.plugins)
+    _collect(root, root, (), plugins, found, resolve=resolve)
     found.extend(_setting_marks(root))
     return found
 
@@ -413,7 +413,7 @@ def _collect(
     app: App,
     root: App,
     path: tuple[str, ...],
-    capabilities: frozenset[str],
+    plugins: frozenset[str],
     found: list[Mark],
     *,
     resolve: bool,
@@ -424,12 +424,12 @@ def _collect(
         entry = app_mark(sub)
         if mark is not None and not (entry is not None and entry.source == "spec"):
             target: MarkTarget = (
-                "capability"
-                if not path and name in capabilities
+                "plugin"
+                if not path and name in plugins
                 else ("group" if any(True for _ in children(sub, resolve=False)) else "command")
             )
             found.append(_record(" ".join(here), target, mark, root))
-        _collect(sub, root, here, capabilities, found, resolve=resolve)
+        _collect(sub, root, here, plugins, found, resolve=resolve)
 
 
 # --- marks on settings -------------------------------------------------------
@@ -542,7 +542,7 @@ def setting_mark(
     """The effective mark of setting ``key`` (``section.field``), or ``None`` when stable.
 
     The field's own mark wins; otherwise the setting inherits the mark of the
-    capability that owns its section. Pure: ``section_stability`` is what
+    plugin that owns its section. Pure: ``section_stability`` is what
     :func:`untaped.settings.section_stabilities` returns.
     """
     section, _, rest = key.partition(".")

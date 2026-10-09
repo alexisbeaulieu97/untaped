@@ -1,4 +1,4 @@
-"""Workspace capability for the unified ``untaped`` shell."""
+"""Workspace plugin for the unified ``untaped`` shell."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset, executable_check, experimental
+from untaped.sdk import PluginSpec, SkillAsset, executable_check, experimental
 from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 
 if TYPE_CHECKING:
@@ -22,14 +22,13 @@ def build_app() -> App:
     return app
 
 
-SPEC = CapabilitySpec(
+SPEC = PluginSpec(
     name="workspace",
     app_factory=build_app,
     help="Create and archive task workspaces (git worktrees of several repos).",
     stability=experimental,
-    config_section="workspace",
-    profile_model=WorkspaceSettings,
-    state_model=WorkspaceState,
+    settings=WorkspaceSettings,
+    state=WorkspaceState,
     skills=(
         SkillAsset(
             name="untaped-workspace",
@@ -47,6 +46,6 @@ SPEC = CapabilitySpec(
 )
 
 
-def provider() -> CapabilitySpec:
-    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+def provider() -> PluginSpec:
+    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
     return SPEC

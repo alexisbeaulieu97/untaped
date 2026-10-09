@@ -155,7 +155,7 @@ class SettingsFileRepository:
         return self._section_models().get(section)
 
     def mark(self, descriptor: FieldDescriptor) -> Stability | None:
-        """The effective stability mark of ``descriptor``: its own, else its capability's."""
+        """The effective stability mark of ``descriptor``: its own, else its plugin's."""
         return setting_mark(
             descriptor.key,
             sections=self._section_models(),

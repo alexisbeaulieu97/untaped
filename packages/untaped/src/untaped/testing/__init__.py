@@ -1,6 +1,6 @@
 """Testing helpers for driving Cyclopts command apps with captured output.
 
-:func:`check_conventions` checks one installed capability against
+:func:`check_conventions` checks one installed plugin against
 ``docs/reference/conventions.md``; its ``candidates`` argument composes a provider
 passed in directly instead of one discovered through entry points.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
@@ -36,8 +36,8 @@ from untaped.stability import apply_marks
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
 
 if TYPE_CHECKING:
-    from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
     from untaped.picker import PickRequest, PickResult
+    from untaped.plugins.registry import PluginSpec, ProviderCandidate
     from untaped.theme import ThemeSpec
 
 __all__ = [
@@ -112,8 +112,8 @@ def invoke_cli(
 
     A bare app is given the panels and help lines its marks ask for first, as
     the root would when mounting it (a nested sub-app computes the path of its
-    replacement from its own name only). A mark on a ``CapabilitySpec`` is
-    applied only by a composed root, so assert a spec-marked capability's help
+    replacement from its own name only). A mark on a ``PluginSpec`` is
+    applied only by a composed root, so assert a spec-marked plugin's help
     through :func:`invoke_root`, not through its own app.
 
     ``interactive=True`` swaps stdin for a :class:`TtyStringIO` so TTY gates
@@ -225,40 +225,43 @@ def assert_destructive_contract(
         assert_unchanged()
 
 
-def provider_candidate(
-    spec: CapabilitySpec, *, distribution: str = "test-provider"
-) -> ProviderCandidate:
+def provider_candidate(spec: PluginSpec, *, distribution: str | None = None) -> ProviderCandidate:
     """``spec`` as a discovered candidate, for composing it without installing it.
+
+    ``distribution`` defaults to ``untaped-<name>``, the name the
+    ``plugin-name`` convention expects.
 
     Pass the result to ``check_conventions(..., candidates=[...])`` or
     ``untaped.bootstrap.build_root_app(candidates=[...])``.
     """
-    from untaped.capabilities.registry import ProviderCandidate  # noqa: PLC0415
+    from untaped.plugins.registry import ProviderCandidate  # noqa: PLC0415
 
-    return ProviderCandidate(distribution=distribution, name=spec.name, target=lambda: spec)
+    return ProviderCandidate(
+        distribution=distribution or f"untaped-{spec.name}", name=spec.name, target=lambda: spec
+    )
 
 
 def check_conventions(
-    capability: str,
+    plugin: str,
     *,
     tests_dir: Path | None = None,
     candidates: Sequence[ProviderCandidate] | None = None,
 ) -> None:
-    """Fail with every convention violation of ``capability``.
+    """Fail with every convention violation of ``plugin``.
 
     The rules are in ``docs/reference/conventions.md#enforcement``.
 
-    Checks the installed capability's command subtree and its own source
+    Checks the installed plugin's command subtree and its own source
     files: command grammar, stderr wording, package structure and layering.
     ``tests_dir`` adds the private-test-import check over those tests.
     ``candidates`` replaces entry-point discovery, so a test can compose a
     provider that is not installed. ``# untaped: allow <rule>`` on the flagged
-    node's first line allows that one violation. A quarantined capability
+    node's first line allows that one violation. A quarantined plugin
     fails with the reason it was refused, such as a broken rename declaration.
     """
-    from untaped.conventions import capability_violations  # noqa: PLC0415
+    from untaped.conventions import plugin_violations  # noqa: PLC0415
 
-    found = capability_violations(capability, tests_dir=tests_dir, candidates=candidates)
+    found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)
     assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)
 
 
@@ -393,8 +396,8 @@ def _call_command(
         target = command.meta if command.meta.default_command is not None else command
         if target is command and command._meta_parent is None:
             # A composed root (or its meta app) marked its commands when it
-            # mounted them; a bare capability app did not. Never resolves a
-            # lazy capability.
+            # mounted them; a bare plugin app did not. Never resolves a
+            # lazy plugin.
             apply_marks(command, path=() if command.name == ("untaped",) else command.name[:1])
         run_cyclopts_app(
             target,

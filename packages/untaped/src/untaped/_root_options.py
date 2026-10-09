@@ -390,9 +390,9 @@ def _consume_path_root_options(
     """Apply and strip root options sitting between command names.
 
     ``untaped awx --profile x jobs list`` places a root option after a
-    capability (or group) name but before the next command name, where
+    plugin (or group) name but before the next command name, where
     cyclopts would read it as an unknown command. Walking the command path
-    (resolving lazy capabilities only along the chain dispatch would
+    (resolving lazy plugins only along the chain dispatch would
     resolve anyway), each run of root options followed by another command
     name is applied and removed. Options after the last command name stay
     in place for the leaf to parse, so a leaf's homonymous option still wins

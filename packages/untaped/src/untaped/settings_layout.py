@@ -38,7 +38,7 @@ class ResolvedConfig:
 class ProfilesSettingsLayout:
     """Layer ``profiles.default`` beneath ``profiles.<active>``.
 
-    Profiles are a first-class SDK capability, so this layout (and the
+    Profiles are a first-class SDK plugin, so this layout (and the
     resolver it delegates to) lives in core.
 
     ``sections`` supplies the default section models: each layered profile's

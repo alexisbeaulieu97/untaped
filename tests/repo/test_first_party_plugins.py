@@ -1,9 +1,9 @@
-"""Every first-party capability is an entry point and composes, mounts and exposes its
+"""Every first-party plugin is an entry point and composes, mounts and exposes its
 settings the same way.
 
-First-party capabilities ship as ``untaped-<name>`` distributions pinned to the
+First-party plugins ship as ``untaped-<name>`` distributions pinned to the
 unified product version, so their reported version is always that version —
-never per-capability.
+never per-plugin.
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ import release
 from cyclopts import App
 
 from repo.support import FIRST_PARTY, REPO_ROOT
-from test_capabilities.capharness import make_shell
+from test_plugins.plugin_harness import make_shell
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, ProviderRef, compose
+from untaped.plugins.registry import PluginSpec, ProviderCandidate, ProviderRef, compose
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
@@ -35,11 +35,11 @@ def candidates(
 
 
 @pytest.fixture(scope="module")
-def specs(first_party_specs: tuple[CapabilitySpec, ...]) -> dict[str, CapabilitySpec]:
+def specs(first_party_specs: tuple[PluginSpec, ...]) -> dict[str, PluginSpec]:
     return {spec.name: spec for spec in first_party_specs}
 
 
-def _invoke(spec: CapabilitySpec, *args: str) -> str:
+def _invoke(spec: PluginSpec, *args: str) -> str:
     root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
     result = CliInvoker().invoke(root.meta, list(args))
     assert result.exit_code == 0, result.output
@@ -51,17 +51,17 @@ def test_the_only_console_script_is_the_unified_shell() -> None:
     assert project["scripts"] == {"untaped": "untaped.__main__:main"}
 
 
-def test_the_fixtures_hold_exactly_the_first_party_capabilities(
-    candidates: dict[str, ProviderCandidate], specs: dict[str, CapabilitySpec]
+def test_the_fixtures_hold_exactly_the_first_party_plugins(
+    candidates: dict[str, ProviderCandidate], specs: dict[str, PluginSpec]
 ) -> None:
     assert tuple(candidates) == tuple(specs) == FIRST_PARTY
 
 
-def test_every_first_party_capability_is_an_entry_point_listed_ready_in_name_order(
+def test_every_first_party_plugin_is_an_entry_point_listed_ready_in_name_order(
     first_party_candidates: tuple[ProviderCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
-    listed = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
+    listed = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
     assert listed.exit_code == 0, listed.output
     assert [
         (row["name"], row["status"], row["distribution"]) for row in json.loads(listed.stdout)
@@ -82,7 +82,7 @@ def test_first_party_commit_carries_its_entry_point(
     candidates: dict[str, ProviderCandidate],
 ) -> None:
     result = compose(make_shell(), [candidates["github"]])
-    (registered,) = result.capabilities
+    (registered,) = result.plugins
     assert registered.provider_ref == ProviderRef(
         distribution="untaped-github", entry_point="untaped_github:provider"
     )
@@ -102,10 +102,10 @@ def test_first_party_version_is_the_product_version(
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
 def test_first_party_spec_ships_a_lazy_app_and_one_skill(
-    specs: dict[str, CapabilitySpec], name: str
+    specs: dict[str, PluginSpec], name: str
 ) -> None:
     spec = specs[name]
-    assert spec.config_section == name
+    assert spec.name == name
     assert spec.help
     assert isinstance(spec.app_factory(), App)
     (skill,) = spec.skills
@@ -114,9 +114,7 @@ def test_first_party_spec_ships_a_lazy_app_and_one_skill(
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_first_party_mounts_under_the_unified_root(
-    specs: dict[str, CapabilitySpec], name: str
-) -> None:
+def test_first_party_mounts_under_the_unified_root(specs: dict[str, PluginSpec], name: str) -> None:
     top = _invoke(specs[name], "--help")
     assert name in top
     own = _invoke(specs[name], name, "--help")
@@ -125,19 +123,19 @@ def test_first_party_mounts_under_the_unified_root(
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
 def test_first_party_profile_fields_are_configurable_and_state_is_not(
-    specs: dict[str, CapabilitySpec], name: str
+    specs: dict[str, PluginSpec], name: str
 ) -> None:
     spec = specs[name]
     stdout = _invoke(spec, "config", "list", "--format", "raw", "--columns", "key")
     keys = set(stdout.splitlines())
-    for field in spec.profile_model.model_fields:
+    for field in spec.settings.model_fields:
         assert any(key.split(".")[:2] == [name, field] for key in keys), field
-    for field in spec.state_model.model_fields if spec.state_model else ():
+    for field in spec.state.model_fields if spec.state else ():
         assert f"{name}.{field}" not in keys
 
 
-def test_profile_scoped_capability_setting_resolves(
-    _isolated_config: Path, specs: dict[str, CapabilitySpec]
+def test_profile_scoped_plugin_setting_resolves(
+    _isolated_config: Path, specs: dict[str, PluginSpec]
 ) -> None:
     _isolated_config.write_text(
         "profiles:\n  default:\n    jira:\n      base_url: https://jira.example.com\n",

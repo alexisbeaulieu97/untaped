@@ -1,6 +1,6 @@
 """The checklist: the human view of ``doctor`` and ``setup`` rows.
 
-Rows grouped by capability in row order, one glyph per status (ASCII under
+Rows grouped by plugin in row order, one glyph per status (ASCII under
 an ASCII theme), each fix under its row as the command line to type, and a
 footer counting every status. ``--columns`` prints the table instead.
 """
@@ -15,14 +15,14 @@ from rich.cells import cell_len
 
 from test_management.support import check, compose, make_spec, write_config
 from untaped import bootstrap
-from untaped.capabilities.registry import (
-    CapabilityContext,
-    CapabilitySpec,
-    DoctorCheck,
-    DoctorResult,
-)
 from untaped.management._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.management.doctor import build_root_doctor_app, report_check_rows
+from untaped.plugins.registry import (
+    DoctorCheck,
+    DoctorResult,
+    PluginContext,
+    PluginSpec,
+)
 from untaped.profile_resolver import profile_scope
 from untaped.testing import CliInvoker, CliResult
 
@@ -36,7 +36,7 @@ def _wide(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _fixing(check_id: str, fix: str, *, automatic: bool, ok: bool = False) -> DoctorCheck:
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+    def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
             id=check_id, ok=ok, warn=ok, detail=f"{check_id} broke", fix=fix, automatic=automatic
         )
@@ -44,7 +44,7 @@ def _fixing(check_id: str, fix: str, *, automatic: bool, ok: bool = False) -> Do
     return DoctorCheck(id=check_id, title=f"{check_id} title", run=run)
 
 
-def _specs() -> tuple[CapabilitySpec, ...]:
+def _specs() -> tuple[PluginSpec, ...]:
     return (
         make_spec(
             "alpha",
@@ -66,7 +66,7 @@ def _doctor(*args: str) -> CliResult:
     return CliInvoker().invoke(app, list(args))
 
 
-def test_rows_are_grouped_by_capability_in_row_order() -> None:
+def test_rows_are_grouped_by_plugin_in_row_order() -> None:
     lines = _doctor().stdout.splitlines()
     groups = [line for line in lines if line and not line.startswith(" ")]
     assert groups == ["untaped", "alpha", "beta"]
@@ -121,7 +121,7 @@ def test_a_healthy_run_prints_its_footer_too() -> None:
 def test_the_footer_names_the_operation(capsys: pytest.CaptureFixture[str]) -> None:
     row = {
         "check": "x",
-        "capability": "untaped",
+        "plugin": "untaped",
         "status": "warn",
         "title": "t",
         "detail": "d",
@@ -168,7 +168,7 @@ def test_structured_rows_keep_their_shape_and_the_footer_is_a_json_line(
     row = next(row for row in json.loads(result.stdout) if row["check"] == "alpha.auto")
     assert row == {
         "check": "alpha.auto",
-        "capability": "alpha",
+        "plugin": "alpha",
         "status": "warn",
         "title": "alpha.auto title",
         "detail": "alpha.auto broke",

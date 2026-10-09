@@ -62,7 +62,7 @@ class SettingEntry(BaseModel):
     note: str | None = None
     """Why the value deserves a look, e.g. ``from deprecated github.corpus_path``."""
     stability: SettingStability = "stable"
-    """The setting's own mark, else its capability's."""
+    """The setting's own mark, else its plugin's."""
     use: str | None = None
     """For a deprecated setting: what replaces it, as help shows it."""
 

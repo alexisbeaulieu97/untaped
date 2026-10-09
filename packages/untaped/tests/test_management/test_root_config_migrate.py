@@ -41,7 +41,7 @@ class MigratedProfile(BaseModel):
 
 
 def _migrate(*args: str) -> CliResult:
-    result = compose(make_spec("mig", profile_model=MigratedProfile))
+    result = compose(make_spec("mig", settings=MigratedProfile))
     app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=result)
     return CliInvoker().invoke(app, ["migrate", *args])
 
@@ -180,7 +180,7 @@ def test_a_key_that_cannot_be_placed_stays_and_other_profiles_still_migrate(
         "  empty:\n  work:\n    blk:\n      workers: 2\n"
     )
     write_config(_isolated_config, text)
-    result = compose(make_spec("blk", profile_model=BlockedProfile))
+    result = compose(make_spec("blk", settings=BlockedProfile))
     app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=result)
 
     migrated = CliInvoker().invoke(app, ["migrate", "--format", "json"])

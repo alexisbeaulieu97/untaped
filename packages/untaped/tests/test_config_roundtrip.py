@@ -41,7 +41,7 @@ profiles:
       token: old-token  # rotate monthly
     ui: {theme: classic}
 
-# capability state below
+# plugin state below
 workspace:
   active:
     - name: alpha   # first
@@ -93,7 +93,7 @@ def test_unset_keeps_surrounding_comments(cfg: Path) -> None:
     assert "timeout" not in text
     assert "verify_ssl: yes     # YAML 1.1 boolean, keep as written" in text
     assert "# shared base layer" in text
-    assert "# capability state below" in text
+    assert "# plugin state below" in text
 
 
 def test_untouched_yaml_1_1_scalars_keep_their_meaning(cfg: Path) -> None:

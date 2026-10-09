@@ -73,7 +73,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ids=[
         "unset",
         "core-default",
-        "capability-default",
+        "plugin-default",
         "path-default",
         "default-profile",
         "active-profile",

@@ -1,11 +1,11 @@
-"""Root ``untaped capabilities`` command.
+"""Root ``untaped plugin`` group and its ``list`` command.
 
-A terminal command (not a group) reporting one record per candidate
+``plugin list`` reports one record per candidate
 provider — ``name/status/distribution/version``, in name order — from the
-composition outcome: ready rows for committed capabilities plus quarantined
+composition outcome: ready rows for committed plugins plus quarantined
 rows carrying the entry-point name (or the ``unknown`` sentinels when the
 provider never resolved). The listing never touches settings, so invalid
-capability values cannot block it.
+plugin values cannot block it.
 """
 
 from __future__ import annotations
@@ -14,11 +14,6 @@ from collections.abc import Sequence
 
 from cyclopts import App
 
-from untaped.capabilities.registry import (
-    CompositionResult,
-    ProviderCandidate,
-    candidate_distribution,
-)
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
@@ -27,36 +22,38 @@ from untaped.cli import (
     report_errors,
 )
 from untaped.management._render import emit_isolated
+from untaped.plugins.registry import (
+    CompositionResult,
+    ProviderCandidate,
+    candidate_distribution,
+)
 from untaped.theme import OutputFormat
 
 _UNKNOWN = "unknown"
 
-#: Shown by root ``--help`` and an empty ``capabilities`` listing when a bare
-#: ``untaped`` install has no capability providers.
+#: Shown by root ``--help`` and an empty ``plugin list`` when a bare
+#: ``untaped`` install has no plugin providers.
 INSTALL_HINT = (
-    "No capabilities are installed. Reinstall untaped with an extra: 'untaped[all]' "
+    "No plugins are installed. Reinstall untaped with an extra: 'untaped[all]' "
     "for all of them, or one, e.g. 'untaped[awx]'."
 )
 
 
-def build_root_capabilities_app(
+def build_root_plugin_app(
     *,
     result: CompositionResult,
     candidates: Sequence[ProviderCandidate],
 ) -> App:
-    """Return the root ``capabilities`` terminal command for one composition."""
-    app = create_app(
-        name="capabilities",
-        help="List composed capabilities and quarantined providers.",
-    )
+    """Return the root ``plugin`` group for one composition."""
+    app = create_app(name="plugin", help="Inspect installed plugins.")
 
-    @app.default
-    def show_command(
+    @app.command(name="list")
+    def list_command(
         *,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List one record per candidate provider."""
+        """List installed plugins and quarantined providers, one row each."""
         with report_errors():
             _show(result, candidates, fmt=fmt, columns=columns)
 
@@ -75,7 +72,7 @@ def _show(
         rows,
         fmt=fmt,
         columns=columns,
-        kind="untaped.capability",
+        kind="untaped.plugin",
         table_columns=["name", "status", "distribution", "version"],
     )
     if not rows:
@@ -97,7 +94,7 @@ def _rows(
     }
     ready = [
         (registered.spec.name, "ready", registered.provider_ref.distribution)
-        for registered in result.capabilities
+        for registered in result.plugins
     ]
     quarantined = [
         (record.name, "quarantined", record.distribution) for record in result.quarantine
@@ -115,4 +112,4 @@ def _rows(
     ]
 
 
-__all__ = ["INSTALL_HINT", "build_root_capabilities_app"]
+__all__ = ["INSTALL_HINT", "build_root_plugin_app"]

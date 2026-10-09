@@ -23,7 +23,7 @@ class _Wide(OutcomeRecord):
     d: str = ""
 
 
-_Wide.__module__ = "untaped.capabilities.example.domain"
+_Wide.__module__ = "untaped.plugins.example.domain"
 
 
 class _Narrowed(_Wide):
@@ -39,7 +39,7 @@ def test_a_wide_collection_without_default_columns_is_flagged(
     emit([_Wide(a="x", action="created")], fmt="json")
     flagged = list(table_default_violations)
     table_default_violations.clear()  # handled here: do not fail this test
-    assert flagged == ["untaped.capabilities.example.domain._Wide::no-default-columns"]
+    assert flagged == ["untaped.plugins.example.domain._Wide::no-default-columns"]
 
 
 @pytest.mark.parametrize(
@@ -65,7 +65,7 @@ def test_default_columns_or_a_single_record_pass(
     ("module", "flagged"),
     [
         ("untaped_acme.domain", True),
-        ("untaped.capabilities.x", True),
+        ("untaped.plugins.x", True),
         ("untapedish.x", False),
         ("acme.x", False),
     ],

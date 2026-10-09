@@ -1,6 +1,6 @@
 """``settings_overlay``: candidate values layered over the loaded config, in one context.
 
-``setup`` checks a capability against what the user typed before anything is
+``setup`` checks a plugin against what the user typed before anything is
 written. The overlay is the internal seam for that: the settings loader reads
 it, ``get_settings`` bypasses its cache while it is set, and nothing outside
 the context that set it (the main thread, a fresh thread, the config file, the

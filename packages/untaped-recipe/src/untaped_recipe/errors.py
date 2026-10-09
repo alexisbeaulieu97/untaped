@@ -1,6 +1,6 @@
-"""Recipe capability exception hierarchy.
+"""Recipe plugin exception hierarchy.
 
-Every error the capability raises on purpose derives from :class:`RecipeError`
+Every error the plugin raises on purpose derives from :class:`RecipeError`
 (itself an :class:`~untaped.sdk.UntapedError`), so ``report_errors``
 prints it as a clean ``error: ...`` line instead of a traceback. Recipe, pack
 and hook files and the inputs a command reads are local input, so an error is
@@ -14,7 +14,7 @@ from untaped.sdk import ErrorCategory, UntapedError
 
 
 class RecipeError(UntapedError):
-    """Base for recipe capability errors: invalid local input unless a subclass says otherwise."""
+    """Base for recipe plugin errors: invalid local input unless a subclass says otherwise."""
 
     category = ErrorCategory.INVALID
     system = "local"

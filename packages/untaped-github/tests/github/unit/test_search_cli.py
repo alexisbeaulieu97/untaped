@@ -12,7 +12,7 @@ import pytest
 import respx
 
 from untaped.bootstrap import build_root_app
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.plugins.registry import ProviderCandidate
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, invoke_cli
 from untaped_github.cli import app

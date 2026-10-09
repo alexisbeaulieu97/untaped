@@ -109,8 +109,8 @@ _DISPATCH_PROBE = (
 )
 
 
-def _capability_cli_modules(argv: list[str]) -> set[str]:
-    """Capability CLI modules a clean ``untaped <argv>`` run imports (httpx never)."""
+def _plugin_cli_modules(argv: list[str]) -> set[str]:
+    """Plugin CLI modules a clean ``untaped <argv>`` run imports (httpx never)."""
     # The verdict's heavy-module line follows the CLI line; empty lines strip away.
     cli_line, _, heavy_line = _loaded_heavy_modules(_DISPATCH_PROBE.format(argv=argv)).partition(
         "\n"
@@ -119,12 +119,12 @@ def _capability_cli_modules(argv: list[str]) -> set[str]:
     return set(cli_line.split())
 
 
-def test_root_help_imports_no_capability_cli() -> None:
-    assert _capability_cli_modules(["--help"]) == set()
+def test_root_help_imports_no_plugin_cli() -> None:
+    assert _plugin_cli_modules(["--help"]) == set()
 
 
-def test_capability_help_imports_only_its_own_cli() -> None:
-    loaded = _capability_cli_modules(["workspace", "--help"])
+def test_plugin_help_imports_only_its_own_cli() -> None:
+    loaded = _plugin_cli_modules(["workspace", "--help"])
     assert loaded
     owners = {module.split(".")[0].removeprefix("untaped_") for module in loaded}
     assert owners == {"workspace"}
@@ -142,11 +142,11 @@ _STARTUP_PROBE = (
 
 #: Modules imported on top of interpreter startup (a coverage run preloads
 #: some, so it only lowers these). Measured 2026-10-02 on Python 3.14.8 with
-#: seven capabilities: 119 ``untaped.*`` for ``--help`` and ``--version``
-#: (the dotfiles capability adds four: its package, settings and state models).
+#: seven plugins: 119 ``untaped.*`` for ``--help`` and ``--version``
+#: (the dotfiles plugin adds four: its package, settings and state models).
 #: The budget sits six above that measurement, the same headroom the
 #: previous one had, to absorb dependency and patch-release drift; a new
-#: built-in capability adds a few ``untaped.*`` modules (its SPEC and settings).
+#: built-in plugin adds a few ``untaped.*`` modules (its SPEC and settings).
 _TOTAL_BUDGET = 700
 _UNTAPED_BUDGET = 125
 

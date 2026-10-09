@@ -1,6 +1,6 @@
 """Tests for the root ``untaped profile …`` command group.
 
-The profile surface is capability-agnostic (it operates on the shared
+The profile surface is plugin-agnostic (it operates on the shared
 ``profiles`` layout and names the unified executable in its guidance.
 """
 

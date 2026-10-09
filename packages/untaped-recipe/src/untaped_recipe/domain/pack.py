@@ -1,6 +1,6 @@
 """Pack identity, the ``[tool.untaped_recipe]`` manifest, and qualified references.
 
-One manifest model serves every uv project the capability reads: a recipe
+One manifest model serves every uv project the plugin reads: a recipe
 pack, and a hooks-only project (a pack that exposes no recipes).
 """
 

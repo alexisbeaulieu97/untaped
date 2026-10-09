@@ -1,12 +1,12 @@
 [project]
 name = "untaped-hello"
 version = "0.1.0"
-description = "A minimal example capability for untaped."
+description = "A minimal example plugin for untaped."
 readme = "README.md"
 requires-python = ">=3.14.1"
 dependencies = ["untaped>=10,<11", "pydantic>=2.13.3,<3"]
 
-[project.entry-points."untaped.capabilities"]
+[project.entry-points."untaped.plugins"]
 hello = "untaped_hello:provider"
 
 [dependency-groups]

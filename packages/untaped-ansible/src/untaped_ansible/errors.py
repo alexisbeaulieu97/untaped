@@ -1,6 +1,6 @@
-"""Ansible capability exception hierarchy.
+"""Ansible plugin exception hierarchy.
 
-Every error the capability raises on purpose derives from :class:`AnsibleError`
+Every error the plugin raises on purpose derives from :class:`AnsibleError`
 (itself an :class:`~untaped.sdk.UntapedError`) so ``report_errors`` turns it
 into a clean ``error: ...`` message instead of a traceback. Failures are
 attributed to ``local`` (sources, the dependency index, files), except
@@ -14,7 +14,7 @@ from untaped.sdk import UntapedError
 
 
 class AnsibleError(UntapedError):
-    """Base for Ansible capability errors."""
+    """Base for Ansible plugin errors."""
 
     system = "local"
 

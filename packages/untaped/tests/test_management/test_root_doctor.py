@@ -2,7 +2,7 @@
 
 The root doctor runs OFFLINE (config-file reads plus in-process model
 validation; never network I/O) with per-row failure isolation: invalid
-settings for one capability surface as failed rows while every other row
+settings for one plugin surface as failed rows while every other row
 still runs (the Jira-isolation acceptance case). Any failure or quarantine
 exits nonzero.
 """
@@ -31,13 +31,13 @@ from test_management.support import (
     write_config,
 )
 from untaped import bootstrap
-from untaped.capabilities.registry import (
-    CapabilitySpec,
+from untaped.management.doctor import build_root_doctor_app, collect_doctor_rows
+from untaped.plugins.registry import (
     CompositionResult,
+    PluginSpec,
     ProviderCandidate,
     QuarantineRecord,
 )
-from untaped.management.doctor import build_root_doctor_app, collect_doctor_rows
 from untaped.settings import FORMAT_VERSION, get_settings
 from untaped.testing import CliInvoker, provider_candidate
 
@@ -49,7 +49,7 @@ _PASS = "pass"
 def _doctor_app(*specs: object, quarantine: tuple[QuarantineRecord, ...] = ()) -> object:
     result = compose(*specs)  # type: ignore[arg-type]
     if quarantine:
-        result = CompositionResult(capabilities=result.capabilities, quarantine=quarantine)
+        result = CompositionResult(plugins=result.plugins, quarantine=quarantine)
     return build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=result
     )
@@ -61,7 +61,7 @@ def _quarantine() -> QuarantineRecord:
         distribution="example-dist",
         entry_point="example_mod:provider",
         reason="duplicate-name",
-        detail="duplicate capability name: 'ghost'",
+        detail="duplicate plugin name: 'ghost'",
     )
 
 
@@ -74,8 +74,8 @@ def test_all_pass_exits_zero(_isolated_config: Path) -> None:
     )
     get_settings.cache_clear()
     app = _doctor_app(
-        make_spec("github", profile_model=GithubProfile),
-        make_spec("jira", profile_model=JiraProfile),
+        make_spec("github", settings=GithubProfile),
+        make_spec("jira", settings=JiraProfile),
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
@@ -94,7 +94,7 @@ def test_a_pass_preset_that_cannot_decrypt_is_a_failed_row(
     )
     get_settings.cache_clear()
     result = CliInvoker().invoke(
-        _doctor_app(make_spec("github", profile_model=GithubProfile)),  # type: ignore[arg-type]
+        _doctor_app(make_spec("github", settings=GithubProfile)),  # type: ignore[arg-type]
         ["--format", "json"],
     )
     assert result.exit_code != 0
@@ -114,7 +114,7 @@ def test_a_working_pass_and_a_missing_pass_are_reported(
         "      token_command: [pass, show, hand/written]\n",
     )
     get_settings.cache_clear()
-    app = _doctor_app(make_spec("github", profile_model=GithubProfile))
+    app = _doctor_app(make_spec("github", settings=GithubProfile))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     [row] = [r for r in json.loads(result.stdout) if r["title"] == "pass token store"]
     assert row["status"] == "pass", "a hand-written pass command counts too"
@@ -208,7 +208,7 @@ def test_failing_check_does_not_block_other_rows(_isolated_config: Path) -> None
 
 
 def test_raising_check_body_is_a_failed_row(_isolated_config: Path) -> None:
-    from untaped.capabilities.registry import DoctorCheck
+    from untaped.plugins.registry import DoctorCheck
 
     def _boom(ctx: object) -> object:
         raise RuntimeError("kaput")
@@ -222,7 +222,7 @@ def test_raising_check_body_is_a_failed_row(_isolated_config: Path) -> None:
 
 
 def test_id_mismatch_and_bad_return_are_failed_rows(_isolated_config: Path) -> None:
-    from untaped.capabilities.registry import DoctorCheck, DoctorResult
+    from untaped.plugins.registry import DoctorCheck, DoctorResult
 
     def _wrong_id(ctx: object) -> DoctorResult:
         return DoctorResult(id="other.id", ok=True, detail="x")
@@ -248,7 +248,7 @@ def test_id_mismatch_and_bad_return_are_failed_rows(_isolated_config: Path) -> N
 # ── Jira isolation: invalid settings fail their rows only ────────────────────
 
 
-def test_invalid_capability_settings_fail_their_rows_only(_isolated_config: Path) -> None:
+def test_invalid_plugin_settings_fail_their_rows_only(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
         "profiles:\n  default:\n"
@@ -259,10 +259,10 @@ def test_invalid_capability_settings_fail_their_rows_only(_isolated_config: Path
     app = _doctor_app(
         make_spec(
             "github",
-            profile_model=GithubProfile,
+            settings=GithubProfile,
             doctor_checks=(check("github.auth", detail="github ok"),),
         ),
-        make_spec("jira", profile_model=JiraProfile),
+        make_spec("jira", settings=JiraProfile),
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 1
@@ -272,7 +272,7 @@ def test_invalid_capability_settings_fail_their_rows_only(_isolated_config: Path
 
 
 def test_missing_required_field_is_a_failed_row(_isolated_config: Path) -> None:
-    app = _doctor_app(make_spec("strict", profile_model=StrictProfile))
+    app = _doctor_app(make_spec("strict", settings=StrictProfile))
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 1
     assert "endpoint" in result.stdout
@@ -305,7 +305,7 @@ def test_quarantine_row_fails_exit(_isolated_config: Path) -> None:
     assert "duplicate-name" in result.stdout
     raw = CliInvoker().invoke(app, ["--format", "raw", "--columns", "detail"])  # type: ignore[arg-type]
     assert raw.exit_code == 1
-    assert "duplicate capability name: 'ghost'" in raw.stdout
+    assert "duplicate plugin name: 'ghost'" in raw.stdout
 
 
 def _raises_cli_import_failed() -> App:
@@ -316,8 +316,8 @@ def _returns_a_string() -> object:
     return "not-an-app"
 
 
-def _deferred(name: str, factory: Callable[[], object]) -> CapabilitySpec:
-    return replace(make_spec(name), help=f"{name} capability.", app_factory=factory)  # type: ignore[arg-type]
+def _deferred(name: str, factory: Callable[[], object]) -> PluginSpec:
+    return replace(make_spec(name), help=f"{name} plugin.", app_factory=factory)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -339,30 +339,30 @@ def test_doctor_reports_a_failing_lazy_factory_as_a_quarantine_row(
     )
     rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
     quarantine = [row for row in rows if row["check"] == "quarantine"]
-    assert [(row["capability"], row["title"]) for row in quarantine] == [("bad", "bad-app-factory")]
+    assert [(row["plugin"], row["title"]) for row in quarantine] == [("bad", "bad-app-factory")]
     assert quarantine[0]["status"] == "fail"
     assert detail in str(quarantine[0]["detail"])
     assert str(quarantine[0]["detail"]).endswith(" [distribution bad-dist, entry point bad]")
 
 
-def test_doctor_names_each_quarantined_capability(
+def test_doctor_names_each_quarantined_plugin(
     broken_first_party_candidates: Callable[[], tuple[ProviderCandidate, ...]],
 ) -> None:
     result = bootstrap.compose_root(candidates=broken_first_party_candidates())
     rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
     quarantine = [row for row in rows if row["check"] == "quarantine"]
-    assert [(row["capability"], row["title"]) for row in quarantine] == [
+    assert [(row["plugin"], row["title"]) for row in quarantine] == [
         ("awx", "malformed-entry-point"),
         ("jira", "malformed-entry-point"),
     ]
     assert str(quarantine[0]["detail"]).endswith(" [distribution untaped]")
 
 
-def test_doctor_limits_factory_rows_to_the_requested_capabilities() -> None:
+def test_doctor_limits_factory_rows_to_the_requested_plugins() -> None:
     result = bootstrap.compose_root(
         candidates=[provider_candidate(_deferred("bad", _returns_a_string))]
     )
-    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result, capabilities=frozenset({"other"}))
+    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result, plugins=frozenset({"other"}))
     assert [row for row in rows if row["check"] == "quarantine"] == []
 
 
@@ -381,10 +381,10 @@ def test_doctor_cli_exits_1_on_a_failing_lazy_factory() -> None:
 def test_undefined_active_profile_fails_section_rows(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default: {}\nactive: ghost\n")
     get_settings.cache_clear()
-    app = _doctor_app(make_spec("ext", profile_model=ExtProfile))
+    app = _doctor_app(make_spec("ext", settings=ExtProfile))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == 1
-    rows = {(row["check"], row["capability"]): row for row in json.loads(result.stdout)}
+    rows = {(row["check"], row["plugin"]): row for row in json.loads(result.stdout)}
     assert rows[("profile", "untaped")]["status"] == "fail"
     assert "not defined" in rows[("profile", "untaped")]["detail"]
     assert rows[("settings", "ext")]["status"] == "fail"
@@ -401,7 +401,7 @@ def test_doctor_performs_no_network_io(
 
     monkeypatch.setattr(socket, "socket", _blocked)
     app = _doctor_app(
-        make_spec("github", profile_model=GithubProfile),
+        make_spec("github", settings=GithubProfile),
         make_spec("ext", doctor_checks=(check("ext.auth"),)),
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
@@ -423,7 +423,7 @@ def _failed(rows: list[dict[str, str]]) -> dict[str, str]:
 def test_core_settings_rows_pass_on_empty_config(_isolated_config: Path) -> None:
     code, rows = _rows(_doctor_app())
     assert code == 0
-    titles = [row["title"] for row in rows if row["capability"] == "untaped"]
+    titles = [row["title"] for row in rows if row["plugin"] == "untaped"]
     for title in ("validate http", "validate ui", "resolve active profile"):
         assert title in titles
     assert "validate log_level" not in titles
@@ -465,7 +465,7 @@ def test_bad_env_override_fails_its_row_and_names_the_variable(
 ) -> None:
     monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT", "abc")
     monkeypatch.setenv("UNTAPED_JIRA__TIMEOUT", "soon")
-    code, rows = _rows(_doctor_app(make_spec("jira", profile_model=JiraProfile)))
+    code, rows = _rows(_doctor_app(make_spec("jira", settings=JiraProfile)))
     assert code == 1
     failed = _failed(rows)
     assert "UNTAPED_HTTP__TIMEOUT" in failed["validate http"]
@@ -495,9 +495,7 @@ def test_an_explicit_format_version_is_not_an_unknown_key(_isolated_config: Path
     stamp = f"format_version: {FORMAT_VERSION}\n"
     write_config(_isolated_config, f"{stamp}profiles:\n  default: {{}}\n")
     (_isolated_config.parent / "state.yml").write_text(stamp)
-    code, rows = _rows(
-        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
-    )
+    code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
     assert code == 0, _failed(rows)
     (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
     assert unknown["status"] == _PASS
@@ -515,9 +513,7 @@ def test_active_profile_missing_without_profiles_fails_profile_row(
 def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> None:
     state_file = _isolated_config.parent / "state.yml"
     state_file.write_text("github:\n  cursor: [not, a, string]\n")
-    code, rows = _rows(
-        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
-    )
+    code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
     assert code == 1
     assert str(state_file) in _failed(rows)["validate state"]
 
@@ -525,9 +521,7 @@ def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> N
 def test_unreadable_state_file_fails_its_row(_isolated_config: Path) -> None:
     state_file = _isolated_config.parent / "state.yml"
     state_file.write_text("github: [unclosed\n")
-    code, rows = _rows(
-        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
-    )
+    code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
     assert code == 1
     failed = _failed(rows)
     assert str(state_file) in failed["load state file"]
@@ -539,9 +533,7 @@ def test_state_left_in_config_is_ignored(
 ) -> None:
     """The pre-8.0 layout (state at the top level of config.yml) is not read."""
     write_config(_isolated_config, "github:\n  cursor: [not, a, string]\n")
-    code, rows = _rows(
-        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
-    )
+    code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
     assert code == 0
     assert not [row for row in rows if row["check"] == "legacy-state"]
     (state,) = [row for row in rows if row["title"] == "validate state"]
@@ -549,7 +541,7 @@ def test_state_left_in_config_is_ignored(
     (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
     assert unknown["status"] == "warn"
     assert "github" in unknown["detail"]
-    assert "warning: capability state" not in capsys.readouterr().err
+    assert "warning: plugin state" not in capsys.readouterr().err
 
 
 def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path) -> None:

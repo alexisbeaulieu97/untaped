@@ -12,13 +12,13 @@ Checks every command of a subtree against ``docs/plugins.md``:
 - ``nested-mark`` — a mark under a mark that makes it redundant or
   contradictory: experimental under experimental, or anything under
   deprecated (deprecated under experimental is allowed); a settings field
-  sits under its capability;
+  sits under its plugin;
 - ``bad-replacement`` — a ``deprecated`` replacement that is not mounted, is
   itself deprecated, or is text naming a command that does not resolve, a
-  command of the capability itself (pass the object), or a setting that does
+  command of the plugin itself (pass the object), or a setting that does
   not exist (a setting's replacement is always text);
-- ``mark-on-spec`` — a capability's top app carries a mark of its own, which a
-  lazy mount cannot see (mark the ``CapabilitySpec`` instead);
+- ``mark-on-spec`` — a plugin's top app carries a mark of its own, which a
+  lazy mount cannot see (mark the ``PluginSpec`` instead);
 - ``reserved-panel`` — a group named ``Experimental`` or ``Deprecated`` that is
   not core's panel.
 
@@ -35,8 +35,8 @@ from collections.abc import Iterable, Iterator
 from cyclopts import App, Group
 
 from untaped._root_options import resolve_command
-from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.config_schema import walk_settings
+from untaped.plugins.registry import CompositionResult, PluginSpec
 from untaped.settings import get_profile_settings_model, profile_section_models
 from untaped.stability import (
     COMMAND_TEXT,
@@ -75,19 +75,19 @@ def stability_violations(
     result: CompositionResult,
     names: Iterable[str],
     *,
-    spec: CapabilitySpec | None = None,
+    spec: PluginSpec | None = None,
     sections: Iterable[str] = (),
 ) -> list[str]:
     """``["<command path>::<rule>::<detail>", ...]`` for the subtrees ``root[name]``.
 
-    ``spec`` is the checked capability's, for the rule that needs it; its
+    ``spec`` is the checked plugin's, for the rule that needs it; its
     settings section is checked too, as are the ``sections`` named (core's).
     The marks come from :func:`untaped.stability.marks` over the whole
-    composition: the checked capability's subtree is resolved by ``root[name]``;
+    composition: the checked plugin's subtree is resolved by ``root[name]``;
     a lazy sibling is never imported (its spec mark is still seen).
     """
     wanted = frozenset(names)
-    settings = frozenset(sections) | ({spec.config_section} if spec is not None else frozenset())
+    settings = frozenset(sections) | ({spec.name} if spec is not None else frozenset())
     found: list[str] = []
     for top in sorted(wanted):
         subtree = root[top]
@@ -126,15 +126,12 @@ def _setting_violations(
                 f"{section}.{path}::wrong-deprecated::"
                 "uses pydantic's deprecated=; use untaped's deprecated(...)"
             )
-    capability = {
-        capability.spec.config_section: capability.spec.stability
-        for capability in result.capabilities
-    }
+    plugin = {plugin.spec.name: plugin.spec.stability for plugin in result.plugins}
     for mark in every:
         section = mark.where.partition(".")[0]
         if mark.target != "setting" or section not in sections:
             continue
-        above = capability.get(section)
+        above = plugin.get(section)
         if isinstance(above, Deprecated):
             yield f"{mark.where}::nested-mark::{_kind(mark.stability)} under deprecated {section}"
         elif isinstance(above, Experimental) and isinstance(mark.stability, Experimental):
@@ -146,7 +143,7 @@ def _setting_violations(
             )
 
 
-def _spec_violations(spec: CapabilitySpec, top: App) -> Iterator[str]:
+def _spec_violations(spec: PluginSpec, top: App) -> Iterator[str]:
     entry = app_mark(top)
     if entry is not None and entry.source == "own":
         yield f"{spec.name}::mark-on-spec::{spec.name}"
@@ -192,12 +189,12 @@ def _reserved_panels(app: App) -> Iterator[str]:
             yield str(name)
 
 
-def _bad_replacement(root: App, mark: Deprecated, capability: str | None) -> Iterator[str]:
+def _bad_replacement(root: App, mark: Deprecated, plugin: str | None) -> Iterator[str]:
     replacement = mark.replacement
     if replacement is None:
         return
     if isinstance(replacement, str):
-        yield from _bad_text(root, replacement, capability)
+        yield from _bad_text(root, replacement, plugin)
         return
     path = replacement_path(root, replacement)
     if path is None:
@@ -210,7 +207,7 @@ def _bad_replacement(root: App, mark: Deprecated, capability: str | None) -> Ite
         yield f"the replacement `{' '.join(path)}` is itself deprecated"
 
 
-def _bad_text(root: App, text: str, capability: str | None) -> Iterator[str]:
+def _bad_text(root: App, text: str, plugin: str | None) -> Iterator[str]:
     if COMMAND_TEXT.match(text):
         words = text.split()[1:]
         current = root
@@ -220,8 +217,8 @@ def _bad_text(root: App, text: str, capability: str | None) -> Iterator[str]:
                 yield f"`{text}` does not resolve to a command"
                 return
             current = current[name]
-        if capability is not None and words[0] == capability:
-            yield f"`{text}` names a command of the same capability; pass the object"
+        if plugin is not None and words[0] == plugin:
+            yield f"`{text}` names a command of the same plugin; pass the object"
     elif KEY_TEXT.match(text):
         keys = {
             ".".join(descriptor.path)

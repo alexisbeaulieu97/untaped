@@ -1,4 +1,4 @@
-"""Shared test fixtures for the recipe capability."""
+"""Shared test fixtures for the recipe plugin."""
 
 from __future__ import annotations
 

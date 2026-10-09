@@ -1,6 +1,6 @@
-"""Capability composition root for the unified ``untaped`` shell.
+"""Plugin composition root for the unified ``untaped`` shell.
 
-Every capability is discovered through the ``untaped.capabilities``
+Every plugin is discovered through the ``untaped.plugins``
 entry-point group and validated before settings registration or app
 mounting. Only providers that survive validation
 contribute command trees, settings sections, skills, or doctor checks.
@@ -30,19 +30,6 @@ from untaped._root_options import (
     expand_alias,
     resolve_command,
 )
-from untaped.capabilities.registry import (
-    ROOT_MANAGEMENT_COMMANDS,
-    ApplicationSpec,
-    CapabilitySpec,
-    CompositionResult,
-    ProviderCandidate,
-    QuarantineRecord,
-    RegisteredCapability,
-    SkillAsset,
-    compose,
-    discover_candidates,
-    run_deferred_factory,
-)
 from untaped.cli import (
     apply_default_format,
     echo,
@@ -55,15 +42,27 @@ from untaped.errors import ConfigError
 from untaped.management import (
     build_root_alias_app,
     build_root_auth_app,
-    build_root_capabilities_app,
     build_root_config_app,
     build_root_doctor_app,
+    build_root_plugin_app,
     build_root_profile_app,
     build_root_setup_app,
     build_root_skills_app,
 )
-from untaped.management.capabilities import INSTALL_HINT
+from untaped.management.plugins import INSTALL_HINT
 from untaped.management.skills import check_installed_skills, composed_skills
+from untaped.plugins.registry import (
+    ROOT_MANAGEMENT_COMMANDS,
+    ApplicationSpec,
+    CompositionResult,
+    ProviderCandidate,
+    QuarantineRecord,
+    RegisteredPlugin,
+    SkillAsset,
+    compose,
+    discover_candidates,
+    run_deferred_factory,
+)
 from untaped.profile_resolver import set_profile_override
 from untaped.quiet import reset as _reset_quiet
 from untaped.settings import (
@@ -80,7 +79,7 @@ from untaped.stability import ROOT_PARAMETERS_GROUP, apply_marks, mark_app, pane
 from untaped.verbose import reset as _reset_verbose
 
 #: Unified executable name; also the identity reported before dispatch selects
-#: a capability.
+#: a plugin.
 SHELL_NAME = "untaped"
 
 #: Config section owned by the shell itself.
@@ -99,8 +98,8 @@ def _shell_app() -> App:
 SHELL_SPEC = ApplicationSpec(
     name=SHELL_NAME,
     app_factory=_shell_app,
-    config_section=SHELL_SECTION,
-    profile_model=ShellProfileSettings,
+    section=SHELL_SECTION,
+    settings=ShellProfileSettings,
     skills=(
         SkillAsset(
             name=SHELL_NAME,
@@ -119,26 +118,28 @@ SHELL_SPEC = ApplicationSpec(
 _COMPOSED_RESULT: CompositionResult | None = None
 
 
-def _register_shell_and_capabilities(result: CompositionResult) -> None:
-    """Register the shell plus every composed capability's settings sections.
+def _register_shell_and_plugins(result: CompositionResult) -> None:
+    """Register the shell plus every composed plugin's settings sections.
 
     Runs exactly once per composition, after validation succeeds: a provider
     that fails any check registers nothing.
     """
-    specs: list[ApplicationSpec | CapabilitySpec] = [SHELL_SPEC]
-    specs.extend(capability.spec for capability in result.capabilities)
-    for spec in specs:
-        stability = spec.stability if isinstance(spec, CapabilitySpec) else None
-        register_profile_settings(spec.config_section, spec.profile_model, stability)
-        if spec.state_model is not None:
-            register_state_settings(spec.config_section, spec.state_model)
+    register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
+    if SHELL_SPEC.state is not None:
+        register_state_settings(SHELL_SPEC.section, SHELL_SPEC.state)
+    for plugin in result.plugins:
+        spec = plugin.spec
+        if spec.settings is not None:
+            register_profile_settings(spec.name, spec.settings, spec.stability)
+        if spec.state is not None:
+            register_state_settings(spec.name, spec.state)
 
 
 def _warn_quarantined(result: CompositionResult) -> None:
-    """Emit one stderr warning per quarantined capability."""
+    """Emit one stderr warning per quarantined plugin."""
     for record in result.quarantine:
         echo(
-            f"warning: capability {record.name!r} from {record.distribution!r} quarantined "
+            f"warning: plugin {record.name!r} from {record.distribution!r} quarantined "
             f"[{record.reason}]: {record.detail}",
             err=True,
         )
@@ -157,7 +158,7 @@ def compose_root(
     global _COMPOSED_RESULT
     candidates = discover_candidates() if candidates is None else candidates
     result = compose(SHELL_SPEC, candidates)
-    _register_shell_and_capabilities(result)
+    _register_shell_and_plugins(result)
     _COMPOSED_RESULT = result
     _warn_quarantined(result)
     return result
@@ -175,7 +176,7 @@ def reset() -> None:
 
     Clears the profile/verbose/quiet overrides, the
     settings caches, and the config registry, then re-registers the
-    just-composed shell and capabilities. Exists for test isolation; never
+    just-composed shell and plugins. Exists for test isolation; never
     called implicitly between user invocations.
     """
     set_profile_override(None)
@@ -186,7 +187,7 @@ def reset() -> None:
     get_settings_model.cache_clear()
     get_profile_settings_model.cache_clear()
     if _COMPOSED_RESULT is not None:
-        _register_shell_and_capabilities(_COMPOSED_RESULT)
+        _register_shell_and_plugins(_COMPOSED_RESULT)
 
 
 def _clear_for_tests() -> None:
@@ -210,10 +211,10 @@ def build_root_app(
     *,
     candidates: Sequence[ProviderCandidate] | None = None,
 ) -> App:
-    """Compose the shell plus capabilities and return the root app.
+    """Compose the shell plus plugins and return the root app.
 
-    Mounts root management commands and each validated capability's sub-app
-    under its capability name, wires ``--version`` to installed-distribution
+    Mounts root management commands and each validated plugin's sub-app
+    under its plugin name, wires ``--version`` to installed-distribution
     metadata, installs position-independent root options, and registers shell
     completion. Drive ``app.meta`` directly in tests; run via
     :func:`run_root` in production.
@@ -222,7 +223,7 @@ def build_root_app(
     result = compose_root(candidates=candidates)
     root = _shell_app()
     root.meta.group_parameters = ROOT_PARAMETERS_GROUP  # keyed, so Parameters sorts last
-    if not result.capabilities and not result.quarantine:
+    if not result.plugins and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     management = {
         "config": build_root_config_app(shell=SHELL_SPEC, result=result),
@@ -236,14 +237,14 @@ def build_root_app(
         "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
         "auth": build_root_auth_app(result=result),
         "alias": build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
-        "capabilities": build_root_capabilities_app(result=result, candidates=candidates),
+        "plugin": build_root_plugin_app(result=result, candidates=candidates),
     }
     for name in ROOT_MANAGEMENT_COMMANDS:
         _mount(root, management.pop(name), name=name)
     if management:
         raise RuntimeError(f"unreserved management commands: {sorted(management)}")
-    for capability in result.capabilities:
-        _mount_capability(root, capability)
+    for plugin in result.plugins:
+        _mount_plugin(root, plugin)
     root.version = _resolve_version
     root.config = (apply_default_format,)
     skills = composed_skills(SHELL_SPEC, result)
@@ -268,8 +269,8 @@ def _mount(app: App, sub: App, *, name: str) -> None:
     apply_marks(sub, path=(name,))
 
 
-class _LazyCapabilityCommand(CommandSpec):
-    """Cyclopts lazy command backed by a capability's nullary app factory.
+class _LazyPluginCommand(CommandSpec):
+    """Cyclopts lazy command backed by a plugin's nullary app factory.
 
     Cyclopts lists an unresolved :class:`CommandSpec` from its ``help``
     without resolving it, and resolves it only when dispatch selects the
@@ -282,46 +283,46 @@ class _LazyCapabilityCommand(CommandSpec):
     and the internals tests in ``packages/untaped/tests/test_bootstrap.py``.
     """
 
-    def __init__(self, capability: RegisteredCapability, mount_parent: App) -> None:
-        spec = capability.spec
+    def __init__(self, plugin: RegisteredPlugin, mount_parent: App) -> None:
+        spec = plugin.spec
         super().__init__(
-            import_path=f"<capability {spec.name}>",
+            import_path=f"<plugin {spec.name}>",
             name=spec.name,
             help=spec.help,
-            # placed in its panel without importing the capability
+            # placed in its panel without importing the plugin
             group=None if spec.stability is None else panel_for(spec.stability),
         )
-        self._capability = capability
+        self._plugin = plugin
         self._mount_parent = mount_parent
 
     def resolve(self, parent_app: App) -> App:
-        """Build and cache the capability app (or its failing stand-in) on first access."""
+        """Build and cache the plugin app (or its failing stand-in) on first access."""
         resolved = self._resolved
         if resolved is not None:
             return resolved
-        built = run_deferred_factory(self._capability)
+        built = run_deferred_factory(self._plugin)
         app = _unbuildable_app(built) if isinstance(built, QuarantineRecord) else built
         _apply_parent_defaults_to_app(app, self._mount_parent)
         for flag in chain(app.help_flags, app.version_flags):
             app[flag].show = False
         if app._name_transform is None:
             app.name_transform = self._mount_parent.name_transform
-        if self._capability.spec.stability is not None:
-            mark_app(app, self._capability.spec.stability, source="spec")
-        apply_marks(app, path=(self._capability.spec.name,))
+        if self._plugin.spec.stability is not None:
+            mark_app(app, self._plugin.spec.stability, source="spec")
+        apply_marks(app, path=(self._plugin.spec.name,))
         self._resolved = app
         return app
 
 
 def _unbuildable_app(failure: QuarantineRecord) -> App:
-    """Stand-in for a capability whose deferred factory failed.
+    """Stand-in for a plugin whose deferred factory failed.
 
     Every invocation, ``--help`` included (it declares no help or version
     flags), fails with a ``ConfigError`` (exit 4) attributed to the
-    capability; nothing is unregistered and other capabilities are unaffected.
+    plugin; nothing is unregistered and other plugins are unaffected.
     """
     message = (
-        f"capability {failure.name!r} from {failure.distribution!r} "
+        f"plugin {failure.name!r} from {failure.distribution!r} "
         f"could not build its commands: {failure.detail}"
     )
     stub = App(
@@ -339,17 +340,19 @@ def _unbuildable_app(failure: QuarantineRecord) -> App:
     return stub
 
 
-def _mount_capability(root: App, capability: RegisteredCapability) -> None:
-    """Mount one composed capability, lazily when its factory was deferred."""
-    spec = capability.spec
-    if capability.app is not None:
+def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
+    """Mount one composed plugin's commands, lazily when its factory was deferred."""
+    spec = plugin.spec
+    if spec.app_factory is None:
+        return
+    if plugin.app is not None:
         if spec.stability is not None:
-            mark_app(capability.app, spec.stability, source="spec")
-        _mount(root, capability.app, name=spec.name)
+            mark_app(plugin.app, spec.stability, source="spec")
+        _mount(root, plugin.app, name=spec.name)
         return
     if spec.name in root:
         del root[spec.name]
-    root._commands[spec.name] = _LazyCapabilityCommand(capability, root)
+    root._commands[spec.name] = _LazyPluginCommand(plugin, root)
 
 
 #: Root commands that manage or diagnose skills themselves: the per-run

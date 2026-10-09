@@ -1,4 +1,4 @@
-"""Ansible capability for the unified ``untaped`` shell.
+"""Ansible plugin for the unified ``untaped`` shell.
 
 GitHub behavior is consumed through the closed API in
 :mod:`untaped_github.api`.
@@ -10,7 +10,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset
+from untaped.sdk import PluginSpec, SkillAsset
 from untaped_ansible.doctor import DOCTOR_CHECKS
 from untaped_ansible.settings import AnsibleSettings, AnsibleState
 
@@ -27,13 +27,12 @@ def build_app() -> App:
     return app
 
 
-SPEC = CapabilitySpec(
+SPEC = PluginSpec(
     name="ansible",
     app_factory=build_app,
     help="Analyze Ansible dependency graphs.",
-    config_section="ansible",
-    profile_model=AnsibleSettings,
-    state_model=AnsibleState,
+    settings=AnsibleSettings,
+    state=AnsibleState,
     skills=(
         SkillAsset(
             name="untaped-ansible",
@@ -51,6 +50,6 @@ SPEC = CapabilitySpec(
 )
 
 
-def provider() -> CapabilitySpec:
-    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+def provider() -> PluginSpec:
+    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
     return SPEC

@@ -1,4 +1,4 @@
-"""GitHub's declared public module: the only github code other capabilities import.
+"""GitHub's declared public module: the only github code other plugins import.
 
 Ansible uses it for repository inventory, client operations, reference
 probing, settings, and result/error types; workspace uses
@@ -60,7 +60,7 @@ def github_settings() -> GithubSettings:
     """Return the active profile's ``github`` settings (token, base URL, corpus).
 
     Ansible calls this instead of reading the ``github`` config section itself,
-    so the GitHub capability stays the only reader of its section.
+    so the GitHub plugin stays the only reader of its section.
     """
     return get_config_section("github", GithubSettings)
 

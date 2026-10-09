@@ -1,11 +1,11 @@
 ---
 name: untaped-hello
-description: Uses the example hello capability through `untaped hello`. Use when demonstrating how an untaped plugin works.
+description: Uses the example hello plugin through `untaped hello`. Use when demonstrating how an untaped plugin works.
 ---
 
 # untaped hello
 
-`untaped hello` is an example plugin. Use it to show how a capability
+`untaped hello` is an example plugin. Use it to show how a plugin
 installed beside `untaped` appears in the CLI; it does no real work.
 
 ## Setup
@@ -21,7 +21,7 @@ Settings live under `profiles.<name>.hello`. The only one is the greeting:
 
 ## Workflows
 
-1. Run `untaped capabilities` and check that `hello` is `ready`.
+1. Run `untaped plugin list` and check that `hello` is `ready`.
 2. Run `untaped hello greet` and compare the output with `hello.greeting`.
 
 ## Safety
@@ -37,4 +37,4 @@ Settings live under `profiles.<name>.hello`. The only one is the greeting:
   its `level`: a deprecated setting or flag, a skipped or partial result, a
   clamped option. Leave out progress and routine lines.
 - A `hello` row that is `quarantined` means the plugin failed to load; the
-  `untaped capabilities` reason says why.
+  `untaped plugin list` reason says why.

@@ -22,7 +22,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `doctor`, `setup` | `untaped.doctor_check` |
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
-| `capabilities` | `untaped.capability` |
+| `plugin list` | `untaped.plugin` |
 | `alias list` | `untaped.alias` |
 | `alias set`, `alias remove` | `untaped.alias_outcome` |
 

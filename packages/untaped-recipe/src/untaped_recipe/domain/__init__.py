@@ -1,4 +1,4 @@
-"""Domain models for the recipe capability."""
+"""Domain models for the recipe plugin."""
 
 from untaped_recipe.domain.plan import ApplyStatus, FileChange, TargetPlan, Verdict
 from untaped_recipe.domain.recipe import (

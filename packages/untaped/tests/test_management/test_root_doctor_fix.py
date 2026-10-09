@@ -18,14 +18,14 @@ import pytest
 
 from test_management.support import make_spec, write_config
 from untaped import bootstrap
-from untaped.capabilities.registry import (
-    CapabilityContext,
-    CapabilitySpec,
-    DoctorCheck,
-    DoctorResult,
-)
 from untaped.management import fix
 from untaped.management.fix import ChildRun
+from untaped.plugins.registry import (
+    DoctorCheck,
+    DoctorResult,
+    PluginContext,
+    PluginSpec,
+)
 from untaped.profile_resolver import profile_scope
 from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
 
@@ -55,7 +55,7 @@ def _check(
     fail: bool = False,
     online: bool = False,
 ) -> DoctorCheck:
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+    def run(_ctx: PluginContext) -> DoctorResult:
         if check_id in HEALED and check_id not in STUBBORN:
             return DoctorResult(id=check_id, ok=True, detail="healthy")
         return DoctorResult(
@@ -90,7 +90,7 @@ def _stub(
 _FIXES: dict[str, str] = {}
 
 
-def _spec(*checks: tuple[str, str | None, dict[str, Any]]) -> CapabilitySpec:
+def _spec(*checks: tuple[str, str | None, dict[str, Any]]) -> PluginSpec:
     _FIXES.clear()
     built = []
     for check_id, fix_, options in checks:
@@ -101,7 +101,7 @@ def _spec(*checks: tuple[str, str | None, dict[str, Any]]) -> CapabilitySpec:
 
 
 def _cli(
-    spec: CapabilitySpec,
+    spec: PluginSpec,
     *args: str,
     monkeypatch: pytest.MonkeyPatch,
     results: dict[str, ChildRun] | None = None,
@@ -167,7 +167,7 @@ def test_a_fix_running_doctor_or_an_unknown_command_is_refused(
     assert RAN == []
 
 
-def test_a_lazily_mounted_capability_command_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_lazily_mounted_plugin_command_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
     spec = _spec(("svc.own", "svc repair", {}))
     result = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
     assert result.exit_code == 0, result.output
@@ -292,11 +292,11 @@ def test_without_outcome_rows_the_detail_falls_back(
     assert _rows(result)[0]["detail"] == detail
 
 
-def test_rows_are_matched_by_capability_check_and_title(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_rows_are_matched_by_plugin_check_and_title(monkeypatch: pytest.MonkeyPatch) -> None:
     covered = {"rows": [("svc", "svc.a", "svc.a title")]}
     rows = [
-        {"capability": "svc", "check": "svc.a", "title": "other title", "status": "warn"},
-        {"capability": "svc", "check": "svc.a", "title": "svc.a title", "status": "pass"},
+        {"plugin": "svc", "check": "svc.a", "title": "other title", "status": "warn"},
+        {"plugin": "svc", "check": "svc.a", "title": "svc.a title", "status": "pass"},
     ]
     one = fix._Fix(argv=("x",), keys=tuple(covered["rows"]), checks=("svc.a",), automatic=True)
     run = ChildRun(code=0, rows=[], diagnostics=[])
@@ -345,7 +345,7 @@ def test_online_reaches_the_collection_and_the_recheck(monkeypatch: pytest.Monke
     calls: list[str] = []
     online = _check("svc.api", "auth migrate", online=True)
 
-    def counted(ctx: CapabilityContext) -> DoctorResult:
+    def counted(ctx: PluginContext) -> DoctorResult:
         calls.append("probe")
         return online.run(ctx)
 
@@ -461,7 +461,7 @@ def test_an_ascii_theme_swaps_the_glyphs(
 # ── the hint on doctor and setup ─────────────────────────────────────────────
 
 
-def _doctor(spec: CapabilitySpec, *root_args: str) -> CliResult:
+def _doctor(spec: PluginSpec, *root_args: str) -> CliResult:
     root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
     return invoke_cli(root.meta, [*root_args, "doctor"])
 
@@ -519,7 +519,7 @@ def test_every_shell_fix_row_has_a_check_id_of_its_own() -> None:
         trigger()
     root = bootstrap.build_root_app()
     rows = json.loads(invoke_cli(root.meta, ["doctor", "--format", "json"]).stdout)
-    shell = [row for row in rows if row["capability"] == bootstrap.SHELL_SPEC.name]
+    shell = [row for row in rows if row["plugin"] == bootstrap.SHELL_SPEC.name]
     fixable = {row["check"] for row in shell if row["fix"]}
     assert fixable == set(_SHELL_FIX_TRIGGERS)
     for check in fixable:

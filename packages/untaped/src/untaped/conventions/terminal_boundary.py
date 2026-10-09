@@ -1,9 +1,9 @@
-"""Terminal-boundary lint: a capability builds screens with ``untaped.sdk``, not prompt_toolkit.
+"""Terminal-boundary lint: a plugin builds screens with ``untaped.sdk``, not prompt_toolkit.
 
 Core's one terminal adapter (``untaped.screen.terminal``) is the only module
 that imports prompt_toolkit, so a screen never depends on a terminal library
 and the adapter can be replaced. Any import of ``prompt_toolkit`` or one of its
-submodules in a capability's source (function-level and ``TYPE_CHECKING``
+submodules in a plugin's source (function-level and ``TYPE_CHECKING``
 imports included) is flagged as
 ``<file>:<line>::terminal-boundary::imports prompt_toolkit; build screens with untaped.sdk``.
 

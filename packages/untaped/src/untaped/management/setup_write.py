@@ -23,11 +23,11 @@ from typing import Literal
 from pydantic import SecretStr
 
 from untaped.auth import token_env_names
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.config.repository import SettingsFileRepository
 from untaped.errors import ConfigError
 from untaped.management.auth import delete_stored_token, save_token
 from untaped.management.setup_state import ServiceState
+from untaped.plugins.registry import PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
 from untaped.profile_resolver import DEFAULT_PROFILE
@@ -87,7 +87,7 @@ def overlay_values(candidate: Candidate, current: ServiceState) -> dict[str, obj
 
 
 def write_candidate(
-    spec: CapabilitySpec,
+    spec: PluginSpec,
     candidate: Candidate,
     current: ServiceState,
     store: TokenStore | None,
@@ -100,7 +100,7 @@ def write_candidate(
     :class:`ConfigError` when a write is refused; what was written before stays.
     """
     notes: list[Note] = []
-    section, profile, how = spec.config_section, candidate.profile, candidate.how
+    section, profile, how = spec.name, candidate.profile, candidate.how
     if how in ("store", "move"):
         preflight()
     profiles = ProfileFileRepository()
@@ -127,7 +127,7 @@ def write_candidate(
         if current.own_command is not None:
             repo.unset_value(f"{section}.token_command", profile=profile)
             notes.append(("info", f"unset {section}.token_command in profile {profile}"))
-        env = token_env_names(spec.profile_model.model_construct())[0]
+        env = token_env_names(settings_model(spec).model_construct())[0]
         notes.append(("info", f"export ${env} in your shell for untaped {spec.name} to use it"))
     if how != "keep":
         notes.extend(_retire(section, current.own_command, argv))

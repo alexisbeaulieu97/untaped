@@ -11,7 +11,7 @@ different paragraphs, a fact under :data:`MIN_WORDS` words, or a paraphrase
 is still the reviewer's to catch.
 
 A skill must stand alone for an agent that has only the installed CLI, so it
-may restate docs; skill files are compared only with the same capability's
+may restate docs; skill files are compared only with the same plugin's
 other skill files and README. Intentional README repeats go in
 :data:`ALLOWED`, each with its reason.
 """
@@ -80,7 +80,7 @@ def overlap(a: str, b: str) -> float:
 
 
 def _owner(path: Path) -> tuple[str, str | None]:
-    """``("skill"|"readme"|"doc", capability)`` for a page."""
+    """``("skill"|"readme"|"doc", plugin)`` for a page."""
     parts = path.relative_to(REPO_ROOT).parts
     if "skills" in parts:
         return "skill", parts[1]
@@ -90,7 +90,7 @@ def _owner(path: Path) -> tuple[str, str | None]:
 
 
 def comparable(first: Path, second: Path) -> bool:
-    """Skill files meet only their own capability's skill files and README."""
+    """Skill files meet only their own plugin's skill files and README."""
     (kind_a, cap_a), (kind_b, cap_b) = _owner(first), _owner(second)
     if "skill" not in (kind_a, kind_b):
         return True

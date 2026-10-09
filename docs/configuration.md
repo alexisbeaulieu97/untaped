@@ -1,8 +1,8 @@
 # Configuration
 
-Settings live in profiles in `config.yml`; data a capability manages itself
+Settings live in profiles in `config.yml`; data a plugin manages itself
 lives in `state.yml`. The [configuration reference](./reference/config.md)
-lists every setting, its default and its environment variable. Capability
+lists every setting, its default and its environment variable. Plugin
 settings live in their own sections (`github.token`, `awx.base_url`).
 
 ## File and layout
@@ -10,7 +10,7 @@ settings live in their own sections (`github.token`, `awx.base_url`).
 ```text
 ~/.untaped/config.yml             # settings and profiles (default)
 $UNTAPED_CONFIG                   # one-process override
-~/.untaped/state.yml              # capability state (default: derived from the config file)
+~/.untaped/state.yml              # plugin state (default: derived from the config file)
 $UNTAPED_STATE                    # one-process override
 ```
 
@@ -48,7 +48,7 @@ it. `config edit` refuses to open while `config.yml` or `state.yml` has a
 newer format, but opens a config with an invalid `format_version` so you can
 fix it.
 
-`config` and `profile` commands write only `config.yml`; capability state
+`config` and `profile` commands write only `config.yml`; plugin state
 writes touch only `state.yml`.
 
 `config.yml` keeps settings under `profiles.<name>`. `active` is optional;
@@ -87,7 +87,7 @@ profiles:
       token_command: [pass, show, untaped/prod/awx]
 ```
 
-`state.yml` holds one section per capability, outside profiles:
+`state.yml` holds one section per plugin, outside profiles:
 
 ```yaml
 workspace:
@@ -143,7 +143,7 @@ the `active:` key, then `default`. The first three must name an existing
 profile; before any profile exists, only `default` may be named.
 
 `--profile` is a root option and goes anywhere in the command: before the
-capability, between command names (`untaped github --profile work whoami`) or
+plugin, between command names (`untaped github --profile work whoami`) or
 after the command. So do `--verbose`/`-v`, `--quiet`/`-q` and `--deprecated`.
 Tokens after `--` belong to the command and are never read as `untaped` options.
 
@@ -163,7 +163,7 @@ Tokens after `--` belong to the command and are never read as `untaped` options.
 
 ## Settings
 
-Capability keys are always fully qualified (`awx.base_url`, never
+Plugin keys are always fully qualified (`awx.base_url`, never
 `base_url`). `http.*`, `ui.*` and `skills.*` are shared root sections.
 
 ```bash
@@ -193,8 +193,8 @@ parsing it as YAML:
 
 `config set` and `config unset` write to the active profile, or the one the
 root `--profile` names, and print an `untaped.setting_outcome` record that
-never echoes the value. Settings a capability manages as state are rejected
-with a "managed by untaped …" error; use the owning capability's commands.
+never echoes the value. Settings a plugin manages as state are rejected
+with a "managed by untaped …" error; use the owning plugin's commands.
 
 `config get` prints only the value (nothing when unset). Structured output
 adds its source, profile and default, with secrets masked as `"***"` unless
@@ -214,7 +214,7 @@ checked: copy the file over `config.yml` yourself and run `untaped doctor`.
 `untaped doctor` checks offline, one row per check: the config and state
 files, the selected profile, every section, unknown keys, renamed, retired or
 deprecated keys in any profile, a `pass` token command that gpg cannot serve
-here, installed skills and each capability's own checks. `--online` also
+here, installed skills and each plugin's own checks. `--online` also
 authenticates against each configured service. A failed check makes it exit
 nonzero; a `warn` row does not. To write a profile's service settings
 interactively, see [Getting started](./getting-started.md#set-up-your-services).
@@ -247,13 +247,13 @@ stored argv goes to `untaped` as is; no shell runs it.
 - To remove an alias inherited from `default`, run
   `untaped --profile default alias remove NAME`.
 - Names use lowercase letters, digits and dashes. An alias never shadows a
-  built-in command or capability: `alias set` rejects the name (exit 2) and a
+  built-in command or plugin: `alias set` rejects the name (exit 2) and a
   stored one is ignored.
 - An alias is expanded once; it cannot run another alias.
 
 ## TLS and shared UI settings
 
-`http.*` and `ui.*` are profile settings shared by all capabilities. HTTP
+`http.*` and `ui.*` are profile settings shared by all plugins. HTTP
 clients use the operating system trust store by default. To trust a corporate
 certificate, prefer a pinned CA bundle:
 

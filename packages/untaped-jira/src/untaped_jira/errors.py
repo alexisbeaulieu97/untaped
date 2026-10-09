@@ -1,4 +1,4 @@
-"""Typed exceptions for the Jira capability.
+"""Typed exceptions for the Jira plugin.
 
 Every Jira failure subclasses :class:`JiraError`. The mapping from HTTP
 statuses to these types lives in ``infrastructure.errors``, so the
@@ -15,7 +15,7 @@ from untaped.sdk import ErrorCategory, UntapedError
 
 
 class JiraError(UntapedError):
-    """Base for Jira capability failures."""
+    """Base for Jira plugin failures."""
 
     system = "jira"
 

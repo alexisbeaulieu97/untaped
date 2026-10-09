@@ -1,4 +1,4 @@
-# Capability conventions
+# Plugin conventions
 
 Every `untaped` command, first-party or third-party, looks and behaves the same
 way. Each rule below names the `untaped.sdk` helper that implements it; use
@@ -7,9 +7,9 @@ the helper rather than your own version.
 A provider also follows these rules:
 
 - Provider code imports only `untaped.sdk` (plus `untaped.testing` in
-  tests), and another capability only through its `api` module (see
-  [Depending on another capability](#depending-on-another-capability)).
-- A capability reads and writes only its own config section, state, skills
+  tests), and another plugin only through its `api` module (see
+  [Depending on another plugin](#depending-on-another-plugin)).
+- A plugin reads and writes only its own config section, state, skills
   and doctor checks.
 - Layering is `cli → application → domain`, with `infrastructure → domain`;
   `domain` imports nothing from the other layers.
@@ -20,12 +20,13 @@ A provider also follows these rules:
 
 [`check_conventions`](#enforcement) flags part of this:
 
+- `plugin-name`: a distribution or import package not named after the plugin;
 - `foreign-section`: a `get_config_section(...)` or `.section(...)` call
-  naming another capability's section as a string literal;
+  naming another plugin's section as a string literal;
 - `layer`: an import against the layer direction, and `settings`: settings
   resolved outside `cli`;
 - `errors-module`, `exception-base` and `error-system`: no `errors.py`, an
-  exception that is not an `UntapedError`, or a capability's base error
+  exception that is not an `UntapedError`, or a plugin's base error
   class without a `system`;
 - `undeclared-write`, `mutation-format` and `destructive-controls`: the
   write rules under [Options](#options).
@@ -37,8 +38,7 @@ checks, named in each violation line.
 
 ## Exit codes
 
-[Exit codes](./exit-codes.md) defines what each code means. To
-produce one:
+[Exit codes](./exit-codes.md) defines what each code means. To produce one:
 
 - 0: return normally.
 - 1: raise an `UntapedError` whose category is `failed`, `not_found`,
@@ -63,7 +63,7 @@ configuration or remote state are another `UntapedError`.
 Every `UntapedError` has a `category` (`ErrorCategory`) that selects the exit
 code, and a `system` that says who is responsible (`untaped`, `local`, `git`,
 or the service section, such as `awx`); [Scripting](./exit-codes.md#categories)
-lists the categories. A capability's error classes declare them as class defaults
+lists the categories. A plugin's error classes declare them as class defaults
 (`category = ErrorCategory.NOT_FOUND`, `system = "awx"`); pass
 `category=`, `system=`, `hint=` or `details=` to override one instance.
 
@@ -71,7 +71,7 @@ lists the categories. A capability's error classes declare them as class default
   and exits 4. An invalid input *file* the command reads, or a value the user
   gave that fails validation, is `invalid` (exit 1), not config.
 - HTTP errors take their category from the status and their `system` from
-  `connected_client(section=…)`. A mapper that turns them into capability
+  `connected_client(section=…)`. A mapper that turns them into plugin
   errors keeps both: `JiraApiError(msg, **attribution(err))`, and a 401 stays
   `auth` even when it becomes a `ConfigError` for its hint.
 - Put a follow-up command in `hint=` (``"run `untaped auth set awx`"``)
@@ -236,22 +236,22 @@ free, but a command that writes declares it with `@writes`, or
 ## Enforcement
 
 `untaped.testing.check_conventions(NAME)` runs these checks for one
-capability; each capability's tests call it. `import-boundary` enforces the
-import rules above and in [Depending on another capability](#depending-on-another-capability);
+plugin; each plugin's tests call it. `import-boundary` enforces the
+import rules above and in [Depending on another plugin](#depending-on-another-plugin);
 `terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md));
 the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 `# untaped: allow <rule>` on the flagged node's first line allows one violation,
 except the default-table-columns and stability rules.
 
-## Depending on another capability
+## Depending on another plugin
 
-A capability may import another only through that capability's public
+A plugin may import another only through that plugin's public
 module, `<package>.api` (for example `untaped_github.api`), never its other
 internals, and only when its distribution depends on the other's (a
 dependency under an extra does not count). Dependencies are one-way, and
-imports of another capability stay lazy on CLI paths; a settings model that
-validates against the other capability may import it at module top. An `api`
-module keeps a closed `__all__`. Logic two capabilities need lives in exactly
+imports of another plugin stay lazy on CLI paths; a settings model that
+validates against the other plugin may import it at module top. An `api`
+module keeps a closed `__all__`. Logic two plugins need lives in exactly
 one owner's `api` module, never forked into both.
 
 ## Stable helper surface
@@ -265,7 +265,7 @@ The sections above name the helper for each rule. Beyond those:
   than `app_context().settings`.
 - For a token, declare `token_sources: ClassVar[TokenSources] =
   TokenSources(env=(...))` and a `token_command: TokenCommand = None` field
-  beside `token` on your profile model; see [Tokens](../configuration.md#tokens).
+  beside `token` on your settings model; see [Tokens](../configuration.md#tokens).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
 - To keep a bare-repo cache, use `RepoCache` rather than your own git plumbing.
@@ -297,7 +297,7 @@ def items_command(
 {"untaped": "1", "kind": "acme.item", "record": {"repo": "octocat/Hello-World"}}
 ```
 
-Kinds are the capability name and a snake_case noun, with an optional
+Kinds are the plugin name and a snake_case noun, with an optional
 `.summary` suffix for informational rows. For a `--stdin` command,
 `read_identifiers()` reads bare identifiers or a pipe stream. Declare the
 kinds you understand with `accept_kinds`, so a record of any other kind exits
@@ -319,7 +319,7 @@ When an empty pipe (a filter that matched nothing) should do nothing, pass
 must treat as "nothing to do", never as "everything". A terminal stdin with
 nothing piped still raises.
 
-The provider joins pipelines with the first-party capabilities:
+The provider joins pipelines with the first-party plugins:
 
 ```bash
 untaped github search repos --format pipe | untaped acme import --stdin
@@ -333,8 +333,8 @@ re-declare it as `target_path: AbsolutePath` so it leads the output.
 
 ## Managed state
 
-A capability that writes structured state declares a disjoint `state_model`
-and writes through the state helpers:
+A plugin that writes structured state declares a `state` model, whose
+fields are disjoint from its `settings`, and writes through the state helpers:
 
 ```python
 from untaped.sdk import StateCollection
@@ -344,7 +344,7 @@ _items.upsert({"id": "one", "label": "Example"})
 ```
 
 State lives in the [state file](../configuration.md#file-and-layout), outside
-profiles, and is never a user setting. The helpers keep other capabilities'
+profiles, and is never a user setting. The helpers keep other plugins'
 sections intact under the shared lock, so never read or write either file
 directly.
 
@@ -360,14 +360,14 @@ directly.
 - A duration ends in its unit: `_seconds`, `_minutes`, `_hours`, `_days` or
   `_ms`.
 
-`check_conventions` flags a profile model field that breaks one of these
+`check_conventions` flags a settings model field that breaks one of these
 (`settings-naming`) and declarations that break the rules below
 (`settings-renames`). A name that is the established term for its value
 keeps it with `# untaped: allow settings-naming` on the field's line.
 
 ### Renaming a setting
 
-Declare a rename on the section's profile model, never on a nested model,
+Declare a rename on the section's settings model, never on a nested model,
 with dotted paths relative to the section:
 
 ```python

@@ -1,6 +1,6 @@
 """Message helpers that keep stderr wording consistent across the suite.
 
-Every capability phrases counts, quoted names, "not found" errors, hints and
+Every plugin phrases counts, quoted names, "not found" errors, hints and
 summaries through these helpers instead of hand-rolled f-strings, so the
 conventions in ``docs/reference/conventions.md#messages-stderr`` hold in one place:
 
