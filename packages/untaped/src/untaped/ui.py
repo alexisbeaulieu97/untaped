@@ -392,12 +392,26 @@ class UiContext:
         result raises :class:`OperationCancelledError`; an interrupt raises
         :class:`PromptInterruptedError` (exit 130), like every prompt.
         """
-        from untaped.screen.core import Quit  # noqa: PLC0415 - keeps screens off the startup path
+        from untaped.screen.core import (  # noqa: PLC0415 - keeps screens off the startup path
+            Cancel,
+            Quit,
+        )
 
         with self._screen_terminal(command=screen.command, alternative=screen.alternative):
+            # Read inside the block: the default backend is built on the swapped streams.
+            backend = self.prompt_backend
+            run_screen: Callable[..., Quit[R] | Cancel] | None = getattr(
+                backend, "run_screen", None
+            )
+            if run_screen is None:
+                raise ConfigError(
+                    f"prompt backend {type(backend).__name__} cannot run screens: "
+                    "it has no run_screen method",
+                    category="failed",
+                    system="untaped",
+                )
             try:
-                # Read inside the block: the default backend is built on the swapped streams.
-                outcome = self.prompt_backend.run_screen(screen, theme=self.theme)
+                outcome = run_screen(screen, theme=self.theme)
             except (ConfigError, EOFError, KeyboardInterrupt) as exc:
                 raise handle_prompt_exception(exc) from exc
         if isinstance(outcome, Quit):
@@ -528,7 +542,10 @@ def no_terminal_message(command: str, alternative: str) -> str:
     An empty ``command`` or ``alternative`` (a picker request may leave them out)
     is said in words instead of quoted as a command.
     """
-    from untaped.picker import GENERIC_ALTERNATIVE, GENERIC_COMMAND  # noqa: PLC0415 - refusal path only
+    from untaped.picker import (  # noqa: PLC0415 - refusal path only
+        GENERIC_ALTERNATIVE,
+        GENERIC_COMMAND,
+    )
 
     named = f"`{command}`" if command else GENERIC_COMMAND
     offer = f"`{alternative}`" if alternative else GENERIC_ALTERNATIVE
