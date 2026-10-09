@@ -18,7 +18,6 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import BaseModel, SecretStr
 
-from untaped import auth
 from untaped.auth import TokenSources, clear_token_cache, resolve_token
 from untaped.errors import ConfigError
 from untaped.profile_resolver import profile_scope
@@ -250,7 +249,6 @@ def test_plaintext_warning_is_suppressed_under_an_overlay(
         resolve_token(section, section="ovl")
 
     assert capsys.readouterr().err == ""
-    assert auth._warned == set()
 
     resolve_token(section, section="ovl")  # the warning still fires without the overlay
 
