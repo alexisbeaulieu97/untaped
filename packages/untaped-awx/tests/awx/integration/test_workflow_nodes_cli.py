@@ -7,6 +7,7 @@ and node 2 (sub-workflow 200 ``nightly-backups``), which holds nodes 3 and 4
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -132,6 +133,17 @@ def test_nodes_selection(tree: Any, args: list[str], expected: list[int]) -> Non
 def test_nodes_stdin_recursive_type_filter_end_to_end(tree: Any) -> None:
     ids = _ids("--stdin", "--by-id", "--recursive", "--type", "job_template", input="100\n")
     assert sorted(ids) == [1, 3, 4]
+
+
+def test_nodes_stdin_typed_records_use_their_id_not_their_name(tree: Any) -> None:
+    """A piped workflow record is read by ``id``, even when its name is shared or stale."""
+    tree.seed("organizations", id=2, name="Other")
+    _workflow(tree, 300, "weekly-rollup", 2, "Other")
+    piped = "".join(
+        json.dumps({"untaped": "1", "kind": "awx.workflow_job_template", "record": record}) + "\n"
+        for record in ({"id": 200, "name": "weekly-rollup"}, {"id": 300, "name": "gone"})
+    )
+    assert sorted(_ids("--stdin", input=piped)) == [3, 4]
 
 
 @pytest.mark.parametrize(

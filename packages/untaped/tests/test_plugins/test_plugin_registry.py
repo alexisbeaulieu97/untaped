@@ -1,4 +1,4 @@
-"""Tests for composition records and the happy-path pipeline (spec §§1-5)."""
+"""Tests for composition records and the happy-path pipeline."""
 
 from __future__ import annotations
 

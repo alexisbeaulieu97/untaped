@@ -21,14 +21,12 @@ from untaped.auth import takes_token_command, token_env_names, token_instead
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
-from untaped.management.setup_state import ServiceState, profile_view, service_state
-from untaped.messages import command_argv, command_line
+from untaped.management.setup_state import ServiceState, service_states, service_store
+from untaped.messages import command_argv, command_line, split_profile
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
-from untaped.settings import active_settings_layout
 from untaped.theme import OutputFormat
-from untaped.token_store import pick_store
 
 Row = dict[str, object]
 State = Literal["done", "todo", "failed", "skipped"]
@@ -51,15 +49,11 @@ def plan_rows(
     """Every setup step for ``services`` in ``profile``, in the order to run them."""
     exists = _profile_exists(profile)
     rows = [_profile_row(shell, profile, exists=exists)]
-    raw = read_config_dict()
-    values = profile_view(raw, profile)
-    own = active_settings_layout().profile_data(raw, profile) or {}
-    commands = any(takes_token_command(settings_model(spec)) for spec in services.values())
-    store = pick_store() if commands else None
+    states = service_states(services, profile, read_config_dict())
+    store = service_store(services)
     ready: list[str] = []
     for name, spec in services.items():
-        state = service_state(spec, values.get(spec.name), own, profile, raw)
-        steps = _service_rows(spec, state, profile, store_name=store.name if store else None)
+        steps = _service_rows(spec, states[name], profile, store_name=store.name if store else None)
         rows.extend(steps)
         if exists and all(row["state"] == "done" for row in steps):
             ready.append(name)
@@ -218,7 +212,7 @@ def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
     detail = str(row["detail"])
     fix = row.get("fix")
     run = fix if isinstance(fix, list) else None
-    if run is not None and _command(run)[:3] == ["config", "set", f"{section}.token"]:
+    if run is not None and split_profile(run)[1][:3] == ["config", "set", f"{section}.token"]:
         # Models without `token_command`: never suggest storing a token in the config.
         settings = settings_model(spec).model_construct()
         detail = f"{detail}; export {token_instead(settings, section=section)} with a working token"
@@ -228,11 +222,6 @@ def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
     )
 
 
-def _command(run: list[str]) -> list[str]:
-    """``run`` without its leading ``--profile NAME``."""
-    return run[2:] if run[:1] == ["--profile"] else run
-
-
 def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
     """Who runs a fix: an automatic one is the agent's.
 
@@ -240,7 +229,7 @@ def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
     """
     if automatic:
         return "agent"
-    command = _command(run or [])
+    command = split_profile(run or [])[1]
     secret = command[:1] == ["auth"] or any(
         arg.endswith((".token", ".token_command")) for arg in command
     )

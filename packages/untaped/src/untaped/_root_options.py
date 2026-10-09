@@ -1,7 +1,10 @@
-"""Position-independent root-option machinery for the root app.
+"""How the root app reads a command line before dispatch.
 
-The ``--profile`` / ``--verbose`` / ``--quiet`` option table and dispatch
-helpers live here so the bootstrap composition root has one implementation.
+The root options (``--profile``, ``--verbose``, ``--quiet``, ``--deprecated``),
+accepted anywhere before the command's own arguments; the rewriting of a
+command's loose or deprecated spelling to its registered name, with the
+deprecation warnings; and the expansion of a user alias (``shell.aliases``).
+The bootstrap composition root uses this one implementation.
 """
 
 from __future__ import annotations

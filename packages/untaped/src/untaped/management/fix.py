@@ -39,7 +39,7 @@ from untaped.management.doctor import (
     placeholders,
     run_line,
 )
-from untaped.messages import hint, not_found, summary
+from untaped.messages import command_argv, hint, not_found, split_profile, summary
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
@@ -93,7 +93,7 @@ def run_fixes(
     if not fixes:
         ui.message("info", "nothing to fix")
         _emit([], fmt=fmt, columns=columns, profile=profile)
-        _exit_unhealthy(rows)
+        _exit_unhealthy(rows, profile)
         return
     refusals = {fix: _refusal(fix, builtin_for) for fix in fixes}
     runnable = [fix for fix in fixes if fix.automatic and refusals[fix] is None]
@@ -131,7 +131,7 @@ def run_fixes(
     if dry_run:
         return
     finish(counts["failed"] > 0 or counts["partial"] > 0)
-    _exit_unhealthy(after)
+    _exit_unhealthy(after, profile)
 
 
 def _select(rows: list[dict[str, object]]) -> list[_Fix]:
@@ -151,18 +151,9 @@ def _key(row: dict[str, object]) -> Key:
     return (str(row["plugin"]), str(row["check"]), str(row["title"]))
 
 
-def _command(argv: Sequence[str]) -> list[str]:
-    """``argv`` without its leading ``--profile NAME`` (or ``--profile=NAME``)."""
-    if list(argv[:1]) == ["--profile"]:
-        return list(argv[2:])
-    if argv and argv[0].startswith("--profile="):
-        return list(argv[1:])
-    return list(argv)
-
-
 def _refusal(fix: _Fix, builtin_for: Callable[[str], str | None]) -> UntapedError | None:
     """Why ``fix`` never runs: it runs ``doctor``, or names no root command (a check bug)."""
-    command = _command(fix.argv)
+    command = split_profile(fix.argv)[1]
     first = command[0] if command else ""
     name = builtin_for(first) if first else None
     if name is None:
@@ -341,10 +332,10 @@ def _emit(rows: list[Row], *, fmt: OutputFormat, columns: list[str] | None, prof
     emit_isolated(shown, fmt=fmt, columns=columns, kind=KIND)
 
 
-def _exit_unhealthy(rows: list[dict[str, object]]) -> None:
-    """Exit 1, pointing at ``doctor``, when a check still fails."""
+def _exit_unhealthy(rows: list[dict[str, object]], profile: str) -> None:
+    """Exit 1, pointing at ``doctor`` for ``profile``, when a check still fails."""
     if any(row["status"] == "fail" for row in rows):
-        echo(hint("doctor"), err=True)
+        echo(hint(run_line(command_argv("doctor", profile=profile), profile)), err=True)
         raise SystemExit(ExitCode.FAILURE)
 
 

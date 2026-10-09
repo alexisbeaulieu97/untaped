@@ -1,9 +1,9 @@
-"""Integration tests for the Wave 1.4 root management surface.
+"""Integration tests for the root management surface.
 
-The unified root mounts exactly the five management commands (no plugin
-subtrees ship in 1.4 — workspace mounts in 1.5), reachable through the
-position-independent root-option dispatch, with the §4 Jira-isolation case
-covered end to end through the real surface.
+The unified root mounts the management commands beside the plugins,
+reachable through the position-independent root-option dispatch, with the
+Jira-isolation case (broken Jira values block nothing else) covered end to
+end through the real surface.
 """
 
 from __future__ import annotations
@@ -215,3 +215,11 @@ def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
         prompt_backend=ScriptedPromptBackend(interrupt=True),
     )
     assert result.exit_code == 130
+
+
+def test_a_management_app_without_a_reserved_name_fails_the_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(bootstrap, "ROOT_MANAGEMENT_COMMANDS", ("config", "profile"))
+    with pytest.raises(RuntimeError, match=r"unreserved management commands: .*'alias'"):
+        bootstrap.build_root_app(candidates=())

@@ -419,7 +419,7 @@ def test_new_editor_secret_never_leaks(fake_aap: Any, editor: Any, fmt: str) -> 
 def test_reopen_uses_fresh_default_backend_stream_each_time(
     fake_aap: Any, editor: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from untaped.prompts import PromptToolkitPromptBackend
+    from untaped.prompts import TerminalPromptBackend
 
     seed(fake_aap, "projects")
     original: list[Any] = []
@@ -436,7 +436,7 @@ def test_reopen_uses_fresh_default_backend_stream_each_time(
         streams.append(backend.stdin)
         return True
 
-    monkeypatch.setattr(PromptToolkitPromptBackend, "confirm", confirm)
+    monkeypatch.setattr(TerminalPromptBackend, "confirm", confirm)
     paths = editor(invalid, lambda _: "[invalid", lambda _: changed(original))
     result = CliInvoker().invoke(
         app,

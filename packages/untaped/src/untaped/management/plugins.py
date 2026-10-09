@@ -1,11 +1,11 @@
-"""Root ``untaped plugin`` group and its ``list`` command (Wave 1.4, spec §7.3).
+"""Root ``untaped plugin`` group and its ``list`` command.
 
 ``plugin list`` reports one record per candidate
 provider — ``name/status/distribution/version``, in name order — from the
 composition outcome: ready rows for committed plugins plus quarantined
 rows carrying the entry-point name (or the ``unknown`` sentinels when the
 provider never resolved). The listing never touches settings, so invalid
-plugin values cannot block it (spec §4 failure isolation).
+plugin values cannot block it.
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@
 ask one question each, so each is a small ``layout="inline"`` screen built from
 the same components as every other screen (``TextInput``, ``SecretInput``,
 ``SingleList``, ``SearchList``, ``MultiList``): one prompt stack, one look, the
-theme's symbols, colors and border. :class:`~untaped.prompts.PromptToolkitPromptBackend`
+theme's symbols, colors and border. :class:`~untaped.prompts.TerminalPromptBackend`
 builds a screen and runs it; nothing here touches a terminal. ``select_screen`` and
 ``multiselect_screen`` take the caller's choices and answer with positions, so the
 backend maps an answer back to its choice (two rows may share a value).

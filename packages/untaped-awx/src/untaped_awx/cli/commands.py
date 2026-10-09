@@ -688,7 +688,9 @@ def jobs_wait(
     if records:
         emit(records, fmt=fmt, columns=columns, table_columns=_JOB_WAIT_COLUMNS, kind="awx.job")
     for job_id in timed_out:
-        ctx.progress_ui().message("warning", f"timeout: job {job_id} did not reach terminal state")
+        ctx.progress_ui().message(
+            "warning", f"job {job_id}: timed out before reaching a terminal state"
+        )
     finish(any_failed or bool(timed_out) or any(r["status"] != "successful" for r in records))
 
 

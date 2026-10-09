@@ -1,4 +1,4 @@
-"""Shared doubles for root management-surface tests (Wave 1.4)."""
+"""Shared doubles for root management-surface tests."""
 
 from __future__ import annotations
 

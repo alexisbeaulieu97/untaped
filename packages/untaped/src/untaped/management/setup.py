@@ -25,7 +25,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.auth import takes_token_command
 from untaped.batch import finish
 from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
 from untaped.config_file import read_config_dict
@@ -38,11 +37,10 @@ from untaped.management.setup_plan import (
     pending,
     plan_rows,
 )
-from untaped.management.setup_state import service_states, setup_services
-from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
+from untaped.management.setup_state import service_states, service_store, setup_services
+from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
-from untaped.token_store import pick_store
 from untaped.ui import ui_context
 
 OnlyOption = Annotated[
@@ -113,13 +111,11 @@ def _run(
     services = setup_services(result, only)
     raw = read_config_dict()
     active = selected_profile()
-    # One probe per run: a dead Secret Service costs its timeout once.
-    commands = any(takes_token_command(settings_model(spec)) for spec in services.values())
     screen = setup_screen(
         result,
         services,
         profile=active,
-        store=pick_store() if commands else None,
+        store=service_store(services),
         states=service_states(services, active, raw),
         profiles=sorted(raw.get("profiles") or ()),
     )
@@ -128,7 +124,7 @@ def _run(
         ui.message(kind, text)
     profile = outcome.profile
     if not outcome.touched:
-        ui.message("info", "no plugins selected; no changes made")
+        ui.message("info", "nothing saved; no changes made")
     else:
         rows = selected_check_rows(shell, result, profile, frozenset(outcome.touched))
         try:

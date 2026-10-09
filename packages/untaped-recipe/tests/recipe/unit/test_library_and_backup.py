@@ -30,11 +30,11 @@ from untaped_recipe.infrastructure.pack_store import PackLibrary, pack_content_h
 
 def test_hook_resolver_uses_recipe_local_then_installed_pack(tmp_path: Path) -> None:
     recipe_dir = tmp_path / "recipe"
-    library_root = tmp_path / "library"
+    library_dir = tmp_path / "library"
     pack_source = tmp_path / "pack-source"
     _write_hook_project(recipe_dir, hook_name="pick", package="local_hooks")
     _write_hook_project(pack_source, hook_name="pick", package="pack_hooks")
-    PackLibrary(library_root=library_root).add(
+    PackLibrary(library_dir=library_dir).add(
         pack_source,
         source=str(pack_source),
         rev=None,
@@ -42,14 +42,14 @@ def test_hook_resolver_uses_recipe_local_then_installed_pack(tmp_path: Path) -> 
         force=False,
     )
 
-    local_ref = HookResolver(library_root=library_root).resolve("pick", recipe_dir)
-    installed_ref = HookResolver(library_root=library_root).resolve("pick", None)
+    local_ref = HookResolver(library_dir=library_dir).resolve("pick", recipe_dir)
+    installed_ref = HookResolver(library_dir=library_dir).resolve("pick", None)
 
     assert isinstance(local_ref, UvHookRef)
     assert local_ref.project_root == recipe_dir
     assert local_ref.module == "local_hooks.hooks.pick"
     assert isinstance(installed_ref, UvHookRef)
-    assert installed_ref.project_root == library_root / "packs" / "shared"
+    assert installed_ref.project_root == library_dir / "packs" / "shared"
     assert installed_ref.module == "pack_hooks.hooks.pick"
 
 
@@ -58,24 +58,24 @@ def test_hook_resolver_bare_name_in_pack_does_not_fall_through_to_other_packs(
 ) -> None:
     own_pack = tmp_path / "own"
     own_pack.mkdir()
-    library_root = tmp_path / "library"
+    library_dir = tmp_path / "library"
     other_source = tmp_path / "other-source"
     _write_hook_project(other_source, hook_name="pick", package="other_hooks")
-    PackLibrary(library_root=library_root).add(
+    PackLibrary(library_dir=library_dir).add(
         other_source,
         source=str(other_source),
         rev=None,
         name="other",
         force=False,
     )
-    resolver = HookResolver(library_root=library_root)
+    resolver = HookResolver(library_dir=library_dir)
 
     with pytest.raises(HookNotFoundError, match="hook not found: 'pick'"):
         resolver.resolve("pick", own_pack)
     qualified = resolver.resolve("other/pick", own_pack)
 
     assert isinstance(qualified, UvHookRef)
-    assert qualified.project_root == library_root / "packs" / "other"
+    assert qualified.project_root == library_dir / "packs" / "other"
 
 
 @pytest.mark.parametrize("name", ["nope", "acme/nope"])
@@ -88,7 +88,7 @@ def test_hook_resolver_rejects_hook_paths_that_escape_recipe(tmp_path: Path) -> 
     recipe_dir = tmp_path / "recipe"
     recipe_dir.mkdir()
     with pytest.raises(ValueError, match="safe hook name"):
-        HookResolver(library_root=tmp_path / "library").resolve("../outside.py", recipe_dir)
+        HookResolver(library_dir=tmp_path / "library").resolve("../outside.py", recipe_dir)
 
 
 def _write_hook_project(
@@ -116,7 +116,7 @@ def _write_hook_project(
 
 
 def test_pack_add_ignores_dev_and_build_junk(tmp_path: Path) -> None:
-    library_root = tmp_path / "library"
+    library_dir = tmp_path / "library"
     pack_source = tmp_path / "pack-source"
     _write_hook_project(pack_source, hook_name="pick")
     (pack_source / ".venv" / "bin").mkdir(parents=True)
@@ -128,7 +128,7 @@ def test_pack_add_ignores_dev_and_build_junk(tmp_path: Path) -> None:
     (pack_source / "pack.egg-info").mkdir()
     (pack_source / "pack.egg-info" / "PKG-INFO").write_text("")
 
-    PackLibrary(library_root=library_root).add(
+    PackLibrary(library_dir=library_dir).add(
         pack_source,
         source=str(pack_source),
         rev=None,
@@ -136,7 +136,7 @@ def test_pack_add_ignores_dev_and_build_junk(tmp_path: Path) -> None:
         force=False,
     )
 
-    installed = library_root / "packs" / "clean"
+    installed = library_dir / "packs" / "clean"
     assert (installed / "pyproject.toml").is_file()
     assert (installed / "uv.lock").is_file()
     assert not (installed / ".venv").exists()
@@ -149,7 +149,7 @@ def test_pack_add_ignores_dev_and_build_junk(tmp_path: Path) -> None:
 def test_pack_add_rejects_symlinks_instead_of_copying_their_targets(
     tmp_path: Path, kind: str
 ) -> None:
-    library_root = tmp_path / "library"
+    library_dir = tmp_path / "library"
     pack_source = tmp_path / "pack-source"
     _write_hook_project(pack_source, hook_name="pick")
     outside = tmp_path / "outside"
@@ -159,26 +159,26 @@ def test_pack_add_rejects_symlinks_instead_of_copying_their_targets(
     link.symlink_to(outside / "secret.txt" if kind == "file" else outside)
 
     with pytest.raises(ValueError, match="symlink") as excinfo:
-        _add_pack(library_root, pack_source, name="leaky")
+        _add_pack(library_dir, pack_source, name="leaky")
 
     assert "src/project_hooks/leak" in str(excinfo.value)
-    assert not (library_root / "packs" / "leaky").exists()
+    assert not (library_dir / "packs" / "leaky").exists()
 
 
 def test_pack_add_allows_symlinks_inside_ignored_dev_directories(tmp_path: Path) -> None:
-    library_root = tmp_path / "library"
+    library_dir = tmp_path / "library"
     pack_source = tmp_path / "pack-source"
     _write_hook_project(pack_source, hook_name="pick")
     (pack_source / ".venv" / "bin").mkdir(parents=True)
     (pack_source / ".venv" / "bin" / "python").symlink_to("/usr/bin/python3")
 
-    _add_pack(library_root, pack_source, name="venv")
+    _add_pack(library_dir, pack_source, name="venv")
 
-    assert not (library_root / "packs" / "venv" / ".venv").exists()
+    assert not (library_dir / "packs" / "venv" / ".venv").exists()
 
 
-def _add_pack(library_root: Path, source: Path, *, name: str, **kwargs: object) -> None:
-    PackLibrary(library_root=library_root).add(
+def _add_pack(library_dir: Path, source: Path, *, name: str, **kwargs: object) -> None:
+    PackLibrary(library_dir=library_dir).add(
         source,
         source=str(source),
         rev=None,
@@ -189,16 +189,16 @@ def _add_pack(library_root: Path, source: Path, *, name: str, **kwargs: object) 
 
 
 def test_pack_add_rejects_index_rows_without_content_hash_before_mutation(tmp_path: Path) -> None:
-    library_root = tmp_path / "library"
+    library_dir = tmp_path / "library"
     pack_source = tmp_path / "pack-source"
     _write_hook_project(pack_source, hook_name="pick")
-    _add_pack(library_root, pack_source, name="guarded")
-    index_path = library_root / "packs.toml"
+    _add_pack(library_dir, pack_source, name="guarded")
+    index_path = library_dir / "packs.toml"
     index_path.write_text(
         index_path.read_text(encoding="utf-8").replace("content_hash", "ignored_field"),
         encoding="utf-8",
     )
-    installed = library_root / "packs" / "guarded"
+    installed = library_dir / "packs" / "guarded"
     (installed / "src" / "project_hooks" / "hooks" / "pick.py").write_text(
         "def transform(content, *, inputs, target, file, args, helpers):\n"
         "    return content + 'edited'\n"
@@ -209,7 +209,7 @@ def test_pack_add_rejects_index_rows_without_content_hash_before_mutation(tmp_pa
         encoding="utf-8"
     )
     with pytest.raises(ValueError, match=r"pack index row 'guarded' requires content_hash"):
-        _add_pack(library_root, pack_source, name="guarded", force=True, discard_edits=True)
+        _add_pack(library_dir, pack_source, name="guarded", force=True, discard_edits=True)
 
     assert index_path.read_text(encoding="utf-8") == before_index
     assert (installed / "src" / "project_hooks" / "hooks" / "pick.py").read_text(

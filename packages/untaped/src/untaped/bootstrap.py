@@ -52,6 +52,7 @@ from untaped.management import (
 from untaped.management.plugins import INSTALL_HINT
 from untaped.management.skills import check_installed_skills, composed_skills
 from untaped.plugins.registry import (
+    ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
     CompositionResult,
     ProviderCandidate,
@@ -78,13 +79,13 @@ from untaped.stability import ROOT_PARAMETERS_GROUP, apply_marks, mark_app, pane
 from untaped.verbose import reset as _reset_verbose
 
 #: Unified executable name; also the identity reported before dispatch selects
-#: a plugin (spec §4).
+#: a plugin.
 SHELL_NAME = "untaped"
 
-#: Config section owned by the shell itself (spec §1).
+#: Config section owned by the shell itself.
 SHELL_SECTION = "shell"
 
-#: Distribution owning the unified product version (spec §7.1).
+#: Distribution owning the unified product version.
 SHELL_DISTRIBUTION = "untaped"
 
 
@@ -120,8 +121,8 @@ _COMPOSED_RESULT: CompositionResult | None = None
 def _register_shell_and_plugins(result: CompositionResult) -> None:
     """Register the shell plus every composed plugin's settings sections.
 
-    Runs exactly once per composition, after validation succeeds (spec §5
-    Phase D): a provider that fails any row registers nothing.
+    Runs exactly once per composition, after validation succeeds: a provider
+    that fails any check registers nothing.
     """
     register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
     if SHELL_SPEC.state is not None:
@@ -135,7 +136,7 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
 
 
 def _warn_quarantined(result: CompositionResult) -> None:
-    """Emit one stderr warning per quarantined plugin (spec §5)."""
+    """Emit one stderr warning per quarantined plugin."""
     for record in result.quarantine:
         echo(
             f"warning: plugin {record.name!r} from {record.distribution!r} quarantined "
@@ -176,7 +177,7 @@ def reset() -> None:
     Clears the profile/verbose/quiet overrides, the
     settings caches, and the config registry, then re-registers the
     just-composed shell and plugins. Exists for test isolation; never
-    called implicitly between user invocations (spec §4).
+    called implicitly between user invocations.
     """
     set_profile_override(None)
     _reset_verbose(None)
@@ -224,26 +225,24 @@ def build_root_app(
     root.meta.group_parameters = ROOT_PARAMETERS_GROUP  # keyed, so Parameters sorts last
     if not result.plugins and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
-    _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
-    _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
-    _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
-    _mount(
-        root,
-        build_root_doctor_app(
+    management = {
+        "config": build_root_config_app(shell=SHELL_SPEC, result=result),
+        "profile": build_root_profile_app(command=SHELL_NAME),
+        "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),
+        "doctor": build_root_doctor_app(
             shell=SHELL_SPEC,
             result=result,
             builtin_for=lambda name: resolve_command(root, name),
         ),
-        name="doctor",
-    )
-    _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
-    _mount(root, build_root_auth_app(result=result), name="auth")
-    _mount(
-        root,
-        build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
-        name="alias",
-    )
-    _mount(root, build_root_plugin_app(result=result, candidates=candidates), name="plugin")
+        "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
+        "auth": build_root_auth_app(result=result),
+        "alias": build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
+        "plugin": build_root_plugin_app(result=result, candidates=candidates),
+    }
+    for name in ROOT_MANAGEMENT_COMMANDS:
+        _mount(root, management.pop(name), name=name)
+    if management:
+        raise RuntimeError(f"unreserved management commands: {sorted(management)}")
     for plugin in result.plugins:
         _mount_plugin(root, plugin)
     root.version = _resolve_version

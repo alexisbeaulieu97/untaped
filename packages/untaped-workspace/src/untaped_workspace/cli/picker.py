@@ -55,12 +55,15 @@ def build_request(
     branch: str = "",
     base: str = "",
     allow_empty: bool = False,
+    command: str = "",
 ) -> PickRequest:
     """The picker request: ``mode``/``base``/``branch`` settings over ``source``'s catalog.
 
     ``branch``/``base`` (the ``--branch``/``--base`` flags) seed the all-items
     defaults. The subtitle previews the branch writable repos get.
     ``allow_empty`` lets the picker confirm with no repos (``create``).
+    ``command`` (``untaped workspace create``) and its repo flags are what the
+    no-terminal refusal names.
     """
 
     def subtitle(current: str, defaults: Mapping[str, str]) -> str:
@@ -90,6 +93,8 @@ def build_request(
         refresh=refresh,
         adhoc=_adhoc,
         allow_empty=allow_empty,
+        command=command,
+        alternative=f"{command} NAME --repo OWNER/NAME" if command else "",
     )
 
 
@@ -213,6 +218,7 @@ def _pick(
         branch=branch or "",
         base=base or "",
         allow_empty=record is None,
+        command=f"untaped workspace {'create' if record is None else 'add'}",
     )
     result = ui.pick_many(request)
     args = [source.pick_arg(arg) for arg in repo_args(result)]

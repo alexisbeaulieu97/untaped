@@ -29,7 +29,7 @@ from untaped.conventions.stability import stability_violations
 from untaped.conventions.structure import structure_violations
 from untaped.conventions.terminal_boundary import terminal_boundary_violations
 from untaped.plugins.registry import (
-    ROOT_COMMANDS,
+    ROOT_MANAGEMENT_COMMANDS,
     PluginSpec,
     ProviderCandidate,
     discover_candidates,
@@ -187,8 +187,8 @@ def core_violations() -> list[str]:
     src = _source_dir("untaped").parent
     return sorted(
         [
-            *help_tree_violations(root, sorted(ROOT_COMMANDS)),
-            *stability_violations(root, result, ROOT_COMMANDS, sections=sections),
+            *help_tree_violations(root, sorted(ROOT_MANAGEMENT_COMMANDS)),
+            *stability_violations(root, result, ROOT_MANAGEMENT_COMMANDS, sections=sections),
             *message_violations(management, list(source_files(management))),
             *(
                 line

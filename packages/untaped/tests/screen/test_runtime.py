@@ -747,11 +747,29 @@ def test_help_overlay_closes_and_swallows_other_keys(closer: str) -> None:
     assert "Keys" not in _frame(runtime)
 
 
-def test_ctrl_c_in_the_help_overlay_cancels_interrupted() -> None:
-    runtime, _host = _runtime(Probe())
+def test_ctrl_c_in_the_help_overlay_closes_it_and_cancels_when_unhandled() -> None:
+    probe = Probe()
+    runtime, _host = _runtime(probe)
     runtime.send(Key("?"))
     runtime.send(Key("ctrl-c"))
+    assert probe.seen == [Key("?"), Help(), Interrupt()]
     assert runtime.outcome == Cancel(interrupted=True)
+
+
+def test_ctrl_c_in_the_help_overlay_reaches_a_screen_that_handles_interrupt() -> None:
+    """A screen that asks before quitting (the picker, setup) still gets to ask."""
+
+    def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
+        if isinstance(message, Interrupt):
+            return replace(model, flag=True), []
+        return None
+
+    runtime, _host = _runtime(Probe(handler))
+    runtime.send(Key("?"))
+    runtime.send(Key("ctrl-c"))
+    assert runtime.model.flag
+    assert not runtime.help_open
+    assert runtime.outcome is None
 
 
 def test_footer_reads_saving_while_waiting() -> None:

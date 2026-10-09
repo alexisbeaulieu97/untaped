@@ -18,7 +18,6 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import BaseModel, SecretStr
 
-from untaped import auth
 from untaped.auth import TokenSources, clear_token_cache, resolve_token
 from untaped.errors import ConfigError
 from untaped.profile_resolver import profile_scope
@@ -131,6 +130,19 @@ def test_overlay_reaches_a_profile_that_is_not_written_yet(_isolated_config: Pat
     assert section.token is not None
     with pytest.raises(ConfigError, match="brand-new"), profile_scope("brand-new"):
         load_settings_section("ovl")
+
+
+@pytest.mark.parametrize("profiles", ["", "profiles: {}\n"])
+def test_overlay_reaches_a_new_profile_in_a_config_without_profiles(
+    _isolated_config: Path, profiles: str
+) -> None:
+    _config(_isolated_config, profiles or "{}\n")
+
+    typed = {"token": SecretStr("t")}
+    with profile_scope("brand-new"), settings_overlay("brand-new", "ovl", typed):
+        section = load_settings_section("ovl")
+
+    assert section.token is not None
 
 
 def test_overlay_never_changes_get_settings_on_the_main_thread(_isolated_config: Path) -> None:
@@ -250,7 +262,6 @@ def test_plaintext_warning_is_suppressed_under_an_overlay(
         resolve_token(section, section="ovl")
 
     assert capsys.readouterr().err == ""
-    assert auth._warned == set()
 
     resolve_token(section, section="ovl")  # the warning still fires without the overlay
 

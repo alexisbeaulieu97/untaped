@@ -26,15 +26,4 @@ class SettingsReader(Protocol):
     def profile_names(self) -> list[str]: ...
 
 
-class SettingsRepository(SettingsReader, Protocol):
-    """Read + write surface used by ``config set`` / ``config unset``."""
-
-    def set_value(
-        self, key: str, raw_value: str, *, profile: str | None = None, dry_run: bool = False
-    ) -> str: ...
-    def unset_value(
-        self, key: str, *, profile: str | None = None, dry_run: bool = False
-    ) -> tuple[bool, str]: ...
-
-
-__all__ = ["SettingsReader", "SettingsRepository"]
+__all__ = ["SettingsReader"]
