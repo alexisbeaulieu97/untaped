@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from filelock import FileLock
 
+import untaped.git
 from untaped.sdk import cache_path
 from untaped_github.domain import (
     CorpusFreshness,
@@ -173,7 +174,7 @@ def _record_fetches(
 ) -> list[list[str]]:
     """Record ``git fetch`` subprocesses; ``fail`` maps a fetch number to injected stderr."""
     fetches: list[list[str]] = []
-    real_run = subprocess.run
+    real_run = untaped.git._run_process
 
     def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
         argv = args[2:] if args[1].startswith("--git-dir=") else args[1:]
@@ -184,7 +185,7 @@ def _record_fetches(
                 return subprocess.CompletedProcess(args, 128, stdout=b"", stderr=stderr.encode())
         return real_run(args, **kwargs)
 
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(untaped.git, "_run_process", run)
     return fetches
 
 
