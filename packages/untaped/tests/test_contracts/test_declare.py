@@ -254,3 +254,31 @@ def test_a_method_filled_under_another_name_is_cached_as_the_contract_method() -
     [answer] = gather(BookSource.books)()
     assert isinstance(answer, Ok)
     assert [book.title for book in answer.value] == ["Dune"]
+
+
+def test_a_method_filled_by_a_plain_mixin_is_rewrapped_too() -> None:
+    class Shared:
+        def books(self) -> list[Book]:
+            return [Book(title="Dune")]
+
+    class Mixed(Shared, Shop):
+        pass
+
+    assert getattr(Mixed.books, "__untaped_cached__", None) == timedelta(hours=1)
+
+    class Cached:
+        @cached(ttl=timedelta(days=30))
+        def books(self) -> list[Book]:
+            return []
+
+    with pytest.raises(TypeError, match=r"Cached\.books: only the contract decides"):
+
+        class Overridden(Cached, Shop):
+            pass
+
+
+def test_an_alias_of_an_inherited_cached_method_is_not_a_provider_cache() -> None:
+    class Again(Shop):
+        latest = Shop.books
+
+    assert Again.latest is Shop.books
