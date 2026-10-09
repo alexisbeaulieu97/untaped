@@ -68,12 +68,12 @@ profiles:
       detail_view: list
     awx:
       base_url: https://aap.example.com
-      token: <token>
+      token_command: [pass, show, untaped/default/awx]
     github:
-      token: <token>
+      token_command: [gh, auth, token]
     jira:
       base_url: https://jira.example.com
-      token: <token>
+      token_command: [pass, show, untaped/default/jira]
       default_project: OPS
       default_board_id: 42
     workspace:
@@ -84,7 +84,7 @@ profiles:
   prod:
     awx:
       base_url: https://aap.prod.example.com
-      token: <prod token>
+      token_command: [pass, show, untaped/prod/awx]
 ```
 
 `state.yml` holds one section per capability, outside profiles:
@@ -178,8 +178,8 @@ untaped config edit
 `config list` prints stable settings first, then experimental ones under an
 `Experimental` heading. A deprecated setting appears under `Deprecated` once
 it is set, as does any setting set under an old name; `untaped --deprecated
-config list` lists them all. `--format json` lists every setting with its
-`stability`.
+config list` lists them all, and `config set` warns when it sets a deprecated
+setting. `--format json` lists every setting with its `stability`.
 
 `config set` validates the value against the setting's type instead of
 parsing it as YAML:
@@ -336,7 +336,8 @@ untaped config set awx.token_command '["pass", "show", "aap/token"]'
 token, the command's arguments or its output: a failure is reported as
 `error: jira.token_command: 'op' exited with status 1` (or `not found on
 PATH`, `printed no token`, `timed out after 60s`). The command's own stderr
-goes straight to your terminal.
+goes straight to your terminal, except `pass`'s: gpg repeats one error per
+call, so the error quotes its first line and, for gpg's, names the usual fix.
 
 `untaped` does not run `gh auth token` on its own. To reuse the GitHub CLI's
 login, set `github.token_command` as above.

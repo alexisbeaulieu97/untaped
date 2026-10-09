@@ -1,4 +1,4 @@
-"""Internal capability composition kernel (spec §§1-5).
+"""Internal capability composition kernel.
 
 Implements the provider pipeline: discovery and metadata pre-checks, provider
 resolution, declaration validation, quarantine of every claimant of a contested
@@ -41,19 +41,24 @@ from untaped.stability import Stability, check_stability, mark_errors
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
 
-#: Entry-point group every capability is discovered from (spec §7.2).
+#: Entry-point group every capability is discovered from.
 CAPABILITIES_ENTRY_POINT_GROUP = "untaped.capabilities"
 
-#: Reserved root command/layout names no capability may claim (spec §5 row 1).
-_RESERVED_COMMAND_ROOTS = RESERVED_STATE_SECTIONS | {
+#: Management commands the root app mounts beside the capabilities, in mount
+#: order. ``bootstrap`` mounts exactly these; no capability may claim one.
+ROOT_MANAGEMENT_COMMANDS = (
     "config",
     "profile",
     "skills",
     "doctor",
-    "capabilities",
     "setup",
+    "auth",
     "alias",
-}
+    "capabilities",
+)
+
+#: Reserved root command/layout names no capability may claim.
+_RESERVED_COMMAND_ROOTS = RESERVED_STATE_SECTIONS | set(ROOT_MANAGEMENT_COMMANDS)
 
 
 class CapabilityProvider(Protocol):
@@ -64,7 +69,7 @@ class CapabilityProvider(Protocol):
 
 @dataclass(frozen=True)
 class SkillAsset:
-    """A packaged agent skill shipped by a capability (spec §3)."""
+    """A packaged agent skill shipped by a capability."""
 
     name: str
     source: Path
@@ -79,7 +84,7 @@ class SkillAsset:
 
 @dataclass(frozen=True)
 class DoctorCheck:
-    """A health check contributed by the shell or a capability (spec §3).
+    """A health check contributed by the shell or a capability.
 
     An ``online`` check contacts a remote service, so only
     ``untaped doctor --online`` runs it; every other check stays offline.
@@ -93,7 +98,7 @@ class DoctorCheck:
 
 @dataclass(frozen=True)
 class DoctorResult:
-    """Outcome of one doctor-check body (spec §3).
+    """Outcome of one doctor-check body.
 
     ``ok=False`` is a failed row (doctor exits 1). ``ok=True`` with
     ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
@@ -121,7 +126,7 @@ class DoctorResult:
 
 @dataclass(frozen=True)
 class CapabilityContext:
-    """Frozen per-invocation snapshot handed to a doctor-check body (spec §3)."""
+    """Frozen per-invocation snapshot handed to a doctor-check body."""
 
     capability: str
     config_section: str
@@ -172,7 +177,7 @@ class ApplicationSpec:
 
 @dataclass(frozen=True)
 class CapabilitySpec:
-    """One composable capability unit (spec §1).
+    """One composable capability unit.
 
     ``help`` is the one-line summary shown in the root command listing. A
     capability that declares it is mounted lazily: its ``app_factory`` (and
@@ -219,7 +224,7 @@ class CapabilitySpec:
 
 @dataclass(frozen=True)
 class ProviderRef:
-    """How a composed capability arrived (spec §3)."""
+    """How a composed capability arrived."""
 
     distribution: str
     entry_point: str
@@ -227,7 +232,7 @@ class ProviderRef:
 
 @dataclass(frozen=True)
 class RegisteredCapability:
-    """A fully validated, committed capability (spec §3)."""
+    """A fully validated, committed capability."""
 
     spec: CapabilitySpec
     provider_ref: ProviderRef
@@ -237,7 +242,7 @@ class RegisteredCapability:
     app: App | None = None
 
 
-#: Every valid quarantine/diagnostic reason code lives here (spec §5 table).
+#: Every valid quarantine/diagnostic reason code lives here.
 VALID_REASONS = frozenset(
     {
         "reserved-root",
@@ -259,7 +264,7 @@ VALID_REASONS = frozenset(
 
 @dataclass(frozen=True)
 class QuarantineRecord:
-    """Why a provider was excluded (spec §3).
+    """Why a provider was excluded.
 
     ``name`` is the candidate's entry-point (capability) name.
     """
@@ -283,8 +288,8 @@ class ProviderCandidate:
 
     ``distribution_version``, ``entry_point_group``, and ``requires_dist``
     are captured at discovery via :mod:`importlib.metadata` without importing
-    provider code (spec §7.2); the §7.3 listing reports
-    ``distribution_version`` for candidates.
+    provider code; ``untaped capabilities`` reports ``distribution_version``
+    for candidates.
     """
 
     distribution: str
@@ -423,7 +428,7 @@ def _check_requires_dist(candidate: ProviderCandidate, state: _CompositionState)
 def discover_candidates(
     *, group: str = CAPABILITIES_ENTRY_POINT_GROUP
 ) -> tuple[ProviderCandidate, ...]:
-    """Discover every capability candidate from entry points (spec §7.2).
+    """Discover every capability candidate from entry points.
 
     Reads distribution version, entry-point group, and Requires-Dist strings
     via :mod:`importlib.metadata` without importing any provider code.
@@ -567,7 +572,7 @@ def _check_key_mappings(spec: CapabilitySpec) -> None:
         raise _Quarantine("bad-settings-keys", f"capability {spec.name!r}: {errors[0]}")
 
 
-def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
+def _check_declaration(spec: CapabilitySpec, state: _CompositionState) -> None:
     _check_reserved_and_names(spec, state)
     _check_key_mappings(spec)
     _check_state_model(spec, state)
@@ -736,7 +741,7 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> Capabili
     """
     # Metadata-only gates precede any import: group and Requires-Dist
     # admission are decided from distribution metadata without executing
-    # provider code (spec §5 Phase A).
+    # provider code.
     _check_entry_point_group(candidate)
     _check_requires_dist(candidate, state)
     try:
@@ -768,7 +773,7 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> Capabili
             f"{candidate.distribution!r} returned {type(spec).__name__}, "
             f"expected CapabilitySpec",
         )
-    _check_rows_1_to_8(spec, state)
+    _check_declaration(spec, state)
     if candidate.name != spec.name:
         raise _Quarantine(
             "bad-metadata",

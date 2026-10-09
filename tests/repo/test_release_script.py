@@ -51,7 +51,7 @@ CAPS = ("awx", "ansible", "github", "jira", "workspace", "recipe")
 
 
 def _split_repo(root: Path, version: str = "10.0.0") -> Path:
-    """The §1 layout: a virtual root, core and six capability packages, one excluded example."""
+    """The layout: a virtual root, core and six capability packages, one excluded example."""
     _write(
         root / "pyproject.toml",
         "[tool.uv.workspace]\n"
