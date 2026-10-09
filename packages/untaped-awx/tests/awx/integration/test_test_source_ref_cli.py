@@ -375,7 +375,8 @@ def test_a_teardown_failure_is_a_warning_and_never_changes_the_result(
     [copy] = aap.list_records("job_templates")
     warnings = [json.loads(line) for line in stderr.splitlines() if '"warning"' in line]
     assert any(
-        f"teardown: JobTemplate '{copy['name']}' is left" in line["message"] for line in warnings
+        f"JobTemplate '{copy['name']}': left behind by teardown" in line["message"]
+        for line in warnings
     )
     run_id = copy["name"][-5:-1]
     assert f"run `untaped awx test prune --run {run_id} --older-than 0`" in stderr
@@ -393,7 +394,7 @@ def test_a_second_ctrl_c_during_teardown_still_reports_the_results_and_what_is_l
 
     assert (code, row["result"]) == (0, "pass")
     [copy] = aap.list_records("job_templates")
-    assert f"teardown: JobTemplate '{copy['name']}' is left: teardown interrupted" in stderr
+    assert f"JobTemplate '{copy['name']}': left behind by teardown, teardown interrupted" in stderr
     assert "--older-than 0" in stderr
 
 

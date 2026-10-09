@@ -186,3 +186,20 @@ def test_summary_fields_passes_through_unchanged() -> None:
     )
     result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", by_id=True)
     assert result[0].summary_fields == summary
+
+
+def test_a_true_cycle_warns_once_and_stops() -> None:
+    nodes = _StubNodes(
+        {
+            100: [_node(1, identifier="a", ujt_id=200, ujt_name="b", ujt_type="workflow_job")],
+            200: [_node(2, identifier="b", ujt_id=100, ujt_name="a", ujt_type="workflow_job")],
+        }
+    )
+    warnings: list[str] = []
+    use = ListWorkflowNodes(
+        cast(WorkflowNodeRepository, nodes),
+        cast(ResourceClient, _StubResources()),
+        warn=warnings.append,
+    )
+    use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=None, by_id=True)
+    assert warnings == ["workflow 100: already visited (a cycle); skipped"]
