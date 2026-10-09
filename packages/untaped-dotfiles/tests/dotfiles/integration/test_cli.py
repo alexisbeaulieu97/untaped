@@ -295,6 +295,28 @@ def test_apply_refuses_a_local_edit_unless_forced(
     assert target.read_text().startswith("[character]")
 
 
+def test_an_unreadable_placed_path_exits_1_and_counts_in_attention(
+    make_upstream: Upstream, home: Path, dotfiles_env: Path
+) -> None:
+    bare, _ = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship"])
+    run(app, ["apply", "--yes"])
+    target = home / ".config" / "starship.toml"
+    target.chmod(0o000)
+    if os.access(target, os.R_OK):  # running as root; permission bits are advisory
+        target.chmod(0o644)
+        pytest.skip("cannot make files unreadable as root")
+    try:
+        result = run(app, ["status", "--check", "--format", "json"])
+    finally:
+        target.chmod(0o644)
+    assert result.exit_code == 1, result.output
+    [row] = _rows(result)
+    assert row["state"] == "error" and row["error"] is not None
+    assert (dotfiles_env / "attention").read_text() == "1\n"
+
+
 # -- sync ---------------------------------------------------------------------------
 
 
