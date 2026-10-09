@@ -79,7 +79,7 @@ jobs:
 
   # Build every package and install the wheels by path into clean venvs, one
   # per install shape, each checked by `scripts/release.py smoke` against the
-  # exact capabilities it should hold. A fresh uv cache means no wheel from an
+  # exact plugins it should hold. A fresh uv cache means no wheel from an
   # earlier build is reused, and nothing first party comes from PyPI.
   wheel-matrix:
     runs-on: ubuntu-latest
@@ -122,13 +122,13 @@ jobs:
           uv venv -q --python 3.14 "$RUNNER_TEMP/bare"
           uv pip install --python "$RUNNER_TEMP/bare/bin/python" "$CORE"
           uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/bare/bin/untaped" "$VERSION" --expect ""
-          # The root's own commands work with no capability installed.
+          # The root's own commands work with no plugin installed.
           "$RUNNER_TEMP/bare/bin/untaped" doctor
           "$RUNNER_TEMP/bare/bin/untaped" skills list
           "$RUNNER_TEMP/bare/bin/untaped" config list
           "$RUNNER_TEMP/bare/bin/untaped" profile list
-          # ...and `capabilities` says how to install some (a stderr hint).
-          "$RUNNER_TEMP/bare/bin/untaped" capabilities 2>&1 >/dev/null | grep -F "untaped[all]"
+          # ...and `plugin list` says how to install some (a stderr hint).
+          "$RUNNER_TEMP/bare/bin/untaped" plugin list 2>&1 >/dev/null | grep -F "untaped[all]"
 
       - name: untaped[awx] alone
         run: |
@@ -162,9 +162,9 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/broken/bin/python" "$CORE" "$RUNNER_TEMP/hello-broken"
           uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/broken/bin/untaped" "$VERSION" --expect "" --quarantined hello
 
-  # Core's tests must pass with no capability package installed: a venv
+  # Core's tests must pass with no plugin package installed: a venv
   # holding only the core wheel and the dev tools (the workspace members
-  # and the capability packages' own dependencies left out of the export).
+  # and the plugin packages' own dependencies left out of the export).
   core-only-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -191,5 +191,5 @@ jobs:
           prune=(); for pkg in packages/untaped-*/; do prune+=(--prune "$(basename "$pkg")"); done
           uv export --frozen --only-group dev --no-hashes --no-emit-workspace "${prune[@]}" > "$RUNNER_TEMP/dev-requirements.txt"
           uv pip install --python "$RUNNER_TEMP/core/bin/python" dist/untaped-*-py3-none-any.whl -r "$RUNNER_TEMP/dev-requirements.txt"
-          "$RUNNER_TEMP/core/bin/python" -c 'import importlib.util, sys; leaked = [m for m in ("jinja2", "tomlkit") if importlib.util.find_spec(m)]; sys.exit(f"capability dependencies installed: {leaked}" if leaked else 0)'
+          "$RUNNER_TEMP/core/bin/python" -c 'import importlib.util, sys; leaked = [m for m in ("jinja2", "tomlkit") if importlib.util.find_spec(m)]; sys.exit(f"plugin dependencies installed: {leaked}" if leaked else 0)'
           "$RUNNER_TEMP/core/bin/python" -m pytest -q -n auto -p no:cacheprovider --rootdir . -c pyproject.toml packages/untaped/tests

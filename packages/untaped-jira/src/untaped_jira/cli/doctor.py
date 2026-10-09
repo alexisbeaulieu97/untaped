@@ -1,4 +1,4 @@
-"""The ``untaped doctor --online`` probe of the Jira capability.
+"""The ``untaped doctor --online`` probe of the Jira plugin.
 
 Runs the same ``/myself`` call as ``untaped jira whoami`` against the active
 profile, through the CLI composition root.

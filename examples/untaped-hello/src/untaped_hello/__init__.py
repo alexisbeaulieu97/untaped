@@ -1,6 +1,6 @@
-"""The example ``hello`` capability: one command, one setting, one skill.
+"""The example ``hello`` plugin: one command, one setting, one skill.
 
-The ``untaped.capabilities`` entry point names :func:`provider`. ``help`` is
+The ``untaped.plugins`` entry point names :func:`provider`. ``help`` is
 set, so the root mounts the app lazily and ``untaped --help`` never imports
 :mod:`untaped_hello.cli`.
 """
@@ -11,7 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset
+from untaped.sdk import PluginSpec, SkillAsset
 from untaped_hello.settings import HelloSettings
 
 if TYPE_CHECKING:
@@ -27,18 +27,17 @@ def build_app() -> App:
     return app
 
 
-SPEC = CapabilitySpec(
+SPEC = PluginSpec(
     name="hello",
     app_factory=build_app,
     help="Say hello (an example plugin).",
-    config_section="hello",
-    profile_model=HelloSettings,
+    settings=HelloSettings,
     skills=(
         SkillAsset(
             name="untaped-hello",
             source=Path(str(files("untaped_hello").joinpath("skills", "untaped-hello"))),
             description=(
-                "Uses the example hello capability through `untaped hello`. "
+                "Uses the example hello plugin through `untaped hello`. "
                 "Use when demonstrating how an untaped plugin works."
             ),
         ),
@@ -46,6 +45,6 @@ SPEC = CapabilitySpec(
 )
 
 
-def provider() -> CapabilitySpec:
-    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+def provider() -> PluginSpec:
+    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
     return SPEC

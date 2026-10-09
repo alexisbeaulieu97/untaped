@@ -1,6 +1,6 @@
-"""``online_probe_rows``: one capability's online checks against candidate values.
+"""``online_probe_rows``: one plugin's online checks against candidate values.
 
-``setup`` calls it before saving. It runs only the capability's ``online=True``
+``setup`` calls it before saving. It runs only the plugin's ``online=True``
 checks, over the loaded config with the candidate values laid on top
 (``settings_overlay``), and never writes anything.
 """
@@ -24,10 +24,10 @@ from test_management.support import (
     write_config,
 )
 from untaped.app_context import app_context
-from untaped.capabilities.registry import CompositionResult, DoctorCheck, DoctorResult
 from untaped.doctor_checks import connection_check
 from untaped.errors import ConfigError
 from untaped.management.doctor import online_probe_rows
+from untaped.plugins.registry import CompositionResult, DoctorCheck, DoctorResult
 from untaped.sdk import online_check
 from untaped.settings import active_overlay
 
@@ -68,7 +68,7 @@ def _composition(*extra: DoctorCheck, probe: Any = _seeing_probe) -> Composition
         online_check("wiz.api", section="wiz", probe=probe),
         *extra,
     )
-    return compose(make_spec("wiz", profile_model=WizProfile, doctor_checks=checks))
+    return compose(make_spec("wiz", settings=WizProfile, doctor_checks=checks))
 
 
 @pytest.fixture(autouse=True)
@@ -198,6 +198,6 @@ def test_a_failed_probe_row_carries_detail_and_fix(_isolated_config: Path) -> No
     assert rows[0]["fix"] == ["--profile", "default", "auth", "set", "wiz"]
 
 
-def test_a_capability_that_is_not_composed_is_an_error(_isolated_config: Path) -> None:
+def test_a_plugin_that_is_not_composed_is_an_error(_isolated_config: Path) -> None:
     with pytest.raises(ConfigError, match="nope"):
         online_probe_rows(_composition(), "default", "nope", {})

@@ -1,4 +1,4 @@
-"""Shared factories for capability composition tests (not collected)."""
+"""Shared factories for plugin composition tests (not collected)."""
 
 from __future__ import annotations
 
@@ -9,16 +9,16 @@ from typing import Any
 from cyclopts import App
 from pydantic import BaseModel
 
-from untaped.capabilities.registry import (
-    CAPABILITIES_ENTRY_POINT_GROUP,
+from untaped.cli import create_app
+from untaped.plugins.registry import (
+    PLUGINS_ENTRY_POINT_GROUP,
     ApplicationSpec,
-    CapabilitySpec,
     DoctorCheck,
     DoctorResult,
+    PluginSpec,
     ProviderCandidate,
     SkillAsset,
 )
-from untaped.cli import create_app
 
 
 class Profile(BaseModel):
@@ -72,19 +72,17 @@ def exploding_check(id: str = "test.boom") -> DoctorCheck:
 
 def make_spec(
     name: str = "alpha",
-    section: str | None = None,
     profile: type[BaseModel] = Profile,
     state: type[BaseModel] | None = None,
     skills: tuple[SkillAsset, ...] = (),
     checks: tuple[DoctorCheck, ...] = (),
     factory: Callable[[], App] | None = None,
-) -> CapabilitySpec:
-    return CapabilitySpec(
+) -> PluginSpec:
+    return PluginSpec(
         name=name,
         app_factory=factory or nullary_app(f"{name}-app"),
-        config_section=section or name,
-        profile_model=profile,
-        state_model=state,
+        settings=profile,
+        state=state,
         skills=skills,
         doctor_checks=checks,
     )
@@ -99,9 +97,8 @@ def make_shell(
     return ApplicationSpec(
         name=name,
         app_factory=nullary_app("root"),
-        config_section=section,
-        profile_model=OtherProfile,
-        state_model=None,
+        section=section,
+        settings=OtherProfile,
         skills=skills,
         doctor_checks=checks,
     )
@@ -112,7 +109,7 @@ class Provider:
 
     def __init__(
         self,
-        spec: CapabilitySpec | None = None,
+        spec: PluginSpec | None = None,
         *,
         error: Exception | None = None,
         result: Any = None,
@@ -135,12 +132,12 @@ class Provider:
 
 
 def make_candidate(
-    spec: CapabilitySpec,
+    spec: PluginSpec,
     distribution: str = "example-dist",
     name: str | None = None,
     *,
     distribution_version: str = "",
-    entry_point_group: str = CAPABILITIES_ENTRY_POINT_GROUP,
+    entry_point_group: str = PLUGINS_ENTRY_POINT_GROUP,
     requires_dist: tuple[str, ...] | list[str] = (),
     **kwargs: Any,
 ) -> ProviderCandidate:
@@ -154,8 +151,8 @@ def make_candidate(
     )
 
 
-def function_provider(spec: CapabilitySpec) -> Callable[[], CapabilitySpec]:
-    def _provide() -> CapabilitySpec:
+def function_provider(spec: PluginSpec) -> Callable[[], PluginSpec]:
+    def _provide() -> PluginSpec:
         return spec
 
     return _provide

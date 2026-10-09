@@ -12,6 +12,6 @@ def test_provider_candidate_composes_a_spec_without_installing_it(
 ) -> None:
     spec = make_spec("demo")
     root = build_root_app(candidates=[provider_candidate(spec)])
-    [registered] = [c for c in composition().capabilities if c.spec.name == "demo"]
+    [registered] = [c for c in composition().plugins if c.spec.name == "demo"]
     assert registered.provider_ref.distribution == "test-provider"
     assert CliInvoker().invoke(root.meta, ["demo", "--help"]).exit_code == 0

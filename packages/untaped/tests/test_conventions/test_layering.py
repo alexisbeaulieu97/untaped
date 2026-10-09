@@ -14,21 +14,21 @@ from untaped.conventions.source import import_targets, source_files
 def test_runtime_imports_skip_only_type_checking_bodies() -> None:
     source = """
 from typing import TYPE_CHECKING
-import untaped.capabilities.demo.cli.app
+import untaped.plugins.demo.cli.app
 if TYPE_CHECKING:
-    from untaped.capabilities.demo.application.ports import Port
+    from untaped.plugins.demo.application.ports import Port
 else:
-    from untaped.capabilities.demo.application import ports
+    from untaped.plugins.demo.application import ports
 from ..application import use_case
 """
     tree = ast.parse(source)
-    package = "untaped.capabilities.demo.infrastructure"
+    package = "untaped.plugins.demo.infrastructure"
     targets = [t for node in runtime_imports(tree) for t in import_targets(node, package)]
     assert targets == [
         "typing",
-        "untaped.capabilities.demo.cli.app",
-        "untaped.capabilities.demo.application",  # the else branch
-        "untaped.capabilities.demo.application",  # the relative import
+        "untaped.plugins.demo.cli.app",
+        "untaped.plugins.demo.application",  # the else branch
+        "untaped.plugins.demo.application",  # the relative import
     ]
 
 

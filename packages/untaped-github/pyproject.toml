@@ -1,7 +1,7 @@
 [project]
 name = "untaped-github"
 version = "10.0.0"
-description = "GitHub capability for untaped."
+description = "GitHub plugin for untaped."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -9,7 +9,7 @@ authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14.1"
 dependencies = ["untaped==10.0.0"]
 
-[project.entry-points."untaped.capabilities"]
+[project.entry-points."untaped.plugins"]
 github = "untaped_github:provider"
 
 [build-system]

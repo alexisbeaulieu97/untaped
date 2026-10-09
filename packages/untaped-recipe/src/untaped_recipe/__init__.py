@@ -1,6 +1,6 @@
-"""Recipe capability: apply reusable recipe packs to plain directories.
+"""Recipe plugin: apply reusable recipe packs to plain directories.
 
-Exposes a static ``SPEC: CapabilitySpec`` plus a nullary :func:`build_app`
+Exposes a static ``SPEC: PluginSpec`` plus a nullary :func:`build_app`
 factory. Importing this package never constructs the CLI tree;
 :func:`build_app` imports it on demand at mount time.
 """
@@ -11,7 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset, executable_check
+from untaped.sdk import PluginSpec, SkillAsset, executable_check
 from untaped_recipe.settings import RecipeSettings
 
 if TYPE_CHECKING:
@@ -27,12 +27,11 @@ def build_app() -> App:
     return app
 
 
-SPEC = CapabilitySpec(
+SPEC = PluginSpec(
     name="recipe",
     app_factory=build_app,
     help="Apply reusable local recipes to plain directories.",
-    config_section="recipe",
-    profile_model=RecipeSettings,
+    settings=RecipeSettings,
     skills=(
         SkillAsset(
             name="untaped-recipe",
@@ -53,6 +52,6 @@ SPEC = CapabilitySpec(
 )
 
 
-def provider() -> CapabilitySpec:
-    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+def provider() -> PluginSpec:
+    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
     return SPEC

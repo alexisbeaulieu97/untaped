@@ -1,4 +1,4 @@
-"""The stability rules: one violating fixture per rule, and a clean capability."""
+"""The stability rules: one violating fixture per rule, and a clean plugin."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ import pytest
 from cyclopts import App, Group, Parameter
 from pydantic import BaseModel, Field
 
-from test_capabilities.capharness import make_spec
+from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.cli import create_app
 from untaped.conventions.stability import stability_violations
+from untaped.plugins.registry import PluginSpec
 from untaped.stability import Deprecated, Experimental, deprecated, experimental, marks
 from untaped.testing import provider_candidate
 
@@ -24,7 +24,7 @@ def _violations(
     factory: Callable[[], App],
     *,
     stability: Experimental | Deprecated | None = None,
-    others: tuple[CapabilitySpec, ...] = (),
+    others: tuple[PluginSpec, ...] = (),
 ) -> list[str]:
     spec = replace(make_spec(name="svc", factory=factory), stability=stability)
     root = bootstrap.build_root_app(
@@ -43,7 +43,7 @@ def _app() -> App:
     return app
 
 
-def test_a_clean_capability_with_marks_has_no_violations() -> None:
+def test_a_clean_plugin_with_marks_has_no_violations() -> None:
     def factory() -> App:
         app = _app()
 
@@ -71,7 +71,7 @@ def test_a_clean_capability_with_marks_has_no_violations() -> None:
     assert _violations(factory, stability=None) == []
 
 
-def test_a_clean_experimental_capability_has_no_violations() -> None:
+def test_a_clean_experimental_plugin_has_no_violations() -> None:
     assert _violations(_app, stability=experimental) == []
 
 
@@ -170,7 +170,7 @@ def test_nested_marks_under_experimental_and_deprecated() -> None:
     ]
 
 
-def test_a_mark_under_an_experimental_capability() -> None:
+def test_a_mark_under_an_experimental_plugin() -> None:
     def factory() -> App:
         app = _app()
 
@@ -191,7 +191,7 @@ def test_a_mark_under_an_experimental_capability() -> None:
     ]
 
 
-def test_anything_under_a_deprecated_capability_is_nested() -> None:
+def test_anything_under_a_deprecated_plugin_is_nested() -> None:
     def factory() -> App:
         app = _app()
 
@@ -295,7 +295,7 @@ def test_bad_replacement_stale_command_text() -> None:
     ]
 
 
-def test_bad_replacement_text_naming_a_command_of_the_same_capability() -> None:
+def test_bad_replacement_text_naming_a_command_of_the_same_plugin() -> None:
     def factory() -> App:
         app = _app()
 
@@ -308,11 +308,11 @@ def test_bad_replacement_text_naming_a_command_of_the_same_capability() -> None:
 
     assert _violations(factory) == [
         "svc old::bad-replacement::`untaped svc set` names a command of the same "
-        "capability; pass the object"
+        "plugin; pass the object"
     ]
 
 
-def test_command_text_may_name_another_capability() -> None:
+def test_command_text_may_name_another_plugin() -> None:
     other = make_spec(name="other", factory=lambda: create_app(name="other", help="Other."))
 
     def factory() -> App:
@@ -344,13 +344,13 @@ def test_bad_replacement_a_stale_setting_key() -> None:
     ]
 
 
-def test_bad_replacement_on_a_capability_spec() -> None:
+def test_bad_replacement_on_a_plugin_spec() -> None:
     assert _violations(_app, stability=deprecated(replacement="untaped gone")) == [
         "svc::bad-replacement::`untaped gone` does not resolve to a command"
     ]
 
 
-def test_checking_a_capability_never_imports_a_lazy_sibling() -> None:
+def test_checking_a_plugin_never_imports_a_lazy_sibling() -> None:
     built: list[str] = []
 
     def sibling_factory() -> App:
@@ -432,7 +432,7 @@ def test_bad_replacement_on_a_setting_mark() -> None:
     ]
 
 
-def test_anything_under_a_deprecated_capability_is_nested_for_settings() -> None:
+def test_anything_under_a_deprecated_plugin_is_nested_for_settings() -> None:
     assert _setting_violations(_Nested, stability=deprecated()) == [
         "svc.old::nested-mark::deprecated under deprecated svc",
         "svc.trial::nested-mark::experimental under deprecated svc",

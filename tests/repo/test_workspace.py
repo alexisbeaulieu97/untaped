@@ -74,10 +74,10 @@ def test_test_package_names_are_unique_and_never_tests() -> None:
     assert len(names) == len(set(names)), sorted(n for n in names if names.count(n) > 1)
 
 
-def test_the_installed_untaped_lists_every_first_party_capability() -> None:
+def test_the_installed_untaped_lists_every_first_party_plugin() -> None:
     """A fresh process: the editable installs' entry-point metadata is current."""
     listed = subprocess.run(
-        [sys.executable, "-m", "untaped", "capabilities", "--format", "json"],
+        [sys.executable, "-m", "untaped", "plugin", "list", "--format", "json"],
         capture_output=True,
         text=True,
         check=False,
@@ -88,14 +88,14 @@ def test_the_installed_untaped_lists_every_first_party_capability() -> None:
     assert names == list(FIRST_PARTY)
 
 
-def test_capability_packages_declare_their_entry_point_and_pin_core() -> None:
+def test_plugin_packages_declare_their_entry_point_and_pin_core() -> None:
     projects = release.packages(REPO_ROOT)
     core = projects.pop("untaped")
     version = core["version"]
     for project in projects.values():
         name = project["name"].removeprefix("untaped-")
         assert project["version"] == version
-        assert project["entry-points"]["untaped.capabilities"] == {name: f"untaped_{name}:provider"}
+        assert project["entry-points"]["untaped.plugins"] == {name: f"untaped_{name}:provider"}
         assert f"untaped=={version}" in project["dependencies"]
         assert core["optional-dependencies"][name] == [f"untaped-{name}=={version}"]
     assert sorted(core["optional-dependencies"]["all"]) == sorted(
@@ -123,7 +123,7 @@ def test_every_project_and_the_plugin_template_share_a_python_floor_above_3_14_0
     assert Version("3.14.0") not in SpecifierSet(floor)
 
 
-def test_dependent_capabilities_pin_github() -> None:
+def test_dependent_plugins_pin_github() -> None:
     projects = release.packages(REPO_ROOT)
     version = projects["untaped"]["version"]
     for name in ("ansible", "workspace"):
@@ -131,8 +131,8 @@ def test_dependent_capabilities_pin_github() -> None:
         assert project["dependencies"] == [f"untaped=={version}", f"untaped-github=={version}"]
 
 
-def test_core_holds_only_the_registry_under_capabilities() -> None:
-    root = PACKAGES / "untaped/src/untaped/capabilities"
+def test_core_holds_only_the_registry_under_plugins() -> None:
+    root = PACKAGES / "untaped/src/untaped/plugins"
     assert sorted(p.name for p in root.iterdir() if p.name != "__pycache__") == [
         "__init__.py",
         "registry.py",

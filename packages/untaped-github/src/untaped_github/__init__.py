@@ -1,7 +1,7 @@
-"""GitHub capability for the unified ``untaped`` shell.
+"""GitHub plugin for the unified ``untaped`` shell.
 
 The nullary :func:`build_app` factory is imported on demand when the root
-mounts the capability. Other capabilities import GitHub only through
+mounts the plugin. Other plugins import GitHub only through
 :mod:`untaped_github.api`.
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import (
-    CapabilitySpec,
+    PluginSpec,
     SkillAsset,
     connection_check,
     executable_check,
@@ -40,12 +40,11 @@ def _probe_api() -> str:
     return probe_api()
 
 
-SPEC = CapabilitySpec(
+SPEC = PluginSpec(
     name="github",
     app_factory=build_app,
     help="Inspect and search GitHub from the authenticated user's account.",
-    config_section="github",
-    profile_model=GithubSettings,
+    settings=GithubSettings,
     skills=(
         SkillAsset(
             name="untaped-github",
@@ -67,6 +66,6 @@ SPEC = CapabilitySpec(
 )
 
 
-def provider() -> CapabilitySpec:
-    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+def provider() -> PluginSpec:
+    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
     return SPEC

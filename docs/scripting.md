@@ -33,7 +33,7 @@ stream (`--follow`) prints json as one object per line (NDJSON).
 | Field | Meaning |
 |---|---|
 | `untaped` | Envelope version. Always `"1"`. A consumer rejects other versions. |
-| `kind` | Record kind, `<capability>.<noun>` (root commands use `untaped.<noun>`). May be `null`. |
+| `kind` | Record kind, `<plugin>.<noun>` (root commands use `untaped.<noun>`). May be `null`. |
 | `record` | The row, as a JSON object. Values are JSON types; timestamps are strings such as `2026-01-02T03:04:05Z`. |
 
 Because every line stands alone, `head`, `grep` and `cat a b` keep a stream
@@ -41,7 +41,7 @@ valid.
 
 A record that names a concrete filesystem target carries it as an absolute,
 non-empty `record.target_path`. A consumer reads this field rather than
-another capability's domain fields.
+another plugin's domain fields.
 
 ### How `--stdin` reads input
 
@@ -51,7 +51,7 @@ another capability's domain fields.
 - A consumer lists the kinds it accepts. A record of another kind exits 2
   (`line N: record kind 'awx.host' is not accepted here; expected …`). A
   record whose `kind` is `null` is accepted.
-- Kinds ending in `.summary` (`<capability>.<noun>.summary`) are summary
+- Kinds ending in `.summary` (`<plugin>.<noun>.summary`) are summary
   rows, not items. `recipe apply --stdin` skips them.
 - Empty stdin is an error (`no identifiers received on stdin`), except for
   `workspace run --stdin`, where it selects no repos.
@@ -138,4 +138,4 @@ esac
 
 - [Output records](./reference/conventions.md#output-records) and
   [Piping](./reference/conventions.md#piping): record field rules and the
-  pipe helpers for capability authors.
+  pipe helpers for plugin authors.

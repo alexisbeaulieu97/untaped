@@ -10,8 +10,8 @@ from cyclopts import App
 from pydantic import BaseModel
 
 from test_conventions.support import Install
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
-from untaped.conventions import capability_violations
+from untaped.conventions import plugin_violations
+from untaped.plugins.registry import PluginSpec, ProviderCandidate
 from untaped.testing import check_conventions, provider_candidate
 
 # A provider package outside src/untaped, one file per convention family:
@@ -19,7 +19,7 @@ from untaped.testing import check_conventions, provider_candidate
 # Protocol outside the ports (structure) and a domain -> cli import (layering).
 _PLUGIN = {
     "demo_plugin/__init__.py": '''
-        """Demo capability provider."""
+        """Demo plugin provider."""
 
         from __future__ import annotations
 
@@ -27,7 +27,7 @@ _PLUGIN = {
 
         from pydantic import BaseModel, ConfigDict
 
-        from untaped.sdk import CapabilitySpec
+        from untaped.sdk import PluginSpec
 
         if TYPE_CHECKING:
             from cyclopts import App
@@ -45,15 +45,14 @@ _PLUGIN = {
             return build()
 
 
-        SPEC = CapabilitySpec(
+        SPEC = PluginSpec(
             name="demo",
             app_factory=build_app,
-            config_section="demo",
-            profile_model=DemoSettings,
+            settings=DemoSettings,
         )
 
 
-        def provider() -> CapabilitySpec:
+        def provider() -> PluginSpec:
             return SPEC
 
         ''',
@@ -114,6 +113,8 @@ def demo(install: Install) -> list[ProviderCandidate]:
 
 _FOUND = [
     "demo nuke::undeclared-write::--yes",
+    "demo::plugin-name::distribution 'demo-plugin' is not 'untaped-demo'",
+    "demo::plugin-name::import package 'demo_plugin' is not 'untaped_demo'",
     "demo_plugin.domain.model.Store::protocol-location",
     "demo_plugin/cli.py::print::print()",
     "demo_plugin/domain/model.py::layer::domain -> demo_plugin.cli",
@@ -121,20 +122,18 @@ _FOUND = [
 _PRIVATE_IMPORT = "demo_tests/test_demo.py::private-test-import::demo_plugin._internal:_internal"
 
 
-def test_unknown_capability_raises() -> None:
+def test_unknown_plugin_raises() -> None:
     with pytest.raises(LookupError) as raised:
-        check_conventions("no-such-capability", candidates=[])
-    assert str(raised.value) == "no installed capability named 'no-such-capability'"
+        check_conventions("no-such-plugin", candidates=[])
+    assert str(raised.value) == "no installed plugin named 'no-such-plugin'"
 
 
 class _BrokenRenames(BaseModel):
     renamed_keys: ClassVar[dict[str, str]] = {"old": "missing"}
 
 
-def test_a_quarantined_capability_fails_with_why() -> None:
-    spec = CapabilitySpec(
-        name="bad", app_factory=App, config_section="bad", profile_model=_BrokenRenames
-    )
+def test_a_quarantined_plugin_fails_with_why() -> None:
+    spec = PluginSpec(name="bad", app_factory=App, settings=_BrokenRenames)
 
     with pytest.raises(AssertionError) as raised:
         check_conventions("bad", candidates=[provider_candidate(spec)])
@@ -147,13 +146,11 @@ def test_a_quarantined_capability_fails_with_why() -> None:
 def test_test_imports_are_checked_only_with_a_tests_dir(
     demo: list[ProviderCandidate], tmp_path: Path
 ) -> None:
-    found = capability_violations(
-        "demo", tests_dir=tmp_path / "site" / "demo_tests", candidates=demo
-    )
+    found = plugin_violations("demo", tests_dir=tmp_path / "site" / "demo_tests", candidates=demo)
     assert found == sorted([*_FOUND, _PRIVATE_IMPORT])
 
 
-def test_a_plugin_capability_fails_with_every_violation_in_its_own_files(
+def test_a_third_party_plugin_fails_with_every_violation_in_its_own_files(
     demo: list[ProviderCandidate],
 ) -> None:
     """A plugin outside src/untaped is checked from its own files."""
@@ -168,18 +165,18 @@ def test_a_main_module_is_checked_without_running_it(
     demo: list[ProviderCandidate], install: Install
 ) -> None:
     install({"demo_plugin/__main__.py": 'raise SystemExit("ran __main__")\n'})
-    assert capability_violations("demo", candidates=demo) == _FOUND
+    assert plugin_violations("demo", candidates=demo) == _FOUND
 
 
 def test_a_quarantined_provider_is_warned_about_once(
     demo: list[ProviderCandidate], capsys: pytest.CaptureFixture[str]
 ) -> None:
     broken = ProviderCandidate(distribution="broken", name="broken", target="no_such_mod:provider")
-    capability_violations("demo", candidates=[*demo, broken])
+    plugin_violations("demo", candidates=[*demo, broken])
     assert capsys.readouterr().err.count("quarantined") == 1
 
 
-def test_an_app_factory_outside_any_package_names_the_capability(
+def test_an_app_factory_outside_any_package_names_the_plugin(
     demo: list[ProviderCandidate], tmp_path: Path
 ) -> None:
     init = tmp_path / "site" / "demo_plugin" / "__init__.py"
@@ -191,7 +188,9 @@ def test_an_app_factory_outside_any_package_names_the_capability(
     )
     with pytest.raises(LookupError) as raised:
         check_conventions("demo", candidates=demo)
-    assert str(raised.value) == "capability 'demo': its app factory is not defined in a package"
+    assert str(raised.value) == (
+        "plugin 'demo': its app factory or settings are not defined in a package"
+    )
 
 
 def test_stability_rules_run_with_the_other_checks(
@@ -207,4 +206,35 @@ def test_stability_rules_run_with_the_other_checks(
     )
     install({"demo_plugin/cli.py": marked})
 
-    assert "demo::mark-on-spec::demo" in capability_violations("demo", candidates=demo)
+    assert "demo::mark-on-spec::demo" in plugin_violations("demo", candidates=demo)
+
+
+def test_a_plugin_without_commands_is_found_through_its_settings(install: Install) -> None:
+    install(
+        {
+            "untaped_quiet/__init__.py": '''
+                """Quiet plugin provider: settings, no commands."""
+
+                from pydantic import BaseModel, ConfigDict
+
+                from untaped.sdk import PluginSpec
+
+
+                class QuietSettings(BaseModel):
+                    """Quiet profile settings."""
+
+                    model_config = ConfigDict(frozen=True)
+
+
+                def provider() -> PluginSpec:
+                    return PluginSpec(name="quiet", settings=QuietSettings)
+                ''',
+            "untaped_quiet/errors.py": '''
+                """Quiet errors."""
+                ''',
+        }
+    )
+    candidate = ProviderCandidate(
+        distribution="untaped-quiet", name="quiet", target="untaped_quiet:provider"
+    )
+    assert plugin_violations("quiet", candidates=[candidate]) == []

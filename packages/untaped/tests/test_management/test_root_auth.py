@@ -56,9 +56,9 @@ class PlainProfile(BaseModel):
 
 def _auth(*args: str, input: str | None = None, backend: Any = None) -> CliResult:
     specs = (
-        make_spec("svc", profile_model=SvcProfile),
-        make_spec("other", profile_model=OtherProfile),
-        make_spec("plain", profile_model=PlainProfile),
+        make_spec("svc", settings=SvcProfile),
+        make_spec("other", settings=OtherProfile),
+        make_spec("plain", settings=PlainProfile),
     )
     root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
     return invoke_cli(
@@ -508,7 +508,7 @@ def test_set_in_a_named_profile_names_the_entry_after_it(
     result = _auth("set", "svc", "--stdin", input="tok")
     assert result.exit_code == 0
     root = bootstrap.build_root_app(
-        candidates=(provider_candidate(make_spec("svc", profile_model=SvcProfile)),)
+        candidates=(provider_candidate(make_spec("svc", settings=SvcProfile)),)
     )
     result = invoke_cli(
         root.meta, ["--profile", "work", "auth", "set", "svc", "--stdin"], input="w"
@@ -896,7 +896,7 @@ def test_only_an_env_token_silences_the_warning(
 
 def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
     root = bootstrap.build_root_app(
-        candidates=(provider_candidate(make_spec("svc", profile_model=SvcProfile)),)
+        candidates=(provider_candidate(make_spec("svc", settings=SvcProfile)),)
     )
     result = invoke_cli(root.meta, ["config", "set", "svc.token", "tok"])
     assert result.exit_code == 0, result.output

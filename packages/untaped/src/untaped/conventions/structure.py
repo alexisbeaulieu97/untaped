@@ -1,23 +1,23 @@
-"""Structure lint: every capability has the same shape (``docs/reference/conventions.md``).
+"""Structure lint: every plugin has the same shape (``docs/reference/conventions.md``).
 
-For one capability package this flags:
+For one plugin package this flags:
 
-- ``errors-module`` — no ``errors.py`` with the capability's error classes;
+- ``errors-module`` — no ``errors.py`` with the plugin's error classes;
 - ``exception-base`` — an ``Exception`` subclass that is not an
   ``UntapedError`` (``report_errors`` would show a traceback); ``Warning``
   categories are exempt;
 - ``exception-name`` — an exception class whose name does not end in ``Error``;
-- ``error-system`` — a capability error base (no capability parent) that does
+- ``error-system`` — a plugin error base (no plugin parent) that does
   not set ``system`` (its failures would blame ``untaped``);
 - ``protocol-location`` — a ``Protocol`` defined outside an
   ``application/**/ports.py`` module;
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
-- ``foreign-section`` — code reads another capability's config section;
+- ``foreign-section`` — code reads another plugin's config section;
 - ``settings-not-frozen`` — the profile or state model is mutable;
 - ``settings-naming`` and ``settings-renames`` — see
   :mod:`untaped.conventions.settings_names`;
 - ``private-test-import`` — a test imports an ``_``-prefixed module or name
-  of ``untaped`` or of the capability package.
+  of ``untaped`` or of the plugin package.
 
 The class checks import the package and report ``<module>.<class>::<rule>``;
 they have no source line, so no inline marker can suppress them. The source
@@ -34,11 +34,11 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.allow import allowed
 from untaped.conventions.settings_names import settings_name_violations
 from untaped.conventions.source import SourceFile, callee, source_files
 from untaped.errors import UntapedError
+from untaped.plugins.registry import PluginSpec, settings_model
 
 SECTION_READERS = frozenset({"get_config_section", "section"})
 
@@ -89,7 +89,7 @@ def _runtime_violations(package: str) -> Iterator[str]:
 
 
 def _unattributed_base(cls: type, package: str) -> bool:
-    """A capability's own ``*Error`` base (no capability parent) that sets no ``system``."""
+    """A plugin's own ``*Error`` base (no plugin parent) that sets no ``system``."""
     if not issubclass(cls, UntapedError):
         return False
     own_parents = [base for base in cls.__mro__[1:] if base.__module__.startswith(package)]
@@ -117,8 +117,8 @@ def _source_violations(
                 yield f"{rel}::foreign-section::{first.value}"
 
 
-def _settings_violations(spec: CapabilitySpec) -> Iterator[str]:
-    for label, model in (("profile", spec.profile_model), ("state", spec.state_model)):
+def _settings_violations(spec: PluginSpec) -> Iterator[str]:
+    for label, model in (("profile", spec.settings), ("state", spec.state)):
         if model is not None and not model.model_config.get("frozen", False):
             yield f"{model.__module__}.{model.__qualname__}::settings-not-frozen::{label}"
 
@@ -151,14 +151,14 @@ def _private(name: str) -> bool:
 
 
 def structure_violations(
-    spec: CapabilitySpec,
+    spec: PluginSpec,
     package: str,
     source_dir: Path,
     files: Sequence[SourceFile],
     *,
     tests_dir: Path | None = None,
 ) -> list[str]:
-    """Violations of the capability ``spec`` whose code is ``package`` in ``source_dir``.
+    """Violations of the plugin ``spec`` whose code is ``package`` in ``source_dir``.
 
     ``files`` are the parsed sources under ``source_dir``.
     ``tests_dir``, when given, is scanned for private imports of ``untaped``
@@ -166,10 +166,10 @@ def structure_violations(
     """
     found = [
         *_runtime_violations(package),
-        *_source_violations(source_dir, files, spec.config_section),
+        *_source_violations(source_dir, files, spec.name),
         *_settings_violations(spec),
         *settings_name_violations(
-            spec.config_section, spec.profile_model, source_dir.parent, state=spec.state_model
+            spec.name, settings_model(spec), source_dir.parent, state=spec.state
         ),
     ]
     if tests_dir is not None:

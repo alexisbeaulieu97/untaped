@@ -1,4 +1,4 @@
-"""The ``untaped doctor --online`` probe of the AWX capability.
+"""The ``untaped doctor --online`` probe of the AWX plugin.
 
 Runs the same ``ping`` + ``/me/`` round trip as ``untaped awx ping``
 against the active profile, through the CLI composition root.

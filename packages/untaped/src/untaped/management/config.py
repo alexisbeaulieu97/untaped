@@ -4,7 +4,7 @@ Key resolution is direct: a fully qualified ``section.key``
 selects its schema by ``section``. A renamed key resolves to its new name
 with a warning and a retired one is rejected; the section's own state fields
 raise the "managed by" error, and anything else passes through to the
-schema. Bare keys are never implicitly expanded to a capability section.
+schema. Bare keys are never implicitly expanded to a plugin section.
 
 All read/write logic (list/get/set/unset/edit) is imported from the existing
 config modules; only :class:`RootConfigContext` (the root resolution rule)
@@ -22,7 +22,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.capabilities.registry import ApplicationSpec, CompositionResult
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -42,6 +41,7 @@ from untaped.config_file import read_config_dict
 from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, key_mappings, warn_once
 from untaped.errors import ConfigError
 from untaped.messages import deprecated_message, hint, plural
+from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
 from untaped.settings import (
     Settings,
     active_settings_layout,
@@ -58,8 +58,8 @@ from untaped.ui import ui_context
 class RootSectionScope:
     """One section's key-resolution scope for the root config command."""
 
-    capability: str
-    """Owning capability name (the shell name for the shell section)."""
+    plugin: str
+    """Owning plugin name (the shell name for the shell section)."""
 
     profile_fields: frozenset[str]
     """User-tunable field names of the section's profile model."""
@@ -87,7 +87,7 @@ class RootConfigContext:
         """Map a user key to the concrete config key without implicit expansion."""
         first, rest = _split_first(key)
         if rest is None:
-            # Bare keys never expand to a capability section at the root.
+            # Bare keys never expand to a plugin section at the root.
             return key
         scope = self.sections.get(first)
         if scope is None:
@@ -110,7 +110,7 @@ class RootConfigContext:
     def _state_error(self, section: str, key: str) -> ConfigError:
         scope = self.sections[section]
         return ConfigError(
-            f"{key!r} is managed by untaped {scope.capability} and is not a configurable setting",
+            f"{key!r} is managed by untaped {scope.plugin} and is not a configurable setting",
             category="invalid",
         )
 
@@ -140,33 +140,29 @@ def _split_first(key: str) -> tuple[str, str | None]:
 def section_scopes(
     shell: ApplicationSpec, result: CompositionResult
 ) -> dict[str, RootSectionScope]:
-    """Build the root resolution scopes for core, the shell and composed capabilities."""
+    """Build the root resolution scopes for core, the shell and composed plugins."""
     scopes = {
         section: RootSectionScope(
-            capability=shell.name,
+            plugin=shell.name,
             profile_fields=frozenset(model.model_fields),
             state_fields=frozenset(),
             mappings=key_mappings(model),
         )
         for section, model in model_sections(Settings).items()
     }
-    scopes[shell.config_section] = RootSectionScope(
-        capability=shell.name,
-        profile_fields=frozenset(shell.profile_model.model_fields),
-        state_fields=frozenset(
-            shell.state_model.model_fields if shell.state_model is not None else ()
-        ),
-        mappings=key_mappings(shell.profile_model),
+    scopes[shell.section] = RootSectionScope(
+        plugin=shell.name,
+        profile_fields=frozenset(shell.settings.model_fields),
+        state_fields=frozenset(shell.state.model_fields if shell.state is not None else ()),
+        mappings=key_mappings(shell.settings),
     )
-    for registered in result.capabilities:
+    for registered in result.plugins:
         spec = registered.spec
-        scopes[spec.config_section] = RootSectionScope(
-            capability=spec.name,
-            profile_fields=frozenset(spec.profile_model.model_fields),
-            state_fields=frozenset(
-                spec.state_model.model_fields if spec.state_model is not None else ()
-            ),
-            mappings=key_mappings(spec.profile_model),
+        scopes[spec.name] = RootSectionScope(
+            plugin=spec.name,
+            profile_fields=frozenset(settings_model(spec).model_fields),
+            state_fields=frozenset(spec.state.model_fields if spec.state is not None else ()),
+            mappings=key_mappings(settings_model(spec)),
         )
     return scopes
 

@@ -28,7 +28,6 @@ from typing import IO, Any
 from pydantic import ValidationError
 
 from untaped.batch import batch_apply, finish
-from untaped.capabilities.registry import ApplicationSpec, CompositionResult
 from untaped.cli import echo
 from untaped.diagnostics import DIAGNOSTICS_ENV, ErrorInfo, note_failure
 from untaped.errors import ErrorCategory, ExitCode, UntapedError
@@ -41,6 +40,7 @@ from untaped.management.doctor import (
     run_line,
 )
 from untaped.messages import hint, not_found, summary
+from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
@@ -52,7 +52,7 @@ _FORMAT_FLAGS = ("--format", "-f")
 
 Row = dict[str, Any]
 Key = tuple[str, str, str]
-"""A doctor row's identity: ``(capability, check, title)``."""
+"""A doctor row's identity: ``(plugin, check, title)``."""
 
 
 @dataclass(frozen=True)
@@ -148,7 +148,7 @@ def _select(rows: list[dict[str, object]]) -> list[_Fix]:
 
 
 def _key(row: dict[str, object]) -> Key:
-    return (str(row["capability"]), str(row["check"]), str(row["title"]))
+    return (str(row["plugin"]), str(row["check"]), str(row["title"]))
 
 
 def _command(argv: Sequence[str]) -> list[str]:

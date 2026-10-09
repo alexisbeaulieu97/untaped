@@ -1,20 +1,20 @@
 """Root ``untaped doctor`` command group.
 
-Its default command runs the shell plus every composed capability's health
+Its default command runs the shell plus every composed plugin's health
 checks OFFLINE — config-file reads plus in-process model
 validation only, never network I/O. ``--online`` adds the checks
-capabilities contribute with ``DoctorCheck(online=True)``, which contact the
+plugins contribute with ``DoctorCheck(online=True)``, which contact the
 configured services. A check's ``DoctorResult.fix`` becomes the row's
 ``fix``: a complete argv (``--profile`` first) to run after ``untaped``;
 the human view shows it under its row as the command line to type. A row's
 ``automatic`` says the fix is safe to run unattended (see ``DoctorResult``).
-Each row is isolated: invalid settings for one capability surface as failed
+Each row is isolated: invalid settings for one plugin surface as failed
 rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
 profile keys no settings model declares, renamed, retired or deprecated keys
 in any profile (fixed by ``config migrate``, except deprecated settings),
-installed skills that differ from their packaged copy, and a capability
+installed skills that differ from their packaged copy, and a plugin
 check that returns ``DoctorResult(..., warn=True)``. ``doctor fix``
 (:mod:`untaped.management.fix`) runs every automatic fix the checks name.
 """
@@ -33,16 +33,6 @@ from typing import Annotated, Any
 from cyclopts import App, Parameter
 from pydantic import BaseModel, ValidationError
 
-from untaped.capabilities.registry import (
-    ApplicationSpec,
-    CapabilityContext,
-    CapabilitySpec,
-    CompositionResult,
-    DoctorCheck,
-    DoctorResult,
-    QuarantineRecord,
-    run_deferred_factory,
-)
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -61,6 +51,17 @@ from untaped.http import resolve_verify
 from untaped.management._render import emit_check_list, emit_isolated
 from untaped.management.skills import composed_skills
 from untaped.messages import command_argv, command_line, hint, plural, summary
+from untaped.plugins.registry import (
+    ApplicationSpec,
+    CompositionResult,
+    DoctorCheck,
+    DoctorResult,
+    PluginContext,
+    PluginSpec,
+    QuarantineRecord,
+    run_deferred_factory,
+    settings_model,
+)
 from untaped.profile_resolver import (
     classify_active_profile,
     profile_override,
@@ -96,7 +97,7 @@ _PLACEHOLDER = re.compile(r"<[A-Z][A-Z0-9_]*>")
 class _SectionScope:
     """One section's health scope: models plus the check bodies owning it."""
 
-    capability: str
+    plugin: str
     section: str
     profile_model: type[BaseModel]
     state_model: type[BaseModel] | None
@@ -125,7 +126,7 @@ def build_root_doctor_app(
     """
     app = create_app(
         name="doctor",
-        help="Check the health of the shell and every composed capability.",
+        help="Check the health of the shell and every composed plugin.",
     )
 
     @app.default
@@ -238,7 +239,7 @@ def run_line(argv: list[str], profile: str) -> str:
 
 def _row(
     check: str,
-    capability: str,
+    plugin: str,
     status: str,
     title: str,
     detail: str,
@@ -248,7 +249,7 @@ def _row(
 ) -> dict[str, object]:
     return {
         "check": check,
-        "capability": capability,
+        "plugin": plugin,
         "status": status,
         "title": title,
         "detail": detail,
@@ -280,23 +281,23 @@ def is_automatic(covered: list[dict[str, object]]) -> bool:
 def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionScope]:
     scopes = [
         _SectionScope(
-            capability=shell.name,
-            section=shell.config_section,
-            profile_model=shell.profile_model,
-            state_model=shell.state_model,
+            plugin=shell.name,
+            section=shell.section,
+            profile_model=shell.settings,
+            state_model=shell.state,
             checks=tuple(shell.doctor_checks),
         )
     ]
-    scopes.extend(_capability_scope(registered.spec) for registered in result.capabilities)
+    scopes.extend(_plugin_scope(registered.spec) for registered in result.plugins)
     return scopes
 
 
-def _capability_scope(spec: CapabilitySpec) -> _SectionScope:
+def _plugin_scope(spec: PluginSpec) -> _SectionScope:
     return _SectionScope(
-        capability=spec.name,
-        section=spec.config_section,
-        profile_model=spec.profile_model,
-        state_model=spec.state_model,
+        plugin=spec.name,
+        section=spec.name,
+        profile_model=settings_model(spec),
+        state_model=spec.state,
         checks=tuple(spec.doctor_checks),
     )
 
@@ -306,12 +307,12 @@ def collect_doctor_rows(
     result: CompositionResult,
     *,
     online: bool = False,
-    capabilities: frozenset[str] | None = None,
+    plugins: frozenset[str] | None = None,
 ) -> list[dict[str, object]]:
     """Every doctor row, offline unless ``online``.
 
-    ``capabilities`` limits the capability-contributed checks to those
-    capabilities (``setup`` checks only what it configured).
+    ``plugins`` limits the plugin-contributed checks to those
+    plugins (``setup`` checks only what it configured).
     """
     rows: list[dict[str, object]] = []
     raw, config_row = _config_row(shell)
@@ -337,21 +338,20 @@ def collect_doctor_rows(
     for scope in scopes:
         settings, error = _validate_section(scope, effective, settings_error)
         if error is not None:
-            rows.append(_row("settings", scope.capability, _FAIL, "validate settings", error))
+            rows.append(_row("settings", scope.plugin, _FAIL, "validate settings", error))
         else:
-            rows.append(
-                _row("settings", scope.capability, _PASS, "validate settings", "settings OK")
-            )
+            rows.append(_row("settings", scope.plugin, _PASS, "validate settings", "settings OK"))
         contexts.append((scope, settings))
         if scope.state_model is not None:
             rows.append(_state_row(scope, scope.state_model, state))
     profile = selected_profile(raw or {})
-    rows.extend(_check_rows(contexts, online=online, capabilities=capabilities, profile=profile))
+    rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
-    for registered in result.capabilities:
-        if capabilities is not None and registered.spec.name not in capabilities:
+    for registered in result.plugins:
+        selected = plugins is None or registered.spec.name in plugins
+        if registered.spec.app_factory is None or not selected:
             continue
         built = run_deferred_factory(registered)
         if isinstance(built, QuarantineRecord):
@@ -365,14 +365,14 @@ def selected_check_rows(
     profile: str,
     selected: frozenset[str],
 ) -> list[dict[str, object]]:
-    """``selected`` capabilities' doctor rows for ``profile``, online checks included."""
+    """``selected`` plugins' doctor rows for ``profile``, online checks included."""
     with profile_scope(profile):
-        rows = collect_doctor_rows(shell, result, online=True, capabilities=selected)
-    # Old keys concern every capability's settings, so setup shows them too.
+        rows = collect_doctor_rows(shell, result, online=True, plugins=selected)
+    # Old keys concern every plugin's settings, so setup shows them too.
     return [
         row
         for row in rows
-        if row["capability"] in selected
+        if row["plugin"] in selected
         or (row["check"] == "deprecated-keys" and row["status"] != _PASS)
     ]
 
@@ -380,12 +380,12 @@ def selected_check_rows(
 def online_probe_rows(
     result: CompositionResult,
     profile: str,
-    capability: str,
+    plugin: str,
     values: Mapping[str, object],
 ) -> list[dict[str, object]]:
-    """``capability``'s online checks against ``values``, which nothing has written yet.
+    """``plugin``'s online checks against ``values``, which nothing has written yet.
 
-    ``values`` are candidate settings for the capability's section in
+    ``values`` are candidate settings for the plugin's section in
     ``profile`` (a ``None`` value unsets that key), laid over the loaded config
     for the duration of the call (:func:`untaped.settings.settings_overlay`);
     ``profile`` need not exist yet. Only the ``online=True`` checks run: the
@@ -398,20 +398,16 @@ def online_probe_rows(
     the overlay lives in that copy only.
     """
     spec = next(
-        (
-            registered.spec
-            for registered in result.capabilities
-            if registered.spec.name == capability
-        ),
+        (registered.spec for registered in result.plugins if registered.spec.name == plugin),
         None,
     )
     if spec is None:
-        raise ConfigError(f"no composed capability named {capability!r} to check")
-    scope = _capability_scope(spec)
+        raise ConfigError(f"no composed plugin named {plugin!r} to check")
+    scope = _plugin_scope(spec)
     with profile_scope(profile), settings_overlay(profile, scope.section, values):
         settings, error = _validate_section(scope, *_overlaid_effective())
         if error is not None:
-            return [_row("settings", scope.capability, _FAIL, "validate settings", error)]
+            return [_row("settings", scope.plugin, _FAIL, "validate settings", error)]
         return [
             _run_check(scope, check_item, settings, profile=profile)
             for check_item in scope.checks
@@ -431,14 +427,14 @@ def _check_rows(
     contexts: list[tuple[_SectionScope, BaseModel | None]],
     *,
     online: bool,
-    capabilities: frozenset[str] | None,
+    plugins: frozenset[str] | None,
     profile: str,
 ) -> list[dict[str, object]]:
     """Run the contributed checks (online ones only when ``online``)."""
     return [
         _run_check(scope, check_item, settings, profile=profile)
         for scope, settings in contexts
-        if capabilities is None or scope.capability in capabilities
+        if plugins is None or scope.plugin in plugins
         for check_item in scope.checks
         if online or not check_item.online
     ]
@@ -634,23 +630,23 @@ def _state_row(
     state_model: type[BaseModel],
     state: tuple[dict[str, Any], Path] | None,
 ) -> dict[str, object]:
-    """Validate a capability's state section in ``state.yml`` (profile-independent)."""
+    """Validate a plugin's state section in ``state.yml`` (profile-independent)."""
     title = "validate state"
     if state is None:
-        return _row("state", scope.capability, _FAIL, title, "state file could not be read")
+        return _row("state", scope.plugin, _FAIL, title, "state file could not be read")
     state_raw, source = state
     node = state_raw.get(scope.section)
     if node is None:
-        return _row("state", scope.capability, _PASS, title, "no state")
+        return _row("state", scope.plugin, _PASS, title, "no state")
     if not isinstance(node, dict):
         detail = f"state section {scope.section!r} in {source} must be a mapping"
-        return _row("state", scope.capability, _FAIL, title, detail)
+        return _row("state", scope.plugin, _FAIL, title, detail)
     try:
         state_model.model_validate(node)
     except ValidationError as exc:
         detail = f"invalid {scope.section} state in {source}: {first_validation_error(exc)}"
-        return _row("state", scope.capability, _FAIL, title, detail)
-    return _row("state", scope.capability, _PASS, title, "state OK")
+        return _row("state", scope.plugin, _FAIL, title, detail)
+    return _row("state", scope.plugin, _PASS, title, "state OK")
 
 
 def _validate_section(
@@ -682,10 +678,9 @@ def _validate_section(
 def _run_check(
     scope: _SectionScope, check_item: DoctorCheck, settings: BaseModel | None, *, profile: str
 ) -> dict[str, object]:
-    ctx = CapabilityContext(
-        capability=scope.capability,
-        config_section=scope.section,
-        profile_fields=frozenset(scope.profile_model.model_fields),
+    ctx = PluginContext(
+        plugin=scope.plugin,
+        settings_fields=frozenset(scope.profile_model.model_fields),
         state_fields=frozenset(scope.state_model.model_fields if scope.state_model else ()),
         settings=settings,
     )
@@ -696,7 +691,7 @@ def _run_check(
     except Exception as exc:
         return _row(
             check_item.id,
-            scope.capability,
+            scope.plugin,
             _FAIL,
             check_item.title,
             f"check raised {type(exc).__name__}: {exc}",
@@ -704,7 +699,7 @@ def _run_check(
     if not isinstance(outcome, DoctorResult):
         return _row(
             check_item.id,
-            scope.capability,
+            scope.plugin,
             _FAIL,
             check_item.title,
             f"check returned {type(outcome).__name__}, expected DoctorResult",
@@ -712,7 +707,7 @@ def _run_check(
     if outcome.id != check_item.id:
         return _row(
             check_item.id,
-            scope.capability,
+            scope.plugin,
             _FAIL,
             check_item.title,
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
@@ -724,18 +719,18 @@ def _run_check(
             fix = command_argv(outcome.fix, profile=profile)
         except ValueError as exc:
             detail = f"check returned an unparsable fix: {exc}"
-            return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
+            return _row(check_item.id, scope.plugin, _FAIL, check_item.title, detail)
     if outcome.automatic and (fix is None or placeholders(fix)):
         needs = f"that needs {', '.join(placeholders(fix))}" if fix else "but no fix"
         detail = f"check {check_item.id} declares an automatic fix {needs}"
-        return _row(check_item.id, scope.capability, _FAIL, check_item.title, detail)
+        return _row(check_item.id, scope.plugin, _FAIL, check_item.title, detail)
     title = check_item.title
     if outcome.ok and not outcome.warn:
-        return _row(check_item.id, scope.capability, _PASS, title, outcome.detail or "OK")
+        return _row(check_item.id, scope.plugin, _PASS, title, outcome.detail or "OK")
     status = _FAIL if not outcome.ok else _WARN
     detail = outcome.detail
     return _row(
-        check_item.id, scope.capability, status, title, detail, fix, automatic=outcome.automatic
+        check_item.id, scope.plugin, status, title, detail, fix, automatic=outcome.automatic
     )
 
 

@@ -1,4 +1,4 @@
-"""The dotfiles capability follows the command, message and structure conventions."""
+"""The dotfiles plugin follows the command, message and structure conventions."""
 
 from __future__ import annotations
 

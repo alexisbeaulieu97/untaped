@@ -43,11 +43,11 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 def _wiz_spec() -> Any:
-    return make_spec("wiz", profile_model=WizProfile, doctor_checks=(wiz_api_check(),))
+    return make_spec("wiz", settings=WizProfile, doctor_checks=(wiz_api_check(),))
 
 
 def _setup(backend: ScriptedPromptBackend | None, *args: str, terminal: bool = True) -> CliResult:
-    plain = make_spec("plain", profile_model=ExtProfile)
+    plain = make_spec("plain", settings=ExtProfile)
     root = bootstrap.build_root_app(
         candidates=(provider_candidate(_wiz_spec()), provider_candidate(plain))
     )
@@ -138,14 +138,14 @@ def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
     rows = {row["check"]: row for row in json.loads(result.stdout)}
     assert rows["wiz.api"] == {
         "check": "wiz.api",
-        "capability": "wiz",
+        "plugin": "wiz",
         "status": "pass",
         "title": "wiz API reachable",
         "detail": "authenticated as alice",
         "fix": None,
         "automatic": False,
     }
-    assert {row["capability"] for row in rows.values()} == {"wiz"}
+    assert {row["plugin"] for row in rows.values()} == {"wiz"}
     assert PROBES == ["probed", "probed"]  # the check before saving, then the doctor row
     assert "profile default is ready" in result.stderr
 
@@ -193,7 +193,7 @@ def test_a_failed_check_cancelled_writes_nothing(
     result = _setup(backend)
 
     assert result.exit_code == 0, result.output
-    assert "no capabilities selected; no changes made" in result.stderr
+    assert "no plugins selected; no changes made" in result.stderr
     assert stores.entries() == {}
     assert not _isolated_config.exists()
 
@@ -202,7 +202,7 @@ def test_leaving_without_saving_changes_nothing(_isolated_config: Path) -> None:
     result = _setup(_scripted("esc"))
 
     assert result.exit_code == 0, result.output
-    assert "no capabilities selected; no changes made" in result.stderr
+    assert "no plugins selected; no changes made" in result.stderr
     assert result.stdout == ""
     assert not _isolated_config.exists()
 
@@ -300,13 +300,13 @@ def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) ->
     result = _setup(ScriptedPromptBackend(screens=[SetupResult("default", (), (("info", "hi"),))]))
 
     assert result.exit_code == 0, result.output
-    assert "hi" in result.stderr and "no capabilities selected; no changes made" in result.stderr
+    assert "hi" in result.stderr and "no plugins selected; no changes made" in result.stderr
     assert result.stdout == ""
 
 
-def test_rows_cover_only_the_touched_capabilities(_isolated_config: Path) -> None:
+def test_rows_cover_only_the_touched_plugins(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n")
-    envy = make_spec("envy", profile_model=EnvProfile)
+    envy = make_spec("envy", settings=EnvProfile)
     root = bootstrap.build_root_app(
         candidates=(provider_candidate(_wiz_spec()), provider_candidate(envy))
     )
@@ -320,4 +320,4 @@ def test_rows_cover_only_the_touched_capabilities(_isolated_config: Path) -> Non
         terminal=True,
     )
 
-    assert {row["capability"] for row in json.loads(result.stdout)} == {"wiz"}
+    assert {row["plugin"] for row in json.loads(result.stdout)} == {"wiz"}

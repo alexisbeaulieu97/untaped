@@ -19,7 +19,7 @@ CAPS = tuple(ListItem(name, name) for name in ("awx", "jira", "github", "ansible
 
 
 def _tags(**kwargs: object) -> Tags:
-    return Tags("Capabilities", CAPS, **kwargs)  # type: ignore[arg-type]
+    return Tags("Plugins", CAPS, **kwargs)  # type: ignore[arg-type]
 
 
 # --- drawing -----------------------------------------------------------------------
@@ -29,7 +29,7 @@ def test_the_chosen_items_are_badges_with_a_remove_mark_and_an_add_hint() -> Non
     run = run_solo(_tags(selected=("awx", "jira")))
 
     body = lines(run.frame)
-    assert body[0].startswith("╭─ Capabilities")
+    assert body[0].startswith("╭─ Plugins")
     assert "awx ✕  jira ✕  + add" in body[1]
     assert "github" not in run.frame  # unchosen items are not shown until the menu opens
 

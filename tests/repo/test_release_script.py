@@ -49,7 +49,7 @@ CAPS = ("awx", "ansible", "github", "jira", "workspace", "recipe")
 
 
 def _split_repo(root: Path, version: str = "10.0.0") -> Path:
-    """The §1 layout: a virtual root, core and six capability packages, one excluded example."""
+    """The §1 layout: a virtual root, core and six plugin packages, one excluded example."""
     _write(
         root / "pyproject.toml",
         "[tool.uv.workspace]\n"
@@ -577,23 +577,23 @@ def test_smoke_errors_report_version_missing_and_unready() -> None:
         "9.9.9\n", json.dumps(ROWS), "10.0.0", ["awx", "jira", "github"]
     ) == [
         "untaped --version printed 9.9.9, not 10.0.0",
-        "capability github is missing",
-        "capability jira is quarantined",
-        "capability extra is installed but not expected",
+        "plugin github is missing",
+        "plugin jira is quarantined",
+        "plugin extra is installed but not expected",
     ]
     assert release.smoke_errors("10.0.0\n", json.dumps(ROWS[:1]), "10.0.0", ["awx"]) == []
 
 
 def test_smoke_errors_refuse_output_that_is_not_a_list_of_rows() -> None:
     assert release.smoke_errors("10.0.0", "not json", "10.0.0", ["awx"]) == [
-        "untaped capabilities --format json did not print a list of rows"
+        "untaped plugin list --format json did not print a list of rows"
     ]
 
 
-def test_smoke_errors_refuse_an_unexpected_capability() -> None:
+def test_smoke_errors_refuse_an_unexpected_plugin() -> None:
     rows = [{"name": "awx", "status": "ready"}, {"name": "github", "status": "ready"}]
     assert release.smoke_errors("10.0.0a0", json.dumps(rows), "10.0.0a0", ["awx"]) == [
-        "capability github is installed but not expected"
+        "plugin github is installed but not expected"
     ]
 
 
@@ -601,14 +601,14 @@ def test_smoke_errors_check_quarantined_names() -> None:
     rows = [{"name": "hello", "status": "ready"}]
     assert release.smoke_errors(
         "10.0.0a0", json.dumps(rows), "10.0.0a0", [], quarantined=["hello"]
-    ) == ["capability hello is ready, not quarantined"]
+    ) == ["plugin hello is ready, not quarantined"]
     rows = [{"name": "hello", "status": "quarantined"}]
     assert (
         release.smoke_errors("10.0.0a0", json.dumps(rows), "10.0.0a0", [], quarantined=["hello"])
         == []
     )
     assert release.smoke_errors("10.0.0a0", "[]", "10.0.0a0", [], quarantined=["hello"]) == [
-        "capability hello is missing"
+        "plugin hello is missing"
     ]
 
 
@@ -617,41 +617,41 @@ def test_smoke_errors_refuse_duplicates_and_overlap() -> None:
     assert release.smoke_errors(
         "1.0.0", json.dumps(rows), "1.0.0", ["awx"], quarantined=["awx"]
     ) == [
-        "capability awx is both expected and quarantined",
-        "capability awx is listed twice",
+        "plugin awx is both expected and quarantined",
+        "plugin awx is listed twice",
     ]
 
 
-def test_capability_names_are_the_packages_entry_points(tmp_path: Path) -> None:
+def test_plugin_names_are_the_packages_entry_points(tmp_path: Path) -> None:
     _write(
         tmp_path / "pyproject.toml",
         '[project]\nname = "untaped"\nversion = "10.0.0"\n'
-        '[project.entry-points."untaped.capabilities"]\n'
+        '[project.entry-points."untaped.plugins"]\n'
         'zeta = "z:provider"\nalpha = "a:provider"\n',
     )
-    assert release.capability_names(tmp_path) == ["alpha", "zeta"]
+    assert release.plugin_names(tmp_path) == ["alpha", "zeta"]
 
 
-def test_capability_names_span_workspace_members(tmp_path: Path) -> None:
+def test_plugin_names_span_workspace_members(tmp_path: Path) -> None:
     root = _split_repo(tmp_path)
     _write(
         root / "packages" / "untaped-github" / "pyproject.toml",
         '[project]\nname = "untaped-github"\nversion = "10.0.0"\n'
-        '[project.entry-points."untaped.capabilities"]\ngithub = "g:provider"\n',
+        '[project.entry-points."untaped.plugins"]\ngithub = "g:provider"\n',
     )
     _write(
         root / "packages" / "untaped-awx" / "pyproject.toml",
         '[project]\nname = "untaped-awx"\nversion = "10.0.0"\n'
-        '[project.entry-points."untaped.capabilities"]\nawx = "a:provider"\n',
+        '[project.entry-points."untaped.plugins"]\nawx = "a:provider"\n',
     )
-    assert release.capability_names(root) == ["awx", "github"]
+    assert release.plugin_names(root) == ["awx", "github"]
 
 
-FIRST_PARTY = release.capability_names(release.REPO_ROOT)
+FIRST_PARTY = release.plugin_names(release.REPO_ROOT)
 FAKE_UNTAPED = """#!/bin/sh
 case "$1" in
   --version) echo "$FAKE_VERSION" ;;
-  capabilities) echo "$FAKE_ROWS"; exit "${FAKE_ROWS_EXIT:-0}" ;;
+  plugin) echo "$FAKE_ROWS"; exit "${FAKE_ROWS_EXIT:-0}" ;;
   skills) echo "$FAKE_SKILLS"; exit "${FAKE_SKILLS_EXIT:-0}" ;;
   "$FAKE_FAILING") exit 2 ;;
 esac
@@ -692,7 +692,7 @@ def test_the_smoke_command_passes_a_healthy_install(
 ) -> None:
     assert _smoke(tmp_path, monkeypatch, capsys, READY) == (
         0,
-        f"smoke ok: untaped 10.0.0, {len(FIRST_PARTY)} capabilities\n",
+        f"smoke ok: untaped 10.0.0, {len(FIRST_PARTY)} plugins\n",
         "",
     )
 
@@ -702,15 +702,15 @@ def test_the_smoke_command_passes_a_healthy_install(
     [
         (READY, FIRST_PARTY[-1], 0, f"untaped {FIRST_PARTY[-1]} --help exited 2\n"),
         (READY, "--help", 0, "untaped --help exited 2\n"),
-        (READY, "", 3, "untaped capabilities --format json exited 3\n"),
+        (READY, "", 3, "untaped plugin list --format json exited 3\n"),
         (
             [{"name": FIRST_PARTY[0], "status": "quarantined"}, *READY[1:]],
             "",
             0,
-            f"capability {FIRST_PARTY[0]} is quarantined\n",
+            f"plugin {FIRST_PARTY[0]} is quarantined\n",
         ),
     ],
-    ids=["capability-help", "root-help", "capabilities-command", "not-ready"],
+    ids=["plugin-help", "root-help", "plugin-list", "not-ready"],
 )
 def test_the_smoke_command_reports_each_failure(
     tmp_path: Path,
@@ -731,7 +731,7 @@ def test_smoke_cli_expects_nothing_for_a_bare_install(
     monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
     monkeypatch.setenv("FAKE_ROWS", "[]")
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", ""]) == 0
-    assert "smoke ok: untaped 10.0.0a0, 0 capabilities" in capsys.readouterr().out
+    assert "smoke ok: untaped 10.0.0a0, 0 plugins" in capsys.readouterr().out
 
 
 def test_smoke_cli_checks_expected_and_quarantined_names(
@@ -743,10 +743,10 @@ def test_smoke_cli_checks_expected_and_quarantined_names(
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows))
     argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--quarantined", "hello"]
     assert release.main(argv) == 0
-    assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 capabilities\n"
+    assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 plugins\n"
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx,jira"]) == 1
     assert capsys.readouterr().err == (
-        "capability jira is missing\ncapability hello is installed but not expected\n"
+        "plugin jira is missing\nplugin hello is installed but not expected\n"
     )
 
 
@@ -780,7 +780,7 @@ def test_smoke_skills_need_each_expected_skill_with_its_file(
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows[:1]))
     monkeypatch.setenv("FAKE_SKILLS", json.dumps(skills[:2]))
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--skills"]) == 0
-    assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 capabilities\n"
+    assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 plugins\n"
 
 
 def test_skill_errors_refuse_a_skill_listed_twice(tmp_path: Path) -> None:

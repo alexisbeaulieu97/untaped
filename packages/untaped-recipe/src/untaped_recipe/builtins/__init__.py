@@ -1,1 +1,1 @@
-"""Packaged built-ins for the recipe capability."""
+"""Packaged built-ins for the recipe plugin."""

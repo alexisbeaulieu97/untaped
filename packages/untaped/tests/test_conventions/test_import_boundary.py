@@ -1,6 +1,6 @@
-"""Import boundary: capability code reaches core only through ``untaped.sdk``.
+"""Import boundary: plugin code reaches core only through ``untaped.sdk``.
 
-Capabilities are synthetic packages written into a temporary site and
+Plugins are synthetic packages written into a temporary site and
 discovered through explicit candidates, so each case controls the
 distributions and their ``Requires-Dist``.
 """
@@ -15,8 +15,8 @@ from textwrap import dedent
 import pytest
 
 from test_conventions.support import Install
-from untaped.capabilities.registry import ProviderCandidate
-from untaped.conventions import capability_violations
+from untaped.conventions import plugin_violations
+from untaped.plugins.registry import ProviderCandidate
 from untaped.testing import provider_candidate
 
 _INIT = """
@@ -24,7 +24,7 @@ _INIT = """
 
     from pydantic import BaseModel, ConfigDict
 
-    from untaped.sdk import CapabilitySpec
+    from untaped.sdk import PluginSpec
 
 
     class Settings(BaseModel):
@@ -37,12 +37,12 @@ _INIT = """
         return create_app(name="{name}", help="Demo.")
 
 
-    SPEC = CapabilitySpec(
-        name="{name}", app_factory=build_app, config_section="{name}", profile_model=Settings
+    SPEC = PluginSpec(
+        name="{name}", app_factory=build_app, settings=Settings
     )
 
 
-    def provider() -> CapabilitySpec:
+    def provider() -> PluginSpec:
         {body}
 """
 
@@ -51,7 +51,7 @@ Check = Callable[[str], list[str]]
 
 @dataclass(frozen=True)
 class Cap:
-    """A synthetic capability: package ``name``, installed in distribution ``dist``."""
+    """A synthetic plugin: package ``name``, installed in distribution ``dist``."""
 
     name: str
     files: dict[str, str]
@@ -74,7 +74,7 @@ def cap(
     installed: bool = True,
     callable_target: bool = False,
 ) -> Cap:
-    """A capability; ``dist`` and ``package`` default to ``name``.
+    """A plugin; ``dist`` and ``package`` default to ``name``.
 
     ``callable_target`` discovers it through :func:`untaped.testing.provider_candidate`
     (a callable target) instead of a ``module:provider`` string.
@@ -98,7 +98,7 @@ Boundary = Callable[..., Check]
 def boundary(install: Install) -> Boundary:
     """``setup(*caps)`` installs them and returns ``check(name)``: the boundary lines.
 
-    A capability with ``installed=False`` is only discovered, never importable.
+    A plugin with ``installed=False`` is only discovered, never importable.
     """
 
     def setup(*caps: Cap) -> Check:
@@ -124,7 +124,7 @@ def boundary(install: Install) -> Boundary:
             )
 
         def check(name: str) -> list[str]:
-            found = capability_violations(name, candidates=candidates)
+            found = plugin_violations(name, candidates=candidates)
             return [line for line in found if "::import-boundary::" in line]
 
         return check
@@ -180,7 +180,7 @@ def test_a_waiver_suppresses_one_line(boundary: Boundary) -> None:
     ]
 
 
-def test_another_capability_only_through_its_api(boundary: Boundary) -> None:
+def test_another_plugin_only_through_its_api(boundary: Boundary) -> None:
     check = boundary(
         cap("other", files={"api.py": "x = 1\n", "domain/__init__.py": "y = 1\n"}),
         cap(
@@ -240,7 +240,7 @@ def test_an_api_import_needs_a_declared_dependency(boundary: Boundary) -> None:
     ]
 
 
-def test_capabilities_in_one_distribution_may_import_each_others_api(boundary: Boundary) -> None:
+def test_plugins_in_one_distribution_may_import_each_others_api(boundary: Boundary) -> None:
     check = boundary(
         cap("other", files={"api.py": "x = 1\n"}, dist="suite"),
         cap("demo", files={"cli/__init__.py": "from other.api import x\n"}, dist="suite"),
@@ -248,7 +248,7 @@ def test_capabilities_in_one_distribution_may_import_each_others_api(boundary: B
     assert check("demo") == []
 
 
-def test_a_quarantined_capability_still_counts_as_a_capability(boundary: Boundary) -> None:
+def test_a_quarantined_plugin_still_counts_as_a_plugin(boundary: Boundary) -> None:
     check = boundary(
         cap("other", files={"api.py": "x = 1\n", "domain/__init__.py": "y = 1\n"}, broken=True),
         cap("demo", files={"cli/__init__.py": "from other.domain import y\n"}, requires=["other"]),
@@ -258,8 +258,8 @@ def test_a_quarantined_capability_still_counts_as_a_capability(boundary: Boundar
     ]
 
 
-def test_a_capability_nested_under_untaped_is_a_capability_not_core(boundary: Boundary) -> None:
-    package = "untaped.capabilities.other"
+def test_a_plugin_nested_under_untaped_is_a_plugin_not_core(boundary: Boundary) -> None:
+    package = "untaped.plugins.other"
     check = boundary(
         cap("other", package=package, installed=False),
         cap(
@@ -273,7 +273,7 @@ def test_a_capability_nested_under_untaped_is_a_capability_not_core(boundary: Bo
     ]
 
 
-def test_a_capability_given_as_a_callable_candidate_is_a_capability(boundary: Boundary) -> None:
+def test_a_plugin_given_as_a_callable_candidate_is_a_plugin(boundary: Boundary) -> None:
     check = boundary(
         cap("other", files={"domain/__init__.py": "y = 1\n"}, callable_target=True),
         cap("demo", files={"cli/__init__.py": "from other.domain import y\n"}, requires=["other"]),
@@ -299,7 +299,7 @@ def test_relative_imports_within_the_own_package_are_allowed(boundary: Boundary)
     assert check("demo") == []
 
 
-def test_a_relative_import_into_a_sibling_capability_is_a_violation(boundary: Boundary) -> None:
+def test_a_relative_import_into_a_sibling_plugin_is_a_violation(boundary: Boundary) -> None:
     parent = "suite"
     check = boundary(
         cap("other", package=f"{parent}.other", files={"domain/__init__.py": "y = 1\n"}),

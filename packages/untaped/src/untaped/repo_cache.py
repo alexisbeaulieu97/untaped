@@ -15,7 +15,7 @@ refuses) and carries the auth header only when the cache's origin is an
 ``https://`` URL on the trusted ``auth_host``; ssh, ``file`` and other-host
 origins never see it.
 
-The cache owns mechanics only. Each capability keeps its own root, its ref
+The cache owns mechanics only. Each plugin keeps its own root, its ref
 policy (what to fetch, what to prune) and its error mapping.
 """
 
@@ -248,7 +248,7 @@ class RepoCache:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             self.run(["init", "--bare", "--quiet", str(self._path)], cwd=self._path.parent)
         # ``config`` (not ``remote add``) so no default fetch refspec is written:
-        # each capability's ref policy passes its own refspecs.
+        # each plugin's ref policy passes its own refspecs.
         if created or cache_origin(self._path) != url:
             self.run(["config", "--replace-all", "remote.origin.url", url])
         return created

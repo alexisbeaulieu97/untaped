@@ -1,6 +1,6 @@
 """Root ``untaped skills …`` command group and the per-run skills check.
 
-The root exposes commands over the union of the shell plus every composed capability's
+The root exposes commands over the union of the shell plus every composed plugin's
 skills. Selection, planning, and install machinery are imported from
 :mod:`untaped.skills`; only the short-selector rule is new: a selector
 naming no skill exactly retries with the ``untaped-`` prefix, while the
@@ -21,7 +21,6 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from untaped.batch import batch_apply, finish
-from untaped.capabilities.registry import ApplicationSpec, CompositionResult
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -37,6 +36,7 @@ from untaped.cli import (
 )
 from untaped.errors import ConfigError, UntapedError, UsageError
 from untaped.messages import hint, not_found, plural
+from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.settings import SkillsSettings, load_settings_section
 from untaped.skills import (
     AllSkillsOption,
@@ -97,9 +97,9 @@ FoundProjectDirOption = Annotated[
 def composed_skills(
     shell: ApplicationSpec, result: CompositionResult
 ) -> dict[str, InstallableSkill]:
-    """Return the shell's skills plus every composed capability's, keyed by name."""
+    """Return the shell's skills plus every composed plugin's, keyed by name."""
     skills_map: dict[str, InstallableSkill] = {asset.name: asset for asset in shell.skills}
-    for registered in result.capabilities:
+    for registered in result.plugins:
         for asset in registered.skills:
             skills_map[asset.name] = asset
     return skills_map
@@ -119,7 +119,7 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List the agent skills shipped by every composed capability."""
+        """List the agent skills shipped by every composed plugin."""
         _list(skills_map, fmt=fmt, columns=columns)
 
     @app.command(name="install")

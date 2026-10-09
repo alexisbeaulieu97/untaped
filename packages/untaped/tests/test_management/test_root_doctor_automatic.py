@@ -23,27 +23,27 @@ from test_management.support import (
     write_config,
 )
 from untaped import bootstrap
-from untaped.capabilities.registry import (
-    CapabilityContext,
-    CapabilitySpec,
+from untaped.management.doctor import build_root_doctor_app
+from untaped.plugins.registry import (
     DoctorCheck,
     DoctorResult,
+    PluginContext,
+    PluginSpec,
 )
-from untaped.management.doctor import build_root_doctor_app
 from untaped.sdk import connection_check
 from untaped.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
-def _doctor(*specs: CapabilitySpec, args: tuple[str, ...] = ("--format", "json")) -> CliResult:
+def _doctor(*specs: PluginSpec, args: tuple[str, ...] = ("--format", "json")) -> CliResult:
     app = build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(*specs)
     )
     return CliInvoker().invoke(app, list(args))
 
 
-def _rows(*specs: CapabilitySpec, online: bool = False) -> list[dict[str, Any]]:
+def _rows(*specs: PluginSpec, online: bool = False) -> list[dict[str, Any]]:
     args = ("--format", "json", "--online") if online else ("--format", "json")
     rows: list[dict[str, Any]] = json.loads(_doctor(*specs, args=args).stdout)
     return rows
@@ -53,10 +53,8 @@ def _row(rows: list[dict[str, Any]], check: str) -> dict[str, Any]:
     return next(row for row in rows if row["check"] == check)
 
 
-def _declaring(
-    *, ok: bool = False, warn: bool = False, fix: str | list[str] | None
-) -> CapabilitySpec:
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+def _declaring(*, ok: bool = False, warn: bool = False, fix: str | list[str] | None) -> PluginSpec:
+    def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
             id="svc.check", ok=ok, warn=warn, detail="found it", fix=fix, automatic=True
         )
@@ -75,7 +73,7 @@ def test_a_plaintext_token_fix_is_automatic(_isolated_config: Path) -> None:
     )
     wiz = make_spec(
         "wiz",
-        profile_model=WizProfile,
+        settings=WizProfile,
         doctor_checks=(connection_check("wiz.connection", section="wiz"),),
     )
     row = _row(_rows(wiz), "wiz.connection")
@@ -90,7 +88,7 @@ def test_an_online_fix_is_manual(_isolated_config: Path) -> None:
     )
     FAIL.append(True)
     try:
-        wiz = make_spec("wiz", profile_model=WizProfile, doctor_checks=(wiz_api_check(),))
+        wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(wiz_api_check(),))
         row = _row(_rows(wiz, online=True), "wiz.api")
     finally:
         FAIL.clear()
@@ -147,7 +145,7 @@ def test_an_impossible_automatic_fix_fails_its_row(
         False,
     )
     # Isolation: the other rows still render.
-    assert any(r["capability"] == "other" for r in rows)
+    assert any(r["plugin"] == "other" for r in rows)
 
 
 def test_a_passing_row_still_validates_its_automatic_fix() -> None:

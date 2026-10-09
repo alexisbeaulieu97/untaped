@@ -1,4 +1,4 @@
-"""Capability state lives in ``state.yml``, separate from ``config.yml``.
+"""Plugin state lives in ``state.yml``, separate from ``config.yml``.
 
 Covers path resolution, reads and writes of ``state.yml``, and the isolation
 between settings writes and state writes. A state section left at the top

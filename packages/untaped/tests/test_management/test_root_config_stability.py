@@ -1,4 +1,4 @@
-"""``config list|get`` and ``doctor`` follow the stability marks of settings and capabilities."""
+"""``config list|get`` and ``doctor`` follow the stability marks of settings and plugins."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class Trial(BaseModel):
 
 
 class Beta(BaseModel):
-    """Section ``beta`` of an experimental capability."""
+    """Section ``beta`` of an experimental plugin."""
 
     size: int = 1
     old: Annotated[bool, deprecated(replacement="beta.size")] = False
@@ -56,7 +56,7 @@ class Tls(BaseModel):
 
 
 class Sunset(BaseModel):
-    """Section ``sunset`` of a deprecated capability."""
+    """Section ``sunset`` of a deprecated plugin."""
 
     host: str = "h"
     port: int = 80
@@ -74,12 +74,10 @@ class Moved(BaseModel):
 
 def _compose() -> Any:
     return compose(
-        make_spec("trial", profile_model=Trial),
-        make_spec("beta", profile_model=Beta, stability=experimental),
-        make_spec(
-            "sunset", profile_model=Sunset, stability=deprecated(replacement="a newer service")
-        ),
-        make_spec("moved", profile_model=Moved),
+        make_spec("trial", settings=Trial),
+        make_spec("beta", settings=Beta, stability=experimental),
+        make_spec("sunset", settings=Sunset, stability=deprecated(replacement="a newer service")),
+        make_spec("moved", settings=Moved),
     )
 
 
@@ -166,18 +164,18 @@ def test_show_deprecated_lists_every_deprecated_setting(_show_deprecated: None) 
     assert "trial.probe" not in deprecated_table
 
 
-def test_a_deprecated_capability_marks_its_settings_deprecated() -> None:
+def test_a_deprecated_plugin_marks_its_settings_deprecated() -> None:
     rows = _rows()
 
     assert {rows[key]["stability"] for key in ("sunset.host", "sunset.port")} == {"deprecated"}
     assert rows["sunset.host"]["note"] == "use a newer service"
 
 
-def test_an_experimental_capability_marks_its_settings_experimental() -> None:
+def test_an_experimental_plugin_marks_its_settings_experimental() -> None:
     assert _rows()["beta.size"]["stability"] == "experimental"
 
 
-def test_a_field_mark_wins_over_the_capability_mark() -> None:
+def test_a_field_mark_wins_over_the_plugin_mark() -> None:
     rows = _rows()
 
     assert rows["beta.old"]["stability"] == "deprecated"
@@ -333,7 +331,7 @@ def _doctor_detail() -> str:
     )
 
 
-def test_doctor_lists_every_key_set_in_a_deprecated_capabilitys_section(
+def test_doctor_lists_every_key_set_in_a_deprecated_plugins_section(
     _isolated_config: Path,
 ) -> None:
     write_config(
@@ -349,7 +347,7 @@ def test_doctor_lists_every_key_set_in_a_deprecated_capabilitys_section(
     assert "beta." not in detail
 
 
-def test_doctor_reports_a_deprecated_capabilitys_keys_not_their_contents(
+def test_doctor_reports_a_deprecated_plugins_keys_not_their_contents(
     _isolated_config: Path,
 ) -> None:
     write_config(
@@ -366,7 +364,7 @@ def test_doctor_reports_a_deprecated_capabilitys_keys_not_their_contents(
     assert "typo_key" not in detail
 
 
-def test_reading_a_deprecated_capabilitys_settings_warns_nothing(_isolated_config: Path) -> None:
+def test_reading_a_deprecated_plugins_settings_warns_nothing(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    sunset:\n      host: h2\n")
 
     result = _config("get", "sunset.host")

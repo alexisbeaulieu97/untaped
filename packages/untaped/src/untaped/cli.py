@@ -212,7 +212,7 @@ def create_app(*, name: str, help: str = "", stability: Stability | None = None)
     ``stability`` marks the group experimental (``stability=experimental``) or
     deprecated (``stability=deprecated(replacement=...)``): core lists it in
     its stability panel and ends its ``--help`` with the matching line. Mark a
-    whole capability on its ``CapabilitySpec`` instead, never on the app its
+    whole plugin on its ``PluginSpec`` instead, never on the app its
     factory returns.
     """
     mark = check_stability(stability, where=f"create_app({name!r})")
@@ -714,7 +714,7 @@ def run_cyclopts_app(
 
     Ctrl-C anywhere exits ``130`` without a traceback. Also converts a broken
     downstream pipe — the consumer closed it early, e.g.
-    ``untaped <capability> list | head`` or a consumer that exits before reading all of
+    ``untaped <plugin> list | head`` or a consumer that exits before reading all of
     its input — into a quiet ``SystemExit(0)`` (the standard CLI behaviour:
     the consumer chose to stop reading, which is not a failure). Without this the producer's
     buffered stdout flush fails at interpreter shutdown and Python prints a

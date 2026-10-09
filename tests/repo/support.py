@@ -11,7 +11,7 @@ PACKAGES = REPO_ROOT / "packages"
 #: A fenced code block, indented or not.
 FENCE = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1", re.MULTILINE | re.DOTALL)
 
-#: Every first-party capability, in name order.
+#: Every first-party plugin, in name order.
 FIRST_PARTY = ("ansible", "awx", "dotfiles", "github", "jira", "recipe", "workspace")
 
 

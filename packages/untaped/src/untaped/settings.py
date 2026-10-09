@@ -1,7 +1,7 @@
 """Registry-backed configuration loaded from ``~/.untaped/config.yml``.
 
 The unified composition root owns YAML/env loading and the in-process registry
-of typed capability settings sections over the profiles layout. Capability
+of typed plugin settings sections over the profiles layout. Plugin
 state lives in a separate ``state.yml`` (:func:`resolve_state_path`).
 """
 
@@ -186,7 +186,7 @@ def model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
 
 
 def profile_section_models() -> SectionModels:
-    """``section -> model`` for every profile section: core, the shell and each capability."""
+    """``section -> model`` for every profile section: core, the shell and each plugin."""
     return model_sections(get_profile_settings_model())
 
 
@@ -203,14 +203,14 @@ def register_profile_settings(
 ) -> None:
     """Register a tool's profile-scoped section (lives under ``profiles.<name>``).
 
-    ``stability`` is the owning capability's mark; its settings inherit it
+    ``stability`` is the owning plugin's mark; its settings inherit it
     unless a field carries a mark of its own.
     """
     _CONFIG_REGISTRY.register_profile_settings(section, model, stability)
 
 
 def section_stabilities() -> Mapping[str, Stability | None]:
-    """Each registered profile section's capability mark (``None`` for an unmarked one)."""
+    """Each registered profile section's plugin mark (``None`` for an unmarked one)."""
     return _CONFIG_REGISTRY.section_stability
 
 
@@ -261,7 +261,7 @@ class SettingsOverlay:
     """Candidate values for one section of one profile, layered over the loaded config.
 
     A ``None`` value means "unset this key" (a command token source removes the
-    ``token``). Internal: ``setup`` checks a capability against what the user
+    ``token``). Internal: ``setup`` checks a plugin against what the user
     typed before anything is written.
     """
 
@@ -541,9 +541,17 @@ def splice_registered_state(
 
 
 #: Top-level keys of ``config.yml`` and ``state.yml`` that core owns (the
-#: profile layout and the on-disk format stamp), never usable as capability
+#: profile layout and the on-disk format stamp), never usable as plugin
 #: state names.
 RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
+
+
+#: Config sections no plugin may take: the shell's own section, the core
+#: ``Settings`` fields, the top-level layout keys and ``extensions`` (kept
+#: for contract settings).
+RESERVED_SECTIONS = frozenset(
+    {"shell", "extensions", *Settings.model_fields, *RESERVED_STATE_SECTIONS}
+)
 
 
 def check_state_section_name(section: str) -> None:
@@ -636,7 +644,7 @@ def validate_config_file(candidate: Path) -> None:
     """Validate ``candidate`` as if it were the config file, without loading it.
 
     Checks exactly what :func:`get_settings` would (environment overrides and
-    capability state included) against the candidate's content instead of
+    plugin state included) against the candidate's content instead of
     the active config file's. Raises :class:`ConfigError`.
     """
 
@@ -736,7 +744,7 @@ class _EnvOverInit(BaseSettings):
 def check_settings_field(name: str, node: Any, *, model: type[BaseModel] | None = None) -> Any:
     """Validate one top-level field from an effective YAML ``node`` plus env.
 
-    ``model`` validates a capability section; without it ``name`` must be a
+    ``model`` validates a plugin section; without it ``name`` must be a
     core :class:`Settings` field (``http``/``ui``/``skills``). ``node``
     ``None`` means the YAML does not set the field. Diagnostic helper for
     ``doctor``: raises :class:`ConfigError` via :func:`settings_error_message`
@@ -801,7 +809,7 @@ def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
     """Return one typed settings section, building a one-off model if needed.
 
     Only ``section`` (plus its own state section) is validated, so an invalid
-    sibling section never breaks an unrelated capability. A token-bearing
+    sibling section never breaks an unrelated plugin. A token-bearing
     section gets its token fallbacks applied (:func:`untaped.auth.resolve_token`).
     """
     settings_cls: type[Settings] | None = None

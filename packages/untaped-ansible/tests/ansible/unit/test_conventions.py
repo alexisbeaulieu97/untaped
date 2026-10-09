@@ -1,4 +1,4 @@
-"""The ansible capability follows the command, message and structure conventions."""
+"""The ansible plugin follows the command, message and structure conventions."""
 
 from __future__ import annotations
 

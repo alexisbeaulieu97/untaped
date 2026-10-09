@@ -1,12 +1,12 @@
-"""Capability distribution-metadata enforcement (spec §§5, 7).
+"""Plugin distribution-metadata enforcement (spec §§5, 7).
 
 This module is the CI-mode metadata validator: it runs on every pull
 request as part of the default ``pytest`` run. Compose mode stays lenient
 for every provider (quarantine, never raise), first-party ones included.
 
-Every provider (§7.2, checked without importing provider code): capabilities
-declared in the ``untaped.capabilities`` entry-point group, each
-entry-point name equal to its capability ``name``, a non-empty
+Every provider (§7.2, checked without importing provider code): plugins
+declared in the ``untaped.plugins`` entry-point group, each
+entry-point name equal to its plugin ``name``, a non-empty
 distribution name, and ``Requires-Dist`` on ``untaped`` admitting the
 running SDK version.
 """
@@ -19,9 +19,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import untaped.capabilities.registry as registry
-from test_capabilities.capharness import Provider, make_candidate, make_shell, make_spec
-from untaped.capabilities.registry import (
+import untaped.plugins.registry as registry
+from test_plugins.plugin_harness import Provider, make_candidate, make_shell, make_spec
+from untaped.plugins.registry import (
     ProviderCandidate,
     compose,
     discover_candidates,
@@ -44,7 +44,7 @@ def test_bad_candidate_metadata_quarantines(
 ) -> None:
     candidate = make_candidate(make_spec(name="real"), distribution, name=name, **kwargs)
     result = compose(make_shell(), [candidate])
-    assert result.capabilities == ()
+    assert result.plugins == ()
     (record,) = result.quarantine
     assert record.reason == "bad-metadata"
     assert record.distribution == (distribution.strip() or "unknown")
@@ -120,7 +120,7 @@ def test_requires_dist_follows_pep_440_and_508(
     monkeypatch: pytest.MonkeyPatch, sdk_version: str, requirement: str, admitted: bool
 ) -> None:
     result = _compose_with_sdk_version(monkeypatch, sdk_version, requirement)
-    names = [cap.spec.name for cap in result.capabilities]  # type: ignore[attr-defined]
+    names = [cap.spec.name for cap in result.plugins]  # type: ignore[attr-defined]
     assert names == (["pep440"] if admitted else [])
 
 
@@ -135,12 +135,12 @@ def test_multi_entry_point_distribution_passes() -> None:
     first = make_candidate(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
     second = make_candidate(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
     result = compose(make_shell(), [second, first])
-    assert [cap.spec.name for cap in result.capabilities] == ["alpha", "beta"]
+    assert [cap.spec.name for cap in result.plugins] == ["alpha", "beta"]
     assert result.quarantine == ()
 
 
 def test_discover_without_distributions() -> None:
-    assert discover_candidates(group="untaped.capabilities.no-such-group") == ()
+    assert discover_candidates(group="untaped.plugins.no-such-group") == ()
 
 
 def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -158,20 +158,20 @@ def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> 
     fake_entry_point = SimpleNamespace(
         name="live-cap",
         value="test_live_row13_provider_mod:provider",
-        group="untaped.capabilities",
+        group="untaped.plugins",
         dist=fake_dist,
     )
     monkeypatch.setattr(
         registry.importlib_metadata,
         "entry_points",
-        lambda group=None: [fake_entry_point] if group == "untaped.capabilities" else [],
+        lambda group=None: [fake_entry_point] if group == "untaped.plugins" else [],
     )
     providers = registry.discover_candidates()
     (candidate,) = providers
     assert candidate.distribution == "live-dist"
     assert candidate.name == "live-cap"
     result = compose(make_shell(), list(providers))
-    assert [cap.spec.name for cap in result.capabilities] == ["live-cap"]
+    assert [cap.spec.name for cap in result.plugins] == ["live-cap"]
     assert result.quarantine == ()
 
 
@@ -201,7 +201,7 @@ def test_discovery_reads_each_distribution_once(monkeypatch: pytest.MonkeyPatch)
     reads: list[str] = []
     dist = _CountingDist(reads)
     entry_points = [
-        SimpleNamespace(name=name, value=f"mod:{name}", group="untaped.capabilities", dist=dist)
+        SimpleNamespace(name=name, value=f"mod:{name}", group="untaped.plugins", dist=dist)
         for name in ("alpha", "beta")
     ]
     monkeypatch.setattr(registry.importlib_metadata, "entry_points", lambda group: entry_points)
@@ -228,5 +228,5 @@ def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPat
         for name in ("alpha", "beta")
     ]
     result = compose(make_shell(), candidates)
-    assert [cap.spec.name for cap in result.capabilities] == ["alpha", "beta"]
+    assert [cap.spec.name for cap in result.plugins] == ["alpha", "beta"]
     assert looked_up == ["untaped"]

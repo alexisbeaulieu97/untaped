@@ -1,7 +1,7 @@
-"""Import boundary of a capability: core only through ``untaped.sdk``.
+"""Import boundary of a plugin: core only through ``untaped.sdk``.
 
-A capability's own source may import ``untaped`` only as ``untaped.sdk``,
-and another capability only as that capability's ``api`` module, and only
+A plugin's own source may import ``untaped`` only as ``untaped.sdk``,
+and another plugin only as that plugin's ``api`` module, and only
 when its distribution declares a dependency on the other's. Its own package
 is always allowed; third-party libraries are not this rule's business.
 Every import counts, including function-level and ``TYPE_CHECKING`` ones.
@@ -40,23 +40,23 @@ def _is_within(target: str, package: str) -> bool:
 def _detail(
     target: str,
     package: str,
-    capability_packages: Mapping[str, str],
+    plugin_packages: Mapping[str, str],
     declared: frozenset[str],
 ) -> str | None:
     if _is_within(target, package):
         return None
     other = max(
-        (name for name in capability_packages if _is_within(target, name)),
+        (name for name in plugin_packages if _is_within(target, name)),
         key=len,
         default=None,
     )
     if other is not None:
         if target != f"{other}.api":
             return f"imports {target}; use {other}.api"
-        if capability_packages[other] not in declared:
+        if plugin_packages[other] not in declared:
             return (
                 f"imports {target} but its distribution does not depend on "
-                f"{capability_packages[other]}'s"
+                f"{plugin_packages[other]}'s"
             )
         return None
     if _is_within(target, "untaped") and target != _SDK:
@@ -69,17 +69,17 @@ def import_boundary_violations(
     source_dir: Path,
     files: Sequence[SourceFile],
     *,
-    capability_packages: Mapping[str, str],
+    plugin_packages: Mapping[str, str],
     declared: frozenset[str],
 ) -> list[str]:
     """Violations in ``files`` of ``package`` (code in ``source_dir``).
 
-    ``capability_packages`` maps each capability's package to its canonical
+    ``plugin_packages`` maps each plugin's package to its canonical
     distribution name; ``declared`` holds the canonical distribution names
-    the checked capability may import from (its own and its requirements).
+    the checked plugin may import from (its own and its requirements).
     Paths are relative to ``source_dir``'s parent.
     """
-    roots = frozenset({"untaped", *capability_packages})
+    roots = frozenset({"untaped", *plugin_packages})
     found: list[str] = []
     for source in files:
         parts = source.path.relative_to(source_dir).with_suffix("").parts
@@ -89,7 +89,7 @@ def import_boundary_violations(
             if not isinstance(node, ast.Import | ast.ImportFrom):
                 continue
             for target in _targets(node, module_package, roots):
-                detail = _detail(target, package, capability_packages, declared)
+                detail = _detail(target, package, plugin_packages, declared)
                 if detail is not None and not allowed(source.lines, node.lineno, RULE):
                     found.append(f"{rel}:{node.lineno}::{RULE}::{detail}")
     return found

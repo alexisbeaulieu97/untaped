@@ -141,11 +141,11 @@ def test_auto_only_warns_after_a_failed_or_dry_run_command(
 
 
 def _root_with_commands(tmp_path: Path) -> object:
-    """A ``demo`` capability with a previewing ``apply`` and a passthrough ``run``."""
+    """A ``demo`` plugin with a previewing ``apply`` and a passthrough ``run``."""
     skill = asset(tmp_path, "untaped-demo")
 
     def _factory() -> App:
-        app = create_app(name="demo", help="demo capability.")
+        app = create_app(name="demo", help="demo plugin.")
 
         @app.command(name="apply")
         def apply(

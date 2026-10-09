@@ -1,7 +1,7 @@
 """``field_for`` over the real settings: every leaf maps, and the declared bounds are enforced.
 
 The descriptors come from the settings models of the root app and of every
-first-party capability, so a setting added with a type nobody mapped (or a
+first-party plugin, so a setting added with a type nobody mapped (or a
 constraint ``field_for`` cannot read) fails here instead of in a screen.
 """
 
@@ -12,8 +12,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from untaped.bootstrap import SHELL_SPEC
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.config_schema import FieldDescriptor, find_descriptor, walk_settings
+from untaped.plugins.registry import PluginSpec
 from untaped.screen.components.choices import Cycle
 from untaped.screen.components.fields import field_for
 from untaped.screen.components.inputs import NumberInput
@@ -21,15 +21,15 @@ from untaped.screen.core import Key
 from untaped.settings import Settings
 
 
-def _models(specs: tuple[CapabilitySpec, ...]) -> list[tuple[str, type[BaseModel]]]:
+def _models(specs: tuple[PluginSpec, ...]) -> list[tuple[str, type[BaseModel]]]:
     return [
         ("root", Settings),
-        (SHELL_SPEC.config_section, SHELL_SPEC.profile_model),
-        *((spec.config_section, spec.profile_model) for spec in specs),
+        (SHELL_SPEC.section, SHELL_SPEC.settings),
+        *((spec.name, spec.settings) for spec in specs),
     ]
 
 
-def _descriptor(specs: tuple[CapabilitySpec, ...], section: str, key: str) -> FieldDescriptor:
+def _descriptor(specs: tuple[PluginSpec, ...], section: str, key: str) -> FieldDescriptor:
     """The descriptor of ``key`` in ``section``'s model (``root`` is the core ``Settings``)."""
     for name, model in _models(specs):
         if name == section:
@@ -49,18 +49,18 @@ def _text(component: Any, text: str) -> Any:
 
 
 def test_every_leaf_of_every_first_party_settings_model_has_a_component(
-    first_party_specs: tuple[CapabilitySpec, ...],
+    first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     mapped = 0
     for _, model in _models(first_party_specs):
         for descriptor in walk_settings(model):
             assert field_for(descriptor) is not None, descriptor.key
             mapped += 1
-    assert mapped > 40  # the walk really covered the capabilities
+    assert mapped > 40  # the walk really covered the plugins
 
 
 def test_ansible_git_fetch_parallel_enforces_one_to_thirty_two(
-    first_party_specs: tuple[CapabilitySpec, ...],
+    first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     built = field_for(_descriptor(first_party_specs, "ansible", "git_fetch_parallel"))
 
@@ -73,7 +73,7 @@ def test_ansible_git_fetch_parallel_enforces_one_to_thirty_two(
         assert _text(built, accepted).validate() == "", accepted
 
 
-def test_awx_page_size_must_be_above_zero(first_party_specs: tuple[CapabilitySpec, ...]) -> None:
+def test_awx_page_size_must_be_above_zero(first_party_specs: tuple[PluginSpec, ...]) -> None:
     built = field_for(_descriptor(first_party_specs, "awx", "page_size"))
 
     assert isinstance(built, NumberInput)
@@ -83,7 +83,7 @@ def test_awx_page_size_must_be_above_zero(first_party_specs: tuple[CapabilitySpe
 
 
 def test_http_timeout_seconds_is_a_float_above_zero(
-    first_party_specs: tuple[CapabilitySpec, ...],
+    first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     built = field_for(_descriptor(first_party_specs, "root", "http.timeout_seconds"))
 
@@ -97,7 +97,7 @@ def test_http_timeout_seconds_is_a_float_above_zero(
 
 
 def test_workspace_parallel_may_be_left_empty_for_unset(
-    first_party_specs: tuple[CapabilitySpec, ...],
+    first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     built = field_for(_descriptor(first_party_specs, "workspace", "parallel"))
 
@@ -111,7 +111,7 @@ def test_workspace_parallel_may_be_left_empty_for_unset(
 
 
 def test_ui_hide_empty_columns_is_a_three_state_cycle_starting_unset(
-    first_party_specs: tuple[CapabilitySpec, ...],
+    first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     built = field_for(_descriptor(first_party_specs, "root", "ui.hide_empty_columns"))
 

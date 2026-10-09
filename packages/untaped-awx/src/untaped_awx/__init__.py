@@ -1,4 +1,4 @@
-"""AWX capability for the unified ``untaped`` shell."""
+"""AWX plugin for the unified ``untaped`` shell."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset, connection_check, online_check
+from untaped.sdk import PluginSpec, SkillAsset, connection_check, online_check
 from untaped_awx.settings import AwxSettings
 
 if TYPE_CHECKING:
@@ -29,12 +29,11 @@ def _probe_api() -> str:
     return probe_api()
 
 
-SPEC = CapabilitySpec(
+SPEC = PluginSpec(
     name="awx",
     app_factory=build_app,
     help="Talk to Ansible Automation Platform / AWX.",
-    config_section="awx",
-    profile_model=AwxSettings,
+    settings=AwxSettings,
     skills=(
         SkillAsset(
             name="untaped-awx",
@@ -55,6 +54,6 @@ SPEC = CapabilitySpec(
 )
 
 
-def provider() -> CapabilitySpec:
-    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+def provider() -> PluginSpec:
+    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
     return SPEC

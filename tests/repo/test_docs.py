@@ -29,8 +29,8 @@ from cyclopts import App
 from repo import quoted_commands
 from repo.support import FENCE, PACKAGES, REPO_ROOT, markdown_files
 from untaped.bootstrap import build_root_app
-from untaped.capabilities import registry
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
+from untaped.plugins import registry
+from untaped.plugins.registry import PluginSpec, ProviderCandidate
 
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 
@@ -60,7 +60,7 @@ def _setting_command_problems(root: App, page: str) -> list[str]:
     """Commands a setting description names (``source refresh --parallel``) that do not exist.
 
     A span of two or more words is a command, named from the root or from the
-    setting's own capability; its options must exist too. One word is ambiguous
+    setting's own plugin; its options must exist too. One word is ambiguous
     with a value (``table``, ``never``) and is not checked.
     """
     problems = []
@@ -114,7 +114,7 @@ def test_setting_command_detector(
     assert _setting_command_problems(root, row) == ([problem] if problem else [])
 
 
-def test_config_reference_refuses_a_quarantined_first_party_capability(
+def test_config_reference_refuses_a_quarantined_first_party_plugin(
     monkeypatch: pytest.MonkeyPatch,
     broken_first_party_candidates: Callable[[], tuple[ProviderCandidate, ...]],
 ) -> None:
@@ -122,7 +122,7 @@ def test_config_reference_refuses_a_quarantined_first_party_capability(
     with pytest.raises(RuntimeError) as failed:
         generator.collect_sections()
     message = str(failed.value)
-    assert message.startswith("first-party capabilities quarantined; fix them before generating")
+    assert message.startswith("first-party plugins quarantined; fix them before generating")
     for name in ("awx", "jira"):
         assert f"{name!r} [malformed-entry-point]: could not resolve entry point" in message
 
@@ -257,7 +257,7 @@ def test_every_workspace_member_has_a_readme() -> None:
 _ROOT_OPTIONS = {"--profile", "--verbose", "-v", "--quiet", "-q", "--help", "-h"}
 _ROOT_ONLY_OPTIONS = _ROOT_OPTIONS | {"--version", "--install-completion"}
 _EXAMPLE_PROVIDER = "acme"
-"""The example external capability in docs/plugins.md."""
+"""The example external plugin in docs/plugins.md."""
 
 
 def _bash_blocks(path: Path) -> list[str]:
@@ -420,8 +420,8 @@ DOCS_PAGE_BUDGET = 400
 RETIRED_TERMS = {"root shell": "root", "unified shell": "root"}
 
 
-def test_records_page_has_a_section_per_capability(
-    first_party_specs: tuple[CapabilitySpec, ...],
+def test_records_page_has_a_section_per_plugin(
+    first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     records = _anchors(REPO_ROOT / "docs" / "reference" / "records.md")
     assert {spec.name for spec in first_party_specs} <= records
@@ -474,7 +474,7 @@ def _bare_installs(path: Path, *, fenced_only: bool) -> list[str]:
     ],
     ids=lambda v: str(v.relative_to(REPO_ROOT)) if isinstance(v, Path) else "",
 )
-def test_docs_never_install_a_bare_capability_package(path: Path, *, fenced_only: bool) -> None:
+def test_docs_never_install_a_bare_plugin_package(path: Path, *, fenced_only: bool) -> None:
     """Installing `untaped-<name>` alone leaves the core out; docs point at the extras."""
     assert _bare_installs(path, fenced_only=fenced_only) == []
 
@@ -495,7 +495,7 @@ def test_agents_md_is_short_and_points_to_contributing() -> None:
     for heading in (
         "## Releasing",
         "## Evaluating a skill change",
-        "## Adding a first-party capability",
+        "## Adding a first-party plugin",
     ):
         assert heading in contributing
 
