@@ -132,6 +132,19 @@ def test_overlay_reaches_a_profile_that_is_not_written_yet(_isolated_config: Pat
         load_settings_section("ovl")
 
 
+@pytest.mark.parametrize("profiles", ["", "profiles: {}\n"])
+def test_overlay_reaches_a_new_profile_in_a_config_without_profiles(
+    _isolated_config: Path, profiles: str
+) -> None:
+    _config(_isolated_config, profiles or "{}\n")
+
+    typed = {"token": SecretStr("t")}
+    with profile_scope("brand-new"), settings_overlay("brand-new", "ovl", typed):
+        section = load_settings_section("ovl")
+
+    assert section.token is not None
+
+
 def test_overlay_never_changes_get_settings_on_the_main_thread(_isolated_config: Path) -> None:
     _config(_isolated_config, "profiles:\n  default:\n    ovl:\n      base_url: https://old\n")
     before = get_settings()
