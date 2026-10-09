@@ -22,13 +22,11 @@ from untaped.capabilities.registry import ApplicationSpec, CapabilitySpec, Compo
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
-from untaped.management.setup_state import ServiceState, profile_view, service_state
+from untaped.management.setup_state import ServiceState, service_states, service_store
 from untaped.messages import command_argv, command_line, split_profile
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
-from untaped.settings import active_settings_layout
 from untaped.theme import OutputFormat
-from untaped.token_store import pick_store
 
 Row = dict[str, object]
 State = Literal["done", "todo", "failed", "skipped"]
@@ -51,15 +49,11 @@ def plan_rows(
     """Every setup step for ``services`` in ``profile``, in the order to run them."""
     exists = _profile_exists(profile)
     rows = [_profile_row(shell, profile, exists=exists)]
-    raw = read_config_dict()
-    values = profile_view(raw, profile)
-    own = active_settings_layout().profile_data(raw, profile) or {}
-    commands = any(takes_token_command(spec.profile_model) for spec in services.values())
-    store = pick_store() if commands else None
+    states = service_states(services, profile, read_config_dict())
+    store = service_store(services)
     ready: list[str] = []
     for name, spec in services.items():
-        state = service_state(spec, values.get(spec.config_section), own, profile, raw)
-        steps = _service_rows(spec, state, profile, store_name=store.name if store else None)
+        steps = _service_rows(spec, states[name], profile, store_name=store.name if store else None)
         rows.extend(steps)
         if exists and all(row["state"] == "done" for row in steps):
             ready.append(name)
