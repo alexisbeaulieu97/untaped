@@ -15,8 +15,8 @@ process cache for the background check. Leaving the profile field loads the
 profile typed there, so the field and the forms never disagree.
 
 What a save has to say (a profile created, a token replaced or to export)
-comes back as notes, which the command prints after the screen closes with the doctor rows of what was
-configured (:class:`SetupResult`). Esc and ctrl-c on the list end the screen
+comes back as notes, which the command prints after the screen closes with
+the doctor rows of what was configured (:class:`SetupResult`). Esc and ctrl-c on the list end the screen
 with that result (ctrl-c flagged ``interrupted``, which ``setup`` turns into
 exit 130); neither is a cancel. A quit while a save runs waits for it, so the
 result always says what was written.
