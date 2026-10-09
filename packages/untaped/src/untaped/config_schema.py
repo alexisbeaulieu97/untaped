@@ -40,10 +40,6 @@ class FieldDescriptor:
     is_secret: bool
     """``True`` for ``SecretStr`` fields — render as ``***`` unless explicitly revealed."""
 
-    metadata: tuple[Any, ...] = ()
-    """The field's constraint metadata: pydantic's ``FieldInfo.metadata`` (``Ge``, ``Le``, ...)
-    plus the ``Annotated`` extras of the leaf type, ``Field(...)`` expanded to its constraints."""
-
     optional: bool = False
     """``True`` when the field's annotation is ``X | None`` (``annotation`` is then ``X``)."""
 
@@ -102,7 +98,6 @@ def walk_settings(
                 default=default,
                 has_default=has_default,
                 is_secret=annotation is SecretStr,
-                metadata=(*field.metadata, *annotated_metadata(annotation)),
                 optional=_is_optional(field.annotation),
                 description=field.description,
             )
@@ -179,22 +174,6 @@ def unwrap_optional(annotation: Any) -> Any:
         if len(non_none) == 1:
             return non_none[0]
     return annotation
-
-
-def annotated_metadata(annotation: Any) -> tuple[Any, ...]:
-    """The constraint metadata ``Annotated[X, ...]`` carries (``Field(...)`` expanded); else ``()``.
-
-    ``Field(ge=1)`` inside ``Annotated`` contributes its ``Ge(1)``, the way pydantic
-    flattens it into ``FieldInfo.metadata`` for a field's own annotation.
-    """
-    if get_origin(annotation) is not typing.Annotated:
-        return ()
-    _, *extras = get_args(annotation)
-    metadata: list[Any] = []
-    for extra in extras:
-        metadata.append(extra)
-        metadata.extend(getattr(extra, "metadata", ()))
-    return tuple(metadata)
 
 
 def _is_optional(annotation: Any) -> bool:
