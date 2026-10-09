@@ -13,7 +13,8 @@ for the fields the pipe contract fixes (``docs/reference/conventions.md#output-r
   outcome or target row (``category``, ``system``, ``retryable``, ``message``,
   ``hint``);
 - :data:`UtcTimestamp` — a ``datetime`` normalized to UTC that serializes as
-  RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``);
+  RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``), to the second in
+  tables and in full everywhere else;
 - :class:`TableGlyph` — a field annotation that shows a value as a glyph in
   tables only.
 
@@ -24,16 +25,34 @@ Records are frozen pydantic models; subclasses add their own fields, which
 serialize before the base fields they inherit (the identifying field stays
 first for ``--format raw`` and the first table column), except that an
 inherited ``action`` follows the identifying field.
+
+A record type declares its kind as a class keyword,
+``class GitlabProject(Record, kind="gitlab.project")``; :func:`emit
+<untaped.cli.emit>` reads it from the rows, and :func:`record_model` maps a
+kind back to its model. Every record's fields must survive a JSON round trip,
+which the class definition checks (:class:`Record`).
 """
 
 from __future__ import annotations
 
 import annotationlib
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Final, Literal
+from types import MappingProxyType
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Final,
+    Literal,
+    TypeAliasType,
+    get_args,
+    get_origin,
+)
 
 from pydantic import (
     AfterValidator,
@@ -41,9 +60,14 @@ from pydantic import (
     ConfigDict,
     Field,
     PlainSerializer,
+    SecretBytes,
+    SecretStr,
+    SerializationInfo,
     SerializerFunctionWrapHandler,
+    WrapSerializer,
     model_serializer,
 )
+from pydantic.fields import FieldInfo
 
 from untaped.diagnostics import ErrorInfo
 
@@ -60,14 +84,61 @@ def format_utc(value: datetime) -> str:
     return _to_utc(value).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+#: The serialization context of a dump for a ``table``, which shows
+#: timestamps to the second (:data:`UtcTimestamp`).
+TABLE_CONTEXT: Final = MappingProxyType({"untaped.table": True})
+
+
+def _utc_json(value: datetime, info: SerializationInfo) -> str:
+    """RFC 3339 UTC with a ``Z``: to the second in a table, else in full (lossless)."""
+    context = info.context
+    if isinstance(context, Mapping) and context.get("untaped.table"):
+        return format_utc(value)
+    return _to_utc(value).isoformat().replace("+00:00", "Z")
+
+
 UtcTimestamp = Annotated[
     datetime,
     AfterValidator(_to_utc),
-    PlainSerializer(format_utc, return_type=str, when_used="json"),
+    PlainSerializer(_utc_json, return_type=str, when_used="json"),
 ]
 """A UTC ``datetime`` field that renders as ``2026-01-02T03:04:05Z`` in output.
 
-Name such fields ``<event>_at`` (``created_at``, ``scanned_at``)."""
+Tables show it to the second; every other format keeps the microseconds
+(``2026-01-02T03:04:05.000678Z``), so it reads back unchanged. Name such
+fields ``<event>_at`` (``created_at``, ``scanned_at``)."""
+
+#: Serializers known to round-trip, allowed on :class:`Record` fields.
+_ROUND_TRIP_SERIALIZERS: Final = frozenset({_utc_json})
+
+
+#: The kind grammar: two or three lowercase dot-separated segments. The first
+#: is the declaring plugin's name verbatim, hyphens included (``untaped`` for
+#: core); the others are snake_case.
+KIND_PATTERN: Final = re.compile(
+    r"^[a-z][a-z0-9]*(-[a-z0-9]+)*(\.[a-z][a-z0-9]*(_[a-z0-9]+)*){1,2}$"
+)
+
+
+def check_data_kind(kind: str) -> None:
+    """Reject a record kind that is not ``<plugin>.<noun>`` or ``<plugin>.<noun>.summary``.
+
+    ``.summary`` is the only third segment a data kind may have: pipe
+    consumers that skip informational records rely on it. Raises
+    ``ValueError``: a bad kind is a programming error that must surface at
+    development time.
+    """
+    segments = kind.split(".")
+    if (
+        not KIND_PATTERN.match(kind)
+        or segments[1] == "summary"
+        or (len(segments) == 3 and segments[2] != "summary")
+    ):
+        raise ValueError(
+            f"invalid record kind {kind!r}: expected '<plugin>.<noun>' with the plugin's "
+            "name verbatim and a snake_case noun, optionally followed by '.summary', e.g. "
+            "'github.code_hit', 'acme-tools.widget' or 'awx.apply_outcome.summary'"
+        )
 
 
 def _absolute(value: Path) -> Path:
@@ -163,17 +234,170 @@ def _field_order(model: type[BaseModel]) -> tuple[str, ...]:
     return tuple(names)
 
 
+class DuplicateKindError(ValueError):
+    """Two record models declare the same kind (reason ``duplicate-kind``)."""
+
+
+_MODELS: dict[str, type[Record]] = {}
+_KINDS: dict[type[BaseModel], str] = {}
+
+
+def kind_of(model: type[BaseModel]) -> str | None:
+    """The kind ``model`` declares (``None``: a kind-less model, such as the record bases)."""
+    return _KINDS.get(model)
+
+
+def record_model(kind: str) -> type[Record] | None:
+    """The record model that declares ``kind`` (``None``: no model declares it)."""
+    return _MODELS.get(kind)
+
+
+def record_kinds() -> Mapping[str, type[Record]]:
+    """Every declared kind and its model, read-only."""
+    return MappingProxyType(_MODELS)
+
+
+def _register(kind: str, model: type[Record]) -> None:
+    """Map ``kind`` to ``model``; another model already declaring it is ``duplicate-kind``.
+
+    The same class defined again (a module imported twice) replaces itself.
+    """
+    held = _MODELS.get(kind)
+    if held is not None and (held.__module__, held.__qualname__) != (
+        model.__module__,
+        model.__qualname__,
+    ):
+        raise DuplicateKindError(
+            f"duplicate-kind: {kind!r} is declared by both "
+            f"{held.__module__}.{held.__qualname__} and {model.__module__}.{model.__qualname__}; "
+            "each kind has exactly one schema, so give one of them another kind"
+        )
+    if held is not None:
+        _KINDS.pop(held, None)
+    _MODELS[kind] = model
+    _KINDS[model] = kind
+
+
+def _lossy(where: str, why: str) -> TypeError:
+    return TypeError(
+        f"{where}: {why}. A record's fields must survive a JSON round trip "
+        "(pipes, state.yml and caches read records back), so this record would lose data"
+    )
+
+
+def _check_round_trip(
+    model: type[BaseModel], seen: set[type[BaseModel]], where: str | None = None
+) -> None:
+    """Reject the field features that silently lose data in a JSON round trip.
+
+    Covers ``model`` and every model nested in its fields: secrets
+    (``SecretStr``, ``SecretBytes``), ``Field(exclude=True)``, an
+    ``exclude_if`` that can drop a value other than the default, a
+    serialization alias validation does not accept, and ``field_serializer``
+    or ``PlainSerializer``/``WrapSerializer`` other than core's own. ``where``
+    names the field a nested model sits in.
+    """
+    if model in seen:
+        return
+    seen.add(model)
+    prefix = where or model.__qualname__
+    if serializers := model.__pydantic_decorators__.field_serializers:
+        fields = sorted({field for each in serializers.values() for field in each.info.fields})
+        raise _lossy(prefix, f"field_serializer on {', '.join(fields)} may not invert")
+    config = model.model_config
+    by_name = bool(config.get("validate_by_name") or config.get("populate_by_name"))
+    for name, info in model.model_fields.items():
+        field = f"{prefix}.{name}"
+        _check_field(field, name, info, by_name=by_name)
+        for meta in info.metadata:
+            _check_serializer(field, meta)
+        _check_type(field, info.annotation, seen)
+
+
+def _check_field(where: str, name: str, info: FieldInfo, *, by_name: bool) -> None:
+    if info.exclude is True:
+        raise _lossy(where, "Field(exclude=True) leaves it out of every dump")
+    if info.exclude_if is not None and (
+        info.is_required() or not info.exclude_if(info.get_default(call_default_factory=True))
+    ):
+        # Only "omit when it is the default" reads back to the same value.
+        raise _lossy(where, "exclude_if must only drop the field's default")
+    dumped_as = info.serialization_alias or name
+    if dumped_as not in _accepted_keys(name, info, by_name=by_name):
+        raise _lossy(where, f"dumps as {dumped_as!r}, which validation does not accept")
+
+
+def _accepted_keys(name: str, info: FieldInfo, *, by_name: bool) -> set[str]:
+    alias = info.validation_alias
+    if alias is None:
+        return {name}
+    accepted = {name} if by_name else set()
+    if isinstance(alias, str):
+        return accepted | {alias}
+    choices = getattr(alias, "choices", ())
+    return accepted | {choice for choice in choices if isinstance(choice, str)}
+
+
+def _check_serializer(where: str, meta: object) -> None:
+    if isinstance(meta, PlainSerializer | WrapSerializer) and (
+        meta.func not in _ROUND_TRIP_SERIALIZERS
+    ):
+        raise _lossy(where, f"{type(meta).__name__} {meta.func.__name__} may not invert")
+
+
+def _check_type(where: str, annotation: object, seen: set[type[BaseModel]]) -> None:
+    if isinstance(annotation, TypeAliasType):
+        _check_type(where, annotation.__value__, seen)
+        return
+    origin = get_origin(annotation)
+    if origin is Literal:
+        return
+    if origin is Annotated:
+        for meta in getattr(annotation, "__metadata__", ()):
+            _check_serializer(where, meta)
+    if isinstance(annotation, type):
+        if issubclass(annotation, SecretStr | SecretBytes):
+            raise _lossy(where, f"{annotation.__name__} dumps masked")
+        if issubclass(annotation, BaseModel):
+            _check_round_trip(annotation, seen, where)
+            return
+    for arg in get_args(annotation):
+        _check_type(where, arg, seen)
+
+
 class Record(BaseModel):
     """Base for emitted records: frozen, with unknown fields rejected.
 
     Dumps list the record's own fields before inherited base fields, except
     that an inherited ``action`` follows the identifying field.
+
+    A subclass declares its kind with a class keyword,
+    ``class GitlabProject(Record, kind="gitlab.project")``, checked against
+    the kind grammar (:func:`check_data_kind`) and registered kind → model;
+    a second model declaring the same kind raises :class:`DuplicateKindError`.
+    A subclass without ``kind=`` is kind-less, not its parent's kind. Every
+    subclass is checked for fields that would lose data in a JSON round trip
+    (``SecretStr``, ``Field(exclude=True)``, serialization-only aliases,
+    custom serializers); the class definition raises ``TypeError`` naming
+    the field.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     #: The fields a table of these records shows by default (empty: every field).
     table_columns: ClassVar[tuple[str, ...]] = ()
+
+    def __init_subclass__(cls, *, kind: str | None = None, **kwargs: Any) -> None:
+        if kind is not None:
+            check_data_kind(kind)
+        super().__init_subclass__(**kwargs)
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, *, kind: str | None = None, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        _check_round_trip(cls, set())
+        if kind is not None:
+            _register(kind, cls)
 
     @model_serializer(mode="wrap")
     def _own_fields_first(self, handler: SerializerFunctionWrapHandler) -> Any:
@@ -231,15 +455,22 @@ class CheckRecord(Record):
 
 __all__ = [
     "FAILURE_ACTIONS",
+    "KIND_PATTERN",
     "OUTCOME_ACTIONS",
+    "TABLE_CONTEXT",
     "AbsolutePath",
     "CheckRecord",
     "CheckStatus",
+    "DuplicateKindError",
     "OutcomeRecord",
     "Record",
     "TableGlyph",
     "TargetRecord",
     "UtcTimestamp",
+    "check_data_kind",
     "format_utc",
+    "kind_of",
+    "record_kinds",
+    "record_model",
     "table_columns_of",
 ]

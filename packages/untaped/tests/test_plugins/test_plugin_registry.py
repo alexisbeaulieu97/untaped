@@ -37,6 +37,7 @@ from untaped.plugins.registry import (
     run_deferred_factory,
     settings_model,
 )
+from untaped.records import DuplicateKindError
 
 
 @pytest.mark.parametrize(
@@ -254,11 +255,19 @@ def test_three_claimants_are_all_quarantined() -> None:
             "malformed-entry-point",
         ),
         (
+            make_candidate(
+                make_spec(name="github"),
+                "a-dist",
+                error=DuplicateKindError("duplicate-kind: 'github.repo' is declared twice"),
+            ),
+            "duplicate-kind",
+        ),
+        (
             make_candidate(make_spec(name="github", skills=("not-a-skill",)), "a-dist"),  # type: ignore[arg-type]
             "bad-skill-asset",
         ),
     ],
-    ids=["provider-raises", "declaration-fails"],
+    ids=["provider-raises", "kind-declared-twice", "declaration-fails"],
 )
 def test_a_candidate_failing_its_own_checks_is_not_a_claimant(
     broken: ProviderCandidate, reason: str
@@ -324,3 +333,23 @@ def test_asking_a_plugin_without_commands_for_its_app_is_a_bug() -> None:
 def test_a_plugin_keeps_its_data_under_its_own_name() -> None:
     expected = Path.home() / ".untaped" / "plugins" / "acme-tools"
     assert plugin_dir(PluginSpec(name="acme-tools")) == expected
+
+
+def test_a_plugin_whose_import_redeclares_a_kind_is_quarantined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "untaped_kind_thief.py").write_text(
+        "from untaped.sdk import Record\n\n\n"
+        'class Stolen(Record, kind="untaped.setting"):\n'
+        "    key: str\n\n\n"
+        "def provide(): ...\n"
+    )
+    monkeypatch.syspath_prepend(tmp_path)
+    candidate = ProviderCandidate(
+        distribution="thief-dist", name="thief", target="untaped_kind_thief:provide"
+    )
+
+    result = compose(make_shell(), [candidate])
+
+    assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
+    assert "untaped.config.models.SettingRow" in result.quarantine[0].detail

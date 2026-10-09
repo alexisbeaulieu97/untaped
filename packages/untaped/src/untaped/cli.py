@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
@@ -32,7 +31,7 @@ from untaped.diagnostics import (
     write_record,
 )
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
-from untaped.records import TableGlyph, table_columns_of
+from untaped.records import TABLE_CONTEXT, TableGlyph, check_data_kind, kind_of, table_columns_of
 from untaped.render import column_value
 from untaped.stability import Stability, check_stability, mark_app
 from untaped.theme import OutputFormat
@@ -326,29 +325,15 @@ def raise_usage(message: str) -> NoReturn:
     raise SystemExit(ExitCode.USAGE)
 
 
-# <tool>.<snake_noun> with an optional ".summary" suffix. The suffix is
-# load-bearing for pipe consumers that skip informational records, so it is
-# the only third segment allowed and is reserved for suffix use only.
-_KIND_RE = re.compile(
-    r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\.summary)?$"
-)
-
-
 def _validate_kind(kind: str | None) -> None:
-    """Reject emit kinds that break the documented ``<tool>.<noun>[.summary]`` shape.
+    """Reject emit kinds that break the ``<plugin>.<noun>[.summary]`` grammar.
 
     Raises ``ValueError`` (not ``UntapedError``): a bad kind is a programming
     error that must surface at development time, not a user-facing condition
     for ``report_errors`` to soften.
     """
-    if kind is None:
-        return
-    if not _KIND_RE.match(kind) or (kind.endswith(".summary") and kind.count(".") == 1):
-        raise ValueError(
-            f"invalid pipe kind {kind!r}: expected '<tool>.<noun>' in snake_case "
-            "with an optional '<tool>.<noun>.summary' suffix, e.g. "
-            "'github.code_hit' or 'awx.apply_outcome.summary'"
-        )
+    if kind is not None:
+        check_data_kind(kind)
 
 
 def render_rows(
@@ -589,7 +574,10 @@ def emit(
     directly — no manual ``model_dump()`` — and writes the result itself, so
     there is no "forgot to ``echo``" silent-no-output trap. ``empty``,
     ``kind`` and ``table_columns`` behave as in :func:`render_rows`; ``empty``
-    applies to a sequence only. Without ``table_columns``, a collection of
+    applies to a sequence only. Rows of a :class:`~untaped.records.Record`
+    type that declares a kind carry it, so ``kind`` is only for plain models,
+    mappings and kind-less records; one that names another kind than a row
+    declares is an error. Without ``table_columns``, a collection of
     records shows their type's ``table_columns``; a table shows a field's
     :class:`~untaped.records.TableGlyph` instead of its value.
     """
@@ -623,10 +611,11 @@ def emit_with(
     items: Sequence[BaseModel | Mapping[str, object]] = (
         [records] if isinstance(records, BaseModel | Mapping) else records
     )
+    kind = _rows_kind(items, kind)
     if table_columns is None and not single:
         table_columns = _record_table_columns(items)
     rendered = _render(
-        [_as_row(item) for item in items],
+        [_as_row(item, table=fmt == "table") for item in items],
         single=single,
         fmt=fmt,
         columns=columns,
@@ -639,6 +628,25 @@ def emit_with(
     )
     if rendered:
         echo(rendered)
+
+
+def _rows_kind(items: Sequence[BaseModel | Mapping[str, object]], kind: str | None) -> str | None:
+    """The kind of an emit: the one its rows declare, else ``kind``.
+
+    Raises ``ValueError`` (a programming error) when ``kind`` names another
+    kind than a row declares, or rows declare different kinds, or only some
+    rows declare one: each kind has exactly one schema.
+    """
+    declared = {kind_of(type(item)) if isinstance(item, BaseModel) else None for item in items}
+    if kind is not None:
+        if declared - {None, kind}:
+            others = ", ".join(sorted(repr(each) for each in declared - {None, kind}))
+            raise ValueError(f"emit(kind={kind!r}) on records of kind {others}")
+        return kind
+    if len(declared) > 1:
+        shown = ", ".join(sorted("no kind" if each is None else repr(each) for each in declared))
+        raise ValueError(f"emit() rows declare different kinds ({shown}); emit each kind apart")
+    return declared.pop() if declared else None
 
 
 def _model_schema(
@@ -691,14 +699,15 @@ def _metadata(annotation: object) -> tuple[object, ...]:
     return tuple(getattr(annotation, "__metadata__", ()))
 
 
-def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:
+def _as_row(record: BaseModel | Mapping[str, object], *, table: bool) -> dict[str, object]:
     """Normalize a model or mapping into a plain row dict.
 
     Models dump in JSON mode so paths, enums, dates, etc. become plain
-    JSON-compatible values every output format can encode.
+    JSON-compatible values every output format can encode; a ``table`` dump
+    shows timestamps to the second.
     """
     if isinstance(record, BaseModel):
-        return record.model_dump(mode="json")
+        return record.model_dump(mode="json", context=TABLE_CONTEXT if table else None)
     return dict(record)
 
 

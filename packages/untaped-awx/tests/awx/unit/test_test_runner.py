@@ -1150,8 +1150,8 @@ def test_rows_report_the_job_start_and_finish_as_utc_timestamps() -> None:
     [row] = runner([_case_suite({})]).results
     dumped = row.model_dump(mode="json")
     assert (dumped["started_at"], dumped["finished_at"]) == (
-        "2026-01-02T03:04:05Z",
-        "2026-01-02T03:05:06Z",
+        "2026-01-02T03:04:05.123456Z",
+        "2026-01-02T03:05:06.654321Z",
     )
 
 
