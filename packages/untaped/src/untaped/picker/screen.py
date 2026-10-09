@@ -257,11 +257,17 @@ def _enter_label(state: PickerState) -> str | None:
     return None
 
 
+def _esc_label(state: PickerState) -> str | None:
+    """Esc clears a typed query before it goes back, like a ``SearchList``."""
+    return "clear" if state.query and state.focus in ("search", "list") else None
+
+
 #: What the shared keys do here, for the footer and the help overlay. They stay the SDK's
 #: keys; the screen only says what they mean in the picker.
 _SHARED_LABELS: Mapping[str, str | Callable[[PickerState], str | None]] = {
     "tab": _tab_label,
     "enter": _enter_label,
+    "esc": _esc_label,
     "ctrl-s": "create",
 }
 

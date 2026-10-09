@@ -211,8 +211,8 @@ def press(state: PickerState, key: str) -> tuple[PickerState, bool]:
 
     Whatever the key, the error on screen is dismissed in the state returned.
     Unused keys are those the focus does not bind and does not type (a letter
-    while the settings are focused, ``home``), so a screen can leave them to
-    the keys it shares with every other screen.
+    while the settings are focused, ``home``, esc with no query to clear), so a
+    screen can leave them to the keys it shares with every other screen.
     """
     if state.outcome != "running":
         return state, False
@@ -222,6 +222,8 @@ def press(state: PickerState, key: str) -> tuple[PickerState, bool]:
         return _answer_quit(state, key), True
     if state.editing is not None:
         return _edit_key(state, key), True
+    if key == "esc" and state.focus in ("search", "list"):
+        return (_clear_query(state), True) if state.query else (state, False)
     action = _GLOBAL.get(key) or _BY_FOCUS[state.focus].get(key)
     if action is not None:
         return action(state), True
@@ -419,7 +421,6 @@ _BY_FOCUS: dict[Focus, dict[str, _Action]] = {
         "down": _focus("list"),
         "enter": _focus("list"),
         "up": _focus("title"),
-        "esc": _clear_query,
         "backspace": _edit("backspace"),
         "ctrl-u": _edit("ctrl-u"),
         "ctrl-w": _edit("ctrl-w"),
@@ -429,7 +430,6 @@ _BY_FOCUS: dict[Focus, dict[str, _Action]] = {
         "down": _list_down,
         " ": _toggle,
         "enter": _toggle,
-        "esc": _clear_query,
         "/": _focus("search"),
         "backspace": _edit("backspace"),
         "ctrl-u": _edit("ctrl-u"),

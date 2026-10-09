@@ -214,10 +214,23 @@ def test_esc_with_nothing_selected_in_the_selected_pane_cancels() -> None:
     assert _run(_request(), "tab", "esc").outcome == Cancel()
 
 
-def test_esc_in_the_search_clears_the_query_and_never_quits() -> None:
-    run = _run(_request(), *"web", "esc", "esc")
-    assert run.model.query == ""
-    assert run.outcome is None
+def test_esc_in_the_search_clears_the_query_then_goes_back() -> None:
+    cleared = _run(_request(), *"web", "esc")
+    assert cleared.model.query == ""
+    assert cleared.outcome is None
+    assert _run(_request(), *"web", "esc", "esc").outcome == Cancel()
+
+
+def test_esc_in_the_list_with_a_selection_asks_before_discarding() -> None:
+    asked = _run(_request(), "down", " ", "esc")
+    assert "discard 1 selected? y/n" in asked.frame
+    assert asked.outcome is None
+
+
+def test_the_footer_says_esc_clears_while_a_query_is_typed() -> None:
+    assert "esc clear" in _lines(_run(_request(), *"web").frame)[-1]
+    assert "esc clear" in _lines(_run(_request(), *"web", "down").frame)[-1]
+    assert "esc back" in _lines(_run(_request(), *"web", "esc").frame)[-1]
 
 
 def test_esc_goes_back_even_while_an_error_is_showing() -> None:
