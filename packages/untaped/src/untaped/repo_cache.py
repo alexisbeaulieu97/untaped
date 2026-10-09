@@ -336,8 +336,9 @@ class RepoCache:
 
         A fetch that is killed (the timeout above, or the untaped process
         itself) cannot run git's own cleanup, and only ``git gc``, which
-        these caches rarely reach, removes them later. The caller's cache lock keeps other untaped fetches out; the
-        age keeps a git running outside untaped safe. Best effort.
+        these caches rarely reach, removes them later. The caller's cache
+        lock keeps other untaped fetches out; the age keeps a git running
+        outside untaped safe. Best effort.
         """
         cutoff = time.time() - _STALE_TEMP_PACK_SECONDS
         try:
