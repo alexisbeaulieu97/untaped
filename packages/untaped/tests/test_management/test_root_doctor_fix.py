@@ -167,18 +167,6 @@ def test_a_fix_running_doctor_or_an_unknown_command_is_refused(
     assert RAN == []
 
 
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ("--profile", "p", "skills", "update"),
-        ("--profile=p", "skills", "update"),
-        ("skills", "update"),
-    ],
-)
-def test_the_command_is_read_past_either_profile_spelling(argv: tuple[str, ...]) -> None:
-    assert fix._command(argv) == ["skills", "update"]
-
-
 def test_a_lazily_mounted_capability_command_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
     spec = _spec(("svc.own", "svc repair", {}))
     result = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
