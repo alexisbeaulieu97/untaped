@@ -261,6 +261,13 @@ def test_the_footer_offers_no_picker_keys_while_the_discard_question_is_open() -
     assert "left previous" not in on_choice
     assert "right next" not in on_choice
 
+    from_search = _lines(_run(_request(), "down", " ", "up", "ctrl-c").frame)[-1]
+    assert "down browse" not in from_search
+    on_create = ("down", " ", "tab", *["down"] * 8, "ctrl-c")
+    assert "enter create" not in _lines(_run(_many(), *on_create).frame)[-1]
+    on_text = ("down", " ", "tab", "down", "down", "ctrl-c")
+    assert "enter edit" not in _lines(_run(_many(), *on_text).frame)[-1]
+
 
 def test_esc_goes_back_even_while_an_error_is_showing() -> None:
     run = _run(_request(title_label="name"), "ctrl-s")
