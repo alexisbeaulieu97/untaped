@@ -84,9 +84,11 @@ yourself, in a workspace checkout or anywhere else, is unaffected:
 If you set `GIT_SSH_COMMAND` yourself, add `-o BatchMode=yes` to keep the
 fail-fast behavior.
 
-When a Git command times out or you press Ctrl-C, `untaped` stops it and every
-process it started: SIGTERM first, so Git removes its lock files, then
-SIGKILL two seconds later.
+When a Git command times out, `untaped` stops it and every process it
+started: SIGTERM first, so Git removes its lock files, then SIGKILL two
+seconds later. Ctrl-C, SIGTERM and SIGHUP sent to `untaped` (a closed
+terminal, `timeout`, a cancelled CI job) are passed on to the Git commands it
+is running.
 
 ## Recipe hooks
 

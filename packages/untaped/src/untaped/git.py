@@ -72,6 +72,8 @@ _BATCH_SSH_COMMAND = "ssh -o BatchMode=yes"
 _GIST_LIMIT = 300
 # Seconds a timed-out git gets, after SIGTERM, to remove its lock files.
 _TERM_GRACE_S = 2.0
+# Process groups of the git commands running now, for forward_signals().
+_LIVE_GROUPS: dict[int, None] = {}
 _REDACTED = "<redacted>"
 _LOG = logging.getLogger("untaped.git")
 # ``scheme://user[:password]@``: the whole userinfo can be a token.
@@ -144,7 +146,6 @@ _AUTH_MARKERS = (
     "could not read password",
     "terminal prompts disabled",
     "permission denied (publickey",
-    "host key verification failed",
     "invalid username or password",
     "returned error: 401",
 )
@@ -153,12 +154,10 @@ _CREDENTIAL_HINT = (
     "the remote rejected the credentials: check the token (or ssh key) "
     "for this host and its access to the repository"
 )
-# Lowercased stderr fragments of ssh failing where it would have prompted.
-_SSH_MARKERS = (
-    "permission denied (publickey",
-    "host key verification failed",
-    "can't open /dev/tty",
-)
+# Lowercased stderr fragments of ssh failing where it would have prompted;
+# a host key that changed is never one to accept from a hint.
+_SSH_PROMPT_MARKERS = ("can't open /dev/tty", "host key verification failed")
+_CHANGED_HOST_KEY = "remote host identification has changed"
 _SSH_HINT = (
     "untaped runs git without a terminal, so ssh cannot ask for a key "
     "passphrase or to trust a new host: load the key into ssh-agent "
@@ -179,7 +178,7 @@ def credential_failure(stderr: str) -> ErrorCategory | None:
 def _failure_hint(stderr: str) -> str | None:
     """What the user can do about a git failure, from its stderr."""
     lowered = stderr.lower()
-    if any(marker in lowered for marker in _SSH_MARKERS):
+    if _CHANGED_HOST_KEY not in lowered and any(m in lowered for m in _SSH_PROMPT_MARKERS):
         return _SSH_HINT
     return _CREDENTIAL_HINT if credential_failure(stderr) else None
 
@@ -385,7 +384,8 @@ def _run_process(
     ``fetch-pack``, ``index-pack``) share its process group and nothing it
     starts can prompt on the terminal. On a timeout or an interrupt the group
     gets SIGTERM, so git removes its lock files, then SIGKILL after
-    :data:`_TERM_GRACE_S`, so no helper outlives the call.
+    :data:`_TERM_GRACE_S`, so no helper outlives the call. Signals sent to
+    untaped's own process group reach git only through :func:`forward_signals`.
     """
     with subprocess.Popen(
         cmd,
@@ -396,26 +396,32 @@ def _run_process(
         stderr=stderr,
         start_new_session=True,
     ) as process:
+        _LIVE_GROUPS[process.pid] = None
         try:
             out, err = process.communicate(input, timeout=timeout)
         except BaseException:
             _stop_group(process)
             raise
+        finally:
+            _LIVE_GROUPS.pop(process.pid, None)
     return subprocess.CompletedProcess(cmd, process.returncode, out, err)
 
 
 def _stop_group(process: subprocess.Popen[bytes]) -> None:
     """SIGTERM the process group led by ``process``, wait for it to empty, then SIGKILL it."""
     deadline = time.monotonic() + _TERM_GRACE_S
-    _signal_group(process.pid, signal.SIGTERM)
+    alive = _signal_group(process.pid, signal.SIGTERM)
     try:
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=_TERM_GRACE_S)
         # Helpers can outlive git: give them the rest of the grace period too.
-        while time.monotonic() < deadline and _signal_group(process.pid, 0):
-            time.sleep(0.02)
+        while alive and time.monotonic() < deadline:
+            alive = _signal_group(process.pid, 0)
+            if alive:
+                time.sleep(0.02)
     finally:  # a second interrupt during the grace period must not skip the kill
-        _signal_group(process.pid, signal.SIGKILL)
+        if alive:
+            _signal_group(process.pid, signal.SIGKILL)
 
 
 def _signal_group(pgid: int, sig: int) -> bool:
@@ -425,6 +431,33 @@ def _signal_group(pgid: int, sig: int) -> bool:
     except ProcessLookupError, PermissionError:  # macOS: EPERM for a group of zombies
         return False
     return True
+
+
+def forward_signals() -> None:
+    """Pass SIGINT, SIGTERM and SIGHUP on to the git commands running when they arrive.
+
+    Git runs in its own session (see :func:`_run_process`), so a signal sent
+    to untaped's process group (Ctrl-C, a closed terminal, ``timeout``, a
+    cancelled CI job) no longer reaches it, and git started by a worker
+    thread would run on until its own timeout. The CLI entry point calls this
+    once, from the main thread; the previous handler then runs as before, and
+    a signal untaped ignores stays ignored.
+    """
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        previous = signal.getsignal(sig)
+        if previous is None or previous == signal.SIG_IGN:
+            continue
+        signal.signal(sig, functools.partial(_forward_signal, previous))
+
+
+def _forward_signal(previous: Callable[..., object] | int, signum: int, frame: object) -> None:
+    for pgid in list(_LIVE_GROUPS):
+        _signal_group(pgid, signum)
+    if callable(previous):
+        previous(signum, frame)
+    else:  # SIG_DFL: die of the signal, as untaped did before
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
 
 
 def git_toplevel(path: Path, *, git: str = "git", timeout: float = 30.0) -> Path | None:
@@ -556,7 +589,7 @@ def _core_ssh_command_set(
     probe runs in the command's ``cwd`` (the process cwd when there is none)
     and names ``git_dir`` when given, so it reads that repository's config,
     never one inherited ``GIT_DIR`` points at. It uses ``Popen`` directly so
-    it stays out of the ``subprocess.run`` path that callers and tests observe.
+    it stays out of the :func:`_run_process` path that callers and tests observe.
     """
     if git_path is None:
         return False

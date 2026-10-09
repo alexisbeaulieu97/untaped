@@ -39,6 +39,7 @@ from untaped.cli import (
 )
 from untaped.diagnostics import diagnostics_scope
 from untaped.errors import ConfigError
+from untaped.git import forward_signals
 from untaped.management import (
     build_root_alias_app,
     build_root_auth_app,
@@ -470,6 +471,7 @@ def run_root(
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Console-script entry point for the unified ``untaped`` shell."""
+    forward_signals()
     run_root(argv)
 
 
