@@ -23,10 +23,18 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
-from pydantic import BaseModel, ConfigDict, Secret, SecretBytes, SecretStr, TypeAdapter
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Secret,
+    SecretBytes,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+)
 from pydantic_core import PydanticSerializationError, to_json
 
-from untaped.errors import ConfigError, UntapedError
+from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.records import Record, kind_of
 
 if TYPE_CHECKING:
@@ -166,19 +174,24 @@ def cached[F: Callable[..., Any]](*, ttl: timedelta) -> Callable[[F], F]:
         raise TypeError("cached(ttl=...) needs a positive timedelta")
 
     def mark(fn: F) -> F:
-        if getattr(fn, _CACHED, None) is not None:
-            return fn
-
-        @functools.wraps(fn)
-        def served(self: Contract, /, *args: Any, **kwargs: Any) -> Any:
-            from untaped.contracts._cache import call  # noqa: PLC0415 - cache needs settings
-
-            return call(self, fn, ttl, args, kwargs)
-
-        setattr(served, _CACHED, ttl)
-        return served  # type: ignore[return-value]  # same signature as fn
+        return _served(fn, ttl, fn.__name__)
 
     return mark
+
+
+def _served[F: Callable[..., Any]](fn: F, ttl: timedelta, name: str) -> F:
+    """``fn`` served through the answer cache as contract method ``name``."""
+    if getattr(fn, _CACHED, None) is not None:
+        return fn
+
+    @functools.wraps(fn)
+    def served(self: Contract, /, *args: Any, **kwargs: Any) -> Any:
+        from untaped.contracts._cache import call  # noqa: PLC0415 - cache needs settings
+
+        return call(self, name, fn, ttl, args, kwargs)
+
+    setattr(served, _CACHED, ttl)
+    return served  # type: ignore[return-value]  # same signature as fn
 
 
 def _stamp(provider: Contract, item: Any, result: Any) -> Any:
@@ -247,8 +260,8 @@ class Contract(ABC):  # noqa: B024 - every method has a default
     def http(self) -> HttpClient:
         """The SDK's HTTP client for this provider: the profile's proxy, CA and timeout.
 
-        Inside ``gather(deadline=...)`` no request starts past the deadline.
-        A provider using its own client is not bounded.
+        Inside ``gather(deadline=...)`` no request starts past the deadline
+        (true of every untaped ``HttpClient``; another library's is not bounded).
         """
         return _per_profile(self, "_untaped_http", lambda: _http_client(binding_of(self)))
 
@@ -264,7 +277,16 @@ class Contract(ABC):  # noqa: B024 - every method has a default
                 category="invalid",
                 system=binding.plugin,
             )
-        return binding.item.model_validate_json(json.dumps(source.record), strict=True)
+        try:
+            return binding.item.model_validate_json(json.dumps(source.record), strict=True)
+        except ValidationError as exc:
+            raise UntapedError(
+                f"this {kind_of(binding.item)} record no longer reads: "
+                f"{first_validation_error(exc)}",
+                category="invalid",
+                system=binding.plugin,
+                hint=f"ask {binding.plugin} for it again; its record shape changed since",
+            ) from None
 
 
 def _per_profile[V](holder: object, attribute: str, load: Callable[[], V]) -> V:
@@ -313,8 +335,6 @@ class Configured[S: BaseModel]:
         return cast("S", settings)
 
     def _settings_ready(self) -> NotReady | None:
-        from pydantic import ValidationError  # noqa: PLC0415
-
         try:
             self.settings  # noqa: B018 - loading is the check
         except ConfigError as exc:
@@ -454,13 +474,19 @@ def _rewrap(cls: type[Contract]) -> None:
         return
     for name, value in list(vars(cls).items()):
         method = info.methods.get(name)
-        if method is None or not inspect.isfunction(value):
+        if method is None:
+            if getattr(value, _CACHED, None) is not None:
+                raise TypeError(
+                    f"{cls.__qualname__}.{name}: only the contract decides what is @cached"
+                )
+            continue
+        if not inspect.isfunction(value):
             continue
         wrapped = value
         if method.bridge:
             wrapped = bridge(wrapped)
         if method.ttl is not None:
-            wrapped = cached(ttl=method.ttl)(wrapped)
+            wrapped = _served(wrapped, method.ttl, name)
         if wrapped is not value:
             setattr(cls, name, wrapped)
 

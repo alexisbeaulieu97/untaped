@@ -296,6 +296,26 @@ def test_a_deadline_caps_each_attempt_and_refuses_one_past_it(
     assert err.value.retryable
 
 
+def test_a_retry_that_would_wait_past_the_deadline_is_not_made(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    from untaped.http import request_deadline
+
+    monkeypatch.setattr("untaped.http.time.monotonic", lambda: 100.0)
+    busy = httpx.Response(503, headers={"Retry-After": "60"})
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/x").mock(return_value=busy)
+        with (
+            HttpClient(base_url="https://example.com") as client,
+            request_deadline(5.0),
+            pytest.raises(HttpStatusError) as err,
+        ):
+            client.get("/x", retry=RetryPolicy(max_attempts=3))
+    assert err.value.status_code == 503
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
 def test_a_nested_deadline_never_extends_the_outer_one(monkeypatch: pytest.MonkeyPatch) -> None:
     from untaped.http import _time_left, request_deadline
 

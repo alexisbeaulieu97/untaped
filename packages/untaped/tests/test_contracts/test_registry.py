@@ -221,3 +221,36 @@ def test_a_skipped_answer_names_why() -> None:
     library = gather(BookSource.books)()[0]
     assert isinstance(library, Skipped)
     assert "catalog" in library.detail
+
+
+def test_an_owner_whose_contracts_break_takes_only_its_own_contracts_down() -> None:
+    def broken() -> tuple[type[Contract], ...]:
+        raise ImportError("acme api broke")
+
+    acme = PluginSpec(name="acme", contracts=broken)
+    odd = PluginSpec(name="odd", contracts=lambda: (Book,))  # type: ignore[arg-type, return-value]
+    compose(shelf_spec(), acme, odd, shop_spec())
+    [shop] = gather(BookSource.books)()
+    assert isinstance(shop, Ok)
+    row = doctor_row(PluginContext(settings=None))
+    assert row.ok and row.warn
+    assert "acme's contracts couldn't be read: acme api broke" in row.detail
+    assert "odd's contracts couldn't be read" in row.detail
+
+    class Gadgets(Contract):
+        def gadgets(self) -> list[Book]:
+            raise NotImplementedError
+
+    with pytest.raises(ConfigError, match="acme's contracts couldn't be read"):
+        gather(Gadgets.gadgets)()
+
+
+def test_an_offer_waiting_for_its_owner_is_a_pass_in_doctor() -> None:
+    compose(shop_spec())
+    row = doctor_row(PluginContext(settings=None))
+    assert (row.ok, row.warn) == (True, False)
+    assert row.detail == "offers wait for shelf (not installed)"
+    compose(shelf_spec(), library_spec(), PluginSpec(name="kiosk", provides={"git": lambda: ()}))
+    assert doctor_row(PluginContext(settings=None)).detail == (
+        "1 provider(s), all usable; offers wait for git (not installed)"
+    )

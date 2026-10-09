@@ -21,9 +21,10 @@ from test_contracts.support import (
     shelf_spec,
     write_config,
 )
-from untaped.contracts import Contract, Record, bridge, cached, gather
+from untaped.contracts import Contract, Ok, Record, bridge, cached, gather
 from untaped.contracts._declare import ContractError, contract_of, item_type
-from untaped.stability import Experimental, function_mark
+from untaped.plugins.registry import PluginSpec
+from untaped.stability import Experimental, deprecated, function_mark
 
 
 def test_a_contract_is_declared_with_its_name_methods_and_owner_model() -> None:
@@ -31,7 +32,7 @@ def test_a_contract_is_declared_with_its_name_methods_and_owner_model() -> None:
     assert info is not None
     assert info.name == "book_source"
     assert info.item is Book
-    assert set(info.methods) == {"to_book", "books", "lookup"}
+    assert set(info.methods) == {"to_book", "books", "lookup", "by_author", "first", "count"}
     assert info.methods["to_book"].bridge
     assert info.methods["books"].ttl == timedelta(hours=1)
     assert info.methods["books"].listing
@@ -205,3 +206,44 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
     assert getattr(Direct.listing, "__isabstractmethod__", False)
     with pytest.raises(TypeError, match="positive"):
         cached(ttl=timedelta(0))
+
+
+def test_a_provider_may_not_cache_a_method_the_contract_does_not_declare() -> None:
+    with pytest.raises(TypeError, match="only the contract decides what is @cached"):
+
+        class Eager(Shop):
+            @cached(ttl=timedelta(minutes=1))
+            def _load(self) -> list[Book]:
+                return []
+
+
+def test_a_renamed_method_keeps_its_old_name_marked_deprecated() -> None:
+    from untaped.stability import Deprecated
+
+    class Catalogue(Contract):
+        def entries(self) -> list[Book]:
+            raise NotImplementedError
+
+        @deprecated(replacement="entries")
+        def items(self) -> list[Book]:
+            raise NotImplementedError
+
+    info = contract_of(Catalogue)
+    assert info is not None
+    assert set(info.methods) == {"entries", "items"}
+    mark = function_mark(Catalogue.items)
+    assert isinstance(mark, Deprecated)
+    assert mark.replacement == "entries"
+
+
+def test_a_method_filled_under_another_name_is_cached_as_the_contract_method() -> None:
+    class Aliased(Shop):
+        def _load(self) -> list[Book]:
+            return [Book(title="Dune")]
+
+        books = _load
+
+    compose(shelf_spec(), PluginSpec(name="shop", provides={"shelf": lambda: (Aliased(),)}))
+    [answer] = gather(BookSource.books)()
+    assert isinstance(answer, Ok)
+    assert [book.title for book in answer.value] == ["Dune"]

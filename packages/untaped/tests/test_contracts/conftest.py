@@ -16,6 +16,8 @@ def _fresh_providers() -> Iterator[None]:
     Library.error = None
     Shop.rows = []
     Shop.error = None
+    Shop.asked = []
+    Shop.total = 0
     Kiosk.rows = []
     reset()
     yield

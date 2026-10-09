@@ -141,7 +141,12 @@ def gather[C: Contract, **P, R](
     one isn't.
     """
     info, wanted = method_contract(method)
-    needed = [wanted.name, *(method_contract(each)[1].name for each in needs)]
+    needed = [wanted.name]
+    for each in needs:
+        other, also = method_contract(each)
+        if other.cls is not info.cls:
+            raise TypeError(f"needs= names {other.name}.{also.name}, not a {info.name} method")
+        needed.append(also.name)
     seconds = deadline.total_seconds() if isinstance(deadline, timedelta) else deadline
 
     def call(*args: P.args, **kwargs: P.kwargs) -> Answers[R]:

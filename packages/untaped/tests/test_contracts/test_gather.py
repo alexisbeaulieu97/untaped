@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from test_contracts.support import (
     Kiosk,
     Library,
     Shop,
+    Volume,
     compose,
     kiosk_spec,
     library_spec,
@@ -275,5 +275,132 @@ def test_the_deadline_bounds_a_provider_requests() -> None:
     gather(BookSource.books, refresh=True)()
     assert seen[0] is not None and 0 < seen[0] <= 30
     assert seen[1] is None
-    started = time.monotonic()
-    assert time.monotonic() - started < 1
+
+
+def test_each_set_of_arguments_has_its_own_cache_entry() -> None:
+    compose(shelf_spec(), shop_spec())
+    ask = gather(BookSource.by_author)
+    ask("Herbert")
+    ask("Herbert", limit=10)
+    ask("Herbert", 10)
+    ask("Austen")
+    ask("Herbert", limit=3)
+    assert Shop.asked == [("Herbert", 10), ("Austen", 10), ("Herbert", 3)]
+    assert len(_cache_files()) == 3
+
+
+def test_one_item_and_a_plain_value_are_validated_strictly_too() -> None:
+    compose(shelf_spec(), shop_spec())
+    Shop.rows = [Book(title="Dune")]
+    [first] = gather(BookSource.first)()
+    assert isinstance(first, Ok)
+    assert first.value.source == Source(plugin="shop", kind="shelf.book")
+    Shop.rows = [Book.model_construct(title="Dune", pages="many")]
+    [first] = gather(BookSource.first)()
+    assert isinstance(first, Skipped)
+    assert first.reason == "invalid-item"
+    Shop.total = 3
+    [count] = gather(BookSource.count)()
+    assert isinstance(count, Ok) and count.value == 3
+    Shop.total = "3"
+    [count] = gather(BookSource.count)()
+    assert isinstance(count, Skipped)
+    assert count.reason == "invalid-item"
+
+
+def test_needs_names_methods_of_the_same_contract() -> None:
+    from untaped.contracts import Contract
+
+    class Catalogue(Contract):
+        def entries(self) -> list[Book]:
+            raise NotImplementedError
+
+    with pytest.raises(TypeError, match="not a book_source method"):
+        gather(BookSource.books, needs=[Catalogue.entries])
+
+
+def test_a_cache_entry_names_the_provider_own_record_shape() -> None:
+    """S20 for a bridged provider: its record model's shape is part of the entry's schema."""
+    import dataclasses
+
+    from test_contracts.support import SpecialVolume
+    from untaped.contracts._cache import _adapter, _schema, return_type
+    from untaped.contracts._declare import binding_of
+
+    provider = Library()
+    compose(shelf_spec(), library_spec(provider))
+    write_config(LIBRARY_CONFIG)
+    gather(BookSource.books)()
+    binding = binding_of(provider)
+    assert binding is not None
+    hint = return_type(binding, "books")
+    [path] = _cache_files()
+    stored = json.loads(path.read_text())["schema"]
+    assert stored == _schema(binding, hint)
+    assert stored != _adapter(hint)[1]
+    assert stored != _schema(dataclasses.replace(binding, item=SpecialVolume), hint)
+
+
+def test_a_cache_that_cannot_be_written_keeps_the_live_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refuse(*_: object, **__: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr("untaped.contracts._cache.atomic_write", refuse)
+    compose(shelf_spec(), library_spec())
+    write_config(LIBRARY_CONFIG)
+    [library] = gather(BookSource.books)()
+    assert isinstance(library, Ok)
+    assert [book.title for book in library.value] == ["Dune", "Emma"]
+    assert _cache_files() == []
+
+
+def test_self_http_is_the_profiles_client_bounded_by_the_deadline() -> None:
+    import httpx
+    import respx
+
+    seen: list[object] = []
+
+    class Online(Library):
+        def books(self) -> list[Book]:
+            response = self.http.get("https://library.example/books")
+            return [self.to_book(Volume(id=1, name=response.json()["name"]))]
+
+    def record(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions["timeout"]["read"])
+        return httpx.Response(200, json={"name": "Dune"})
+
+    provider = Online()
+    compose(shelf_spec(), library_spec(provider))
+    write_config(LIBRARY_CONFIG + "    http:\n      timeout_seconds: 40\n")
+    with respx.mock() as mock:
+        mock.get("https://library.example/books").mock(side_effect=record)
+        [answer] = gather(BookSource.books, refresh=True, deadline=5)()
+        gather(BookSource.books, refresh=True)()
+    assert isinstance(answer, Ok)
+    assert answer.value[0].title == "Dune"
+    assert seen[0] is not None and 0 < seen[0] <= 5  # type: ignore[operator]
+    assert seen[1] == 40
+    assert provider.http is provider.http
+
+
+def test_own_reads_back_the_providers_record() -> None:
+    from untaped.contracts._declare import binding_of
+
+    provider = Library()
+    compose(shelf_spec(), library_spec(provider))
+    write_config(LIBRARY_CONFIG)
+    [answer] = gather(BookSource.books)()
+    assert isinstance(answer, Ok)
+    dune = answer.value[0]
+    assert provider.own(dune) == Volume(id=1, name="Dune")
+    with pytest.raises(UntapedError, match="not issued by library"):
+        provider.own(Book(title="Dune", source=Source(plugin="shop", kind="shelf.book")))
+    reshaped = dune.model_copy(
+        update={"source": Source(plugin="library", kind="library.volume", record={"id": "x"})}
+    )
+    with pytest.raises(UntapedError, match="no longer reads") as err:
+        provider.own(reshaped)
+    assert binding_of(provider) is not None
+    assert err.value.hint == "ask library for it again; its record shape changed since"
