@@ -531,6 +531,56 @@ def test_a_signal_that_ends_untaped_reaches_git(tmp_path: Path, sig: str) -> Non
     assert _wait_gone(int(helper_pid.read_text())), f"git's helper outlived {sig} to untaped"
 
 
+@pytest.mark.usefixtures("restore_signal_handlers")
+def test_forwarding_leaves_an_ignored_signal_ignored() -> None:
+    # nohup: SIGHUP stays ignored, for untaped and the git it starts.
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    git.forward_signals()
+    assert signal.getsignal(signal.SIGHUP) == signal.SIG_IGN
+    assert signal.getsignal(signal.SIGTERM) != signal.SIG_DFL
+
+
+def test_a_forwarded_default_signal_still_ends_untaped(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(git.signal, "signal", lambda sig, handler: calls.append(("reset", sig)))
+    monkeypatch.setattr(git.os, "kill", lambda pid, sig: calls.append(("kill", sig)))
+
+    def exit_(status: int) -> None:
+        calls.append(("exit", status))
+        raise SystemExit(status)
+
+    monkeypatch.setattr(git.os, "_exit", exit_)
+
+    with pytest.raises(SystemExit):
+        git._forward_signal(signal.SIG_DFL, signal.SIGTERM, None)
+
+    # Re-raised under the default action; exiting covers PID 1, which ignores it.
+    assert calls == [
+        ("reset", signal.SIGTERM),
+        ("kill", signal.SIGTERM),
+        ("exit", 128 + signal.SIGTERM),
+    ]
+
+
+@pytest.mark.usefixtures("restore_signal_handlers")
+def test_without_process_groups_git_is_killed_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(os, "killpg")
+    killed: list[bool] = []
+
+    class _Process:
+        pid = 0
+
+        def kill(self) -> None:
+            killed.append(True)
+
+    git._stop_group(_Process())  # type: ignore[arg-type]
+    before = signal.getsignal(signal.SIGTERM)
+    git.forward_signals()
+
+    assert killed == [True]
+    assert signal.getsignal(signal.SIGTERM) is before
+
+
 def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch) -> None:
     stderr = "warning: noise\nfatal: repository 'x' not found\n"
     monkeypatch.setattr(git, "_run_process", _recording_run([], returncode=128, stderr=stderr))
