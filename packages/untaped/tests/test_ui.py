@@ -362,14 +362,14 @@ def test_resolve_theme_finds_quiet_preset_from_builtins_without_registry() -> No
 
 
 def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None:
-    """With no injected backend, the default prompt_toolkit backend is built on
+    """With no injected backend, the default terminal backend is built on
     first access (the only path that imports ``prompt_toolkit``) and reused."""
-    from untaped.prompts import PromptToolkitPromptBackend
+    from untaped.prompts import TerminalPromptBackend
 
     ui = UiContext()
 
     backend = ui.prompt_backend
-    assert isinstance(backend, PromptToolkitPromptBackend)
+    assert isinstance(backend, TerminalPromptBackend)
     assert ui.prompt_backend is backend  # cached, not rebuilt per access
 
 
