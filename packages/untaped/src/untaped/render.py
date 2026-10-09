@@ -423,8 +423,8 @@ def _table_cell(column: str, value: Any) -> str:
     Only the ``table`` format uses it; json, yaml, raw and pipe keep values
     verbatim. Mappings flatten to ``key=value`` pairs, empty containers are
     blank, durations (``*_s``, ``elapsed``) read as ``1m42s``, other floats keep two
-    decimals, a 40-hex commit is shortened, and whitespace runs (newlines
-    included) collapse to one space.
+    decimals, a 40-hex commit is shortened, a UTC timestamp shows to the second,
+    and whitespace runs (newlines included) collapse to one space.
     """
     if isinstance(value, int | float) and not isinstance(value, bool) and _is_duration(column):
         return _duration(value)
@@ -436,14 +436,14 @@ def _table_cell(column: str, value: Any) -> str:
 
 
 #: An RFC 3339 UTC timestamp with a fraction, as records and plain rows render one.
-_UTC_FRACTION_RE = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\.\d+Z$")
+_UTC_FRACTION_RE = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})\.[0-9]+Z")
 
 
 def _flat(value: Any) -> str:
     """A value as table or list-view text: flat, with timestamps to the second."""
     if isinstance(value, datetime):
         value = _utc(value)
-    if isinstance(value, str) and (match := _UTC_FRACTION_RE.match(value)):
+    if isinstance(value, str) and (match := _UTC_FRACTION_RE.fullmatch(value)):
         return f"{match[1]}Z"
     if isinstance(value, Mapping):
         return ", ".join(f"{key}={text}" for key, text in _flat_pairs(value, prefix=""))

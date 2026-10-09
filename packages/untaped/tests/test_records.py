@@ -411,24 +411,53 @@ def test_aliases_validation_accepts_are_allowed() -> None:
     _assert_round_trips(_ByAlias(url="https://h/x"))
 
 
+def test_a_deferred_build_is_not_an_unresolved_type() -> None:
+    class _Deferred(Record):
+        model_config = ConfigDict(frozen=True, extra="forbid", defer_build=True)
+
+        name: str
+
+    _assert_round_trips(_Deferred(name="n"))
+
+
+def test_an_alias_validation_is_told_to_ignore_fails_at_definition() -> None:
+    with pytest.raises(TypeError, match=r"_NoAlias\.html_url: dumps as 'url'"):
+
+        class _NoAlias(Record):
+            model_config = ConfigDict(
+                frozen=True,
+                extra="forbid",
+                serialize_by_alias=True,
+                validate_by_alias=False,
+                validate_by_name=True,
+            )
+
+            html_url: str = Field(alias="url")
+
+
 def _assert_round_trips(record: BaseModel) -> None:
     """Read back the dump ``emit`` writes, in strict JSON mode."""
     dumped = json.dumps(record.model_dump(mode="json"))
     assert type(record).model_validate_json(dumped, strict=True) == record
 
 
+#: Core's and the installed plugins' import packages (a test's fake plugin is
+#: a single module, not a package).
+_SHIPPED = frozenset(
+    info.name
+    for info in pkgutil.iter_modules()
+    if info.ispkg and (info.name == "untaped" or info.name.startswith("untaped_"))
+)
+
+
 def _is_shipped(module: str) -> bool:
-    top = module.partition(".")[0]
-    return top == "untaped" or top.startswith("untaped_")
+    return module.partition(".")[0] in _SHIPPED
 
 
 def _import_every_shipped_module() -> None:
     """Import every module of core and the installed plugins, so all their kinds register."""
-    tops = sorted({info.name for info in pkgutil.iter_modules() if _is_shipped(info.name)})
-    for top in tops:
+    for top in sorted(_SHIPPED):
         package = importlib.import_module(top)
-        if not hasattr(package, "__path__"):
-            continue  # a stray top-level module (a test's fake plugin), not a package
         for info in pkgutil.walk_packages(package.__path__, f"{top}."):
             if not info.name.endswith(".__main__"):
                 importlib.import_module(info.name)
