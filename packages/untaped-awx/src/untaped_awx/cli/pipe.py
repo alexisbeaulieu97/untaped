@@ -8,6 +8,8 @@ multi-word entities (``awx.job_template``); the transform lives in
 
 from __future__ import annotations
 
+from untaped.sdk import read_identifiers, read_stdin_input
+from untaped_awx.application.selection import pipe_record_id
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.kinds import RESOURCE_OUTCOME_PIPE_KINDS, pipe_kind
 from untaped_awx.infrastructure.spec import AwxResourceSpec
@@ -30,14 +32,24 @@ def selection_pipe_kinds(spec: ResourceSpec) -> set[str]:
     }
 
 
-def id_field_for(spec: ResourceSpec, *, by_id: bool) -> str:
-    """The record field a ``--stdin`` consumer extracts for ``spec``.
+def template_targets(
+    spec: ResourceSpec, identifiers: list[str] | None, *, stdin: bool, by_id: bool
+) -> list[tuple[str, bool]]:
+    """Targets of a template read command, each with its own ``by_id`` mode.
 
-    ``--by-id`` resolves on the numeric ``id``; otherwise on the spec's
-    primary identity key (its name field). Keeps the
-    ``--format pipe`` → ``--stdin`` bridge consistent across the factories.
+    Positional identifiers and bare stdin lines are names, or ids with
+    ``--by-id``. A piped record of ``spec``'s kind always names its template
+    by ``id`` (like the selection commands), so a name shared across
+    organizations can't send the lookup to the wrong template.
     """
-    return "id" if by_id else spec.identity_keys[0]
+    if not stdin or identifiers:
+        return [
+            (target, by_id) for target in read_identifiers(list(identifiers or []), stdin=stdin)
+        ]
+    piped = read_stdin_input(accept_kinds={pipe_kind_for_spec(spec)})
+    if piped.records is None:
+        return [(value, by_id) for value in piped.values]
+    return [(str(pipe_record_id(envelope)), True) for envelope in piped.records]
 
 
-__all__ = ["id_field_for", "pipe_kind_for_spec", "selection_pipe_kinds"]
+__all__ = ["pipe_kind_for_spec", "selection_pipe_kinds", "template_targets"]

@@ -25,14 +25,13 @@ from untaped.sdk import (
     emit,
     finish,
     parse_kv_pairs,
-    read_identifiers,
     report_error,
     report_errors,
 )
 from untaped_awx.application import ListTemplateUsage
 from untaped_awx.cli.context import open_context, scope_for_command
 from untaped_awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
-from untaped_awx.cli.pipe import id_field_for, pipe_kind_for_spec
+from untaped_awx.cli.pipe import template_targets
 from untaped_awx.domain import WorkflowUsage
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
@@ -63,8 +62,9 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                 name="--stdin",
                 negative="",
                 help=(
-                    "Read template names from stdin (one per line); "
-                    "equivalent to passing them positionally. Per-target "
+                    "Read template names from stdin (one per line), or "
+                    "``--format pipe`` records of the template's kind, which "
+                    "are looked up by their ``id``. Per-target "
                     "failures emit a stderr warning and force a non-zero "
                     "exit; other targets still emit their rows."
                 ),
@@ -114,12 +114,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         usages: list[WorkflowUsage] = []
         any_failed = False
         with report_errors(), open_context() as ctx:
-            targets = read_identifiers(
-                list(identifiers or []),
-                stdin=stdin,
-                id_field=id_field_for(spec, by_id=by_id),
-                accept_kinds={pipe_kind_for_spec(spec)},
-            )
+            targets = template_targets(spec, identifiers, stdin=stdin, by_id=by_id)
             filters = parse_kv_pairs(filter_, flag="--filter")
             scope = scope_for_command(ctx, organization, spec)
             use = ListTemplateUsage(
@@ -127,14 +122,14 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                 ctx.repo,
                 warn=lambda msg: ctx.progress_ui().message("warning", msg),
             )
-            for target in targets:
+            for target, target_by_id in targets:
                 try:
                     usages.extend(
                         use(
                             spec,
                             identifier=target,
                             scope=scope,
-                            by_id=by_id,
+                            by_id=target_by_id,
                             max_depth=max_depth,
                             filters=filters,
                         )
