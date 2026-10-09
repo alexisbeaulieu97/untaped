@@ -300,7 +300,7 @@ def _check_round_trip(
         return
     seen.add(model)
     prefix = where or model.__qualname__
-    if not model.__pydantic_complete__:
+    if not model.__pydantic_fields_complete__:
         raise _lossy(prefix, "it refers to a type not defined yet, so its fields can't be checked")
     decorators = model.__pydantic_decorators__
     if serializers := decorators.field_serializers:
@@ -313,15 +313,18 @@ def _check_round_trip(
     config = model.model_config
     by_alias = bool(config.get("serialize_by_alias"))
     by_name = bool(config.get("validate_by_name") or config.get("populate_by_name"))
+    reads_alias = config.get("validate_by_alias") is not False
     for name, info in model.model_fields.items():
         field = f"{prefix}.{name}"
-        _check_field(field, name, info, by_alias=by_alias, by_name=by_name)
+        _check_field(field, name, info, by_alias=by_alias, by_name=by_name, reads_alias=reads_alias)
         for meta in info.metadata:
             _check_serializer(field, meta)
         _check_type(field, info.annotation, seen)
 
 
-def _check_field(where: str, name: str, info: FieldInfo, *, by_alias: bool, by_name: bool) -> None:
+def _check_field(
+    where: str, name: str, info: FieldInfo, *, by_alias: bool, by_name: bool, reads_alias: bool
+) -> None:
     if info.exclude is True:
         raise _lossy(where, "Field(exclude=True) leaves it out of every dump")
     if info.exclude_if is not None and (
@@ -333,14 +336,16 @@ def _check_field(where: str, name: str, info: FieldInfo, *, by_alias: bool, by_n
     # serialization alias must read back too, for a dump that uses it.
     alias = info.serialization_alias
     dumped = [(alias if by_alias else None) or name, *([alias] if alias else [])]
-    accepted = _accepted_keys(name, info, by_name=by_name)
+    accepted = _accepted_keys(name, info, by_name=by_name, by_alias=reads_alias)
     for key in dumped:
         if key not in accepted:
             raise _lossy(where, f"dumps as {key!r}, which validation does not accept")
 
 
-def _accepted_keys(name: str, info: FieldInfo, *, by_name: bool) -> set[str]:
+def _accepted_keys(name: str, info: FieldInfo, *, by_name: bool, by_alias: bool) -> set[str]:
     alias = info.validation_alias
+    if not by_alias:
+        return {name} if by_name or alias is None else set()
     if alias is None:
         return {name}
     accepted = {name} if by_name else set()
