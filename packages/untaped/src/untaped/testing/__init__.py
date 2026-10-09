@@ -225,17 +225,20 @@ def assert_destructive_contract(
         assert_unchanged()
 
 
-def provider_candidate(
-    spec: PluginSpec, *, distribution: str = "test-provider"
-) -> ProviderCandidate:
+def provider_candidate(spec: PluginSpec, *, distribution: str | None = None) -> ProviderCandidate:
     """``spec`` as a discovered candidate, for composing it without installing it.
+
+    ``distribution`` defaults to ``untaped-<name>``, the name the
+    ``plugin-name`` convention expects.
 
     Pass the result to ``check_conventions(..., candidates=[...])`` or
     ``untaped.bootstrap.build_root_app(candidates=[...])``.
     """
     from untaped.plugins.registry import ProviderCandidate  # noqa: PLC0415
 
-    return ProviderCandidate(distribution=distribution, name=spec.name, target=lambda: spec)
+    return ProviderCandidate(
+        distribution=distribution or f"untaped-{spec.name}", name=spec.name, target=lambda: spec
+    )
 
 
 def check_conventions(

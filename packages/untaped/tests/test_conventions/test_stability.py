@@ -400,7 +400,7 @@ class _Nested(BaseModel):
 def _setting_violations(
     model: type[BaseModel], *, stability: Experimental | Deprecated | None = None
 ) -> list[str]:
-    spec = replace(make_spec(name="svc", factory=_app, profile=model), stability=stability)
+    spec = replace(make_spec(name="svc", factory=_app, settings=model), stability=stability)
     root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
     return stability_violations(root, bootstrap.composition(), ["svc"], spec=spec)
 
@@ -440,7 +440,7 @@ def test_anything_under_a_deprecated_plugin_is_nested_for_settings() -> None:
 
 
 def test_marks_lists_a_settings_mark_with_its_key_and_replacement() -> None:
-    spec = make_spec(name="svc", factory=_app, profile=_Clean)
+    spec = make_spec(name="svc", factory=_app, settings=_Clean)
     root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
 
     found = [m for m in marks(root, bootstrap.composition()) if m.target == "setting"]

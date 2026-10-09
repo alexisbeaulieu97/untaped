@@ -99,7 +99,7 @@ class _SectionScope:
 
     plugin: str
     section: str
-    profile_model: type[BaseModel]
+    settings_model: type[BaseModel] | None
     state_model: type[BaseModel] | None
     checks: tuple[DoctorCheck, ...]
 
@@ -283,7 +283,7 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
         _SectionScope(
             plugin=shell.name,
             section=shell.section,
-            profile_model=shell.settings,
+            settings_model=shell.settings,
             state_model=shell.state,
             checks=tuple(shell.doctor_checks),
         )
@@ -296,7 +296,7 @@ def _plugin_scope(spec: PluginSpec) -> _SectionScope:
     return _SectionScope(
         plugin=spec.name,
         section=spec.name,
-        profile_model=settings_model(spec),
+        settings_model=spec.settings,
         state_model=spec.state,
         checks=tuple(spec.doctor_checks),
     )
@@ -336,11 +336,7 @@ def collect_doctor_rows(
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
     scopes = _scopes(shell, result)
     for scope in scopes:
-        settings, error = _validate_section(scope, effective, settings_error)
-        if error is not None:
-            rows.append(_row("settings", scope.plugin, _FAIL, "validate settings", error))
-        else:
-            rows.append(_row("settings", scope.plugin, _PASS, "validate settings", "settings OK"))
+        settings = _settings_row(scope, effective, settings_error, rows)
         contexts.append((scope, settings))
         if scope.state_model is not None:
             rows.append(_state_row(scope, scope.state_model, state))
@@ -405,7 +401,7 @@ def online_probe_rows(
         raise ConfigError(f"no composed plugin named {plugin!r} to check")
     scope = _plugin_scope(spec)
     with profile_scope(profile), settings_overlay(profile, scope.section, values):
-        settings, error = _validate_section(scope, *_overlaid_effective())
+        settings, error = _validate_section(scope, settings_model(spec), *_overlaid_effective())
         if error is not None:
             return [_row("settings", scope.plugin, _FAIL, "validate settings", error)]
         return [
@@ -651,6 +647,7 @@ def _state_row(
 
 def _validate_section(
     scope: _SectionScope,
+    model: type[BaseModel],
     effective: Mapping[str, Any] | None,
     settings_error: str | None,
 ) -> tuple[BaseModel | None, str | None]:
@@ -669,10 +666,30 @@ def _validate_section(
     if not isinstance(node, dict):
         return None, f"section {scope.section!r} must be a mapping"
     try:
-        settings = check_settings_field(scope.section, node, model=scope.profile_model)
+        settings = check_settings_field(scope.section, node, model=model)
     except ConfigError as exc:
         return None, str(exc)
     return settings, None
+
+
+def _settings_row(
+    scope: _SectionScope,
+    effective: Mapping[str, Any] | None,
+    settings_error: str | None,
+    rows: list[dict[str, object]],
+) -> BaseModel | None:
+    """Append the scope's settings row and return its validated settings.
+
+    A plugin that declares no settings gets no row and its checks get ``None``.
+    """
+    if scope.settings_model is None:
+        return None
+    settings, error = _validate_section(scope, scope.settings_model, effective, settings_error)
+    if error is not None:
+        rows.append(_row("settings", scope.plugin, _FAIL, "validate settings", error))
+    else:
+        rows.append(_row("settings", scope.plugin, _PASS, "validate settings", "settings OK"))
+    return settings
 
 
 def _run_check(

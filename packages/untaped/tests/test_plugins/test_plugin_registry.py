@@ -49,7 +49,12 @@ from untaped.plugins.registry import (
         lambda: make_spec(name="acme_tools"),
         lambda: make_spec(name="acme--tools"),
         lambda: make_spec(name="github@ghes"),
-        lambda: make_spec(profile=dict),
+        lambda: make_spec(name=""),
+        lambda: make_spec(name="9tools"),
+        lambda: make_spec(name="-acme"),
+        lambda: make_spec(name="acme-"),
+        lambda: PluginSpec(name="quiet", help="Has no commands."),
+        lambda: make_spec(settings=dict),
         lambda: make_spec(state=dict),
         lambda: QuarantineRecord(
             name="n", distribution="d", entry_point="e", reason="nope", detail="x"
@@ -66,7 +71,12 @@ from untaped.plugins.registry import (
         "spec-name-underscore",
         "spec-name-double-hyphen",
         "spec-name-at",
-        "spec-profile-not-model",
+        "spec-name-empty",
+        "spec-name-leading-digit",
+        "spec-name-leading-hyphen",
+        "spec-name-trailing-hyphen",
+        "spec-help-without-commands",
+        "spec-settings-not-model",
         "spec-state-not-model",
         "quarantine-unknown-reason",
         "quarantine-blank-detail",
@@ -92,11 +102,11 @@ def test_spec_normalizes_sequences_to_tuples() -> None:
 
 def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     shell = make_shell()
-    github_spec = make_spec(name="github", profile=Profile, skills=(make_skill("gh-skill"),))
+    github_spec = make_spec(name="github", settings=Profile, skills=(make_skill("gh-skill"),))
     package = ModuleType("fake_github_package")
     package.provider = lambda: github_spec  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "fake_github_package", package)
-    jira_spec = make_spec(name="jira", profile=OtherProfile, checks=(make_check("jira.auth"),))
+    jira_spec = make_spec(name="jira", settings=OtherProfile, checks=(make_check("jira.auth"),))
     result = compose(
         shell,
         [

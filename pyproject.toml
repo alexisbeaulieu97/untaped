@@ -75,7 +75,7 @@ disallow_any_generics = true
 disallow_untyped_defs = true
 no_implicit_optional = true
 plugins = ["pydantic.mypy"]
-# Type-check every package's src/ and the release script; tests are validated by running them.
+# Type-check every package's src/ and the scripts; tests are validated by running them.
 files = [
     "packages/untaped/src",
     "packages/untaped-ansible/src",
@@ -87,6 +87,7 @@ files = [
     "packages/untaped-workspace/src",
     "scripts/changelog.py",
     "scripts/check_pr.py",
+    "scripts/gen_config_reference.py",
     "scripts/release.py",
 ]
 mypy_path = [

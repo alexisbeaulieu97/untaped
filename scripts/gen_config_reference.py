@@ -299,15 +299,8 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability 
         )
     for registered in result.plugins:
         spec = registered.spec
-        sections.append(
-            (
-                f"`{spec.name}`",
-                spec.name,
-                spec.settings,
-                False,
-                spec.stability,
-            )
-        )
+        if spec.settings is not None:
+            sections.append((f"`{spec.name}`", spec.name, spec.settings, False, spec.stability))
         if spec.state is not None:
             sections.append(
                 (

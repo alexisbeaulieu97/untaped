@@ -150,7 +150,7 @@ def test_reading_another_plugin_section_is_flagged(install: Install) -> None:
 def test_mutable_settings_models_are_flagged(install: Install) -> None:
     mutable = _SETTINGS.replace("model_config = ConfigDict(frozen=True)", "pass")
     assert _violations(install, {**_CLEAN, "acme/settings.py": mutable}) == [
-        "acme.settings.AcmeSettings::settings-not-frozen::profile",
+        "acme.settings.AcmeSettings::settings-not-frozen::settings",
         "acme.settings.AcmeState::settings-not-frozen::state",
     ]
 

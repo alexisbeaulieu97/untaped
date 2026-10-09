@@ -118,7 +118,7 @@ def _source_violations(
 
 
 def _settings_violations(spec: PluginSpec) -> Iterator[str]:
-    for label, model in (("profile", spec.settings), ("state", spec.state)):
+    for label, model in (("settings", spec.settings), ("state", spec.state)):
         if model is not None and not model.model_config.get("frozen", False):
             yield f"{model.__module__}.{model.__qualname__}::settings-not-frozen::{label}"
 

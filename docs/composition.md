@@ -25,8 +25,9 @@ and doctor checks.
 
 When two providers claim the same plugin name, all of them are quarantined
 and a warning names every claimant: no provider can take over another's
-commands or settings, and the result does not depend on install order. Uninstall one to restore the other. A plugin whose settings import
-another plugin's `api` is quarantined with it when that import fails.
+commands or settings, and the result does not depend on install order.
+Uninstall one to restore the other. A plugin whose settings import another
+plugin's `api` is quarantined with it when that import fails.
 
 The import rules between plugins are in
 [Depending on another plugin](./reference/conventions.md#depending-on-another-plugin).

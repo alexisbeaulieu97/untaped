@@ -19,7 +19,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
 from untaped.bootstrap import SHELL_SPEC, build_root_app, composition
-from untaped.conventions.help_tree import ROOT_COMMANDS, help_tree_violations
+from untaped.conventions.help_tree import help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.messages import message_violations
@@ -29,6 +29,7 @@ from untaped.conventions.stability import stability_violations
 from untaped.conventions.structure import structure_violations
 from untaped.conventions.terminal_boundary import terminal_boundary_violations
 from untaped.plugins.registry import (
+    ROOT_COMMANDS,
     PluginSpec,
     ProviderCandidate,
     discover_candidates,
@@ -66,10 +67,10 @@ def plugin_violations(
         # A quarantined plugin has no subtree to check; why it was refused
         # (a broken settings-key declaration, say) is its one violation.
         return [f"{name}::quarantined::{record.reason}: {record.detail}"]
-    package, source_dir = _package_of(spec)
+    own = next((candidate for candidate in candidates if candidate.name == name), None)
+    package, source_dir = _package_of(spec, None if own is None else own.target)
     files = list(source_files(source_dir))
     plugin_packages, declared = _boundary(name, candidates)
-    own = next((candidate for candidate in candidates if candidate.name == name), None)
     commands = [] if spec.app_factory is None else [name]  # its mounted subtree
     return sorted(
         [
@@ -146,8 +147,7 @@ def _boundary(
     ``module:attr`` target names its package; a callable target (as from
     :func:`untaped.testing.provider_candidate`) gives it through the spec it
     provides, and is skipped when that cannot be resolved. The checked
-    plugin's own distribution is always declared, so plugins sharing
-    a distribution may import each other's ``api``.
+    plugin's own distribution is always declared.
     """
     found = list(candidates)
     packages: dict[str, str] = {}
@@ -170,7 +170,7 @@ def _candidate_package(target: object) -> str | None:
         return None
     try:
         spec = target()
-        return _package_of(spec)[0] if isinstance(spec, PluginSpec) else None
+        return _package_of(spec, target)[0] if isinstance(spec, PluginSpec) else None
     except Exception:
         return None
 
@@ -199,15 +199,19 @@ def core_violations() -> list[str]:
     )
 
 
-def _package_of(spec: PluginSpec) -> tuple[str, Path]:
+def _package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
     """The package owning ``spec`` and its source directory.
 
     That is the module of what the spec declares (its app factory, else its
-    settings or state model) when it is a package, else the module's parent
+    settings or state model), or of its entry-point ``target`` when it
+    declares none of them, when it is a package, else the module's parent
     package.
     """
     declared = spec.app_factory or spec.settings or spec.state
-    module = getattr(declared, "__module__", None) or ""
+    if declared is None and isinstance(target, str):
+        module = target.partition(":")[0]
+    else:
+        module = getattr(declared or target, "__module__", None) or ""
     found = find_spec(module) if module else None
     if found is not None and found.submodule_search_locations:
         return module, Path(found.submodule_search_locations[0])
