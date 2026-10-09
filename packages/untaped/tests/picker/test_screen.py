@@ -174,9 +174,24 @@ def test_pasted_text_lands_in_the_search() -> None:
     assert _picked_ids(run) == ["acme/web"]
 
 
-def test_a_paste_after_the_outcome_is_decided_acts_once() -> None:
-    run = _run(_request(), "down", " ", "ctrl-c", Paste("yy"))
-    assert run.outcome == Cancel()
+def test_a_paste_is_text_never_keys() -> None:
+    """Spaces and slashes in a paste are typed, not replayed as toggles or focus moves."""
+    in_list = _run(_request(), "down", Paste(" a/b"))
+    assert (in_list.model.query, in_list.model.selected) == (" a/b", ())
+
+    in_selected = _run(_request(), "down", " ", "tab", "down", "down", "down", Paste(" x"))
+    assert in_selected.model.selected == ("acme/api",)
+
+    asked = _run(_request(), "down", " ", "ctrl-c", Paste("yy"))
+    assert asked.outcome is None
+    assert asked.model.quitting
+
+
+def test_a_paste_lands_in_the_name_and_the_setting_being_edited() -> None:
+    named = _run(_request(title_label="name"), "up", Paste("J 1"))
+    assert named.model.title == "J 1"
+    editing = _run(_text_request(), "down", " ", "tab", "down", "enter", Paste("dev /x"))
+    assert editing.model.editing == "maindev /x"
 
 
 def test_a_paste_drops_control_characters() -> None:

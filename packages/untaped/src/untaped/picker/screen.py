@@ -39,6 +39,7 @@ from untaped.picker.state import (
     handle,
     initial_state,
     is_inherited,
+    paste,
     press,
     refresh_failed,
     result,
@@ -149,7 +150,7 @@ def _update(
         case Key(name):
             new = _key(state, name)
         case Paste(text):
-            new = _paste(state, text)
+            new = paste(state, text)
         case _Loaded(catalog):
             new = with_catalog(state, catalog)
         case CmdError(error):
@@ -178,13 +179,6 @@ def _ending(state: PickerState) -> list[Cmd]:
     if state.outcome == "cancelled":
         return [Cmd.send(Cancel())]
     return []
-
-
-def _paste(state: PickerState, text: str) -> PickerState:
-    for char in text:
-        if char.isprintable():
-            state = handle(state, char)
-    return state
 
 
 def _key(state: PickerState, name: str) -> PickerState:
