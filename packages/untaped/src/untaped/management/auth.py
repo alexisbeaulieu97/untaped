@@ -19,6 +19,7 @@ from typing import Annotated, Any, Literal
 from cyclopts import App, Parameter
 
 from untaped.auth import takes_token_command, token_env_names, token_override_env
+from untaped.batch import finish
 from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.cli import (
     ColumnsOption,
@@ -32,6 +33,7 @@ from untaped.cli import (
 )
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
+from untaped.diagnostics import note_failure
 from untaped.errors import ConfigError
 from untaped.messages import hint, plural
 from untaped.profile_resolver import (
@@ -445,11 +447,11 @@ def _migrate(
     emit(rows, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
     failed = sum(row["action"] == "failed" for row in rows)
     if failed:
-        raise ConfigError(
-            f"{plural(failed, 'token')} could not be moved and stay in the config", hint=store_hint
-        )
-    if not dry_run:
+        summary = f"{plural(failed, 'token')} could not be moved and stay in the config"
+        ui.message("error", f"{summary}\nhint: {store_hint}" if store_hint else summary)
+    elif not dry_run:
         ui.success(f"moved {plural(len(rows), 'token')} to {chosen.name}")
+    finish(failed > 0)
 
 
 def _move_all(
@@ -469,7 +471,10 @@ def _move_all(
             where = save_token(repo, section, profile, token, store)
         except ConfigError as exc:
             store_hint = store_hint or exc.hint
-            rows.append({**row, "store": None, "action": "failed", "detail": str(exc)})
+            error = note_failure(exc).model_dump(mode="json")
+            rows.append(
+                {**row, "store": None, "action": "failed", "detail": str(exc), "error": error}
+            )
             continue
         rows.append({**row, "store": where, "action": "moved"})
     return rows, store_hint

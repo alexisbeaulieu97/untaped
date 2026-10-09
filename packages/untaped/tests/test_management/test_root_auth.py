@@ -808,6 +808,21 @@ def test_migrate_keeps_a_token_that_fails_and_exits_non_zero(
     assert _config(_isolated_config)["profiles"]["work"]["other"] == {"token": "w-other"}
 
 
+def test_migrate_exits_with_the_failure_category_and_names_it_per_row(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: d-svc\n")
+    monkeypatch.setenv("STUB_MODE", "hang")
+    monkeypatch.setattr(auth, "_TIMEOUT_SECONDS", 0.5)
+    result = _auth("migrate", "--format", "json")
+    assert result.exit_code == 5, "a store that timed out is unavailable, not a config error"
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "failed"
+    assert row["error"]["category"] == "unavailable"
+    assert row["error"]["message"] == row["detail"]
+    assert "1 token could not be moved" in result.stderr
+
+
 def test_migrate_with_a_pass_that_cannot_decrypt_does_not_flood(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -834,7 +849,7 @@ def test_migrate_names_no_gpg_fix_for_a_failure_that_is_not_gpg(
         "  my work:\n    svc:\n      token: w-svc\n",
     )
     result = _auth("migrate", "--format", "json")
-    assert result.exit_code == 4
+    assert result.exit_code == 1, "a profile name no entry can hold is invalid input"
     assert {row["action"] for row in json.loads(result.stdout)} == {"moved", "failed"}
     assert "pinentry" not in result.stderr and "GPG_TTY" not in result.stderr
 
