@@ -721,6 +721,19 @@ def test_the_profile_field_completes_existing_profiles(_isolated_config: Path) -
     assert "production" in run.frame
 
 
+def test_open_profile_completions_keep_the_frame_on_screen(_isolated_config: Path) -> None:
+    profiles = "".join(f"  p{n}: {{}}\n" for n in range(8))
+    write_config(_isolated_config, f"profiles:\n  default: {{}}\n{profiles}")
+
+    run = drive_screen(_build(), ["shift-tab", "ctrl-u", "p"], size=(200, 24))  # header on one line
+
+    lines = run.frame.splitlines()
+    assert "p0" in run.frame
+    assert len(lines) <= 24
+    assert lines[-2].startswith("╰"), run.frame  # the panes keep their bottom border
+    assert "? help" in lines[-1]
+
+
 # --- what the screen shows -------------------------------------------------------
 
 

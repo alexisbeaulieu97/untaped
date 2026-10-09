@@ -7,8 +7,8 @@ concurrency, shared options, message wording, record bases, token sources
 and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks are a major release.
 
-The screen names (``Screen``, ``Cmd``, ``Key``, the components such as ``TextInput``
-and ``field_for``, ...) are exported lazily, on first use, so ``import untaped.sdk``
+The screen names (``Screen``, ``Cmd``, ``Key``, the components such as ``TextInput``,
+...) are exported lazily, on first use, so ``import untaped.sdk``
 loads no screen code and no prompt_toolkit and stays within the startup import
 budget; they are experimental (``docs/versioning.md``).
 """
@@ -139,7 +139,7 @@ if _typing.TYPE_CHECKING:
         Select,
         SingleList,
     )
-    from untaped.screen.components.fields import Field, field_for
+    from untaped.screen.components.fields import Field
     from untaped.screen.components.form import Form, Submitted
     from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
     from untaped.screen.components.layout import Panes, Viewport
@@ -199,7 +199,7 @@ _SCREEN_MODULES: dict[str, tuple[str, ...]] = {
     ),
     "untaped.screen.components.tabs": ("Tab", "Tabs"),
     "untaped.screen.components.buttons": ("Button", "Buttons", "Pressed"),
-    "untaped.screen.components.fields": ("Field", "field_for"),
+    "untaped.screen.components.fields": ("Field",),
     "untaped.screen.components.form": ("Form", "Submitted"),
     "untaped.screen.components.layout": ("Panes", "Viewport"),
     "untaped.screen.components.lists": ("SearchList", "Tags", "Tree", "TreeRow"),
@@ -382,7 +382,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Tree",
     "TreeRow",
     "Viewport",
-    "field_for",
 ]
 
 

@@ -8,7 +8,6 @@ draws the state with the screen components.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Literal
@@ -21,6 +20,7 @@ from untaped.picker import (
     PickResult,
     PickSetting,
 )
+from untaped.screen.components.text import EditBuffer
 from untaped.screen.fuzzy import Ranked, rank
 
 Focus = Literal["title", "search", "list", "selected"]
@@ -211,8 +211,8 @@ def press(state: PickerState, key: str) -> tuple[PickerState, bool]:
 
     Whatever the key, the error on screen is dismissed in the state returned.
     Unused keys are those the focus does not bind and does not type (a letter
-    while the settings are focused, ``home``), so a screen can leave them to
-    the keys it shares with every other screen.
+    while the settings are focused, ``home``, esc with no query to clear), so a
+    screen can leave them to the keys it shares with every other screen.
     """
     if state.outcome != "running":
         return state, False
@@ -222,6 +222,8 @@ def press(state: PickerState, key: str) -> tuple[PickerState, bool]:
         return _answer_quit(state, key), True
     if state.editing is not None:
         return _edit_key(state, key), True
+    if key == "esc" and state.focus in ("search", "list"):
+        return (_clear_query(state), True) if state.query else (state, False)
     action = _GLOBAL.get(key) or _BY_FOCUS[state.focus].get(key)
     if action is not None:
         return action(state), True
@@ -230,21 +232,36 @@ def press(state: PickerState, key: str) -> tuple[PickerState, bool]:
     return state, False
 
 
+def paste(state: PickerState, text: str) -> PickerState:
+    """Insert pasted ``text`` into the field being typed in; never replay it as keys.
+
+    The name, the search (from the list too) and a setting being edited take
+    it, without control characters; the settings pane and the discard question
+    ignore it, so a space in a paste never toggles or removes a repo.
+    """
+    if state.outcome != "running" or state.quitting:
+        return state
+    clean = EditBuffer().paste(text).text
+    if not clean:
+        return state
+    state = replace(state, error="") if state.error else state
+    if state.editing is not None:
+        return replace(state, editing=state.editing + clean)
+    return _type(state, clean)
+
+
 def _edit_text(text: str, key: str) -> str:
-    if key == "backspace":
-        return text[:-1]
-    if key == "ctrl-u":
-        return ""
-    if key == "ctrl-w":
-        return re.sub(r"\S+\s*$", "", text)
-    return text
+    """``text`` after an editing key, the caret at its end (the picker's fields have no other)."""
+    edited = EditBuffer(text, len(text)).key(key)
+    return text if edited is None else edited.text
 
 
-def _type(state: PickerState, char: str) -> PickerState:
+def _type(state: PickerState, text: str) -> PickerState:
+    """``text`` typed into the name or the search (from the list too); settings ignore it."""
     if state.focus == "title":
-        return replace(state, title=state.title + char)
+        return replace(state, title=state.title + text)
     if state.focus in ("search", "list"):
-        return replace(state, focus="search", query=state.query + char, cursor=0)
+        return replace(state, focus="search", query=state.query + text, cursor=0)
     return state
 
 
@@ -419,7 +436,6 @@ _BY_FOCUS: dict[Focus, dict[str, _Action]] = {
         "down": _focus("list"),
         "enter": _focus("list"),
         "up": _focus("title"),
-        "esc": _clear_query,
         "backspace": _edit("backspace"),
         "ctrl-u": _edit("ctrl-u"),
         "ctrl-w": _edit("ctrl-w"),
@@ -429,7 +445,6 @@ _BY_FOCUS: dict[Focus, dict[str, _Action]] = {
         "down": _list_down,
         " ": _toggle,
         "enter": _toggle,
-        "esc": _clear_query,
         "/": _focus("search"),
         "backspace": _edit("backspace"),
         "ctrl-u": _edit("ctrl-u"),

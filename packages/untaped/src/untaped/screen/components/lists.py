@@ -52,7 +52,9 @@ __all__ = ["SearchList", "Tags", "Tree", "TreeRow"]
 #: The most list rows a ``SearchList`` shows at once, and the fewest it is squeezed to.
 MAX_ROWS = 10
 MIN_ROWS = 3
-#: The rows of a frame a search list's box, search line and count line take, and a tree's box.
+#: The frame rows a list leaves to all but its rows: a ``SearchList``'s two borders, search
+#: line, rule, count line and help line, a ``Tree``'s borders and help line, and two more
+#: for the screen around either.
 _CHROME = 8
 _TREE_CHROME = 5
 
