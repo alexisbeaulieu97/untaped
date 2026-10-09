@@ -642,7 +642,7 @@ def test_source_status_classifies_sources_with_utc_timestamps(tmp_path: Path, mo
     rows = {row["source"]: row for row in json.loads(result.stdout)}
     assert rows["unindexed"]["state"] == "not_refreshed"
     assert rows["stale"]["state"] == "stale"
-    assert rows["stale"]["scanned_at"] == "2026-01-02T03:04:05Z"
+    assert rows["stale"]["scanned_at"] == "2026-01-02T03:04:05.000678Z"
     assert missing.exit_code == 1
     assert "source not found: 'missing'" in missing.output
 

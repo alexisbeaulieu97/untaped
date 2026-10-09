@@ -44,11 +44,10 @@ from untaped.stability import deprecated
 from untaped.ui import ui_context
 
 _ALIASES_KEY = "shell.aliases"
-_OUTCOME = "untaped.alias_outcome"
 
 
-class AliasRow(Record):
-    """One effective alias (kind ``untaped.alias``)."""
+class AliasRow(Record, kind="untaped.alias"):
+    """One effective alias."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("name", "command", "profile")
 
@@ -61,8 +60,8 @@ class AliasRow(Record):
     """The profile that defines it (``default`` or the active one)."""
 
 
-class AliasOutcome(OutcomeRecord):
-    """The result of ``alias set``/``remove`` (kind ``untaped.alias_outcome``).
+class AliasOutcome(OutcomeRecord, kind="untaped.alias_outcome"):
+    """The result of ``alias set``/``remove``.
 
     ``action`` is ``created``, ``updated``, ``unchanged``, ``deleted``, or
     ``planned`` under ``--dry-run``.
@@ -118,12 +117,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
                     ui_context(strict=False).success(
                         f"alias {name} = {shlex.join(argv)} (profile {profile})"
                     )
-            emit(
-                AliasOutcome(name=name, profile=profile, action=action),
-                fmt=fmt,
-                columns=columns,
-                kind=_OUTCOME,
-            )
+            emit(AliasOutcome(name=name, profile=profile, action=action), fmt=fmt, columns=columns)
 
     @app.command(name="list")
     def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
@@ -133,7 +127,6 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
                 _alias_rows(),
                 fmt=fmt,
                 columns=columns,
-                kind="untaped.alias",
                 empty="No aliases found.",
             )
 
@@ -163,12 +156,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
                 SettingsFileRepository().update_value(_ALIASES_KEY, _without(name))
                 ui_context(strict=False).success(f"removed alias {name} (profile {profile})")
                 action = "deleted"
-            emit(
-                AliasOutcome(name=name, profile=profile, action=action),
-                fmt=fmt,
-                columns=columns,
-                kind=_OUTCOME,
-            )
+            emit(AliasOutcome(name=name, profile=profile, action=action), fmt=fmt, columns=columns)
 
     return app
 

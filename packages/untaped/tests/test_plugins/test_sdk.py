@@ -31,6 +31,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "OutcomeRecord",
         "OutputFormat",
         "PipeEnvelope",
+        "Record",
         "TableGlyph",
         "TargetRecord",
         "UtcTimestamp",

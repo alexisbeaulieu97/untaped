@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,9 @@ from untaped.sdk import (
     HttpError,
     HttpTransportError,
     OutcomeRecord,
+    Record,
     UntapedError,
+    UtcTimestamp,
     clamp_parallel,
     create_app,
     emit,
@@ -309,6 +312,8 @@ def test_render_rows_pipe_kind_defaults_to_null(_isolated_config: Path) -> None:
         "profile.profile",
         "jira.issue.summary",
         "health.metric_source",
+        "acme-tools.widget",
+        "acme-tools.widget.summary",
     ],
 )
 def test_valid_kinds_are_accepted(kind: str) -> None:
@@ -325,20 +330,25 @@ def test_valid_kinds_are_accepted(kind: str) -> None:
         "github.",
         "github.code_hit.extra",
         "github.code_hit.summary.x",
+        "acme_tools.widget",
+        "acme--tools.widget",
+        "-acme.widget",
+        "acme-.widget",
+        "1acme.widget",
     ],
 )
 def test_invalid_kinds_raise_value_error(kind: str) -> None:
-    with pytest.raises(ValueError, match="invalid pipe kind"):
+    with pytest.raises(ValueError, match="invalid record kind"):
         render_rows([{"id": 1}], fmt="pipe", kind=kind)
 
 
 def test_summary_kind_is_reserved_as_suffix_only() -> None:
-    with pytest.raises(ValueError, match="<tool>\\.<noun>\\.summary"):
+    with pytest.raises(ValueError, match="optionally followed by '\\.summary'"):
         render_rows([{"id": 1}], fmt="pipe", kind="github.summary")
 
 
 def test_emit_validates_kind_for_single_records() -> None:
-    with pytest.raises(ValueError, match="invalid pipe kind"):
+    with pytest.raises(ValueError, match="invalid record kind"):
         emit({"id": 1}, fmt="json", kind="bad-kind")
 
 
@@ -409,6 +419,59 @@ def test_emit_single_pipe_emits_one_envelope(capsys: pytest.CaptureFixture[str])
         "kind": "demo.widget",
         "record": {"name": "alpha", "value": 1},
     }
+
+
+class _Gadget(Record, kind="acme-tools.gadget"):
+    name: str
+    built_at: UtcTimestamp
+
+
+class _Plain(Record):
+    name: str
+
+
+_BUILT = datetime(2026, 1, 2, 3, 4, 5, 250_000, tzinfo=UTC)
+
+
+def test_emit_reads_a_hyphenated_plugins_kind_from_its_records(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe")
+
+    assert json.loads(capsys.readouterr().out) == {
+        "untaped": "1",
+        "kind": "acme-tools.gadget",
+        "record": {"name": "a", "built_at": "2026-01-02T03:04:05.250000Z"},
+    }
+
+
+def test_emit_shows_timestamps_to_the_second_only_in_tables(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    emit([_Gadget(name="a", built_at=_BUILT)], fmt="table")
+
+    out = capsys.readouterr().out
+    assert "2026-01-02T03:04:05Z" in out
+    assert ".25" not in out
+
+
+def test_emit_kind_is_an_override_for_kind_less_rows_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit([_Plain(name="a")], fmt="pipe", kind="acme-tools.plain")
+    assert json.loads(capsys.readouterr().out)["kind"] == "acme-tools.plain"
+    emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe", kind="acme-tools.gadget")
+    assert json.loads(capsys.readouterr().out)["kind"] == "acme-tools.gadget"
+
+    with pytest.raises(ValueError, match=r"emit\(kind='acme-tools\.other'\) on records of kind"):
+        emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe", kind="acme-tools.other")
+
+
+def test_emit_rejects_rows_of_different_kinds() -> None:
+    rows = [_Gadget(name="a", built_at=_BUILT), _Plain(name="b")]
+
+    with pytest.raises(ValueError, match="rows declare different kinds"):
+        emit(rows, fmt="pipe")
 
 
 def test_emit_single_model_table_renders_vertical_detail(
