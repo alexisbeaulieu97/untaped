@@ -53,7 +53,7 @@ from untaped.picker.state import (
 from untaped.screen.components.buttons import BOX_ROWS, Button, Buttons
 from untaped.screen.components.choices import ListItem
 from untaped.screen.components.draw import role_style, text_line, unboxed
-from untaped.screen.components.inputs import TextInput
+from untaped.screen.components.inputs import COMPLETION_ROWS, TextInput
 from untaped.screen.components.layout import Panes
 from untaped.screen.components.lists import SearchList, Tree, TreeRow
 from untaped.screen.core import (
@@ -415,7 +415,7 @@ class _SelectedPane:
         editor = self._editor(editor_frame) if state.editing is not None else None
         editor_rows = 0
         if editor is not None:
-            candidates = min(5, len(editor.matches or ())) if editor.completing else 0
+            candidates = min(COMPLETION_ROWS, len(editor.matches or ())) if editor.completing else 0
             # The label line (a border when boxed), the value, the help; boxed adds the bottom
             # border and a rule over the candidates.
             editor_rows = 3 + candidates
