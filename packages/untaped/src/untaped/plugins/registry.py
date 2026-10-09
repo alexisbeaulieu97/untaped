@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
+from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from cyclopts import App
 from packaging.markers import UndefinedEnvironmentName
@@ -38,6 +40,9 @@ from untaped.settings import (
     validate_disjoint_settings_sections,
 )
 from untaped.stability import Stability, check_stability, mark_errors
+
+if TYPE_CHECKING:
+    from untaped.contracts import Contract
 
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
@@ -178,6 +183,10 @@ class ApplicationSpec:
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
 
+def _no_contracts() -> Sequence[type[Contract]]:
+    return ()
+
+
 @dataclass(frozen=True)
 class PluginSpec:
     """One composable plugin unit.
@@ -196,6 +205,12 @@ class PluginSpec:
     ``stability`` marks the whole plugin ``experimental`` or
     ``deprecated(...)``. It sits here, never on the app the factory returns:
     a lazy mount reads only the spec.
+
+    ``contracts`` returns the :class:`~untaped.contracts.Contract` classes the
+    plugin owns, and ``provides`` maps an owner plugin's name to a function
+    returning this plugin's providers of that owner's contracts. Both are
+    functions with a local import, so nothing under them is imported until a
+    contract is first asked for (``untaped.contracts``).
     """
 
     name: str
@@ -206,6 +221,10 @@ class PluginSpec:
     doctor_checks: tuple[DoctorCheck, ...] = ()
     help: str | None = None
     stability: Stability | None = None
+    contracts: Callable[[], Sequence[type[Contract]]] = _no_contracts
+    provides: Mapping[str, Callable[[], Sequence[Contract]]] = field(
+        default_factory=lambda: MappingProxyType({}), hash=False
+    )
 
     def __post_init__(self) -> None:
         check_plugin_name(self.name)
@@ -225,8 +244,15 @@ class PluginSpec:
             raise ConfigError(
                 f"plugin {self.name!r} help describes commands it has no app_factory for"
             )
+        if not callable(self.contracts):
+            raise ConfigError(f"plugin {self.name!r} contracts must be a function")
+        for owner, providers in self.provides.items():
+            check_plugin_name(owner)
+            if not callable(providers):
+                raise ConfigError(f"plugin {self.name!r} provides[{owner!r}] must be a function")
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
+        object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
 
 
 class _NoSettings(BaseModel):

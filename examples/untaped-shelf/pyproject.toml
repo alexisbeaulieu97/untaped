@@ -1,0 +1,17 @@
+[project]
+name = "untaped-shelf"
+version = "0.1.0"
+description = "An example contract owner for untaped: finds books wherever plugins keep them."
+readme = "README.md"
+requires-python = ">=3.14.1"
+dependencies = ["untaped>=10,<11", "pydantic>=2.13.3,<3"]
+
+[project.entry-points."untaped.plugins"]
+shelf = "untaped_shelf:provider"
+
+[dependency-groups]
+dev = ["pytest>=9"]
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"

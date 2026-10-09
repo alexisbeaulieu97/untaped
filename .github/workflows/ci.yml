@@ -158,6 +158,16 @@ jobs:
           uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/hello/bin/untaped" "$VERSION" --expect hello --skills
           (cd "$RUNNER_TEMP/hello-src" && "$RUNNER_TEMP/hello/bin/python" -m pytest -q tests)
 
+      - name: The example contract owner and provider, tested outside the repo
+        run: |
+          set -euo pipefail
+          cp -r examples/untaped-shelf "$RUNNER_TEMP/shelf-src"
+          cp -r examples/untaped-library "$RUNNER_TEMP/library-src"
+          uv venv -q --python 3.14 "$RUNNER_TEMP/contracts"
+          uv pip install --python "$RUNNER_TEMP/contracts/bin/python" "$CORE" "$RUNNER_TEMP/shelf-src" "$RUNNER_TEMP/library-src" pytest
+          (cd "$RUNNER_TEMP/shelf-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
+          (cd "$RUNNER_TEMP/library-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
+
       - name: A broken example plugin is quarantined
         run: |
           set -euo pipefail

@@ -55,6 +55,9 @@ from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
     CompositionResult,
+    DoctorCheck,
+    DoctorResult,
+    PluginContext,
     ProviderCandidate,
     QuarantineRecord,
     RegisteredPlugin,
@@ -93,6 +96,13 @@ def _shell_app() -> App:
     return App(name=SHELL_NAME, help="Unified untaped developer CLI.")
 
 
+def _contract_providers(context: PluginContext) -> DoctorResult:
+    # Imported here: ``untaped.contracts`` stays out of every run that asks no contract.
+    from untaped.contracts._registry import doctor_row  # noqa: PLC0415
+
+    return doctor_row(context)
+
+
 #: The root application. A singleton so repeated
 #: compositions re-register the identical models idempotently.
 SHELL_SPEC = ApplicationSpec(
@@ -112,6 +122,9 @@ SHELL_SPEC = ApplicationSpec(
                 "`untaped doctor`, or install untaped's skills for an agent."
             ),
         ),
+    ),
+    doctor_checks=(
+        DoctorCheck(id="contract-providers", title="Contract providers", run=_contract_providers),
     ),
 )
 
