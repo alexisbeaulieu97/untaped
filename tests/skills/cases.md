@@ -97,7 +97,7 @@ printed. stdout: `[{"item": "zsh", "source": ".zshrc", "action": "unchanged"}]`.
 stderr:
 `{"level": "info", "message": "acme-dots: held back by manual link files: zsh/.zshrc"}`
 `{"level": "warning", "message": "installed skills are out of date: untaped-dotfiles"}`
-and ``hint: run `untaped skills update` (set skills.updates to auto or off to change this)``.
+and ``{"level": "hint", "message": "run `untaped skills update` (set skills.updates to auto or off to change this)"}``.
 Is everything up to date?"
 
 - a. Says not everything is up to date: `acme-dots` was held back and not
