@@ -62,7 +62,6 @@ class Field(Protocol):
         ...
 
 
-@experimental
 def field_for(descriptor: FieldDescriptor, *, value: object = None, help: str = "") -> Field:
     """The component that edits the setting ``descriptor`` describes.
 

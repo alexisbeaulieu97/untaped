@@ -1,4 +1,4 @@
-"""Ready-made screen components: inputs, choices, tabs, buttons and ``field_for``.
+"""Ready-made screen components: inputs, choices, tabs, buttons, lists, forms and layout.
 
 Import what you need from the module that owns it; nothing is re-exported here,
 so importing the package loads neither Rich nor prompt_toolkit. Every
