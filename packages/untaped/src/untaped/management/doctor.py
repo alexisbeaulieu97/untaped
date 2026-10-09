@@ -60,7 +60,6 @@ from untaped.plugins.registry import (
     PluginSpec,
     QuarantineRecord,
     run_deferred_factory,
-    settings_model,
 )
 from untaped.profile_resolver import (
     classify_active_profile,
@@ -401,7 +400,9 @@ def online_probe_rows(
         raise ConfigError(f"no composed plugin named {plugin!r} to check")
     scope = _plugin_scope(spec)
     with profile_scope(profile), settings_overlay(profile, scope.section, values):
-        settings, error = _validate_section(scope, settings_model(spec), *_overlaid_effective())
+        settings, error = None, None
+        if scope.settings_model is not None:
+            settings, error = _validate_section(scope, scope.settings_model, *_overlaid_effective())
         if error is not None:
             return [_row("settings", scope.plugin, _FAIL, "validate settings", error)]
         return [

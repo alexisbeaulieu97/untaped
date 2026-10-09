@@ -502,7 +502,7 @@ def rejected_token_error(
     """The standard error for a service rejecting ``<section>.token`` (HTTP 401).
 
     ``auth`` in ``section`` (exit ``4``). The hint is ``auth set <section>``
-    when the section's registered profile model has ``token_command``, else
+    when the section's registered settings model has ``token_command``, else
     ``config set <section>.token --prompt``. The ``cause``'s details
     (``status``, ``url``) are kept.
     """

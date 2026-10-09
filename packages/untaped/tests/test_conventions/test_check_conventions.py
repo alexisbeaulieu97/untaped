@@ -263,6 +263,12 @@ def test_a_plugin_with_only_a_name_is_found_through_its_entry_point(install: Ins
     assert plugin_violations("bare", candidates=[candidate]) == []
 
 
+def test_a_plugin_with_only_a_name_and_no_entry_point_cannot_be_located() -> None:
+    candidate = provider_candidate(PluginSpec(name="bare"))
+    with pytest.raises(LookupError, match="'bare' declares nothing to locate its package by"):
+        plugin_violations("bare", candidates=[candidate])
+
+
 def test_a_hyphenated_plugin_is_named_with_underscores_to_import(install: Install) -> None:
     install(
         {

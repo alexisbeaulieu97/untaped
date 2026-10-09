@@ -28,7 +28,7 @@ from untaped.testing import provider_candidate
 
 
 class GithubProfile(BaseModel):
-    """Fake plugin profile model (section ``github``)."""
+    """Fake plugin settings model (section ``github``)."""
 
     token: SecretStr | None = None
     base_url: str = "https://api.github.com"
@@ -42,7 +42,7 @@ class GithubState(BaseModel):
 
 
 class JiraProfile(BaseModel):
-    """Fake plugin profile model (section ``jira``)."""
+    """Fake plugin settings model (section ``jira``)."""
 
     token: SecretStr | None = None
     base_url: str = "https://jira.example.com"
@@ -50,14 +50,14 @@ class JiraProfile(BaseModel):
 
 
 class StrictProfile(BaseModel):
-    """Profile model with a required field (section ``strict``)."""
+    """Settings model with a required field (section ``strict``)."""
 
     endpoint: str
     token: SecretStr | None = None
 
 
 class ExtProfile(BaseModel):
-    """Minimal profile model for generic plugin doubles."""
+    """Minimal settings model for generic plugin doubles."""
 
     token: str = "default-token"
 

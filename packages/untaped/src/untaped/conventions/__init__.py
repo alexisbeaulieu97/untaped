@@ -203,15 +203,20 @@ def _package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
     """The package owning ``spec`` and its source directory.
 
     That is the module of what the spec declares (its app factory, else its
-    settings or state model), or of its entry-point ``target`` when it
-    declares none of them, when it is a package, else the module's parent
-    package.
+    settings or state model), or of its ``package:provider`` entry-point
+    ``target`` when it declares none of them, when it is a package, else the
+    module's parent package.
     """
     declared = spec.app_factory or spec.settings or spec.state
-    if declared is None and isinstance(target, str):
+    if declared is not None:
+        module = getattr(declared, "__module__", None) or ""
+    elif isinstance(target, str) and ":" in target:
         module = target.partition(":")[0]
     else:
-        module = getattr(declared or target, "__module__", None) or ""
+        raise LookupError(
+            f"plugin {spec.name!r} declares nothing to locate its package by; "
+            "pass a ProviderCandidate whose target is 'package:provider'"
+        )
     found = find_spec(module) if module else None
     if found is not None and found.submodule_search_locations:
         return module, Path(found.submodule_search_locations[0])

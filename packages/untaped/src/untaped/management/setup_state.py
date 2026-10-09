@@ -1,6 +1,6 @@
 """What ``untaped setup`` and ``untaped setup plan`` read about a profile's services.
 
-A service is a composed plugin whose profile model has ``base_url`` and
+A service is a composed plugin whose settings model has ``base_url`` and
 ``token`` fields. Both commands resolve each one's current state here, the
 way ``doctor`` does (the profile's values with ``UNTAPED_*`` overrides
 layered on top), so the setup screen, the plan and doctor cannot disagree about
