@@ -73,8 +73,8 @@ yourself, in a workspace checkout or anywhere else, is unaffected:
   `git fetch`, as the error's hint says;
 - sets `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`, so a remote that
   needs credentials fails instead of waiting for input, and
-  `SSH_ASKPASS_REQUIRE=never` unless you set it, so ssh does not open a
-  graphical prompt instead;
+  `SSH_ASKPASS_REQUIRE=never` and an empty `GIT_ASKPASS` unless you set
+  them, so neither ssh nor Git opens a graphical prompt instead;
 - sets `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` unless you set
   `GIT_SSH_COMMAND`, `GIT_SSH` or the `core.sshCommand` Git setting yourself;
 - removes `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,

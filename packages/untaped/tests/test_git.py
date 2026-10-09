@@ -494,10 +494,14 @@ def test_ctrl_c_reaches_git_started_by_a_worker_thread(tmp_path: Path) -> None:
     worker = threading.Thread(target=fetch)
     worker.start()
     _wait_for(tmp_path / "ready")
+    deadline = time.monotonic() + 10
+    while not git._LIVE_GROUPS and time.monotonic() < deadline:
+        time.sleep(0.02)
     with pytest.raises(KeyboardInterrupt):
         os.kill(os.getpid(), signal.SIGINT)
         time.sleep(5)
-    worker.join(timeout=5)
+    # Well under the 30s git timeout: only the forwarded signal ends it in time.
+    worker.join(timeout=15)
 
     assert not worker.is_alive(), "git in the worker kept running after Ctrl-C"
     assert outcome, "git exited cleanly instead of being interrupted"
@@ -733,7 +737,7 @@ def test_a_rejected_credential_is_an_environment_failure(
             "Host key verification failed.\nfatal: Could not read from remote repository.",
             "git fetch",
         ),
-        # A desktop with DISPLAY set but no askpass program.
+        # The user allowed ssh's graphical prompt, but there is no program.
         ("ssh_askpass: exec(/usr/bin/ssh-askpass): No such file or directory\n", "ssh-agent"),
         # ssh says nothing about the passphrase it could not ask for.
         (
@@ -771,11 +775,70 @@ def test_an_untrusted_host_key_gets_no_hint_to_accept_it(
     assert excinfo.value.hint is None
 
 
-def test_ssh_never_falls_back_to_a_graphical_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ssh_and_git_never_fall_back_to_a_graphical_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("SSH_ASKPASS_REQUIRE", raising=False)
+    monkeypatch.delenv("GIT_ASKPASS", raising=False)
+    env = git_env(batch_ssh=False)
+    assert env["SSH_ASKPASS_REQUIRE"] == "never"
+    assert env["GIT_ASKPASS"] == ""  # git then skips core.askPass and SSH_ASKPASS
+
+    monkeypatch.setenv("SSH_ASKPASS_REQUIRE", "")  # ssh reads empty as unset
     assert git_env(batch_ssh=False)["SSH_ASKPASS_REQUIRE"] == "never"
+
     monkeypatch.setenv("SSH_ASKPASS_REQUIRE", "force")
-    assert git_env(batch_ssh=False)["SSH_ASKPASS_REQUIRE"] == "force"
+    monkeypatch.setenv("GIT_ASKPASS", "/ci/token-helper")
+    env = git_env(batch_ssh=False)
+    assert (env["SSH_ASKPASS_REQUIRE"], env["GIT_ASKPASS"]) == ("force", "/ci/token-helper")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shell script stands in for askpass")
+def test_git_does_not_run_an_inherited_ssh_askpass_for_https_credentials(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log = tmp_path / "askpass.log"
+    askpass = tmp_path / "askpass"
+    askpass.write_text(f"#!/bin/sh\necho called >> {log}\necho x\n")
+    askpass.chmod(askpass.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("SSH_ASKPASS", str(askpass))
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.delenv("GIT_ASKPASS", raising=False)
+    server = _unauthorized_http_server()
+    try:
+        with pytest.raises(GitCommandError):
+            run_git(
+                [
+                    "-c",
+                    "credential.helper=",
+                    "ls-remote",
+                    f"http://127.0.0.1:{server.server_port}/r",
+                ],
+                timeout=30,
+                batch_ssh=False,
+            )
+    finally:
+        server.shutdown()
+
+    assert not log.exists(), "git ran the inherited SSH_ASKPASS"
+
+
+def _unauthorized_http_server() -> Any:
+    import http.server
+
+    class _Unauthorized(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="r"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *_: object) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Unauthorized)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
 
 
 # ── path segments ────────────────────────────────────────────────────────────
