@@ -20,14 +20,13 @@ from untaped.sdk import (
     emit,
     finish,
     parse_kv_pairs,
-    read_identifiers,
     report_error,
     report_errors,
 )
 from untaped_awx.application import ListWorkflowNodes
 from untaped_awx.cli.context import open_context, scope_for_command
 from untaped_awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
-from untaped_awx.cli.pipe import id_field_for, pipe_kind_for_spec
+from untaped_awx.cli.template_targets import template_targets
 from untaped_awx.domain import WorkflowNode, WorkflowNodeType
 from untaped_awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
@@ -58,8 +57,9 @@ def register_nodes_command(parent: App) -> None:
                 name="--stdin",
                 negative="",
                 help=(
-                    "Read workflow names from stdin (one per line); "
-                    "equivalent to passing them positionally. Per-root "
+                    "Read workflow names from stdin (one per line), or "
+                    "``--format pipe`` records of the workflow's kind, which "
+                    "are looked up by their ``id``. Per-root "
                     "failures emit a stderr warning and force a non-zero "
                     "exit; other roots still emit their rows."
                 ),
@@ -120,11 +120,8 @@ def register_nodes_command(parent: App) -> None:
         nodes: list[WorkflowNode] = []
         any_failed = False
         with report_errors(), open_context() as ctx:
-            roots = read_identifiers(
-                list(identifiers or []),
-                stdin=stdin,
-                id_field=id_field_for(WORKFLOW_JOB_TEMPLATE_SPEC, by_id=by_id),
-                accept_kinds={pipe_kind_for_spec(WORKFLOW_JOB_TEMPLATE_SPEC)},
+            roots = template_targets(
+                WORKFLOW_JOB_TEMPLATE_SPEC, identifiers, stdin=stdin, by_id=by_id
             )
             filters = parse_kv_pairs(filter_, flag="--filter")
             scope = scope_for_command(ctx, organization, WORKFLOW_JOB_TEMPLATE_SPEC)
@@ -136,14 +133,14 @@ def register_nodes_command(parent: App) -> None:
             # ``resolve_each`` doesn't fit: its ``Callable[[str], R]``
             # interface maps each id to a single record, but ``nodes``
             # produces a ``list[WorkflowNode]`` per root.
-            for root in roots:
+            for root, root_by_id in roots:
                 try:
                     nodes.extend(
                         use(
                             WORKFLOW_JOB_TEMPLATE_SPEC,
                             identifier=root,
                             scope=scope,
-                            by_id=by_id,
+                            by_id=root_by_id,
                             max_depth=max_depth,
                             filters=filters,
                         )

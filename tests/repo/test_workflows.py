@@ -198,6 +198,7 @@ def test_build_guards_and_checks_run_before_anything_is_uploaded() -> None:
         _find(steps, id="version"),
         _find(steps, run=f'{SCRIPT} check "$VERSION"'),
         _find(steps, run=f'{SCRIPT} notes "$VERSION" > release-notes.md'),
+        _find(steps, run=f'{SCRIPT} readmes "$VERSION"'),
         build,
         _find(steps, run=f'{SCRIPT} check "$VERSION" --dist dist'),
         _find(steps, run=f'{SCRIPT} smoke "$RUNNER_TEMP/smoke/bin/untaped" "$VERSION"'),
@@ -356,8 +357,13 @@ def test_ci_wheel_matrix_smokes_each_install_shape_from_the_built_wheels() -> No
     build = _find(steps, run="uv build --all-packages --no-sources --out-dir dist")
     assert steps[build]["run"].splitlines() == [
         "set -euo pipefail",
+        "# The release's build: README links pinned first, artifacts checked after.",
+        f'version="$({SCRIPT} version)"',
+        f'{SCRIPT} readmes "$version"',
         "uv build --all-packages --no-sources --out-dir dist",
-        f'echo "VERSION=$({SCRIPT} version)" >> "$GITHUB_ENV"',
+        "rm -f dist/.gitignore",
+        f'{SCRIPT} check "$version" --dist dist',
+        'echo "VERSION=$version" >> "$GITHUB_ENV"',
         'echo "CORE=$(ls dist/untaped-*-py3-none-any.whl)" >> "$GITHUB_ENV"',
     ]
     for venv, (installs, expect) in WHEEL_MATRIX.items():

@@ -112,8 +112,13 @@ jobs:
       - name: Build every package
         run: |
           set -euo pipefail
+          # The release's build: README links pinned first, artifacts checked after.
+          version="$(uv run --no-sync python scripts/release.py version)"
+          uv run --no-sync python scripts/release.py readmes "$version"
           uv build --all-packages --no-sources --out-dir dist
-          echo "VERSION=$(uv run --no-sync python scripts/release.py version)" >> "$GITHUB_ENV"
+          rm -f dist/.gitignore
+          uv run --no-sync python scripts/release.py check "$version" --dist dist
+          echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "CORE=$(ls dist/untaped-*-py3-none-any.whl)" >> "$GITHUB_ENV"
 
       - name: Bare untaped

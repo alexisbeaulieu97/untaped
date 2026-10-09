@@ -51,7 +51,9 @@ uv lock --check                                 # lock file is current
 - Each capability is its own package,
   `packages/untaped-<name>/src/untaped_<name>/`, and owns one capability end
   to end. Its packaged skill is the reference; its `README.md` (also its PyPI
-  page) is a one-screen guide that links to it.
+  page) is a one-screen guide that links to it. A package README links into
+  this repository with absolute `blob/main` URLs, which the release build
+  points at its own `vX.Y.Z` tag.
 - `examples/untaped-hello/` is a minimal third-party plugin with its own
   tests; it is not a workspace member and is never published. CI installs it
   beside the core wheel and runs its tests outside the repository.
