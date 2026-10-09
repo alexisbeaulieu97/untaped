@@ -66,7 +66,7 @@ class ServiceState:
     """What a service section currently resolves to in the profile."""
 
     base_url: str | None
-    """Effective URL (the model default when unset), offered as the prompt default."""
+    """Effective URL (the model default when unset), the form's starting value."""
 
     token_source: str | None
     """Where the token would come from (``describe_token_source``), if anywhere."""

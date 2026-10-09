@@ -128,7 +128,7 @@ def _run(
         ui.message(kind, text)
     profile = outcome.profile
     if not outcome.touched:
-        ui.message("info", "no capabilities selected; no changes made")
+        ui.message("info", "nothing saved; no changes made")
     else:
         rows = selected_check_rows(shell, result, profile, frozenset(outcome.touched))
         try:
