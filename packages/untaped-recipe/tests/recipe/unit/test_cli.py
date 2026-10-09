@@ -25,7 +25,7 @@ from untaped.testing import (
 from untaped_recipe import SPEC
 from untaped_recipe.builtins.registry import BUILTIN_HOOKS, BuiltinHook
 from untaped_recipe.cli import app
-from untaped_recipe.cli.common import library_root
+from untaped_recipe.cli.common import library_dir
 from untaped_recipe.domain.paths import is_path_ref
 from untaped_recipe.domain.plan import FileChange
 from untaped_recipe.infrastructure.backup import BackupDraft, BackupStore
@@ -133,7 +133,7 @@ def test_add_pack_installs_without_prompting_and_prints_summary(tmp_path: Path) 
         "commit": None,
         "detail": None,
     }
-    assert (library_root() / "packs" / "demo").exists()
+    assert (library_dir() / "packs" / "demo").exists()
 
     again = CliInvoker().invoke(app, ["packs", "add", str(pack), "--force", "-f", "pipe"])
     assert again.exit_code == 0, again.output
@@ -169,7 +169,7 @@ def test_add_and_check_hookless_pack_without_lock(tmp_path: Path) -> None:
 
     added = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert added.exit_code == 0, added.output
-    assert (library_root() / "packs" / "hygiene").exists()
+    assert (library_dir() / "packs" / "hygiene").exists()
 
 
 def test_add_hooked_pack_without_lock_leads_with_error_no_summary(tmp_path: Path) -> None:
@@ -184,7 +184,7 @@ def test_add_hooked_pack_without_lock_leads_with_error_no_summary(tmp_path: Path
     # UX rider: validation leads; the pack summary never precedes the error.
     assert "Pack: demo" not in result.stderr
     assert "demo-recipe" not in result.stderr
-    assert not (library_root() / "packs" / "demo").exists()
+    assert not (library_dir() / "packs" / "demo").exists()
 
 
 def test_edit_uses_shared_editor_and_reports_bad_quoting(
@@ -210,7 +210,7 @@ def test_add_force_fails_fast_on_local_edits_before_confirm(
     _write_pack_project(pack)
     result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert result.exit_code == 0, result.output
-    installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
+    installed_recipe = library_dir() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
 
     result = CliInvoker().invoke(app, ["packs", "add", str(pack), "--force"])
@@ -228,7 +228,7 @@ def test_add_force_discard_edits_warns_in_preview_and_overwrites(
     pack = tmp_path / "pack"
     _write_pack_project(pack)
     CliInvoker().invoke(app, ["packs", "add", str(pack)])
-    installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
+    installed_recipe = library_dir() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
 
     result = CliInvoker().invoke(
@@ -251,7 +251,7 @@ def test_remove_warns_on_local_edits_before_confirm(tmp_path: Path) -> None:
     _write_pack_project(pack)
     result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert result.exit_code == 0, result.output
-    installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
+    installed_recipe = library_dir() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
     backend = ScriptedPromptBackend(confirms=[False])
 
@@ -268,7 +268,7 @@ def test_remove_warns_on_local_edits_before_confirm(tmp_path: Path) -> None:
     assert "cancelled; no changes made" in result.stderr
     assert result.stdout == ""
     assert backend.calls == [("confirm", "Continue?")]
-    assert (library_root() / "packs" / "demo").exists()
+    assert (library_dir() / "packs" / "demo").exists()
 
 
 def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
@@ -288,19 +288,19 @@ def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
         "detail": None,
     }
     assert json.loads(result.stdout) == [planned]
-    assert (library_root() / "packs" / "demo").exists()
+    assert (library_dir() / "packs" / "demo").exists()
 
     refused = CliInvoker().invoke(app, ["packs", "remove", "demo"])
     assert refused.exit_code != 0
     assert "requires --yes" in refused.output
-    assert (library_root() / "packs" / "demo").exists()
+    assert (library_dir() / "packs" / "demo").exists()
 
     removed = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes", "-f", "pipe"])
     assert removed.exit_code == 0, removed.output
     envelope = json.loads(removed.stdout)
     assert envelope["kind"] == "recipe.remove_outcome"
     assert envelope["record"] == {**planned, "action": "removed"}
-    assert not (library_root() / "packs" / "demo").exists()
+    assert not (library_dir() / "packs" / "demo").exists()
 
 
 def test_remove_failure_is_a_failed_row(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -329,7 +329,7 @@ def test_remove_that_deletes_part_of_a_pack_is_partial_and_retryable(
     pack = tmp_path / "pack"
     _write_pack_project(pack)
     assert CliInvoker().invoke(app, ["packs", "add", str(pack)]).exit_code == 0
-    installed = library_root() / "packs" / "demo"
+    installed = library_dir() / "packs" / "demo"
     real_rmtree = shutil.rmtree
 
     def _half_rmtree(path: Path, *args: object, **kwargs: object) -> None:
@@ -355,7 +355,7 @@ def test_remove_that_deletes_part_of_a_pack_is_partial_and_retryable(
     retried = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
     assert retried.exit_code == 0, retried.output
     assert not installed.exists()
-    assert "demo" not in (library_root() / "packs.toml").read_text()
+    assert "demo" not in (library_dir() / "packs.toml").read_text()
 
 
 def test_remove_that_cannot_update_the_index_is_partial_and_retryable(
@@ -376,10 +376,10 @@ def test_remove_that_cannot_update_the_index_is_partial_and_retryable(
     [row] = json.loads(result.stdout)
     assert row["action"] == "partial"
     assert "could not update packs.toml: read-only file system" in row["detail"]
-    assert not (library_root() / "packs" / "demo").exists()
+    assert not (library_dir() / "packs" / "demo").exists()
     retried = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
     assert retried.exit_code == 0, retried.output
-    assert "demo" not in (library_root() / "packs.toml").read_text()
+    assert "demo" not in (library_dir() / "packs.toml").read_text()
 
 
 def test_remove_repeated_name_reports_the_second_as_failed(tmp_path: Path) -> None:
@@ -402,7 +402,7 @@ def test_remove_rejects_index_rows_without_content_hash(
     _write_pack_project(pack)
     result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert result.exit_code == 0, result.output
-    index_path = library_root() / "packs.toml"
+    index_path = library_dir() / "packs.toml"
     index_path.write_text(
         index_path.read_text(encoding="utf-8").replace("content_hash", "ignored_field"),
         encoding="utf-8",
@@ -412,7 +412,7 @@ def test_remove_rejects_index_rows_without_content_hash(
 
     assert result.exit_code != 0
     assert "content_hash" in result.output
-    assert (library_root() / "packs" / "demo").exists()
+    assert (library_dir() / "packs" / "demo").exists()
 
 
 def test_remove_yes_skips_local_edits_warning(
@@ -422,14 +422,14 @@ def test_remove_yes_skips_local_edits_warning(
     _write_pack_project(pack)
     result = CliInvoker().invoke(app, ["packs", "add", str(pack)])
     assert result.exit_code == 0, result.output
-    installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
+    installed_recipe = library_dir() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
 
     result = CliInvoker().invoke(app, ["packs", "remove", "demo", "--yes"])
 
     assert result.exit_code == 0, result.output
     assert "local edits" not in result.stderr
-    assert not (library_root() / "packs" / "demo").exists()
+    assert not (library_dir() / "packs" / "demo").exists()
 
 
 def test_apply_yes_writes_and_emits_json_summary(
@@ -794,7 +794,7 @@ def test_apply_keeps_backup_only_when_write_rollback_is_incomplete(
     )
 
     assert result.exit_code != 0, result.output
-    store = BackupStore(library_root() / "backups")
+    store = BackupStore(library_dir() / "backups")
     if not rollback_fails:
         assert store.list() == []
         return
@@ -821,7 +821,7 @@ def test_apply_check_explicit_preview_reports_drift_without_writing(
 
     assert result.exit_code == 3, result.output
     assert not (target / "out.txt").exists()
-    assert BackupStore(library_root() / "backups").list() == []
+    assert BackupStore(library_dir() / "backups").list() == []
     assert "Recipe preview:" in result.stderr
     if preview == "table":
         assert str(target / "out.txt") in result.stderr
@@ -876,7 +876,7 @@ def test_apply_check_reports_drift_without_writing_or_backing_up(
 
     assert drift.exit_code == 3, drift.output
     assert not (target / "out.txt").exists()
-    assert BackupStore(library_root() / "backups").list() == []
+    assert BackupStore(library_dir() / "backups").list() == []
     rows = json.loads(drift.stdout)
     assert rows[0]["action"] == "planned"
     assert rows[0]["files_changed"] == 1
@@ -1563,7 +1563,7 @@ def test_apply_skip_verdict_end_to_end(tmp_path: Path) -> None:
     (in_target / "wanted.txt").write_text("x")
     out_target = tmp_path / "app-out"
     out_target.mkdir()
-    backups = BackupStore(library_root() / "backups")
+    backups = BackupStore(library_dir() / "backups")
 
     # Boundary population: every target skips -> exit 0, no writes, no backup.
     all_skip = CliInvoker().invoke(
@@ -1843,7 +1843,7 @@ def test_apply_bulk_invocation_backs_up_only_successful_targets_in_one_bundle(
     assert result.exit_code != 0
     assert [row["action"] for row in json.loads(result.stdout)] == ["applied", "applied", "failed"]
     assert (first / "config.txt").read_text() == "after\n"
-    store = BackupStore(library_root() / "backups")
+    store = BackupStore(library_dir() / "backups")
     [bundle] = store.list()
     assert len(store.metadata(bundle.id)["files"]) == 2
 
@@ -2110,7 +2110,7 @@ def test_apply_backup_metadata_records_redacted_per_target_inputs(tmp_path: Path
     )
 
     assert result.exit_code == 0, result.output
-    metadata = BackupStore(library_root() / "backups").metadata("latest")
+    metadata = BackupStore(library_dir() / "backups").metadata("latest")
     assert metadata["files"][0]["inputs"] == {"service": "api", "token": "***"}
     assert "secret" not in json.dumps(metadata)
 
@@ -2723,7 +2723,7 @@ def test_hook_run_never_adopts_cwd_project_without_explicit_project(
             "def transform(content, *, inputs, target, file, args, helpers):\n    return 'global'\n"
         ),
     )
-    PackLibrary(library_root=library_root()).add(
+    PackLibrary(library_dir=library_dir()).add(
         global_project,
         source=str(global_project),
         rev=None,
@@ -3185,7 +3185,7 @@ def _config_backup(tmp_path: Path) -> tuple[BackupDraft, Path]:
     )
     config.write_text("before\n")
     bundle = _create_backup(
-        BackupStore(library_root() / "backups"),
+        BackupStore(library_dir() / "backups"),
         recipe_name="demo",
         inputs={"service": "api"},
         changes=[change],
@@ -3372,7 +3372,7 @@ def test_backup_restore_failing_item_exits_nonzero(
     second = target / "two.txt"
     first.write_text("one-before\n")
     second.write_text("two-before\n")
-    store = BackupStore(library_root() / "backups")
+    store = BackupStore(library_dir() / "backups")
     bundle = _create_backup(
         store,
         recipe_name="demo",
@@ -3443,7 +3443,7 @@ def test_backup_prune_policies(
     env_keep: str | None,
     survivors: set[str],
 ) -> None:
-    backups = library_root() / "backups"
+    backups = library_dir() / "backups"
     ids = {
         "a": "20200101T000000000000Z-aaaaaaaa",
         "b": "20990201T000000000000Z-bbbbbbbb",
@@ -3466,7 +3466,7 @@ def test_backup_prune_policies(
 
 
 def test_backup_prune_requires_a_policy(tmp_path: Path) -> None:
-    _seed_bundle(library_root() / "backups", "20250101T000000000000Z-aaaaaaaa")
+    _seed_bundle(library_dir() / "backups", "20250101T000000000000Z-aaaaaaaa")
 
     result = CliInvoker().invoke(app, ["backups", "prune", "--yes"])
 
@@ -3475,7 +3475,7 @@ def test_backup_prune_requires_a_policy(tmp_path: Path) -> None:
 
 
 def test_backup_prune_conforms_to_destructive_contract(tmp_path: Path) -> None:
-    backups = library_root() / "backups"
+    backups = library_dir() / "backups"
     old = _seed_bundle(backups, "20250101T000000000000Z-aaaaaaaa")
     new = _seed_bundle(backups, "20990301T000000000000Z-cccccccc")
 
@@ -3528,7 +3528,7 @@ def test_backup_prune_counts_failed_deletions_and_continues(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    backups = library_root() / "backups"
+    backups = library_dir() / "backups"
     first = _seed_bundle(backups, "20250101T000000000000Z-aaaaaaaa")
     second = _seed_bundle(backups, "20250201T000000000000Z-bbbbbbbb")
     _seed_bundle(backups, "20990301T000000000000Z-cccccccc")
@@ -3564,7 +3564,7 @@ def test_backup_prune_counts_failed_deletions_and_continues(
 
 
 def test_backup_prune_rows_say_planned_or_deleted(tmp_path: Path) -> None:
-    backups = library_root() / "backups"
+    backups = library_dir() / "backups"
     old = _seed_bundle(backups, "20250101T000000000000Z-aaaaaaaa")
     _seed_bundle(backups, "20990301T000000000000Z-cccccccc")
     args = ["backups", "prune", "--keep", "1", "--yes", "-f", "pipe"]
@@ -3615,7 +3615,7 @@ def test_add_rejects_rev_for_local_path_source(tmp_path: Path) -> None:
 
     assert result.exit_code == 2
     assert "--rev is only valid for git URL sources" in result.stderr
-    assert not (library_root() / "packs" / "demo").exists()
+    assert not (library_dir() / "packs" / "demo").exists()
 
 
 def _create_backup(
@@ -3677,7 +3677,7 @@ def _write_pack(
 
 
 def _install_pack(source: Path, *, name: str | None = None) -> None:
-    PackLibrary(library_root=library_root()).add(
+    PackLibrary(library_dir=library_dir()).add(
         source,
         source=str(source),
         rev=None,
@@ -3834,7 +3834,7 @@ def test_check_hook_pack_without_lock_keeps_pack_error_exact(tmp_path: Path) -> 
         hooks={"check": "ansible_pack.hooks.check"},
     )
     _install_pack(source)
-    installed = library_root() / "packs" / "ansible"
+    installed = library_dir() / "packs" / "ansible"
     (installed / "uv.lock").unlink()
 
     result = CliInvoker().invoke(app, ["validate", "ansible", "--format", "json"])
@@ -3850,9 +3850,9 @@ def test_check_without_ref_reports_library_reconcile_and_pack_rows(tmp_path: Pat
     _write_pack(stale_source, manifest_name="stale", recipes={"old": "recipes/old.yml"})
     _install_pack(good_source, name="good")
     _install_pack(stale_source, name="stale")
-    shutil.rmtree(library_root() / "packs" / "stale")
+    shutil.rmtree(library_dir() / "packs" / "stale")
     _write_pack(
-        library_root() / "packs" / "orphan",
+        library_dir() / "packs" / "orphan",
         manifest_name="orphan",
         recipes={"playbook": "recipes/playbook.yml"},
     )
@@ -3938,7 +3938,7 @@ def _install_good_and_broken_packs(tmp_path: Path) -> None:
     broken = tmp_path / "broken"
     _write_pack(broken, manifest_name="broken", recipes={"other": "recipes/other.yml"})
     _install_pack(broken)
-    installed = library_root() / "packs" / "broken" / "pyproject.toml"
+    installed = library_dir() / "packs" / "broken" / "pyproject.toml"
     installed.write_text("[project\nname = ", encoding="utf-8")
 
 
@@ -4069,7 +4069,7 @@ def test_unified_list_recipes_hooks_and_packs(tmp_path: Path) -> None:
             "pack": "ansible",
             "name": "playbook",
             "ref": "ansible/playbook",
-            "path": str(library_root() / "packs" / "ansible" / "recipes/playbook/recipe.yml"),
+            "path": str(library_dir() / "packs" / "ansible" / "recipes/playbook/recipe.yml"),
         }
     ]
     # Library hooks list before the built-ins.
@@ -4152,11 +4152,11 @@ def test_check_prefers_library_refs_over_builtin(tmp_path: Path, shadow: str) ->
     assert (row["type"], row["status"], row["detail"]) == (shadow, "pass", None)
     assert "error" not in row
     if shadow == "pack":
-        assert (row["name"], row["path"]) == ("yaml_edit", str(library_root() / "packs/yaml_edit"))
+        assert (row["name"], row["path"]) == ("yaml_edit", str(library_dir() / "packs/yaml_edit"))
     else:
         assert (row["name"], row["path"]) == (
             "shadow/yaml_edit",
-            str(library_root() / "packs" / "shadow" / "recipes/yaml.yml"),
+            str(library_dir() / "packs" / "shadow" / "recipes/yaml.yml"),
         )
 
 
@@ -4184,7 +4184,7 @@ def test_check_hookless_pack_without_lock_passes_every_ref_form(tmp_path: Path) 
     source = tmp_path / "source"
     _write_pack(source, manifest_name="plain", recipes={"ok": "recipes/ok.yml"})
     _install_pack(source)
-    installed = library_root() / "packs" / "plain"
+    installed = library_dir() / "packs" / "plain"
     (installed / "uv.lock").unlink()
     (source / "uv.lock").unlink()
     pack_row = {

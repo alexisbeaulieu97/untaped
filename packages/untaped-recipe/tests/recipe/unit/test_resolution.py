@@ -39,7 +39,7 @@ def _write_pack(root: Path, *, recipes: tuple[str, ...]) -> None:
 def _library(tmp_path: Path, *recipes: str) -> PackLibrary:
     source = tmp_path / "source"
     _write_pack(source, recipes=recipes)
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
     library.add(source, source=str(source), rev=None, name=None, force=False)
     return library
 
