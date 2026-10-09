@@ -116,7 +116,7 @@ def refresh_source(
             index=index,
             aliases=aliases,
             default_dependency_paths=settings.dependency_paths,
-            repo_cache_path=settings.cache_dir,
+            cache_dir=settings.cache_dir,
             clone_protocol=settings.git_clone_protocol,
             fetch_depth=settings.git_fetch_depth,
             blob_filter=settings.git_blob_filter,

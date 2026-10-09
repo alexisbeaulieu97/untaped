@@ -91,7 +91,7 @@ After the results, each copy is deleted, workflows first, and named on
 stderr; with `--keep` it is listed as `kept … (id N)`.
 
 - A copy teardown could not delete in 30 seconds (a job of it still runs),
-  or one a second Ctrl-C left, gets a `warning: teardown: … is left: …`
+  or one a second Ctrl-C left, gets a `warning: <copy>: left behind, …`
   line.
 - The warning ends with the command that deletes that run's copies:
   `untaped awx test prune --run k3x9 --older-than 0`.

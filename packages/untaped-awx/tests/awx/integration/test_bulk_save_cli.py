@@ -187,7 +187,7 @@ def test_save_all_with_only_read_only_kinds_emits_empty_stream(
     result = CliInvoker().invoke(app, ["export", "--all-kinds", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
     assert result.stdout == "", f"expected empty stdout, got: {result.stdout!r}"
-    assert "warning: skipping Credential" in result.stderr
+    assert "warning: Credential: skipped, not roundtrippable in v0" in result.stderr
 
 
 def test_save_all_without_filter_backs_up_every_org_and_streams_envelopes(
@@ -266,7 +266,7 @@ def test_save_all_skips_read_only_kinds_on_stderr_only(
     result = CliInvoker().invoke(app, ["export", "--all-kinds", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
     assert [p.name for p in out_dir.iterdir()] == ["Project__Default__playbooks.yml"]
-    assert "skipping Credential" in result.stderr
+    assert "Credential: skipped" in result.stderr
     assert "deprecated" not in result.output
     docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
     assert [Resource.model_validate(d).kind for d in docs] == ["Project"]

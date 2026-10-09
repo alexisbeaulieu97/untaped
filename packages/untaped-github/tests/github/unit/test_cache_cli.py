@@ -312,6 +312,7 @@ def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None
     row = json.loads(result.stdout)
     assert row["repo"] == "acme/api"
     assert (Path(row["path"]) / "README.md").is_file()
+    assert next(iter(row)) == "target_path" and row["target_path"] == row["path"]
 
 
 def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo) -> None:
@@ -320,6 +321,8 @@ def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo)
     result = CliInvoker().invoke(app, ["cache", "worktree", "acme/api", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
+    assert result.stdout.count("\n") == 1 and "\t" not in result.stdout
+    assert Path(result.stdout.strip()).is_absolute()
     assert (Path(result.stdout.strip()) / "README.md").is_file()
 
 

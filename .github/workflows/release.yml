@@ -79,6 +79,11 @@ jobs:
       - name: Release notes
         run: uv run --no-sync python scripts/release.py notes "$VERSION" > release-notes.md
 
+      # The PyPI page is the README at build time: point its blob/main links
+      # at this release's tag, in this checkout only.
+      - name: Point README links at the tag
+        run: uv run --no-sync python scripts/release.py readmes "$VERSION"
+
       - name: Build
         run: |
           set -euo pipefail

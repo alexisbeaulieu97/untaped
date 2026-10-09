@@ -83,7 +83,10 @@ class StatusSummary(BaseModel):
     checked_at: UtcTimestamp
     total: int
     attention: int
-    """Rows that need the user: what makes ``status --check`` and ``sync`` exit 3."""
+    """Rows that need the user, ``error`` rows included.
+
+    They make ``status --check`` and ``sync`` exit 3, or 1 when one is an ``error`` row.
+    """
     pending: int = 0
     foreign: int = 0
     applied: int = 0
@@ -102,7 +105,7 @@ PlaceAction = Literal[
 
 
 class PlaceOutcome(OutcomeRecord, TargetRecord):
-    """``dotfiles.apply_outcome`` / ``dotfiles.sync_outcome``: what was done for one placed path.
+    """``dotfiles.{apply,sync,remove}_outcome``: what was done for one placed path.
 
     ``state`` is the path's state before the action, so a script can tell a
     ``skipped`` row that was ``behind`` under ``manual`` from one that was
@@ -139,7 +142,11 @@ RepoAction = Literal["planned", "updated", "deleted", "unchanged", "failed", "sk
 
 
 class RepoOutcome(OutcomeRecord):
-    """``dotfiles.repo_outcome``: what ``subscribe``, ``unsubscribe`` or ``sync`` did for a repo."""
+    """``dotfiles.repo_outcome``: what ``unsubscribe`` did for a repo.
+
+    ``apply`` and ``sync`` build the same rows for the fetches and fast-forwards
+    they run, and report them on stderr rather than emitting them.
+    """
 
     table_columns: ClassVar[tuple[str, ...]] = ("name", "action", "detail")
 

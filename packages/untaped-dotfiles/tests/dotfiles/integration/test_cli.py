@@ -141,6 +141,18 @@ def test_enable_records_the_policy_and_skips(make_upstream: Upstream) -> None:
     assert run(app, ["enable", "nope"]).exit_code == 1
 
 
+def test_subscribe_and_enable_print_the_next_step_as_a_hint(make_upstream: Upstream) -> None:
+    bare, _ = make_upstream()
+    subscribed = run(app, ["subscribe", str(bare)])
+    assert subscribed.exit_code == 0, subscribed.output
+    assert "subscribed 'dotfiles' (4 items)\n" in subscribed.stderr
+    assert "hint: run `untaped dotfiles enable ITEM`" in subscribed.stderr
+    enabled = run(app, ["enable", "fish"])
+    assert enabled.exit_code == 0, enabled.output
+    assert "enabled 1 item\n" in enabled.stderr
+    assert "hint: run `untaped dotfiles apply`" in enabled.stderr
+
+
 def test_enable_all_takes_every_item_that_applies_here(make_upstream: Upstream) -> None:
     bare, _ = make_upstream()
     _subscribe(bare)
@@ -252,6 +264,8 @@ def test_apply_without_a_terminal_needs_yes_and_a_decline_changes_nothing(
     )
     assert declined.exit_code == 1 and "cancelled; no changes made" in declined.stderr
     assert "starship.toml" in declined.stderr  # the plan was previewed
+    header = declined.stderr.lower()
+    assert "item" in header and "target_path" not in header  # the default columns
     assert not (home / ".config" / "starship.toml").exists()
     accepted = run(
         app, ["apply"], terminal=True, prompt_backend=ScriptedPromptBackend(confirms=[True])
@@ -281,6 +295,53 @@ def test_apply_refuses_a_local_edit_unless_forced(
     assert target.read_text().startswith("[character]")
 
 
+def _unreadable(monkeypatch: pytest.MonkeyPatch, path: Path) -> None:
+    """Make ``path`` unreadable, root or not: permission bits do not stop root."""
+    read_bytes = Path.read_bytes
+
+    def refuse(self: Path) -> bytes:
+        if self == path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", refuse)
+
+
+def test_an_unreadable_placed_path_exits_1_and_counts_in_attention(
+    make_upstream: Upstream, home: Path, dotfiles_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare, _ = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship"])
+    run(app, ["apply", "--yes"])
+    target = home / ".config" / "starship.toml"
+    _unreadable(monkeypatch, target)
+    result = run(app, ["status", "--check", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    [row] = _rows(result)
+    assert row["state"] == "error" and row["error"] is not None
+    assert str(row["detail"]).startswith(f"could not read {target}: ")
+    assert (dotfiles_env / "attention").read_text() == "1\n"
+
+
+def test_an_unreadable_source_in_a_checkout_is_an_error_row(
+    make_upstream: Upstream, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, author = make_upstream()
+    _subscribe(author, "--name", "local")
+    run(app, ["enable", "starship"])
+    source = (author / "starship.toml").resolve()
+    _unreadable(monkeypatch, source)
+    result = run(app, ["status", "--check", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    [row] = _rows(result)
+    assert row["state"] == "error"
+    assert str(row["detail"]).startswith("could not read source starship.toml: ")
+    diff = run(app, ["diff"])
+    assert diff.exit_code == 1 and "error: starship/starship.toml: could not read" in diff.stderr
+    assert run(app, ["apply", "--yes"]).exit_code == 1
+
+
 # -- sync ---------------------------------------------------------------------------
 
 
@@ -306,7 +367,8 @@ def test_sync_applies_sync_items_and_holds_a_clone_back_for_manual_links(
     assert rows["fish/conf.d/abbr.fish"]["state"] == "applied"
     assert git(tmp_path / "repos" / "dotfiles", "rev-parse", "HEAD") == before
     assert (
-        "held back by manual link files: fish/fish/conf.d, fish/fish/config.fish" in result.stderr
+        "warning: dotfiles: held back by manual link files: fish/fish/conf.d, fish/fish/config.fish"
+        in result.stderr
     )
     assert (home / ".config/fish/config.fish").read_text() == "set -gx EDITOR vim\n"
     assert (dotfiles_env / "attention").read_text() == "1\n"

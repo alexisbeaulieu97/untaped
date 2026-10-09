@@ -48,10 +48,10 @@ class HookResolver:
     def __init__(
         self,
         *,
-        library_root: Path | None = None,
+        library_dir: Path | None = None,
         builtins: dict[str, BuiltinHook] | None = None,
     ) -> None:
-        self._library = PackLibrary(library_root=library_root) if library_root is not None else None
+        self._library = PackLibrary(library_dir=library_dir) if library_dir is not None else None
         self._builtins = builtins if builtins is not None else BUILTIN_HOOKS
         self._metadata_cache: dict[Path, PackManifest] = {}
         self._validated_projects: set[Path] = set()

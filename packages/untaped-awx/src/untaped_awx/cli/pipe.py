@@ -30,14 +30,4 @@ def selection_pipe_kinds(spec: ResourceSpec) -> set[str]:
     }
 
 
-def id_field_for(spec: ResourceSpec, *, by_id: bool) -> str:
-    """The record field a ``--stdin`` consumer extracts for ``spec``.
-
-    ``--by-id`` resolves on the numeric ``id``; otherwise on the spec's
-    primary identity key (its name field). Keeps the
-    ``--format pipe`` → ``--stdin`` bridge consistent across the factories.
-    """
-    return "id" if by_id else spec.identity_keys[0]
-
-
-__all__ = ["id_field_for", "pipe_kind_for_spec", "selection_pipe_kinds"]
+__all__ = ["pipe_kind_for_spec", "selection_pipe_kinds"]
