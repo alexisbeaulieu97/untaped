@@ -183,8 +183,11 @@ def test_relative_links_resolve(path: Path) -> None:
 
 # release.MAIN_LINK (whose group 1 is the URL before ``/main``), then the path and anchor.
 _REPO_URL = re.compile(release.MAIN_LINK.pattern + r"/([^)\s#]+)(?:#([^)\s]+))?")
-# Any link into this repository that names a kind and a ref: ``<REPO_URL>/<kind>/<ref>``.
-_REPO_REF = re.compile(re.escape(release.REPO_URL) + r"/([^/\s)#]+)/([^/\s)#]+)")
+# Any link to a file in this repository: ``<REPO_URL>/<kind>/<ref>`` (issue, PR and release
+# links name no ref and need no pinning; trailing punctuation is not part of the ref).
+_REPO_REF = re.compile(
+    re.escape(release.REPO_URL) + r"/(blob|tree|raw|blame|edit)/([^/\s)#]+?)[.,;:]*(?=[/\s)#]|$)"
+)
 
 
 @pytest.mark.parametrize("path", markdown_files(), ids=lambda p: str(p.relative_to(REPO_ROOT)))
