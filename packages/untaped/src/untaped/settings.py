@@ -332,8 +332,9 @@ def resolve_with_overlay(
     """
     overlay = _overlay.get()
     profiles = raw.get("profiles")
-    known = profiles if isinstance(profiles, dict) else {}
-    if overlay is not None and (profiles is None or known) and overlay.profile not in known:
+    # A malformed ``profiles`` (not a mapping) is left for resolution to report.
+    known = {} if profiles is None else profiles
+    if overlay is not None and isinstance(known, dict) and overlay.profile not in known:
         raw = {**raw, "profiles": {**known, overlay.profile: {}}}
     resolved = active_settings_layout().resolve(raw, sections=sections)
     selected = effective_active_profile_name(raw) or DEFAULT_PROFILE
