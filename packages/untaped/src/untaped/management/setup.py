@@ -1,7 +1,7 @@
 """Root ``untaped setup`` command: one full-screen screen to configure a profile.
 
 The screen (:mod:`untaped.management.setup_screen`) lists every composed
-plugin whose profile model has ``base_url`` and ``token`` fields, each with
+plugin whose settings model has ``base_url`` and ``token`` fields, each with
 a status, and the selected one's form: its URL and how to get its token (stored
 with this machine's password store, a plaintext token moved there, a
 ``token_command``, a conventional environment variable, or the current source

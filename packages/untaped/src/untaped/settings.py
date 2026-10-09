@@ -215,7 +215,7 @@ def section_stabilities() -> Mapping[str, Stability | None]:
 
 
 def registered_profile_model(section: str) -> type[BaseModel] | None:
-    """The profile model registered for ``section``, if any."""
+    """The settings model registered for ``section``, if any."""
     return _CONFIG_REGISTRY.profile_sections.get(section)
 
 

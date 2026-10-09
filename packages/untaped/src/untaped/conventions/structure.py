@@ -13,7 +13,7 @@ For one plugin package this flags:
   ``application/**/ports.py`` module;
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
 - ``foreign-section`` — code reads another plugin's config section;
-- ``settings-not-frozen`` — the profile or state model is mutable;
+- ``settings-not-frozen`` — the settings or state model is mutable;
 - ``settings-naming`` and ``settings-renames`` — see
   :mod:`untaped.conventions.settings_names`;
 - ``private-test-import`` — a test imports an ``_``-prefixed module or name

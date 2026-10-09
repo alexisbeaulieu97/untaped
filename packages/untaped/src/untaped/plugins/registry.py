@@ -175,7 +175,7 @@ class PluginSpec:
 
     ``name`` is also the plugin's config section and CLI group. Every part
     is optional: ``app_factory`` builds the commands mounted under the name
-    (none when it is ``None``), ``settings`` is the profile model of the
+    (none when it is ``None``), ``settings`` is the settings model of the
     plugin's config section and ``state`` its ``state.yml`` model.
 
     ``help`` is the one-line summary shown in the root command listing. A
@@ -264,7 +264,7 @@ VALID_REASONS = frozenset(
     {
         "reserved-name",
         "duplicate-name",
-        "profile-state-overlap",
+        "settings-state-overlap",
         "duplicate-skill",
         "bad-skill-asset",
         "duplicate-doctor-check",
@@ -525,7 +525,7 @@ def _check_state_model(spec: PluginSpec) -> None:
     try:
         validate_disjoint_settings_sections(spec.name, spec.settings, spec.state)
     except ConfigError as exc:
-        raise _Quarantine("profile-state-overlap", str(exc)) from None
+        raise _Quarantine("settings-state-overlap", str(exc)) from None
 
 
 def _check_skills(spec: PluginSpec, state: _CompositionState) -> None:

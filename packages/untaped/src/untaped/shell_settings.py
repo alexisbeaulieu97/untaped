@@ -1,6 +1,6 @@
 """The shell's own profile settings (the ``shell`` section) and alias rules.
 
-:class:`ShellProfileSettings` is the root app's profile model;
+:class:`ShellProfileSettings` is the root app's settings model;
 ``aliases`` maps an alias name (:data:`ALIAS_NAME`) to the argv it stands
 for. Kept free of CLI imports so composition and the ``alias`` commands
 share one validation.

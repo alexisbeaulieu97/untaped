@@ -62,7 +62,7 @@ class RootSectionScope:
     """Owning plugin name (the shell name for the shell section)."""
 
     settings_fields: frozenset[str]
-    """User-tunable field names of the section's profile model."""
+    """User-tunable field names of the section's settings model."""
 
     state_fields: frozenset[str]
     """Tool-managed field names of the section's state model (never settable)."""

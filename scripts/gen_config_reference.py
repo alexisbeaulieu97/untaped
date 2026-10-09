@@ -1,7 +1,7 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
 The page lists every setting of the root app (``http.*``, ``ui.*``,
-``skills.*``) and of each first-party plugin's profile model, plus each
+``skills.*``) and of each first-party plugin's settings model, plus each
 plugin's state model. Types, defaults and environment variables come from
 the Pydantic models; a description comes from ``Field(description=...)`` when
 the model declares one, else from :data:`DESCRIPTIONS` below.

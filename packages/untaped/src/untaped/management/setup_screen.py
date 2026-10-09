@@ -1,7 +1,7 @@
 """The ``untaped setup`` screen: its model, update and view.
 
 Two panes under a profile field: the plugins the wizard offers (those
-whose profile model has ``base_url`` and ``token``) with a status each, and the
+whose settings model has ``base_url`` and ``token``) with a status each, and the
 selected one's form (base URL, a token source as tabs, buttons). Saving checks
 before it writes: the form's values become a :class:`Candidate`, the
 plugin's online checks run against them inside a settings overlay (nothing

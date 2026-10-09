@@ -68,7 +68,7 @@ class _TokenSection:
 
 
 def _token_sections(result: CompositionResult) -> dict[str, _TokenSection]:
-    """Every composed section whose profile model has ``token`` and ``token_command``."""
+    """Every composed section whose settings model has ``token`` and ``token_command``."""
     models = {
         registered.spec.name: settings_model(registered.spec) for registered in result.plugins
     }

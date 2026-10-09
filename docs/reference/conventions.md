@@ -265,7 +265,7 @@ The sections above name the helper for each rule. Beyond those:
   than `app_context().settings`.
 - For a token, declare `token_sources: ClassVar[TokenSources] =
   TokenSources(env=(...))` and a `token_command: TokenCommand = None` field
-  beside `token` on your profile model; see [Tokens](../configuration.md#tokens).
+  beside `token` on your settings model; see [Tokens](../configuration.md#tokens).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
 - To keep a bare-repo cache, use `RepoCache` rather than your own git plumbing.
@@ -360,14 +360,14 @@ directly.
 - A duration ends in its unit: `_seconds`, `_minutes`, `_hours`, `_days` or
   `_ms`.
 
-`check_conventions` flags a profile model field that breaks one of these
+`check_conventions` flags a settings model field that breaks one of these
 (`settings-naming`) and declarations that break the rules below
 (`settings-renames`). A name that is the established term for its value
 keeps it with `# untaped: allow settings-naming` on the field's line.
 
 ### Renaming a setting
 
-Declare a rename on the section's profile model, never on a nested model,
+Declare a rename on the section's settings model, never on a nested model,
 with dotted paths relative to the section:
 
 ```python

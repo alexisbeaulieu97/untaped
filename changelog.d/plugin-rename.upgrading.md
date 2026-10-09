@@ -6,4 +6,4 @@ point, `PluginSpec` name, config section and command group. It passes
 `settings=` and `state=` and no `config_section`; a doctor check reads only
 `PluginContext.settings`. A plugin whose old `config_section` differed from
 its name finds its settings under the name now: move that section in
-`config.yml` and rename its `UNTAPED_<SECTION>__*` variables.
+`config.yml` and `state.yml` and rename its `UNTAPED_<SECTION>__*` variables.

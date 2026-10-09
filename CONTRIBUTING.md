@@ -71,7 +71,7 @@ and uses this layout:
 ```
 packages/untaped-<name>/src/untaped_<name>/
 ├── __init__.py        # SPEC: PluginSpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
-├── settings.py        # profile model + state model (field sets must be disjoint)
+├── settings.py        # settings model + state model (field sets must be disjoint)
 ├── api.py             # optional: declared public module other first-party plugins may import
 ├── cli/               # cyclopts commands (thin)
 ├── application/       # use cases (orchestration); ports in application/ports.py

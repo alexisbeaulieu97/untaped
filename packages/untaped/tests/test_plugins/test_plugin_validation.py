@@ -101,9 +101,9 @@ RESERVED = [
 SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
     *((f"reserved-name-{v}", lambda v=v: make_spec(name=v), "reserved-name", v) for v in RESERVED),
     (
-        "profile-state-overlap",
+        "settings-state-overlap",
         lambda: make_spec(name="o", settings=TokenProfile, state=TokenState),
-        "profile-state-overlap",
+        "settings-state-overlap",
         "token",
     ),
     (
