@@ -4,7 +4,8 @@ A screen's models, updates and views never touch the terminal library, so the
 adapter can be replaced without changing a screen. This test applies core's
 ``terminal-boundary`` rule (which ``check_conventions`` applies to one
 capability) to every package's source, core's included, the example plugin and
-``scripts``, and allows only the adapter.
+``scripts``, and allows only the adapter. The rule's inline waiver
+(``# untaped: allow terminal-boundary`` on the import line) applies here too.
 """
 
 from __future__ import annotations
