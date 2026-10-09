@@ -8,7 +8,6 @@ draws the state with the screen components.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Literal
@@ -21,6 +20,7 @@ from untaped.picker import (
     PickResult,
     PickSetting,
 )
+from untaped.screen.components.text import EditBuffer
 from untaped.screen.fuzzy import Ranked, rank
 
 Focus = Literal["title", "search", "list", "selected"]
@@ -255,13 +255,9 @@ def paste(state: PickerState, text: str) -> PickerState:
 
 
 def _edit_text(text: str, key: str) -> str:
-    if key == "backspace":
-        return text[:-1]
-    if key == "ctrl-u":
-        return ""
-    if key == "ctrl-w":
-        return re.sub(r"\S+\s*$", "", text)
-    return text
+    """``text`` after an editing key, the caret at its end (the picker's fields have no other)."""
+    edited = EditBuffer(text, len(text)).key(key)
+    return text if edited is None else edited.text
 
 
 def _type(state: PickerState, char: str) -> PickerState:
