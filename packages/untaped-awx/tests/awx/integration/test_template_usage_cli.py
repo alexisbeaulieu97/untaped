@@ -7,6 +7,7 @@ inside 300 ``quarterly-audit``. Job template 11 ``unused`` runs nowhere.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -93,6 +94,69 @@ def test_usage_stdin_reads_roots_and_partial_failure_exits_nonzero(graph: Any) -
     assert result.stdout.strip().splitlines() == ["200"]
     assert "does-not-exist" in result.stderr
     assert "does-not-exist" not in result.stdout
+
+
+def _records(kind: str | None, *records: dict[str, Any]) -> str:
+    return "".join(
+        json.dumps({"untaped": "1", **({"kind": kind} if kind else {}), "record": record}) + "\n"
+        for record in records
+    )
+
+
+def test_usage_stdin_typed_records_use_their_id_not_their_name(graph: Any) -> None:
+    """A piped record names its template by ``id``: a name shared across orgs can't misroute it."""
+    graph.seed("organizations", id=2, name="Other")
+    graph.seed("job_templates", id=12, name="smoke-test", organization=2, organization_name="Other")
+    piped = _records(
+        "awx.job_template", {"id": 12, "name": "smoke-test"}, {"id": 10, "name": "renamed"}
+    )
+    result = _usage("job-templates", "usage", "--stdin", "--columns", "id", input=piped)
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == ["200"]
+
+
+@pytest.mark.parametrize(
+    ("args", "input", "expected"),
+    [
+        (["job-templates", "usage", "--stdin"], "smoke-test\n", "200"),
+        (["job-templates", "usage", "--stdin", "--by-id"], "10\n", "200"),
+        # --by-id is moot for records: they always carry their id
+        (["job-templates", "usage", "--stdin", "--by-id"],
+         _records("awx.job_template", {"id": 10, "name": "smoke-test"}), "200"),
+        # a record without a kind is read by its id too
+        (["job-templates", "usage", "--stdin"], _records(None, {"id": 10}), "200"),
+        (["workflow-templates", "usage", "--stdin"],
+         _records("awx.workflow_job_template", {"id": 200}), "100"),
+    ],
+)  # fmt: skip
+def test_usage_stdin_bare_lines_and_records(
+    graph: Any, args: list[str], input: str, expected: str
+) -> None:
+    result = _usage(*args, "--columns", "id", input=input)
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == [expected]
+
+
+@pytest.mark.parametrize(
+    ("input", "exit_code", "stderr"),
+    [
+        # one stream is records or bare lines, never both
+        ("smoke-test\n" + _records("awx.job_template", {"id": 10}), 1, "mixed"),
+        (_records("awx.job_template", {"id": 10}) + "smoke-test\n", 1, "line 2"),
+        # a record is never re-resolved by name, with or without a kind
+        (_records("awx.job_template", {"name": "smoke-test"}), 1, "id"),
+        (_records(None, {"name": "smoke-test"}), 1, "id"),
+        (_records("awx.job_template", {"id": "10"}), 1, "id"),
+        (_records("awx.workflow_job_template", {"id": 200}), 2, "awx.workflow_job_template"),
+    ],
+)  # fmt: skip
+def test_usage_stdin_rejects_bad_records(
+    graph: Any, input: str, exit_code: int, stderr: str
+) -> None:
+    result = _usage("job-templates", "usage", "--stdin", input=input)
+    assert result.exit_code == exit_code, result.output
+    assert stderr in result.stderr
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize("args", [["does-not-exist"], ["10", "--depth", "-1"]])

@@ -446,6 +446,36 @@ def test_patch_runtime_failure_stops_scheduling(
     assert fake_aap.get_record("projects", 11)["description"] == ("new" if continue_ else "old")
 
 
+def test_patch_failure_is_an_attributed_error_and_the_skip_a_warning(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    seed(fake_aap, "projects")
+    fake_aap.seed("projects", id=11, name="second", organization=1, description="old")
+    original = fake_aap._update
+    monkeypatch.setattr(
+        fake_aap,
+        "_update",
+        lambda path, id_, body: (
+            httpx.Response(500, json={"detail": "failed"})
+            if id_ == 10
+            else original(path, id_, body)
+        ),
+    )
+    args = ["projects", "patch", "10", "11", "--by-id", "--set", "description=new", "--yes"]
+
+    result = CliInvoker().invoke(app, args)
+
+    assert result.exit_code != 0
+    records = [json.loads(line) for line in result.stderr.splitlines() if line.startswith("{")]
+    [error] = [r for r in records if r["level"] == "error"]
+    assert (error["item"], error["category"]) == ("Project/target", "unavailable")
+    [warning] = [r for r in records if r["level"] == "warning"]
+    assert warning["message"] == "Project/second: skipped after a runtime failure"
+
+
 @pytest.mark.parametrize("continue_", [False, True])
 def test_delete_runtime_failure_stops_scheduling(
     fake_aap: Any, continue_: bool, monkeypatch: pytest.MonkeyPatch
