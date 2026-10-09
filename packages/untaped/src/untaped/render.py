@@ -166,7 +166,7 @@ def _represent_datetime(dumper: yaml.SafeDumper, value: datetime) -> yaml.Node:
 
 
 def _utc(value: datetime) -> str:
-    """A ``datetime`` in a plain row, as records render theirs (``…Z``, to the second)."""
+    """A ``datetime`` in a plain row, as records render theirs (``…Z``, microseconds kept)."""
     from untaped.records import format_utc  # noqa: PLC0415 - keep pydantic off render imports
 
     return format_utc(value)
@@ -435,7 +435,16 @@ def _table_cell(column: str, value: Any) -> str:
     return " ".join(_flat(value).split())
 
 
+#: An RFC 3339 UTC timestamp with a fraction, as records and plain rows render one.
+_UTC_FRACTION_RE = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\.\d+Z$")
+
+
 def _flat(value: Any) -> str:
+    """A value as table or list-view text: flat, with timestamps to the second."""
+    if isinstance(value, datetime):
+        value = _utc(value)
+    if isinstance(value, str) and (match := _UTC_FRACTION_RE.match(value)):
+        return f"{match[1]}Z"
     if isinstance(value, Mapping):
         return ", ".join(f"{key}={text}" for key, text in _flat_pairs(value, prefix=""))
     if isinstance(value, list | tuple):

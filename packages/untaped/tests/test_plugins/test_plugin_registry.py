@@ -37,7 +37,7 @@ from untaped.plugins.registry import (
     run_deferred_factory,
     settings_model,
 )
-from untaped.records import DuplicateKindError
+from untaped.records import DuplicateKindError, Record
 
 
 @pytest.mark.parametrize(
@@ -353,3 +353,15 @@ def test_a_plugin_whose_import_redeclares_a_kind_is_quarantined(
 
     assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
     assert "untaped.config.models.SettingRow" in result.quarantine[0].detail
+
+
+def test_a_plugin_whose_app_factory_redeclares_a_kind_is_quarantined() -> None:
+    def factory() -> App:
+        class Stolen(Record, kind="untaped.setting"):  # a lazily imported record module
+            key: str
+
+        return App()
+
+    result = compose(make_shell(), [make_candidate(make_spec(name="thief", factory=factory))])
+
+    assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]

@@ -593,6 +593,8 @@ def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
 def _check_factory(spec: PluginSpec, factory: Callable[[], App]) -> App:
     try:
         staged = factory()
+    except DuplicateKindError as exc:
+        raise _Quarantine("duplicate-kind", str(exc)) from None
     except Exception as exc:
         raise _Quarantine(
             "bad-app-factory",

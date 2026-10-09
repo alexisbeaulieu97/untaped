@@ -361,11 +361,27 @@ def test_detail_column_wraps_instead_of_being_cut(monkeypatch: pytest.MonkeyPatc
     assert "…" not in out
 
 
-@pytest.mark.parametrize("fmt", ["json", "yaml", "raw", "table", "pipe"])
+@pytest.mark.parametrize("fmt", ["json", "yaml", "raw", "pipe"])
 def test_datetimes_in_plain_rows_render_as_utc_timestamps(fmt: OutputFormat) -> None:
     stamp = datetime(2026, 1, 2, 4, 4, 5, 123456, tzinfo=timezone(timedelta(hours=1)))
     out = _render([{"created_at": stamp}], fmt=fmt)
-    assert "2026-01-02T03:04:05Z" in out
+    assert "2026-01-02T03:04:05.123456Z" in out
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(2026, 1, 2, 4, 4, 5, 123456, tzinfo=timezone(timedelta(hours=1))),
+        "2026-01-02T03:04:05.123456Z",  # a row its command dumped before emitting it
+    ],
+)
+def test_tables_show_timestamps_to_the_second(value: object) -> None:
+    row = {"created_at": value, "events": [{"at": "2026-01-02T03:04:05.5Z"}]}
+
+    for out in (_render([row], fmt="table"), UiContext().detail(row, fmt="table")):
+        assert "2026-01-02T03:04:05Z" in out
+        assert ".1" not in out
+        assert ".5" not in out
 
 
 def test_fitting_narrows_the_widest_column_before_names_and_short_values(
