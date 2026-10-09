@@ -35,8 +35,10 @@ class PromptBackend(Protocol):
 
     A backend may also set ``needs_terminal = False`` (an optional attribute,
     read with a default of ``True``) to say it never draws on a terminal, so
-    :class:`UiContext` does not look for one before handing it a prompt, a screen
-    (:meth:`UiContext.run`) or a request (:meth:`UiContext.pick_many`).
+    :class:`UiContext` does not look for one before handing it a screen
+    (:meth:`UiContext.run`) or a request (:meth:`UiContext.pick_many`), and
+    leaves a prompt's streams as they are. A prompt still requires a TTY stdin
+    (:class:`untaped.testing.TtyStringIO` in tests).
     """
 
     def confirm(self, message: str, *, default: bool) -> bool: ...

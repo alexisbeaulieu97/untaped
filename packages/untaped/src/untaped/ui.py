@@ -445,7 +445,6 @@ class UiContext:
         search: bool = False,
     ) -> T:
         """Prompt for one typed choice."""
-        self._ensure_promptable()
         self._validate_choices(choices)
         with self._prompt_terminal():
             try:
@@ -462,7 +461,6 @@ class UiContext:
         min_count: int = 0,
     ) -> list[T]:
         """Prompt for multiple typed choices."""
-        self._ensure_promptable()
         self._validate_choices(choices)
         selected_defaults = list(defaults or ())
         with self._prompt_terminal():
