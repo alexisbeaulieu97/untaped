@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -227,6 +228,25 @@ def test_fetch_filter_makes_the_cache_partial(tmp_path: Path) -> None:
     config = cache.run(["config", "--get-regexp", r"^remote\.origin\."], capture=True).text
     assert "remote.origin.promisor true" in config
     assert "remote.origin.partialclonefilter blob:none" in config
+
+
+def test_fetch_removes_temp_packs_an_interrupted_fetch_left(tmp_path: Path, origin: Path) -> None:
+    # A killed ``git fetch`` leaves its temporary pack behind; only ``git gc`` would remove it.
+    cache = RepoCache(tmp_path / "app.git", error=_CacheError)
+    cache.ensure(f"file://{origin}")
+    packs = cache.path / "objects" / "pack"
+    packs.mkdir(parents=True, exist_ok=True)
+    stale = [packs / "tmp_pack_aB3dE9", packs / "tmp_idx_aB3dE9"]
+    fresh = packs / "tmp_pack_Zz9yX8"  # may belong to a git running outside untaped
+    for path in [*stale, fresh]:
+        path.write_bytes(b"partial")
+    hour_and_a_bit = time.time() - 3700
+    for path in stale:
+        os.utime(path, (hour_and_a_bit, hour_and_a_bit))
+    cache.fetch(["+refs/heads/main:refs/heads/main"], tags=False)
+    assert [path.exists() for path in stale] == [False, False]
+    assert fresh.exists()
+    assert _refs(cache) == ["refs/heads/main"]
 
 
 def test_delete_refs(tmp_path: Path, origin: Path) -> None:

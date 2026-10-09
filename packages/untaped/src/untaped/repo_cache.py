@@ -39,6 +39,9 @@ _ORIGIN_SECTION = re.compile(r'\[\s*(?i:remote)\s+"origin"\s*\]')
 _ESCAPES = {"n": "\n", "t": "\t", "b": "\b"}
 _SPACE = " \t\n\r"
 _UNKNOWN = "_unknown"
+#: Age after which a temporary pack is an interrupted fetch's leftover: well
+#: above the default fetch timeout, so a git running outside untaped keeps its own.
+_STALE_TEMP_PACK_SECONDS = 3600.0
 
 
 def repo_url_parts(url: str) -> tuple[str | None, list[str]]:
@@ -313,7 +316,9 @@ class RepoCache:
         :meth:`ensure` writes no fetch refspec, so pass ``refspecs``: with
         none, git fetches only the remote ``HEAD`` into ``FETCH_HEAD``.
         ``filter`` is a partial-clone filter spec such as ``"blob:none"``.
+        First removes the temporary packs an interrupted fetch left behind.
         """
+        self._remove_stale_temp_packs()
         argv = [
             "fetch",
             "--quiet",
@@ -325,6 +330,27 @@ class RepoCache:
             *refspecs,
         ]
         self.run(argv, timeout=self._slow_timeout, retry=True)
+
+    def _remove_stale_temp_packs(self) -> None:
+        """Delete ``objects/pack/tmp_{pack,idx}_*`` older than an hour.
+
+        A fetch that is killed (the timeout above, or the untaped process
+        itself) cannot run git's own cleanup, and only ``git gc``, which
+        these caches rarely reach, removes them later. The caller's cache lock keeps other untaped fetches out; the
+        age keeps a git running outside untaped safe. Best effort.
+        """
+        cutoff = time.time() - _STALE_TEMP_PACK_SECONDS
+        try:
+            with os.scandir(self._path / "objects" / "pack") as scan:
+                entries = [e for e in scan if e.name.startswith(("tmp_pack_", "tmp_idx_"))]
+        except OSError:
+            return
+        for entry in entries:
+            try:
+                if entry.is_file(follow_symlinks=False) and entry.stat().st_mtime < cutoff:
+                    os.unlink(entry.path)
+            except OSError:
+                continue
 
     def delete_refs(self, refs: Iterable[str]) -> None:
         """Delete ``refs`` in one ``update-ref --stdin``; a no-op when empty."""
