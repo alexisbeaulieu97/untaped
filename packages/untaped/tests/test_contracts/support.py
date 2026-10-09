@@ -39,6 +39,16 @@ class BookSource[T: Record = Book](Contract):
     def lookup(self, title: str) -> list[Book]:
         raise NotImplementedError
 
+    @cached(ttl=timedelta(hours=1))
+    def by_author(self, author: str, limit: int = 10) -> list[Book]:
+        raise NotImplementedError
+
+    def first(self) -> Book:
+        raise NotImplementedError
+
+    def count(self) -> int:
+        raise NotImplementedError
+
 
 class Volume(Record, kind="library.volume"):
     id: int
@@ -71,6 +81,8 @@ class Library(BookSource[Volume], Configured[LibrarySettings]):
 class Shop(BookSource):
     rows: ClassVar[list[object]] = []
     error: ClassVar[Exception | None] = None
+    asked: ClassVar[list[tuple[str, int]]] = []
+    total: ClassVar[object] = 0
 
     def books(self) -> list[Book]:
         if type(self).error is not None:
@@ -79,6 +91,16 @@ class Shop(BookSource):
 
     def lookup(self, title: str) -> list[Book]:
         return [book for book in self.books() if book.title == title]
+
+    def by_author(self, author: str, limit: int = 10) -> list[Book]:
+        type(self).asked.append((author, limit))
+        return [Book(title=author)]
+
+    def first(self) -> Book:
+        return type(self).rows[0]  # type: ignore[return-value]  # tests plant bad rows too
+
+    def count(self) -> int:
+        return type(self).total  # type: ignore[return-value]  # tests plant bad values too
 
 
 class Kiosk(BookSource):

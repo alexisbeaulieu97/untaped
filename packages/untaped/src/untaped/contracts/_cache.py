@@ -3,7 +3,9 @@
 Path: ``~/.untaped/plugins/<provider>/cache/<owner>.<contract>.<method>/<profile>/<key>.json``,
 holding ``{"untaped": "1", "schema": …, "refreshed_at": …, "value": …}``. ``<key>`` is the
 sha256 of the arguments' canonical JSON and ``schema`` the sha256 of the return type's JSON
-schema, so an entry written for another shape of the model is a miss, never an error.
+schema (with the provider's own record model's, which ``source.record`` carries), so an entry
+written for another shape of either model is a miss, never an error. A cache that can't be
+written never costs the live answer.
 
 ``gather`` passes its ``refresh`` directive down through a context variable and reads back
 what the call served: the oldest ``refreshed_at`` and, when a live call failed and an entry
@@ -15,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -35,6 +38,7 @@ from untaped.plugins.registry import plugin_dir
 
 _FORMAT = "1"
 _LOCK_TIMEOUT = 10.0
+_LOG = logging.getLogger("untaped.contracts")
 
 
 class NoCache(Exception):
@@ -92,6 +96,14 @@ def _adapter(hint: Any) -> tuple[TypeAdapter[Any], str]:
     return adapter, hashlib.sha256(schema.encode()).hexdigest()
 
 
+def _schema(binding: Binding, hint: Any) -> str:
+    """The entry's schema hash: the return type's, and the provider's own model's when bridged."""
+    schema = _adapter(hint)[1]
+    if binding.owns_item or binding.item is None:
+        return schema
+    return hashlib.sha256(f"{schema}:{_adapter(binding.item)[1]}".encode()).hexdigest()
+
+
 def entry_path(binding: Binding, name: str, key: str) -> Path:
     """Where ``name``'s answer for argument key ``key`` lives in the active profile."""
     folder = f"{binding.owner}.{binding.contract.name}.{name}"
@@ -139,35 +151,41 @@ def _write(path: Path, adapter: TypeAdapter[Any], schema: str, value: Any, at: d
         {"untaped": _FORMAT, "schema": schema, "refreshed_at": at.isoformat(), "value": dumped},
         ensure_ascii=False,
     )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with file_lock(
-        path.with_name(f"{path.name}.lock"),
-        timeout=_LOCK_TIMEOUT,
-        error=ConfigError,
-        busy=f"another untaped process is writing {path}",
-        failed=f"could not lock {path}",
-    ):
-        atomic_write(path, text)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with file_lock(
+            path.with_name(f"{path.name}.lock"),
+            timeout=_LOCK_TIMEOUT,
+            error=ConfigError,
+            busy=f"another untaped process is writing {path}",
+            failed=f"could not lock {path}",
+        ):
+            atomic_write(path, text)
+    except OSError, ConfigError:
+        _LOG.debug("could not write the answer cache entry %s", path, exc_info=True)
 
 
 def call(
     provider: Contract,
+    name: str,
     function: Callable[..., Any],
     ttl: timedelta,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> Any:
-    """Serve ``function`` through the answer cache, per the caller's refresh directive.
+    """Serve ``function``, filling contract method ``name``, through the answer cache.
 
-    A provider used outside the registry (no binding) is called live, uncached.
+    The caller's refresh directive decides. A provider used outside the
+    registry (no binding) is called live, uncached.
     """
     binding = binding_of(provider)
     if binding is None:
         return function(provider, *args, **kwargs)
     state = _CALL.get()
     refresh = None if state is None else state.refresh
-    adapter, schema = _adapter(return_type(binding, function.__name__))
-    path = entry_path(binding, function.__name__, argument_key(function, provider, args, kwargs))
+    hint = return_type(binding, name)
+    adapter, schema = _adapter(hint)[0], _schema(binding, hint)
+    path = entry_path(binding, name, argument_key(function, provider, args, kwargs))
     entry = _read(path, adapter, schema)
     now = datetime.now(UTC)
     if entry is not None and (

@@ -1,10 +1,11 @@
 """Who owns each contract and who fills it, for the current composition.
 
 Owners are found through ``PluginSpec.contracts``; providers through
-``PluginSpec.provides[owner]``, whose function runs once per process (per
-composition and profile) on the first ask for one of that owner's contracts.
-A provider that breaks a rule is quarantined for its own offer only: the
-plugin's commands, settings and other offers are untouched.
+``PluginSpec.provides[owner]``, whose function runs once per process and
+profile, on the first ask for one of that owner's contracts. A provider that
+breaks a rule is quarantined for its own offer only: the plugin's commands,
+settings and other offers are untouched. An owner whose ``contracts`` breaks
+loses its own contracts only; doctor names it.
 """
 
 from __future__ import annotations
@@ -74,6 +75,8 @@ class _State:
     composition: CompositionResult
     profile: str
     owners: dict[type[Contract], str] | None = None
+    #: Why an owner's ``contracts`` couldn't be read, by plugin.
+    broken: dict[str, str] = field(default_factory=dict)
     groups: dict[tuple[str, str], tuple[Provider | Quarantined, ...]] = field(default_factory=dict)
 
 
@@ -105,25 +108,37 @@ def _owners(state: _State) -> dict[type[Contract], str]:
     if state.owners is None:
         owners: dict[type[Contract], str] = {}
         for spec in _plugins(state):
-            for declared in spec.contracts():
-                info = contract_of(declared)
-                if info is None or info.cls is not declared:
-                    raise ConfigError(
-                        f"plugin {spec.name!r} lists {declared!r} in contracts, "
-                        "which is not a Contract declaration"
-                    )
-                owners[declared] = spec.name
+            try:
+                declared = _declared(spec)
+            except Exception as exc:
+                state.broken[spec.name] = str(exc) or type(exc).__name__
+                continue
+            owners.update(dict.fromkeys(declared, spec.name))
         state.owners = owners
     return state.owners
 
 
+def _declared(spec: PluginSpec) -> tuple[type[Contract], ...]:
+    declared = tuple(spec.contracts())
+    for each in declared:
+        info = contract_of(each)
+        if info is None or info.cls is not each:
+            raise TypeError(f"it lists {each!r}, which is not a Contract declaration")
+    return declared
+
+
 def owner_of(contract: ContractInfo) -> str:
     """The plugin that declares ``contract`` (``ConfigError`` when no installed plugin does)."""
-    owner = _owners(_state()).get(contract.cls)
+    state = _state()
+    owner = _owners(state).get(contract.cls)
     if owner is None:
+        unread = "".join(
+            f"; {plugin}'s contracts couldn't be read: {why}"
+            for plugin, why in state.broken.items()
+        )
         raise ConfigError(
             f"no installed plugin declares the contract {contract.cls.__qualname__} "
-            "(list it in its PluginSpec.contracts)"
+            f"(list it in its PluginSpec.contracts){unread}"
         )
     return owner
 
@@ -147,9 +162,12 @@ def every_offer() -> list[Provider | Quarantined]:
     """Every provider and quarantined offer in the composition (doctor)."""
     state = _state()
     installed = {spec.name for spec in _plugins(state)}
+    _owners(state)
     found: list[Provider | Quarantined] = []
     for spec in _plugins(state):
         for owner in spec.provides:
+            if owner in state.broken:
+                continue
             if owner not in installed:
                 found.append(
                     Quarantined(
@@ -270,7 +288,9 @@ class OfferReport:
     plugin: str
     owner: str
     contract: str
-    problem: str | None
+    #: The quarantine reason, or ``unused-method``; ``None`` for a clean offer.
+    reason: str | None = None
+    detail: str = ""
 
 
 def offer_reports() -> list[OfferReport]:
@@ -279,18 +299,17 @@ def offer_reports() -> list[OfferReport]:
     for entry in every_offer():
         if isinstance(entry, Quarantined):
             name = "" if entry.contract is None else _contract_name(entry.contract)
-            reports.append(
-                OfferReport(entry.plugin, entry.owner, name, f"{entry.reason}: {entry.detail}")
-            )
+            reports.append(OfferReport(entry.plugin, entry.owner, name, entry.reason, entry.detail))
             continue
         info = entry.binding.contract
         unused = unused_methods(type(entry.instance), info)
-        problem = (
-            f"unused-method: {', '.join(unused)} (not in {info.name}; never called)"
-            if unused
-            else None
-        )
-        reports.append(OfferReport(entry.plugin, entry.binding.owner, info.name, problem))
+        if unused:
+            detail = f"{', '.join(unused)} (not in {info.name}; never called)"
+            reports.append(
+                OfferReport(entry.plugin, entry.binding.owner, info.name, "unused-method", detail)
+            )
+        else:
+            reports.append(OfferReport(entry.plugin, entry.binding.owner, info.name))
     return reports
 
 
@@ -304,18 +323,29 @@ DOCTOR_CHECK_ID = "contract-providers"
 
 
 def doctor_row(_context: PluginContext) -> DoctorResult:
-    """A ``warn`` naming each quarantined offer and each unused method, else a pass."""
+    """A ``warn`` naming each quarantined offer, unused method and unreadable owner, else a pass.
+
+    An offer to an owner that isn't installed is no problem: it waits for that owner.
+    """
     try:
         reports = offer_reports()
     except ConfigError as exc:
         return DoctorResult(id=DOCTOR_CHECK_ID, ok=False, detail=str(exc))
     problems = [
-        f"{report.plugin} for {report.owner}.{report.contract or '?'}: {report.problem}"
+        f"{plugin}'s contracts couldn't be read: {why}" for plugin, why in _state().broken.items()
+    ]
+    problems += [
+        f"{report.plugin} for {report.owner}.{report.contract or '?'}: "
+        f"{report.reason}: {report.detail}"
         for report in reports
-        if report.problem is not None
+        if report.reason not in {None, "owner-not-installed"}
     ]
     if problems:
         return DoctorResult(id=DOCTOR_CHECK_ID, ok=True, warn=True, detail="; ".join(problems))
-    count = len(reports)
-    detail = "no plugin fills a contract" if not count else f"{count} provider(s), all usable"
+    usable = sum(report.reason is None for report in reports)
+    waiting = sorted({report.owner for report in reports if report.reason is not None})
+    parts = [f"{usable} provider(s), all usable"] if usable else []
+    if waiting:
+        parts.append(f"offers wait for {', '.join(waiting)} (not installed)")
+    detail = "; ".join(parts) or "no plugin fills a contract"
     return DoctorResult(id=DOCTOR_CHECK_ID, ok=True, detail=detail)

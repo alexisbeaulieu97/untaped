@@ -237,6 +237,12 @@ def _time_left() -> float | None:
     return None if ends is None else ends - time.monotonic()
 
 
+def _fits(delay: float) -> bool:
+    """Whether a retry after ``delay`` seconds could still start before the deadline."""
+    left = _time_left()
+    return left is None or delay < left
+
+
 class HttpClient:
     """A minimal HTTP client suitable for talking to JSON APIs.
 
@@ -328,8 +334,9 @@ class HttpClient:
                     and attempt < policy.max_attempts
                     and transient
                     and policy.allows_transport_retry(method, presend=presend)
+                    and _fits(delay := policy.backoff(attempt))
                 ):
-                    _sleep_before_retry(policy.backoff(attempt), attempt, policy)
+                    _sleep_before_retry(delay, attempt, policy)
                     continue
                 raise HttpTransportError(
                     str(exc),
@@ -343,8 +350,10 @@ class HttpClient:
                     policy is not None
                     and attempt < policy.max_attempts
                     and policy.allows_status_retry(method, response.status_code)
+                    and _fits(
+                        delay := policy.status_delay(attempt, response.headers.get("Retry-After"))
+                    )
                 ):
-                    delay = policy.status_delay(attempt, response.headers.get("Retry-After"))
                     _sleep_before_retry(delay, attempt, policy)
                     continue
                 raise HttpStatusError(

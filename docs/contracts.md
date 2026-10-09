@@ -62,8 +62,9 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   returning provider instances, with a local import. `Configured[S]` gives
   `self.settings` (S is the plugin's `settings` model), and a provider is
   ready when they validate; override `ready()` only for what a schema can't
-  say. Use `self.http` for requests, so `gather(deadline=...)` bounds them;
-  a client of your own is not bounded. Keep helper methods private
+  say. Use `self.http` for requests: it carries the profile's proxy, CA and
+  timeout, and `gather(deadline=...)` bounds it (as it does any untaped
+  `HttpClient`; another library's client is not bounded). Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as
   `unused-method`.
 - **Asking.** `gather(method, refresh=, needs=, deadline=)(*args)` returns
@@ -77,7 +78,8 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
 ## How providers are loaded and chosen
 
 A contract's providers are
-loaded on the first ask for one of its owner's contracts, once per process.
+loaded on the first ask for one of its owner's contracts, once per process
+and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
 doesn't fill the bridge), `unresolved-item-type`, `duplicate-kind`,
