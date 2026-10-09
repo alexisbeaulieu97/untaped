@@ -24,6 +24,7 @@ from pathlib import Path
 
 import gen_config_reference as generator
 import pytest
+import release
 from cyclopts import App
 
 from repo import quoted_commands
@@ -180,8 +181,12 @@ def test_relative_links_resolve(path: Path) -> None:
     assert _broken_links(path) == []
 
 
-_REPO_URL = re.compile(
-    r"https://github\.com/alexisbeaulieu97/untaped/(?:blob|tree)/main/([^)\s#]+)(?:#([^)\s]+))?"
+# release.MAIN_LINK (whose group 1 is the URL before ``/main``), then the path and anchor.
+_REPO_URL = re.compile(release.MAIN_LINK.pattern + r"/([^)\s#]+)(?:#([^)\s]+))?")
+# Any link to a file in this repository: ``<REPO_URL>/<kind>/<ref>`` (issue, PR and release
+# links name no ref and need no pinning; trailing punctuation is not part of the ref).
+_REPO_REF = re.compile(
+    re.escape(release.REPO_URL) + r"/(blob|tree|raw|blame|edit)/([^/\s)#]+?)[.,;:]*(?=[/\s)#]|$)"
 )
 
 
@@ -189,7 +194,7 @@ _REPO_URL = re.compile(
 def test_repository_urls_resolve(path: Path) -> None:
     """Absolute links into this repository (package READMEs render on PyPI) point at real files."""
     broken = []
-    for target, anchor in _REPO_URL.findall(path.read_text(encoding="utf-8")):
+    for _, target, anchor in _REPO_URL.findall(path.read_text(encoding="utf-8")):
         file = REPO_ROOT / target
         if not file.exists() or (anchor and file.suffix == ".md" and anchor not in _anchors(file)):
             broken.append(f"{target}#{anchor}" if anchor else target)
@@ -247,6 +252,19 @@ def test_package_readmes_link_absolutely() -> None:
     """PyPI cannot resolve a relative or in-page link or an image in a package README."""
     for readme in _package_readmes():
         assert _relative_targets(_prose(readme)) == [], readme
+
+
+def test_package_readmes_link_into_the_repository_on_main() -> None:
+    """The release pins ``blob/main`` and ``tree/main`` links to its tag (``release.py readmes``).
+
+    Any other kind or ref (``raw``, ``HEAD``, a tag left by a local ``readmes``
+    run) would reach PyPI unpinned or stale.
+    """
+    for readme in _package_readmes():
+        refs = _REPO_REF.findall(readme.read_text(encoding="utf-8"))
+        assert [ref for ref in refs if ref not in {("blob", "main"), ("tree", "main")}] == [], (
+            readme
+        )
 
 
 def test_every_workspace_member_has_a_readme() -> None:
