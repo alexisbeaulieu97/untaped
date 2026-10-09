@@ -30,7 +30,7 @@ from untaped.sdk import (
 from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     as_recipe_error,
-    library_root,
+    library_dir,
     report_config_errors,
     settings,
 )
@@ -72,7 +72,7 @@ def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) 
     """List backup bundles."""
     with report_config_errors():
         emit(
-            [_backup_row(bundle) for bundle in BackupStore(library_root() / "backups").list()],
+            [_backup_row(bundle) for bundle in BackupStore(library_dir() / "backups").list()],
             fmt=fmt,
             columns=columns,
             kind="recipe.backup",
@@ -119,7 +119,7 @@ def get_command(
 ) -> None:
     """Show backup metadata."""
     with report_config_errors():
-        metadata = BackupStore(library_root() / "backups").metadata(backup_id)
+        metadata = BackupStore(library_dir() / "backups").metadata(backup_id)
         if fmt != "table":
             emit(metadata, fmt=fmt, columns=columns, kind="recipe.backup")
             return
@@ -157,7 +157,7 @@ def restore_command(
 ) -> None:
     """Restore a backup bundle."""
     with report_config_errors():
-        store = BackupStore(library_root() / "backups")
+        store = BackupStore(library_dir() / "backups")
         resolved_id = store.resolve(backup_id).id
         items = store.plan_restore(resolved_id, force=force)
         ui = recipe_ui()
@@ -234,7 +234,7 @@ def prune_command(
                 "backups prune needs --keep/--older-than "
                 "or backup_keep/backup_max_age_days settings"
             )
-        store = BackupStore(library_root() / "backups")
+        store = BackupStore(library_dir() / "backups")
         bundles = store.list()
         pruned = prune_selection(
             bundles,

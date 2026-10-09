@@ -43,7 +43,7 @@ from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
-    library_root,
+    library_dir,
     merge_vars,
     report_config_errors,
     settings,
@@ -281,9 +281,9 @@ def _apply_context(
     hook_timeout_seconds: float,
     recipe_id: str | None = None,
 ) -> ApplyContext:
-    root = library_root()
+    root = library_dir()
     recipe_resolution = resolve_apply_recipe(
-        PackLibrary(library_root=root), recipe, recipe_id=recipe_id
+        PackLibrary(library_dir=root), recipe, recipe_id=recipe_id
     )
     recipe_path = recipe_resolution.path
     loaded = read_recipe_file(recipe_path)
@@ -314,7 +314,7 @@ def _apply_context(
         runner = RunBulkApply(
             ApplyRecipe(
                 HookExecutor(
-                    HookResolver(library_root=root),
+                    HookResolver(library_dir=root),
                     workers=hook_workers,
                 )
             )

@@ -42,7 +42,7 @@ from untaped_recipe.builtins.registry import BUILTIN_HOOKS
 from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     as_recipe_error,
-    library_root,
+    library_dir,
     report_config_errors,
 )
 from untaped_recipe.cli.detail import (
@@ -173,7 +173,7 @@ def add_command(
         # the summary follows only on a pack that will actually install.
         validate_pack(source_dir, manifest)
         installed_name = name or manifest.name
-        library = PackLibrary(library_root=library_root())
+        library = PackLibrary(library_dir=library_dir())
         edited = force and library.local_edits(installed_name)
         if edited and not discard_edits:
             raise LocalChangesError(local_edits_message(installed_name))
@@ -232,7 +232,7 @@ def sync_command(
     ``unchanged``.
     """
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
-        library = PackLibrary(library_root=library_root())
+        library = PackLibrary(library_dir=library_dir())
         selected = _sync_selection(
             library, _pack_names(names, stdin=stdin) if stdin else names or [], all_packs=all_packs
         )
@@ -465,7 +465,7 @@ def _list_rows(
 ) -> None:
     """Render one row kind for every loadable installed pack, warning about the rest."""
     with report_config_errors():
-        library = PackLibrary(library_root=library_root())
+        library = PackLibrary(library_dir=library_dir())
         installed = library.packs()
         for name, error in library.load_errors().items():
             recipe_ui().message("warning", f"skipping pack '{name}': {error}")
@@ -488,7 +488,7 @@ def get_command(
 ) -> None:
     """Show an installed recipe."""
     with report_config_errors():
-        library = PackLibrary(library_root=library_root())
+        library = PackLibrary(library_dir=library_dir())
         pack, name, recipe = _find_recipe(library, ref_text, verb="get")
         recipe_path = pack.root / recipe.path
         detail = recipe_detail(f"{pack.name}/{name}", read_recipe_file(recipe_path), recipe_path)
@@ -509,7 +509,7 @@ def get_pack_command(
 ) -> None:
     """Show an installed pack."""
     with report_config_errors():
-        pack = _find_pack(PackLibrary(library_root=library_root()), name)
+        pack = _find_pack(PackLibrary(library_dir=library_dir()), name)
         emit(
             pack_detail(pack.name, pack.manifest, pack.root),
             fmt=fmt,
@@ -527,7 +527,7 @@ def get_hook_command(
 ) -> None:
     """Show an installed or built-in hook."""
     with report_config_errors():
-        target = _find_hook(PackLibrary(library_root=library_root()), ref_text)
+        target = _find_hook(PackLibrary(library_dir=library_dir()), ref_text)
         if target.pack is None or target.hook is None:
             builtin = BUILTIN_HOOKS[target.name]
             detail = hook_detail(
@@ -559,9 +559,9 @@ def validate_command(
 ) -> None:
     """Validate a pack, recipe, or the whole installed library."""
     with report_config_errors():
-        root = library_root()
-        library = PackLibrary(library_root=root)
-        inspector = PackInspector(library_root=root)
+        root = library_dir()
+        library = PackLibrary(library_dir=root)
+        inspector = PackInspector(library_dir=root)
         rows = (
             check_library(library=library, inspector=inspector)
             if ref_text is None
@@ -597,7 +597,7 @@ def remove_command(
 ) -> None:
     """Remove installed packs."""
     with report_config_errors():
-        library = PackLibrary(library_root=library_root())
+        library = PackLibrary(library_dir=library_dir())
         selected = _pack_names(names, stdin=stdin)
         installed = {pack.name: pack for pack in library.packs()}
         # A removal that stopped partway leaves a name only reconcile() still sees.
@@ -670,7 +670,7 @@ def edit_command(
 ) -> None:
     """Open an installed recipe file in $VISUAL or $EDITOR."""
     with report_config_errors():
-        library = PackLibrary(library_root=library_root())
+        library = PackLibrary(library_dir=library_dir())
         pack, _name, recipe = _find_recipe(library, ref_text, verb="edit")
         run_editor(pack.root / recipe.path)
 
@@ -678,7 +678,7 @@ def edit_command(
 def edit_pack_command(name: Annotated[str, Parameter(help="Installed pack identity.")], /) -> None:
     """Open an installed pack's pyproject.toml in $VISUAL or $EDITOR."""
     with report_config_errors():
-        pack = _find_pack(PackLibrary(library_root=library_root()), name)
+        pack = _find_pack(PackLibrary(library_dir=library_dir()), name)
         run_editor(pack.root / "pyproject.toml")
 
 
@@ -687,7 +687,7 @@ def edit_hook_command(
 ) -> None:
     """Open an installed hook module in $VISUAL or $EDITOR."""
     with report_config_errors():
-        target = _find_hook(PackLibrary(library_root=library_root()), ref_text)
+        target = _find_hook(PackLibrary(library_dir=library_dir()), ref_text)
         if target.pack is None or target.hook is None:
             raise RecipeError(
                 f"built-in hooks are engine-owned and cannot be edited: {target.name}"

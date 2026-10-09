@@ -9,7 +9,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import echo, hint
 from untaped_recipe.cli._context import recipe_ui
-from untaped_recipe.cli.common import library_root, report_config_errors
+from untaped_recipe.cli.common import library_dir, report_config_errors
 from untaped_recipe.domain.pack import parse_ref
 from untaped_recipe.domain.paths import is_path_ref, safe_library_name
 from untaped_recipe.errors import PackNotFoundError
@@ -107,7 +107,7 @@ def _new_pack_child(ref_text: str) -> tuple[Path, str]:
     ref = parse_ref(ref_text)
     if ref.pack is None:
         raise ValueError("qualified refs must use <pack>/<name>")
-    library = PackLibrary(library_root=library_root())
+    library = PackLibrary(library_dir=library_dir())
     installed = library.find_pack(safe_library_name(ref.pack, field="pack"))
     if installed is not None:
         return installed.root, ref.name

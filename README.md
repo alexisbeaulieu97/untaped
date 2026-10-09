@@ -5,7 +5,7 @@ gives you seven capabilities that share one config file, the same profiles, and
 the same output and piping rules:
 
 - **`workspace`**: task workspaces: one directory of git worktrees across
-  repos on a shared branch, archived when the work is pushed.
+  repos on a shared branch, archived when the work is pushed (experimental).
 - **`github`**: repo inventory, GitHub search, and content sweeps across
   hundreds of repos.
 - **`jira`**: search, create, update and transition Jira Data Center issues.
@@ -15,7 +15,7 @@ the same output and piping rules:
 - **`dotfiles`**: place config files from dotfiles repos, with a policy per
   item per machine (experimental).
 
-Root commands manage the tool itself: `setup`, `config`, `profile`,
+Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
 `skills`, `doctor` and `capabilities`.
 
 ## Install
@@ -53,7 +53,7 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 - [Getting started](./docs/getting-started.md): install, tokens, profiles,
   a first command in each capability, and piping.
 - [Configuration](./docs/configuration.md): the config and state files,
-  profiles, settings, aliases, TLS and tokens.
+  profiles, settings, TLS and tokens.
 - [Scripting](./docs/scripting.md): pipes, structured output and stderr
   diagnostics in scripts and CI.
 - [Agent skills](./docs/skills.md): install skills for your agent and keep

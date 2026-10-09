@@ -9,6 +9,8 @@ A dotfiles repo carries a manifest, `dotfiles.yml`, of named items; each
 item lists files placed by `link`, `copy` or `merge`. The machine
 subscribes to repos, enables items with a policy, and places them with
 `apply`; `sync` keeps `sync` items current and reports the rest.
+`untaped dotfiles` is experimental: it may change in a minor release, so
+after upgrading untaped, check a command's `--help` before relying on it.
 
 ## Setup
 

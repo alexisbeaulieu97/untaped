@@ -97,10 +97,6 @@ def test_only_a_release_pr_edits_the_changelog() -> None:
         assert check_pr.problems(FILLED, [path], {}, release=True) == []
 
 
-def test_the_pr_that_moves_unreleased_into_fragments_may_edit_the_changelog() -> None:
-    assert check_pr.problems(FILLED, ["CHANGELOG.md"], {}, migration=True) == []
-
-
 def test_a_release_pr_leaves_no_fragment_behind() -> None:
     (problem,) = check_pr.problems(FILLED, [], {}, release=True, leftover=[FRAGMENT])
     assert FRAGMENT in problem
@@ -128,7 +124,6 @@ def test_main_reads_the_event_and_the_checkout(
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")
     _write(repo / "packages/untaped/pyproject.toml", PYPROJECT)
-    _write(repo / "CHANGELOG.md", "# Changelog\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "base")
     base = _rev(repo, "HEAD")
@@ -147,7 +142,6 @@ def test_main_reads_the_event_and_the_checkout(
     assert check_pr.main([str(event)]) == 0
 
     _write(repo / "packages/untaped/pyproject.toml", PYPROJECT.replace("10.0.0", "10.1.0"))
-    _write(repo / "CHANGELOG.md", "# Changelog\n")
     _commit(repo, "release")
     assert check_pr.main([str(event)]) == 1  # a release PR with a fragment left over
     assert "changelog.py build" in capsys.readouterr().err
@@ -168,7 +162,6 @@ def test_main_measures_a_merge_commit_against_its_first_parent(
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")
     _write(repo / "packages/untaped/pyproject.toml", PYPROJECT)
-    _write(repo / "CHANGELOG.md", "# Changelog\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-qm", "base")
     stale = _rev(repo, "HEAD")

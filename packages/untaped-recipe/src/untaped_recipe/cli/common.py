@@ -24,8 +24,8 @@ def settings() -> RecipeSettings:
     return get_config_section("recipe", RecipeSettings)
 
 
-def library_root() -> Path:
-    """Configured recipe library root."""
+def library_dir() -> Path:
+    """Configured recipe library directory (`recipe.library_dir`, expanded)."""
     return settings().library_dir.expanduser()
 
 
