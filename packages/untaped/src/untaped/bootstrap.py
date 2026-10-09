@@ -240,7 +240,8 @@ def build_root_app(
     }
     for name in ROOT_MANAGEMENT_COMMANDS:
         _mount(root, management.pop(name), name=name)
-    assert not management, f"unreserved management commands: {sorted(management)}"
+    if management:
+        raise RuntimeError(f"unreserved management commands: {sorted(management)}")
     for capability in result.capabilities:
         _mount_capability(root, capability)
     root.version = _resolve_version
