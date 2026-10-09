@@ -218,6 +218,22 @@ def run_command(
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
 
 
+def command_failure(
+    label: str, completed: subprocess.CompletedProcess[str], *, is_pass: bool
+) -> ConfigError:
+    """The error for a command that exited non-zero, starting with ``label``.
+
+    For ``pass``, whose stderr was captured: gpg repeats one error per call,
+    so its first non-empty line is quoted, with gpg's fix as the hint.
+    """
+    message = f"{label} exited with status {completed.returncode}"
+    if not is_pass:
+        return ConfigError(message)
+    if quote := first_stderr_line(completed.stderr):
+        message += f": {quote}"
+    return ConfigError(message, hint=gpg_hint(completed.stderr))
+
+
 def forget_token_command(argv: list[str]) -> None:
     """Forget the cached result of ``argv``, so its next read runs the command again.
 
@@ -319,12 +335,7 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
     is_pass = Path(argv[0]).name == "pass"
     completed = run_command(argv, label=label, capture_stderr=is_pass)
     if completed.returncode != 0:
-        message = f"{label} exited with status {completed.returncode}"
-        if is_pass:
-            if quote := first_stderr_line(completed.stderr):
-                message += f": {quote}"
-            raise ConfigError(message, hint=gpg_hint(completed.stderr))
-        raise ConfigError(message)
+        raise command_failure(label, completed, is_pass=is_pass)
     token = completed.stdout.strip()
     if not token:
         raise ConfigError(f"{label} printed no token")
@@ -338,6 +349,7 @@ __all__ = [
     "TokenCommand",
     "TokenSources",
     "clear_token_cache",
+    "command_failure",
     "describe_token_source",
     "first_stderr_line",
     "forget_token_command",
