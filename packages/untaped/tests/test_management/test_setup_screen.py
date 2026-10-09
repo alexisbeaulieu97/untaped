@@ -725,7 +725,7 @@ def test_open_profile_completions_keep_the_frame_on_screen(_isolated_config: Pat
     profiles = "".join(f"  p{n}: {{}}\n" for n in range(8))
     write_config(_isolated_config, f"profiles:\n  default: {{}}\n{profiles}")
 
-    run = drive_screen(_build(), ["shift-tab", "ctrl-u", "p"], size=(100, 24))
+    run = drive_screen(_build(), ["shift-tab", "ctrl-u", "p"], size=(200, 24))  # header on one line
 
     lines = run.frame.splitlines()
     assert "p0" in run.frame
