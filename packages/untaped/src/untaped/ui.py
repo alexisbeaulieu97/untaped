@@ -490,9 +490,7 @@ class UiContext:
             raise ConfigError(
                 "picker items must have unique ids", category="failed", system="untaped"
             )
-        with self._screen_terminal(
-            command=request.terminal_command, alternative=request.terminal_alternative
-        ):
+        with self._screen_terminal(command=request.command, alternative=request.alternative):
             try:
                 picked = self.prompt_backend.pick_many(request)
             except (ConfigError, EOFError, KeyboardInterrupt) as exc:
@@ -525,8 +523,16 @@ class UiContext:
 
 
 def no_terminal_message(command: str, alternative: str) -> str:
-    """The error for a screen with no terminal to draw on: the one place its text lives."""
-    return f"`{command}` needs a terminal; use `{alternative}`"
+    """The error for a screen with no terminal to draw on: the one place its text lives.
+
+    An empty ``command`` or ``alternative`` (a picker request may leave them out)
+    is said in words instead of quoted as a command.
+    """
+    from untaped.picker import GENERIC_ALTERNATIVE, GENERIC_COMMAND  # noqa: PLC0415 - refusal path only
+
+    named = f"`{command}`" if command else GENERIC_COMMAND
+    offer = f"`{alternative}`" if alternative else GENERIC_ALTERNATIVE
+    return f"{named} needs a terminal; use {offer}"
 
 
 def ui_context(

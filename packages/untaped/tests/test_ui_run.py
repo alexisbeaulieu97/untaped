@@ -133,6 +133,9 @@ def test_the_no_terminal_message_is_built_in_one_place() -> None:
     assert no_terminal_message("untaped x", "untaped x plan") == (
         "`untaped x` needs a terminal; use `untaped x plan`"
     )
+    assert no_terminal_message("", "") == (
+        "this command needs a terminal; use its non-interactive options (see --help)"
+    )
 
 
 @dataclass
@@ -343,7 +346,7 @@ def _refused(request: PickRequest) -> str:
 
 def test_pick_many_without_any_terminal_uses_the_fallback_message() -> None:
     assert (
-        "`this command` needs a terminal; use `its non-interactive options (see --help)`"
+        "this command needs a terminal; use its non-interactive options (see --help)"
         in _refused(_PICK_REQUEST)
     )
 
