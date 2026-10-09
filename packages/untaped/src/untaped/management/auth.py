@@ -236,7 +236,8 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
         """Move every plaintext token in ``config.yml``, in every profile, to a store.
 
         Each token is stored and read back before it is removed from the
-        file; one that fails stays where it was, and the command exits 1.
+        file; one that fails stays where it was, and the command exits
+        non-zero, with the code of the most severe failure's category.
         """
         with report_errors():
             _migrate(result, store=store, dry_run=dry_run, fmt=fmt, columns=columns)
