@@ -232,6 +232,28 @@ def press(state: PickerState, key: str) -> tuple[PickerState, bool]:
     return state, False
 
 
+def paste(state: PickerState, text: str) -> PickerState:
+    """Insert pasted ``text`` into the field being typed in; never replay it as keys.
+
+    The name, the search (from the list too) and a setting being edited take
+    it, without control characters; the settings pane and the discard question
+    ignore it, so a space in a paste never toggles or removes a repo.
+    """
+    if state.outcome != "running" or state.quitting:
+        return state
+    clean = "".join(char for char in text if char.isprintable())
+    if not clean:
+        return state
+    state = replace(state, error="") if state.error else state
+    if state.editing is not None:
+        return replace(state, editing=state.editing + clean)
+    if state.focus == "title":
+        return replace(state, title=state.title + clean)
+    if state.focus in ("search", "list"):
+        return replace(state, focus="search", query=state.query + clean, cursor=0)
+    return state
+
+
 def _edit_text(text: str, key: str) -> str:
     if key == "backspace":
         return text[:-1]
