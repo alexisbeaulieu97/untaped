@@ -473,29 +473,24 @@ def _rewrap(cls: type[Contract]) -> None:
 
     A filled method defined on ``cls`` or on a plain mixin it inherits is
     rewrapped onto ``cls``; one inherited from a provider base already is.
+    ``@cached`` anywhere in the provider's own code is a ``TypeError``.
     """
     info = contract_of(cls)
     if info is None:
         return
-    inherited = {
-        id(value)
-        for base in cls.__mro__[1:]
-        if issubclass(base, Contract)
-        for value in vars(base).values()
-    }
-    for name, value in vars(cls).items():
-        if getattr(value, _CACHED, None) is not None and id(value) not in inherited:
-            raise TypeError(f"{cls.__qualname__}.{name}: only the contract decides what is @cached")
+    own = [cls, *(klass for klass in cls.__mro__ if not issubclass(klass, Contract))]
+    for klass in own:
+        for name, value in vars(klass).items():
+            if _carries_cached(value):
+                raise TypeError(
+                    f"{klass.__qualname__}.{name}: only the contract decides what is @cached"
+                )
     for name, method in info.methods.items():
         holder = next(klass for klass in cls.__mro__ if name in vars(klass))
         if holder is not cls and issubclass(holder, Contract):
             continue
         value = vars(holder)[name]
-        if holder is not cls and getattr(value, _CACHED, None) is not None:
-            raise TypeError(
-                f"{holder.__qualname__}.{name}: only the contract decides what is @cached"
-            )
-        if not inspect.isfunction(value) or id(value) in inherited:
+        if not inspect.isfunction(value):
             continue
         wrapped = value
         if method.bridge:
@@ -504,6 +499,11 @@ def _rewrap(cls: type[Contract]) -> None:
             wrapped = _served(wrapped, method.ttl, name)
         if wrapped is not value:
             setattr(cls, name, wrapped)
+
+
+def _carries_cached(value: object) -> bool:
+    inner = [value, getattr(value, "__func__", None), getattr(value, "fget", None)]
+    return any(getattr(each, _CACHED, None) is not None for each in inner if each is not None)
 
 
 def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:

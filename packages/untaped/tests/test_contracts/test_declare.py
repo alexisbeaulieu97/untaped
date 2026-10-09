@@ -277,8 +277,34 @@ def test_a_method_filled_by_a_plain_mixin_is_rewrapped_too() -> None:
             pass
 
 
-def test_an_alias_of_an_inherited_cached_method_is_not_a_provider_cache() -> None:
-    class Again(Shop):
-        latest = Shop.books
+def test_a_provider_filling_a_method_with_a_base_helper_is_rewrapped() -> None:
+    class Base(Shop):
+        def _fetch(self) -> list[Book]:
+            return [Book(title="Dune")]
 
-    assert Again.latest is Shop.books
+    class Aliased(Base):
+        books = Base._fetch
+
+    assert getattr(Aliased.books, "__untaped_cached__", None) == timedelta(hours=1)
+    with pytest.raises(TypeError, match=r"Twice\.count: only the contract decides"):
+
+        class Twice(Shop):
+            count = Shop.books  # type: ignore[assignment]  # a cached method in another slot
+
+    class Popular:
+        @cached(ttl=timedelta(days=1))
+        def popular(self) -> list[Book]:
+            return []
+
+    with pytest.raises(TypeError, match=r"Popular\.popular: only the contract decides"):
+
+        class Mixed(Popular, Shop):
+            pass
+
+    with pytest.raises(TypeError, match=r"Static\.books: only the contract decides"):
+
+        class Static(Shop):
+            @staticmethod
+            @cached(ttl=timedelta(days=1))
+            def books() -> list[Book]:  # type: ignore[override]
+                return []
