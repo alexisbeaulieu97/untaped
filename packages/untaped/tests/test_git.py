@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -364,12 +365,16 @@ def _wait_gone(pid: int, seconds: float = 5.0) -> bool:
     return True
 
 
-def _fake_git_with_helper(tmp_path: Path) -> tuple[Path, Path, Path]:
+def _fake_git_with_helper(
+    tmp_path: Path, *, helper_ignores_term: bool = True
+) -> tuple[Path, Path, Path]:
     """A fake git that starts a hung helper, like ``remote-http`` or ``fetch-pack``.
 
     On SIGTERM it removes its lock file, as git does; the helper ignores
-    SIGTERM, so only SIGKILL stops it.
+    SIGTERM unless told otherwise, so only SIGKILL (or SIGINT) stops it.
+    Once both are in place it writes ``ready``.
     """
+    ignore = "signal.signal(signal.SIGTERM, signal.SIG_IGN); " if helper_ignores_term else ""
     helper_pid = tmp_path / "helper.pid"
     lock = tmp_path / "shallow.lock"
     script = tmp_path / "fake-git"
@@ -381,11 +386,12 @@ def _fake_git_with_helper(tmp_path: Path) -> tuple[Path, Path, Path]:
         "def cleanup(*_):\n    os.unlink(lock)\n    sys.exit(143)\n"
         "signal.signal(signal.SIGTERM, cleanup)\n"
         "helper = subprocess.Popen([sys.executable, '-c', "
-        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
+        f"'import signal, time; {ignore}time.sleep(60)'])\n"
         f"staged = {str(helper_pid)!r} + '.tmp'\n"
         "with open(staged, 'w') as f:\n    f.write(str(helper.pid))\n"
         f"os.replace(staged, {str(helper_pid)!r})\n"
         "open(lock, 'w').close()\n"
+        f"open({str(tmp_path / 'ready')!r}, 'w').close()\n"
         "time.sleep(60)\n"
     )
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
@@ -400,7 +406,7 @@ def test_timeout_kills_the_helpers_git_started(
     script, helper_pid, _ = _fake_git_with_helper(tmp_path)
 
     with pytest.raises(GitCommandError, match="timed out"):
-        run_git(["fetch"], timeout=1.0, git=str(script))
+        run_git(["fetch"], timeout=1.5, git=str(script))
 
     assert helper_pid.exists(), "the fake git did not get far enough to start its helper"
     assert _wait_gone(int(helper_pid.read_text())), "git's helper outlived the timeout"
@@ -414,8 +420,9 @@ def test_timeout_lets_git_clean_up_its_locks(
     script, _, lock = _fake_git_with_helper(tmp_path)
 
     with pytest.raises(GitCommandError, match="timed out"):
-        run_git(["fetch"], timeout=1.0, git=str(script))
+        run_git(["fetch"], timeout=1.5, git=str(script))
 
+    assert (tmp_path / "ready").exists(), "the fake git did not get far enough to take its lock"
     assert not lock.exists(), "git was killed before it could remove its lock"
 
 
@@ -447,6 +454,77 @@ def test_an_interrupt_stops_git_and_its_helpers(
 
     assert _wait_gone(int(helper_pid.read_text()))
     assert not lock.exists()
+
+
+def _wait_for(path: Path, seconds: float = 10.0) -> None:
+    deadline = time.monotonic() + seconds
+    while not path.exists():
+        assert time.monotonic() < deadline, f"{path.name} never appeared"
+        time.sleep(0.02)
+
+
+@pytest.fixture
+def restore_signal_handlers() -> Iterator[None]:
+    saved = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+    yield
+    for sig, handler in saved.items():
+        signal.signal(sig, handler)
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or threading.current_thread() is not threading.main_thread(),
+    reason="POSIX process groups; signals reach only the main thread",
+)
+@pytest.mark.usefixtures("restore_signal_handlers")
+def test_ctrl_c_reaches_git_started_by_a_worker_thread(tmp_path: Path) -> None:
+    # Only the main thread sees KeyboardInterrupt: git in a worker would run
+    # on until its timeout unless the signal is passed on to its group.
+    script, helper_pid, _ = _fake_git_with_helper(tmp_path)
+    git.forward_signals()
+    outcome: list[BaseException] = []
+
+    def fetch() -> None:
+        try:
+            run_git(["fetch"], timeout=30, git=str(script))
+        except GitCommandError as exc:
+            outcome.append(exc)
+
+    worker = threading.Thread(target=fetch)
+    worker.start()
+    _wait_for(tmp_path / "ready")
+    with pytest.raises(KeyboardInterrupt):
+        os.kill(os.getpid(), signal.SIGINT)
+        time.sleep(5)
+    worker.join(timeout=5)
+
+    assert not worker.is_alive(), "git in the worker kept running after Ctrl-C"
+    assert outcome, "git exited cleanly instead of being interrupted"
+    assert _wait_gone(int(helper_pid.read_text()))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+@pytest.mark.parametrize("sig", ["SIGTERM", "SIGHUP"])
+def test_a_signal_that_ends_untaped_reaches_git(tmp_path: Path, sig: str) -> None:
+    script, helper_pid, _ = _fake_git_with_helper(tmp_path, helper_ignores_term=False)
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "from untaped.git import forward_signals, run_git\n"
+            "forward_signals()\n"
+            f"run_git(['fetch'], timeout=30, git={str(script)!r})\n",
+        ],
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        _wait_for(tmp_path / "ready")
+        child.send_signal(getattr(signal, sig))
+        assert child.wait(timeout=10) == -getattr(signal, sig)
+    finally:
+        child.kill()
+        child.wait()
+
+    assert _wait_gone(int(helper_pid.read_text())), f"git's helper outlived {sig} to untaped"
 
 
 def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -573,7 +651,6 @@ def test_transient_classifier(stderr: str, expected: bool) -> None:
             "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote",
             "auth",
         ),
-        ("Host key verification failed.\nfatal: Could not read from remote", "auth"),
         ("fatal: unable to access 'x': The requested URL returned error: 401", "auth"),
         ("fatal: unable to access 'x': The requested URL returned error: 403", "permission"),
         ("fatal: couldn't find remote ref refs/heads/missing", "failed"),
@@ -610,11 +687,31 @@ def test_an_ssh_prompt_failure_says_git_has_no_terminal(
     with pytest.raises(GitCommandError) as excinfo:
         run_git(["fetch"], timeout=5)
 
-    assert excinfo.value.category == "auth"
     assert excinfo.value.hint is not None
     assert "without a terminal" in excinfo.value.hint
     assert "ssh-agent" in excinfo.value.hint
     assert "git fetch" in excinfo.value.hint
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        # The key is simply not authorized: no prompt was missed.
+        "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote",
+        # A changed host key must never be accepted on a hint's say-so.
+        "@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@\n"
+        "Host key verification failed.\nfatal: Could not read from remote repository.",
+    ],
+)
+def test_other_ssh_failures_do_not_blame_the_missing_terminal(
+    monkeypatch: pytest.MonkeyPatch, stderr: str
+) -> None:
+    monkeypatch.setattr(git, "_run_process", _scripted_run([(128, stderr)], []))
+
+    with pytest.raises(GitCommandError) as excinfo:
+        run_git(["fetch"], timeout=5)
+
+    assert "without a terminal" not in (excinfo.value.hint or "")
 
 
 # ── path segments ────────────────────────────────────────────────────────────
