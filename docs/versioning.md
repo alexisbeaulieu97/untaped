@@ -81,9 +81,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
   so, and warns on every run until the next major release removes it.
 - A renamed command or flag keeps working as a hidden, deprecated alias until
   the next major release, and prints a warning naming the new spelling.
-- A renamed setting, and its `UNTAPED_*` variable, keeps working as a
-  deprecated key until the next major release, with a warning naming the new
-  key.
+- A renamed setting's old name, and its `UNTAPED_*` variable, keeps working
+  as a renamed key until the next major release; see
+  [Renamed settings](./configuration.md#renamed-settings).
 - A deprecated setting keeps working too, and `untaped config list` lists it
   under `Deprecated` once it is set; experimental settings sit under
   `Experimental`, and `--format json` carries each setting's `stability`.
