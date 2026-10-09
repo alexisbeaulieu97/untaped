@@ -158,3 +158,14 @@ def test_startup_stays_within_its_module_budget(flag: str) -> None:
     total, own = map(int, counts.split())
     assert own <= _UNTAPED_BUDGET, f"untaped {flag} imported {own} untaped.* modules"
     assert total <= _TOTAL_BUDGET, f"untaped {flag} imported {total} modules"
+
+
+def test_contracts_load_only_when_asked() -> None:
+    """``untaped.contracts`` is a module root of its own: the SDK and ``--help`` never load it."""
+    snippet = (
+        "import untaped.sdk\n"
+        "assert 'untaped.contracts' not in sys.modules\n"
+        + _DISPATCH_PROBE.format(argv=["--help"])
+        + "assert not [m for m in sys.modules if m.startswith('untaped.contracts')]\n"
+    )
+    assert "httpx" not in _loaded_heavy_modules(snippet)

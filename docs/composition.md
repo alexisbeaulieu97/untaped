@@ -31,3 +31,8 @@ plugin's `api` is quarantined with it when that import fails.
 
 The import rules between plugins are in
 [Depending on another plugin](./reference/conventions.md#depending-on-another-plugin).
+
+## Contracts
+
+How a contract's providers load, are set aside and are chosen between is in
+[Contracts](./contracts.md#how-providers-are-loaded-and-chosen).

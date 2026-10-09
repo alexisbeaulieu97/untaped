@@ -19,6 +19,7 @@ import functools
 import itertools
 import re
 import shlex
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -275,6 +276,13 @@ def test_every_workspace_member_has_a_readme() -> None:
 _ROOT_OPTIONS = {"--profile", "--verbose", "-v", "--quiet", "-q", "--help", "-h"}
 _ROOT_ONLY_OPTIONS = _ROOT_OPTIONS | {"--version", "--install-completion"}
 _EXAMPLE_PROVIDER = "acme"
+
+#: The plugins under ``examples/``: never installed here, so their commands don't resolve.
+_EXAMPLE_PLUGINS = frozenset(
+    name
+    for pyproject in REPO_ROOT.glob("examples/*/pyproject.toml")
+    for name in tomllib.loads(pyproject.read_text())["project"]["entry-points"]["untaped.plugins"]
+)
 """The example external plugin in docs/plugins.md."""
 
 
@@ -366,7 +374,7 @@ def _prose_command_problem(root: App, command: str, aliases: set[str]) -> str | 
     the check: only the words before it must resolve.
     """
     words = list(itertools.takewhile(lambda t: not t.startswith("-"), shlex.split(command)[1:]))
-    if words[:1] and words[0] in aliases | {_EXAMPLE_PROVIDER, "hello"}:
+    if words[:1] and words[0] in aliases | {_EXAMPLE_PROVIDER, *_EXAMPLE_PLUGINS}:
         return None
     for index, word in enumerate(words):
         if re.fullmatch(r"<[^>]+>", word) or quoted_commands.PLACEHOLDER.match(word):
@@ -419,6 +427,7 @@ def test_inline_command_detector(
 DOCS_PAGES = [
     "composition.md",
     "configuration.md",
+    "contracts.md",
     "getting-started.md",
     "plugins.md",
     "reference/config.md",
