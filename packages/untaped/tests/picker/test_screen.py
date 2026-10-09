@@ -269,6 +269,20 @@ def test_the_footer_offers_no_picker_keys_while_the_discard_question_is_open() -
     assert "enter edit" not in _lines(_run(_many(), *on_text).frame)[-1]
 
 
+def test_the_footer_says_esc_keeps_the_selection_while_the_discard_question_is_open() -> None:
+    footer = _lines(_run(_request(), "down", " ", "ctrl-c").frame)[-1]
+    assert "esc keep" in footer
+    assert "esc back" not in footer
+
+
+def test_help_opens_over_the_discard_question_and_leaves_it_open() -> None:
+    run = _run(_request(), "down", " ", "ctrl-c", "?")
+    assert "Keys" in run.frame
+    assert run.model.quitting
+
+    assert _run(_request(), "down", " ", "ctrl-c", "?", "esc", "y").outcome == Cancel()
+
+
 def test_esc_goes_back_even_while_an_error_is_showing() -> None:
     run = _run(_request(title_label="name"), "ctrl-s")
     assert "name is required" in run.frame

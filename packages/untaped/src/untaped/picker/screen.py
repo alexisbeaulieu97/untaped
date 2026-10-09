@@ -185,6 +185,8 @@ def _ending(state: PickerState) -> list[Cmd]:
 def _key(state: PickerState, name: str) -> PickerState:
     if name == "ctrl-r" and state.request.refresh is not None:
         return state  # the screen's own binding, not a key the reducer knows
+    if name == "?" and state.quitting:
+        return state  # help opens over the discard question, which stays open
     new, used = press(state, name)
     if used or name not in SHARED_KEYS:
         return new  # a key the picker used, or one nobody else wants: the error is dismissed
@@ -194,8 +196,8 @@ def _key(state: PickerState, name: str) -> PickerState:
 # --- keys ----------------------------------------------------------------------
 
 
-# While the discard question is open, every key but ctrl-r answers it: the footer offers none
-# of the others.
+# While the discard question is open, every key but ctrl-r and ? answers it: the footer offers
+# none of the others.
 
 
 def _searching(state: PickerState) -> bool:
@@ -263,9 +265,10 @@ def _enter_label(state: PickerState) -> str | None:
 
 
 def _esc_label(state: PickerState) -> str | None:
-    """Esc clears a typed query before it goes back, like a ``SearchList``; asked, it means no."""
+    """Esc clears a typed query before it goes back, like a ``SearchList``; asked, it keeps the
+    selection."""
     if state.quitting:
-        return None
+        return "keep"
     return "clear" if state.query and state.focus in ("search", "list") else None
 
 
