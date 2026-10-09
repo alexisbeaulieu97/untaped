@@ -1,4 +1,4 @@
-"""The ``untaped doctor --online`` probe of the GitHub capability.
+"""The ``untaped doctor --online`` probe of the GitHub plugin.
 
 Runs the same ``GET /user`` as ``untaped github whoami`` against the active
 profile, through the CLI composition root.

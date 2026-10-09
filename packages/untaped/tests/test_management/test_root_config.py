@@ -2,8 +2,8 @@
 
 Root resolution is direct, not delegated per tool: a fully qualified
 ``section.key`` selects its schema by ``section``. SDK roots win first,
-state-managed fields are rejected per the section's own ``state_model``,
-and bare keys are NEVER implicitly expanded to a capability section.
+state-managed fields are rejected per the section's own ``state``,
+and bare keys are NEVER implicitly expanded to a plugin section.
 """
 
 from __future__ import annotations
@@ -34,8 +34,8 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 def _config_app() -> object:
-    github = make_spec("github", profile_model=GithubProfile, state_model=GithubState)
-    jira = make_spec("jira", profile_model=JiraProfile)
+    github = make_spec("github", settings=GithubProfile, state=GithubState)
+    jira = make_spec("jira", settings=JiraProfile)
     result = compose(github, jira)
     return build_root_config_app(shell=bootstrap.SHELL_SPEC, result=result)
 
@@ -131,7 +131,7 @@ def test_state_field_is_rejected_without_writing(_isolated_config: Path, argv: l
         (["get", "bogus"], "bogus"),
         (["get", "nope.key"], "nope.key"),
     ],
-    ids=["bare-capability-key", "bare-unknown-key", "unknown-section"],
+    ids=["bare-plugin-key", "bare-unknown-key", "unknown-section"],
 )
 def test_unresolvable_key_is_rejected(_isolated_config: Path, argv: list[str], named: str) -> None:
     result = CliInvoker().invoke(_config_app(), argv)  # type: ignore[arg-type]

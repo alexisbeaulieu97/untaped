@@ -9,12 +9,12 @@ from typing import Annotated
 import pytest
 from pydantic import BaseModel, Field
 
-from test_capabilities.capharness import make_spec
+from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.settings_names import settings_name_violations
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
+from untaped.plugins.registry import PluginSpec
 from untaped.stability import (
     Deprecated,
     deprecated,
@@ -123,18 +123,18 @@ def test_a_pydantic_deprecated_field_still_loads_but_is_a_lint_error() -> None:
     assert pydantic_deprecated_fields(PythonDeprecated) == ["old"]
 
     composition = bootstrap.compose_root(
-        candidates=[provider_candidate(make_spec(name="svc", profile=PythonDeprecated))]
+        candidates=[provider_candidate(make_spec(name="svc", settings=PythonDeprecated))]
     )
 
-    assert [capability.spec.name for capability in composition.capabilities] == ["svc"]
+    assert [plugin.spec.name for plugin in composition.plugins] == ["svc"]
 
 
 def test_a_misplaced_mark_quarantines_its_provider() -> None:
-    spec = make_spec(name="svc", profile=UnionMark)
+    spec = make_spec(name="svc", settings=UnionMark)
 
     composition = bootstrap.compose_root(candidates=[provider_candidate(spec)])
 
-    assert composition.capabilities == ()
+    assert composition.plugins == ()
     [record] = composition.quarantine
     assert record.reason == "bad-settings-keys"
     assert "sits inside its type" in record.detail
@@ -144,8 +144,8 @@ class MarkedState(BaseModel):
     last_run: Annotated[str, experimental] = ""
 
 
-def _state_spec(state: type[BaseModel]) -> CapabilitySpec:
-    return make_spec(name="svc", section="svc", profile=Section, state=state)
+def _state_spec(state: type[BaseModel]) -> PluginSpec:
+    return make_spec(name="svc", settings=Section, state=state)
 
 
 def test_a_mark_on_a_state_field_is_refused_and_quarantines_its_provider() -> None:
@@ -184,7 +184,7 @@ def test_the_lint_checks_a_state_model_for_marks() -> None:
 
 def test_a_clean_marked_section_composes() -> None:
     composition = bootstrap.compose_root(
-        candidates=[provider_candidate(make_spec(name="svc", profile=Section))]
+        candidates=[provider_candidate(make_spec(name="svc", settings=Section))]
     )
 
-    assert [capability.spec.name for capability in composition.capabilities] == ["svc"]
+    assert [plugin.spec.name for plugin in composition.plugins] == ["svc"]

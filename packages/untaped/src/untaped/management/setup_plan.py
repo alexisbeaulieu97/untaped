@@ -7,7 +7,7 @@ its invalid settings), then (with ``--online``) each online check. A row's
 is a value to ask the user for); ``by`` says who runs it: ``user`` for
 a step that asks for or reveals a token, so a token never passes through
 an agent. Service state comes from :mod:`untaped.management.setup_state`
-(shared with the setup screen) and the online rows are the capabilities' own
+(shared with the setup screen) and the online rows are the plugins' own
 online doctor checks.
 """
 
@@ -18,12 +18,12 @@ import shutil
 from typing import Literal
 
 from untaped.auth import takes_token_command, token_env_names, token_instead
-from untaped.capabilities.registry import ApplicationSpec, CapabilitySpec, CompositionResult
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
 from untaped.management.setup_state import ServiceState, service_states, service_store
 from untaped.messages import command_argv, command_line, split_profile
+from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
 from untaped.theme import OutputFormat
@@ -41,7 +41,7 @@ TABLE_COLUMNS = ["step", "state", "by", "detail", "run"]
 def plan_rows(
     shell: ApplicationSpec,
     result: CompositionResult,
-    services: dict[str, CapabilitySpec],
+    services: dict[str, PluginSpec],
     profile: str,
     *,
     online: bool,
@@ -95,7 +95,7 @@ def _table_row(row: Row, profile: str) -> Row:
 
 def _row(
     step: str,
-    capability: str,
+    plugin: str,
     state: State,
     detail: str,
     run: list[str] | None = None,
@@ -104,7 +104,7 @@ def _row(
 ) -> Row:
     return {
         "step": step,
-        "capability": capability,
+        "plugin": plugin,
         "state": state,
         "detail": detail,
         "run": run or [],
@@ -120,9 +120,9 @@ def _profile_row(shell: ApplicationSpec, profile: str, *, exists: bool) -> Row:
 
 
 def _service_rows(
-    spec: CapabilitySpec, state: ServiceState, profile: str, *, store_name: str | None
+    spec: PluginSpec, state: ServiceState, profile: str, *, store_name: str | None
 ) -> list[Row]:
-    name, section = spec.name, spec.config_section
+    name, section = spec.name, spec.name
     if state.invalid is not None:
         detail = f"{section} settings are invalid: {state.invalid}"
         return [_row(f"{name}.settings", name, "failed", detail)]
@@ -137,7 +137,7 @@ def _service_rows(
 
 
 def _token_row(
-    spec: CapabilitySpec, state: ServiceState, profile: str, *, store_name: str | None
+    spec: PluginSpec, state: ServiceState, profile: str, *, store_name: str | None
 ) -> Row:
     """The token step.
 
@@ -145,10 +145,10 @@ def _token_row(
     or terminal: ``auth set`` prompts for a token, while ``auth migrate``
     moves one inside its own process and prints none.
     """
-    name, section = spec.name, spec.config_section
+    name, section = spec.name, spec.name
     step = f"{name}.token"
-    takes_command = takes_token_command(spec.profile_model)
-    settings = spec.profile_model.model_construct()
+    takes_command = takes_token_command(settings_model(spec))
+    settings = settings_model(spec).model_construct()
     if state.plaintext is not None or state.inherited_token:
         holder = profile if state.plaintext is not None else DEFAULT_PROFILE
         detail = f"{section}.token is stored in plain text in profile {holder}"
@@ -186,12 +186,10 @@ def _token_row(
     return _row(step, name, "todo", detail, run, by="user")
 
 
-def _online_rows(
-    spec: CapabilitySpec, checks: list[Row], *, online: bool, ready: bool
-) -> list[Row]:
+def _online_rows(spec: PluginSpec, checks: list[Row], *, online: bool, ready: bool) -> list[Row]:
     """One row per declared online check, ``<service>.online.<check>`` in every state."""
     name = spec.name
-    found = {str(row["check"]): row for row in checks if row["capability"] == name}
+    found = {str(row["check"]): row for row in checks if row["plugin"] == name}
     rows = []
     for check in spec.doctor_checks:
         if not check.online:
@@ -209,14 +207,14 @@ def _online_rows(
     return rows
 
 
-def _failed_check(spec: CapabilitySpec, step: str, row: Row) -> Row:
-    name, section = spec.name, spec.config_section
+def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
+    name, section = spec.name, spec.name
     detail = str(row["detail"])
     fix = row.get("fix")
     run = fix if isinstance(fix, list) else None
     if run is not None and split_profile(run)[1][:3] == ["config", "set", f"{section}.token"]:
         # Models without `token_command`: never suggest storing a token in the config.
-        settings = spec.profile_model.model_construct()
+        settings = settings_model(spec).model_construct()
         detail = f"{detail}; export {token_instead(settings, section=section)} with a working token"
         return _row(step, name, "failed", detail, by="user")
     return _row(

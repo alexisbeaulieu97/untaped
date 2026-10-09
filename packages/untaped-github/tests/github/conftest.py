@@ -1,4 +1,4 @@
-"""Shared fixtures for the GitHub capability tests: settings and throwaway source repos."""
+"""Shared fixtures for the GitHub plugin tests: settings and throwaway source repos."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
-"""GitHub capability exception hierarchy.
+"""GitHub plugin exception hierarchy.
 
-Every error the capability raises on purpose derives from :class:`GithubError`
+Every error the plugin raises on purpose derives from :class:`GithubError`
 (itself an :class:`~untaped.sdk.UntapedError`) so ``report_errors``
 turns it into a clean ``error: ...`` line instead of a traceback. Failures are
 attributed to ``github``, except :class:`GitCorpusError` (``git``) and
@@ -37,7 +37,7 @@ _KIND_CATEGORIES: Mapping[GithubGraphqlErrorKind, ErrorCategory] = MappingProxyT
 
 
 class GithubError(UntapedError):
-    """Base for GitHub capability errors."""
+    """Base for GitHub plugin errors."""
 
     system = "github"
 

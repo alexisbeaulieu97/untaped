@@ -99,7 +99,7 @@ _BROKEN_OTHER = (
 
 
 def test_invalid_sibling_section_does_not_block_this_section(_isolated_config: Path) -> None:
-    """One capability's bad section must not break another capability's commands."""
+    """One plugin's bad section must not break another plugin's commands."""
     register_profile_settings("demo", DemoSettings)
     register_profile_settings("other", OtherSettings)
     _isolated_config.write_text(_BROKEN_OTHER)

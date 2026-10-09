@@ -153,7 +153,7 @@ def _leaf_paths(model: type[BaseModel], prefix: str = "") -> list[str]:
     """Every setting path of ``model``, as ``walk_settings`` finds them, without defaults.
 
     Evaluating a ``default_factory`` here could raise, and these checks run
-    while composing every capability.
+    while composing every plugin.
     """
     paths: list[str] = []
     for name, field in model.model_fields.items():
@@ -391,9 +391,9 @@ def scan_keys(
 ) -> list[FoundKey]:
     """Every old key ``config migrate`` would move, and every deprecated setting, per profile.
 
-    ``stabilities`` maps a section to its capability's mark: every key set in
-    the section of a deprecated capability is reported as deprecated, with the
-    capability's replacement text.
+    ``stabilities`` maps a section to its plugin's mark: every key set in
+    the section of a deprecated plugin is reported as deprecated, with the
+    plugin's replacement text.
     """
     found: list[FoundKey] = []
     for profile, section, model, data in profile_sections(raw, sections):
@@ -406,12 +406,12 @@ def scan_keys(
         for key, message in sorted(mappings.deprecated.items()):
             if _lookup(data, key) is not _MISSING:
                 found.append(FoundKey(profile, section, key, None, "deprecated", message))
-        capability = (stabilities or {}).get(section)
-        if isinstance(capability, Deprecated):
+        plugin = (stabilities or {}).get(section)
+        if isinstance(plugin, Deprecated):
             reported = {
                 item.old for item in found if (item.profile, item.section) == (profile, section)
             }
-            use = replacement_text(capability, None)
+            use = replacement_text(plugin, None)
             keys = (".".join(d.path) for d in walk_settings(model, include_collections=True))
             found.extend(
                 FoundKey(profile, section, key, None, "deprecated", use)

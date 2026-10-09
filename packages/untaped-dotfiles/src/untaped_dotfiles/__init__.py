@@ -1,4 +1,4 @@
-"""Dotfiles capability for the unified ``untaped`` shell."""
+"""Dotfiles plugin for the unified ``untaped`` shell."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset, executable_check, experimental
+from untaped.sdk import PluginSpec, SkillAsset, executable_check, experimental
 from untaped_dotfiles.settings import DotfilesSettings, DotfilesState
 
 if TYPE_CHECKING:
@@ -22,14 +22,13 @@ def build_app() -> App:
     return app
 
 
-SPEC = CapabilitySpec(
+SPEC = PluginSpec(
     name="dotfiles",
     app_factory=build_app,
     help="Place dotfiles from subscribed repos, with a policy per item per machine.",
     stability=experimental,
-    config_section="dotfiles",
-    profile_model=DotfilesSettings,
-    state_model=DotfilesState,
+    settings=DotfilesSettings,
+    state=DotfilesState,
     skills=(
         SkillAsset(
             name="untaped-dotfiles",
@@ -47,6 +46,6 @@ SPEC = CapabilitySpec(
 )
 
 
-def provider() -> CapabilitySpec:
-    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+def provider() -> PluginSpec:
+    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
     return SPEC

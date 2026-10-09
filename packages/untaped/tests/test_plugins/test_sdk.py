@@ -9,13 +9,13 @@ import untaped.sdk as sdk
 SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     "composition": (
         "ApplicationSpec",
-        "CapabilityContext",
-        "CapabilityProvider",
-        "CapabilitySpec",
+        "PluginContext",
+        "PluginSpec",
         "DoctorCheck",
         "DoctorResult",
         "SkillAsset",
         "create_app",
+        "plugin_dir",
     ),
     "settings and state": (
         "AppContext",

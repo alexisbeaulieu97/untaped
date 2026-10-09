@@ -2,6 +2,6 @@
 
 The worker is launched as a script (``python -P _worker/hook_worker.py``) in a
 pack's uv environment. Keeping it in a directory that holds only worker files
-means nothing from the recipe capability (``cli``, ``domain``, ``settings``,
+means nothing from the recipe plugin (``cli``, ``domain``, ``settings``,
 ...) can shadow a pack's own top-level modules.
 """

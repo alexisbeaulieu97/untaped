@@ -1,7 +1,7 @@
 """Tests for the root ``untaped skills …`` command group.
 
 The root group lists the union of the shell plus every composed
-capability's skills. ``install`` accepts short selectors (``demo`` for an
+plugin's skills. ``install`` accepts short selectors (``demo`` for an
 installed ID of ``untaped-demo``) while installed directories and markers
 keep the full ``untaped-*`` ID.
 """
@@ -32,11 +32,11 @@ def _skills_app(tmp_path: Path, *names: str) -> object:
     return build_root_skills_app(shell=bootstrap.SHELL_SPEC, result=result)
 
 
-def test_list_unions_skills_across_capabilities(tmp_path: Path) -> None:
+def test_list_unions_skills_across_plugins(tmp_path: Path) -> None:
     app = _skills_app(tmp_path, "untaped-two", "untaped-one")
     result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "name"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
-    # The shell's own skill is listed with the capabilities'.
+    # The shell's own skill is listed with the plugins'.
     assert result.output.splitlines() == ["untaped", "untaped-one", "untaped-two"]
 
 

@@ -1,7 +1,7 @@
 [project]
 name = "untaped-workspace"
 version = "10.1.0"
-description = "Workspace capability for untaped."
+description = "Workspace plugin for untaped."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -9,7 +9,7 @@ authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14.1"
 dependencies = ["untaped==10.1.0", "untaped-github==10.1.0"]
 
-[project.entry-points."untaped.capabilities"]
+[project.entry-points."untaped.plugins"]
 workspace = "untaped_workspace:provider"
 
 [build-system]

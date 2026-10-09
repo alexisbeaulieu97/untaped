@@ -1,4 +1,4 @@
-"""``config get|set|unset|list`` follow a capability's renamed keys."""
+"""``config get|set|unset|list`` follow a plugin's renamed keys."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class RenamedProfile(BaseModel):
 
 
 def _config(*args: str) -> CliResult:
-    result = compose(make_spec("renamed", profile_model=RenamedProfile))
+    result = compose(make_spec("renamed", settings=RenamedProfile))
     app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=result)
     return CliInvoker().invoke(app, list(args))
 

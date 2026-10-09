@@ -33,7 +33,6 @@ from test_management.support import (
     write_config,
 )
 from untaped.app_context import app_context
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.config_file import read_config_dict
 from untaped.management.setup_screen import (
     SetupModel,
@@ -42,6 +41,7 @@ from untaped.management.setup_screen import (
     setup_screen,
 )
 from untaped.management.setup_state import ServiceState, service_states, setup_services
+from untaped.plugins.registry import PluginSpec
 from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
 from untaped.sdk import online_check
@@ -68,20 +68,20 @@ def _reset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeStores:
     return install_fake_stores(tmp_path, monkeypatch)
 
 
-def _wiz() -> CapabilitySpec:
-    return make_spec("wiz", profile_model=WizProfile, doctor_checks=(wiz_api_check(),))
+def _wiz() -> PluginSpec:
+    return make_spec("wiz", settings=WizProfile, doctor_checks=(wiz_api_check(),))
 
 
-def _envy() -> CapabilitySpec:
-    return make_spec("envy", profile_model=EnvProfile)
+def _envy() -> PluginSpec:
+    return make_spec("envy", settings=EnvProfile)
 
 
-def _legacy() -> CapabilitySpec:
-    return make_spec("legacy", profile_model=LegacyProfile)
+def _legacy() -> PluginSpec:
+    return make_spec("legacy", settings=LegacyProfile)
 
 
 def _build(
-    *specs: CapabilitySpec, profile: str = "default", only: list[str] | None = None
+    *specs: PluginSpec, profile: str = "default", only: list[str] | None = None
 ) -> Screen[SetupModel, SetupResult]:
     result = compose(*(specs or (_wiz(),)))
     services = setup_services(result, only)
@@ -324,7 +324,7 @@ def test_check_fails_then_nothing_is_written(
     flat = _flat(run.frame)
     assert "HTTP 401 from https://wiz/me" in flat
     assert "Save anyway" in flat and "Cancel" in flat
-    assert "failed" in flat  # the status of the capability
+    assert "failed" in flat  # the status of the plugin
 
 
 def test_save_anyway_writes(
@@ -375,7 +375,7 @@ def test_only_online_probes_run_before_saving(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     offline: list[str] = []
-    from untaped.capabilities.registry import DoctorCheck, DoctorResult
+    from untaped.plugins.registry import DoctorCheck, DoctorResult
 
     def offline_run(_ctx: object) -> DoctorResult:
         offline.append("ran")
@@ -383,7 +383,7 @@ def test_only_online_probes_run_before_saving(
 
     spec = make_spec(
         "wiz",
-        profile_model=WizProfile,
+        settings=WizProfile,
         doctor_checks=(
             DoctorCheck(id="wiz.offline", title="offline", run=offline_run),  # type: ignore[arg-type]
             wiz_api_check(),
@@ -397,7 +397,7 @@ def test_only_online_probes_run_before_saving(
     assert PROBES == ["probed"]
 
 
-def test_a_capability_without_an_online_check_saves_directly(_isolated_config: Path) -> None:
+def test_a_plugin_without_an_online_check_saves_directly(_isolated_config: Path) -> None:
     run = drive_screen(_build(_legacy()), [*_keys("https://legacy", token="tok")])
 
     assert run.commands_run == ("probe", "save")
@@ -459,7 +459,7 @@ def test_the_overlay_never_writes_and_never_changes_get_settings(
 
     spec = make_spec(
         "wiz",
-        profile_model=WizProfile,
+        settings=WizProfile,
         doctor_checks=(online_check("wiz.api", section="wiz", probe=probe),),
     )
     FAIL.clear()
@@ -738,10 +738,7 @@ def test_open_profile_completions_keep_the_frame_on_screen(_isolated_config: Pat
 
 
 def test_a_status_per_state() -> None:
-    specs = [
-        make_spec(name, section=name, profile_model=WizProfile)
-        for name in ("ready", "bare", "fresh", "broken")
-    ]
+    specs = [make_spec(name, settings=WizProfile) for name in ("ready", "bare", "fresh", "broken")]
     result = compose(*specs)
     services = setup_services(result)
     states = {
@@ -921,7 +918,7 @@ def test_the_token_command_is_primed_before_the_background_check(tmp_path: Path)
 
     spec = make_spec(
         "wiz",
-        profile_model=WizProfile,
+        settings=WizProfile,
         doctor_checks=(online_check("wiz.api", section="wiz", probe=probe),),
     )
 
@@ -972,7 +969,7 @@ def test_the_screen_is_usable_on_a_narrow_terminal(
     run = drive_screen(_build(), ["enter", "tab", Resize(60, 24)], size=(100, 30))
 
     assert all(len(line) <= 100 for line in run.frames[-1].splitlines())
-    assert "Capabilities" in run.frame and "wiz" in run.frame
+    assert "Plugins" in run.frame and "wiz" in run.frame
 
 
 def test_scripted_keys_run_the_screen_end_to_end(_isolated_config: Path) -> None:
@@ -1059,10 +1056,10 @@ def test_the_profile_field_cannot_be_edited_while_a_check_a_save_or_a_load_runs(
     assert typed.profile.value == "defaultx"
 
 
-# --- Save anyway is per capability -----------------------------------------------
+# --- Save anyway is per plugin -----------------------------------------------
 
 
-def test_save_anyway_survives_another_capability_saving(
+def test_save_anyway_survives_another_plugin_saving(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
@@ -1087,9 +1084,7 @@ def test_save_anyway_survives_another_capability_saving(
     assert run.model.failed == {}
 
 
-def test_a_failure_is_kept_for_each_capability(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_failure_is_kept_for_each_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
@@ -1108,7 +1103,7 @@ def _pressed_save_anyway(
     return updated, list(cmds)
 
 
-def test_save_anyway_does_nothing_unless_this_capability_failed_and_nothing_runs(
+def test_save_anyway_does_nothing_unless_this_plugin_failed_and_nothing_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
@@ -1117,13 +1112,13 @@ def test_save_anyway_does_nothing_unless_this_capability_failed_and_nothing_runs
     failed = drive_screen(screen, ["down", *_keys("https://wiz", token="bad")]).model
     assert set(failed.failed) == {"wiz"}
 
-    # It writes for the failed capability ...
+    # It writes for the failed plugin ...
     written, cmds = _pressed_save_anyway(failed, screen)
     assert [cmd.name for cmd in cmds] == ["save"] and written.phase == "saving"
     # ... not while a check or a save runs ...
     busy = replace(failed, phase="probing")
     assert _pressed_save_anyway(busy, screen) == (busy, [])
-    # ... and not for a capability that did not fail (a stale button), even though a candidate
+    # ... and not for a plugin that did not fail (a stale button), even though a candidate
     # is pending: here wiz failed, legacy is selected.
     other = replace(failed, selected=0)
     assert other.name == "legacy" and other.pending is not None and "legacy" not in other.failed

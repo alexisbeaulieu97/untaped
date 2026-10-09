@@ -658,7 +658,7 @@ def test_status_of_an_unknown_enabled_item_hints_enable(make_upstream: Upstream)
     assert "hint: run `untaped dotfiles enable fish`" in result.stderr
 
 
-def test_the_root_mounts_the_capability(make_upstream: Upstream) -> None:
-    listed = invoke_root(["capabilities", "--format", "json"])
+def test_the_root_mounts_the_plugin(make_upstream: Upstream) -> None:
+    listed = invoke_root(["plugin", "list", "--format", "json"])
     assert ("dotfiles", "ready") in [(r["name"], r["status"]) for r in json.loads(listed.stdout)]
     assert invoke_root(["dotfiles", "repos"]).exit_code == 0

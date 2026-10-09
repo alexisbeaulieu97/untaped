@@ -1,6 +1,6 @@
 """Pure helper that merges ``profiles.default`` with ``profiles.<active>``.
 
-Profiles are a first-class SDK capability: this resolver and
+Profiles are a first-class SDK plugin: this resolver and
 :class:`untaped.settings_layout.ProfilesSettingsLayout` are the SDK's home
 for profile resolution.
 

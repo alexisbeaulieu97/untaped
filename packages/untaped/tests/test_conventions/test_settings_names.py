@@ -1,4 +1,4 @@
-"""``settings-naming`` and ``settings-renames`` on a tmp capability's settings."""
+"""``settings-naming`` and ``settings-renames`` on a tmp plugin's settings."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ from cyclopts import App
 from pydantic import BaseModel, create_model
 
 from test_conventions.support import Install
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.settings_names import name_problem, settings_name_violations
 from untaped.conventions.source import source_files
 from untaped.conventions.structure import structure_violations
+from untaped.plugins.registry import PluginSpec
 
 _ERRORS = dedent('''
     """Acme errors."""
@@ -61,18 +61,17 @@ def _settings(fields: str) -> str:
 def _violations(install: Install, body: str) -> list[str]:
     site = install(
         {
-            "acme/__init__.py": '"""Acme capability."""\n',
+            "acme/__init__.py": '"""Acme plugin."""\n',
             "acme/errors.py": _ERRORS,
             "acme/settings.py": _settings(body),
         }
     )
     settings = importlib.import_module("acme.settings")
-    spec = CapabilitySpec(
+    spec = PluginSpec(
         name="acme",
         app_factory=App,
-        config_section="acme",
-        profile_model=settings.AcmeSettings,
-        state_model=settings.AcmeState,
+        settings=settings.AcmeSettings,
+        state=settings.AcmeState,
     )
     source_dir = site / "acme"
     return structure_violations(spec, "acme", source_dir, list(source_files(source_dir)))

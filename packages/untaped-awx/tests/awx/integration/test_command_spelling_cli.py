@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from untaped.bootstrap import build_root_app
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.plugins.registry import ProviderCandidate
 from untaped.testing import invoke_cli
 
 

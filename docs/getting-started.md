@@ -5,7 +5,7 @@
 `untaped` needs Python 3.14.1 or newer and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one capability, e.g. 'untaped[awx]'
+uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one plugin, e.g. 'untaped[awx]'
 untaped --version
 untaped --help
 ```
@@ -16,7 +16,7 @@ restates the whole set and replaces the old one, so list every extra and
 `--with` you want, for example
 `uv tool install 'untaped[github,awx]' --with acme-untaped`. Only the
 `untaped` package ships the command, so `uv tool install untaped-<name>` does
-not work: uv finds no executable in a capability package. In an environment
+not work: uv finds no executable in a plugin package. In an environment
 you manage, `pip install 'untaped[<name>]'` or `pip install <provider>` adds to
 the same environment.
 
@@ -125,9 +125,9 @@ untaped profile current
 `profile use` changes the default for every later command. See
 [Profiles](./configuration.md#profiles).
 
-## First command in each capability
+## First command in each plugin
 
-Each capability's guide shows its main workflows and links its full reference:
+Each plugin's guide shows its main workflows and links its full reference:
 [workspace](../packages/untaped-workspace/README.md), [github](../packages/untaped-github/README.md),
 [jira](../packages/untaped-jira/README.md), [awx](../packages/untaped-awx/README.md),
 [ansible](../packages/untaped-ansible/README.md), [recipe](../packages/untaped-recipe/README.md)
@@ -221,8 +221,8 @@ Every command uses the same [exit codes](./reference/exit-codes.md).
 
 ## Agent skills
 
-Each capability ships an agent skill that teaches an AI coding agent to use
-it. Install every composed capability's skill for your agent:
+Each plugin ships an agent skill that teaches an AI coding agent to use
+it. Install every composed plugin's skill for your agent:
 
 ```bash
 untaped skills install --all --target all

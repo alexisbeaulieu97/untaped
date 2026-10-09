@@ -82,7 +82,7 @@ def validate_hook_project_contract(
     if Version(HOOK_API_VERSION) not in specifier:
         raise ValueError(
             f"hook project requires hook API {manifest.requires_hook_api}, "
-            f"but the untaped recipe capability provides {HOOK_API_VERSION}: {project_root}"
+            f"but the untaped recipe plugin provides {HOOK_API_VERSION}: {project_root}"
         )
 
 

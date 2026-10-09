@@ -1,4 +1,4 @@
-"""Doctor checks the ansible capability contributes to root ``untaped doctor``.
+"""Doctor checks the ansible plugin contributes to root ``untaped doctor``.
 
 Checks run offline.
 """

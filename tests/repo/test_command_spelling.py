@@ -8,7 +8,7 @@ from cyclopts import App
 
 from untaped._root_options import canonical_command_tokens
 from untaped.bootstrap import build_root_app
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.plugins.registry import ProviderCandidate
 from untaped.stability import deprecated_alias
 from untaped.testing import invoke_cli
 

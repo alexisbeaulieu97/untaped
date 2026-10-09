@@ -1,4 +1,4 @@
-"""The workspace capability follows the command, message and structure conventions."""
+"""The workspace plugin follows the command, message and structure conventions."""
 
 from __future__ import annotations
 

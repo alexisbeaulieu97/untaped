@@ -1,4 +1,4 @@
-"""The awx capability follows the command, message and structure conventions."""
+"""The awx plugin follows the command, message and structure conventions."""
 
 from __future__ import annotations
 

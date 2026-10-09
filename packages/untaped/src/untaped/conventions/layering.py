@@ -1,4 +1,4 @@
-"""Import-boundary lint: layers inside one capability point one way.
+"""Import-boundary lint: layers inside one plugin point one way.
 
 ``cli → application → domain`` and ``infrastructure → domain``
 (``docs/reference/conventions.md``). A *runtime* import (``TYPE_CHECKING`` blocks are
@@ -13,7 +13,7 @@ exempt) that crosses a layer the wrong way is flagged as
   does, as the composition root (flagged as ``<file>::settings::<layer> -> <name>``).
 
 ``# untaped: allow layer`` (or ``settings``) on the import line suppresses one.
-Imports between capabilities are checked by ``untaped.conventions.imports``.
+Imports between plugins are checked by ``untaped.conventions.imports``.
 """
 
 from __future__ import annotations

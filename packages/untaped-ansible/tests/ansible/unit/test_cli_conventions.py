@@ -1,4 +1,4 @@
-"""CLI convention tests for the Ansible capability (docs/reference/conventions.md).
+"""CLI convention tests for the Ansible plugin (docs/reference/conventions.md).
 
 Covers the renamed verbs and flags (removed spellings are usage errors through
 the ``untaped`` root), mutation outcome records, destructive confirmation and

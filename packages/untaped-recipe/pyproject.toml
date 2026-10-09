@@ -1,7 +1,7 @@
 [project]
 name = "untaped-recipe"
 version = "10.1.0"
-description = "Recipe capability for untaped."
+description = "Recipe plugin for untaped."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -9,7 +9,7 @@ authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14.1"
 dependencies = ["jinja2>=3.1.6,<4", "tomlkit>=0.13,<1", "untaped==10.1.0"]
 
-[project.entry-points."untaped.capabilities"]
+[project.entry-points."untaped.plugins"]
 recipe = "untaped_recipe:provider"
 
 [build-system]

@@ -11,11 +11,11 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel, ConfigDict
 
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.allow import allowed
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.source import source_files
 from untaped.conventions.structure import structure_violations
+from untaped.plugins.registry import PluginSpec
 
 LINES = [
     "x = 1",
@@ -100,9 +100,7 @@ def test_the_marker_suppresses_only_its_own_layer_violation(allowdemo: Path) -> 
 
 
 def test_the_marker_suppresses_only_its_own_foreign_section_violation(allowdemo: Path) -> None:
-    spec = CapabilitySpec(
-        name="allowdemo", app_factory=App, config_section="allowdemo", profile_model=_Settings
-    )
+    spec = PluginSpec(name="allowdemo", app_factory=App, settings=_Settings)
     files = list(source_files(allowdemo))
     assert structure_violations(spec, "allowdemo", allowdemo, files) == [
         "allowdemo/cli.py::foreign-section::elsewhere"

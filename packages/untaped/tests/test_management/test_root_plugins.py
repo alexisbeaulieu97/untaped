@@ -1,8 +1,8 @@
-"""Tests for the root ``untaped capabilities`` command.
+"""Tests for the root ``untaped plugin list`` command.
 
 Reports one record per candidate provider — ``name/status/distribution/
 version`` — from the composition outcome, in name order. The listing never
-touches settings, so invalid capability values cannot block it.
+touches settings, so invalid plugin values cannot block it.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from test_capabilities.capharness import make_candidate
 from test_management.support import (
     GithubProfile,
     JiraProfile,
@@ -20,13 +19,14 @@ from test_management.support import (
     make_spec,
     write_config,
 )
+from test_plugins.plugin_harness import make_candidate
 from untaped import bootstrap
-from untaped.capabilities.registry import (
+from untaped.management.plugins import INSTALL_HINT, build_root_plugin_app
+from untaped.plugins.registry import (
     CompositionResult,
     ProviderCandidate,
     QuarantineRecord,
 )
-from untaped.management.capabilities import INSTALL_HINT, build_root_capabilities_app
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
@@ -38,9 +38,9 @@ def _rows(stdout: str) -> list[dict[str, object]]:
 
 
 def _listing(candidates: list[ProviderCandidate]) -> list[dict[str, object]]:
-    """The JSON rows ``untaped capabilities`` lists for ``candidates``."""
+    """The JSON rows ``untaped plugin list`` lists for ``candidates``."""
     root = bootstrap.build_root_app(candidates=candidates)
-    invoked = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
+    invoked = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
     assert invoked.exit_code == 0, invoked.output
     return _rows(invoked.stdout)
 
@@ -81,7 +81,7 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
         distribution_version="0.1.0",
     )
     result = CompositionResult(
-        capabilities=(),
+        plugins=(),
         quarantine=(
             QuarantineRecord(
                 name="ghost",
@@ -92,8 +92,8 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
             ),
         ),
     )
-    app = build_root_capabilities_app(result=result, candidates=(candidate,))
-    invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    app = build_root_plugin_app(result=result, candidates=(candidate,))
+    invoked = CliInvoker().invoke(app, ["list", "--format", "json"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
     assert _rows(invoked.stdout) == [
         {
@@ -108,7 +108,7 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
 def test_unresolvable_provider_uses_unknown_sentinels() -> None:
     candidate = ProviderCandidate(distribution="unknown", name="mystery", target="nope:missing")
     result = CompositionResult(
-        capabilities=(),
+        plugins=(),
         quarantine=(
             QuarantineRecord(
                 name="mystery",
@@ -119,8 +119,8 @@ def test_unresolvable_provider_uses_unknown_sentinels() -> None:
             ),
         ),
     )
-    app = build_root_capabilities_app(result=result, candidates=(candidate,))
-    invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    app = build_root_plugin_app(result=result, candidates=(candidate,))
+    invoked = CliInvoker().invoke(app, ["list", "--format", "json"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
     (row,) = _rows(invoked.stdout)
     assert row["name"] == "mystery"
@@ -128,30 +128,30 @@ def test_unresolvable_provider_uses_unknown_sentinels() -> None:
 
 
 def test_table_headers_name_the_listing_contract() -> None:
-    result = compose(make_spec("github", profile_model=GithubProfile))
-    app = build_root_capabilities_app(result=result, candidates=())
-    invoked = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
+    result = compose(make_spec("github", settings=GithubProfile))
+    app = build_root_plugin_app(result=result, candidates=())
+    invoked = CliInvoker().invoke(app, ["list"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
     header = [cell.strip() for cell in invoked.stdout.splitlines()[1].strip("│").split("│")]
     assert header == ["name", "status", "distribution", "version"]
     assert "github" in invoked.stdout
-    listed = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    listed = CliInvoker().invoke(app, ["list", "--format", "json"])  # type: ignore[arg-type]
     assert {"distribution", "version"} <= set(_rows(listed.stdout)[0])
 
 
 def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> None:
-    """Broken Jira values still list every capability."""
+    """Broken Jira values still list every plugin."""
     write_config(
         _isolated_config,
         "profiles:\n  default:\n    jira:\n      timeout: not-a-number\n",
     )
     get_settings.cache_clear()
     result = compose(
-        make_spec("github", profile_model=GithubProfile),
-        make_spec("jira", profile_model=JiraProfile),
+        make_spec("github", settings=GithubProfile),
+        make_spec("jira", settings=JiraProfile),
     )
-    app = build_root_capabilities_app(result=result, candidates=())
-    invoked = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    app = build_root_plugin_app(result=result, candidates=())
+    invoked = CliInvoker().invoke(app, ["list", "--format", "json"])  # type: ignore[arg-type]
     assert invoked.exit_code == 0, invoked.output
     assert {row["name"] for row in _rows(invoked.stdout)} == {"github", "jira"}
 
@@ -160,15 +160,15 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
     ("candidates", "expect_hint"),
     [
         pytest.param([], True, id="bare"),
-        pytest.param([make_candidate(make_spec("demo"))], False, id="capability"),
+        pytest.param([make_candidate(make_spec("demo"))], False, id="plugin"),
         pytest.param([make_candidate(make_spec("demo"), name="other")], False, id="quarantined"),
     ],
 )
-def test_capabilities_listing_install_hint_on_stderr(
+def test_plugins_listing_install_hint_on_stderr(
     candidates: list[ProviderCandidate], expect_hint: bool
 ) -> None:
     root = bootstrap.build_root_app(candidates=candidates)
-    result = CliInvoker().invoke(root.meta, ["capabilities", "--format", "json"])
+    result = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
     assert result.exit_code == 0
     assert bool(_rows(result.stdout)) is not expect_hint
     if expect_hint:
@@ -179,8 +179,8 @@ def test_capabilities_listing_install_hint_on_stderr(
         assert INSTALL_HINT not in result.stderr
 
 
-def test_bare_capabilities_listing_hint_is_a_plain_hint_line_in_text_mode() -> None:
+def test_bare_plugins_listing_hint_is_a_plain_hint_line_in_text_mode() -> None:
     root = bootstrap.build_root_app(candidates=[])
-    result = CliInvoker().invoke(root.meta, ["capabilities"])
+    result = CliInvoker().invoke(root.meta, ["plugin", "list"])
     assert result.exit_code == 0
     assert result.stderr.strip() == f"hint: {INSTALL_HINT}"

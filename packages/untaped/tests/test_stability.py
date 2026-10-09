@@ -9,12 +9,12 @@ from dataclasses import replace
 import pytest
 from cyclopts import App
 
-from test_capabilities.capharness import make_spec
+from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.cli import create_app
 from untaped.errors import ConfigError
 from untaped.messages import EXPERIMENTAL_LINE
+from untaped.plugins.registry import PluginSpec, ProviderCandidate
 from untaped.stability import (
     Deprecated,
     Experimental,
@@ -130,14 +130,14 @@ def test_an_uncalled_deprecated_says_to_call_it() -> None:
 
 
 def test_a_provider_building_a_bad_spec_stability_is_quarantined() -> None:
-    def provider() -> CapabilitySpec:
+    def provider() -> PluginSpec:
         return replace(make_spec(name="bad"), stability=deprecated)  # type: ignore[arg-type]
 
     candidate = ProviderCandidate(distribution="test-provider", name="bad", target=provider)
 
     composition = bootstrap.compose_root(candidates=[candidate])
 
-    assert composition.capabilities == ()
+    assert composition.plugins == ()
     assert [record.name for record in composition.quarantine] == ["bad"]
     assert "stability must be experimental or deprecated" in composition.quarantine[0].detail
 
@@ -236,7 +236,7 @@ def test_an_experimental_group_marks_every_help_below_it() -> None:
     assert _help(root, "grp").rstrip().endswith(EXPERIMENTAL_LINE)
 
 
-def test_apply_marks_leaves_an_unresolved_lazy_capability_unresolved() -> None:
+def test_apply_marks_leaves_an_unresolved_lazy_plugin_unresolved() -> None:
     app = _service(stability=None)
     root = _root(app, lazy=True, stability=experimental)
     lazy = root._get_item("svc", recurse_meta=True)
@@ -251,7 +251,7 @@ def test_apply_marks_leaves_an_unresolved_lazy_capability_unresolved() -> None:
 
 
 @pytest.mark.parametrize("stability", [experimental, deprecated(replacement="something else")])
-def test_a_marked_capability_renders_the_same_lazy_and_eager(
+def test_a_marked_plugin_renders_the_same_lazy_and_eager(
     stability: Experimental | Deprecated,
 ) -> None:
     for argv in (
@@ -270,7 +270,7 @@ def test_a_marked_capability_renders_the_same_lazy_and_eager(
         assert (lazy.exit_code, lazy.stdout) == (eager.exit_code, eager.stdout), argv
 
 
-def test_a_marked_capability_lists_in_its_panel_and_its_help_ends_with_the_line() -> None:
+def test_a_marked_plugin_lists_in_its_panel_and_its_help_ends_with_the_line() -> None:
     app = _service()
     root = _root(app, stability=experimental)
 
@@ -421,7 +421,7 @@ def test_invoke_cli_gives_a_directly_invoked_app_its_marks() -> None:
     )
 
 
-def test_invoke_cli_on_the_root_never_resolves_a_lazy_capability() -> None:
+def test_invoke_cli_on_the_root_never_resolves_a_lazy_plugin() -> None:
     app = _service()
     root = _root(app, lazy=True, stability=experimental)
     lazy = root._get_item("svc", recurse_meta=True)

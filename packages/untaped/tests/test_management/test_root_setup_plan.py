@@ -2,7 +2,7 @@
 
 Every ``run`` is a complete argv (``--profile`` first, ``<NAME>``
 placeholders), every step that asks for or reveals a secret is ``by:
-user``, and the online rows are the capabilities' own online doctor checks.
+user``, and the online rows are the plugins' own online doctor checks.
 """
 
 from __future__ import annotations
@@ -27,13 +27,13 @@ from test_management.support import (
     write_config,
 )
 from untaped import bootstrap
-from untaped.capabilities.registry import (
-    CapabilityContext,
-    CapabilitySpec,
+from untaped.management import setup_plan
+from untaped.plugins.registry import (
     DoctorCheck,
     DoctorResult,
+    PluginContext,
+    PluginSpec,
 )
-from untaped.management import setup_plan
 from untaped.sdk import TokenCommand, TokenSources, connection_check, online_check
 from untaped.testing import (
     CliResult,
@@ -66,10 +66,10 @@ def _clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def _wiz() -> CapabilitySpec:
+def _wiz() -> PluginSpec:
     return make_spec(
         "wiz",
-        profile_model=WizProfile,
+        settings=WizProfile,
         doctor_checks=(
             connection_check("wiz.connection", section="wiz"),
             wiz_api_check(),
@@ -77,14 +77,14 @@ def _wiz() -> CapabilitySpec:
     )
 
 
-def _cli(*args: str, specs: tuple[CapabilitySpec, ...] | None = None) -> CliResult:
+def _cli(*args: str, specs: tuple[PluginSpec, ...] | None = None) -> CliResult:
     candidates = tuple(provider_candidate(spec) for spec in (specs or (_wiz(),)))
     root = bootstrap.build_root_app(candidates=candidates)
     return invoke_cli(root.meta, list(args))
 
 
 def _plan(
-    *args: str, profile: str | None = None, specs: tuple[CapabilitySpec, ...] | None = None
+    *args: str, profile: str | None = None, specs: tuple[PluginSpec, ...] | None = None
 ) -> list[dict[str, Any]]:
     root = ["--profile", profile] if profile else []
     result = _cli(*root, "setup", "plan", "--format", "json", *args, specs=specs)
@@ -112,7 +112,7 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
     ]
     assert rows[0] == {
         "step": "profile",
-        "capability": "untaped",
+        "plugin": "untaped",
         "state": "done",
         "detail": "profile default exists",
         "run": [],
@@ -120,7 +120,7 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
     }
     assert _step(rows, "wiz.base_url") | {"detail": ""} == {
         "step": "wiz.base_url",
-        "capability": "wiz",
+        "plugin": "wiz",
         "state": "todo",
         "detail": "",
         "run": ["--profile", "default", "config", "set", "wiz.base_url", "<URL>"],
@@ -190,7 +190,7 @@ def test_a_token_outside_the_config_is_done(
 
 
 def test_a_service_without_token_command_is_told_to_export_a_variable() -> None:
-    legacy = make_spec("legacy", profile_model=LegacyProfile)
+    legacy = make_spec("legacy", settings=LegacyProfile)
     token = _step(_plan(specs=(legacy,)), "legacy.token")
     assert (token["state"], token["by"], token["run"]) == ("todo", "user", [])
     assert "$UNTAPED_LEGACY__TOKEN" in token["detail"]
@@ -199,7 +199,7 @@ def test_a_service_without_token_command_is_told_to_export_a_variable() -> None:
 def test_no_step_ever_stores_a_token_in_the_config(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    legacy = make_spec("legacy", profile_model=LegacyProfile)
+    legacy = make_spec("legacy", settings=LegacyProfile)
     for stores in ((), ("pass",)):
         install_fake_stores(tmp_path, monkeypatch, *stores)
         for rows in (_plan(specs=(_wiz(), legacy)), _plan(profile="work", specs=(_wiz(),))):
@@ -216,7 +216,7 @@ def test_a_missing_profile_is_created_first_and_every_step_targets_it() -> None:
 
 
 def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> None:
-    hub = make_spec("hub", profile_model=HubProfile)
+    hub = make_spec("hub", settings=HubProfile)
     _configure(_isolated_config, "{base_url: https://wiz, token_command: []}")
     rows = _plan(specs=(_wiz(), hub))
     settings = _step(rows, "wiz.settings")
@@ -227,10 +227,10 @@ def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> Non
 
 
 def test_only_narrows_and_orders_the_services() -> None:
-    hub = make_spec("hub", profile_model=HubProfile)
+    hub = make_spec("hub", settings=HubProfile)
     rows = _plan("--only", "hub,wiz", specs=(_wiz(), hub))
-    assert [row["capability"] for row in rows[1:]] == ["hub", "hub", "wiz", "wiz", "wiz"]
-    assert {row["capability"] for row in _plan("--only", "hub", specs=(_wiz(), hub))} == {
+    assert [row["plugin"] for row in rows[1:]] == ["hub", "hub", "wiz", "wiz", "wiz"]
+    assert {row["plugin"] for row in _plan("--only", "hub", specs=(_wiz(), hub))} == {
         "untaped",
         "hub",
     }
@@ -284,7 +284,7 @@ def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
             assert _cli(*argv).exit_code == 0
     assert _step(_plan(), "wiz.base_url") | {"run": []} == {
         "step": "wiz.base_url",
-        "capability": "wiz",
+        "plugin": "wiz",
         "state": "done",
         "detail": "https://wiz.example",
         "run": [],
@@ -370,7 +370,7 @@ def test_a_plaintext_token_in_default_fails_the_profile_that_inherits_it(
 def test_a_plaintext_token_without_token_command_is_exported_instead(
     _isolated_config: Path,
 ) -> None:
-    legacy = make_spec("legacy", profile_model=LegacyProfile)
+    legacy = make_spec("legacy", settings=LegacyProfile)
     write_config(
         _isolated_config, "profiles:\n  default:\n    legacy: {base_url: https://l, token: t}\n"
     )
@@ -385,7 +385,7 @@ def test_a_rejected_token_without_token_command_is_never_stored_in_the_config(
 ) -> None:
     legacy = make_spec(
         "legacy",
-        profile_model=LegacyProfile,
+        settings=LegacyProfile,
         doctor_checks=(online_check("legacy.api", section="legacy", probe=wiz_probe),),
     )
     monkeypatch.setenv("UNTAPED_LEGACY__BASE_URL", "https://l")
@@ -412,13 +412,13 @@ def test_who_runs_a_manual_fix_depends_on_its_command(run: list[str], by: str) -
 def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
     _isolated_config: Path, automatic: bool, by: str
 ) -> None:
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+    def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
             id="wiz.api", ok=False, detail="stale", fix="auth migrate", automatic=automatic
         )
 
     check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
-    wiz = make_spec("wiz", profile_model=WizProfile, doctor_checks=(check,))
+    wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
     _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", by)
@@ -429,13 +429,13 @@ def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
 def test_a_fix_that_sets_a_token_is_the_users_however_it_names_the_profile(
     _isolated_config: Path, spelling: list[str]
 ) -> None:
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+    def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
             id="wiz.api", ok=False, detail="no", fix=[*spelling, "auth", "set", "wiz"]
         )
 
     check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
-    wiz = make_spec("wiz", profile_model=WizProfile, doctor_checks=(check,))
+    wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
     _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", "user")
@@ -447,7 +447,7 @@ _VALUES = {"<URL>": "https://wiz.example", "<COMMAND>": '["x"]', "<PATH>": "/ca.
 def test_every_run_parses(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    legacy = make_spec("legacy", profile_model=LegacyProfile)
+    legacy = make_spec("legacy", settings=LegacyProfile)
     specs = (_wiz(), legacy)
     root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
     runs: list[list[str]] = []
@@ -498,7 +498,7 @@ def test_a_github_style_service_suggests_gh_without_running_it(
     gh = tmp_path / "fake-bin" / "gh"
     gh.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'w').close()\n", encoding="utf-8")
     gh.chmod(0o755)
-    hub = make_spec("hub", profile_model=HubProfile)
+    hub = make_spec("hub", settings=HubProfile)
     token = _step(_plan(specs=(hub,)), "hub.token")
     assert "after `gh auth login`" in token["detail"]
     assert "config set hub.token_command" in token["detail"]
@@ -506,11 +506,11 @@ def test_a_github_style_service_suggests_gh_without_running_it(
 
 
 def test_without_gh_there_is_no_suggestion() -> None:
-    hub = make_spec("hub", profile_model=HubProfile)
+    hub = make_spec("hub", settings=HubProfile)
     assert "gh auth" not in _step(_plan(specs=(hub,)), "hub.token")["detail"]
 
 
 def test_without_a_service_there_is_nothing_to_plan() -> None:
     result = _cli("setup", "plan", specs=(make_spec("plain"),))
     assert result.exit_code == 4
-    assert "no composed capability takes a base URL and token" in result.stderr
+    assert "no composed plugin takes a base URL and token" in result.stderr

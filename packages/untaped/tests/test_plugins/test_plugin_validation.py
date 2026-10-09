@@ -14,23 +14,22 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel, Field
 
-from test_capabilities.capharness import (
-    OtherProfile,
+from test_plugins.plugin_harness import (
     make_candidate,
     make_check,
     make_shell,
     make_skill,
     make_spec,
 )
-from untaped.capabilities.registry import (
+from untaped.errors import ConfigError
+from untaped.plugins.registry import (
     ApplicationSpec,
-    CapabilitySpec,
     DoctorCheck,
+    PluginSpec,
     ProviderCandidate,
     SkillAsset,
     compose,
 )
-from untaped.errors import ConfigError
 
 
 class TokenProfile(BaseModel):
@@ -54,7 +53,7 @@ def broken_asset(name: str = "", description: str = "d") -> SkillAsset:
     return asset
 
 
-def _with(spec: CapabilitySpec, **fields: Any) -> CapabilitySpec:
+def _with(spec: PluginSpec, **fields: Any) -> PluginSpec:
     """Bypass construction checks the way a hostile provider could."""
     for key, value in fields.items():
         object.__setattr__(spec, key, value)
@@ -72,38 +71,39 @@ def _failing_factory() -> Any:
     raise RuntimeError("factory-boom")
 
 
+#: One name per reason it is reserved: a plugin name, a config section and
+#: a command group; the grammar already refuses ``format_version``.
 RESERVED = [
+    "untaped",
+    "core",
+    "sdk",
+    "contracts",
+    "plugins",
+    "extensions",
+    "profiles",
+    "default",
+    "shell",
     "http",
     "ui",
-    "profiles",
+    "skills",
     "active",
-    "format_version",
     "config",
     "profile",
-    "skills",
     "doctor",
-    "capabilities",
+    "setup",
+    "auth",
+    "alias",
+    "plugin",
+    "rank",
 ]
 
 # (spec factory, reason, text the error/detail must name)
-SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], CapabilitySpec], str, str]] = [
-    *(
-        (f"reserved-name-{v}", lambda v=v: make_spec(name=v, section=f"ok-{v}"), "reserved-root", v)
-        for v in RESERVED
-    ),
-    *(
-        (
-            f"reserved-section-{v}",
-            lambda v=v: make_spec(name=f"ok-{v}", section=v),
-            "reserved-root",
-            v,
-        )
-        for v in RESERVED
-    ),
+SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
+    *((f"reserved-name-{v}", lambda v=v: make_spec(name=v), "reserved-name", v) for v in RESERVED),
     (
-        "profile-state-overlap",
-        lambda: make_spec(name="o", profile=TokenProfile, state=TokenState),
-        "profile-state-overlap",
+        "settings-state-overlap",
+        lambda: make_spec(name="o", settings=TokenProfile, state=TokenState),
+        "settings-state-overlap",
         "token",
     ),
     (
@@ -180,18 +180,18 @@ SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], CapabilitySpec], str, str]] = [
     ids=[row[0] for row in SINGLE_SPEC_ROWS],
 )
 def test_invalid_spec_is_quarantined(
-    make: Callable[[], CapabilitySpec], reason: str, named: str
+    make: Callable[[], PluginSpec], reason: str, named: str
 ) -> None:
     spec = make()
     result = compose(make_shell(), [make_candidate(spec, "ext-dist")])
-    assert result.capabilities == ()
+    assert result.plugins == ()
     (record,) = result.quarantine
     assert (record.distribution, record.reason) == ("ext-dist", reason)
     assert named in record.detail
 
 
 # (first spec, colliding spec, reason, text the error/detail must name)
-COLLISION_ROWS: list[tuple[str, Callable[[], tuple[CapabilitySpec, CapabilitySpec]], str, str]] = [
+COLLISION_ROWS: list[tuple[str, Callable[[], tuple[PluginSpec, PluginSpec]], str, str]] = [
     (
         "skill",
         lambda: (
@@ -218,8 +218,8 @@ COLLISION_ROWS: list[tuple[str, Callable[[], tuple[CapabilitySpec, CapabilitySpe
     [row[1:] for row in COLLISION_ROWS],
     ids=[row[0] for row in COLLISION_ROWS],
 )
-def test_collision_with_an_earlier_capability_is_quarantined(
-    make: Callable[[], tuple[CapabilitySpec, CapabilitySpec]],
+def test_collision_with_an_earlier_plugin_is_quarantined(
+    make: Callable[[], tuple[PluginSpec, PluginSpec]],
     reason: str,
     named: str,
 ) -> None:
@@ -227,7 +227,7 @@ def test_collision_with_an_earlier_capability_is_quarantined(
     result = compose(
         make_shell(), [make_candidate(second, "b-dist"), make_candidate(first, "a-dist")]
     )
-    assert [c.spec.name for c in result.capabilities] == [first.name]
+    assert [c.spec.name for c in result.plugins] == [first.name]
     (record,) = result.quarantine
     assert (record.distribution, record.reason) == ("b-dist", reason)
     assert named in record.detail
@@ -237,22 +237,16 @@ def test_collision_with_an_earlier_capability_is_quarantined(
     ("shell", "spec", "reason", "detail"),
     [
         (
-            make_shell(),
-            make_spec(name="untaped"),
+            make_shell(name="root"),
+            make_spec(name="root"),
             "duplicate-name",
-            "duplicate capability name: 'untaped' (already provided by the shell)",
+            "duplicate plugin name: 'root' (already provided by the shell)",
         ),
         (
-            make_shell(),
-            make_spec(name="intruder", section="shell"),
-            "duplicate-section",
-            "duplicate config section: 'shell' (already provided by the shell)",
-        ),
-        (
-            make_shell(),
-            make_spec(name="shadow", section="shell", state=EndpointState),
-            "state-shadow",
-            "state fields shadow profile fields of section 'shell': endpoint",
+            make_shell(section="root-section"),
+            make_spec(name="root-section"),
+            "duplicate-name",
+            "duplicate plugin name: 'root-section' (already provided by the shell)",
         ),
         (
             make_shell(skills=(make_skill("shell-skill"),)),
@@ -267,30 +261,22 @@ def test_collision_with_an_earlier_capability_is_quarantined(
             "duplicate doctor id: 'shell.health'",
         ),
     ],
-    ids=["name", "section", "state-shadow", "skill", "doctor-id"],
+    ids=["name", "section", "skill", "doctor-id"],
 )
 def test_collision_with_the_shell_quarantines(
-    shell: Any, spec: CapabilitySpec, reason: str, detail: str
+    shell: Any, spec: PluginSpec, reason: str, detail: str
 ) -> None:
     result = compose(shell, [make_candidate(spec)])
-    assert result.capabilities == ()
+    assert result.plugins == ()
     (record,) = result.quarantine
     assert (record.reason, record.detail) == (reason, detail)
-
-
-def test_state_shadow_scoped_to_same_section() -> None:
-    first = make_spec(name="first", section="data", profile=TokenProfile)
-    other = make_spec(name="other", section="other", profile=OtherProfile, state=TokenState)
-    result = compose(make_shell(), [make_candidate(first), make_candidate(other)])
-    assert [c.spec.name for c in result.capabilities] == ["first", "other"]
-    assert result.quarantine == ()
 
 
 def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
     first = make_candidate(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
     second = make_candidate(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
     result = compose(make_shell(), [first, second])
-    assert [c.spec.name for c in result.capabilities] == ["a"]
+    assert [c.spec.name for c in result.plugins] == ["a"]
     (record,) = result.quarantine
     assert record.reason == "duplicate-skill"
 
@@ -299,19 +285,19 @@ def test_a_plain_function_provider_composes() -> None:
     """The provider contract is a nullary callable; nothing else is declared."""
     spec = make_spec(name="plain")
 
-    def provide() -> CapabilitySpec:
+    def provide() -> PluginSpec:
         return spec
 
     candidate = ProviderCandidate(distribution="plain-dist", name="plain", target=provide)
     result = compose(make_shell(), [candidate])
     assert result.quarantine == ()
-    assert [registered.spec for registered in result.capabilities] == [spec]
+    assert [registered.spec for registered in result.plugins] == [spec]
 
 
 # ---- entry-point targets ------------------------------------------------------
 
 
-def _needs_arg(value: str) -> CapabilitySpec:
+def _needs_arg(value: str) -> PluginSpec:
     return make_spec(name="argful")
 
 
@@ -397,17 +383,17 @@ class BadKeysProfile(BaseModel):
     value: int = 1
 
 
-def test_broken_key_declarations_quarantine_only_that_capability() -> None:
-    bad = make_spec(name="bad", profile=BadKeysProfile)
-    good = make_spec(name="good", profile=TokenProfile)
+def test_broken_key_declarations_quarantine_only_that_plugin() -> None:
+    bad = make_spec(name="bad", settings=BadKeysProfile)
+    good = make_spec(name="good", settings=TokenProfile)
 
     result = compose(make_shell(), [make_candidate(bad), make_candidate(good)])
 
-    assert [c.spec.name for c in result.capabilities] == ["good"]
+    assert [c.spec.name for c in result.plugins] == ["good"]
     (record,) = result.quarantine
     assert (record.reason, record.detail) == (
         "bad-settings-keys",
-        "capability 'bad': renamed key 'old' points at 'nowhere', which is not a setting",
+        "plugin 'bad': renamed key 'old' points at 'nowhere', which is not a setting",
     )
 
 
@@ -421,12 +407,12 @@ class LazyProfile(BaseModel):
 
 
 def test_a_raising_default_factory_is_not_called_while_composing() -> None:
-    lazy = make_spec(name="lazy", profile=LazyProfile)
-    good = make_spec(name="good", profile=TokenProfile)
+    lazy = make_spec(name="lazy", settings=LazyProfile)
+    good = make_spec(name="good", settings=TokenProfile)
 
     result = compose(make_shell(), [make_candidate(lazy), make_candidate(good)])
 
-    assert ([c.spec.name for c in result.capabilities], result.quarantine) == (["good", "lazy"], ())
+    assert ([c.spec.name for c in result.plugins], result.quarantine) == (["good", "lazy"], ())
 
 
 def test_a_shell_with_broken_key_declarations_fails_loudly() -> None:
@@ -434,6 +420,6 @@ def test_a_shell_with_broken_key_declarations_fails_loudly() -> None:
         ApplicationSpec(
             name="untaped",
             app_factory=lambda: App(),
-            config_section="shell",
-            profile_model=BadKeysProfile,
+            section="shell",
+            settings=BadKeysProfile,
         )

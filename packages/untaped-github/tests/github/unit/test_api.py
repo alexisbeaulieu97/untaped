@@ -98,7 +98,7 @@ def test_exports_are_canonical_objects() -> None:
 
 
 def test_github_specific_api_does_not_leak_into_sdk() -> None:
-    # GitHub behavior belongs to its explicit inter-capability interface,
+    # GitHub behavior belongs to its explicit inter-plugin interface,
     # independently of legitimate additions to the shared provider helpers.
     assert set(EXPECTED_ALL).isdisjoint(sdk.__all__)
     assert not any(hasattr(sdk, name) for name in EXPECTED_ALL)

@@ -68,7 +68,7 @@ def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
         "    http:\n      timout: 3\n    ui:\n      symbols: {success: y}\n"
         "  work:\n    nope: 1\n",
     )
-    row = _row(_rows(make_spec("github", profile_model=GithubProfile)), "unknown-keys")
+    row = _row(_rows(make_spec("github", settings=GithubProfile)), "unknown-keys")
     assert row["status"] == "warn"
     assert row["detail"] == (
         "ignored: profiles.default.github.tokn, profiles.default.http.timout, profiles.work.nope"
@@ -212,7 +212,7 @@ def test_connection_check(
     write_config(_isolated_config, f"profiles:\n  default:\n    api: {config}\n")
     spec = make_spec(
         "api",
-        profile_model=ApiProfile,
+        settings=ApiProfile,
         doctor_checks=(connection_check("api.connection", section="api"),),
     )
     row = _row(_rows(spec), "api.connection")
@@ -235,7 +235,7 @@ def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
     write_config(config, "profiles:\n  default:\n    bare: {base_url: https://b, token: t}\n")
     spec = make_spec(
         "bare",
-        profile_model=BareProfile,
+        settings=BareProfile,
         doctor_checks=(connection_check("bare.connection", section="bare"),),
     )
     row = _row(_rows(spec), "bare.connection")

@@ -1,4 +1,4 @@
-"""Token resolution for token-bearing capability settings sections.
+"""Token resolution for token-bearing plugin settings sections.
 
 One place owns where a section's API token comes from when ``<section>.token``
 is unset. A settings model opts in by declaring ``token_sources:
@@ -35,6 +35,7 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, SecretStr
 
 from untaped.errors import ConfigError
+from untaped.settings import env_var_name
 
 _LOG = logging.getLogger("untaped.auth")
 _TIMEOUT_SECONDS = 60.0
@@ -161,7 +162,7 @@ def takes_token_command(model: type[BaseModel]) -> bool:
 
 def token_override_name(section: str) -> str:
     """The ``UNTAPED_<SECTION>__TOKEN`` variable that overrides ``<section>.token``."""
-    return f"UNTAPED_{section.upper()}__TOKEN"
+    return env_var_name([section, "token"])
 
 
 def token_override_env(section: str) -> str | None:

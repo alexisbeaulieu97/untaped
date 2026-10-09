@@ -1,4 +1,4 @@
-"""The github capability follows the command, message and structure conventions."""
+"""The github plugin follows the command, message and structure conventions."""
 
 from __future__ import annotations
 

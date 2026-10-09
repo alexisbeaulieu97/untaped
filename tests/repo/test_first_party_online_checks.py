@@ -1,4 +1,4 @@
-"""The first-party AWX, GitHub and Jira capabilities contribute ``doctor --online`` probes."""
+"""The first-party AWX, GitHub and Jira plugins contribute ``doctor --online`` probes."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import respx
 
 from test_management.support import write_config
 from untaped import bootstrap
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.plugins.registry import ProviderCandidate
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "fresh_composition")

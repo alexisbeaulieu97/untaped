@@ -16,7 +16,7 @@ from cyclopts import App
 
 from test_management.support import GithubProfile, make_spec, write_config
 from untaped import bootstrap
-from untaped.sdk import CapabilitySpec, FormatOption, create_app, emit
+from untaped.sdk import FormatOption, PluginSpec, create_app, emit
 from untaped.testing import CliInvoker, CliResult, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -26,7 +26,7 @@ _CONFIG = "profiles:\n  default:\n    github:\n      base_url: https://g\n"
 
 def _invoke(argv: list[str]) -> CliResult:
     root = bootstrap.build_root_app(
-        candidates=(provider_candidate(make_spec("github", profile_model=GithubProfile)),)
+        candidates=(provider_candidate(make_spec("github", settings=GithubProfile)),)
     )
     return CliInvoker().invoke(root.meta, argv)
 
@@ -99,9 +99,9 @@ def test_an_invalid_untaped_format_does_not_block_diagnosis(
     assert result.exit_code != 2 or "terminal" in result.stderr
 
 
-def _lazy_spec() -> CapabilitySpec:
+def _lazy_spec() -> PluginSpec:
     def factory() -> App:
-        app = create_app(name="lazy", help="Lazy capability.")
+        app = create_app(name="lazy", help="Lazy plugin.")
 
         @app.command(name="list")
         def list_command(*, fmt: FormatOption = "table") -> None:
@@ -110,16 +110,15 @@ def _lazy_spec() -> CapabilitySpec:
 
         return app
 
-    return CapabilitySpec(
+    return PluginSpec(
         name="lazy",
         app_factory=factory,
-        config_section="lazy",
-        profile_model=GithubProfile,
-        help="Lazy capability.",
+        settings=GithubProfile,
+        help="Lazy plugin.",
     )
 
 
-def test_ui_format_reaches_a_lazily_mounted_capability(_isolated_config: Path) -> None:
+def test_ui_format_reaches_a_lazily_mounted_plugin(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      format: json\n")
     root = bootstrap.build_root_app(candidates=(provider_candidate(_lazy_spec()),))
     result = CliInvoker().invoke(root.meta, ["lazy", "list"])

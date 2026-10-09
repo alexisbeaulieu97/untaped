@@ -1,4 +1,4 @@
-"""Jira capability for the unified ``untaped`` shell."""
+"""Jira plugin for the unified ``untaped`` shell."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset, connection_check, online_check
+from untaped.sdk import PluginSpec, SkillAsset, connection_check, online_check
 from untaped_jira.settings import JiraSettings
 
 if TYPE_CHECKING:
@@ -29,12 +29,11 @@ def _probe_api() -> str:
     return probe_api()
 
 
-SPEC = CapabilitySpec(
+SPEC = PluginSpec(
     name="jira",
     app_factory=build_app,
     help="Manage Jira Data Center issues from untaped.",
-    config_section="jira",
-    profile_model=JiraSettings,
+    settings=JiraSettings,
     skills=(
         SkillAsset(
             name="untaped-jira",
@@ -55,6 +54,6 @@ SPEC = CapabilitySpec(
 )
 
 
-def provider() -> CapabilitySpec:
-    """Entry-point provider: the ``untaped.capabilities`` entry point names this."""
+def provider() -> PluginSpec:
+    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
     return SPEC
