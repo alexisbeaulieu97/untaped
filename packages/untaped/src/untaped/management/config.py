@@ -268,7 +268,7 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Rename deprecated keys in every profile of config.yml.
+        """Give renamed and retired keys their new names in every profile of config.yml.
 
         A key also set under its new name (or a closer old name) in the same
         profile is dropped. Environment variables and ``state.yml`` are not
@@ -445,7 +445,7 @@ def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> 
         rows = SettingsFileRepository().migrate_keys(dry_run=dry_run)
         ui = ui_context(strict=False)
         if not rows:
-            ui.message("info", "no deprecated keys in the config")
+            ui.message("info", "no renamed or retired keys in the config")
         else:
             counts = Counter(row["action"] for row in rows)
             renamed = plural(counts["renamed"], "key")
