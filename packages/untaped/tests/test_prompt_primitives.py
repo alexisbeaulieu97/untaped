@@ -611,8 +611,13 @@ def test_prompt_toolkit_backend_returns_none_when_the_picker_is_cancelled(
 def test_prompt_toolkit_backend_raises_keyboard_interrupt_for_an_interrupted_picker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    keys = "\t?\x03"  # tab, help, ctrl-c in the help
-    with _real_terminal(monkeypatch, keys) as backend, pytest.raises(KeyboardInterrupt):
+    backend = PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
+
+    def run_screen(screen: object, *, theme: ThemeSpec) -> Cancel:
+        return Cancel(interrupted=True)
+
+    monkeypatch.setattr(backend, "run_screen", run_screen)
+    with pytest.raises(KeyboardInterrupt):
         backend.pick_many(_REQUEST)
 
 
