@@ -19,7 +19,8 @@
   `url` opens in a browser; `api_url` is the REST address.
 - `issues get` adds the detail fields. `comments` is `null` unless
   `--comments` fetched them.
-- Timestamps are UTC, as `2026-01-02T03:04:05Z`.
+- Timestamps are UTC, as `2026-01-02T03:04:05.123000Z` in JSON, YAML and
+  pipe, and to the second in tables.
 - One issue renders as a key: value view in a table and as a single JSON
   object; several render as a table or a JSON array.
 

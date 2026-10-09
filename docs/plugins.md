@@ -174,8 +174,8 @@ only when its command is dispatched, so `untaped --help` never imports its CLI.
 A factory that raises or returns something other than a cyclopts `App` then
 fails that command, `--help` included, with exit 4, naming the plugin;
 other commands and shell completion keep working. `untaped doctor` runs every
-factory and reports a failing one as a `bad-app-factory` quarantine row, so
-you find it without dispatching. Without `help`, composition calls
+factory and reports a failing one as a quarantine row (`bad-app-factory`, or
+`duplicate-kind` for a reused record kind). Without `help`, composition calls
 `build_app()` once at startup, a bad factory quarantines the provider, and the
 listing shows the built app's own help.
 
