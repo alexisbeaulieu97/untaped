@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -3202,11 +3203,9 @@ def test_backups_list_rows_carry_the_creation_time_and_recipe(tmp_path: Path) ->
     columns = invoker.invoke(app, ["backups", "list", "--columns", "?"])
 
     assert listed.exit_code == 0, listed.output
-    # The id's UTC stamp, rendered to the second with a ``Z``.
-    stamp = bundle.id[:15]
-    created_at = (
-        f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]}T{stamp[9:11]}:{stamp[11:13]}:{stamp[13:15]}Z"
-    )
+    # The id's UTC stamp, rendered in full with a ``Z``.
+    stamp = datetime.strptime(bundle.id.partition("-")[0], "%Y%m%dT%H%M%S%fZ")
+    created_at = stamp.isoformat() + "Z"
     assert json.loads(listed.stdout) == [
         {
             "id": bundle.id,

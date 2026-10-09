@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
+from untaped.records import DuplicateKindError
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
     RESERVED_SECTIONS,
@@ -281,6 +282,7 @@ VALID_REASONS = frozenset(
         "bad-app-factory",
         "bad-metadata",
         "bad-settings-keys",
+        "duplicate-kind",
     }
 )
 
@@ -751,6 +753,8 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> PluginSp
     _check_requires_dist(candidate, state)
     try:
         provider = _resolve_target(candidate.target)
+    except DuplicateKindError as exc:
+        raise _Quarantine("duplicate-kind", str(exc), entry_point="") from None
     except Exception as exc:
         raise _Quarantine(
             "malformed-entry-point",
@@ -766,6 +770,8 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> PluginSp
         )
     try:
         spec = provider()
+    except DuplicateKindError as exc:
+        raise _Quarantine("duplicate-kind", str(exc)) from None
     except Exception as exc:
         raise _Quarantine(
             "malformed-entry-point",

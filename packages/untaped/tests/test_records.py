@@ -2,15 +2,38 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Annotated
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    SecretStr,
+    ValidationError,
+    field_serializer,
+)
 
 from untaped.diagnostics import diagnostics_scope, failure_exit_code, note_failure
 from untaped.errors import ConfigError, ErrorCategory, HttpStatusError, HttpTransportError
-from untaped.records import CheckRecord, ErrorInfo, OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.records import (
+    TABLE_CONTEXT,
+    CheckRecord,
+    DuplicateKindError,
+    ErrorInfo,
+    OutcomeRecord,
+    Record,
+    TargetRecord,
+    UtcTimestamp,
+    kind_of,
+    record_kinds,
+    record_model,
+)
 
 
 class _Stamped(BaseModel):
@@ -21,12 +44,23 @@ class _CloneOutcome(OutcomeRecord, TargetRecord):
     repo: str
 
 
-def test_utc_timestamp_renders_rfc3339_z_to_the_second() -> None:
+def test_utc_timestamp_renders_rfc3339_z_in_full_and_to_the_second_in_tables() -> None:
     eastern = timezone(timedelta(hours=-5))
     record = _Stamped(scanned_at=datetime(2026, 1, 2, 3, 4, 5, 678, tzinfo=eastern))
 
     assert record.scanned_at == datetime(2026, 1, 2, 8, 4, 5, 678, tzinfo=UTC)
-    assert record.model_dump(mode="json") == {"scanned_at": "2026-01-02T08:04:05Z"}
+    assert record.model_dump(mode="json") == {"scanned_at": "2026-01-02T08:04:05.000678Z"}
+    assert record.model_dump(mode="json", context=TABLE_CONTEXT) == {
+        "scanned_at": "2026-01-02T08:04:05Z"
+    }
+
+
+def test_utc_timestamp_keeps_microseconds_through_a_json_round_trip() -> None:
+    record = _Stamped(scanned_at=datetime(2026, 1, 2, 3, 4, 5, 250_000, tzinfo=UTC))
+
+    dumped = json.dumps(record.model_dump(mode="json", round_trip=True))
+
+    assert _Stamped.model_validate_json(dumped, strict=True) == record
 
 
 def test_utc_timestamp_takes_naive_values_and_strings_as_utc() -> None:
@@ -192,3 +226,183 @@ def test_an_interrupt_is_interrupted_everywhere() -> None:
     with diagnostics_scope():
         note_failure(KeyboardInterrupt())
         assert (info.category, failure_exit_code()) == ("interrupted", 130)
+
+
+# ---- kinds -----------------------------------------------------------------
+
+
+class _Widget(Record, kind="acme-tools.widget"):
+    name: str
+
+
+class _WidgetSummary(Record, kind="acme-tools.widget.summary"):
+    total: int
+
+
+class _SpecialWidget(_Widget):
+    colour: str
+
+
+def test_a_record_declares_its_kind_and_is_registered_under_it() -> None:
+    assert kind_of(_Widget) == "acme-tools.widget"
+    assert record_model("acme-tools.widget") is _Widget
+    assert record_kinds()["acme-tools.widget.summary"] is _WidgetSummary
+    assert "kind" not in _Widget.model_fields
+
+
+def test_bases_and_subclasses_without_kind_are_kind_less() -> None:
+    assert [kind_of(base) for base in (Record, OutcomeRecord, TargetRecord, CheckRecord)] == [
+        None,
+        None,
+        None,
+        None,
+    ]
+    assert kind_of(_SpecialWidget) is None
+    assert record_model("acme-tools.nothing") is None
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ["acme_tools.widget", "acme.widget.extra", "acme.summary", "Acme.widget", "acme"],
+)
+def test_a_kind_outside_the_grammar_fails_at_definition(kind: str) -> None:
+    with pytest.raises(ValueError, match="invalid record kind"):
+
+        class _Bad(Record, kind=kind):
+            name: str
+
+
+def test_two_models_declaring_one_kind_is_duplicate_kind() -> None:
+    with pytest.raises(DuplicateKindError, match=r"duplicate-kind: 'acme-tools\.widget'"):
+
+        class _Rival(Record, kind="acme-tools.widget"):
+            name: str
+
+    assert record_model("acme-tools.widget") is _Widget
+
+
+def test_the_same_class_defined_again_replaces_itself() -> None:
+    def define() -> type[Record]:
+        class _Reloaded(Record, kind="acme-tools.reloaded"):
+            name: str
+
+        return _Reloaded
+
+    first, second = define(), define()
+
+    assert record_model("acme-tools.reloaded") is second
+    assert kind_of(first) is None
+    assert kind_of(second) == "acme-tools.reloaded"
+
+
+# ---- the round-trip check ----------------------------------------------------
+
+
+class _Nested(BaseModel):
+    token: SecretStr
+
+
+def _join(value: list[str]) -> str:
+    return ",".join(value)
+
+
+@pytest.mark.parametrize(
+    ("annotation", "default", "why"),
+    [
+        (SecretStr, ..., "SecretStr dumps masked"),
+        (list[SecretStr | None], ..., "SecretStr dumps masked"),
+        (_Nested, ..., "SecretStr dumps masked"),
+        (str, Field(exclude=True), r"Field\(exclude=True\)"),
+        (str, Field(serialization_alias="url"), "dumps as 'url'"),
+        (str, Field(validation_alias="url"), "dumps as 'value'"),
+        (int, Field(default=0, exclude_if=lambda v: v < 0), "exclude_if must only drop"),
+        (int, Field(exclude_if=lambda v: v == 0), "exclude_if must only drop"),
+        (Annotated[list[str], PlainSerializer(_join)], ..., "PlainSerializer _join"),
+    ],
+)
+def test_a_field_that_loses_data_in_a_json_round_trip_fails_at_definition(
+    annotation: object, default: object, why: str
+) -> None:
+    namespace: dict[str, object] = {"__annotations__": {"value": annotation}}
+    if default is not ...:
+        namespace["value"] = default
+    with pytest.raises(TypeError, match=f"_Lossy\\.value(\\.token)?: {why}.*would lose data"):
+        type("_Lossy", (Record,), namespace)
+
+
+def test_a_field_serializer_fails_at_definition() -> None:
+    with pytest.raises(TypeError, match="_Joined: field_serializer on tags may not invert"):
+
+        class _Joined(Record):
+            tags: list[str]
+
+            @field_serializer("tags")
+            def _join(self, value: list[str]) -> str:
+                return ",".join(value)
+
+
+class _Tree(BaseModel):
+    children: list[_Tree] = []
+
+
+class _RoundTrips(Record, kind="acme-tools.round_trips"):
+    model_config = ConfigDict(frozen=True, extra="forbid", validate_by_name=True)
+
+    named: str = Field(alias="Named")
+    chosen: str | None = Field(default=None, validation_alias=AliasChoices("chosen", "pick"))
+    by_name: str = Field(default="", validation_alias="byName")
+    omitted: int | None = Field(default=None, exclude_if=lambda v: v is None)
+    at: UtcTimestamp
+    where: Path
+    error: ErrorInfo | None = None
+    tree: _Tree = _Tree()
+
+
+def test_aliases_that_validation_accepts_and_default_only_exclude_if_are_allowed() -> None:
+    record = _RoundTrips(
+        Named="n",
+        pick="c",
+        byName="b",
+        at=datetime(2026, 1, 2, 3, 4, 5, 6, tzinfo=UTC),
+        where=Path("/tmp/x"),
+        error=ErrorInfo.from_exception(ConfigError("x")),
+        tree=_Tree(children=[_Tree()]),
+    )
+
+    _assert_round_trips(record)
+
+
+def _assert_round_trips(record: BaseModel) -> None:
+    dumped = json.dumps(record.model_dump(mode="json", by_alias=True, round_trip=True))
+    assert type(record).model_validate_json(dumped, strict=True) == record
+
+
+def _core_samples(tmp_path: Path) -> list[Record]:
+    from untaped.config.models import SettingOutcome, SettingRow
+    from untaped.management.alias import AliasOutcome, AliasRow
+    from untaped.profile.models import ProfileOutcome, ProfileRow
+
+    return [
+        SettingRow(key="k", value={"a": [1]}, default=None, source="default", profile=None),
+        SettingOutcome(key="k", profile="default", action="updated"),
+        AliasRow(name="ls", command="plugin list", argv=["plugin", "list"], profile="default"),
+        AliasOutcome(
+            name="ls",
+            profile="default",
+            action="failed",
+            error=ErrorInfo.from_exception(ConfigError("x")),
+        ),
+        ProfileRow(name="default", active=True, keys=3),
+        ProfileOutcome(name="work", action="renamed", previous_name="old"),
+    ]
+
+
+def test_every_kind_core_declares_round_trips_in_json_mode(tmp_path: Path) -> None:
+    samples = _core_samples(tmp_path)
+    core = {
+        kind for kind, model in record_kinds().items() if model.__module__.startswith("untaped.")
+    }
+
+    assert {kind_of(type(sample)) for sample in samples} == core
+    for sample in samples:
+        _assert_round_trips(sample)

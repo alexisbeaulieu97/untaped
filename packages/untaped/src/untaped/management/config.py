@@ -301,7 +301,7 @@ def _list(
         human = fmt in ("table", "raw")
         if fmt != "table" or columns == ["?"]:
             rows = [setting_entry_row(e, human=human) for e in entries]
-            emit(rows, fmt=fmt, columns=columns, kind="untaped.setting")
+            emit(rows, fmt=fmt, columns=columns)
             return
         _emit_split_tables(entries, columns=columns)
 
@@ -344,7 +344,6 @@ def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None
             [setting_entry_row(entry, human=True) for entry in group],
             fmt="table",
             columns=columns,
-            kind="untaped.setting",
             table_columns=table_columns,
         )
 
@@ -364,7 +363,6 @@ def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: b
             setting_entry_row(entry, human=fmt in ("table", "raw")),
             fmt=fmt,
             columns=columns,
-            kind="untaped.setting",
         )
 
 
@@ -394,7 +392,7 @@ def _set(
             ui_context(strict=False).success(f"{message} (config: {resolve_config_path()})")
         action = "planned" if dry_run else "updated"
         outcome = SettingOutcome(key=resolved, profile=profile, action=action)
-        emit(outcome, fmt=fmt, columns=columns, kind=_SETTING_OUTCOME)
+        emit(outcome, fmt=fmt, columns=columns)
 
 
 def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
@@ -438,7 +436,7 @@ def _unset(
             ui.success(f"unset {resolved} {where}{_removed_note(spellings)}")
         action = "unchanged" if not removed else "planned" if dry_run else "deleted"
         outcome = SettingOutcome(key=resolved, profile=profile, action=action)
-        emit(outcome, fmt=fmt, columns=columns, kind=_SETTING_OUTCOME)
+        emit(outcome, fmt=fmt, columns=columns)
 
 
 def _removed_note(spellings: list[str]) -> str:
@@ -464,7 +462,6 @@ def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> 
         emit(rows, fmt=fmt, columns=columns, kind=_MIGRATION_OUTCOME)
 
 
-_SETTING_OUTCOME = "untaped.setting_outcome"
 _MIGRATION_OUTCOME = "untaped.config_migration_outcome"
 
 

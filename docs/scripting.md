@@ -34,7 +34,7 @@ stream (`--follow`) prints json as one object per line (NDJSON).
 |---|---|
 | `untaped` | Envelope version. Always `"1"`. A consumer rejects other versions. |
 | `kind` | Record kind, `<plugin>.<noun>` (root commands use `untaped.<noun>`). May be `null`. |
-| `record` | The row, as a JSON object. Values are JSON types; timestamps are strings such as `2026-01-02T03:04:05Z`. |
+| `record` | The row, as a JSON object. Values are JSON types; timestamps are UTC strings such as `2026-01-02T03:04:05Z`, with microseconds when the time has them (`2026-01-02T03:04:05.250000Z`). |
 
 Because every line stands alone, `head`, `grep` and `cat a b` keep a stream
 valid.
