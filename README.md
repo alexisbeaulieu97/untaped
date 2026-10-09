@@ -15,7 +15,7 @@ the same output and piping rules:
 - **`dotfiles`**: place config files from dotfiles repos, with a policy per
   item per machine (experimental).
 
-Root commands manage the tool itself: `setup`, `config`, `profile`, `alias`,
+Root commands manage the tool itself: `setup`, `config`, `profile`,
 `skills`, `doctor` and `capabilities`.
 
 ## Install
@@ -69,6 +69,8 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 - [Building a capability provider](./docs/plugins.md): add a capability from
   your own package, with its [conventions](./docs/reference/conventions.md)
   and [how composition works](./docs/composition.md).
+- [Building a screen](./docs/screens.md): an interactive terminal UI on the
+  SDK's runtime, with the keys, theme and tests it shares.
 
 Each capability's guide: [workspace](./packages/untaped-workspace/README.md),
 [github](./packages/untaped-github/README.md), [jira](./packages/untaped-jira/README.md),

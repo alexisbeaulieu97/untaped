@@ -23,9 +23,16 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git is not 
 _REQS = "roles/requirements.yml"
 
 
+def _git_dir(cwd: Path) -> list[str]:
+    """``--git-dir`` for a bare repository: the suite runs with ``safe.bareRepository=explicit``."""
+    return (
+        ["--git-dir", str(cwd)] if (cwd / "HEAD").is_file() and (cwd / "objects").is_dir() else []
+    )
+
+
 def _git(repo: Path, *args: str) -> str:
     result = subprocess.run(
-        ["git", *args],
+        ["git", *_git_dir(repo), *args],
         cwd=repo,
         text=True,
         capture_output=True,
@@ -146,8 +153,7 @@ def test_read_files_returns_only_existing_blobs_under_any_locale(
     assert files == {_REQS: "- src: acme/two\n", "requirements.yml": "- src: acme/one\n"}
     # The port's ``blob_filter`` reaches git as ``--filter=blob:none``.
     partial = subprocess.run(
-        ["git", "config", "--get", "remote.origin.partialclonefilter"],
-        cwd=bare,
+        ["git", "--git-dir", str(bare), "config", "--get", "remote.origin.partialclonefilter"],
         text=True,
         capture_output=True,
         check=False,

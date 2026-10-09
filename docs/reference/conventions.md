@@ -155,6 +155,8 @@ root rewrites the old token and prints
 ``warning: `me` is deprecated and will be removed in the next major release; use `whoami` ``.
 The old spelling never appears in `--help`. Aliases apply through the
 `untaped` root, so test them with `untaped.testing.invoke_root([...])`.
+A flag deprecated without a new spelling is hidden (`show=False`), starts its
+help with `Deprecated:` and warns when used; the major-release test fails on it.
 
 Command names are kebab-case; use plural nouns for collections. Names are
 free, but a command that writes declares it with `@writes`, or
@@ -234,12 +236,12 @@ free, but a command that writes declares it with `@writes`, or
 ## Enforcement
 
 `untaped.testing.check_conventions(NAME)` runs these checks for one
-capability; each capability's tests call it. Its `import-boundary` rule
-enforces the import rules at the top of this page and in
-[Depending on another capability](#depending-on-another-capability).
-`# untaped: allow <rule>` on the flagged node's first line allows that one
-violation. It does not apply to the default-table-columns rule (see Output
-records).
+capability; each capability's tests call it. `import-boundary` enforces the
+import rules above and in [Depending on another capability](#depending-on-another-capability);
+`terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md));
+the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
+`# untaped: allow <rule>` on the flagged node's first line allows one violation,
+except the default-table-columns and stability rules.
 
 ## Depending on another capability
 
@@ -371,7 +373,6 @@ with dotted paths relative to the section:
 ```python
 renamed_keys: ClassVar[Mapping[str, str]] = {"sweep.sync_concurrency": "sweep.parallel"}
 retired_keys: ClassVar[Mapping[str, str]] = {}
-deprecated_settings: ClassVar[Mapping[str, str]] = {"legacy": "use mode: legacy is ignored"}
 ```
 
 - A key in `renamed_keys`, and its `UNTAPED_*` variable, is read as the new
@@ -380,12 +381,13 @@ deprecated_settings: ClassVar[Mapping[str, str]] = {"legacy": "use mode: legacy 
 - A target is a current setting or another old key, so renames chain; a
   renamed key never points at a retired one. Entries are never deleted and
   old names never reused.
-- A rename keeps the meaning. A change of unit, type or choices is a new key,
-  and the old field becomes a `deprecated_settings` entry, still read with
-  its message as the warning, until the next major release.
+- A rename keeps the meaning. A change of unit, type or choices is a new key;
+  mark the old leaf field `Annotated[bool, deprecated(replacement="mode")]`
+  (outermost `Annotated`; never a model or state field). It is still read,
+  with a warning naming the replacement (a key or prose), until the next major.
 
 Each warning prints once per process. Composition quarantines a provider
-whose declarations break these rules (`bad-settings-keys`).
+whose declarations or marks break these rules (`bad-settings-keys`).
 
 ## SDK stability
 

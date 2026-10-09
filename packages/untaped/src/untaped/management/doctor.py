@@ -36,6 +36,7 @@ from pydantic import BaseModel, ValidationError
 from untaped.capabilities.registry import (
     ApplicationSpec,
     CapabilityContext,
+    CapabilitySpec,
     CompositionResult,
     DoctorCheck,
     DoctorResult,
@@ -76,9 +77,13 @@ from untaped.settings import (
     profile_section_models,
     resolve_config_path,
     resolve_state_path,
+    resolve_with_overlay,
+    section_stabilities,
+    settings_overlay,
 )
 from untaped.skills import SkillState, outdated_skills, project_root
-from untaped.theme import OutputFormat, UiSettings, resolve_theme
+from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
+from untaped.token_store import pass_problem
 
 _PASS = "pass"
 _FAIL = "fail"
@@ -282,18 +287,18 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
             checks=tuple(shell.doctor_checks),
         )
     ]
-    for registered in result.capabilities:
-        spec = registered.spec
-        scopes.append(
-            _SectionScope(
-                capability=spec.name,
-                section=spec.config_section,
-                profile_model=spec.profile_model,
-                state_model=spec.state_model,
-                checks=tuple(spec.doctor_checks),
-            )
-        )
+    scopes.extend(_capability_scope(registered.spec) for registered in result.capabilities)
     return scopes
+
+
+def _capability_scope(spec: CapabilitySpec) -> _SectionScope:
+    return _SectionScope(
+        capability=spec.name,
+        section=spec.config_section,
+        profile_model=spec.profile_model,
+        state_model=spec.state_model,
+        checks=tuple(spec.doctor_checks),
+    )
 
 
 def collect_doctor_rows(
@@ -312,9 +317,7 @@ def collect_doctor_rows(
     raw, config_row = _config_row(shell)
     rows.append(config_row)
     if raw is not None:
-        rows.append(_permissions_row(shell))
-        rows.append(_unknown_keys_row(shell, raw))
-        rows.append(_deprecated_keys_row(shell, raw))
+        rows.extend(_config_file_rows(shell, raw))
     state, state_file_row = _state_file_row(shell)
     rows.append(state_file_row)
     settings_error: str | None = None
@@ -374,6 +377,56 @@ def selected_check_rows(
     ]
 
 
+def online_probe_rows(
+    result: CompositionResult,
+    profile: str,
+    capability: str,
+    values: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """``capability``'s online checks against ``values``, which nothing has written yet.
+
+    ``values`` are candidate settings for the capability's section in
+    ``profile`` (a ``None`` value unsets that key), laid over the loaded config
+    for the duration of the call (:func:`untaped.settings.settings_overlay`);
+    ``profile`` need not exist yet. Only the ``online=True`` checks run: the
+    offline ones (connection settings, the plaintext-token warning) would
+    misreport on candidate values, and there are no state or config-file rows.
+    Settings that do not validate come back as the one failing ``validate
+    settings`` row. Never writes: not the config, not a token store.
+
+    ``setup`` runs this on a worker thread inside a copy of its own context;
+    the overlay lives in that copy only.
+    """
+    spec = next(
+        (
+            registered.spec
+            for registered in result.capabilities
+            if registered.spec.name == capability
+        ),
+        None,
+    )
+    if spec is None:
+        raise ConfigError(f"no composed capability named {capability!r} to check")
+    scope = _capability_scope(spec)
+    with profile_scope(profile), settings_overlay(profile, scope.section, values):
+        settings, error = _validate_section(scope, *_overlaid_effective())
+        if error is not None:
+            return [_row("settings", scope.capability, _FAIL, "validate settings", error)]
+        return [
+            _run_check(scope, check_item, settings, profile=profile)
+            for check_item in scope.checks
+            if check_item.online
+        ]
+
+
+def _overlaid_effective() -> tuple[dict[str, Any] | None, str | None]:
+    """The selected profile's effective values with the overlay over them, or why not."""
+    try:
+        return resolve_with_overlay(read_config_dict()).effective, None
+    except ConfigError as exc:
+        return None, str(exc)
+
+
 def _check_rows(
     contexts: list[tuple[_SectionScope, BaseModel | None]],
     *,
@@ -402,6 +455,40 @@ def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
         detail = f"{path} has mode {mode:04o}; restrict it with `chmod 600 {path}`"
         return _row("config", shell.name, _WARN, title, detail)
     return _row("config", shell.name, _PASS, title, f"mode {mode:04o}")
+
+
+def _config_file_rows(shell: ApplicationSpec, raw: dict[str, Any]) -> list[dict[str, object]]:
+    rows = [
+        _permissions_row(shell),
+        _unknown_keys_row(shell, raw),
+        _deprecated_keys_row(shell, raw),
+    ]
+    if (store_row := _token_store_row(shell, raw)) is not None:
+        rows.append(store_row)
+    return rows
+
+
+def _token_store_row(shell: ApplicationSpec, raw: dict[str, Any]) -> dict[str, object] | None:
+    """Fail when a ``pass`` token command cannot work here (no key, no gpg).
+
+    Only checked once a profile's ``token_command`` runs ``pass``, so
+    installing ``pass`` alone never adds a row.
+    """
+    layout = active_settings_layout()
+    uses_pass = any(
+        isinstance(node, dict)
+        and isinstance(argv := node.get("token_command"), list)
+        and argv
+        and Path(str(argv[0])).name == "pass"
+        for profile in layout.profile_names(raw)
+        for node in (layout.profile_data(raw, profile) or {}).values()
+    )
+    if not uses_pass:
+        return None
+    title = "pass token store"
+    if (problem := pass_problem()) is not None:
+        return _row("config", shell.name, _FAIL, title, problem)
+    return _row("config", shell.name, _PASS, title, "gpg holds a key for the password store")
 
 
 def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
@@ -434,14 +521,15 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
 def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
     """Warn about old keys and deprecated settings in any profile."""
     title = "deprecated config keys"
-    found = scan_keys(raw, profile_section_models())
+    found = scan_keys(raw, profile_section_models(), section_stabilities())
     if not found:
         return _row("deprecated-keys", shell.name, _PASS, title, "no deprecated keys")
     parts = []
     for item in found:
         old = f"{item.section}.{item.old}"
         if item.kind == "deprecated":
-            parts.append(f"{old} (profile {item.profile}, deprecated): {item.message}")
+            advice = f": use {item.message}" if item.message else ""
+            parts.append(f"{old} (profile {item.profile}, deprecated){advice}")
         else:
             retired = ", retired" if item.kind == "retired" else ""
             parts.append(f"{old} (profile {item.profile}{retired}) → {item.section}.{item.new}")
@@ -533,6 +621,7 @@ def _core_row(
         value = check_settings_field(field, effective.get(field))
         if isinstance(value, UiSettings):
             resolve_theme(value)
+            check_declared_tokens(value)
         if isinstance(value, HttpSettings):
             resolve_verify(value)
     except ConfigError as exc:
@@ -660,6 +749,7 @@ def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
 __all__ = [
     "build_root_doctor_app",
     "collect_doctor_rows",
+    "online_probe_rows",
     "report_check_rows",
     "selected_check_rows",
 ]

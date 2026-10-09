@@ -84,8 +84,18 @@ def test_create_reads_clone_urls_from_pipe_records(make_upstream: Callable[..., 
     assert [r["dir"] for r in _rows(created)] == ["web"]
 
 
-def test_create_without_repos_is_usage(workspace_env: Path) -> None:
-    result = run(app, ["create", "J-1"])
+def test_create_without_repos_makes_an_empty_workspace(workspace_env: Path) -> None:
+    created = run(app, ["create", "J-1", "--format", "json"])
+    assert created.exit_code == 0, created.output
+    assert _rows(created) == []
+    assert (workspace_env / "J-1").is_dir()
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None and not record.repos
+
+
+def test_add_without_repos_is_usage() -> None:
+    assert run(app, ["create", "J-1"]).exit_code == 0
+    result = run(app, ["add", "J-1"])
     assert result.exit_code == 2
     assert "--repo" in result.output
 

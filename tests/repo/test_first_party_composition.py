@@ -13,6 +13,8 @@ import pytest
 
 from untaped import bootstrap
 from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
+from untaped.messages import EXPERIMENTAL_LINE
+from untaped.stability import enable_show_deprecated, reset_show_deprecated
 from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -78,3 +80,104 @@ def test_first_party_help_matches_app_summary(
     for spec in first_party_specs:
         assert spec.help is not None, spec.name
         assert spec.help == spec.app_factory().help, spec.name
+
+
+def _panels(text: str) -> dict[str, str]:
+    """``{panel title: panel text}`` of a rendered ``--help``."""
+    panels: dict[str, str] = {}
+    title = ""
+    for line in text.splitlines():
+        if line.startswith("╭"):
+            title = line.strip("╭─ ").split(" ─")[0]
+            panels[title] = ""
+        elif title:
+            panels[title] += line + "\n"
+    return panels
+
+
+def test_experimental_capabilities_sit_in_the_root_experimental_panel(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    result = CliInvoker().invoke(root.meta, ["--help"])
+
+    panels = _panels(result.stdout)
+    assert list(panels)[-2:] == ["Experimental", "Parameters"]
+    assert "Deprecated" not in panels
+    experimental = panels["Experimental"]
+    assert "workspace" in experimental and "dotfiles" in experimental
+    assert "awx" not in experimental
+    assert "workspace" not in panels["Commands"] and "dotfiles" not in panels["Commands"]
+
+
+def test_the_deprecated_flag_adds_the_deprecated_panel_before_parameters(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    panels = _panels(CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout)
+
+    assert list(panels) == ["Commands", "Experimental", "Deprecated", "Parameters"]
+    assert "alias" in panels["Deprecated"] and "alias" not in panels["Commands"]
+
+
+def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visible(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    # Hiding it would let the help-tree and stability walks skip it.
+    assert root["alias"].show is not False
+    completion = root.generate_completion(shell="bash")
+    assert '"alias"' not in completion
+    assert '"config"' in completion
+    token = enable_show_deprecated()
+    try:
+        # The same call lists it once the flag is on, so the check above can fail.
+        assert '"alias"' in root.generate_completion(shell="bash")
+    finally:
+        reset_show_deprecated(token)
+
+
+def test_awx_test_sits_in_awxs_experimental_panel(
+    first_party_candidates: tuple[ProviderCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    panels = _panels(CliInvoker().invoke(root.meta, ["awx", "--help"]).stdout)
+
+    assert list(panels)[:1] == ["Commands"] and list(panels)[-2:] == ["Experimental", "Parameters"]
+    assert panels["Experimental"].split()[1] == "test"
+    assert "test" not in panels["Commands"].split()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["workspace", "--help"],
+        ["workspace", "list", "--help"],
+        ["dotfiles", "--help"],
+        ["dotfiles", "status", "--help"],
+        ["awx", "test", "--help"],
+        ["awx", "test", "run", "--help"],
+    ],
+)
+def test_every_experimental_help_ends_with_the_experimental_line(
+    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    result = CliInvoker().invoke(root.meta, argv)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.rstrip().endswith(EXPERIMENTAL_LINE)
+
+
+@pytest.mark.parametrize("argv", [["awx", "jobs", "list", "--help"], ["awx", "ping", "--help"]])
+def test_stable_commands_do_not_carry_the_experimental_line(
+    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    assert EXPERIMENTAL_LINE not in CliInvoker().invoke(root.meta, argv).stdout

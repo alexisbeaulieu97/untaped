@@ -2,13 +2,20 @@
 
 The picker lists :class:`PickItem` entries, lets the user select several and
 set per-item :class:`PickSetting` values, and returns a :class:`PickResult`.
-Nothing here imports prompt_toolkit; :mod:`untaped.picker.app` does, lazily.
+Nothing here imports prompt_toolkit or Rich: the picker is a screen
+(:mod:`untaped.picker.screen`) that ``UiContext.pick_many`` runs on the screen
+runtime, and its pure reducer is :mod:`untaped.picker.state`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+
+GENERIC_COMMAND = "this command"
+"""What the no-terminal refusal names when a request carries no ``command``."""
+GENERIC_ALTERNATIVE = "its non-interactive options (see --help)"
+"""What the no-terminal refusal offers when a request carries no ``alternative``."""
 
 
 @dataclass(frozen=True)
@@ -60,7 +67,13 @@ class PickRequest:
     (``force=False``) and on ctrl-r (``force=True``); it is never called
     concurrently (ctrl-r is ignored while one runs), but may still be running
     after the picker returns. ``adhoc(query)`` may turn the typed query into
-    an extra item (a URL).
+    an extra item (a URL). ``allow_empty`` lets the user confirm with nothing
+    selected.
+
+    ``command`` and ``alternative`` fill the refusal shown when there is no
+    terminal to draw on (`` `command` needs a terminal; use `alternative` ``);
+    left empty they fall back to a generic message, so a caller that gates on
+    ``can_prompt`` itself can leave them out.
     """
 
     heading: str
@@ -72,6 +85,19 @@ class PickRequest:
     subtitle: Callable[[str, Mapping[str, str]], str] | None = None
     refresh: Callable[[bool], PickCatalog] | None = None
     adhoc: Callable[[str], PickItem | None] | None = None
+    allow_empty: bool = False
+    command: str = ""
+    alternative: str = ""
+
+    @property
+    def terminal_command(self) -> str:
+        """The command the no-terminal refusal names: ``command``, or the generic one."""
+        return self.command or GENERIC_COMMAND
+
+    @property
+    def terminal_alternative(self) -> str:
+        """The alternative that refusal offers: ``alternative``, or the generic one."""
+        return self.alternative or GENERIC_ALTERNATIVE
 
 
 @dataclass(frozen=True)

@@ -45,6 +45,47 @@ def test_public_api_import_does_not_load_prompt_toolkit_or_httpx() -> None:
     assert _loaded_heavy_modules("import untaped.sdk") == ""
 
 
+def test_sdk_import_loads_no_screen_module() -> None:
+    """The screen names are exported lazily: touching one loads core, never the adapter."""
+    snippet = (
+        "import untaped.sdk\n"
+        "eager = [m for m in sys.modules if m.startswith('untaped.screen')]\n"
+        "assert not eager, eager\n"
+        "assert 'Screen' in dir(untaped.sdk)\n"
+        "untaped.sdk.Screen\n"
+        "assert 'untaped.screen.core' in sys.modules\n"
+        "assert 'untaped.screen.terminal' not in sys.modules\n"
+    )
+    assert _loaded_heavy_modules(snippet) == ""
+
+
+def test_screen_components_load_without_the_adapter_or_prompt_toolkit() -> None:
+    """Components are plain Rich and core code: loading them never loads a terminal library."""
+    snippet = (
+        "import untaped.sdk\n"
+        "untaped.sdk.TextInput\n"
+        "untaped.sdk.field_for\n"
+        "assert 'untaped.screen.components.inputs' in sys.modules\n"
+        "assert 'untaped.screen.components.fields' in sys.modules\n"
+        "assert 'untaped.screen.terminal' not in sys.modules\n"
+    )
+    assert _loaded_heavy_modules(snippet) == ""
+    every = (
+        "import untaped.screen.components.inputs, untaped.screen.components.choices, "
+        "untaped.screen.components.tabs, untaped.screen.components.buttons, "
+        "untaped.screen.components.fields\n"
+    )
+    assert "prompt_toolkit" not in _loaded_heavy_modules(every)
+
+
+def test_screen_core_does_not_load_prompt_toolkit() -> None:
+    snippet = (
+        "import untaped.screen.core, untaped.screen.runtime, untaped.screen.color\n"
+        "import untaped.testing.screens\n"
+    )
+    assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
+
+
 def test_building_and_rendering_a_ui_context_does_not_load_prompt_toolkit() -> None:
     snippet = (
         "from untaped.ui import UiContext\n"

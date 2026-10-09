@@ -144,8 +144,8 @@ profile; before any profile exists, only `default` may be named.
 
 `--profile` is a root option and goes anywhere in the command: before the
 capability, between command names (`untaped github --profile work whoami`) or
-after the command. So do `--verbose`/`-v` and `--quiet`/`-q`. Tokens after
-`--` belong to the command and are never read as `untaped` options.
+after the command. So do `--verbose`/`-v`, `--quiet`/`-q` and `--deprecated`.
+Tokens after `--` belong to the command and are never read as `untaped` options.
 
 - `default` is created by the first setting write. Other profiles must exist
   before a write targets them.
@@ -171,9 +171,15 @@ untaped config list --all-profiles
 untaped config get github.token --show-secrets
 untaped config set http.timeout_seconds 60 --dry-run
 untaped --profile prod config unset awx.token
-untaped config set ui.symbols '{"ok": "✓", "fail": "✗"}'
+untaped config set ui.symbols '{"success": "✓", "error": "✗"}'
 untaped config edit
 ```
+
+`config list` prints stable settings first, then experimental ones under an
+`Experimental` heading. A deprecated setting appears under `Deprecated` once
+it is set, as does any setting set under an old name; `untaped --deprecated
+config list` lists them all. `--format json` lists every setting with its
+`stability`.
 
 `config set` validates the value against the setting's type instead of
 parsing it as YAML:
@@ -207,13 +213,17 @@ checked: copy the file over `config.yml` yourself and run `untaped doctor`.
 
 `untaped doctor` checks offline, one row per check: the config and state
 files, the selected profile, every section, unknown keys, renamed, retired or
-deprecated keys in any profile, installed skills and each capability's own
-checks. `--online` also authenticates against each
-configured service. A failed check makes it exit nonzero; a `warn` row does
-not. To write a profile's service settings interactively, see
-[Getting started](./getting-started.md#set-up-your-services).
+deprecated keys in any profile, a `pass` token command that gpg cannot serve
+here, installed skills and each capability's own checks. `--online` also
+authenticates against each configured service. A failed check makes it exit
+nonzero; a `warn` row does not. To write a profile's service settings
+interactively, see [Getting started](./getting-started.md#set-up-your-services).
 
 ## Command aliases
+
+> Deprecated: `untaped alias` and the `shell.aliases` setting are removed in
+> the next major release. Use a shell alias or function instead
+> (`alias failed='untaped awx jobs list --status failed'`).
 
 An alias is a shortcut for a longer command. Put the command after `--`:
 
@@ -255,7 +265,9 @@ untaped --profile work config set http.verify_hostname false
 `http.verify_ssl: false` disables certificate validation; keep it for a
 controlled network. `ui.theme` picks a built-in theme and `ui.format` the
 default `--format`; the [configuration reference](./reference/config.md#root)
-lists every `http.*` and `ui.*` setting.
+lists every `http.*` and `ui.*` setting, including the names `ui.symbols` and
+`ui.color_roles` accept. `config set` and `doctor` reject any other name; a
+stray name already in `config.yml` keeps working.
 
 ## Tokens
 
@@ -271,10 +283,16 @@ untaped auth set awx                  # prompts; or: … | untaped auth set awx 
 argument. It uses the first store that works here: macOS `security` (the login
 keychain), `secret-tool` (a Secret Service such as GNOME Keyring), then `pass`
 (GPG, which works over SSH with gpg-agent; usually what a headless server or
-WSL2 ends up with). `--store` picks one. It hands the token to the store on
-stdin, reads it back, and only then writes `<section>.token_command` (the
-store's read command) in the active profile, removing any plaintext
-`<section>.token`. Run it again to replace a rotated token. The entry is
+WSL2 ends up with; it needs an initialised store, a gpg secret key for it and a
+working pinentry, with `GPG_TTY` set in a terminal). `--store` picks one. Before
+asking for a token (here and in `setup`) it tests the store with a throwaway
+value (`pass`: a gpg encrypt and decrypt, run with your `PASSWORD_STORE_GPG_OPTS`;
+`secret-tool`: a store and read back) and stops with the cause if that fails;
+tokens read later through `pass` report gpg's first error
+and the same fixes. It hands the token to the store on stdin, reads it back, and
+only then writes `<section>.token_command` (the store's read command) in the
+active profile, removing any plaintext `<section>.token`. Run it again to
+replace a rotated token. The entry is
 `<profile>/<section>` under the `untaped` service, so two config files on one
 machine (`UNTAPED_CONFIG`) share it. `untaped auth --help` lists the other
 commands: `migrate` moves every plaintext token, `status` says where each

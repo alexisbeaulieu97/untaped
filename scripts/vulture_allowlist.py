@@ -78,3 +78,5 @@ _typed_options_are_supported
 UiContext.confirm_action  # documented SDK
 _clear_for_tests  # test hook for the composed root
 core_violations  # repo lint of the core commands
+ScreenRun.commands_run  # read by tests that drive screens
+Field.with_error  # the component contract: forms and plugin screens call it on any component

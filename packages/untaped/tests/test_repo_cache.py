@@ -44,6 +44,8 @@ def _git(cwd: Path, *args: str) -> None:
             "commit.gpgsign=false",
             "-c",
             "tag.gpgsign=false",
+            # The suite runs with ``safe.bareRepository=explicit``: name a bare cache.
+            *(["--git-dir", str(cwd)] if (cwd / "HEAD").is_file() else []),
             *args,
         ],
         cwd=cwd,
@@ -164,6 +166,29 @@ def test_ensure_creates_once_and_repoints_origin(tmp_path: Path, origin: Path) -
     assert cache.ensure(str(origin)) is False
     cache.ensure("https://example.invalid/app.git")
     assert cache_origin(cache.path) == "https://example.invalid/app.git"
+
+
+def test_a_cache_works_where_git_refuses_implicit_bare_repositories(
+    tmp_path: Path, origin: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hardened agent shells (GitHub Copilot CLI) inject ``safe.bareRepository=explicit``.
+
+    Git then refuses a bare repository it discovers from ``cwd``; the cache
+    names its git dir explicitly, so it keeps working there.
+    """
+    for key, value in {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "safe.bareRepository",
+        "GIT_CONFIG_VALUE_0": "explicit",
+    }.items():
+        monkeypatch.setenv(key, value)
+    cache = RepoCache(tmp_path / "c" / "app.git", error=_CacheError)
+    assert cache.ensure(f"file://{origin}") is True
+    cache.fetch(["+refs/heads/*:refs/heads/*"], tags=False)
+    assert _refs(cache) == ["refs/heads/main"]
+    worktree = tmp_path / "wt"
+    cache.run(["worktree", "add", "--detach", str(worktree), "main"])
+    assert (worktree / "README.md").read_text() == "hi"
 
 
 def test_fetch_honours_refspecs_tags_and_depth(tmp_path: Path, origin: Path) -> None:

@@ -12,7 +12,7 @@ import respx
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from untaped.app_context import app_context
-from untaped.auth import describe_token_source, resolve_token
+from untaped.auth import describe_token_source, forget_token_command, resolve_token
 from untaped.errors import ConfigError
 from untaped.sdk import TokenCommand, TokenSources, connected_client
 from untaped.settings import (
@@ -83,6 +83,25 @@ def test_command_wins_over_env_and_runs_once_lazily(
     assert again.token is not None
     assert again.token.get_secret_value() == "from-cmd"
     assert log.read_text() == "x"
+
+
+def test_forgetting_a_command_runs_it_again_and_leaves_the_others_cached(tmp_path: Path) -> None:
+    log, other_log = tmp_path / "runs", tmp_path / "other"
+    argv, other = _printer("tok", log=log), _printer("tok", log=other_log)
+
+    def read(command: list[str]) -> str:
+        token = resolve_token(DemoSettings(token_command=command), section="demo").token
+        assert token is not None
+        return token.get_secret_value()
+
+    read(argv), read(other), read(argv)
+    assert (log.read_text(), other_log.read_text()) == ("x", "x")  # cached
+
+    forget_token_command(argv)
+    read(argv), read(other)
+
+    assert (log.read_text(), other_log.read_text()) == ("xx", "x")
+    forget_token_command(["never", "run"])  # an unknown command is nothing to forget
 
 
 @pytest.mark.parametrize(

@@ -40,6 +40,7 @@ from untaped.profile_resolver import selected_profile
 from untaped.records import OutcomeRecord, Record
 from untaped.settings import load_settings_section
 from untaped.shell_settings import ShellProfileSettings, alias_name_error
+from untaped.stability import deprecated
 from untaped.ui import ui_context
 
 _ALIASES_KEY = "shell.aliases"
@@ -73,7 +74,11 @@ class AliasOutcome(OutcomeRecord):
 
 def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
     """Return the root ``alias`` group; ``builtin_for`` names the root command a word selects."""
-    app = create_app(name="alias", help="Manage command aliases (``untaped NAME [ARGS…]``).")
+    app = create_app(
+        name="alias",
+        help="Manage command aliases (``untaped NAME [ARGS…]``).",
+        stability=deprecated(replacement="a shell alias or function"),
+    )
 
     @app.command(name="set")
     @writes

@@ -9,10 +9,12 @@ share one validation.
 from __future__ import annotations
 
 import re
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
 from untaped.messages import q
+from untaped.stability import deprecated
 
 #: An alias name: lowercase letters, digits and dashes, like a command name.
 ALIAS_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -39,7 +41,9 @@ def check_aliases(value: dict[str, list[str]]) -> dict[str, list[str]]:
 class ShellProfileSettings(BaseModel):
     """Shell-level profile-scoped settings (the ``shell`` section)."""
 
-    aliases: dict[str, list[str]] = Field(
+    aliases: Annotated[
+        dict[str, list[str]], deprecated(replacement="a shell alias or function")
+    ] = Field(
         default_factory=dict,
         description="Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. "
         "Managed by `alias` commands.",

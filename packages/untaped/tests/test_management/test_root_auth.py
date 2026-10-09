@@ -289,6 +289,218 @@ def test_an_uninitialised_password_store_is_not_usable(
     assert "no token store is usable" in result.stderr
 
 
+def test_a_password_store_without_a_secret_key_is_not_usable(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "no-secret-key")
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert result.exit_code == 5
+    assert "no token store is usable" in result.stderr
+    assert stores.entries() == {}
+
+
+def test_a_skipped_pass_says_why(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "no-secret-key")
+    result = _auth("set", "svc", "--stdin", input="tok")
+    assert "holds no secret key" in result.stderr and "pass init" in result.stderr
+    assert "pinentry" not in result.stderr
+    forced = _auth("set", "svc", "--stdin", "--store", "pass", input="tok")
+    assert forced.exit_code == 0, "an explicit --store pass skips the key probe"
+
+
+def test_an_explicit_pass_on_an_uninitialised_store_says_so(
+    _isolated_config: Path, stores: FakeStores, tmp_path: Path
+) -> None:
+    (tmp_path / "password-store" / ".gpg-id").unlink()
+    result = _auth("set", "svc", "--stdin", "--store", "pass", input="tok")
+    assert result.exit_code == 5
+    assert "pass: the password store is not initialised" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "gpg_id", ["test@example.com # laptop\n", "# note\n\nother@example.com\ntest@example.com\n"]
+)
+def test_gpg_id_is_read_like_pass_does(
+    _isolated_config: Path, stores: FakeStores, tmp_path: Path, gpg_id: str
+) -> None:
+    (tmp_path / "password-store" / ".gpg-id").write_text(gpg_id, encoding="utf-8")
+    assert token_store.pass_problem() is None
+
+
+def test_pass_without_gpg_is_not_usable(
+    _isolated_config: Path, stores: FakeStores, tmp_path: Path
+) -> None:
+    (tmp_path / "fake-bin" / "gpg").unlink()
+    assert token_store.pass_problem() == "gpg is not installed"
+
+
+def test_a_hung_gpg_probe_is_not_usable(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "hang-gpg")
+    monkeypatch.setattr(token_store, "_PROBE_TIMEOUT_SECONDS", 0.5)
+    assert "did not answer" in (token_store.pass_problem() or "")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 5
+
+
+def test_set_stops_before_the_prompt_when_gpg_cannot_decrypt(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "gpg-roundtrip")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert (
+        "gpg decrypt failed for the pass store: gpg: public key decryption failed" in result.stderr
+    )
+    assert result.stderr.count("decryption failed") == 1 and "pinentry" in result.stderr
+    assert not [c for c in stores.calls() if c["argv"][0] == "pass"], "pass never ran"
+    assert not _isolated_config.exists()
+    _no_leak(result, stores)
+
+
+def test_migrate_stops_before_moving_anything_when_gpg_cannot_decrypt(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _PLAINTEXT)
+    monkeypatch.setenv("STUB_MODE", "gpg-roundtrip")
+    before = _isolated_config.read_text()
+    result = _auth("migrate")
+    assert result.exit_code == 5
+    assert result.stderr.count("pinentry") == 1
+    assert _isolated_config.read_text() == before
+    assert stores.entries() == {}
+    assert _auth("migrate", "--dry-run").exit_code == 0, "a plan needs no preflight"
+
+
+def test_reading_a_pass_token_summarises_gpg_and_hints_once(
+    stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "gpg-decrypt")
+    token = auth.CommandToken(["pass", "show", "untaped/default/svc"], section="svc")
+    with pytest.raises(ConfigError) as caught:
+        token.get_secret_value()
+    assert str(caught.value) == (
+        "svc.token_command: 'pass' exited with status 2: "
+        "gpg: public key decryption failed: No such file or directory"
+    )
+    assert caught.value.hint == auth.PASS_GPG_HINT
+
+
+def test_a_secret_service_that_cannot_store_stops_set_early(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    monkeypatch.setenv("STUB_MODE", "fail")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code != 0
+    assert "'secret-tool' exited with status 1" in result.stderr
+    assert not _isolated_config.exists()
+    assert stores.entries() == {}
+
+
+def test_an_untrusted_key_is_named_with_the_trust_fix(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "untrusted-key")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "gpg encrypt failed for the pass store: gpg: [stdin]: encryption failed" in result.stderr
+    assert "gpg --edit-key" in result.stderr and "pinentry" not in result.stderr
+    assert "set the section's token_command to your own command" in result.stderr
+
+
+def test_the_preflight_runs_gpg_with_the_options_pass_would(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PASSWORD_STORE_GPG_OPTS", "--homedir /elsewhere")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    gpg_calls = [c["argv"] for c in stores.calls() if c["argv"][0] == "gpg"]
+    assert gpg_calls and all(
+        "--homedir" in argv and "--no-encrypt-to" in argv for argv in gpg_calls
+    )
+
+
+def test_a_missing_pass_entry_gets_no_gpg_advice(
+    stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "not-in-store")
+    token = auth.CommandToken(["pass", "show", "untaped/default/nope"], section="svc")
+    with pytest.raises(ConfigError) as caught:
+        token.get_secret_value()
+    assert str(caught.value).endswith("Error: untaped/default/nope is not in the password store.")
+    assert caught.value.hint is None
+    store = token_store.TokenStore("pass")
+    monkeypatch.setenv("STUB_MODE", "protected")
+    with pytest.raises(ConfigError, match="protected entry") as protected:
+        store.delete("default/svc")
+    assert protected.value.hint is None
+
+
+def test_gpg_that_cannot_run_is_reported_with_no_entry_left(
+    stores: FakeStores, tmp_path: Path
+) -> None:
+    (tmp_path / "fake-bin" / "gpg").chmod(0o644)
+    with pytest.raises(ConfigError, match="gpg could not run"):
+        token_store.TokenStore("pass").preflight()
+    assert stores.entries() == {}
+
+
+def test_a_secret_service_that_garbles_the_test_value_is_reported(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    monkeypatch.setenv("STUB_MODE", "corrupt")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "a test value did not read back" in result.stderr
+    assert stores.entries() == {}
+
+
+def test_a_hung_gpg_round_trip_times_out_before_any_token_moves(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "hang-roundtrip")
+    monkeypatch.setattr(token_store, "_ROUND_TRIP_SECONDS", 0.5)
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "gpg encrypt timed out" in result.stderr and "gpgconf --kill" in result.stderr
+    assert not _isolated_config.exists() and stores.entries() == {}
+
+
+def test_a_secret_tool_test_entry_that_cannot_be_removed_is_reported(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    monkeypatch.setenv("STUB_MODE", "no-clear")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "could not remove its test entry" in result.stderr
+    assert not _isolated_config.exists()
+
+
+def test_a_working_secret_service_leaves_no_preflight_entry(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    assert list(stores.entries().values()) == ["tok"]
+
+
+def test_a_pass_that_cannot_decrypt_is_reported_once_with_the_fix(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: old\n")
+    monkeypatch.setenv("STUB_MODE", "gpg-decrypt")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code != 0
+    assert result.stderr.count("decryption failed") == 1, "gpg's repeated stderr is summarised"
+    assert "pinentry" in result.stderr and "GPG_TTY" in result.stderr
+    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {"token": "old"}
+    _no_leak(result, stores)
+
+
 def test_set_in_a_named_profile_names_the_entry_after_it(
     _isolated_config: Path, stores: FakeStores
 ) -> None:
@@ -509,17 +721,18 @@ def test_status_names_every_source_without_running_commands(
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     result = _auth("status", "--format", "json")
     assert result.exit_code == 0, result.output
-    assert stores.calls() == []
-    rows = {(row["profile"], row["section"]): row for row in json.loads(result.stdout)}
+    assert [c["argv"][0] for c in stores.calls()] == ["gpg"], "only the usability probe runs"
+    listed = json.loads(result.stdout)
+    rows = {(row["profile"], row["section"]): row for row in listed}
+    assert len(rows) == len(listed)
     assert rows["default", "svc"]["source"] == "pass (untaped/default/svc)"
     assert rows["default", "other"] == {
         "profile": "default",
         "section": "other",
         "source": "config.yml (plain text)",
-        "set_in": "default",
     }
     assert rows["work", "svc"]["source"] == "token_command"
-    assert rows["work", "other"]["set_in"] == "default"
+    assert ("work", "other") not in rows  # inherited from default, not a separate entry
     assert "token stores usable here: pass" in result.stderr
     assert "plain-secret" not in result.output
 
@@ -527,11 +740,14 @@ def test_status_names_every_source_without_running_commands(
 def test_status_reports_env_sources(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
     install_fake_stores(tmp_path, monkeypatch)
     monkeypatch.setenv("UNTAPED_SVC__TOKEN", "x")
     monkeypatch.setenv("SVC_TOKEN", "y")
     result = _auth("status", "--format", "json")
-    rows = {row["section"]: row for row in json.loads(result.stdout)}
+    listed = json.loads(result.stdout)
+    assert {row["profile"] for row in listed} == {"default"}
+    rows = {row["section"]: row for row in listed}
     assert rows["svc"]["source"] == "$UNTAPED_SVC__TOKEN"
     assert rows["other"]["source"] == "none"
     assert "token stores usable here: none" in result.stderr
@@ -590,6 +806,37 @@ def test_migrate_keeps_a_token_that_fails_and_exits_non_zero(
     assert {row["action"] for row in json.loads(result.stdout)} == {"failed"}
     assert "3 tokens could not be moved" in result.stderr
     assert _config(_isolated_config)["profiles"]["work"]["other"] == {"token": "w-other"}
+
+
+def test_migrate_with_a_pass_that_cannot_decrypt_does_not_flood(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _PLAINTEXT)
+    monkeypatch.setenv("STUB_MODE", "gpg-decrypt")
+    result = _auth("migrate", "--format", "json")
+    assert result.exit_code == 4
+    rows = json.loads(result.stdout)
+    quote = "'pass' exited with status 2: gpg: public key decryption failed: No such file"
+    details = [row["detail"] for row in rows]
+    assert details.count(quote + " or directory") == 2
+    assert sum("would override the token command" in detail for detail in details) == 1
+    assert "gpg:" not in result.stderr, "gpg's own stderr never reaches the terminal"
+    assert result.stderr.count("pinentry") == 1, "the fix is named once, not per token"
+    assert "w-other" in _isolated_config.read_text()
+
+
+def test_migrate_names_no_gpg_fix_for_a_failure_that_is_not_gpg(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    svc:\n      token: d-svc\n"
+        "  my work:\n    svc:\n      token: w-svc\n",
+    )
+    result = _auth("migrate", "--format", "json")
+    assert result.exit_code == 4
+    assert {row["action"] for row in json.loads(result.stdout)} == {"moved", "failed"}
+    assert "pinentry" not in result.stderr and "GPG_TTY" not in result.stderr
 
 
 def test_migrate_without_a_store_changes_nothing(

@@ -8,7 +8,12 @@ from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, TextIO
 
 from untaped.diagnostics import json_diagnostics, write_record
-from untaped.errors import ConfigError, OperationCancelledError, UsageError
+from untaped.errors import (
+    ConfigError,
+    OperationCancelledError,
+    PromptInterruptedError,
+    UsageError,
+)
 from untaped.messages import plural
 from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
@@ -18,7 +23,6 @@ from untaped.prompts import (
     handle_prompt_exception,
     open_controlling_terminal,
     prompt_backend_override,
-    prompt_style_from_roles,
 )
 from untaped.quiet import is_quiet
 from untaped.render import (
@@ -30,6 +34,7 @@ from untaped.render import (
     should_colorize,
     stream_is_tty,
 )
+from untaped.stability import experimental
 from untaped.theme import (
     BUILTIN_THEMES,
     OutputFormat,
@@ -42,6 +47,7 @@ if TYPE_CHECKING:
     from rich.text import Text
 
     from untaped.picker import PickRequest, PickResult
+    from untaped.screen.core import Screen
 
 
 class UiContext:
@@ -82,14 +88,15 @@ class UiContext:
     def prompt_backend(self) -> PromptBackend:
         """The interactive prompt backend, built lazily on first use.
 
-        Constructing the default backend imports ``prompt_toolkit``; deferring
-        it here keeps that cost off any rendering-only or piped invocation that
-        never prompts. An injected backend (tests, alternative frontends) is
-        returned as-is. The default is cached only while its input and error
-        streams remain the same, so reopened terminals never reuse closed streams.
-        A ContextVar override (installed by the test harness
-        via ``untaped.testing``) wins over the lazy default so scripted prompts
-        reach contexts the test never constructed itself.
+        The default backend runs every prompt as a screen on the terminal
+        adapter, which imports ``prompt_toolkit`` only when a prompt runs, so
+        a rendering-only or piped invocation that never prompts pays nothing.
+        Building it here, on first use, keeps it that way. An injected backend
+        (tests, alternative frontends) is returned as-is. The default is cached
+        only while its input and error streams remain the same, so reopened
+        terminals never reuse closed streams. A ContextVar override (installed
+        by the test harness via ``untaped.testing``) wins over the lazy default
+        so scripted prompts reach contexts the test never constructed itself.
         """
         backend = self._prompt_backend
         if backend is not None:
@@ -106,7 +113,7 @@ class UiContext:
         backend = PromptToolkitPromptBackend(
             stdin=self.stdin,
             stderr=self.stderr,
-            style=prompt_style_from_roles(self.theme.color_roles),
+            theme=self.theme,
         )
         self._default_prompt_backend = backend
         return backend
@@ -221,11 +228,11 @@ class UiContext:
 
     def confirm(self, message: str, *, default: bool = False) -> bool:
         """Prompt for a yes/no response."""
-        self._ensure_promptable()
-        try:
-            return self.prompt_backend.confirm(message, default=default)
-        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
-            raise handle_prompt_exception(exc) from exc
+        with self._prompt_terminal():
+            try:
+                return self.prompt_backend.confirm(message, default=default)
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
 
     def confirm_action(
         self,
@@ -277,9 +284,12 @@ class UiContext:
     ) -> Iterator[UiContext]:
         """Point prompts at a terminal for the duration of the block.
 
-        A TTY stdin is used as-is; piped stdin is swapped for the controlling
-        terminal (``/dev/tty``) and restored afterwards. Raises
-        :class:`UsageError` with ``refusal`` when no terminal is available.
+        Gives a prompt its input: a TTY stdin is used as-is; piped stdin is swapped
+        for the controlling terminal (``/dev/tty``) and restored afterwards. The
+        prompts themselves put their frames on a terminal too, even when stderr is
+        redirected. A screen asks for its terminal through :meth:`run` or
+        :meth:`pick_many`. Raises :class:`UsageError` with ``refusal`` when no
+        terminal is available.
         """
         if self.can_prompt:
             yield self
@@ -296,6 +306,106 @@ class UiContext:
             self.stdin = original
             terminal.close()
 
+    @contextmanager
+    def _screen_terminal(self, *, command: str, alternative: str) -> Iterator[UiContext]:
+        """Point a screen at a terminal for the duration of the block.
+
+        What :meth:`run` and :meth:`pick_many` wrap a screen in. Raises
+        :class:`UsageError` naming ``command`` and ``alternative`` when no terminal
+        can be opened (see :meth:`_terminal_streams`).
+        """
+        with self._terminal_streams(refusal=no_terminal_message(command, alternative)):
+            yield self
+
+    @contextmanager
+    def _prompt_terminal(self) -> Iterator[UiContext]:
+        """Point a one-shot prompt at a terminal for the duration of the block.
+
+        stdin must be a terminal already (:meth:`terminal` secures one for piped
+        input) or :class:`UsageError` says so; the frames then go to stderr when it is
+        a terminal and to the controlling terminal when it is redirected, so a prompt
+        never paints into a log (see :meth:`_terminal_streams`).
+        """
+        self._ensure_promptable()
+        with self._terminal_streams(refusal="interactive prompt requires a terminal"):
+            yield self
+
+    @contextmanager
+    def _terminal_streams(self, *, refusal: str) -> Iterator[None]:
+        """The one place a screen or prompt gets its terminal: stdin and stderr, both.
+
+        They are used as they are when both are terminals. Otherwise (piped
+        stdin, redirected stderr) the controlling terminal is opened for input and
+        again for output, swapped in for the block and closed after, so nothing is
+        ever painted into a file. A prompt backend that declares
+        ``needs_terminal = False`` (an optional attribute; the scripted backend does)
+        gets the streams as they are. Raises :class:`UsageError` with ``refusal``
+        when no terminal can be opened.
+        """
+        injected = (
+            self._prompt_backend if self._prompt_backend is not None else prompt_backend_override()
+        )
+        if not getattr(injected, "needs_terminal", True) or (
+            self.can_prompt and stream_is_tty(self.stderr)
+        ):
+            yield
+            return
+        try:
+            terminal_in = open_controlling_terminal()
+        except OSError as exc:
+            raise UsageError(refusal) from exc
+        try:
+            terminal_out = open_controlling_terminal(write=True)
+        except OSError as exc:
+            terminal_in.close()
+            raise UsageError(refusal) from exc
+        original = (self.stdin, self.stderr)
+        self.stdin, self.stderr = terminal_in, terminal_out
+        try:
+            yield
+        finally:
+            self.stdin, self.stderr = original
+            terminal_in.close()
+            terminal_out.close()
+
+    @experimental
+    def require_screen_terminal(self, *, command: str, alternative: str) -> None:
+        """Raise :class:`UsageError` naming ``command`` and ``alternative`` without a terminal.
+
+        For a command that does work before it builds its screen (reading the config, probing
+        a token store): ask first, so a run without a terminal touches nothing. :meth:`run`
+        asks again.
+        """
+        with self._screen_terminal(command=command, alternative=alternative):
+            pass
+
+    @experimental
+    def run[M, R](self, screen: Screen[M, R]) -> R:
+        """Run an interactive screen and return its result.
+
+        The screen draws on the terminal (stdin and stderr when both are
+        terminals, otherwise the controlling terminal), with
+        :class:`UsageError` naming its ``command`` and ``alternative`` when
+        there is none. A prompt backend that declares ``needs_terminal = False``
+        (the scripted backend of :mod:`untaped.testing`, which never touches a
+        terminal) gets the screen without one. A user who quits without a
+        result raises :class:`OperationCancelledError`; an interrupt raises
+        :class:`PromptInterruptedError` (exit 130), like every prompt.
+        """
+        from untaped.screen.core import Quit  # noqa: PLC0415 - keeps screens off the startup path
+
+        with self._screen_terminal(command=screen.command, alternative=screen.alternative):
+            try:
+                # Read inside the block: the default backend is built on the swapped streams.
+                outcome = self.prompt_backend.run_screen(screen, theme=self.theme)
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
+        if isinstance(outcome, Quit):
+            return outcome.result
+        if outcome.interrupted:
+            raise PromptInterruptedError("prompt cancelled")
+        raise OperationCancelledError
+
     def text(
         self,
         message: str,
@@ -304,11 +414,11 @@ class UiContext:
         required: bool = True,
     ) -> str:
         """Prompt for visible text."""
-        self._ensure_promptable()
-        try:
-            value = self.prompt_backend.text(message, default=default)
-        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
-            raise handle_prompt_exception(exc) from exc
+        with self._prompt_terminal():
+            try:
+                value = self.prompt_backend.text(message, default=default)
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
         return self._validate_prompt_text(value, required=required)
 
     def secret(
@@ -319,11 +429,11 @@ class UiContext:
         required: bool = True,
     ) -> str:
         """Prompt for hidden text."""
-        self._ensure_promptable()
-        try:
-            value = self.prompt_backend.secret(message, confirmation=confirmation)
-        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
-            raise handle_prompt_exception(exc) from exc
+        with self._prompt_terminal():
+            try:
+                value = self.prompt_backend.secret(message, confirmation=confirmation)
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
         return self._validate_prompt_text(value, required=required)
 
     def select[T](
@@ -337,10 +447,11 @@ class UiContext:
         """Prompt for one typed choice."""
         self._ensure_promptable()
         self._validate_choices(choices)
-        try:
-            return self.prompt_backend.select(message, choices, default=default, search=search)
-        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
-            raise handle_prompt_exception(exc) from exc
+        with self._prompt_terminal():
+            try:
+                return self.prompt_backend.select(message, choices, default=default, search=search)
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
 
     def multiselect[T](
         self,
@@ -354,34 +465,40 @@ class UiContext:
         self._ensure_promptable()
         self._validate_choices(choices)
         selected_defaults = list(defaults or ())
-        try:
-            values = self.prompt_backend.multiselect(
-                message,
-                choices,
-                defaults=selected_defaults,
-            )
-        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
-            raise handle_prompt_exception(exc) from exc
+        with self._prompt_terminal():
+            try:
+                values = self.prompt_backend.multiselect(
+                    message,
+                    choices,
+                    defaults=selected_defaults,
+                )
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
         if len(values) < min_count:
             raise ConfigError(f"select at least {plural(min_count, 'value')}", category="invalid")
         return values
 
     def pick_many(self, request: PickRequest) -> PickResult:
-        """Run the two-pane multi-select picker.
+        """Run the two-pane multi-select picker, a full-screen screen like every other.
 
-        Raises :class:`OperationCancelledError` when the user quits, and
-        :class:`UsageError` without a TTY on stdin.
+        With piped stdin or a redirected stderr it draws on the controlling
+        terminal (see :meth:`_screen_terminal`). Raises
+        :class:`OperationCancelledError` when the user quits, and
+        :class:`UsageError` naming ``request.command`` and ``request.alternative``
+        (a generic message when unset) when there is no terminal at all.
         """
-        self._ensure_promptable()
         ids = [item.id for item in request.catalog.items]
         if len(set(ids)) != len(ids):
             raise ConfigError(
                 "picker items must have unique ids", category="failed", system="untaped"
             )
-        try:
-            picked = self.prompt_backend.pick_many(request)
-        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
-            raise handle_prompt_exception(exc) from exc
+        with self._screen_terminal(
+            command=request.terminal_command, alternative=request.terminal_alternative
+        ):
+            try:
+                picked = self.prompt_backend.pick_many(request)
+            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+                raise handle_prompt_exception(exc) from exc
         if picked is None:
             raise OperationCancelledError
         return picked
@@ -407,6 +524,11 @@ class UiContext:
             raise ConfigError(
                 "prompt choices must have unique labels", category="failed", system="untaped"
             )
+
+
+def no_terminal_message(command: str, alternative: str) -> str:
+    """The error for a screen with no terminal to draw on: the one place its text lives."""
+    return f"`{command}` needs a terminal; use `{alternative}`"
 
 
 def ui_context(

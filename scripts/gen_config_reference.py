@@ -20,14 +20,19 @@ from __future__ import annotations
 import sys
 import types
 import typing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Literal, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
 from packaging.utils import canonicalize_name
 from pydantic import BaseModel, SecretStr
 from pydantic_core import PydanticUndefined
 from release import packages
+
+from untaped.theme import ROLE_NAMES, SYMBOL_NAMES
+
+if TYPE_CHECKING:
+    from untaped.stability import Stability
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
@@ -49,8 +54,12 @@ DESCRIPTIONS: dict[str, str] = {
     "ui.detail_view": "How a single record renders in `table` format; overrides the theme.",
     "ui.hide_empty_columns": "Leave out `table` columns that are empty on every row "
     "(on unless the theme turns it off); a column named in `--columns` always shows.",
-    "ui.symbols": "Symbol overrides merged over the theme's symbols.",
-    "ui.color_roles": "Color-role overrides merged over the theme's colors.",
+    "ui.symbols": "Symbol overrides merged over the theme's symbols. Names: "
+    + ", ".join(f"`{name}`" for name in SYMBOL_NAMES)
+    + ".",
+    "ui.color_roles": "Color-role overrides merged over the theme's colors. Names: "
+    + ", ".join(f"`{name}`" for name in ROLE_NAMES)
+    + ".",
     "skills.updates": "What each run does when installed agent skills differ from this "
     "version: `warn` (print a warning), `auto` (update them in place), or `off`.",
     "workspace.cache_dir": "Bare-clone cache that workspace worktrees are created from. "
@@ -180,6 +189,8 @@ class Row:
     annotation: Any
     default: Any
     description: str | None
+    mark: Stability | None = None
+    """The setting's own mark, else its capability's."""
 
 
 def _leaf_rows(model: type[BaseModel], prefix: tuple[str, ...]) -> list[Row]:
@@ -255,23 +266,25 @@ def _env_name(key: str) -> str:
     return env_var_name(key.split("."))
 
 
-def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
-    """``(title, prefix, model, is_state)`` for the shell and every first-party capability.
+def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability | None]]:
+    """``(title, prefix, model, is_state, stability)``: the shell and each first-party capability.
 
-    Capabilities follow in name order. Raises :class:`RuntimeError` naming
-    every quarantined first-party capability rather than drop its section.
+    ``stability`` is the owning capability's mark. Capabilities follow in name
+    order. Raises :class:`RuntimeError` naming every quarantined first-party
+    capability rather than drop its section.
     """
     from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
     from untaped.capabilities.registry import compose, discover_candidates  # noqa: PLC0415
     from untaped.settings import Settings  # noqa: PLC0415
 
-    sections: list[tuple[str, str, type[BaseModel], bool]] = [
-        ("Root", "", Settings, False),
+    sections: list[tuple[str, str, type[BaseModel], bool, Stability | None]] = [
+        ("Root", "", Settings, False, None),
         (
             f"`{SHELL_SPEC.config_section}`",
             SHELL_SPEC.config_section,
             SHELL_SPEC.profile_model,
             False,
+            None,
         ),
     ]
     own = packages(REPO_ROOT)
@@ -287,11 +300,23 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool]]:
     for registered in result.capabilities:
         spec = registered.spec
         sections.append(
-            (f"`{spec.config_section}`", spec.config_section, spec.profile_model, False)
+            (
+                f"`{spec.config_section}`",
+                spec.config_section,
+                spec.profile_model,
+                False,
+                spec.stability,
+            )
         )
         if spec.state_model is not None:
             sections.append(
-                (f"`{spec.config_section}` state", spec.config_section, spec.state_model, True)
+                (
+                    f"`{spec.config_section}` state",
+                    spec.config_section,
+                    spec.state_model,
+                    True,
+                    None,
+                )
             )
     return sections
 
@@ -309,17 +334,47 @@ def unknown_descriptions() -> list[str]:
 
 def _all_rows() -> list[Row]:
     rows: list[Row] = []
-    for _, prefix, model, _ in collect_sections():
-        rows.extend(_section_rows(prefix, model))
+    for _, prefix, model, _, stability in collect_sections():
+        rows.extend(_section_rows(prefix, model, stability))
     return rows
 
 
-def _section_rows(prefix: str, model: type[BaseModel]) -> list[Row]:
+def _section_rows(
+    prefix: str, model: type[BaseModel], stability: Stability | None = None
+) -> list[Row]:
+    from untaped.settings import model_sections  # noqa: PLC0415
+    from untaped.stability import setting_mark  # noqa: PLC0415
+
     rows = _leaf_rows(model, (prefix,) if prefix else ())
     if not prefix:
         # Root model: keep the shell's own settings, not the pydantic-settings base.
         rows = [row for row in rows if row.key.split(".")[0] in {"http", "ui", "skills"}]
-    return rows
+    sections = {prefix: model} if prefix else model_sections(model)
+    return [
+        replace(
+            row,
+            mark=setting_mark(
+                row.key,
+                sections=sections,
+                section_stability={name: stability for name in sections},
+            ),
+        )
+        for row in rows
+    ]
+
+
+def _description(row: Row) -> str:
+    """The description cell: the text, then the sentence for a marked setting."""
+    from untaped.messages import EXPERIMENTAL_LINE, deprecated_line  # noqa: PLC0415
+    from untaped.stability import Deprecated, replacement_text  # noqa: PLC0415
+
+    if row.mark is None:
+        return str(row.description)
+    if isinstance(row.mark, Deprecated):
+        line = deprecated_line(replacement_text(row.mark, None))
+    else:
+        line = EXPERIMENTAL_LINE
+    return f"{row.description} {line}"
 
 
 def _renamed_table() -> list[str]:
@@ -328,7 +383,7 @@ def _renamed_table() -> list[str]:
     from untaped.settings import model_sections  # noqa: PLC0415
 
     rows: list[str] = []
-    for _, prefix, model, is_state in collect_sections():
+    for _, prefix, model, is_state, _ in collect_sections():
         if is_state:
             continue
         sections = {prefix: model} if prefix else model_sections(model)
@@ -353,15 +408,17 @@ def _renamed_table() -> list[str]:
 def render() -> str:
     """Return the full Markdown page."""
     parts = [_HEADER]
-    for title, prefix, model, is_state in collect_sections():
-        rows = _section_rows(prefix, model)
+    for title, prefix, model, is_state, stability in collect_sections():
+        rows = _section_rows(prefix, model, stability)
         if not rows:
             continue
         parts.append(f"## {title}\n")
         if is_state:
             parts.append("| Key | Type | Description |\n|---|---|---|")
             for row in rows:
-                parts.append(f"| `{row.key}` | {_type_name(row.annotation)} | {row.description} |")
+                parts.append(
+                    f"| `{row.key}` | {_type_name(row.annotation)} | {_description(row)} |"
+                )
         else:
             parts.append(
                 "| Key | Type | Default | Environment | Description |\n|---|---|---|---|---|"
@@ -369,7 +426,7 @@ def render() -> str:
             for row in rows:
                 parts.append(
                     f"| `{row.key}` | {_type_name(row.annotation)} | {_default_text(row.default)} "
-                    f"| `{_env_name(row.key)}` | {row.description} |"
+                    f"| `{_env_name(row.key)}` | {_description(row)} |"
                 )
         parts.append("")
     parts.extend(_renamed_table())

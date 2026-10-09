@@ -66,8 +66,8 @@ def test_stdin_secret_keeps_hash_and_everything_after_it(_isolated_config: Path)
         ("http.ca_bundle", "/etc/ssl/ca.pem", "/etc/ssl/ca.pem"),
         ("github.mode", "on", "on"),
         ("ui.theme", "high-contrast", "high-contrast"),
-        ("ui.symbols", '{"ok": "Y", "fail": "N"}', {"ok": "Y", "fail": "N"}),
-        ("ui.symbols", "{ok: Y, fail: N}", {"ok": "Y", "fail": "N"}),
+        ("ui.symbols", '{"success": "Y", "error": "N"}', {"success": "Y", "error": "N"}),
+        ("ui.symbols", "{success: Y, error: N}", {"success": "Y", "error": "N"}),
     ],
 )
 def test_set_stores_the_value_for_the_field_type(
@@ -90,6 +90,8 @@ def test_set_stores_the_value_for_the_field_type(
         ("ui.symbols", "[1, 2]", ""),
         ("ui.symbols", "{bad", ""),
         ("ui.symbols", "plain", ""),
+        ("ui.symbols", '{"checkd": "x"}', "checkd"),
+        ("ui.color_roles", '{"screen.acent": "red"}', "screen.accent"),
     ],
 )
 def test_invalid_value_is_rejected_without_writing(
@@ -255,10 +257,10 @@ def test_tables_show_setting_values_verbatim(_isolated_config: Path) -> None:
 
 
 def test_raw_prints_a_mapping_as_json_that_set_accepts(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {ok: Y}\n")
-    assert _invoke(["get", "ui.symbols"]).stdout == '{"ok": "Y"}\n'
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {success: Y}\n")
+    assert _invoke(["get", "ui.symbols"]).stdout == '{"success": "Y"}\n'
     listed = json.loads(_invoke(["get", "ui.symbols", "--format", "json"]).stdout)
-    assert listed["value"] == {"ok": "Y"}
+    assert listed["value"] == {"success": "Y"}
 
 
 def test_secret_stays_masked_in_every_format(_isolated_config: Path) -> None:
@@ -307,30 +309,46 @@ def test_prompt_repairs_key_in_invalid_section(_isolated_config: Path) -> None:
 
 
 def test_get_and_list_render_mapping_settings(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {ok: Y}\n")
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {success: Y}\n")
 
     raw = _invoke(["get", "ui.symbols"])
     assert raw.exit_code == 0, raw.output
-    assert raw.stdout.strip() == '{"ok": "Y"}'
+    assert raw.stdout.strip() == '{"success": "Y"}'
 
     as_json = _invoke(["get", "ui.symbols", "--format", "json"])
-    assert json.loads(as_json.stdout)["value"] == {"ok": "Y"}
+    assert json.loads(as_json.stdout)["value"] == {"success": "Y"}
 
     rows = json.loads(_invoke(["list", "--format", "json"]).stdout)
     symbols = next(row for row in rows if row["key"] == "ui.symbols")
-    assert symbols["value"] == {"ok": "Y"}
+    assert symbols["value"] == {"success": "Y"}
     assert symbols["source"] == "profile:default"
 
     everywhere = json.loads(_invoke(["list", "--all-profiles", "--format", "json"]).stdout)
-    assert {"key": "ui.symbols", "value": {"ok": "Y"}} in [
+    assert {"key": "ui.symbols", "value": {"success": "Y"}} in [
         {"key": row["key"], "value": row["value"]} for row in everywhere
     ]
 
 
 def test_unset_removes_the_whole_mapping(_isolated_config: Path) -> None:
     write_config(
-        _isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {ok: Y, fail: N}\n"
+        _isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {success: Y, error: N}\n"
     )
     result = _invoke(["unset", "ui.symbols"])
     assert result.exit_code == 0, result.output
     assert "symbols" not in (_default_profile(_isolated_config).get("ui") or {})
+
+
+def test_a_stray_ui_symbol_name_does_not_block_writing_another_ui_key(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {zzz: q}\n")
+    result = _invoke(["set", "ui.format", "json"])
+    assert result.exit_code == 0, result.output
+    assert _default_profile(_isolated_config)["ui"] == {"symbols": {"zzz": "q"}, "format": "json"}
+
+
+def test_writing_ui_symbols_still_rejects_a_stray_name(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {zzz: q}\n")
+    result = _invoke(["set", "ui.symbols", '{"zzz":"q"}'])
+    assert result.exit_code != 0
+    assert "unknown name zzz" in result.output

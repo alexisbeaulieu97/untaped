@@ -175,12 +175,20 @@ def test_list_notes_an_old_environment_variable(
     )
 
 
-def test_list_shows_the_note_column_only_when_set(_isolated_config: Path) -> None:
-    assert " note " not in _config("list").stdout.splitlines()[1]
+def test_list_shows_a_value_from_an_old_key_in_the_deprecated_table(
+    _isolated_config: Path,
+) -> None:
+    before = _config("list").stdout
+    assert "Deprecated" not in before
+    assert " note " not in before.splitlines()[1]
 
     write_config(_isolated_config, "profiles:\n  default:\n    renamed:\n      corpus_path: /c\n")
 
-    assert " note " in _config("list").stdout.splitlines()[1]
+    before_heading, _, after_heading = _config("list").stdout.partition("Deprecated\n")
+    assert " note " not in before_heading.splitlines()[1]
+    assert "renamed.cache_dir" not in before_heading
+    assert "renamed.cache_dir" in after_heading
+    assert "from deprecated renamed.corpus_path" in after_heading
 
 
 def test_list_all_profiles_shows_new_names_with_the_note(_isolated_config: Path) -> None:

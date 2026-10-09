@@ -326,3 +326,53 @@ def test_list_table_shows_the_default_columns(_isolated_config: Path) -> None:
     assert result.exit_code == 0, result.output
     header = [cell.strip() for cell in result.stdout.splitlines()[1].strip("│").split("│")]
     assert header == ["name", "command", "profile"]
+
+
+_DEPRECATION = (
+    "is deprecated and will be removed in the next major release; use a shell alias or function"
+)
+
+
+_COMMAND_WARNING = f"warning: `untaped alias` {_DEPRECATION}\n"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("alias", "set", "gb", "--", "config", "list"),
+        ("alias", "list"),
+        ("alias", "remove", "gb", "--yes"),
+    ],
+)
+def test_every_alias_command_warns_once_that_the_command_is_deprecated(
+    _isolated_config: Path, argv: tuple[str, ...]
+) -> None:
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    shell:\n      aliases:\n        gb: [x]\n"
+    )
+    result = _invoke(*argv)
+    assert result.exit_code == 0, result.output
+    assert result.stderr.count(_COMMAND_WARNING) == 1
+
+
+def test_alias_help_and_version_print_no_deprecation_warning(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _CONFIG)
+    for argv in (("alias", "--help"), ("alias", "set", "--help"), ("--version",)):
+        assert "deprecated" not in _invoke(*argv).stderr
+
+
+def test_using_a_stored_alias_warns_once(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _CONFIG)
+    assert _invoke("alias", "set", "gb", "--", "config", "list").exit_code == 0
+    ran = _invoke("gb")
+    assert ran.exit_code == 0, ran.output
+    assert ran.stderr.count(_DEPRECATION) == 1
+    assert f"shell.aliases {_DEPRECATION}" in ran.stderr
+
+
+def test_any_command_warns_once_while_an_alias_is_stored(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _CONFIG)
+    assert "deprecated" not in _invoke("config", "list").stderr
+    assert _invoke("alias", "set", "gb", "--", "config", "list").exit_code == 0
+    listed = _invoke("config", "list")
+    assert listed.stderr.count(f"shell.aliases {_DEPRECATION}") == 1

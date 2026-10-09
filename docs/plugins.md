@@ -199,13 +199,13 @@ Config keys are fully qualified (`acme.greeting`). A capability reads and
 writes only its own section; `http.*` and `ui.*` are shared root settings, and
 `untaped config set` rejects state fields.
 
-The root supplies `--profile`, `--verbose` and `--quiet`. Raise errors inside
-`report_errors()` so the root prints its standard diagnostics and
+The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise
+errors inside `report_errors()` so the root prints its standard diagnostics and
 [exit codes](./reference/exit-codes.md). Give your error classes a `category`
 and `system` (your section name) as class defaults; see
 [Raise with a category](./reference/conventions.md#raise-with-a-category-or-inherit-one).
 [Conventions](./reference/conventions.md) covers flags, messages, exit codes
-and record shapes.
+and record shapes; interactive screens are in [Screens](./screens.md).
 
 A doctor check (`DoctorCheck` on `CapabilitySpec.doctor_checks`) returns a
 `DoctorResult`. Its `fix` is the `untaped` command that repairs a failed or
@@ -215,6 +215,34 @@ supplies as a `<NAME>` placeholder. `doctor` emits it as the row's `fix`
 argv, prefixed with `--profile NAME` unless it names one, so an agent can run
 it as is. Set `automatic=True` only on a fix that meets the rule in the
 `DoctorResult` docstring.
+
+## Experimental and deprecated commands
+
+Mark what is not stable once, where it lives; `untaped` supplies the help
+panel, the last `--help` line, the warning and the checks:
+
+```python
+from untaped.sdk import CapabilitySpec, create_app, deprecated, experimental
+
+SPEC = CapabilitySpec(name="acme", ..., stability=experimental)  # whole capability
+lab = create_app(name="lab", help="Try things.", stability=experimental)  # a group
+
+
+@app.command(name="put")
+@deprecated(replacement=set_command)  # the path follows a rename
+def put_command() -> None: ...
+```
+
+- Mark a capability on its spec, never on its factory's app: a lazy mount reads
+  only the spec.
+- Name the replacement as the function or app, or as text (a command like
+  `"untaped acme set"`, a setting key or prose) when it is in another
+  capability or on a spec. Text must resolve.
+- A deprecated command shows with `untaped --deprecated --help` and warns once
+  per run. `check_conventions` rejects a hand-typed `Experimental:` or
+  `Deprecated:`, a misplaced or redundant mark and a stale replacement.
+- Mark a setting on its field, as `Annotated[int, experimental]`; it
+  inherits its capability's mark, and `config list` lists it apart.
 
 ## Packaged skills
 

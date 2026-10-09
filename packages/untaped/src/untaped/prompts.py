@@ -1,10 +1,10 @@
-"""Typed prompt primitives backed by prompt_toolkit."""
+"""Typed prompt primitives: the backend protocol and the screen-backed default."""
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable, Sequence
-from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
@@ -12,13 +12,9 @@ from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 from untaped.errors import ConfigError, PromptInterruptedError, UntapedError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-    from prompt_toolkit.completion import WordCompleter
-    from prompt_toolkit.formatted_text import AnyFormattedText
-    from prompt_toolkit.styles import Style
-
     from untaped.picker import PickRequest, PickResult
+    from untaped.screen.core import Cancel, Quit, Screen
+    from untaped.theme import ThemeSpec
 
 
 T = TypeVar("T")
@@ -35,7 +31,13 @@ class PromptChoice[T_co]:
 
 
 class PromptBackend(Protocol):
-    """Backend boundary for interactive prompt implementations."""
+    """Backend boundary for interactive prompt implementations.
+
+    A backend may also set ``needs_terminal = False`` (an optional attribute,
+    read with a default of ``True``) to say it never draws on a terminal, so
+    :class:`UiContext` does not look for one before handing it a prompt, a screen
+    (:meth:`UiContext.run`) or a request (:meth:`UiContext.pick_many`).
+    """
 
     def confirm(self, message: str, *, default: bool) -> bool: ...
 
@@ -61,6 +63,10 @@ class PromptBackend(Protocol):
     ) -> list[T]: ...
 
     def pick_many(self, request: PickRequest) -> PickResult | None: ...
+
+    def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
+        """Run ``screen`` and return how it ended (``ui.run`` turns that into a result)."""
+        ...
 
 
 _backend_override: ContextVar[PromptBackend | None] = ContextVar(
@@ -92,17 +98,23 @@ _terminal_override: ContextVar[Callable[[], TextIO] | None] = ContextVar(
 )
 
 
-def open_controlling_terminal() -> TextIO:
+def open_controlling_terminal(*, write: bool = False) -> TextIO:
     """Open the process's controlling terminal for prompting.
 
     Used when stdin carries piped data, so a confirmation can still reach
-    the user. Raises :class:`OSError` when there is no controlling terminal
-    (CI, cron, detached sessions). The test harness installs an override via
-    :func:`set_terminal_override` so tests never touch the real terminal.
+    the user; opened read-only, or with ``write=True`` for drawing on it (a
+    terminal cannot be opened ``r+``, so a screen opens it twice). Raises
+    :class:`OSError` when there is no controlling terminal (CI, cron, detached
+    sessions). The test harness installs an override via
+    :func:`set_terminal_override`, whose handle serves both modes, so tests
+    never touch the real terminal.
     """
     override = _terminal_override.get()
     if override is not None:
         return override()
+    if write:
+        # Never ``O_CREAT``: where there is no terminal this must fail, not create a file.
+        return os.fdopen(os.open(_CONTROLLING_TERMINAL, os.O_WRONLY), "w", encoding="utf-8")
     return open(_CONTROLLING_TERMINAL, encoding="utf-8")
 
 
@@ -119,45 +131,52 @@ def reset_terminal_override(token: Token[Callable[[], TextIO] | None]) -> None:
 
 
 class PromptToolkitPromptBackend:
-    """prompt_toolkit-backed implementation for interactive terminals."""
+    """The interactive backend: every prompt is a screen run on the terminal streams.
+
+    Text, secret, select, multiselect and confirm are the inline screens of
+    :mod:`untaped.screen.prompts`, and :meth:`pick_many` the picker's full-screen
+    one, all run by :meth:`run_screen`. How a screen ends maps onto the line
+    prompts' exceptions: an interrupt raises :class:`KeyboardInterrupt` (exit
+    130 through ``UiContext``) and a cancel raises :class:`EOFError` (exit 1).
+    """
 
     def __init__(
         self,
         *,
         stdin: TextIO | None = None,
         stderr: TextIO | None = None,
-        style: Style | None = None,
+        theme: ThemeSpec | None = None,
     ) -> None:
         self.stdin = stdin or sys.stdin
         self.stderr = stderr or sys.stderr
-        self.style = style
+        self.theme = theme
 
     def confirm(self, message: str, *, default: bool) -> bool:
-        suffix = " [Y/n]: " if default else " [y/N]: "
-        while True:
-            # The buffer starts empty (Enter takes the default): a pre-filled
-            # "n" would turn a typed "y" into "ny" and re-prompt.
-            answer = self._prompt(f"{message}{suffix}", default="").strip().lower()
-            if not answer:
-                return default
-            if answer in {"y", "yes"}:
-                return True
-            if answer in {"n", "no"}:
-                return False
-            self.stderr.write("Please answer y or n.\n")
-            self.stderr.flush()
+        from untaped.screen.prompts import confirm_screen  # noqa: PLC0415
+
+        answer = self._answer(confirm_screen(message, default))
+        self._record(f"{message} {'[Y/n]' if default else '[y/N]'}", "y" if answer else "n")
+        return answer
 
     def text(self, message: str, *, default: str | None) -> str:
-        return self._prompt(f"{message}: ", default=default or "")
+        from untaped.screen.prompts import text_screen  # noqa: PLC0415
+
+        answer = self._answer(text_screen(message, default))
+        self._record(message, answer)
+        return answer
 
     def secret(self, message: str, *, confirmation: bool) -> str:
-        value = self._prompt(f"{message}: ", default="", is_password=True)
-        if not confirmation:
-            return value
-        repeated = self._prompt("Confirm value: ", default="", is_password=True)
-        if value != repeated:
+        from untaped.screen.prompts import secret_screen  # noqa: PLC0415
+
+        value, repeated = self._answer(secret_screen(message, confirmation=confirmation))
+        # The record is the mask, one symbol per character as the old line prompt left it.
+        mask = self._mask()
+        self._record(message, mask * len(value.get_secret_value()))
+        if confirmation:
+            self._record("Confirm value", mask * len(repeated.get_secret_value()))
+        if confirmation and value.get_secret_value() != repeated.get_secret_value():
             raise ConfigError("prompt values did not match", category="invalid")
-        return value
+        return value.get_secret_value()
 
     def select(
         self,
@@ -167,22 +186,14 @@ class PromptToolkitPromptBackend:
         default: T | None,
         search: bool,
     ) -> T:
-        if search:
-            return self._search_select(message, choices, default=default)
-        from prompt_toolkit.shortcuts import choice  # noqa: PLC0415
+        from untaped.screen.prompts import select_screen  # noqa: PLC0415
 
-        options = [
-            (index, _choice_display(choice_item)) for index, choice_item in enumerate(choices)
-        ]
-        default_index = _choice_index(choices, default)
-        with self._app_session():
-            selected_index = choice(
-                message=f"{message}:",
-                options=options,
-                default=default_index,
-                style=self.style,
-            )
-        return choices[selected_index].value
+        # The screen answers with a row's position, so the record names the row chosen even
+        # when two rows share a value.
+        default_row = next((i for i, item in enumerate(choices) if item.value == default), None)
+        index = self._answer(select_screen(message, choices, default_row, search=search))
+        self._record(message, choices[index].label)
+        return choices[index].value
 
     def multiselect(
         self,
@@ -191,124 +202,81 @@ class PromptToolkitPromptBackend:
         *,
         defaults: Sequence[T],
     ) -> list[T]:
-        from prompt_toolkit.shortcuts import checkboxlist_dialog  # noqa: PLC0415
+        from untaped.screen.prompts import multiselect_screen  # noqa: PLC0415
 
-        values = [
-            (index, _choice_display(choice_item)) for index, choice_item in enumerate(choices)
-        ]
-        default_indexes = [
-            index for index, choice_item in enumerate(choices) if choice_item.value in defaults
-        ]
-        with self._app_session():
-            selected_indexes = checkboxlist_dialog(
-                title="Select",
-                text=message,
-                values=values,
-                default_values=default_indexes,
-                style=self.style,
-            ).run()
-        if selected_indexes is None:
-            raise ConfigError("prompt cancelled", category="failed", system="untaped")
-        return [choices[index].value for index in selected_indexes]
+        checked = [i for i, item in enumerate(choices) if item.value in defaults]
+        picked = self._answer(
+            multiselect_screen(message, choices, checked), cancelled=_cancelled_error
+        )
+        self._record(message, ", ".join(choices[index].label for index in picked))
+        return [choices[index].value for index in picked]
 
     def pick_many(self, request: PickRequest) -> PickResult | None:
-        """Run the two-pane picker on this backend's terminal streams."""
-        from prompt_toolkit.input.defaults import create_input  # noqa: PLC0415
-        from prompt_toolkit.output.defaults import create_output  # noqa: PLC0415
+        """Run the two-pane picker as a screen on this backend's terminal streams.
 
-        from untaped.picker.app import run_picker  # noqa: PLC0415
+        Returns ``None`` when the user cancelled; an interrupt raises
+        :class:`KeyboardInterrupt`, which ``UiContext`` maps like every prompt.
+        """
+        from untaped.picker.screen import picker_screen  # noqa: PLC0415
+        from untaped.screen.core import Quit  # noqa: PLC0415
 
-        return run_picker(
-            request,
-            input=create_input(self.stdin),
-            output=create_output(self.stderr),
-            style=self.style,
-        )
+        outcome = self.run_screen(picker_screen(request), theme=self._theme())
+        if isinstance(outcome, Quit):
+            return outcome.result
+        if outcome.interrupted:
+            raise KeyboardInterrupt
+        return None
 
-    def _search_select(
-        self,
-        message: str,
-        choices: Sequence[PromptChoice[T]],
-        *,
-        default: T | None,
-    ) -> T:
-        from prompt_toolkit.completion import WordCompleter  # noqa: PLC0415
+    def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
+        """Run ``screen`` on this backend's terminal streams (input stdin, drawing on stderr)."""
+        from untaped.screen.terminal import run_screen_on  # noqa: PLC0415
 
-        labels = [_choice_display(choice_item) for choice_item in choices]
-        by_label = dict(zip(labels, choices, strict=True))
-        default_index = _choice_index(choices, default)
-        default_label = labels[default_index] if default_index is not None else ""
-        selected_label = self._prompt(
-            f"{message}: ",
-            default=default_label,
-            completer=WordCompleter(labels, ignore_case=True, sentence=True),
-        )
-        choice_item = by_label.get(selected_label)
-        if choice_item is None:
-            raise ConfigError(f"invalid selection: {selected_label}", category="invalid")
-        return choice_item.value
+        return run_screen_on(screen, stdin=self.stdin, stderr=self.stderr, theme=theme)
 
-    def _prompt(
-        self,
-        message: str,
-        *,
-        default: str,
-        is_password: bool = False,
-        completer: WordCompleter | None = None,
-    ) -> str:
-        from prompt_toolkit import PromptSession  # noqa: PLC0415
-        from prompt_toolkit.input.defaults import create_input  # noqa: PLC0415
-        from prompt_toolkit.output.defaults import create_output  # noqa: PLC0415
+    def _theme(self) -> ThemeSpec:
+        from untaped.theme import BUILTIN_THEMES  # noqa: PLC0415
 
-        session: PromptSession[str] = PromptSession(
-            input=create_input(self.stdin),
-            output=create_output(self.stderr),
-            style=self.style,
-            completer=completer,
-        )
-        rendered_message: AnyFormattedText = [("class:prompt", message)]
-        return session.prompt(rendered_message, default=default, is_password=is_password)
+        return self.theme or BUILTIN_THEMES["default"]
 
-    @contextmanager
-    def _app_session(self) -> Iterator[None]:
-        from prompt_toolkit.application.current import create_app_session  # noqa: PLC0415
-        from prompt_toolkit.input.defaults import create_input  # noqa: PLC0415
-        from prompt_toolkit.output.defaults import create_output  # noqa: PLC0415
+    def _mask(self) -> str:
+        from untaped.theme import DEFAULT_SYMBOLS  # noqa: PLC0415
 
-        with create_app_session(
-            input=create_input(self.stdin),
-            output=create_output(self.stderr),
-        ):
-            yield
+        symbols = self._theme().symbols
+        return symbols.get("mask") or DEFAULT_SYMBOLS["mask"]
+
+    def _record(self, question: str, answer: str) -> None:
+        """Print ``<question>: <answer>`` so the scrollback keeps what the erased prompt showed.
+
+        Plain text on the stream the prompt drew on, never through markup; control
+        characters are dropped so an answer cannot move the cursor or recolour the terminal.
+        Only an answered prompt records: a cancel or an interrupt raises before this runs.
+        """
+        line = f"{question}: {answer}"
+        self.stderr.write("".join(ch for ch in line if ch.isprintable()) + "\n")
+        self.stderr.flush()
+
+    def _answer[M, R](
+        self, screen: Screen[M, R], *, cancelled: Callable[[], BaseException] = EOFError
+    ) -> R:
+        """Run a prompt screen and return its answer, or raise how the line prompts ended.
+
+        ``cancelled`` builds the exception for a user who ended it without an answer
+        (``EOFError``, like ctrl-d on a line prompt); an interrupt is always
+        :class:`KeyboardInterrupt`.
+        """
+        from untaped.screen.core import Quit  # noqa: PLC0415
+
+        outcome = self.run_screen(screen, theme=self._theme())
+        if isinstance(outcome, Quit):
+            return outcome.result
+        if outcome.interrupted:
+            raise KeyboardInterrupt
+        raise cancelled()
 
 
-def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
-    """Build a prompt_toolkit style from conservative UI color roles.
-
-    Picker classes are only emitted for roles that resolve to a style, so the
-    picker's own defaults stay in effect for the rest.
-    """
-    from prompt_toolkit.styles import Style  # noqa: PLC0415
-
-    key = _prompt_toolkit_style(color_roles.get("key") or color_roles.get("header"))
-    value = _prompt_toolkit_style(color_roles.get("value"))
-    border = _prompt_toolkit_style(color_roles.get("border"))
-    error = _prompt_toolkit_style(color_roles.get("error"))
-    picker = {
-        **dict.fromkeys(("cursor", "mark", "border.focus", "subtitle"), key),
-        "border": border,
-        "error": error,
-    }
-    return Style.from_dict(
-        {
-            "prompt": key,
-            "input-selection": value,
-            "selected-option": value,
-            "frame.border": border,
-            "dialog.body": "",
-            **{f"picker.{name}": style for name, style in picker.items() if style},
-        }
-    )
+def _cancelled_error() -> ConfigError:
+    """What a prompt ended without an answer is: ``prompt cancelled``, exit 1."""
+    return ConfigError("prompt cancelled", category="failed", system="untaped")
 
 
 def handle_prompt_exception(exc: BaseException) -> UntapedError:
@@ -320,49 +288,7 @@ def handle_prompt_exception(exc: BaseException) -> UntapedError:
     if isinstance(exc, KeyboardInterrupt):
         return PromptInterruptedError("prompt cancelled")
     if isinstance(exc, EOFError):
-        return ConfigError("prompt cancelled", category="failed", system="untaped")
+        return _cancelled_error()
     if isinstance(exc, ConfigError):
         return exc
     raise exc
-
-
-def _choice_display[T](choice_item: PromptChoice[T]) -> str:
-    if choice_item.description:
-        return f"{choice_item.label} - {choice_item.description}"
-    return choice_item.label
-
-
-def _choice_index[T](choices: Sequence[PromptChoice[T]], value: T | None) -> int | None:
-    if value is None:
-        return None
-    return next(
-        (index for index, choice_item in enumerate(choices) if choice_item.value == value),
-        None,
-    )
-
-
-def _prompt_toolkit_style(style: str | None) -> str:
-    if not style:
-        return ""
-    tokens = [_STYLE_TOKENS.get(token, "") for token in style.split()]
-    return " ".join(token for token in tokens if token)
-
-
-_STYLE_TOKENS = {
-    "bold": "bold",
-    "dim": "",
-    "red": "ansired",
-    "green": "ansigreen",
-    "yellow": "ansiyellow",
-    "blue": "ansiblue",
-    "magenta": "ansimagenta",
-    "cyan": "ansicyan",
-    "white": "ansigray",
-    "bright_red": "ansibrightred",
-    "bright_green": "ansibrightgreen",
-    "bright_yellow": "ansibrightyellow",
-    "bright_blue": "ansibrightblue",
-    "bright_magenta": "ansibrightmagenta",
-    "bright_cyan": "ansibrightcyan",
-    "bright_white": "ansiwhite",
-}
