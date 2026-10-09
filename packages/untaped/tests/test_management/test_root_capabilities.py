@@ -1,9 +1,8 @@
-"""Tests for the root ``untaped capabilities`` command (Wave 1.4, spec §7.3).
+"""Tests for the root ``untaped capabilities`` command.
 
 Reports one record per candidate provider — ``name/status/distribution/
 version`` — from the composition outcome, in name order. The listing never
-touches settings, so invalid capability values cannot block it (spec §4
-failure isolation).
+touches settings, so invalid capability values cannot block it.
 """
 
 from __future__ import annotations
@@ -141,7 +140,7 @@ def test_table_headers_name_the_listing_contract() -> None:
 
 
 def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> None:
-    """The §4 isolation case: broken Jira values still list every capability."""
+    """Broken Jira values still list every capability."""
     write_config(
         _isolated_config,
         "profiles:\n  default:\n    jira:\n      timeout: not-a-number\n",

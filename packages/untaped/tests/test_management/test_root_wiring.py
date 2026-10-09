@@ -1,9 +1,9 @@
-"""Integration tests for the Wave 1.4 root management surface.
+"""Integration tests for the root management surface.
 
-The unified root mounts exactly the five management commands (no capability
-subtrees ship in 1.4 — workspace mounts in 1.5), reachable through the
-position-independent root-option dispatch, with the §4 Jira-isolation case
-covered end to end through the real surface.
+The unified root mounts the management commands beside the capabilities,
+reachable through the position-independent root-option dispatch, with the
+Jira-isolation case (broken Jira values block nothing else) covered end to
+end through the real surface.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Tests for the stable provider surface (spec §2)."""
+"""Tests for the stable provider surface."""
 
 from __future__ import annotations
 

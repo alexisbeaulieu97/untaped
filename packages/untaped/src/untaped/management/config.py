@@ -73,7 +73,7 @@ class RootSectionScope:
 
 @dataclass(frozen=True)
 class RootConfigContext:
-    """Root key-resolution rule (spec §4, root half).
+    """Root key-resolution rule.
 
     A fully qualified ``section.key`` resolves against that section's scope:
     a renamed key becomes its new key (with a warning), a retired key and a
