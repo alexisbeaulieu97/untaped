@@ -262,9 +262,19 @@ def _built(dist: Path, stem: str, description: str) -> None:
         (f"{DOCS}/blob/main/a {DOCS}/blob/main/b", f"{DOCS}/blob/v10.1.0/a {DOCS}/blob/v10.1.0/b"),
         (f"[a]({DOCS}#readme)", f"[a]({DOCS}#readme)"),
         (f"[a]({DOCS}/blob/mainline/a.md)", f"[a]({DOCS}/blob/mainline/a.md)"),
+        (f"[a]({DOCS}/blob/main-old/a.md)", f"[a]({DOCS}/blob/main-old/a.md)"),
         ("[a](https://github.com/other/repo/blob/main/a.md)", None),
     ],
-    ids=["blob", "tree", "tree-root", "every-link", "repo-root", "other-branch", "other-repo"],
+    ids=[
+        "blob",
+        "tree",
+        "tree-root",
+        "every-link",
+        "repo-root",
+        "mainline",
+        "main-old",
+        "other-repo",
+    ],
 )
 def test_pin_links_points_this_repositorys_main_links_at_the_tag(
     text: str, expected: str | None
@@ -602,6 +612,16 @@ CHANGELOG = (
     "# Changelog\n\n## Unreleased\n\n- next\n\n## 10.0.0\n\n- Core\n  - **New:** x\n\n"
     "## 9.1.0\n\n- old\n"
 )
+
+
+def test_release_notes_point_main_links_at_the_tag(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "CHANGELOG.md",
+        f"# Changelog\n\n## 10.1.0\n\n- See [docs]({DOCS}/blob/main/docs/a.md).\n",
+    )
+    assert release.release_notes(tmp_path / "CHANGELOG.md", "10.1.0") == (
+        f"- See [docs]({DOCS}/blob/v10.1.0/docs/a.md)."
+    )
 
 
 def test_release_notes_are_the_versions_section(tmp_path: Path) -> None:
