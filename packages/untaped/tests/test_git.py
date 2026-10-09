@@ -733,6 +733,7 @@ def test_transient_classifier(stderr: str, expected: bool) -> None:
             "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote",
             "auth",
         ),
+        ("fatal: unable to get password from user", "auth"),  # git 2.55
         ("fatal: unable to access 'x': The requested URL returned error: 401", "auth"),
         ("fatal: unable to access 'x': The requested URL returned error: 403", "permission"),
         ("fatal: couldn't find remote ref refs/heads/missing", "failed"),
@@ -830,7 +831,8 @@ def test_git_does_not_run_an_inherited_ssh_askpass_for_https_credentials(
     monkeypatch.delenv("GIT_ASKPASS", raising=False)
     server = _unauthorized_http_server()
     try:
-        with pytest.raises(GitCommandError, match="terminal prompts disabled"):
+        # Git reached the credential prompt (wording varies by version), then failed.
+        with pytest.raises(GitCommandError, match=r"(?i)password|username|terminal prompts"):
             run_git(
                 [
                     "-c",
