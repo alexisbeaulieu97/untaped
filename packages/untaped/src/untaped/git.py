@@ -144,6 +144,7 @@ _AUTH_MARKERS = (
     "could not read password",
     "terminal prompts disabled",
     "permission denied (publickey",
+    "host key verification failed",
     "invalid username or password",
     "returned error: 401",
 )
@@ -151,6 +152,17 @@ _PERMISSION_MARKERS = ("returned error: 403",)
 _CREDENTIAL_HINT = (
     "the remote rejected the credentials: check the token (or ssh key) "
     "for this host and its access to the repository"
+)
+# Lowercased stderr fragments of ssh failing where it would have prompted.
+_SSH_MARKERS = (
+    "permission denied (publickey",
+    "host key verification failed",
+    "can't open /dev/tty",
+)
+_SSH_HINT = (
+    "untaped runs git without a terminal, so ssh cannot ask for a key "
+    "passphrase or to trust a new host: load the key into ssh-agent "
+    "(`ssh-add`), or accept the host key once with your own `git fetch`"
 )
 
 
@@ -162,6 +174,14 @@ def credential_failure(stderr: str) -> ErrorCategory | None:
     if any(marker in lowered for marker in _AUTH_MARKERS):
         return ErrorCategory.AUTH
     return None
+
+
+def _failure_hint(stderr: str) -> str | None:
+    """What the user can do about a git failure, from its stderr."""
+    lowered = stderr.lower()
+    if any(marker in lowered for marker in _SSH_MARKERS):
+        return _SSH_HINT
+    return _CREDENTIAL_HINT if credential_failure(stderr) else None
 
 
 def _failure_category(stderr: str) -> ErrorCategory | None:
@@ -343,7 +363,7 @@ def run_git(
                 returncode=result.returncode,
                 stderr=result.stderr,
                 category=_failure_category(result.stderr),
-                hint=_CREDENTIAL_HINT if credential_failure(result.stderr) else None,
+                hint=_failure_hint(result.stderr),
             )
     raise AssertionError("unreachable")  # pragma: no cover
 
