@@ -134,7 +134,7 @@ def reset_terminal_override(token: Token[Callable[[], TextIO] | None]) -> None:
     _terminal_override.reset(token)
 
 
-class PromptToolkitPromptBackend:
+class TerminalPromptBackend:
     """The interactive backend: every prompt is a screen run on the terminal streams.
 
     Text, secret, select, multiselect and confirm are the inline screens of

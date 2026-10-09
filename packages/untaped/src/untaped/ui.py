@@ -19,7 +19,7 @@ from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
-    PromptToolkitPromptBackend,
+    TerminalPromptBackend,
     handle_prompt_exception,
     open_controlling_terminal,
     prompt_backend_override,
@@ -73,7 +73,7 @@ class UiContext:
         self.stdout = stdout or sys.stdout
         self.stderr = stderr or sys.stderr
         self._prompt_backend = prompt_backend
-        self._default_prompt_backend: PromptToolkitPromptBackend | None = None
+        self._default_prompt_backend: TerminalPromptBackend | None = None
 
     @property
     def can_prompt(self) -> bool:
@@ -110,7 +110,7 @@ class UiContext:
         if cached is not None and cached.stdin is self.stdin and cached.stderr is self.stderr:
             return cached
 
-        backend = PromptToolkitPromptBackend(
+        backend = TerminalPromptBackend(
             stdin=self.stdin,
             stderr=self.stderr,
             theme=self.theme,
