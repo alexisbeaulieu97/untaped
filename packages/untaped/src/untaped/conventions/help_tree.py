@@ -34,12 +34,11 @@ from typing import Any
 
 from cyclopts import App
 
+from untaped.capabilities.registry import ROOT_MANAGEMENT_COMMANDS
 from untaped.cli import write_kind
 
 #: Management commands the root app mounts beside the capabilities.
-ROOT_COMMANDS = frozenset(
-    {"config", "profile", "skills", "doctor", "capabilities", "setup", "alias"}
-)
+ROOT_COMMANDS = frozenset(ROOT_MANAGEMENT_COMMANDS)
 
 RESERVED_SHORTS = {
     "-f": "--format",
