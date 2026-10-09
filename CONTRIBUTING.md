@@ -180,9 +180,8 @@ one entry: the sentence, wrapped at 78 columns (the bullet adds two; only a
 line holding one longer token, such as a URL, may exceed it), with no leading
 `- `, heading or blank line. A breaking change keeps the
 `**Breaking (scope):**` prefix and comes with an `upgrading` fragment saying
-what a user or script must do. Two
-user-visible changes are two fragments; a change to something still
-unreleased edits its fragment.
+what a user or script must do. Two user-visible changes are two fragments; a
+change to something still unreleased edits its fragment.
 
 ```text
 changelog.d/doctor-fix.added.md:
