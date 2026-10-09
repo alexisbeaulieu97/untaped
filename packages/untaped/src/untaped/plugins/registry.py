@@ -21,7 +21,6 @@ from functools import cached_property
 from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
-from typing import Protocol
 
 from cyclopts import App
 from packaging.markers import UndefinedEnvironmentName
@@ -70,12 +69,6 @@ RESERVED_COMMAND_GROUPS = frozenset(
         "contracts",
     }
 )
-
-
-class PluginProvider(Protocol):
-    """Entry-point contract: a nullary callable returning a ``PluginSpec``."""
-
-    def __call__(self) -> PluginSpec: ...
 
 
 @dataclass(frozen=True)
@@ -139,9 +132,6 @@ class DoctorResult:
 class PluginContext:
     """Frozen per-invocation snapshot handed to a doctor-check body (spec §3)."""
 
-    plugin: str
-    settings_fields: frozenset[str]
-    state_fields: frozenset[str]
     settings: BaseModel | None
 
 

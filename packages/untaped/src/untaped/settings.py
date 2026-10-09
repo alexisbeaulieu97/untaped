@@ -382,8 +382,14 @@ def _warn_use(use: KeyUse, *, section: str) -> None:
 
 
 def env_var_name(path: Iterable[str]) -> str:
-    """The ``UNTAPED_*`` variable that sets the setting at ``path`` (``("github", "token")``)."""
-    return "UNTAPED_" + "__".join(path).upper()
+    """The ``UNTAPED_*`` variable that sets the setting at ``path`` (``("github", "token")``).
+
+    The one place an environment name is built. A hyphen becomes an
+    underscore, as in the plugin's import package (``acme-tools`` reads
+    ``UNTAPED_ACME_TOOLS__KEY``): plugin names hold no ``_``, so the
+    spelling stays unambiguous, and ``__`` stays the nesting delimiter.
+    """
+    return "UNTAPED_" + "__".join(part.replace("-", "_") for part in path).upper()
 
 
 def _env_name(section: str, key: str) -> str:
@@ -398,7 +404,7 @@ def _env_is_set(name: str) -> bool:
 def _env_spelling(section: str, key: str) -> str:
     """How the environment spells ``key``: its variable when set, else a key in the JSON blob."""
     name = _env_name(section, key)
-    return name if _env_is_set(name) else f"{key} in UNTAPED_{section.upper()}"
+    return name if _env_is_set(name) else f"{key} in {env_var_name([section])}"
 
 
 class _RenamingEnvSource(EnvSettingsSource):
@@ -408,6 +414,26 @@ class _RenamingEnvSource(EnvSettingsSource):
     variables (and an ``UNTAPED_<SECTION>`` JSON blob) without checking the
     inner names, so old names arrive here and are renamed like YAML keys.
     """
+
+    def _load_env_vars(self) -> Mapping[str, str | None]:
+        """The environment, with a hyphenated section's variables under its field name.
+
+        pydantic-settings looks a section up by its field name, so
+        ``UNTAPED_ACME_TOOLS__KEY`` (see :func:`env_var_name`) is read as
+        ``UNTAPED_ACME-TOOLS__KEY``.
+        """
+        env_vars = dict(super()._load_env_vars())
+        for section in self.settings_cls.model_fields:
+            if "-" not in section:
+                continue
+            spelled = env_var_name([section])
+            field = f"{self.env_prefix}{section}"
+            if not self.case_sensitive:
+                spelled, field = spelled.lower(), field.lower()
+            moved = [key for key in env_vars if key.partition("__")[0] == spelled]
+            for key in moved:
+                env_vars[field + key[len(spelled) :]] = env_vars.pop(key)
+        return env_vars
 
     def __call__(self) -> dict[str, Any]:
         data = super().__call__()

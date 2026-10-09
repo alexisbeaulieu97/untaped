@@ -41,7 +41,12 @@ from untaped.errors import (
 )
 from untaped.messages import command_line
 from untaped.redaction import redact_url_password
-from untaped.settings import HttpSettings, load_settings_section, registered_profile_model
+from untaped.settings import (
+    HttpSettings,
+    env_var_name,
+    load_settings_section,
+    registered_profile_model,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -479,7 +484,7 @@ def missing_setting_error(
         else f"`untaped config set {section}.{name} <{name.rsplit('_', maxsplit=1)[-1]}>`"
         for name in fields
     ]
-    env_vars = [f"UNTAPED_{section.upper()}__{name.upper()}" for name in fields]
+    env_vars = [env_var_name([section, name]) for name in fields]
     if len(fields) == 1:
         return ConfigError(
             f"{keys[0]} is not configured",

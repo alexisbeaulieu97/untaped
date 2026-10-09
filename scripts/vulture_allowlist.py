@@ -75,7 +75,6 @@ _plain_mapping_options_are_supported  # TYPE_CHECKING type probes
 _typed_options_are_supported
 
 # SDK and repo checks that only tests call.
-PluginContext.settings_fields  # documented SDK: read by plugin doctor checks
 UiContext.confirm_action  # documented SDK
 _clear_for_tests  # test hook for the composed root
 core_violations  # repo lint of the core commands
