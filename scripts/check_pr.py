@@ -14,10 +14,8 @@ not a merge. CI checks out with full history.
   fragment in ``changelog.d/``, or its ``Changelog:`` line reads
   ``none, <why>``.
 - A fragment that is ``**Breaking`` comes with an ``upgrading`` fragment.
-- Only a release PR (one that changes the ``untaped`` package version) or a
-  PR that moves an ``## Unreleased`` section into fragments (the one-off
-  migration to fragments) edits ``CHANGELOG.md`` or ``changelog/``. A release PR
-  leaves no fragment behind.
+- Only a release PR (one that changes the ``untaped`` package version) edits
+  ``CHANGELOG.md`` or ``changelog/``. A release PR leaves no fragment behind.
 
 Every failure prints one line on stderr and exits 1.
 """
@@ -68,15 +66,12 @@ def problems(
     fragments: Mapping[str, str],
     *,
     release: bool = False,
-    migration: bool = False,
     leftover: Sequence[str] = (),
 ) -> list[str]:
     """Every reason the PR fails its checks (empty when it passes).
 
     ``fragments`` maps each fragment the PR adds or changes to its text; ``leftover`` lists the
-    fragments still in ``changelog.d/`` at the PR's head; ``release`` says it is a release PR and
-    ``migration`` that the base still has ``## Unreleased`` in CHANGELOG.md (the PR that
-    introduced fragments; no later base has it).
+    fragments still in ``changelog.d/`` at the PR's head; ``release`` says it is a release PR.
     """
     answers = drift_review(body)
     if answers is None:
@@ -101,7 +96,7 @@ def problems(
             "a user or script must do about it"
         )
     edited = [p for p in changed if p == "CHANGELOG.md" or p.startswith("changelog/")]
-    if edited and not (release or migration):
+    if edited and not release:
         found.append(
             f"{edited[0]} changed outside a release PR: add a fragment in changelog.d/ instead"
         )
@@ -130,7 +125,6 @@ def main(argv: Sequence[str]) -> int:
         merge = len(_git("rev-list", "--parents", "-n", "1", "HEAD").split()) == 3
         base = "HEAD^1" if merge else _git("merge-base", pull["base"]["sha"], "HEAD").strip()
         changed = _git("diff", "--name-only", base, "HEAD").split()
-        base_changelog = _git("show", f"{base}:CHANGELOG.md")
         base_version = _package_version(_git("show", f"{base}:{_PACKAGE}"))
     except GitCommandError as exc:
         print(f"check_pr: {exc}", file=sys.stderr)
@@ -146,7 +140,6 @@ def main(argv: Sequence[str]) -> int:
         changed,
         fragments,
         release=head_version != base_version,
-        migration=bool(re.search(r"^## Unreleased\b", base_changelog, re.M)),
         leftover=changelog.fragment_paths(Path()),
     )
     for problem in found:
