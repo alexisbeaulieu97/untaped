@@ -372,8 +372,8 @@ def _fake_git_with_helper(
 
     On SIGTERM it removes its lock file, as git does; the helper ignores
     SIGTERM unless told otherwise, so only SIGKILL (or SIGINT) stops it.
-    Once both are in place, the helper started up too, it writes ``ready``:
-    a Python helper interrupted mid-startup can swallow its KeyboardInterrupt.
+    It writes ``ready`` once the lock exists and the helper has started up
+    (a Python helper interrupted mid-startup can swallow its KeyboardInterrupt).
     """
     ignore = "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if helper_ignores_term else ""
     helper_pid = tmp_path / "helper.pid"
@@ -599,7 +599,7 @@ def test_a_signal_forwarded_while_git_starts_still_reaches_it(
         process = real_popen(*args, **kwargs)
         if kwargs.get("start_new_session"):
             _wait_for(tmp_path / "ready")
-            git._FORWARDED.append(signal.SIGTERM)  # forwarded before registration
+            git._forward_signal(lambda *_: None, signal.SIGTERM, None)  # before registration
         return process
 
     monkeypatch.setattr(git.subprocess, "Popen", popen)
@@ -607,6 +607,50 @@ def test_a_signal_forwarded_while_git_starts_still_reaches_it(
     with pytest.raises(GitCommandError, match="failed"):
         run_git(["fetch"], timeout=30, git=str(script))
     assert time.monotonic() - started < 15, "git ran on until its timeout"
+
+
+def test_a_signal_that_ends_untaped_waits_for_a_git_being_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signalled: list[tuple[int, int]] = []
+    monkeypatch.setattr(git, "_signal_group", lambda pgid, sig: signalled.append((pgid, sig)))
+    monkeypatch.setattr(git, "_LIVE_GROUPS", {})
+    monkeypatch.setattr(git, "_SPAWNING", [1])  # another thread is forking git
+    monkeypatch.setattr(git.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(git.os, "kill", lambda *_: None)
+
+    def exit_(status: int) -> None:
+        raise SystemExit(status)
+
+    monkeypatch.setattr(git.os, "_exit", exit_)
+
+    def register() -> None:
+        time.sleep(0.1)
+        git._LIVE_GROUPS[4242] = None
+        git._SPAWNING[0] = 0
+
+    threading.Thread(target=register).start()
+    with pytest.raises(SystemExit):
+        git._forward_signal(signal.SIG_DFL, signal.SIGTERM, None)
+
+    assert (4242, signal.SIGTERM) in signalled
+
+
+def test_a_git_that_cannot_start_is_not_left_counted_as_starting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(git, "_SPAWNING", [0])
+
+    def no_exec(*_: Any, **kwargs: Any) -> None:
+        if kwargs.get("start_new_session"):
+            raise OSError("exec format error")
+        return real_popen(*_, **kwargs)
+
+    real_popen = subprocess.Popen
+    monkeypatch.setattr(git.subprocess, "Popen", no_exec)
+    with pytest.raises(GitCommandError, match="could not run"):
+        run_git(["status"], timeout=5, batch_ssh=False)
+    assert git._SPAWNING == [0]
 
 
 def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -733,7 +777,8 @@ def test_transient_classifier(stderr: str, expected: bool) -> None:
             "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote",
             "auth",
         ),
-        ("fatal: unable to get password from user", "auth"),  # git 2.55
+        # credential.interactive=never (git >= 2.46)
+        ("fatal: unable to get password from user", "auth"),
         ("fatal: unable to access 'x': The requested URL returned error: 401", "auth"),
         ("fatal: unable to access 'x': The requested URL returned error: 403", "permission"),
         ("fatal: couldn't find remote ref refs/heads/missing", "failed"),
@@ -831,14 +876,15 @@ def test_git_does_not_run_an_inherited_ssh_askpass_for_https_credentials(
     monkeypatch.delenv("GIT_ASKPASS", raising=False)
     server = _unauthorized_http_server()
     try:
-        # Git reached the credential prompt (wording varies by version), then failed.
-        with pytest.raises(GitCommandError, match=r"(?i)password|username|terminal prompts"):
+        with pytest.raises(GitCommandError, match="terminal prompts disabled"):
             run_git(
                 [
                     "-c",
                     "credential.helper=",
                     "-c",
                     "http.proxy=",  # reach the server even behind a configured proxy
+                    "-c",
+                    "credential.interactive=true",  # git >= 2.46: undo conftest's "never"
                     "ls-remote",
                     f"http://127.0.0.1:{server.server_port}/r",
                 ],

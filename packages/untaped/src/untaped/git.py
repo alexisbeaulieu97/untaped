@@ -24,6 +24,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -76,6 +77,11 @@ _TERM_GRACE_S = 2.0
 _LIVE_GROUPS: dict[int, None] = {}
 # Signals forward_signals() passed on, for a group registered just after one.
 _FORWARDED: list[int] = []
+# Git commands forked but not yet in _LIVE_GROUPS, for a signal that ends untaped.
+_SPAWNING = [0]
+_SPAWNING_LOCK = threading.Lock()
+# How long a signal that ends untaped waits for those to register.
+_SPAWN_WAIT_S = 1.0
 _REDACTED = "<redacted>"
 _LOG = logging.getLogger("untaped.git")
 # ``scheme://user[:password]@``: the whole userinfo can be a token.
@@ -408,17 +414,24 @@ def _run_process(
     untaped's own process group reach git only through :func:`forward_signals`.
     """
     forwarded = len(_FORWARDED)
-    with subprocess.Popen(
-        cmd,
-        cwd=cwd,
-        env=env,
-        stdin=subprocess.PIPE if input is not None else stdin,
-        stdout=stdout,
-        stderr=stderr,
-        start_new_session=True,
-    ) as process:
+    _count_spawning(1)
+    try:
+        process = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.PIPE if input is not None else stdin,
+            stdout=stdout,
+            stderr=stderr,
+            start_new_session=True,
+        )
+    except BaseException:
+        _count_spawning(-1)
+        raise
+    with process:
         try:
             _LIVE_GROUPS[process.pid] = None
+            _count_spawning(-1)
             # A signal forwarded between Popen and registration missed this group.
             for sig in _FORWARDED[forwarded:]:
                 _signal_group(process.pid, sig)
@@ -429,6 +442,11 @@ def _run_process(
         finally:
             _LIVE_GROUPS.pop(process.pid, None)
     return subprocess.CompletedProcess(cmd, process.returncode, out, err)
+
+
+def _count_spawning(delta: int) -> None:
+    with _SPAWNING_LOCK:
+        _SPAWNING[0] += delta
 
 
 def _stop_group(process: subprocess.Popen[bytes]) -> None:
@@ -486,6 +504,12 @@ def _forward_signal(previous: Callable[..., object] | int, signum: int, frame: o
     if callable(previous):
         previous(signum, frame)
     else:  # SIG_DFL: die of the signal, as untaped did before
+        # A git another thread is starting would outlive untaped: let it register.
+        deadline = time.monotonic() + _SPAWN_WAIT_S
+        while _SPAWNING[0] > 0 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        for pgid in list(_LIVE_GROUPS):
+            _signal_group(pgid, signum)
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
         os._exit(128 + signum)  # still here: PID 1 ignores its own default signals
