@@ -1,4 +1,4 @@
 **Breaking (git):** Git commands that `untaped` runs no longer have the
-terminal, so an ssh command you configured yourself that asks for a key
-passphrase or to trust a new host fails, with a hint naming the fix, instead
-of prompting. Git you run yourself is unaffected.
+terminal or a graphical ssh prompt, so an ssh key passphrase or a new host
+key fails, with a hint naming the fix, instead of prompting. Git you run
+yourself is unaffected.

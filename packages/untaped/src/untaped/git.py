@@ -156,8 +156,15 @@ _CREDENTIAL_HINT = (
 )
 # Lowercased stderr fragments of ssh failing where it would have prompted;
 # a host key that changed is never one to accept from a hint.
-_SSH_PROMPT_MARKERS = ("can't open /dev/tty", "host key verification failed")
-_CHANGED_HOST_KEY = "remote host identification has changed"
+_SSH_PROMPT_MARKERS = ("host key verification failed", "ssh_askpass:")
+_UNTRUSTED_HOST_KEY = ("remote host identification has changed", "revoked host key")
+# ssh reports a passphrase it could not ask for only as a refused key.
+_SSH_KEY_REFUSED = "permission denied (publickey"
+_SSH_KEY_HINT = (
+    "the remote refused the ssh key: check the key's access to the repository; "
+    "untaped runs git without a terminal, so a key with a passphrase must be "
+    "loaded into ssh-agent (`ssh-add`)"
+)
 _SSH_HINT = (
     "untaped runs git without a terminal, so ssh cannot ask for a key "
     "passphrase or to trust a new host: load the key into ssh-agent "
@@ -178,8 +185,12 @@ def credential_failure(stderr: str) -> ErrorCategory | None:
 def _failure_hint(stderr: str) -> str | None:
     """What the user can do about a git failure, from its stderr."""
     lowered = stderr.lower()
-    if _CHANGED_HOST_KEY not in lowered and any(m in lowered for m in _SSH_PROMPT_MARKERS):
+    if any(m in lowered for m in _UNTRUSTED_HOST_KEY):
+        return None  # never a key to accept on a hint's say-so
+    if any(m in lowered for m in _SSH_PROMPT_MARKERS):
         return _SSH_HINT
+    if _SSH_KEY_REFUSED in lowered:
+        return _SSH_KEY_HINT
     return _CREDENTIAL_HINT if credential_failure(stderr) else None
 
 
@@ -247,6 +258,8 @@ def git_env(
         env.pop(name, None)
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GCM_INTERACTIVE"] = "never"
+    # Without a terminal, ssh would fall back to a graphical askpass prompt.
+    env.setdefault("SSH_ASKPASS_REQUIRE", "never")
     if locale_c:
         env["LC_ALL"] = "C"
         env["LANGUAGE"] = "C"
@@ -396,8 +409,8 @@ def _run_process(
         stderr=stderr,
         start_new_session=True,
     ) as process:
-        _LIVE_GROUPS[process.pid] = None
         try:
+            _LIVE_GROUPS[process.pid] = None
             out, err = process.communicate(input, timeout=timeout)
         except BaseException:
             _stop_group(process)
@@ -409,6 +422,9 @@ def _run_process(
 
 def _stop_group(process: subprocess.Popen[bytes]) -> None:
     """SIGTERM the process group led by ``process``, wait for it to empty, then SIGKILL it."""
+    if not hasattr(os, "killpg"):  # no process groups (Windows)
+        process.kill()
+        return
     deadline = time.monotonic() + _TERM_GRACE_S
     alive = _signal_group(process.pid, signal.SIGTERM)
     try:
@@ -443,6 +459,8 @@ def forward_signals() -> None:
     once, from the main thread; the previous handler then runs as before, and
     a signal untaped ignores stays ignored.
     """
+    if not hasattr(os, "killpg"):
+        return  # no process groups (Windows)
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         previous = signal.getsignal(sig)
         if previous is None or previous == signal.SIG_IGN:
@@ -458,6 +476,7 @@ def _forward_signal(previous: Callable[..., object] | int, signum: int, frame: o
     else:  # SIG_DFL: die of the signal, as untaped did before
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
+        os._exit(128 + signum)  # still here: PID 1 ignores its own default signals
 
 
 def git_toplevel(path: Path, *, git: str = "git", timeout: float = 30.0) -> Path | None:

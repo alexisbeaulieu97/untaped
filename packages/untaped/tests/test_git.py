@@ -466,6 +466,8 @@ def _wait_for(path: Path, seconds: float = 10.0) -> None:
 @pytest.fixture
 def restore_signal_handlers() -> Iterator[None]:
     saved = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+    # A background or nohup run inherits SIG_IGN, which forward_signals leaves alone.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
     yield
     for sig, handler in saved.items():
         signal.signal(sig, handler)
@@ -510,7 +512,9 @@ def test_a_signal_that_ends_untaped_reaches_git(tmp_path: Path, sig: str) -> Non
         [
             sys.executable,
             "-c",
+            "import signal\n"
             "from untaped.git import forward_signals, run_git\n"
+            f"signal.signal(signal.{sig}, signal.SIG_DFL)\n"
             "forward_signals()\n"
             f"run_git(['fetch'], timeout=30, git={str(script)!r})\n",
         ],
@@ -672,15 +676,24 @@ def test_a_rejected_credential_is_an_environment_failure(
 
 
 @pytest.mark.parametrize(
-    "stderr",
+    ("stderr", "fix"),
     [
-        "Host key verification failed.\nfatal: Could not read from remote repository.",
-        "read_passphrase: can't open /dev/tty: No such device or address\n"
-        "git@github.com: Permission denied (publickey).",
+        # A host it would have asked to trust.
+        (
+            "Host key verification failed.\nfatal: Could not read from remote repository.",
+            "git fetch",
+        ),
+        # A desktop with DISPLAY set but no askpass program.
+        ("ssh_askpass: exec(/usr/bin/ssh-askpass): No such file or directory\n", "ssh-agent"),
+        # ssh says nothing about the passphrase it could not ask for.
+        (
+            "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote",
+            "ssh-agent",
+        ),
     ],
 )
-def test_an_ssh_prompt_failure_says_git_has_no_terminal(
-    monkeypatch: pytest.MonkeyPatch, stderr: str
+def test_an_ssh_failure_says_git_has_no_terminal(
+    monkeypatch: pytest.MonkeyPatch, stderr: str, fix: str
 ) -> None:
     monkeypatch.setattr(git, "_run_process", _scripted_run([(128, stderr)], []))
 
@@ -689,29 +702,30 @@ def test_an_ssh_prompt_failure_says_git_has_no_terminal(
 
     assert excinfo.value.hint is not None
     assert "without a terminal" in excinfo.value.hint
-    assert "ssh-agent" in excinfo.value.hint
-    assert "git fetch" in excinfo.value.hint
+    assert fix in excinfo.value.hint
 
 
 @pytest.mark.parametrize(
-    "stderr",
-    [
-        # The key is simply not authorized: no prompt was missed.
-        "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote",
-        # A changed host key must never be accepted on a hint's say-so.
-        "@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@\n"
-        "Host key verification failed.\nfatal: Could not read from remote repository.",
-    ],
+    "banner",
+    ["WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!", "WARNING: REVOKED HOST KEY DETECTED!"],
 )
-def test_other_ssh_failures_do_not_blame_the_missing_terminal(
-    monkeypatch: pytest.MonkeyPatch, stderr: str
+def test_an_untrusted_host_key_gets_no_hint_to_accept_it(
+    monkeypatch: pytest.MonkeyPatch, banner: str
 ) -> None:
+    stderr = f"@@@ {banner} @@@\nHost key verification failed.\nfatal: Could not read"
     monkeypatch.setattr(git, "_run_process", _scripted_run([(128, stderr)], []))
 
     with pytest.raises(GitCommandError) as excinfo:
         run_git(["fetch"], timeout=5)
 
-    assert "without a terminal" not in (excinfo.value.hint or "")
+    assert excinfo.value.hint is None
+
+
+def test_ssh_never_falls_back_to_a_graphical_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SSH_ASKPASS_REQUIRE", raising=False)
+    assert git_env(batch_ssh=False)["SSH_ASKPASS_REQUIRE"] == "never"
+    monkeypatch.setenv("SSH_ASKPASS_REQUIRE", "force")
+    assert git_env(batch_ssh=False)["SSH_ASKPASS_REQUIRE"] == "force"
 
 
 # ── path segments ────────────────────────────────────────────────────────────
