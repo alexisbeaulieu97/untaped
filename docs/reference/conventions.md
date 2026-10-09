@@ -203,9 +203,11 @@ free, but a command that writes declares it with `@writes`, or
 - Never pass defaults as `columns=` (`columns or DEFAULTS`):
   `--columns +name/-name` edits the defaults, and a named column is always
   shown, even when empty.
-- Kinds are `<cap>.<singular_noun>` for entities and `<cap>.<verb>_outcome`
-  for mutation results. Root commands use `untaped.*`. Each kind has exactly
-  one schema.
+- Declare a record's kind on its class, `class Widget(Record,
+  kind="acme-tools.widget")`: `<plugin>.<noun>`, `<plugin>.<verb>_outcome` for
+  mutations, `.summary` the only third segment, `untaped.*` for root commands.
+  One model per kind; `emit` reads it from the rows. Fields must survive a
+  JSON round trip (the `Record` docstring says which fail).
 - Fields are snake_case, with `id` and then `name` first. `url` is the web
   URL and `api_url` is the API link.
 - A record's own fields come before the fields it inherits from the bases
@@ -225,7 +227,7 @@ free, but a command that writes declares it with `@writes`, or
 - Base check results on `CheckRecord`, with `status` set to `pass`, `warn`,
   `fail` or `error`.
 - Type timestamps as `UtcTimestamp` and name them `<event>_at`. They render
-  as `2026-01-02T03:04:05Z`.
+  as `2026-01-02T03:04:05Z`, with microseconds outside tables.
 - Use native booleans, `null` and lists in records. Do not use glyphs such as
   `✓` or `—` as data; for a table, annotate the field with `TableGlyph`
   (`Annotated[bool, TableGlyph(true="✓")]`), which every other format ignores.
@@ -274,18 +276,19 @@ The sections above name the helper for each rule. Beyond those:
   The `untaped.sdk` docstrings are the reference.
 
 A row-producing command uses `FormatOption`, `ColumnsOption` and `emit`, and
-namespaces its kind:
+its records declare their kind:
 
 ```python
-from untaped.sdk import ColumnsOption, FormatOption, emit
+from untaped.sdk import ColumnsOption, FormatOption, Record, emit
+
+
+class Item(Record, kind="acme.item"):
+    id: str
 
 
 @app.command(name="items")
-def items_command(
-    *, fmt: FormatOption = "table", columns: ColumnsOption = None
-) -> None:
-    rows = [{"id": "one", "label": "Example"}]
-    emit(rows, fmt=fmt, columns=columns, kind="acme.item")
+def items_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+    emit([Item(id="one")], fmt=fmt, columns=columns)
 ```
 
 ## Piping
@@ -297,18 +300,14 @@ def items_command(
 {"untaped": "1", "kind": "acme.item", "record": {"repo": "octocat/Hello-World"}}
 ```
 
-Kinds are the plugin name and a snake_case noun, with an optional
-`.summary` suffix for informational rows. For a `--stdin` command,
-`read_identifiers()` reads bare identifiers or a pipe stream. Declare the
-kinds you understand with `accept_kinds`, so a record of any other kind exits
-2 instead of being misread:
+For a `--stdin` command, `read_identifiers()` reads bare identifiers or a
+pipe stream. Declare the kinds you understand with `accept_kinds`, so a record
+of any other kind exits 2 instead of being misread:
 
 ```python
 from untaped.sdk import read_identifiers
 
-identifiers = read_identifiers(
-    [], stdin=True, id_field="repo", accept_kinds={"github.repo"}
-)
+identifiers = read_identifiers([], stdin=True, id_field="repo", accept_kinds={"github.repo"})
 ```
 
 For whole records, `read_stdin_input(accept_kinds=...)` returns the bare

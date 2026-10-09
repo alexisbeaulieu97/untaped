@@ -697,8 +697,8 @@ def test_jobs_wait_reports_start_and_finish_as_utc_timestamps(fake_aap: Any) -> 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
     assert (row["started_at"], row["finished_at"]) == (
-        "2026-01-02T03:04:05Z",
-        "2026-01-02T03:05:06Z",
+        "2026-01-02T03:04:05.123456Z",
+        "2026-01-02T03:05:06.654321Z",
     )
     assert "started" not in row
     assert "finished" not in row

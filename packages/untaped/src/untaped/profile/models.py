@@ -34,8 +34,8 @@ class ProfileDeletePreview:
     top_level_keys: tuple[str, ...]
 
 
-class ProfileRow(Record):
-    """One row of ``profile list`` (kind ``untaped.profile``)."""
+class ProfileRow(Record, kind="untaped.profile"):
+    """One row of ``profile list``."""
 
     name: str
     active: Annotated[bool, TableGlyph(true="✓", false="")]
@@ -43,8 +43,8 @@ class ProfileRow(Record):
     """Number of leaf keys the profile sets."""
 
 
-class ProfileOutcome(OutcomeRecord):
-    """The result of ``profile create/delete/rename`` (``untaped.profile_outcome``).
+class ProfileOutcome(OutcomeRecord, kind="untaped.profile_outcome"):
+    """The result of ``profile create/delete/rename``.
 
     ``action`` is ``created``, ``deleted``, ``renamed``, or ``planned`` under
     ``--dry-run``. ``previous_name`` is set by ``rename`` and ``copied_from``

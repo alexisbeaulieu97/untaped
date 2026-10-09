@@ -42,8 +42,8 @@ def test_job_reads_awx_started_and_finished_as_utc_timestamps() -> None:
     )
     dumped = job.model_dump(mode="json")
     assert (dumped["started_at"], dumped["finished_at"]) == (
-        "2026-01-02T03:04:05Z",
-        "2026-01-02T03:05:06Z",
+        "2026-01-02T03:04:05.123456Z",
+        "2026-01-02T03:05:06.654321Z",
     )
     assert "started" not in dumped
     assert "finished" not in dumped
