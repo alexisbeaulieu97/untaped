@@ -241,17 +241,13 @@ def paste(state: PickerState, text: str) -> PickerState:
     """
     if state.outcome != "running" or state.quitting:
         return state
-    clean = "".join(char for char in text if char.isprintable())
+    clean = EditBuffer().paste(text).text
     if not clean:
         return state
     state = replace(state, error="") if state.error else state
     if state.editing is not None:
         return replace(state, editing=state.editing + clean)
-    if state.focus == "title":
-        return replace(state, title=state.title + clean)
-    if state.focus in ("search", "list"):
-        return replace(state, focus="search", query=state.query + clean, cursor=0)
-    return state
+    return _type(state, clean)
 
 
 def _edit_text(text: str, key: str) -> str:
@@ -260,11 +256,12 @@ def _edit_text(text: str, key: str) -> str:
     return text if edited is None else edited.text
 
 
-def _type(state: PickerState, char: str) -> PickerState:
+def _type(state: PickerState, text: str) -> PickerState:
+    """``text`` typed into the name or the search (from the list too); settings ignore it."""
     if state.focus == "title":
-        return replace(state, title=state.title + char)
+        return replace(state, title=state.title + text)
     if state.focus in ("search", "list"):
-        return replace(state, focus="search", query=state.query + char, cursor=0)
+        return replace(state, focus="search", query=state.query + text, cursor=0)
     return state
 
 
