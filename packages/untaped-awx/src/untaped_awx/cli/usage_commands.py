@@ -31,7 +31,7 @@ from untaped.sdk import (
 from untaped_awx.application import ListTemplateUsage
 from untaped_awx.cli.context import open_context, scope_for_command
 from untaped_awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
-from untaped_awx.cli.pipe import template_targets
+from untaped_awx.cli.template_targets import template_targets
 from untaped_awx.domain import WorkflowUsage
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
