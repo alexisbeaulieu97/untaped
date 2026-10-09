@@ -16,6 +16,7 @@ from untaped.sdk import (
     emit,
     finish,
     plural,
+    report_error,
 )
 from untaped_awx.application.mutation_engine import BatchMutationEngine
 from untaped_awx.application.mutation_types import MutationPlan
@@ -94,6 +95,10 @@ def confirm_batch(ctx: AwxContext, *, count: int, verb: str, yes: bool, dry_run:
     return True
 
 
+#: Outcome actions that fail the run: the write did not fully land.
+UNFINISHED_ACTIONS = frozenset({"failed", "partial", "conflict", "skipped"})
+
+
 def emit_outcomes(
     outcomes: list[ApplyOutcome],
     *,
@@ -117,8 +122,7 @@ def emit_outcomes(
     )
     finish(
         any(
-            o.action in {"failed", "partial", "conflict", "skipped"}
-            or (o.unverified and not allow_unverified)
+            o.action in UNFINISHED_ACTIONS or (o.unverified and not allow_unverified)
             for o in outcomes
         ),
         predicate_hit=predicate_hit,
@@ -149,9 +153,21 @@ def preview_and_execute(
         ctx, count=changed, verb=plan.mode, yes=controls.yes, dry_run=controls.dry_run
     ):
         return previews
-    return engine.execute(
+    outcomes = engine.execute(
         plan, continue_on_error=controls.continue_on_error, parallel=controls.parallel
     ).outcomes
+    _report_outcomes(ctx, outcomes)
+    return outcomes
+
+
+def _report_outcomes(ctx: AwxContext, outcomes: list[ApplyOutcome]) -> None:
+    """Report each failed write as an attributed error, each other unfinished one as a warning."""
+    for outcome in outcomes:
+        label = f"{outcome.kind}/{outcome.name}"
+        if outcome.error is not None:
+            report_error(outcome.error, item=label)
+        elif outcome.detail and outcome.action in UNFINISHED_ACTIONS:
+            ctx.progress_ui().message("warning", f"{label}: {outcome.detail}")
 
 
 def run_mutation_plan(

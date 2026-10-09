@@ -23,6 +23,7 @@ from untaped_awx.application.save_resource import SaveResource
 from untaped_awx.application.selection import SelectedResource
 from untaped_awx.cli._apply_runner import build_mutation_engine
 from untaped_awx.cli._mutation_runner import (
+    UNFINISHED_ACTIONS,
     WriteControls,
     emit_outcomes,
     preview_and_execute,
@@ -110,8 +111,7 @@ def run_edit(
                     clean = True  # declined: nothing was written, so nothing to keep
                     raise
                 clean = not any(
-                    item.action in {"failed", "partial", "conflict", "skipped"} or item.unverified
-                    for item in outcomes
+                    item.action in UNFINISHED_ACTIONS or item.unverified for item in outcomes
                 )
                 break
         except OSError as exc:
