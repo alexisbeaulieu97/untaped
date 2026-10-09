@@ -31,7 +31,7 @@ from untaped.diagnostics import (
     write_record,
 )
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
-from untaped.records import TABLE_CONTEXT, TableGlyph, check_data_kind, kind_of, table_columns_of
+from untaped.records import TableGlyph, check_data_kind, kind_of, table_columns_of
 from untaped.render import column_value
 from untaped.stability import Stability, check_stability, mark_app
 from untaped.theme import OutputFormat
@@ -615,7 +615,7 @@ def emit_with(
     if table_columns is None and not single:
         table_columns = _record_table_columns(items)
     rendered = _render(
-        [_as_row(item, table=fmt == "table") for item in items],
+        [_as_row(item) for item in items],
         single=single,
         fmt=fmt,
         columns=columns,
@@ -699,15 +699,14 @@ def _metadata(annotation: object) -> tuple[object, ...]:
     return tuple(getattr(annotation, "__metadata__", ()))
 
 
-def _as_row(record: BaseModel | Mapping[str, object], *, table: bool) -> dict[str, object]:
+def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:
     """Normalize a model or mapping into a plain row dict.
 
     Models dump in JSON mode so paths, enums, dates, etc. become plain
-    JSON-compatible values every output format can encode; a ``table`` dump
-    shows timestamps to the second.
+    JSON-compatible values every output format can encode.
     """
     if isinstance(record, BaseModel):
-        return record.model_dump(mode="json", context=TABLE_CONTEXT if table else None)
+        return record.model_dump(mode="json")
     return dict(record)
 
 

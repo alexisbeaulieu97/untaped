@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import pkgutil
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
@@ -14,15 +16,17 @@ from pydantic import (
     ConfigDict,
     Field,
     PlainSerializer,
+    Secret,
     SecretStr,
     ValidationError,
+    computed_field,
     field_serializer,
+    model_serializer,
 )
 
 from untaped.diagnostics import diagnostics_scope, failure_exit_code, note_failure
 from untaped.errors import ConfigError, ErrorCategory, HttpStatusError, HttpTransportError
 from untaped.records import (
-    TABLE_CONTEXT,
     CheckRecord,
     DuplicateKindError,
     ErrorInfo,
@@ -44,15 +48,12 @@ class _CloneOutcome(OutcomeRecord, TargetRecord):
     repo: str
 
 
-def test_utc_timestamp_renders_rfc3339_z_in_full_and_to_the_second_in_tables() -> None:
+def test_utc_timestamp_renders_rfc3339_z_in_full() -> None:
     eastern = timezone(timedelta(hours=-5))
     record = _Stamped(scanned_at=datetime(2026, 1, 2, 3, 4, 5, 678, tzinfo=eastern))
 
     assert record.scanned_at == datetime(2026, 1, 2, 8, 4, 5, 678, tzinfo=UTC)
     assert record.model_dump(mode="json") == {"scanned_at": "2026-01-02T08:04:05.000678Z"}
-    assert record.model_dump(mode="json", context=TABLE_CONTEXT) == {
-        "scanned_at": "2026-01-02T08:04:05Z"
-    }
 
 
 def test_utc_timestamp_keeps_microseconds_through_a_json_round_trip() -> None:
@@ -273,7 +274,7 @@ def test_a_kind_outside_the_grammar_fails_at_definition(kind: str) -> None:
 
 
 def test_two_models_declaring_one_kind_is_duplicate_kind() -> None:
-    with pytest.raises(DuplicateKindError, match=r"duplicate-kind: 'acme-tools\.widget'"):
+    with pytest.raises(DuplicateKindError, match=r"kind 'acme-tools\.widget' is declared by both"):
 
         class _Rival(Record, kind="acme-tools.widget"):
             name: str
@@ -291,8 +292,15 @@ def test_the_same_class_defined_again_replaces_itself() -> None:
     first, second = define(), define()
 
     assert record_model("acme-tools.reloaded") is second
-    assert kind_of(first) is None
-    assert kind_of(second) == "acme-tools.reloaded"
+    assert kind_of(first) == kind_of(second) == "acme-tools.reloaded"
+
+
+class _Page[T](Record, kind="acme-tools.page"):
+    items: list[T]
+
+
+def test_a_parametrized_generic_record_has_its_generics_kind() -> None:
+    assert kind_of(_Page[int]) == "acme-tools.page"
 
 
 # ---- the round-trip check ----------------------------------------------------
@@ -311,13 +319,16 @@ def _join(value: list[str]) -> str:
     [
         (SecretStr, ..., "SecretStr dumps masked"),
         (list[SecretStr | None], ..., "SecretStr dumps masked"),
+        (Secret[str], ..., "Secret dumps masked"),
         (_Nested, ..., "SecretStr dumps masked"),
         (str, Field(exclude=True), r"Field\(exclude=True\)"),
         (str, Field(serialization_alias="url"), "dumps as 'url'"),
+        (str, Field(alias="Value"), "dumps as 'value'"),
         (str, Field(validation_alias="url"), "dumps as 'value'"),
-        (int, Field(default=0, exclude_if=lambda v: v < 0), "exclude_if must only drop"),
-        (int, Field(exclude_if=lambda v: v == 0), "exclude_if must only drop"),
+        (int | None, Field(default=None, exclude_if=lambda v: not v), "exclude_if may only"),
+        (int, Field(default=0, exclude_if=lambda v: v == 0), "exclude_if may only"),
         (Annotated[list[str], PlainSerializer(_join)], ..., "PlainSerializer _join"),
+        ("_Later", ..., "it refers to a type not defined yet"),
     ],
 )
 def test_a_field_that_loses_data_in_a_json_round_trip_fails_at_definition(
@@ -326,11 +337,11 @@ def test_a_field_that_loses_data_in_a_json_round_trip_fails_at_definition(
     namespace: dict[str, object] = {"__annotations__": {"value": annotation}}
     if default is not ...:
         namespace["value"] = default
-    with pytest.raises(TypeError, match=f"_Lossy\\.value(\\.token)?: {why}.*would lose data"):
+    with pytest.raises(TypeError, match=f"_Lossy(\\.value(\\.token)?)?: {why}.*would lose data"):
         type("_Lossy", (Record,), namespace)
 
 
-def test_a_field_serializer_fails_at_definition() -> None:
+def test_serializers_and_computed_fields_fail_at_definition() -> None:
     with pytest.raises(TypeError, match="_Joined: field_serializer on tags may not invert"):
 
         class _Joined(Record):
@@ -339,6 +350,28 @@ def test_a_field_serializer_fails_at_definition() -> None:
             @field_serializer("tags")
             def _join(self, value: list[str]) -> str:
                 return ",".join(value)
+
+    class _Flat(BaseModel):
+        name: str
+
+        @model_serializer
+        def _dump(self) -> str:
+            return self.name
+
+    with pytest.raises(TypeError, match="value: a model_serializer may not invert"):
+
+        class _Holder(Record):
+            value: _Flat
+
+    with pytest.raises(TypeError, match="computed field owner does not read back"):
+
+        class _Repo(Record):
+            full_name: str
+
+            @computed_field  # type: ignore[prop-decorator]
+            @property
+            def owner(self) -> str:
+                return self.full_name.split("/")[0]
 
 
 class _Tree(BaseModel):
@@ -351,38 +384,62 @@ class _RoundTrips(Record, kind="acme-tools.round_trips"):
     named: str = Field(alias="Named")
     chosen: str | None = Field(default=None, validation_alias=AliasChoices("chosen", "pick"))
     by_name: str = Field(default="", validation_alias="byName")
-    omitted: int | None = Field(default=None, exclude_if=lambda v: v is None)
     at: UtcTimestamp
     where: Path
     error: ErrorInfo | None = None
     tree: _Tree = _Tree()
 
 
-def test_aliases_that_validation_accepts_and_default_only_exclude_if_are_allowed() -> None:
-    record = _RoundTrips(
-        Named="n",
-        pick="c",
-        byName="b",
-        at=datetime(2026, 1, 2, 3, 4, 5, 6, tzinfo=UTC),
-        where=Path("/tmp/x"),
-        error=ErrorInfo.from_exception(ConfigError("x")),
-        tree=_Tree(children=[_Tree()]),
-    )
+class _ByAlias(Record, kind="acme-tools.by_alias"):
+    model_config = ConfigDict(frozen=True, extra="forbid", serialize_by_alias=True)
 
-    _assert_round_trips(record)
+    html_url: str = Field(alias="url")
+
+
+def test_aliases_validation_accepts_are_allowed() -> None:
+    _assert_round_trips(
+        _RoundTrips(
+            Named="n",
+            pick="c",
+            byName="b",
+            at=datetime(2026, 1, 2, 3, 4, 5, 6, tzinfo=UTC),
+            where=Path("/tmp/x"),
+            error=ErrorInfo.from_exception(ConfigError("x")),
+            tree=_Tree(children=[_Tree()]),
+        )
+    )
+    _assert_round_trips(_ByAlias(url="https://h/x"))
 
 
 def _assert_round_trips(record: BaseModel) -> None:
-    dumped = json.dumps(record.model_dump(mode="json", by_alias=True, round_trip=True))
+    """Read back the dump ``emit`` writes, in strict JSON mode."""
+    dumped = json.dumps(record.model_dump(mode="json"))
     assert type(record).model_validate_json(dumped, strict=True) == record
 
 
-def _core_samples(tmp_path: Path) -> list[Record]:
+def _is_shipped(module: str) -> bool:
+    top = module.partition(".")[0]
+    return top == "untaped" or top.startswith("untaped_")
+
+
+def _import_every_shipped_module() -> None:
+    """Import every module of core and the installed plugins, so all their kinds register."""
+    tops = sorted({info.name for info in pkgutil.iter_modules() if _is_shipped(info.name)})
+    for top in tops:
+        package = importlib.import_module(top)
+        if not hasattr(package, "__path__"):
+            continue  # a stray top-level module (a test's fake plugin), not a package
+        for info in pkgutil.walk_packages(package.__path__, f"{top}."):
+            if not info.name.endswith(".__main__"):
+                importlib.import_module(info.name)
+
+
+def _samples() -> dict[str, Record]:
     from untaped.config.models import SettingOutcome, SettingRow
     from untaped.management.alias import AliasOutcome, AliasRow
     from untaped.profile.models import ProfileOutcome, ProfileRow
 
-    return [
+    rows: list[Record] = [
         SettingRow(key="k", value={"a": [1]}, default=None, source="default", profile=None),
         SettingOutcome(key="k", profile="default", action="updated"),
         AliasRow(name="ls", command="plugin list", argv=["plugin", "list"], profile="default"),
@@ -395,14 +452,14 @@ def _core_samples(tmp_path: Path) -> list[Record]:
         ProfileRow(name="default", active=True, keys=3),
         ProfileOutcome(name="work", action="renamed", previous_name="old"),
     ]
+    return {str(kind_of(type(row))): row for row in rows}
 
 
-def test_every_kind_core_declares_round_trips_in_json_mode(tmp_path: Path) -> None:
-    samples = _core_samples(tmp_path)
-    core = {
-        kind for kind, model in record_kinds().items() if model.__module__.startswith("untaped.")
-    }
+def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:
+    _import_every_shipped_module()
+    shipped = {kind for kind, model in record_kinds().items() if _is_shipped(model.__module__)}
+    samples = _samples()
 
-    assert {kind_of(type(sample)) for sample in samples} == core
-    for sample in samples:
+    assert set(samples) == shipped, "give every kind a package declares a sample here"
+    for sample in samples.values():
         _assert_round_trips(sample)
