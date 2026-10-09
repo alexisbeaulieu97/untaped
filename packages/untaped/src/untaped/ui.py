@@ -536,17 +536,18 @@ class UiContext:
             )
 
 
+GENERIC_COMMAND = "this command"
+"""What the no-terminal refusal names when a picker request carries no ``command``."""
+GENERIC_ALTERNATIVE = "its non-interactive options (see --help)"
+"""What the no-terminal refusal offers when a picker request carries no ``alternative``."""
+
+
 def no_terminal_message(command: str, alternative: str) -> str:
     """The error for a screen with no terminal to draw on: the one place its text lives.
 
     An empty ``command`` or ``alternative`` (a picker request may leave them out)
     is said in words instead of quoted as a command.
     """
-    from untaped.picker import (  # noqa: PLC0415 - refusal path only
-        GENERIC_ALTERNATIVE,
-        GENERIC_COMMAND,
-    )
-
     named = f"`{command}`" if command else GENERIC_COMMAND
     offer = f"`{alternative}`" if alternative else GENERIC_ALTERNATIVE
     return f"{named} needs a terminal; use {offer}"

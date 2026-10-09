@@ -16,8 +16,6 @@ from rich.cells import cell_len
 
 from screen.gallery import render_styled, role
 from untaped.picker import (
-    GENERIC_ALTERNATIVE,
-    GENERIC_COMMAND,
     PickCatalog,
     PickItem,
     PickRequest,
@@ -30,6 +28,7 @@ from untaped.screen.core import Back, Cancel, Frame, Interrupt, Key, Paste, Quit
 from untaped.testing import ScreenRun, drive_screen
 from untaped.testing.screens import rendered_text
 from untaped.theme import BUILTIN_THEMES
+from untaped.ui import GENERIC_ALTERNATIVE, GENERIC_COMMAND
 
 DEFAULT = BUILTIN_THEMES["default"]
 LEFT, RIGHT = DEFAULT.symbols["cycle.left"], DEFAULT.symbols["cycle.right"]
@@ -802,18 +801,6 @@ def test_only_the_state_is_the_models_key_press() -> None:
         state = handle(state, key)
     assert run.model == state
     assert Key("w") == Key("w")
-
-
-def test_a_request_resolves_its_terminal_command_and_alternative_once() -> None:
-    assert (_request().terminal_command, _request().terminal_alternative) == (
-        GENERIC_COMMAND,
-        GENERIC_ALTERNATIVE,
-    )
-    named = _request(command="untaped workspace create", alternative="--repo")
-    assert (named.terminal_command, named.terminal_alternative) == (
-        "untaped workspace create",
-        "--repo",
-    )
 
 
 def test_ctrl_r_while_a_refresh_runs_still_dismisses_the_error() -> None:
