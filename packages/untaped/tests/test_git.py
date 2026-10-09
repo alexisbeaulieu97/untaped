@@ -372,11 +372,19 @@ def _fake_git_with_helper(
 
     On SIGTERM it removes its lock file, as git does; the helper ignores
     SIGTERM unless told otherwise, so only SIGKILL (or SIGINT) stops it.
-    Once both are in place it writes ``ready``.
+    Once both are in place, the helper started up too, it writes ``ready``:
+    a Python helper interrupted mid-startup can swallow its KeyboardInterrupt.
     """
-    ignore = "signal.signal(signal.SIGTERM, signal.SIG_IGN); " if helper_ignores_term else ""
+    ignore = "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if helper_ignores_term else ""
     helper_pid = tmp_path / "helper.pid"
     lock = tmp_path / "shallow.lock"
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        f"import os, signal, time\n{ignore}"
+        f"with open({str(helper_pid)!r} + '.tmp', 'w') as f:\n    f.write(str(os.getpid()))\n"
+        f"os.replace({str(helper_pid)!r} + '.tmp', {str(helper_pid)!r})\n"
+        "time.sleep(60)\n"
+    )
     script = tmp_path / "fake-git"
     script.write_text(
         f"#!{sys.executable}\n"
@@ -385,11 +393,8 @@ def _fake_git_with_helper(
         f"lock = {str(lock)!r}\n"
         "def cleanup(*_):\n    os.unlink(lock)\n    sys.exit(143)\n"
         "signal.signal(signal.SIGTERM, cleanup)\n"
-        "helper = subprocess.Popen([sys.executable, '-c', "
-        f"'import signal, time; {ignore}time.sleep(60)'])\n"
-        f"staged = {str(helper_pid)!r} + '.tmp'\n"
-        "with open(staged, 'w') as f:\n    f.write(str(helper.pid))\n"
-        f"os.replace(staged, {str(helper_pid)!r})\n"
+        f"subprocess.Popen([sys.executable, {str(helper)!r}])\n"
+        f"while not os.path.exists({str(helper_pid)!r}):\n    time.sleep(0.01)\n"
         "open(lock, 'w').close()\n"
         f"open({str(tmp_path / 'ready')!r}, 'w').close()\n"
         "time.sleep(60)\n"
@@ -494,9 +499,6 @@ def test_ctrl_c_reaches_git_started_by_a_worker_thread(tmp_path: Path) -> None:
     worker = threading.Thread(target=fetch)
     worker.start()
     _wait_for(tmp_path / "ready")
-    deadline = time.monotonic() + 10
-    while not git._LIVE_GROUPS and time.monotonic() < deadline:
-        time.sleep(0.02)
     with pytest.raises(KeyboardInterrupt):
         os.kill(os.getpid(), signal.SIGINT)
         time.sleep(5)
@@ -583,6 +585,28 @@ def test_without_process_groups_git_is_killed_alone(monkeypatch: pytest.MonkeyPa
 
     assert killed == [True]
     assert signal.getsignal(signal.SIGTERM) is before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+def test_a_signal_forwarded_while_git_starts_still_reaches_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    script, _, _ = _fake_git_with_helper(tmp_path, helper_ignores_term=False)
+    monkeypatch.setattr(git, "_FORWARDED", [])
+    real_popen = subprocess.Popen
+
+    def popen(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        process = real_popen(*args, **kwargs)
+        if kwargs.get("start_new_session"):
+            _wait_for(tmp_path / "ready")
+            git._FORWARDED.append(signal.SIGTERM)  # forwarded before registration
+        return process
+
+    monkeypatch.setattr(git.subprocess, "Popen", popen)
+    started = time.monotonic()
+    with pytest.raises(GitCommandError, match="failed"):
+        run_git(["fetch"], timeout=30, git=str(script))
+    assert time.monotonic() - started < 15, "git ran on until its timeout"
 
 
 def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -806,11 +830,13 @@ def test_git_does_not_run_an_inherited_ssh_askpass_for_https_credentials(
     monkeypatch.delenv("GIT_ASKPASS", raising=False)
     server = _unauthorized_http_server()
     try:
-        with pytest.raises(GitCommandError):
+        with pytest.raises(GitCommandError, match="terminal prompts disabled"):
             run_git(
                 [
                     "-c",
                     "credential.helper=",
+                    "-c",
+                    "http.proxy=",  # reach the server even behind a configured proxy
                     "ls-remote",
                     f"http://127.0.0.1:{server.server_port}/r",
                 ],
@@ -819,6 +845,7 @@ def test_git_does_not_run_an_inherited_ssh_askpass_for_https_credentials(
             )
     finally:
         server.shutdown()
+        server.server_close()
 
     assert not log.exists(), "git ran the inherited SSH_ASKPASS"
 
