@@ -1,11 +1,11 @@
-"""Root ``untaped capabilities`` command (Wave 1.4, spec §7.3).
+"""Root ``untaped capabilities`` command.
 
 A terminal command (not a group) reporting one record per candidate
 provider — ``name/status/distribution/version``, in name order — from the
 composition outcome: ready rows for committed capabilities plus quarantined
 rows carrying the entry-point name (or the ``unknown`` sentinels when the
 provider never resolved). The listing never touches settings, so invalid
-capability values cannot block it (spec §4 failure isolation).
+capability values cannot block it.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def build_root_capabilities_app(
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List one record per candidate provider (spec §7.3)."""
+        """List one record per candidate provider."""
         with report_errors():
             _show(result, candidates, fmt=fmt, columns=columns)
 

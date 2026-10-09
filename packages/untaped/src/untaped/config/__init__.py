@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from untaped.config.models import SettingEntry, Source, display_default, display_value
-from untaped.config.ports import SettingsReader, SettingsRepository
+from untaped.config.ports import SettingsReader
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import (
     GetSetting,
@@ -18,7 +18,6 @@ __all__ = [
     "SettingEntry",
     "SettingsFileRepository",
     "SettingsReader",
-    "SettingsRepository",
     "Source",
     "display_default",
     "display_value",
