@@ -695,7 +695,7 @@ def test_run_interrupt_cancels_running_jobs(
 
     assert result.exit_code == 130, result.output
     [job_id] = _cancelled_ids(running_job)
-    assert f"interrupted: job {job_id} cancel requested" in result.stderr
+    assert f"warning: job {job_id}: interrupted, cancel requested" in result.stderr
     assert "jobs wait" not in result.stderr
 
 

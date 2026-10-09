@@ -95,7 +95,7 @@ def test_cancel_skips_finished_jobs_without_a_prompt(fake_aap: Any) -> None:
     assert result.exit_code == 0, result.output
     row = json.loads(result.stdout)[0]
     assert (row["action"], row["detail"]) == ("skipped", "already successful")
-    assert "warning: skipped: job 43" in result.stderr
+    assert "warning: job 43 'old': skipped, already successful" in result.stderr
     assert _posts(fake_aap) == []
 
 
