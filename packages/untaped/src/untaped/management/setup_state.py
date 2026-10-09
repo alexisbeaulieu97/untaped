@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from untaped.auth import describe_token_source
+from untaped.auth import describe_token_source, takes_token_command
 from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError, UsageError
@@ -22,6 +22,7 @@ from untaped.management.auth import inherited_from_default, plaintext_token
 from untaped.messages import not_found
 from untaped.profile_resolver import DEFAULT_PROFILE
 from untaped.settings import active_settings_layout, check_settings_field
+from untaped.token_store import TokenStore, pick_store
 
 _SERVICE_FIELDS = frozenset({"base_url", "token"})
 
@@ -136,4 +137,21 @@ def service_states(
     }
 
 
-__all__ = ["ServiceState", "profile_view", "service_state", "service_states", "setup_services"]
+def service_store(services: dict[str, CapabilitySpec]) -> TokenStore | None:
+    """The store a token goes to, probed once per run; ``None`` when no service takes a command.
+
+    One probe per run: a dead Secret Service costs its timeout once.
+    """
+    if any(takes_token_command(spec.profile_model) for spec in services.values()):
+        return pick_store()
+    return None
+
+
+__all__ = [
+    "ServiceState",
+    "profile_view",
+    "service_state",
+    "service_states",
+    "service_store",
+    "setup_services",
+]

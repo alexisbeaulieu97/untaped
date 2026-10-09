@@ -108,7 +108,7 @@ def test_setup_without_a_terminal_touches_neither_the_config_nor_the_keychain(
     def touched(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("read before the terminal was checked")
 
-    monkeypatch.setattr("untaped.management.setup.pick_store", touched)
+    monkeypatch.setattr("untaped.management.setup.service_store", touched)
     monkeypatch.setattr("untaped.management.setup.read_config_dict", touched)
 
     result = _setup(None, terminal=False)

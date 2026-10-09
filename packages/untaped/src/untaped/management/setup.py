@@ -25,7 +25,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.auth import takes_token_command
 from untaped.batch import finish
 from untaped.capabilities.registry import ApplicationSpec, CompositionResult
 from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
@@ -39,10 +38,9 @@ from untaped.management.setup_plan import (
     pending,
     plan_rows,
 )
-from untaped.management.setup_state import service_states, setup_services
+from untaped.management.setup_state import service_states, service_store, setup_services
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
-from untaped.token_store import pick_store
 from untaped.ui import ui_context
 
 OnlyOption = Annotated[
@@ -113,13 +111,11 @@ def _run(
     services = setup_services(result, only)
     raw = read_config_dict()
     active = selected_profile()
-    # One probe per run: a dead Secret Service costs its timeout once.
-    commands = any(takes_token_command(spec.profile_model) for spec in services.values())
     screen = setup_screen(
         result,
         services,
         profile=active,
-        store=pick_store() if commands else None,
+        store=service_store(services),
         states=service_states(services, active, raw),
         profiles=sorted(raw.get("profiles") or ()),
     )
