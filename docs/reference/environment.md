@@ -66,6 +66,8 @@ from environment variables.
 
 For every `git` call it makes, `untaped`:
 
+- runs Git in its own session, without the terminal, so nothing Git starts
+  (ssh included) can prompt there;
 - sets `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`, so a remote that
   needs credentials fails instead of waiting for input;
 - sets `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` unless you set
@@ -77,7 +79,12 @@ For every `git` call it makes, `untaped`:
   so the token is not logged.
 
 If you set `GIT_SSH_COMMAND` yourself, add `-o BatchMode=yes` to keep the
-fail-fast behavior.
+fail-fast behavior. A key that needs a passphrase belongs in `ssh-agent`, and
+a new host in `known_hosts`, before `untaped` connects to it.
+
+When a Git command times out or you press Ctrl-C, `untaped` stops it and every
+process it started: SIGTERM first, so Git removes its lock files, then
+SIGKILL two seconds later.
 
 ## Recipe hooks
 
