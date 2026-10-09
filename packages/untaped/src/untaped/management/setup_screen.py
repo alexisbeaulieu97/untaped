@@ -15,11 +15,11 @@ process cache for the background check. Leaving the profile field loads the
 profile typed there, so the field and the forms never disagree.
 
 What a save has to say (a profile created, a token replaced or to export)
-comes back as notes, which the command prints after the screen closes with
-the doctor rows of what was configured (:class:`SetupResult`). Esc and ctrl-c on the list end the screen
-with that result (ctrl-c flagged ``interrupted``, which ``setup`` turns into
-exit 130); neither is a cancel. A quit while a save runs waits for it, so the
-result always says what was written.
+comes back as notes, which the command prints after the screen closes with the
+doctor rows of what was configured (:class:`SetupResult`). Esc and ctrl-c on
+the list end the screen with that result (ctrl-c flagged ``interrupted``,
+which ``setup`` turns into exit 130); neither is a cancel. A quit while a save
+runs waits for it, so the result always says what was written.
 
 The typed token lives in a ``SecretInput`` and a ``Candidate`` as a ``SecretStr``
 and in no frame, repr or message of this module's own. The model never holds the
@@ -54,7 +54,7 @@ from untaped.screen.components.buttons import Button, Buttons, Pressed
 from untaped.screen.components.choices import ListItem, SingleList
 from untaped.screen.components.draw import role_style
 from untaped.screen.components.form import Form, Submitted
-from untaped.screen.components.inputs import SecretInput, TextInput
+from untaped.screen.components.inputs import COMPLETION_ROWS, SecretInput, TextInput
 from untaped.screen.components.layout import Panes
 from untaped.screen.components.tabs import Tab, Tabs
 from untaped.screen.core import (
@@ -295,7 +295,7 @@ class _Setup:
         header.append(f"  config {model.config_path}", style=muted)
         field_width = min(frame.width, 40)
         field = model.profile.view(frame, focused=model.focus == "profile", width=field_width)
-        used = 1 + _field_rows(frame, model.profile)
+        used = 1 + _field_rows(frame, model.profile, focused=model.focus == "profile")
         inner = replace(frame, height=max(1, frame.height - used))
         left = SingleList(
             "",
@@ -745,10 +745,16 @@ def _status(rows: tuple[CapRow, ...], name: str, status: str) -> tuple[CapRow, .
     return tuple(replace(row, status=status) if row.name == name else row for row in rows)
 
 
-def _field_rows(frame: Frame, field: TextInput) -> int:
-    """The lines the profile field takes: its box (or label and value) and a note under it."""
-    base = 3 if frame.box() is not None else 2
-    return base + (1 if field.error else 0)
+def _field_rows(frame: Frame, field: TextInput, *, focused: bool) -> int:
+    """The lines the profile field takes: its box (or label and value) and a note under it.
+
+    While it is focused and completing, the candidates count too, under a rule when boxed.
+    """
+    boxed = frame.box() is not None
+    rows = (3 if boxed else 2) + (1 if field.error else 0)
+    if focused and field.completing:
+        rows += min(COMPLETION_ROWS, len(field.matches)) + (1 if boxed else 0)
+    return rows
 
 
 def _save_buttons() -> Buttons:
