@@ -1,4 +1,4 @@
-"""Tests for the root ``untaped config …`` command group (Wave 1.4, spec §4).
+"""Tests for the root ``untaped config …`` command group.
 
 Root resolution is direct, not delegated per tool: a fully qualified
 ``section.key`` selects its schema by ``section``. SDK roots win first,

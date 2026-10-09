@@ -24,7 +24,7 @@ from untaped.stability import (
     setting_mark,
     stability_name,
 )
-from untaped.testing import CliInvoker, CliResult
+from untaped.testing import CliInvoker, CliResult, invoke_cli, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -374,3 +374,33 @@ def test_reading_a_deprecated_capabilitys_settings_warns_nothing(_isolated_confi
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "h2"
     assert result.stderr == ""
+
+
+def test_setting_a_deprecated_setting_warns_with_its_replacement(_isolated_config: Path) -> None:
+    result = _config("set", "trial.old_flag", "true")
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr.count("trial.old_flag is deprecated") == 1
+    assert "use trial.steady" in result.stderr
+
+
+def test_setting_a_deprecated_setting_through_the_root_warns_once_in_json(
+    _isolated_config: Path,
+) -> None:
+    specs = (make_spec("trial", profile_model=Trial),)
+    root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
+
+    result = invoke_cli(root.meta, ["config", "set", "trial.old_flag", "true", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    lines = [json.loads(line) for line in result.stderr.splitlines()]
+    [warning] = [line for line in lines if line["level"] == "warning"]
+    assert warning["message"].startswith("trial.old_flag is deprecated")
+    assert warning["message"].endswith("use trial.steady")
+
+
+def test_setting_a_stable_setting_warns_nothing(_isolated_config: Path) -> None:
+    result = _config("set", "trial.steady", "3")
+
+    assert result.exit_code == 0, result.output
+    assert "deprecated" not in result.stderr
