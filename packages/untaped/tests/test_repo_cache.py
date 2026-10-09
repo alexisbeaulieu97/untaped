@@ -249,6 +249,26 @@ def test_fetch_removes_temp_packs_an_interrupted_fetch_left(tmp_path: Path, orig
     assert _refs(cache) == ["refs/heads/main"]
 
 
+def test_a_temp_pack_that_cannot_be_removed_does_not_stop_the_fetch(
+    tmp_path: Path, origin: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = RepoCache(tmp_path / "app.git", error=_CacheError)
+    cache.ensure(f"file://{origin}")
+    packs = cache.path / "objects" / "pack"
+    packs.mkdir(parents=True, exist_ok=True)
+    stale = packs / "tmp_pack_aB3dE9"
+    stale.write_bytes(b"partial")
+    os.utime(stale, (time.time() - 3700, time.time() - 3700))
+
+    def refuse(path: str) -> None:
+        raise PermissionError(13, "Permission denied", path)
+
+    monkeypatch.setattr("untaped.repo_cache.os.unlink", refuse)
+    cache.fetch(["+refs/heads/main:refs/heads/main"], tags=False)
+    assert stale.exists()
+    assert _refs(cache) == ["refs/heads/main"]
+
+
 def test_delete_refs(tmp_path: Path, origin: Path) -> None:
     cache = RepoCache(tmp_path / "app.git", error=_CacheError)
     cache.ensure(f"file://{origin}")
