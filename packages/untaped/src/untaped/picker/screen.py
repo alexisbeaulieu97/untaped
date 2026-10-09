@@ -194,7 +194,8 @@ def _key(state: PickerState, name: str) -> PickerState:
 # --- keys ----------------------------------------------------------------------
 
 
-# While the discard question is open, every key answers it: the footer offers none of these.
+# While the discard question is open, every key but ctrl-r answers it: the footer offers none
+# of the others.
 
 
 def _searching(state: PickerState) -> bool:
@@ -252,7 +253,7 @@ def _tab_label(state: PickerState) -> str | None:
 def _enter_label(state: PickerState) -> str | None:
     """What enter does where it is worth saying: edit a text setting, press Create."""
     owner, key = state.row
-    if state.focus != "selected" or state.editing is not None:
+    if state.focus != "selected" or state.editing is not None or state.quitting:
         return None
     if owner == CREATE:
         return "create"
