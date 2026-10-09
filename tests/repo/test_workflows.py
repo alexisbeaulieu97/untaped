@@ -198,6 +198,7 @@ def test_build_guards_and_checks_run_before_anything_is_uploaded() -> None:
         _find(steps, id="version"),
         _find(steps, run=f'{SCRIPT} check "$VERSION"'),
         _find(steps, run=f'{SCRIPT} notes "$VERSION" > release-notes.md'),
+        _find(steps, run=f'{SCRIPT} readmes "$VERSION"'),
         build,
         _find(steps, run=f'{SCRIPT} check "$VERSION" --dist dist'),
         _find(steps, run=f'{SCRIPT} smoke "$RUNNER_TEMP/smoke/bin/untaped" "$VERSION"'),

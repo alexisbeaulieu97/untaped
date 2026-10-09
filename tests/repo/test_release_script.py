@@ -8,7 +8,9 @@ import json
 import re
 import subprocess
 import sys
+import tarfile
 import urllib.error
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -230,6 +232,77 @@ def test_artifact_errors_name_missing_and_stray_files(tmp_path: Path) -> None:
         "missing: untaped-10.0.0.tar.gz",
         "unexpected: .gitignore",
         "unexpected: untaped-9.1.0.tar.gz",
+    ]
+
+
+# --- README links -----------------------------------------------------------
+
+DOCS = "https://github.com/alexisbeaulieu97/untaped"
+PINNED = f"See [docs]({DOCS}/blob/v10.0.0/docs/a.md)."
+
+
+def _built(dist: Path, stem: str, description: str) -> None:
+    """A wheel and an sdist for ``stem`` whose core metadata carries ``description``."""
+    metadata = f"Metadata-Version: 2.4\nName: x\n\n{description}\n".encode()
+    dist.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(dist / f"{stem}-py3-none-any.whl", "w") as wheel:
+        wheel.writestr(f"{stem}.dist-info/METADATA", metadata)
+    with tarfile.open(dist / f"{stem}.tar.gz", "w:gz") as sdist:
+        info = tarfile.TarInfo(f"{stem}/PKG-INFO")
+        info.size = len(metadata)
+        sdist.addfile(info, io.BytesIO(metadata))
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (f"[a]({DOCS}/blob/main/docs/a.md#x)", f"[a]({DOCS}/blob/v10.1.0/docs/a.md#x)"),
+        (f"[a]({DOCS}/tree/main/docs)", f"[a]({DOCS}/tree/v10.1.0/docs)"),
+        (f"[a]({DOCS}/tree/main)", f"[a]({DOCS}/tree/v10.1.0)"),
+        (f"{DOCS}/blob/main/a {DOCS}/blob/main/b", f"{DOCS}/blob/v10.1.0/a {DOCS}/blob/v10.1.0/b"),
+        (f"[a]({DOCS}#readme)", f"[a]({DOCS}#readme)"),
+        (f"[a]({DOCS}/blob/mainline/a.md)", f"[a]({DOCS}/blob/mainline/a.md)"),
+        ("[a](https://github.com/other/repo/blob/main/a.md)", None),
+    ],
+    ids=["blob", "tree", "tree-root", "every-link", "repo-root", "other-branch", "other-repo"],
+)
+def test_pin_links_points_this_repositorys_main_links_at_the_tag(
+    text: str, expected: str | None
+) -> None:
+    assert release.pin_links(text, "10.1.0") == (text if expected is None else expected)
+
+
+def test_main_link_errors_read_each_built_page(tmp_path: Path) -> None:
+    root = _split_repo(tmp_path / "repo")
+    dist = tmp_path / "dist"
+    _built(dist, "untaped-10.0.0", PINNED)
+    _built(dist, "untaped_awx-10.0.0", f"[a]({DOCS}/tree/main/docs)")
+    _write(dist / "untaped_jira-10.0.0-py3-none-any.whl", "not a zip")
+    _write(dist / "untaped_jira-10.0.0.tar.gz", "not a tarball")
+    assert release.main_link_errors(release.packages(root), "10.0.0", dist) == [
+        f"untaped_awx-10.0.0-py3-none-any.whl links to main: {DOCS}/tree/main",
+        f"untaped_awx-10.0.0.tar.gz links to main: {DOCS}/tree/main",
+        "untaped_jira-10.0.0-py3-none-any.whl: cannot read its metadata: File is not a zip file",
+        "untaped_jira-10.0.0.tar.gz: cannot read its metadata:"
+        " file could not be opened successfully:",
+    ]
+
+
+def test_main_link_errors_need_the_metadata_file(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _project(root, "untaped", "10.0.0")
+    dist = tmp_path / "dist"
+    _built(dist, "untaped-9.0.0", PINNED)
+    for old, new in (
+        ("9.0.0-py3-none-any.whl", "10.0.0-py3-none-any.whl"),
+        ("9.0.0.tar.gz", "10.0.0.tar.gz"),
+    ):
+        (dist / f"untaped-{old}").rename(dist / f"untaped-{new}")
+    assert release.main_link_errors(release.packages(root), "10.0.0", dist) == [
+        "untaped-10.0.0-py3-none-any.whl: cannot read its metadata:"
+        " \"There is no item named 'untaped-10.0.0.dist-info/METADATA' in the archive\"",
+        "untaped-10.0.0.tar.gz: cannot read its metadata:"
+        " \"filename 'untaped-10.0.0/PKG-INFO' not found\"",
     ]
 
 
@@ -1056,12 +1129,65 @@ def test_check_with_dist_fails_on_a_stray_file(
     root = tmp_path / "repo"
     _project(root, "untaped", "10.0.0")
     dist = tmp_path / "dist"
-    for name in ("untaped-10.0.0-py3-none-any.whl", "untaped-10.0.0.tar.gz", ".gitignore"):
-        _write(dist / name, "")
+    _write(dist / ".gitignore", "")
+    _built(dist, "untaped-10.0.0", PINNED)
     argv = ["--root", str(root), "check", "10.0.0", "--dist", str(dist)]
     assert _main(capsys, *argv) == (1, "", "unexpected: .gitignore\n")
     (dist / ".gitignore").unlink()
     assert _main(capsys, *argv) == (0, "ok: 1 package(s), 2 artifact(s) for 10.0.0\n", "")
+
+
+def test_check_with_dist_fails_on_a_page_that_links_to_main(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path / "repo"
+    _project(root, "untaped", "10.0.0")
+    dist = tmp_path / "dist"
+    _built(dist, "untaped-10.0.0", f"See [docs]({DOCS}/blob/main/docs/a.md).")
+    argv = ["--root", str(root), "check", "10.0.0", "--dist", str(dist)]
+    assert _main(capsys, *argv) == (
+        1,
+        "",
+        f"untaped-10.0.0-py3-none-any.whl links to main: {DOCS}/blob/main\n"
+        f"untaped-10.0.0.tar.gz links to main: {DOCS}/blob/main\n",
+    )
+
+
+def test_the_readmes_command_pins_every_package_readme(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _split_repo(tmp_path)
+    readmes = {
+        "untaped-github": ('readme = "README.md"', "README.md", f"[a]({DOCS}/blob/main/a.md)"),
+        "untaped-awx": ('readme = { file = "docs/PYPI.md" }', "docs/PYPI.md", f"{DOCS}/tree/main"),
+        "untaped-jira": ('readme = "README.md"', "README.md", "No links."),
+    }
+    for package, (field, file, text) in readmes.items():
+        pyproject = root / "packages" / package / "pyproject.toml"
+        _write(pyproject, pyproject.read_text() + field + "\n")
+        _write(root / "packages" / package / file, text + "\n")
+    argv = ["--root", str(root), "readmes", "10.1.0"]
+    assert _main(capsys, *argv) == (0, "pinned README links to v10.1.0 in 2 file(s)\n", "")
+    assert {
+        package: (root / "packages" / package / file).read_text()
+        for package, (_, file, _) in readmes.items()
+    } == {
+        "untaped-github": f"[a]({DOCS}/blob/v10.1.0/a.md)\n",
+        "untaped-awx": f"{DOCS}/tree/v10.1.0\n",
+        "untaped-jira": "No links.\n",
+    }
+    assert _main(capsys, *argv) == (0, "pinned README links to v10.1.0 in 0 file(s)\n", "")
+
+
+def test_the_readmes_command_refuses_a_malformed_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _project(tmp_path, "untaped", "10.0.0")
+    assert _main(capsys, "--root", str(tmp_path), "readmes", "v10.0.0") == (
+        1,
+        "",
+        "version v10.0.0 is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN\n",
+    )
 
 
 @pytest.mark.parametrize(

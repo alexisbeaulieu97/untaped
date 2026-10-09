@@ -7,9 +7,15 @@ subcommand is one step of the workflow:
   version step, before the value reaches ``$GITHUB_ENV``); with ``--tag`` (a
   production release) it first checks that TAG is ``v<version>`` and that
   HEAD is on ``origin/main``, fetching ``main`` to know.
+- ``readmes VERSION`` rewrites, in the checkout, each package README's
+  ``blob/main`` and ``tree/main`` links into this repository to ``vVERSION``
+  (just before the build), so a release's PyPI page keeps describing that
+  release after the docs move on ``main``. The committed READMEs keep
+  ``main``, which is right while browsing the repository.
 - ``check [VERSION] [--dist DIR]`` checks every package version and sibling
   pin against VERSION (default: the ``untaped`` package's version) before the
-  build, and with ``--dist`` the built artifact list (after the build).
+  build, and with ``--dist`` the built artifact list and that no built
+  package's metadata (its PyPI page) links to ``main`` (after the build).
 - ``notes VERSION`` prints the CHANGELOG section for the GitHub release body.
 - ``index VERSION --dist DIR --index pypi|testpypi [--complete]`` compares the
   built files with what the index already holds: before publishing (conflicts
@@ -35,10 +41,12 @@ import json
 import re
 import subprocess
 import sys
+import tarfile
 import time
 import tomllib
 import urllib.error
 import urllib.request
+import zipfile
 from collections import Counter
 from collections.abc import Callable, Collection, Iterator, Sequence
 from pathlib import Path
@@ -56,6 +64,8 @@ INDEX_URLS = {
     "pypi": "https://pypi.org/pypi/{name}/{version}/json",
     "testpypi": "https://test.pypi.org/pypi/{name}/{version}/json",
 }
+#: A link into this repository on ``main``; group 1 is everything before ``/main``.
+MAIN_LINK = re.compile(r"(https://github\.com/alexisbeaulieu97/untaped/(?:blob|tree))/main\b")
 #: ``index --complete`` retries this often, this many seconds apart (about 2 minutes).
 INDEX_TRIES = 12
 INDEX_DELAY = 10
@@ -195,8 +205,12 @@ def version_errors(found: dict[str, dict[str, Any]], version: str) -> list[str]:
 # --- artifacts --------------------------------------------------------------
 
 
+def _stem(name: str, version: str) -> str:
+    return f"{name.replace('-', '_')}-{version}"
+
+
 def _package_artifacts(name: str, version: str) -> tuple[str, str]:
-    stem = f"{name.replace('-', '_')}-{version}"
+    stem = _stem(name, version)
     return f"{stem}-py3-none-any.whl", f"{stem}.tar.gz"
 
 
@@ -223,6 +237,75 @@ def artifact_errors(names: Collection[str], version: str, found: set[str]) -> li
     return [f"missing: {file}" for file in sorted(expected - found)] + [
         f"unexpected: {file}" for file in sorted(found - expected)
     ]
+
+
+# --- README links -----------------------------------------------------------
+
+
+def pin_links(text: str, version: str) -> str:
+    """``text`` with each ``blob/main`` and ``tree/main`` link into this repo at ``v<version>``."""
+    return MAIN_LINK.sub(rf"\1/v{version}", text)
+
+
+def readme_paths(root: Path) -> list[Path]:
+    """Each package's ``[project].readme`` file (a path or a ``{file = ...}`` table)."""
+    paths = []
+    for directory in [root, *_member_dirs(root)]:
+        readme = _pyproject(directory).get("project", {}).get("readme")
+        if isinstance(readme, dict):
+            readme = readme.get("file")
+        if isinstance(readme, str):
+            paths.append(directory / readme)
+    return paths
+
+
+def pin_readmes(root: Path, version: str) -> int:
+    """Rewrite every package README with ``pin_links``; the number of files it changed."""
+    if errors := _format_errors(version):
+        raise ReleaseError(errors[0])
+    changed = 0
+    for path in readme_paths(root):
+        text = path.read_text(encoding="utf-8")
+        pinned = pin_links(text, version)
+        if pinned != text:
+            path.write_text(pinned, encoding="utf-8")
+            changed += 1
+    return changed
+
+
+def _metadata(dist: Path, stem: str, file: str) -> str:
+    """The core metadata of a built wheel (``METADATA``) or sdist (``PKG-INFO``)."""
+    if file.endswith(".whl"):
+        with zipfile.ZipFile(dist / file) as wheel:
+            return wheel.read(f"{stem}.dist-info/METADATA").decode("utf-8")
+    with tarfile.open(dist / file) as sdist:
+        member = sdist.extractfile(f"{stem}/PKG-INFO")
+        if member is None:
+            raise KeyError(f"{stem}/PKG-INFO is not a file")
+        return member.read().decode("utf-8")
+
+
+def main_link_errors(names: Collection[str], version: str, dist: Path) -> list[str]:
+    """One error per built wheel or sdist in ``dist`` whose metadata links to ``main``.
+
+    The metadata holds the README as the PyPI page; ``readmes`` pins its links
+    before the build. A missing artifact is ``artifact_errors``' to report.
+    """
+    errors = []
+    for name in sorted(names):
+        stem = _stem(name, version)
+        for file in _package_artifacts(name, version):
+            if not (dist / file).is_file():
+                continue
+            try:
+                text = _metadata(dist, stem, file)
+            except (OSError, KeyError, tarfile.TarError, zipfile.BadZipFile) as exc:
+                reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+                errors.append(f"{file}: cannot read its metadata: {reason}")
+                continue
+            if match := MAIN_LINK.search(text):
+                errors.append(f"{file} links to main: {match.group(0)}")
+    return errors
 
 
 # --- index ------------------------------------------------------------------
@@ -550,6 +633,8 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     version = commands.add_parser("version", help="print the untaped package's version")
     version.add_argument("--tag", help="fail unless TAG is v<version> and HEAD is on main")
+    readmes = commands.add_parser("readmes", help="point package README links at vVERSION")
+    readmes.add_argument("version")
     check = commands.add_parser("check", help="check versions, pins and (with --dist) artifacts")
     check.add_argument("version", nargs="?", help="default: the untaped package's version")
     check.add_argument("--dist", type=Path)
@@ -589,6 +674,7 @@ def _check(root: Path, version: str, dist: Path | None) -> list[str]:
     errors = version_errors(found, version)
     if dist is not None:
         errors += artifact_errors(found, version, files)
+        errors += main_link_errors(found, version, dist)
     if not errors:
         print(f"ok: {len(found)} package(s), {len(files)} artifact(s) for {version}")
     return errors
@@ -622,6 +708,9 @@ def _dispatch(args: argparse.Namespace) -> list[str]:
             version = tagged_version(root, args.tag)
             check_on_main(root)
             print(version)
+        case "readmes":
+            changed = pin_readmes(root, args.version)
+            print(f"pinned README links to v{args.version} in {changed} file(s)")
         case "check":
             version = release_version(root) if args.version is None else args.version
             return _check(root, version, args.dist)
