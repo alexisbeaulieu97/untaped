@@ -164,8 +164,13 @@ def _broken_links(path: Path) -> list[str]:
     return broken
 
 
-#: The changelog and its per-major archives: link-checked, but history, so no other docs checks.
-CHANGELOGS = [REPO_ROOT / "CHANGELOG.md", *sorted((REPO_ROOT / "changelog").glob("*.md"))]
+#: The changelog, its per-major archives and the unreleased fragments: link-checked, but
+#: history, so no other docs checks.
+CHANGELOGS = [
+    REPO_ROOT / "CHANGELOG.md",
+    *sorted((REPO_ROOT / "changelog").glob("*.md")),
+    *sorted((REPO_ROOT / "changelog.d").glob("*.md")),
+]
 
 
 @pytest.mark.parametrize(

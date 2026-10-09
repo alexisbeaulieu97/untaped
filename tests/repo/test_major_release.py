@@ -1,9 +1,10 @@
 """A major release ships without the previous major's deprecated spellings.
 
-Fires when the workspace version is ``X.0.0`` (or an ``X.0.0`` pre-release)
-and ``CHANGELOG.md`` has no ``## Unreleased`` heading, which is the state of
-a major release PR. Between releases main carries the last released version,
-so the version alone would fire there. ``retired_keys`` never count: they are
+Fires when the workspace version is ``X.0.0`` (or an ``X.0.0`` pre-release),
+``CHANGELOG.md`` has a section for that version and ``changelog.d/`` holds no
+fragments, which is the state of a major release PR (and of main just after
+the release, where the test passes anyway). Between releases main carries the
+last released version, so the version alone would fire there. ``retired_keys`` never count: they are
 what a major leaves behind for ``config migrate``.
 """
 
@@ -12,7 +13,7 @@ from __future__ import annotations
 import functools
 import re
 import warnings
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
 from typing import Annotated, Any, ClassVar
 
@@ -22,6 +23,7 @@ from cyclopts import App, Parameter
 from packaging.version import Version
 from pydantic import BaseModel
 
+import changelog  # scripts/changelog.py
 from repo.support import REPO_ROOT
 from test_capabilities.capharness import make_spec
 from untaped import bootstrap, sdk
@@ -39,11 +41,11 @@ from untaped.stability import (
 from untaped.testing import provider_candidate
 
 
-def is_major_release(version: str, changelog: str) -> bool:
-    """Whether ``version`` with this ``changelog`` is a major release being prepared."""
+def is_major_release(version: str, text: str, fragments: Sequence[str]) -> bool:
+    """Whether ``version`` with this changelog ``text`` and fragments is a major release in prep."""
     parsed = Version(version)
-    unreleased = re.search(r"^## Unreleased\b", changelog, re.MULTILINE) is not None
-    return parsed.minor == 0 and parsed.micro == 0 and not unreleased
+    built = re.search(rf"^## {re.escape(version)}$", text, re.MULTILINE) is not None
+    return parsed.minor == 0 and parsed.micro == 0 and built and not fragments
 
 
 def settings_leftovers(sections: Mapping[str, type[BaseModel]]) -> list[str]:
@@ -116,7 +118,8 @@ def test_a_major_release_drops_deprecated_spellings(
     first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
 ) -> None:
     version = release.release_version(REPO_ROOT)
-    if not is_major_release(version, (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")):
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    if not is_major_release(version, text, changelog.fragment_paths(REPO_ROOT)):
         pytest.skip(f"{version} is not a major release being prepared")
     root = bootstrap.build_root_app(candidates=first_party_candidates)
     sections = profile_section_models()
@@ -134,17 +137,21 @@ def test_a_major_release_drops_deprecated_spellings(
 
 
 @pytest.mark.parametrize(
-    ("version", "changelog", "expected"),
+    ("version", "text", "fragments", "expected"),
     [
-        ("11.0.0", "# Changelog\n\n## 11.0.0\n", True),
-        ("11.0.0rc1", "# Changelog\n\n## 11.0.0\n", True),
-        ("11.0.0", "# Changelog\n\n## Unreleased\n\n## 10.0.0\n", False),
-        ("11.1.0", "# Changelog\n\n## 11.1.0\n", False),
-        ("11.0.1", "# Changelog\n\n## 11.0.1\n", False),
+        ("11.0.0", "# Changelog\n\n## 11.0.0\n", [], True),
+        ("11.0.0rc1", "# Changelog\n\n## 11.0.0rc1\n", [], True),
+        # A pre-release section is retitled by the final build, so the final version needs its own.
+        ("11.0.0", "# Changelog\n\n## 11.0.0rc1\n", [], False),
+        # Fragments left in changelog.d/ mean the release has not been built (main before it).
+        ("11.0.0", "# Changelog\n\n## 10.0.0\n", ["changelog.d/x.added.md"], False),
+        ("11.0.0", "# Changelog\n\n## 10.0.0\n", [], False),
+        ("11.1.0", "# Changelog\n\n## 11.1.0\n", [], False),
+        ("11.0.1", "# Changelog\n\n## 11.0.1\n", [], False),
     ],
 )
-def test_is_major_release(version: str, changelog: str, expected: bool) -> None:
-    assert is_major_release(version, changelog) is expected
+def test_is_major_release(version: str, text: str, fragments: list[str], expected: bool) -> None:
+    assert is_major_release(version, text, fragments) is expected
 
 
 class _Renamed(BaseModel):
