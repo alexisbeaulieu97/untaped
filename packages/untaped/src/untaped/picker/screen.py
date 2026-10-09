@@ -39,6 +39,7 @@ from untaped.picker.state import (
     handle,
     initial_state,
     is_inherited,
+    paste,
     press,
     refresh_failed,
     result,
@@ -52,7 +53,7 @@ from untaped.picker.state import (
 from untaped.screen.components.buttons import BOX_ROWS, Button, Buttons
 from untaped.screen.components.choices import ListItem
 from untaped.screen.components.draw import role_style, text_line, unboxed
-from untaped.screen.components.inputs import TextInput
+from untaped.screen.components.inputs import COMPLETION_ROWS, TextInput
 from untaped.screen.components.layout import Panes
 from untaped.screen.components.lists import SearchList, Tree, TreeRow
 from untaped.screen.core import (
@@ -76,6 +77,7 @@ from untaped.screen.core import (
 )
 from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked
+from untaped.ui import GENERIC_ALTERNATIVE, GENERIC_COMMAND
 
 __all__ = ["picker_screen"]
 
@@ -124,8 +126,8 @@ def picker_screen(request: PickRequest) -> Screen[PickerState, PickResult]:
         update=update,
         view=_view,
         title=request.heading,
-        command=request.terminal_command,
-        alternative=request.terminal_alternative,
+        command=request.command or GENERIC_COMMAND,
+        alternative=request.alternative or GENERIC_ALTERNATIVE,
         keys=_KEYS,
         shared_labels=_SHARED_LABELS,
         layout="full",
@@ -149,7 +151,7 @@ def _update(
         case Key(name):
             new = _key(state, name)
         case Paste(text):
-            new = _paste(state, text)
+            new = paste(state, text)
         case _Loaded(catalog):
             new = with_catalog(state, catalog)
         case CmdError(error):
@@ -180,16 +182,11 @@ def _ending(state: PickerState) -> list[Cmd]:
     return []
 
 
-def _paste(state: PickerState, text: str) -> PickerState:
-    for char in text:
-        if char.isprintable():
-            state = handle(state, char)
-    return state
-
-
 def _key(state: PickerState, name: str) -> PickerState:
     if name == "ctrl-r" and state.request.refresh is not None:
         return state  # the screen's own binding, not a key the reducer knows
+    if name == "?" and state.quitting:
+        return state  # help opens over the discard question, which stays open
     new, used = press(state, name)
     if used or name not in SHARED_KEYS:
         return new  # a key the picker used, or one nobody else wants: the error is dismissed
@@ -199,17 +196,26 @@ def _key(state: PickerState, name: str) -> PickerState:
 # --- keys ----------------------------------------------------------------------
 
 
+# While the discard question is open, every key but ctrl-r and ? answers it: the footer offers
+# none of the others.
+
+
 def _searching(state: PickerState) -> bool:
-    return state.focus == "search"
+    return state.focus == "search" and not state.quitting
 
 
 def _in_list(state: PickerState) -> bool:
-    return state.focus == "list"
+    return state.focus == "list" and not state.quitting
 
 
 def _on_item(state: PickerState) -> bool:
     owner, key = state.row
-    return state.focus == "selected" and key is None and owner not in (ALL, CREATE)
+    return (
+        state.focus == "selected"
+        and key is None
+        and owner not in (ALL, CREATE)
+        and not state.quitting
+    )
 
 
 def _on_choice(state: PickerState) -> bool:
@@ -219,6 +225,7 @@ def _on_choice(state: PickerState) -> bool:
         and key is not None
         and bool(setting_for(state, key).choices)
         and state.editing is None
+        and not state.quitting
     )
 
 
@@ -248,7 +255,7 @@ def _tab_label(state: PickerState) -> str | None:
 def _enter_label(state: PickerState) -> str | None:
     """What enter does where it is worth saying: edit a text setting, press Create."""
     owner, key = state.row
-    if state.focus != "selected" or state.editing is not None:
+    if state.focus != "selected" or state.editing is not None or state.quitting:
         return None
     if owner == CREATE:
         return "create"
@@ -257,12 +264,26 @@ def _enter_label(state: PickerState) -> str | None:
     return None
 
 
+def _esc_label(state: PickerState) -> str | None:
+    """Esc clears a typed query before it goes back, like a ``SearchList``; asked, it keeps the
+    selection."""
+    if state.quitting:
+        return "keep"
+    return "clear" if state.query and state.focus in ("search", "list") else None
+
+
+def _ctrl_s_label(state: PickerState) -> str | None:
+    """Ctrl-s creates, except while the discard question is open, where it answers "no"."""
+    return None if state.quitting else "create"
+
+
 #: What the shared keys do here, for the footer and the help overlay. They stay the SDK's
 #: keys; the screen only says what they mean in the picker.
 _SHARED_LABELS: Mapping[str, str | Callable[[PickerState], str | None]] = {
     "tab": _tab_label,
     "enter": _enter_label,
-    "ctrl-s": "create",
+    "esc": _esc_label,
+    "ctrl-s": _ctrl_s_label,
 }
 
 
@@ -415,7 +436,7 @@ class _SelectedPane:
         editor = self._editor(editor_frame) if state.editing is not None else None
         editor_rows = 0
         if editor is not None:
-            candidates = min(5, len(editor.matches or ())) if editor.completing else 0
+            candidates = min(COMPLETION_ROWS, len(editor.matches or ())) if editor.completing else 0
             # The label line (a border when boxed), the value, the help; boxed adds the bottom
             # border and a rule over the candidates.
             editor_rows = 3 + candidates

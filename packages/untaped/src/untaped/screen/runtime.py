@@ -50,6 +50,7 @@ from untaped.screen.core import (
     Quit,
     Resize,
     Screen,
+    SharedKey,
     is_inline,
 )
 from untaped.theme import ThemeSpec
@@ -236,14 +237,21 @@ class Runtime[M, R]:
         if shared.message is None:
             self.help_open = True
             self._update(Help())
-        elif not self._update(shared.message) and shared.unhandled is not None:
+        else:
+            self._shared(shared)
+
+    def _shared(self, shared: SharedKey) -> None:
+        """Deliver a shared key's message; its ``unhandled`` follows when ``update`` ignored it."""
+        if not self._update(shared.message) and shared.unhandled is not None:
             self._inbox.append(shared.unhandled)
 
     def _help_key(self, name: str) -> None:
+        """The overlay swallows keys; ctrl-c closes it and reaches the screen as ``Interrupt``."""
         if name in ("?", "esc", "enter"):
             self.help_open = False
         elif name == "ctrl-c":
-            self._inbox.append(Cancel(interrupted=True))
+            self.help_open = False
+            self._shared(SHARED_KEYS[name])
 
     def _shared_labels(self) -> dict[str, str]:
         """The screen's shared-key labels for the current model (a function may decline)."""

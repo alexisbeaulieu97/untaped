@@ -16,8 +16,6 @@ from rich.cells import cell_len
 
 from screen.gallery import render_styled, role
 from untaped.picker import (
-    GENERIC_ALTERNATIVE,
-    GENERIC_COMMAND,
     PickCatalog,
     PickItem,
     PickRequest,
@@ -30,6 +28,7 @@ from untaped.screen.core import Back, Cancel, Frame, Interrupt, Key, Paste, Quit
 from untaped.testing import ScreenRun, drive_screen
 from untaped.testing.screens import rendered_text
 from untaped.theme import BUILTIN_THEMES
+from untaped.ui import GENERIC_ALTERNATIVE, GENERIC_COMMAND
 
 DEFAULT = BUILTIN_THEMES["default"]
 LEFT, RIGHT = DEFAULT.symbols["cycle.left"], DEFAULT.symbols["cycle.right"]
@@ -174,9 +173,24 @@ def test_pasted_text_lands_in_the_search() -> None:
     assert _picked_ids(run) == ["acme/web"]
 
 
-def test_a_paste_after_the_outcome_is_decided_acts_once() -> None:
-    run = _run(_request(), "down", " ", "ctrl-c", Paste("yy"))
-    assert run.outcome == Cancel()
+def test_a_paste_is_text_never_keys() -> None:
+    """Spaces and slashes in a paste are typed, not replayed as toggles or focus moves."""
+    in_list = _run(_request(), "down", Paste(" a/b"))
+    assert (in_list.model.query, in_list.model.selected) == (" a/b", ())
+
+    in_selected = _run(_request(), "down", " ", "tab", "down", "down", "down", Paste(" x"))
+    assert in_selected.model.selected == ("acme/api",)
+
+    asked = _run(_request(), "down", " ", "ctrl-c", Paste("yy"))
+    assert asked.outcome is None
+    assert asked.model.quitting
+
+
+def test_a_paste_lands_in_the_name_and_the_setting_being_edited() -> None:
+    named = _run(_request(title_label="name"), "up", Paste("J 1"))
+    assert named.model.title == "J 1"
+    editing = _run(_text_request(), "down", " ", "tab", "down", "enter", Paste("dev /x"))
+    assert editing.model.editing == "maindev /x"
 
 
 def test_a_paste_drops_control_characters() -> None:
@@ -214,10 +228,59 @@ def test_esc_with_nothing_selected_in_the_selected_pane_cancels() -> None:
     assert _run(_request(), "tab", "esc").outcome == Cancel()
 
 
-def test_esc_in_the_search_clears_the_query_and_never_quits() -> None:
-    run = _run(_request(), *"web", "esc", "esc")
-    assert run.model.query == ""
-    assert run.outcome is None
+def test_esc_in_the_search_clears_the_query_then_goes_back() -> None:
+    cleared = _run(_request(), *"web", "esc")
+    assert cleared.model.query == ""
+    assert cleared.outcome is None
+    assert _run(_request(), *"web", "esc", "esc").outcome == Cancel()
+
+
+def test_esc_in_the_list_with_a_selection_asks_before_discarding() -> None:
+    asked = _run(_request(), "down", " ", "esc")
+    assert "discard 1 selected? y/n" in asked.frame
+    assert asked.outcome is None
+
+
+def test_the_footer_says_esc_clears_while_a_query_is_typed() -> None:
+    assert "esc clear" in _lines(_run(_request(), *"web").frame)[-1]
+    assert "esc clear" in _lines(_run(_request(), *"web", "down").frame)[-1]
+    assert "esc back" in _lines(_run(_request(), *"web", "esc").frame)[-1]
+
+
+def test_the_footer_offers_no_picker_keys_while_the_discard_question_is_open() -> None:
+    run = _run(_request(), *"web", "down", " ", "ctrl-c")
+    assert "discard 1 selected? y/n" in run.frame
+
+    footer = _lines(run.frame)[-1]
+    for entry in ("esc clear", "space toggle", "/ search", "ctrl-s create"):
+        assert entry not in footer
+
+    on_item = ("down", " ", "tab", "down", "down", "down", "ctrl-c")
+    assert "space remove" not in _lines(_run(_many(), *on_item).frame)[-1]
+    on_choice = _lines(_run(_many(), "down", " ", "tab", "down", "ctrl-c").frame)[-1]
+    assert "left previous" not in on_choice
+    assert "right next" not in on_choice
+
+    from_search = _lines(_run(_request(), "down", " ", "up", "ctrl-c").frame)[-1]
+    assert "down browse" not in from_search
+    on_create = ("down", " ", "tab", *["down"] * 8, "ctrl-c")
+    assert "enter create" not in _lines(_run(_many(), *on_create).frame)[-1]
+    on_text = ("down", " ", "tab", "down", "down", "ctrl-c")
+    assert "enter edit" not in _lines(_run(_many(), *on_text).frame)[-1]
+
+
+def test_the_footer_says_esc_keeps_the_selection_while_the_discard_question_is_open() -> None:
+    footer = _lines(_run(_request(), "down", " ", "ctrl-c").frame)[-1]
+    assert "esc keep" in footer
+    assert "esc back" not in footer
+
+
+def test_help_opens_over_the_discard_question_and_leaves_it_open() -> None:
+    run = _run(_request(), "down", " ", "ctrl-c", "?")
+    assert "Keys" in run.frame
+    assert run.model.quitting
+
+    assert _run(_request(), "down", " ", "ctrl-c", "?", "esc", "y").outcome == Cancel()
 
 
 def test_esc_goes_back_even_while_an_error_is_showing() -> None:
@@ -759,18 +822,6 @@ def test_only_the_state_is_the_models_key_press() -> None:
         state = handle(state, key)
     assert run.model == state
     assert Key("w") == Key("w")
-
-
-def test_a_request_resolves_its_terminal_command_and_alternative_once() -> None:
-    assert (_request().terminal_command, _request().terminal_alternative) == (
-        GENERIC_COMMAND,
-        GENERIC_ALTERNATIVE,
-    )
-    named = _request(command="untaped workspace create", alternative="--repo")
-    assert (named.terminal_command, named.terminal_alternative) == (
-        "untaped workspace create",
-        "--repo",
-    )
 
 
 def test_ctrl_r_while_a_refresh_runs_still_dismisses_the_error() -> None:

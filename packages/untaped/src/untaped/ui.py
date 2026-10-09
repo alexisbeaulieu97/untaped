@@ -19,7 +19,7 @@ from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
-    PromptToolkitPromptBackend,
+    TerminalPromptBackend,
     handle_prompt_exception,
     open_controlling_terminal,
     prompt_backend_override,
@@ -73,7 +73,7 @@ class UiContext:
         self.stdout = stdout or sys.stdout
         self.stderr = stderr or sys.stderr
         self._prompt_backend = prompt_backend
-        self._default_prompt_backend: PromptToolkitPromptBackend | None = None
+        self._default_prompt_backend: TerminalPromptBackend | None = None
 
     @property
     def can_prompt(self) -> bool:
@@ -110,7 +110,7 @@ class UiContext:
         if cached is not None and cached.stdin is self.stdin and cached.stderr is self.stderr:
             return cached
 
-        backend = PromptToolkitPromptBackend(
+        backend = TerminalPromptBackend(
             stdin=self.stdin,
             stderr=self.stderr,
             theme=self.theme,
@@ -392,12 +392,26 @@ class UiContext:
         result raises :class:`OperationCancelledError`; an interrupt raises
         :class:`PromptInterruptedError` (exit 130), like every prompt.
         """
-        from untaped.screen.core import Quit  # noqa: PLC0415 - keeps screens off the startup path
+        from untaped.screen.core import (  # noqa: PLC0415 - keeps screens off the startup path
+            Cancel,
+            Quit,
+        )
 
         with self._screen_terminal(command=screen.command, alternative=screen.alternative):
+            # Read inside the block: the default backend is built on the swapped streams.
+            backend = self.prompt_backend
+            run_screen: Callable[..., Quit[R] | Cancel] | None = getattr(
+                backend, "run_screen", None
+            )
+            if run_screen is None:
+                raise ConfigError(
+                    f"prompt backend {type(backend).__name__} cannot run screens: "
+                    "it has no run_screen method",
+                    category="failed",
+                    system="untaped",
+                )
             try:
-                # Read inside the block: the default backend is built on the swapped streams.
-                outcome = self.prompt_backend.run_screen(screen, theme=self.theme)
+                outcome = run_screen(screen, theme=self.theme)
             except (ConfigError, EOFError, KeyboardInterrupt) as exc:
                 raise handle_prompt_exception(exc) from exc
         if isinstance(outcome, Quit):
@@ -445,7 +459,6 @@ class UiContext:
         search: bool = False,
     ) -> T:
         """Prompt for one typed choice."""
-        self._ensure_promptable()
         self._validate_choices(choices)
         with self._prompt_terminal():
             try:
@@ -462,7 +475,6 @@ class UiContext:
         min_count: int = 0,
     ) -> list[T]:
         """Prompt for multiple typed choices."""
-        self._ensure_promptable()
         self._validate_choices(choices)
         selected_defaults = list(defaults or ())
         with self._prompt_terminal():
@@ -492,9 +504,7 @@ class UiContext:
             raise ConfigError(
                 "picker items must have unique ids", category="failed", system="untaped"
             )
-        with self._screen_terminal(
-            command=request.terminal_command, alternative=request.terminal_alternative
-        ):
+        with self._screen_terminal(command=request.command, alternative=request.alternative):
             try:
                 picked = self.prompt_backend.pick_many(request)
             except (ConfigError, EOFError, KeyboardInterrupt) as exc:
@@ -526,9 +536,21 @@ class UiContext:
             )
 
 
+GENERIC_COMMAND = "this command"
+"""What the no-terminal refusal names when a picker request carries no ``command``."""
+GENERIC_ALTERNATIVE = "its non-interactive options (see --help)"
+"""What the no-terminal refusal offers when a picker request carries no ``alternative``."""
+
+
 def no_terminal_message(command: str, alternative: str) -> str:
-    """The error for a screen with no terminal to draw on: the one place its text lives."""
-    return f"`{command}` needs a terminal; use `{alternative}`"
+    """The error for a screen with no terminal to draw on: the one place its text lives.
+
+    An empty ``command`` or ``alternative`` (a picker request may leave them out)
+    is said in words instead of quoted as a command.
+    """
+    named = f"`{command}`" if command else GENERIC_COMMAND
+    offer = f"`{alternative}`" if alternative else GENERIC_ALTERNATIVE
+    return f"{named} needs a terminal; use {offer}"
 
 
 def ui_context(

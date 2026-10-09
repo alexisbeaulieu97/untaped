@@ -218,7 +218,7 @@ def test_a_termination_signal_restores_the_terminal_and_exits(
 
 
 def test_an_answered_inline_prompt_leaves_its_record_line_on_the_terminal() -> None:
-    from untaped.prompts import PromptToolkitPromptBackend
+    from untaped.prompts import TerminalPromptBackend
 
     master, slave = os.openpty()
     path = os.ttyname(slave)
@@ -226,7 +226,7 @@ def test_an_answered_inline_prompt_leaves_its_record_line_on_the_terminal() -> N
         result: list[object] = []
 
         def work() -> None:
-            backend = PromptToolkitPromptBackend(stdin=tty_in, stderr=tty_out)
+            backend = TerminalPromptBackend(stdin=tty_in, stderr=tty_out)
             try:
                 result.append(backend.text("Name", default=None))
             except BaseException as error:
