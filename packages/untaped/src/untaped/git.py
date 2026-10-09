@@ -146,6 +146,7 @@ _AUTH_MARKERS = (
     "authentication failed",
     "could not read username",
     "could not read password",
+    "unable to get password",
     "terminal prompts disabled",
     "permission denied (publickey",
     "invalid username or password",
