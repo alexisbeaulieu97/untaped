@@ -40,7 +40,6 @@ _LOG = logging.getLogger("untaped.auth")
 _TIMEOUT_SECONDS = 60.0
 _MASK = "**********"
 _cache: dict[tuple[str, ...], str] = {}
-_warned: set[str] = set()
 
 
 def _check_argv(value: list[str] | None) -> list[str] | None:
@@ -244,9 +243,8 @@ def forget_token_command(argv: list[str]) -> None:
 
 
 def clear_token_cache() -> None:
-    """Forget every ``token_command`` result and plaintext warning (tests, embedding)."""
+    """Forget every ``token_command`` result (tests, embedding)."""
     _cache.clear()
-    _warned.clear()
 
 
 def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
@@ -261,20 +259,15 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     # worker thread over its screen: nothing to warn about, nowhere to print it.
     if active_overlay() is not None:
         return
-    if (
-        section in _warned
-        or not takes_token_command(type(settings))
-        or token_override_env(section) is not None
-    ):
+    if not takes_token_command(type(settings)) or token_override_env(section) is not None:
         return
-    _warned.add(section)
-    from untaped.messages import hint  # noqa: PLC0415 - keep auth imports light
-    from untaped.ui import ui_context  # noqa: PLC0415
+    from untaped.deprecated_keys import warn_once  # noqa: PLC0415 - keep auth imports light
+    from untaped.messages import hint  # noqa: PLC0415
 
-    ui_context(strict=False).message(
-        "warning",
+    warn_once(
         f"{section}.token is stored in plain text in the config file, which is deprecated\n"
         f"{hint('auth migrate')}",
+        key=f"plaintext {section}.token",
     )
 
 
