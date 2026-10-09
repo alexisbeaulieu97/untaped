@@ -104,3 +104,18 @@ def test_missing_summary_fields_degrades_to_none_name() -> None:
     nodes = _StubNodes({10: [raw]})
     result = _use(nodes)(JOB_TEMPLATE_SPEC, identifier="10", by_id=True)
     assert [(u.id, u.name, u.node_count) for u in result] == [(100, None, 1)]
+
+
+def test_a_true_cycle_warns_once_and_stops() -> None:
+    nodes = _StubNodes(
+        {
+            10: [_ref(1, wf_id=100, wf_name="a")],
+            100: [_ref(2, wf_id=200, wf_name="b")],
+            200: [_ref(3, wf_id=100, wf_name="a")],
+        }
+    )
+    warnings: list[str] = []
+    _use(nodes, warn=warnings.append)(
+        JOB_TEMPLATE_SPEC, identifier="10", by_id=True, max_depth=None
+    )
+    assert warnings == ["workflow 100: already visited (a cycle); skipped"]

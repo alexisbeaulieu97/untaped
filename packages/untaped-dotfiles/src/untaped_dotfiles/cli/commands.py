@@ -20,8 +20,10 @@ from untaped.sdk import (
     echo,
     emit,
     finish,
+    hint,
     plural,
     q,
+    render_rows,
     report_error,
     report_errors,
     report_row_errors,
@@ -74,7 +76,8 @@ PolicyOption = Annotated[
     Parameter(
         name="--policy",
         help="sync (new versions apply as they arrive), once (apply, then leave alone) or "
-        "manual (report; apply when asked). Default: the manifest's suggestion.",
+        "manual (report; apply when asked). Default: the item's current policy when it is "
+        "already enabled, else the manifest's suggestion (manual when it has none).",
     ),
 ]
 
@@ -118,9 +121,9 @@ def subscribe_command(
         rows = svc.catalog.rows(record.name)
         emit(rows, fmt=fmt, columns=columns, kind=ITEM, empty="No items in the manifest.")
         ui_context(strict=False).success(
-            f"subscribed {q(record.name)} ({plural(len(rows), 'item')}); "
-            f"run `untaped dotfiles enable ITEM` to pick items"
+            f"subscribed {q(record.name)} ({plural(len(rows), 'item')})"
         )
+        echo(hint("dotfiles enable ITEM"), err=True)
 
 
 @writes(destructive=True)
@@ -239,9 +242,8 @@ def enable_command(
             for row in rows
         ]
         emit(outcomes, fmt=fmt, columns=columns, kind=ITEM_OUTCOME)
-        ui_context(strict=False).success(
-            f"enabled {plural(len(rows), 'item')}; run `untaped dotfiles apply` to place them"
-        )
+        ui_context(strict=False).success(f"enabled {plural(len(rows), 'item')}")
+        echo(hint("dotfiles apply"), err=True)
 
 
 @writes
@@ -282,8 +284,8 @@ def status_command(
         Parameter(
             name="--check",
             negative="",
-            help="Exit 3 when any path needs the user (behind, modified, conflict, missing, "
-            "orphan, or one that could not be read).",
+            help="Exit 3 when any path needs the user (behind, modified, conflict, missing "
+            "or orphan).",
         ),
     ] = False,
     all_paths: Annotated[
@@ -301,7 +303,11 @@ def status_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Show the state of every placed path, offline. Also writes status.json and attention."""
+    """Show the state of every placed path, offline.
+
+    A path that could not be read exits 1. Run without ITEM or --repo, it also
+    rewrites status.json and attention.
+    """
     with report_errors():
         svc = services()
         choices = pick_enabled(svc.store, items, repo=repo)
@@ -332,18 +338,25 @@ def diff_command(
         choices = pick_enabled(svc.store, items, repo=repo)
         resolved = svc.inventory.placements(choices)
         _report_problems(resolved.problems)
-        for text in _diffs(svc, resolved.placements):
+        texts, unread = _diffs(svc, resolved.placements)
+        for text in texts:
             echo(text, nl=False)
-    finish(bool(resolved.problems))
+    finish(bool(resolved.problems) or unread)
 
 
-def _diffs(svc: Services, placements: Sequence[Placement]) -> list[str]:
+def _diffs(svc: Services, placements: Sequence[Placement]) -> tuple[list[str], bool]:
+    """The diff text of each copy and merge path that would change, and whether one failed."""
     svc.evaluator.prime_changes(placements)
     out: list[str] = []
+    failed = False
     for p in placements:
         if p.mode == "link" or p.excluded:
             continue
         found = svc.evaluator.evaluate(p)
+        if found.error is not None:
+            report_error(found.error, item=f"{p.item}/{p.source}")
+            failed = True
+            continue
         if found.state not in ("pending", "foreign", "behind", "modified", "conflict"):
             continue
         before = svc.placer.render(p.target)
@@ -353,7 +366,7 @@ def _diffs(svc: Services, placements: Sequence[Placement]) -> list[str]:
         else:
             after = data.decode("utf-8", errors="replace")
         out.append(unified_diff_text(before, after, path=_shown(svc, p.target)))
-    return out
+    return out, failed
 
 
 def _shown(svc: Services, target: Path) -> str:
@@ -616,7 +629,7 @@ def _confirm(
 
     def preview() -> None:
         rows = [row.model_dump(mode="json") for row in planned]
-        echo(ui.collection(rows, fmt=fmt), err=True)
+        echo(render_rows(rows, fmt=fmt, table_columns=PlaceOutcome.table_columns), err=True)
 
     ui.confirm_or_cancel(
         message,
@@ -630,7 +643,7 @@ def _note_repos(rows: Sequence[RepoOutcome]) -> None:
     ui = ui_context(strict=False)
     for row in rows:
         if row.action == "skipped":
-            ui.message("info", f"{row.name}: {row.detail}")
+            ui.message("warning", f"{row.name}: {row.detail}")
 
 
 def _planned_attention(steps: Sequence[Step]) -> int:

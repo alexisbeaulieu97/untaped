@@ -223,7 +223,7 @@ class Harness:
             "index": self.index,
             "aliases": {},
             "default_dependency_paths": [_REQS],
-            "repo_cache_path": self.tmp_path / "repos",
+            "cache_dir": self.tmp_path / "repos",
             "clone_protocol": "https",
             "fetch_depth": 1,
             "blob_filter": True,

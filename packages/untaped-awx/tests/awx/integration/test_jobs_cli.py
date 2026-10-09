@@ -759,8 +759,8 @@ def test_jobs_wait_multi_id_timeout(fake_aap: Any) -> None:
     assert result.exit_code == 1
     stderr = result.stderr or ""
     # One breadcrumb per id — neither was silently dropped.
-    assert "warning: timeout: job 42" in stderr
-    assert "warning: timeout: job 43" in stderr
+    assert "warning: job 42: timed out before reaching a terminal state" in stderr
+    assert "warning: job 43: timed out before reaching a terminal state" in stderr
 
 
 @pytest.mark.parametrize("fmt", ["json", "yaml"])

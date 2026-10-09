@@ -83,7 +83,7 @@ class ListTemplateUsage:
             for wf_id, (name, count) in references.items():
                 if wf_id in new_ancestors:
                     self._warn(
-                        f"cycle: workflow {wf_id} already visited; skipping",
+                        f"workflow {wf_id}: already visited (a cycle); skipped",
                     )
                     continue
                 if wf_id in listed:

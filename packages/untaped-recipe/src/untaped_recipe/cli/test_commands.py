@@ -35,7 +35,7 @@ from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
-    library_root,
+    library_dir,
     report_config_errors,
     settings,
 )
@@ -80,7 +80,7 @@ def test_command(
     with report_config_errors():
         if update and ref_text is None:
             raise UsageError("--update requires an explicit pack or recipe argument")
-        root = library_root()
+        root = library_dir()
         selection = _select(root, ref_text)
         results = _execute(root, selection, update=update)
         rows = [_row(result) for result in results]
@@ -109,7 +109,7 @@ def test_command(
 
 
 def _select(root: Path, ref_text: str | None) -> _Selection:
-    library = PackLibrary(library_root=root)
+    library = PackLibrary(library_dir=root)
     if ref_text is None:
         selection = _Selection()
         for pack in library.packs():
@@ -179,7 +179,7 @@ def _execute(root: Path, selection: _Selection, *, update: bool) -> list[CaseRes
         startup_notice=hook_startup_notice(ui),
     ) as workers:
         executor = HookExecutor(
-            HookResolver(library_root=root),
+            HookResolver(library_dir=root),
             workers=workers,
         )
         with ui.progress("Running test cases") as progress:

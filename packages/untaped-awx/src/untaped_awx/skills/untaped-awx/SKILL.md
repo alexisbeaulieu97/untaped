@@ -68,10 +68,11 @@ Use the agent profile when one exists (`--profile agent`).
    `untaped awx test run --scm-branch main --format json > /tmp/baseline.json`
    (exit 1 is expected when `main` already fails some cases).
 3. Commit and push: AWX runs what the remote has.
-4. `untaped awx test validate` passes without launching anything.
+4. `untaped awx test validate --scm-branch HEAD` passes without launching
+   anything.
 5. `untaped awx test run --scm-branch HEAD --compare /tmp/baseline.json --format json`.
-   When the change edits a spec under `.untaped/awx/`, add `--source-ref
-   HEAD` to step 4 and use it instead of `--scm-branch HEAD` in step 5.
+   When the change edits a spec under `.untaped/awx/`, use `--source-ref
+   HEAD` instead of `--scm-branch HEAD` in steps 4 and 5.
 6. Exit 0: no regression and no failing new case. Exit 1: each failing row's
    `failure.system` says who must act; fix, push, rerun. Exit 4 or 5: the
    environment, not the change.

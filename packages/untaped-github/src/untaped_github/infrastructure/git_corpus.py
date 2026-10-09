@@ -420,7 +420,12 @@ class GitCorpusCache:
                 ["worktree", "add", "--detach", str(worktree), selected_ref],
                 timeout=self._slow_timeout,
             )
-        return WorktreeResult(repo=repo.full_name, ref=selected_ref, path=str(worktree))
+        return WorktreeResult(
+            target_path=worktree.absolute(),
+            path=str(worktree),
+            repo=repo.full_name,
+            ref=selected_ref,
+        )
 
     def _cached(self, repo: CorpusRepoTarget, *, root: Path) -> RepoCache:
         """The cache of ``repo``; ``not_found`` when it has never been synced."""
