@@ -77,9 +77,9 @@ _TERM_GRACE_S = 2.0
 _LIVE_GROUPS: dict[int, None] = {}
 # Signals forward_signals() passed on, for a group registered just after one.
 _FORWARDED: list[int] = []
-# Git commands forked but not yet in _LIVE_GROUPS, for a signal that ends untaped.
-_SPAWNING = [0]
-_SPAWNING_LOCK = threading.Lock()
+# Threads forking a git not yet in _LIVE_GROUPS, for a signal that ends untaped.
+# Dict set and pop are atomic, so neither a lock nor an interrupt can wedge it.
+_SPAWNING: dict[int, None] = {}
 # How long a signal that ends untaped waits for those to register.
 _SPAWN_WAIT_S = 1.0
 _REDACTED = "<redacted>"
@@ -414,7 +414,8 @@ def _run_process(
     untaped's own process group reach git only through :func:`forward_signals`.
     """
     forwarded = len(_FORWARDED)
-    _count_spawning(1)
+    spawner = threading.get_ident()
+    _SPAWNING[spawner] = None
     try:
         process = subprocess.Popen(
             cmd,
@@ -426,12 +427,14 @@ def _run_process(
             start_new_session=True,
         )
     except BaseException:
-        _count_spawning(-1)
+        _SPAWNING.pop(spawner, None)
         raise
     with process:
         try:
+            # Register before clearing the mark: a dying untaped signals the
+            # groups again once no other thread is mid-spawn.
             _LIVE_GROUPS[process.pid] = None
-            _count_spawning(-1)
+            _SPAWNING.pop(spawner, None)
             # A signal forwarded between Popen and registration missed this group.
             for sig in _FORWARDED[forwarded:]:
                 _signal_group(process.pid, sig)
@@ -440,13 +443,9 @@ def _run_process(
             _stop_group(process)
             raise
         finally:
+            _SPAWNING.pop(spawner, None)
             _LIVE_GROUPS.pop(process.pid, None)
     return subprocess.CompletedProcess(cmd, process.returncode, out, err)
-
-
-def _count_spawning(delta: int) -> None:
-    with _SPAWNING_LOCK:
-        _SPAWNING[0] += delta
 
 
 def _stop_group(process: subprocess.Popen[bytes]) -> None:
@@ -506,7 +505,8 @@ def _forward_signal(previous: Callable[..., object] | int, signum: int, frame: o
     else:  # SIG_DFL: die of the signal, as untaped did before
         # A git another thread is starting would outlive untaped: let it register.
         deadline = time.monotonic() + _SPAWN_WAIT_S
-        while _SPAWNING[0] > 0 and time.monotonic() < deadline:
+        me = threading.get_ident()  # a spawn on this thread cannot finish meanwhile
+        while any(t != me for t in list(_SPAWNING)) and time.monotonic() < deadline:
             time.sleep(0.01)
         for pgid in list(_LIVE_GROUPS):
             _signal_group(pgid, signum)

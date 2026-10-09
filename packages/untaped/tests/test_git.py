@@ -609,13 +609,11 @@ def test_a_signal_forwarded_while_git_starts_still_reaches_it(
     assert time.monotonic() - started < 15, "git ran on until its timeout"
 
 
-def test_a_signal_that_ends_untaped_waits_for_a_git_being_started(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _die_of_default_signal(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, int]]:
+    """Make _forward_signal's SIG_DFL branch record signals and raise SystemExit."""
     signalled: list[tuple[int, int]] = []
     monkeypatch.setattr(git, "_signal_group", lambda pgid, sig: signalled.append((pgid, sig)))
-    monkeypatch.setattr(git, "_LIVE_GROUPS", {})
-    monkeypatch.setattr(git, "_SPAWNING", [1])  # another thread is forking git
+    monkeypatch.setattr(git, "_FORWARDED", [])
     monkeypatch.setattr(git.signal, "signal", lambda *_: None)
     monkeypatch.setattr(git.os, "kill", lambda *_: None)
 
@@ -623,34 +621,69 @@ def test_a_signal_that_ends_untaped_waits_for_a_git_being_started(
         raise SystemExit(status)
 
     monkeypatch.setattr(git.os, "_exit", exit_)
+    return signalled
+
+
+def test_a_signal_that_ends_untaped_waits_for_a_git_being_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signalled = _die_of_default_signal(monkeypatch)
+    live: dict[int, None] = {}
+    spawning: dict[int, None] = {-1: None}  # another thread is forking git
+    monkeypatch.setattr(git, "_LIVE_GROUPS", live)
+    monkeypatch.setattr(git, "_SPAWNING", spawning)
 
     def register() -> None:
         time.sleep(0.1)
-        git._LIVE_GROUPS[4242] = None
-        git._SPAWNING[0] = 0
+        live[4242] = None
+        spawning.clear()
 
-    threading.Thread(target=register).start()
+    registrar = threading.Thread(target=register)
+    registrar.start()
     with pytest.raises(SystemExit):
         git._forward_signal(signal.SIG_DFL, signal.SIGTERM, None)
+    registrar.join()
 
     assert (4242, signal.SIGTERM) in signalled
 
 
-def test_a_git_that_cannot_start_is_not_left_counted_as_starting(
+def test_a_signal_that_ends_untaped_does_not_wait_for_its_own_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(git, "_SPAWNING", [0])
+    _die_of_default_signal(monkeypatch)
+    # The handler interrupted this thread mid-spawn: that spawn cannot finish.
+    monkeypatch.setattr(git, "_SPAWNING", {threading.get_ident(): None})
+    monkeypatch.setattr(git, "_SPAWN_WAIT_S", 30.0)
 
-    def no_exec(*_: Any, **kwargs: Any) -> None:
+    started = time.monotonic()
+    with pytest.raises(SystemExit):
+        git._forward_signal(signal.SIG_DFL, signal.SIGTERM, None)
+    assert time.monotonic() - started < 5
+
+
+def test_no_git_is_left_marked_as_starting(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    spawning: dict[int, None] = {}
+    monkeypatch.setattr(git, "_SPAWNING", spawning)
+    real_popen = subprocess.Popen
+
+    def popen(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        if kwargs.get("start_new_session"):
+            assert spawning, "git forked without being marked as starting"
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(git.subprocess, "Popen", popen)
+    run_git(["init", "-q", str(tmp_path / "r")], timeout=30, batch_ssh=False)
+    assert spawning == {}
+
+    def no_exec(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
         if kwargs.get("start_new_session"):
             raise OSError("exec format error")
-        return real_popen(*_, **kwargs)
+        return real_popen(*args, **kwargs)
 
-    real_popen = subprocess.Popen
     monkeypatch.setattr(git.subprocess, "Popen", no_exec)
     with pytest.raises(GitCommandError, match="could not run"):
         run_git(["status"], timeout=5, batch_ssh=False)
-    assert git._SPAWNING == [0]
+    assert spawning == {}
 
 
 def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch) -> None:
