@@ -40,7 +40,7 @@ from untaped.management.doctor import (
     placeholders,
     run_line,
 )
-from untaped.messages import hint, not_found, summary
+from untaped.messages import hint, not_found, split_profile, summary
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
@@ -151,18 +151,9 @@ def _key(row: dict[str, object]) -> Key:
     return (str(row["capability"]), str(row["check"]), str(row["title"]))
 
 
-def _command(argv: Sequence[str]) -> list[str]:
-    """``argv`` without its leading ``--profile NAME`` (or ``--profile=NAME``)."""
-    if list(argv[:1]) == ["--profile"]:
-        return list(argv[2:])
-    if argv and argv[0].startswith("--profile="):
-        return list(argv[1:])
-    return list(argv)
-
-
 def _refusal(fix: _Fix, builtin_for: Callable[[str], str | None]) -> UntapedError | None:
     """Why ``fix`` never runs: it runs ``doctor``, or names no root command (a check bug)."""
-    command = _command(fix.argv)
+    command = split_profile(fix.argv)[1]
     first = command[0] if command else ""
     name = builtin_for(first) if first else None
     if name is None:
