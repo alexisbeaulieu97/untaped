@@ -67,8 +67,8 @@ class SettingEntry(BaseModel):
     """For a deprecated setting: what replaces it, as help shows it."""
 
 
-class SettingOutcome(OutcomeRecord):
-    """The result of ``config set``/``unset`` (kind ``untaped.setting_outcome``).
+class SettingOutcome(OutcomeRecord, kind="untaped.setting_outcome"):
+    """The result of ``config set``/``unset``.
 
     ``action`` is ``updated`` (set), ``deleted`` or ``unchanged`` (unset), or
     ``planned`` under ``--dry-run``. The value is never echoed: it may be a
@@ -83,8 +83,8 @@ _UNSET = TableGlyph(none="—")
 """Tables show an unset value as ``—``; every other format prints it natively."""
 
 
-class SettingRow(Record):
-    """One row of ``config list``/``get`` (kind ``untaped.setting``).
+class SettingRow(Record, kind="untaped.setting"):
+    """One row of ``config list``/``get``.
 
     ``value``/``default`` are native (``None`` when unset, secrets already
     masked); table and raw output get a set value as its text, a mapping or

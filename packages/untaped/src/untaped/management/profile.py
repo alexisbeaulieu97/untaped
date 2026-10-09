@@ -39,8 +39,6 @@ from untaped.profile.use_cases import (
 from untaped.settings import get_profile_settings_model, resolve_config_path
 from untaped.ui import ui_context
 
-_PROFILE_OUTCOME = "untaped.profile_outcome"
-
 # `profile show` returns a single nested object — `raw`/`table` (which want
 # tabular rows) don't apply, so narrow the format type for this command and
 # let Cyclopts reject other values at parse time.
@@ -74,13 +72,7 @@ def _make_list_command(empty_hint: str) -> Callable[..., None]:
         with report_errors():
             profiles = ListProfiles(ProfileFileRepository())()
             rows = [ProfileRow(name=p.name, active=p.is_active, keys=p.key_count) for p in profiles]
-            emit(
-                rows,
-                fmt=fmt,
-                columns=columns,
-                kind="untaped.profile",
-                empty=empty_hint,
-            )
+            emit(rows, fmt=fmt, columns=columns, empty=empty_hint)
 
     return list_command
 
@@ -208,7 +200,7 @@ def _create_command(
         outcome = ProfileOutcome(
             name=name, copied_from=copy_from, action="planned" if dry_run else "created"
         )
-        emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
+        emit(outcome, fmt=fmt, columns=columns)
 
 
 @writes(destructive=True)
@@ -238,7 +230,7 @@ def _delete_command(
             delete_profile(name)
             ui_context(strict=False).success(f"deleted profile: {name}")
         outcome = ProfileOutcome(name=name, action="planned" if dry_run else "deleted")
-        emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
+        emit(outcome, fmt=fmt, columns=columns)
 
 
 @writes
@@ -259,7 +251,7 @@ def _rename_command(
         outcome = ProfileOutcome(
             name=new_name, previous_name=old_name, action="planned" if dry_run else "renamed"
         )
-        emit(outcome, fmt=fmt, columns=columns, kind=_PROFILE_OUTCOME)
+        emit(outcome, fmt=fmt, columns=columns)
 
 
 def _show_delete_preview(preview: ProfileDeletePreview) -> None:
