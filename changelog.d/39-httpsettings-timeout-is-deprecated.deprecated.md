@@ -1,2 +1,3 @@
-`HttpSettings.timeout` is deprecated; use `timeout_seconds`.
+SDK: `HttpSettings.timeout` and `HttpSettings(timeout=…)` are deprecated,
+removed in 11.0; use `timeout_seconds`.
 ([#489](https://github.com/alexisbeaulieu97/untaped/pull/489))
