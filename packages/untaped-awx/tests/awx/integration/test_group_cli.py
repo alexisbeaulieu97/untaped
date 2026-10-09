@@ -499,6 +499,7 @@ def test_a_refused_membership_add_is_partial_with_its_error(fake_aap: Any) -> No
     assert row["action"] == "partial"
     assert (row["error"]["category"], row["error"]["system"]) == ("permission", "awx")
     assert row["error"]["message"] == row["detail"]
+    assert f"error: Group/web-servers: {row['detail']}" in result.stderr
 
 
 def test_groups_hosts_add_accepts_positional_names(fake_aap: Any) -> None:
