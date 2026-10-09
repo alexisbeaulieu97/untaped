@@ -11,7 +11,7 @@ import pytest
 
 from untaped.errors import ConfigError, OperationCancelledError, PromptInterruptedError, UsageError
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
-from untaped.prompts import PromptToolkitPromptBackend
+from untaped.prompts import PromptToolkitPromptBackend, handle_prompt_exception
 from untaped.screen.core import Cancel
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
 from untaped.ui import PromptChoice, UiContext
@@ -341,11 +341,11 @@ def test_prompt_toolkit_multiselect_returns_the_checked_values(
 def test_prompt_toolkit_multiselect_handles_a_cancelled_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with (
-        _real_terminal(monkeypatch, _CTRL_D) as backend,
-        pytest.raises(ConfigError, match="prompt cancelled"),
-    ):
+    with _real_terminal(monkeypatch, _CTRL_D) as backend, pytest.raises(EOFError) as raised:
         backend.multiselect("Pick repos", [PromptChoice(value="one", label="One")], defaults=[])
+    mapped = handle_prompt_exception(raised.value)
+    assert isinstance(mapped, ConfigError)
+    assert str(mapped) == "prompt cancelled"
 
 
 @pytest.mark.parametrize(
@@ -418,8 +418,7 @@ def test_prompt_toolkit_ctrl_c_interrupts_and_ctrl_d_ends_the_prompt(
 
     with _real_terminal(monkeypatch, _CTRL_C) as backend, pytest.raises(KeyboardInterrupt):
         ask(backend)
-    expected = ConfigError if method == "multiselect" else EOFError
-    with _real_terminal(monkeypatch, _CTRL_D) as backend, pytest.raises(expected):
+    with _real_terminal(monkeypatch, _CTRL_D) as backend, pytest.raises(EOFError):
         ask(backend)
 
 
