@@ -167,8 +167,8 @@ state lives in `~/.untaped/state.yml` and is written only by the owning
 capability's commands. See [Configuration](../configuration.md) for the file
 layout, profiles and precedence.
 
-Set a profile setting with `untaped config set KEY VALUE` (secrets:
-`untaped config set KEY --prompt`; how values are parsed is in
+Set a profile setting with `untaped config set KEY VALUE` (a token:
+`untaped auth set SECTION`; how values are parsed is in
 [Settings](../configuration.md#settings)). Each profile setting can be
 overridden for one process with the environment variable shown.
 """
