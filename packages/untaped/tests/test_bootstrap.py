@@ -858,3 +858,15 @@ def test_no_plugin_can_claim_a_management_command() -> None:
     for name in management:
         bootstrap.build_root_app(candidates=[make_candidate(make_spec(name))])
         assert [r.reason for r in bootstrap.composition().quarantine] == ["reserved-name"], name
+
+
+def test_the_console_entry_point_forwards_signals_to_git_before_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(bootstrap, "forward_signals", lambda: calls.append("forward"))
+    monkeypatch.setattr(bootstrap, "run_root", lambda argv: calls.append(argv))
+
+    bootstrap.main(["--version"])
+
+    assert calls == ["forward", ["--version"]]
