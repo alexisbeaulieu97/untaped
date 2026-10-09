@@ -690,8 +690,8 @@ def _run_check(
         settings=settings,
     )
     try:
-        # Typed as ``object``: provider bodies may return anything at runtime
-        # (spec §5 row 9); the shape checks below are the validation.
+        # Typed as ``object``: provider bodies may return anything at runtime;
+        # the shape checks below are the validation.
         outcome: object = check_item.run(ctx)
     except Exception as exc:
         return _row(

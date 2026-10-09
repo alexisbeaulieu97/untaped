@@ -80,13 +80,13 @@ from untaped.stability import ROOT_PARAMETERS_GROUP, apply_marks, mark_app, pane
 from untaped.verbose import reset as _reset_verbose
 
 #: Unified executable name; also the identity reported before dispatch selects
-#: a capability (spec §4).
+#: a capability.
 SHELL_NAME = "untaped"
 
-#: Config section owned by the shell itself (spec §1).
+#: Config section owned by the shell itself.
 SHELL_SECTION = "shell"
 
-#: Distribution owning the unified product version (spec §7.1).
+#: Distribution owning the unified product version.
 SHELL_DISTRIBUTION = "untaped"
 
 
@@ -122,8 +122,8 @@ _COMPOSED_RESULT: CompositionResult | None = None
 def _register_shell_and_capabilities(result: CompositionResult) -> None:
     """Register the shell plus every composed capability's settings sections.
 
-    Runs exactly once per composition, after validation succeeds (spec §5
-    Phase D): a provider that fails any row registers nothing.
+    Runs exactly once per composition, after validation succeeds: a provider
+    that fails any check registers nothing.
     """
     specs: list[ApplicationSpec | CapabilitySpec] = [SHELL_SPEC]
     specs.extend(capability.spec for capability in result.capabilities)
@@ -135,7 +135,7 @@ def _register_shell_and_capabilities(result: CompositionResult) -> None:
 
 
 def _warn_quarantined(result: CompositionResult) -> None:
-    """Emit one stderr warning per quarantined capability (spec §5)."""
+    """Emit one stderr warning per quarantined capability."""
     for record in result.quarantine:
         echo(
             f"warning: capability {record.name!r} from {record.distribution!r} quarantined "
@@ -176,7 +176,7 @@ def reset() -> None:
     Clears the profile/verbose/quiet overrides, the
     settings caches, and the config registry, then re-registers the
     just-composed shell and capabilities. Exists for test isolation; never
-    called implicitly between user invocations (spec §4).
+    called implicitly between user invocations.
     """
     set_profile_override(None)
     _reset_verbose(None)
