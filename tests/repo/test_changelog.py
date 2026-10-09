@@ -83,6 +83,7 @@ def _merge_pr(repo: Path, number: int, files: dict[str, str]) -> None:
         ("x.added.md", " one\n", "starts with whitespace"),
         ("x.added.md", f"one ([#1]({PR}/x))\n", "malformed link group"),
         ("x.added.md", f"one ([#1]({PR}/1) and more)\n", "malformed link group"),
+        ("x.added.md", "ok\n" + "word " * 15 + "word\n", "line 2 is 79 columns; wrap at 78"),
     ],
 )
 def test_a_malformed_fragment_says_why(name: str, content: str, error: str) -> None:
@@ -101,6 +102,12 @@ def test_a_fragment_keeps_its_slug_type_and_text() -> None:
     assert fragment == changelog.Fragment(
         "changelog.d/a-b.fixed.md", "a-b", "fixed", "Line one\nline two"
     )
+
+
+def test_a_line_may_reach_78_columns_or_be_one_longer_token() -> None:
+    text = "x" * 78 + "\n" + "x " * 38 + "xy\n" + f"{ISSUE}/{'9' * 80}\n"
+
+    assert changelog.parse_fragment("a.fixed.md", text)[1] == []
 
 
 def test_fragment_type_reads_only_valid_fragment_paths() -> None:
@@ -233,7 +240,7 @@ def test_without_origin_main_nothing_is_on_main(repo: Path) -> None:
     [
         f"Fixes it.\n([#442]({PR}/442))",
         f"Fixes it.\n([#442]({PR}/442),\n[#503]({ISSUE}/503))",
-        f"Fixes it ([#4]({PR}/4), [#5]({PR}/5))",
+        f"Fixes it ([#4]({PR}/4),\n[#5]({PR}/5))",
     ],
 )
 def test_an_entry_with_its_own_link_group_keeps_it_and_gets_no_other(repo: Path, text: str) -> None:
