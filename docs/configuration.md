@@ -178,8 +178,8 @@ untaped config edit
 `config list` prints stable settings first, then experimental ones under an
 `Experimental` heading. A deprecated setting appears under `Deprecated` once
 it is set, as does any setting set under an old name; `untaped --deprecated
-config list` lists them all. `--format json` lists every setting with its
-`stability`.
+config list` lists them all, and `config set` warns when it sets a deprecated
+setting. `--format json` lists every setting with its `stability`.
 
 `config set` validates the value against the setting's type instead of
 parsing it as YAML:

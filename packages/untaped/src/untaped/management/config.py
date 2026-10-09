@@ -388,6 +388,7 @@ def _set(
         resolved = ctx.resolve_key(key)
         resolved_value = resolve_set_value(resolved, value, stdin=stdin, prompt=prompt, repo=repo)
         _warn_plaintext_token(ctx, resolved)
+        _warn_deprecated_setting(ctx, resolved)
         removed: list[str] = []
         profile = repo.set_value(
             resolved, resolved_value, dry_run=dry_run, on_spelling_removed=removed.append
@@ -398,6 +399,14 @@ def _set(
         action = "planned" if dry_run else "updated"
         outcome = SettingOutcome(key=resolved, profile=profile, action=action)
         emit(outcome, fmt=fmt, columns=columns, kind=_SETTING_OUTCOME)
+
+
+def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
+    """Warn that ``key`` is a deprecated setting, as reading it from ``config.yml`` does."""
+    section, rest = _split_first(key)
+    scope = ctx.sections.get(section)
+    if rest is not None and scope is not None and rest in scope.mappings.deprecated:
+        warn_once(deprecated_message(key, scope.mappings.deprecated[rest]), key=key)
 
 
 def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:

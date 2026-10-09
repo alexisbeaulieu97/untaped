@@ -374,3 +374,18 @@ def test_reading_a_deprecated_capabilitys_settings_warns_nothing(_isolated_confi
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "h2"
     assert result.stderr == ""
+
+
+def test_setting_a_deprecated_setting_warns_with_its_replacement(_isolated_config: Path) -> None:
+    result = _config("set", "trial.old_flag", "true")
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr.count("trial.old_flag is deprecated") == 1
+    assert "use trial.steady" in result.stderr
+
+
+def test_setting_a_stable_setting_warns_nothing(_isolated_config: Path) -> None:
+    result = _config("set", "trial.steady", "3")
+
+    assert result.exit_code == 0, result.output
+    assert "deprecated" not in result.stderr
