@@ -31,7 +31,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.auth import PASS_GPG_HINT, first_stderr_line, gpg_hint, run_command
+from untaped.auth import (
+    PASS_GPG_HINT,
+    command_failure,
+    first_stderr_line,
+    gpg_hint,
+    run_command,
+)
 from untaped.errors import ConfigError
 
 StoreName = Literal["security", "secret-tool", "pass"]
@@ -46,10 +52,6 @@ _SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
 _ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
 _SECURITY_NOT_FOUND = 44
-
-
-class PassCommandError(ConfigError):
-    """``pass`` failed; it carries gpg's fix when the failure is gpg's."""
 
 
 @dataclass(frozen=True)
@@ -370,19 +372,12 @@ def _run(
             category="unavailable",
         )
     if check and completed.returncode != 0:
-        message = f"{program!r} exited with status {completed.returncode}"
-        if is_pass:
-            # gpg repeats one error per call; the first non-empty line says what failed.
-            if quote := first_stderr_line(completed.stderr):
-                message += f": {quote}"
-            raise PassCommandError(message, hint=gpg_hint(completed.stderr))
-        raise ConfigError(message)
+        raise command_failure(repr(program), completed, is_pass=is_pass)
     return completed
 
 
 __all__ = [
     "PASS_GPG_HINT",
-    "PassCommandError",
     "StoreName",
     "TokenStore",
     "entry_name",

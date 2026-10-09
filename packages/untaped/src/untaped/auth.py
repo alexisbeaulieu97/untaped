@@ -40,7 +40,6 @@ _LOG = logging.getLogger("untaped.auth")
 _TIMEOUT_SECONDS = 60.0
 _MASK = "**********"
 _cache: dict[tuple[str, ...], str] = {}
-_warned: set[str] = set()
 
 
 def _check_argv(value: list[str] | None) -> list[str] | None:
@@ -218,6 +217,22 @@ def run_command(
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
 
 
+def command_failure(
+    label: str, completed: subprocess.CompletedProcess[str], *, is_pass: bool
+) -> ConfigError:
+    """The error for a command that exited non-zero, starting with ``label``.
+
+    For ``pass``, whose stderr was captured: gpg repeats one error per call,
+    so its first non-empty line is quoted, with gpg's fix as the hint.
+    """
+    message = f"{label} exited with status {completed.returncode}"
+    if not is_pass:
+        return ConfigError(message)
+    if quote := first_stderr_line(completed.stderr):
+        message += f": {quote}"
+    return ConfigError(message, hint=gpg_hint(completed.stderr))
+
+
 def forget_token_command(argv: list[str]) -> None:
     """Forget the cached result of ``argv``, so its next read runs the command again.
 
@@ -228,9 +243,8 @@ def forget_token_command(argv: list[str]) -> None:
 
 
 def clear_token_cache() -> None:
-    """Forget every ``token_command`` result and plaintext warning (tests, embedding)."""
+    """Forget every ``token_command`` result (tests, embedding)."""
     _cache.clear()
-    _warned.clear()
 
 
 def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
@@ -245,20 +259,15 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     # worker thread over its screen: nothing to warn about, nowhere to print it.
     if active_overlay() is not None:
         return
-    if (
-        section in _warned
-        or not takes_token_command(type(settings))
-        or token_override_env(section) is not None
-    ):
+    if not takes_token_command(type(settings)) or token_override_env(section) is not None:
         return
-    _warned.add(section)
-    from untaped.messages import hint  # noqa: PLC0415 - keep auth imports light
-    from untaped.ui import ui_context  # noqa: PLC0415
+    from untaped.deprecated_keys import warn_once  # noqa: PLC0415 - keep auth imports light
+    from untaped.messages import hint  # noqa: PLC0415
 
-    ui_context(strict=False).message(
-        "warning",
+    warn_once(
         f"{section}.token is stored in plain text in the config file, which is deprecated\n"
         f"{hint('auth migrate')}",
+        key=f"plaintext {section}.token",
     )
 
 
@@ -319,12 +328,7 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
     is_pass = Path(argv[0]).name == "pass"
     completed = run_command(argv, label=label, capture_stderr=is_pass)
     if completed.returncode != 0:
-        message = f"{label} exited with status {completed.returncode}"
-        if is_pass:
-            if quote := first_stderr_line(completed.stderr):
-                message += f": {quote}"
-            raise ConfigError(message, hint=gpg_hint(completed.stderr))
-        raise ConfigError(message)
+        raise command_failure(label, completed, is_pass=is_pass)
     token = completed.stdout.strip()
     if not token:
         raise ConfigError(f"{label} printed no token")
@@ -338,6 +342,7 @@ __all__ = [
     "TokenCommand",
     "TokenSources",
     "clear_token_cache",
+    "command_failure",
     "describe_token_source",
     "first_stderr_line",
     "forget_token_command",

@@ -60,7 +60,7 @@ from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_check_list, emit_isolated
 from untaped.management.skills import composed_skills
-from untaped.messages import command_argv, command_line, hint, plural, summary
+from untaped.messages import command_argv, command_line, hint, plural, split_profile, summary
 from untaped.profile_resolver import (
     classify_active_profile,
     profile_override,
@@ -210,8 +210,7 @@ def _fix_hint(rows: list[dict[str, object]], profile: str) -> str | None:
     automatic = [argv for argv, auto in fixes.items() if auto]
     if not automatic:
         return None
-    first = automatic[0]
-    target = first[1] if first[:1] == ("--profile",) and len(first) > 1 else profile
+    target = split_profile(automatic[0])[0] or profile
     command = run_line(command_argv("doctor fix", profile=target), profile)
     text = f"{hint(command)} to apply {plural(len(automatic), 'automatic fix', 'automatic fixes')}"
     manual = len(fixes) - len(automatic)
@@ -231,8 +230,9 @@ def run_line(argv: list[str], profile: str) -> str:
     ``--profile <profile>`` goes without saying when no ``--profile`` flag
     chose it: the same line then acts on that profile anyway.
     """
-    if argv[:2] == ["--profile", profile] and profile_override() is None:
-        argv = argv[2:]
+    named, rest = split_profile(argv)
+    if named == profile and profile_override() is None:
+        argv = rest
     return command_line(shlex.join(argv))
 
 
@@ -690,8 +690,8 @@ def _run_check(
         settings=settings,
     )
     try:
-        # Typed as ``object``: provider bodies may return anything at runtime
-        # (spec §5 row 9); the shape checks below are the validation.
+        # Typed as ``object``: provider bodies may return anything at runtime;
+        # the shape checks below are the validation.
         outcome: object = check_item.run(ctx)
     except Exception as exc:
         return _row(

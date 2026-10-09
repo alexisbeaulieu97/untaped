@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.messages import hint, not_found, plural, q, summary
+import pytest
+
+from untaped.messages import hint, not_found, plural, q, split_profile, summary
 
 
 def test_plural_picks_the_noun_form_from_the_count() -> None:
@@ -43,3 +45,17 @@ def test_summary_drops_zero_counts() -> None:
         "sync: 2 cloned, 1 failed"
     )
     assert summary("sync", {"cloned": 0}) == "sync: nothing to do"
+
+
+@pytest.mark.parametrize(
+    ("argv", "profile"),
+    [
+        (("--profile", "p", "skills", "update"), "p"),
+        (("--profile=p", "skills", "update"), "p"),
+        (("skills", "update"), None),
+    ],
+)
+def test_split_profile_reads_past_either_spelling(
+    argv: tuple[str, ...], profile: str | None
+) -> None:
+    assert split_profile(argv) == (profile, ["skills", "update"])

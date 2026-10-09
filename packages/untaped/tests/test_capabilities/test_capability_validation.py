@@ -1,4 +1,4 @@
-"""Row-by-row validation tests: every violation quarantines its provider (spec §5).
+"""Row-by-row validation tests: every violation quarantines its provider.
 
 Each rejection row becomes a ``QuarantineRecord`` naming the reason while
 composition continues; first-party and third-party providers are judged alike.

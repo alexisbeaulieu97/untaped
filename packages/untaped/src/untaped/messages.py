@@ -81,6 +81,19 @@ def command_argv(command: str | Sequence[str], *, profile: str) -> list[str]:
     return argv
 
 
+def split_profile(argv: Sequence[str]) -> tuple[str | None, list[str]]:
+    """``argv``'s leading ``--profile NAME`` (or ``--profile=NAME``) and the rest.
+
+    The profile is ``None`` when ``argv`` does not start with one.
+    """
+    first = argv[0] if argv else ""
+    if first == "--profile" and len(argv) > 1:
+        return argv[1], list(argv[2:])
+    if first.startswith("--profile="):
+        return first.removeprefix("--profile="), list(argv[1:])
+    return None, list(argv)
+
+
 def hint(command: str) -> str:
     """A follow-up hint line: ``hint: run `untaped <command>```.
 
@@ -132,5 +145,6 @@ __all__ = [
     "not_found",
     "plural",
     "q",
+    "split_profile",
     "summary",
 ]
