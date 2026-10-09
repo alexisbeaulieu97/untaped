@@ -15,11 +15,13 @@ Copilot CLI set ``safe.bareRepository=explicit``, which refuses that discovery.
 from __future__ import annotations
 
 import base64
+import contextlib
 import functools
 import logging
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -68,6 +70,8 @@ _REPO_REDIRECT_ENV = (
 )
 _BATCH_SSH_COMMAND = "ssh -o BatchMode=yes"
 _GIST_LIMIT = 300
+# Seconds a timed-out git gets, after SIGTERM, to remove its lock files.
+_TERM_GRACE_S = 2.0
 _REDACTED = "<redacted>"
 _LOG = logging.getLogger("untaped.git")
 # ``scheme://user[:password]@``: the whole userinfo can be a token.
@@ -303,7 +307,7 @@ def run_git(
         for attempt in range(1, max(attempts, 1) + 1):
             started = time.monotonic()
             try:
-                completed = subprocess.run(
+                completed = _run_process(
                     [git_path, *_git_dir_option(git_dir), *argv],
                     cwd=cwd,
                     env=env,
@@ -312,7 +316,6 @@ def run_git(
                     input=payload,
                     stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
-                    check=False,
                     timeout=timeout,
                 )
             except subprocess.TimeoutExpired as exc:
@@ -343,6 +346,65 @@ def run_git(
                 hint=_CREDENTIAL_HINT if credential_failure(result.stderr) else None,
             )
     raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _run_process(
+    cmd: list[str],
+    *,
+    cwd: Path | None,
+    env: Mapping[str, str],
+    stdin: int | None,
+    input: bytes | None,
+    stdout: int,
+    stderr: int,
+    timeout: float,
+) -> subprocess.CompletedProcess[bytes]:
+    """``subprocess.run`` for git, except that a timeout stops git's whole process group.
+
+    Git runs in a new session, so the helpers it starts (``remote-http``,
+    ``fetch-pack``, ``index-pack``) share its process group and nothing it
+    starts can prompt on the terminal. On a timeout or an interrupt the group
+    gets SIGTERM, so git removes its lock files, then SIGKILL after
+    :data:`_TERM_GRACE_S`, so no helper outlives the call.
+    """
+    with subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.PIPE if input is not None else stdin,
+        stdout=stdout,
+        stderr=stderr,
+        start_new_session=True,
+    ) as process:
+        try:
+            out, err = process.communicate(input, timeout=timeout)
+        except BaseException:
+            _stop_group(process)
+            raise
+    return subprocess.CompletedProcess(cmd, process.returncode, out, err)
+
+
+def _stop_group(process: subprocess.Popen[bytes]) -> None:
+    """SIGTERM the process group led by ``process``, wait for it to empty, then SIGKILL it."""
+    deadline = time.monotonic() + _TERM_GRACE_S
+    _signal_group(process.pid, signal.SIGTERM)
+    try:
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=_TERM_GRACE_S)
+        # Helpers can outlive git: give them the rest of the grace period too.
+        while time.monotonic() < deadline and _signal_group(process.pid, 0):
+            time.sleep(0.02)
+    finally:  # a second interrupt during the grace period must not skip the kill
+        _signal_group(process.pid, signal.SIGKILL)
+
+
+def _signal_group(pgid: int, sig: int) -> bool:
+    """Send ``sig`` to process group ``pgid``; ``False`` when no process is left in it."""
+    try:
+        os.killpg(pgid, sig)
+    except ProcessLookupError, PermissionError:  # macOS: EPERM for a group of zombies
+        return False
+    return True
 
 
 def git_toplevel(path: Path, *, git: str = "git", timeout: float = 30.0) -> Path | None:

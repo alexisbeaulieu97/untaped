@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import os
+import signal
 import stat
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from untaped import git
 from untaped.errors import UntapedError
 from untaped.git import (
     GitCommandError,
@@ -196,7 +200,7 @@ def test_auth_header_travels_only_through_removed_include_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(subprocess, "run", _recording_run(calls))
+    monkeypatch.setattr(git, "_run_process", _recording_run(calls))
 
     run_git(["fetch", "origin"], timeout=5, auth_header=_HEADER, auth_url="https://h/a.git")
 
@@ -216,7 +220,7 @@ def test_auth_include_is_removed_when_git_cannot_start(monkeypatch: pytest.Monke
         seen.append(Path(env[f"GIT_CONFIG_VALUE_{int(env['GIT_CONFIG_COUNT']) - 1}"]))
         raise OSError("exec format error")
 
-    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(git, "_run_process", boom)
     with pytest.raises(GitCommandError, match="could not run"):
         run_git(["fetch"], timeout=5, auth_header=_HEADER)
     assert seen
@@ -230,7 +234,7 @@ def test_run_closes_stdin_discards_stdout_and_pipes_stderr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(subprocess, "run", _recording_run(calls, stdout=b"chatter"))
+    monkeypatch.setattr(git, "_run_process", _recording_run(calls, stdout=b"chatter"))
 
     result = run_git(["status"], timeout=7)
 
@@ -245,7 +249,7 @@ def test_run_closes_stdin_discards_stdout_and_pipes_stderr(
 
 def test_run_feeds_stdin_and_captures_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(subprocess, "run", _recording_run(calls, stdout=b"caf\xc3\xa9\n"))
+    monkeypatch.setattr(git, "_run_process", _recording_run(calls, stdout=b"caf\xc3\xa9\n"))
 
     result = run_git(["cat-file", "--batch"], timeout=5, capture=True, stdin="abc\n")
 
@@ -279,7 +283,7 @@ def test_git_toplevel_is_local_so_it_skips_the_ssh_setup(
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
-    monkeypatch.setattr(subprocess, "run", _recording_run(calls, stdout=f"{tmp_path}\n"))
+    monkeypatch.setattr(git, "_run_process", _recording_run(calls, stdout=f"{tmp_path}\n"))
     monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: pytest.fail("probed ssh config"))
 
     assert git_toplevel(tmp_path) == tmp_path.resolve()
@@ -308,7 +312,7 @@ def test_timeout_maps_to_timed_out_error(monkeypatch: pytest.MonkeyPatch) -> Non
     def slow(args: list[str], **kwargs: Any) -> None:
         raise subprocess.TimeoutExpired(args, kwargs["timeout"])
 
-    monkeypatch.setattr(subprocess, "run", slow)
+    monkeypatch.setattr(git, "_run_process", slow)
     with pytest.raises(GitCommandError, match=r"git fetch timed out after 60s") as excinfo:
         run_git(["fetch", "--prune", "origin"], timeout=60.0)
     assert excinfo.value.timed_out is True
@@ -338,9 +342,116 @@ def test_timeout_kills_a_real_hung_process(tmp_path: Path) -> None:
             os.kill(int(pid_file.read_text()), 0)
 
 
+def _gone(pid: int) -> bool:
+    """Whether ``pid`` has exited (a zombie no reaper collected counts as gone)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    stat_file = Path(f"/proc/{pid}/stat")
+    try:
+        return stat_file.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    except OSError:
+        return False
+
+
+def _wait_gone(pid: int, seconds: float = 5.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while not _gone(pid):
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.02)
+    return True
+
+
+def _fake_git_with_helper(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A fake git that starts a hung helper, like ``remote-http`` or ``fetch-pack``.
+
+    On SIGTERM it removes its lock file, as git does; the helper ignores
+    SIGTERM, so only SIGKILL stops it.
+    """
+    helper_pid = tmp_path / "helper.pid"
+    lock = tmp_path / "shallow.lock"
+    script = tmp_path / "fake-git"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import os, signal, subprocess, sys, time\n"
+        "if sys.argv[1] == 'config':\n    sys.exit(1)\n"
+        f"lock = {str(lock)!r}\n"
+        "def cleanup(*_):\n    os.unlink(lock)\n    sys.exit(143)\n"
+        "signal.signal(signal.SIGTERM, cleanup)\n"
+        "helper = subprocess.Popen([sys.executable, '-c', "
+        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
+        f"staged = {str(helper_pid)!r} + '.tmp'\n"
+        "with open(staged, 'w') as f:\n    f.write(str(helper.pid))\n"
+        f"os.replace(staged, {str(helper_pid)!r})\n"
+        "open(lock, 'w').close()\n"
+        "time.sleep(60)\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return script, helper_pid, lock
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+def test_timeout_kills_the_helpers_git_started(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(git, "_TERM_GRACE_S", 0.5)
+    script, helper_pid, _ = _fake_git_with_helper(tmp_path)
+
+    with pytest.raises(GitCommandError, match="timed out"):
+        run_git(["fetch"], timeout=1.0, git=str(script))
+
+    assert helper_pid.exists(), "the fake git did not get far enough to start its helper"
+    assert _wait_gone(int(helper_pid.read_text())), "git's helper outlived the timeout"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+def test_timeout_lets_git_clean_up_its_locks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(git, "_TERM_GRACE_S", 0.5)
+    script, _, lock = _fake_git_with_helper(tmp_path)
+
+    with pytest.raises(GitCommandError, match="timed out"):
+        run_git(["fetch"], timeout=1.0, git=str(script))
+
+    assert not lock.exists(), "git was killed before it could remove its lock"
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or threading.current_thread() is not threading.main_thread(),
+    reason="POSIX process groups; signals reach only the main thread",
+)
+def test_an_interrupt_stops_git_and_its_helpers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Git runs in its own session, so a terminal Ctrl-C no longer reaches it:
+    # run_git must stop the group itself.
+    script, helper_pid, lock = _fake_git_with_helper(tmp_path)
+
+    def interrupt(*_: object) -> None:
+        if lock.exists():
+            raise KeyboardInterrupt
+        signal.setitimer(signal.ITIMER_REAL, 0.1)
+
+    monkeypatch.setattr(git, "_TERM_GRACE_S", 0.5)
+    previous = signal.signal(signal.SIGALRM, interrupt)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, 0.1)
+        with pytest.raises(KeyboardInterrupt):
+            run_git(["fetch"], timeout=30, git=str(script))
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+    assert _wait_gone(int(helper_pid.read_text()))
+    assert not lock.exists()
+
+
 def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch) -> None:
     stderr = "warning: noise\nfatal: repository 'x' not found\n"
-    monkeypatch.setattr(subprocess, "run", _recording_run([], returncode=128, stderr=stderr))
+    monkeypatch.setattr(git, "_run_process", _recording_run([], returncode=128, stderr=stderr))
 
     with pytest.raises(GitCommandError) as excinfo:
         run_git(["clone", "--", "https://h/x.git", "/tmp/x"], timeout=5)
@@ -351,7 +462,7 @@ def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_unchecked_failure_returns_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(subprocess, "run", _recording_run([], returncode=1, stderr=b"nope"))
+    monkeypatch.setattr(git, "_run_process", _recording_run([], returncode=1, stderr=b"nope"))
     result = run_git(["grep", "x"], timeout=5, check=False)
     assert result.returncode == 1
     assert result.stderr == "nope"
@@ -359,7 +470,7 @@ def test_unchecked_failure_returns_result(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_failure_redacts_auth_header_and_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     stderr = f"fatal: {_HEADER} rejected\nerror: token c2VjcmV0LXRva2Vu leaked\n"
-    monkeypatch.setattr(subprocess, "run", _recording_run([], returncode=128, stderr=stderr))
+    monkeypatch.setattr(git, "_run_process", _recording_run([], returncode=128, stderr=stderr))
 
     with pytest.raises(GitCommandError) as excinfo:
         run_git(["fetch"], timeout=5, auth_header=_HEADER)
@@ -395,7 +506,7 @@ def _scripted_run(outcomes: list[tuple[int, str]], calls: list[list[str]]) -> An
 def test_transient_failure_is_retried_with_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
     sleeps: list[float] = []
-    monkeypatch.setattr(subprocess, "run", _scripted_run([(128, _TRANSIENT), (0, "")], calls))
+    monkeypatch.setattr(git, "_run_process", _scripted_run([(128, _TRANSIENT), (0, "")], calls))
 
     result = run_git(["fetch"], timeout=5, retry_transient=True, sleep=sleeps.append)
 
@@ -407,7 +518,7 @@ def test_transient_failure_is_retried_with_backoff(monkeypatch: pytest.MonkeyPat
 def test_transient_retries_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
     sleeps: list[float] = []
-    monkeypatch.setattr(subprocess, "run", _scripted_run([(128, _TRANSIENT)], calls))
+    monkeypatch.setattr(git, "_run_process", _scripted_run([(128, _TRANSIENT)], calls))
 
     with pytest.raises(GitCommandError, match="early EOF") as excinfo:
         run_git(["fetch"], timeout=5, retry_transient=True, attempts=3, sleep=sleeps.append)
@@ -427,7 +538,7 @@ def test_failure_is_not_retried(
 ) -> None:
     calls: list[list[str]] = []
     sleeps: list[float] = []
-    monkeypatch.setattr(subprocess, "run", _scripted_run([(128, stderr)], calls))
+    monkeypatch.setattr(git, "_run_process", _scripted_run([(128, stderr)], calls))
 
     with pytest.raises(GitCommandError):
         run_git(["fetch"], timeout=5, retry_transient=retry_transient, sleep=sleeps.append)
@@ -471,7 +582,7 @@ def test_a_rejected_credential_is_an_environment_failure(
     monkeypatch: pytest.MonkeyPatch, stderr: str, category: str
 ) -> None:
     calls: list[list[str]] = []
-    monkeypatch.setattr(subprocess, "run", _scripted_run([(128, stderr)], calls))
+    monkeypatch.setattr(git, "_run_process", _scripted_run([(128, stderr)], calls))
 
     with pytest.raises(GitCommandError) as excinfo:
         run_git(["fetch"], timeout=5, retry_transient=True, sleep=lambda _: None)
