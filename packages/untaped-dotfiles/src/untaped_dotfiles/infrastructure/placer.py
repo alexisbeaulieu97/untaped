@@ -57,7 +57,7 @@ class FilesystemPlacer:
         except UnicodeDecodeError:
             return TargetInfo(kind="other")
         except OSError as exc:
-            raise DotfilesError(f"cannot read {target}: {exc.strerror or exc}") from exc
+            raise DotfilesError(f"could not read {target}: {exc.strerror or exc}") from exc
         try:
             document = load_document(text, fmt=fmt, where=str(target))
         except DotfilesError:

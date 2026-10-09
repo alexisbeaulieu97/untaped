@@ -295,26 +295,51 @@ def test_apply_refuses_a_local_edit_unless_forced(
     assert target.read_text().startswith("[character]")
 
 
+def _unreadable(monkeypatch: pytest.MonkeyPatch, path: Path) -> None:
+    """Make ``path`` unreadable, root or not: permission bits do not stop root."""
+    read_bytes = Path.read_bytes
+
+    def refuse(self: Path) -> bytes:
+        if self == path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", refuse)
+
+
 def test_an_unreadable_placed_path_exits_1_and_counts_in_attention(
-    make_upstream: Upstream, home: Path, dotfiles_env: Path
+    make_upstream: Upstream, home: Path, dotfiles_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bare, _ = make_upstream()
     _subscribe(bare)
     run(app, ["enable", "starship"])
     run(app, ["apply", "--yes"])
     target = home / ".config" / "starship.toml"
-    target.chmod(0o000)
-    if os.access(target, os.R_OK):  # running as root; permission bits are advisory
-        target.chmod(0o644)
-        pytest.skip("cannot make files unreadable as root")
-    try:
-        result = run(app, ["status", "--check", "--format", "json"])
-    finally:
-        target.chmod(0o644)
+    _unreadable(monkeypatch, target)
+    result = run(app, ["status", "--check", "--format", "json"])
     assert result.exit_code == 1, result.output
     [row] = _rows(result)
     assert row["state"] == "error" and row["error"] is not None
+    assert str(row["detail"]).startswith(f"could not read {target}: ")
     assert (dotfiles_env / "attention").read_text() == "1\n"
+
+
+def test_an_unreadable_source_in_a_checkout_is_an_error_row(
+    make_upstream: Upstream, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, author = make_upstream()
+    _subscribe(author, "--name", "local")
+    run(app, ["enable", "starship"])
+    source = (author / "starship.toml").resolve()
+    _unreadable(monkeypatch, source)
+    result = run(app, ["status", "--check", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    [row] = _rows(result)
+    assert row["state"] == "error"
+    assert str(row["detail"]).startswith("could not read source starship.toml: ")
+    diff = run(app, ["diff"])
+    assert diff.exit_code == 1 and "error: starship/starship.toml: could not read" in diff.stderr
+    assert run(app, ["apply", "--yes"]).exit_code == 1
 
 
 # -- sync ---------------------------------------------------------------------------

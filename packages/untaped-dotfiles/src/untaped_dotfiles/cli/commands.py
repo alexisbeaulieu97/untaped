@@ -338,18 +338,25 @@ def diff_command(
         choices = pick_enabled(svc.store, items, repo=repo)
         resolved = svc.inventory.placements(choices)
         _report_problems(resolved.problems)
-        for text in _diffs(svc, resolved.placements):
+        texts, unread = _diffs(svc, resolved.placements)
+        for text in texts:
             echo(text, nl=False)
-    finish(bool(resolved.problems))
+    finish(bool(resolved.problems) or unread)
 
 
-def _diffs(svc: Services, placements: Sequence[Placement]) -> list[str]:
+def _diffs(svc: Services, placements: Sequence[Placement]) -> tuple[list[str], bool]:
+    """The diff text of each copy and merge path that would change, and whether one failed."""
     svc.evaluator.prime_changes(placements)
     out: list[str] = []
+    failed = False
     for p in placements:
         if p.mode == "link" or p.excluded:
             continue
         found = svc.evaluator.evaluate(p)
+        if found.error is not None:
+            report_error(found.error, item=f"{p.item}/{p.source}")
+            failed = True
+            continue
         if found.state not in ("pending", "foreign", "behind", "modified", "conflict"):
             continue
         before = svc.placer.render(p.target)
@@ -359,7 +366,7 @@ def _diffs(svc: Services, placements: Sequence[Placement]) -> list[str]:
         else:
             after = data.decode("utf-8", errors="replace")
         out.append(unified_diff_text(before, after, path=_shown(svc, p.target)))
-    return out
+    return out, failed
 
 
 def _shown(svc: Services, target: Path) -> str:
