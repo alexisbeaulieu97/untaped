@@ -473,14 +473,10 @@ def _rewrap(cls: type[Contract]) -> None:
     if info is None:
         return
     for name, value in list(vars(cls).items()):
+        if getattr(value, _CACHED, None) is not None:
+            raise TypeError(f"{cls.__qualname__}.{name}: only the contract decides what is @cached")
         method = info.methods.get(name)
-        if method is None:
-            if getattr(value, _CACHED, None) is not None:
-                raise TypeError(
-                    f"{cls.__qualname__}.{name}: only the contract decides what is @cached"
-                )
-            continue
-        if not inspect.isfunction(value):
+        if method is None or not inspect.isfunction(value):
             continue
         wrapped = value
         if method.bridge:

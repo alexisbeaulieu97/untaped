@@ -340,12 +340,12 @@ def doctor_row(_context: PluginContext) -> DoctorResult:
         for report in reports
         if report.reason not in {None, "owner-not-installed"}
     ]
+    waiting = sorted({report.owner for report in reports if report.reason == "owner-not-installed"})
+    tail = [f"offers wait for {', '.join(waiting)} (not installed)"] if waiting else []
     if problems:
-        return DoctorResult(id=DOCTOR_CHECK_ID, ok=True, warn=True, detail="; ".join(problems))
+        detail = "; ".join(problems + tail)
+        return DoctorResult(id=DOCTOR_CHECK_ID, ok=True, warn=True, detail=detail)
     usable = sum(report.reason is None for report in reports)
-    waiting = sorted({report.owner for report in reports if report.reason is not None})
     parts = [f"{usable} provider(s), all usable"] if usable else []
-    if waiting:
-        parts.append(f"offers wait for {', '.join(waiting)} (not installed)")
-    detail = "; ".join(parts) or "no plugin fills a contract"
+    detail = "; ".join(parts + tail) or "no plugin fills a contract"
     return DoctorResult(id=DOCTOR_CHECK_ID, ok=True, detail=detail)

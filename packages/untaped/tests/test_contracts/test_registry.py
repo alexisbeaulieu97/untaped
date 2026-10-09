@@ -254,3 +254,9 @@ def test_an_offer_waiting_for_its_owner_is_a_pass_in_doctor() -> None:
     assert doctor_row(PluginContext(settings=None)).detail == (
         "1 provider(s), all usable; offers wait for git (not installed)"
     )
+    compose(
+        shelf_spec(), library_spec(_NoBridge()), PluginSpec(name="kiosk", provides={"git": dict})
+    )
+    row = doctor_row(PluginContext(settings=None))
+    assert row.warn
+    assert row.detail.endswith("; offers wait for git (not installed)")
