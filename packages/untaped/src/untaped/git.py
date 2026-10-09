@@ -151,7 +151,7 @@ _AUTH_MARKERS = (
 )
 _PERMISSION_MARKERS = ("returned error: 403",)
 _CREDENTIAL_HINT = (
-    "the remote rejected the credentials: check the token (or ssh key) "
+    "the remote rejected the credentials: check the token "
     "for this host and its access to the repository"
 )
 # Lowercased stderr fragments of ssh failing where it would have prompted;
@@ -258,8 +258,12 @@ def git_env(
         env.pop(name, None)
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GCM_INTERACTIVE"] = "never"
-    # Without a terminal, ssh would fall back to a graphical askpass prompt.
-    env.setdefault("SSH_ASKPASS_REQUIRE", "never")
+    # Without a terminal, ssh and git would fall back to a graphical askpass
+    # prompt (git tries SSH_ASKPASS too); a user's own GIT_ASKPASS, such as a
+    # CI token script, still runs.
+    if not env.get("SSH_ASKPASS_REQUIRE"):
+        env["SSH_ASKPASS_REQUIRE"] = "never"
+    env.setdefault("GIT_ASKPASS", "")
     if locale_c:
         env["LC_ALL"] = "C"
         env["LANGUAGE"] = "C"
