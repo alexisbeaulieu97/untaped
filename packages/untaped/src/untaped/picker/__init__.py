@@ -12,11 +12,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-GENERIC_COMMAND = "this command"
-"""What the no-terminal refusal names when a request carries no ``command``."""
-GENERIC_ALTERNATIVE = "its non-interactive options (see --help)"
-"""What the no-terminal refusal offers when a request carries no ``alternative``."""
-
 
 @dataclass(frozen=True)
 class PickItem:
@@ -88,16 +83,6 @@ class PickRequest:
     allow_empty: bool = False
     command: str = ""
     alternative: str = ""
-
-    @property
-    def terminal_command(self) -> str:
-        """The command the no-terminal refusal names: ``command``, or the generic one."""
-        return self.command or GENERIC_COMMAND
-
-    @property
-    def terminal_alternative(self) -> str:
-        """The alternative that refusal offers: ``alternative``, or the generic one."""
-        return self.alternative or GENERIC_ALTERNATIVE
 
 
 @dataclass(frozen=True)

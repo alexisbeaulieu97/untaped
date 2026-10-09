@@ -77,6 +77,7 @@ from untaped.screen.core import (
 )
 from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked
+from untaped.ui import GENERIC_ALTERNATIVE, GENERIC_COMMAND
 
 __all__ = ["picker_screen"]
 
@@ -125,8 +126,8 @@ def picker_screen(request: PickRequest) -> Screen[PickerState, PickResult]:
         update=update,
         view=_view,
         title=request.heading,
-        command=request.terminal_command,
-        alternative=request.terminal_alternative,
+        command=request.command or GENERIC_COMMAND,
+        alternative=request.alternative or GENERIC_ALTERNATIVE,
         keys=_KEYS,
         shared_labels=_SHARED_LABELS,
         layout="full",
