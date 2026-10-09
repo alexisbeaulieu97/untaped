@@ -141,6 +141,18 @@ def test_enable_records_the_policy_and_skips(make_upstream: Upstream) -> None:
     assert run(app, ["enable", "nope"]).exit_code == 1
 
 
+def test_subscribe_and_enable_print_the_next_step_as_a_hint(make_upstream: Upstream) -> None:
+    bare, _ = make_upstream()
+    subscribed = run(app, ["subscribe", str(bare)])
+    assert subscribed.exit_code == 0, subscribed.output
+    assert "subscribed 'dotfiles' (4 items)\n" in subscribed.stderr
+    assert "hint: run `untaped dotfiles enable ITEM`" in subscribed.stderr
+    enabled = run(app, ["enable", "fish"])
+    assert enabled.exit_code == 0, enabled.output
+    assert "enabled 1 item\n" in enabled.stderr
+    assert "hint: run `untaped dotfiles apply`" in enabled.stderr
+
+
 def test_enable_all_takes_every_item_that_applies_here(make_upstream: Upstream) -> None:
     bare, _ = make_upstream()
     _subscribe(bare)
@@ -252,6 +264,8 @@ def test_apply_without_a_terminal_needs_yes_and_a_decline_changes_nothing(
     )
     assert declined.exit_code == 1 and "cancelled; no changes made" in declined.stderr
     assert "starship.toml" in declined.stderr  # the plan was previewed
+    header = declined.stderr.lower()
+    assert "item" in header and "target_path" not in header  # the default columns
     assert not (home / ".config" / "starship.toml").exists()
     accepted = run(
         app, ["apply"], terminal=True, prompt_backend=ScriptedPromptBackend(confirms=[True])
@@ -306,7 +320,8 @@ def test_sync_applies_sync_items_and_holds_a_clone_back_for_manual_links(
     assert rows["fish/conf.d/abbr.fish"]["state"] == "applied"
     assert git(tmp_path / "repos" / "dotfiles", "rev-parse", "HEAD") == before
     assert (
-        "held back by manual link files: fish/fish/conf.d, fish/fish/config.fish" in result.stderr
+        "warning: dotfiles: held back by manual link files: fish/fish/conf.d, fish/fish/config.fish"
+        in result.stderr
     )
     assert (home / ".config/fish/config.fish").read_text() == "set -gx EDITOR vim\n"
     assert (dotfiles_env / "attention").read_text() == "1\n"
