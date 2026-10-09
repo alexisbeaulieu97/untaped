@@ -393,6 +393,16 @@ def test_nothing_to_fix_with_a_failing_check_exits_1_and_points_at_doctor(
     assert result.stderr.splitlines()[-1] == "hint: run `untaped doctor`"
 
 
+def test_the_doctor_hint_keeps_the_chosen_profile(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolated_config.write_text("profiles:\n  default: {}\n  work: {}\n")
+    spec = _spec(("svc.bad", None, {"fail": True}))
+    result = _cli(spec, "--yes", "--profile", "work", monkeypatch=monkeypatch)
+    assert result.exit_code == 1
+    assert result.stderr.splitlines()[-1] == "hint: run `untaped --profile work doctor`"
+
+
 def test_a_check_still_failing_after_the_run_exits_1(monkeypatch: pytest.MonkeyPatch) -> None:
     spec = _spec(
         _MIGRATE, ("svc.url", "config set svc.base_url <URL>", {"fail": True, "automatic": False})
