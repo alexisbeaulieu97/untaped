@@ -264,6 +264,22 @@ def test_a_shallow_lock_a_killed_fetch_left_no_longer_wedges_the_cache(
     assert (cache.path / "shallow").is_file()
 
 
+def test_a_fetch_untaped_kills_does_not_leave_its_shallow_lock(
+    tmp_path: Path, origin: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = RepoCache(tmp_path / "app.git", error=_CacheError)
+    cache.ensure(f"file://{origin}")
+
+    def killed_mid_fetch(args: list[str], **_: object) -> None:
+        (cache.path / "shallow.lock").write_bytes(b"")
+        raise GitCommandError("git fetch timed out after 600s", timed_out=True)
+
+    monkeypatch.setattr("untaped.repo_cache.run_git", killed_mid_fetch)
+    with pytest.raises(_CacheError, match="timed out"):
+        cache.fetch(["+refs/heads/main:refs/heads/main"], tags=False, depth=1)
+    assert not (cache.path / "shallow.lock").exists()
+
+
 def test_a_temp_pack_that_cannot_be_removed_does_not_stop_the_fetch(
     tmp_path: Path, origin: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

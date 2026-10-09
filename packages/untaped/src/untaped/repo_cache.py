@@ -329,7 +329,17 @@ class RepoCache:
             "origin",
             *refspecs,
         ]
-        self.run(argv, timeout=self._slow_timeout, retry=True)
+        shallow_lock = self._path / "shallow.lock"
+        had_lock = shallow_lock.exists()
+        try:
+            self.run(argv, timeout=self._slow_timeout, retry=True)
+        except BaseException:
+            # Git removes its own lock unless it was killed (``run_git``'s
+            # timeout, Ctrl-C). It is dead now and the caller holds the cache
+            # lock, so a lock this fetch created is ours: don't wait an hour.
+            if not had_lock:
+                shallow_lock.unlink(missing_ok=True)
+            raise
 
     def _remove_stale_fetch_leftovers(self) -> None:
         """Delete ``objects/pack/tmp_*`` and ``shallow.lock`` older than an hour.
@@ -340,7 +350,8 @@ class RepoCache:
         A shallow fetch killed outright also leaves ``shallow.lock``, which
         makes every later fetch of the cache fail. The caller's cache lock
         keeps other untaped fetches out; the age keeps a git running outside
-        untaped safe. Best effort.
+        untaped safe, except a shallow fetch running over an hour, since git
+        writes ``shallow.lock`` once at its start. Best effort.
         """
         cutoff = time.time() - _STALE_LEFTOVER_SECONDS
         candidates = [self._path / "shallow.lock"]
