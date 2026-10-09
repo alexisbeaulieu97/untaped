@@ -170,11 +170,12 @@ class PromptToolkitPromptBackend:
         return answer
 
     def secret(self, message: str, *, confirmation: bool) -> str:
+        from untaped.screen.core import Frame  # noqa: PLC0415
         from untaped.screen.prompts import secret_screen  # noqa: PLC0415
 
         value, repeated = self._answer(secret_screen(message, confirmation=confirmation))
-        # The record is the mask, one symbol per character as the old line prompt left it.
-        mask = self._mask()
+        # The record is the mask the box drew, one symbol per character.
+        mask = Frame(0, 0, self._theme()).symbol("mask")
         self._record(message, mask * len(value.get_secret_value()))
         if confirmation:
             self._record("Confirm value", mask * len(repeated.get_secret_value()))
@@ -209,9 +210,7 @@ class PromptToolkitPromptBackend:
         from untaped.screen.prompts import multiselect_screen  # noqa: PLC0415
 
         checked = [i for i, item in enumerate(choices) if item.value in defaults]
-        picked = self._answer(
-            multiselect_screen(message, choices, checked), cancelled=_cancelled_error
-        )
+        picked = self._answer(multiselect_screen(message, choices, checked))
         self._record(message, ", ".join(choices[index].label for index in picked))
         return [choices[index].value for index in picked]
 
@@ -242,12 +241,6 @@ class PromptToolkitPromptBackend:
 
         return self.theme or BUILTIN_THEMES["default"]
 
-    def _mask(self) -> str:
-        from untaped.theme import DEFAULT_SYMBOLS  # noqa: PLC0415
-
-        symbols = self._theme().symbols
-        return symbols.get("mask") or DEFAULT_SYMBOLS["mask"]
-
     def _record(self, question: str, answer: str) -> None:
         """Print ``<question>: <answer>`` so the scrollback keeps what the erased prompt showed.
 
@@ -259,14 +252,11 @@ class PromptToolkitPromptBackend:
         self.stderr.write("".join(ch for ch in line if ch.isprintable()) + "\n")
         self.stderr.flush()
 
-    def _answer[M, R](
-        self, screen: Screen[M, R], *, cancelled: Callable[[], BaseException] = EOFError
-    ) -> R:
+    def _answer[M, R](self, screen: Screen[M, R]) -> R:
         """Run a prompt screen and return its answer, or raise how the line prompts ended.
 
-        ``cancelled`` builds the exception for a user who ended it without an answer
-        (``EOFError``, like ctrl-d on a line prompt); an interrupt is always
-        :class:`KeyboardInterrupt`.
+        A user who ended it without an answer raises ``EOFError`` (like ctrl-d on a
+        line prompt), an interrupt :class:`KeyboardInterrupt`.
         """
         from untaped.screen.core import Quit  # noqa: PLC0415
 
@@ -275,7 +265,7 @@ class PromptToolkitPromptBackend:
             return outcome.result
         if outcome.interrupted:
             raise KeyboardInterrupt
-        raise cancelled()
+        raise EOFError
 
 
 def _cancelled_error() -> ConfigError:
