@@ -678,12 +678,7 @@ def _validate_section(
 def _run_check(
     scope: _SectionScope, check_item: DoctorCheck, settings: BaseModel | None, *, profile: str
 ) -> dict[str, object]:
-    ctx = PluginContext(
-        plugin=scope.plugin,
-        settings_fields=frozenset(scope.profile_model.model_fields),
-        state_fields=frozenset(scope.state_model.model_fields if scope.state_model else ()),
-        settings=settings,
-    )
+    ctx = PluginContext(settings=settings)
     try:
         # Typed as ``object``: provider bodies may return anything at runtime
         # (spec §5 row 9); the shape checks below are the validation.

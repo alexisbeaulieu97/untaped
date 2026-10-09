@@ -91,7 +91,6 @@ from untaped.plugins.registry import (
     DoctorCheck,
     DoctorResult,
     PluginContext,
-    PluginProvider,
     PluginSpec,
     SkillAsset,
     plugin_dir,
@@ -213,7 +212,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     # composition
     "ApplicationSpec",
     "PluginContext",
-    "PluginProvider",
     "PluginSpec",
     "DoctorCheck",
     "DoctorResult",

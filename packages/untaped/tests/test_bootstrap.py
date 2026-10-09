@@ -803,3 +803,39 @@ def test_a_plugin_with_state_only_registers_its_state_section() -> None:
 
     assert _CONFIG_REGISTRY.state_sections["kept"] is _OnlyState
     assert "kept" not in _CONFIG_REGISTRY.profile_sections
+
+
+class _ToolsProfile(BaseModel):
+    greeting: str = "hi"
+    token: str | None = None
+
+
+def test_a_hyphenated_plugin_reads_its_overrides_with_underscores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from untaped.auth import token_override_env, token_override_name
+    from untaped.settings import env_var_name, get_config_section
+
+    spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
+    bootstrap.compose_root(candidates=[provider_candidate(spec)])
+    monkeypatch.setenv("UNTAPED_ACME_TOOLS__GREETING", "from env")
+    monkeypatch.setenv("UNTAPED_ACME_TOOLS__TOKEN", "env-token")
+    get_settings.cache_clear()
+
+    settings = get_config_section("acme-tools", _ToolsProfile)
+
+    assert (settings.greeting, settings.token) == ("from env", "env-token")
+    assert env_var_name(["acme-tools", "greeting"]) == "UNTAPED_ACME_TOOLS__GREETING"
+    assert token_override_name("acme-tools") == "UNTAPED_ACME_TOOLS__TOKEN"
+    assert token_override_env("acme-tools") == "UNTAPED_ACME_TOOLS__TOKEN"
+
+
+def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.settings import get_config_section
+
+    spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
+    bootstrap.compose_root(candidates=[provider_candidate(spec)])
+    monkeypatch.setenv("UNTAPED_ACME_TOOLS", '{"greeting": "blob"}')
+    get_settings.cache_clear()
+
+    assert get_config_section("acme-tools", _ToolsProfile).greeting == "blob"
