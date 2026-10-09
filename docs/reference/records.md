@@ -138,7 +138,7 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 | `awx <resource> <members> add/remove --stdin` | the member resource's kind; or name lines (ID lines with `--by-id`) | `id` of a record; a line is a name, or an ID with `--by-id` |
 | `awx jobs get/events/logs/wait/cancel/relaunch --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`, `awx.relaunch_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
 | `awx unified-templates get --stdin` | `awx.unified_template`; or ID lines | `id` |
-| `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines (ID lines with `--by-id`) | name field (`id` with `--by-id`) |
+| `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines (ID lines with `--by-id`) | `id` of a record; a line is a name, or an ID with `--by-id` |
 
 `awx jobs events` and `awx jobs logs` with several ids print one json or yaml
 array covering every job; the `job` field says which job a row belongs to.
