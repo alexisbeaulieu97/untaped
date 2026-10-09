@@ -68,11 +68,13 @@ For every `git` call it makes, `untaped` does the following; Git you run
 yourself, in a workspace checkout or anywhere else, is unaffected:
 
 - runs Git in its own session, without the terminal, so nothing Git starts
-  (ssh included) can prompt there: an ssh key passphrase or a new host key
-  fails with a hint to use `ssh-agent` or to accept the host key once with
-  your own `git fetch`;
+  (ssh included) can prompt there: a key with a passphrase must be in
+  `ssh-agent`, and a new host must be accepted once with your own
+  `git fetch`, as the error's hint says;
 - sets `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`, so a remote that
-  needs credentials fails instead of waiting for input;
+  needs credentials fails instead of waiting for input, and
+  `SSH_ASKPASS_REQUIRE=never` unless you set it, so ssh does not open a
+  graphical prompt instead;
 - sets `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` unless you set
   `GIT_SSH_COMMAND`, `GIT_SSH` or the `core.sshCommand` Git setting yourself;
 - removes `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
