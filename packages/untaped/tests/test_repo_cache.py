@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -227,6 +228,60 @@ def test_fetch_filter_makes_the_cache_partial(tmp_path: Path) -> None:
     config = cache.run(["config", "--get-regexp", r"^remote\.origin\."], capture=True).text
     assert "remote.origin.promisor true" in config
     assert "remote.origin.partialclonefilter blob:none" in config
+
+
+def test_fetch_removes_temp_packs_an_interrupted_fetch_left(tmp_path: Path, origin: Path) -> None:
+    # A killed ``git fetch`` leaves its temporary pack behind; only ``git gc`` would remove it.
+    cache = RepoCache(tmp_path / "app.git", error=_CacheError)
+    cache.ensure(f"file://{origin}")
+    packs = cache.path / "objects" / "pack"
+    packs.mkdir(parents=True, exist_ok=True)
+    stale = [packs / "tmp_pack_aB3dE9", packs / "tmp_idx_aB3dE9", packs / "tmp_rev_aB3dE9"]
+    fresh = packs / "tmp_pack_Zz9yX8"  # may belong to a git running outside untaped
+    for path in [*stale, fresh]:
+        path.write_bytes(b"partial")
+    hour_and_a_bit = time.time() - 3700
+    for path in stale:
+        os.utime(path, (hour_and_a_bit, hour_and_a_bit))
+    cache.fetch(["+refs/heads/main:refs/heads/main"], tags=False)
+    assert [path.exists() for path in stale] == [False, False, False]
+    assert fresh.exists()
+    assert _refs(cache) == ["refs/heads/main"]
+
+
+def test_a_shallow_lock_a_killed_fetch_left_no_longer_wedges_the_cache(
+    tmp_path: Path, origin: Path
+) -> None:
+    # A shallow fetch killed outright leaves ``shallow.lock``; every later
+    # fetch then fails with "Unable to create '.../shallow.lock': File exists".
+    cache = RepoCache(tmp_path / "app.git", error=_CacheError)
+    cache.ensure(f"file://{origin}")
+    lock = cache.path / "shallow.lock"
+    lock.write_bytes(b"")
+    os.utime(lock, (time.time() - 3700, time.time() - 3700))
+    cache.fetch(["+refs/heads/main:refs/heads/main"], tags=False, depth=1)
+    assert not lock.exists()
+    assert (cache.path / "shallow").is_file()
+
+
+def test_a_temp_pack_that_cannot_be_removed_does_not_stop_the_fetch(
+    tmp_path: Path, origin: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = RepoCache(tmp_path / "app.git", error=_CacheError)
+    cache.ensure(f"file://{origin}")
+    packs = cache.path / "objects" / "pack"
+    packs.mkdir(parents=True, exist_ok=True)
+    stale = packs / "tmp_pack_aB3dE9"
+    stale.write_bytes(b"partial")
+    os.utime(stale, (time.time() - 3700, time.time() - 3700))
+
+    def refuse(path: Path, missing_ok: bool = False) -> None:
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    cache.fetch(["+refs/heads/main:refs/heads/main"], tags=False)
+    assert stale.exists()
+    assert _refs(cache) == ["refs/heads/main"]
 
 
 def test_delete_refs(tmp_path: Path, origin: Path) -> None:

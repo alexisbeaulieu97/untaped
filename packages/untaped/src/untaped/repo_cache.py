@@ -39,6 +39,9 @@ _ORIGIN_SECTION = re.compile(r'\[\s*(?i:remote)\s+"origin"\s*\]')
 _ESCAPES = {"n": "\n", "t": "\t", "b": "\b"}
 _SPACE = " \t\n\r"
 _UNKNOWN = "_unknown"
+#: Age after which an interrupted fetch's leftovers are stale: well above the
+#: default fetch timeout, so a git running outside untaped keeps its own.
+_STALE_LEFTOVER_SECONDS = 3600.0
 
 
 def repo_url_parts(url: str) -> tuple[str | None, list[str]]:
@@ -313,7 +316,9 @@ class RepoCache:
         :meth:`ensure` writes no fetch refspec, so pass ``refspecs``: with
         none, git fetches only the remote ``HEAD`` into ``FETCH_HEAD``.
         ``filter`` is a partial-clone filter spec such as ``"blob:none"``.
+        First removes what an interrupted fetch left behind.
         """
+        self._remove_stale_fetch_leftovers()
         argv = [
             "fetch",
             "--quiet",
@@ -325,6 +330,32 @@ class RepoCache:
             *refspecs,
         ]
         self.run(argv, timeout=self._slow_timeout, retry=True)
+
+    def _remove_stale_fetch_leftovers(self) -> None:
+        """Delete ``objects/pack/tmp_*`` and ``shallow.lock`` older than an hour.
+
+        Any interrupted fetch (a timeout, Ctrl-C, untaped itself killed, or a
+        dropped connection) leaves index-pack's temporary files: git has no
+        cleanup for them and only ``git prune`` removes them, as this mirrors.
+        A shallow fetch killed outright also leaves ``shallow.lock``, which
+        makes every later fetch of the cache fail. The caller's cache lock
+        keeps other untaped fetches out; the age keeps a git running outside
+        untaped safe, except a shallow fetch running over an hour, since git
+        writes ``shallow.lock`` once at its start. Best effort.
+        """
+        cutoff = time.time() - _STALE_LEFTOVER_SECONDS
+        candidates = [self._path / "shallow.lock"]
+        try:
+            with os.scandir(self._path / "objects" / "pack") as scan:
+                candidates.extend(Path(e.path) for e in scan if e.name.startswith("tmp_"))
+        except OSError:
+            pass
+        for path in candidates:
+            try:
+                if path.is_file(follow_symlinks=False) and path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                continue
 
     def delete_refs(self, refs: Iterable[str]) -> None:
         """Delete ``refs`` in one ``update-ref --stdin``; a no-op when empty."""
