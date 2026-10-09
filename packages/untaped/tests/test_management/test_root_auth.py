@@ -820,7 +820,14 @@ def test_migrate_exits_with_the_failure_category_and_names_it_per_row(
     assert row["action"] == "failed"
     assert row["error"]["category"] == "unavailable"
     assert row["error"]["message"] == row["detail"]
-    assert "1 token could not be moved" in result.stderr
+    [error] = [line for line in _stderr_lines(result) if line["level"] == "error"]
+    assert error["message"] == "1 token could not be moved and stay in the config"
+    assert (error["category"], error["exit_code"], error["retryable"]) == ("unavailable", 5, True)
+    assert "hint" in error and "details" in error
+
+
+def _stderr_lines(result: CliResult) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in result.stderr.splitlines()]
 
 
 def test_migrate_with_a_pass_that_cannot_decrypt_does_not_flood(
@@ -837,6 +844,9 @@ def test_migrate_with_a_pass_that_cannot_decrypt_does_not_flood(
     assert sum("would override the token command" in detail for detail in details) == 1
     assert "gpg:" not in result.stderr, "gpg's own stderr never reaches the terminal"
     assert result.stderr.count("pinentry") == 1, "the fix is named once, not per token"
+    [error] = [line for line in _stderr_lines(result) if line["level"] == "error"]
+    assert "pinentry" in error["hint"] and "hint" not in error["message"]
+    assert (error["category"], error["exit_code"]) == ("config", 4)
     assert "w-other" in _isolated_config.read_text()
 
 
