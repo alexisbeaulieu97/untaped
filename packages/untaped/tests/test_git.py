@@ -686,6 +686,32 @@ def test_no_git_is_left_marked_as_starting(monkeypatch: pytest.MonkeyPatch, tmp_
     assert spawning == {}
 
 
+def test_git_is_registered_before_its_spawn_mark_clears(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Cleared before registering, a dying untaped would see neither the spawn
+    # nor the group; cleared only at the end, it would wait on every running git.
+    spawning: dict[int, None] = {}
+    me = threading.get_ident()
+
+    class _Live(dict[int, None]):
+        def __setitem__(self, key: int, value: None) -> None:
+            assert me in spawning, "spawn mark cleared before git was registered"
+            super().__setitem__(key, value)
+
+    class _Popen(subprocess.Popen[bytes]):
+        def communicate(self, *args: Any, **kwargs: Any) -> Any:
+            assert me not in spawning, "spawn mark still set while git runs"
+            return super().communicate(*args, **kwargs)
+
+    monkeypatch.setattr(git, "_SPAWNING", spawning)
+    monkeypatch.setattr(git, "_LIVE_GROUPS", _Live())
+    monkeypatch.setattr(git.subprocess, "Popen", _Popen)
+
+    run_git(["init", "-q", str(tmp_path / "r")], timeout=30, batch_ssh=False)
+    assert spawning == {}
+
+
 def test_failure_carries_status_and_stderr_gist(monkeypatch: pytest.MonkeyPatch) -> None:
     stderr = "warning: noise\nfatal: repository 'x' not found\n"
     monkeypatch.setattr(git, "_run_process", _recording_run([], returncode=128, stderr=stderr))
