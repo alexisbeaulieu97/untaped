@@ -390,14 +390,14 @@ def _renamed_table() -> list[str]:
         for section, section_model in sections.items():
             mappings = key_mappings(section_model)
             for old, new in sorted(mappings.migratable.items()):
-                kind = "retired" if old in mappings.retired else "deprecated"
+                kind = "retired" if old in mappings.retired else "renamed"
                 key = f"{section}.{old}"
                 rows.append(f"| `{key}` | `{_env_name(key)}` | `{section}.{new}` | {kind} |")
     if not rows:
         return []
     return [
         "## Renamed settings\n",
-        "A deprecated key is still read with a warning; a retired one is no longer read. See "
+        "A renamed key is still read with a warning; a retired one is no longer read. See "
         "[Renamed settings](../configuration.md#renamed-settings).\n",
         "| Old key | Old environment variable | New key | Status |\n|---|---|---|---|",
         *rows,
