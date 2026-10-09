@@ -56,10 +56,7 @@ from untaped_dotfiles.domain.status import needs_attention
 
 app = create_app(
     name="dotfiles",
-    help=(
-        "Place dotfiles from subscribed repos, with a policy per item per machine. "
-        "Experimental: may change in a minor release."
-    ),
+    help="Place dotfiles from subscribed repos, with a policy per item per machine.",
 )
 
 ITEM = "dotfiles.item"
@@ -383,14 +380,6 @@ def apply_command(
             help="Replace paths edited on this machine too (the local version is kept aside).",
         ),
     ] = False,
-    show_diff: Annotated[
-        bool,
-        Parameter(
-            name="--diff",
-            negative="",
-            help="Show a unified diff of copy and merge changes before confirming.",
-        ),
-    ] = False,
     yes: YesOption = False,
     dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
@@ -428,7 +417,6 @@ def apply_command(
                     verb="apply",
                     message=f"Apply {plural(len(todo), 'path')}?",
                     yes=yes,
-                    diff=(show_diff and _diffs(svc, [s.placement for s in todo])) or [],
                 )
                 _fast_forward(svc, pulled, placements)
                 steps = svc.applier.replan(steps, force=force)
@@ -623,13 +611,10 @@ def _confirm(
     verb: str,
     message: str,
     yes: bool,
-    diff: Sequence[str] = (),
 ) -> None:
     ui = ui_context(strict=False)
 
     def preview() -> None:
-        for text in diff:
-            echo(text, err=True, nl=False)
         rows = [row.model_dump(mode="json") for row in planned]
         echo(ui.collection(rows, fmt=fmt), err=True)
 

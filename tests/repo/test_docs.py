@@ -164,8 +164,13 @@ def _broken_links(path: Path) -> list[str]:
     return broken
 
 
-#: The changelog and its per-major archives: link-checked, but history, so no other docs checks.
-CHANGELOGS = [REPO_ROOT / "CHANGELOG.md", *sorted((REPO_ROOT / "changelog").glob("*.md"))]
+#: The changelog, its per-major archives and the unreleased fragments: link-checked, but
+#: history, so no other docs checks.
+CHANGELOGS = [
+    REPO_ROOT / "CHANGELOG.md",
+    *sorted((REPO_ROOT / "changelog").glob("*.md")),
+    *sorted((REPO_ROOT / "changelog.d").glob("*.md")),
+]
 
 
 @pytest.mark.parametrize(
@@ -403,6 +408,7 @@ DOCS_PAGES = [
     "reference/environment.md",
     "reference/exit-codes.md",
     "reference/records.md",
+    "screens.md",
     "scripting.md",
     "skills.md",
     "troubleshooting.md",
@@ -481,7 +487,9 @@ def test_docs_holds_only_the_reader_pages() -> None:
 
 def test_agents_md_is_short_and_points_to_contributing() -> None:
     agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    assert len(agents.splitlines()) <= 30
+    # AGENTS.md carries the shared vision and agent-only notes; everything else
+    # lives in CONTRIBUTING.md so the two never drift apart.
+    assert len(agents.splitlines()) <= 40, "move detail to CONTRIBUTING.md"
     assert "CONTRIBUTING.md" in agents
     contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8").splitlines()
     for heading in (

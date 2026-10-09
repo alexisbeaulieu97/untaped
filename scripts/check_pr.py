@@ -1,4 +1,4 @@
-"""Checks on a pull request itself: its drift review and its changelog line.
+"""Checks on a pull request itself: its drift review and its changelog fragment.
 
 Usage: ``uv run python scripts/check_pr.py EVENT_JSON``, where EVENT_JSON is
 the ``pull_request`` event (``$GITHUB_EVENT_PATH`` in Actions). The PR's
@@ -10,9 +10,14 @@ not a merge. CI checks out with full history.
 - The body has a ``## Drift review`` section with a non-empty line for each of
   :data:`DRIFT_ITEMS` (the PR template's lines; the checklist itself lives in
   CONTRIBUTING.md, "Before you open a PR").
-- A PR that changes shipped code (``packages/*/src/``) changes the
-  ``## Unreleased`` section of CHANGELOG.md by adding a bullet, or its
-  ``Changelog:`` line reads ``none, <why>``.
+- A PR that changes shipped code (``packages/*/src/``) adds or changes a
+  fragment in ``changelog.d/``, or its ``Changelog:`` line reads
+  ``none, <why>``.
+- A fragment that is ``**Breaking`` comes with an ``upgrading`` fragment.
+- Only a release PR (one that changes the ``untaped`` package version) or a
+  PR that moves an ``## Unreleased`` section into fragments (the one-off
+  migration to fragments) edits ``CHANGELOG.md`` or ``changelog/``. A release PR
+  leaves no fragment behind.
 
 Every failure prints one line on stderr and exits 1.
 """
@@ -22,9 +27,11 @@ from __future__ import annotations
 import json
 import re
 import sys
-from collections.abc import Sequence
+import tomllib
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import changelog
 from untaped.git import GitCommandError, run_git
 
 DRIFT_HEADING = "## Drift review"
@@ -36,8 +43,8 @@ DRIFT_ITEMS = (
     "Issues",
 )
 _SHIPPED = re.compile(r"^packages/[^/]+/src/")
-_UNRELEASED = re.compile(r"^## Unreleased[ \t]*\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_PACKAGE = "packages/untaped/pyproject.toml"
 _WAIVER = re.compile(r"none\b\W+\w", re.IGNORECASE)
 
 
@@ -55,24 +62,22 @@ def drift_review(body: str) -> dict[str, str] | None:
     return answers
 
 
-def unreleased(changelog: str) -> str:
-    """The body of CHANGELOG.md's ``## Unreleased`` section (empty without one)."""
-    match = _UNRELEASED.search(changelog)
-    return match.group(1).strip() if match else ""
-
-
-def _bullets(changelog: str) -> set[str]:
-    return {
-        line.strip()
-        for line in unreleased(changelog).splitlines()
-        if line.lstrip().startswith("- ")
-    }
-
-
 def problems(
-    body: str, changed: Sequence[str], base_changelog: str, head_changelog: str
+    body: str,
+    changed: Sequence[str],
+    fragments: Mapping[str, str],
+    *,
+    release: bool = False,
+    migration: bool = False,
+    leftover: Sequence[str] = (),
 ) -> list[str]:
-    """Every reason the PR fails its checks (empty when it passes)."""
+    """Every reason the PR fails its checks (empty when it passes).
+
+    ``fragments`` maps each fragment the PR adds or changes to its text; ``leftover`` lists the
+    fragments still in ``changelog.d/`` at the PR's head; ``release`` says it is a release PR and
+    ``migration`` that the base still has ``## Unreleased`` in CHANGELOG.md (the PR that
+    introduced fragments; no later base has it).
+    """
     answers = drift_review(body)
     if answers is None:
         return [f"the PR body has no '{DRIFT_HEADING}' section (see the PR template)"]
@@ -82,14 +87,34 @@ def problems(
         if not answers.get(item)
     ]
     ships = any(_SHIPPED.match(path) for path in changed)
-    logged = bool(_bullets(head_changelog) - _bullets(base_changelog))
     waived = _WAIVER.match(answers.get("Changelog", "")) is not None
-    if ships and not logged and not waived:
+    if ships and not fragments and not waived:
         found.append(
-            "packages/*/src changed: add a CHANGELOG.md line under '## Unreleased', "
-            "or answer 'Changelog: none, <why>'"
+            "packages/*/src changed: add a fragment changelog.d/<slug>.<type>.md "
+            "(see CONTRIBUTING.md, Changelog), or answer 'Changelog: none, <why>'"
+        )
+    breaking = [path for path, text in fragments.items() if changelog.is_breaking(text)]
+    upgrading = any(changelog.fragment_type(path) == "upgrading" for path in fragments)
+    if breaking and not upgrading:
+        found.append(
+            f"{breaking[0]} is Breaking: add changelog.d/<slug>.upgrading.md saying what "
+            "a user or script must do about it"
+        )
+    edited = [p for p in changed if p == "CHANGELOG.md" or p.startswith("changelog/")]
+    if edited and not (release or migration):
+        found.append(
+            f"{edited[0]} changed outside a release PR: add a fragment in changelog.d/ instead"
+        )
+    if release and leftover:
+        found.append(
+            f"{leftover[0]} is still a fragment in this release PR: "
+            "run `uv run python scripts/changelog.py build X.Y.Z` again"
         )
     return found
+
+
+def _package_version(pyproject: str) -> str:
+    return str(tomllib.loads(pyproject)["project"]["version"])
 
 
 def _git(*args: str) -> str:
@@ -106,11 +131,24 @@ def main(argv: Sequence[str]) -> int:
         base = "HEAD^1" if merge else _git("merge-base", pull["base"]["sha"], "HEAD").strip()
         changed = _git("diff", "--name-only", base, "HEAD").split()
         base_changelog = _git("show", f"{base}:CHANGELOG.md")
+        base_version = _package_version(_git("show", f"{base}:{_PACKAGE}"))
     except GitCommandError as exc:
         print(f"check_pr: {exc}", file=sys.stderr)
         return 1
-    head_changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
-    found = problems(pull.get("body") or "", changed, base_changelog, head_changelog)
+    head_version = _package_version(Path(_PACKAGE).read_text(encoding="utf-8"))
+    fragments = {
+        path: Path(path).read_text(encoding="utf-8")
+        for path in changed
+        if changelog.fragment_type(path) and Path(path).is_file()
+    }
+    found = problems(
+        pull.get("body") or "",
+        changed,
+        fragments,
+        release=head_version != base_version,
+        migration=bool(re.search(r"^## Unreleased\b", base_changelog, re.M)),
+        leftover=changelog.fragment_paths(Path()),
+    )
     for problem in found:
         print(problem, file=sys.stderr)
     return 1 if found else 0

@@ -1,9 +1,10 @@
-"""Fuzzy ranking for the picker."""
+"""Fuzzy ranking for searchable lists."""
 
 from __future__ import annotations
 
 from untaped.picker import PickItem
-from untaped.picker.fuzzy import fuzzy_match, rank
+from untaped.screen.components.choices import ListItem
+from untaped.screen.fuzzy import fuzzy_match, rank
 
 
 def _items(*labels: str, dimmed: tuple[str, ...] = ()) -> list[PickItem]:
@@ -60,3 +61,15 @@ def test_description_matches_need_a_substring() -> None:
     items = [PickItem(id="1", label="acme/web", description="Frontend")]
     assert rank("fe", items) == []  # "fe" is not a substring of "frontend" or the label
     assert [r.item.id for r in rank("front", items)] == ["1"]
+
+
+def test_a_list_item_ranks_like_a_pick_item() -> None:
+    items = [
+        ListItem("1", "legacy/api", dimmed=True),
+        ListItem("2", "acme/api-gateway"),
+        ListItem("3", "acme/web", description="Frontend"),
+    ]
+    ranked = rank("api", items)
+    assert [entry.item.id for entry in ranked] == ["2", "1"]
+    assert ranked[0].positions == (5, 6, 7)
+    assert [entry.item.id for entry in rank("front", items)] == ["3"]

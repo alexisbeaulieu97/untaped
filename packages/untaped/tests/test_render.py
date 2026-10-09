@@ -436,3 +436,35 @@ def test_a_plain_field_value_table_is_not_colored_as_a_record(
     monkeypatch.delenv("NO_COLOR", raising=False)
     out = _table([{"field": "status", "value": "failed"}])
     assert "\x1b[31mfailed" not in out
+
+
+@pytest.mark.parametrize("name", sorted(BUILTIN_THEMES))
+@pytest.mark.parametrize("tty", [False, True])
+@pytest.mark.parametrize("view", ["table", "list"])
+def test_screen_tokens_do_not_change_tables(name: str, tty: bool, view: str) -> None:
+    """Screen roles and symbols are invisible to tables and detail views."""
+    import io
+
+    from untaped.testing import TtyStringIO
+
+    full = BUILTIN_THEMES[name].model_copy(
+        update={"collection_view": view, "detail_view": view}  # type: ignore[dict-item]
+    )
+    bare = full.model_copy(
+        update={
+            "color_roles": {
+                key: value
+                for key, value in full.color_roles.items()
+                if not key.startswith("screen.")
+            },
+            "symbols": {key: full.symbols[key] for key in ("success", "warning", "error", "info")},
+        }
+    )
+    records = [{"id": 1, "name": "alpha"}, {"id": 2, "name": "beta"}]
+
+    def render(theme: object) -> tuple[str, str]:
+        stdout = TtyStringIO() if tty else io.StringIO()
+        ui = UiContext(stdout=stdout, theme=theme)  # type: ignore[arg-type]
+        return ui.collection(records, fmt="table"), ui.detail(records[0], fmt="table")
+
+    assert render(full) == render(bare)

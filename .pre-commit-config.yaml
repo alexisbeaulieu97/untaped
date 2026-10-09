@@ -43,6 +43,14 @@ repos:
         files: '\.py$|^pyproject\.toml$'
         stages: [pre-push]
 
+      # Changelog fragments: name, type and format (scripts/changelog.py).
+      - id: changelog-fragments
+        name: changelog fragments
+        entry: uv run python scripts/changelog.py check
+        language: system
+        pass_filenames: false
+        files: ^(changelog\.d/|scripts/changelog\.py$)
+
       # Dead code in shipped packages ([tool.vulture] in pyproject.toml).
       - id: vulture
         name: vulture

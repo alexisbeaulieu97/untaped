@@ -103,6 +103,18 @@ def _wait_for(paths: list[Path], limit: float = 10.0) -> None:
         time.sleep(0.02)
 
 
+def _wait_registered(runner: SubprocessRunner, limit: float = 10.0) -> None:
+    """Wait until the runner has registered a live command.
+
+    STARTED can appear before the runner thread adds the process to ``_live``, and
+    ``cancel()`` signals only registered ones. Reads ``_live``: the runner has no public view.
+    """
+    deadline = time.monotonic() + limit
+    while not runner._live:
+        assert time.monotonic() < deadline, "runner never registered the command"
+        time.sleep(0.02)
+
+
 def _start(
     runner: SubprocessRunner, script: str, cwd: Path, results: list[CommandResult]
 ) -> Thread:
@@ -170,6 +182,7 @@ def test_second_interrupt_during_cancel_still_kills(
     results: list[CommandResult] = []
     thread = _start(runner, "trap '' TERM; touch STARTED; sleep 30", tmp_path, results)
     _wait_for([tmp_path / "STARTED"])
+    _wait_registered(runner)  # else cancel() sees no process and never reaches its grace wait
 
     real_sleep = time.sleep
 

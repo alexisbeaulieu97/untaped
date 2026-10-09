@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
+from rich.cells import cell_len
 
 from test_management.support import check, compose, make_spec, write_config
 from untaped import bootstrap
@@ -20,6 +21,7 @@ from untaped.capabilities.registry import (
     DoctorCheck,
     DoctorResult,
 )
+from untaped.management._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.management.doctor import build_root_doctor_app, report_check_rows
 from untaped.profile_resolver import profile_scope
 from untaped.testing import CliInvoker, CliResult
@@ -79,7 +81,7 @@ def test_each_row_has_a_glyph_and_shows_its_detail() -> None:
     assert ok.split()[0] == "✓"
     assert ok.endswith("all fine")
     auto = next(line for line in stdout.splitlines() if " alpha.auto " in line)
-    assert auto.split()[0] == "⚠"
+    assert auto.split()[0] == "▲"
     manual = next(line for line in stdout.splitlines() if " beta.manual " in line)
     assert manual.split()[0] == "✗"
 
@@ -207,6 +209,19 @@ def test_a_long_detail_wraps_inside_its_group(
 def test_glyphs_take_the_status_colours(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FORCE_COLOR", "1")
     stdout = _doctor().stdout
-    assert "\x1b[33m⚠" in stdout
+    assert "\x1b[33m▲" in stdout
     assert "\x1b[31m✗" in stdout
     assert "\x1b[32m✓" in stdout
+
+
+def test_status_glyphs_are_one_cell_and_have_no_emoji_form() -> None:
+    # U+26A0 ``⚠`` and ``✔`` measure one cell but have an emoji form that terminals
+    # draw two cells wide and misalign rows; the variation selector exposes it.
+    for status, glyph in _UNICODE_GLYPHS.items():
+        assert cell_len(glyph) == 1, status
+        assert cell_len(glyph + "\ufe0f") == 1, f"{status}: {glyph!r} has an emoji form"
+
+
+def test_ascii_glyphs_cover_every_status() -> None:
+    assert _ASCII_GLYPHS.keys() == _UNICODE_GLYPHS.keys()
+    assert all(glyph.isascii() for glyph in _ASCII_GLYPHS.values())

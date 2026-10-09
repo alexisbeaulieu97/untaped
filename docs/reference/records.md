@@ -9,7 +9,7 @@ command runs and needs at least one row, so use it on a read command or add
 
 | Command | Writes |
 |---|---|
-| `config list`, `config get` | `untaped.setting` |
+| `config list`, `config get` | `untaped.setting` (`stability`: `stable`, `experimental` or `deprecated`; `table` lists the last two apart) |
 | `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
 | `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`; `action` `renamed` or `dropped`) |
 | `auth set`, `auth unset`, `auth migrate` | `untaped.auth_outcome` (never the token; `action` `gone` when `unset` found the entry already deleted) |
@@ -128,7 +128,7 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 | `awx workflow-templates nodes` | `awx.workflow_node` |
 | `awx test list` | `awx.test_case` |
 | `awx test run` | `awx.test_result` |
-| `awx test validate --source-ref`, `awx test run --dry-run --source-ref` | `awx.provision_outcome` |
+| `awx test validate --source-ref` | `awx.provision_outcome` |
 | `awx test prune` | `awx.prune_outcome` |
 | `awx ping` | `awx.status` |
 

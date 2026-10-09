@@ -31,19 +31,26 @@ from untaped.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
+from untaped.screen.core import Cancel, Quit, Screen
+from untaped.stability import apply_marks
+from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
 
 if TYPE_CHECKING:
     from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
     from untaped.picker import PickRequest, PickResult
+    from untaped.theme import ThemeSpec
 
 __all__ = [
     "CliInvoker",
     "CliResult",
     "PromptBackend",
+    "ScreenKeys",
+    "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
     "assert_destructive_contract",
     "check_conventions",
+    "drive_screen",
     "invoke_cli",
     "invoke_root",
     "provider_candidate",
@@ -103,12 +110,21 @@ def invoke_cli(
 ) -> CliResult:
     """Invoke a Cyclopts app or launcher while capturing terminal streams.
 
+    A bare app is given the panels and help lines its marks ask for first, as
+    the root would when mounting it (a nested sub-app computes the path of its
+    replacement from its own name only). A mark on a ``CapabilitySpec`` is
+    applied only by a composed root, so assert a spec-marked capability's help
+    through :func:`invoke_root`, not through its own app.
+
     ``interactive=True`` swaps stdin for a :class:`TtyStringIO` so TTY gates
     open; ``prompt_backend`` installs a scripted backend for the invocation
     (reaching even ``UiContext``s the command builds itself). The
     controlling terminal (``/dev/tty``, used for prompts while stdin is
     piped) is simulated: absent by default, present with ``terminal=True``
-    (prompts then go to ``prompt_backend``).
+    (prompts then go to ``prompt_backend``). A command that runs a screen
+    (``ui.run``) needs neither with a :class:`ScriptedPromptBackend`, which
+    never touches a terminal: ``prompt_backend=ScriptedPromptBackend(screens=[...])``
+    is enough (and ``interactive=True`` only if the command checks for a TTY itself).
     """
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -266,7 +282,19 @@ class ScriptedPromptBackend:
     :class:`ConfigError` so a test fails cleanly instead of hanging. With
     ``interrupt=True`` every prompt raises :class:`PromptInterruptedError`,
     simulating Ctrl-C.
+
+    ``screens`` answers :meth:`UiContext.run`: each entry is the screen's
+    result (returned as ``Quit(entry)``), a :class:`Quit` (its result is
+    returned, like the screen's own), a :class:`Cancel` (or the class itself), an exception
+    instance or class (raised), or :class:`ScreenKeys` (replayed through
+    :func:`drive_screen` with commands run synchronously, so a command-level
+    test can run a real screen). ``ran`` keeps the screens it was asked to
+    run. The backend never touches a terminal, so ``UiContext.run`` and
+    ``UiContext.pick_many`` do not require one: a command test needs no
+    ``terminal=True`` and no TTY stdin.
     """
+
+    needs_terminal = False
 
     def __init__(
         self,
@@ -277,6 +305,7 @@ class ScriptedPromptBackend:
         selections: Sequence[Any] = (),
         multiselects: Sequence[list[Any]] = (),
         picks: Sequence[PickResult | None] = (),
+        screens: Sequence[object] = (),
         interrupt: bool = False,
     ) -> None:
         self._interrupt = interrupt
@@ -286,6 +315,8 @@ class ScriptedPromptBackend:
         self._selections = deque(selections)
         self._multiselects = deque(multiselects)
         self._picks = deque(picks)
+        self._screens = deque(screens)
+        self.ran: list[Screen[Any, Any]] = []
         self.calls: list[tuple[str, str]] = []
 
     def _next(self, queue: deque[Any], method: str, message: str) -> Any:
@@ -327,6 +358,27 @@ class ScriptedPromptBackend:
     def pick_many(self, request: PickRequest) -> PickResult | None:
         return cast("PickResult | None", self._next(self._picks, "pick_many", request.heading))
 
+    def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
+        self.ran.append(screen)
+        entry = self._next(self._screens, "run_screen", screen.title)
+        if isinstance(entry, BaseException) or (
+            isinstance(entry, type) and issubclass(entry, BaseException)
+        ):
+            raise entry
+        if entry is Cancel:
+            return Cancel()
+        if isinstance(entry, Quit | Cancel):
+            return cast("Quit[R] | Cancel", entry)
+        if isinstance(entry, ScreenKeys):
+            run = drive_screen(screen, entry, theme=theme, commands="sync")
+            if run.outcome is None:
+                raise ConfigError(
+                    f"the scripted keys did not end screen {screen.title!r}; "
+                    "finish them with a key that quits"
+                )
+            return run.outcome
+        return cast("Quit[R]", Quit(entry))
+
 
 def _call_command(
     command: App | Callable[..., Any],
@@ -339,6 +391,11 @@ def _call_command(
     error_console = _console(stderr)
     if isinstance(command, App):
         target = command.meta if command.meta.default_command is not None else command
+        if target is command and command._meta_parent is None:
+            # A composed root (or its meta app) marked its commands when it
+            # mounted them; a bare capability app did not. Never resolves a
+            # lazy capability.
+            apply_marks(command, path=() if command.name == ("untaped",) else command.name[:1])
         run_cyclopts_app(
             target,
             args,

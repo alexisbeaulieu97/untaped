@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 import pytest
 import yaml
@@ -23,6 +23,7 @@ from untaped.settings import (
     register_profile_settings,
     validate_config_file,
 )
+from untaped.stability import deprecated
 from untaped.testing import invoke_cli, provider_candidate
 
 
@@ -36,10 +37,9 @@ class DemoSettings(BaseModel):
         "sweep.sync_concurrency": "sweep.parallel",
     }
     retired_keys: ClassVar[dict[str, str]] = {"ancient_path": "cache_dir"}
-    deprecated_settings: ClassVar[dict[str, str]] = {"legacy": "use cache_dir: legacy is ignored"}
 
     cache_dir: str = "default-cache"
-    legacy: bool = False
+    legacy: Annotated[bool, deprecated(replacement="cache_dir")] = False
     sweep: Sweep = Field(default_factory=Sweep)
 
 
@@ -134,7 +134,7 @@ def test_a_deprecated_setting_keeps_its_value_and_warns(
     assert get_config_section("demo", DemoSettings).legacy is True
     assert (
         "warning: demo.legacy is deprecated and will be removed in the next major release; "
-        "use cache_dir: legacy is ignored"
+        "use cache_dir"
     ) in capsys.readouterr().err
 
 

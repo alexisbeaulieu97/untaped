@@ -27,7 +27,7 @@ _SEGMENT_BREAK = re.compile(r"\s+\|\s+|\s*(?:&&|\|\||;)\s*")
 _REDIRECT = re.compile(r"^\d*[<>]")
 _SYNOPSIS_SUFFIX = re.compile(r"(?:\]|\.\.\.|…)+$")
 PLACEHOLDER = re.compile(r"^[A-Z][A-Z0-9_]*(?:[/=:.-][A-Z0-9_]+)*$")
-_ROOT_FLAGS = {"-q", "--quiet", "-v", "--verbose"}
+_ROOT_FLAGS = {"-q", "--quiet", "-v", "--verbose", "--deprecated"}
 _HELP_FLAGS = {"--help", "-h"}
 
 

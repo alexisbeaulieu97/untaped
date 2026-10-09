@@ -54,11 +54,13 @@ def build_request(
     validate_title: Callable[[str], str | None] | None,
     branch: str = "",
     base: str = "",
+    allow_empty: bool = False,
 ) -> PickRequest:
     """The picker request: ``mode``/``base``/``branch`` settings over ``source``'s catalog.
 
     ``branch``/``base`` (the ``--branch``/``--base`` flags) seed the all-items
     defaults. The subtitle previews the branch writable repos get.
+    ``allow_empty`` lets the picker confirm with no repos (``create``).
     """
 
     def subtitle(current: str, defaults: Mapping[str, str]) -> str:
@@ -87,6 +89,7 @@ def build_request(
         subtitle=subtitle,
         refresh=refresh,
         adhoc=_adhoc,
+        allow_empty=allow_empty,
     )
 
 
@@ -145,20 +148,31 @@ def choose_repos(
     branch: str | None,
     base: str | None,
     stdin: bool,
+    empty: bool = False,
 ) -> tuple[str, list[RepoArg]]:
     """The workspace name and repos: from the flags, else from the picker in a terminal.
 
     ``record`` is the workspace ``add`` targets (``None`` for ``create``).
-    Without a terminal and without flags this is a usage error naming them.
+    Without a terminal and without flags, ``create`` makes an empty workspace
+    and ``add`` is a usage error naming the flags. ``empty`` (``create --empty``)
+    makes an empty workspace without the picker and refuses repo, branch and
+    base flags.
     """
     name = record.name if record is not None else name
     flags = bool(repo or read_only or stdin)
-    if flags or not ui.can_prompt:
+    if empty and (flags or branch or base):
+        raise UsageError(
+            "--empty takes no repos",
+            hint="drop --empty, or --repo, --read-only, --stdin, --branch and --base",
+        )
+    if empty or flags or not ui.can_prompt:
         if name is None:
-            hint = "pass NAME before the options" if flags else NO_NAME_HINT
+            hint = "pass NAME before the options" if flags or empty else NO_NAME_HINT
             raise UsageError("a workspace name is required", hint=hint)
         if not flags:
-            raise UsageError("no repos given", hint=NO_REPOS_HINT)
+            if record is not None:
+                raise UsageError("no repos given", hint=NO_REPOS_HINT)
+            return name, []  # create NAME alone: an empty workspace
         return name, flag_repo_args(repo, read_only, branch=branch, base=base, stdin=stdin)
     return _pick(ui, settings, store, name=name, record=record, branch=branch, base=base)
 
@@ -198,6 +212,7 @@ def _pick(
         validate_title=validate,
         branch=branch or "",
         base=base or "",
+        allow_empty=record is None,
     )
     result = ui.pick_many(request)
     args = [source.pick_arg(arg) for arg in repo_args(result)]

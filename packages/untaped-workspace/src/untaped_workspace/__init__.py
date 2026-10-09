@@ -6,7 +6,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import CapabilitySpec, SkillAsset, executable_check
+from untaped.sdk import CapabilitySpec, SkillAsset, executable_check, experimental
 from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 
 if TYPE_CHECKING:
@@ -25,10 +25,8 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="workspace",
     app_factory=build_app,
-    help=(
-        "Create and archive task workspaces (git worktrees of several repos). "
-        "Experimental: may change in a minor release."
-    ),
+    help="Create and archive task workspaces (git worktrees of several repos).",
+    stability=experimental,
     config_section="workspace",
     profile_model=WorkspaceSettings,
     state_model=WorkspaceState,

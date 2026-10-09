@@ -168,7 +168,9 @@ def structure_violations(
         *_runtime_violations(package),
         *_source_violations(source_dir, files, spec.config_section),
         *_settings_violations(spec),
-        *settings_name_violations(spec.config_section, spec.profile_model, source_dir.parent),
+        *settings_name_violations(
+            spec.config_section, spec.profile_model, source_dir.parent, state=spec.state_model
+        ),
     ]
     if tests_dir is not None:
         found.extend(_private_import_violations(tests_dir, package))

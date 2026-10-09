@@ -29,6 +29,7 @@ import os
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, SecretStr
@@ -217,6 +218,15 @@ def run_command(
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
 
 
+def forget_token_command(argv: list[str]) -> None:
+    """Forget the cached result of ``argv``, so its next read runs the command again.
+
+    For a caller that checks a token it was just given (``setup``): a retry after a rejected
+    token must run the command again, not read the rejected result back.
+    """
+    _cache.pop(tuple(argv), None)
+
+
 def clear_token_cache() -> None:
     """Forget every ``token_command`` result and plaintext warning (tests, embedding)."""
     _cache.clear()
@@ -229,6 +239,12 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     A token from the environment (:func:`token_override_env`) is not a file,
     so it never warns; nor does a model ``auth set`` cannot serve.
     """
+    from untaped.settings import active_overlay  # noqa: PLC0415 - imports each other lazily
+
+    # ``setup`` checks a candidate token that is not written yet, possibly on a
+    # worker thread over its screen: nothing to warn about, nowhere to print it.
+    if active_overlay() is not None:
+        return
     if (
         section in _warned
         or not takes_token_command(type(settings))
@@ -257,14 +273,58 @@ def _env_source(names: tuple[str, ...]) -> str | None:
     return next((name for name in names if os.environ.get(name, "").strip()), None)
 
 
+PASS_GPG_HINT = (
+    "check that gpg works on its own (`echo test | gpg -e -r <gpg-id> | gpg -d`); usual causes: "
+    "no pinentry program installed, GPG_TTY unset (`export GPG_TTY=$(tty)`), or gpg-agent not "
+    "running (`gpgconf --launch gpg-agent`)"
+)
+"""The usual fixes when ``pass`` cannot decrypt; named once per failing command."""
+
+TRUST_HINT = (
+    "gpg does not trust the key yet: run `gpg --edit-key <gpg-id> trust` and pick 5 "
+    "(ultimate), or `gpg --import-ownertrust`"
+)
+"""The fix when gpg refuses an imported key whose ownertrust is unknown."""
+
+_STDERR_QUOTE = 120
+
+
+def gpg_hint(stderr: str) -> str | None:
+    """The fix to name for a failure whose stderr is gpg's, else ``None``.
+
+    A ``pass`` that fails for its own reasons (no such entry, a protected
+    one) gets no gpg advice.
+    """
+    if not any(line.startswith("gpg:") for line in stderr.splitlines()):
+        return None
+    if "no assurance" in stderr or "Unusable public key" in stderr:
+        return TRUST_HINT
+    return PASS_GPG_HINT
+
+
+def first_stderr_line(stderr: str) -> str:
+    """The first non-empty stderr line, cut short: what a repeating tool failed on."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    # gpg may open with a note (a trust warning); the failure is the line saying so.
+    line = next((line for line in lines if "failed" in line or "error" in line.lower()), "")
+    return (line or next(iter(lines), ""))[:_STDERR_QUOTE]
+
+
 def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
     label = f"{section}.token_command: {argv[0]!r}"
     _LOG.debug("%s.token_command: running %s", section, argv[0])
     # stderr goes straight to the terminal: the command explains its own
-    # failures, and untaped never captures or repeats them.
-    completed = run_command(argv, label=label)
+    # failures, and untaped never captures or repeats them. Except `pass`,
+    # whose gpg repeats one error per call: the first line and one hint do.
+    is_pass = Path(argv[0]).name == "pass"
+    completed = run_command(argv, label=label, capture_stderr=is_pass)
     if completed.returncode != 0:
-        raise ConfigError(f"{label} exited with status {completed.returncode}")
+        message = f"{label} exited with status {completed.returncode}"
+        if is_pass:
+            if quote := first_stderr_line(completed.stderr):
+                message += f": {quote}"
+            raise ConfigError(message, hint=gpg_hint(completed.stderr))
+        raise ConfigError(message)
     token = completed.stdout.strip()
     if not token:
         raise ConfigError(f"{label} printed no token")
@@ -272,11 +332,16 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
 
 
 __all__ = [
+    "PASS_GPG_HINT",
+    "TRUST_HINT",
     "CommandToken",
     "TokenCommand",
     "TokenSources",
     "clear_token_cache",
     "describe_token_source",
+    "first_stderr_line",
+    "forget_token_command",
+    "gpg_hint",
     "resolve_token",
     "run_command",
     "takes_token_command",

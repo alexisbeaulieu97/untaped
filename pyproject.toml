@@ -85,6 +85,7 @@ files = [
     "packages/untaped-jira/src",
     "packages/untaped-recipe/src",
     "packages/untaped-workspace/src",
+    "scripts/changelog.py",
     "scripts/check_pr.py",
     "scripts/release.py",
 ]
@@ -168,14 +169,16 @@ ignore_names = [
     "row_factory",
     "default_parameter",
     "end_of_options_delimiter",
+    "group_parameters",
     "ttimeoutlen",
+    "__getattr__",  # PEP 562 module hooks of untaped.sdk's lazy exports
+    "__dir__",
     "__signature__",
     "__annotations__",
     "code_generator_class",
     "concat",
     "renamed_keys",  # settings ClassVars read by untaped.deprecated_keys
     "retired_keys",
-    "deprecated_settings",
 ]
 
 [tool.coverage.run]
