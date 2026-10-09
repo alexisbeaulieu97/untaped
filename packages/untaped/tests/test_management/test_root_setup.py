@@ -193,7 +193,7 @@ def test_a_failed_check_cancelled_writes_nothing(
     result = _setup(backend)
 
     assert result.exit_code == 0, result.output
-    assert "no capabilities selected; no changes made" in result.stderr
+    assert "nothing saved; no changes made" in result.stderr
     assert stores.entries() == {}
     assert not _isolated_config.exists()
 
@@ -202,7 +202,7 @@ def test_leaving_without_saving_changes_nothing(_isolated_config: Path) -> None:
     result = _setup(_scripted("esc"))
 
     assert result.exit_code == 0, result.output
-    assert "no capabilities selected; no changes made" in result.stderr
+    assert "nothing saved; no changes made" in result.stderr
     assert result.stdout == ""
     assert not _isolated_config.exists()
 
@@ -300,7 +300,7 @@ def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) ->
     result = _setup(ScriptedPromptBackend(screens=[SetupResult("default", (), (("info", "hi"),))]))
 
     assert result.exit_code == 0, result.output
-    assert "hi" in result.stderr and "no capabilities selected; no changes made" in result.stderr
+    assert "hi" in result.stderr and "nothing saved; no changes made" in result.stderr
     assert result.stdout == ""
 
 
