@@ -8,7 +8,9 @@ description: Creates, inspects and archives task workspaces through the `untaped
 A workspace is one directory per task, under `workspace.workspaces_dir`. Each
 repo in it is a git worktree of a shared bare cache, on the task branch, or
 read-only at a base branch. Create one per ticket, work and push in it, then
-archive it.
+archive it. `untaped workspace` is experimental: it may change in a minor
+release, so after upgrading untaped, check a command's `--help` before
+relying on it.
 
 ## Setup
 
