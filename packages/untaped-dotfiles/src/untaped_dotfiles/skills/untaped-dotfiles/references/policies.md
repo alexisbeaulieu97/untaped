@@ -34,11 +34,13 @@ applies this table to every enabled path:
 still exactly what the tool wrote, so it never loses a local edit and never
 prompts. It exits 3 when a row needs the user: one left in `behind`,
 `modified`, `conflict`, `missing` or `orphan` (under `once`, only `missing`
-and `orphan`), or one carrying an `error`. A `manual` `pending` or `foreign`
-row is reported but does not count. It exits 1 when an apply or a git
-operation failed. `status --check` exits 3 on the same rows. Both rewrite
-`status.json` and `attention` under `dotfiles.state_dir`; `attention` is
-the one-line count a prompt reads.
+and `orphan`). A `manual` `pending` or `foreign` row is reported but does
+not count. It exits 1 when an apply or a git operation failed, or a path
+could not be read (a row carrying an `error`). `status --check` exits the
+same way. Both rewrite `status.json` and `attention` under
+`dotfiles.state_dir` (`status` only when run without ITEM or `--repo`);
+`attention` is the one-line count a prompt reads, and it counts a row
+carrying an `error` too.
 
 ## When a clone is pulled
 
