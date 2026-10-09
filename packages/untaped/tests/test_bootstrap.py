@@ -775,3 +775,12 @@ def test_root_help_install_hint(
 def test_bare_management_commands_work(argv: list[str]) -> None:
     root = bootstrap.build_root_app(candidates=[])
     assert CliInvoker().invoke(root.meta, argv).exit_code == 0
+
+
+def test_no_capability_can_claim_a_management_command() -> None:
+    root = bootstrap.build_root_app(candidates=[])
+    management = [name for name in root if not name.startswith("-")]
+    assert "auth" in management
+    for name in management:
+        bootstrap.build_root_app(candidates=[make_candidate(make_spec(name, section=f"ok-{name}"))])
+        assert [r.reason for r in bootstrap.composition().quarantine] == ["reserved-root"], name

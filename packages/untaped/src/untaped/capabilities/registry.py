@@ -44,16 +44,21 @@ _CORE_DISTRIBUTION = "untaped"
 #: Entry-point group every capability is discovered from (spec §7.2).
 CAPABILITIES_ENTRY_POINT_GROUP = "untaped.capabilities"
 
-#: Reserved root command/layout names no capability may claim (spec §5 row 1).
-_RESERVED_COMMAND_ROOTS = RESERVED_STATE_SECTIONS | {
+#: Management commands the root app mounts beside the capabilities, in mount
+#: order. ``bootstrap`` mounts exactly these; no capability may claim one.
+ROOT_MANAGEMENT_COMMANDS = (
     "config",
     "profile",
     "skills",
     "doctor",
-    "capabilities",
     "setup",
+    "auth",
     "alias",
-}
+    "capabilities",
+)
+
+#: Reserved root command/layout names no capability may claim.
+_RESERVED_COMMAND_ROOTS = RESERVED_STATE_SECTIONS | set(ROOT_MANAGEMENT_COMMANDS)
 
 
 class CapabilityProvider(Protocol):

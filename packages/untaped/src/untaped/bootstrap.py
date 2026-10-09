@@ -31,6 +31,7 @@ from untaped._root_options import (
     resolve_command,
 )
 from untaped.capabilities.registry import (
+    ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
     CapabilitySpec,
     CompositionResult,
@@ -223,30 +224,23 @@ def build_root_app(
     root.meta.group_parameters = ROOT_PARAMETERS_GROUP  # keyed, so Parameters sorts last
     if not result.capabilities and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
-    _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
-    _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
-    _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
-    _mount(
-        root,
-        build_root_doctor_app(
+    management = {
+        "config": build_root_config_app(shell=SHELL_SPEC, result=result),
+        "profile": build_root_profile_app(command=SHELL_NAME),
+        "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),
+        "doctor": build_root_doctor_app(
             shell=SHELL_SPEC,
             result=result,
             builtin_for=lambda name: resolve_command(root, name),
         ),
-        name="doctor",
-    )
-    _mount(root, build_root_setup_app(shell=SHELL_SPEC, result=result), name="setup")
-    _mount(root, build_root_auth_app(result=result), name="auth")
-    _mount(
-        root,
-        build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
-        name="alias",
-    )
-    _mount(
-        root,
-        build_root_capabilities_app(result=result, candidates=candidates),
-        name="capabilities",
-    )
+        "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
+        "auth": build_root_auth_app(result=result),
+        "alias": build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
+        "capabilities": build_root_capabilities_app(result=result, candidates=candidates),
+    }
+    for name in ROOT_MANAGEMENT_COMMANDS:
+        _mount(root, management.pop(name), name=name)
+    assert not management, f"unreserved management commands: {sorted(management)}"
     for capability in result.capabilities:
         _mount_capability(root, capability)
     root.version = _resolve_version
