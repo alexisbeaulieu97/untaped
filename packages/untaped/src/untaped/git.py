@@ -79,6 +79,9 @@ _LIVE_GROUPS: dict[int, None] = {}
 _FORWARDED: list[int] = []
 # Threads forking a git not yet in _LIVE_GROUPS, for a signal that ends untaped.
 # Dict set and pop are atomic, so neither a lock nor an interrupt can wedge it.
+# An interrupt can leave the main thread's own mark behind; that is harmless
+# only because the handler never waits on its own thread. A signal handled on
+# the main thread while it is itself mid-spawn still misses that git (#579).
 _SPAWNING: dict[int, None] = {}
 # How long a signal that ends untaped waits for those to register.
 _SPAWN_WAIT_S = 1.0
