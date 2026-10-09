@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from untaped.sdk import OutcomeRecord, UtcTimestamp
+from untaped.sdk import AbsolutePath, OutcomeRecord, TargetRecord, UtcTimestamp
 
 RefKind = Literal["heads", "tags"]
 """Ref namespace probed by ``GithubClient.batch_repo_refs``."""
@@ -169,14 +169,15 @@ class CorpusSyncOutcome(OutcomeRecord):
     detail: str | None = None
 
 
-class WorktreeResult(BaseModel):
-    """A materialized worktree path for a cached repository ref.
+class WorktreeResult(TargetRecord):
+    """A materialized worktree path for a cached repository ref (``github.worktree``).
 
-    ``path`` leads so ``--format raw`` prints it, for ``$(…)`` capture.
+    ``target_path`` leads so ``--format raw`` prints it, for ``$(…)`` capture,
+    and so ``--format pipe`` consumers find the directory. ``path`` holds the
+    same directory; it predates ``target_path`` and stays for scripts that read it.
     """
 
-    model_config = ConfigDict(extra="ignore")
-
+    target_path: AbsolutePath
     path: str
     repo: str
     ref: str
