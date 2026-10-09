@@ -125,7 +125,7 @@ class RefreshGitSourceIndex:
         index: IncrementalDependencyIndexWriter,
         aliases: dict[str, str],
         default_dependency_paths: list[str],
-        repo_cache_path: Path,
+        cache_dir: Path,
         clone_protocol: str,
         fetch_depth: int,
         blob_filter: bool,
@@ -151,7 +151,7 @@ class RefreshGitSourceIndex:
         self._index = index
         self._aliases = aliases
         self._default_dependency_paths = default_dependency_paths
-        self._repo_cache_path = repo_cache_path
+        self._cache_dir = cache_dir
         self._clone_protocol = clone_protocol
         self._fetch_depth = fetch_depth
         self._blob_filter = blob_filter
@@ -503,7 +503,7 @@ class RefreshGitSourceIndex:
 
         bare = self._git.ensure_bare(
             clone_url,
-            cache_dir=self._repo_cache_path,
+            cache_dir=self._cache_dir,
             auth_header=self._auth_header,
         )
         self._git.fetch_refs(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -82,6 +83,7 @@ def _merge_pr(repo: Path, number: int, files: dict[str, str]) -> None:
         ("x.added.md", " one\n", "starts with whitespace"),
         ("x.added.md", f"one ([#1]({PR}/x))\n", "malformed link group"),
         ("x.added.md", f"one ([#1]({PR}/1) and more)\n", "malformed link group"),
+        ("x.added.md", "ok\n" + "word " * 15 + "word\n", "line 2 is 79 columns; wrap at 78"),
     ],
 )
 def test_a_malformed_fragment_says_why(name: str, content: str, error: str) -> None:
@@ -100,6 +102,12 @@ def test_a_fragment_keeps_its_slug_type_and_text() -> None:
     assert fragment == changelog.Fragment(
         "changelog.d/a-b.fixed.md", "a-b", "fixed", "Line one\nline two"
     )
+
+
+def test_a_line_may_reach_78_columns_or_be_one_longer_token() -> None:
+    text = "x" * 78 + "\n" + "x " * 38 + "xy\n" + f"{ISSUE}/{'9' * 80}\n"
+
+    assert changelog.parse_fragment("a.fixed.md", text)[1] == []
 
 
 def test_fragment_type_reads_only_valid_fragment_paths() -> None:
@@ -232,7 +240,7 @@ def test_without_origin_main_nothing_is_on_main(repo: Path) -> None:
     [
         f"Fixes it.\n([#442]({PR}/442))",
         f"Fixes it.\n([#442]({PR}/442),\n[#503]({ISSUE}/503))",
-        f"Fixes it ([#4]({PR}/4), [#5]({PR}/5))",
+        f"Fixes it ([#4]({PR}/4),\n[#5]({PR}/5))",
     ],
 )
 def test_an_entry_with_its_own_link_group_keeps_it_and_gets_no_other(repo: Path, text: str) -> None:
@@ -358,22 +366,30 @@ def test_a_major_build_archives_the_previous_major() -> None:
     )
 
 
-def test_the_older_releases_line_wraps_like_the_file_does() -> None:
+def _real_changelog() -> tuple[str, int, list[int]]:
+    """CHANGELOG.md, its current major and the archived majors it links, newest first."""
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    current = int(re.search(r"(?m)^## (\d+)\.", text)[1])  # type: ignore[index]
+    body = text.split("## Older releases\n\n", 1)[1]
+    return text, current, [int(m) for m in re.findall(r"\[(\d+)\.x\]", body)]
+
+
+def test_the_older_releases_line_wraps_like_the_file_does() -> None:
+    text, _, archived = _real_changelog()
     body = text.split("## Older releases\n\n", 1)[1].strip()
 
-    assert changelog.older_releases([9, 8, 7, 6, 5, 4]) == body
+    assert changelog.older_releases(archived) == body
 
 
 def test_the_real_changelog_survives_a_major_build() -> None:
-    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    text, current, archived = _real_changelog()
 
-    built, archives = changelog.build_text(text, "11.0.0", {"upgrading": ["- do"]})
+    built, archives = changelog.build_text(text, f"{current + 1}.0.0", {"upgrading": ["- do"]})
 
-    assert list(archives) == [10]
-    assert archives[10].count("\n## ") == 1  # 10.0.0
-    assert "## 10.0.0" not in built
-    assert "file: [10.x](changelog/10.x.md),\n[9.x](changelog/9.x.md)," in built
+    assert list(archives) == [current]
+    assert archives[current].count("\n## ") == text.count(f"\n## {current}.")
+    assert f"\n## {current}." not in built
+    assert built.endswith(changelog.older_releases([current, *archived]) + "\n")
 
 
 def test_build_writes_the_files_and_removes_the_fragments(repo: Path) -> None:

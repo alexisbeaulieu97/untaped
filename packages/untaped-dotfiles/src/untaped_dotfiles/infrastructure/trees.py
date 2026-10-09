@@ -120,4 +120,7 @@ class WorkingTree:
         return sorted(found, key=lambda f: f.path)
 
     def read(self, path: str) -> bytes:
-        return self.resolve(path).read_bytes()
+        try:
+            return self.resolve(path).read_bytes()
+        except OSError as exc:
+            raise DotfilesError(f"could not read source {path}: {exc.strerror or exc}") from exc

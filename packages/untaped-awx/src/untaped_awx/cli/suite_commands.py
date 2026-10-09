@@ -352,7 +352,6 @@ def run_command(
 
     With --source-ref, temporary copies of the templates with specs are created
     first (no confirmation) and deleted after the run, even when interrupted.
-
     """
     from untaped_awx.application import RunAction, WatchJob  # noqa: PLC0415
     from untaped_awx.application.suites.preflight import (  # noqa: PLC0415
@@ -690,7 +689,6 @@ def validate_command(
 
     With --source-ref, also check the temporary copies a run would create (every
     link, name and project branch override) and print them.
-
     """
     _refuse_scm_branch_with_source_ref(source_ref, scm_branch)
     _validate(
@@ -714,9 +712,9 @@ def _validate(
     non_interactive: bool,
     case_filter: set[str] | None,
     source_ref: str | None,
+    scm_branch: str | None,
     fmt: OutputFormat,
     columns: list[str] | None,
-    scm_branch: str | None = None,
 ) -> None:
     """Check every selected case as ``run`` would, without writing or launching anything.
 
@@ -849,7 +847,6 @@ def prune_command(
 
     A copy is a job template or workflow named `NAME [untaped-test SHA RUN]` whose
     description carries the matching `untaped-test run=…` marker.
-
     """
     from untaped_awx.cli import _temporary_sets as copies  # noqa: PLC0415
     from untaped_awx.domain.temporary_set import parse_age  # noqa: PLC0415

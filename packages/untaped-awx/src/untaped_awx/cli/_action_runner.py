@@ -421,15 +421,15 @@ def report_interrupted(
     for label, job in executions:
         if job.is_terminal:
             continue
-        prefix = f"{label}: " if label else ""
+        item = f"{label} ({job.kind} {job.id})" if label else f"{job.kind} {job.id}"
         if (job.kind, job.id) in cancelled:
-            ui.message("warning", f"interrupted: {prefix}{job.kind} {job.id} cancel requested")
+            ui.message("warning", f"{item}: interrupted, cancel requested")
             continue
         state = "keeps running" if job.status in _ACTIVE_STATUSES else "was launched"
-        ui.message("warning", f"interrupted: {prefix}{job.kind} {job.id} {state}")
+        ui.message("warning", f"{item}: interrupted, {state}")
         by_kind.setdefault(job.kind, []).append(str(job.id))
     for kind, ids in by_kind.items():
-        echo(f"hint: untaped awx jobs wait {' '.join(ids)} --kind {kind}", err=True)
+        echo(hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"), err=True)
     raise SystemExit(130)
 
 
