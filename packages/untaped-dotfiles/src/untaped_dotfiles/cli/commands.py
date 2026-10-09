@@ -285,7 +285,7 @@ def status_command(
             name="--check",
             negative="",
             help="Exit 3 when any path needs the user (behind, modified, conflict, missing "
-            "or orphan). A path that could not be read exits 1.",
+            "or orphan).",
         ),
     ] = False,
     all_paths: Annotated[
@@ -305,7 +305,8 @@ def status_command(
 ) -> None:
     """Show the state of every placed path, offline.
 
-    Run without ITEM or --repo, it also rewrites status.json and attention.
+    A path that could not be read exits 1. Run without ITEM or --repo, it also
+    rewrites status.json and attention.
     """
     with report_errors():
         svc = services()

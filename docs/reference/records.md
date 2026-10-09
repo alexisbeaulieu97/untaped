@@ -210,6 +210,7 @@ untaped workspace status NAME --format pipe \
 
 `dotfiles diff` prints a unified diff, not records. `dotfiles status` (run
 without ITEM or `--repo`) and `dotfiles sync` (and, after their changes,
-`dotfiles apply` and `dotfiles remove`) write two files under `dotfiles.state_dir`: `status.json`, the
-`dotfiles.status.summary` record, and `attention`, one line holding its
-`attention` count (the rows that need the user), for prompt segments.
+`dotfiles apply` and `dotfiles remove`) write two files under
+`dotfiles.state_dir`: `status.json`, the `dotfiles.status.summary` record,
+and `attention`, one line holding its `attention` count (the rows that need
+the user), for prompt segments.
