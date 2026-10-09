@@ -573,6 +573,7 @@ def test_transient_classifier(stderr: str, expected: bool) -> None:
             "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote",
             "auth",
         ),
+        ("Host key verification failed.\nfatal: Could not read from remote", "auth"),
         ("fatal: unable to access 'x': The requested URL returned error: 401", "auth"),
         ("fatal: unable to access 'x': The requested URL returned error: 403", "permission"),
         ("fatal: couldn't find remote ref refs/heads/missing", "failed"),
@@ -591,6 +592,29 @@ def test_a_rejected_credential_is_an_environment_failure(
     assert len(calls) == 1
     if category != "failed":
         assert excinfo.value.hint
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "Host key verification failed.\nfatal: Could not read from remote repository.",
+        "read_passphrase: can't open /dev/tty: No such device or address\n"
+        "git@github.com: Permission denied (publickey).",
+    ],
+)
+def test_an_ssh_prompt_failure_says_git_has_no_terminal(
+    monkeypatch: pytest.MonkeyPatch, stderr: str
+) -> None:
+    monkeypatch.setattr(git, "_run_process", _scripted_run([(128, stderr)], []))
+
+    with pytest.raises(GitCommandError) as excinfo:
+        run_git(["fetch"], timeout=5)
+
+    assert excinfo.value.category == "auth"
+    assert excinfo.value.hint is not None
+    assert "without a terminal" in excinfo.value.hint
+    assert "ssh-agent" in excinfo.value.hint
+    assert "git fetch" in excinfo.value.hint
 
 
 # ── path segments ────────────────────────────────────────────────────────────

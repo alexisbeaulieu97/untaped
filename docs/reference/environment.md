@@ -64,10 +64,13 @@ from environment variables.
 
 ## Git
 
-For every `git` call it makes, `untaped`:
+For every `git` call it makes, `untaped` does the following; Git you run
+yourself, in a workspace checkout or anywhere else, is unaffected:
 
 - runs Git in its own session, without the terminal, so nothing Git starts
-  (ssh included) can prompt there;
+  (ssh included) can prompt there: an ssh key passphrase or a new host key
+  fails with a hint to use `ssh-agent` or to accept the host key once with
+  your own `git fetch`;
 - sets `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`, so a remote that
   needs credentials fails instead of waiting for input;
 - sets `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` unless you set
@@ -79,8 +82,7 @@ For every `git` call it makes, `untaped`:
   so the token is not logged.
 
 If you set `GIT_SSH_COMMAND` yourself, add `-o BatchMode=yes` to keep the
-fail-fast behavior. A key that needs a passphrase belongs in `ssh-agent`, and
-a new host in `known_hosts`, before `untaped` connects to it.
+fail-fast behavior.
 
 When a Git command times out or you press Ctrl-C, `untaped` stops it and every
 process it started: SIGTERM first, so Git removes its lock files, then
