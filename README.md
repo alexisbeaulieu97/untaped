@@ -16,7 +16,7 @@ the same output and piping rules:
   item per machine (experimental).
 
 Root commands manage the tool itself: `setup`, `config`, `profile`,
-`skills`, `doctor` and `plugin`.
+`auth`, `alias`, `skills`, `doctor` and `plugin`.
 
 ## Install
 

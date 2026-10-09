@@ -61,7 +61,7 @@ class RootSectionScope:
     plugin: str
     """Owning plugin name (the shell name for the shell section)."""
 
-    profile_fields: frozenset[str]
+    settings_fields: frozenset[str]
     """User-tunable field names of the section's profile model."""
 
     state_fields: frozenset[str]
@@ -144,7 +144,7 @@ def section_scopes(
     scopes = {
         section: RootSectionScope(
             plugin=shell.name,
-            profile_fields=frozenset(model.model_fields),
+            settings_fields=frozenset(model.model_fields),
             state_fields=frozenset(),
             mappings=key_mappings(model),
         )
@@ -152,7 +152,7 @@ def section_scopes(
     }
     scopes[shell.section] = RootSectionScope(
         plugin=shell.name,
-        profile_fields=frozenset(shell.settings.model_fields),
+        settings_fields=frozenset(shell.settings.model_fields),
         state_fields=frozenset(shell.state.model_fields if shell.state is not None else ()),
         mappings=key_mappings(shell.settings),
     )
@@ -160,7 +160,7 @@ def section_scopes(
         spec = registered.spec
         scopes[spec.name] = RootSectionScope(
             plugin=spec.name,
-            profile_fields=frozenset(settings_model(spec).model_fields),
+            settings_fields=frozenset(settings_model(spec).model_fields),
             state_fields=frozenset(spec.state.model_fields if spec.state is not None else ()),
             mappings=key_mappings(settings_model(spec)),
         )
@@ -400,7 +400,7 @@ def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
     """Deprecate ``config set <section>.token`` where ``auth set`` can store it instead."""
     section, rest = _split_first(key)
     scope = ctx.sections.get(section)
-    if rest == "token" and scope is not None and "token_command" in scope.profile_fields:
+    if rest == "token" and scope is not None and "token_command" in scope.settings_fields:
         fix = hint(f"auth set {section}")
         ui_context(strict=False).message(
             "warning", f"storing {key} in plain text in config.yml is deprecated\n{fix}"

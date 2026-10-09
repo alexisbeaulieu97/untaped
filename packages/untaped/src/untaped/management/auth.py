@@ -33,7 +33,7 @@ from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
 from untaped.messages import hint, plural
-from untaped.plugins.registry import CompositionResult, PluginSpec, settings_model
+from untaped.plugins.registry import CompositionResult, settings_model
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
     resolve_profiles,
@@ -69,17 +69,14 @@ class _TokenSection:
 
 def _token_sections(result: CompositionResult) -> dict[str, _TokenSection]:
     """Every composed section whose profile model has ``token`` and ``token_command``."""
-    return {
-        registered.spec.name: _token_section(registered.spec)
-        for registered in result.plugins
-        if "token" in settings_model(registered.spec).model_fields
-        and takes_token_command(settings_model(registered.spec))
+    models = {
+        registered.spec.name: settings_model(registered.spec) for registered in result.plugins
     }
-
-
-def _token_section(spec: PluginSpec) -> _TokenSection:
-    model = settings_model(spec)
-    return _TokenSection(spec.name, token_env_names(model.model_construct()))
+    return {
+        name: _TokenSection(name, token_env_names(model.model_construct()))
+        for name, model in models.items()
+        if "token" in model.model_fields and takes_token_command(model)
+    }
 
 
 def save_token(

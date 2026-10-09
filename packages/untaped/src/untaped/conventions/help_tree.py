@@ -36,9 +36,6 @@ from cyclopts import App
 
 from untaped.cli import write_kind
 
-#: Management commands the root app mounts beside the plugins.
-ROOT_COMMANDS = frozenset({"config", "profile", "skills", "doctor", "plugin", "setup", "alias"})
-
 RESERVED_SHORTS = {
     "-f": "--format",
     "-c": "--columns",

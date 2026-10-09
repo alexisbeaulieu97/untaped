@@ -123,14 +123,14 @@ def test_a_pydantic_deprecated_field_still_loads_but_is_a_lint_error() -> None:
     assert pydantic_deprecated_fields(PythonDeprecated) == ["old"]
 
     composition = bootstrap.compose_root(
-        candidates=[provider_candidate(make_spec(name="svc", profile=PythonDeprecated))]
+        candidates=[provider_candidate(make_spec(name="svc", settings=PythonDeprecated))]
     )
 
     assert [plugin.spec.name for plugin in composition.plugins] == ["svc"]
 
 
 def test_a_misplaced_mark_quarantines_its_provider() -> None:
-    spec = make_spec(name="svc", profile=UnionMark)
+    spec = make_spec(name="svc", settings=UnionMark)
 
     composition = bootstrap.compose_root(candidates=[provider_candidate(spec)])
 
@@ -145,7 +145,7 @@ class MarkedState(BaseModel):
 
 
 def _state_spec(state: type[BaseModel]) -> PluginSpec:
-    return make_spec(name="svc", profile=Section, state=state)
+    return make_spec(name="svc", settings=Section, state=state)
 
 
 def test_a_mark_on_a_state_field_is_refused_and_quarantines_its_provider() -> None:
@@ -184,7 +184,7 @@ def test_the_lint_checks_a_state_model_for_marks() -> None:
 
 def test_a_clean_marked_section_composes() -> None:
     composition = bootstrap.compose_root(
-        candidates=[provider_candidate(make_spec(name="svc", profile=Section))]
+        candidates=[provider_candidate(make_spec(name="svc", settings=Section))]
     )
 
     assert [plugin.spec.name for plugin in composition.plugins] == ["svc"]

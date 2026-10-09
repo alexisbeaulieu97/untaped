@@ -204,7 +204,9 @@ class _Marked(BaseModel):
 
 
 def test_mark_leftovers_report_a_deprecated_setting_but_not_an_experimental_one() -> None:
-    spec = make_spec(name="svc", factory=lambda: create_app(name="svc", help="S."), profile=_Marked)
+    spec = make_spec(
+        name="svc", factory=lambda: create_app(name="svc", help="S."), settings=_Marked
+    )
     root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
 
     found = mark_leftovers(root, bootstrap.composition())

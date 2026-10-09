@@ -788,7 +788,7 @@ def test_a_plugin_with_only_a_name_mounts_and_registers_nothing() -> None:
         ("bare", "ready")
     ]
     rows = collect_doctor_rows(bootstrap.SHELL_SPEC, bootstrap.composition())
-    assert [row["status"] for row in rows if row["plugin"] == "bare"] == ["pass"]
+    assert [row for row in rows if row["plugin"] == "bare"] == []
 
 
 def test_a_plugin_with_state_only_registers_its_state_section() -> None:
@@ -839,3 +839,13 @@ def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyP
     get_settings.cache_clear()
 
     assert get_config_section("acme-tools", _ToolsProfile).greeting == "blob"
+
+
+def test_the_root_mounts_exactly_the_reserved_management_commands() -> None:
+    from untaped.plugins.registry import RESERVED_COMMAND_GROUPS, ROOT_COMMANDS
+
+    root = bootstrap.build_root_app(candidates=[])
+
+    mounted = {name for name in root if not name.startswith("-")}
+    assert mounted == ROOT_COMMANDS
+    assert ROOT_COMMANDS <= RESERVED_COMMAND_GROUPS

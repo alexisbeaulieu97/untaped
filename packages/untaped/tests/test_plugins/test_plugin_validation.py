@@ -102,7 +102,7 @@ SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
     *((f"reserved-name-{v}", lambda v=v: make_spec(name=v), "reserved-name", v) for v in RESERVED),
     (
         "profile-state-overlap",
-        lambda: make_spec(name="o", profile=TokenProfile, state=TokenState),
+        lambda: make_spec(name="o", settings=TokenProfile, state=TokenState),
         "profile-state-overlap",
         "token",
     ),
@@ -384,8 +384,8 @@ class BadKeysProfile(BaseModel):
 
 
 def test_broken_key_declarations_quarantine_only_that_plugin() -> None:
-    bad = make_spec(name="bad", profile=BadKeysProfile)
-    good = make_spec(name="good", profile=TokenProfile)
+    bad = make_spec(name="bad", settings=BadKeysProfile)
+    good = make_spec(name="good", settings=TokenProfile)
 
     result = compose(make_shell(), [make_candidate(bad), make_candidate(good)])
 
@@ -407,8 +407,8 @@ class LazyProfile(BaseModel):
 
 
 def test_a_raising_default_factory_is_not_called_while_composing() -> None:
-    lazy = make_spec(name="lazy", profile=LazyProfile)
-    good = make_spec(name="good", profile=TokenProfile)
+    lazy = make_spec(name="lazy", settings=LazyProfile)
+    good = make_spec(name="good", settings=TokenProfile)
 
     result = compose(make_shell(), [make_candidate(lazy), make_candidate(good)])
 

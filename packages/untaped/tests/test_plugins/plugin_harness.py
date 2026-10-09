@@ -72,7 +72,7 @@ def exploding_check(id: str = "test.boom") -> DoctorCheck:
 
 def make_spec(
     name: str = "alpha",
-    profile: type[BaseModel] = Profile,
+    settings: type[BaseModel] | None = Profile,
     state: type[BaseModel] | None = None,
     skills: tuple[SkillAsset, ...] = (),
     checks: tuple[DoctorCheck, ...] = (),
@@ -81,7 +81,7 @@ def make_spec(
     return PluginSpec(
         name=name,
         app_factory=factory or nullary_app(f"{name}-app"),
-        settings=profile,
+        settings=settings,
         state=state,
         skills=skills,
         doctor_checks=checks,

@@ -238,3 +238,51 @@ def test_a_plugin_without_commands_is_found_through_its_settings(install: Instal
         distribution="untaped-quiet", name="quiet", target="untaped_quiet:provider"
     )
     assert plugin_violations("quiet", candidates=[candidate]) == []
+
+
+def test_a_plugin_with_only_a_name_is_found_through_its_entry_point(install: Install) -> None:
+    install(
+        {
+            "untaped_bare/__init__.py": '''
+                """Bare plugin provider: a name and nothing else."""
+
+                from untaped.sdk import PluginSpec
+
+
+                def provider() -> PluginSpec:
+                    return PluginSpec(name="bare")
+                ''',
+            "untaped_bare/errors.py": '''
+                """Bare errors."""
+                ''',
+        }
+    )
+    candidate = ProviderCandidate(
+        distribution="untaped-bare", name="bare", target="untaped_bare:provider"
+    )
+    assert plugin_violations("bare", candidates=[candidate]) == []
+
+
+def test_a_hyphenated_plugin_is_named_with_underscores_to_import(install: Install) -> None:
+    install(
+        {
+            "acme_tools/__init__.py": '''
+                """A hyphenated plugin under the wrong import package."""
+
+                from untaped.sdk import PluginSpec
+
+
+                def provider() -> PluginSpec:
+                    return PluginSpec(name="acme-tools")
+                ''',
+            "acme_tools/errors.py": '''
+                """Errors."""
+                ''',
+        }
+    )
+    candidate = ProviderCandidate(
+        distribution="untaped-acme-tools", name="acme-tools", target="acme_tools:provider"
+    )
+    assert plugin_violations("acme-tools", candidates=[candidate]) == [
+        "acme-tools::plugin-name::import package 'acme_tools' is not 'untaped_acme_tools'"
+    ]

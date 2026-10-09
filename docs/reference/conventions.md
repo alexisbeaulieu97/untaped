@@ -20,6 +20,7 @@ A provider also follows these rules:
 
 [`check_conventions`](#enforcement) flags part of this:
 
+- `plugin-name`: a distribution or import package not named after the plugin;
 - `foreign-section`: a `get_config_section(...)` or `.section(...)` call
   naming another plugin's section as a string literal;
 - `layer`: an import against the layer direction, and `settings`: settings
@@ -37,8 +38,7 @@ checks, named in each violation line.
 
 ## Exit codes
 
-[Exit codes](./exit-codes.md) defines what each code means. To
-produce one:
+[Exit codes](./exit-codes.md) defines what each code means. To produce one:
 
 - 0: return normally.
 - 1: raise an `UntapedError` whose category is `failed`, `not_found`,

@@ -237,13 +237,13 @@ def validate_disjoint_settings_sections(
 
 
 def _reject_reserved_section(section: str) -> None:
-    """Reject a tool section name that collides with an SDK base field.
+    """Reject a tool section name that core owns (:data:`RESERVED_SECTIONS`).
 
     ``http``/``ui``/``skills`` are base fields on :class:`Settings`;
     registering a tool section with one of those names would shadow the SDK
     field in the dynamically built model and break config resolution.
     """
-    if section in Settings.model_fields:
+    if section in RESERVED_SECTIONS:
         raise ConfigError(f"reserved SDK settings section: {section!r}")
 
 
@@ -572,17 +572,15 @@ def splice_registered_state(
 RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
 
 
-#: Config sections no plugin may take: the shell's own section, the core
-#: ``Settings`` fields, the top-level layout keys and ``extensions`` (kept
-#: for contract settings).
-RESERVED_SECTIONS = frozenset(
-    {"shell", "extensions", *Settings.model_fields, *RESERVED_STATE_SECTIONS}
-)
+#: Config sections core owns: the ``Settings`` fields, the top-level layout
+#: keys and ``extensions`` (kept for contract settings). No tool section or
+#: state section may take one.
+RESERVED_SECTIONS = frozenset({"extensions", *Settings.model_fields, *RESERVED_STATE_SECTIONS})
 
 
 def check_state_section_name(section: str) -> None:
     """Reject a state section name that collides with ``config.yml``'s own keys."""
-    if not section or section in RESERVED_STATE_SECTIONS or section in Settings.model_fields:
+    if not section or section in RESERVED_SECTIONS:
         raise ConfigError(f"reserved or invalid state section name: {section!r}")
 
 

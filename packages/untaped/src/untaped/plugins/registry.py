@@ -53,22 +53,14 @@ RESERVED_PLUGIN_NAMES = frozenset(
     {"untaped", "core", "sdk", "contracts", "plugins", "extensions", "profiles", "default", "shell"}
 )
 
+#: The management commands the root mounts beside the plugins.
+ROOT_COMMANDS = frozenset(
+    {"config", "profile", "skills", "doctor", "setup", "auth", "alias", "plugin"}
+)
+
 #: Root commands core mounts or keeps for itself; a plugin's CLI group is its
 #: name, so no plugin may be named after one.
-RESERVED_COMMAND_GROUPS = frozenset(
-    {
-        "config",
-        "profile",
-        "skills",
-        "doctor",
-        "setup",
-        "auth",
-        "alias",
-        "plugin",
-        "rank",
-        "contracts",
-    }
-)
+RESERVED_COMMAND_GROUPS = ROOT_COMMANDS | {"rank", "contracts"}
 
 
 @dataclass(frozen=True)
@@ -220,6 +212,10 @@ class PluginSpec:
             not isinstance(self.help, str) or not self.help.strip() or "\n" in self.help
         ):
             raise ConfigError(f"plugin {self.name!r} help must be a non-empty single line or None")
+        if self.help is not None and self.app_factory is None:
+            raise ConfigError(
+                f"plugin {self.name!r} help describes commands it has no app_factory for"
+            )
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
