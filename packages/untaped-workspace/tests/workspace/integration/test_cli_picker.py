@@ -41,6 +41,35 @@ def test_create_without_repos_opens_the_picker(
     assert backend.calls == [("pick_many", "New workspace")]
 
 
+class _Recording(ScriptedPromptBackend):
+    def __init__(self) -> None:
+        super().__init__(picks=[None])
+        self.requests: list[PickRequest] = []
+
+    def pick_many(self, request: PickRequest) -> PickResult | None:
+        self.requests.append(request)
+        return super().pick_many(request)
+
+
+@pytest.mark.parametrize("command", ["create", "add"])
+def test_the_picker_names_its_command_and_flags_for_the_no_terminal_refusal(
+    command: str,
+) -> None:
+    StateWorkspaceStore().create(
+        WorkspaceRecord(name="J-1", created_at=datetime(2026, 10, 1, tzinfo=UTC))
+    )
+    backend = _Recording()
+    run(
+        app,
+        [command, *(["J-1"] if command == "add" else [])],
+        interactive=True,
+        prompt_backend=backend,
+    )
+    (request,) = backend.requests
+    assert request.command == f"untaped workspace {command}"
+    assert request.alternative == f"untaped workspace {command} NAME --repo OWNER/NAME"
+
+
 def test_cancelled_picker_creates_nothing(workspace_env: Path) -> None:
     result = run(
         app, ["create", "J-1"], interactive=True, prompt_backend=ScriptedPromptBackend(picks=[None])
