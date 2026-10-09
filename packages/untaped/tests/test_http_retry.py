@@ -316,6 +316,25 @@ def test_a_retry_that_would_wait_past_the_deadline_is_not_made(
     assert no_sleep == []
 
 
+def test_a_transport_retry_that_would_wait_past_the_deadline_is_not_made(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    from untaped.http import request_deadline
+
+    monkeypatch.setattr("untaped.http.time.monotonic", lambda: 100.0)
+    policy = RetryPolicy(max_attempts=3, backoff_base=10.0)
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/x").mock(side_effect=httpx.ConnectError("refused"))
+        with (
+            HttpClient(base_url="https://example.com") as client,
+            request_deadline(5.0),
+            pytest.raises(HttpTransportError, match="refused"),
+        ):
+            client.get("/x", retry=policy)
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
 def test_a_nested_deadline_never_extends_the_outer_one(monkeypatch: pytest.MonkeyPatch) -> None:
     from untaped.http import _time_left, request_deadline
 

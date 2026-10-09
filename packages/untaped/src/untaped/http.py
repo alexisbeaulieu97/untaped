@@ -215,7 +215,8 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
 
     Inside it, a request starts only while time is left, and each attempt's
     timeout is capped at the time left; the retry policy still applies within
-    the budget. A request past it raises :class:`HttpTransportError`
+    the budget, and a retry whose wait would end past it is not made (the
+    last error stands). A request past it raises :class:`HttpTransportError`
     (``unavailable``). ``None`` leaves an enclosing deadline in effect. The
     deadline is a context variable, so threads started with a copied context
     (``bounded_map``) share it.

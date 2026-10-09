@@ -208,12 +208,19 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
         cached(ttl=timedelta(0))
 
 
-def test_a_provider_may_not_cache_a_method_the_contract_does_not_declare() -> None:
+def test_only_the_contract_decides_what_is_cached() -> None:
     with pytest.raises(TypeError, match="only the contract decides what is @cached"):
 
         class Eager(Shop):
             @cached(ttl=timedelta(minutes=1))
             def _load(self) -> list[Book]:
+                return []
+
+    with pytest.raises(TypeError, match=r"Hasty\.books: only the contract decides"):
+
+        class Hasty(Shop):
+            @cached(ttl=timedelta(seconds=1))
+            def books(self) -> list[Book]:
                 return []
 
 
