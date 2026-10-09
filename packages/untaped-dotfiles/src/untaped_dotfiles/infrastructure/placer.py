@@ -50,11 +50,17 @@ class FilesystemPlacer:
             return TargetInfo(kind="dir")
         if not target.is_file():
             return TargetInfo(kind="other")
-        if fmt is None:
-            return TargetInfo(kind="file", hash=content_hash(target.read_bytes()))
         try:
-            document = load_document(target.read_text(encoding="utf-8"), fmt=fmt, where=str(target))
-        except DotfilesError, UnicodeDecodeError:
+            if fmt is None:
+                return TargetInfo(kind="file", hash=content_hash(target.read_bytes()))
+            text = target.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return TargetInfo(kind="other")
+        except OSError as exc:
+            raise DotfilesError(f"could not read {target}: {exc.strerror or exc}") from exc
+        try:
+            document = load_document(text, fmt=fmt, where=str(target))
+        except DotfilesError:
             return TargetInfo(kind="other")
         return TargetInfo(kind="file", hash=value_hash(project(plain(document), managed)))
 

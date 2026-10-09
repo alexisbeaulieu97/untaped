@@ -12,8 +12,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-SDK = REPO / "packages/untaped/src/untaped/sdk.py"
+from repo.support import REPO_ROOT
+
+SDK = REPO_ROOT / "packages/untaped/src/untaped/sdk.py"
 
 SNIPPET = """\
 import untaped.sdk
@@ -54,7 +55,7 @@ def _mypy(tmp_path: Path) -> tuple[int, str]:
             "-m",
             "mypy",
             "--config-file",
-            str(REPO / "pyproject.toml"),
+            str(REPO_ROOT / "pyproject.toml"),
             "--cache-dir",
             str(tmp_path / ".mypy_cache"),
             str(source),
@@ -62,7 +63,7 @@ def _mypy(tmp_path: Path) -> tuple[int, str]:
         capture_output=True,
         text=True,
         check=False,
-        cwd=REPO,
+        cwd=REPO_ROOT,
     )
     return proc.returncode, proc.stdout
 
