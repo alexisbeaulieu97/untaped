@@ -17,7 +17,7 @@ SDK = REPO / "packages/untaped/src/untaped/sdk.py"
 
 SNIPPET = """\
 import untaped.sdk
-from untaped.sdk import Cmd, Key, Screen, TextInput, UiContext, field_for
+from untaped.sdk import Cmd, Key, Screen, TextInput, UiContext
 from untaped.sdk import Scren  # line 3: a typo in an import
 from untaped.sdk import emmit  # line 4: a typo in a helper
 
@@ -41,7 +41,6 @@ def edit(field: TextInput) -> str:
 
 
 reveal_type(TextInput("name").value)  # line 25
-reveal_type(field_for)  # line 26
 """
 
 
@@ -87,8 +86,6 @@ def test_the_component_names_keep_their_real_types(tmp_path: Path) -> None:
     }
 
     assert revealed[25] == '"str"', output  # TextInput(...).value, not object
-    assert "config_schema.FieldDescriptor" in revealed[26], output  # field_for takes a descriptor
-    assert revealed[26].rstrip('"').endswith("-> untaped.screen.components.fields.Field"), output
 
 
 def _sdk_tree() -> ast.Module:

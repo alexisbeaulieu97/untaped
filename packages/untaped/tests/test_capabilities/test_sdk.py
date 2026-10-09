@@ -187,7 +187,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Tree",
         "TreeRow",
         "Viewport",
-        "field_for",
     ),
 }
 EXPECTED_ALL = [name for group in SURFACE_GROUPS.values() for name in group]

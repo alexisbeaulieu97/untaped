@@ -328,7 +328,7 @@ def test_a_field_built_by_field_for_edits_through_the_runtime() -> None:
     assert field_of(path).value == "/"
 
 
-def test_every_component_satisfies_the_field_contract_and_field_for_is_experimental() -> None:
+def test_every_component_satisfies_the_field_contract_and_field_is_experimental() -> None:
 
     built: list[FieldProtocol] = [
         field_for(_descriptor(annotation, default=3 if annotation is int else None))
@@ -348,5 +348,4 @@ def test_every_component_satisfies_the_field_contract_and_field_for_is_experimen
         assert component.with_error("Nope.").error == "Nope."
         assert component.validate() == ""
         assert {f.name for f in fields(component)} >= {"label"}  # type: ignore[arg-type]
-    assert isinstance(function_mark(field_for), Experimental)
     assert isinstance(function_mark(FieldProtocol), Experimental)

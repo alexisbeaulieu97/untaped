@@ -237,16 +237,6 @@ unless `ui.terminal` or `confirm_action` secured one) and draws on stderr when
 that is a terminal and on the controlling terminal when it is redirected, so a
 prompt never paints into a log.
 
-`field_for(descriptor, value=..., help=...)` maps a setting's type to its
-component (a `Literal` to a list or `Select`, `bool` to `Check`, numbers to
-`NumberInput`, paths to `PathInput`, `SecretStr` to `SecretInput`, `str` to
-`TextInput`) and raises `TypeError` naming the setting for any other type.
-It reads the descriptor's `metadata`, `optional` and `description`: a number's
-`ge`/`gt`/`le`/`lt` bounds are enforced, a number that is not optional cannot be
-left empty while an optional one (`int | None`) may be (its value is `None`),
-an optional `bool` is a three-state `Cycle` (unset, on, off; `None`, `True`,
-`False`), and the field's description is the help line when you pass none.
-
 The look comes from the theme: the label sits in the top border, the caret is
 drawn, help is muted below, an error is a red border and message, and the only
 fill is the highlighted cursor row. With `ui.border: none` a field is its label
