@@ -73,7 +73,7 @@ need to diagnose it.
 untaped awx test init "Deploy app"
 untaped awx test run --scm-branch main --format json > /tmp/baseline.json
 # commit and git push the change, then:
-untaped awx test validate
+untaped awx test validate --scm-branch HEAD
 untaped awx test run --scm-branch HEAD --compare /tmp/baseline.json --format json
 ```
 
