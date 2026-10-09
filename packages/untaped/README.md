@@ -12,8 +12,7 @@ uv tool install 'untaped[all]'   # or 'untaped[github]', 'untaped[awx]', ...
 pip install 'untaped[all]'
 ```
 
-The extras are `workspace`, `github`, `jira`, `awx`, `ansible` and `recipe`.
 See the [project README](https://github.com/alexisbeaulieu97/untaped#readme)
-for install and usage, and
+for the extras, install and usage, and
 [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md)
 for the first commands.
