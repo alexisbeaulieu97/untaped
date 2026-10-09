@@ -16,7 +16,8 @@ subcommand is one step of the workflow:
   pin against VERSION (default: the ``untaped`` package's version) before the
   build, and with ``--dist`` the built artifact list and that no built
   package's metadata (its PyPI page) links to ``main`` (after the build).
-- ``notes VERSION`` prints the CHANGELOG section for the GitHub release body.
+- ``notes VERSION`` prints the CHANGELOG section for the GitHub release body,
+  its links pinned to ``vVERSION`` as ``readmes`` pins a README's.
 - ``index VERSION --dist DIR --index pypi|testpypi [--complete]`` compares the
   built files with what the index already holds: before publishing (conflicts
   fail, so a re-run uploads only what is missing) and, with ``--complete``,
@@ -64,8 +65,10 @@ INDEX_URLS = {
     "pypi": "https://pypi.org/pypi/{name}/{version}/json",
     "testpypi": "https://test.pypi.org/pypi/{name}/{version}/json",
 }
-#: A link into this repository on ``main``; group 1 is everything before ``/main``.
-MAIN_LINK = re.compile(r"(https://github\.com/alexisbeaulieu97/untaped/(?:blob|tree))/main\b")
+#: This repository on GitHub; links into it are ``REPO_URL/<kind>/<ref>/...``.
+REPO_URL = "https://github.com/alexisbeaulieu97/untaped"
+#: A ``blob/main`` or ``tree/main`` link into this repository; group 1 is all before ``/main``.
+MAIN_LINK = re.compile(rf"({re.escape(REPO_URL)}/(?:blob|tree))/main(?![\w-])")
 #: ``index --complete`` retries this often, this many seconds apart (about 2 minutes).
 INDEX_TRIES = 12
 INDEX_DELAY = 10
@@ -422,7 +425,11 @@ def index_errors(
 
 
 def release_notes(changelog: Path, version: str) -> str:
-    """The stripped body of ``changelog``'s ``## <version>`` section."""
+    """The stripped body of ``changelog``'s ``## <version>`` section, links pinned to its tag.
+
+    The GitHub release page outlives ``main`` as a PyPI page does, so its
+    ``blob/main`` links go through ``pin_links`` too.
+    """
     lines = changelog.read_text(encoding="utf-8").splitlines()
     heading = f"## {version}"
     try:
@@ -433,7 +440,7 @@ def release_notes(changelog: Path, version: str) -> str:
     body = "\n".join(lines[start:end]).strip()
     if not body:
         raise ReleaseError(f'{changelog.name}\'s "{heading}" section is empty')
-    return body
+    return pin_links(body, version)
 
 
 # --- smoke ------------------------------------------------------------------
