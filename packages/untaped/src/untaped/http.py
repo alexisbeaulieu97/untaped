@@ -458,7 +458,7 @@ def missing_setting_error(
     token_sources: str = "",
     auth_set: bool = False,
 ) -> ConfigError:
-    """Return the standard error for missing capability settings.
+    """Return the standard error for missing plugin settings.
 
     Names every missing field; the ``hint`` names the root command (and env
     var) that sets each one. Fields listed in ``secret`` suggest ``config set … --prompt`` so the

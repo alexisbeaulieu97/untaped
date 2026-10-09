@@ -42,5 +42,5 @@ def test_invoke_root_runs_the_composed_root(monkeypatch: pytest.MonkeyPatch) -> 
     from untaped.testing import invoke_root
 
     monkeypatch.setattr(bootstrap, "discover_candidates", lambda: [])
-    result = invoke_root(["capabilities", "--format", "json"])
+    result = invoke_root(["plugin", "list", "--format", "json"])
     assert (result.exit_code, result.stdout.strip()) == (0, "[]")

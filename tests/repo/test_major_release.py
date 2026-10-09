@@ -25,10 +25,10 @@ from pydantic import BaseModel
 
 import changelog  # scripts/changelog.py
 from repo.support import REPO_ROOT
-from test_capabilities.capharness import make_spec
+from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap, sdk
-from untaped.capabilities.registry import CompositionResult, ProviderCandidate
 from untaped.cli import create_app
+from untaped.plugins.registry import CompositionResult, ProviderCandidate
 from untaped.settings import profile_section_models
 from untaped.stability import (
     Deprecated,
@@ -58,7 +58,7 @@ def settings_leftovers(sections: Mapping[str, type[BaseModel]]) -> list[str]:
 
 
 def mark_leftovers(root: App, result: CompositionResult) -> list[str]:
-    """Every capability, group, command or setting marked ``deprecated``."""
+    """Every plugin, group, command or setting marked ``deprecated``."""
     return [
         (
             f"{mark.where}: deprecated setting"
@@ -171,7 +171,7 @@ def test_settings_leftovers_name_each_section_but_not_retired_keys() -> None:
     assert settings_leftovers(sections) == ["a: renamed_keys ['old']"]
 
 
-def test_mark_leftovers_report_a_deprecated_capability_group_and_command() -> None:
+def test_mark_leftovers_report_a_deprecated_plugin_group_and_command() -> None:
     def factory() -> App:
         app = create_app(name="svc", help="Service.")
         app.command(create_app(name="sunset", help="Sunset.", stability=deprecated()))
@@ -191,7 +191,7 @@ def test_mark_leftovers_report_a_deprecated_capability_group_and_command() -> No
 
     found = mark_leftovers(root, bootstrap.composition())
     assert [line for line in found if line.startswith("untaped svc")] == [
-        "untaped svc: deprecated capability",
+        "untaped svc: deprecated plugin",
         "untaped svc sunset: deprecated command",
         "untaped svc old: deprecated command",
     ]

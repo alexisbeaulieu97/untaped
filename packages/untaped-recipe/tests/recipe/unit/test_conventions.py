@@ -1,4 +1,4 @@
-"""The recipe capability follows the command, message and structure conventions."""
+"""The recipe plugin follows the command, message and structure conventions."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """What ``untaped setup`` and ``untaped setup plan`` read about a profile's services.
 
-A service is a composed capability whose profile model has ``base_url`` and
+A service is a composed plugin whose profile model has ``base_url`` and
 ``token`` fields. Both commands resolve each one's current state here, the
 way ``doctor`` does (the profile's values with ``UNTAPED_*`` overrides
 layered on top), so the setup screen, the plan and doctor cannot disagree about
@@ -15,11 +15,11 @@ from typing import Any
 from pydantic import BaseModel
 
 from untaped.auth import describe_token_source
-from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import inherited_from_default, plaintext_token
 from untaped.messages import not_found
+from untaped.plugins.registry import CompositionResult, PluginSpec, settings_model
 from untaped.profile_resolver import DEFAULT_PROFILE
 from untaped.settings import active_settings_layout, check_settings_field
 
@@ -28,19 +28,19 @@ _SERVICE_FIELDS = frozenset({"base_url", "token"})
 
 def setup_services(
     result: CompositionResult, only: list[str] | None = None
-) -> dict[str, CapabilitySpec]:
+) -> dict[str, PluginSpec]:
     """The composed services by name, narrowed to ``only`` (comma-separated entries).
 
-    Raises :class:`ConfigError` when no capability is a service and
+    Raises :class:`ConfigError` when no plugin is a service and
     :class:`UsageError` for an ``only`` name that is not one.
     """
     services = {
         registered.spec.name: registered.spec
-        for registered in result.capabilities
-        if registered.spec.profile_model.model_fields.keys() >= _SERVICE_FIELDS
+        for registered in result.plugins
+        if settings_model(registered.spec).model_fields.keys() >= _SERVICE_FIELDS
     }
     if not services:
-        raise ConfigError("no composed capability takes a base URL and token to set up")
+        raise ConfigError("no composed plugin takes a base URL and token to set up")
     if not only:
         return services
     names = [part.strip() for entry in only for part in entry.split(",") if part.strip()]
@@ -91,7 +91,7 @@ class ServiceState:
 
 
 def service_state(
-    spec: CapabilitySpec, node: object, own: dict[str, Any], profile: str, raw: dict[str, Any]
+    spec: PluginSpec, node: object, own: dict[str, Any], profile: str, raw: dict[str, Any]
 ) -> ServiceState:
     """Resolve one service.
 
@@ -101,10 +101,10 @@ def service_state(
     data = node if isinstance(node, dict) else {}
     stored = data.get("base_url")
     configured_url = stored if isinstance(stored, str) and stored.strip() else None
-    section = spec.config_section
+    section = spec.name
     plaintext = plaintext_token(own, section)
     try:
-        settings: BaseModel = check_settings_field(section, data, model=spec.profile_model)
+        settings: BaseModel = check_settings_field(section, data, model=settings_model(spec))
     except ConfigError as exc:
         return ServiceState(
             configured_url, None, configured_url is not None, plaintext, invalid=str(exc)
@@ -125,13 +125,13 @@ def service_state(
 
 
 def service_states(
-    services: dict[str, CapabilitySpec], profile: str, raw: dict[str, Any]
+    services: dict[str, PluginSpec], profile: str, raw: dict[str, Any]
 ) -> dict[str, ServiceState]:
     """Every service's state in ``profile``, from the parsed config ``raw``."""
     values = profile_view(raw, profile)
     own = active_settings_layout().profile_data(raw, profile) or {}
     return {
-        name: service_state(spec, values.get(spec.config_section), own, profile, raw)
+        name: service_state(spec, values.get(spec.name), own, profile, raw)
         for name, spec in services.items()
     }
 

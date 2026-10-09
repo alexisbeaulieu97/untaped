@@ -3,8 +3,8 @@
 Each first-party automatic fix runs as the subprocess a user's run starts,
 under the test plugin's isolated ``HOME``, ``UNTAPED_CONFIG`` and
 ``UNTAPED_STATE``; the token store is the fake ``pass`` on a narrowed
-``PATH``. Core's tests run without any capability package, so a token check
-comes from a ``wiz`` capability installed on ``PYTHONPATH`` for the test.
+``PATH``. Core's tests run without any plugin package, so a token check
+comes from a ``wiz`` plugin installed on ``PYTHONPATH`` for the test.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ _WIZ_MODULE = """
 from pydantic import BaseModel, SecretStr
 
 from untaped.cli import create_app
-from untaped.sdk import CapabilitySpec, TokenCommand, connection_check
+from untaped.sdk import PluginSpec, TokenCommand, connection_check
 
 
 class WizProfile(BaseModel):
@@ -37,19 +37,18 @@ class WizProfile(BaseModel):
     token_command: TokenCommand = None
 
 
-def provider() -> CapabilitySpec:
-    return CapabilitySpec(
+def provider() -> PluginSpec:
+    return PluginSpec(
         name="wiz",
-        app_factory=lambda: create_app(name="wiz", help="wiz capability."),
-        config_section="wiz",
-        profile_model=WizProfile,
+        app_factory=lambda: create_app(name="wiz", help="wiz plugin."),
+        settings=WizProfile,
         doctor_checks=(connection_check("wiz.connection", section="wiz"),),
     )
 """
 
 
 def _install_wiz(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Install a ``wiz`` capability for this process and the fixes' children."""
+    """Install a ``wiz`` plugin for this process and the fixes' children."""
     site = tmp_path / "site"
     dist_info = site / "untaped_wiz-1.0.dist-info"
     dist_info.mkdir(parents=True)
@@ -58,7 +57,7 @@ def _install_wiz(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "Metadata-Version: 2.1\nName: untaped-wiz\nVersion: 1.0\n", encoding="utf-8"
     )
     (dist_info / "entry_points.txt").write_text(
-        "[untaped.capabilities]\nwiz = untaped_wiz:provider\n", encoding="utf-8"
+        "[untaped.plugins]\nwiz = untaped_wiz:provider\n", encoding="utf-8"
     )
     monkeypatch.syspath_prepend(str(site))
     monkeypatch.setenv("PYTHONPATH", str(site))

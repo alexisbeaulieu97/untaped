@@ -7,7 +7,7 @@ import pytest
 import respx
 
 from untaped import bootstrap
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.plugins.registry import ProviderCandidate
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult
 from untaped_awx.cli import app

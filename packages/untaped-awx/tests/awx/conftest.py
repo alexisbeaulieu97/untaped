@@ -1,4 +1,4 @@
-"""Test infrastructure for the awx capability test trees.
+"""Test infrastructure for the awx plugin test trees.
 
 The :class:`FakeAap` class is defined inline (rather than in a sibling
 ``_fake_aap.py``) because pytest's ``--import-mode=importlib`` doesn't
@@ -1384,7 +1384,7 @@ def _register_awx_settings(_isolate_config_registry_for_tests: None) -> None:
 
     Depends on the root reset fixture so registration happens after the
     config-registry reset (production registers via composition;
-    capability tests invoking the sub-app directly mirror that here).
+    plugin tests invoking the sub-app directly mirror that here).
     """
     register_profile_settings("awx", AwxSettings)
     get_settings.cache_clear()

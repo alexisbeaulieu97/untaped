@@ -1,7 +1,7 @@
 # Contributing
 
 This is the developer guide for the `untaped` repository. Rules that every
-capability provider follows, first-party or not, live in
+plugin provider follows, first-party or not, live in
 [`docs/reference/conventions.md`](docs/reference/conventions.md); this page
 covers what is specific to working in this repository.
 
@@ -12,11 +12,11 @@ uv sync
 ```
 
 The root `dev` dependency group installs `untaped[all]`, so every first-party
-capability is available to `uv run untaped`.
+plugin is available to `uv run untaped`.
 
 To try unreleased changes without a checkout, install from git. The repo root
 is a workspace with no package of its own, so the bare repository URL fails to
-build, and `untaped[all]` would take the capability packages from PyPI. Point at
+build, and `untaped[all]` would take the plugin packages from PyPI. Point at
 each package directory instead (one line, so it pastes unchanged in bash and
 PowerShell):
 
@@ -44,12 +44,12 @@ uv lock --check                                 # lock file is current
 - `packages/<name>/` holds one distribution each: its `pyproject.toml`,
   `README.md`, `LICENSE`, `src/` and `tests/`. Core is `packages/untaped/`: its
   `src/untaped/` holds the root app and shared services. `sdk.py` is the
-  public SDK surface; `capabilities/registry.py` is the internal composition
+  public SDK surface; `plugins/registry.py` is the internal composition
   kernel (see [How composition works](docs/composition.md));
   `management/` holds the root's management commands. The implementation is
   the reference for composition and command behavior.
-- Each capability is its own package,
-  `packages/untaped-<name>/src/untaped_<name>/`, and owns one capability end
+- Each plugin is its own package,
+  `packages/untaped-<name>/src/untaped_<name>/`, and owns one plugin end
   to end. Its packaged skill is the reference; its `README.md` (also its PyPI
   page) is a one-screen guide that links to it.
 - `examples/untaped-hello/` is a minimal third-party plugin with its own
@@ -61,18 +61,18 @@ uv lock --check                                 # lock file is current
   rather than letting it grow.
 - `tests/` verifies public behavior and release contracts: `tests/repo/`
   holds the cross-package tests and `tests/skills/` the skill evaluation
-  cases; a capability's tests live in `packages/untaped-<name>/tests/<name>/`.
+  cases; a plugin's tests live in `packages/untaped-<name>/tests/<name>/`.
 
-## Adding a first-party capability
+## Adding a first-party plugin
 
-A first-party capability follows the [plugin rules](docs/reference/conventions.md)
+A first-party plugin follows the [plugin rules](docs/reference/conventions.md)
 and uses this layout:
 
 ```
 packages/untaped-<name>/src/untaped_<name>/
-├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
+├── __init__.py        # SPEC: PluginSpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
 ├── settings.py        # profile model + state model (field sets must be disjoint)
-├── api.py             # optional: declared public module other first-party capabilities may import
+├── api.py             # optional: declared public module other first-party plugins may import
 ├── cli/               # cyclopts commands (thin)
 ├── application/       # use cases (orchestration); ports in application/ports.py
 ├── domain/            # entities, value objects (pure, no I/O)
@@ -84,10 +84,10 @@ packages/untaped-<name>/src/untaped_<name>/
 1. Add `packages/untaped-<name>/` with a copy of the root `LICENSE`, exposing
    `SPEC`, `build_app` and a nullary `provider()` returning `SPEC`. Set
    `SPEC.help` to the app's one-line help (see
-   [Settings and the capability app](docs/plugins.md#settings-and-the-capability-app)).
+   [Settings and the plugin app](docs/plugins.md#settings-and-the-plugin-app)).
 2. In its `pyproject.toml` (copy a sibling package's), add
    `<name> = "untaped_<name>:provider"` under
-   `[project.entry-points."untaped.capabilities"]`.
+   `[project.entry-points."untaped.plugins"]`.
 3. Add the `untaped[<name>]` extra to core and add the package to core's
    `all` extra, then `uv sync`.
 4. Add the package to the root `pyproject.toml` lists: mypy
@@ -104,9 +104,9 @@ packages/untaped-<name>/src/untaped_<name>/
    sibling's (the same section order, ending in `## Reference`), linked from
    the root `README.md` and `docs/getting-started.md`.
 
-A capability whose settings import another's `api` (ansible imports
+A plugin whose settings import another's `api` (ansible imports
 github's) is quarantined with it when that import fails. Shared logic follows
-[Depending on another capability](docs/reference/conventions.md#depending-on-another-capability);
+[Depending on another plugin](docs/reference/conventions.md#depending-on-another-plugin);
 in this repository it may also live in core. Extract a protocol into core
 only when a second provider appears.
 
@@ -129,7 +129,7 @@ only when a second provider appears.
   TLS through `resolve_verify` (`tests/repo/test_invariants.py` pins both).
 - **Docs in the same change.** A change to behavior, settings, composition or
   a shared helper updates its docs in the same commit. Each fact has one home
-  and other pages link to it: capability detail in its skill (the package
+  and other pages link to it: plugin detail in its skill (the package
   `README.md` is a one-screen guide: set up, one example per workflow, and a
   `## Reference` section linking the skill), exit codes, record kinds and environment
   variables in [`docs/reference/`](docs/reference), settings in the
@@ -163,7 +163,7 @@ answer each item, in order, in the PR template's **Drift review** section
   `none, <why>`; answer with the fragment's path. See
   [Changelog fragments](#changelog-fragments).
 - **Duplicated helpers.** Nothing new repeats a helper in `untaped.sdk`,
-  core or another capability; move a misplaced helper instead of forking it.
+  core or another plugin; move a misplaced helper instead of forking it.
 - **Repo rules.** The Workflow rules above that no linter checks: lazy
   imports, git and locks through core, `SecretStr`, module docstrings.
 - **Issues.** `Closes #N` for the issue the PR finishes, and any open issue
@@ -346,12 +346,13 @@ or examples. Use synthetic data for tests and examples.
 Terms these docs and the code use; see the [README](README.md) for what
 untaped is.
 
-**Capability**: what users run: one command group under `untaped`, with its
-own config section.
+**Plugin**: what `untaped` composes under one name, which is also its
+command group, config section and data directory. It may add commands,
+settings, state, skills and doctor checks; each is optional.
+_Avoid_: capability.
 
-**Provider**: the Python package that supplies a capability.
-
-**Plugin**: the informal word for a capability or its provider.
+**Provider**: the Python package that supplies a plugin, named
+`untaped-<plugin>`.
 
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.

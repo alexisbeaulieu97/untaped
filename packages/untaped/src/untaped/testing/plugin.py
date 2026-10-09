@@ -1,4 +1,4 @@
-"""Pytest plugin: a hermetic environment for tests of untaped capabilities.
+"""Pytest plugin: a hermetic environment for tests of untaped plugin list.
 
 Enable it with ``pytest_plugins = ["untaped.testing.plugin"]`` in a suite's
 top-level ``conftest.py``. Every test then runs with its own ``HOME`` and

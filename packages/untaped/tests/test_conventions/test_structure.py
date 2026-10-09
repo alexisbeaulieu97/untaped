@@ -1,4 +1,4 @@
-"""Structure rules on a tmp capability package, one rule broken at a time."""
+"""Structure rules on a tmp plugin package, one rule broken at a time."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import pytest
 from cyclopts import App
 
 from test_conventions.support import Install
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.conventions.source import source_files
 from untaped.conventions.structure import structure_violations
+from untaped.plugins.registry import PluginSpec
 
 _ERRORS = dedent('''
     """Acme errors."""
@@ -42,7 +42,7 @@ _SETTINGS = dedent('''
         model_config = ConfigDict(frozen=True)
     ''')
 _CLEAN = {
-    "acme/__init__.py": '"""Acme capability."""\n',
+    "acme/__init__.py": '"""Acme plugin."""\n',
     "acme/errors.py": _ERRORS,
     "acme/settings.py": _SETTINGS,
     "acme/cli.py": '''
@@ -61,12 +61,11 @@ def _violations(install: Install, files: dict[str, str]) -> list[str]:
     """Structure violations of the package ``acme`` written from ``files``."""
     site = install(files)
     settings = importlib.import_module("acme.settings")
-    spec = CapabilitySpec(
+    spec = PluginSpec(
         name="acme",
         app_factory=App,
-        config_section="acme",
-        profile_model=settings.AcmeSettings,
-        state_model=settings.AcmeState,
+        settings=settings.AcmeSettings,
+        state=settings.AcmeState,
     )
     source_dir = site / "acme"
     files_found = list(source_files(source_dir))
@@ -141,7 +140,7 @@ def test_a_port_and_an_adapter_sharing_a_name_are_flagged(install: Install) -> N
     assert _violations(install, files) == ["acme.application.ports.Store::port-adapter-clash"]
 
 
-def test_reading_another_capability_section_is_flagged(install: Install) -> None:
+def test_reading_another_plugin_section_is_flagged(install: Install) -> None:
     cli = _CLEAN["acme/cli.py"].replace('"acme"', '"github"')
     assert _violations(install, {**_CLEAN, "acme/cli.py": cli}) == [
         "acme/cli.py::foreign-section::github"

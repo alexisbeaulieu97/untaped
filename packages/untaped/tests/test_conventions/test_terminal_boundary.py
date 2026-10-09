@@ -1,4 +1,4 @@
-"""Terminal boundary: capability code builds screens with ``untaped.sdk``, never prompt_toolkit."""
+"""Terminal boundary: plugin code builds screens with ``untaped.sdk``, never prompt_toolkit."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from textwrap import dedent
 import pytest
 
 from test_conventions.support import Install
-from untaped.conventions import capability_violations
+from untaped.conventions import plugin_violations
 from untaped.conventions.source import source_files
 from untaped.conventions.terminal_boundary import RULE, terminal_boundary_violations
 from untaped.testing import provider_candidate
@@ -75,7 +75,7 @@ def test_clean_files_pass(tmp_path: Path, source: str) -> None:
     assert _violations(tmp_path, source) == []
 
 
-def test_check_conventions_reports_it_for_a_capability(install: Install) -> None:
+def test_check_conventions_reports_it_for_a_plugin(install: Install) -> None:
     install(
         {
             "demo/__init__.py": """
@@ -83,7 +83,7 @@ def test_check_conventions_reports_it_for_a_capability(install: Install) -> None
 
                 from pydantic import BaseModel, ConfigDict
 
-                from untaped.sdk import CapabilitySpec
+                from untaped.sdk import PluginSpec
 
 
                 class Settings(BaseModel):
@@ -96,17 +96,16 @@ def test_check_conventions_reports_it_for_a_capability(install: Install) -> None
                     return create_app(name="demo", help="Demo.")
 
 
-                SPEC = CapabilitySpec(
+                SPEC = PluginSpec(
                     name="demo",
                     app_factory=build_app,
-                    config_section="demo",
-                    profile_model=Settings,
+                    settings=Settings,
                 )
             """,
             "demo/tool.py": "from prompt_toolkit import Application\n",
         }
     )
-    found = capability_violations("demo", candidates=[provider_candidate(_spec())])
+    found = plugin_violations("demo", candidates=[provider_candidate(_spec())])
     assert f"demo/tool.py:1::terminal-boundary::{MESSAGE}" in found
 
 

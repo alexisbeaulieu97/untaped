@@ -1,14 +1,14 @@
 """The ``untaped setup`` screen: its model, update and view.
 
-Two panes under a profile field: the capabilities the wizard offers (those
+Two panes under a profile field: the plugins the wizard offers (those
 whose profile model has ``base_url`` and ``token``) with a status each, and the
 selected one's form (base URL, a token source as tabs, buttons). Saving checks
 before it writes: the form's values become a :class:`Candidate`, the
-capability's online checks run against them inside a settings overlay (nothing
+plugin's online checks run against them inside a settings overlay (nothing
 is stored yet, :func:`untaped.management.doctor.online_probe_rows`), and only a
 pass runs the write, as a write command, so quitting never leaves it half done.
 A failed check shows its reason under the form and offers ``Save anyway``, for
-that capability until its form changes or saves (each capability keeps its own).
+that plugin until its form changes or saves (each plugin keeps its own).
 A Command token source is run first, on every check, as a suspend command, so a
 ``pass`` or ``op`` prompt gets the real terminal; its token then sits in the
 process cache for the background check. Leaving the profile field loads the
@@ -40,7 +40,6 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from untaped.auth import CommandToken, forget_token_command, takes_token_command, token_env_names
-from untaped.capabilities.registry import CapabilitySpec, CompositionResult
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
 from untaped.management.doctor import online_probe_rows
@@ -48,6 +47,7 @@ from untaped.management.setup_plan import SETUP_ALTERNATIVE, SETUP_COMMAND
 from untaped.management.setup_state import ServiceState, service_states
 from untaped.management.setup_write import Candidate, Note, overlay_values, write_candidate
 from untaped.messages import hint
+from untaped.plugins.registry import CompositionResult, PluginSpec, settings_model
 from untaped.profile_resolver import DEFAULT_PROFILE
 from untaped.prompts import PromptChoice
 from untaped.screen.components.buttons import Button, Buttons, Pressed
@@ -107,7 +107,7 @@ _PROGRESS = ("checking", "saving")
 
 @dataclass(frozen=True)
 class SetupResult:
-    """What the screen did: for ``profile``, the capabilities written and the lines to print.
+    """What the screen did: for ``profile``, the plugins written and the lines to print.
 
     ``notes`` are what the old wizard printed while it wrote. ``interrupted`` is
     ctrl-c, which ``setup`` reports as exit 130 after printing the rest.
@@ -121,7 +121,7 @@ class SetupResult:
 
 @dataclass(frozen=True)
 class CapRow:
-    """One capability on the left: its name and status (a key of the status table)."""
+    """One plugin on the left: its name and status (a key of the status table)."""
 
     name: str
     status: str
@@ -154,7 +154,7 @@ class Saved:
 
 @dataclass(frozen=True)
 class ProfileLoaded:
-    """The states of every capability in ``profile``, read for the profile field."""
+    """The states of every plugin in ``profile``, read for the profile field."""
 
     profile: str
     states: Mapping[str, ServiceState]
@@ -177,22 +177,22 @@ class SetupModel:
     pending: Candidate | None = None
     """The candidate being checked or saved, or the one whose check failed."""
     failed: Mapping[str, Candidate] = field(default_factory=dict)
-    """Per capability, the candidate whose check failed: its form offers ``Save anyway``."""
+    """Per plugin, the candidate whose check failed: its form offers ``Save anyway``."""
     leaving: Literal["quit", "interrupt"] | None = None
     """A quit asked for while a save runs: it ends the screen once the write finished."""
     saved: tuple[tuple[str, str], ...] = ()
-    """``(profile, capability)`` for every write that finished."""
+    """``(profile, plugin)`` for every write that finished."""
     notes: tuple[Note, ...] = ()
 
     @property
     def name(self) -> str:
-        """The selected capability."""
+        """The selected plugin."""
         return self.rows[self.selected].name
 
 
 def setup_screen(
     result: CompositionResult,
-    services: Mapping[str, CapabilitySpec],
+    services: Mapping[str, PluginSpec],
     *,
     profile: str,
     store: TokenStore | None,
@@ -254,7 +254,7 @@ class _Setup:
     def __init__(
         self,
         result: CompositionResult,
-        services: dict[str, CapabilitySpec],
+        services: dict[str, PluginSpec],
         store: TokenStore | None,
         profiles: tuple[str, ...],
         profile: str,
@@ -306,7 +306,7 @@ class _Setup:
             left,
             model.forms[model.name],
             focus=0 if model.focus == "list" else 1,
-            left_title="Capabilities",
+            left_title="Plugins",
             right_title=model.name,
         )
         return Group(header, field, panes.view(inner, focused=model.focus != "profile"))
@@ -504,7 +504,7 @@ class _Setup:
 
         def prime() -> object:
             # Runs with the real terminal; the token is cached for the probe.
-            section = spec.config_section
+            section = spec.name
             argv = list(candidate.argv or ())
             forget_token_command(argv)  # every check runs the command, a retry included
             try:
@@ -532,7 +532,7 @@ class _Setup:
         return model, [self._probe(candidate, model.states[name])]
 
     def _probe(self, candidate: Candidate, state: ServiceState) -> Cmd:
-        """The background check of ``candidate``: the capability's online checks over its values."""
+        """The background check of ``candidate``: the plugin's online checks over its values."""
         overlay = overlay_values(candidate, state)
         result, name, profile = self.result, candidate.name, candidate.profile
 
@@ -679,8 +679,8 @@ class _Setup:
             name: self._form(spec, states[name], profile) for name, spec in self.services.items()
         }
 
-    def _form(self, spec: CapabilitySpec, state: ServiceState, profile: str) -> Form:
-        has_command = takes_token_command(spec.profile_model)
+    def _form(self, spec: PluginSpec, state: ServiceState, profile: str) -> Form:
+        has_command = takes_token_command(settings_model(spec))
         choices = _token_choices(spec, state, self.store, has_command=has_command)
         tabs = tuple(
             self._tab(spec, state, choice, profile, has_command=has_command) for choice in choices
@@ -695,7 +695,7 @@ class _Setup:
 
     def _tab(
         self,
-        spec: CapabilitySpec,
+        spec: PluginSpec,
         state: ServiceState,
         choice: PromptChoice[str],
         profile: str,
@@ -707,7 +707,7 @@ class _Setup:
         note = choice.label
         if how == "keep" and has_command and state.inherited_token:
             note += (
-                f"\n{spec.config_section}.token is set in profile {DEFAULT_PROFILE}: switching "
+                f"\n{spec.name}.token is set in profile {DEFAULT_PROFILE}: switching "
                 f"profile {profile} to a stored token or a command would leave it in charge, so "
                 f"only keeping the current token is offered\n{hint('auth migrate')}"
             )
@@ -736,7 +736,7 @@ def _initial_status(state: ServiceState) -> str:
 
 
 def _without(failed: Mapping[str, Candidate], name: str) -> dict[str, Candidate]:
-    """``failed`` without ``name``: that capability's failed check no longer applies."""
+    """``failed`` without ``name``: that plugin's failed check no longer applies."""
     return {key: candidate for key, candidate in failed.items() if key != name}
 
 
@@ -800,7 +800,7 @@ def _token_command(name: str, text: str) -> list[str]:
     return argv
 
 
-def _candidate(spec: CapabilitySpec, profile: str, values: Mapping[str, object]) -> Candidate:
+def _candidate(spec: PluginSpec, profile: str, values: Mapping[str, object]) -> Candidate:
     """The form's validated values as what the user asked for."""
     tab = values["token"]
     assert isinstance(tab, dict)
@@ -815,7 +815,7 @@ def _candidate(spec: CapabilitySpec, profile: str, values: Mapping[str, object])
         argv = tuple(_token_command(spec.name, str(tab["command"])))
     return Candidate(
         spec.name,
-        spec.config_section,
+        spec.name,
         profile,
         how,
         str(values["base_url"]).strip(),
@@ -824,7 +824,7 @@ def _candidate(spec: CapabilitySpec, profile: str, values: Mapping[str, object])
     )
 
 
-def _refreshed(spec: CapabilitySpec, profile: str) -> ServiceState | None:
+def _refreshed(spec: PluginSpec, profile: str) -> ServiceState | None:
     """What ``profile`` resolves to now for ``spec``, or ``None`` when it cannot be read."""
     try:
         return service_states({spec.name: spec}, profile, read_config_dict())[spec.name]
@@ -854,7 +854,7 @@ def _check_hint(profile: str) -> str:
 
 
 def _token_choices(
-    spec: CapabilitySpec,
+    spec: PluginSpec,
     current: ServiceState,
     store: TokenStore | None,
     *,
@@ -878,7 +878,7 @@ def _token_choices(
         choices.append(PromptChoice(value="store", label=f"Store a token with {store.name}"))
     if has_command:
         choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
-        env = token_env_names(spec.profile_model.model_construct())
+        env = token_env_names(settings_model(spec).model_construct())
         # default's command would win over the variable once the profile's is gone.
         if env and not current.inherited_command:
             stored = current.own_command is not None and preset_entry(current.own_command)

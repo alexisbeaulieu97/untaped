@@ -2,10 +2,10 @@
 
 The bullet list under "## Experimental" is kept by hand, because it also names
 record kinds, file formats and environment variables no mark knows. This
-checks it rather than generating it: every experimental capability, group or
+checks it rather than generating it: every experimental plugin, group or
 command is a bullet, every bullet that starts with a command path is marked, and
 every experimental setting is named in backticks somewhere in the section (a
-capability's own settings are covered by its bullet).
+plugin's own settings are covered by its bullet).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from types import ModuleType
 
 from repo.support import REPO_ROOT
 from untaped import bootstrap, sdk, testing
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.plugins.registry import ProviderCandidate
 from untaped.stability import Experimental, function_mark, marks
 
 _BULLET = re.compile(r"^- `([^`]+)`:", re.MULTILINE)

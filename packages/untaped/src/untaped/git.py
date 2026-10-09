@@ -1,4 +1,4 @@
-"""Hardened ``git`` subprocess execution shared by every capability.
+"""Hardened ``git`` subprocess execution shared by every plugin.
 
 One place owns how untaped shells out to Git: binary resolution, the
 non-interactive environment (no terminal or credential-manager prompts,

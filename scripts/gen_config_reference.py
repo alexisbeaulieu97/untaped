@@ -1,8 +1,8 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
 The page lists every setting of the root app (``http.*``, ``ui.*``,
-``skills.*``) and of each first-party capability's profile model, plus each
-capability's state model. Types, defaults and environment variables come from
+``skills.*``) and of each first-party plugin's profile model, plus each
+plugin's state model. Types, defaults and environment variables come from
 the Pydantic models; a description comes from ``Field(description=...)`` when
 the model declares one, else from :data:`DESCRIPTIONS` below.
 
@@ -164,7 +164,7 @@ _HEADER = """\
 Every setting `untaped` reads, generated from the settings models. Profile
 settings live under `profiles.<name>.<section>` in `~/.untaped/config.yml`;
 state lives in `~/.untaped/state.yml` and is written only by the owning
-capability's commands. See [Configuration](../configuration.md) for the file
+plugin's commands. See [Configuration](../configuration.md) for the file
 layout, profiles and precedence.
 
 Set a profile setting with `untaped config set KEY VALUE` (secrets:
@@ -190,7 +190,7 @@ class Row:
     default: Any
     description: str | None
     mark: Stability | None = None
-    """The setting's own mark, else its capability's."""
+    """The setting's own mark, else its plugin's."""
 
 
 def _leaf_rows(model: type[BaseModel], prefix: tuple[str, ...]) -> list[Row]:
@@ -267,22 +267,22 @@ def _env_name(key: str) -> str:
 
 
 def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability | None]]:
-    """``(title, prefix, model, is_state, stability)``: the shell and each first-party capability.
+    """``(title, prefix, model, is_state, stability)``: the shell and each first-party plugin.
 
-    ``stability`` is the owning capability's mark. Capabilities follow in name
+    ``stability`` is the owning plugin's mark. Plugins follow in name
     order. Raises :class:`RuntimeError` naming every quarantined first-party
-    capability rather than drop its section.
+    plugin rather than drop its section.
     """
     from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
-    from untaped.capabilities.registry import compose, discover_candidates  # noqa: PLC0415
+    from untaped.plugins.registry import compose, discover_candidates  # noqa: PLC0415
     from untaped.settings import Settings  # noqa: PLC0415
 
     sections: list[tuple[str, str, type[BaseModel], bool, Stability | None]] = [
         ("Root", "", Settings, False, None),
         (
-            f"`{SHELL_SPEC.config_section}`",
-            SHELL_SPEC.config_section,
-            SHELL_SPEC.profile_model,
+            f"`{SHELL_SPEC.section}`",
+            SHELL_SPEC.section,
+            SHELL_SPEC.settings,
             False,
             None,
         ),
@@ -295,25 +295,25 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability 
             f"{record.name!r} [{record.reason}]: {record.detail}" for record in result.quarantine
         )
         raise RuntimeError(
-            f"first-party capabilities quarantined; fix them before generating: {reasons}"
+            f"first-party plugins quarantined; fix them before generating: {reasons}"
         )
-    for registered in result.capabilities:
+    for registered in result.plugins:
         spec = registered.spec
         sections.append(
             (
-                f"`{spec.config_section}`",
-                spec.config_section,
-                spec.profile_model,
+                f"`{spec.name}`",
+                spec.name,
+                spec.settings,
                 False,
                 spec.stability,
             )
         )
-        if spec.state_model is not None:
+        if spec.state is not None:
             sections.append(
                 (
-                    f"`{spec.config_section}` state",
-                    spec.config_section,
-                    spec.state_model,
+                    f"`{spec.name}` state",
+                    spec.name,
+                    spec.state,
                     True,
                     None,
                 )

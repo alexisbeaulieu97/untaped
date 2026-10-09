@@ -237,7 +237,7 @@ def test_a_list_cursor_never_leaves_its_items() -> None:
 
 def test_multi_list_toggles_and_brackets() -> None:
     items = tuple(ListItem(name, name) for name in ("awx", "jira", "github", "ansible"))
-    component = MultiList("Capabilities", items, frozenset({"awx"}), cursor=1)
+    component = MultiList("Plugins", items, frozenset({"awx"}), cursor=1)
     assert "[✓] awx" in run_solo(component).frame
     assert "[ ] jira" in run_solo(component).frame
 
@@ -252,7 +252,7 @@ def test_multi_list_toggles_and_brackets() -> None:
 
 def test_multi_list_leaves_enter_to_the_form_and_highlights_the_cursor_row() -> None:
     items = tuple(ListItem(name, name) for name in ("awx", "jira"))
-    component = MultiList("Capabilities", items, frozenset({"awx", "jira"}), cursor=1)
+    component = MultiList("Plugins", items, frozenset({"awx", "jira"}), cursor=1)
     run = run_solo(component, "enter")
     assert run.model.unhandled == (Activate(),)
 
@@ -363,7 +363,7 @@ def _all() -> list[object]:
         Select("Region", REGIONS, "us-east"),
         Select("Region", REGIONS, "us-east", open=True),
         SingleList("Output", OUTPUTS, "table", cursor=1),
-        MultiList("Capabilities", items, frozenset({"one"}), cursor=2),
+        MultiList("Plugins", items, frozenset({"one"}), cursor=2),
         Check("Verify TLS", True, help="Check the certificate."),
         Cycle("Format", ("table", "json"), "json"),
         Select("Region", REGIONS, "us-east", open=True).with_error("Pick one."),

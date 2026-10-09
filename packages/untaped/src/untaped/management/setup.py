@@ -1,18 +1,18 @@
 """Root ``untaped setup`` command: one full-screen screen to configure a profile.
 
 The screen (:mod:`untaped.management.setup_screen`) lists every composed
-capability whose profile model has ``base_url`` and ``token`` fields, each with
+plugin whose profile model has ``base_url`` and ``token`` fields, each with
 a status, and the selected one's form: its URL and how to get its token (stored
 with this machine's password store, a plaintext token moved there, a
 ``token_command``, a conventional environment variable, or the current source
-kept). A capability's online checks run against the values before anything is
+kept). A plugin's online checks run against the values before anything is
 saved; writes go through the same validated settings repository as
 ``config set`` (:mod:`untaped.management.setup_write`). After the screen
 closes this command prints what the screen wrote, then the doctor checks of
-the capabilities it configured, online ones included, and exits 1 when any
+the plugins it configured, online ones included, and exits 1 when any
 fails; ctrl-c exits 130 after that. It needs a terminal: without one it exits 2,
 naming ``setup plan``, before it reads the config or the password store.
-``--only`` limits the capabilities listed.
+``--only`` limits the plugins listed.
 
 ``setup plan`` (:mod:`untaped.management.setup_plan`) is its read-only,
 non-interactive face for agents and scripts; both read service state
@@ -27,7 +27,6 @@ from cyclopts import App, Parameter
 
 from untaped.auth import takes_token_command
 from untaped.batch import finish
-from untaped.capabilities.registry import ApplicationSpec, CompositionResult
 from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
 from untaped.config_file import read_config_dict
 from untaped.errors import PromptInterruptedError
@@ -40,6 +39,7 @@ from untaped.management.setup_plan import (
     plan_rows,
 )
 from untaped.management.setup_state import service_states, setup_services
+from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
 from untaped.token_store import pick_store
@@ -114,7 +114,7 @@ def _run(
     raw = read_config_dict()
     active = selected_profile()
     # One probe per run: a dead Secret Service costs its timeout once.
-    commands = any(takes_token_command(spec.profile_model) for spec in services.values())
+    commands = any(takes_token_command(settings_model(spec)) for spec in services.values())
     screen = setup_screen(
         result,
         services,
@@ -128,7 +128,7 @@ def _run(
         ui.message(kind, text)
     profile = outcome.profile
     if not outcome.touched:
-        ui.message("info", "no capabilities selected; no changes made")
+        ui.message("info", "no plugins selected; no changes made")
     else:
         rows = selected_check_rows(shell, result, profile, frozenset(outcome.touched))
         try:

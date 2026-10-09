@@ -1,6 +1,6 @@
-"""The untaped SDK: the one module capability code (first- or third-party) imports from core.
+"""The untaped SDK: the one module plugin code (first- or third-party) imports from core.
 
-Every capability — first-party or third-party — imports untaped helpers
+Every plugin — first-party or third-party — imports untaped helpers
 from this module only. It carries the composition set and the supported runtime helpers (output,
 errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, UI, batch,
 concurrency, shared options, message wording, record bases, token sources
@@ -21,15 +21,6 @@ import typing as _typing
 from untaped.app_context import AppContext, app_context
 from untaped.auth import TokenCommand, TokenSources
 from untaped.batch import BatchOutcome, batch_apply, finish
-from untaped.capabilities.registry import (
-    ApplicationSpec,
-    CapabilityContext,
-    CapabilityProvider,
-    CapabilitySpec,
-    DoctorCheck,
-    DoctorResult,
-    SkillAsset,
-)
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -95,6 +86,16 @@ from untaped.http import (
 from untaped.messages import hint, not_found, plural, q, summary
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
+from untaped.plugins.registry import (
+    ApplicationSpec,
+    DoctorCheck,
+    DoctorResult,
+    PluginContext,
+    PluginProvider,
+    PluginSpec,
+    SkillAsset,
+    plugin_dir,
+)
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
 from untaped.records import (
@@ -211,13 +212,14 @@ _SCREEN_EXPORTS: dict[str, str] = {
 __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
     # composition
     "ApplicationSpec",
-    "CapabilityContext",
-    "CapabilityProvider",
-    "CapabilitySpec",
+    "PluginContext",
+    "PluginProvider",
+    "PluginSpec",
     "DoctorCheck",
     "DoctorResult",
     "SkillAsset",
     "create_app",
+    "plugin_dir",
     # settings and state
     "AppContext",
     "StateCollection",

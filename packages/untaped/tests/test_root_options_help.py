@@ -7,7 +7,7 @@ from typing import Annotated
 import pytest
 from cyclopts import App, Parameter
 
-from test_capabilities.capharness import make_spec
+from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
 from untaped._root_options import _apply_help_root_options, _root_options, _RootOption
 from untaped.cli import create_app, echo
@@ -61,7 +61,7 @@ def test_the_flag_adds_the_deprecated_panel_before_or_after_help(argv: list[str]
 @pytest.mark.parametrize(
     "argv", [["svc", "--deprecated", "--help"], ["svc", "--help", "--deprecated"]]
 )
-def test_the_flag_applies_inside_a_capability(argv: list[str]) -> None:
+def test_the_flag_applies_inside_a_plugin(argv: list[str]) -> None:
     assert "Old." in _help(*argv)
     assert "Old." not in _help("svc", "--help")
 

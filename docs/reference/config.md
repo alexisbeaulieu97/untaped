@@ -5,7 +5,7 @@
 Every setting `untaped` reads, generated from the settings models. Profile
 settings live under `profiles.<name>.<section>` in `~/.untaped/config.yml`;
 state lives in `~/.untaped/state.yml` and is written only by the owning
-capability's commands. See [Configuration](../configuration.md) for the file
+plugin's commands. See [Configuration](../configuration.md) for the file
 layout, profiles and precedence.
 
 Set a profile setting with `untaped config set KEY VALUE` (secrets:

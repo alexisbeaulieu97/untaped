@@ -2,8 +2,8 @@
 
 ``app_context()`` hands a tool a context that resolves each settings section
 lazily, at most once, the first time it is accessed. Only the sections a
-command actually reads are validated, so an invalid value in one capability's
-section never breaks another capability's commands. Profile (or any other
+command actually reads are validated, so an invalid value in one plugin's
+section never breaks another plugin's commands. Profile (or any other
 scope) selection happens before command dispatch via the root ``--profile``
 option, so nothing about the resolution leaks into ambient process state from
 here.

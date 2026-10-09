@@ -32,7 +32,7 @@ def _panes(**kwargs: object) -> Panes:
     return Panes(
         SingleList("", CAPS, "github", show_chosen=False),
         form,
-        left_title="Capabilities",
+        left_title="Plugins",
         right_title="github",
         **kwargs,  # type: ignore[arg-type]
     )
@@ -52,11 +52,11 @@ def test_side_by_side_from_the_wide_width_and_stacked_below_it() -> None:
     stacked = run_solo(_panes(), size=(WIDE - 1, 24)).frame
 
     top = lines(side)[0]
-    assert "Capabilities" in top
+    assert "Plugins" in top
     assert "github" in top  # both titles on the first line
     assert "╮╭" in top
     stacked_lines = lines(stacked)
-    assert "Capabilities" in stacked_lines[0]
+    assert "Plugins" in stacked_lines[0]
     assert "github" not in stacked_lines[0]
     assert any(line.startswith("╭─ github") for line in stacked_lines)
 
@@ -148,8 +148,8 @@ def test_the_focused_pane_has_the_focus_border_and_a_bright_title() -> None:
     assert edges(_panes(focus=1)) == [border, focus]
     assert edges(_panes(), focused=False) == [border, border]
     accent = role(DEFAULT, "screen.accent")
-    assert style_of(_styled(_panes()), "Capabilities").bold == accent.bold
-    assert style_of(_styled(_panes()), "Capabilities").color == accent.color
+    assert style_of(_styled(_panes()), "Plugins").bold == accent.bold
+    assert style_of(_styled(_panes()), "Plugins").color == accent.color
     assert style_of(_styled(_panes()), "github").color == role(DEFAULT, "screen.value").color
 
 
@@ -270,17 +270,17 @@ def test_plain_panes_are_pure_ascii_and_use_the_ascii_box() -> None:
             _panes().with_error("Nope."), size=size, theme=BUILTIN_THEMES["plain"]
         ).frame
         assert frame.isascii()
-        assert "+- Capabilities" in frame
+        assert "+- Plugins" in frame
 
 
 def test_without_a_box_the_panes_are_titles_over_their_content() -> None:
     side = run_solo(_panes(), size=(100, 20), theme=BUILTIN_THEMES["quiet"]).frame
-    assert lines(side)[0].startswith("Capabilities")
+    assert lines(side)[0].startswith("Plugins")
     assert "github" in lines(side)[0]
     assert not any(char in side for char in "╭│╰")
 
     stacked = lines(run_solo(_panes(), size=(60, 30), theme=BUILTIN_THEMES["quiet"]).frame)
-    assert stacked[0] == "Capabilities"
+    assert stacked[0] == "Plugins"
     assert "github" in stacked
 
 

@@ -12,9 +12,9 @@ from cyclopts import App
 from pydantic import BaseModel, Field
 
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec
 from untaped.cli import create_app
 from untaped.errors import ConfigError
+from untaped.plugins.registry import PluginSpec
 from untaped.profile.repository import ProfileFileRepository
 from untaped.settings import (
     get_config_section,
@@ -245,7 +245,7 @@ def test_profile_show_resolves_old_keys_to_new_names(config: Path) -> None:
 
 def _demo_root() -> object:
     def _factory() -> App:
-        app = create_app(name="demo", help="demo capability.")
+        app = create_app(name="demo", help="demo plugin.")
 
         @app.command
         def show(*, format: str = "table") -> None:
@@ -254,9 +254,7 @@ def _demo_root() -> object:
 
         return app
 
-    spec = CapabilitySpec(
-        name="demo", app_factory=_factory, config_section="demo", profile_model=DemoSettings
-    )
+    spec = PluginSpec(name="demo", app_factory=_factory, settings=DemoSettings)
     return bootstrap.build_root_app(candidates=(provider_candidate(spec),)).meta
 
 

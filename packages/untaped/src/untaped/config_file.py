@@ -1,7 +1,7 @@
 """Read/write helpers for ``~/.untaped/config.yml`` and ``state.yml``.
 
 These are the lowest-level primitives behind the root ``untaped config
-set/unset`` commands and capability state writes. They never validate
+set/unset`` commands and plugin state writes. They never validate
 against the Settings schema — that's the caller's job. Settings writes only
 touch the config file; state writes only touch the state file.
 

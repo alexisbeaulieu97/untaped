@@ -204,7 +204,7 @@ def test_hook_resolver_rejects_runtime_cli_dependency(tmp_path: Path, dependency
         (
             {"requires_hook_api": ">=99"},
             False,
-            r"requires hook API >=99, but the untaped recipe capability provides 0\.10\.0",
+            r"requires hook API >=99, but the untaped recipe plugin provides 0\.10\.0",
         ),
         ({}, True, "hook module file not found"),
     ],

@@ -1,4 +1,4 @@
-"""GithubClient REST reads used only by the ansible capability (search/repos go via the CLI)."""
+"""GithubClient REST reads used only by the ansible plugin (search/repos go via the CLI)."""
 
 from __future__ import annotations
 

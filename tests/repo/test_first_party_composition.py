@@ -1,7 +1,7 @@
-"""The composition root over every first-party capability: mounts and lazy help.
+"""The composition root over every first-party plugin: mounts and lazy help.
 
 Moved from core's ``test_bootstrap.py``: these tests compose the installed
-first-party capabilities, so they need every workspace package (Decision 5).
+first-party plugins, so they need every workspace package (Decision 5).
 """
 
 from __future__ import annotations
@@ -12,22 +12,22 @@ from pathlib import Path
 import pytest
 
 from untaped import bootstrap
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate
 from untaped.messages import EXPERIMENTAL_LINE
+from untaped.plugins.registry import PluginSpec, ProviderCandidate
 from untaped.stability import enable_show_deprecated, reset_show_deprecated
 from untaped.testing import CliInvoker, provider_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
-def test_default_composition_is_the_first_party_capabilities(
+def test_default_composition_is_the_first_party_plugins(
     first_party_candidates: tuple[ProviderCandidate, ...],
 ) -> None:
     expected = tuple(candidate.name for candidate in first_party_candidates)
 
     composition = bootstrap.compose_root(candidates=first_party_candidates)
 
-    assert tuple(capability.spec.name for capability in composition.capabilities) == expected
+    assert tuple(plugin.spec.name for plugin in composition.plugins) == expected
     assert composition.quarantine == ()
 
     root = bootstrap.build_root_app(candidates=first_party_candidates)
@@ -36,7 +36,7 @@ def test_default_composition_is_the_first_party_capabilities(
         assert result.exit_code == 0, result.output
 
 
-def test_root_option_after_a_lazy_capability_name_is_not_a_command(
+def test_root_option_after_a_lazy_plugin_name_is_not_a_command(
     first_party_candidates: tuple[ProviderCandidate, ...],
     _isolated_config: Path,
 ) -> None:
@@ -49,9 +49,9 @@ def test_root_option_after_a_lazy_capability_name_is_not_a_command(
     assert "'nope'" in result.stderr
 
 
-def test_lazy_first_party_capabilities_render_like_eager_mounts(
+def test_lazy_first_party_plugins_render_like_eager_mounts(
     first_party_candidates: tuple[ProviderCandidate, ...],
-    first_party_specs: tuple[CapabilitySpec, ...],
+    first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     specs = first_party_specs
     eager_candidates = [
@@ -69,13 +69,13 @@ def test_lazy_first_party_capabilities_render_like_eager_mounts(
         )
         assert (lazy.exit_code, lazy.output) == (eager.exit_code, eager.output), (
             f"lazy mount of {argv} renders differently from an eager mount; cyclopts "
-            "internals used by bootstrap._LazyCapabilityCommand may have drifted (see "
+            "internals used by bootstrap._LazyPluginCommand may have drifted (see "
             "test_cyclopts_private_internals_used_by_lazy_mounts_exist)"
         )
 
 
 def test_first_party_help_matches_app_summary(
-    first_party_specs: tuple[CapabilitySpec, ...],
+    first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     for spec in first_party_specs:
         assert spec.help is not None, spec.name
@@ -95,7 +95,7 @@ def _panels(text: str) -> dict[str, str]:
     return panels
 
 
-def test_experimental_capabilities_sit_in_the_root_experimental_panel(
+def test_experimental_plugins_sit_in_the_root_experimental_panel(
     first_party_candidates: tuple[ProviderCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)

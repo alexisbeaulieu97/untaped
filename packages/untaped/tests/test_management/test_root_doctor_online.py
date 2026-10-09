@@ -1,4 +1,4 @@
-"""``doctor --online``: capability-contributed online checks and their fixes.
+"""``doctor --online``: plugin-contributed online checks and their fixes.
 
 Online checks (``DoctorCheck(online=True)``) never run in a plain
 ``doctor``. The shared ``online_check`` factory probes a configured service
@@ -22,13 +22,13 @@ from untaped import bootstrap
 from untaped.management.doctor import build_root_doctor_app
 from untaped.profile_resolver import profile_scope
 from untaped.sdk import (
-    CapabilityContext,
     ConfigError,
     DoctorCheck,
     DoctorResult,
     HttpClient,
     HttpStatusError,
     HttpTransportError,
+    PluginContext,
     RetryPolicy,
     TokenCommand,
     TokenSources,
@@ -50,7 +50,7 @@ class ProbeProfile(BaseModel):
 
 
 def _doctor(checks: tuple[DoctorCheck, ...], *args: str) -> CliResult:
-    spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=checks)
+    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=checks)
     app = build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
     )
@@ -70,7 +70,7 @@ def _configured(path: Path, **values: str) -> None:
 def test_plain_doctor_never_runs_online_checks(_isolated_config: Path) -> None:
     calls: list[str] = []
 
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+    def run(_ctx: PluginContext) -> DoctorResult:
         calls.append("ran")
         return DoctorResult(id="svc.api", ok=False, detail="down")
 
@@ -82,7 +82,7 @@ def test_plain_doctor_never_runs_online_checks(_isolated_config: Path) -> None:
 
 
 def test_online_failure_names_its_fix(_isolated_config: Path) -> None:
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+    def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
             id="svc.api", ok=False, detail="token rejected", fix="config set svc.token --prompt"
         )
@@ -135,7 +135,7 @@ def test_a_default_base_url_without_a_token_is_not_configured(_isolated_config: 
         raise AssertionError("must not probe")
 
     check = online_check("github.api", section="github", probe=probe)
-    spec = make_spec("github", profile_model=GithubProfile, doctor_checks=(check,))
+    spec = make_spec("github", settings=GithubProfile, doctor_checks=(check,))
     app = build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
     )
@@ -291,7 +291,7 @@ def test_online_check_is_skipped_when_settings_are_invalid(_isolated_config: Pat
 
 
 def _fixing(fix: str | list[str]) -> DoctorCheck:
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+    def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(id="svc.api", ok=False, detail="token rejected", fix=fix)
 
     return DoctorCheck(id="svc.api", title="svc API", run=run, online=True)
@@ -318,7 +318,7 @@ def test_an_unparsable_fix_fails_its_row(_isolated_config: Path) -> None:
 
 
 def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_config: Path) -> None:
-    spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
     app = build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
     )
@@ -328,7 +328,7 @@ def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_confi
 
 
 def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
-    spec = make_spec("svc", profile_model=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
     app = build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
     )

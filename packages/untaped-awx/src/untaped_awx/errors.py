@@ -24,7 +24,7 @@ from untaped.sdk import (
 
 
 class AwxError(UntapedError):
-    """Base class for every AWX capability error (a ``failed`` error in ``awx``)."""
+    """Base class for every AWX plugin error (a ``failed`` error in ``awx``)."""
 
     system = "awx"
 

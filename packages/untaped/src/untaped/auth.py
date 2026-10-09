@@ -1,4 +1,4 @@
-"""Token resolution for token-bearing capability settings sections.
+"""Token resolution for token-bearing plugin settings sections.
 
 One place owns where a section's API token comes from when ``<section>.token``
 is unset. A settings model opts in by declaring ``token_sources:

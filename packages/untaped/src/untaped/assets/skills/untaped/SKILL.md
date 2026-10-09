@@ -5,9 +5,9 @@ description: Installs, sets up and diagnoses the `untaped` CLI itself (profiles,
 
 # untaped
 
-untaped is one CLI that composes capabilities (`awx`, `github`, `jira`,
+untaped is one CLI that composes plugins (`awx`, `github`, `jira`,
 `workspace`, `ansible`, `recipe`, …). This skill covers the shell they share:
-install, profiles, setup and health. Each capability has its own skill
+install, profiles, setup and health. Each plugin has its own skill
 (`untaped-<name>`) for its commands.
 
 Tokens are the user's alone. You set everything else up; the user types
@@ -16,12 +16,12 @@ every secret in their own terminal, so a token never passes through you.
 ## Setup
 
 - Install with `uv tool install 'untaped[all]'` (or `'untaped[awx,github]'`
-  for some capabilities). Re-running `uv tool install` replaces the whole
+  for some plugins). Re-running `uv tool install` replaces the whole
   set, so list every extra the user wants.
 - Settings live in a config file as named profiles; `default` is the base and
   other profiles override it field by field. Read settings with
   `untaped config list` and `untaped config get KEY`, which mask secrets.
-- `untaped capabilities` lists what this install composes.
+- `untaped plugin list` lists what this install composes.
 
 ## Commands
 
@@ -36,7 +36,7 @@ every secret in their own terminal, so a token never passes through you.
 | check health and get each failure's fix | `untaped doctor --format json`, `untaped doctor --online --format json` |
 | apply every automatic fix | `untaped doctor fix --yes --format json` |
 | see where tokens come from | `untaped auth status` |
-| install capability skills for an agent | `untaped skills install awx jira --target codex` |
+| install plugin skills for an agent | `untaped skills install awx jira --target codex` |
 | keep installed skills current | `untaped skills status`, `untaped skills update` |
 
 ## Workflows
@@ -59,7 +59,7 @@ every secret in their own terminal, so a token never passes through you.
 5. Re-run the plan with `--online`. Repeat until `setup plan --online
    --check` exits 0. A failed online row's `detail` says what the service
    answered and `run` is its fix.
-6. Offer to install the skills of the capabilities they use, by name:
+6. Offer to install the skills of the plugins they use, by name:
    `untaped skills install awx jira --target codex` (or `claude`, or `all`).
    This skill is already installed, so `--all` would stop on it.
 
@@ -111,5 +111,5 @@ that asks for or reveals a token (`auth set`, `config set ….token
 
 ## References
 
-Each capability's own skill (`untaped-awx`, `untaped-github`,
+Each plugin's own skill (`untaped-awx`, `untaped-github`,
 `untaped-jira`, …) covers its commands and its setup quirks.

@@ -25,7 +25,7 @@ def test_hello_loads_lazily() -> None:
 
 
 def test_hello_is_listed_ready() -> None:
-    rows = json.loads(invoke_root(["capabilities", "--format", "json"]).stdout)
+    rows = json.loads(invoke_root(["plugin", "list", "--format", "json"]).stdout)
     assert [(r["name"], r["status"]) for r in rows] == [("hello", "ready")]
 
 

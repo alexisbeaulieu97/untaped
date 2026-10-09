@@ -5,7 +5,7 @@ plus the catalog / fk-resolver / strategies / repository — exactly what
 the generic use cases need. Commands construct the context inside a
 ``with`` block to ensure the HTTP client is closed.
 
-This module is the **only** place in the ``awx`` capability that reads
+This module is the **only** place in the ``awx`` plugin that reads
 core settings (via :func:`untaped.sdk.app_context`); everything
 downstream consumes the :class:`AwxSettings` section.
 """

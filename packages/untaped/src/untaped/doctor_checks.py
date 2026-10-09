@@ -1,6 +1,6 @@
-"""Reusable doctor-check factories for capabilities.
+"""Reusable doctor-check factories for plugins.
 
-Each factory returns a :class:`DoctorCheck` a capability lists in its
+Each factory returns a :class:`DoctorCheck` a plugin lists in its
 ``SPEC.doctor_checks``. :func:`executable_check` and :func:`connection_check`
 read the validated settings snapshot and the local machine only: no network
 I/O and no ``token_command`` runs. :func:`online_check` is the one online
@@ -21,16 +21,16 @@ from untaped.auth import (
     token_alternatives,
     token_instead,
 )
-from untaped.capabilities.registry import CapabilityContext, DoctorCheck, DoctorResult
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, HttpError, HttpTransportError, UntapedError
+from untaped.plugins.registry import DoctorCheck, DoctorResult, PluginContext
 from untaped.settings import active_settings_layout, resolve_config_path
 
 
 def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorCheck:
     """Warn when ``program`` is not on ``PATH``; ``purpose`` says what needs it."""
 
-    def run(_ctx: CapabilityContext) -> DoctorResult:
+    def run(_ctx: PluginContext) -> DoctorResult:
         found = shutil.which(program)
         if found is None:
             return DoctorResult(
@@ -55,7 +55,7 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
     ``token_command`` is reported, never run.
     """
 
-    def run(ctx: CapabilityContext) -> DoctorResult:
+    def run(ctx: PluginContext) -> DoctorResult:
         settings = ctx.settings
         if settings is None:
             return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")
@@ -141,7 +141,7 @@ def online_check(
 ) -> DoctorCheck:
     """Contact ``section``'s service through ``probe`` (``doctor --online`` only).
 
-    ``probe`` is the capability's own authenticated call (``whoami``-style),
+    ``probe`` is the plugin's own authenticated call (``whoami``-style),
     run against the active profile inside :func:`untaped.http.quick_probe`
     (no retries, a short timeout); it returns the pass detail and raises on
     failure. A section that is not :func:`service_configured` passes
@@ -151,7 +151,7 @@ def online_check(
     ``base_url``.
     """
 
-    def run(ctx: CapabilityContext) -> DoctorResult:
+    def run(ctx: PluginContext) -> DoctorResult:
         settings = ctx.settings
         if settings is None:
             return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")

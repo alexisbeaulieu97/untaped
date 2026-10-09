@@ -18,7 +18,7 @@ Every failure has a **category**, which selects its exit code, and a
 **system**, which says who is responsible: `untaped` (a bug or the command
 line), `local` (config, files, the environment), `git`, `http` (an HTTP
 request no service owns), or a service such as `awx`, `jira` or `github` (a
-capability may refine it, such as `awx.scm`).
+plugin may refine it, such as `awx.scm`).
 
 | Category | Meaning | Exit |
 |---|---|---|

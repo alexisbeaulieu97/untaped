@@ -14,8 +14,8 @@ from packaging.utils import canonicalize_name
 from pydantic import BaseModel
 
 from untaped import bootstrap, cli, repo_cache
-from untaped.capabilities.registry import CapabilitySpec, ProviderCandidate, discover_candidates
 from untaped.git import GitResult
+from untaped.plugins.registry import PluginSpec, ProviderCandidate, discover_candidates
 from untaped.records import table_columns_of
 
 pytest_plugins = ["untaped.testing.plugin"]
@@ -43,7 +43,7 @@ def first_party_candidates() -> tuple[ProviderCandidate, ...]:
 @pytest.fixture(scope="session")
 def first_party_specs(
     first_party_candidates: tuple[ProviderCandidate, ...],
-) -> tuple[CapabilitySpec, ...]:
+) -> tuple[PluginSpec, ...]:
     """Every first-party spec, resolved from its discovered entry point, in name order."""
     return tuple(resolve_name(str(candidate.target))() for candidate in first_party_candidates)
 
@@ -114,7 +114,7 @@ def fresh_composition() -> Iterator[None]:
     """Start without a root composition and forget it (and its settings) after the test.
 
     For tests that compose the root, such as convention checks, so the
-    capabilities they register do not leak into later tests.
+    plugins they register do not leak into later tests.
     """
     bootstrap._clear_for_tests()
     yield

@@ -1,10 +1,10 @@
 # Agent skills
 
-Each capability ships an agent skill: a directory with `SKILL.md` and its
-reference files that teaches an AI coding agent to use that capability.
+Each plugin ships an agent skill: a directory with `SKILL.md` and its
+reference files that teaches an AI coding agent to use that plugin.
 untaped itself ships the `untaped` skill, which covers install, profiles,
 setup (`setup plan`), `doctor` and skills. `untaped skills` lists and installs
-the skills of every composed capability, first-party or third-party.
+the skills of every composed plugin, first-party or third-party.
 
 An agent whose harness has no skills folder can read a skill in place: the
 `source` field of `untaped skills list --format json` is the directory that
@@ -105,5 +105,5 @@ after upgrading and commit the result. To catch drift in CI:
 untaped skills status --check   # exits 3 when a skill is outdated or orphaned
 ```
 
-To write a capability's skill, see
+To write a plugin's skill, see
 [Packaged skills](./plugins.md#packaged-skills).

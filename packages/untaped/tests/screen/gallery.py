@@ -174,7 +174,7 @@ def gallery_fields() -> tuple[tuple[str, Any, str], ...]:
             "Token source",
         ),
         ("search", SearchList("Repos", many, multi=True, note="refreshed"), "Repos"),
-        ("tags", Tags("Capabilities", names, ("awx",)), "Capabilities"),
+        ("tags", Tags("Plugins", names, ("awx",)), "Plugins"),
         ("tree", Tree("Settings", rows, frozenset({"all"})), "Settings"),
         (
             "buttons",

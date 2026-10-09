@@ -18,7 +18,7 @@ JSON-native types only.
 Pipe envelope **v1** — frozen and stable across every ``untaped`` SDK release
 (1.x, 2.x, and 3.x alike). The envelope is versioned independently of the SDK: any
 change to its shape is a major *envelope* event, not tied to the SDK major. This
-freeze lets capability commands interoperate as long as they emit the same
+freeze lets plugin commands interoperate as long as they emit the same
 envelope version (still v1). See ``docs/reference/conventions.md#piping`` for producer and consumer
 examples.
 """

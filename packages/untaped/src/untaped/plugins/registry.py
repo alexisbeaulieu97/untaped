@@ -1,8 +1,8 @@
-"""Internal capability composition kernel (spec §§1-5).
+"""Internal plugin composition kernel (spec §§1-5).
 
 Implements the provider pipeline: discovery and metadata pre-checks, provider
 resolution, declaration validation, quarantine of every claimant of a contested
-name or section, then app-factory staging and commit. Every capability,
+name, then app-factory staging and commit. Every plugin,
 first-party ones included, arrives as an entry-point candidate; every violation
 yields a :class:`QuarantineRecord` while composition continues. Doctor-check
 bodies never run here.
@@ -13,6 +13,7 @@ stable surface from :mod:`untaped.sdk` instead.
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -32,8 +33,8 @@ from pydantic import BaseModel
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
 from untaped.settings import (
-    RESERVED_STATE_SECTIONS,
-    Settings,
+    DEFAULT_CONFIG_PATH,
+    RESERVED_SECTIONS,
     validate_disjoint_settings_sections,
 )
 from untaped.stability import Stability, check_stability, mark_errors
@@ -41,30 +42,45 @@ from untaped.stability import Stability, check_stability, mark_errors
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
 
-#: Entry-point group every capability is discovered from (spec §7.2).
-CAPABILITIES_ENTRY_POINT_GROUP = "untaped.capabilities"
+#: Entry-point group every plugin is discovered from (spec §7.2).
+PLUGINS_ENTRY_POINT_GROUP = "untaped.plugins"
 
-#: Reserved root command/layout names no capability may claim (spec §5 row 1).
-_RESERVED_COMMAND_ROOTS = RESERVED_STATE_SECTIONS | {
-    "config",
-    "profile",
-    "skills",
-    "doctor",
-    "capabilities",
-    "setup",
-    "alias",
-}
+#: A plugin name: lowercase words joined by single hyphens. The name is also
+#: the plugin's config section, CLI group and :func:`plugin_dir`.
+PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+
+#: Names no plugin may take, whatever they would collide with.
+RESERVED_PLUGIN_NAMES = frozenset(
+    {"untaped", "core", "sdk", "contracts", "plugins", "extensions", "profiles", "default", "shell"}
+)
+
+#: Root commands core mounts or keeps for itself; a plugin's CLI group is its
+#: name, so no plugin may be named after one.
+RESERVED_COMMAND_GROUPS = frozenset(
+    {
+        "config",
+        "profile",
+        "skills",
+        "doctor",
+        "setup",
+        "auth",
+        "alias",
+        "plugin",
+        "rank",
+        "contracts",
+    }
+)
 
 
-class CapabilityProvider(Protocol):
-    """Entry-point contract: a nullary callable returning a ``CapabilitySpec``."""
+class PluginProvider(Protocol):
+    """Entry-point contract: a nullary callable returning a ``PluginSpec``."""
 
-    def __call__(self) -> CapabilitySpec: ...
+    def __call__(self) -> PluginSpec: ...
 
 
 @dataclass(frozen=True)
 class SkillAsset:
-    """A packaged agent skill shipped by a capability (spec §3)."""
+    """A packaged agent skill shipped by a plugin (spec §3)."""
 
     name: str
     source: Path
@@ -79,7 +95,7 @@ class SkillAsset:
 
 @dataclass(frozen=True)
 class DoctorCheck:
-    """A health check contributed by the shell or a capability (spec §3).
+    """A health check contributed by the shell or a plugin (spec §3).
 
     An ``online`` check contacts a remote service, so only
     ``untaped doctor --online`` runs it; every other check stays offline.
@@ -87,7 +103,7 @@ class DoctorCheck:
 
     id: str
     title: str
-    run: Callable[[CapabilityContext], DoctorResult]
+    run: Callable[[PluginContext], DoctorResult]
     online: bool = False
 
 
@@ -120,33 +136,33 @@ class DoctorResult:
 
 
 @dataclass(frozen=True)
-class CapabilityContext:
+class PluginContext:
     """Frozen per-invocation snapshot handed to a doctor-check body (spec §3)."""
 
-    capability: str
-    config_section: str
-    profile_fields: frozenset[str]
+    plugin: str
+    settings_fields: frozenset[str]
     state_fields: frozenset[str]
     settings: BaseModel | None
 
 
-def _check_spec_shape(
-    name: str,
-    config_section: str,
-    profile_model: object,
-    state_model: object,
-    label: str,
-) -> None:
-    if not name.strip():
-        raise ConfigError(f"{label} name must not be empty")
-    if not config_section.strip():
-        raise ConfigError(f"{label} config_section must not be empty")
-    if not (isinstance(profile_model, type) and issubclass(profile_model, BaseModel)):
-        raise ConfigError(f"{label} profile_model must be a pydantic BaseModel subclass")
-    if state_model is not None and not (
-        isinstance(state_model, type) and issubclass(state_model, BaseModel)
-    ):
-        raise ConfigError(f"{label} state_model must be a pydantic BaseModel subclass or None")
+def _check_model(model: object, field: str, label: str) -> None:
+    if model is not None and not (isinstance(model, type) and issubclass(model, BaseModel)):
+        raise ConfigError(f"{label} {field} must be a pydantic BaseModel subclass or None")
+
+
+def check_plugin_name(name: str) -> None:
+    """Raise :class:`ConfigError` unless ``name`` is a valid plugin name.
+
+    ``@`` is kept for a later ``<plugin>@<instance>`` form, so it gets its
+    own message.
+    """
+    if "@" in name:
+        raise ConfigError(f"plugin name {name!r} must not contain '@' (reserved)")
+    if not PLUGIN_NAME_PATTERN.fullmatch(name):
+        raise ConfigError(
+            f"plugin name {name!r} must be lowercase words joined by single hyphens "
+            f"(pattern {PLUGIN_NAME_PATTERN.pattern})"
+        )
 
 
 @dataclass(frozen=True)
@@ -155,96 +171,114 @@ class ApplicationSpec:
 
     name: str
     app_factory: Callable[[], App]
-    config_section: str
-    profile_model: type[BaseModel]
-    state_model: type[BaseModel] | None = None
+    section: str
+    settings: type[BaseModel]
+    state: type[BaseModel] | None = None
     skills: tuple[SkillAsset, ...] = ()
     doctor_checks: tuple[DoctorCheck, ...] = ()
 
     def __post_init__(self) -> None:
-        _check_spec_shape(
-            self.name, self.config_section, self.profile_model, self.state_model, "shell"
-        )
-        key_mappings(self.profile_model)  # a broken shell declaration is a core bug
+        if not self.name.strip() or not self.section.strip():
+            raise ConfigError("shell name and section must not be empty")
+        _check_model(self.settings, "settings", "shell")
+        _check_model(self.state, "state", "shell")
+        key_mappings(self.settings)  # a broken shell declaration is a core bug
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
 
 @dataclass(frozen=True)
-class CapabilitySpec:
-    """One composable capability unit (spec §1).
+class PluginSpec:
+    """One composable plugin unit (spec §1).
+
+    ``name`` is also the plugin's config section and CLI group. Every part
+    is optional: ``app_factory`` builds the commands mounted under the name
+    (none when it is ``None``), ``settings`` is the profile model of the
+    plugin's config section and ``state`` its ``state.yml`` model.
 
     ``help`` is the one-line summary shown in the root command listing. A
-    capability that declares it is mounted lazily: its ``app_factory`` (and
+    plugin that declares it is mounted lazily: its ``app_factory`` (and
     so its CLI import tree) runs only when the command is dispatched. Without
     it, the factory runs during composition and the listing falls back to
     the built app's own help.
 
-    ``stability`` marks the whole capability ``experimental`` or
+    ``stability`` marks the whole plugin ``experimental`` or
     ``deprecated(...)``. It sits here, never on the app the factory returns:
     a lazy mount reads only the spec.
     """
 
     name: str
-    app_factory: Callable[[], App]
-    config_section: str
-    profile_model: type[BaseModel]
-    state_model: type[BaseModel] | None = None
+    app_factory: Callable[[], App] | None = None
+    settings: type[BaseModel] | None = None
+    state: type[BaseModel] | None = None
     skills: tuple[SkillAsset, ...] = ()
     doctor_checks: tuple[DoctorCheck, ...] = ()
     help: str | None = None
     stability: Stability | None = None
 
     def __post_init__(self) -> None:
-        _check_spec_shape(
-            self.name,
-            self.config_section,
-            self.profile_model,
-            self.state_model,
-            f"capability {self.name!r}",
-        )
+        check_plugin_name(self.name)
+        _check_model(self.settings, "settings", f"plugin {self.name!r}")
+        _check_model(self.state, "state", f"plugin {self.name!r}")
+        if self.app_factory is not None and not callable(self.app_factory):
+            raise ConfigError(f"plugin {self.name!r} app_factory must be callable or None")
         try:
-            check_stability(self.stability, where=f"capability {self.name!r}")
+            check_stability(self.stability, where=f"plugin {self.name!r}")
         except TypeError as exc:
             raise ConfigError(str(exc)) from exc
         if self.help is not None and (
             not isinstance(self.help, str) or not self.help.strip() or "\n" in self.help
         ):
-            raise ConfigError(
-                f"capability {self.name!r} help must be a non-empty single line or None"
-            )
+            raise ConfigError(f"plugin {self.name!r} help must be a non-empty single line or None")
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
 
+class _NoSettings(BaseModel):
+    """The settings of a plugin that declares none: no fields."""
+
+
+def settings_model(spec: PluginSpec) -> type[BaseModel]:
+    """``spec.settings``, or a model with no fields when the plugin has none."""
+    return spec.settings or _NoSettings
+
+
+def plugin_dir(spec: PluginSpec) -> Path:
+    """The directory a plugin keeps its own data in: ``~/.untaped/plugins/<name>/``.
+
+    It takes the spec rather than reading any ambient state, so it works
+    from any thread. The directory is not created.
+    """
+    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins" / spec.name
+
+
 @dataclass(frozen=True)
 class ProviderRef:
-    """How a composed capability arrived (spec §3)."""
+    """How a composed plugin arrived (spec §3)."""
 
     distribution: str
     entry_point: str
 
 
 @dataclass(frozen=True)
-class RegisteredCapability:
-    """A fully validated, committed capability (spec §3)."""
+class RegisteredPlugin:
+    """A fully validated, committed plugin (spec §3)."""
 
-    spec: CapabilitySpec
+    spec: PluginSpec
     provider_ref: ProviderRef
     skills: tuple[SkillAsset, ...]
     #: App staged by the one validating ``app_factory`` call, reused at
-    #: mount time; ``None`` exactly when the spec sets ``help`` (deferred).
+    #: mount time; ``None`` when the spec sets ``help`` (deferred) or has
+    #: no ``app_factory``.
     app: App | None = None
 
 
 #: Every valid quarantine/diagnostic reason code lives here (spec §5 table).
 VALID_REASONS = frozenset(
     {
-        "reserved-root",
+        "reserved-name",
         "duplicate-name",
-        "duplicate-section",
         "profile-state-overlap",
-        "state-shadow",
         "duplicate-skill",
         "bad-skill-asset",
         "duplicate-doctor-check",
@@ -261,7 +295,7 @@ VALID_REASONS = frozenset(
 class QuarantineRecord:
     """Why a provider was excluded (spec §3).
 
-    ``name`` is the candidate's entry-point (capability) name.
+    ``name`` is the candidate's entry-point (plugin) name.
     """
 
     name: str
@@ -291,7 +325,7 @@ class ProviderCandidate:
     name: str
     target: object
     distribution_version: str = ""
-    entry_point_group: str = CAPABILITIES_ENTRY_POINT_GROUP
+    entry_point_group: str = PLUGINS_ENTRY_POINT_GROUP
     requires_dist: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -300,9 +334,9 @@ class ProviderCandidate:
 
 @dataclass(frozen=True)
 class CompositionResult:
-    """Committed capabilities plus quarantine records for one composition."""
+    """Committed plugins plus quarantine records for one composition."""
 
-    capabilities: tuple[RegisteredCapability, ...] = ()
+    plugins: tuple[RegisteredPlugin, ...] = ()
     quarantine: tuple[QuarantineRecord, ...] = ()
 
 
@@ -372,12 +406,12 @@ def _running_sdk_version() -> str | None:
 
 
 def _check_entry_point_group(candidate: ProviderCandidate) -> None:
-    if candidate.entry_point_group != CAPABILITIES_ENTRY_POINT_GROUP:
+    if candidate.entry_point_group != PLUGINS_ENTRY_POINT_GROUP:
         raise _Quarantine(
             "bad-metadata",
             f"entry-point group {candidate.entry_point_group!r} of distribution "
-            f"{candidate.distribution!r} is not the capabilities group "
-            f"{CAPABILITIES_ENTRY_POINT_GROUP!r}",
+            f"{candidate.distribution!r} is not the plugins group "
+            f"{PLUGINS_ENTRY_POINT_GROUP!r}",
         )
 
 
@@ -420,10 +454,8 @@ def _check_requires_dist(candidate: ProviderCandidate, state: _CompositionState)
             )
 
 
-def discover_candidates(
-    *, group: str = CAPABILITIES_ENTRY_POINT_GROUP
-) -> tuple[ProviderCandidate, ...]:
-    """Discover every capability candidate from entry points (spec §7.2).
+def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[ProviderCandidate, ...]:
+    """Discover every plugin candidate from entry points (spec §7.2).
 
     Reads distribution version, entry-point group, and Requires-Dist strings
     via :mod:`importlib.metadata` without importing any provider code.
@@ -474,58 +506,43 @@ class _CompositionState:
         return _running_sdk_version()
 
 
-def _is_reserved(value: str) -> bool:
-    return value in Settings.model_fields or value in _RESERVED_COMMAND_ROOTS
+def _reserved_as(name: str) -> str | None:
+    """What a reserved ``name`` would collide with; ``None`` when it is free."""
+    if name in RESERVED_PLUGIN_NAMES:
+        return "plugin name"
+    if name in RESERVED_SECTIONS:
+        return "config section"
+    if name in RESERVED_COMMAND_GROUPS:
+        return "command group"
+    return None
 
 
-def _check_reserved_and_names(spec: CapabilitySpec, state: _CompositionState) -> None:
-    if _is_reserved(spec.name):
-        raise _Quarantine("reserved-root", f"reserved capability name: {spec.name!r}")
-    if _is_reserved(spec.config_section):
-        raise _Quarantine("reserved-root", f"reserved config section: {spec.config_section!r}")
-    if spec.name == state.shell.name:
+def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
+    reserved = _reserved_as(spec.name)
+    if reserved is not None:
+        raise _Quarantine("reserved-name", f"reserved {reserved}: {spec.name!r}")
+    if spec.name in (state.shell.name, state.shell.section):
         raise _Quarantine(
             "duplicate-name",
-            f"duplicate capability name: {spec.name!r} (already provided by the shell)",
+            f"duplicate plugin name: {spec.name!r} (already provided by the shell)",
         )
 
 
-def _check_duplicate_section(spec: CapabilitySpec, state: _CompositionState) -> None:
-    if spec.config_section == state.shell.config_section:
-        raise _Quarantine(
-            "duplicate-section",
-            f"duplicate config section: {spec.config_section!r} (already provided by the shell)",
-        )
-
-
-def _check_state_model(spec: CapabilitySpec, state: _CompositionState) -> None:
-    if spec.state_model is None:
+def _check_state_model(spec: PluginSpec) -> None:
+    if spec.state is None:
         return
-    marked = mark_errors(spec.state_model, state=True)
+    marked = mark_errors(spec.state, state=True)
     if marked:
-        raise _Quarantine("bad-settings-keys", f"capability {spec.name!r}: {marked[0]}")
+        raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {marked[0]}")
+    if spec.settings is None:
+        return
     try:
-        validate_disjoint_settings_sections(
-            spec.config_section, spec.profile_model, spec.state_model
-        )
+        validate_disjoint_settings_sections(spec.name, spec.settings, spec.state)
     except ConfigError as exc:
         raise _Quarantine("profile-state-overlap", str(exc)) from None
-    # Before duplicate-section so a state collision with the shell's section
-    # reports the specific diagnosis rather than the generic duplicate; only
-    # the shell can share a section, since candidates sharing one are contested.
-    if spec.config_section != state.shell.config_section:
-        return
-    claimed = set(state.shell.profile_model.model_fields)
-    shadowed = sorted(set(spec.state_model.model_fields) & claimed)
-    if shadowed:
-        joined = ", ".join(shadowed)
-        raise _Quarantine(
-            "state-shadow",
-            f"state fields shadow profile fields of section {spec.config_section!r}: {joined}",
-        )
 
 
-def _check_skills(spec: CapabilitySpec, state: _CompositionState) -> None:
+def _check_skills(spec: PluginSpec, state: _CompositionState) -> None:
     # Shape before collision: a collision needs a valid name to report.
     seen_skills: set[str] = set()
     for index, skill in enumerate(spec.skills):
@@ -536,14 +553,14 @@ def _check_skills(spec: CapabilitySpec, state: _CompositionState) -> None:
         ):
             raise _Quarantine(
                 "bad-skill-asset",
-                f"malformed skill asset at index {index} of capability {spec.name!r}: {skill!r}",
+                f"malformed skill asset at index {index} of plugin {spec.name!r}: {skill!r}",
             )
         if skill.name in state.skill_names or skill.name in seen_skills:
             raise _Quarantine("duplicate-skill", f"duplicate skill name: {skill.name!r}")
         seen_skills.add(skill.name)
 
 
-def _check_doctor_checks(spec: CapabilitySpec, state: _CompositionState) -> None:
+def _check_doctor_checks(spec: PluginSpec, state: _CompositionState) -> None:
     seen_checks: set[str] = set()
     for check in spec.doctor_checks:
         if (
@@ -554,72 +571,76 @@ def _check_doctor_checks(spec: CapabilitySpec, state: _CompositionState) -> None
         ):
             raise _Quarantine(
                 "doctor-check-failed",
-                f"malformed doctor check of capability {spec.name!r}: {check!r}",
+                f"malformed doctor check of plugin {spec.name!r}: {check!r}",
             )
         if check.id in state.doctor_ids or check.id in seen_checks:
             raise _Quarantine("duplicate-doctor-check", f"duplicate doctor id: {check.id!r}")
         seen_checks.add(check.id)
 
 
-def _check_key_mappings(spec: CapabilitySpec) -> None:
-    errors = mapping_errors(spec.profile_model)
+def _check_key_mappings(spec: PluginSpec) -> None:
+    if spec.settings is None:
+        return
+    errors = mapping_errors(spec.settings)
     if errors:
-        raise _Quarantine("bad-settings-keys", f"capability {spec.name!r}: {errors[0]}")
+        raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {errors[0]}")
 
 
-def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
-    _check_reserved_and_names(spec, state)
+def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
+    _check_reserved_name(spec, state)
     _check_key_mappings(spec)
-    _check_state_model(spec, state)
-    _check_duplicate_section(spec, state)
+    _check_state_model(spec)
     _check_skills(spec, state)
     _check_doctor_checks(spec, state)
 
 
-def _check_factory(spec: CapabilitySpec) -> App:
+def _check_factory(spec: PluginSpec, factory: Callable[[], App]) -> App:
     try:
-        staged = spec.app_factory()
+        staged = factory()
     except Exception as exc:
         raise _Quarantine(
             "bad-app-factory",
-            f"app factory of capability {spec.name!r} raised: {exc}",
+            f"app factory of plugin {spec.name!r} raised: {exc}",
         ) from None
     if not isinstance(staged, App):
         raise _Quarantine(
             "bad-app-factory",
-            f"app factory of capability {spec.name!r} returned "
+            f"app factory of plugin {spec.name!r} returned "
             f"{type(staged).__name__}, expected cyclopts App",
         )
     return staged
 
 
-def run_deferred_factory(capability: RegisteredCapability) -> App | QuarantineRecord:
-    """The capability's app, running a deferred factory; a failure as a quarantine record.
+def run_deferred_factory(plugin: RegisteredPlugin) -> App | QuarantineRecord:
+    """The plugin's app, running a deferred factory; a failure as a quarantine record.
 
     The one place a deferred factory runs, for first dispatch and
     ``untaped doctor`` alike. An eager
-    capability returns its staged app without running anything.
+    plugin returns its staged app without running anything. A plugin
+    without an ``app_factory`` has no app to build: asking for one is a
+    caller bug and raises :class:`ConfigError`.
     """
-    if capability.app is not None:
-        return capability.app
+    if plugin.app is not None:
+        return plugin.app
+    factory = plugin.spec.app_factory
+    if factory is None:
+        raise ConfigError(f"plugin {plugin.spec.name!r} has no commands to build")
     try:
-        return _check_factory(capability.spec)
+        return _check_factory(plugin.spec, factory)
     except _Quarantine as failed:
-        ref = capability.provider_ref
+        ref = plugin.provider_ref
         return QuarantineRecord(
-            capability.spec.name, ref.distribution, ref.entry_point, failed.reason, failed.detail
+            plugin.spec.name, ref.distribution, ref.entry_point, failed.reason, failed.detail
         )
 
 
 def _commit(
-    spec: CapabilitySpec,
+    spec: PluginSpec,
     ref: ProviderRef,
     state: _CompositionState,
     app: App | None,
-) -> RegisteredCapability:
-    registered = RegisteredCapability(
-        spec=spec, provider_ref=ref, skills=tuple(spec.skills), app=app
-    )
+) -> RegisteredPlugin:
+    registered = RegisteredPlugin(spec=spec, provider_ref=ref, skills=tuple(spec.skills), app=app)
     for skill in registered.skills:
         state.skill_names.add(skill.name)
     for check in spec.doctor_checks:
@@ -646,7 +667,7 @@ def compose(
     """Compose the shell, then every candidate in name order; quarantine failures.
 
     Each candidate is first provided and validated against the shell alone.
-    A capability name or config section that two or more of the survivors
+    A plugin name that two or more of the survivors
     claim is contested: every claimant is quarantined, so the result never
     depends on candidate order. The rest commit in ``(name, distribution,
     entry point)`` order, where a skill name or doctor-check id already taken
@@ -658,7 +679,7 @@ def compose(
     state = _CompositionState(shell)
     ordered = sorted(candidates, key=_candidate_order)
     quarantined: dict[int, QuarantineRecord] = {}
-    claims: dict[int, CapabilitySpec] = {}
+    claims: dict[int, PluginSpec] = {}
     for index, candidate in enumerate(ordered):
         try:
             claims[index] = _provide(candidate, state)
@@ -667,56 +688,51 @@ def compose(
     for index, contest in _contested(ordered, claims).items():
         quarantined[index] = contest.to_record(ordered[index])
         del claims[index]
-    capabilities: list[RegisteredCapability] = []
+    plugins: list[RegisteredPlugin] = []
     for index, spec in claims.items():
         candidate = ordered[index]
         try:
             _check_skills(spec, state)
             _check_doctor_checks(spec, state)
-            staged = None if spec.help is not None else _check_factory(spec)
+            factory = spec.app_factory
+            staged = (
+                None if factory is None or spec.help is not None else _check_factory(spec, factory)
+            )
         except _Quarantine as failed:
             quarantined[index] = failed.to_record(candidate)
             continue
         ref = ProviderRef(
             distribution=candidate.distribution, entry_point=candidate_entry_point(candidate)
         )
-        capabilities.append(_commit(spec, ref, state, staged))
+        plugins.append(_commit(spec, ref, state, staged))
     return CompositionResult(
-        capabilities=tuple(capabilities),
+        plugins=tuple(plugins),
         quarantine=tuple(quarantined[index] for index in sorted(quarantined)),
     )
 
 
 def _contested(
-    ordered: Sequence[ProviderCandidate], claims: dict[int, CapabilitySpec]
+    ordered: Sequence[ProviderCandidate], claims: dict[int, PluginSpec]
 ) -> dict[int, _Quarantine]:
-    """A quarantine per claimant of a name or section shared by two or more claims.
+    """A quarantine per claimant of a plugin name two or more claims share.
 
-    A claimant contesting both a name and a section gets the name's record.
+    The name is also the config section and CLI group, so one contest
+    covers all three.
     """
+    claimants: defaultdict[str, list[int]] = defaultdict(list)
+    for index, spec in claims.items():
+        claimants[spec.name].append(index)
     contested: dict[int, _Quarantine] = {}
-    for reason, kind, values in (
-        ("duplicate-name", "capability name", {i: spec.name for i, spec in claims.items()}),
-        (
-            "duplicate-section",
-            "config section",
-            {i: spec.config_section for i, spec in claims.items()},
-        ),
-    ):
-        claimants: defaultdict[str, list[int]] = defaultdict(list)
-        for index, value in values.items():
-            claimants[value].append(index)
-        for value, indexes in claimants.items():
-            if len(indexes) < 2:
-                continue
-            claimed_by = ", ".join(
-                repr(dist) for dist in sorted(ordered[index].distribution for index in indexes)
+    for name, indexes in claimants.items():
+        if len(indexes) < 2:
+            continue
+        claimed_by = ", ".join(
+            repr(dist) for dist in sorted(ordered[index].distribution for index in indexes)
+        )
+        for index in indexes:
+            contested[index] = _Quarantine(
+                "duplicate-name", f"duplicate plugin name: {name!r} (claimed by {claimed_by})"
             )
-            for index in indexes:
-                contested.setdefault(
-                    index,
-                    _Quarantine(reason, f"duplicate {kind}: {value!r} (claimed by {claimed_by})"),
-                )
     return contested
 
 
@@ -729,7 +745,7 @@ def candidate_entry_point(candidate: ProviderCandidate) -> str:
     return candidate.target if isinstance(candidate.target, str) else candidate.name
 
 
-def _provide(candidate: ProviderCandidate, state: _CompositionState) -> CapabilitySpec:
+def _provide(candidate: ProviderCandidate, state: _CompositionState) -> PluginSpec:
     """Resolve and run one candidate's provider, then validate its declaration.
 
     Raises :class:`_Quarantine` on the first failed check.
@@ -761,18 +777,18 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> Capabili
             "malformed-entry-point",
             f"provider {candidate.name!r} of distribution {candidate.distribution!r} raised: {exc}",
         ) from None
-    if not isinstance(spec, CapabilitySpec):
+    if not isinstance(spec, PluginSpec):
         raise _Quarantine(
             "malformed-entry-point",
             f"provider {candidate.name!r} of distribution "
             f"{candidate.distribution!r} returned {type(spec).__name__}, "
-            f"expected CapabilitySpec",
+            f"expected PluginSpec",
         )
-    _check_rows_1_to_8(spec, state)
+    _check_declaration(spec, state)
     if candidate.name != spec.name:
         raise _Quarantine(
             "bad-metadata",
-            f"entry-point name {candidate.name!r} does not match capability name {spec.name!r}",
+            f"entry-point name {candidate.name!r} does not match plugin name {spec.name!r}",
         )
     if not candidate.distribution.strip():
         raise _Quarantine(

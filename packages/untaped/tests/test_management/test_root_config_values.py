@@ -30,8 +30,8 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 def _invoke(args: list[str], *, input: str | None = None) -> CliResult:
-    github = make_spec("github", profile_model=GithubProfile, state_model=GithubState)
-    jira = make_spec("jira", profile_model=JiraProfile)
+    github = make_spec("github", settings=GithubProfile, state=GithubState)
+    jira = make_spec("jira", settings=JiraProfile)
     app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose(github, jira))
     return CliInvoker().invoke(app, args, input=input)
 
@@ -292,8 +292,8 @@ def test_null_clears_optional_typed_setting(_isolated_config: Path, key: str, cu
 
 def test_prompt_repairs_key_in_invalid_section(_isolated_config: Path) -> None:
     write_config(_isolated_config, _BROKEN_JIRA)
-    github = make_spec("github", profile_model=GithubProfile, state_model=GithubState)
-    jira = make_spec("jira", profile_model=JiraProfile)
+    github = make_spec("github", settings=GithubProfile, state=GithubState)
+    jira = make_spec("jira", settings=JiraProfile)
     app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose(github, jira))
     backend = ScriptedPromptBackend(texts=["12"])
     result = invoke_cli(

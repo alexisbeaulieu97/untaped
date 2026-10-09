@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped.bootstrap import build_root_app
-from untaped.capabilities.registry import ProviderCandidate
+from untaped.plugins.registry import ProviderCandidate
 from untaped.testing import invoke_cli
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
         (["config", "list"], "untaped.setting"),
         (["config", "get", "skills.updates"], "untaped.setting"),
         (["profile", "list"], "untaped.profile"),
-        (["capabilities"], "untaped.capability"),
+        (["plugin", "list"], "untaped.plugin"),
         (["doctor"], "untaped.doctor_check"),
         (["skills", "list"], "untaped.skill"),
         (["auth", "status"], "untaped.token_source"),

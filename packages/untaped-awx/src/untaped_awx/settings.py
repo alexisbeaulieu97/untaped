@@ -1,4 +1,4 @@
-"""Settings for the AWX capability: the ``awx`` profile section model."""
+"""Settings for the AWX plugin: the ``awx`` profile section model."""
 
 from __future__ import annotations
 
