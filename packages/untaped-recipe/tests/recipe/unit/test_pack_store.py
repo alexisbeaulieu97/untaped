@@ -86,7 +86,7 @@ def test_pack_library_adds_and_finds_recipes_and_hooks(tmp_path: Path) -> None:
         recipes={"playbook": "recipes/playbook/recipe.yml"},
         hooks={"set_owner": "ansible_hooks.hooks.set_owner"},
     )
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
 
     manifest = library.add(source, source=str(source), rev=None, name=None, force=False)
 
@@ -106,7 +106,7 @@ def test_pack_library_ambiguity_lists_installed_candidates(tmp_path: Path) -> No
     source_b = tmp_path / "source-b"
     _write_pack(source_a, manifest_name="manifest-a", hooks={"x": "a_hooks.hooks.x"})
     _write_pack(source_b, manifest_name="manifest-b", hooks={"x": "b_hooks.hooks.x"})
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
     library.add(source_a, source=str(source_a), rev=None, name="a", force=False)
     library.add(source_b, source=str(source_b), rev=None, name="b", force=False)
 
@@ -125,7 +125,7 @@ def test_pack_library_duplicate_requires_force_or_name(tmp_path: Path) -> None:
     replacement = tmp_path / "replacement"
     _write_pack(source, manifest_name="ansible", version="0.1.0")
     _write_pack(replacement, manifest_name="ansible", version="0.2.0")
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
     library.add(source, source=str(source), rev=None, name=None, force=False)
 
     with pytest.raises(RecipeError, match=r"ansible.*--force.*--name") as raised:
@@ -145,7 +145,7 @@ def test_pack_library_name_override_is_installed_identity(tmp_path: Path) -> Non
         recipes={"playbook": "recipes/playbook/recipe.yml"},
         hooks={"set_owner": "ansible_hooks.hooks.set_owner"},
     )
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
 
     library.add(source, source=str(source), rev=None, name="alias", force=False)
 
@@ -161,7 +161,7 @@ def test_pack_library_name_override_is_installed_identity(tmp_path: Path) -> Non
 def test_pack_library_misses_raise_typed_not_found_errors(tmp_path: Path, ref: str) -> None:
     source = tmp_path / "source"
     _write_pack(source, manifest_name="ansible", recipes={"playbook": "recipes/playbook.yml"})
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
     library.add(source, source=str(source), rev=None, name=None, force=False)
 
     with pytest.raises(RecipeNotFoundError, match=f"recipe not found: '{ref}'"):
@@ -171,7 +171,7 @@ def test_pack_library_misses_raise_typed_not_found_errors(tmp_path: Path, ref: s
 
 
 def test_pack_library_ambiguous_bare_refs_raise_typed_errors(tmp_path: Path) -> None:
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
     for name in ("one", "two"):
         source = tmp_path / name
         _write_pack(
@@ -191,7 +191,7 @@ def test_pack_library_ambiguous_bare_refs_raise_typed_errors(tmp_path: Path) -> 
 def test_pack_library_remove_deletes_pack_and_index_row(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_pack(source, manifest_name="ansible")
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
     library.add(source, source=str(source), rev="main", name=None, force=False)
 
     library.remove("ansible")
@@ -204,7 +204,7 @@ def test_pack_library_remove_deletes_pack_and_index_row(tmp_path: Path) -> None:
 def test_pack_library_index_round_trips_source_rev_and_version(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_pack(source, manifest_name="ansible", version="0.3.0")
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
 
     library.add(
         source,
@@ -275,7 +275,7 @@ def test_pack_library_rejects_a_symlink_that_appears_after_validation(
         (source_dir / "recipes" / "leak.txt").symlink_to(secret)
 
     monkeypatch.setattr(pack_store, "validate_pack", validate_then_swap)
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
 
     with pytest.raises(ValueError, match=r"symlinks: recipes/leak\.txt"):
         library.add(source, source=str(source), rev=None, name=None, force=False)
@@ -287,14 +287,14 @@ def test_pack_library_rejects_a_symlink_that_appears_after_validation(
 def test_pack_library_record_commit_fills_a_legacy_row_without_commit(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_pack(source, manifest_name="ansible")
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
     library.add(source, source="https://example.test/p.git", rev="main", name=None, force=False)
     assert "commit" not in library.index_path.read_text(encoding="utf-8")
     assert library.packs()[0].commit == ""
 
     library.record_commit("ansible", "3" * 40)
 
-    assert PackLibrary(library_root=tmp_path / "library").packs()[0].commit == "3" * 40
+    assert PackLibrary(library_dir=tmp_path / "library").packs()[0].commit == "3" * 40
     with pytest.raises(ValueError, match="pack not found: ghost"):
         library.record_commit("ghost", "3" * 40)
 
@@ -311,12 +311,12 @@ def test_pack_library_record_commit_fills_a_legacy_row_without_commit(tmp_path: 
 def test_pack_library_rejects_incomplete_index_rows(
     tmp_path: Path, index_text: str, message: str
 ) -> None:
-    library_root = tmp_path / "library"
-    library_root.mkdir()
-    (library_root / "packs.toml").write_text(index_text, encoding="utf-8")
+    library_dir = tmp_path / "library"
+    library_dir.mkdir()
+    (library_dir / "packs.toml").write_text(index_text, encoding="utf-8")
 
     with pytest.raises(ValueError, match=message):
-        PackLibrary(library_root=library_root).reconcile()
+        PackLibrary(library_dir=library_dir).reconcile()
 
 
 def test_pack_library_reconcile_reports_stale_index_and_orphan_directory(
@@ -326,7 +326,7 @@ def test_pack_library_reconcile_reports_stale_index_and_orphan_directory(
     stale_source = tmp_path / "stale-source"
     _write_pack(source, manifest_name="ansible")
     _write_pack(stale_source, manifest_name="stale")
-    library = PackLibrary(library_root=tmp_path / "library")
+    library = PackLibrary(library_dir=tmp_path / "library")
     library.add(source, source=str(source), rev=None, name="recorded", force=False)
     library.add(stale_source, source=str(stale_source), rev=None, name="stale", force=False)
     shutil.rmtree(library.packs_dir / "stale")
@@ -472,10 +472,10 @@ def test_pack_library_force_replace_keeps_old_pack_when_copy_fails(
     replacement = tmp_path / "replacement"
     _write_pack(source, manifest_name="ansible", version="0.1.0")
     _write_pack(replacement, manifest_name="ansible", version="0.2.0")
-    library_root = tmp_path / "library"
-    library = PackLibrary(library_root=library_root)
+    library_dir = tmp_path / "library"
+    library = PackLibrary(library_dir=library_dir)
     library.add(source, source=str(source), rev=None, name=None, force=False)
-    index_before = (library_root / "packs.toml").read_text()
+    index_before = (library_dir / "packs.toml").read_text()
 
     def failing_copytree(src: Path, dst: Path, **kwargs: object) -> Path:
         Path(dst).mkdir(parents=True)
@@ -487,11 +487,11 @@ def test_pack_library_force_replace_keeps_old_pack_when_copy_fails(
     with pytest.raises(OSError, match="disk full"):
         library.add(replacement, source=str(replacement), rev=None, name=None, force=True)
 
-    fresh = PackLibrary(library_root=library_root)
+    fresh = PackLibrary(library_dir=library_dir)
     assert fresh.packs()[0].installed_version == "0.1.0"
-    assert (library_root / "packs.toml").read_text() == index_before
-    assert sorted(path.name for path in library_root.iterdir()) == ["packs", "packs.toml"]
-    assert [path.name for path in (library_root / "packs").iterdir()] == ["ansible"]
+    assert (library_dir / "packs.toml").read_text() == index_before
+    assert sorted(path.name for path in library_dir.iterdir()) == ["packs", "packs.toml"]
+    assert [path.name for path in (library_dir / "packs").iterdir()] == ["ansible"]
 
 
 def test_fetch_pack_source_runs_git_non_interactive_in_c_locale(
@@ -528,8 +528,8 @@ def test_pack_library_force_replace_keeps_retired_pack_when_swap_and_rollback_fa
     replacement = tmp_path / "replacement"
     _write_pack(source, manifest_name="ansible", version="0.1.0")
     _write_pack(replacement, manifest_name="ansible", version="0.2.0")
-    library_root = tmp_path / "library"
-    library = PackLibrary(library_root=library_root)
+    library_dir = tmp_path / "library"
+    library = PackLibrary(library_dir=library_dir)
     library.add(source, source=str(source), rev=None, name=None, force=False)
     real_rename = Path.rename
 
@@ -543,7 +543,7 @@ def test_pack_library_force_replace_keeps_retired_pack_when_swap_and_rollback_fa
     with pytest.raises(OSError) as excinfo:
         library.add(replacement, source=str(replacement), rev=None, name=None, force=True)
 
-    retired = [path for path in library_root.iterdir() if path.name.startswith(".pack-retired-")]
+    retired = [path for path in library_dir.iterdir() if path.name.startswith(".pack-retired-")]
     assert len(retired) == 1
     assert str(retired[0]) in str(excinfo.value)
     manifest = (retired[0] / "pyproject.toml").read_text()

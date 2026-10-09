@@ -11,7 +11,7 @@ import pytest
 from untaped.testing import CliInvoker
 from untaped_recipe.application.files import read_recipe_file
 from untaped_recipe.cli import app
-from untaped_recipe.cli.common import library_root
+from untaped_recipe.cli.common import library_dir
 from untaped_recipe.cli.detail import (
     hook_detail,
     pack_detail,
@@ -162,7 +162,7 @@ def test_pack_detail_lists_recipe_summaries_and_hook_exports(tmp_path: Path) -> 
 def test_show_recipe_cli_emits_structured_recipe_record(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_detail_pack(source)
-    library = library_root()
+    library = library_dir()
     (library / "packs").mkdir(parents=True)
     shutil.copytree(source, library / "packs" / "ansible")
 
