@@ -162,8 +162,6 @@ def report_teardown(ctx: AwxContext, rows: Sequence[TemporaryCopyOutcome]) -> No
             ui.message("info", f"deleted {row.kind} {q(row.name)}")
         else:
             left = row.run_id
-            ui.message(
-                "warning", f"{row.kind} {q(row.name)}: left behind by teardown, {row.detail}"
-            )
+            ui.message("warning", f"{row.kind} {q(row.name)}: left behind, {row.detail}")
     if left is not None:
         echo(hint(f"awx test prune --run {left} --older-than 0"), err=True)
