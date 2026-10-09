@@ -1,6 +1,6 @@
 """The ``untaped setup`` screen: its model, update and view.
 
-Two panes under a profile field: the capabilities the wizard offers (those
+Two panes under a profile field: the capabilities setup configures (those
 whose profile model has ``base_url`` and ``token``) with a status each, and the
 selected one's form (base URL, a token source as tabs, buttons). Saving checks
 before it writes: the form's values become a :class:`Candidate`, the
@@ -14,8 +14,8 @@ A Command token source is run first, on every check, as a suspend command, so a
 process cache for the background check. Leaving the profile field loads the
 profile typed there, so the field and the forms never disagree.
 
-What the old wizard printed while it wrote comes back as notes, which the
-command prints after the screen closes with the doctor rows of what was
+What a save has to say (a profile created, a token replaced or to export)
+comes back as notes, which the command prints after the screen closes with the doctor rows of what was
 configured (:class:`SetupResult`). Esc and ctrl-c on the list end the screen
 with that result (ctrl-c flagged ``interrupted``, which ``setup`` turns into
 exit 130); neither is a cancel. A quit while a save runs waits for it, so the
@@ -109,8 +109,9 @@ _PROGRESS = ("checking", "saving")
 class SetupResult:
     """What the screen did: for ``profile``, the capabilities written and the lines to print.
 
-    ``notes`` are what the old wizard printed while it wrote. ``interrupted`` is
-    ctrl-c, which ``setup`` reports as exit 130 after printing the rest.
+    ``notes`` are what the saves had to say, printed after the screen closes.
+    ``interrupted`` is ctrl-c, which ``setup`` reports as exit 130 after printing
+    the rest.
     """
 
     profile: str
