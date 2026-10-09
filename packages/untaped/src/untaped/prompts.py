@@ -39,6 +39,12 @@ class PromptBackend(Protocol):
     (:meth:`UiContext.run`) or a request (:meth:`UiContext.pick_many`), and
     leaves a prompt's streams as they are. A prompt still requires a TTY stdin
     (:class:`untaped.testing.TtyStringIO` in tests).
+
+    To run screens (:meth:`UiContext.run`) a backend also defines
+    ``run_screen(screen, *, theme) -> Quit | Cancel``, which runs ``screen``
+    and returns how it ended. The method is optional, so a backend written
+    before screens still type-checks; ``ui.run`` on one without it raises
+    :class:`ConfigError` naming the method.
     """
 
     def confirm(self, message: str, *, default: bool) -> bool: ...
@@ -65,10 +71,6 @@ class PromptBackend(Protocol):
     ) -> list[T]: ...
 
     def pick_many(self, request: PickRequest) -> PickResult | None: ...
-
-    def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
-        """Run ``screen`` and return how it ended (``ui.run`` turns that into a result)."""
-        ...
 
 
 _backend_override: ContextVar[PromptBackend | None] = ContextVar(
