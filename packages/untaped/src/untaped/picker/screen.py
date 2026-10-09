@@ -193,17 +193,25 @@ def _key(state: PickerState, name: str) -> PickerState:
 # --- keys ----------------------------------------------------------------------
 
 
+# While the discard question is open, every key answers it: the footer offers none of these.
+
+
 def _searching(state: PickerState) -> bool:
-    return state.focus == "search"
+    return state.focus == "search" and not state.quitting
 
 
 def _in_list(state: PickerState) -> bool:
-    return state.focus == "list"
+    return state.focus == "list" and not state.quitting
 
 
 def _on_item(state: PickerState) -> bool:
     owner, key = state.row
-    return state.focus == "selected" and key is None and owner not in (ALL, CREATE)
+    return (
+        state.focus == "selected"
+        and key is None
+        and owner not in (ALL, CREATE)
+        and not state.quitting
+    )
 
 
 def _on_choice(state: PickerState) -> bool:
@@ -213,6 +221,7 @@ def _on_choice(state: PickerState) -> bool:
         and key is not None
         and bool(setting_for(state, key).choices)
         and state.editing is None
+        and not state.quitting
     )
 
 
@@ -252,8 +261,15 @@ def _enter_label(state: PickerState) -> str | None:
 
 
 def _esc_label(state: PickerState) -> str | None:
-    """Esc clears a typed query before it goes back, like a ``SearchList``."""
+    """Esc clears a typed query before it goes back, like a ``SearchList``; asked, it means no."""
+    if state.quitting:
+        return None
     return "clear" if state.query and state.focus in ("search", "list") else None
+
+
+def _ctrl_s_label(state: PickerState) -> str | None:
+    """Ctrl-s creates, except while the discard question is open, where it answers "no"."""
+    return None if state.quitting else "create"
 
 
 #: What the shared keys do here, for the footer and the help overlay. They stay the SDK's
@@ -262,7 +278,7 @@ _SHARED_LABELS: Mapping[str, str | Callable[[PickerState], str | None]] = {
     "tab": _tab_label,
     "enter": _enter_label,
     "esc": _esc_label,
-    "ctrl-s": "create",
+    "ctrl-s": _ctrl_s_label,
 }
 
 

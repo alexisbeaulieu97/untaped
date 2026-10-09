@@ -248,6 +248,21 @@ def test_the_footer_says_esc_clears_while_a_query_is_typed() -> None:
     assert "esc back" in _lines(_run(_request(), *"web", "esc").frame)[-1]
 
 
+def test_the_footer_offers_no_picker_keys_while_the_discard_question_is_open() -> None:
+    run = _run(_request(), *"web", "down", " ", "ctrl-c")
+    assert "discard 1 selected? y/n" in run.frame
+
+    footer = _lines(run.frame)[-1]
+    for entry in ("esc clear", "space toggle", "/ search", "ctrl-s create"):
+        assert entry not in footer
+
+    on_item = ("down", " ", "tab", "down", "down", "down", "ctrl-c")
+    assert "space remove" not in _lines(_run(_many(), *on_item).frame)[-1]
+    on_choice = _lines(_run(_many(), "down", " ", "tab", "down", "ctrl-c").frame)[-1]
+    assert "left previous" not in on_choice
+    assert "right next" not in on_choice
+
+
 def test_esc_goes_back_even_while_an_error_is_showing() -> None:
     run = _run(_request(title_label="name"), "ctrl-s")
     assert "name is required" in run.frame
