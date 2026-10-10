@@ -83,7 +83,7 @@ def preview_cache(options: MigrationOptions) -> Sequence[MigrationRow]:
             continue
         if not root.is_dir():
             continue
-        rows += unfinished_removals(root, options)
+        rows += unfinished_removals(root, options, skip=(_WORKTREES,))
         repos = _repos(root)
         worktrees = _worktrees(root)
         if not repos and not worktrees:
