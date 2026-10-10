@@ -155,6 +155,20 @@ class LocalGitWorktrees:
         if store.exists() and dest.is_dir():
             store.write_worktree_config(dest.absolute(), profile=self._profile)
 
+    def adopted(self, url: str, worktrees: Sequence[Path]) -> None:
+        """Finish a repo ``setup migrate-dirs`` moved into the store for workspace.
+
+        Each of ``worktrees`` (stamped as workspace's by the move) gets its
+        URL and credential helper, and ``untaped-workspace.json`` records a
+        ``partial`` history, so the next fetch checks the whole history once
+        (a 10.x repo is a full clone: nothing is missing, nothing downloads).
+        """
+        store = self._store(url)
+        for dest in worktrees:
+            if dest.is_dir():
+                store.write_worktree_config(dest.absolute(), profile=self._profile)
+        self._history(store)
+
     def in_store(self, url: str) -> bool:
         """Whether the repo store holds ``url``'s repo."""
         return self._store(url).exists()
