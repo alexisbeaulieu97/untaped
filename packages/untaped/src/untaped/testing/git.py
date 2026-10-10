@@ -42,6 +42,7 @@ HOSTILE_GLOBALS: Mapping[str, str] = {
     "fetch.pruneTags": "true",
     "fetch.unpackLimit": "100",
     "gc.auto": "0",
+    "gc.pruneExpire": "now",
     "maintenance.auto": "false",
 }
 
