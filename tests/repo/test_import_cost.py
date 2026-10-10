@@ -169,3 +169,32 @@ def test_contracts_load_only_when_asked() -> None:
         + "assert not [m for m in sys.modules if m.startswith('untaped.contracts')]\n"
     )
     assert "httpx" not in _loaded_heavy_modules(snippet)
+
+
+def test_testing_helpers_load_contracts_only_when_called() -> None:
+    """``untaped.testing`` exports compose_with and assert_fills without loading contracts."""
+    snippet = (
+        "import untaped.testing\n"
+        "untaped.testing.compose_with, untaped.testing.assert_fills\n"
+        "assert not [m for m in sys.modules if m.startswith('untaped.contracts')]\n"
+    )
+    assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
+
+
+def test_help_and_plugin_list_never_call_a_providers_offer() -> None:
+    """A provider's ``provides`` function runs when a contract is first asked, never before."""
+    snippet = (
+        "import contextlib, io\n"
+        "from untaped import bootstrap\n"
+        "from untaped.plugins.registry import PluginSpec\n"
+        "from untaped.testing import plugin_candidate\n"
+        "def offer():\n"
+        "    raise AssertionError('provides was called')\n"
+        "spec = PluginSpec(name='lend', provides={'shelf': offer})\n"
+        "for argv in (['--help'], ['plugin', 'list']):\n"
+        "    app = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])\n"
+        "    with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
+        "        app.meta(argv)\n"
+        "assert not [m for m in sys.modules if m.startswith('untaped.contracts')]\n"
+    )
+    assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
