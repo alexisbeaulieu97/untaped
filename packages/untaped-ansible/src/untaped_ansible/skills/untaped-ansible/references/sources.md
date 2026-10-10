@@ -45,7 +45,7 @@ failed and paused refreshes, the cache.
   space freed), `released` (another plugin kept it), or `kept` (another
   saved source's last refresh in this profile selected it); with
   `--dry-run`, `would release`. When a release fails the source stays
-  (`action` `failed`), so rerunning the remove retries it.
+  (`action` `failed`, with an `error`), so rerunning the remove retries it.
 - `source status` reports `state` (`fresh`, `stale` or `not_refreshed`) and
   `scanned_at` in UTC.
 

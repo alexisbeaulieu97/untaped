@@ -517,11 +517,14 @@ def test_source_remove_keeps_the_source_when_a_release_fails(tmp_path: Path, mon
     result = _run("source", "remove", "prod", "--yes", "--format", "json")
 
     assert result.exit_code == 5  # the lock was unavailable: retry later
-    assert json.loads(result.stdout)["changes"] == ["failed to release acme/site"]
+    row = json.loads(result.stdout)
+    assert row["changes"] == ["failed to release acme/site"]
+    assert row["error"]["category"] == "unavailable"
+    assert row["error"]["message"] == "1 repo not released; source kept"
     assert "error: acme/site: could not lock repo store for https://github.com/acme/site.git" in (
         result.stderr
     )
-    assert "a rerun retries the release" in result.stderr
+    assert "hint: run `untaped ansible source remove prod`" in result.stderr
     # Kept, with its index rows, so the rerun finds what to release.
     assert _state(tmp_path)["sources"][0]["name"] == "prod"
     assert _index(tmp_path).status("source:prod") is not None
