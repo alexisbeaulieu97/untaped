@@ -22,7 +22,8 @@ The caller holds the workspace lock from the plan through the removal. A
 ``create`` of the same repo in another workspace can still start meanwhile:
 the store checks under its repo lock that no workspace worktree is registered
 before it deletes anything, so a repo that ``create`` has added its worktree
-to is kept, and one it has not reached yet is fetched again.
+to is kept. A ``create`` caught between its fetch and its worktree fails
+instead (nothing is lost; running it again fetches the repo anew).
 """
 
 from __future__ import annotations

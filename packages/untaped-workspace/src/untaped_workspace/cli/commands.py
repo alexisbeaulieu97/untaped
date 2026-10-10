@@ -596,9 +596,7 @@ def _confirm_discard(name: str, blocked: Sequence[StatusRow], *, yes: bool) -> N
 def _confirm_remove(plan: RemovalPlan, *, force: bool, yes: bool) -> None:
     """Confirm the removal, naming the work ``--force`` would discard."""
     lost = [
-        (repo.spec.dir, [*repo.blockers, *(repo.discards if force else ())])
-        for repo in plan.repos
-        if repo.held_by is None
+        (repo.spec.dir, [*repo.blockers, *(repo.discards if force else ())]) for repo in plan.repos
     ]
     discard = "; ".join(f"{d} ({', '.join(work)})" for d, work in lost if work)
     ui_context(strict=False).confirm_or_cancel(
