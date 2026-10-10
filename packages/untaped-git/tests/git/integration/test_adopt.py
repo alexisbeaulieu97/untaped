@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -183,3 +184,75 @@ def test_an_emptied_root_goes_and_one_holding_anything_else_stays(tmp_path: Path
     assert not remove_if_emptied(kept)
     assert (kept / "host" / "stuck.git" / "refs" / "heads").is_dir()
     assert not (kept / "host" / "other.git.lock").exists()
+
+
+def test_a_worktree_deleted_by_hand_is_left_to_git_and_the_repo_still_moves(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    root = tmp_path / "github-cache"
+    source, worktree = _github_10x(remote, root)
+    shutil.rmtree(worktree)
+
+    adopted = adopt(
+        source, plugin="github", error=StoreError, worktrees=(root / "worktrees", tmp_path / "new")
+    )
+
+    assert adopted.action == "moved"
+    assert not (tmp_path / "new" / "sweep-1").exists()
+
+
+def test_the_kept_copys_own_files_win_and_an_unreadable_one_is_skipped(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    tree = tmp_path / "ws" / "app"
+    adopt(_workspace_10x(remote, tmp_path / "a", tree), plugin="workspace", error=StoreError)
+    target = _store_repo()
+    (target / "untaped-workspace.json").write_text('{"history": "complete"}\n', encoding="utf-8")
+    github, _ = _github_10x(remote, tmp_path / "github-cache")
+    (github / "untaped-corpus.json").unlink()
+    (github / "untaped-github.json").write_text("{not json", encoding="utf-8")
+    (github / "untaped-workspace.json").write_text('{"history": "partial"}\n', encoding="utf-8")
+
+    assert adopt(github, plugin="github", error=StoreError).action == "dropped"
+
+    assert not (target / "untaped-github.json").exists()
+    assert json.loads((target / "untaped-workspace.json").read_text()) == {"history": "complete"}
+
+
+def test_a_move_across_filesystems_copies_then_deletes(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source, _ = _github_10x(remote, tmp_path / "github-cache")
+    real_rename = Path.rename
+
+    def cross_device(self: Path, target: Path) -> Path:
+        if self == source:
+            raise OSError(18, "Invalid cross-device link")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", cross_device)
+
+    assert adopt(source, plugin="github", error=StoreError).action == "moved"
+    assert not source.exists()
+    assert "refs/untaped/github/heads/main" in all_refs(_store_repo())
+
+
+def test_a_move_that_fails_is_the_plugins_error(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source, _ = _github_10x(remote, tmp_path / "github-cache")
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "rename", refuse)
+    monkeypatch.setattr(shutil, "move", refuse)
+
+    with pytest.raises(StoreError, match="could not move") as caught:
+        adopt(source, plugin="github", error=StoreError)
+    assert caught.value.category == ErrorCategory.FAILED
+    assert source.is_dir()
+
+
+def test_a_missing_root_counts_as_gone(tmp_path: Path) -> None:
+    assert remove_if_emptied(tmp_path / "nowhere")
