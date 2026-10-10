@@ -238,12 +238,12 @@ free, but a command that writes declares it with `@writes`, or
 
 ## Enforcement
 
-`untaped.testing.check_conventions(NAME)` runs these checks for one
-plugin; each plugin's tests call it. `import-boundary` enforces the
-import rules above and in [Depending on another plugin](#depending-on-another-plugin);
+`untaped.testing.check_conventions(NAME)` runs these checks for one plugin;
+each plugin's tests call it. `import-boundary` enforces the import rules above
+and in [Depending on another plugin](#depending-on-another-plugin);
 `provides-requirement` the [ranges a provider declares](../plugins.md#filling-another-plugins-contract);
-`terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md));
-the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
+`terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md)); `blob-reader`
+keeps repo store blob reads on `store.prefetched(...).run()`; the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 `# untaped: allow <rule>` on the flagged node's first line allows one violation,
 except the default-table-columns and stability rules.
 

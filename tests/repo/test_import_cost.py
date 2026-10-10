@@ -141,14 +141,14 @@ _STARTUP_PROBE = (
 )
 
 #: Modules imported on top of interpreter startup (a coverage run preloads
-#: some, so it only lowers these). Measured 2026-10-02 on Python 3.14.8 with
-#: seven plugins: 119 ``untaped.*`` for ``--help`` and ``--version``
-#: (the dotfiles plugin adds four: its package, settings and state models).
+#: some, so it only lowers these). Measured 2026-10-10 on Python 3.14.6 with
+#: eight plugins: 127 ``untaped.*`` for ``--help`` and ``--version``
+#: (the git plugin adds two: its package and settings model).
 #: The budget sits six above that measurement, the same headroom the
 #: previous one had, to absorb dependency and patch-release drift; a new
 #: built-in plugin adds a few ``untaped.*`` modules (its SPEC and settings).
 _TOTAL_BUDGET = 700
-_UNTAPED_BUDGET = 125
+_UNTAPED_BUDGET = 133
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])

@@ -52,6 +52,35 @@ BackupPruneRecord.size_bytes  # recipe backup prune rows
 ProfileOutcome.previous_name  # profile rename/copy rows
 ProfileOutcome.copied_from
 
+GitHostRecord.helpers_first  # git.host rows
+StoreReport.packs_median  # git.store report
+StoreReport.packs_max
+StoreReport.loose_objects
+StoreReport.filter_ignored
+StoreReport.gc_log
+
+# The git plugin's repo store API, unused until workspace, ansible and github move onto it.
+StoreError
+store_report
+GitHost.for_url
+RepoStore.for_url
+RepoStore.prefetched
+RepoStore.ls_tree
+RepoStore.worktree_add
+RepoStore.write_worktree_config
+RepoStore.filter_state
+
+# untaped.testing.git: fixtures for plugins that test against the repo store.
+GitRemote.spread
+GitRemote.delete_branch
+GitRemote.refuse_by_oid
+GitRemote.drop_pack
+GitRemote.packs_requested
+git_remote
+hostile_git_home
+git_shim
+trace2_events
+
 # Read through getattr over a field table (awx application.workflow_graph).
 NodeRun.workflow_job_template
 NodeRun.inventory_source

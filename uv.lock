@@ -12,6 +12,7 @@ members = [
     "untaped-ansible",
     "untaped-awx",
     "untaped-dotfiles",
+    "untaped-git",
     "untaped-github",
     "untaped-jira",
     "untaped-recipe",
@@ -809,6 +810,7 @@ all = [
     { name = "untaped-ansible" },
     { name = "untaped-awx" },
     { name = "untaped-dotfiles" },
+    { name = "untaped-git" },
     { name = "untaped-github" },
     { name = "untaped-jira" },
     { name = "untaped-recipe" },
@@ -822,6 +824,9 @@ awx = [
 ]
 dotfiles = [
     { name = "untaped-dotfiles" },
+]
+git = [
+    { name = "untaped-git" },
 ]
 github = [
     { name = "untaped-github" },
@@ -855,6 +860,8 @@ requires-dist = [
     { name = "untaped-awx", marker = "extra == 'awx'", editable = "packages/untaped-awx" },
     { name = "untaped-dotfiles", marker = "extra == 'all'", editable = "packages/untaped-dotfiles" },
     { name = "untaped-dotfiles", marker = "extra == 'dotfiles'", editable = "packages/untaped-dotfiles" },
+    { name = "untaped-git", marker = "extra == 'all'", editable = "packages/untaped-git" },
+    { name = "untaped-git", marker = "extra == 'git'", editable = "packages/untaped-git" },
     { name = "untaped-github", marker = "extra == 'all'", editable = "packages/untaped-github" },
     { name = "untaped-github", marker = "extra == 'github'", editable = "packages/untaped-github" },
     { name = "untaped-jira", marker = "extra == 'all'", editable = "packages/untaped-jira" },
@@ -864,7 +871,7 @@ requires-dist = [
     { name = "untaped-workspace", marker = "extra == 'all'", editable = "packages/untaped-workspace" },
     { name = "untaped-workspace", marker = "extra == 'workspace'", editable = "packages/untaped-workspace" },
 ]
-provides-extras = ["all", "ansible", "awx", "dotfiles", "github", "jira", "recipe", "workspace"]
+provides-extras = ["all", "ansible", "awx", "dotfiles", "git", "github", "jira", "recipe", "workspace"]
 
 [[package]]
 name = "untaped-ansible"
@@ -900,6 +907,17 @@ requires-dist = [
 name = "untaped-dotfiles"
 version = "10.1.0"
 source = { editable = "packages/untaped-dotfiles" }
+dependencies = [
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+
+[[package]]
+name = "untaped-git"
+version = "10.1.0"
+source = { editable = "packages/untaped-git" }
 dependencies = [
     { name = "untaped" },
 ]
