@@ -7,7 +7,7 @@ The package it writes composes and passes ``check_conventions`` as written:
   naming ``SPEC``;
 - ``src/untaped_<name>/``: ``SPEC`` offering the provider to the owner (a
   local import, so runs that ask no contract never load it), ``errors.py``,
-  an empty ``settings.py`` and ``adapters/<owner>.py``. The adapter has every
+  an empty ``settings.py`` and ``adapters/<owner>.py``. The provider there has every
   method of the contract with its docstring: required ones as stubs, the
   others written commented out, since a stub would count as filling them;
 - ``tests/``: ``check_conventions`` and ``assert_fills`` with a list of
@@ -143,7 +143,7 @@ class _Scaffold:
 
     def files(self) -> dict[str, str]:
         src = f"src/{self.package}"
-        adapter = self._adapter()
+        provider = self._provider_module()
         return {
             "pyproject.toml": self._pyproject(),
             "README.md": self._readme(),
@@ -152,7 +152,7 @@ class _Scaffold:
             f"{src}/settings.py": self._settings(),
             f"{src}/py.typed": "",
             f"{src}/adapters/__init__.py": "",
-            f"{src}/adapters/{self.owner_module}.py": adapter,
+            f"{src}/adapters/{self.owner_module}.py": provider,
             "tests/conftest.py": _CONFTEST,
             f"tests/test_{self.package.removeprefix('untaped_')}.py": self._test(),
         }
@@ -288,7 +288,7 @@ class _Scaffold:
             '''
         )
 
-    def _adapter(self) -> str:
+    def _provider_module(self) -> str:
         info = self.info
         param = info.item_param.__name__ if info.item_param is not None else None
         model = info.item.__name__ if info.item is not None else None
@@ -439,7 +439,7 @@ def _names(code: str) -> set[str]:
 
 
 def _imports(names: set[str], api: ModuleType, package: str, settings: str) -> str:
-    """The adapter's imports: what it names from the owner's api, else from where it lives."""
+    """The provider module's imports: what it names from the owner's api, else from where it lives."""
     found = vars(api)
     owned: list[str] = []
     others: dict[str, list[str]] = {}

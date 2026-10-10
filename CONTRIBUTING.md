@@ -1,7 +1,7 @@
 # Contributing
 
 This is the developer guide for the `untaped` repository. Rules that every
-plugin provider follows, first-party or not, live in
+plugin follows, first-party or not, live in
 [`docs/reference/conventions.md`](docs/reference/conventions.md); this page
 covers what is specific to working in this repository.
 
@@ -72,7 +72,7 @@ and uses this layout:
 
 ```
 packages/untaped-<name>/src/untaped_<name>/
-├── __init__.py        # SPEC: PluginSpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time) + provider()
+├── __init__.py        # SPEC: PluginSpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time)
 ├── settings.py        # settings model + state model (field sets must be disjoint)
 ├── api.py             # optional: declared public module other first-party plugins may import
 ├── cli/               # cyclopts commands (thin)
@@ -84,11 +84,11 @@ packages/untaped-<name>/src/untaped_<name>/
 ```
 
 1. Add `packages/untaped-<name>/` with a copy of the root `LICENSE`, exposing
-   `SPEC`, `build_app` and a nullary `provider()` returning `SPEC`. Set
+   `SPEC` and `build_app`. Set
    `SPEC.help` to the app's one-line help (see
    [Settings and the plugin app](docs/plugins.md#settings-and-the-plugin-app)).
 2. In its `pyproject.toml` (copy a sibling package's), add
-   `<name> = "untaped_<name>:provider"` under
+   `<name> = "untaped_<name>:SPEC"` under
    `[project.entry-points."untaped.plugins"]`.
 3. Add the `untaped[<name>]` extra to core and add the package to core's
    `all` extra, then `uv sync`.
@@ -100,7 +100,7 @@ packages/untaped-<name>/src/untaped_<name>/
 6. Call `untaped.testing.check_conventions` from its tests. The default
    table columns rule is enforced by this repository's own test suite, not by
    `check_conventions`, and `# untaped: allow` does not apply to it.
-7. Start its skill from the [skill template](docs/plugins.md#packaged-skills);
+7. Start its skill from the [skill template](docs/plugin-skills.md);
    tests hold it to the template's section order, `SKILL.md` at most 500
    lines and each reference at most 300. Start its package `README.md` from a
    sibling's (the same section order, ending in `## Reference`), linked from
@@ -109,8 +109,8 @@ packages/untaped-<name>/src/untaped_<name>/
 A plugin whose settings import another's `api` (ansible imports
 github's) is quarantined with it when that import fails. Shared logic follows
 [Depending on another plugin](docs/reference/conventions.md#depending-on-another-plugin);
-in this repository it may also live in core. Extract a protocol into core
-only when a second provider appears.
+in this repository it may also live in core. Declare a
+[contract](docs/contracts.md) once a second plugin would fill it.
 
 ## Workflow
 
@@ -350,12 +350,55 @@ Terms these docs and the code use; see the [README](README.md) for what
 untaped is.
 
 **Plugin**: what `untaped` composes under one name, which is also its
-command group, config section and data directory. It may add commands,
-settings, state, skills and doctor checks; each is optional.
-_Avoid_: capability.
+command group, config section and data directory, and the distribution
+`untaped-<name>` that ships it. It may add commands, settings, state,
+skills, doctor checks and contracts; each is optional.
+_Avoid_: capability, provider (for the package).
 
-**Provider**: the Python package that supplies a plugin, named
-`untaped-<plugin>`.
+**Contract**: an interface one plugin declares and others fill, so the
+plugin asking never names who answers.
+
+**Owner**: the plugin that declares a contract.
+
+**Provider**: a plugin that fills a contract, or the class in it that does.
+_Avoid_: adapter, backend, implementation.
+
+**Source**: three things that keep the word. A record's `source` names the
+plugin and record it came from (provenance on the wire); ansible's `source`
+is a set of repositories a user adds (`ansible source add`); and
+`RepoSource` is a contract.
+
+**Answer cache**: the SDK's store of a cached contract answer, per
+provider, method, profile and arguments.
+
+**Repo store**: the git plugin's shared bare repositories under
+`plugins/git/store/`, which every consumer's refs and worktrees depend on.
+_Avoid_: cache, corpus, bare cache.
+
+**Cache**: data a plugin keeps from an upstream it can ask again, with a max
+age after which it is checked before use.
+_Avoid_: store (the repo store), corpus, index as a synonym.
+
+**Max age**: how long cached data is served without checking upstream; a
+cache's declared default, tunable per cache.
+_Avoid_: TTL, stale-after.
+
+**Stale**: older than its max age, or last refreshed by a run that failed or
+stopped early.
+
+**Refresh**: consulting upstream and updating the cache; it fetches only
+what changed.
+
+**Directive**: what the user asked of a cache: auto (refresh when stale; the
+default), refresh (check upstream now) or cached (never check).
+_Avoid_: sync mode, force/off.
+
+**Diagnostic**: a typed stderr line, with a `level`, a `kind` and a
+`message`.
+
+**Sink**: the one writer to stderr.
+
+**Policy**: one invocation's output choices.
 
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.

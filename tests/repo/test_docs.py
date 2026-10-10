@@ -429,6 +429,7 @@ DOCS_PAGES = [
     "configuration.md",
     "contracts.md",
     "getting-started.md",
+    "plugin-skills.md",
     "plugins.md",
     "reference/config.md",
     "reference/conventions.md",
