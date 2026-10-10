@@ -14,7 +14,7 @@ import pytest
 from untaped import bootstrap
 from untaped.messages import EXPERIMENTAL_LINE
 from untaped.plugins.registry import PluginCandidate, PluginSpec
-from untaped.stability import enable_show_deprecated, reset_show_deprecated
+from untaped.stability import enable_show_deprecated, mark_of, panel_for, reset_show_deprecated
 from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -95,30 +95,110 @@ def _panels(text: str) -> dict[str, str]:
     return panels
 
 
-def test_experimental_plugins_sit_in_the_root_experimental_panel(
+def _rows(panel: str) -> list[str]:
+    """The first word of each row of a panel (wrapped continuation lines skipped)."""
+    return [
+        line[2:].split()[0]
+        for line in panel.splitlines()
+        if line.startswith("│ ") and line[2:3] != " " and not line.startswith("╰")
+    ]
+
+
+def test_each_root_command_sits_in_exactly_one_panel(
+    first_party_candidates: tuple[PluginCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+    composition = bootstrap.composition()
+    plugins = {plugin.spec.name: plugin.spec for plugin in composition.plugins}
+    expected: dict[str, str] = {}
+    for name in root:
+        if name.startswith("-"):
+            continue
+        spec = plugins.get(name)
+        mark = spec.stability if spec is not None else mark_of(root[name])
+        if mark is not None:
+            expected[name] = panel_for(mark).name
+        else:
+            expected[name] = "Plugins" if spec is not None else "Commands"
+
+    def placed() -> dict[str, str]:
+        text = CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout
+        return {
+            row: title
+            for title, panel in _panels(text).items()
+            if title != "Global options"
+            for row in _rows(panel)
+        }
+
+    fresh = CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout
+    assert placed() == expected, (
+        "root help panels are core's to assign: a plugin goes in Plugins (or its "
+        "stability panel) through bootstrap._root_panel, every other root command in "
+        "Commands unless marked"
+    )
+    for name in plugins:
+        root[name]  # resolve each lazy plugin, as dispatch or completion would
+    assert CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout == fresh, (
+        "resolving a plugin moved it to another panel; see bootstrap._place"
+    )
+
+
+def test_root_help_lists_core_then_plugins_then_global_options(
     first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
-    result = CliInvoker().invoke(root.meta, ["--help"])
+    panels = _panels(CliInvoker().invoke(root.meta, ["--help"]).stdout)
 
-    panels = _panels(result.stdout)
-    assert list(panels)[-2:] == ["Experimental", "Parameters"]
-    assert "Deprecated" not in panels
-    experimental = panels["Experimental"]
-    assert "workspace" in experimental and "dotfiles" in experimental
-    assert "awx" not in experimental
-    assert "workspace" not in panels["Commands"] and "dotfiles" not in panels["Commands"]
+    assert list(panels) == ["Commands", "Plugins", "Experimental", "Global options"]
+    assert {"awx", "jira", "ansible"} <= set(_rows(panels["Plugins"]))
+    assert {"workspace", "dotfiles"} <= set(_rows(panels["Experimental"]))
+    assert _rows(panels["Global options"]) == [
+        "--profile",
+        "--verbose",
+        "--quiet",
+        "--deprecated",
+        "--help",
+        "--version",
+        "--install-completion",
+    ]
 
 
-def test_the_deprecated_flag_adds_the_deprecated_panel_before_parameters(
+@pytest.mark.parametrize(
+    "argv", [["config", "list", "--help"], ["awx", "jobs", "list", "--help"], ["awx", "--help"]]
+)
+def test_global_options_are_the_last_panel_of_every_help(
+    first_party_candidates: tuple[PluginCandidate, ...], argv: list[str]
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    panels = _panels(CliInvoker().invoke(root.meta, argv).stdout)
+
+    assert list(panels)[-1] == "Global options"
+    assert _rows(panels["Global options"]) == ["--profile", "--verbose", "--quiet", "--deprecated"]
+    for title, panel in panels.items():
+        if title != "Global options":
+            assert not {"--profile", "--verbose", "--quiet"} & set(_rows(panel)), title
+
+
+def test_a_plugin_section_lists_before_global_options(
+    first_party_candidates: tuple[PluginCandidate, ...],
+) -> None:
+    root = bootstrap.build_root_app(candidates=first_party_candidates)
+
+    panels = _panels(CliInvoker().invoke(root.meta, ["ansible", "graph", "--help"]).stdout)
+
+    assert list(panels)[-2:] == ["Source Data", "Global options"]
+
+
+def test_the_deprecated_flag_adds_the_deprecated_panel_before_global_options(
     first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
     panels = _panels(CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout)
 
-    assert list(panels) == ["Commands", "Experimental", "Deprecated", "Parameters"]
+    assert list(panels) == ["Commands", "Plugins", "Experimental", "Deprecated", "Global options"]
     assert "alias" in panels["Deprecated"] and "alias" not in panels["Commands"]
 
 
@@ -147,7 +227,7 @@ def test_awx_test_sits_in_awxs_experimental_panel(
 
     panels = _panels(CliInvoker().invoke(root.meta, ["awx", "--help"]).stdout)
 
-    assert list(panels)[:1] == ["Commands"] and list(panels)[-2:] == ["Experimental", "Parameters"]
+    assert list(panels) == ["Commands", "Experimental", "Global options"]
     assert panels["Experimental"].split()[1] == "test"
     assert "test" not in panels["Commands"].split()
 
