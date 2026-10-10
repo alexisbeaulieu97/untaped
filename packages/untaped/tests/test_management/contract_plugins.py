@@ -38,9 +38,17 @@ RACK = {
         ''',
     "untaped_rack/errors.py": '"""Errors."""\n',
     "untaped_rack/api.py": '''
-        """The rack contract."""
+        """What a provider may import from rack."""
+
+        from untaped_rack._contract import Item, ItemSource
+
+        __all__ = ["Item", "ItemSource"]
+        ''',
+    "untaped_rack/_contract.py": '''
+        """The rack contract, defined outside the api module that exports it."""
 
         from abc import abstractmethod
+        from datetime import date
 
         from untaped.contracts import Contract, Issued, Record, bridge
 
@@ -57,7 +65,7 @@ RACK = {
                 raise NotImplementedError
 
             @abstractmethod
-            def items(self) -> list[Item]:
+            def items(self, since: date | None = None) -> list[Item]:
                 """Every item on the rack."""
 
             def named(self, name: str, *, limit: int = 10) -> list[Item]:
@@ -82,7 +90,7 @@ BIN = {
 
 
         def _rack():
-            from untaped_bin.adapters.rack import BinSource
+            from untaped_bin.providers.rack import BinSource
 
             return (BinSource(),)
 
@@ -90,8 +98,8 @@ BIN = {
         SPEC = PluginSpec(name="bin", provides={"rack": _rack})
         ''',
     "untaped_bin/errors.py": '"""Errors."""\n',
-    "untaped_bin/adapters/__init__.py": "",
-    "untaped_bin/adapters/rack.py": '''
+    "untaped_bin/providers/__init__.py": "",
+    "untaped_bin/providers/rack.py": '''
         """Bins as rack items."""
 
         from typing import ClassVar

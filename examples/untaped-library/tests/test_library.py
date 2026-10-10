@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 import pytest
-from untaped_library.adapters.shelf import LibraryBooks
+from untaped_library.providers.shelf import LibraryBooks
 from untaped_library.records import Volume
 
 from untaped.testing import assert_fills, check_conventions, invoke_root

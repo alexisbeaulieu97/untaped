@@ -115,8 +115,9 @@ def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[objec
     ``samples=`` is required when ``T`` isn't the owner's model. The provider
     is the one an enclosing :func:`compose_with` offers, else the installed
     plugin's. Records the owner's schema hash in the plugin package's
-    ``fills.json``, which ``untaped plugin check`` and ``untaped doctor``
-    compare with the installed owner's (``owner-schema-drift``).
+    ``fills.json`` (unless the package is installed in site-packages), which
+    ``untaped plugin check`` and ``untaped doctor`` compare with the installed
+    owner's (``owner-schema-drift``).
     """
     from untaped.contracts._declare import contract_of  # noqa: PLC0415
 
@@ -150,16 +151,21 @@ def _assert_bound(cls: type, samples: Sequence[object]) -> None:
 
 def _bound(cls: type) -> Provider:
     from untaped.contracts._declare import contract_of  # noqa: PLC0415
-    from untaped.contracts._registry import Provider, every_offer  # noqa: PLC0415
+    from untaped.contracts._registry import (  # noqa: PLC0415
+        Provider,
+        every_offer,
+        owned_contracts,
+    )
 
     contract = contract_of(cls)
     entries = every_offer()
     for entry in entries:
         if isinstance(entry, Provider) and type(entry.instance) is cls:
             return entry
+    owner = next((o for o, infos in owned_contracts().items() if contract in infos), None)
     for entry in entries:
         wanted = (None, getattr(contract, "cls", None))
-        if not isinstance(entry, Provider) and entry.contract in wanted:
+        if not isinstance(entry, Provider) and entry.contract in wanted and entry.owner == owner:
             raise AssertionError(
                 f"{entry.plugin}'s offer to {entry.owner} is quarantined ({entry.reason}): "
                 f"{entry.detail}"

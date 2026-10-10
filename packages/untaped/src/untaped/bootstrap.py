@@ -2,7 +2,7 @@
 
 Every plugin is discovered through the ``untaped.plugins``
 entry-point group and validated before settings registration or app
-mounting. Only providers that survive validation
+mounting. Only plugins that survive validation
 contribute command trees, settings sections, skills, or doctor checks.
 """
 
@@ -128,7 +128,7 @@ _QUIET_QUARANTINE: ContextVar[bool] = ContextVar("untaped_quiet_quarantine", def
 def _register_shell_and_plugins(result: CompositionResult) -> None:
     """Register the shell plus every composed plugin's settings sections.
 
-    Runs exactly once per composition, after validation succeeds: a provider
+    Runs exactly once per composition, after validation succeeds: a plugin
     that fails any check registers nothing.
     """
     register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
@@ -163,7 +163,7 @@ def compose_root(
 
     Discovery (entry-point candidates, or ``candidates`` when given) runs BEFORE any
     settings registration or resolution; registration happens only after every
-    surviving provider validates. Remembers the composition for :func:`reset`.
+    surviving plugin validates. Remembers the composition for :func:`reset`.
     """
     global _COMPOSED_RESULT
     candidates = discover_candidates() if candidates is None else candidates
@@ -501,7 +501,7 @@ def run_root(
     """Compose the root app and run it. Use as the unified ``main()``.
 
     One diagnostics scope spans composition and dispatch, so composition
-    warnings (a quarantined provider) follow the ``--format`` the tokens ask
+    warnings (a quarantined plugin) follow the ``--format`` the tokens ask
     for, like an error found before parsing.
     """
     argv = list(tokens) if tokens is not None else sys.argv[1:]

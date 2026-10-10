@@ -3,11 +3,11 @@
 The package it writes composes and passes ``check_conventions`` as written:
 
 - ``pyproject.toml``: ``untaped`` in this major's range, the owner as an
-  extra named like it (in the installed owner's major), and the entry point
+  extra named like it (in the installed owner's compatible range), and the entry point
   naming ``SPEC``;
 - ``src/untaped_<name>/``: ``SPEC`` offering the provider to the owner (a
   local import, so runs that ask no contract never load it), ``errors.py``,
-  an empty ``settings.py`` and ``adapters/<owner>.py``. The provider there has every
+  an empty ``settings.py`` and ``providers/<owner>.py``. The provider there has every
   method of the contract with its docstring: required ones as stubs, the
   others written commented out, since a stub would count as filling them;
 - ``tests/``: ``check_conventions`` and ``assert_fills`` with a list of
@@ -23,6 +23,7 @@ import builtins
 import inspect
 import keyword
 import re
+import sys
 from annotationlib import Format
 from collections.abc import Callable, Sequence
 from importlib import import_module
@@ -151,8 +152,8 @@ class _Scaffold:
             f"{src}/errors.py": self._errors(),
             f"{src}/settings.py": self._settings(),
             f"{src}/py.typed": "",
-            f"{src}/adapters/__init__.py": "",
-            f"{src}/adapters/{self.owner_module}.py": provider,
+            f"{src}/providers/__init__.py": "",
+            f"{src}/providers/{self.owner_module}.py": provider,
             "tests/conftest.py": _CONFTEST,
             f"tests/test_{self.package.removeprefix('untaped_')}.py": self._test(),
         }
@@ -206,7 +207,7 @@ class _Scaffold:
             uv pip install -e '.[{self.owner.name}]'
             ```
 
-            Fill the methods in `src/{self.package}/adapters/{self.owner_module}.py`, add
+            Fill the methods in `src/{self.package}/providers/{self.owner_module}.py`, add
             samples to `tests/test_{self.package.removeprefix("untaped_")}.py`, then run
             `pytest` and `untaped plugin check {self.name}`.
             """
@@ -214,8 +215,8 @@ class _Scaffold:
 
     def _init(self) -> str:
         function = f"_{self.owner_module}"
-        adapter = f"{self.package}.adapters.{self.owner_module}"
-        local = f"from {adapter} import {self.provider}  # noqa: PLC0415"
+        module = f"{self.package}.providers.{self.owner_module}"
+        local = f"from {module} import {self.provider}  # noqa: PLC0415"
         return dedent(
             f'''\
             """The ``{self.name}`` plugin: it fills {self._contract()}.
@@ -309,7 +310,7 @@ class _Scaffold:
                     "# Optional: fill it when the API can answer it.\n" + _comment(text)
                 )
         names = {info.cls.__name__, *_names("\n".join(live))}
-        imports = _imports(names, self.api, self.package, f"{self.camel}Settings")
+        imports = _imports(names, self.api, info.cls, self.package, f"{self.camel}Settings")
         body = "\n".join([*live, *commented]) or "pass\n"
         return (
             f'"""{self.name}\'s provider of {self.owner.name}\'s {info.cls.__name__} contract.\n\n'
@@ -322,30 +323,26 @@ class _Scaffold:
         )
 
     def _test(self) -> str:
-        adapter = f"{self.package}.adapters.{self.owner_module}"
+        module = f"{self.package}.providers.{self.owner_module}"
         short = self.package.removeprefix("untaped_")
-        return dedent(
-            f'''\
-            """``{self.name}`` follows the conventions and fills {self.owner.name}'s contract."""
-
-            from __future__ import annotations
-
-            from untaped.testing import assert_fills, check_conventions
-
-            from {adapter} import {self.provider}
-
-            #: Records as the provider issues them (its ``T``), each checked by ``assert_fills``.
-            #: Add a few, built the way your API returns them.
-            SAMPLES: list[object] = []
-
-
-            def test_{short}_follows_the_conventions() -> None:
-                check_conventions("{self.name}")
-
-
-            def test_{short}_fills_{self.info.name}() -> None:
-                assert_fills({self.provider}, samples=SAMPLES)
-            '''
+        samples, call = "", f"assert_fills({self.provider})"
+        if self.info.item is not None:
+            samples = (
+                "#: Records as the provider issues them (its ``T``), each checked by "
+                "``assert_fills``.\n#: Add a few, built the way your API returns them.\n"
+                "SAMPLES: list[object] = []\n\n\n"
+            )
+            call = f"assert_fills({self.provider}, samples=SAMPLES)"
+        return (
+            f'"""``{self.name}`` follows the conventions and fills {self._contract()}."""\n'
+            "\nfrom __future__ import annotations\n\n"
+            "from untaped.testing import assert_fills, check_conventions\n\n"
+            f"from {module} import {self.provider}\n\n"
+            f"{samples}"
+            f"def test_{short}_follows_the_conventions() -> None:\n"
+            f'    check_conventions("{self.name}")\n\n\n'
+            f"def test_{short}_fills_{self.info.name}() -> None:\n"
+            f"    {call}\n"
         )
 
 
@@ -431,18 +428,28 @@ def _names(code: str) -> set[str]:
     } - {"def", "NotImplementedError"}
 
 
-def _imports(names: set[str], api: ModuleType, package: str, settings: str) -> str:
-    """The provider module's imports: from the owner's api, else from where each name lives."""
-    found = vars(api)
+def _imports(names: set[str], api: ModuleType, contract: type, package: str, settings: str) -> str:
+    """The provider module's imports: from the owner's api, else from where each name lives.
+
+    A name the contract's own module sees but the api doesn't export comes
+    from its defining module (``datetime``, ``typing``), unless it is the
+    owner's own, which a provider may only import from the api.
+    """
+    seen = {**vars(sys.modules[contract.__module__]), **vars(api)}
+    owner_top = api.__name__.partition(".")[0]
     owned: list[str] = []
     others: dict[str, list[str]] = {}
     for name in sorted(names):
-        value = found.get(name)
-        if value is None:
+        if name not in seen:
             continue
-        module = getattr(value, "__module__", None) or ""
-        if not module or module.startswith(("untaped", api.__name__.partition(".")[0])):
+        module = getattr(seen[name], "__module__", None) or ""
+        if hasattr(api, name) and (not module or module.startswith(("untaped", owner_top))):
             owned.append(name)
+        elif module.startswith(owner_top) or not module:
+            raise UsageError(
+                f"{contract.__name__} names {name}, which {api.__name__} doesn't export; "
+                "a provider may import only the owner's api"
+            )
         else:
             others.setdefault(module, []).append(name)
     third = sorted([f"from {api.__name__} import {', '.join(owned)}", _CONFIGURED])
@@ -478,14 +485,21 @@ def _core_metadata() -> _Core:
 
 
 def _range(version: str) -> str:
-    """``>=M,<M+1`` for an installed version (``>=0.m,<1`` before 1.0); ``""`` when unknown."""
+    """The installed version's compatible range; ``""`` when the version is unknown.
+
+    ``>=M,<M+1``, or ``>=0.m,<0.m+1`` before 1.0, where a minor may break; a
+    pre-release is its own lower bound (``>=11.0.0a1,<12``), since ``>=11``
+    leaves it out.
+    """
     try:
         parsed = Version(version)
     except InvalidVersion:
         return ""
     if parsed.major == 0:
-        return f">=0.{parsed.minor},<1"
-    return f">={parsed.major},<{parsed.major + 1}"
+        low, high = f"0.{parsed.minor}", f"0.{parsed.minor + 1}"
+    else:
+        low, high = str(parsed.major), str(parsed.major + 1)
+    return f">={version if parsed.is_prerelease else low},<{high}"
 
 
 def _toml_key(name: str) -> str:
