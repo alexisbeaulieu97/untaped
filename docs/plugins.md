@@ -217,6 +217,45 @@ argv, prefixed with `--profile NAME` unless it names one, so an agent can run
 it as is. Set `automatic=True` only on a fix that meets the rule in the
 `DoctorResult` docstring.
 
+## Moving what an older version left
+
+When a new version of your plugin keeps its data somewhere else, declare a
+`DirMigration` in `PluginSpec.migrations` rather than asking users to move or
+delete the old directory by hand. `untaped setup migrate-dirs` previews every
+plugin's rows as one table, confirms (`--yes` skips it, `--dry-run` stops
+after the preview), then applies them in plugin-name order; `untaped doctor`
+warns while any row would still move or delete something.
+
+```python
+from untaped.sdk import DirMigration, MigrationOutcome, MigrationRow, delete_migration
+
+SPEC = PluginSpec(
+    name="acme",
+    ...,
+    migrations=(
+        DirMigration(id="acme.data", title="data into the plugin's directory",
+                     preview=preview_data, apply=apply_data),
+        delete_migration("acme.cache", "1.x cache", lambda: [Path("~/.acme-cache").expanduser()]),
+    ),
+)
+```
+
+`preview(ctx, options)` only reads: it returns `MigrationRow`s (`action`
+`move`, `delete`, `keep` or `then`, with `source`, `destination`, `detail`
+and `bytes`), none once there is nothing left, and must work with no
+settings (`ctx.settings` is `None` when yours don't validate). `apply(ctx,
+options)` does the work and returns one `MigrationOutcome` per row it ran; it
+runs again on every `migrate-dirs`, so make it do nothing the second time.
+Move data into `plugin_dir(SPEC)`. An id is `<plugin>.<noun>`; a malformed
+row, an id of another shape or a repeated one quarantines the plugin
+(`bad-migration`, `duplicate-migration`). `delete_migration` is the whole
+row for a directory nothing reads any more, and `old_dirs(default, section,
+key)` finds an old directory a deleted setting may have moved:
+`retired_values` reads that setting from config.yml even after its key left
+your settings model, until `config migrate` deletes it. `untaped plugin
+check` runs each preview on an empty `HOME`, and the example plugin
+(`examples/untaped-hello`) has one row.
+
 ## Filling another plugin's contract
 
 A plugin can answer another plugin's questions by filling a

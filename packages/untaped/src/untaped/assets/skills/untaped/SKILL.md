@@ -82,6 +82,12 @@ Pass on each `failed` or `partial` row's `detail` to the user. The
 that asks for or reveals a token (`auth set`, `config set ….token
 --prompt`), which is the user's to run.
 
+A `migrate-dirs` row means an older version left directories behind. Run
+`untaped setup migrate-dirs --dry-run --format json`, show the user what
+would move or be deleted, and run it with `--yes` once they agree, before
+any `config migrate`. Add `--dissociate` only when they confirm no clone
+outside their workspaces borrows from `~/.untaped/repositories`.
+
 ## Safety
 
 - Never ask for a token in chat, never print or echo one, never pass one on

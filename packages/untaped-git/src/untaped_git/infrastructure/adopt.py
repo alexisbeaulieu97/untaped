@@ -97,14 +97,12 @@ def adopt(
     moves = _worktree_moves(source, worktrees)
     owned = [*owned, *moves.values()]
     with store._locked():
-        if _same(source, target):
-            action: Literal["moved", "replaced", "dropped"] = "moved"
-        elif store.exists():
+        action: Literal["moved", "replaced", "dropped"] = "moved"
+        if store.exists() and not _same(source, target):
             action = _overlap(store, source, plugin=name, moves=moves, error=error)
             if action == "dropped":
                 return Adopted(target, "dropped")
-            _move(source, target, error=error)
-        else:
+        if not _same(source, target):
             _move(source, target, error=error)
         _move_worktrees(moves, error=error)
         _repoint(store, moves)
