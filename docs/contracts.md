@@ -91,9 +91,8 @@ A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
 doesn't fill the bridge), `unresolved-item-type`, `duplicate-kind`,
 `unserialisable-signature`, `owner-not-installed`, or `bad-provider` (its
-`provides` function raised or returned something else). `untaped doctor`'s
-`contract-providers` row names each one, and each provider method the
-contract no longer has (`unused-method`), which is simply never called.
+`provides` function raised or returned something else). A provider method
+the contract no longer has (`unused-method`) is simply never called.
 
 Each ask goes to every provider that fills the method. One not configured in
 the profile is skipped silently; with none ready the command exits 4.
@@ -109,3 +108,48 @@ the profile is skipped silently; with none ready the command exits 4.
   with a warning when unranked and fails when ranked.
 - Otherwise no match exits 2 (not found), and several matches with nothing
   to rank them exit 2 (ambiguous).
+
+## Ranking providers
+
+A contract owner's config section holds an `extensions` key the SDK adds,
+with a ranking per contract method. No plugin's settings or state model may
+declare `extensions`, nor `caches`, kept for cache settings; one that
+does is quarantined (`bad-settings-keys`).
+
+```yaml
+profiles:
+  default:
+    workspace:
+      extensions:
+        repo_source:
+          rank:
+            repos: [github, gitlab]
+```
+
+`untaped plugin rank workspace.repo_source repos github gitlab` writes that
+ranking in the profile; naming no plugin removes it. The command refuses a
+contract or method the owner doesn't have, and a bridge method, which is
+never ranked. The environment overrides it like any setting:
+`UNTAPED_WORKSPACE__EXTENSIONS__REPO_SOURCE__RANK__REPOS='["github","gitlab"]'`.
+Loading config checks only the names' spelling, so a ranking in
+`profiles.default` never breaks a profile where a ranked plugin isn't
+installed or configured.
+
+`untaped plugin list --contracts` lists every contract method with its
+owner, stability, the providers that fill it in the order they are asked
+and the profile's ranking, including contracts nobody fills yet.
+`untaped plugin schema <kind>` prints a record kind's JSON Schema.
+
+`untaped doctor` has a `contract-provider` row per provider, titled with
+one of these reasons:
+
+- passing: `active`, `not-configured` (it names the setting it waits for)
+  and `owner-not-installed`;
+- warning: `unused-method` and the quarantine reasons above.
+
+A `contracts` row warns about an owner whose `contracts` function fails
+(`bad-contracts`), and a `rank` row warns about a ranking it can't follow:
+`rank-unknown-method` (no such contract or method) and `rank-not-installed`
+(a ranked plugin isn't installed), each with the `plugin rank` command that
+repairs it in the profile holding the ranking (none when an environment
+variable sets it).
