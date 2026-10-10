@@ -213,13 +213,13 @@ def safe_path_segment(value: str) -> str:
 
 
 @contextmanager
-def _secret_include(settings: Mapping[str, str]) -> Iterator[Path]:
+def _auth_include(settings: Mapping[str, str]) -> Iterator[Path]:
     """Write ``settings`` (``section[.subsection].name`` → value) to a private include file.
 
     The values never appear in argv or the environment, only in this 0600
     file, which is deleted on exit.
     """
-    handle, name = tempfile.mkstemp(prefix="untaped-git-secret-", suffix=".config")
+    handle, name = tempfile.mkstemp(prefix="untaped-git-auth-", suffix=".config")
     path = Path(name)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as config:
@@ -322,7 +322,7 @@ def run_git(
     capture: bool = False,
     stdin: bytes | str | None = None,
     check: bool = True,
-    secret_config: Mapping[str, str] | None = None,
+    auth_config: Mapping[str, str] | None = None,
     locale_c: bool = True,
     batch_ssh: bool = True,
     ceiling: bool = False,
@@ -343,7 +343,7 @@ def run_git(
     with 1s, 2s, ... backoff; use it only for idempotent network commands
     (fetch, ls-remote). ``config`` sets command-scope git settings, as
     ``git -c key=value`` would but outside argv, so error messages still name
-    the subcommand; ``secret_config`` does the same for settings that carry a
+    the subcommand; ``auth_config`` does the same for settings that carry a
     secret (a credential header): they go in a private include file, never
     argv or the environment, trace variables that could log them are dropped,
     and their values are redacted from stderr and the debug log. ``env`` adds
@@ -355,13 +355,13 @@ def run_git(
     if git_path is None:
         raise GitCommandError(f"`{git}` not found on PATH", category="config", system="local")
     payload = stdin.encode() if isinstance(stdin, str) else stdin
-    secrets = tuple(value for value in (secret_config or {}).values() if value)
-    with _maybe_secret_include(secret_config) as auth_config:
+    secrets = tuple(value for value in (auth_config or {}).values() if value)
+    with _maybe_auth_include(auth_config) as include:
         process_env = git_env(
             git_path=git_path,
             cwd=cwd,
             git_dir=git_dir,
-            auth_config=auth_config,
+            auth_config=include,
             locale_c=locale_c,
             batch_ssh=batch_ssh,
             ceiling=ceiling,
@@ -591,7 +591,7 @@ def _log_run(
         where,
         returncode,
         elapsed_ms,
-        " [secret config]" if secrets else "",
+        " [auth config]" if secrets else "",
     )
 
 
@@ -608,11 +608,11 @@ def stderr_gist(stderr: str) -> str:
 
 
 @contextmanager
-def _maybe_secret_include(settings: Mapping[str, str] | None) -> Iterator[Path | None]:
+def _maybe_auth_include(settings: Mapping[str, str] | None) -> Iterator[Path | None]:
     if not settings:
         yield None
         return
-    with _secret_include(settings) as path:
+    with _auth_include(settings) as path:
         yield path
 
 

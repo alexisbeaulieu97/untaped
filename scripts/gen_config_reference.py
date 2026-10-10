@@ -77,7 +77,8 @@ DESCRIPTIONS: dict[str, str] = {
     "github.default_org": "Org scope for `repos list`, `search` (repos, code, issues), "
     "`sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, "
     "search uses `@me`.",
-    "github.git_protocol": "How `sweep` and `cache sync` fetch repos on the GitHub host: "
+    "github.git_protocol": "How `sweep`, `cache sync` and `ansible source refresh` fetch "
+    "repos on the GitHub host: "
     "`https` or `ssh` (`git@HOST:OWNER/NAME.git`).",
     "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
     "this that GitHub reports as pushed since.",

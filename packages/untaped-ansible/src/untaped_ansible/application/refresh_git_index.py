@@ -428,6 +428,10 @@ class RefreshGitSourceIndex:
                     continue
                 if not pattern_matches(ref.name, selection.patterns):
                     continue
+                # A name git allows but the store refuses (``-wip``) is left
+                # out rather than failing the whole repo.
+                if not self._git.holds(ref):
+                    continue
                 selected[(ref.kind, ref.name)] = ref
         return _RepoRefreshTask(
             repo=repo,
@@ -491,18 +495,14 @@ class RefreshGitSourceIndex:
             )
 
         self._git.fetch(clone_url, changed_refs)
-        parsed_by_sha: dict[str, _ParsedDependencyFiles] = {}
+        files_by_sha = self._git.read_files(clone_url, [ref.sha for ref in changed_refs], paths)
+        parsed_by_sha = {
+            sha: _parse_dependency_files(contents, paths) for sha, contents in files_by_sha.items()
+        }
         resolver = IdentityResolver(self._aliases, github_host=self._github_host)
         repo_skipped_files: list[SkippedDependencyFile] = []
         for ref in changed_refs:
-            parsed = parsed_by_sha.get(ref.sha)
-            if parsed is None:
-                parsed = self._read_dependency_files(
-                    clone_url,
-                    ref=ref,
-                    paths=paths,
-                )
-                parsed_by_sha[ref.sha] = parsed
+            parsed = parsed_by_sha[ref.sha]
             ignored_collections.update(parsed.ignored_collections)
             repo_skipped_files.extend(
                 SkippedDependencyFile(
@@ -591,31 +591,6 @@ class RefreshGitSourceIndex:
             ((ref.kind, ref.name) for ref in refs),
         )
 
-    def _read_dependency_files(
-        self,
-        url: str,
-        *,
-        ref: GitRef,
-        paths: list[str],
-    ) -> _ParsedDependencyFiles:
-        reports: list[tuple[str, ParseReport]] = []
-        ignored_collections: set[str] = set()
-        warnings: list[ParseWarning] = []
-        contents = self._git.read_files(url, ref.sha, paths)
-        for path in paths:
-            content = contents.get(path)
-            if content is None:
-                continue
-            report = parse_dependency_file(path, content)
-            ignored_collections.update(report.ignored_collections)
-            warnings.extend(report.warnings)
-            reports.append((path, report))
-        return _ParsedDependencyFiles(
-            reports=tuple(reports),
-            ignored_collections=frozenset(ignored_collections),
-            warnings=tuple(warnings),
-        )
-
     def _edges_from_reports(
         self,
         parsed: _ParsedDependencyFiles,
@@ -642,6 +617,25 @@ class RefreshGitSourceIndex:
                     )
                 )
         return edges
+
+
+def _parse_dependency_files(contents: dict[str, str], paths: list[str]) -> _ParsedDependencyFiles:
+    reports: list[tuple[str, ParseReport]] = []
+    ignored_collections: set[str] = set()
+    warnings: list[ParseWarning] = []
+    for path in paths:
+        content = contents.get(path)
+        if content is None:
+            continue
+        report = parse_dependency_file(path, content)
+        ignored_collections.update(report.ignored_collections)
+        warnings.extend(report.warnings)
+        reports.append((path, report))
+    return _ParsedDependencyFiles(
+        reports=tuple(reports),
+        ignored_collections=frozenset(ignored_collections),
+        warnings=tuple(warnings),
+    )
 
 
 def _dedupe_skipped_files(

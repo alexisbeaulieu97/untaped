@@ -111,7 +111,7 @@ def store_auth(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str | None]]:
                     if key.startswith("url.") and key.endswith(".insteadOf")
                 ]
                 url = rewrites[0] if rewrites else _remote_url(args, kwargs.get("git_dir"))
-                secret = kwargs.get("secret_config") or {}
+                secret = kwargs.get("auth_config") or {}
                 seen.setdefault(url, []).append(next(iter(secret.values()), None))
             return real(args, **kwargs)
 

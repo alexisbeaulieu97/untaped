@@ -6,7 +6,7 @@ import json
 import re
 import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
@@ -354,8 +354,12 @@ class _SeedGitCache:
     def fetch(self, url: str, refs: Any) -> None:
         return None
 
-    def read_files(self, url: str, sha: str, paths: list[str]) -> Any:
-        return {path: content for path, content in self.files.items() if path in paths}
+    def holds(self, ref: Any) -> bool:
+        return True
+
+    def read_files(self, url: str, shas: Sequence[str], paths: Sequence[str]) -> Any:
+        found = {path: content for path, content in self.files.items() if path in paths}
+        return dict.fromkeys(shas, found)
 
     def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
         name = url.removesuffix(".git").rsplit("/", maxsplit=1)[-1]
@@ -371,7 +375,7 @@ class _NoFetchGitCache(_SeedGitCache):
     def fetch(self, url: str, refs: Any) -> None:
         raise AssertionError(f"unexpected git fetch for {url}")
 
-    def read_files(self, url: str, sha: str, paths: list[str]) -> Any:
+    def read_files(self, url: str, shas: Sequence[str], paths: Sequence[str]) -> Any:
         raise AssertionError("unexpected dependency file read")
 
 

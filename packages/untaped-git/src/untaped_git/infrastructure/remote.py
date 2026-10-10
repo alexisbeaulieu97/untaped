@@ -83,7 +83,7 @@ def _ls_remote(
             cwd=root,
             timeout=TIMEOUT,
             capture=True,
-            secret_config=secret,
+            auth_config=secret,
             ceiling=True,
             retry_transient=True,
             attempts=ATTEMPTS,
