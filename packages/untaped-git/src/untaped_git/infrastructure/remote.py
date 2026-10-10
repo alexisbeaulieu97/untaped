@@ -12,13 +12,14 @@ from pathlib import Path
 
 from untaped.sdk import GitCommandError, attribution, run_git
 from untaped_git.domain.hosts import HostAuth
-from untaped_git.domain.url import https_origin
+from untaped_git.domain.url import https_origin, store_key
 from untaped_git.errors import GitError
 from untaped_git.infrastructure.store import (
     ATTEMPTS,
     TIMEOUT,
     basic_header,
     parse_symref,
+    record_default_branch,
 )
 
 
@@ -29,19 +30,33 @@ def ls_remote(
     root: Path,
     auth: Callable[[str], HostAuth | None],
 ) -> dict[str, str]:
-    """``ref → oid`` of ``url``'s refs matching ``patterns`` (all refs when empty)."""
-    result = _ls_remote(url, ["--refs", url, *patterns], root=root, auth=auth)
+    """``ref → commit oid`` of ``url``'s refs matching ``patterns`` (all refs when empty).
+
+    ``HEAD`` is included when a pattern asks for it, and an annotated tag maps
+    to the commit it points at, not to the tag object.
+    """
+    result = _ls_remote(url, ["--", url, *patterns], root=root, auth=auth)
     refs: dict[str, str] = {}
+    peeled: dict[str, str] = {}
     for line in result.splitlines():
         oid, _, ref = line.partition("\t")
-        if ref:
+        if ref.endswith("^{}"):
+            peeled[ref.removesuffix("^{}")] = oid
+        elif ref:
             refs[ref] = oid
-    return refs
+    return refs | {ref: oid for ref, oid in peeled.items() if ref in refs}
 
 
 def default_branch(url: str, *, root: Path, auth: Callable[[str], HostAuth | None]) -> str | None:
-    """The branch ``url``'s ``HEAD`` points at (``ls-remote --symref``), or ``None``."""
-    return parse_symref(_ls_remote(url, ["--symref", url, "HEAD"], root=root, auth=auth))
+    """The branch ``url``'s ``HEAD`` points at (``ls-remote --symref``), or ``None``.
+
+    The answer is recorded in ``url``'s store repo when it exists, so its next
+    fetch points ``origin/HEAD`` without asking the remote again.
+    """
+    branch = parse_symref(_ls_remote(url, ["--symref", "--", url, "HEAD"], root=root, auth=auth))
+    if branch is not None:
+        record_default_branch(root.joinpath(*store_key(url)), branch)
+    return branch
 
 
 def _ls_remote(

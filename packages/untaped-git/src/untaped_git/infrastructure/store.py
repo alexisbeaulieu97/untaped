@@ -23,8 +23,9 @@ the URL being fetched.
 A blob nobody prefetched costs one round trip in a blobless repo, so blob
 readers go through :meth:`RepoStore.prefetched`, whose handle exists only
 after its prefetch; ``GIT_NO_LAZY_FETCH=1`` is set on every git the store runs
-except its fetches and its maintenance, so on git 2.46+ a forgotten prefetch
-fails loudly. Maintenance is the store's second command after a fetch or
+except its fetches and its maintenance, so on a git that honours it a
+forgotten prefetch fails loudly (an older git fetches lazily, and the
+prefetch's guard is the only check). Maintenance is the store's second command after a fetch or
 prefetch, under the same lock with its own timeout; its failure is a warning,
 never a failed fetch, because the data landed before it ran.
 """
@@ -92,9 +93,11 @@ POLICY: Mapping[str, str] = {
 }
 _NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}
 _NETWORK = {"maintenance.auto": "false"}
+#: What ``run()`` refuses: the store's own methods reach the remote.
+_NETWORK_VERBS = frozenset({"fetch", "pull", "push", "ls-remote", "clone", "submodule"})
 _FILTER_IGNORED = "filtering not recognized by server"
 _REFUSED = ("unadvertised object", "not our ref", "allow-tip-sha1-in-want")
-_LAZY_READ = ("lazy fetch", "unable to read", "missing blob object")
+_LAZY_READ = ("lazy fetch", "promisor remote")
 _REFUSED_HINT = (
     "this host refuses blob fetches by object id (a protocol v0/v1 server without "
     "uploadpack.allowAnySHA1InWant), so the repo store cannot read files there: "
@@ -207,8 +210,10 @@ class RepoStore:
                 ) from exc
             # An empty template keeps a user's template hooks out of store repos.
             self._git(["init", "--bare", "--quiet", "--template=", str(self._path)], bare=False)
-            self._git(["config", "remote.origin.url", self._url])
         current = self._config_list()
+        # Checked on every call, so a creation interrupted after ``init`` heals.
+        if "remote.origin.url" not in current:
+            self._git(["config", "remote.origin.url", self._url])
         for key, value in POLICY.items():
             if current.get(key.lower()) != [value]:
                 self._git(["config", "--local", "--replace-all", key, value])
@@ -227,9 +232,15 @@ class RepoStore:
         refs = []
         for name in names:
             try:
-                refs.append(self._layout.absolute(name))
+                ref = self._layout.absolute(name)
             except ValueError as exc:
                 raise self._error(str(exc), category=ErrorCategory.INVALID) from None
+            reason = check_names([name.partition("/")[2]])
+            if reason is None and ref == ORIGIN_HEAD:
+                reason = f"{name!r} is the store's own symref, not a branch"
+            if reason is not None:
+                raise self._error(reason, category=ErrorCategory.INVALID)
+            refs.append(ref)
         if not refs:
             return
         with self._locked():
@@ -251,8 +262,9 @@ class RepoStore:
         :data:`DEFAULT_FETCH_BATCH_SIZE`; a call with globs only goes straight
         to git. ``prune=True`` deletes every ref of the namespace the call's
         names don't cover, and every covered ref the remote no longer has
-        (never workspace's tags, never ``refs/remotes/origin/HEAD``). Returns
-        what changed in the namespace.
+        (never workspace's tags, never ``refs/remotes/origin/HEAD``). A call
+        with no names does nothing, ``prune`` included: dropping a whole
+        namespace is ``delete_refs``' job. Returns what changed in the namespace.
         """
         reason = check_names([*branches, *tags])
         if reason is not None:
@@ -358,12 +370,19 @@ class RepoStore:
         return self._network(argv, timeout=SLOW_TIMEOUT, retry=True).stderr
 
     def _write_origin_head(self) -> None:
-        """Point workspace's ``refs/remotes/origin/HEAD`` at the remote's default branch."""
+        """Point workspace's ``refs/remotes/origin/HEAD`` at the remote's default branch.
+
+        The branch is the recorded ``untaped.defaultBranch`` (``default_branch()``
+        records it); with none recorded, or one whose ref a prune removed
+        (the remote renamed it), the remote is asked once and the answer recorded.
+        """
         symref = ["symbolic-ref", "--quiet", ORIGIN_HEAD]
         target = self._git(symref, capture=True, check=False).text.strip()
         if target and self._has_ref(target):
             return
-        branch = self._config_get("untaped.defaultBranch") or self._remote_default_branch()
+        branch = self._config_get("untaped.defaultBranch")
+        if branch is None or not self._has_ref(f"refs/remotes/origin/{branch}"):
+            branch = self._remote_default_branch()
         ref = f"refs/remotes/origin/{branch}"
         if branch is not None and self._has_ref(ref):
             self._git(["symbolic-ref", ORIGIN_HEAD, ref])
@@ -376,7 +395,7 @@ class RepoStore:
         result = self._network(["ls-remote", "--symref", "origin", "HEAD"], capture=True)
         branch = parse_symref(result.text)
         if branch is not None:
-            self._git(["config", "untaped.defaultBranch", branch])
+            record_default_branch(self._path, branch)
         return branch
 
     def _record_filter(self, stderr: str, delta: RefDelta) -> None:
@@ -527,8 +546,16 @@ class RepoStore:
         Blob readers (``grep``, ``cat-file``, ``show``, ``archive``) belong on
         a :meth:`prefetched` handle; ``check_conventions`` flags them here.
         """
-        if argv and argv[0] == "fetch":
-            raise ValueError("fetch through RepoStore.fetch() or prefetch(), not run()")
+        if (
+            not argv
+            or argv[0].startswith("-")
+            or argv[0] in _NETWORK_VERBS
+            or (argv[0] == "remote" and argv[1:2] in (["update"], ["prune"]))
+        ):
+            raise ValueError(
+                "run() takes a local git subcommand first; fetch through "
+                "RepoStore.fetch() or prefetch()"
+            )
         return self._git(
             argv,
             capture=capture,
@@ -568,6 +595,7 @@ class RepoStore:
     def checkout(self, worktree: Path, ref: str) -> None:
         """Check ``ref`` out in one of this repo's worktrees, its blobs prefetched first."""
         with self._locked():
+            self._check_worktree(worktree)
             self.prefetch(trees=[ref])
             self._git(["checkout", "--quiet", ref], cwd=worktree, env=_NO_LAZY)
 
@@ -577,17 +605,20 @@ class RepoStore:
         Workspace calls it at create and on every ``status --fetch``: a
         user's ``git fetch``/``push`` there uses this handle's URL
         (``insteadOf`` over the store's label) and, for https, asks
-        ``untaped git credential`` with ``profile`` (after the user's own
-        helpers, unless ``git.untaped_helper_first`` reset them).
+        ``untaped git credential`` with ``profile`` after the user's own
+        helpers (instead of them with ``git.untaped_helper_first``).
         """
         with self._locked():
+            self._check_worktree(worktree)
             self._enable_worktree_config()
             self._write_owner_config(worktree)
             label = cache_origin(self._path)
-            rewrite = f"url.{self._url}.insteadOf"
-            self._worktree_config(worktree, "--unset-all", rewrite, check=False)
+            # Every rewrite onto the label goes, so an earlier URL spelling
+            # (https before ssh, say) never wins over this one.
+            for key in self._rewrites_onto(worktree, label) if label else ():
+                self._worktree_config(worktree, "--unset-all", key, check=False)
             if label and label != self._url:
-                self._worktree_config(worktree, rewrite, label)
+                self._worktree_config(worktree, f"url.{self._url}.insteadOf", label)
             origin = https_origin(self._url)
             if origin is None:
                 return
@@ -614,6 +645,36 @@ class RepoStore:
             self._worktree_config(worktree, refspec, "+refs/heads/*:refs/remotes/origin/*")
         # A user's own fetch here brings the blobs of new commits.
         self._worktree_config(worktree, "remote.origin.partialclonefilter", "")
+
+    def _check_worktree(self, worktree: Path) -> None:
+        """Refuse a path that is not one of this repo's worktrees (a user's own clone, say)."""
+        result = self._git(
+            ["rev-parse", "--git-common-dir"],
+            cwd=worktree,
+            capture=True,
+            check=False,
+        )
+        common = result.text.strip()
+        # Relative to the worktree when git prints it relative (``--path-format`` is 2.31+).
+        if result.returncode != 0 or (worktree / common).resolve() != self._path.resolve():
+            raise self._error(
+                f"{worktree} is not a worktree of repo store {self._path}",
+                category=ErrorCategory.INVALID,
+            )
+
+    def _rewrites_onto(self, worktree: Path, label: str) -> list[str]:
+        result = self._git(
+            ["config", "--worktree", "--get-regexp", r"^url\..*\.insteadof$"],
+            cwd=worktree,
+            capture=True,
+            check=False,
+        )
+        keys = []
+        for line in result.text.splitlines():
+            key, _, value = line.partition(" ")
+            if value == label:
+                keys.append(key)
+        return keys
 
     def _worktree_config(self, worktree: Path, *args: str, check: bool = True) -> None:
         self._git(["config", "--worktree", *args], cwd=worktree, check=check)
@@ -650,7 +711,7 @@ class RepoStore:
     def _delete(self, refs: Iterable[str]) -> None:
         lines = "".join(f"delete {ref}\n" for ref in refs)
         if lines:
-            self._git(["update-ref", "--stdin"], stdin=lines)
+            self._git(["update-ref", "--no-deref", "--stdin"], stdin=lines)
 
     def _config_list(self) -> dict[str, list[str]]:
         result = self._git(["config", "--local", "--list", "-z"], capture=True)
@@ -849,6 +910,18 @@ class Prefetched:
             raise ValueError(f"git {argv[0]} goes through RepoStore, never a Prefetched handle")
         return self._store.run(
             argv, capture=capture, check=check, stdin=stdin, timeout=timeout, locale_c=locale_c
+        )
+
+
+def record_default_branch(repo: Path, branch: str) -> None:
+    """Record ``branch`` as ``repo``'s remote default (``untaped.defaultBranch``) if it exists."""
+    if (repo / "HEAD").is_file():
+        run_git(
+            ["config", "--file", str(repo / "config"), "untaped.defaultBranch", branch],
+            cwd=repo,
+            timeout=TIMEOUT,
+            ceiling=True,
+            batch_ssh=False,
         )
 
 

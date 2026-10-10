@@ -27,8 +27,8 @@ untaped git hosts
 
 In the worktrees untaped creates, Git asks `untaped git credential` for the
 host's credentials, after your own credential helpers. When an old keychain
-entry answers first, set `git.untaped_helper_first: true` to have untaped's
-worktrees ask untaped first.
+entry answers first, set `git.untaped_helper_first: true`: untaped's worktrees
+then ask only untaped for that host, never your own helpers.
 
 ## Reference
 

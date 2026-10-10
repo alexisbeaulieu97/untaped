@@ -142,8 +142,8 @@ DESCRIPTIONS: dict[str, str] = {
     "dotfiles.os": "This machine's OS for `os` filters; detected when unset.",
     "git.store_dir": "Root of the repo store: one shared bare repository per remote, "
     "under `<store_dir>/<host>/<path>.git`.",
-    "git.untaped_helper_first": "In untaped's worktrees, ask untaped for credentials before "
-    "your own Git credential helpers.",
+    "git.untaped_helper_first": "In untaped's worktrees, ask only untaped for a host's "
+    "credentials, instead of your own Git credential helpers first.",
     "dotfiles.repos": "Subscribed repos. Managed by `dotfiles subscribe`/`unsubscribe`.",
     "dotfiles.items": "Enabled items with their policy and skips. Managed by `dotfiles enable`/"
     "`disable`.",

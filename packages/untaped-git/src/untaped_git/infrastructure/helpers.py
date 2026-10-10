@@ -6,7 +6,7 @@ import re
 import shlex
 from pathlib import Path
 
-from untaped.sdk import GitCommandError, run_git
+from untaped.sdk import GitCommandError, list_caches, run_git
 
 _HELPER_KEY = re.compile(r"^credential\.(?:(?P<url>.+)\.)?helper$")
 _UNTAPED_HELPER = re.compile(r"^\s*helper\s*=\s*(?P<value>!.*\bgit credential\s*)$")
@@ -20,7 +20,7 @@ def user_helpers(host: str, *, cwd: Path) -> list[str]:
     """
     try:
         result = run_git(
-            ["config", "--global", "--get-regexp", r"^credential\..*helper$"],
+            ["config", "--get-regexp", r"^credential\..*helper$"],
             cwd=cwd,
             timeout=10,
             capture=True,
@@ -44,7 +44,10 @@ def user_helpers(host: str, *, cwd: Path) -> list[str]:
 
 def missing_helper(root: Path) -> str | None:
     """An untaped helper path written into a store worktree config that no longer exists."""
-    for config in sorted(root.glob("**/worktrees/*/config.worktree")):
+    configs = (
+        config for repo in list_caches(root) for config in repo.glob("worktrees/*/config.worktree")
+    )
+    for config in sorted(configs):
         try:
             lines = config.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:

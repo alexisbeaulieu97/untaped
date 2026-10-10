@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -11,14 +12,7 @@ from git.conftest import StoreFor, git
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote, git_shim, trace2_events
 from untaped_git.errors import StoreError
-from untaped_git.infrastructure.version import git_version
 
-_VERSION = git_version() or (0, 0, 0)
-#: The first git that honours ``GIT_NO_LAZY_FETCH``.
-NO_LAZY_FETCH_FLOOR = (2, 46)
-lazy_fetch_refused = pytest.mark.skipif(
-    _VERSION[:2] < NO_LAZY_FETCH_FLOOR, reason="git honours GIT_NO_LAZY_FETCH from 2.46"
-)
 #: The sweep's pinned grep flags (github's git_corpus), spelled out here.
 SWEEP_GREP = ["grep", "-n", "-I", "--fixed-strings", "-e", "needle"]
 
@@ -80,10 +74,18 @@ def test_a_handle_refuses_store_mechanics(seeded: GitRemote, store_for: StoreFor
         store.run(["fetch", "origin"])
 
 
-@lazy_fetch_refused
 def test_an_unprefetched_read_fails_loudly(seeded: GitRemote, store_for: StoreFor) -> None:
     store = store_for("github")
     store.fetch(branches=["main"])
+    probe = git(store.path, "rev-parse", "refs/untaped/github/heads/main:src/a.py").strip()
+    honoured = subprocess.run(
+        ["git", f"--git-dir={store.path}", "cat-file", "-e", probe],
+        env={**os.environ, "GIT_NO_LAZY_FETCH": "1"},
+        capture_output=True,
+        check=False,
+    )
+    if honoured.returncode == 0:  # it fetched lazily: the prefetch guard is the only check
+        pytest.skip("this git ignores GIT_NO_LAZY_FETCH")
     blob = git(store.path, "rev-parse", "refs/untaped/github/heads/main:docs/c.md").strip()
 
     with pytest.raises(StoreError) as caught:

@@ -3,11 +3,11 @@
 The git plugin owns it; a forge plugin (github, gitlab…) fills it for the
 host its own settings name. :func:`resolve_host` is how untaped picks the
 provider for a URL: the plugins whose ``home()`` is the URL's host are the
-candidates, and only they are asked for credentials and proxy; none means
-plain git (the user's own git config answers); several are decided by their
-rank for ``credential`` (for ``proxy`` on an ssh URL, where no credential is
-asked), and an unranked tie is a configuration error (exit 4) naming them and
-the rank command. Credentials are asked only for ``https://`` URLs, so an ssh
+candidates; none means plain git (the user's own git config answers); several
+are decided by their rank for ``credential`` (``git.extensions.git_host``),
+whatever the URL, and an unranked tie is a configuration error (exit 4) naming
+them and the rank command. Only the chosen provider is asked for credentials
+and proxy. Credentials are asked only for ``https://`` URLs, so an ssh
 remote never runs anyone's token command.
 
 Core never imports this module: the repo store asks it itself, so consumers
@@ -40,8 +40,8 @@ class Credential(BaseModel):
 class GitHost(Contract, shell=False):
     """A plugin that knows a Git host: its name, and credentials and proxy for its URLs.
 
-    untaped asks ``credential`` and ``proxy`` only of the providers whose
-    ``home()`` is the URL's host.
+    untaped asks ``credential`` and ``proxy`` only of the provider it chose for
+    the URL's host by ``home()``.
     """
 
     @abstractmethod
@@ -86,10 +86,10 @@ def resolve_host(url: str) -> HostAuth | None:
     ]
     if not candidates:
         return None
+    chosen = _choose(host, candidates)
     https = url.startswith("https://")
-    credentials = _ask(GitHost.credential, url, among=candidates) if https else None
-    proxies = _ask(GitHost.proxy, url, among=candidates)
-    chosen = _choose(host, candidates, credentials or proxies)
+    credentials = _ask(GitHost.credential, url, among=[chosen]) if https else None
+    proxies = _ask(GitHost.proxy, url, among=[chosen])
     return HostAuth(chosen, _answer(credentials, chosen), _answer(proxies, chosen))
 
 
@@ -100,25 +100,21 @@ def _ask(method: Any, *args: str, among: list[str] | None = None) -> Answers[Any
         return None
 
 
-def _choose(host: str, candidates: list[str], answers: Answers[Any] | None) -> str:
-    """The one candidate, else the best ranked for the method that decides (``answers``)."""
+def _choose(host: str, candidates: list[str]) -> str:
+    """The one candidate, else the first of them ranked for ``credential``, whatever the URL."""
     if len(candidates) == 1:
         return candidates[0]
-    method = answers.method if answers is not None else "credential"
-    if answers is not None:
-        ranks = {a.plugin: a.rank for a in answers if a.plugin in candidates and a.rank is not None}
-        if ranks:
-            return min(ranks, key=lambda plugin: ranks[plugin])
+    from untaped_git.settings import credential_rank  # noqa: PLC0415  # the owner's own section
+
+    for plugin in credential_rank():
+        if plugin in candidates:
+            return plugin
     named = ", ".join(candidates)
-    if answers is not None:
-        hint = answers.rank_command(candidates)
-    else:
-        hint = f"untaped plugin rank git.git_host {method} {' '.join(candidates)}"
     raise ConfigError(
         f"{named} all supply credentials for {host}; rank them to choose one",
         system="git",
-        hint=hint,
-        details={"contract": "git.git_host", "method": method, "providers": candidates},
+        hint=f"untaped plugin rank git.git_host credential {' '.join(candidates)}",
+        details={"contract": "git.git_host", "method": "credential", "providers": candidates},
     )
 
 

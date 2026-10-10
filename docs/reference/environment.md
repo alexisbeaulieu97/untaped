@@ -86,7 +86,9 @@ yourself, in a workspace checkout or anywhere else, is unaffected:
   so the token is not logged.
 
 If you set `GIT_SSH_COMMAND` yourself, add `-o BatchMode=yes` to keep the
-fail-fast behavior.
+fail-fast behavior. The git plugin's repo store also sets
+`GIT_NO_LAZY_FETCH=1` on its local commands, so a file it never fetched fails
+to read instead of being fetched one at a time.
 
 When a Git command times out, `untaped` stops it and every process it
 started: SIGTERM first, so Git removes its lock files, then SIGKILL two
