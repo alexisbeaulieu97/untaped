@@ -1,7 +1,7 @@
 # untaped
 
 **untaped** is a batteries-included CLI for DevOps workflows. `untaped[all]`
-gives you seven plugins that share one config file, the same profiles, and
+gives you eight plugins that share one config file, the same profiles, and
 the same output and piping rules:
 
 - **`workspace`**: task workspaces: one directory of git worktrees across
@@ -14,13 +14,15 @@ the same output and piping rules:
 - **`recipe`**: plan, preview and apply file changes across many directories.
 - **`dotfiles`**: place config files from dotfiles repos, with a policy per
   item per machine (experimental).
+- **`git`**: credentials for Git hosts, and the repo store the other plugins
+  keep repositories in (experimental).
 
 Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
 `skills`, `doctor` and `plugin`.
 
 ## Install
 
-Python 3.14.1 or newer and [uv](https://docs.astral.sh/uv/) are required.
+Python 3.14.1 or newer, [uv](https://docs.astral.sh/uv/) and Git 2.29 or newer are required.
 
 ```bash
 uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one tool, e.g. 'untaped[awx]'
@@ -76,8 +78,9 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 Each plugin's guide: [workspace](./packages/untaped-workspace/README.md),
 [github](./packages/untaped-github/README.md), [jira](./packages/untaped-jira/README.md),
 [awx](./packages/untaped-awx/README.md), [ansible](./packages/untaped-ansible/README.md),
-[recipe](./packages/untaped-recipe/README.md) and
-[dotfiles](./packages/untaped-dotfiles/README.md).
+[recipe](./packages/untaped-recipe/README.md),
+[dotfiles](./packages/untaped-dotfiles/README.md) and
+[git](./packages/untaped-git/README.md).
 
 ## Versioning
 

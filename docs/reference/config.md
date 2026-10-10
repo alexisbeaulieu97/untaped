@@ -96,6 +96,13 @@ overridden for one process with the environment variable shown.
 | `dotfiles.items` | list | Enabled items with their policy and skips. Managed by `dotfiles enable`/`disable`. |
 | `dotfiles.applied` | list | One record per path the tool placed. Managed by `dotfiles apply`, `sync` and `remove`. |
 
+## `git`
+
+| Key | Type | Default | Environment | Description |
+|---|---|---|---|---|
+| `git.store_dir` | path | `~/.untaped/plugins/git/store` | `UNTAPED_GIT__STORE_DIR` | Root of the repo store: one shared bare repository per remote, under `<store_dir>/<host>/<path>.git`. Experimental: may change in a minor release. |
+| `git.untaped_helper_first` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_FIRST` | In untaped's worktrees, ask untaped for credentials before your own Git credential helpers. Experimental: may change in a minor release. |
+
 ## `github`
 
 | Key | Type | Default | Environment | Description |
