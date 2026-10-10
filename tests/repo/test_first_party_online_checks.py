@@ -12,7 +12,7 @@ import respx
 
 from test_management.support import write_config
 from untaped import bootstrap
-from untaped.plugins.registry import ProviderCandidate
+from untaped.plugins.registry import PluginCandidate
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "fresh_composition")
@@ -31,9 +31,7 @@ profiles:
 """
 
 
-def _online_rows(
-    candidates: tuple[ProviderCandidate, ...], *args: str
-) -> dict[str, dict[str, Any]]:
+def _online_rows(candidates: tuple[PluginCandidate, ...], *args: str) -> dict[str, dict[str, Any]]:
     root = bootstrap.build_root_app(candidates=candidates)
     result = CliInvoker().invoke(root.meta, ["doctor", "--online", "--format", "json", *args])
     assert result.stdout, result.output
@@ -56,7 +54,7 @@ def _mock_services(mock: respx.MockRouter, *, github_status: int = 200) -> None:
 
 
 def test_each_configured_service_is_contacted(
-    _isolated_config: Path, first_party_candidates: tuple[ProviderCandidate, ...]
+    _isolated_config: Path, first_party_candidates: tuple[PluginCandidate, ...]
 ) -> None:
     write_config(_isolated_config, _CONFIG)
     with respx.mock(assert_all_called=True) as mock:
@@ -69,7 +67,7 @@ def test_each_configured_service_is_contacted(
 
 
 def test_a_rejected_token_names_the_fix(
-    _isolated_config: Path, first_party_candidates: tuple[ProviderCandidate, ...]
+    _isolated_config: Path, first_party_candidates: tuple[PluginCandidate, ...]
 ) -> None:
     write_config(_isolated_config, _CONFIG)
     with respx.mock(assert_all_called=False) as mock:

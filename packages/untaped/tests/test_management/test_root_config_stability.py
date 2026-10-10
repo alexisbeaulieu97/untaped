@@ -24,7 +24,7 @@ from untaped.stability import (
     setting_mark,
     stability_name,
 )
-from untaped.testing import CliInvoker, CliResult, invoke_cli, provider_candidate
+from untaped.testing import CliInvoker, CliResult, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -386,7 +386,7 @@ def test_setting_a_deprecated_setting_through_the_root_warns_once_in_json(
     _isolated_config: Path,
 ) -> None:
     specs = (make_spec("trial", settings=Trial),)
-    root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
+    root = bootstrap.build_root_app(candidates=tuple(plugin_candidate(s) for s in specs))
 
     result = invoke_cli(root.meta, ["config", "set", "trial.old_flag", "true", "--format", "json"])
 

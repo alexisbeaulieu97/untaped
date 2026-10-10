@@ -4,11 +4,11 @@ Every `untaped` command, first-party or third-party, looks and behaves the same
 way. Each rule below names the `untaped.sdk` helper that implements it; use
 the helper rather than your own version.
 
-A provider also follows these rules:
+A plugin also follows these rules:
 
-- Provider code imports only `untaped.sdk` and
-  [`untaped.contracts`](../contracts.md) (plus `untaped.testing` in tests),
-  and another plugin only through its `api` module (see
+- A plugin imports only `untaped.sdk`, [`untaped.contracts`](../contracts.md)
+  and `untaped.testing` from `untaped`, and another plugin only through its
+  `api` module, declared (see
   [Depending on another plugin](#depending-on-another-plugin)).
 - A plugin reads and writes only its own config section, state, skills
   and doctor checks.
@@ -33,7 +33,7 @@ A provider also follows these rules:
   write rules under [Options](#options).
 
 It does not check state writes or an error's category. Composition, not
-`check_conventions`, quarantines a provider whose skill name or doctor-check
+`check_conventions`, quarantines a plugin whose skill name or doctor-check
 ID duplicates another's. The message and option rules below have their own
 checks, named in each violation line.
 
@@ -241,6 +241,7 @@ free, but a command that writes declares it with `@writes`, or
 `untaped.testing.check_conventions(NAME)` runs these checks for one plugin;
 each plugin's tests call it. `import-boundary` enforces the import rules above
 and in [Depending on another plugin](#depending-on-another-plugin);
+`provides-requirement` the [ranges a provider declares](../plugins.md#filling-another-plugins-contract);
 `terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md)); `blob-reader`
 keeps repo store blob reads on `store.prefetched(...).run()`; the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 `# untaped: allow <rule>` on the flagged node's first line allows one violation,
@@ -250,8 +251,8 @@ except the default-table-columns and stability rules.
 
 A plugin may import another only through that plugin's public
 module, `<package>.api` (for example `untaped_github.api`), never its other
-internals, and only when its distribution depends on the other's (a
-dependency under an extra does not count). Dependencies are one-way, and
+internals, and only when its distribution depends on the other's (under an
+extra only for an owner it provides for, the extra named like the owner). Dependencies are one-way, and
 imports of another plugin stay lazy on CLI paths; a settings model that
 validates against the other plugin may import it at module top. An `api`
 module keeps a closed `__all__`. Logic two plugins need lives in exactly
@@ -318,7 +319,7 @@ When an empty pipe (a filter that matched nothing) should do nothing, pass
 must treat as "nothing to do", never as "everything". A terminal stdin with
 nothing piped still raises.
 
-The provider joins pipelines with the first-party plugins:
+A plugin joins pipelines with the first-party plugins:
 
 ```bash
 untaped github search repos --format pipe | untaped acme import --stdin
@@ -385,15 +386,14 @@ retired_keys: ClassVar[Mapping[str, str | Retired]] = {"cache_dir": Retired(note
   (outermost `Annotated`; never a model or state field). It is still read,
   with a warning naming the replacement (a key or prose), until the next major.
 
-Each warning prints once per process. Composition quarantines a provider
+Each warning prints once per process. Composition quarantines a plugin
 whose declarations or marks break these rules (`bad-settings-keys`).
 
 ## SDK stability
 
 `untaped.sdk`, `untaped.contracts` and `untaped.testing` are stable within a
 major release: a minor or patch release adds to them and never breaks them.
-Providers import only these (`untaped.testing` in tests); other `untaped`
-modules are internal.
+Plugins import only these; other `untaped` modules are internal.
 A deprecated SDK attribute or callable is marked with `warnings.deprecated`
 and removed in the next major release.
 For what users can rely on, see [Versioning](../versioning.md).

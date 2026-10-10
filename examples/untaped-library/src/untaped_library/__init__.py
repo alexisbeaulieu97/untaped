@@ -16,18 +16,13 @@ from untaped_library.settings import LibrarySettings
 if TYPE_CHECKING:
     from untaped.contracts import Contract
 
-__all__ = ["SPEC", "provider"]
+__all__ = ["SPEC"]
 
 
 def _shelf() -> Sequence[Contract]:
-    from untaped_library.adapters.shelf import LibraryBooks  # noqa: PLC0415
+    from untaped_library.providers.shelf import LibraryBooks  # noqa: PLC0415
 
     return (LibraryBooks(),)
 
 
 SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _shelf})
-
-
-def provider() -> PluginSpec:
-    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
-    return SPEC

@@ -934,11 +934,18 @@ dependencies = [
     { name = "untaped-git" },
 ]
 
+[package.optional-dependencies]
+git = [
+    { name = "untaped-git" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
+    { name = "untaped-git", marker = "extra == 'git'", editable = "packages/untaped-git" },
 ]
+provides-extras = ["git"]
 
 [[package]]
 name = "untaped-jira"

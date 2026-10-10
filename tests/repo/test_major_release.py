@@ -28,7 +28,7 @@ from repo.support import REPO_ROOT
 from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap, sdk
 from untaped.cli import create_app
-from untaped.plugins.registry import CompositionResult, ProviderCandidate
+from untaped.plugins.registry import CompositionResult, PluginCandidate
 from untaped.settings import profile_section_models
 from untaped.stability import (
     Deprecated,
@@ -38,7 +38,7 @@ from untaped.stability import (
     experimental,
     marks,
 )
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 
 
 def is_major_release(version: str, text: str, fragments: Sequence[str]) -> bool:
@@ -115,7 +115,7 @@ def _deprecated(value: object) -> bool:
 
 
 def test_a_major_release_drops_deprecated_spellings(
-    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+    first_party_candidates: tuple[PluginCandidate, ...], fresh_composition: None
 ) -> None:
     version = release.release_version(REPO_ROOT)
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -187,7 +187,7 @@ def test_mark_leftovers_report_a_deprecated_plugin_group_and_command() -> None:
         return app
 
     spec = replace(make_spec(name="svc", factory=factory), stability=deprecated())
-    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
 
     found = mark_leftovers(root, bootstrap.composition())
     assert [line for line in found if line.startswith("untaped svc")] == [
@@ -207,7 +207,7 @@ def test_mark_leftovers_report_a_deprecated_setting_but_not_an_experimental_one(
     spec = make_spec(
         name="svc", factory=lambda: create_app(name="svc", help="S."), settings=_Marked
     )
-    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
 
     found = mark_leftovers(root, bootstrap.composition())
 
@@ -256,7 +256,7 @@ def test_option_leftovers_name_hidden_deprecated_options_only() -> None:
 
 
 def test_option_leftovers_see_the_first_party_deprecated_dry_run(
-    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+    first_party_candidates: tuple[PluginCandidate, ...], fresh_composition: None
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
@@ -299,7 +299,7 @@ def test_sdk_leftovers_look_through_properties_and_method_wrappers() -> None:
 
 
 def test_the_deprecated_shell_aliases_setting_blocks_a_major_release(
-    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+    first_party_candidates: tuple[PluginCandidate, ...], fresh_composition: None
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 

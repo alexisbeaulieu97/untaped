@@ -35,7 +35,7 @@ from untaped.testing import (
     ScreenKeys,
     ScriptedPromptBackend,
     invoke_cli,
-    provider_candidate,
+    plugin_candidate,
 )
 from untaped.testing.screens import ScreenKey
 
@@ -49,7 +49,7 @@ def _wiz_spec() -> Any:
 def _setup(backend: ScriptedPromptBackend | None, *args: str, terminal: bool = True) -> CliResult:
     plain = make_spec("plain", settings=ExtProfile)
     root = bootstrap.build_root_app(
-        candidates=(provider_candidate(_wiz_spec()), provider_candidate(plain))
+        candidates=(plugin_candidate(_wiz_spec()), plugin_candidate(plain))
     )
     return invoke_cli(
         root.meta,
@@ -153,7 +153,7 @@ def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
 def test_setup_ends_with_the_checklist(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
     backend = _scripted("enter", "ctrl-u", Paste("https://wiz"), "tab", "right", "enter", "esc")
-    root = bootstrap.build_root_app(candidates=(provider_candidate(_wiz_spec()),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(_wiz_spec()),))
 
     result = invoke_cli(
         root.meta, ["setup"], interactive=True, prompt_backend=backend, terminal=True
@@ -308,7 +308,7 @@ def test_rows_cover_only_the_touched_plugins(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n")
     envy = make_spec("envy", settings=EnvProfile)
     root = bootstrap.build_root_app(
-        candidates=(provider_candidate(_wiz_spec()), provider_candidate(envy))
+        candidates=(plugin_candidate(_wiz_spec()), plugin_candidate(envy))
     )
     backend = ScriptedPromptBackend(screens=[SetupResult("default", ("wiz",), ())])
 

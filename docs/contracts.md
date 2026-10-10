@@ -92,8 +92,10 @@ and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
 doesn't fill the bridge), `unresolved-item-type`, `duplicate-kind`,
-`unserialisable-signature`, `owner-not-installed`, or `bad-provider` (its
-`provides` function raised or returned something else). A provider method
+`unserialisable-signature`, `owner-not-installed`, `owner-out-of-range` (the
+plugin's extra named like the owner requires a range of it the installed
+owner is outside), or `bad-provider` (its `provides` function raised or
+returned something else). A provider method
 the contract no longer has (`unused-method`) is simply never called.
 
 Each ask goes to every provider that fills the method. One not configured in
@@ -147,7 +149,9 @@ one of these reasons:
 
 - passing: `active`, `not-configured` (it names the setting it waits for)
   and `owner-not-installed`;
-- warning: `unused-method` and the quarantine reasons above.
+- warning: `unused-method`, `owner-schema-drift` (the provider was tested
+  against another schema of the contract than the installed owner's; see
+  [Testing contracts](#testing-contracts)) and the quarantine reasons above.
 
 A `contracts` row warns about an owner whose `contracts` function fails
 (`bad-contracts`), and a `rank` row warns about a ranking it can't follow:
@@ -155,3 +159,61 @@ A `contracts` row warns about an owner whose `contracts` function fails
 (a ranked plugin isn't installed), each with the `plugin rank` command that
 repairs it in the profile holding the ranking (none when an environment
 variable sets it).
+
+## Testing contracts
+
+`untaped.testing` has the tools, and loads `untaped.contracts` only when one
+runs.
+
+An owner tests its questions against providers it controls, and keeps its
+contracts' schemas from changing by accident:
+
+```python
+with compose_with("shelf", provides={"fake": [FakeBooks()]}):
+    [answer] = gather(BookSource.books, refresh=True)()
+
+def test_the_contract_keeps_its_schemas() -> None:
+    assert_contract_schemas(BookSource, snapshots=Path(__file__).parent / "snapshots")
+```
+
+- `compose_with(*plugins, provides={"fake": [...]})` composes the named
+  installed plugins (or `PluginSpec`s) plus a plugin named `fake` offering
+  each instance to the owner of its contract, and restores the composition
+  after the block.
+- `assert_contract_schemas` writes `<contract>.json` (each method's
+  parameter and return schemas and its stability) the first time, and fails
+  on an incompatible change: a removed or retyped field, a new required
+  field or parameter, a changed constraint, or a removed stable method. A
+  new method, a new optional parameter or field, and a removed experimental
+  method are compatible and rewrite the snapshot. To accept a breaking
+  change in a major release, delete the snapshot. Commit the snapshots.
+- An owner may ship checks every provider must pass as a
+  `conformance(provider)` function in its `testing` module
+  (`untaped_shelf.testing`); `untaped plugin check` runs it on each ready
+  provider.
+
+A provider proves it fills its contract:
+
+```python
+def test_the_library_fills_the_shelf_contract() -> None:
+    assert_fills(LibraryBooks, samples=[Volume(shelf_mark="A1", name="Dune")])
+```
+
+- `assert_fills(Provider, samples=[...])` checks that each sample (a `T`
+  or a mapping of one) survives a JSON round trip, and that each bridge
+  method turns it into a valid owner record whose `source` gives it back.
+  `samples=` is required when `T` is not the owner's model. Run from a
+  checkout or an editable install, it records the owner's schema hash in
+  the plugin package's `fills.json`; commit it.
+- `untaped plugin check [NAME]` checks an installed plugin (every one
+  without a name), a developer's editable install included: the
+  conventions and the import lint, then, composing only the plugin and the
+  owners it provides for, the owner's `conformance`, one live call of each
+  filled method that takes no required argument (each item round-tripped),
+  the `assert_fills` checks on those items, and the recorded schema hash
+  against the installed owner's. A provider that isn't ready skips the live
+  checks. A different hash is `owner-schema-drift`, which warns (here and in
+  `doctor`) and never fails: rerun the provider's tests against that owner.
+  It exits 1 when a check fails.
+- [Filling another plugin's contract](./plugins.md#filling-another-plugins-contract)
+  covers starting a provider with `untaped plugin new`.

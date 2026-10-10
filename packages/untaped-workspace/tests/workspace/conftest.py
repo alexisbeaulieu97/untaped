@@ -11,7 +11,7 @@ import pytest
 
 from untaped import bootstrap
 from untaped.settings import get_settings
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 from untaped_git import SPEC as GIT
 from untaped_git.api import store_key
 from untaped_workspace import SPEC as WORKSPACE
@@ -73,7 +73,7 @@ def store_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path
 def composed(fresh_composition: None) -> None:
     """A root composed of the git and workspace plugins: a store fetch of a hosted URL asks
     the plugins filling ``GitHost`` (none here) for credentials."""
-    bootstrap.compose_root(candidates=[provider_candidate(GIT), provider_candidate(WORKSPACE)])
+    bootstrap.compose_root(candidates=[plugin_candidate(GIT), plugin_candidate(WORKSPACE)])
 
 
 def store_repo(root: Path, url: str) -> Path:

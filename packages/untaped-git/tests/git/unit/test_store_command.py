@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 from untaped import bootstrap
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 from untaped_git import SPEC
 
 
 def _root() -> object:
-    return bootstrap.build_root_app(candidates=(provider_candidate(SPEC),)).meta
+    return bootstrap.build_root_app(candidates=(plugin_candidate(SPEC),)).meta
 
 
 @pytest.fixture

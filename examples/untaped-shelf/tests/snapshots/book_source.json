@@ -1,0 +1,208 @@
+{
+  "contract": "book_source",
+  "methods": {
+    "books": {
+      "params": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "return": {
+        "$defs": {
+          "Book": {
+            "additionalProperties": false,
+            "description": "A book, whoever keeps it; ``source`` names the plugin that issued it.",
+            "properties": {
+              "pages": {
+                "default": 0,
+                "title": "Pages",
+                "type": "integer"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Source"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "title": "Book",
+            "type": "object"
+          },
+          "Source": {
+            "additionalProperties": false,
+            "description": "Where an issued record came from: the provider's plugin and its own record.\n\n``record`` is the JSON dump of the provider's own record when its item type\nis not the owner's model, else empty. The SDK fills it; a provider never does.",
+            "properties": {
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "plugin": {
+                "title": "Plugin",
+                "type": "string"
+              },
+              "record": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Record",
+                "type": "object"
+              }
+            },
+            "required": [
+              "plugin",
+              "kind"
+            ],
+            "title": "Source",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/Book"
+        },
+        "type": "array"
+      },
+      "stability": "experimental"
+    },
+    "to_book": {
+      "params": {
+        "properties": {
+          "item": {
+            "$defs": {
+              "Source": {
+                "additionalProperties": false,
+                "description": "Where an issued record came from: the provider's plugin and its own record.\n\n``record`` is the JSON dump of the provider's own record when its item type\nis not the owner's model, else empty. The SDK fills it; a provider never does.",
+                "properties": {
+                  "kind": {
+                    "title": "Kind",
+                    "type": "string"
+                  },
+                  "plugin": {
+                    "title": "Plugin",
+                    "type": "string"
+                  },
+                  "record": {
+                    "additionalProperties": true,
+                    "default": {},
+                    "title": "Record",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "plugin",
+                  "kind"
+                ],
+                "title": "Source",
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "description": "A book, whoever keeps it; ``source`` names the plugin that issued it.",
+            "properties": {
+              "pages": {
+                "default": 0,
+                "title": "Pages",
+                "type": "integer"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Source"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "title": "Book",
+            "type": "object"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "type": "object"
+      },
+      "return": {
+        "$defs": {
+          "Source": {
+            "additionalProperties": false,
+            "description": "Where an issued record came from: the provider's plugin and its own record.\n\n``record`` is the JSON dump of the provider's own record when its item type\nis not the owner's model, else empty. The SDK fills it; a provider never does.",
+            "properties": {
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "plugin": {
+                "title": "Plugin",
+                "type": "string"
+              },
+              "record": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Record",
+                "type": "object"
+              }
+            },
+            "required": [
+              "plugin",
+              "kind"
+            ],
+            "title": "Source",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A book, whoever keeps it; ``source`` names the plugin that issued it.",
+        "properties": {
+          "pages": {
+            "default": 0,
+            "title": "Pages",
+            "type": "integer"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Source"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "Book",
+        "type": "object"
+      },
+      "stability": "experimental"
+    }
+  },
+  "untaped": "1"
+}
