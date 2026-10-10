@@ -31,7 +31,13 @@ from untaped.contracts._declare import (
     unused_methods,
 )
 from untaped.errors import ConfigError
-from untaped.plugins.registry import CompositionResult, PluginSpec, owns_contracts
+from untaped.plugins.registry import (
+    CompositionResult,
+    PluginSpec,
+    admits,
+    owner_requirement,
+    owns_contracts,
+)
 from untaped.profile_resolver import selected_profile
 from untaped.records import DuplicateKindError
 from untaped.settings import (
@@ -46,6 +52,7 @@ from untaped.settings import (
 PROVIDER_REASONS = frozenset(
     {
         "owner-not-installed",
+        "owner-out-of-range",
         "duplicate-kind",
         "unresolved-item-type",
         "missing-bridge",
@@ -206,6 +213,9 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[Provider | Quara
     def whole(reason: str, detail: str) -> tuple[Quarantined, ...]:
         return (Quarantined(spec.name, owner, reason, detail),)
 
+    out_of_range = _out_of_range(state, spec, owner)
+    if out_of_range is not None:
+        return whole("owner-out-of-range", out_of_range)
     try:
         values = tuple(spec.provides[owner]())
     except DuplicateKindError as exc:
@@ -231,6 +241,26 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[Provider | Quara
                 seen[contract] = len(entries)
         entries.append(entry)
     return tuple(entries)
+
+
+def _out_of_range(state: _State, spec: PluginSpec, owner: str) -> str | None:
+    """Why the installed ``owner`` is outside the range ``spec`` declares for it, if it is.
+
+    The range is the one the provider's ``<owner>`` extra requires; without
+    one, or without the owner's version, nothing is checked (the
+    ``provides-requirement`` convention asks for the range).
+    """
+    refs = {plugin.spec.name: plugin.plugin_ref for plugin in state.composition.plugins}
+    provider, installed = refs.get(spec.name), refs.get(owner)
+    if provider is None or installed is None or not installed.distribution_version:
+        return None
+    requirement = owner_requirement(provider.requires_dist, owner, installed.distribution)
+    if requirement is None or admits(requirement, installed.distribution_version):
+        return None
+    return (
+        f"{spec.name} requires {requirement.name}{requirement.specifier} for {owner}, "
+        f"but {installed.distribution_version} is installed"
+    )
 
 
 def _check(

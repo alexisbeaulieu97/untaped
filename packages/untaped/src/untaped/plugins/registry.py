@@ -454,6 +454,42 @@ def _requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
     return requirement.specifier.contains(sdk_version, prereleases=True)
 
 
+def owner_requirement(
+    requires_dist: Sequence[str], owner: str, distribution: str | None = None
+) -> Requirement | None:
+    """The requirement on ``owner``'s distribution that the ``<owner>`` extra adds.
+
+    A provider declares the plugin it fills contracts for under an extra named
+    after it (``untaped-acme[workspace]``), so ``distribution``
+    (``untaped-<owner>`` by default) is required only with that extra. The
+    import lint, the ``provides-requirement`` convention and the
+    ``owner-out-of-range`` quarantine all read this one requirement.
+    """
+    wanted = canonicalize_name(distribution or f"untaped-{owner}")
+    for line in requires_dist:
+        parsed = _parse_requirement(line)
+        if parsed is None or parsed.marker is None or canonicalize_name(parsed.name) != wanted:
+            continue
+        try:
+            if parsed.marker.evaluate({"extra": owner}) and not parsed.marker.evaluate(
+                {"extra": ""}
+            ):
+                return parsed
+        except UndefinedEnvironmentName:
+            continue
+    return None
+
+
+def admits(requirement: Requirement, version: str) -> bool:
+    """Whether ``requirement``'s range admits ``version`` (a direct reference always does)."""
+    if requirement.url:
+        return True
+    try:
+        return requirement.specifier.contains(version, prereleases=True)
+    except InvalidVersion:
+        return True
+
+
 def _running_sdk_version() -> str | None:
     """Running SDK version via importlib.metadata; None when unresolvable."""
     try:

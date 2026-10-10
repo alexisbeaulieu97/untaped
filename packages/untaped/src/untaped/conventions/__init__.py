@@ -4,7 +4,7 @@ See ``docs/reference/conventions.md#enforcement``.
 
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
-third-party provider is checked exactly like a first-party one. Provider tests call
+third-party plugin is checked exactly like a first-party one. Plugin tests call
 :func:`untaped.testing.check_conventions`; this package is internal.
 """
 
@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from importlib.util import find_spec
 from pathlib import Path
 
+from packaging.markers import UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
@@ -33,6 +34,7 @@ from untaped.plugins.registry import (
     PluginCandidate,
     PluginSpec,
     discover_candidates,
+    owner_requirement,
 )
 from untaped.settings import Settings, model_sections
 
@@ -70,11 +72,12 @@ def plugin_violations(
     own = next((candidate for candidate in candidates if candidate.name == name), None)
     package, source_dir = _package_of(spec, None if own is None else own.target)
     files = list(source_files(source_dir))
-    plugin_packages, declared = _boundary(name, candidates)
+    plugin_packages, declared = _boundary(name, candidates, frozenset(spec.provides))
     commands = [] if spec.app_factory is None else [name]  # its mounted subtree
     return sorted(
         [
             *_name_violations(name, package, own),
+            *_provides_violations(spec, own, candidates),
             *help_tree_violations(root, commands),
             *stability_violations(root, composition(), commands, spec=spec),
             *message_violations(source_dir, files),
@@ -116,11 +119,14 @@ def _name_violations(name: str, package: str, candidate: PluginCandidate | None)
     return violations
 
 
-def _required(requirements: Sequence[str]) -> set[str]:
-    """Canonical names of the ``Requires-Dist`` strings a default install pulls in.
+def _required(requirements: Sequence[str], extras: frozenset[str] = frozenset()) -> set[str]:
+    """Canonical names of the ``Requires-Dist`` strings the plugin may import from.
 
-    A requirement guarded by an ``extra`` marker is left out; other markers
-    (``python_version``, ``sys_platform``…) are ignored; invalid strings are skipped.
+    That is what a default install pulls in, plus what an extra in
+    ``extras`` (the plugin's ``provides`` keys) adds: the owner a provider
+    declares under ``untaped-acme[<owner>]``. Other extra-guarded
+    requirements are left out; other markers (``python_version``,
+    ``sys_platform``…) are ignored; invalid strings are skipped.
     """
     names: set[str] = set()
     for requirement in requirements:
@@ -128,9 +134,24 @@ def _required(requirements: Sequence[str]) -> set[str]:
             parsed = Requirement(requirement)
         except InvalidRequirement:
             continue
-        if parsed.marker is None or not _mentions_extra(str(parsed.marker)):
+        if (
+            parsed.marker is None
+            or not _mentions_extra(str(parsed.marker))
+            or _added_by(parsed, extras)
+        ):
             names.add(canonicalize_name(parsed.name))
     return names
+
+
+def _added_by(requirement: Requirement, extras: frozenset[str]) -> bool:
+    """Whether one of ``extras`` turns ``requirement`` on."""
+    marker = requirement.marker
+    if marker is None:
+        return False
+    try:
+        return any(marker.evaluate({"extra": extra}) for extra in extras)
+    except UndefinedEnvironmentName:
+        return False
 
 
 def _mentions_extra(marker: str) -> bool:
@@ -138,8 +159,52 @@ def _mentions_extra(marker: str) -> bool:
     return re.search(r"\bextra\b", re.sub(r"\"[^\"]*\"|'[^']*'", "", marker)) is not None
 
 
+def _provides_violations(
+    spec: PluginSpec, candidate: PluginCandidate | None, candidates: Sequence[PluginCandidate]
+) -> list[str]:
+    """Where a provider doesn't declare the ranges its offers rely on.
+
+    A plugin with ``provides`` requires ``untaped`` with a version range, and
+    each owner it fills contracts for under an extra named after the owner,
+    with a range too (``untaped-<owner>>=M,<M+1``): the registry checks the
+    installed owner against that range (``owner-out-of-range``).
+    """
+    if not spec.provides:
+        return []
+    requires = () if candidate is None else candidate.requires_dist
+    rule = f"{spec.name}::provides-requirement::"
+    found: list[str] = []
+    core = [
+        parsed
+        for parsed in (_parse(line) for line in requires)
+        if parsed is not None
+        and canonicalize_name(parsed.name) == "untaped"
+        and not _mentions_extra(str(parsed.marker or ""))
+    ]
+    if not any(parsed.specifier or parsed.url for parsed in core):
+        found.append(f"{rule}requires no untaped version range (untaped>=M,<M+1)")
+    distributions = {c.name: c.distribution for c in candidates}
+    for owner in sorted(spec.provides):
+        distribution = str(canonicalize_name(distributions.get(owner, f"untaped-{owner}")))
+        requirement = owner_requirement(requires, owner, distribution)
+        if requirement is None:
+            found.append(
+                f"{rule}provides for {owner} but has no {owner!r} extra requiring {distribution}"
+            )
+        elif not (requirement.specifier or requirement.url):
+            found.append(f"{rule}its {owner!r} extra requires {distribution} with no version range")
+    return found
+
+
+def _parse(line: str) -> Requirement | None:
+    try:
+        return Requirement(line)
+    except InvalidRequirement:
+        return None
+
+
 def _boundary(
-    name: str, candidates: Sequence[PluginCandidate]
+    name: str, candidates: Sequence[PluginCandidate], extras: frozenset[str] = frozenset()
 ) -> tuple[dict[str, str], frozenset[str]]:
     """Plugin packages (to distributions) and what plugin ``name`` may import from.
 
@@ -147,7 +212,8 @@ def _boundary(
     ``module:attr`` target names its package; a spec target (as from
     :func:`untaped.testing.plugin_candidate`) gives it through what the spec
     declares, and is skipped when that cannot be resolved. The checked
-    plugin's own distribution is always declared.
+    plugin's own distribution is always declared, as is what one of
+    ``extras`` (its ``provides`` keys) requires.
     """
     found = list(candidates)
     packages: dict[str, str] = {}
@@ -158,7 +224,7 @@ def _boundary(
     own = next((candidate for candidate in found if candidate.name == name), None)
     if own is None:
         return packages, frozenset()
-    declared = {str(canonicalize_name(own.distribution)), *_required(own.requires_dist)}
+    declared = {str(canonicalize_name(own.distribution)), *_required(own.requires_dist, extras)}
     return packages, frozenset(declared)
 
 
