@@ -52,11 +52,13 @@ class ResolveRepos:
                 if new is not None:
                     changed.append(new)
             if changed:
-                self._store.update_repos(record.name, changed)
+                # Worktrees first: a failed configure leaves the old URL saved,
+                # so the next resolve tries again.
                 old = {spec.dir: spec.url for spec in record.repos}
                 for spec in changed:
                     if spec.url != old[spec.dir]:
                         self._git.configure(spec.url, root / spec.dir)
+                self._store.update_repos(record.name, changed)
             return rows
 
     def _one(
