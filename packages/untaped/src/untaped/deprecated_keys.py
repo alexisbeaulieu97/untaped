@@ -493,8 +493,8 @@ def reset_key_warnings() -> None:
 def use_warning(use: KeyUse, *, old: str, new: str, kept: str | None = None) -> str | None:
     """The warning for ``use``, with keys spelled as the caller names them.
 
-    ``old``/``new``/``kept`` are the user-facing spellings (``github.corpus_path``
-    or ``UNTAPED_GITHUB__CORPUS_PATH``); retired keys get no read-time warning.
+    ``old``/``new``/``kept`` are the user-facing spellings (``demo.old_key``
+    or ``UNTAPED_DEMO__OLD_KEY``); retired keys get no read-time warning.
     """
     if use.kind == "renamed":
         return deprecated_message(old, new)
