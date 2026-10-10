@@ -466,6 +466,7 @@ def _import_every_shipped_module() -> None:
 def _samples() -> dict[str, Record]:
     from untaped.config.models import SettingOutcome, SettingRow
     from untaped.management.alias import AliasOutcome, AliasRow
+    from untaped.management.plugin_check import PluginCheckRow
     from untaped.management.plugins import ContractRow
     from untaped.profile.models import ProfileOutcome, ProfileRow
 
@@ -488,6 +489,9 @@ def _samples() -> dict[str, Record]:
             stability="experimental",
             providers=["github", "gitlab"],
             ranked=["github"],
+        ),
+        PluginCheckRow(
+            plugin="bin", check="live", title="rack.item_source.items", status="pass", detail="2"
         ),
     ]
     return {str(kind_of(type(row))): row for row in rows}

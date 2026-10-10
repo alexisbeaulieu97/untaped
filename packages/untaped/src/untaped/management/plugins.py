@@ -120,6 +120,30 @@ def build_root_plugin_app(
             outcome = _rank(result, contract, method, list(plugins), dry_run=dry_run)
             emit(outcome, fmt=fmt, columns=columns)
 
+    @app.command(name="check")
+    def check_command(
+        name: Annotated[
+            str | None, Parameter(help="The plugin to check; every installed one when left out.")
+        ] = None,
+        /,
+        *,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """Check an installed plugin: conventions, and each contract it fills, live.
+
+        The contract checks compose only the plugin and its owners. Exits 1
+        when a check fails; owner-schema-drift only warns.
+        """
+        from untaped.management.plugin_check import (  # noqa: PLC0415 - imports contracts
+            check_plugins,
+            report_check_rows,
+        )
+
+        with report_errors():
+            rows = check_plugins(result, candidates, name)
+            report_check_rows(rows, fmt=fmt, columns=columns)
+
     @app.command(name="schema")
     def schema_command(
         kind: Annotated[str, Parameter(help="A record kind, such as workspace.repo.")],
