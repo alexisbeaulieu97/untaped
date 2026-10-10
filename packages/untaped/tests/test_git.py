@@ -984,3 +984,55 @@ def _unauthorized_http_server() -> Any:
 )
 def test_safe_path_segment(value: str, expected: str) -> None:
     assert safe_path_segment(value) == expected
+
+
+# ── command-scope config and extra environment ─────────────────────────────
+
+
+def test_config_adds_command_scope_settings_before_the_auth_include(tmp_path: Path) -> None:
+    include = tmp_path / "auth.config"
+
+    env = git_env(base={}, auth_config=include, config={"maintenance.auto": "false", "a.b": "c"})
+
+    assert env["GIT_CONFIG_KEY_0"] == "maintenance.auto"
+    assert env["GIT_CONFIG_VALUE_0"] == "false"
+    assert env["GIT_CONFIG_KEY_1"] == "a.b"
+    assert env["GIT_CONFIG_KEY_2"] == "include.path"
+    assert env["GIT_CONFIG_COUNT"] == "3"
+
+
+def test_run_git_passes_config_and_env_outside_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(git, "_run_process", _recording_run(calls))
+
+    run_git(
+        ["fetch", "origin"],
+        timeout=5,
+        config={"fetch.negotiationAlgorithm": "noop"},
+        env={"GIT_NO_LAZY_FETCH": "1"},
+    )
+
+    (call,) = calls
+    assert call["args"][1:] == ["fetch", "origin"]
+    assert call["env"]["GIT_NO_LAZY_FETCH"] == "1"
+    env = call["env"]
+    keys = [env[f"GIT_CONFIG_KEY_{i}"] for i in range(int(env["GIT_CONFIG_COUNT"]))]
+    assert "fetch.negotiationAlgorithm" in keys
+
+
+def test_run_git_env_cannot_reopen_traces_under_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(git, "_run_process", _recording_run(calls))
+
+    run_git(
+        ["fetch", "origin"],
+        timeout=5,
+        auth_header=_HEADER,
+        auth_url="https://h/a.git",
+        env={"GIT_TRACE_CURL": "1", "GIT_NO_LAZY_FETCH": "1"},
+    )
+
+    (call,) = calls
+    assert "GIT_TRACE_CURL" not in call["env"]
+    assert call["env"]["GIT_NO_LAZY_FETCH"] == "1"
+    assert call["auth_config"] is not None
