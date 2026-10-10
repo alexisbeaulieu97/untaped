@@ -443,6 +443,25 @@ def test_ctrl_c_while_deleting_a_copied_source_keeps_the_moved_repo_working(
     assert remove_if_emptied(root)
 
 
+def test_a_copied_source_goes_even_when_a_step_after_the_move_fails(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tree = tmp_path / "ws" / "app"
+    source = _workspace_10x(remote, tmp_path / "workspace-cache", tree)
+
+    def broken(*_args: object) -> None:
+        raise StoreError("repoint failed")
+
+    monkeypatch.setattr(adopt_module, "_same_filesystem", lambda _a, _b: False)
+    monkeypatch.setattr(adopt_module, "_repoint", broken)
+    with pytest.raises(StoreError, match="repoint failed"):
+        adopt(source, plugin="workspace", error=StoreError, owned=[tree])
+
+    assert (_store_repo() / "HEAD").is_file()
+    assert not source.exists()
+    assert git(tree, "status", "--short", bare=False) == ""
+
+
 def test_a_worktree_path_another_repository_now_uses_is_left_alone(
     remote: GitRemote, tmp_path: Path
 ) -> None:

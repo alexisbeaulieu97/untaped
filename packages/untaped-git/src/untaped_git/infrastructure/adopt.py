@@ -41,10 +41,13 @@ from untaped.sdk import (
     ErrorCategory,
     GitCommandError,
     GitResult,
+    MigrationOptions,
+    MigrationRow,
     UntapedError,
     atomic_write,
     attribution,
     cache_origin,
+    dir_bytes,
     run_git,
 )
 from untaped_git.domain.namespace import PLAIN_CLONE, layout_for
@@ -59,6 +62,7 @@ from untaped_git.infrastructure.store import REMOVING_SUFFIX, TIMEOUT, RepoStore
 #: What a copied private file loses, so its owner's next sync fetches.
 _FRESHNESS_KEYS = ("fetched_at", "pushed_at")
 #: The 10.x workspace layout mark, replaced by the store's ``untaped.store``.
+_REMOVING = ".git" + REMOVING_SUFFIX
 _OLD_LAYOUT_KEY = "untaped.layout"
 #: Where a copy across filesystems is built before it becomes the store repo.
 _COPYING_SUFFIX = ".adopting"
@@ -142,15 +146,17 @@ def adopt(
             if staged is not None:
                 shutil.rmtree(staged, ignore_errors=True)
             raise
-        _repoint(store, source, moves)
-        store._git(["config", "--local", "--unset-all", _OLD_LAYOUT_KEY], check=False)
-        stamped = [path for path in owned if path.is_dir()]
-        if stamped or worktree_entries(target):
-            store._enable_worktree_config()
-        for path in stamped:
-            store._write_owner_config(path)
-        store._ensure()
-        _discard(source)  # a copy's original, last: the repo is complete in the store
+        try:
+            _repoint(store, source, moves)
+            store._git(["config", "--local", "--unset-all", _OLD_LAYOUT_KEY], check=False)
+            stamped = [path for path in owned if path.is_dir()]
+            if stamped or worktree_entries(target):
+                store._enable_worktree_config()
+            for path in stamped:
+                store._write_owner_config(path)
+            store._ensure()
+        finally:
+            _discard(source)  # a copy's original, last: the repo is complete in the store
     return Adopted(target, action)
 
 
@@ -462,6 +468,27 @@ def _real(path: Path) -> Path:
     return Path(os.path.realpath(path))
 
 
+def unfinished_removals(root: Path, options: MigrationOptions) -> list[MigrationRow]:
+    """A ``delete`` row per ``<repo>.git.removing`` an interrupted run left under ``root``.
+
+    :func:`remove_if_emptied` deletes them; a preview lists them so a root
+    holding nothing else still gets applied. Never looks inside a repository.
+    """
+    found: list[Path] = []
+    for directory, dirs, _files in os.walk(root):
+        found += [Path(directory) / name for name in dirs if name.endswith(_REMOVING)]
+        dirs[:] = [name for name in dirs if not name.endswith((".git", REMOVING_SUFFIX))]
+    return [
+        MigrationRow(
+            action="delete",
+            source=str(path),
+            detail="a copy an interrupted run already moved into the repo store",
+            bytes=dir_bytes(path) if options.measure else 0,
+        )
+        for path in sorted(found)
+    ]
+
+
 def remove_if_emptied(root: Path) -> bool:
     """Delete ``root`` once only empty directories and lock files are left in it.
 
@@ -479,7 +506,7 @@ def remove_if_emptied(root: Path) -> bool:
         here = Path(directory)
         # Never into a repository: an empty refs/ directory there is load-bearing.
         for name in dirs:
-            if name.endswith(".git" + REMOVING_SUFFIX):
+            if name.endswith(_REMOVING):
                 shutil.rmtree(here / name, ignore_errors=True)
         dirs[:] = [name for name in dirs if not name.endswith((".git", REMOVING_SUFFIX))]
         directories.append(here)
