@@ -35,12 +35,12 @@ from untaped.errors import ConfigError
 from untaped.records import DuplicateKindError
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
+    PLUGIN_NAME_PATTERN,
     RESERVED_SECTIONS,
     owner_settings_model,
     reserved_section_keys,
     validate_disjoint_settings_sections,
 )
-from untaped.settings import PLUGIN_NAME_PATTERN as PLUGIN_NAME_PATTERN
 from untaped.stability import Stability, check_stability, mark_errors
 
 if TYPE_CHECKING:
@@ -576,14 +576,18 @@ def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
 
 
 def _check_section_keys(spec: PluginSpec) -> None:
+    # Only an owner's settings section gets ``extensions`` injected.
     injected = frozenset({"extensions"}) if owns_contracts(spec) else frozenset()
-    for label, model in (("settings", spec.settings), ("state", spec.state)):
-        taken = [] if model is None else reserved_section_keys(model, injected=injected)
+    for label, model, keys in (
+        ("settings", spec.settings, injected),
+        ("state", spec.state, frozenset[str]()),
+    ):
+        taken = [] if model is None else reserved_section_keys(model, injected=keys)
         if taken:
             raise _Quarantine(
                 "bad-settings-keys",
                 f"plugin {spec.name!r} {label} declares {', '.join(taken)}, "
-                "which untaped injects into every plugin's section",
+                "which untaped reserves for its own section keys",
             )
 
 
