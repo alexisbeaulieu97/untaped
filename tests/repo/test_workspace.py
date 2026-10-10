@@ -116,8 +116,9 @@ def test_every_project_and_the_plugin_template_share_a_python_floor_above_3_14_0
     floors = {
         name: project["requires-python"] for name, project in release.packages(REPO_ROOT).items()
     }
-    example = tomllib.loads((REPO_ROOT / "examples/untaped-hello/pyproject.toml").read_text())
-    floors["examples/untaped-hello"] = example["project"]["requires-python"]
+    for example in sorted(REPO_ROOT.glob("examples/*/pyproject.toml")):
+        project = tomllib.loads(example.read_text())["project"]
+        floors[example.parent.relative_to(REPO_ROOT).as_posix()] = project["requires-python"]
     template = re.search(
         r'^requires-python = "(.+)"$', (REPO_ROOT / "docs/plugins.md").read_text(), re.M
     )

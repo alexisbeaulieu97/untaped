@@ -376,6 +376,13 @@ def test_ci_wheel_matrix_smokes_each_install_shape_from_the_built_wheels() -> No
     hello = _find(steps, run='cp -r examples/untaped-hello "$RUNNER_TEMP/hello-src"')
     tests = '(cd "$RUNNER_TEMP/hello-src" && "$RUNNER_TEMP/hello/bin/python" -m pytest -q tests)'
     assert _find(steps, run=tests) == hello
+    pair = _find(steps, run='cp -r examples/untaped-shelf "$RUNNER_TEMP/shelf-src"')
+    for example in ("shelf", "library"):
+        tests = (
+            f'(cd "$RUNNER_TEMP/{example}-src" && '
+            '"$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)'
+        )
+        assert _find(steps, run=tests) == pair
     broken = _find(steps, run='cp -r examples/untaped-hello "$RUNNER_TEMP/hello-broken"')
     breaks = (
         "sed -i 's/untaped_hello:provider/untaped_hello:missing/'"

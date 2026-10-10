@@ -268,3 +268,81 @@ def test_a_client_without_a_section_attributes_failures_to_http() -> None:
         mock.get("/x").mock(return_value=httpx.Response(401))
         client.get("/x")
     assert (exc_info.value.category, exc_info.value.system) == ("auth", "http")
+
+
+def test_a_deadline_caps_each_attempt_and_refuses_one_past_it(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    from untaped.http import request_deadline
+
+    seen: list[object] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions["timeout"]["read"])
+        return httpx.Response(503)
+
+    clock = [100.0]
+    monkeypatch.setattr("untaped.http.time.monotonic", lambda: clock[0])
+    with respx.mock(base_url="https://example.com") as mock:
+        mock.get("/x").mock(side_effect=record)
+        with HttpClient(base_url="https://example.com", timeout=30.0) as client:
+            with request_deadline(5.0), pytest.raises(HttpStatusError):
+                client.get("/x", retry=RetryPolicy(max_attempts=2))
+            assert seen == [5.0, 5.0]
+            with request_deadline(60.0):
+                clock[0] += 61
+                with pytest.raises(HttpTransportError, match="deadline exceeded") as err:
+                    client.get("/x")
+    assert err.value.retryable
+
+
+def test_a_retry_that_would_wait_past_the_deadline_is_not_made(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    from untaped.http import request_deadline
+
+    monkeypatch.setattr("untaped.http.time.monotonic", lambda: 100.0)
+    busy = httpx.Response(503, headers={"Retry-After": "60"})
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/x").mock(return_value=busy)
+        with (
+            HttpClient(base_url="https://example.com") as client,
+            request_deadline(5.0),
+            pytest.raises(HttpStatusError) as err,
+        ):
+            client.get("/x", retry=RetryPolicy(max_attempts=3))
+    assert err.value.status_code == 503
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
+def test_a_transport_retry_that_would_wait_past_the_deadline_is_not_made(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+) -> None:
+    from untaped.http import request_deadline
+
+    monkeypatch.setattr("untaped.http.time.monotonic", lambda: 100.0)
+    policy = RetryPolicy(max_attempts=3, backoff_base=10.0)
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/x").mock(side_effect=httpx.ConnectError("refused"))
+        with (
+            HttpClient(base_url="https://example.com") as client,
+            request_deadline(5.0),
+            pytest.raises(HttpTransportError, match="refused"),
+        ):
+            client.get("/x", retry=policy)
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
+def test_a_nested_deadline_never_extends_the_outer_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.http import _time_left, request_deadline
+
+    monkeypatch.setattr("untaped.http.time.monotonic", lambda: 0.0)
+    assert _time_left() is None
+    with request_deadline(5.0):
+        with request_deadline(50.0):
+            assert _time_left() == 5.0
+        with request_deadline(None):
+            assert _time_left() == 5.0
+    assert _time_left() is None

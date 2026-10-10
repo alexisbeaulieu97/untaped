@@ -67,8 +67,9 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
   [exit codes](./docs/reference/exit-codes.md) and
   [environment variables](./docs/reference/environment.md).
 - [Building a plugin provider](./docs/plugins.md): add a plugin from
-  your own package, with its [conventions](./docs/reference/conventions.md)
-  and [how composition works](./docs/composition.md).
+  your own package, with its [conventions](./docs/reference/conventions.md),
+  [how composition works](./docs/composition.md) and
+  [contracts](./docs/contracts.md) between plugins.
 - [Building a screen](./docs/screens.md): an interactive terminal UI on the
   SDK's runtime, with the keys, theme and tests it shares.
 

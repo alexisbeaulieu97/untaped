@@ -206,6 +206,44 @@ def _ssl_context(ca_bundle: Path | None) -> ssl.SSLContext:
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
 
+_DEADLINE: ContextVar[float | None] = ContextVar("untaped_http_deadline", default=None)
+
+
+@contextmanager
+def request_deadline(seconds: float | None) -> Iterator[None]:
+    """Bound every :class:`HttpClient` request in the block to ``seconds`` from now.
+
+    Inside it, a request starts only while time is left, and each attempt's
+    timeout is capped at the time left; the retry policy still applies within
+    the budget, and a retry whose wait would end past it is not made (the
+    last error stands). A request past it raises :class:`HttpTransportError`
+    (``unavailable``). ``None`` leaves an enclosing deadline in effect. The
+    deadline is a context variable, so threads started with a copied context
+    (``bounded_map``) share it.
+    """
+    if seconds is None:
+        yield
+        return
+    ends = time.monotonic() + seconds
+    held = _DEADLINE.get()
+    token = _DEADLINE.set(ends if held is None else min(held, ends))
+    try:
+        yield
+    finally:
+        _DEADLINE.reset(token)
+
+
+def _time_left() -> float | None:
+    ends = _DEADLINE.get()
+    return None if ends is None else ends - time.monotonic()
+
+
+def _fits(delay: float) -> bool:
+    """Whether a retry after ``delay`` seconds could still start before the deadline."""
+    left = _time_left()
+    return left is None or delay < left
+
+
 class HttpClient:
     """A minimal HTTP client suitable for talking to JSON APIs.
 
@@ -239,6 +277,7 @@ class HttpClient:
         )
         self._auth = auth
         self._retry = retry
+        self._timeout = timeout
         self.system = system or HttpError.system
 
     def request(
@@ -256,7 +295,9 @@ class HttpClient:
         default (``_INHERIT``) keeps the client's policy. The request is rebuilt
         each attempt so re-signing auth and re-reading the body stay correct.
         A final failure carries the client's ``system`` and the number of
-        ``attempts`` in its ``details``.
+        ``attempts`` in its ``details``. Inside :func:`request_deadline`, no
+        attempt starts past the deadline and each one's timeout is capped at
+        the time left.
         """
         import httpx  # noqa: PLC0415
 
@@ -266,7 +307,7 @@ class HttpClient:
         attempt = 0
         while True:
             attempt += 1
-            request = self._client.build_request(method, path, **kwargs)
+            request = self._client.build_request(method, path, **self._bounded(kwargs))
             if self._auth is not None:
                 request = self._auth(request)
             started = time.monotonic()
@@ -294,8 +335,9 @@ class HttpClient:
                     and attempt < policy.max_attempts
                     and transient
                     and policy.allows_transport_retry(method, presend=presend)
+                    and _fits(delay := policy.backoff(attempt))
                 ):
-                    _sleep_before_retry(policy.backoff(attempt), attempt, policy)
+                    _sleep_before_retry(delay, attempt, policy)
                     continue
                 raise HttpTransportError(
                     str(exc),
@@ -309,8 +351,10 @@ class HttpClient:
                     policy is not None
                     and attempt < policy.max_attempts
                     and policy.allows_status_retry(method, response.status_code)
+                    and _fits(
+                        delay := policy.status_delay(attempt, response.headers.get("Retry-After"))
+                    )
                 ):
-                    delay = policy.status_delay(attempt, response.headers.get("Retry-After"))
                     _sleep_before_retry(delay, attempt, policy)
                     continue
                 raise HttpStatusError(
@@ -322,6 +366,20 @@ class HttpClient:
                     details={"attempts": attempt},
                 )
             return response
+
+    def _bounded(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """``kwargs`` with the timeout capped at the deadline's time left."""
+        left = _time_left()
+        if left is None:
+            return kwargs
+        if left <= 0:
+            raise HttpTransportError(
+                "request deadline exceeded before the request started",
+                system=self.system,
+            )
+        limit = kwargs.get("timeout", self._timeout)
+        capped = min(left, limit) if isinstance(limit, int | float) else left
+        return {**kwargs, "timeout": capped}
 
     def get(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("GET", path, **kwargs)
