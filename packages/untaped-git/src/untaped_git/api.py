@@ -23,6 +23,7 @@ from untaped_git.domain.release import Released, Removed
 from untaped_git.domain.url import GitUrl, store_key, validate_git_url
 from untaped_git.infrastructure import remote
 from untaped_git.infrastructure.adopt import Adopted, adopt, remove_if_emptied
+from untaped_git.infrastructure.repo_files import config_value
 from untaped_git.infrastructure.store import Prefetched, RepoStore
 from untaped_git.settings import git_settings
 
@@ -82,11 +83,22 @@ def overlaps_store(path: Path) -> bool:
     return real == root or real.is_relative_to(root) or root.is_relative_to(real)
 
 
-def bare_repos(root: Path, *, skip: Collection[str] = ()) -> list[Path]:
+def bare_repos(
+    root: Path, *, skip: Collection[str] = (), workspace_layout: bool | None = None
+) -> list[Path]:
     """Every ``*.git`` directory under ``root``, sorted, without running git.
 
     For an older version's cache root, before :func:`adopt`: never descends
     into a repository, skips symlinks and, at the top level, hidden
-    directories and the names in ``skip``.
+    directories and the names in ``skip``. ``workspace_layout`` keeps only the
+    repos 10.x workspace marked ``untaped.layout`` (``True``) or only the
+    others (``False``).
     """
-    return list_caches(root, skip=skip)
+    repos = list_caches(root, skip=skip)
+    if workspace_layout is None:
+        return repos
+    return [
+        repo
+        for repo in repos
+        if bool(config_value(repo / "config", "untaped", "layout")) is workspace_layout
+    ]

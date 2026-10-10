@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import untaped_git.infrastructure.adopt as adopt_module
 from git.conftest import all_refs, git
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote
@@ -381,8 +382,6 @@ def test_a_workspace_repo_that_fails_to_move_keeps_its_mark_and_worktrees(
 def test_worktrees_work_when_a_run_stops_right_after_the_repo_moved(
     remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import untaped_git.infrastructure.adopt as adopt_module
-
     tree = tmp_path / "ws" / "app"
     source = _workspace_10x(remote, tmp_path / "workspace-cache", tree)
 
@@ -396,3 +395,39 @@ def test_worktrees_work_when_a_run_stops_right_after_the_repo_moved(
     assert not source.exists()
     assert git(tree, "rev-parse", "HEAD", bare=False).strip() == remote.oid("main")
     assert git(tree, "status", "--short", bare=False) == ""
+
+
+def test_ctrl_c_during_a_copy_across_filesystems_leaves_the_worktrees_working(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tree = tmp_path / "ws" / "app"
+    source = _workspace_10x(remote, tmp_path / "workspace-cache", tree)
+
+    def interrupted(*_args: object, **_kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(adopt_module, "_same_filesystem", lambda _a, _b: False)
+    monkeypatch.setattr(shutil, "copytree", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        adopt(source, plugin="workspace", error=StoreError, owned=[tree])
+    monkeypatch.undo()
+
+    assert git(tree, "status", "--short", bare=False) == ""
+    assert not _store_repo().exists()
+    assert adopt(source, plugin="workspace", error=StoreError, owned=[tree]).action == "moved"
+
+
+def test_a_worktree_path_another_repository_now_uses_is_left_alone(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    tree = tmp_path / "ws" / "app"
+    source = _workspace_10x(remote, tmp_path / "workspace-cache", tree)
+    shutil.rmtree(tree)  # removed by hand; the entry stays registered
+    other = tmp_path / "other"
+    git(Path("."), "clone", "--quiet", "--bare", remote.url, str(other))
+    git(other, "worktree", "add", "--quiet", "--detach", str(tree), "main")
+    before = (tree / ".git").read_text(encoding="utf-8")
+
+    adopt(source, plugin="workspace", error=StoreError)
+
+    assert (tree / ".git").read_text(encoding="utf-8") == before

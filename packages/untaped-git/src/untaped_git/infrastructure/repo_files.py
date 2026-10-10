@@ -53,6 +53,23 @@ def private_files(repo: Path) -> list[str]:
     )
 
 
+def names_admin(dot_git: Path, *admins: Path) -> bool:
+    """Whether the worktree file ``dot_git`` names one of ``admins``.
+
+    A worktree removed by hand leaves its entry registered; its path may since
+    hold another repository's checkout, which must never be rewritten.
+    """
+    try:
+        text = dot_git.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    named = text.strip().removeprefix("gitdir:").strip()
+    if not named:
+        return False
+    real = os.path.realpath(dot_git.parent / named)
+    return any(real == os.path.realpath(admin) for admin in admins)
+
+
 def worktree_entries(repo: Path) -> list[WorktreeEntry]:
     """Every worktree registered in ``repo`` (``worktrees/*``), sorted by admin directory."""
     try:
