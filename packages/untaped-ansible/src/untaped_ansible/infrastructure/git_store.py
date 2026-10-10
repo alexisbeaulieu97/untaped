@@ -65,9 +65,8 @@ class GitSourceStore:
             atomic_write(store.private_file, json.dumps({"url": url}) + "\n")
 
     def holds(self, url: str) -> bool:
-        """Whether ansible has a part in ``url``'s store repo (its file or refs are there)."""
-        store = self._store(url)
-        return store.exists() and (store.private_file.is_file() or bool(_peeled_refs(store)))
+        """Whether ansible has a part in ``url``'s store repo (see :meth:`RepoStore.has_part`)."""
+        return self._store(url).has_part()
 
     def release(self, url: str) -> Released | Removed | None:
         """Give up ansible's part of ``url``'s store repo (``None`` when there is none).
