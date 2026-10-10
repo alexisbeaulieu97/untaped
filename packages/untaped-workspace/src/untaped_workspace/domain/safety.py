@@ -90,6 +90,16 @@ def releasable_branches(branches: Sequence[LocalBranch], *, force: bool) -> list
     ]
 
 
+def branch_work(branch: LocalBranch) -> str | None:
+    """What deleting ``branch`` would lose (commits, a stash made on it); ``None``: nothing."""
+    if not (branch.unpushed or branch.stashed):
+        return None
+    work = [plural(branch.unpushed, "commit") + " not pushed"] if branch.unpushed else []
+    if branch.stashed:
+        work.append("a stash made on it")
+    return f"branch {branch.name} ({', '.join(work)})"
+
+
 def unpushed_branch_blocker(branch: LocalBranch) -> str | None:
     """Why releasing would lose ``branch``'s commits; ``None`` when they are all pushed."""
     if not branch.unpushed:

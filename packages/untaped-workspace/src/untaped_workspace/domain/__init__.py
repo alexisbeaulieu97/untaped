@@ -25,6 +25,7 @@ from untaped_workspace.domain.naming import (
 from untaped_workspace.domain.safety import (
     archive_blockers,
     archive_hint,
+    branch_work,
     releasable_branches,
     unpushed_branch_blocker,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "archive_hint",
     "assign_dirs",
     "branch_for",
+    "branch_work",
     "looks_like_url",
     "releasable_branches",
     "repo_identity",

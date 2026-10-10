@@ -141,9 +141,10 @@ class StoreUse:
 
 @dataclass(frozen=True)
 class RepoRelease:
-    """What releasing one repo from the store did: ``released`` (kept), or ``removed``."""
+    """What releasing one repo from the store did: ``released`` (the repo stayed for
+    someone else), ``removed``, or ``kept`` (a workspace worktree still uses it)."""
 
-    action: Literal["released", "removed"]
+    action: Literal["released", "removed", "kept"]
     detail: str
     freed_bytes: int = 0
 

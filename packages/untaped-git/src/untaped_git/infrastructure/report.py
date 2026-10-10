@@ -14,7 +14,12 @@ from pathlib import Path
 
 from untaped.sdk import list_caches
 from untaped_git.domain.records import RepoCount, StoreReport
-from untaped_git.infrastructure.repo_files import config_value, private_files, worktree_entries
+from untaped_git.infrastructure.repo_files import (
+    config_value,
+    private_files,
+    tree_size,
+    worktree_entries,
+)
 
 
 def store_report(root: Path, *, version: str | None) -> StoreReport:
@@ -27,7 +32,7 @@ def store_report(root: Path, *, version: str | None) -> StoreReport:
     used_by: dict[str, int] = {}
     exclusive: dict[str, int] = {}
     unowned, held = RepoCount(), RepoCount()
-    sizes = [_size(repo) for repo in repos]
+    sizes = [tree_size(repo) for repo in repos]
     for repo, size in zip(repos, sizes, strict=True):
         if config_value(repo / "config", "untaped", "filter") == "ignored":
             host = repo.relative_to(root).parts[0]
@@ -79,15 +84,4 @@ def _loose(repo: Path) -> int:
                     total += _count(Path(entry.path), lambda _name: True)
     except OSError:
         return 0
-    return total
-
-
-def _size(path: Path) -> int:
-    total = 0
-    for directory, _dirs, files in os.walk(path):
-        for name in files:
-            try:
-                total += os.lstat(os.path.join(directory, name)).st_size
-            except OSError:
-                continue
     return total

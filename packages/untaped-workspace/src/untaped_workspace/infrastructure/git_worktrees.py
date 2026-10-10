@@ -37,6 +37,7 @@ from untaped.sdk import (
     UntapedError,
     atomic_write,
     attribution,
+    plural,
     run_git,
     size_text,
 )
@@ -230,11 +231,16 @@ class LocalGitWorktrees:
 
         The store deletes workspace's refs (``refs/remotes/origin/*``, its
         ``HEAD``, ``refs/tags/*``) and its private file; the repo itself goes
-        when nobody else holds anything in it.
+        when nobody else holds anything in it. Nothing changes while a
+        workspace worktree is registered (``kept``): checked under the repo
+        lock, so one a ``create`` just added survives.
         """
         from untaped_git.api import Released  # noqa: PLC0415
 
-        outcome = self._store(url).release(branches=branches)
+        outcome = self._store(url).release(branches=branches, unless_in_use=True)
+        if isinstance(outcome, Released) and outcome.plugins.get("workspace"):
+            count = plural(outcome.plugins["workspace"], "workspace worktree")
+            return RepoRelease(action="kept", detail=f"used by {count}")
         if isinstance(outcome, Released):
             return RepoRelease(action="released", detail=f"kept: {outcome.kept()}")
         return RepoRelease(

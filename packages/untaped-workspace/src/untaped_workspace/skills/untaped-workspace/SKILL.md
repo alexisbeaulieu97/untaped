@@ -81,7 +81,8 @@ the workspace directory, and exits 2 outside one.
   2. showing the user which repos and what work would be lost;
   3. waiting for explicit approval;
   4. then `untaped workspace archive NAME --force --yes`.
-- `remove --force` also deletes branches whose commits were never pushed. The
+- `remove --force` also deletes branches whose commits were never pushed, and
+  branches with a stash made on them (the stash stays). The
   same four steps apply, previewing with `untaped workspace remove NAME
   --dry-run`. `remove` always confirms; without a terminal it needs `--yes`.
 - `run` has no preview. List the selection with `untaped workspace status NAME`

@@ -61,7 +61,6 @@ StoreReport.gc_log
 
 # The git plugin's repo store API, unused until ansible moves onto it.
 StoreError
-store_report
 GitHost.for_url
 RepoStore.filter_state
 RepoStore.delete_refs
