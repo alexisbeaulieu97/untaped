@@ -63,6 +63,10 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `UNTAPED_*` variables `workspace run` sets.
 - `dotfiles`: its commands, the `dotfiles.yml` manifest, its record kinds,
   the `status.json` and `attention` files, and the `dotfiles.*` settings.
+- `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
+  credentials for a Git host.
+- The fixtures in `untaped.testing.git`, for testing a plugin against the
+  repo store.
 - Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,
   `Footer` and the message classes `Key`, `Paste`, `Resize`, `CmdError`,
   `Quit`, `Cancel`, `Back`, `Interrupt`, `NextField`, `PrevField`, `Activate`,
