@@ -24,8 +24,9 @@ untaped ansible source refresh platform
 untaped config set ansible.default_source platform
 ```
 
-Private repos also need Git access over HTTPS with that token, or over SSH.
-Scanned files, clone protocol, cache locations and refresh tuning are in the
+Private repos also need Git access over HTTPS with that token, or over SSH
+with `github.git_protocol: ssh`. The repos live in the git plugin's repo store
+(`git.store_dir`). Scanned files, the index location and refresh tuning are in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#ansible).
 
 ## Show what a role depends on

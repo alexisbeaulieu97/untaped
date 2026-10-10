@@ -3,12 +3,12 @@ from untaped_ansible.infrastructure.config_repo import (
     AliasRepository,
     SourceRepository,
 )
-from untaped_ansible.infrastructure.git_cache import (
+from untaped_ansible.infrastructure.git_ref_probe import GitRemoteRefProbe
+from untaped_ansible.infrastructure.git_store import (
     GitCacheError,
-    GitRepositoryCache,
+    GitSourceStore,
     local_remote_url,
 )
-from untaped_ansible.infrastructure.git_ref_probe import GitRemoteRefProbe
 from untaped_ansible.infrastructure.github_index import GithubDependencyIndex
 from untaped_ansible.infrastructure.github_ref_probe import GithubRefProbe
 from untaped_ansible.infrastructure.multi_source_index import (
@@ -25,7 +25,7 @@ __all__ = [
     "AutoRefProbe",
     "GitCacheError",
     "GitRemoteRefProbe",
-    "GitRepositoryCache",
+    "GitSourceStore",
     "GithubDependencyIndex",
     "GithubRefProbe",
     "MultiSourceDependencyIndex",

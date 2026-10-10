@@ -104,8 +104,15 @@ def store_auth(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str | None]]:
     def spy(real: Callable[..., GitResult]) -> Callable[..., GitResult]:
         def run(args: list[str], **kwargs: Any) -> GitResult:
             if args[0] in {"fetch", "ls-remote"}:
-                url = kwargs.get("auth_url") or _remote_url(args, kwargs.get("git_dir"))
-                seen.setdefault(url, []).append(kwargs.get("auth_header"))
+                config = kwargs.get("config") or {}
+                rewrites = [
+                    key.removeprefix("url.").removesuffix(".insteadOf")
+                    for key in config
+                    if key.startswith("url.") and key.endswith(".insteadOf")
+                ]
+                url = rewrites[0] if rewrites else _remote_url(args, kwargs.get("git_dir"))
+                secret = kwargs.get("auth_config") or {}
+                seen.setdefault(url, []).append(next(iter(secret.values()), None))
             return real(args, **kwargs)
 
         return run
