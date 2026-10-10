@@ -24,7 +24,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `setup plan` | `untaped.setup_step` |
 | `plugin list` | `untaped.plugin` |
 | `plugin list --contracts` | `untaped.contract` |
-| `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions.<contract>.rank.<method>`) |
+| `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |
 | `alias list` | `untaped.alias` |
 | `alias set`, `alias remove` | `untaped.alias_outcome` |
 

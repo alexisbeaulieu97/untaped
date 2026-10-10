@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
+import re
 import warnings
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
@@ -193,6 +194,9 @@ ContractName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(_[a-z0
 #: in ``profiles.default`` must not break a profile without that plugin.
 PluginName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")]
 
+#: :data:`PluginName`'s grammar, the one every plugin name follows.
+PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+
 
 def _distinct(names: list[str]) -> list[str]:
     repeated = sorted({name for name in names if names.count(name) > 1})
@@ -222,8 +226,21 @@ RESERVED_SECTION_KEYS = frozenset({"extensions", "caches"})
 
 
 def reserved_section_keys(model: type[BaseModel]) -> list[str]:
-    """The fields of ``model`` that take a key the SDK injects (:data:`RESERVED_SECTION_KEYS`)."""
-    return sorted(RESERVED_SECTION_KEYS & model.model_fields.keys())
+    """The keys of ``model`` that take one the SDK injects (:data:`RESERVED_SECTION_KEYS`).
+
+    A key is a field name, a field's alias, or the first segment of an old
+    key the model still declares (``renamed_keys``, ``retired_keys``).
+    """
+    keys = set(model.model_fields)
+    for field in model.model_fields.values():
+        keys.update(
+            alias for alias in (field.alias, field.validation_alias) if isinstance(alias, str)
+        )
+    for name in ("renamed_keys", "retired_keys"):
+        declared = getattr(model, name, None)
+        if isinstance(declared, Mapping):
+            keys.update(str(old).partition(".")[0] for old in declared)
+    return sorted(RESERVED_SECTION_KEYS & keys)
 
 
 @cache

@@ -343,7 +343,7 @@ def collect_doctor_rows(
             rows.append(_state_row(scope, scope.state_model, state))
     profile = selected_profile(raw or {})
     rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
-    rows.extend(_contract_rows(result, profile))
+    rows.extend(_contract_rows(result, profile, plugins))
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
@@ -750,7 +750,9 @@ def _run_check(
     )
 
 
-def _contract_rows(result: CompositionResult, profile: str) -> list[dict[str, object]]:
+def _contract_rows(
+    result: CompositionResult, profile: str, plugins: frozenset[str] | None
+) -> list[dict[str, object]]:
     """Doctor's rows about contracts: one per provider offer, owner problem and bad ranking."""
     specs = [registered.spec for registered in result.plugins]
     if not any(owns_contracts(spec) or spec.provides for spec in specs):
@@ -769,7 +771,7 @@ def _contract_rows(result: CompositionResult, profile: str) -> list[dict[str, ob
             if row.fix is None or row.status == _PASS
             else command_argv(row.fix, profile=profile),
         )
-        for row in doctor_rows()
+        for row in doctor_rows(plugins)
     ]
 
 

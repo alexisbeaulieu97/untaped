@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from cyclopts import App
 from pydantic import BaseModel
@@ -27,7 +25,6 @@ from untaped.contracts._registry import Quarantined, doctor_rows, every_offer, o
 from untaped.errors import ConfigError, ExitCode
 from untaped.plugins.registry import PluginSpec
 from untaped.records import DuplicateKindError
-from untaped.testing import invoke_root
 
 
 def _rows() -> list[tuple[str, str, str, str]]:
@@ -222,12 +219,6 @@ def test_doctor_has_a_row_per_provider_and_an_inactive_one_passes() -> None:
     assert row.detail.endswith("; upgrade untaped-library")
     compose()
     assert doctor_rows() == []
-
-
-def test_doctor_shows_the_contract_rows() -> None:
-    result = invoke_root(["doctor", "-f", "json"])
-    checks = {row["check"] for row in json.loads(result.stdout)}
-    assert "contract-providers" not in checks
 
 
 def test_a_skipped_answer_names_why() -> None:

@@ -60,7 +60,9 @@ def test_answers_come_in_rank_order_then_by_name(rank) -> None:  # type: ignore[
         ("kiosk", 1),
         ("library", None),
     ]
-    assert answers.rank_command == "untaped plugin rank shelf.book_source books shop kiosk library"
+    assert (
+        answers.rank_command() == "untaped plugin rank shelf.book_source books shop kiosk library"
+    )
 
 
 def test_a_provider_not_configured_is_skipped_and_none_ready_is_exit_4() -> None:

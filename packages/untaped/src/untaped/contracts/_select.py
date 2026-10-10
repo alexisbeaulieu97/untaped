@@ -79,10 +79,10 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
     if ranked:
         return _one(min(ranked, key=lambda pair: _rank_key(pair[0].rank)), answers)
     if len(found) > 1:
-        plugins = ", ".join(ok.plugin for ok, _ in found)
+        matched = [ok.plugin for ok, _ in found]
         raise Ambiguous(
-            f"{plugins} each have a match; rank them to choose",
-            hint=f"run `{answers.rank_command}`",
+            f"{', '.join(matched)} each have a match; rank them to choose",
+            hint=f"run `{answers.rank_command(matched)}`",
             details={"providers": [ok.plugin for ok, _ in found]},
         )
     return _one(found[0], answers)

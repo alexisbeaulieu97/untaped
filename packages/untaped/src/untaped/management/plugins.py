@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal
 
 from cyclopts import App, Parameter
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from untaped.cli import (
     ColumnsOption,
@@ -37,6 +37,7 @@ from untaped.config.models import SettingOutcome
 from untaped.config.repository import SettingsFileRepository
 from untaped.errors import ConfigError, UsageError, first_validation_error
 from untaped.management._render import emit_isolated
+from untaped.messages import command_line, not_found
 from untaped.plugins.registry import (
     CompositionResult,
     ProviderCandidate,
@@ -44,8 +45,8 @@ from untaped.plugins.registry import (
     owns_contracts,
     run_deferred_factory,
 )
-from untaped.records import Record, record_model
-from untaped.settings import ExtensionSettings
+from untaped.records import Record, record_kinds, record_model
+from untaped.settings import ContractName, ExtensionSettings
 from untaped.stability import Deprecated, Experimental, function_mark
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
@@ -104,7 +105,8 @@ def build_root_plugin_app(
         method: Annotated[str, Parameter(help="The contract method whose providers to order.")],
         /,
         *plugins: Annotated[
-            str, Parameter(help="Providers, first first; none removes the ranking.")
+            str,
+            Parameter(name="PLUGINS", help="Providers, first first; none removes the ranking."),
         ],
         dry_run: DryRunOption = False,
         fmt: FormatOption = "table",
@@ -116,7 +118,7 @@ def build_root_plugin_app(
         removes the method's ranking.
         """
         with report_errors():
-            outcome = _rank(contract, method, list(plugins), dry_run=dry_run)
+            outcome = _rank(result, contract, method, list(plugins), dry_run=dry_run)
             emit(outcome, fmt=fmt, columns=columns)
 
     @app.command(name="schema")
@@ -146,8 +148,8 @@ class ContractRow(Record, kind="untaped.contract"):
     """``owner.contract``."""
     method: str
     owner: str
-    stability: str
-    """``stable``, ``experimental`` or ``deprecated`` (the method's own mark wins)."""
+    stability: Literal["stable", "experimental", "deprecated"]
+    """The method's own mark, else its contract's."""
     providers: list[str]
     """The plugins whose usable providers fill the method, in the order they are asked."""
     ranked: list[str]
@@ -159,10 +161,16 @@ def _contract_rows() -> list[ContractRow]:
         method_providers,
         owned_contracts,
         rankings,
+        unreadable_owners,
     )
 
     rows: list[ContractRow] = []
-    for owner, infos in sorted(owned_contracts().items()):
+    owned = owned_contracts()
+    for owner in unreadable_owners():
+        ui_context(strict=False).message(
+            "warning", f"{owner}'s contracts couldn't be read; `untaped doctor` says why"
+        )
+    for owner, infos in sorted(owned.items()):
         try:
             extensions: Mapping[str, ExtensionSettings] = rankings(owner)
         except ConfigError as exc:
@@ -186,57 +194,92 @@ def _contract_rows() -> list[ContractRow]:
     return rows
 
 
-def _stability(mark: Experimental | Deprecated | None) -> str:
+def _stability(
+    mark: Experimental | Deprecated | None,
+) -> Literal["stable", "experimental", "deprecated"]:
     if isinstance(mark, Deprecated):
         return "deprecated"
     return "experimental" if isinstance(mark, Experimental) else "stable"
 
 
-def _rank(contract: str, method: str, plugins: list[str], *, dry_run: bool) -> SettingOutcome:
-    """Write ``plugins`` as the ranking of ``contract`` (``owner.contract``) ``method``."""
+_EXTENSIONS = TypeAdapter(dict[ContractName, ExtensionSettings])
+
+
+def _rank(
+    result: CompositionResult, contract: str, method: str, plugins: list[str], *, dry_run: bool
+) -> SettingOutcome:
+    """Write ``plugins`` as the ranking of ``contract`` (``owner.contract``) ``method``.
+
+    No plugins removes the ranking. Only the owner must exist then: removing
+    is how doctor repairs a ranking of a contract or method that doesn't.
+    """
     owner, _, name = contract.partition(".")
     if not owner or not name:
         raise UsageError(f"name the contract as OWNER.CONTRACT, not {contract!r}")
     try:
-        ExtensionSettings.model_validate({"rank": {method: plugins}})
+        _EXTENSIONS.validate_python({name: {"rank": {method: plugins}}})
     except ValidationError as exc:
         raise UsageError(f"invalid ranking: {first_validation_error(exc)}") from None
+    owners = sorted(each.spec.name for each in result.plugins if owns_contracts(each.spec))
+    if owner not in owners:
+        raise UsageError(
+            f"{owner!r} owns no contract (contract owners: {', '.join(owners) or 'none'})",
+            hint=f"run `{command_line('plugin list --contracts')}`",
+        )
     if plugins:
         _check_rankable(owner, name, method, plugins)
-    key = f"{owner}.extensions.{name}.rank.{method}"
+    changed = False
 
-    def update(_target: str, current: Any) -> str:
-        extensions = _own_extensions(owner, current)
-        ranks = dict(extensions.get(name, {}).get("rank", {}))
-        if plugins:
-            ranks[method] = plugins
-        else:
-            ranks.pop(method, None)
-        contract_settings = {**extensions.get(name, {}), "rank": ranks}
-        if ranks or len(contract_settings) > 1:
-            extensions[name] = contract_settings
-        else:
-            extensions.pop(name, None)
-        return json.dumps(extensions)
+    def update(_target: str, current: Any) -> str | None:
+        nonlocal changed
+        extensions = _ranked(_mapping(current), name, method, plugins)
+        changed = extensions != current and bool(extensions or current)
+        return json.dumps(extensions) if extensions else None
 
-    repo = SettingsFileRepository()
-    profile = repo.update_value(f"{owner}.extensions", update, dry_run=dry_run)
-    if not dry_run:
+    key = f"{owner}.extensions"
+    path = f"{key}.{name}.rank.{method}"
+    profile = SettingsFileRepository().update_value(key, update, dry_run=dry_run)
+    ui = ui_context(strict=False)
+    if not changed:
+        ui.message("info", f"{path} unchanged in profile {profile}")
+        action = "unchanged"
+    elif dry_run:
+        action = "planned"
+    else:
         done = f"ranked {' > '.join(plugins)}" if plugins else "removed the ranking"
-        ui_context(strict=False).success(f"{done} for {owner}.{name} {method} (profile {profile})")
-    action = "planned" if dry_run else "updated"
+        ui.success(f"{done} for {owner}.{name} {method} (profile {profile})")
+        action = "updated" if plugins else "deleted"
     return SettingOutcome(key=key, profile=profile, action=action)
 
 
-def _own_extensions(owner: str, current: Any) -> dict[str, Any]:
-    if current is None:
-        return {}
-    if not isinstance(current, dict):
-        raise ConfigError(f"{owner}.extensions must be a mapping, not {type(current).__name__}")
-    return {
-        str(name): dict(value) if isinstance(value, dict) else value
-        for name, value in current.items()
-    }
+def _mapping(value: Any) -> dict[str, Any]:
+    """``value`` as a mapping to edit; anything else (``null``, a stray list) starts empty."""
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _ranked(
+    extensions: dict[str, Any], name: str, method: str, plugins: list[str]
+) -> dict[str, Any]:
+    """``extensions`` with ``name``'s ``method`` ranked as ``plugins`` (none: unranked).
+
+    A malformed contract or ``rank`` value is replaced, so ranking repairs it;
+    an emptied contract entry is dropped.
+    """
+    entry = _mapping(extensions.get(name))
+    ranks = _mapping(entry.get("rank"))
+    if plugins:
+        ranks[method] = plugins
+    else:
+        ranks.pop(method, None)
+    if ranks:
+        entry["rank"] = ranks
+    else:
+        entry.pop("rank", None)
+    if entry:
+        extensions[name] = entry
+    else:
+        extensions.pop(name, None)
+    return extensions
 
 
 def _check_rankable(owner: str, name: str, method: str, plugins: list[str]) -> None:
@@ -248,11 +291,7 @@ def _check_rankable(owner: str, name: str, method: str, plugins: list[str]) -> N
 
     owned = owned_contracts()
     if owner not in owned:
-        known = ", ".join(sorted(owned)) or "none"
-        raise UsageError(
-            f"{owner!r} owns no contract (contract owners: {known})",
-            hint="run `untaped plugin list --contracts`",
-        )
+        raise UsageError(f"{owner}'s contracts couldn't be read", hint="run `untaped doctor`")
     info: ContractInfo | None = next((each for each in owned[owner] if each.name == name), None)
     if info is None:
         known = ", ".join(sorted(each.name for each in owned[owner]))
@@ -275,10 +314,9 @@ def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
     """``kind``'s JSON Schema, with ``$id`` and ``title`` the kind."""
     model = record_model(kind) or _load_kind(kind, result)
     if model is None:
-        raise UsageError(
-            f"no installed plugin declares the record kind {kind!r}",
-            hint="run `untaped plugin list --contracts`",
-        )
+        prefix = kind.partition(".")[0]
+        known = sorted(each for each in record_kinds() if each.partition(".")[0] == prefix)
+        raise UsageError(not_found("record kind", kind, known=known))
     schema = model.model_json_schema()
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
