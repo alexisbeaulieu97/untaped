@@ -95,8 +95,12 @@ def adopt(
 
     The steps are ordered so a run cut short is finished by running again
     while the old repository is still in place: its refs are renamed and its
-    worktrees moved and pointed at before the repository itself moves, and
-    once it has moved, the store's next ``ensure`` repairs the worktrees.
+    worktrees moved before the repository itself moves. Just before that
+    move, every worktree and admin directory is pointed at where the other
+    will be (put back if the move fails), so a run stopped right after it
+    leaves working worktrees. The 10.x layout mark goes only once the
+    repository is in the store: an old repository that failed to move still
+    reads as workspace's.
     """
     name = _plugin_name(plugin)
     label = cache_origin(source)
@@ -123,13 +127,15 @@ def adopt(
             )
         if name not in PLAIN_CLONE:
             _rename_refs(source, name, error=error)
-        _git(
-            source, ["config", "--local", "--unset-all", _OLD_LAYOUT_KEY], error=error, check=False
-        )
         _move_worktrees(moves, error=error)
-        _point_admins(source, moves)
-        _move(source, target, error=error)
+        undo = _point_ahead(source, target, moves)
+        try:
+            _move(source, target, error=error)
+        except UntapedError:
+            _put_back(undo)
+            raise
         _repoint(store, moves)
+        store._git(["config", "--local", "--unset-all", _OLD_LAYOUT_KEY], check=False)
         stamped = [path for path in owned if path.is_dir()]
         if stamped or worktree_entries(target):
             store._enable_worktree_config()
@@ -229,8 +235,9 @@ def _holds_work(
 
 def _refuse_foreign(source: Path, *, plugin: str, error: type[UntapedError]) -> None:
     """A store repo, or workspace's 10.x repo for a plugin with its own namespace, stays put."""
-    config = _git(source, ["config", "--local", "--list"], error=error, check=False).text
-    keys = {line.partition("=")[0] for line in config.splitlines()}
+    marks = ["config", "--local", "--get-regexp", r"^untaped\.(store|layout)$"]
+    config = _git(source, marks, error=error, check=False).text
+    keys = {line.partition(" ")[0] for line in config.splitlines()}
     if "untaped.store" in keys:
         raise error(f"{source} is a repo store repository already; nothing changed")
     if plugin not in PLAIN_CLONE and _OLD_LAYOUT_KEY in keys:
@@ -295,19 +302,33 @@ def _move_worktrees(moves: Mapping[Path, Path], *, error: type[UntapedError]) ->
         _move(old, new, error=error)
 
 
-def _point_admins(source: Path, moves: Mapping[Path, Path]) -> None:
-    """Point each moved worktree's admin directory at its new place, before the repo moves.
+def _point_ahead(source: Path, target: Path, moves: Mapping[Path, Path]) -> list[tuple[Path, str]]:
+    """Point worktrees and admin directories where each will be once ``source`` is ``target``.
 
-    Once the repository has moved, ``git worktree repair`` run from it (the
-    store's ``ensure``) can then find every worktree, even if this run stops.
+    Each worktree's ``.git`` names its admin directory under ``target``; each
+    moved worktree's admin ``gitdir`` names its new place. Returns what
+    :func:`_put_back` needs to undo the ``.git`` files if the move fails.
     """
     moved = {_real(old): new for old, new in moves.items()}
+    undo: list[tuple[Path, str]] = []
     for entry in worktree_entries(source):
         if entry.path is None:
             continue
-        new = moved.get(_real(entry.path))
-        if new is not None and (new / ".git").is_file():
-            (entry.admin / "gitdir").write_text(f"{_real(new / '.git')}\n", encoding="utf-8")
+        path = moved.get(_real(entry.path), entry.path)
+        dot_git = path / ".git"
+        if not dot_git.is_file():
+            continue
+        undo.append((dot_git, dot_git.read_text(encoding="utf-8")))
+        admin = _real(target) / "worktrees" / entry.admin.name
+        (entry.admin / "gitdir").write_text(f"{_real(dot_git)}\n", encoding="utf-8")
+        dot_git.write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    return undo
+
+
+def _put_back(undo: list[tuple[Path, str]]) -> None:
+    for dot_git, text in undo:
+        with contextlib.suppress(OSError):
+            dot_git.write_text(text, encoding="utf-8")
 
 
 def _repoint(store: RepoStore, moves: Mapping[Path, Path]) -> None:

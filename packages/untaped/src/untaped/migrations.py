@@ -4,7 +4,7 @@
 old directory nothing reads any more, deleted with a preview. :func:`old_dirs`
 finds an older version's directory, custom ones included, and
 :func:`dir_bytes` measures what a row moves or frees. :func:`unsafe_dir` says
-why a directory must never be moved or deleted wholesale (it holds home,
+why a directory must never be moved or deleted whole (it holds home,
 untaped's config or the plugins' own data), whatever an old setting named.
 """
 
@@ -73,14 +73,10 @@ def overlapping(left: Path, right: Path) -> bool:
 def unsafe_dir(path: Path) -> str | None:
     """Why ``path`` must never be deleted or moved whole, or ``None``.
 
-    It holds the home directory or untaped's config directory, overlaps the
-    plugins' own data (``~/.untaped/plugins``), or is a symlink (only the
-    link would go, never what it points to).
+    It holds the home directory or untaped's config directory, or overlaps
+    the plugins' own data (``~/.untaped/plugins``); a symlink is judged by
+    what it points to.
     """
-    if path.is_symlink():
-        return (
-            f"a symlink to {shown_path(os.path.realpath(path))}: delete what it points to yourself"
-        )
     real = _real(path)
     untaped = Path(DEFAULT_CONFIG_PATH).expanduser().parent
     if _real(Path.home()).is_relative_to(real):
@@ -104,13 +100,16 @@ def delete_migration(
 
     The preview has one ``delete`` row per existing path, with its size and
     ``detail``; applying deletes them and reports ``deleted`` (or
-    ``unchanged`` when none is left). A path :func:`unsafe_dir` refuses, or
-    one ``guard`` returns a reason for (a directory another plugin still
-    uses), is a ``keep`` row with that reason instead, and stays. ``paths``
+    ``unchanged`` when none is left). A symlink, a path :func:`unsafe_dir`
+    refuses, or one ``guard`` returns a reason for (a directory another
+    plugin still uses), is a ``keep`` row with that reason instead, and stays. ``paths``
     runs at preview and at apply time, so it may read settings.
     """
 
     def refused(path: Path) -> str | None:
+        if path.is_symlink():
+            target = shown_path(os.path.realpath(path))
+            return f"a symlink to {target}: deleting it would leave what it points to"
         return unsafe_dir(path) or (guard(path) if guard is not None else None)
 
     def preview(_ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:

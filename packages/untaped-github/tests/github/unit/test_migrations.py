@@ -83,3 +83,16 @@ def test_a_root_configured_to_the_store_stays(tmp_path: Path, monkeypatch) -> No
             check=True,
         ).stdout
     )
+
+
+def test_workspaces_repos_in_a_shared_root_are_left_to_its_row(tmp_path: Path) -> None:
+    remote = git_remote(tmp_path)
+    repo = _root() / "git.example" / "app.git"
+    _bare("clone", "-q", "--bare", remote.url, str(repo))
+    _bare("--git-dir", str(repo), "config", "untaped.layout", "2")
+
+    assert preview_cache(MigrationOptions()) == []
+    (outcome,) = apply_cache()
+
+    assert outcome.action == "moved" and "moved 0 repos" in outcome.detail
+    assert repo.is_dir()

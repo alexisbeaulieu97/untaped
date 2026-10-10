@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -144,56 +144,76 @@ def preview_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Mig
 
 
 def apply_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationOutcome]:
-    from untaped_git.api import adopt, remove_if_emptied  # noqa: PLC0415
-    from untaped_workspace import SPEC  # noqa: PLC0415
-    from untaped_workspace.infrastructure.git_worktrees import LocalGitWorktrees  # noqa: PLC0415
+    from untaped_git.api import remove_if_emptied  # noqa: PLC0415
 
-    worktrees = LocalGitWorktrees(profile=app_context().profile)
-    listed = _listed_worktrees(ctx)
-    moved, deleted, kept = 0, 0, 0
+    move = _mover(_listed_worktrees(ctx))
+    done = {"moved": 0, "deleted": 0, "kept": 0}
     failures: list[str] = []
     left: list[str] = []
-    seen = False
-    scanned = {root: _scan(root) for root in roots() if root.is_dir() and _refused(root) is None}
+    scanned = {
+        _real(root): _scan(root) for root in roots() if root.is_dir() and _refused(root) is None
+    }
     borrowed = _borrowers(ctx, _mirrors(scanned))
     for root, found in scanned.items():
-        seen = True
         for repo in found:
             try:
                 if repo.mirror:
-                    users = _users(borrowed, repo.path)
-                    if users and not options.dissociate:
-                        kept += 1
-                        continue
-                    _dissociate(users)
-                    shutil.rmtree(repo.path)
-                    deleted += 1
-                    continue
-                label = cache_origin(repo.path)
-                owned = _worktrees_of(repo.path, listed)
-                adopt(repo.path, plugin=SPEC, error=GitError, owned=owned)
-                if label is not None:
-                    worktrees.adopted(label, owned)
-                moved += 1
+                    done[_drop_mirror(repo.path, _users(borrowed, repo.path), options)] += 1
+                else:
+                    move(repo.path)
+                    done["moved"] += 1
             except (UntapedError, OSError) as exc:
                 failures.append(f"{shown_path(repo.path)}: {_reason(exc)}")
         if not remove_if_emptied(root):
             left.append(shown_path(root))
-    if not seen:
-        return [
-            MigrationOutcome(id=_CACHE_ID, action="unchanged", detail="no 10.x workspace cache")
-        ]
-    parts = [f"moved {plural(moved, 'repo')} into the repo store"]
-    if deleted:
-        parts.append(f"deleted {plural(deleted, '9.x mirror')}")
-    if kept:
-        parts.append(f"kept {plural(kept, '9.x mirror')} clones borrow from (--dissociate)")
+    _drop_dangling_links()
+    if not scanned:
+        detail = "no 10.x workspace cache"
+        return [MigrationOutcome(id=_CACHE_ID, action="unchanged", detail=detail)]
+    parts = [f"moved {plural(done['moved'], 'repo')} into the repo store"]
+    if done["deleted"]:
+        parts.append(f"deleted {plural(done['deleted'], '9.x mirror')}")
+    if done["kept"]:
+        parts.append(f"kept {plural(done['kept'], '9.x mirror')} clones borrow from (--dissociate)")
     parts += failures
     if left:
         parts.append(f"kept {', '.join(left)}: something other than repositories is left there")
-    done = moved or deleted
-    action = "moved" if not failures else ("partial" if done else "failed")
+    changed = done["moved"] or done["deleted"]
+    action = "moved" if not failures else ("partial" if changed else "failed")
     return [MigrationOutcome(id=_CACHE_ID, action=action, detail="; ".join(parts))]
+
+
+def _mover(listed: Sequence[Path]) -> Callable[[Path], None]:
+    """Move one 10.x repository into the store, then give workspace's worktrees their config."""
+    from untaped_git.api import adopt  # noqa: PLC0415
+    from untaped_workspace import SPEC  # noqa: PLC0415
+    from untaped_workspace.infrastructure.git_worktrees import LocalGitWorktrees  # noqa: PLC0415
+
+    worktrees = LocalGitWorktrees(profile=app_context().profile)
+
+    def move(repo: Path) -> None:
+        label = cache_origin(repo)
+        owned = _worktrees_of(repo, listed)
+        adopt(repo, plugin=SPEC, error=GitError, owned=owned)
+        if label is not None:
+            worktrees.adopted(label, owned)
+
+    return move
+
+
+def _drop_mirror(repo: Path, users: Sequence[Path], options: MigrationOptions) -> str:
+    """Delete a 9.x mirror (repacking its borrowers with ``--dissociate``); ``deleted``/``kept``."""
+    if users and not options.dissociate:
+        return "kept"
+    _dissociate(users)
+    shutil.rmtree(repo)
+    return "deleted"
+
+
+def _drop_dangling_links() -> None:
+    for root in roots():
+        if root.is_symlink() and not root.exists():
+            root.unlink()  # its directory was emptied and removed
 
 
 def _scan(root: Path) -> list[_Old]:

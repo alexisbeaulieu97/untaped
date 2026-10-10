@@ -100,10 +100,10 @@ the workspace directory, and exits 2 outside one.
   its `level`: a deprecated setting or flag, a skipped or partial result, a
   clamped option. Leave out progress and routine lines.
 - `run`: quote the command; `-` reads a script from stdin (heredoc).
+  Read-only repos are skipped unless `--include-read-only`.
 - Workspaces made before 11.0 keep working once `untaped setup migrate-dirs`
   has moved `~/.untaped/workspace-cache` into the repo store; until then
   `doctor` warns.
-  Read-only repos are skipped unless `--include-read-only`.
 - An unknown repo name exits 2 and suggests close matches; an ambiguous one
   exits 2 and lists the candidates. When two providers list the same name,
   `untaped plugin rank workspace.repo_source repos PLUGIN...` picks the order.
