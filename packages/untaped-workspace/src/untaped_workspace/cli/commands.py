@@ -35,7 +35,7 @@ from untaped.sdk import (
     writes,
 )
 from untaped_workspace.application.archive import ArchiveWorkspace
-from untaped_workspace.application.remove import RemoveWorkspace, RepoPlan, refusal_hint
+from untaped_workspace.application.remove import RemovalPlan, RemoveWorkspace, refusal_hint
 from untaped_workspace.application.run import RunInRepos, RunTarget
 from untaped_workspace.cli.common import (
     BaseOption,
@@ -348,7 +348,7 @@ def remove_command(
                     f"{plural(len(plan.blocked), 'repo')} would lose work; nothing removed",
                     hint=refusal_hint(plan),
                 )
-            _confirm_remove(plan.name, plan.blocked, yes=yes)
+            _confirm_remove(plan, force=force, yes=yes)
             outcomes = remove(plan, force=force)
         emit(outcomes, fmt=fmt, columns=columns, kind=REMOVE)
         report_row_errors(outcomes, item=lambda row: f"{row.workspace}/{row.repo}")
@@ -593,11 +593,16 @@ def _confirm_discard(name: str, blocked: Sequence[StatusRow], *, yes: bool) -> N
     )
 
 
-def _confirm_remove(name: str, blocked: Sequence[RepoPlan], *, yes: bool) -> None:
+def _confirm_remove(plan: RemovalPlan, *, force: bool, yes: bool) -> None:
     """Confirm the removal, naming the work ``--force`` would discard."""
-    discard = "; ".join(f"{repo.spec.dir} ({', '.join(repo.blockers)})" for repo in blocked)
+    lost = [
+        (repo.spec.dir, [*repo.blockers, *(repo.discards if force else ())])
+        for repo in plan.repos
+        if repo.held_by is None
+    ]
+    discard = "; ".join(f"{d} ({', '.join(work)})" for d, work in lost if work)
     ui_context(strict=False).confirm_or_cancel(
-        f"Remove workspace {name} and release its repos"
+        f"Remove workspace {plan.name} and release its repos"
         + (f", discarding: {discard}?" if discard else "?"),
         assume_yes=yes,
         refusal="remove requires --yes when not interactive",

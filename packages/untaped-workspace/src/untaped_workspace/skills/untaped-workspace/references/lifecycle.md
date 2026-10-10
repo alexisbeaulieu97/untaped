@@ -162,16 +162,17 @@ all on the remote go, and the repo itself when no other plugin uses it.
   lacks refuses the removal (exit 1, "branch BRANCH: N commits not pushed"),
   as archive's blockers do. Push it from a workspace on that branch, or pass
   `--force`, which deletes it.
-- A branch with a stash made on it stays, and so does the stash: `--force`
-  never deletes a stash. The repo then stays too, listed under `held by
-  branches` in `untaped git store`.
+- Other branches with unpushed commits or a stash made on them stay, and
+  keep the repo (listed under `held by branches` in `untaped git store`).
+  `--force` deletes them too, and the preview and the confirmation name
+  them. A stash itself is never deleted, even when its branch is.
 - `remove` always confirms; without a terminal it needs `--yes` (else exit
   2). `--dry-run` previews with `planned` and `skipped` rows and exits 0.
 
 Each repo's row says what happened: `removed` (with the space freed),
 `released` (`kept: ...` names who still uses the repo: another plugin, a
 branch, a stash, a worktree added by hand), `kept` (another workspace uses
-it), `skipped` (not in the repo store) or `failed`. A last row with an empty
+it, or a workspace worktree was added to it meanwhile), `skipped` (not in the repo store) or `failed`. A last row with an empty
 `repo` is the workspace itself.
 
 ## The repo store is load-bearing

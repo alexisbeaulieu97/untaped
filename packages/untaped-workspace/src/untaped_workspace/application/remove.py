@@ -12,15 +12,17 @@ Release deletes local branches only by the rule archive already applies to
 work (:func:`~untaped_workspace.domain.safety.releasable_branches`): a branch
 another worktree has checked out, one with unpushed commits or with a stash
 made on it stays, and keeps the repo. ``--force`` lets every branch go but a
-checked-out one; a stash is never deleted. Before anything changes, a
-workspace whose own branch has commits the remote lacks is refused unless
-forced, because release would delete that branch.
+checked-out one; a stash (``refs/stash``) is never deleted, though the branch
+it was made on is. Before anything changes, a workspace whose own branch has
+commits the remote lacks is refused unless forced, because release would
+delete that branch; any other branch ``--force`` would delete with work on it
+is named in the preview and the confirmation.
 
 The caller holds the workspace lock from the plan through the removal. A
-``create`` of the same repo in another workspace can still start between the
-check that nothing holds a repo and its release; that ``create`` then fetches
-the repo again. A repo whose workspace worktree is registered meanwhile is
-kept.
+``create`` of the same repo in another workspace can still start meanwhile:
+the store checks under its repo lock that no workspace worktree is registered
+before it deletes anything, so a repo that ``create`` has added its worktree
+to is kept, and one it has not reached yet is fetched again.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from untaped_workspace.domain.naming import repo_key
 from untaped_workspace.domain.records import RemoveOutcome
 from untaped_workspace.domain.safety import (
     archive_hint,
+    branch_work,
     releasable_branches,
     unpushed_branch_blocker,
 )
@@ -67,6 +70,8 @@ class RepoPlan:
     stored: bool
     blockers: tuple[str, ...]
     """Work release would lose: the active worktree's blockers, unpushed branches."""
+    discards: tuple[str, ...] = ()
+    """Other branches with work on them that only ``--force`` deletes (no record names them)."""
 
 
 @dataclass(frozen=True)
@@ -167,6 +172,8 @@ class RemoveWorkspace:
                 detail = "release from the repo store"
             if repo.blockers:
                 detail = f"{'; '.join(repo.blockers)}; {detail}"
+            if force and repo.discards:
+                detail = f"{detail}; deletes {'; '.join(repo.discards)}"
             rows.append(
                 RemoveOutcome(
                     workspace=plan.name,
@@ -220,16 +227,20 @@ class RemoveWorkspace:
             held_by = holders.get(key)
             use = self._git.store_use(spec.url) if held_by is None else None
             found = blockers.setdefault(key, [])
+            discards = []
             for branch in use.branches if use is not None else ():
                 reason = unpushed_branch_blocker(branch)
                 if branch.name in branches.get(key, ()) and reason is not None:
                     found.append(reason)
+                elif not branch.checked_out and (work := branch_work(branch)) is not None:
+                    discards.append(work)
             repos.append(
                 RepoPlan(
                     spec=spec,
                     held_by=held_by,
                     stored=held_by is not None or use is not None,
                     blockers=tuple(found),
+                    discards=tuple(discards),
                 )
             )
         return RemovalPlan(

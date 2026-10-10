@@ -65,7 +65,8 @@ def worktree_entries(repo: Path) -> list[WorktreeEntry]:
         path: Path | None
         try:
             gitdir = (admin / "gitdir").read_text(encoding="utf-8", errors="replace").strip()
-            path = Path(gitdir).parent if gitdir else None
+            # Relative since git 2.48 with worktree.useRelativePaths: from the admin dir.
+            path = Path(os.path.normpath(admin / gitdir)).parent if gitdir else None
         except OSError:
             path = None
         config = admin / "config.worktree"
@@ -82,6 +83,18 @@ def _same(stamp: str | None, path: Path | None) -> bool:
     if not stamp or path is None:
         return False
     return os.path.realpath(stamp) == os.path.realpath(path)
+
+
+def tree_size(path: Path) -> int:
+    """Bytes of every file under ``path`` (symlinks not followed)."""
+    total = 0
+    for directory, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(directory, name)).st_size
+            except OSError:
+                continue
+    return total
 
 
 def config_value(file: Path, section: str, key: str) -> str | None:

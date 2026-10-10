@@ -16,6 +16,7 @@ from untaped_workspace.domain import (
     RepoSpec,
     StoreUse,
     WorkspaceRecord,
+    branch_work,
     releasable_branches,
     unpushed_branch_blocker,
 )
@@ -189,9 +190,13 @@ def test_an_archived_branch_with_unpushed_commits_blocks(
     with remover.hold("J-1") as plan:
         # Only the workspace's own branch: another branch's commits are not its work.
         assert [repo.blockers for repo in plan.blocked] == [("branch J-1: 2 commits not pushed",)]
+        # ...but --force deletes it too, so the preview names it.
+        assert plan.repos[0].discards == ("branch other (5 commits not pushed)",)
+        forced = remover.preview(plan, force=True)[0].detail
         hint = refusal_hint(plan)
     assert hint.startswith("push each unpushed branch")
     assert hint.endswith("or pass --force to delete it")
+    assert forced.endswith("; deletes branch other (5 commits not pushed)")
 
     assert _remove(remover, "J-1", force=True)[0] == ("acme/api", "removed", "1.0 KiB freed")
     assert git.released == [(API, ("J-1", "other"))]
@@ -313,3 +318,10 @@ def test_releasable_branches_follow_the_rule() -> None:
 def test_unpushed_branch_blocker() -> None:
     assert unpushed_branch_blocker(_branch("b")) is None
     assert unpushed_branch_blocker(_branch("b", unpushed=1)) == "branch b: 1 commit not pushed"
+
+
+def test_branch_work_names_commits_and_a_stash() -> None:
+    assert branch_work(_branch("b")) is None
+    assert branch_work(_branch("b", unpushed=1, stashed=True)) == (
+        "branch b (1 commit not pushed, a stash made on it)"
+    )

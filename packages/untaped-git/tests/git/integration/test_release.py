@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -253,3 +254,54 @@ def test_a_worktree_added_from_an_owned_one_stays_the_users(
     assert outcome.foreign_worktrees == (str(hand),)
     assert hand.is_dir()
     assert not owned.exists()
+
+
+def test_release_finishes_another_plugins_interrupted_release_first(
+    store_for: StoreFor,
+) -> None:
+    github = store_for("github")
+    github.fetch(branches=["main"])
+    github.private_file.write_text("{}")
+    git(github.path, "config", RELEASE_MARK, "github")  # killed right after the mark
+    ansible = store_for("ansible")
+    ansible.fetch(branches=["main"])
+
+    outcome = ansible.release()
+
+    assert isinstance(outcome, Removed)
+    assert not github.path.exists()
+
+
+def test_release_unless_in_use_keeps_everything_while_a_worktree_is_registered(
+    store_for: StoreFor, tmp_path: Path
+) -> None:
+    workspace = store_for("workspace")
+    workspace.fetch(branches=["*"], tags=["*"], prune=True)
+    workspace.private_file.write_text("{}")
+    tree = tmp_path / "ws" / "one"
+    workspace.worktree_add(tree, "refs/remotes/origin/main", branch="one")
+    before = all_refs(workspace.path)
+
+    outcome = workspace.release(branches=["one"], unless_in_use=True)
+
+    assert outcome == Released(plugins={"workspace": 1}, branches=("one",))
+    assert all_refs(workspace.path) == before
+    assert workspace.private_file.exists()
+    assert tree.is_dir()
+
+
+def test_a_worktree_registered_with_a_relative_path_is_still_owned(
+    store_for: StoreFor, tmp_path: Path
+) -> None:
+    """git 2.48+ ``worktree.useRelativePaths`` writes the admin ``gitdir`` relative."""
+    github = store_for("github")
+    github.fetch(branches=["main"])
+    tree = tmp_path / "plugins" / "github" / "worktrees" / "app"
+    github.worktree_add(tree, "refs/untaped/github/heads/main")
+    (admin,) = (github.path / "worktrees").iterdir()
+    target = os.path.relpath(tree.resolve() / ".git", admin.resolve())
+    (admin / "gitdir").write_text(target + "\n")
+
+    assert github.worktree_owners() == {tree.resolve(): "github"}
+    assert isinstance(github.release(), Removed)
+    assert not tree.exists()

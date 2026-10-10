@@ -72,6 +72,7 @@ from untaped_git.infrastructure.repo_files import (
     WorktreeEntry,
     private_file,
     private_files,
+    tree_size,
     worktree_entries,
 )
 from untaped_git.infrastructure.version import below_floor, floor_text, git_version, version_text
@@ -328,7 +329,9 @@ class RepoStore:
 
     # ── release ────────────────────────────────────────────────────────────
 
-    def release(self, *, branches: Sequence[str] = ()) -> Released | Removed:
+    def release(
+        self, *, branches: Sequence[str] = (), unless_in_use: bool = False
+    ) -> Released | Removed:
         """Say this plugin no longer needs the repo; it goes when nobody else holds it.
 
         Deletes the plugin's refs (workspace's: ``refs/remotes/origin/*``, its
@@ -340,7 +343,12 @@ class RepoStore:
         left, the repo stays (:class:`Released` names who kept it); otherwise
         it is renamed to ``<repo>.git.removing`` and deleted
         (:class:`Removed`). The ``untaped.release`` mark written first lets
-        the next :meth:`ensure` finish a release that was interrupted.
+        the next :meth:`ensure` finish a release that was interrupted, and
+        another plugin's interrupted release is finished first.
+
+        ``unless_in_use`` changes nothing while one of this plugin's worktrees
+        is registered, checked under the repo lock (:class:`Released` then
+        counts it), so a worktree another process just added is never deleted.
         """
         refs = []
         for name in branches:
@@ -354,6 +362,10 @@ class RepoStore:
             if not self.exists():
                 self._remove_removing()
                 return Removed()
+            if unless_in_use and any(
+                entry.owner == self._plugin for entry in worktree_entries(self._path)
+            ):
+                return self._holders() or Released()
             checked_out = set(self._checked_out()) & set(refs)
             if checked_out:
                 names = ", ".join(sorted(ref.removeprefix("refs/heads/") for ref in checked_out))
@@ -361,6 +373,10 @@ class RepoStore:
                     f"cannot release {self._path}: a worktree has {names} checked out",
                     category=ErrorCategory.CONFLICT,
                 )
+            marked = self._config_get(RELEASE_MARK)
+            if marked is not None and marked != self._plugin:
+                # Another plugin's interrupted release: finish it before the mark is reused.
+                self._finish_release(marked, ())
             self._git(["config", RELEASE_MARK, self._plugin])
             self._finish_release(self._plugin, refs)
             return self._settle()
@@ -396,8 +412,9 @@ class RepoStore:
         if released is not None:
             self._git(["config", "--unset-all", RELEASE_MARK], check=False)
             return released
-        freed = _size(self._path)
+        freed = tree_size(self._path)
         removing = self._removing_path()
+        self._remove_removing()
         try:
             self._path.rename(removing)
         except OSError as exc:
@@ -1253,14 +1270,3 @@ def _shown_path(path: Path) -> str:
     """``path`` with the home directory as ``~``."""
     home = Path.home()
     return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)
-
-
-def _size(path: Path) -> int:
-    total = 0
-    for directory, _dirs, names in os.walk(path):
-        for name in names:
-            try:
-                total += os.lstat(os.path.join(directory, name)).st_size
-            except OSError:
-                continue
-    return total

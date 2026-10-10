@@ -571,8 +571,13 @@ def test_release_reports_who_kept_the_repo_or_what_it_freed(
     url = str(make_upstream("api"))
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
-    worktrees.remove(url, dest, force=False)
 
+    # A worktree registered by the time the store holds the lock keeps everything.
+    used = worktrees.release(url, branches=())
+    assert (used.action, used.detail) == ("kept", "used by 1 workspace worktree")
+    assert dest.is_dir()
+
+    worktrees.remove(url, dest, force=False)
     kept = worktrees.release(url, branches=())
     assert (kept.action, kept.detail) == ("released", "kept: branch b")
 
