@@ -13,7 +13,9 @@ from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError
 from untaped_workspace.infrastructure import StateWorkspaceStore
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
-SPEC = RepoSpec(url="u", name="acme/api", dir="api", branch="b", base="main")
+SPEC = RepoSpec(
+    url="https://github.com/acme/api.git", name="acme/api", dir="api", branch="b", base="main"
+)
 
 
 def test_create_get_add_archive() -> None:

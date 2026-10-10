@@ -35,14 +35,15 @@ def _ask(refresh: bool | None) -> Answers[list[Repo]]:
 
 
 def _age(delta: timedelta) -> str:
+    """``just now``, ``5m ago``, ``3h ago`` or ``2d ago``."""
     seconds = int(delta.total_seconds())
     if seconds < 60:
         return "just now"
     if seconds < 3600:
-        return f"{seconds // 60}m"
+        return f"{seconds // 60}m ago"
     if seconds < 86400:
-        return f"{seconds // 3600}h"
-    return f"{seconds // 86400}d"
+        return f"{seconds // 3600}h ago"
+    return f"{seconds // 86400}d ago"
 
 
 def _repos(count: int) -> str:
@@ -105,7 +106,9 @@ class RepoPickSource:
             return []
         if item_id not in self._branches:
             repo = self._seen.get(item_id)
-            self._branches[item_id] = [] if repo is None else self._git.remote_branches(repo.url)
+            if repo is None:  # not listed (yet): a later catalog may list it
+                return []
+            self._branches[item_id] = self._git.remote_branches(repo.url)
         return self._branches[item_id]
 
     # -- helpers -----------------------------------------------------------
@@ -167,7 +170,7 @@ def _note(answer: Ok[list[Repo]] | Failed | Skipped) -> str | None:
         case Ok(value=value, refreshed_at=at, invalid=invalid):
             note = f"{plugin}: {_repos(len(value))}"
             if at is not None:
-                note += f", refreshed {_age(datetime.now(UTC) - at)} ago"
+                note += f", refreshed {_age(datetime.now(UTC) - at)}"
             if invalid:
                 note += f", {len(invalid)} invalid ({invalid[0]}; upgrade untaped-{plugin})"
             return note

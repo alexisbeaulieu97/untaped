@@ -75,7 +75,9 @@ class RepoSources:
         """``repo`` as its source plugin lists it now (a live call), admitted.
 
         ``None`` when nobody can be asked: a typed URL (no source), or a
-        source plugin that is uninstalled or not ready in this profile.
+        source plugin that is uninstalled or not ready in this profile. A
+        live call that failed raises its error, even when a stored answer
+        stood in: that answer is not "now".
         """
         source = repo.source
         if source is None:
@@ -84,6 +86,9 @@ class RepoSources:
             answers = gather(RepoSource.repos, refresh=True, plugins={source.plugin})()
         except NoProviderReady:
             return None
+        for answer in answers:
+            if isinstance(answer, Ok) and answer.stale is not None:
+                raise answer.stale.error
         return self.admit(select_one(answers, lambda listed: listed.name == repo.name))
 
     def _ask(self) -> Answers[list[Repo]]:
@@ -95,7 +100,7 @@ class RepoSources:
 def _unasked_hint(exc: NoProviderReady) -> str:
     """``github wasn't asked: …; set github.default_org, or pass the repo's clone URL``."""
     if not exc.not_ready:
-        return f"no installed plugin lists repos; {_URL_HINT}"
+        return f"install a plugin that lists repos (untaped[github]), or {_URL_HINT}"
     parts = []
     for plugin, ready in exc.not_ready.items():
         setting = f"; set {ready.setting}" if ready.setting else ""

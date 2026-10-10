@@ -50,7 +50,9 @@ def _list(*args: str) -> CliResult:
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         for path, repos in LISTINGS.items():
             mock.get(path).mock(return_value=httpx.Response(200, json=repos))
-        return CliInvoker().invoke(app, ["repos", "list", *args, "--format", "raw", "-c", "full_name"])
+        return CliInvoker().invoke(
+            app, ["repos", "list", *args, "--format", "raw", "-c", "full_name"]
+        )
 
 
 @pytest.mark.parametrize(

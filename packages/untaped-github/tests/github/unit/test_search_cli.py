@@ -320,7 +320,9 @@ def test_search_large_limit_follows_link_pages_until_github_stops(limit: str) ->
     result, _ = _search(["repos", "--limit", limit, "--format", "json"], pages=pages)
 
     assert result.exit_code == 0, result.output
-    assert [row["full_name"] for row in json.loads(result.stdout)] == [f"me/r{i}" for i in range(200)]
+    assert [row["full_name"] for row in json.loads(result.stdout)] == [
+        f"me/r{i}" for i in range(200)
+    ]
 
 
 def test_search_limit_zero_is_a_usage_error() -> None:

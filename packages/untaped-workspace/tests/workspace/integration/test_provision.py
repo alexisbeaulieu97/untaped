@@ -9,18 +9,16 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing.git import GitRemote
-
 from untaped.contracts import Source
 from untaped.sdk import UsageError
-from untaped_workspace.application.provision import ProvisionRepos
+from untaped.testing.git import GitRemote
 from untaped_workspace.api import Repo
+from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.domain import Checkout, RepoArg
 from untaped_workspace.domain.records import RepoOutcome
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from untaped_workspace.infrastructure.catalog import RepoSources
-
 
 #: The store asks the plugins filling ``GitHost`` (none here) for the https remotes, and a
 #: name asks the plugins filling ``RepoSource`` (none here either).
@@ -44,9 +42,7 @@ def test_create_checks_out_every_repo(
     provision: ProvisionRepos, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
     api, web = make_upstream("api"), make_upstream("web")
-    rows = provision.create(
-        "J-1", [RepoArg(ident=api.url), RepoArg(ident=web.url, read_only=True)]
-    )
+    rows = provision.create("J-1", [RepoArg(ident=api.url), RepoArg(ident=web.url, read_only=True)])
     assert [(r.repo, r.action, r.branch) for r in rows] == [
         ("acme/api", "created", "feature/J-1"),
         ("acme/web", "checked_out", None),

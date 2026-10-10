@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from untaped.contracts import Answers, Ok
 from untaped.sdk import Picked, PickItem, PickResult, UntapedError
-from untaped_github.api import RepoInventory, RepositoryInventoryItem
+from untaped_workspace.api import Repo
 from untaped_workspace.cli.picker import build_request, name_validator, repo_args
 from untaped_workspace.domain import RepoArg, StoredRepo, WorkspaceRecord
 from untaped_workspace.infrastructure import StateWorkspaceStore
@@ -68,15 +69,17 @@ class FakeGit:
 
 
 def _source(git: FakeGit, refreshes: list[bool | None]) -> RepoPickSource:
-    item = RepositoryInventoryItem(full_name="acme/api", clone_url="https://h/acme/api.git")
+    api = Repo(name="acme/api", url="https://h.example/acme/api.git")
 
-    def inventory(refresh: bool | None) -> RepoInventory:
+    def ask(refresh: bool | None) -> Answers[list[Repo]]:
         refreshes.append(refresh)
         if refresh is True:
             raise UntapedError("offline")
-        return RepoInventory(repos=(item,), refreshed_at=None, scope_key="k")
+        return Answers(
+            [Ok("github", [api])], owner="workspace", contract="repo_source", method="repos"
+        )
 
-    return RepoPickSource(git=git, inventory=inventory)  # type: ignore[arg-type]
+    return RepoPickSource(git=git, ask=ask)  # type: ignore[arg-type]
 
 
 def test_build_request() -> None:
@@ -99,7 +102,7 @@ def test_build_request() -> None:
     assert list(base.complete("acme/api")) == ["main", "release/2"]
     assert list(base.complete("acme/api")) == ["main", "release/2"]
     assert list(base.complete(None)) == []
-    assert git.calls == ["https://h/acme/api.git"]
+    assert git.calls == ["https://h.example/acme/api.git"]
     assert request.subtitle is not None
     assert request.subtitle("", {"branch": ""}) == "feature/NAME"
     assert request.subtitle("J-1", {"branch": ""}) == "feature/J-1"
