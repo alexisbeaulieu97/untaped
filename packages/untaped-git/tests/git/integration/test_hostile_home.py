@@ -129,3 +129,27 @@ def test_a_users_own_fetch_still_prunes(tmp_path: Path) -> None:
     git(tree, "fetch", "--quiet", bare=False)
 
     assert "refs/remotes/origin/gone" not in all_refs(store.path)
+
+
+def test_a_handle_still_reads_what_gc_left_unreachable(tmp_path: Path) -> None:
+    """``gc.pruneExpire`` at repo scope: a global ``now`` cannot prune under an open handle."""
+    hostile_git_home()
+    remote = git_remote(tmp_path)
+    topic = remote.commit("notes.txt", "kept\n", branch="topic")
+    store = _store(tmp_path, remote)
+    store.fetch(branches=["*"], prune=True)
+    handle = store.prefetched(trees=["refs/remotes/origin/topic"])
+    # Another process prunes the ref the handle read, then the maintenance runs.
+    remote.delete_branch("topic")
+    _store(tmp_path, remote).fetch(branches=["*"], prune=True)
+    assert "refs/remotes/origin/topic" not in all_refs(store.path)
+    git(store.path, "maintenance", "run", "--task=gc", "--quiet")
+
+    assert handle.run(["cat-file", "-p", f"{topic}:notes.txt"]).text == "kept\n"
+
+    # The control: with the user's global in charge, the same run prunes it.
+    git(store.path, "config", "--unset", "gc.pruneExpire")
+    git(store.path, "config", "remote.origin.url", str(tmp_path / "gone.git"))
+    git(store.path, "maintenance", "run", "--task=gc", "--quiet")
+    with pytest.raises(StoreError):
+        handle.run(["cat-file", "-p", f"{topic}:notes.txt"])
