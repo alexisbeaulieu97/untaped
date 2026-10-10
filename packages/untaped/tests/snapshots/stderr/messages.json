@@ -1,0 +1,22 @@
+[
+  {
+    "level": "success",
+    "message": "a success line"
+  },
+  {
+    "level": "info",
+    "message": "a info line"
+  },
+  {
+    "level": "warning",
+    "message": "a warning line"
+  },
+  {
+    "level": "error",
+    "message": "a error line"
+  },
+  {
+    "level": "success",
+    "message": "done"
+  }
+]

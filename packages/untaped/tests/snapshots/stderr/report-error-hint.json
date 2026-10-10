@@ -1,0 +1,12 @@
+[
+  {
+    "level": "error",
+    "category": "config",
+    "system": "local",
+    "retryable": false,
+    "message": "no token",
+    "hint": "run `untaped auth set`",
+    "exit_code": 4,
+    "details": {}
+  }
+]

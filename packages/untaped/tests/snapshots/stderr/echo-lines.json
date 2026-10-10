@@ -1,0 +1,14 @@
+[
+  {
+    "level": "warning",
+    "message": "something is off"
+  },
+  {
+    "level": "hint",
+    "message": "run `untaped try again`"
+  },
+  {
+    "level": "info",
+    "message": "an info line"
+  }
+]
