@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import threading
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
@@ -338,12 +339,15 @@ def test_removing_a_source_keeps_a_repo_another_source_selects_then_removes_it(
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
     index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
-    _save_sources("a", "b")
+    _save_sources("a", "b", "c")
     _refresh(index_dir, "site", source_key="source:a")
     _refresh(index_dir, "site", source_key="source:b")
+    _refresh(index_dir, "site", source_key="source:c")
     repo = _repo(store_root, "site")
 
-    assert _remove("a") == ["kept acme/site (selected by source b)"]
+    assert _remove("a") == ["kept acme/site (selected by sources b and c)"]
+    _save_sources("b", "c")
+    assert _remove("c") == ["kept acme/site (selected by source b)"]
     assert repo.is_dir()
     site.commit(_REQS, "- src: https://github.com/acme/other\n")
     assert _refresh(index_dir, "site", source_key="source:b").changed_refs == 1
@@ -361,9 +365,31 @@ def test_a_dry_run_plans_the_release_and_frees_nothing(tmp_path: Path, store_roo
     _save_sources("a")
     _refresh(index_dir, "site", source_key="source:a")
 
-    assert _remove("a", "--dry-run") == ["release acme/site"]
+    assert _remove("a", "--dry-run") == ["would release acme/site"]
     assert _repo(store_root, "site").is_dir()
     assert _dependents(index_dir, "acme/base", source_key="source:a") == {"acme/site@main"}
+
+    shutil.rmtree(_repo(store_root, "site"))  # gone from the store: nothing to plan or free
+    assert _remove("a", "--dry-run") == []
+    assert _remove("a") == []
+
+
+def test_removing_a_source_releases_a_repo_whose_refs_it_no_longer_scans(
+    tmp_path: Path, store_root: Path
+) -> None:
+    """A branch deleted upstream leaves no ref scan, but the source still selects the repo."""
+    site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
+    site.branch("release-1")
+    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    _save_sources("a")
+    _refresh(index_dir, "site", source_key="source:a", ref_patterns=["release-*"])
+    site.delete_branch("release-1")
+    _refresh(index_dir, "site", source_key="source:a", ref_patterns=["release-*"])
+
+    (change,) = _remove("a")
+
+    assert change.startswith("removed acme/site (")
+    assert not _repo(store_root, "site").exists()
 
 
 def test_removing_a_source_releases_a_repo_workspace_holds(

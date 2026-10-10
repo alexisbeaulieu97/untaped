@@ -506,9 +506,7 @@ def test_source_set_get_remove_updates_state(tmp_path: Path, monkeypatch) -> Non
     assert "sources" not in _state(tmp_path)
 
 
-def test_source_remove_reports_a_release_that_fails_and_still_removes_the_source(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_source_remove_keeps_the_source_when_a_release_fails(tmp_path: Path, monkeypatch) -> None:
     _use_config(tmp_path, monkeypatch, _prod(), token=True)
     _seed_unchanged_scan(monkeypatch, {"acme/site": "sha-site"})
 
@@ -516,12 +514,17 @@ def test_source_remove_reports_a_release_that_fails_and_still_removes_the_source
         raise GitCacheError(f"could not lock repo store for {url}", category="unavailable")
 
     monkeypatch.setattr(GitSourceStore, "release", fail)
-    result = _run("source", "remove", "prod", "--yes")
+    result = _run("source", "remove", "prod", "--yes", "--format", "json")
 
-    assert result.exit_code != 0
-    assert "could not lock repo store for https://github.com/acme/site.git" in result.stderr
-    assert "sources" not in _state(tmp_path)
-    assert _index(tmp_path).status("source:prod") is None
+    assert result.exit_code == 5  # the lock was unavailable: retry later
+    assert json.loads(result.stdout)["changes"] == ["failed to release acme/site"]
+    assert "error: acme/site: could not lock repo store for https://github.com/acme/site.git" in (
+        result.stderr
+    )
+    assert "a rerun retries the release" in result.stderr
+    # Kept, with its index rows, so the rerun finds what to release.
+    assert _state(tmp_path)["sources"][0]["name"] == "prod"
+    assert _index(tmp_path).status("source:prod") is not None
 
 
 def test_source_patch_add_remove_and_clear_updates_state(tmp_path: Path, monkeypatch) -> None:

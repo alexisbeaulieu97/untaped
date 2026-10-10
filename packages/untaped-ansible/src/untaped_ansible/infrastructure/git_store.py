@@ -64,6 +64,10 @@ class GitSourceStore:
             # Its presence tells the store's report and a release that ansible uses the repo.
             atomic_write(store.private_file, json.dumps({"url": url}) + "\n")
 
+    def holds(self, url: str) -> bool:
+        """Whether the store has a repo for ``url``."""
+        return self._store(url).exists()
+
     def release(self, url: str) -> Released | Removed | None:
         """Give up ansible's part of ``url``'s store repo (``None`` when there is none).
 
