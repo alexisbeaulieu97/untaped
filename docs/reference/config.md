@@ -21,7 +21,7 @@ overridden for one process with the environment variable shown.
 | `http.verify_ssl` | boolean | `true` | `UNTAPED_HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks. |
 | `http.verify_hostname` | boolean | `true` | `UNTAPED_HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. |
 | `http.timeout_seconds` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. |
-| `http.proxy` | string (optional) | unset | `UNTAPED_HTTP__PROXY` | Proxy URL for HTTP clients. When unset, standard proxy variables apply. |
+| `http.proxy` | string (optional) | unset | `UNTAPED_HTTP__PROXY` | Proxy URL for HTTP clients, and for Git fetches from the GitHub host. When unset, standard proxy variables (and, for Git, your Git config) apply. |
 | `ui.theme` | string | `default` | `UNTAPED_UI__THEME` | Built-in theme: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
 | `ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
 | `ui.border` | `rounded` \| `square` \| `ascii` \| `none` (optional) | unset | `UNTAPED_UI__BORDER` | Table border style; overrides the theme. |
@@ -111,7 +111,7 @@ overridden for one process with the environment variable shown.
 | `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. Falls back to `token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`. |
 | `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `github.token` is unset. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
-| `github.cache_dir` | path | `~/.untaped/github-cache` | `UNTAPED_GITHUB__CACHE_DIR` | Local Git corpus that `github sweep` and `github cache` manage. |
+| `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep` and `cache sync` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`). |
 | `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
 | `github.inventory.path` | path | `~/.untaped/github-inventory.json` | `UNTAPED_GITHUB__INVENTORY__PATH` | Cached repository list (metadata only) that workspace `create`/`add` resolve names from and the picker searches. |
@@ -174,8 +174,9 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | `ansible.cache_dir` | retired |
 | `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | `ansible.stale_after_seconds` | retired |
 | `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
-| `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | `github.cache_dir` | retired |
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
+| `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted: deleted in 11.0; the repo store lives under git.store_dir |
+| `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted: deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
 
 ## See also

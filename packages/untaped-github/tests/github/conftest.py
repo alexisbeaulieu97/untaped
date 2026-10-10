@@ -12,6 +12,8 @@ import pytest
 
 from untaped.sdk import GitResult
 from untaped.settings import get_settings, register_profile_settings
+from untaped_git.infrastructure import remote as remote_module
+from untaped_git.infrastructure import store as store_module
 from untaped_github.settings import GithubSettings
 
 
@@ -92,21 +94,28 @@ def source_repo(tmp_path: Path) -> Callable[[str, dict[str, str | bytes]], Path]
 
 
 @pytest.fixture
-def git_auth(monkeypatch: pytest.MonkeyPatch) -> dict[str, str | None]:
-    """Stub the corpus's Git calls; map each fetched remote URL to the auth header it got."""
-    seen: dict[str, str | None] = {}
-    origins: dict[Path, str] = {}
+def store_auth(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str | None]]:
+    """Spy on the repo store's network calls; map each remote URL to the auth headers it got.
 
-    def fake_run_git(args: list[str], **kwargs: Any) -> GitResult:
-        if args[:2] == ["init", "--bare"]:
-            Path(args[-1]).mkdir(parents=True, exist_ok=True)
-        if args[:3] == ["config", "--replace-all", "remote.origin.url"]:
-            # The cache reads its origin from this file to scope the header.
-            origins[kwargs["cwd"]] = args[3]
-            (kwargs["cwd"] / "config").write_text(f'[remote "origin"]\n\turl = {args[3]}\n')
-        if args[0] in {"fetch", "ls-remote"}:
-            seen[origins[kwargs["cwd"]]] = kwargs.get("auth_header")
-        return GitResult(returncode=0, stdout=b"", stderr="")
+    Git still runs, so pair this with ``rewrite_to`` to serve the URLs locally.
+    """
+    seen: dict[str, list[str | None]] = {}
 
-    monkeypatch.setattr("untaped.repo_cache.run_git", fake_run_git)
+    def spy(real: Callable[..., GitResult]) -> Callable[..., GitResult]:
+        def run(args: list[str], **kwargs: Any) -> GitResult:
+            if args[0] in {"fetch", "ls-remote"}:
+                url = kwargs.get("auth_url") or _remote_url(args, kwargs.get("git_dir"))
+                seen.setdefault(url, []).append(kwargs.get("auth_header"))
+            return real(args, **kwargs)
+
+        return run
+
+    for module in (store_module, remote_module):
+        monkeypatch.setattr(module, "run_git", spy(module.run_git))
     return seen
+
+
+def _remote_url(args: list[str], git_dir: Path | None) -> str:
+    if git_dir is None:  # ``ls-remote [options] -- <url> [patterns]``
+        return args[args.index("--") + 1]
+    return _git(git_dir, "config", "remote.origin.url")
