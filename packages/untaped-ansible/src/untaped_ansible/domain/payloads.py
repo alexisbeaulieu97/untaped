@@ -115,6 +115,7 @@ class SkippedRef(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     repo: str
+    kind: Literal["heads", "tags"]
     ref: str
     reason: str
 

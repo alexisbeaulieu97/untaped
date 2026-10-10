@@ -443,7 +443,7 @@ class RefreshGitSourceIndex:
                 refusal = self._git.refusal(ref)
                 if refusal is not None:
                     skipped[(ref.kind, ref.name)] = SkippedRef(
-                        repo=repo.full_name, ref=ref.name, reason=refusal
+                        repo=repo.full_name, kind=ref.kind, ref=ref.name, reason=refusal
                     )
                     continue
                 selected[(ref.kind, ref.name)] = ref

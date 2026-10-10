@@ -777,7 +777,9 @@ def test_git_refresh_leaves_out_a_ref_the_store_cannot_hold(h: Harness) -> None:
     assert h.git.fetches == [("site", ("heads/main",))]
     assert h.cached("acme/site", "main")
     assert not h.cached("acme/site", "-wip")
-    assert result.skipped_refs == (SkippedRef(repo="acme/site", ref="-wip", reason="refused"),)
+    assert result.skipped_refs == (
+        SkippedRef(repo="acme/site", kind="heads", ref="-wip", reason="refused"),
+    )
 
 
 def test_the_aliases_fingerprint_always_folds_the_github_host_in(h: Harness) -> None:
