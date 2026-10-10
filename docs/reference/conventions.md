@@ -372,15 +372,15 @@ with dotted paths relative to the section:
 
 ```python
 renamed_keys: ClassVar[Mapping[str, str]] = {"sweep.sync_concurrency": "sweep.parallel"}
-retired_keys: ClassVar[Mapping[str, str]] = {}
+retired_keys: ClassVar[Mapping[str, str | Retired]] = {"cache_dir": Retired(note="use git.store_dir")}
 ```
 
-- A key in `renamed_keys`, and its `UNTAPED_*` variable, is read as the new
-  key, with a warning naming it, until the next major release. Then the
-  entry moves to `retired_keys`: the old key is no longer read.
-- A target is a current setting or another old key, so renames chain; a
-  renamed key never points at a retired one. Entries are never deleted and
-  old names never reused.
+- A key in `renamed_keys` (and its `UNTAPED_*` variable) is read as the new
+  key, with a warning, until the next major; then it moves to `retired_keys`
+  and is no longer read. Targets chain through old keys; a renamed key never
+  points at a retired one; entries are never deleted, old names never reused.
+- A key with no successor retires as `Retired(note=...)`: doctor prints the
+  note and `config migrate` deletes the key, printing the value it held.
 - A rename keeps the meaning. A change of unit, type or choices is a new key;
   mark the old leaf field `Annotated[bool, deprecated(replacement="mode")]`
   (outermost `Annotated`; never a model or state field). It is still read,

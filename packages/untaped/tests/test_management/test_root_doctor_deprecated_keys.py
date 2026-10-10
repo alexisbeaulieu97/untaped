@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from test_management.support import compose, make_spec, write_config
 from untaped import bootstrap
+from untaped.deprecated_keys import Retired
 from untaped.management.doctor import build_root_doctor_app, selected_check_rows
 from untaped.stability import deprecated
 from untaped.testing import CliInvoker
@@ -23,13 +24,16 @@ class Sweep(BaseModel):
 
 
 class OldProfile(BaseModel):
-    """Section ``old``: a renamed, a nested renamed, a retired key and a deprecated setting."""
+    """Section ``old``: renamed, nested renamed, retired and deleted keys, a deprecated setting."""
 
     renamed_keys: ClassVar[dict[str, str]] = {
         "corpus_path": "cache_dir",
         "sweep.sync_concurrency": "sweep.parallel",
     }
-    retired_keys: ClassVar[dict[str, str]] = {"repo_path": "cache_dir"}
+    retired_keys: ClassVar[dict[str, str | Retired]] = {
+        "repo_path": "cache_dir",
+        "store_dir": Retired(note="deleted in 11.0; set git.store_dir"),
+    }
 
     cache_dir: str = "cache"
     legacy: Annotated[bool, deprecated(replacement="cache_dir")] = False
@@ -120,3 +124,23 @@ def test_setup_keeps_a_warning_row(_isolated_config: Path) -> None:
     assert checks() == set()
     write_config(_isolated_config, "profiles:\n  default:\n    old:\n      corpus_path: /c\n")
     assert checks() == {"deprecated-keys"}
+
+
+def test_a_deleted_key_is_unknown_with_its_note_and_the_migrate_fix(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    old:\n      store_dir: /s\n      typo: 1\n",
+    )
+
+    rows = _rows(**{"deprecated-keys": "", "unknown-keys": ""})
+
+    row = rows["unknown-keys"]
+    assert row["status"] == "warn"
+    assert row["detail"] == (
+        "ignored: profiles.default.old.typo; "
+        "old.store_dir (profile default): deleted in 11.0; set git.store_dir"
+    )
+    assert (row["fix"], row["automatic"]) == (["--profile", "default", "config", "migrate"], True)
+    assert rows["deprecated-keys"]["status"] == "pass"

@@ -45,6 +45,7 @@ from untaped.cli import (
     writes,
 )
 from untaped.concurrency import bounded_map
+from untaped.deprecated_keys import Retired
 from untaped.diagnostics import ErrorInfo, note_failure
 from untaped.diff import unified_diff_text
 from untaped.doctor_checks import connection_check, executable_check, online_check
@@ -335,6 +336,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "online_check",
     # conventions
     "ExitCode",
+    "Retired",
     "deprecated",
     "deprecated_alias",
     "experimental",
