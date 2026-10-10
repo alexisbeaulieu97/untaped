@@ -10,7 +10,7 @@ its ``source`` stamped.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Concatenate, get_args, get_origin, overload
@@ -22,9 +22,8 @@ from untaped.contracts._cache import NoCache, call_state, return_type
 from untaped.contracts._declare import (
     Binding,
     Contract,
-    Issued,
     Method,
-    Source,
+    NotReady,
     fills,
     method_contract,
 )
@@ -39,7 +38,7 @@ from untaped.contracts._registry import (
 from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.http import request_deadline
 from untaped.messages import command_line
-from untaped.records import kind_of
+from untaped.records import Issued, Source, kind_of
 
 #: Providers asked at once by one ``gather``.
 _POOL = 8
@@ -87,6 +86,19 @@ class Skipped:
 
 
 type Answer[R] = Ok[R] | Failed | Skipped
+
+
+class NoProviderReady(ConfigError):
+    """No provider of the method could be asked (exit 4); ``not_ready`` says why, per plugin.
+
+    ``not_ready`` holds each installed provider that isn't ready in the
+    profile; a quarantined one is named in the message only. An owner may
+    turn this into its own error (a name nobody could look up is not found).
+    """
+
+    def __init__(self, message: str, *, not_ready: Mapping[str, NotReady]) -> None:
+        super().__init__(message)
+        self.not_ready = dict(not_ready)
 
 
 class Answers[R](Sequence[Answer[R]]):
@@ -148,7 +160,7 @@ def gather[C: Contract, **P, R](
     only the providers of those plugins (an owner that already chose one by a
     cheaper method, say); the others are left out of the answers. With no ready
     provider at all it raises :class:`ConfigError` (exit 4) naming why each
-    one isn't.
+    one isn't (:class:`NoProviderReady`).
     """
     info, wanted = method_contract(method)
     needed = [wanted.name]
@@ -165,6 +177,7 @@ def gather[C: Contract, **P, R](
         answers: dict[str, Answer[R]] = {}
         runnable: list[tuple[Provider, int | None]] = []
         reasons: list[str] = []
+        not_ready: dict[str, NotReady] = {}
         for entry in offers(info):
             if plugins is not None and entry.plugin not in plugins:
                 continue
@@ -179,6 +192,7 @@ def gather[C: Contract, **P, R](
             ready = ready_of(entry)
             if ready is not None:
                 answers[entry.plugin] = Skipped(entry.plugin, "not-configured", ready.reason, rank)
+                not_ready[entry.plugin] = ready
                 setting = f" (set {ready.setting})" if ready.setting else ""
                 reasons.append(f"{entry.plugin}: {ready.reason}{setting}")
                 continue
@@ -186,7 +200,7 @@ def gather[C: Contract, **P, R](
         if not runnable:
             what = f"{owner}.{info.name}.{wanted.name}"
             detail = "; ".join(reasons) if reasons else "no installed plugin fills it"
-            raise ConfigError(f"no provider of {what} is ready: {detail}")
+            raise NoProviderReady(f"no provider of {what} is ready: {detail}", not_ready=not_ready)
 
         def ask(job: tuple[Provider, int | None]) -> Answer[R]:
             provider, rank = job

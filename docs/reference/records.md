@@ -63,19 +63,19 @@ a step that asks for or reveals a token, else `agent`.
 | `workspace archive` | `workspace.archive_outcome` |
 | `workspace remove` | `workspace.remove_outcome` |
 | `workspace run` | `workspace.run_outcome` |
+| `workspace repos resolve` | `workspace.resolve_outcome` |
 
 | Consumer | Reads | Field used |
 |---|---|---|
 | `workspace run --stdin` | `workspace.status`, `workspace.repo_outcome`, `workspace.run_outcome`; or lines, each a repo name or directory | `repo`, else `dir` |
-| `workspace create --stdin`, `workspace add --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or lines, each any repo identifier (`owner/name`, a unique name, a URL) | `full_name`, else `repo`, resolved through the GitHub inventory; `clone_url`, else `url`, when there is no name or the inventory lacks it |
+| `workspace create --stdin`, `workspace add --stdin` | `workspace.repo`, and any kind a `RepoSource` provider reads (github: `github.repo`, `github.sweep_repo`, `github.corpus_repo`); or lines, each a repo name (`owner/name`, a unique name) or a clone URL | the whole record, turned into a repo by the plugin whose kind it is, without an API call; a name line is looked up in the providers' repos |
 
 ## github
 
 | Command | Writes |
 |---|---|
 | `github whoami` | `github.user` |
-| `github repos list` | `github.repo` |
-| `github search repos` | `github.repo_hit` |
+| `github repos list`, `github search repos` | `github.repo` |
 | `github search code` | `github.code` |
 | `github search issues` | `github.issue` |
 | `github search users` | `github.user_hit` |
@@ -86,7 +86,7 @@ a step that asks for or reveals a token, else `agent`.
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `github search repos/code/issues --stdin`, `github sweep --stdin`, `github cache sync --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or `owner/name` lines | `repo` (`sweep` and `cache sync` use a `github.repo` record as-is, without an API call) |
+| `github search repos/code/issues --stdin`, `github sweep --stdin`, `github cache sync --stdin` | `github.repo`, `github.sweep_repo`, `github.corpus_repo`; or `owner/name` lines | `full_name` (`sweep` and `cache sync` use the record as-is, without an API call) |
 
 ## jira
 

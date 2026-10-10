@@ -20,10 +20,7 @@ from untaped.sdk import (
     note_failure,
     plural,
 )
-from untaped_github.application.inventory import (
-    RepositoryInventoryItem,
-    RepositoryInventoryScope,
-)
+from untaped_github.application.inventory import RepositoryInventoryScope
 from untaped_github.application.ports import GitCorpus
 from untaped_github.domain import (
     CODEOWNERS_LOCATIONS,
@@ -32,6 +29,7 @@ from untaped_github.domain import (
     CorpusFreshness,
     CorpusRepoTarget,
     CorpusSyncOutcome,
+    GithubRepo,
     GrepHit,
     GrepSpec,
     RefEvaluation,
@@ -48,7 +46,7 @@ from untaped_github.domain import (
 from untaped_github.domain.errors import is_global_github_failure
 from untaped_github.errors import GitCorpusError
 
-InventoryResolver = Callable[[RepositoryInventoryScope], tuple[RepositoryInventoryItem, ...]]
+InventoryResolver = Callable[[RepositoryInventoryScope], tuple[GithubRepo, ...]]
 # Parallel per-repo API lookups; kept low to stay clear of GitHub's secondary rate limits.
 _API_CONCURRENCY = 4
 
@@ -66,7 +64,7 @@ class SweepOptions:
     parallel: int
     owners: bool
     # Piped records complete enough to skip the per-repo API lookup.
-    stdin_items: tuple[RepositoryInventoryItem, ...] = ()
+    stdin_items: tuple[GithubRepo, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -80,7 +78,7 @@ class CorpusSyncOptions:
     refresh: bool
     max_age_seconds: int
     parallel: int
-    stdin_items: tuple[RepositoryInventoryItem, ...] = ()
+    stdin_items: tuple[GithubRepo, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -313,7 +311,7 @@ class Sweep(_CorpusUseCase):
         rows = tuple(
             sorted(
                 (scan.outcome for scan in scans if scan.outcome is not None),
-                key=lambda row: row.repo,
+                key=lambda row: row.full_name,
             )
         )
         all_matches = [match for scan in scans for match in scan.matches]
@@ -373,13 +371,13 @@ class Sweep(_CorpusUseCase):
         for row in rows:
             if not archived_allows(options.archived, row.archived):
                 continue
-            if owners and row.repo.partition("/")[0].casefold() not in owners:
+            if owners and row.full_name.partition("/")[0].casefold() not in owners:
                 continue
-            if names and row.repo.casefold() not in names:
+            if names and row.full_name.casefold() not in names:
                 continue
             targets.append(
                 CorpusRepoTarget(
-                    full_name=row.repo,
+                    full_name=row.full_name,
                     default_branch=row.ref,
                     clone_url=row.clone_url,
                     archived=row.archived,
@@ -429,8 +427,12 @@ class Sweep(_CorpusUseCase):
         owners = self._owners_for(ready.repo, paths=owner_paths) if options.owners else ()
         return _RepoScan(
             outcome=RepoSweepOutcome(
-                repo=ready.repo.full_name,
+                full_name=ready.repo.full_name,
                 clone_url=ready.repo.clone_url,
+                html_url=ready.repo.html_url,
+                default_branch=ready.repo.default_branch,
+                archived=ready.repo.archived,
+                pushed_at=ready.repo.pushed_at,
                 matched=True,
                 refs_matched=tuple(refs_matched),
                 hits=aggregate_hits,
@@ -468,12 +470,12 @@ def _resolve_online_scope(
     *,
     scope: RepositoryInventoryScope,
     stdin_repos: tuple[str, ...],
-    stdin_items: tuple[RepositoryInventoryItem, ...],
+    stdin_items: tuple[GithubRepo, ...],
     archived: ArchivedMode,
     parallel: int,
 ) -> tuple[tuple[CorpusRepoTarget, ...], tuple[CorpusFailure, ...]]:
     """Expand scopes through the API into sorted corpus targets plus per-name failures."""
-    items: dict[str, RepositoryInventoryItem] = {}
+    items: dict[str, GithubRepo] = {}
     if scope.orgs or scope.teams:
         listed = RepositoryInventoryScope(orgs=scope.orgs, teams=scope.teams)
         for item in inventory(listed):
@@ -486,7 +488,7 @@ def _resolve_online_scope(
     failures: list[CorpusFailure] = []
     names = tuple(dict.fromkeys((*scope.repos, *stdin_repos)))
 
-    def resolve_one(name: str) -> tuple[RepositoryInventoryItem, ...] | CorpusFailure:
+    def resolve_one(name: str) -> tuple[GithubRepo, ...] | CorpusFailure:
         try:
             return inventory(RepositoryInventoryScope(repos=(name,)))
         except UntapedError as exc:
@@ -494,7 +496,7 @@ def _resolve_online_scope(
                 raise
             return CorpusFailure(repo=name, reason=str(exc) or type(exc).__name__, cause=exc)
 
-    def record(_name: str, resolved: tuple[RepositoryInventoryItem, ...] | CorpusFailure) -> None:
+    def record(_name: str, resolved: tuple[GithubRepo, ...] | CorpusFailure) -> None:
         if isinstance(resolved, CorpusFailure):
             failures.append(resolved)
         else:
@@ -512,7 +514,7 @@ def _resolve_online_scope(
     return tuple(_target(item) for item in rows), tuple(failures)
 
 
-def _target(item: RepositoryInventoryItem) -> CorpusRepoTarget:
+def _target(item: GithubRepo) -> CorpusRepoTarget:
     return CorpusRepoTarget(
         full_name=item.full_name,
         default_branch=item.default_branch,

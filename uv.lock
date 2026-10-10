@@ -940,14 +940,18 @@ dependencies = [
 git = [
     { name = "untaped-git" },
 ]
+workspace = [
+    { name = "untaped-workspace" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
     { name = "untaped-git", marker = "extra == 'git'", editable = "packages/untaped-git" },
+    { name = "untaped-workspace", marker = "extra == 'workspace'", editable = "packages/untaped-workspace" },
 ]
-provides-extras = ["git"]
+provides-extras = ["git", "workspace"]
 
 [[package]]
 name = "untaped-jira"
@@ -984,14 +988,12 @@ source = { editable = "packages/untaped-workspace" }
 dependencies = [
     { name = "untaped" },
     { name = "untaped-git" },
-    { name = "untaped-github" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
-    { name = "untaped-github", editable = "packages/untaped-github" },
 ]
 
 [[package]]

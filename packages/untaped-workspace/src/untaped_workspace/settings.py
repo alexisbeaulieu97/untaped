@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,6 +19,7 @@ class WorkspaceSettings(BaseModel):
 
     retired_keys: ClassVar[Mapping[str, str | Retired]] = {
         "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
+        "protocol": Retired(note="deleted in 11.0; set github.git_protocol"),
     }
 
     workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
@@ -28,7 +29,6 @@ class WorkspaceSettings(BaseModel):
     ``None`` means ``min(8, 2 x CPUs)``.
     """
     branch_template: str = "{name}"
-    protocol: Literal["https", "ssh"] = "https"
 
 
 class WorkspaceState(BaseModel):

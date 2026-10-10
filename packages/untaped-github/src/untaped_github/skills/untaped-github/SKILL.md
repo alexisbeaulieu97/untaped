@@ -13,9 +13,9 @@ unscanned before reporting "none" or "all".
 
 - Settings live under `profiles.<name>.github`: `base_url`, `token` or
   `token_command`, `default_org`, `git_protocol` (`https` or `ssh` for
-  sweep fetches and `untaped ansible source refresh`), `sweep` freshness
-  and concurrency, and `inventory` (the cached repo list the workspace
-  picker searches).
+  sweep fetches, workspace clone URLs and `untaped ansible source
+  refresh`), `sweep` freshness and concurrency, and `inventory` (the orgs
+  and teams whose repos workspace looks names up in and its picker lists).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server
   usually needs `untaped config set github.base_url https://HOST/api/v3`.
 - The user stores the token by running `untaped auth set github` in their own
@@ -73,8 +73,9 @@ unscanned before reporting "none" or "all".
    unscanned or `refresh failed` repos with their reasons. Report those
    repos as unknown, not as non-matching.
 5. Feed the rows onward with `--format pipe`. `--stdin` reads `github.repo`,
-   `github.repo_hit` and `github.sweep_repo` records, or bare `owner/name`
-   lines:
+   `github.sweep_repo` and `github.corpus_repo` records (by `full_name`), or
+   bare `owner/name` lines; `untaped workspace create NAME --stdin` reads the
+   same records:
 
 ```bash
 untaped github repos list 'svc-*' --org acme --format pipe \
@@ -123,9 +124,6 @@ strict; exit 5 never means "no results"), 130 interrupted.
   still apply.
 - A sweep scans each repo's default branch unless `--refs` or `--ref` says
   otherwise.
-- `search repos` rows (`github.repo_hit`) lack `clone_url` and `pushed_at`.
-  Feed a sweep from `repos list` instead: its rows let the sweep skip the
-  per-repo lookup and the fetch of an unchanged repo.
 
 ## References
 

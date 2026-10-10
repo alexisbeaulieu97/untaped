@@ -26,15 +26,9 @@ from untaped_workspace.application.locate import locate_workspace, workspace_roo
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.application.status import WorkspaceStatus
 from untaped_workspace.domain.models import RepoArg, RepoSpec, WorkspaceRecord
-from untaped_workspace.infrastructure import (
-    GithubRepoCatalog,
-    LocalGitWorktrees,
-    StateWorkspaceStore,
-)
+from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from untaped_workspace.settings import WorkspaceSettings
 
-STDIN_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
-"""Pipe kinds ``create``/``add --stdin`` read repos from (see :func:`stdin_repos`)."""
 NO_REPOS_HINT = "pass --repo OWNER/NAME (repeatable) or --stdin; the repo picker needs a terminal"
 NO_NAME_HINT = "pass NAME and --repo OWNER/NAME (or --stdin); the repo picker needs a terminal"
 
@@ -52,8 +46,8 @@ RepoOption = Annotated[
         negative="",
         consume_multiple=False,
         help=(
-            "Repo to check out on the workspace branch: owner/name, a name unique in "
-            "the GitHub inventory, or a clone URL (repeatable)."
+            "Repo to check out on the workspace branch: owner/name, a name unique among "
+            "the repos your plugins list, or a clone URL (repeatable)."
         ),
     ),
 ]
@@ -143,10 +137,12 @@ def provisioner(
     warn: Callable[[str], None] | None = None,
 ) -> ProvisionRepos:
     """The ``create``/``add`` use case wired to the real adapters."""
+    from untaped_workspace.infrastructure.catalog import RepoSources  # noqa: PLC0415  # contracts
+
     return ProvisionRepos(
         StateWorkspaceStore(workspaces_dir=workspaces_dir(settings)),
         git_worktrees(),
-        GithubRepoCatalog(protocol=settings.protocol),
+        RepoSources(),
         workspaces_dir=workspaces_dir(settings),
         branch_template=settings.branch_template,
         parallel=parallel_workers(settings, parallel),
@@ -174,30 +170,21 @@ def repo_args(
 
 
 def stdin_repos() -> list[RepoArg]:
-    """Repos from stdin: bare lines (any repo identifier), or github pipe records.
+    """Repos from stdin: bare lines (any repo identifier), or pipe records.
 
-    A record names its repo by ``full_name`` (else ``repo``, which github rows
-    fill with the full name), resolved through the inventory so
-    ``workspace.protocol`` and the default branch apply; its ``clone_url``
-    (else ``url``) is the fallback, used alone when there is no name.
+    A record of kind ``workspace.repo`` is read as it is; any other kind goes
+    to the plugin whose own record it is (``github.repo`` rows to github),
+    which turns it into a repo without asking its API. A record without a
+    kind, or of a kind no plugin reads, is a usage error.
     """
-    data = read_stdin_input(accept_kinds=STDIN_KINDS, what="repos")
+    from untaped.contracts import convert  # noqa: PLC0415  # loaded only for piped records
+    from untaped_workspace.api import RepoSource  # noqa: PLC0415
+
+    data = read_stdin_input(what="repos")
     if data.records is None:
         return [RepoArg(ident=value) for value in data.values]
-    args: list[RepoArg] = []
-    for envelope in data.records:
-        record = envelope.record
-        name = _text(record.get("full_name")) or _text(record.get("repo"))
-        url = _text(record.get("clone_url")) or _text(record.get("url"))
-        if name:
-            args.append(RepoArg(ident=name, fallback=url))
-        elif url:
-            args.append(RepoArg(ident=url))
-        else:
-            raise UsageError(
-                f"stdin line {envelope.lineno}: record has no full_name, repo, clone_url or url"
-            )
-    return args
+    repos = [convert(RepoSource.to_repo, envelope) for envelope in data.records]
+    return [RepoArg(ident=repo.name, repo=repo) for repo in repos]
 
 
 def _text(value: object) -> str | None:

@@ -10,8 +10,10 @@ requires-python = ">=3.14.1"
 dependencies = ["untaped==10.1.0", "untaped-git==10.1.0"]
 
 [project.optional-dependencies]
-# Github fills the git plugin's GitHost contract: the owner extra providers declare.
+# Github fills the git plugin's GitHost and workspace's RepoSource contracts: the owner
+# extras providers declare.
 git = ["untaped-git==10.1.0"]
+workspace = ["untaped-workspace==10.1.0"]
 
 [project.entry-points."untaped.plugins"]
 github = "untaped_github:SPEC"
