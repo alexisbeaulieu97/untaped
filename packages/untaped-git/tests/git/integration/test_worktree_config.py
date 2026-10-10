@@ -63,7 +63,7 @@ def test_delete_refs_guards_the_symref(store_for: StoreFor) -> None:
     store.fetch(branches=["main"])
     before = all_refs(store.path)
 
-    for name in ("heads/HEAD", "heads/a..b"):
+    for name in ("heads/HEAD", "heads/a..b", "heads/*"):
         with pytest.raises(StoreError) as caught:
             store.delete_refs([name])
         assert caught.value.category == ErrorCategory.INVALID
@@ -72,7 +72,16 @@ def test_delete_refs_guards_the_symref(store_for: StoreFor) -> None:
 
 @pytest.mark.parametrize(
     "argv",
-    [["fetch", "origin"], ["-c", "x.y=z", "fetch"], ["remote", "update"], ["push"], []],
+    [
+        ["fetch", "origin"],
+        ["-c", "x.y=z", "fetch"],
+        ["remote", "update"],
+        ["remote", "show", "origin"],
+        ["archive", "--remote=origin", "HEAD"],
+        ["fetch-pack", "origin"],
+        ["push"],
+        [],
+    ],
 )
 def test_run_refuses_what_reaches_the_remote(store_for: StoreFor, argv: list[str]) -> None:
     store = store_for("github")

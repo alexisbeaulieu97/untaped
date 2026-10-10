@@ -24,6 +24,7 @@ from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
 class Forge(GitHost):
     homes: ClassVar[dict[str, str | None]] = {}
     asked: ClassVar[list[str]] = []
+    proxied: ClassVar[list[str]] = []
     error: ClassVar[Exception | None] = None
 
     def __init__(self, plugin: str) -> None:
@@ -39,6 +40,7 @@ class Forge(GitHost):
         return Credential(username=self.plugin, password=SecretStr("token"))
 
     def proxy(self, url: str) -> str | None:
+        type(self).proxied.append(self.plugin)
         return f"http://proxy.{self.plugin}.example"
 
 
@@ -55,6 +57,7 @@ def compose(*forges: str) -> None:
 def _fresh() -> Iterator[None]:
     Forge.homes = {}
     Forge.asked = []
+    Forge.proxied = []
     Forge.error = None
     yield
 
@@ -127,7 +130,8 @@ def test_the_credential_rank_decides_between_two_homes(url: str) -> None:
 
     assert auth is not None
     assert auth.plugin == "lab"
-    assert set(Forge.asked) <= {"lab"}  # the other is never asked for a token
+    assert Forge.asked == (["lab"] if url.startswith("https://") else [])
+    assert Forge.proxied == ["lab"]  # the other is never asked
 
 
 def test_another_methods_rank_does_not_decide() -> None:

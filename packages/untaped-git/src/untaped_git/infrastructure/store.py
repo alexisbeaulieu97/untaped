@@ -95,7 +95,9 @@ POLICY: Mapping[str, str] = {
 _NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}
 _NETWORK = {"maintenance.auto": "false"}
 #: What ``run()`` refuses: the store's own methods reach the remote.
-_NETWORK_VERBS = frozenset({"fetch", "pull", "push", "ls-remote", "clone", "submodule"})
+_NETWORK_VERBS = frozenset(
+    {"fetch", "pull", "push", "ls-remote", "clone", "submodule", "fetch-pack", "send-pack"}
+)
 _FILTER_IGNORED = "filtering not recognized by server"
 _REFUSED = ("unadvertised object", "not our ref", "allow-tip-sha1-in-want")
 #: How git reports a read of an object it may not fetch lazily: older gits name
@@ -107,7 +109,9 @@ _REFUSED_HINT = (
     "upgrade the server, or repair the repo with `git fetch --refetch` without the "
     "filter (git 2.36+), or delete it while no worktree uses it"
 )
-_LAZY_HINT = "read blobs through RepoStore.prefetched(): this blob was never prefetched"
+_LAZY_HINT = (
+    "if this is a file's content, read it through RepoStore.prefetched(): it was never prefetched"
+)
 _STALE_LEFTOVER_SECONDS = 3600.0
 _HANDLE_REFUSED = ("fetch", "checkout", "worktree")
 
@@ -238,7 +242,10 @@ class RepoStore:
                 ref = self._layout.absolute(name)
             except ValueError as exc:
                 raise self._error(str(exc), category=ErrorCategory.INVALID) from None
-            reason = check_names([name.partition("/")[2]])
+            short = name.partition("/")[2]
+            reason = check_names([short])
+            if reason is None and is_glob(short):
+                reason = f"{name!r} is a glob; delete_refs takes exact refs"
             if reason is None and ref == ORIGIN_HEAD:
                 reason = f"{name!r} is the store's own symref, not a branch"
             if reason is not None:
@@ -283,7 +290,7 @@ class RepoStore:
             else:
                 stderr = self._fetch_listed(branches, tags, prune=prune, before=before)
             if self._plain:
-                self._write_origin_head()
+                self._write_origin_head(branches, tags)
             after = self._namespace()
             delta = diff_refs(before, after)
             self._record_filter(stderr, delta)
@@ -372,19 +379,24 @@ class RepoStore:
         ]
         return self._network(argv, timeout=SLOW_TIMEOUT, retry=True).stderr
 
-    def _write_origin_head(self) -> None:
+    def _write_origin_head(self, branches: Sequence[str], tags: Sequence[str]) -> None:
         """Point workspace's ``refs/remotes/origin/HEAD`` at the remote's default branch.
 
         The branch is the recorded ``untaped.defaultBranch`` (``default_branch()``
         records it); with none recorded, or one whose ref a prune removed
         (the remote renamed it), the remote is asked once and the answer recorded.
+        A recorded branch this call didn't name is left alone: its ref is simply
+        not fetched yet.
         """
         symref = ["symbolic-ref", "--quiet", ORIGIN_HEAD]
         target = self._git(symref, capture=True, check=False).text.strip()
         if target and self._has_ref(target):
             return
         branch = self._config_get("untaped.defaultBranch")
-        if branch is None or not self._has_ref(f"refs/remotes/origin/{branch}"):
+        if branch is None or (
+            covered(f"heads/{branch}", branches, tags)
+            and not self._has_ref(f"refs/remotes/origin/{branch}")
+        ):
             branch = self._remote_default_branch()
         ref = f"refs/remotes/origin/{branch}"
         if branch is not None and self._has_ref(ref):
@@ -553,7 +565,8 @@ class RepoStore:
             not argv
             or argv[0].startswith("-")
             or argv[0] in _NETWORK_VERBS
-            or (argv[0] == "remote" and argv[1:2] in (["update"], ["prune"]))
+            or (argv[0] == "remote" and argv[1:2] != ["get-url"])
+            or any(arg == "--remote" or arg.startswith("--remote=") for arg in argv)
         ):
             raise ValueError(
                 "run() takes a local git subcommand first; fetch through "
@@ -667,15 +680,15 @@ class RepoStore:
 
     def _rewrites_onto(self, worktree: Path, label: str) -> list[str]:
         result = self._git(
-            ["config", "--worktree", "--get-regexp", r"^url\..*\.insteadof$"],
+            ["config", "--worktree", "--null", "--get-regexp", r"^url\..*\.insteadof$"],
             cwd=worktree,
             capture=True,
             check=False,
         )
         keys = []
-        for line in result.text.splitlines():
-            key, _, value = line.partition(" ")
-            if value == label:
+        for entry in result.text.split("\0"):
+            key, _, value = entry.partition("\n")
+            if key and value == label:
                 keys.append(key)
         return keys
 
@@ -917,15 +930,24 @@ class Prefetched:
 
 
 def record_default_branch(repo: Path, branch: str) -> None:
-    """Record ``branch`` as ``repo``'s remote default (``untaped.defaultBranch``) if it exists."""
-    if (repo / "HEAD").is_file():
-        run_git(
-            ["config", "--file", str(repo / "config"), "untaped.defaultBranch", branch],
-            cwd=repo,
-            timeout=TIMEOUT,
-            ceiling=True,
-            batch_ssh=False,
-        )
+    """Record ``branch`` as ``repo``'s remote default (``untaped.defaultBranch``) if it exists.
+
+    Best effort, under the repo's lock: a busy or unwritable repo only means
+    its next fetch asks the remote itself.
+    """
+    if not (repo / "HEAD").is_file():
+        return
+    try:
+        with repo_lock(repo, timeout=TIMEOUT, error=UntapedError):
+            run_git(
+                ["config", "--file", str(repo / "config"), "untaped.defaultBranch", branch],
+                cwd=repo,
+                timeout=TIMEOUT,
+                ceiling=True,
+                batch_ssh=False,
+            )
+    except GitCommandError, UntapedError:
+        return
 
 
 def parse_symref(text: str) -> str | None:

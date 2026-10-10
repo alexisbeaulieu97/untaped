@@ -77,10 +77,11 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
 - **Asking.** `gather(method, refresh=, needs=, deadline=, plugins=)(*args)`
   returns one `Ok`, `Failed` or `Skipped` per provider (only those `plugins`
   when given, for an owner that already chose by a cheaper method), in rank
-  order, each item validated once as the owner's model. `select_one(answers, matches)` picks
-  one item and raises the deciding provider's error, `NotFound` or
-  `Ambiguous`; `convert(Contract.bridge_method, envelope)` reads a piped
-  record. [How providers are loaded and chosen](#how-providers-are-loaded-and-chosen)
+  order, each item validated once as the owner's model.
+  `select_one(answers, matches)` picks one item and raises the deciding
+  provider's error, `NotFound` or `Ambiguous`;
+  `convert(Contract.bridge_method, envelope)` reads a piped record.
+  [How providers are loaded and chosen](#how-providers-are-loaded-and-chosen)
   gives the rules they follow.
 
 ## How providers are loaded and chosen

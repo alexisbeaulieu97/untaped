@@ -1,7 +1,8 @@
 """Blob-reader lint: a repo store's blobs are read only through a ``Prefetched`` handle.
 
 The git plugin's store repos are blobless: a blob nobody prefetched is either
-fetched lazily, one round trip per blob, or (from git 2.46) not read at all.
+fetched lazily, one round trip per blob, or (where git honours
+``GIT_NO_LAZY_FETCH``, which the store sets) not read at all.
 ``store.prefetched(trees=, paths=)`` fetches what a reader needs in one round
 trip and returns the handle whose ``run()`` is the only way to read it.
 

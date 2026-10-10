@@ -32,8 +32,8 @@ def ls_remote(
 ) -> dict[str, str]:
     """``ref → commit oid`` of ``url``'s refs matching ``patterns`` (all refs when empty).
 
-    ``HEAD`` is included when a pattern asks for it, and an annotated tag maps
-    to the commit it points at, not to the tag object.
+    ``HEAD`` is included (with no patterns, or when one asks for it), and an
+    annotated tag maps to the commit it points at, not to the tag object.
     """
     result = _ls_remote(url, ["--", url, *patterns], root=root, auth=auth)
     refs: dict[str, str] = {}

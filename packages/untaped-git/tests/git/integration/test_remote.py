@@ -143,3 +143,19 @@ def test_default_branch_is_recorded_and_heals_after_a_rename(
     head = git(store.path, "symbolic-ref", "refs/remotes/origin/HEAD").strip()
     assert head == "refs/remotes/origin/trunk"
     assert git(store.path, "config", "untaped.defaultBranch").strip() == "trunk"
+
+
+def test_a_fetch_without_the_default_branch_asks_nothing_more(
+    remote: GitRemote, store_for: StoreFor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    remote.branch("feature")
+    store = store_for("workspace")
+    store.fetch(branches=["main"])
+
+    trace = tmp_path / "trace.json"
+    monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
+    store.fetch(branches=["feature"])
+    store.fetch(branches=["feature"])
+
+    starts = [e["argv"] for e in trace2_events(trace) if e.get("event") == "start"]
+    assert not any("--symref" in argv for argv in starts)
