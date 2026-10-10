@@ -174,8 +174,14 @@ class GitCache(Protocol):
         """Bring ``refs``, each at its probed commit, into the store repo of ``url``."""
         ...
 
-    def read_files(self, url: str, sha: str, paths: list[str]) -> dict[str, str]:
-        """Return contents for the ``paths`` that exist at ``sha``; omit the rest."""
+    def holds(self, ref: payloads.GitRef) -> bool:
+        """Whether the store can hold ``ref`` (git allows names it refuses)."""
+        ...
+
+    def read_files(
+        self, url: str, shas: Sequence[str], paths: Sequence[str]
+    ) -> dict[str, dict[str, str]]:
+        """``sha → path → content`` for the ``paths`` present at each of ``shas``."""
         ...
 
 

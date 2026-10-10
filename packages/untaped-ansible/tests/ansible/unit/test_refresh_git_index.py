@@ -128,6 +128,7 @@ class FakeGitCache:
         self.urls: list[str] = []
         self.fetches: list[tuple[str, tuple[str, ...]]] = []
         self.reads: list[tuple[str, str, str]] = []
+        self.read_calls: list[tuple[str, tuple[str, ...]]] = []
         self.fail_fetches: set[str] = set()
         self.active_fetches = 0
         self.max_active_fetches = 0
@@ -149,14 +150,22 @@ class FakeGitCache:
             with self._lock:
                 self.active_fetches -= 1
 
-    def read_files(self, url: str, sha: str, paths: list[str]) -> dict[str, str]:
+    def holds(self, ref: GitRef) -> bool:
+        return not ref.name.startswith("-")
+
+    def read_files(
+        self, url: str, shas: Sequence[str], paths: Sequence[str]
+    ) -> dict[str, dict[str, str]]:
         name = _repo_name(url)
-        found: dict[str, str] = {}
-        for path in paths:
-            self.reads.append((name, sha, path))
-            content = self.files.get((name, sha, path))
-            if content is not None:
-                found[path] = content
+        self.read_calls.append((name, tuple(shas)))
+        found: dict[str, dict[str, str]] = {}
+        for sha in dict.fromkeys(shas):
+            found[sha] = {}
+            for path in paths:
+                self.reads.append((name, sha, path))
+                content = self.files.get((name, sha, path))
+                if content is not None:
+                    found[sha][path] = content
         return found
 
 
@@ -749,6 +758,24 @@ def test_git_refresh_reuses_parsed_dependencies_for_duplicate_remote_shas(h: Har
     assert {
         edge.source_ref for edge in h.index.dependents("acme/base", None, source_key="source:prod")
     } == {"main", "release"}
+
+
+def test_git_refresh_reads_every_changed_ref_of_a_repo_in_one_call(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base("v1")), ("release", "sha-release", _base()))
+
+    h.run(_org(ref_patterns=["*"]), ref_scan_default="default_branch")
+
+    assert h.git.read_calls == [("site", ("sha-main", "sha-release"))]
+
+
+def test_git_refresh_leaves_out_a_ref_the_store_cannot_hold(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()), ("-wip", "sha-wip", _base()))
+
+    h.run(_org(ref_patterns=["*"]), ref_scan_default="default_branch")
+
+    assert h.git.fetches == [("site", ("heads/main",))]
+    assert h.cached("acme/site", "main")
+    assert not h.cached("acme/site", "-wip")
 
 
 def test_the_aliases_fingerprint_always_folds_the_github_host_in(h: Harness) -> None:

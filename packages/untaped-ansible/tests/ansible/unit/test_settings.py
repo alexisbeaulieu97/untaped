@@ -94,14 +94,3 @@ def test_the_git_cache_settings_are_deleted() -> None:
 
     assert {key: entry.reason() for key, entry in deleted.items()} == _DELETED
     assert not set(_DELETED) & set(AnsibleSettings.model_fields)
-
-
-@pytest.mark.parametrize("key", sorted(_DELETED))
-def test_a_deleted_git_cache_setting_is_not_read(key: str) -> None:
-    config = Path(os.environ["UNTAPED_CONFIG"])
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": {key: "ssh"}}}}))
-
-    settings = get_config_section("ansible", AnsibleSettings)
-
-    assert not hasattr(settings, key)

@@ -28,22 +28,29 @@ class FakeHandle:
 
 
 class FakeStore:
-    """A store repo holding ``blobs`` (path → blob id); ``cat-file`` answers ``stdout``."""
+    """A store repo whose commits hold ``blobs`` (path → blob id; ``trees`` per commit
+    when they differ); ``cat-file`` answers ``stdout``."""
 
-    def __init__(self, blobs: dict[str, str], stdout: bytes) -> None:
+    def __init__(
+        self,
+        blobs: dict[str, str],
+        stdout: bytes,
+        trees: dict[str, dict[str, str]] | None = None,
+    ) -> None:
+        self.trees = trees or {}
         self.blobs = blobs
         self.stdout = stdout
         self.timeouts: list[float | None] = []
-        self.prefetched_paths: list[str] = []
+        self.prefetches: list[tuple[list[str], list[str]]] = []
 
     def ls_tree(self, tree: str, paths: Sequence[str] = ()) -> list[TreeEntry]:
         return [
             TreeEntry(mode="100644", type="blob", oid=oid, path=path)
-            for path, oid in self.blobs.items()
+            for path, oid in self.trees.get(tree, self.blobs).items()
         ]
 
     def prefetched(self, *, trees: Sequence[str], paths: Sequence[str] = ()) -> FakeHandle:
-        self.prefetched_paths = list(paths)
+        self.prefetches.append((list(trees), list(paths)))
         return FakeHandle(self.stdout, self.timeouts)
 
 
@@ -67,7 +74,7 @@ def test_read_files_rejects_truncated_cat_file_output(
     source = _source(monkeypatch, FakeStore({"a.yml": "b1", "b.yml": "b2"}, batch_stdout))
 
     with pytest.raises(GitCacheError, match="truncated"):
-        source.read_files("https://github.com/acme/site.git", "abc123", ["a.yml", "b.yml"])
+        source.read_files("https://github.com/acme/site.git", ["abc123"], ["a.yml", "b.yml"])
 
 
 def test_read_files_prefetches_only_the_paths_the_tree_holds(
@@ -75,19 +82,42 @@ def test_read_files_prefetches_only_the_paths_the_tree_holds(
 ) -> None:
     store = FakeStore({"a.yml": "b1"}, b"b1 blob 1\nx\n")
 
-    files = _source(monkeypatch, store).read_files("url", "abc", ["a.yml", "missing.yml"])
+    files = _source(monkeypatch, store).read_files("url", ["abc"], ["a.yml", "missing.yml"])
 
-    assert files == {"a.yml": "x"}
-    assert store.prefetched_paths == ["a.yml"]
+    assert files == {"abc": {"a.yml": "x"}}
+    assert store.prefetches == [(["abc"], ["a.yml"])]
+
+
+def test_read_files_reads_every_commit_through_one_prefetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trees = {"c1": {"a.yml": "b1"}, "c2": {"a.yml": "b1", "b.yml": "b2"}, "c3": {}}
+    store = FakeStore({}, b"b1 blob 1\nx\nb2 blob 1\ny\n", trees=trees)
+
+    files = _source(monkeypatch, store).read_files(
+        "url", ["c1", "c2", "c3", "c1"], ["a.yml", "b.yml"]
+    )
+
+    assert files == {"c1": {"a.yml": "x"}, "c2": {"a.yml": "x", "b.yml": "y"}, "c3": {}}
+    assert store.prefetches == [(["c1", "c2"], ["a.yml", "b.yml"])]
+
+
+def test_read_files_with_nothing_to_read_runs_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = FakeStore({}, b"")
+    source = _source(monkeypatch, store)
+
+    assert source.read_files("url", ["c1"], ["a.yml"]) == {"c1": {}}
+    assert source.read_files("url", ["c1"], []) == {"c1": {}}
+    assert store.prefetches == []
 
 
 def test_read_files_timeout_scales_with_number_of_files(monkeypatch: pytest.MonkeyPatch) -> None:
     few = FakeStore({"a.yml": "b0"}, b"b0 blob 1\nx\n")
-    _source(monkeypatch, few).read_files("url", "abc", ["a.yml"])
+    _source(monkeypatch, few).read_files("url", ["abc"], ["a.yml"])
 
     blobs = {f"f{i}.yml": f"b{i}" for i in range(200)}
     many = FakeStore(blobs, b"".join(f"b{i} blob 1\nx\n".encode() for i in range(200)))
-    _source(monkeypatch, many).read_files("url", "abc", list(blobs))
+    _source(monkeypatch, many).read_files("url", ["abc"], list(blobs))
 
     (few_timeout,) = few.timeouts
     (many_timeout,) = many.timeouts

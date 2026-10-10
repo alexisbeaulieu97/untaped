@@ -66,7 +66,7 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[Call]:
     def spy(real: Callable[..., GitResult]) -> Callable[..., GitResult]:
         def run(args: Sequence[str], **kwargs: Any) -> GitResult:
             if args[0] in {"fetch", "ls-remote"}:
-                secret = kwargs.get("secret_config") or {}
+                secret = kwargs.get("auth_config") or {}
                 seen.append((list(args), next(iter(secret.values()), None)))
             return real(args, **kwargs)
 
@@ -267,9 +267,9 @@ def test_dependency_files_read_under_any_locale(
     assert not _repo(store_root, "site").exists()
 
     store.fetch(site.url, [GitRef(kind="heads", name="main", sha=site.oid("main"))])
-    files = store.read_files(site.url, sha, [_REQS, "requirements.yml", _META, "missing.yml"])
+    files = store.read_files(site.url, [sha], [_REQS, "requirements.yml", _META, "missing.yml"])
 
-    assert files == {_REQS: "- src: acme/two\n", "requirements.yml": "- src: acme/one\n"}
+    assert files == {sha: {_REQS: "- src: acme/two\n", "requirements.yml": "- src: acme/one\n"}}
 
 
 def test_a_failed_ls_remote_keeps_the_git_errors_attribution(
@@ -286,3 +286,24 @@ def test_a_failed_ls_remote_keeps_the_git_errors_attribution(
 
 def _basic(token: str) -> str:
     return store_module.basic_header("x-access-token", token)
+
+
+def test_the_remotes_default_branch_and_the_names_the_store_holds(
+    tmp_path: Path, store_root: Path
+) -> None:
+    site = _remote(tmp_path, "site", {"requirements.yml": "- src: acme/one\n"})
+    store = GitSourceStore()
+
+    assert store.default_branch(site.url) == "main"
+    assert store.holds(GitRef(kind="heads", name="feature/+x", sha="0" * 40))
+    assert not store.holds(GitRef(kind="heads", name="-wip", sha="0" * 40))
+
+
+def test_a_failed_default_branch_lookup_keeps_the_git_errors_attribution(
+    tmp_path: Path, store_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "no-bin"))
+    with pytest.raises(GitCacheError) as caught:
+        GitSourceStore().default_branch("https://github.com/acme/site.git")
+
+    assert (caught.value.system, caught.value.category) == ("local", ErrorCategory.CONFIG)

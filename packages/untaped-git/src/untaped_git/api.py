@@ -3,7 +3,8 @@
 ``RepoStore`` is the repo store (one blobless, full-history bare repo per URL,
 shared by plugins, each in its own ref namespace); ``GitHost`` is the
 contract a forge plugin fills to supply credentials and a proxy for its host;
-``ls_remote`` and ``default_branch`` query a remote with those credentials.
+``ls_remote`` and ``default_branch`` query a remote with those credentials;
+``check_names`` says why a branch or tag name is one the store refuses.
 The closed :data:`__all__` keeps the boundary explicit.
 """
 
@@ -13,6 +14,7 @@ from collections.abc import Sequence
 
 from untaped_git.domain.delta import RefDelta, RefMove
 from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
+from untaped_git.domain.namespace import check_names
 from untaped_git.domain.records import TreeEntry
 from untaped_git.domain.release import Released, Removed
 from untaped_git.domain.url import GitUrl, repo_url_parts, store_key, validate_git_url
@@ -32,6 +34,7 @@ __all__ = [
     "Removed",
     "RepoStore",
     "TreeEntry",
+    "check_names",
     "default_branch",
     "ls_remote",
     "repo_url_parts",

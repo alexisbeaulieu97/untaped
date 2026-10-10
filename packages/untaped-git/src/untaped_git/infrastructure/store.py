@@ -68,10 +68,10 @@ from untaped_git.domain.url import https_origin, url_host
 from untaped_git.infrastructure.lock import repo_lock
 from untaped_git.infrastructure.repo_files import (
     WorktreeEntry,
-    cache_origin,
-    list_caches,
+    list_repos,
     private_file,
     private_files,
+    repo_origin,
     tree_size,
     worktree_entries,
 )
@@ -216,8 +216,8 @@ class RepoStore:
         name = _plugin_name(plugin)
         settings = git_settings()
         stores = []
-        for repo in list_caches(settings.store_dir.expanduser()):
-            label = cache_origin(repo)
+        for repo in list_repos(settings.store_dir.expanduser()):
+            label = repo_origin(repo)
             if label is None or not private_file(repo, name).is_file():
                 continue
             stores.append(
@@ -880,7 +880,7 @@ class RepoStore:
             self._check_worktree(worktree)
             self._enable_worktree_config()
             self._write_owner_config(worktree)
-            label = cache_origin(self._path)
+            label = repo_origin(self._path)
             # Every rewrite onto the label goes, so an earlier URL spelling
             # (https before ssh, say) never wins over this one.
             for key in self._rewrites_onto(worktree, label) if label else ():
@@ -1086,7 +1086,7 @@ class RepoStore:
     ) -> GitResult:
         """A command that reaches the remote: URL rewrite, credentials, proxy, no maintenance."""
         settings = dict(_NETWORK)
-        label = cache_origin(self._path)
+        label = repo_origin(self._path)
         if label and label != self._url:
             settings[f"url.{self._url}.insteadOf"] = label
         auth = self._host_auth()
@@ -1106,7 +1106,7 @@ class RepoStore:
                 timeout=timeout,
                 capture=capture,
                 stdin=stdin,
-                secret_config=secret,
+                auth_config=secret,
                 ceiling=True,
                 retry_transient=retry,
                 attempts=ATTEMPTS,
@@ -1242,7 +1242,7 @@ def parse_symref(text: str) -> str | None:
 
 def credential_config(origin: str, credential: Credential) -> dict[str, str]:
     """The command-scope setting that sends ``credential`` to ``origin`` only (``run_git``'s
-    ``secret_config``: a private include file, never argv or the environment)."""
+    ``auth_config``: a private include file, never argv or the environment)."""
     header = basic_header(credential.username, credential.password)
     return {f"http.{origin}/.extraHeader": header}
 

@@ -7,8 +7,8 @@ and its private file is the repo's ``untaped-ansible.json``. The store fetches
 full history blobless and holds the credentials (github's ``GithubHost``
 answers for the GitHub host), so nothing here sees a token, a depth or a filter.
 
-Dependency files are read through a ``prefetched()`` handle: one blob fetch
-for every changed ref's files, then one local ``cat-file --batch``.
+Dependency files are read through one ``prefetched()`` handle per repo: one
+blob fetch for every changed ref's files, then one local ``cat-file --batch``.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from untaped.sdk import (
 )
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import GitCacheError as GitCacheError
-from untaped_git.api import RepoStore, default_branch, ls_remote
+from untaped_git.api import RepoStore, check_names, default_branch, ls_remote
 
 DEFAULT_TIMEOUT = 60.0
 # ``cat-file --batch`` reads many blobs in one process: allow extra time per blob.
@@ -57,6 +57,10 @@ class GitSourceStore:
             # Its presence tells the store's report and a release that ansible uses the repo.
             atomic_write(store.private_file, json.dumps({"url": url}) + "\n")
 
+    def holds(self, ref: GitRef) -> bool:
+        """Whether the store takes ``ref``'s name (git allows some it refuses, like ``-wip``)."""
+        return check_names([ref.name]) is None
+
     def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
         """``ref → commit`` of ``url``'s refs matching ``patterns``, with untaped's credentials."""
         try:
@@ -71,34 +75,45 @@ class GitSourceStore:
         except UntapedError as exc:
             raise GitCacheError(str(exc), **attribution(exc)) from exc
 
-    def read_files(self, url: str, sha: str, paths: list[str]) -> dict[str, str]:
-        """Read the blobs among ``paths`` that exist at commit ``sha``.
+    def read_files(
+        self, url: str, shas: Sequence[str], paths: Sequence[str]
+    ) -> dict[str, dict[str, str]]:
+        """``sha → path → content`` for the blobs among ``paths`` at each commit of ``shas``.
 
-        The store's tree listing says which paths exist as blobs; only those
-        are prefetched, then one ``cat-file --batch`` reads them all. Absent
-        paths are simply omitted: existence comes from the listing, never from
-        Git error text, so any non-zero exit is a real failure.
+        The store's tree listings say which paths exist as blobs; only those
+        are prefetched, in one handle for every commit, then one
+        ``cat-file --batch`` reads them all. Absent paths are simply omitted:
+        existence comes from the listings, never from Git error text, so any
+        non-zero exit is a real failure.
         """
         wanted = list(dict.fromkeys(paths))
-        if not wanted:
-            return {}
+        commits = list(dict.fromkeys(shas))
+        if not wanted or not commits:
+            return {sha: {} for sha in commits}
         store = self._store(url)
-        blob_by_path = {
-            entry.path: entry.oid
-            for entry in store.ls_tree(sha, wanted)
-            if entry.type == "blob" and entry.path in wanted
+        blobs_at = {
+            sha: {
+                entry.path: entry.oid
+                for entry in store.ls_tree(sha, wanted)
+                if entry.type == "blob" and entry.path in wanted
+            }
+            for sha in commits
         }
-        if not blob_by_path:
-            return {}
-        blob_ids = list(dict.fromkeys(blob_by_path.values()))
-        handle = store.prefetched(trees=[sha], paths=list(blob_by_path))
+        found = sorted({path for blobs in blobs_at.values() for path in blobs})
+        blob_ids = list(dict.fromkeys(oid for blobs in blobs_at.values() for oid in blobs.values()))
+        if not blob_ids:
+            return {sha: {} for sha in commits}
+        handle = store.prefetched(trees=[sha for sha in commits if blobs_at[sha]], paths=found)
         result = handle.run(
             ["cat-file", "--batch"],
             stdin="".join(f"{blob}\n" for blob in blob_ids).encode(),
             timeout=DEFAULT_TIMEOUT + PER_FILE_READ_TIMEOUT * len(blob_ids),
         )
         contents = _parse_cat_file_batch(result.stdout, blob_ids)
-        return {path: contents[blob] for path, blob in blob_by_path.items()}
+        return {
+            sha: {path: contents[blob] for path, blob in blobs.items()}
+            for sha, blobs in blobs_at.items()
+        }
 
     def _store(self, url: str) -> RepoStore:
         from untaped_ansible import SPEC  # noqa: PLC0415  # the package imports this module

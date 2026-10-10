@@ -15,7 +15,7 @@ from pathlib import Path
 from untaped_git.domain.records import RepoCount, StoreReport
 from untaped_git.infrastructure.repo_files import (
     config_value,
-    list_caches,
+    list_repos,
     private_files,
     tree_size,
     worktree_entries,
@@ -24,7 +24,7 @@ from untaped_git.infrastructure.repo_files import (
 
 def store_report(root: Path, *, version: str | None) -> StoreReport:
     """What the store under ``root`` holds; ``version`` is the git version shown."""
-    repos = list_caches(root)
+    repos = list_repos(root)
     packs = [
         _count(repo / "objects" / "pack", lambda name: name.endswith(".pack")) for repo in repos
     ]

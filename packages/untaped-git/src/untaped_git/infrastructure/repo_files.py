@@ -10,14 +10,12 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
 #: Each consumer's private file in a repo it uses: ``untaped-<plugin>.json``.
 PRIVATE_PREFIX = "untaped-"
 PRIVATE_SUFFIX = ".json"
-_ORIGIN_SECTION = re.compile(r'\[\s*(?i:remote)\s+"origin"\s*\]')
 _ESCAPES = {"n": "\n", "t": "\t", "b": "\b"}
 _SPACE = " \t\n\r"
 
@@ -103,59 +101,54 @@ def tree_size(path: Path) -> int:
     return total
 
 
-def config_value(file: Path, section: str, key: str) -> str | None:
-    """``<section>.<key>`` from one git config file (the last value wins), else ``None``.
+def config_value(
+    file: Path, section: str, key: str, *, subsection: str | None = None
+) -> str | None:
+    """``<section>[.<subsection>].<key>`` from one config file, as ``git config --get`` reads it.
 
-    For a plain ``[section]`` header only (no subsection), which is all the
-    store writes for its own keys.
+    Only the file itself (no includes); the last value wins. Section and key
+    match case-insensitively, a subsection exactly, as in git. ``None`` when
+    the file is unreadable or holds no such key.
     """
     try:
-        lines = file.read_text(encoding="utf-8", errors="replace").splitlines()
+        text = file.read_text(encoding="utf-8", errors="replace", newline="")
     except OSError:
         return None
-    header = f"[{section.lower()}]"
-    current, value = "", None
-    for raw in lines:
-        line = raw.strip()
-        if line.startswith("["):
-            current = line.lower().replace(" ", "").replace("\t", "")
+    quoted = "" if subsection is None else rf'\s+"{re.escape(subsection)}"'
+    header = re.compile(rf"\[\s*(?i:{re.escape(section)}){quoted}\s*\]")
+    value, inside = None, False
+    for line in text.split("\n"):
+        stripped = line.strip(_SPACE)
+        if stripped.startswith("["):
+            inside = header.fullmatch(stripped) is not None
             continue
-        name, sep, rest = line.partition("=")
-        if sep and current == header and name.strip().lower() == key.lower():
-            value = _unquote(rest.strip())
+        name, sep, raw = stripped.partition("=")
+        if inside and sep and name.strip(_SPACE).lower() == key.lower():
+            value = _config_value(raw)
     return value
 
 
-def _unquote(value: str) -> str:
-    for marker in (" #", "\t#", " ;", "\t;"):
-        if not value.startswith('"'):
-            value = value.split(marker, 1)[0].rstrip()
-    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
-        return value[1:-1]
-    return value
-
-
-def list_caches(root: Path, *, skip: Collection[str] = ()) -> list[Path]:
+def list_repos(root: Path) -> list[Path]:
     """Every ``*.git`` directory under ``root``, sorted; never descends into one.
 
     Skips symlinks and, at the top level only, hidden directories (names
-    starting with ``.``, e.g. scratch dirs) and directories named in ``skip``;
-    below it a repo may be hidden (``github.com/acme/.github.git``). A missing
-    or unreadable directory is skipped. No git runs.
+    starting with ``.``, e.g. scratch dirs); below it a repo may be hidden
+    (``github.com/acme/.github.git``). A missing or unreadable directory is
+    skipped. No git runs.
     """
     found: list[Path] = []
-    _collect(root, skip, found, top=True)
+    _collect(root, found, top=True)
     return sorted(found)
 
 
-def _collect(directory: Path, skip: Collection[str], found: list[Path], *, top: bool) -> None:
+def _collect(directory: Path, found: list[Path], *, top: bool) -> None:
     try:
         with os.scandir(directory) as scan:
             entries = list(scan)
     except OSError:
         return
     for entry in entries:
-        if top and (entry.name.startswith(".") or entry.name in skip):
+        if top and entry.name.startswith("."):
             continue
         try:
             if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
@@ -166,29 +159,12 @@ def _collect(directory: Path, skip: Collection[str], found: list[Path], *, top: 
         if entry.name.endswith(".git"):
             found.append(path)
         else:
-            _collect(path, skip, found, top=False)
+            _collect(path, found, top=False)
 
 
-def cache_origin(cache: Path) -> str | None:
-    """``remote.origin.url`` from ``<cache>/config``, as ``git config --get`` reads it.
-
-    Only the file itself (no includes); the last ``url`` of ``[remote "origin"]``
-    wins. ``None`` when the file is unreadable or has no origin URL.
-    """
-    try:
-        text = (cache / "config").read_text(encoding="utf-8", errors="replace", newline="")
-    except OSError:
-        return None
-    origin, in_origin = None, False
-    for line in text.split("\n"):
-        stripped = line.strip(_SPACE)
-        if stripped.startswith("["):
-            in_origin = _ORIGIN_SECTION.match(stripped) is not None
-            continue
-        name, sep, value = stripped.partition("=")
-        if in_origin and sep and name.strip().lower() == "url":
-            origin = _config_value(value) or None
-    return origin
+def repo_origin(repo: Path) -> str | None:
+    """``remote.origin.url`` from ``<repo>/config`` (``None`` when unset or empty)."""
+    return config_value(repo / "config", "remote", "url", subsection="origin") or None
 
 
 def _config_value(raw: str) -> str:

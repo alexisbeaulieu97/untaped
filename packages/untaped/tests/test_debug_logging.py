@@ -47,12 +47,12 @@ def test_git_logs_argv_with_credentials_masked(
         timeout=10,
         cwd=tmp_path,
         check=False,
-        secret_config={"http.https://invalid.invalid/.extraHeader": header},
+        auth_config={"http.https://invalid.invalid/.extraHeader": header},
     )
     messages = [r.getMessage() for r in caplog.records if r.name == "untaped.git"]
     assert len(messages) == 1
     message = messages[0]
     assert message.startswith("git ls-remote https://***@invalid.invalid/r.git in ")
     assert "-> exit " in message
-    assert message.endswith("[secret config]")
+    assert message.endswith("[auth config]")
     assert "tok-123456789" not in message
