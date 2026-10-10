@@ -32,7 +32,7 @@ import errno
 import json
 import os
 import shutil
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -61,8 +61,9 @@ from untaped_git.infrastructure.store import REMOVING_SUFFIX, TIMEOUT, RepoStore
 
 #: What a copied private file loses, so its owner's next sync fetches.
 _FRESHNESS_KEYS = ("fetched_at", "pushed_at")
-#: The 10.x workspace layout mark, replaced by the store's ``untaped.store``.
+#: What a copied source is renamed to while it is deleted.
 _REMOVING = ".git" + REMOVING_SUFFIX
+#: The 10.x workspace layout mark, replaced by the store's ``untaped.store``.
 _OLD_LAYOUT_KEY = "untaped.layout"
 #: Where a copy across filesystems is built before it becomes the store repo.
 _COPYING_SUFFIX = ".adopting"
@@ -468,16 +469,24 @@ def _real(path: Path) -> Path:
     return Path(os.path.realpath(path))
 
 
-def unfinished_removals(root: Path, options: MigrationOptions) -> list[MigrationRow]:
+def unfinished_removals(
+    root: Path, options: MigrationOptions, *, skip: Collection[str] = ()
+) -> list[MigrationRow]:
     """A ``delete`` row per ``<repo>.git.removing`` an interrupted run left under ``root``.
 
     :func:`remove_if_emptied` deletes them; a preview lists them so a root
-    holding nothing else still gets applied. Never looks inside a repository.
+    holding nothing else still gets applied. Never looks inside a repository,
+    nor, at the top level, into the names in ``skip`` (as :func:`bare_repos`).
     """
     found: list[Path] = []
     for directory, dirs, _files in os.walk(root):
         found += [Path(directory) / name for name in dirs if name.endswith(_REMOVING)]
-        dirs[:] = [name for name in dirs if not name.endswith((".git", REMOVING_SUFFIX))]
+        dirs[:] = [
+            name
+            for name in dirs
+            if not name.endswith((".git", REMOVING_SUFFIX))
+            and not (directory == str(root) and name in skip)
+        ]
     return [
         MigrationRow(
             action="delete",
