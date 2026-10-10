@@ -12,10 +12,10 @@ import statistics
 from collections.abc import Callable
 from pathlib import Path
 
-from untaped.sdk import list_caches
 from untaped_git.domain.records import RepoCount, StoreReport
 from untaped_git.infrastructure.repo_files import (
     config_value,
+    list_caches,
     private_files,
     tree_size,
     worktree_entries,

@@ -14,6 +14,7 @@ import pytest
 import yaml
 from pydantic import BaseModel, ValidationError
 
+from untaped.deprecated_keys import key_mappings
 from untaped.sdk import get_config_section
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 
@@ -25,8 +26,6 @@ _SOURCE = {"name": "prod", "repos": ["acme/site"]}
     [
         (SourceDefinition, {**_SOURCE, "ref_scan_default": "main"}),
         (AnsibleSettings, {"ref_scan_default": "main"}),
-        (AnsibleSettings, {"git_clone_protocol": "ftp"}),
-        (AnsibleSettings, {"git_fetch_depth": -1}),
         (AnsibleSettings, {"git_fetch_parallel": 0}),
         (AnsibleSettings, {"git_fetch_parallel": 33}),
         (AnsibleSettings, {"probe_parallel": 0}),
@@ -62,7 +61,6 @@ def test_source_definition_is_frozen_and_normalized() -> None:
 @pytest.mark.parametrize(
     ("data", "old", "new", "value"),
     [
-        ({"repo_cache_path": "/c"}, "repo_cache_path", "cache_dir", Path("/c")),
         ({"git_fetch_concurrency": 3}, "git_fetch_concurrency", "git_fetch_parallel", 3),
         ({"probe_concurrency": 4}, "probe_concurrency", "probe_parallel", 4),
         ({"stale_after": 60}, "stale_after", "stale_after_seconds", 60),
@@ -79,3 +77,31 @@ def test_a_retired_key_is_not_read(
 
     assert getattr(settings, new) == getattr(AnsibleSettings(), new) != value
     assert old not in capsys.readouterr().err
+
+
+_DELETED = {
+    "cache_dir": "deleted in 11.0; the repo store lives under git.store_dir",
+    "repo_cache_path": "deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir",
+    "git_fetch_depth": "deleted in 11.0; the repo store fetches full history",
+    "git_blob_filter": "deleted in 11.0; the repo store is blobless",
+    "git_clone_protocol": "deleted in 11.0; set github.git_protocol: ssh to keep ssh",
+}
+
+
+def test_the_git_cache_settings_are_deleted() -> None:
+    """The repo store (``git.store_dir``) and ``github.git_protocol`` replaced them."""
+    deleted = key_mappings(AnsibleSettings).deleted
+
+    assert {key: entry.reason() for key, entry in deleted.items()} == _DELETED
+    assert not set(_DELETED) & set(AnsibleSettings.model_fields)
+
+
+@pytest.mark.parametrize("key", sorted(_DELETED))
+def test_a_deleted_git_cache_setting_is_not_read(key: str) -> None:
+    config = Path(os.environ["UNTAPED_CONFIG"])
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": {key: "ssh"}}}}))
+
+    settings = get_config_section("ansible", AnsibleSettings)
+
+    assert not hasattr(settings, key)

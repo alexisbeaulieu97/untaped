@@ -50,13 +50,11 @@ from untaped.sdk import (
     GitResult,
     UntapedError,
     attribution,
-    cache_origin,
-    list_caches,
     run_git,
     ui_context,
 )
 from untaped_git.domain.delta import RefDelta, diff_refs
-from untaped_git.domain.hosts import HostAuth
+from untaped_git.domain.hosts import Credential, HostAuth
 from untaped_git.domain.namespace import (
     ORIGIN_HEAD,
     check_names,
@@ -70,6 +68,8 @@ from untaped_git.domain.url import https_origin, url_host
 from untaped_git.infrastructure.lock import repo_lock
 from untaped_git.infrastructure.repo_files import (
     WorktreeEntry,
+    cache_origin,
+    list_caches,
     private_file,
     private_files,
     tree_size,
@@ -1090,11 +1090,11 @@ class RepoStore:
         if label and label != self._url:
             settings[f"url.{self._url}.insteadOf"] = label
         auth = self._host_auth()
-        header: str | None = None
+        secret: dict[str, str] = {}
         origin = https_origin(self._url)
         if auth is not None:
             if auth.credential is not None and origin is not None:
-                header = basic_header(auth.credential.username, auth.credential.password)
+                secret = credential_config(origin, auth.credential)
             if auth.proxy and origin is not None:
                 settings[f"http.{origin}/.proxy"] = auth.proxy
         settings.update(config or {})
@@ -1106,8 +1106,7 @@ class RepoStore:
                 timeout=timeout,
                 capture=capture,
                 stdin=stdin,
-                auth_header=header,
-                auth_url=self._url if header else None,
+                secret_config=secret,
                 ceiling=True,
                 retry_transient=retry,
                 attempts=ATTEMPTS,
@@ -1239,6 +1238,13 @@ def parse_symref(text: str) -> str | None:
         if line.startswith("ref: refs/heads/") and line.endswith("\tHEAD"):
             return line.removeprefix("ref: refs/heads/").removesuffix("\tHEAD")
     return None
+
+
+def credential_config(origin: str, credential: Credential) -> dict[str, str]:
+    """The command-scope setting that sends ``credential`` to ``origin`` only (``run_git``'s
+    ``secret_config``: a private include file, never argv or the environment)."""
+    header = basic_header(credential.username, credential.password)
+    return {f"http.{origin}/.extraHeader": header}
 
 
 def basic_header(username: str, password: object) -> str:

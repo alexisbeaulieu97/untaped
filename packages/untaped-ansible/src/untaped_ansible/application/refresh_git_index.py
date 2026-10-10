@@ -1,4 +1,4 @@
-"""Use case for refreshing a dependency source index from a bare Git cache."""
+"""Use case for refreshing a dependency source index from the git plugin's repo store."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,8 +52,8 @@ from untaped_github.api import (
 ProgressCallback = Callable[[RefreshProgressEvent], None]
 ProbeMode = Literal["all", "default_branch"]
 
-# Errors a fetch/parse worker may raise: GitCacheError from the local Git
-# cache and UntapedError from the SQLite index. The worker has no HTTP path
+# Errors a fetch/parse worker may raise: GitCacheError from the repo store
+# and UntapedError from the SQLite index. The worker has no HTTP path
 # (GitHub REST/GraphQL traffic happens in expansion and the probe), so no
 # HTTP-specific error type belongs here.
 _REPO_FAILURE_ERRORS = (GitCacheError, UntapedError)
@@ -125,11 +124,7 @@ class RefreshGitSourceIndex:
         index: IncrementalDependencyIndexWriter,
         aliases: dict[str, str],
         default_dependency_paths: list[str],
-        cache_dir: Path,
         clone_protocol: str,
-        fetch_depth: int,
-        blob_filter: bool,
-        auth_header: str | None,
         ref_scan_default: RefScanDefault = "all",
         concurrency: int = 8,
         repo_batch_size: int = 100,
@@ -151,11 +146,7 @@ class RefreshGitSourceIndex:
         self._index = index
         self._aliases = aliases
         self._default_dependency_paths = default_dependency_paths
-        self._cache_dir = cache_dir
         self._clone_protocol = clone_protocol
-        self._fetch_depth = fetch_depth
-        self._blob_filter = blob_filter
-        self._auth_header = auth_header if clone_protocol == "https" else None
         self._ref_scan_default = ref_scan_default
         self._concurrency = concurrency
         self._repo_batch_size = repo_batch_size
@@ -175,8 +166,6 @@ class RefreshGitSourceIndex:
             aliases_fingerprint=aliases_fingerprint,
             ref_scan_default=self._effective_ref_scan_default(source),
             clone_protocol=self._clone_protocol,
-            fetch_depth=self._fetch_depth,
-            blob_filter=self._blob_filter,
         )
         progress = self._index.refresh_progress(source_key, source_fingerprint)
         failures: dict[str, RepoFailure] = {}
@@ -501,18 +490,7 @@ class RefreshGitSourceIndex:
                 skipped_files=(),
             )
 
-        bare = self._git.ensure_bare(
-            clone_url,
-            cache_dir=self._cache_dir,
-            auth_header=self._auth_header,
-        )
-        self._git.fetch_refs(
-            bare,
-            refspecs=[_exact_refspec(ref) for ref in changed_refs],
-            depth=self._fetch_depth,
-            blob_filter=self._blob_filter,
-            auth_header=self._auth_header,
-        )
+        self._git.fetch(clone_url, changed_refs)
         parsed_by_sha: dict[str, _ParsedDependencyFiles] = {}
         resolver = IdentityResolver(self._aliases, github_host=self._github_host)
         repo_skipped_files: list[SkippedDependencyFile] = []
@@ -520,7 +498,7 @@ class RefreshGitSourceIndex:
             parsed = parsed_by_sha.get(ref.sha)
             if parsed is None:
                 parsed = self._read_dependency_files(
-                    bare,
+                    clone_url,
                     ref=ref,
                     paths=paths,
                 )
@@ -615,7 +593,7 @@ class RefreshGitSourceIndex:
 
     def _read_dependency_files(
         self,
-        bare: Path,
+        url: str,
         *,
         ref: GitRef,
         paths: list[str],
@@ -623,7 +601,7 @@ class RefreshGitSourceIndex:
         reports: list[tuple[str, ParseReport]] = []
         ignored_collections: set[str] = set()
         warnings: list[ParseWarning] = []
-        contents = self._git.read_files(bare, ref.sha, paths, auth_header=self._auth_header)
+        contents = self._git.read_files(url, ref.sha, paths)
         for path in paths:
             content = contents.get(path)
             if content is None:
@@ -664,11 +642,6 @@ class RefreshGitSourceIndex:
                     )
                 )
         return edges
-
-
-def _exact_refspec(ref: GitRef) -> str:
-    full_ref = f"refs/{ref.kind}/{ref.name}"
-    return f"+{full_ref}:{full_ref}"
 
 
 def _dedupe_skipped_files(
@@ -723,8 +696,6 @@ def source_refresh_fingerprint(
     aliases_fingerprint: str,
     ref_scan_default: RefScanDefault,
     clone_protocol: str,
-    fetch_depth: int,
-    blob_filter: bool,
 ) -> str:
     payload = {
         "source": source.model_dump(mode="json", exclude={"name"}),
@@ -733,8 +704,6 @@ def source_refresh_fingerprint(
         "aliases_fingerprint": aliases_fingerprint,
         "ref_scan_default": ref_scan_default,
         "clone_protocol": clone_protocol,
-        "fetch_depth": fetch_depth,
-        "blob_filter": blob_filter,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()

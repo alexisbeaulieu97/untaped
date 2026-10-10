@@ -121,15 +121,11 @@ DESCRIPTIONS: dict[str, str] = {
     "no `--source` or inline selector is given.",
     "ansible.ref_scan_default": "Refs a source scans: `all` refs or each repo's default branch.",
     "ansible.source_refresh_backend": "Ref probe backend for source refresh.",
-    "ansible.cache_dir": "Git clone cache used by source refresh.",
-    "ansible.git_clone_protocol": "Protocol for source refresh clones.",
-    "ansible.git_fetch_depth": "Git fetch depth for source refresh; `0` is full history.",
     "ansible.git_fetch_parallel": "Default `--parallel` for `source refresh` and `--refresh`.",
     "ansible.probe_parallel": "Concurrent ref probes during source refresh.",
     "ansible.source_refresh_repo_batch_size": "Repos committed per source refresh batch.",
     "ansible.source_refresh_rate_limit_floor": "Stop a refresh (resumable) when the GraphQL "
     "budget drops below this.",
-    "ansible.git_blob_filter": "Fetch with a blob filter to download less.",
     "ansible.dependency_paths": "Dependency files scanned in each repo.",
     "ansible.sources": "Saved sources. Managed by `ansible source` commands.",
     "ansible.aliases": "Role or Galaxy name to `owner/repo` aliases. Managed by "

@@ -67,6 +67,12 @@ def test_bad_names(name: str) -> None:
     assert check_names(["main", name]) is not None
 
 
+@pytest.mark.parametrize("name", ["feature+x", "c++/fix", "v1.0+build.5"])
+def test_a_plus_inside_a_name_is_a_name(name: str) -> None:
+    # git allows "+" in a ref name; only a leading one is a refspec's force prefix.
+    assert check_names([name]) is None
+
+
 def test_globs_cover_slashes() -> None:
     assert covers("rel/*", "rel/1/hotfix")
     assert covers("*-lts", "v2-lts")

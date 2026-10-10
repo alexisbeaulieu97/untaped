@@ -4,9 +4,9 @@ One place owns how untaped shells out to Git: binary resolution, the
 non-interactive environment (no terminal or credential-manager prompts,
 stdin closed, ssh ``BatchMode`` unless the user configured ssh, C locale so
 stderr parsing is locale-independent, inherited repository-redirecting
-variables dropped), transient scoped HTTP auth via a private include file,
-timeout and exit-status mapping to :class:`GitCommandError` with the auth
-header redacted, a bounded retry for transient transport failures, and the
+variables dropped), secret settings (credentials) through a private include
+file, timeout and exit-status mapping to :class:`GitCommandError` with those
+secrets redacted, a bounded retry for transient transport failures, and the
 work-tree root lookup. A bare repository is always named with ``--git-dir``
 (``git_dir=``), never found from ``cwd``: hardened shells such as GitHub
 Copilot CLI set ``safe.bareRepository=explicit``, which refuses that discovery.
@@ -14,7 +14,6 @@ Copilot CLI set ``safe.bareRepository=explicit``, which refuses that discovery.
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import functools
 import logging
@@ -30,7 +29,6 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
 
 from untaped.errors import ErrorCategory, UntapedError
 
@@ -137,12 +135,6 @@ class GitResult:
         return self.stdout.decode("utf-8", errors="replace")
 
 
-def git_auth_header(token: str) -> str:
-    """Return the transient HTTP ``AUTHORIZATION`` header for a GitHub token."""
-    credential = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    return f"AUTHORIZATION: basic {credential}"
-
-
 def is_transient_failure(stderr: str) -> bool:
     """Whether ``stderr`` describes a transport failure worth retrying."""
     lowered = stderr.lower()
@@ -221,27 +213,34 @@ def safe_path_segment(value: str) -> str:
 
 
 @contextmanager
-def scoped_auth_config(auth_header: str, *, auth_url: str | None = None) -> Iterator[Path]:
-    """Write a private git include file carrying ``auth_header``; delete it on exit.
+def _secret_include(settings: Mapping[str, str]) -> Iterator[Path]:
+    """Write ``settings`` (``section[.subsection].name`` → value) to a private include file.
 
-    With ``auth_url`` the header is scoped to that URL's HTTPS origin;
-    without it, it applies to every HTTP remote. The header never appears in
-    argv or the environment, only in this 0600 file.
+    The values never appear in argv or the environment, only in this 0600
+    file, which is deleted on exit.
     """
-    section = "[http]"
-    if auth_url is not None:
-        parsed = urlparse(auth_url)
-        if parsed.scheme != "https" or not parsed.netloc:
-            raise ValueError("git auth header requires an https:// remote URL")
-        section = f'[http "https://{parsed.netloc}/"]'
-    handle, name = tempfile.mkstemp(prefix="untaped-git-auth-", suffix=".config")
+    handle, name = tempfile.mkstemp(prefix="untaped-git-secret-", suffix=".config")
     path = Path(name)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as config:
-            config.write(f"{section}\n\textraheader = {auth_header}\n")
+            config.writelines(_config_entry(key, value) for key, value in settings.items())
         yield path
     finally:
         path.unlink(missing_ok=True)
+
+
+def _config_entry(key: str, value: str) -> str:
+    """One ``key = value`` as a git config file section, value quoted."""
+    section, _, rest = key.partition(".")
+    subsection, _, name = rest.rpartition(".")
+    if not section or not name or "\n" in key or "\n" in value:
+        raise ValueError(f"not a git config key and one-line value: {key!r}")
+    header = f"[{section}]" if not subsection else f'[{section} "{_quoted(subsection)}"]'
+    return f'{header}\n\t{name} = "{_quoted(value)}"\n'
+
+
+def _quoted(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def git_env(
@@ -264,7 +263,7 @@ def git_env(
     set ``GIT_SSH_COMMAND``/``GIT_SSH``/``core.sshCommand``; ``ceiling`` stops
     repository discovery above ``cwd``; ``git_dir`` is the repository whose
     ``core.sshCommand`` counts (else the one at ``cwd``); ``auth_config``
-    includes a :func:`scoped_auth_config` file and scrubs trace variables that could log it.
+    includes a private file of secret settings and scrubs trace variables that could log them.
     ``config`` adds command-scope settings (``git -c``'s scope, outside argv).
     """
     env = dict(os.environ if base is None else base)
@@ -323,8 +322,7 @@ def run_git(
     capture: bool = False,
     stdin: bytes | str | None = None,
     check: bool = True,
-    auth_header: str | None = None,
-    auth_url: str | None = None,
+    secret_config: Mapping[str, str] | None = None,
     locale_c: bool = True,
     batch_ssh: bool = True,
     ceiling: bool = False,
@@ -345,7 +343,11 @@ def run_git(
     with 1s, 2s, ... backoff; use it only for idempotent network commands
     (fetch, ls-remote). ``config`` sets command-scope git settings, as
     ``git -c key=value`` would but outside argv, so error messages still name
-    the subcommand; ``env`` adds variables on top of the hardened environment.
+    the subcommand; ``secret_config`` does the same for settings that carry a
+    secret (a credential header): they go in a private include file, never
+    argv or the environment, trace variables that could log them are dropped,
+    and their values are redacted from stderr and the debug log. ``env`` adds
+    variables on top of the hardened environment.
     """
     argv = list(args)
     label = f"git {argv[0]}" if argv else "git"
@@ -353,7 +355,8 @@ def run_git(
     if git_path is None:
         raise GitCommandError(f"`{git}` not found on PATH", category="config", system="local")
     payload = stdin.encode() if isinstance(stdin, str) else stdin
-    with _maybe_auth_config(auth_header, auth_url) as auth_config:
+    secrets = tuple(value for value in (secret_config or {}).values() if value)
+    with _maybe_secret_include(secret_config) as auth_config:
         process_env = git_env(
             git_path=git_path,
             cwd=cwd,
@@ -393,9 +396,9 @@ def run_git(
             result = GitResult(
                 returncode=completed.returncode,
                 stdout=_as_bytes(completed.stdout) if capture else b"",
-                stderr=redact(_as_bytes(completed.stderr).decode(errors="replace"), auth_header),
+                stderr=redact(_as_bytes(completed.stderr).decode(errors="replace"), secrets),
             )
-            _log_run(argv, cwd, result.returncode, started, auth_header)
+            _log_run(argv, cwd, result.returncode, started, secrets)
             if result.returncode == 0:
                 return result
             if retry_transient and attempt < attempts and is_transient_failure(result.stderr):
@@ -559,14 +562,13 @@ def git_toplevel(path: Path, *, git: str = "git", timeout: float = 30.0) -> Path
     return Path(top).resolve() if top else None
 
 
-def redact(value: str, auth_header: str | None) -> str:
-    """Replace ``auth_header`` (and its bare credential) in ``value``."""
-    if not auth_header:
-        return value
-    value = value.replace(auth_header, _REDACTED)
-    credential = auth_header.rsplit(" ", maxsplit=1)[-1]
-    if len(credential) >= 8:
-        value = value.replace(credential, _REDACTED)
+def redact(value: str, secrets: Sequence[str]) -> str:
+    """Replace each of ``secrets`` (and its last word, a header's bare credential) in ``value``."""
+    for secret in secrets:
+        value = value.replace(secret, _REDACTED)
+        credential = secret.rsplit(" ", maxsplit=1)[-1]
+        if len(credential) >= 8:
+            value = value.replace(credential, _REDACTED)
     return value
 
 
@@ -575,12 +577,12 @@ def _log_run(
     cwd: Path | None,
     returncode: int,
     started: float,
-    auth_header: str | None,
+    secrets: Sequence[str],
 ) -> None:
     """Debug-log one git run: argv with credentials masked, cwd, exit status, time."""
     if not _LOG.isEnabledFor(logging.DEBUG):
         return
-    shown = " ".join(_URL_USERINFO.sub(r"\g<scheme>***@", redact(arg, auth_header)) for arg in argv)
+    shown = " ".join(_URL_USERINFO.sub(r"\g<scheme>***@", redact(arg, secrets)) for arg in argv)
     elapsed_ms = (time.monotonic() - started) * 1000
     where = f" in {cwd}" if cwd is not None else ""
     _LOG.debug(
@@ -589,7 +591,7 @@ def _log_run(
         where,
         returncode,
         elapsed_ms,
-        " [auth header]" if auth_header else "",
+        " [secret config]" if secrets else "",
     )
 
 
@@ -606,11 +608,11 @@ def stderr_gist(stderr: str) -> str:
 
 
 @contextmanager
-def _maybe_auth_config(auth_header: str | None, auth_url: str | None) -> Iterator[Path | None]:
-    if auth_header is None:
+def _maybe_secret_include(settings: Mapping[str, str] | None) -> Iterator[Path | None]:
+    if not settings:
         yield None
         return
-    with scoped_auth_config(auth_header, auth_url=auth_url) as path:
+    with _secret_include(settings) as path:
         yield path
 
 

@@ -19,13 +19,11 @@ from untaped import git
 from untaped.errors import UntapedError
 from untaped.git import (
     GitCommandError,
-    git_auth_header,
     git_env,
     git_toplevel,
     is_transient_failure,
     run_git,
     safe_path_segment,
-    scoped_auth_config,
     stderr_gist,
 )
 
@@ -45,7 +43,7 @@ def _recording_run(
         count = int(env.get("GIT_CONFIG_COUNT", "0"))
         if count:
             include = Path(env[f"GIT_CONFIG_VALUE_{count - 1}"])
-            if include.name.startswith("untaped-git-auth-"):
+            if include.name.startswith("untaped-git-secret-"):
                 config = include.read_text()
                 kwargs["auth_mode"] = stat.S_IMODE(include.stat().st_mode)
                 kwargs["auth_path"] = include
@@ -171,44 +169,49 @@ def test_auth_env_includes_config_and_scrubs_traces(
 # ── auth include file ──────────────────────────────────────────────────────
 
 
-def test_git_auth_header_encodes_token() -> None:
-    assert git_auth_header("tok") == "AUTHORIZATION: basic eC1hY2Nlc3MtdG9rZW46dG9r"
+_SECRET = {"http.https://h/.extraHeader": _HEADER}
 
 
-def test_scoped_auth_config_is_private_scoped_and_removed() -> None:
-    with scoped_auth_config(_HEADER, auth_url="https://github.example.com/acme/api.git") as path:
+def test_secret_include_file_is_private_quoted_and_removed() -> None:
+    settings = {"http.https://h/.extraHeader": _HEADER, "credential.helper": 'say "hi" \\o'}
+    with git._secret_include(settings) as path:
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
         assert path.read_text() == (
-            f'[http "https://github.example.com/"]\n\textraheader = {_HEADER}\n'
+            f'[http "https://h/"]\n\textraHeader = "{_HEADER}"\n'
+            '[credential]\n\thelper = "say \\"hi\\" \\\\o"\n'
         )
     assert not path.exists()
 
 
-def test_unscoped_auth_config_applies_to_all_http_remotes() -> None:
-    with scoped_auth_config(_HEADER) as path:
-        assert path.read_text().startswith("[http]\n")
-
-
-def test_scoped_auth_config_rejects_non_https_url() -> None:
-    with (
-        pytest.raises(ValueError, match="https"),
-        scoped_auth_config(_HEADER, auth_url="git@github.com:acme/api.git"),
-    ):
+@pytest.mark.parametrize("key", ["nodot", ".name", "section.", "http.x\ny.name"])
+def test_secret_include_refuses_what_is_not_a_config_key(key: str) -> None:
+    with pytest.raises(ValueError, match="git config key"), git._secret_include({key: "v"}):
         pass
 
 
-def test_auth_header_travels_only_through_removed_include_file(
+def test_secret_settings_reach_git_through_its_config(tmp_path: Path) -> None:
+    result = run_git(
+        ["config", "--get", "http.https://h/.extraheader"],
+        timeout=10,
+        cwd=tmp_path,
+        capture=True,
+        secret_config=_SECRET,
+    )
+    assert result.text.strip() == _HEADER
+
+
+def test_secret_config_travels_only_through_removed_include_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(git, "_run_process", _recording_run(calls))
 
-    run_git(["fetch", "origin"], timeout=5, auth_header=_HEADER, auth_url="https://h/a.git")
+    run_git(["fetch", "origin"], timeout=5, secret_config=_SECRET)
 
     (call,) = calls
     assert _HEADER not in " ".join(call["args"])
     assert not any(_HEADER in value for value in call["env"].values())
-    assert call["auth_config"] == f'[http "https://h/"]\n\textraheader = {_HEADER}\n'
+    assert call["auth_config"] == f'[http "https://h/"]\n\textraHeader = "{_HEADER}"\n'
     assert call["auth_mode"] == 0o600
     assert not call["auth_path"].exists()
 
@@ -223,7 +226,7 @@ def test_auth_include_is_removed_when_git_cannot_start(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(git, "_run_process", boom)
     with pytest.raises(GitCommandError, match="could not run"):
-        run_git(["fetch"], timeout=5, auth_header=_HEADER)
+        run_git(["fetch"], timeout=5, secret_config=_SECRET)
     assert seen
     assert not seen[0].exists()
 
@@ -731,12 +734,12 @@ def test_unchecked_failure_returns_result(monkeypatch: pytest.MonkeyPatch) -> No
     assert result.stderr == "nope"
 
 
-def test_failure_redacts_auth_header_and_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_failure_redacts_secret_config_and_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     stderr = f"fatal: {_HEADER} rejected\nerror: token c2VjcmV0LXRva2Vu leaked\n"
     monkeypatch.setattr(git, "_run_process", _recording_run([], returncode=128, stderr=stderr))
 
     with pytest.raises(GitCommandError) as excinfo:
-        run_git(["fetch"], timeout=5, auth_header=_HEADER)
+        run_git(["fetch"], timeout=5, secret_config=_SECRET)
 
     assert "c2VjcmV0LXRva2Vu" not in str(excinfo.value)
     assert "c2VjcmV0LXRva2Vu" not in excinfo.value.stderr
@@ -1027,8 +1030,7 @@ def test_run_git_env_cannot_reopen_traces_under_auth(monkeypatch: pytest.MonkeyP
     run_git(
         ["fetch", "origin"],
         timeout=5,
-        auth_header=_HEADER,
-        auth_url="https://h/a.git",
+        secret_config=_SECRET,
         env={"GIT_TRACE_CURL": "1", "GIT_NO_LAZY_FETCH": "1"},
     )
 

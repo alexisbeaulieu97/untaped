@@ -1,10 +1,12 @@
 """Git ls-remote backed remote ref freshness probe.
 
-Runs ``git ls-remote --symref`` (Git 2.8+) once per repo with the normal Git
-timeout and ``ansible.probe_parallel``, sharing the HTTPS auth-header
-redaction path used by fetches. ``^{}`` lines give fully peeled tag targets.
-The ``git`` backend still expands sources through GitHub REST inventory, so
-private sources still need credentials; it only replaces the probe transport.
+Runs the git plugin's ``ls_remote`` once per repo with ``ansible.probe_parallel``;
+the credentials come from the host's ``GitHost`` (github's for the GitHub
+host), and annotated tags arrive peeled to their commits. The default branch is
+the inventory's (the remote's ``HEAD`` is asked only when the inventory named
+none): the ``git`` backend still expands sources through the GitHub REST
+inventory, so private sources still need credentials; it only replaces the
+probe transport.
 """
 
 from __future__ import annotations
@@ -37,7 +39,6 @@ class GitRemoteRefProbe:
         git: LsRemoteGit,
         *,
         clone_protocol: str,
-        auth_header: str | None,
         concurrency: int = 8,
     ) -> None:
         if clone_protocol not in {"https", "ssh"}:
@@ -46,7 +47,6 @@ class GitRemoteRefProbe:
             raise ValueError("concurrency must be between 1 and 32")
         self._git = git
         self._clone_protocol = clone_protocol
-        self._auth_header = auth_header if clone_protocol == "https" else None
         self._concurrency = concurrency
 
     def probe(
@@ -89,17 +89,17 @@ class GitRemoteRefProbe:
     ) -> ProbedRepo | ProbeFailure:
         url = remote_url_for(target, self._clone_protocol)
         try:
-            output = self._git.ls_remote(
-                url,
-                patterns=_patterns_for(target, kinds=kinds, mode=mode),
-                auth_header=self._auth_header,
-            )
+            if target.default_branch == "HEAD":
+                branch = self._git.default_branch(url)
+                if branch is not None:
+                    target = target.model_copy(update={"default_branch": branch})
+            refs = self._git.ls_remote(url, patterns=_patterns_for(target, kinds=kinds, mode=mode))
         except GitCacheError as exc:
             reason = str(exc) or type(exc).__name__
             return ProbeFailure(
                 kind="git", reason=f"{GIT_REF_PROBE_FAILURE_PREFIX}{reason}", category=exc.category
             )
-        return _parse_ls_remote(output, target=target, kinds=kinds, mode=mode)
+        return _probed(refs, target=target, kinds=kinds, mode=mode)
 
 
 def _patterns_for(
@@ -121,61 +121,32 @@ def _patterns_for(
     return patterns
 
 
-def _parse_ls_remote(
-    output: str,
+def _probed(
+    refs: dict[str, str],
     *,
     target: ProbeTarget,
     kinds: Sequence[str],
     mode: Literal["all", "default_branch"],
 ) -> ProbedRepo:
-    symrefs: dict[str, str] = {}
-    refs: dict[str, str] = {}
-    peeled_tags: dict[str, str] = {}
-    for raw_line in output.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.startswith("ref: "):
-            value, _, name = line[5:].partition("\t")
-            if value and name:
-                symrefs[name] = value
-            continue
-        sha, separator, ref_name = line.partition("\t")
-        if not separator or not sha or not ref_name:
-            continue
-        if ref_name.endswith("^{}"):
-            peeled_tags[ref_name.removesuffix("^{}")] = sha
-        else:
-            refs[ref_name] = sha
-
-    default_branch = _default_branch(symrefs, target)
+    default_branch = target.default_branch
     if mode == "default_branch":
         ref = _default_branch_ref(default_branch, refs)
         return ProbedRepo(default_branch=default_branch, refs=(ref,) if ref is not None else ())
 
     selected: list[GitRef] = []
     kind_set = set(kinds)
-    if "heads" in kind_set:
-        selected.extend(
-            GitRef(kind="heads", name=name, sha=sha)
-            for name, sha in _named_refs(refs, "refs/heads/")
-        )
-    if "tags" in kind_set:
-        selected.extend(
-            GitRef(kind="tags", name=name, sha=peeled_tags.get(full_ref, sha))
-            for full_ref, name, sha in _named_refs_with_full_name(refs, "refs/tags/")
-        )
+    for kind in ("heads", "tags"):
+        if kind in kind_set:
+            prefix = f"refs/{kind}/"
+            selected.extend(
+                GitRef(kind=kind, name=name.removeprefix(prefix), sha=sha)
+                for name, sha in refs.items()
+                if name.startswith(prefix)
+            )
     return ProbedRepo(
         default_branch=default_branch,
         refs=tuple(sorted(selected, key=lambda ref: (ref.kind, ref.name))),
     )
-
-
-def _default_branch(symrefs: dict[str, str], target: ProbeTarget) -> str:
-    head_target = symrefs.get("HEAD")
-    if head_target and head_target.startswith("refs/heads/"):
-        return head_target.removeprefix("refs/heads/")
-    return target.default_branch
 
 
 def _default_branch_ref(default_branch: str, refs: dict[str, str]) -> GitRef | None:
@@ -184,19 +155,3 @@ def _default_branch_ref(default_branch: str, refs: dict[str, str]) -> GitRef | N
     if sha is None:
         return None
     return GitRef(kind="heads", name=default_branch, sha=sha)
-
-
-def _named_refs(refs: dict[str, str], prefix: str) -> list[tuple[str, str]]:
-    return [
-        (full_ref.removeprefix(prefix), sha)
-        for full_ref, sha in refs.items()
-        if full_ref.startswith(prefix)
-    ]
-
-
-def _named_refs_with_full_name(refs: dict[str, str], prefix: str) -> list[tuple[str, str, str]]:
-    return [
-        (full_ref, full_ref.removeprefix(prefix), sha)
-        for full_ref, sha in refs.items()
-        if full_ref.startswith(prefix)
-    ]

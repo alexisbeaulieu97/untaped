@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from untaped.sdk import UsageError, q, repo_url_parts, safe_path_segment
+from untaped.sdk import UsageError, q, safe_path_segment
 from untaped_workspace.domain.models import RepoSpec
 
 
@@ -17,6 +17,8 @@ def validate_workspace_name(name: str) -> str:
 
 def looks_like_url(ident: str) -> bool:
     """Whether ``ident`` is a URL, scp-style ``user@host:path``, a path, or ends in ``.git``."""
+    from untaped_git.api import repo_url_parts  # noqa: PLC0415  # keeps CLI startup free of git
+
     return (
         "://" in ident
         or ident.startswith(("/", "~"))
@@ -38,6 +40,8 @@ def repo_key(url: str) -> tuple[str, ...]:
 
 def repo_identity(url: str) -> tuple[str, str]:
     """``(owner, name)`` from a clone URL or path; owner is ``""`` when absent."""
+    from untaped_git.api import repo_url_parts  # noqa: PLC0415  # keeps CLI startup free of git
+
     _, segments = repo_url_parts(url)
     name = segments[-1] if segments else url
     owner = segments[-2] if len(segments) > 1 else ""
