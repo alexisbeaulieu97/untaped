@@ -475,6 +475,32 @@ def profile_sections(
                 yield str(name), section, model, section_data
 
 
+def retired_values(section: str, key: str) -> tuple[object, ...]:
+    """The values config.yml still sets for ``<section>.<key>``, distinct, ``default``'s first.
+
+    For a deleted key (a :class:`Retired` entry): no settings model reads
+    it, but a plugin may need the old value once, as ``setup migrate-dirs``
+    needs a custom root a deleted ``cache_dir`` named. ``key`` may be dotted.
+    Read from the file as written, every profile, never validated; empty
+    once ``config migrate`` has deleted the key.
+    """
+    from untaped.config_file import read_config_dict  # noqa: PLC0415 - config_file imports settings
+
+    profiles = read_config_dict().get("profiles")
+    if not isinstance(profiles, Mapping):
+        return ()
+    found: list[object] = []
+    for name in sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, str(name))):
+        data = profiles[name]
+        section_data = data.get(section) if isinstance(data, Mapping) else None
+        if not isinstance(section_data, Mapping):
+            continue
+        value = _lookup(section_data, key)
+        if value is not _MISSING and value not in found:
+            found.append(value)
+    return tuple(found)
+
+
 def scan_keys(
     raw: Mapping[str, Any],
     sections: Mapping[str, type[BaseModel]],

@@ -13,9 +13,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import (
+    DirMigration,
+    MigrationOptions,
+    MigrationOutcome,
+    MigrationRow,
+    PluginContext,
     PluginSpec,
     SkillAsset,
     connection_check,
+    delete_migration,
     executable_check,
     online_check,
 )
@@ -57,6 +63,23 @@ def _workspace() -> Sequence[Contract]:
     return (GithubRepos(),)
 
 
+def _cache_preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
+    """The 10.x sweep cache's move into the repo store (imports lazily)."""
+    from untaped_github.infrastructure.migrations import preview_cache  # noqa: PLC0415
+
+    return preview_cache()
+
+
+def _cache_apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
+    from untaped_github.infrastructure.migrations import apply_cache  # noqa: PLC0415
+
+    return apply_cache()
+
+
+def _corpus_9x() -> Sequence[Path]:
+    return [Path("~/.untaped/github-corpus").expanduser()]
+
+
 SPEC = PluginSpec(
     name="github",
     app_factory=build_app,
@@ -81,4 +104,18 @@ SPEC = PluginSpec(
         executable_check("github.git", "git", purpose="`untaped github sweep`"),
     ),
     provides={"git": _git_host, "workspace": _workspace},
+    migrations=(
+        DirMigration(
+            id="github.cache",
+            title="10.x sweep cache into the repo store",
+            preview=_cache_preview,
+            apply=_cache_apply,
+        ),
+        delete_migration(
+            "github.corpus",
+            "9.x sweep corpus",
+            _corpus_9x,
+            detail="9.x layout, its worktrees inside it",
+        ),
+    ),
 )

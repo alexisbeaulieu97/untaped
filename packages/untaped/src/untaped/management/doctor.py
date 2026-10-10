@@ -56,6 +56,7 @@ from untaped.plugins.registry import (
     CompositionResult,
     DoctorCheck,
     DoctorResult,
+    MigrationOptions,
     PluginContext,
     PluginSpec,
     QuarantineRecord,
@@ -345,6 +346,8 @@ def collect_doctor_rows(
     rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
     rows.extend(_contract_rows(result, profile, plugins))
     rows.append(_skills_row(shell, result))
+    if plugins is None:
+        rows.append(_migrations_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
     for registered in result.plugins:
@@ -583,6 +586,25 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         parts.append("remove unshipped skills with `untaped skills remove NAME`")
     detail = "; ".join(parts)
     return _row("skills", shell.name, _WARN, title, detail, fix, automatic=True)
+
+
+def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+    """Warn while a plugin's migration would still move or delete an old directory."""
+    from untaped.management.migrate_dirs import (  # noqa: PLC0415 - runs only in doctor
+        MIGRATE_COMMAND,
+        plan,
+        summary_text,
+    )
+
+    title = "no directories left by older versions"
+    planned = plan(result, MigrationOptions())
+    failed = [f"{item.migration.id}: {item.error}" for item in planned if item.error is not None]
+    if failed:
+        return _row("migrate-dirs", shell.name, _WARN, title, "; ".join(failed))
+    if not any(item.changes for item in planned):
+        return _row("migrate-dirs", shell.name, _PASS, title, "nothing to migrate")
+    fix = command_argv(MIGRATE_COMMAND, profile=selected_profile())
+    return _row("migrate-dirs", shell.name, _WARN, title, summary_text(planned), fix)
 
 
 def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str, object]]:

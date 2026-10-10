@@ -16,7 +16,9 @@ naming ``setup plan``, before it reads the config or the password store.
 
 ``setup plan`` (:mod:`untaped.management.setup_plan`) is its read-only,
 non-interactive face for agents and scripts; both read service state
-through :mod:`untaped.management.setup_state`.
+through :mod:`untaped.management.setup_state`. ``setup migrate-dirs``
+(:mod:`untaped.management.migrate_dirs`) moves or deletes what older
+versions left, from every plugin's ``migrations``.
 """
 
 from __future__ import annotations
@@ -26,7 +28,15 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from untaped.batch import finish
-from untaped.cli import ColumnsOption, FormatOption, create_app, report_errors
+from untaped.cli import (
+    ColumnsOption,
+    DryRunOption,
+    FormatOption,
+    YesOption,
+    create_app,
+    report_errors,
+    writes,
+)
 from untaped.config_file import read_config_dict
 from untaped.errors import PromptInterruptedError
 from untaped.management.doctor import report_check_rows, selected_check_rows
@@ -56,6 +66,14 @@ OnlineOption = Annotated[
     bool,
     Parameter(name="--online", negative="", help="Also run each ready service's online check."),
 ]
+DissociateOption = Annotated[
+    bool,
+    Parameter(
+        name="--dissociate",
+        negative="",
+        help="Repack the clones that borrow objects from an old directory, so it can go too.",
+    ),
+]
 CheckOption = Annotated[
     bool,
     Parameter(name="--check", negative="", help="Exit 3 when a step is still todo or failed."),
@@ -63,7 +81,7 @@ CheckOption = Annotated[
 
 
 def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
-    """Return the root ``setup`` command (the setup screen) and its ``plan`` subcommand."""
+    """Return the root ``setup`` command (the setup screen) and its subcommands."""
     app = create_app(name="setup", help="Configure a profile's services interactively.")
 
     @app.default
@@ -90,6 +108,31 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
             rows = plan_rows(shell, result, services, profile, online=online)
             emit_plan(rows, profile=profile, fmt=fmt, columns=columns)
         finish(False, predicate_hit=check and pending(rows))
+
+    @app.command(name="migrate-dirs")
+    @writes(destructive=True)
+    def migrate_dirs_command(
+        *,
+        dissociate: DissociateOption = False,
+        yes: YesOption = False,
+        dry_run: DryRunOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """Move or delete the directories older untaped versions left, with a preview.
+
+        Each plugin moves its own: repositories into the repo store, old
+        caches deleted. Run it before `config migrate`, which forgets the
+        custom directories older settings named.
+        """
+        # Imported here: the migrations and their plugins' code stay off the startup path.
+        from untaped.management.migrate_dirs import migrate_dirs  # noqa: PLC0415
+
+        with report_errors():
+            failed = migrate_dirs(
+                result, dissociate=dissociate, yes=yes, dry_run=dry_run, fmt=fmt, columns=columns
+            )
+        finish(failed)
 
     return app
 
