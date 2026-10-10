@@ -48,7 +48,12 @@ from untaped.sdk import (
     run_git,
 )
 from untaped_git.domain.namespace import PLAIN_CLONE, layout_for
-from untaped_git.infrastructure.repo_files import private_file, private_files, worktree_entries
+from untaped_git.infrastructure.repo_files import (
+    names_admin,
+    private_file,
+    private_files,
+    worktree_entries,
+)
 from untaped_git.infrastructure.store import REMOVING_SUFFIX, TIMEOUT, RepoStore, _plugin_name
 
 #: What a copied private file loses, so its owner's next sync fetches.
@@ -128,13 +133,16 @@ def adopt(
         if name not in PLAIN_CLONE:
             _rename_refs(source, name, error=error)
         _move_worktrees(moves, error=error)
+        staged = _stage(source, target, error=error)
         undo = _point_ahead(source, target, moves)
         try:
-            _move(source, target, error=error)
-        except UntapedError:
+            _move(source, target, staged, error=error)
+        except BaseException:
             _put_back(undo)
+            if staged is not None:
+                shutil.rmtree(staged, ignore_errors=True)
             raise
-        _repoint(store, moves)
+        _repoint(store, source, moves)
         store._git(["config", "--local", "--unset-all", _OLD_LAYOUT_KEY], check=False)
         stamped = [path for path in owned if path.is_dir()]
         if stamped or worktree_entries(target):
@@ -264,42 +272,74 @@ def _copy_private_files(loser: Path, winner: Path) -> None:
         atomic_write(kept, json.dumps(data, sort_keys=True) + "\n")
 
 
-def _move(source: Path, target: Path, *, error: type[UntapedError]) -> None:
-    """Rename ``source`` to ``target``; across filesystems, copy beside it first, then rename.
+def _same_filesystem(left: Path, right: Path) -> bool:
+    return left.stat().st_dev == right.stat().st_dev
 
-    The copy goes to ``<target>.adopting`` and is deleted when it fails (a
-    full disk), so ``target`` never holds half a repository.
+
+def _stage(source: Path, target: Path, *, error: type[UntapedError]) -> Path | None:
+    """On another filesystem than ``target``'s, copy ``source`` beside it first; the copy.
+
+    The slow part then runs before anything points at ``target``. ``None``
+    on one filesystem (a rename is enough).
     """
-    partial = target.with_name(target.name + _COPYING_SUFFIX)
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            source.rename(target)
-            return
-        except OSError as exc:
-            if exc.errno != errno.EXDEV:
-                raise
-        shutil.rmtree(partial, ignore_errors=True)
-        try:
-            shutil.copytree(source, partial, symlinks=True)
-            partial.rename(target)
-        except OSError:
-            shutil.rmtree(partial, ignore_errors=True)
-            raise
-        shutil.rmtree(source)
+        if _same_filesystem(source, target.parent):
+            return None
     except OSError as exc:
-        raise error(
-            f"could not move {source} to {target}: {exc.strerror or exc}",
-            category=ErrorCategory.FAILED,
-            system="local",
-        ) from exc
+        raise _move_error(source, target, exc, error) from exc
+    return _copy_beside(source, target, error=error)
+
+
+def _copy_beside(source: Path, target: Path, *, error: type[UntapedError]) -> Path:
+    """Copy ``source`` to ``<target>.adopting``, deleted when the copy fails (a full disk).
+
+    ``target`` itself never holds half a repository.
+    """
+    partial = target.with_name(target.name + _COPYING_SUFFIX)
+    shutil.rmtree(partial, ignore_errors=True)
+    try:
+        shutil.copytree(source, partial, symlinks=True)
+    except BaseException as exc:
+        shutil.rmtree(partial, ignore_errors=True)
+        if isinstance(exc, OSError):
+            raise _move_error(source, target, exc, error) from exc
+        raise
+    return partial
+
+
+def _move(source: Path, target: Path, staged: Path | None, *, error: type[UntapedError]) -> None:
+    """Rename ``source`` (or its staged copy, then delete ``source``) to ``target``."""
+    try:
+        if staged is None:
+            try:
+                source.rename(target)
+                return
+            except OSError as exc:
+                if exc.errno != errno.EXDEV:  # a bind mount st_dev didn't show: copy after all
+                    raise
+            staged = _copy_beside(source, target, error=error)
+        staged.rename(target)
+    except OSError as exc:
+        raise _move_error(source, target, exc, error) from exc
+    shutil.rmtree(source, ignore_errors=True)
+
+
+def _move_error(
+    source: Path, target: Path, exc: OSError, error: type[UntapedError]
+) -> UntapedError:
+    return error(
+        f"could not move {source} to {target}: {exc.strerror or exc}",
+        category=ErrorCategory.FAILED,
+        system="local",
+    )
 
 
 def _move_worktrees(moves: Mapping[Path, Path], *, error: type[UntapedError]) -> None:
     for old, new in moves.items():
         if not old.is_dir() or new.exists():
             continue
-        _move(old, new, error=error)
+        _move(old, new, _stage(old, new, error=error), error=error)
 
 
 def _point_ahead(source: Path, target: Path, moves: Mapping[Path, Path]) -> list[tuple[Path, str]]:
@@ -316,10 +356,10 @@ def _point_ahead(source: Path, target: Path, moves: Mapping[Path, Path]) -> list
             continue
         path = moved.get(_real(entry.path), entry.path)
         dot_git = path / ".git"
-        if not dot_git.is_file():
-            continue
-        undo.append((dot_git, dot_git.read_text(encoding="utf-8")))
         admin = _real(target) / "worktrees" / entry.admin.name
+        if not names_admin(dot_git, entry.admin, admin):
+            continue  # gone, or another repository's worktree now: left alone
+        undo.append((dot_git, dot_git.read_text(encoding="utf-8")))
         (entry.admin / "gitdir").write_text(f"{_real(dot_git)}\n", encoding="utf-8")
         dot_git.write_text(f"gitdir: {admin}\n", encoding="utf-8")
     return undo
@@ -331,7 +371,7 @@ def _put_back(undo: list[tuple[Path, str]]) -> None:
             dot_git.write_text(text, encoding="utf-8")
 
 
-def _repoint(store: RepoStore, moves: Mapping[Path, Path]) -> None:
+def _repoint(store: RepoStore, source: Path, moves: Mapping[Path, Path]) -> None:
     """Point every registered worktree and its admin directory at each other again.
 
     What ``git worktree repair`` does, written directly: the oldest git the
@@ -345,8 +385,8 @@ def _repoint(store: RepoStore, moves: Mapping[Path, Path]) -> None:
             continue
         path = moved.get(_real(entry.path), entry.path)
         dot_git = path / ".git"
-        if not dot_git.is_file():
-            continue  # gone, or not a worktree any more: git's own prune decides
+        if not names_admin(dot_git, source / "worktrees" / entry.admin.name, entry.admin):
+            continue  # gone, or another repository's worktree now: git's own prune decides
         admin = Path(os.path.realpath(entry.admin))
         dot_git.write_text(f"gitdir: {admin}\n", encoding="utf-8")
         (entry.admin / "gitdir").write_text(f"{_real(dot_git)}\n", encoding="utf-8")

@@ -70,6 +70,7 @@ from untaped_git.domain.url import https_origin, url_host
 from untaped_git.infrastructure.lock import repo_lock
 from untaped_git.infrastructure.repo_files import (
     WorktreeEntry,
+    names_admin,
     private_file,
     private_files,
     tree_size,
@@ -917,7 +918,7 @@ class RepoStore:
         if self._config_get("extensions.worktreeConfig") != "true":
             return
         for entry in worktree_entries(self._path):
-            if entry.path is None or not entry.path.is_dir():
+            if entry.path is None or not names_admin(entry.path / ".git", entry.admin):
                 continue
             if entry.owner == "workspace":
                 self._write_owner_config(entry.path, owner="workspace")

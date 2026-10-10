@@ -31,7 +31,6 @@ from untaped.sdk import (
     old_dirs,
     plugin_dir,
     plural,
-    run_git,
     shown_path,
     unsafe_dir,
 )
@@ -176,17 +175,7 @@ def apply_cache() -> Sequence[MigrationOutcome]:
 
 def _repos(root: Path) -> list[Path]:
     """The root's repositories but workspace's (in a root both used): its own row moves those."""
-    return [repo for repo in bare_repos(root, skip=(_WORKTREES,)) if not _workspaces(repo)]
-
-
-def _workspaces(repo: Path) -> bool:
-    marked = run_git(
-        ["config", "--file", str(repo / "config"), "--get", "untaped.layout"],
-        timeout=30.0,
-        capture=True,
-        check=False,
-    )
-    return bool(marked.text.strip())
+    return bare_repos(root, skip=(_WORKTREES,), workspace_layout=False)
 
 
 def _size(path: Path, options: MigrationOptions) -> int:
