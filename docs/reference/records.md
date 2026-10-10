@@ -218,3 +218,12 @@ without ITEM or `--repo`) and `dotfiles sync` (and, after their changes,
 `dotfiles.state_dir`: `status.json`, the `dotfiles.status.summary` record,
 and `attention`, one line holding its `attention` count (the rows that need
 the user), for prompt segments.
+
+## git
+
+| Command | Writes |
+|---|---|
+| `git hosts` | `git.host` |
+
+`git credential` speaks Git's credential-helper protocol on stdout, not
+records.

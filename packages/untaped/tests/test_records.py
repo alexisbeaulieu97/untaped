@@ -496,6 +496,14 @@ def _samples() -> dict[str, Record]:
         ),
         ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),
     ]
+    if "untaped_git" in _SHIPPED:  # the core-only job installs no plugin
+        from untaped_git.domain.records import GitHostRecord, StoreReport, TreeEntry
+
+        rows += [
+            GitHostRecord(host="github.com", plugins=["github"], credential=True),
+            StoreReport(store_dir="/s", repos=1, size_bytes=2, filter_ignored={"git.example": 1}),
+            TreeEntry(mode="100644", type="blob", oid="0" * 40, path="a.yml"),
+        ]
     return {str(kind_of(type(row))): row for row in rows}
 
 

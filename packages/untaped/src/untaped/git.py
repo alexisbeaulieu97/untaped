@@ -254,6 +254,7 @@ def git_env(
     batch_ssh: bool = True,
     ceiling: bool = False,
     base: Mapping[str, str] | None = None,
+    config: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """Build the hardened environment for one git subprocess.
 
@@ -264,6 +265,7 @@ def git_env(
     repository discovery above ``cwd``; ``git_dir`` is the repository whose
     ``core.sshCommand`` counts (else the one at ``cwd``); ``auth_config``
     includes a :func:`scoped_auth_config` file and scrubs trace variables that could log it.
+    ``config`` adds command-scope settings (``git -c``'s scope, outside argv).
     """
     env = dict(os.environ if base is None else base)
     for name in _REPO_REDIRECT_ENV:
@@ -294,10 +296,15 @@ def git_env(
         env["GIT_CEILING_DIRECTORIES"] = os.pathsep.join(
             [parent, existing] if existing else [parent]
         )
+    for key, value in (config or {}).items():
+        count = _config_count(env)
+        env[f"GIT_CONFIG_KEY_{count}"] = key
+        env[f"GIT_CONFIG_VALUE_{count}"] = value
+        env["GIT_CONFIG_COUNT"] = str(count + 1)
     if auth_config is not None:
         # Git/curl trace output can include the injected Authorization header.
         for key in list(env):
-            if key.startswith("GIT_TRACE") or key == "GIT_CURL_VERBOSE":
+            if _is_trace_variable(key):
                 del env[key]
         count = _config_count(env)
         env[f"GIT_CONFIG_KEY_{count}"] = "include.path"
@@ -324,6 +331,8 @@ def run_git(
     retry_transient: bool = False,
     attempts: int = 3,
     sleep: Callable[[float], None] = time.sleep,
+    config: Mapping[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> GitResult:
     """Run ``git <args>`` non-interactively and return its result.
 
@@ -334,7 +343,9 @@ def run_git(
     with ``--git-dir`` (required for a bare one; see the module docstring).
     ``retry_transient`` retries transport failures up to ``attempts`` times
     with 1s, 2s, ... backoff; use it only for idempotent network commands
-    (fetch, ls-remote).
+    (fetch, ls-remote). ``config`` sets command-scope git settings, as
+    ``git -c key=value`` would but outside argv, so error messages still name
+    the subcommand; ``env`` adds variables on top of the hardened environment.
     """
     argv = list(args)
     label = f"git {argv[0]}" if argv else "git"
@@ -343,7 +354,7 @@ def run_git(
         raise GitCommandError(f"`{git}` not found on PATH", category="config", system="local")
     payload = stdin.encode() if isinstance(stdin, str) else stdin
     with _maybe_auth_config(auth_header, auth_url) as auth_config:
-        env = git_env(
+        process_env = git_env(
             git_path=git_path,
             cwd=cwd,
             git_dir=git_dir,
@@ -351,6 +362,13 @@ def run_git(
             locale_c=locale_c,
             batch_ssh=batch_ssh,
             ceiling=ceiling,
+            config=config,
+        )
+        process_env.update(
+            (key, value)
+            for key, value in (env or {}).items()
+            # Trace output can carry the injected header (see git_env).
+            if auth_config is None or not _is_trace_variable(key)
         )
         for attempt in range(1, max(attempts, 1) + 1):
             started = time.monotonic()
@@ -358,7 +376,7 @@ def run_git(
                 completed = _run_process(
                     [git_path, *_git_dir_option(git_dir), *argv],
                     cwd=cwd,
-                    env=env,
+                    env=process_env,
                     # With no payload, close stdin so git never reads the terminal.
                     stdin=subprocess.DEVNULL if payload is None else None,
                     input=payload,
@@ -604,6 +622,10 @@ def _as_bytes(value: bytes | str | None) -> bytes:
     if value is None:
         return b""
     return value.encode() if isinstance(value, str) else value
+
+
+def _is_trace_variable(name: str) -> bool:
+    return name.startswith("GIT_TRACE") or name == "GIT_CURL_VERBOSE"
 
 
 def _config_count(env: Mapping[str, str]) -> int:

@@ -12,7 +12,7 @@ PACKAGES = REPO_ROOT / "packages"
 FENCE = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1", re.MULTILINE | re.DOTALL)
 
 #: Every first-party plugin, in name order.
-FIRST_PARTY = ("ansible", "awx", "dotfiles", "github", "jira", "recipe", "workspace")
+FIRST_PARTY = ("ansible", "awx", "dotfiles", "git", "github", "jira", "recipe", "workspace")
 
 
 def markdown_files() -> list[Path]:

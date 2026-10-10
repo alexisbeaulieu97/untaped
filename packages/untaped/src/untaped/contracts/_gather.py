@@ -10,7 +10,7 @@ its ``source`` stamped.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Concatenate, get_args, get_origin, overload
@@ -136,6 +136,7 @@ def gather[C: Contract, **P, R](
     refresh: bool | None = None,
     needs: Sequence[Callable[..., Any]] = (),
     deadline: float | timedelta | None = None,
+    plugins: Collection[str] | None = None,
 ) -> Callable[P, Answers[R]]:
     """Ask every ready provider of ``method``; call the result with the method's arguments.
 
@@ -143,7 +144,9 @@ def gather[C: Contract, **P, R](
     only (none stored: ``Skipped(no-cache)``), ``None`` serves within its max age
     and calls otherwise, ``True`` always calls. ``needs`` names further
     methods a provider must fill to be asked. ``deadline`` (seconds) bounds
-    every request a provider makes through ``self.http``. With no ready
+    every request a provider makes through ``self.http``. ``plugins`` asks
+    only the providers of those plugins (an owner that already chose one by a
+    cheaper method, say); the others are left out of the answers. With no ready
     provider at all it raises :class:`ConfigError` (exit 4) naming why each
     one isn't.
     """
@@ -163,6 +166,8 @@ def gather[C: Contract, **P, R](
         runnable: list[tuple[Provider, int | None]] = []
         reasons: list[str] = []
         for entry in offers(info):
+            if plugins is not None and entry.plugin not in plugins:
+                continue
             rank = order.index(entry.plugin) if entry.plugin in order else None
             if isinstance(entry, Quarantined):
                 answers[entry.plugin] = _excluded(entry.plugin, entry.reason, entry.detail, rank)

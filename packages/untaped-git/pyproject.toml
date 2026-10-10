@@ -1,0 +1,17 @@
+[project]
+name = "untaped-git"
+version = "10.1.0"
+description = "Git plugin for untaped: Git host credentials and the shared repo store."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
+requires-python = ">=3.14.1"
+dependencies = ["untaped==10.1.0"]
+
+[project.entry-points."untaped.plugins"]
+git = "untaped_git:SPEC"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
