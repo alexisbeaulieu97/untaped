@@ -46,6 +46,7 @@ SDK_NAMES = frozenset({"providers", "gather", "convert", "on", "own", "ready", "
 
 _BRIDGE = "__untaped_bridge__"
 _CACHED = "__untaped_cached__"
+_LISTING = "__untaped_listing__"
 _CONTRACT_OF = "__untaped_contract_of__"
 _CONTRACT = "__untaped_contract__"
 _BINDING = "_untaped_binding"
@@ -96,9 +97,9 @@ class Method:
     #: The resolved annotations, ``T`` left as the contract's type parameter.
     hints: Mapping[str, Any]
     bridge: bool
-    ttl: timedelta | None
-    #: A listing takes no arguments and returns a list: an invalid row is
-    #: dropped and the rest kept. Any other method's invalid item fails the answer.
+    max_age: timedelta | None
+    #: Declared ``@listing``: an invalid row is dropped and the rest kept.
+    #: Any other method's invalid item fails the answer.
     listing: bool
 
 
@@ -163,23 +164,34 @@ def bridge[F: Callable[..., Any]](fn: F, /) -> F:
     return stamped  # type: ignore[return-value]  # same signature as fn
 
 
-def cached[F: Callable[..., Any]](*, ttl: timedelta) -> Callable[[F], F]:
-    """Declare that a method's answers are kept for ``ttl`` (the answer cache).
+def listing[F: Callable[..., Any]](fn: F, /) -> F:
+    """Declare a method that returns a list of rows, each standing alone.
+
+    An invalid row is dropped (and reported in ``Ok.invalid``) and the rest
+    kept; without it, one invalid item fails the provider's whole answer.
+    The method must return a ``list``; checked at declaration.
+    """
+    setattr(fn, _LISTING, True)
+    return fn
+
+
+def cached[F: Callable[..., Any]](*, max_age: timedelta) -> Callable[[F], F]:
+    """Declare that a method's answers are kept for ``max_age`` (the answer cache).
 
     The owner declares it; the SDK keeps one entry per provider, method,
     profile and arguments under ``~/.untaped/plugins/<provider>/cache/``. A
     live call that fails while an entry exists serves the entry, marked stale.
     """
-    if ttl <= timedelta(0):
-        raise TypeError("cached(ttl=...) needs a positive timedelta")
+    if max_age <= timedelta(0):
+        raise TypeError("cached(max_age=...) needs a positive timedelta")
 
     def mark(fn: F) -> F:
-        return _served(fn, ttl, fn.__name__)
+        return _served(fn, max_age, fn.__name__)
 
     return mark
 
 
-def _served[F: Callable[..., Any]](fn: F, ttl: timedelta, name: str) -> F:
+def _served[F: Callable[..., Any]](fn: F, max_age: timedelta, name: str) -> F:
     """``fn`` served through the answer cache as contract method ``name``."""
     if getattr(fn, _CACHED, None) is not None:
         return fn
@@ -188,9 +200,9 @@ def _served[F: Callable[..., Any]](fn: F, ttl: timedelta, name: str) -> F:
     def served(self: Contract, /, *args: Any, **kwargs: Any) -> Any:
         from untaped.contracts._cache import call  # noqa: PLC0415 - cache needs settings
 
-        return call(self, name, fn, ttl, args, kwargs)
+        return call(self, name, fn, max_age, args, kwargs)
 
-    setattr(served, _CACHED, ttl)
+    setattr(served, _CACHED, max_age)
     return served  # type: ignore[return-value]  # same signature as fn
 
 
@@ -495,8 +507,8 @@ def _rewrap(cls: type[Contract]) -> None:
         wrapped = value
         if method.bridge:
             wrapped = bridge(wrapped)
-        if method.ttl is not None:
-            wrapped = _served(wrapped, method.ttl, name)
+        if method.max_age is not None:
+            wrapped = _served(wrapped, method.max_age, name)
         if wrapped is not value:
             setattr(cls, name, wrapped)
 
@@ -521,20 +533,22 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
                 f"{'SDK machinery' if name in SDK_NAMES else 'a builtin'} (pick another name)"
             )
         hints = _signature_hints(where, name, value, params)
-        ttl = getattr(value, _CACHED, None)
-        if ttl is not None and _carries_secret(hints["return"]):
+        max_age = getattr(value, _CACHED, None)
+        if max_age is not None and _carries_secret(hints["return"]):
             raise TypeError(
                 f"{where}.{name}: @cached would write a secret to disk; "
                 "a method returning one is never cached"
             )
-        params_taken = [p for p in inspect.signature(value).parameters.values()][1:]
+        rows = getattr(value, _LISTING, False)
+        if rows and get_origin(hints["return"]) is not list:
+            raise TypeError(f"{where}.{name}: a @listing method returns a list")
         methods[name] = Method(
             name=name,
             function=value,
             hints=types.MappingProxyType(hints),
             bridge=getattr(value, _BRIDGE, None) is not None,
-            ttl=ttl,
-            listing=not params_taken and get_origin(hints["return"]) is list,
+            max_age=max_age,
+            listing=rows,
         )
         setattr(value, _CONTRACT_OF, cls)
     return ContractInfo(

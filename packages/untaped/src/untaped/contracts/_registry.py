@@ -274,7 +274,7 @@ def _check(
 def ranking(owner: str, contract: str, method: str) -> tuple[str, ...]:
     """The plugins ranked for ``owner.contract.method``, first first.
 
-    The ``extensions`` settings that hold rankings arrive with ``untaped rank``;
+    The ``extensions`` settings that hold rankings arrive with ``untaped plugin rank``;
     until then nothing is ranked.
     """
     del owner, contract, method

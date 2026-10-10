@@ -20,6 +20,7 @@ from untaped.contracts._declare import (
     Source,
     bridge,
     cached,
+    listing,
 )
 from untaped.contracts._gather import Answer, Answers, Failed, Ok, Skipped, gather
 from untaped.contracts._select import Ambiguous, NotFound, convert, select_one
@@ -43,5 +44,6 @@ __all__ = [
     "cached",
     "convert",
     "gather",
+    "listing",
     "select_one",
 ]

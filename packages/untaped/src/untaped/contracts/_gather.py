@@ -111,9 +111,9 @@ class Answers[R](Sequence[Answer[R]]):
 
     @property
     def rank_command(self) -> str:
-        """The ``untaped rank`` line that orders these providers."""
+        """The ``untaped plugin rank`` line that orders these providers."""
         plugins = " ".join(answer.plugin for answer in self._items)
-        return f"untaped rank {self.owner}.{self.contract} {self.method} {plugins}".rstrip()
+        return f"untaped plugin rank {self.owner}.{self.contract} {self.method} {plugins}".rstrip()
 
 
 class _Invalid(Exception):
@@ -133,7 +133,7 @@ def gather[C: Contract, **P, R](
     """Ask every ready provider of ``method``; call the result with the method's arguments.
 
     ``refresh`` directs ``@cached`` methods: ``False`` serves cached answers
-    only (none stored: ``Skipped(no-cache)``), ``None`` serves within the TTL
+    only (none stored: ``Skipped(no-cache)``), ``None`` serves within its max age
     and calls otherwise, ``True`` always calls. ``needs`` names further
     methods a provider must fill to be asked. ``deadline`` (seconds) bounds
     every request a provider makes through ``self.http``. With no ready

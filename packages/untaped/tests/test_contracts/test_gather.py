@@ -29,7 +29,7 @@ from untaped.errors import ConfigError, ExitCode, HttpTransportError, UntapedErr
 
 @pytest.fixture
 def rank(monkeypatch: pytest.MonkeyPatch) -> object:
-    """Rank providers the way ``untaped rank`` will: ``rank("shop", "library")``."""
+    """Rank providers the way ``untaped plugin rank`` will: ``rank("shop", "library")``."""
 
     def set_rank(*plugins: str) -> None:
         monkeypatch.setattr("untaped.contracts._gather.ranking", lambda *_: plugins)
@@ -57,7 +57,7 @@ def test_answers_come_in_rank_order_then_by_name(rank) -> None:  # type: ignore[
         ("kiosk", 1),
         ("library", None),
     ]
-    assert answers.rank_command == "untaped rank shelf.book_source books shop kiosk library"
+    assert answers.rank_command == "untaped plugin rank shelf.book_source books shop kiosk library"
 
 
 def test_a_provider_not_configured_is_skipped_and_none_ready_is_exit_4() -> None:
@@ -160,7 +160,7 @@ def test_a_bridged_provider_returning_an_unstamped_item_is_unbridged() -> None:
     assert library.reason == "unbridged-item"
 
 
-def test_the_answer_cache_serves_within_the_ttl_and_refresh_directs_it() -> None:
+def test_the_answer_cache_serves_within_its_max_age_and_refresh_directs_it() -> None:
     compose(shelf_spec(), library_spec())
     write_config(LIBRARY_CONFIG)
     [first] = gather(BookSource.books)()
@@ -178,6 +178,7 @@ def test_the_answer_cache_serves_within_the_ttl_and_refresh_directs_it() -> None
     assert path.parts[-4:-1] == ("cache", "shelf.book_source.books", "default")
     stored = json.loads(path.read_text())
     assert stored["untaped"] == "1"
+    assert stored["key"] == f"library:{path.stem}"
     assert [row["title"] for row in stored["value"]] == ["Dune", "Emma"]
 
 

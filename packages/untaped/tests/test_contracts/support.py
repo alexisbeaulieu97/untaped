@@ -11,7 +11,7 @@ from typing import ClassVar
 from pydantic import BaseModel
 
 from untaped import bootstrap
-from untaped.contracts import Configured, Contract, Issued, Record, bridge, cached
+from untaped.contracts import Configured, Contract, Issued, Record, bridge, cached, listing
 from untaped.contracts._registry import reset
 from untaped.plugins.registry import CompositionResult, PluginSpec
 from untaped.sdk import experimental
@@ -32,14 +32,15 @@ class BookSource[T: Record = Book](Contract):
     def to_book(self, item: T) -> Book:
         raise NotImplementedError
 
-    @cached(ttl=timedelta(hours=1))
+    @listing
+    @cached(max_age=timedelta(hours=1))
     @abstractmethod
     def books(self) -> list[Book]: ...
 
     def lookup(self, title: str) -> list[Book]:
         raise NotImplementedError
 
-    @cached(ttl=timedelta(hours=1))
+    @cached(max_age=timedelta(hours=1))
     def by_author(self, author: str, limit: int = 10) -> list[Book]:
         raise NotImplementedError
 
