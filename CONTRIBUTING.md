@@ -407,6 +407,10 @@ _Avoid_: option (a command-line flag).
 **Profile**: a named set of settings in `config.yml`; the selected profile is
 layered over `default`.
 
+**Global option**: one of the options that work anywhere in a command
+(`--profile`, `--verbose`, `--quiet`, `--deprecated`); the code calls them
+root options (`_root_options.py`).
+
 **Renamed key**: an old name of a setting that still works, with a warning,
 until the next major release.
 
