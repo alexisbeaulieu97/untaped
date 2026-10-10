@@ -31,6 +31,8 @@ from typing import Any
 
 import pytest
 
+from untaped.stability import experimental
+
 _AUTHOR = {
     "GIT_AUTHOR_NAME": "Test",
     "GIT_AUTHOR_EMAIL": "test@example.invalid",
@@ -64,11 +66,13 @@ def _git(*args: str, cwd: Path | None = None, input: str | None = None) -> str:
     return result.stdout
 
 
+@experimental
 def global_config(key: str, value: str, *, add: bool = False) -> None:
     """Set ``key`` in the test ``HOME``'s ``~/.gitconfig``."""
     _git("config", "--global", *(["--add"] if add else []), key, value)
 
 
+@experimental
 @dataclass
 class GitRemote:
     """A local bare remote reached at :attr:`url`, with a clone to author commits in."""
@@ -202,6 +206,7 @@ class GitRemote:
             _git("checkout", "--quiet", "-b", branch, cwd=self.work)
 
 
+@experimental
 def git_remote(base: Path, name: str = "app", *, host: str = "git.example") -> GitRemote:
     """A remote under ``base`` answering at ``https://<host>/<name>.git``, with one commit on main.
 
@@ -222,12 +227,14 @@ def git_remote(base: Path, name: str = "app", *, host: str = "git.example") -> G
     return remote
 
 
+@experimental
 def hostile_git_home() -> None:
     """Add :data:`HOSTILE_GLOBALS` to the test ``HOME``'s ``~/.gitconfig``."""
     for key, value in HOSTILE_GLOBALS.items():
         global_config(key, value)
 
 
+@experimental
 def git_shim(
     bin_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -273,6 +280,7 @@ def git_shim(
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
 
+@experimental
 def trace2_events(path: Path) -> list[dict[str, Any]]:
     """The events of a ``GIT_TRACE2_EVENT`` file, one dict per line."""
     if not path.exists():
