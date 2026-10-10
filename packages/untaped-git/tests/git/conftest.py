@@ -43,10 +43,12 @@ def store_for(tmp_path: Path, remote: GitRemote, warnings: list[str]) -> StoreFo
     return build
 
 
-def git(repo: Path, *args: str, bare: bool = True) -> str:
+def git(repo: Path, *args: str, bare: bool = True, input: str | None = None) -> str:
     """Run git on ``repo`` (a bare repo by ``--git-dir``, else a worktree) and return stdout."""
     where = [f"--git-dir={repo}"] if bare else ["-C", str(repo)]
-    result = subprocess.run(["git", *where, *args], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        ["git", *where, *args], input=input, capture_output=True, text=True, check=False
+    )
     if result.returncode != 0:
         raise AssertionError(f"git {' '.join(args)} failed: {result.stderr}")
     return result.stdout

@@ -99,7 +99,7 @@ POLICY: Mapping[str, str] = {
     "gc.auto": "6700",
     "gc.autoDetach": "false",
     "gc.autoPackLimit": "10",
-    # Unlocked handle reads rely on unreachable objects outliving them.
+    # Git's default, restated so a global ``now`` cannot prune under an unlocked handle read.
     "gc.pruneExpire": "2.weeks.ago",
 }
 _NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}
