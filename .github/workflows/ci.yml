@@ -167,12 +167,17 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/contracts/bin/python" "$CORE" "$RUNNER_TEMP/shelf-src" "$RUNNER_TEMP/library-src" pytest
           (cd "$RUNNER_TEMP/shelf-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
           (cd "$RUNNER_TEMP/library-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
+          printf 'profiles:\n  default:\n    library:\n      volumes:\n        - {shelf_mark: A1, name: Dune}\n' > "$RUNNER_TEMP/contracts.yml"
+          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check shelf
+          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check library
+          # owner-schema-drift only warns; the committed fills.json must match shelf here.
+          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check library --format json | jq -e 'all(.[]; .status == "pass")'
 
       - name: A broken example plugin is quarantined
         run: |
           set -euo pipefail
           cp -r examples/untaped-hello "$RUNNER_TEMP/hello-broken"
-          sed -i 's/untaped_hello:provider/untaped_hello:missing/' "$RUNNER_TEMP/hello-broken/pyproject.toml"
+          sed -i 's/untaped_hello:SPEC/untaped_hello:missing/' "$RUNNER_TEMP/hello-broken/pyproject.toml"
           uv venv -q --python 3.14 "$RUNNER_TEMP/broken"
           uv pip install --python "$RUNNER_TEMP/broken/bin/python" "$CORE" "$RUNNER_TEMP/hello-broken"
           uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/broken/bin/untaped" "$VERSION" --expect "" --quarantined hello

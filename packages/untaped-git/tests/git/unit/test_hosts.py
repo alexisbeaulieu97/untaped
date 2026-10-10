@@ -15,7 +15,7 @@ from untaped import bootstrap
 from untaped.plugins.registry import PluginSpec
 from untaped.sdk import ConfigError
 from untaped.settings import get_settings
-from untaped.testing import invoke_cli, provider_candidate
+from untaped.testing import invoke_cli, plugin_candidate
 from untaped_git import SPEC
 from untaped_git.cli import app
 from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
@@ -50,7 +50,7 @@ def forge(name: str) -> PluginSpec:
 
 def compose(*forges: str) -> None:
     specs = [SPEC, *map(forge, forges)]
-    bootstrap.compose_root(candidates=[provider_candidate(spec) for spec in specs])
+    bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
 
 
 @pytest.fixture(autouse=True)

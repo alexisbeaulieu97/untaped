@@ -720,7 +720,7 @@ def test_plugin_names_are_the_packages_entry_points(tmp_path: Path) -> None:
         tmp_path / "pyproject.toml",
         '[project]\nname = "untaped"\nversion = "10.0.0"\n'
         '[project.entry-points."untaped.plugins"]\n'
-        'zeta = "z:provider"\nalpha = "a:provider"\n',
+        'zeta = "z:SPEC"\nalpha = "a:SPEC"\n',
     )
     assert release.plugin_names(tmp_path) == ["alpha", "zeta"]
 
@@ -730,12 +730,12 @@ def test_plugin_names_span_workspace_members(tmp_path: Path) -> None:
     _write(
         root / "packages" / "untaped-github" / "pyproject.toml",
         '[project]\nname = "untaped-github"\nversion = "10.0.0"\n'
-        '[project.entry-points."untaped.plugins"]\ngithub = "g:provider"\n',
+        '[project.entry-points."untaped.plugins"]\ngithub = "g:SPEC"\n',
     )
     _write(
         root / "packages" / "untaped-awx" / "pyproject.toml",
         '[project]\nname = "untaped-awx"\nversion = "10.0.0"\n'
-        '[project.entry-points."untaped.plugins"]\nawx = "a:provider"\n',
+        '[project.entry-points."untaped.plugins"]\nawx = "a:SPEC"\n',
     )
     assert release.plugin_names(root) == ["awx", "github"]
 

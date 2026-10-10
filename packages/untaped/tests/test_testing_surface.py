@@ -14,12 +14,15 @@ EXPECTED_ALL = [
     "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
+    "assert_contract_schemas",
     "assert_destructive_contract",
+    "assert_fills",
     "check_conventions",
+    "compose_with",
     "drive_screen",
     "invoke_cli",
     "invoke_root",
-    "provider_candidate",
+    "plugin_candidate",
 ]
 
 

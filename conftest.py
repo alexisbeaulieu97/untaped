@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from untaped import bootstrap, cli, repo_cache
 from untaped.git import GitResult
-from untaped.plugins.registry import PluginSpec, ProviderCandidate, discover_candidates
+from untaped.plugins.registry import PluginCandidate, PluginSpec, discover_candidates
 from untaped.records import table_columns_of
 
 pytest_plugins = ["untaped.testing.plugin"]
@@ -29,7 +29,7 @@ def _first_party_distributions() -> frozenset[str]:
 
 
 @pytest.fixture(scope="session")
-def first_party_candidates() -> tuple[ProviderCandidate, ...]:
+def first_party_candidates() -> tuple[PluginCandidate, ...]:
     """Every installed first-party candidate, in name order."""
     names = _first_party_distributions()
     return tuple(
@@ -42,19 +42,19 @@ def first_party_candidates() -> tuple[ProviderCandidate, ...]:
 
 @pytest.fixture(scope="session")
 def first_party_specs(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> tuple[PluginSpec, ...]:
     """Every first-party spec, resolved from its discovered entry point, in name order."""
-    return tuple(resolve_name(str(candidate.target))() for candidate in first_party_candidates)
+    return tuple(resolve_name(str(candidate.target)) for candidate in first_party_candidates)
 
 
 @pytest.fixture(scope="session")
-def broken_first_party_candidates() -> Callable[[], tuple[ProviderCandidate, ...]]:
+def broken_first_party_candidates() -> Callable[[], tuple[PluginCandidate, ...]]:
     """A ``discover_candidates`` stand-in: first-party-looking candidates that do not resolve."""
 
-    def candidates() -> tuple[ProviderCandidate, ...]:
+    def candidates() -> tuple[PluginCandidate, ...]:
         return tuple(
-            ProviderCandidate(distribution="untaped", name=name, target=f"untaped_missing_{name}:p")
+            PluginCandidate(distribution="untaped", name=name, target=f"untaped_missing_{name}:p")
             for name in ("awx", "jira")
         )
 

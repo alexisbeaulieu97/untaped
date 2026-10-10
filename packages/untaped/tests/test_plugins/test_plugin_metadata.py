@@ -20,9 +20,9 @@ from types import SimpleNamespace
 import pytest
 
 import untaped.plugins.registry as registry
-from test_plugins.plugin_harness import Provider, make_candidate, make_shell, make_spec
+from test_plugins.plugin_harness import make_candidate, make_shell, make_spec
 from untaped.plugins.registry import (
-    ProviderCandidate,
+    PluginCandidate,
     compose,
     discover_candidates,
 )
@@ -69,10 +69,10 @@ def test_metadata_is_checked_before_import(
         return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(registry, "import_module", tracking_import)
-    candidate = ProviderCandidate(
+    candidate = PluginCandidate(
         distribution="example-dist",
         name="pinned",
-        target="definitely.missing.row13_module:provider",
+        target="definitely.missing.row13_module:SPEC",
         **candidate_kwargs,  # type: ignore[arg-type]
     )
     result = compose(make_shell(), [candidate])
@@ -146,7 +146,7 @@ def test_discover_without_distributions() -> None:
 def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     spec = make_spec(name="live-cap")
     module = types.ModuleType("test_live_row13_provider_mod")
-    module.provider = Provider(spec)  # type: ignore[attr-defined]
+    module.SPEC = spec  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "test_live_row13_provider_mod", module)
 
     fake_dist = SimpleNamespace(
@@ -157,7 +157,7 @@ def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> 
 
     fake_entry_point = SimpleNamespace(
         name="live-cap",
-        value="test_live_row13_provider_mod:provider",
+        value="test_live_row13_provider_mod:SPEC",
         group="untaped.plugins",
         dist=fake_dist,
     )

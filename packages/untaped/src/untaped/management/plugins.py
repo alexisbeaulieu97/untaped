@@ -1,23 +1,25 @@
 """Root ``untaped plugin`` group: what is installed, and how contracts are filled.
 
 ``plugin list`` reports one record per candidate
-provider — ``name/status/distribution/version``, in name order — from the
+plugin — ``name/status/distribution/version``, in name order — from the
 composition outcome: ready rows for committed plugins plus quarantined
 rows carrying the entry-point name (or the ``unknown`` sentinels when the
-provider never resolved). The listing never touches settings, so invalid
+entry point never resolved). The listing never touches settings, so invalid
 plugin values cannot block it. ``plugin list --contracts`` lists every
 contract method instead: its owner, stability and providers.
 
 ``plugin rank`` writes the order of a contract method's providers into the
 owner's ``extensions`` settings; ``plugin schema`` prints a record kind's
-JSON Schema. Both, and ``--contracts``, import ``untaped.contracts`` only
-when they run.
+JSON Schema. ``plugin new`` scaffolds a plugin filling a contract and
+``plugin check`` checks an installed one. These, and ``--contracts``, import
+``untaped.contracts`` only when they run.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal
 
 from cyclopts import App, Parameter
@@ -40,14 +42,13 @@ from untaped.management._render import emit_isolated
 from untaped.messages import command_line, not_found
 from untaped.plugins.registry import (
     CompositionResult,
-    ProviderCandidate,
+    PluginCandidate,
     candidate_distribution,
     owns_contracts,
     run_deferred_factory,
 )
 from untaped.records import Record, record_kinds, record_model
 from untaped.settings import ContractName, ExtensionSettings
-from untaped.stability import Deprecated, Experimental, function_mark
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
@@ -57,7 +58,7 @@ if TYPE_CHECKING:
 _UNKNOWN = "unknown"
 
 #: Shown by root ``--help`` and an empty ``plugin list`` when a bare
-#: ``untaped`` install has no plugin providers.
+#: ``untaped`` install has no plugins.
 INSTALL_HINT = (
     "No plugins are installed. Reinstall untaped with an extra: 'untaped[all]' "
     "for all of them, or one, e.g. 'untaped[awx]'."
@@ -67,7 +68,7 @@ INSTALL_HINT = (
 def build_root_plugin_app(
     *,
     result: CompositionResult,
-    candidates: Sequence[ProviderCandidate],
+    candidates: Sequence[PluginCandidate],
 ) -> App:
     """Return the root ``plugin`` group for one composition."""
     app = create_app(name="plugin", help="Inspect installed plugins and their contracts.")
@@ -86,7 +87,7 @@ def build_root_plugin_app(
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List installed plugins and quarantined providers, one row each."""
+        """List installed and quarantined plugins, one row each."""
         with report_errors():
             if contracts:
                 emit(
@@ -120,6 +121,63 @@ def build_root_plugin_app(
         with report_errors():
             outcome = _rank(result, contract, method, list(plugins), dry_run=dry_run)
             emit(outcome, fmt=fmt, columns=columns)
+
+    @app.command(name="new")
+    @writes
+    def new_command(
+        name: Annotated[str, Parameter(help="The plugin name; the package is untaped-NAME.")],
+        /,
+        *,
+        fills: Annotated[
+            str,
+            Parameter(
+                name="--fills",
+                help="The contract the plugin fills, as OWNER.CONTRACT (plugin list --contracts).",
+            ),
+        ],
+        path: Annotated[
+            Path, Parameter(name="--path", help="Where to create untaped-NAME.")
+        ] = Path(),
+        dry_run: DryRunOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """Scaffold a plugin package that fills an installed owner's contract.
+
+        The package composes and follows the conventions as written: fill the
+        provider's stubs, add samples to its assert_fills test, then run
+        plugin check NAME on the installed package. A plugin with only
+        commands starts from the repository's examples/untaped-hello instead.
+        """
+        from untaped.management.plugin_new import scaffold  # noqa: PLC0415 - imports contracts
+
+        with report_errors():
+            outcomes = scaffold(result, candidates, name, fills, path=path, dry_run=dry_run)
+            emit(outcomes, fmt=fmt, columns=columns)
+
+    @app.command(name="check")
+    def check_command(
+        name: Annotated[
+            str | None, Parameter(help="The plugin to check; every installed one when left out.")
+        ] = None,
+        /,
+        *,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """Check an installed plugin: conventions, and each contract it fills, live.
+
+        The contract checks compose only the plugin and its owners. Exits 1
+        when a check fails; owner-schema-drift only warns.
+        """
+        from untaped.management.plugin_check import (  # noqa: PLC0415 - imports contracts
+            check_plugins,
+            report_check_rows,
+        )
+
+        with report_errors():
+            rows = check_plugins(result, candidates, name)
+            report_check_rows(rows, fmt=fmt, columns=columns)
 
     @app.command(name="schema")
     def schema_command(
@@ -163,6 +221,7 @@ def _contract_rows() -> list[ContractRow]:
         rankings,
         unreadable_owners,
     )
+    from untaped.contracts._schema import method_stability  # noqa: PLC0415
 
     rows: list[ContractRow] = []
     owned = owned_contracts()
@@ -178,28 +237,19 @@ def _contract_rows() -> list[ContractRow]:
             extensions = {}
         for info in sorted(infos, key=lambda each: each.name):
             extension = extensions.get(info.name)
-            for method, declared in info.methods.items():
+            for method in info.methods:
                 order = [] if extension is None else list(extension.rank.get(method, ()))
-                mark = function_mark(declared.function) or function_mark(info.cls)
                 rows.append(
                     ContractRow(
                         contract=f"{owner}.{info.name}",
                         method=method,
                         owner=owner,
-                        stability=_stability(mark),
+                        stability=method_stability(info, method),
                         providers=method_providers(info, method, order),
                         ranked=order,
                     )
                 )
     return rows
-
-
-def _stability(
-    mark: Experimental | Deprecated | None,
-) -> Literal["stable", "experimental", "deprecated"]:
-    if isinstance(mark, Deprecated):
-        return "deprecated"
-    return "experimental" if isinstance(mark, Experimental) else "stable"
 
 
 _EXTENSIONS = TypeAdapter(dict[ContractName, ExtensionSettings])
@@ -345,7 +395,7 @@ def _load_kind(kind: str, result: CompositionResult) -> type[Record] | None:
 
 def _show(
     result: CompositionResult,
-    candidates: Sequence[ProviderCandidate],
+    candidates: Sequence[PluginCandidate],
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
@@ -365,18 +415,18 @@ def _show(
 
 def _rows(
     result: CompositionResult,
-    candidates: Sequence[ProviderCandidate],
+    candidates: Sequence[PluginCandidate],
 ) -> list[dict[str, object]]:
-    # A distribution declares each entry-point name once, and a provider whose
+    # A distribution declares each entry-point name once, and a plugin whose
     # spec name differs from it is quarantined, so the reported (distribution,
-    # name) finds the candidate of every row, a provider that never resolved
+    # name) finds the candidate of every row, an entry point that never resolved
     # and a blank distribution (reported as ``unknown``) included.
     versions = {
         (candidate_distribution(item), item.name): item.distribution_version or _UNKNOWN
         for item in candidates
     }
     ready = [
-        (registered.spec.name, "ready", registered.provider_ref.distribution)
+        (registered.spec.name, "ready", registered.plugin_ref.distribution)
         for registered in result.plugins
     ]
     quarantined = [

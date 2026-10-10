@@ -17,7 +17,7 @@ from untaped.cli import create_app
 from untaped.conventions.stability import stability_violations
 from untaped.plugins.registry import PluginSpec
 from untaped.stability import Deprecated, Experimental, deprecated, experimental, marks
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 
 
 def _violations(
@@ -28,7 +28,7 @@ def _violations(
 ) -> list[str]:
     spec = replace(make_spec(name="svc", factory=factory), stability=stability)
     root = bootstrap.build_root_app(
-        candidates=[provider_candidate(spec), *(provider_candidate(other) for other in others)]
+        candidates=[plugin_candidate(spec), *(plugin_candidate(other) for other in others)]
     )
     return stability_violations(root, bootstrap.composition(), ["svc"], spec=spec)
 
@@ -110,7 +110,7 @@ def test_hand_typed_mark_in_help_docstring_and_visible_parameter_help() -> None:
 
 def test_hand_typed_mark_in_the_spec_help() -> None:
     spec = replace(make_spec(name="svc", factory=_app), help="Experimental: do it.")
-    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
 
     assert stability_violations(root, bootstrap.composition(), ["svc"], spec=spec) == [
         "svc::hand-typed-mark::spec help"
@@ -401,7 +401,7 @@ def _setting_violations(
     model: type[BaseModel], *, stability: Experimental | Deprecated | None = None
 ) -> list[str]:
     spec = replace(make_spec(name="svc", factory=_app, settings=model), stability=stability)
-    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
     return stability_violations(root, bootstrap.composition(), ["svc"], spec=spec)
 
 
@@ -441,7 +441,7 @@ def test_anything_under_a_deprecated_plugin_is_nested_for_settings() -> None:
 
 def test_marks_lists_a_settings_mark_with_its_key_and_replacement() -> None:
     spec = make_spec(name="svc", factory=_app, settings=_Clean)
-    root = bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
 
     found = [m for m in marks(root, bootstrap.composition()) if m.target == "setting"]
 

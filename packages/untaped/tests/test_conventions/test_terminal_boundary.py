@@ -11,7 +11,7 @@ from test_conventions.support import Install
 from untaped.conventions import plugin_violations
 from untaped.conventions.source import source_files
 from untaped.conventions.terminal_boundary import RULE, terminal_boundary_violations
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 
 MESSAGE = "imports prompt_toolkit; build screens with untaped.sdk"
 
@@ -105,7 +105,7 @@ def test_check_conventions_reports_it_for_a_plugin(install: Install) -> None:
             "demo/tool.py": "from prompt_toolkit import Application\n",
         }
     )
-    found = plugin_violations("demo", candidates=[provider_candidate(_spec())])
+    found = plugin_violations("demo", candidates=[plugin_candidate(_spec())])
     assert f"demo/tool.py:1::terminal-boundary::{MESSAGE}" in found
 
 

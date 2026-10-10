@@ -2,7 +2,7 @@
 
 Every plugin is discovered through the ``untaped.plugins``
 entry-point group and validated before settings registration or app
-mounting. Only providers that survive validation
+mounting. Only plugins that survive validation
 contribute command trees, settings sections, skills, or doctor checks.
 """
 
@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import inspect
 import sys
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from importlib import metadata
 from importlib.resources import files
 from itertools import chain
@@ -56,7 +58,7 @@ from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
     CompositionResult,
-    ProviderCandidate,
+    PluginCandidate,
     QuarantineRecord,
     RegisteredPlugin,
     SkillAsset,
@@ -119,11 +121,14 @@ SHELL_SPEC = ApplicationSpec(
 
 _COMPOSED_RESULT: CompositionResult | None = None
 
+#: Set inside :func:`kept_composition` ``(quiet=True)``: the warnings were shown once.
+_QUIET_QUARANTINE: ContextVar[bool] = ContextVar("untaped_quiet_quarantine", default=False)
+
 
 def _register_shell_and_plugins(result: CompositionResult) -> None:
     """Register the shell plus every composed plugin's settings sections.
 
-    Runs exactly once per composition, after validation succeeds: a provider
+    Runs exactly once per composition, after validation succeeds: a plugin
     that fails any check registers nothing.
     """
     register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
@@ -140,6 +145,8 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
 
 def _warn_quarantined(result: CompositionResult) -> None:
     """Emit one stderr warning per quarantined plugin."""
+    if _QUIET_QUARANTINE.get():
+        return
     for record in result.quarantine:
         echo(
             f"warning: plugin {record.name!r} from {record.distribution!r} quarantined "
@@ -150,13 +157,13 @@ def _warn_quarantined(result: CompositionResult) -> None:
 
 def compose_root(
     *,
-    candidates: Sequence[ProviderCandidate] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
 ) -> CompositionResult:
     """Discover, validate, and register one composition.
 
     Discovery (entry-point candidates, or ``candidates`` when given) runs BEFORE any
     settings registration or resolution; registration happens only after every
-    surviving provider validates. Remembers the composition for :func:`reset`.
+    surviving plugin validates. Remembers the composition for :func:`reset`.
     """
     global _COMPOSED_RESULT
     candidates = discover_candidates() if candidates is None else candidates
@@ -165,6 +172,44 @@ def compose_root(
     _COMPOSED_RESULT = result
     _warn_quarantined(result)
     return result
+
+
+@contextmanager
+def kept_composition(*, quiet: bool = False) -> Iterator[None]:
+    """Bring back the composition (and its settings registrations) the block started with.
+
+    The profile, verbose and quiet overrides are left as they are
+    (``untaped plugin check`` runs under the user's ``--profile``). With
+    ``quiet``, compositions inside the block don't warn about quarantined
+    plugins again.
+    """
+    global _COMPOSED_RESULT
+    previous = _COMPOSED_RESULT
+    token = _QUIET_QUARANTINE.set(quiet or _QUIET_QUARANTINE.get())
+    try:
+        yield
+    finally:
+        _QUIET_QUARANTINE.reset(token)
+        _COMPOSED_RESULT = previous
+        _reregister()
+
+
+@contextmanager
+def composed_with(
+    candidates: Sequence[PluginCandidate], *, quiet: bool = False
+) -> Iterator[CompositionResult]:
+    """Compose ``candidates`` for the block, then bring back the composition before it."""
+    with kept_composition(quiet=quiet):
+        yield compose_root(candidates=candidates)
+
+
+def _reregister() -> None:
+    reset_config_registry_for_tests()
+    get_settings.cache_clear()
+    get_settings_model.cache_clear()
+    get_profile_settings_model.cache_clear()
+    if _COMPOSED_RESULT is not None:
+        _register_shell_and_plugins(_COMPOSED_RESULT)
 
 
 def composition() -> CompositionResult:
@@ -185,12 +230,7 @@ def reset() -> None:
     set_profile_override(None)
     _reset_verbose(None)
     _reset_quiet(None)
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
-    get_settings_model.cache_clear()
-    get_profile_settings_model.cache_clear()
-    if _COMPOSED_RESULT is not None:
-        _register_shell_and_plugins(_COMPOSED_RESULT)
+    _reregister()
 
 
 def _clear_for_tests() -> None:
@@ -212,7 +252,7 @@ def _resolve_version() -> str:
 
 def build_root_app(
     *,
-    candidates: Sequence[ProviderCandidate] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
 ) -> App:
     """Compose the shell plus plugins and return the root app.
 
@@ -454,14 +494,14 @@ def _install_root_callback(
 def run_root(
     tokens: Iterable[str] | None = None,
     *,
-    candidates: Sequence[ProviderCandidate] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
     console: Any | None = None,
     error_console: Any | None = None,
 ) -> object:
     """Compose the root app and run it. Use as the unified ``main()``.
 
     One diagnostics scope spans composition and dispatch, so composition
-    warnings (a quarantined provider) follow the ``--format`` the tokens ask
+    warnings (a quarantined plugin) follow the ``--format`` the tokens ask
     for, like an error found before parsing.
     """
     argv = list(tokens) if tokens is not None else sys.argv[1:]

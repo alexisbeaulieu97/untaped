@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped.bootstrap import build_root_app
-from untaped.plugins.registry import ProviderCandidate
+from untaped.plugins.registry import PluginCandidate
 from untaped.testing import invoke_cli
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
     ],
 )
 def test_root_pipe_records_carry_an_untaped_kind(
-    first_party_candidates: tuple[ProviderCandidate, ...], args: list[str], kind: str
+    first_party_candidates: tuple[PluginCandidate, ...], args: list[str], kind: str
 ) -> None:
     config = Path(os.environ["UNTAPED_CONFIG"])
     config.parent.mkdir(parents=True, exist_ok=True)

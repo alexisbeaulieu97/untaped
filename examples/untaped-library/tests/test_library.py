@@ -7,8 +7,10 @@ import os
 from pathlib import Path
 
 import pytest
+from untaped_library.providers.shelf import LibraryBooks
+from untaped_library.records import Volume
 
-from untaped.testing import check_conventions, invoke_root
+from untaped.testing import assert_fills, check_conventions, invoke_root
 
 _CONFIG = """\
 profiles:
@@ -29,6 +31,16 @@ def configured() -> None:
 
 def test_library_follows_the_conventions() -> None:
     check_conventions("library")
+
+
+def test_the_library_fills_the_shelf_contract() -> None:
+    assert_fills(
+        LibraryBooks,
+        samples=[
+            Volume(shelf_mark="A1", name="Dune", pages=412),
+            {"shelf_mark": "B2", "name": "Emma"},
+        ],
+    )
 
 
 def test_unconfigured_the_owner_has_no_ready_provider() -> None:

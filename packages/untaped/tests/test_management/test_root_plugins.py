@@ -24,7 +24,7 @@ from untaped import bootstrap
 from untaped.management.plugins import INSTALL_HINT, build_root_plugin_app
 from untaped.plugins.registry import (
     CompositionResult,
-    ProviderCandidate,
+    PluginCandidate,
     QuarantineRecord,
 )
 from untaped.settings import get_settings
@@ -37,7 +37,7 @@ def _rows(stdout: str) -> list[dict[str, object]]:
     return [dict(item) for item in json.loads(stdout)]
 
 
-def _listing(candidates: list[ProviderCandidate]) -> list[dict[str, object]]:
+def _listing(candidates: list[PluginCandidate]) -> list[dict[str, object]]:
     """The JSON rows ``untaped plugin list`` lists for ``candidates``."""
     root = bootstrap.build_root_app(candidates=candidates)
     invoked = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
@@ -74,7 +74,7 @@ def test_the_listing_is_in_name_order_across_statuses() -> None:
 
 
 def test_quarantined_provider_lists_with_entry_point_name() -> None:
-    candidate = ProviderCandidate(
+    candidate = PluginCandidate(
         distribution="example-dist",
         name="ghost",
         target="example_mod:provider",
@@ -106,7 +106,7 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
 
 
 def test_unresolvable_provider_uses_unknown_sentinels() -> None:
-    candidate = ProviderCandidate(distribution="unknown", name="mystery", target="nope:missing")
+    candidate = PluginCandidate(distribution="unknown", name="mystery", target="nope:missing")
     result = CompositionResult(
         plugins=(),
         quarantine=(
@@ -165,7 +165,7 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
     ],
 )
 def test_plugins_listing_install_hint_on_stderr(
-    candidates: list[ProviderCandidate], expect_hint: bool
+    candidates: list[PluginCandidate], expect_hint: bool
 ) -> None:
     root = bootstrap.build_root_app(candidates=candidates)
     result = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])

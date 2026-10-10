@@ -11,7 +11,7 @@ import pytest
 
 from untaped import bootstrap
 from untaped.sdk import ErrorCategory
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 from untaped.testing.git import git_shim
 from untaped_git import SPEC
 from untaped_git.errors import StoreError
@@ -19,7 +19,7 @@ from untaped_git.infrastructure.lock import repo_lock
 
 
 def _version_row() -> tuple[int, dict[str, object]]:
-    root = bootstrap.build_root_app(candidates=(provider_candidate(SPEC),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(SPEC),))
     result = CliInvoker().invoke(root.meta, ["doctor", "--format", "json"])
     rows = {str(row["check"]): row for row in json.loads(result.stdout)}
     return result.exit_code, rows["git.version"]

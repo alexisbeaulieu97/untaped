@@ -23,7 +23,7 @@ from untaped_github.settings import GithubSettings
 if TYPE_CHECKING:
     from cyclopts import App
 
-__all__ = ["SPEC", "build_app", "provider"]
+__all__ = ["SPEC", "build_app"]
 
 
 def build_app() -> App:
@@ -64,8 +64,3 @@ SPEC = PluginSpec(
         executable_check("github.git", "git", purpose="`untaped github sweep`"),
     ),
 )
-
-
-def provider() -> PluginSpec:
-    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
-    return SPEC

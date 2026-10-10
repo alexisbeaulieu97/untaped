@@ -1,24 +1,27 @@
-# Building a plugin provider
+# Building a plugin
 
-A plugin provider is a Python package that adds one plugin to `untaped`:
-under one name, a command subtree (`untaped <name> ...`), settings, state,
-doctor checks and packaged skills, each optional. The root discovers
-providers through the `untaped.plugins` entry-point group and owns
-everything else: there is no second console script, config command or
+A plugin is a Python package that adds to `untaped`, under one name, a
+command subtree (`untaped <name> ...`), settings, state, doctor checks,
+packaged skills, contracts it owns and contracts it fills, each optional. The
+root discovers plugins through the `untaped.plugins` entry-point group and
+owns everything else: there is no second console script, config command or
 profile command. See the [Glossary](../CONTRIBUTING.md#glossary).
 
-Provider code imports from `untaped.sdk` and nothing else in `untaped`; see
-[SDK stability](./reference/conventions.md#sdk-stability). First-party
+A plugin imports from `untaped.sdk` and nothing else in `untaped`, except
+`untaped.contracts` and `untaped.testing` for [contracts](./contracts.md);
+see [SDK stability](./reference/conventions.md#sdk-stability). First-party
 plugins also use each other's declared `api.py` modules (see
 [Depending on another plugin](./reference/conventions.md#depending-on-another-plugin));
-those are internal to `untaped` and not part of the provider API.
+those are internal to `untaped` and not part of the plugin API.
 
 [`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
-complete, tested plugin; copy it to start.
+complete, tested plugin with commands; copy it to start one. To fill another
+plugin's contract, start with
+[`untaped plugin new`](#filling-another-plugins-contract).
 
-## Provider package
+## Plugin package
 
-An external provider is an ordinary Python distribution with one entry point
+An external plugin is an ordinary Python distribution with one entry point
 and no `[project.scripts]` section:
 
 ```text
@@ -45,7 +48,7 @@ dependencies = [
 ]
 
 [project.entry-points."untaped.plugins"]
-acme = "untaped_acme:provider"
+acme = "untaped_acme:SPEC"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
@@ -71,14 +74,16 @@ A plugin has one name, lowercase words joined by single hyphens (`@` is kept
 for later): `untaped-<name>` on PyPI, `untaped_<name>` to import, and `<name>`
 as entry point, config section, command group and data directory. Names core
 keeps, such as `core`, `http` or `config`, are quarantined (`reserved-name`).
-The entry point names a callable returning one self-validating `PluginSpec`.
+The entry point names the module's `SPEC` constant, one self-validating
+`PluginSpec`. Anything else, a function returning one included, is
+quarantined (`not-a-spec`) and never called.
 
-The provider's `untaped` requirement (`Requires-Dist`) is the only
+The plugin's `untaped` requirement (`Requires-Dist`) is the only
 compatibility check: declare it (`untaped>=10,<11`, raising the floor to the
 minor that added an API you use, for example `untaped>=10.1,<11`); without
 one, nothing is checked. That range excludes pre-releases such as
 `10.0.0a0`; to run on a pre-release core, declare `untaped>=10.0.0a0,<11`. A
-running `untaped` outside that range quarantines the provider. Installers
+running `untaped` outside that range quarantines the plugin. Installers
 normally enforce the range, so this shows up mainly after upgrading `untaped`
 past it. The [changelog](../CHANGELOG.md) says what each version added or broke.
 
@@ -91,9 +96,9 @@ out. `plugin_dir(SPEC)` (`~/.untaped/plugins/<name>/`) is where it keeps
 other data. To rename a setting, see
 [Settings](./reference/conventions.md#settings).
 
-A complete provider module, with a nullary app factory (leave it out for a
-plugin with no commands), one packaged skill and the callable the entry
-point above names:
+A complete plugin module, with a nullary app factory (leave it out for a
+plugin with no commands), one packaged skill and the `SPEC` the entry point
+above names:
 
 ```python
 # src/untaped_acme/__init__.py
@@ -161,11 +166,6 @@ SPEC = PluginSpec(
         ),
     ),
 )
-
-
-def provider() -> PluginSpec:
-    """Entry-point provider discovered by the root."""
-    return SPEC
 ```
 
 The optional `help` field (one non-empty line) is the summary in the root
@@ -176,10 +176,10 @@ fails that command, `--help` included, with exit 4, naming the plugin;
 other commands and shell completion keep working. `untaped doctor` runs every
 factory and reports a failing one as a quarantine row (`bad-app-factory`, or
 `duplicate-kind` for a reused record kind). Without `help`, composition calls
-`build_app()` once at startup, a bad factory quarantines the provider, and the
+`build_app()` once at startup, a bad factory quarantines the plugin, and the
 listing shows the built app's own help.
 
-The provider callable must have no side effects (registration, filesystem,
+Importing the module must have no side effects (registration, filesystem,
 network, `ContextVar`); the root owns registration and mounting.
 
 ## Commands and configuration
@@ -216,6 +216,50 @@ supplies as a `<NAME>` placeholder. `doctor` emits it as the row's `fix`
 argv, prefixed with `--profile NAME` unless it names one, so an agent can run
 it as is. Set `automatic=True` only on a fix that meets the rule in the
 `DoctorResult` docstring.
+
+## Filling another plugin's contract
+
+A plugin can answer another plugin's questions by filling a
+[contract](./contracts.md) that plugin (the owner) declares. Start from a
+scaffold:
+
+```bash
+untaped plugin list --contracts
+untaped plugin new gitlab --fills workspace.repo_source
+```
+
+`plugin new` writes `untaped-gitlab/` in the current directory (`--path`
+elsewhere, `--dry-run` to list the files first): the package with its
+`SPEC` offering the provider to the owner, the provider
+(`providers/workspace.py`) with every method of the contract and its
+docstring (the required ones as stubs, the optional ones and the bridge
+commented out, since a stub would count as filling them), a test running
+`check_conventions` and `assert_fills` with a list of samples to fill in,
+and a `pyproject.toml` with the ranges and extra below. It never writes into
+an existing directory.
+
+A plugin that fills a contract declares, besides its `untaped` range, the
+owner under an extra named like the owner, with a range of the owner's
+versions:
+
+```toml
+[project]
+dependencies = ["untaped>=10,<11", "pydantic>=2.13.3,<3"]
+
+[project.optional-dependencies]
+workspace = ["untaped-workspace>=10,<11"]
+```
+
+`check_conventions` fails a plugin with no `untaped` range, or with a
+`provides` key no such extra matches. An installed owner outside the
+extra's range quarantines that offer alone (`owner-out-of-range`). The
+provider imports only `untaped.sdk`, `untaped.contracts`, `untaped.testing`
+and the owner's `api` module.
+
+Fill the stubs, add samples, then run the plugin's tests and
+`untaped plugin check gitlab` against the installed package.
+[Testing contracts](./contracts.md#testing-contracts) says what each check
+does, and how an owner tests its own contracts.
 
 ## Experimental and deprecated commands
 
@@ -261,115 +305,12 @@ untaped skills install --all --target all
 [Install skills](./skills.md#install-skills)). The core `untaped` skill
 covers untaped itself; plugin guidance belongs in the plugin's skill.
 
-Start from this template. Copy it to
-`src/<package>/skills/untaped-<plugin>/SKILL.md`, replace every
-UPPER_CASE placeholder, and declare it in `PluginSpec.skills`:
-
-```markdown
----
-name: untaped-PLUGIN
-description: Operates SYSTEM through the `untaped PLUGIN` command (TASKS IN A FEW WORDS). Use when the user wants to INTENT, or mentions TRIGGER WORDS.
----
-
-# untaped PLUGIN
-
-One or two sentences: the job this plugin does, the judgement it needs,
-and when another plugin or tool fits better.
-
-## Setup
-
-Settings live under `profiles.<name>.PLUGIN`. The user stores the token
-by running `untaped auth set PLUGIN` in their own terminal (the settings
-model needs a `token_command` field for that). Check the connection with
-`untaped PLUGIN whoami`. Never ask for, print, echo or log tokens.
-
-## Commands
-
-| When you need to | Run |
-|---|---|
-| CONDITION | `untaped PLUGIN NOUN list` |
-| CONDITION | `untaped PLUGIN NOUN get NAME` |
-| CONDITION, after a preview | `untaped PLUGIN NOUN delete NAME --dry-run` |
-
-## Workflows
-
-1. STEP, ending on something the agent can check.
-2. Preview the change with `--dry-run` and show the user what it will touch.
-3. After the user approves, rerun with `--yes`.
-
-## Safety
-
-- WHICH COMMANDS WRITE, which ask first, and how to preview each.
-- Exit codes: 0 success, 1 failure or declined (`cancelled; no changes
-  made`), 2 usage (including a write without a terminal and without
-  `--yes`), 3 predicate hit, 4 fix the environment, 5 retry later, 130
-  interrupted.
-
-## Pitfalls
-
-- Read stderr as well as the rows; under `--format json` it is JSON Lines.
-  Pass on what the user would want to know about, with any hint, whatever
-  its `level`: a deprecated setting or flag, a skipped or partial result, a
-  clamped option. Leave out progress and routine lines.
-- A LIMIT, SURPRISING DEFAULT OR COMMON MISTAKE, with the reason.
-
-## References
-
-| File | Read it when |
-|---|---|
-| [references/TOPIC.md](references/TOPIC.md) | SITUATION |
-```
-
-Composition requires only a non-empty skill name and description; the rest
-of this section is guidance, and no test checks the description's length or
-voice. Keep `SKILL.md` short and split a long reference by task. The content
-rule: a skill documents behaviour and judgement, not what the CLI prints. Say only what the agent cannot learn from the installed CLI,
-and make the risky paths hard to get wrong.
-`--help` and `--columns '?'` answer flags and fields; the skill says which
-commands form a workflow, which order is safe, what the output means and what
-to do next.
-
-Frontmatter:
-
-- `description` equals `SkillAsset.description` exactly. It routes rather
-  than instructs: in the third person, what the skill covers, then the
-  intents that should load it. Aim for under 60 words, on this plugin's
-  ground only, and without `": "`.
-- `name` is the full ID, `untaped-<plugin>`.
-
-Content:
-
-- The installed skill is the agent's whole manual. It never links to the
-  repository's docs or source tree, which do not exist next to an installed
-  CLI.
-- It describes the version it ships with. Change it in the same release as
-  the command, setting or contract it describes; history goes in the
-  changelog.
-- Every quoted `untaped ...` command should parse against the real CLI.
-  Write synopses as `[--flag VALUE]`, `a|b`, `NAME` or `<name>`.
-- Give exact commands only where a wrong flag is costly; elsewhere name the
-  command and the intent.
-- A destructive operation is a sequence: preview (`--dry-run`, `--check`, or
-  list the selection), show the user what it will touch, scope it
-  explicitly, wait for approval, then pass `--yes`. Say how to recover.
-- Leave out `untaped skills ...` mechanics (the root's) and implementation
-  notes, class names or test details.
-- Examples use invented names (acme, Deploy, prod). Write calmly: a reason
-  works better than capitals.
-
-Shape:
-
-- `SKILL.md` holds what every use needs, in about 900 words. What only some
-  uses reach goes in `references/TOPIC.md`, one level deep, each pointer
-  saying when to read it. A reference over about 100 lines opens with a list
-  of its contents. Sample input files go in `examples/`.
-- Keep behaviour test cases outside the skill directory, because
-  `skills install` copies the whole folder. Rerun them when a change could
-  alter what an agent does.
+Write `SKILL.md` from the [skill template](./plugin-skills.md), which also
+says what belongs in it.
 
 ## Validation and checks
 
-Before committing a provider:
+Before committing a plugin:
 
 ```bash
 uv sync
@@ -377,6 +318,7 @@ uv run untaped --help
 uv run untaped acme --help
 uv run untaped plugin list
 uv run untaped doctor
+uv run untaped plugin check acme
 uv run pytest
 uv run mypy
 uv run ruff check
@@ -386,15 +328,15 @@ Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests,
 and `untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
-hello` in-process against the installed providers; it returns the exit code
+hello` in-process against the installed plugins; it returns the exit code
 and captured output.
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,
 see [Enforcement](./reference/conventions.md#enforcement).
 
-Test the provider callable and `SPEC.app_factory()` in isolation, assert that
+Test `SPEC.app_factory()` in isolation, assert that
 the entry-point name matches `SPEC.name`, and exercise root config, profile,
 skill, pipe and error paths. `untaped plugin list`, `untaped acme --help` and
 `untaped doctor` show the composed surface and any quarantine reason: a
-malformed provider is quarantined so the other plugins still boot.
+malformed plugin is quarantined so the other plugins still boot.

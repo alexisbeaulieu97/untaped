@@ -20,17 +20,17 @@ from cyclopts import App
 from repo.support import FIRST_PARTY, REPO_ROOT
 from test_plugins.plugin_harness import make_shell
 from untaped import bootstrap
-from untaped.plugins.registry import PluginSpec, ProviderCandidate, ProviderRef, compose
+from untaped.plugins.registry import PluginCandidate, PluginRef, PluginSpec, compose
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 
 
 @pytest.fixture(scope="module")
 def candidates(
-    first_party_candidates: tuple[ProviderCandidate, ...],
-) -> dict[str, ProviderCandidate]:
+    first_party_candidates: tuple[PluginCandidate, ...],
+) -> dict[str, PluginCandidate]:
     return {candidate.name: candidate for candidate in first_party_candidates}
 
 
@@ -40,7 +40,7 @@ def specs(first_party_specs: tuple[PluginSpec, ...]) -> dict[str, PluginSpec]:
 
 
 def _invoke(spec: PluginSpec, *args: str) -> str:
-    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
     result = CliInvoker().invoke(root.meta, list(args))
     assert result.exit_code == 0, result.output
     return result.stdout
@@ -52,13 +52,13 @@ def test_the_only_console_script_is_the_unified_shell() -> None:
 
 
 def test_the_fixtures_hold_exactly_the_first_party_plugins(
-    candidates: dict[str, ProviderCandidate], specs: dict[str, PluginSpec]
+    candidates: dict[str, PluginCandidate], specs: dict[str, PluginSpec]
 ) -> None:
     assert tuple(candidates) == tuple(specs) == FIRST_PARTY
 
 
 def test_every_first_party_plugin_is_an_entry_point_listed_ready_in_name_order(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
     listed = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
@@ -69,28 +69,28 @@ def test_every_first_party_plugin_is_an_entry_point_listed_ready_in_name_order(
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_the_entry_point_provider_returns_the_package_spec(
-    candidates: dict[str, ProviderCandidate], name: str
+def test_the_entry_point_names_the_package_spec(
+    candidates: dict[str, PluginCandidate], name: str
 ) -> None:
     module = f"untaped_{name}"
     package = import_module(module)
-    assert candidates[name].target == f"{module}:provider"
-    assert package.provider() is package.SPEC
+    assert candidates[name].target == f"{module}:SPEC"
+    assert not hasattr(package, "provider")
 
 
 def test_first_party_commit_carries_its_entry_point(
-    candidates: dict[str, ProviderCandidate],
+    candidates: dict[str, PluginCandidate],
 ) -> None:
     result = compose(make_shell(), [candidates["github"]])
     (registered,) = result.plugins
-    assert registered.provider_ref == ProviderRef(
-        distribution="untaped-github", entry_point="untaped_github:provider"
+    assert registered.plugin_ref == PluginRef(
+        distribution="untaped-github", entry_point="untaped_github:SPEC"
     )
     assert result.quarantine == ()
 
 
 def test_first_party_version_is_the_product_version(
-    candidates: dict[str, ProviderCandidate],
+    candidates: dict[str, PluginCandidate],
 ) -> None:
     try:
         installed = importlib_metadata.version("untaped")
