@@ -1,12 +1,12 @@
-"""CLI composition root: the GitHub client and corpus auth built from settings."""
+"""CLI composition root: the GitHub client and the corpus built from settings."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from untaped.sdk import app_context, git_auth_header
+from untaped.sdk import app_context
+from untaped_github.domain import github_web_host
 from untaped_github.domain.errors import github_failures
 from untaped_github.settings import GithubSettings
 
@@ -15,12 +15,16 @@ if TYPE_CHECKING:
 
     from untaped.sdk import UiContext
     from untaped_github.infrastructure import GithubClient
+    from untaped_github.infrastructure.git_corpus import GitCorpusCache
 
 
-def corpus_auth_header(settings: GithubSettings) -> Callable[[], str | None]:
-    """Return the Git auth-header supplier for corpus fetches (None without a token)."""
-    token = settings.token.get_secret_value().strip() if settings.token is not None else ""
-    return lambda: git_auth_header(token) if token else None
+def open_corpus(settings: GithubSettings) -> GitCorpusCache:
+    """The local corpus in the repo store, fetching over ``github.git_protocol``."""
+    from untaped_github.infrastructure.git_corpus import GitCorpusCache  # noqa: PLC0415
+
+    return GitCorpusCache(
+        web_host=github_web_host(settings.base_url), protocol=settings.git_protocol
+    )
 
 
 @contextmanager
