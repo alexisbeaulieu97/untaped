@@ -229,6 +229,7 @@ def _toy_imports(
     Source.__module__ = contract_module.__name__
     vars(contract_module).update(contract_globals, Item=Item, Source=Source)
     vars(api).update(exports or {}, Item=Item)
+    api.__all__ = sorted({*(exports or {}), "Item"})  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, contract_module.__name__, contract_module)
     return _imports(names, api, Source, "untaped_gitlab", "GitlabSettings")
 
@@ -269,6 +270,21 @@ def test_a_module_the_owners_api_exports_comes_from_the_api(
     models = ModuleType("untaped_toy.models")
     found = _toy_imports(monkeypatch, {"models"}, {"models": models}, models=models)
     assert found.splitlines()[1] == "from untaped_toy.api import models"
+
+
+def test_a_name_the_api_keeps_for_itself_comes_from_its_own_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from decimal import Decimal
+
+    found = _toy_imports(monkeypatch, {"Item", "Decimal"}, Decimal=Decimal)
+    assert found.splitlines()[0] == "from decimal import Decimal"
+
+
+def test_an_attribute_after_a_dot_comes_with_its_module() -> None:
+    from untaped.management.plugin_new import _names
+
+    assert _names("def f(self, where: pathlib.Path) -> None:") == {"f", "where", "pathlib"}
 
 
 @pytest.mark.parametrize(

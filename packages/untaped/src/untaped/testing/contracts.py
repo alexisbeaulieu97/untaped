@@ -155,6 +155,7 @@ def _bound(cls: type) -> Provider:
         Provider,
         every_offer,
         owned_contracts,
+        unreadable_owners,
     )
 
     contract = contract_of(cls)
@@ -164,9 +165,14 @@ def _bound(cls: type) -> Provider:
             return entry
     owner = next((o for o, infos in owned_contracts().items() if contract in infos), None)
     if owner is None:
+        broken = unreadable_owners()
         raise LookupError(
-            f"{cls.__qualname__} fills {getattr(contract, 'name', contract)}, whose owner isn't "
-            "composed; compose it too: compose_with(owner, plugin)"
+            f"{cls.__qualname__} fills {getattr(contract, 'name', contract)}, whose owner "
+            + (
+                f"may be {', '.join(broken)}: its contracts function fails; see doctor"
+                if broken
+                else "isn't composed; compose it too: compose_with(owner, plugin)"
+            )
         )
     for entry in entries:
         wanted = (None, getattr(contract, "cls", None))

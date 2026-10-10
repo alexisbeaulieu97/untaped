@@ -242,3 +242,13 @@ def test_a_provider_of_the_owners_own_model_is_checked_on_its_items(
     rows = _rows(check_plugins(result, found, "shelf"))
     assert ("live", "rack.item_source.items", "pass", "1 item") in rows
     assert ("fills", "rack.item_source", "pass", "1 live item") in rows
+
+
+def test_assert_fills_names_an_owner_whose_contracts_fail(contract_plugins_site: Path) -> None:
+    importlib.import_module("untaped_rack").BROKEN = True
+    box = importlib.import_module("untaped_bin.providers.rack").Box
+    with (
+        compose_with(*candidates()),
+        pytest.raises(LookupError, match="whose owner may be rack: its contracts function fails"),
+    ):
+        assert_fills(_bin(), samples=[box(id=3, label="pens")])
