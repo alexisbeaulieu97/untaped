@@ -33,7 +33,7 @@ def _fake_batch_git(
         return subprocess.CompletedProcess(cmd, 0, stdout=batch_stdout, stderr=b"")
 
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/git")
-    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("untaped.git._run_process", fake_run)
 
 
 @pytest.mark.parametrize(
