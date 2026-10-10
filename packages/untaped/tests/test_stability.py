@@ -180,17 +180,17 @@ def test_marked_commands_are_listed_in_their_stability_panels() -> None:
 
     text = _help(root, "svc")
 
-    assert _panels(text) == ["Commands", "Experimental", "Parameters"]
+    assert _panels(text) == ["Commands", "Experimental", "Global options"]
     assert "Put it." not in text  # the Deprecated panel is hidden without --deprecated
 
 
-def test_the_deprecated_panel_shows_with_the_flag_and_sorts_before_parameters() -> None:
+def test_the_deprecated_panel_shows_with_the_flag_and_sorts_before_global_options() -> None:
     app = _service()
     root = _root(app)
 
     for argv in (["--deprecated", "svc", "--help"], ["svc", "--deprecated", "--help"]):
         text = CliInvoker().invoke(root.meta, argv).stdout
-        assert _panels(text) == ["Commands", "Experimental", "Deprecated", "Parameters"], argv
+        assert _panels(text) == ["Commands", "Experimental", "Deprecated", "Global options"], argv
         assert "Put it." in text
 
 
@@ -286,7 +286,7 @@ def test_a_marked_plugin_lists_in_its_panel_and_its_help_ends_with_the_line() ->
 
     listing = CliInvoker().invoke(root.meta, ["--help"]).stdout
 
-    assert _panels(listing) == ["Commands", "Experimental", "Parameters"]
+    assert _panels(listing) == ["Commands", "Experimental", "Global options"]
     assert _help(root, "svc", "set").rstrip().endswith(EXPERIMENTAL_LINE)
 
 
