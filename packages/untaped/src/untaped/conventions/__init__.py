@@ -70,7 +70,7 @@ def plugin_violations(
         # (a broken settings-key declaration, say) is its one violation.
         return [f"{name}::quarantined::{record.reason}: {record.detail}"]
     own = next((candidate for candidate in candidates if candidate.name == name), None)
-    package, source_dir = _package_of(spec, None if own is None else own.target)
+    package, source_dir = package_of(spec, None if own is None else own.target)
     files = list(source_files(source_dir))
     plugin_packages, declared = _boundary(name, candidates, frozenset(spec.provides))
     commands = [] if spec.app_factory is None else [name]  # its mounted subtree
@@ -235,7 +235,7 @@ def candidate_package(target: object) -> str | None:
     if not isinstance(target, PluginSpec):
         return None
     try:
-        return _package_of(target)[0]
+        return package_of(target)[0]
     except LookupError:
         return None
 
@@ -264,7 +264,7 @@ def core_violations() -> list[str]:
     )
 
 
-def _package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
+def package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
     """The package owning ``spec`` and its source directory.
 
     That is the module of what the spec declares (its app factory, else its

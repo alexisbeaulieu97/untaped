@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from untaped import bootstrap, cli, repo_cache
 from untaped.git import GitResult
-from untaped.plugins.registry import PluginSpec, PluginCandidate, discover_candidates
+from untaped.plugins.registry import PluginCandidate, PluginSpec, discover_candidates
 from untaped.records import table_columns_of
 
 pytest_plugins = ["untaped.testing.plugin"]

@@ -12,6 +12,7 @@ import inspect
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from importlib import metadata
 from importlib.resources import files
 from itertools import chain
@@ -120,6 +121,9 @@ SHELL_SPEC = ApplicationSpec(
 
 _COMPOSED_RESULT: CompositionResult | None = None
 
+#: Set inside :func:`kept_composition` ``(quiet=True)``: the warnings were shown once.
+_QUIET_QUARANTINE: ContextVar[bool] = ContextVar("untaped_quiet_quarantine", default=False)
+
 
 def _register_shell_and_plugins(result: CompositionResult) -> None:
     """Register the shell plus every composed plugin's settings sections.
@@ -141,6 +145,8 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
 
 def _warn_quarantined(result: CompositionResult) -> None:
     """Emit one stderr warning per quarantined plugin."""
+    if _QUIET_QUARANTINE.get():
+        return
     for record in result.quarantine:
         echo(
             f"warning: plugin {record.name!r} from {record.distribution!r} quarantined "
@@ -169,20 +175,32 @@ def compose_root(
 
 
 @contextmanager
-def composed_with(candidates: Sequence[PluginCandidate]) -> Iterator[CompositionResult]:
-    """Compose ``candidates`` for the block, then bring back the composition before it.
+def kept_composition(*, quiet: bool = False) -> Iterator[None]:
+    """Bring back the composition (and its settings registrations) the block started with.
 
-    Settings registrations follow the composition; the profile, verbose and
-    quiet overrides are left as they are (``untaped plugin check`` runs under
-    the user's ``--profile``).
+    The profile, verbose and quiet overrides are left as they are
+    (``untaped plugin check`` runs under the user's ``--profile``). With
+    ``quiet``, compositions inside the block don't warn about quarantined
+    plugins again.
     """
     global _COMPOSED_RESULT
     previous = _COMPOSED_RESULT
+    token = _QUIET_QUARANTINE.set(quiet or _QUIET_QUARANTINE.get())
     try:
-        yield compose_root(candidates=candidates)
+        yield
     finally:
+        _QUIET_QUARANTINE.reset(token)
         _COMPOSED_RESULT = previous
         _reregister()
+
+
+@contextmanager
+def composed_with(
+    candidates: Sequence[PluginCandidate], *, quiet: bool = False
+) -> Iterator[CompositionResult]:
+    """Compose ``candidates`` for the block, then bring back the composition before it."""
+    with kept_composition(quiet=quiet):
+        yield compose_root(candidates=candidates)
 
 
 def _reregister() -> None:
