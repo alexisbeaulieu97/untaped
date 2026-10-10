@@ -423,7 +423,8 @@ def _comment(text: str) -> str:
 
 
 def _names(code: str) -> set[str]:
-    found = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", code))
+    # An attribute after a dot (``pathlib.Path``) comes with its module.
+    found = set(re.findall(r"(?<![\w.])[A-Za-z_][A-Za-z0-9_]*\b", code))
     return {
         name
         for name in found
@@ -441,6 +442,7 @@ def _imports(names: set[str], api: ModuleType, contract: type, package: str, set
     The owner's own names come only from its api.
     """
     seen = {**vars(sys.modules[contract.__module__]), **vars(api)}
+    exported = set(getattr(api, "__all__", ()))
     owner_top = api.__name__.partition(".")[0]
     plain: list[str] = []
     froms: dict[str, set[str]] = {api.__name__: set(), "untaped.contracts": {"Configured"}}
@@ -448,7 +450,7 @@ def _imports(names: set[str], api: ModuleType, contract: type, package: str, set
         if name not in seen:
             continue
         value = seen[name]
-        if getattr(api, name, None) is value:
+        if name in exported and getattr(api, name, None) is value:
             froms[api.__name__].add(name)
             continue
         home = _home(name, value)
@@ -461,8 +463,6 @@ def _imports(names: set[str], api: ModuleType, contract: type, package: str, set
             plain.append(f"import {home}" if home == name else f"import {home} as {name}")
         else:
             froms.setdefault(home, set()).add(name)
-    if not froms[api.__name__]:
-        del froms[api.__name__]
     sections: dict[bool, list[str]] = {True: [], False: []}
     for line in sorted(plain):
         sections[_stdlib(line.split()[1])].append(line)
