@@ -37,6 +37,7 @@ from untaped.plugins.registry import (
     admits,
     owner_requirement,
     owns_contracts,
+    range_text,
 )
 from untaped.profile_resolver import selected_profile
 from untaped.records import DuplicateKindError
@@ -258,7 +259,7 @@ def _out_of_range(state: _State, spec: PluginSpec, owner: str) -> str | None:
     if requirement is None or admits(requirement, installed.distribution_version):
         return None
     return (
-        f"{spec.name} requires {requirement.name}{requirement.specifier} for {owner}, "
+        f"{spec.name} requires {requirement.name}{range_text(requirement)} for {owner}, "
         f"but {installed.distribution_version} is installed"
     )
 

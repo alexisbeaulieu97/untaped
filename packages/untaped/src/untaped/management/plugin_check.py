@@ -355,6 +355,6 @@ def _schema(provider: Provider, what: str, row: _Row) -> PluginCheckRow:
     return row("schema", what, "pass", "tested against this owner's schema")
 
 
-def _message(exc: BaseException) -> str:
-    text = str(exc)
+def _message(exc: object) -> str:
+    text = str(exc).rstrip(": ")
     return text if text else type(exc).__name__
