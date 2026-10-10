@@ -17,7 +17,7 @@ from untaped_recipe.settings import RecipeSettings
 if TYPE_CHECKING:
     from cyclopts import App
 
-__all__ = ["SPEC", "build_app", "provider"]
+__all__ = ["SPEC", "build_app"]
 
 
 def build_app() -> App:
@@ -50,8 +50,3 @@ SPEC = PluginSpec(
         executable_check("recipe.git", "git", purpose="installing packs from git"),
     ),
 )
-
-
-def provider() -> PluginSpec:
-    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
-    return SPEC

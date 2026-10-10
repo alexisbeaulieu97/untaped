@@ -12,7 +12,7 @@ from untaped import bootstrap
 from untaped._root_options import _apply_help_root_options, _root_options, _RootOption
 from untaped.cli import create_app, echo
 from untaped.stability import deprecated, show_deprecated
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 from untaped.verbose import is_verbose
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -34,7 +34,7 @@ def _root() -> App:
         """Old."""
 
     spec = make_spec(name="svc", factory=lambda: app)
-    return bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+    return bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
 
 
 def _help(*argv: str) -> str:

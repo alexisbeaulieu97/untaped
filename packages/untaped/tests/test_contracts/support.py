@@ -16,7 +16,7 @@ from untaped.contracts._registry import reset
 from untaped.plugins.registry import CompositionResult, PluginSpec
 from untaped.sdk import experimental
 from untaped.settings import get_settings
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 
 
 class Book(Issued, kind="shelf.book"):
@@ -130,7 +130,7 @@ def kiosk_spec() -> PluginSpec:
 
 def compose(*specs: PluginSpec) -> CompositionResult:
     reset()
-    return bootstrap.compose_root(candidates=[provider_candidate(spec) for spec in specs])
+    return bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
 
 
 def write_config(text: str) -> None:

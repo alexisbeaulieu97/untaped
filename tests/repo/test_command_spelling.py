@@ -8,13 +8,13 @@ from cyclopts import App
 
 from untaped._root_options import canonical_command_tokens
 from untaped.bootstrap import build_root_app
-from untaped.plugins.registry import ProviderCandidate
+from untaped.plugins.registry import PluginCandidate
 from untaped.stability import deprecated_alias
 from untaped.testing import invoke_cli
 
 
 def test_underscore_command_spelling_renders_help_instead_of_crashing(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = build_root_app(candidates=first_party_candidates)
     result = invoke_cli(root, ["awx", "job_templates", "--help"])
@@ -24,7 +24,7 @@ def test_underscore_command_spelling_renders_help_instead_of_crashing(
 
 
 def test_canonical_spelling_leaves_arguments_and_options_alone(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = build_root_app(candidates=first_party_candidates)
     result = invoke_cli(root, ["awx", "JobTemplates", "list", "--help"])
@@ -153,7 +153,7 @@ REMOVED_SPELLINGS = [
 
 @pytest.mark.parametrize("argv", REMOVED_SPELLINGS, ids=" ".join)
 def test_removed_spelling_is_a_usage_error_without_an_alias(
-    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
+    first_party_candidates: tuple[PluginCandidate, ...], argv: list[str]
 ) -> None:
     root = build_root_app(candidates=first_party_candidates)
     with respx.mock(assert_all_called=False) as mock:

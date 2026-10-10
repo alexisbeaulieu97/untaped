@@ -32,7 +32,7 @@ from untaped.plugins.registry import PluginSpec
 from untaped.records import Record
 from untaped.sdk import deprecated, experimental
 from untaped.settings import get_config_section, load_settings_section, registered_profile_model
-from untaped.testing import CliInvoker, CliResult, provider_candidate
+from untaped.testing import CliInvoker, CliResult, plugin_candidate
 
 RANKED = """\
 profiles:
@@ -46,7 +46,7 @@ profiles:
 
 
 def _run(argv: Sequence[str], *specs: PluginSpec) -> CliResult:
-    app = build_root_app(candidates=[provider_candidate(spec) for spec in specs])
+    app = build_root_app(candidates=[plugin_candidate(spec) for spec in specs])
     return CliInvoker().invoke(app.meta, list(argv))
 
 

@@ -37,13 +37,12 @@ class WizProfile(BaseModel):
     token_command: TokenCommand = None
 
 
-def provider() -> PluginSpec:
-    return PluginSpec(
-        name="wiz",
-        app_factory=lambda: create_app(name="wiz", help="wiz plugin."),
-        settings=WizProfile,
-        doctor_checks=(connection_check("wiz.connection", section="wiz"),),
-    )
+SPEC = PluginSpec(
+    name="wiz",
+    app_factory=lambda: create_app(name="wiz", help="wiz plugin."),
+    settings=WizProfile,
+    doctor_checks=(connection_check("wiz.connection", section="wiz"),),
+)
 """
 
 
@@ -57,7 +56,7 @@ def _install_wiz(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "Metadata-Version: 2.1\nName: untaped-wiz\nVersion: 1.0\n", encoding="utf-8"
     )
     (dist_info / "entry_points.txt").write_text(
-        "[untaped.plugins]\nwiz = untaped_wiz:provider\n", encoding="utf-8"
+        "[untaped.plugins]\nwiz = untaped_wiz:SPEC\n", encoding="utf-8"
     )
     monkeypatch.syspath_prepend(str(site))
     monkeypatch.setenv("PYTHONPATH", str(site))

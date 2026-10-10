@@ -25,8 +25,8 @@ from untaped.errors import ConfigError
 from untaped.plugins.registry import (
     ApplicationSpec,
     DoctorCheck,
+    PluginCandidate,
     PluginSpec,
-    ProviderCandidate,
     SkillAsset,
     compose,
 )
@@ -282,14 +282,10 @@ def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
     assert record.reason == "duplicate-skill"
 
 
-def test_a_plain_function_provider_composes() -> None:
-    """The provider contract is a nullary callable; nothing else is declared."""
+def test_a_spec_target_composes() -> None:
+    """The entry point names the spec itself; nothing else is declared."""
     spec = make_spec(name="plain")
-
-    def provide() -> PluginSpec:
-        return spec
-
-    candidate = ProviderCandidate(distribution="plain-dist", name="plain", target=provide)
+    candidate = PluginCandidate(distribution="plain-dist", name="plain", target=spec)
     result = compose(make_shell(), [candidate])
     assert result.quarantine == ()
     assert [registered.spec for registered in result.plugins] == [spec]
@@ -307,51 +303,51 @@ def _needs_arg(value: str) -> PluginSpec:
     [
         # An unimportable target has no resolved label; the detail names it.
         (
-            ProviderCandidate(distribution="d", name="ghost", target="missing_mod_xyz:provider"),
+            PluginCandidate(distribution="d", name="ghost", target="missing_mod_xyz:SPEC"),
             "malformed-entry-point",
             "",
-            "missing_mod_xyz:provider",
+            "missing_mod_xyz:SPEC",
         ),
         (
-            ProviderCandidate(distribution="d", name="ghost", target="not-a-module-ref"),
+            PluginCandidate(distribution="d", name="ghost", target="not-a-module-ref"),
             "malformed-entry-point",
             "",
             "",
         ),
         (
-            ProviderCandidate(distribution="d", name="mod", target="json:decoder"),
-            "malformed-entry-point",
+            PluginCandidate(distribution="d", name="mod", target="json:decoder"),
+            "not-a-spec",
             "json:decoder",
             "",
         ),
-        # A dotted attribute resolves and is then judged on what it returns.
+        # A dotted attribute resolves and is then judged on what it is.
         (
-            ProviderCandidate(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
-            "malformed-entry-point",
+            PluginCandidate(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
+            "not-a-spec",
             "json.decoder:JSONDecoder",
             "",
         ),
         (
-            ProviderCandidate(distribution="d", name="thing", target=object()),
-            "malformed-entry-point",
+            PluginCandidate(distribution="d", name="thing", target=object()),
+            "not-a-spec",
             "thing",
             "",
         ),
         (
-            ProviderCandidate(distribution="d", name="argful", target=_needs_arg),
-            "malformed-entry-point",
+            PluginCandidate(distribution="d", name="argful", target=_needs_arg),
+            "not-a-spec",
             "argful",
-            "",
+            "the callable '_needs_arg'",
         ),
         (
             make_candidate(make_spec(name="raiser"), "d", error=RuntimeError("boom-text")),
             "malformed-entry-point",
-            None,
+            "",
             "boom-text",
         ),
         (
             make_candidate(make_spec(name="wrong"), "d", result={"not": "a-spec"}),
-            "malformed-entry-point",
+            "not-a-spec",
             None,
             "dict",
         ),
@@ -359,16 +355,16 @@ def _needs_arg(value: str) -> PluginSpec:
     ids=[
         "unresolvable",
         "no-colon",
-        "non-callable-attr",
+        "module-attr",
         "dotted-attr",
-        "non-callable-object",
-        "requires-arguments",
+        "object",
+        "callable",
         "raises",
-        "returns-non-spec",
+        "non-spec",
     ],
 )
 def test_bad_entry_point_target_quarantines(
-    candidate: ProviderCandidate, reason: str, entry_point: str | None, named: str
+    candidate: PluginCandidate, reason: str, entry_point: str | None, named: str
 ) -> None:
     result = compose(make_shell(), [candidate])
     (record,) = result.quarantine

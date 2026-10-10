@@ -16,7 +16,7 @@ from untaped_library.settings import LibrarySettings
 if TYPE_CHECKING:
     from untaped.contracts import Contract
 
-__all__ = ["SPEC", "provider"]
+__all__ = ["SPEC"]
 
 
 def _shelf() -> Sequence[Contract]:
@@ -26,8 +26,3 @@ def _shelf() -> Sequence[Contract]:
 
 
 SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _shelf})
-
-
-def provider() -> PluginSpec:
-    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
-    return SPEC

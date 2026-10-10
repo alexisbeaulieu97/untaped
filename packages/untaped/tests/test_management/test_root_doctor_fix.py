@@ -27,7 +27,7 @@ from untaped.plugins.registry import (
     PluginSpec,
 )
 from untaped.profile_resolver import profile_scope
-from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
+from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -108,7 +108,7 @@ def _cli(
     **kwargs: Any,
 ) -> CliResult:
     monkeypatch.setattr(fix, "_run_one", _stub(results))
-    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
     return invoke_cli(root.meta, ["doctor", "fix", *args], **kwargs)
 
 
@@ -239,7 +239,7 @@ def test_a_fix_that_cannot_start_fails_and_the_next_one_runs(
 ) -> None:
     monkeypatch.setattr(sys, "executable", str(tmp_path / "missing-python"))
     spec = _spec(_MIGRATE, _UPDATE)
-    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
     result = invoke_cli(root.meta, ["doctor", "fix", "--yes", "--format", "json"])
     assert result.exit_code == 1
     rows = _rows(result)
@@ -368,7 +368,7 @@ def test_quiet_keeps_the_plan_and_rows_but_mutes_nothing_to_fix(
     backend = ScriptedPromptBackend(confirms=[True])
     spec = _spec(_MIGRATE)
     monkeypatch.setattr(fix, "_run_one", _stub())
-    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
     result = invoke_cli(
         root.meta, ["--quiet", "doctor", "fix"], terminal=True, prompt_backend=backend
     )
@@ -462,7 +462,7 @@ def test_an_ascii_theme_swaps_the_glyphs(
 
 
 def _doctor(spec: PluginSpec, *root_args: str) -> CliResult:
-    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
     return invoke_cli(root.meta, [*root_args, "doctor"])
 
 

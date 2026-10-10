@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           cp -r examples/untaped-hello "$RUNNER_TEMP/hello-broken"
-          sed -i 's/untaped_hello:provider/untaped_hello:missing/' "$RUNNER_TEMP/hello-broken/pyproject.toml"
+          sed -i 's/untaped_hello:SPEC/untaped_hello:missing/' "$RUNNER_TEMP/hello-broken/pyproject.toml"
           uv venv -q --python 3.14 "$RUNNER_TEMP/broken"
           uv pip install --python "$RUNNER_TEMP/broken/bin/python" "$CORE" "$RUNNER_TEMP/hello-broken"
           uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/broken/bin/untaped" "$VERSION" --expect "" --quarantined hello

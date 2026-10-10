@@ -299,11 +299,18 @@ def plugin_dir(spec: PluginSpec) -> Path:
 
 
 @dataclass(frozen=True)
-class ProviderRef:
-    """How a composed plugin arrived."""
+class PluginRef:
+    """How a composed plugin arrived.
+
+    ``distribution_version`` and ``requires_dist`` are the distribution's
+    metadata (contract providers check their owner's range against it);
+    they don't take part in equality.
+    """
 
     distribution: str
     entry_point: str
+    distribution_version: str = field(default="", compare=False)
+    requires_dist: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True)
@@ -311,7 +318,7 @@ class RegisteredPlugin:
     """A fully validated, committed plugin."""
 
     spec: PluginSpec
-    provider_ref: ProviderRef
+    plugin_ref: PluginRef
     skills: tuple[SkillAsset, ...]
     #: App staged by the one validating ``app_factory`` call, reused at
     #: mount time; ``None`` when the spec sets ``help`` (deferred) or has
@@ -330,6 +337,7 @@ VALID_REASONS = frozenset(
         "duplicate-doctor-check",
         "doctor-check-failed",
         "malformed-entry-point",
+        "not-a-spec",
         "bad-app-factory",
         "bad-metadata",
         "bad-settings-keys",
@@ -359,12 +367,14 @@ class QuarantineRecord:
 
 
 @dataclass(frozen=True)
-class ProviderCandidate:
+class PluginCandidate:
     """One discovered candidate awaiting composition.
 
+    ``target`` is the entry point's ``module:attr`` string, or the
+    :class:`PluginSpec` itself for a plugin composed without installing it.
     ``distribution_version``, ``entry_point_group``, and ``requires_dist``
     are captured at discovery via :mod:`importlib.metadata` without importing
-    provider code; ``untaped plugin list`` reports ``distribution_version``
+    plugin code; ``untaped plugin list`` reports ``distribution_version``
     for candidates.
     """
 
@@ -387,7 +397,7 @@ class CompositionResult:
     quarantine: tuple[QuarantineRecord, ...] = ()
 
 
-def candidate_distribution(candidate: ProviderCandidate) -> str:
+def candidate_distribution(candidate: PluginCandidate) -> str:
     """The distribution a candidate is reported under; a blank one is ``unknown``."""
     return candidate.distribution.strip() or "unknown"
 
@@ -404,7 +414,7 @@ class _Quarantine(Exception):
         self.detail = detail
         self.entry_point = entry_point
 
-    def to_record(self, candidate: ProviderCandidate) -> QuarantineRecord:
+    def to_record(self, candidate: PluginCandidate) -> QuarantineRecord:
         distribution = candidate_distribution(candidate)
         entry_point = (
             self.entry_point if self.entry_point is not None else candidate_entry_point(candidate)
@@ -452,7 +462,7 @@ def _running_sdk_version() -> str | None:
         return None
 
 
-def _check_entry_point_group(candidate: ProviderCandidate) -> None:
+def _check_entry_point_group(candidate: PluginCandidate) -> None:
     if candidate.entry_point_group != PLUGINS_ENTRY_POINT_GROUP:
         raise _Quarantine(
             "bad-metadata",
@@ -462,7 +472,7 @@ def _check_entry_point_group(candidate: ProviderCandidate) -> None:
         )
 
 
-def _check_requires_dist(candidate: ProviderCandidate, state: _CompositionState) -> None:
+def _check_requires_dist(candidate: PluginCandidate, state: _CompositionState) -> None:
     untaped_requirements: list[tuple[str, Requirement]] = []
     for requirement in candidate.requires_dist:
         parsed = _parse_requirement(requirement)
@@ -501,20 +511,20 @@ def _check_requires_dist(candidate: ProviderCandidate, state: _CompositionState)
             )
 
 
-def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[ProviderCandidate, ...]:
+def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[PluginCandidate, ...]:
     """Discover every plugin candidate from entry points.
 
     Reads distribution version, entry-point group, and Requires-Dist strings
     via :mod:`importlib.metadata` without importing any provider code.
     """
-    found: list[ProviderCandidate] = []
+    found: list[PluginCandidate] = []
     # Entry points of one distribution share its object; read its metadata once.
     read: dict[int, tuple[str, str, tuple[str, ...]]] = {}
     for entry_point in importlib_metadata.entry_points(group=group):
         dist = entry_point.dist
         if dist is None:
             found.append(
-                ProviderCandidate(
+                PluginCandidate(
                     distribution="unknown",
                     name=entry_point.name,
                     target=entry_point.value,
@@ -527,7 +537,7 @@ def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[Prov
             read[id(dist)] = (str(name), dist.version, tuple(dist.requires or ()))
         dist_name, dist_version, requires = read[id(dist)]
         found.append(
-            ProviderCandidate(
+            PluginCandidate(
                 distribution=dist_name,
                 name=entry_point.name,
                 target=entry_point.value,
@@ -695,7 +705,7 @@ def run_deferred_factory(plugin: RegisteredPlugin) -> App | QuarantineRecord:
     try:
         return _check_factory(plugin.spec, factory)
     except _Quarantine as failed:
-        ref = plugin.provider_ref
+        ref = plugin.plugin_ref
         return QuarantineRecord(
             plugin.spec.name, ref.distribution, ref.entry_point, failed.reason, failed.detail
         )
@@ -703,11 +713,11 @@ def run_deferred_factory(plugin: RegisteredPlugin) -> App | QuarantineRecord:
 
 def _commit(
     spec: PluginSpec,
-    ref: ProviderRef,
+    ref: PluginRef,
     state: _CompositionState,
     app: App | None,
 ) -> RegisteredPlugin:
-    registered = RegisteredPlugin(spec=spec, provider_ref=ref, skills=tuple(spec.skills), app=app)
+    registered = RegisteredPlugin(spec=spec, plugin_ref=ref, skills=tuple(spec.skills), app=app)
     for skill in registered.skills:
         state.skill_names.add(skill.name)
     for check in spec.doctor_checks:
@@ -729,7 +739,7 @@ def _resolve_target(target: object) -> object:
 
 
 def compose(
-    shell: ApplicationSpec, candidates: Sequence[ProviderCandidate] = ()
+    shell: ApplicationSpec, candidates: Sequence[PluginCandidate] = ()
 ) -> CompositionResult:
     """Compose the shell, then every candidate in name order; quarantine failures.
 
@@ -768,8 +778,11 @@ def compose(
         except _Quarantine as failed:
             quarantined[index] = failed.to_record(candidate)
             continue
-        ref = ProviderRef(
-            distribution=candidate.distribution, entry_point=candidate_entry_point(candidate)
+        ref = PluginRef(
+            distribution=candidate.distribution,
+            entry_point=candidate_entry_point(candidate),
+            distribution_version=candidate.distribution_version,
+            requires_dist=candidate.requires_dist,
         )
         plugins.append(_commit(spec, ref, state, staged))
     return CompositionResult(
@@ -779,7 +792,7 @@ def compose(
 
 
 def _contested(
-    ordered: Sequence[ProviderCandidate], claims: dict[int, PluginSpec]
+    ordered: Sequence[PluginCandidate], claims: dict[int, PluginSpec]
 ) -> dict[int, _Quarantine]:
     """A quarantine per claimant of a plugin name two or more claims share.
 
@@ -803,17 +816,34 @@ def _contested(
     return contested
 
 
-def _candidate_order(candidate: ProviderCandidate) -> tuple[str, str, str]:
+def _candidate_order(candidate: PluginCandidate) -> tuple[str, str, str]:
     return (candidate.name, candidate.distribution, candidate_entry_point(candidate))
 
 
-def candidate_entry_point(candidate: ProviderCandidate) -> str:
+def candidate_entry_point(candidate: PluginCandidate) -> str:
     """The entry point a candidate's provider records carry: its target, else its name."""
     return candidate.target if isinstance(candidate.target, str) else candidate.name
 
 
-def _provide(candidate: ProviderCandidate, state: _CompositionState) -> PluginSpec:
-    """Resolve and run one candidate's provider, then validate its declaration.
+def _describe(value: object) -> str:
+    """How a ``not-a-spec`` detail names what an entry point resolved to."""
+    if callable(value):
+        return f"the callable {getattr(value, '__qualname__', repr(value))!r}"
+    return f"a {type(value).__name__}"
+
+
+def _module_of(candidate: PluginCandidate) -> str:
+    target = candidate.target
+    if isinstance(target, str) and ":" in target:
+        return target.partition(":")[0]
+    return "untaped_" + candidate.name.replace("-", "_")
+
+
+def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec:
+    """Resolve one candidate's entry point to its ``PluginSpec``, then validate it.
+
+    The entry point names the spec itself (``untaped_acme:SPEC``); anything
+    else, a callable included, is ``not-a-spec`` and is never called.
 
     Raises :class:`_Quarantine` on the first failed check.
     """
@@ -823,7 +853,7 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> PluginSp
     _check_entry_point_group(candidate)
     _check_requires_dist(candidate, state)
     try:
-        provider = _resolve_target(candidate.target)
+        spec = _resolve_target(candidate.target)
     except DuplicateKindError as exc:
         raise _Quarantine("duplicate-kind", str(exc), entry_point="") from None
     except Exception as exc:
@@ -833,27 +863,12 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> PluginSp
             f"distribution {candidate.distribution!r}: {exc}",
             entry_point="",
         ) from None
-    if not callable(provider):
-        raise _Quarantine(
-            "malformed-entry-point",
-            f"entry point {candidate.name!r} of distribution "
-            f"{candidate.distribution!r} is not callable: {provider!r}",
-        )
-    try:
-        spec = provider()
-    except DuplicateKindError as exc:
-        raise _Quarantine("duplicate-kind", str(exc)) from None
-    except Exception as exc:
-        raise _Quarantine(
-            "malformed-entry-point",
-            f"provider {candidate.name!r} of distribution {candidate.distribution!r} raised: {exc}",
-        ) from None
     if not isinstance(spec, PluginSpec):
         raise _Quarantine(
-            "malformed-entry-point",
-            f"provider {candidate.name!r} of distribution "
-            f"{candidate.distribution!r} returned {type(spec).__name__}, "
-            f"expected PluginSpec",
+            "not-a-spec",
+            f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
+            f"names {_describe(spec)}, not a PluginSpec; name the module's SPEC constant "
+            f"('{_module_of(candidate)}:SPEC')",
         )
     _check_declaration(spec, state)
     if candidate.name != spec.name:
@@ -864,6 +879,6 @@ def _provide(candidate: ProviderCandidate, state: _CompositionState) -> PluginSp
     if not candidate.distribution.strip():
         raise _Quarantine(
             "bad-metadata",
-            f"provider {candidate.name!r} declares an empty distribution name",
+            f"plugin {candidate.name!r} declares an empty distribution name",
         )
     return spec

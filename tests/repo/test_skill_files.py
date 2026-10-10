@@ -38,7 +38,7 @@ from cyclopts import App
 from repo import quoted_commands
 from repo.support import FENCE, FIRST_PARTY, REPO_ROOT
 from untaped.bootstrap import SHELL_SPEC, build_root_app
-from untaped.plugins.registry import PluginSpec, ProviderCandidate
+from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.sdk import SkillAsset
 from untaped_awx.domain.suite_starter import starter_suite
 
@@ -73,7 +73,7 @@ def test_the_skills_are_the_first_party_plugins_skills(skills: dict[str, SkillAs
 
 
 @pytest.fixture(scope="module")
-def root(first_party_candidates: tuple[ProviderCandidate, ...]) -> App:
+def root(first_party_candidates: tuple[PluginCandidate, ...]) -> App:
     return build_root_app(candidates=first_party_candidates)
 
 

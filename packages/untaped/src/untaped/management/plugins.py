@@ -40,7 +40,7 @@ from untaped.management._render import emit_isolated
 from untaped.messages import command_line, not_found
 from untaped.plugins.registry import (
     CompositionResult,
-    ProviderCandidate,
+    PluginCandidate,
     candidate_distribution,
     owns_contracts,
     run_deferred_factory,
@@ -67,7 +67,7 @@ INSTALL_HINT = (
 def build_root_plugin_app(
     *,
     result: CompositionResult,
-    candidates: Sequence[ProviderCandidate],
+    candidates: Sequence[PluginCandidate],
 ) -> App:
     """Return the root ``plugin`` group for one composition."""
     app = create_app(name="plugin", help="Inspect installed plugins and their contracts.")
@@ -345,7 +345,7 @@ def _load_kind(kind: str, result: CompositionResult) -> type[Record] | None:
 
 def _show(
     result: CompositionResult,
-    candidates: Sequence[ProviderCandidate],
+    candidates: Sequence[PluginCandidate],
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
@@ -365,7 +365,7 @@ def _show(
 
 def _rows(
     result: CompositionResult,
-    candidates: Sequence[ProviderCandidate],
+    candidates: Sequence[PluginCandidate],
 ) -> list[dict[str, object]]:
     # A distribution declares each entry-point name once, and a provider whose
     # spec name differs from it is quarantined, so the reported (distribution,
@@ -376,7 +376,7 @@ def _rows(
         for item in candidates
     }
     ready = [
-        (registered.spec.name, "ready", registered.provider_ref.distribution)
+        (registered.spec.name, "ready", registered.plugin_ref.distribution)
         for registered in result.plugins
     ]
     quarantined = [
