@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
 from test_contracts.support import (
     LIBRARY_CONFIG,
@@ -23,8 +24,9 @@ from test_contracts.support import (
     shop_spec,
     write_config,
 )
-from untaped.contracts import Failed, Ok, Skipped, Source, gather
+from untaped.contracts import Contract, Failed, Ok, Skipped, Source, gather, listing
 from untaped.errors import ConfigError, ExitCode, HttpTransportError, UntapedError
+from untaped.plugins.registry import PluginSpec
 
 
 @pytest.fixture
@@ -405,3 +407,37 @@ def test_own_reads_back_the_providers_record() -> None:
         provider.own(reshaped)
     assert binding_of(provider) is not None
     assert err.value.hint == "ask library for it again; its record shape changed since"
+
+
+class _Tag(BaseModel):
+    name: str
+
+
+class _TagSource(Contract):
+    @listing
+    def tags(self) -> list[_Tag]:
+        raise NotImplementedError
+
+    def everything(self) -> list[_Tag]:
+        raise NotImplementedError
+
+
+class _Tagger(_TagSource):
+    def tags(self) -> list[_Tag]:
+        return [_Tag(name="a"), _Tag.model_construct(name=3)]  # type: ignore[arg-type]
+
+    everything = tags
+
+
+def test_only_a_declared_listing_drops_a_bad_row_whatever_its_item_type() -> None:
+    compose(
+        PluginSpec(name="tags", contracts=lambda: (_TagSource,)),
+        PluginSpec(name="tagger", provides={"tags": lambda: (_Tagger(),)}),
+    )
+    [listed] = gather(_TagSource.tags)()
+    assert isinstance(listed, Ok)
+    assert listed.value == [_Tag(name="a")]
+    assert listed.invalid[0].startswith("row 2:")
+    [whole] = gather(_TagSource.everything)()
+    assert isinstance(whole, Skipped)
+    assert whole.reason == "invalid-item"

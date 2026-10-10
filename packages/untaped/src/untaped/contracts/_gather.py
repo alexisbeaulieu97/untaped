@@ -253,29 +253,37 @@ def validate(binding: Binding, method: Method, value: Any) -> tuple[Any, tuple[s
     hint = return_type(binding, method.name)
     origin, args = get_origin(hint), get_args(hint)
     model = args[0] if origin is list and args else hint
-    if not (isinstance(model, type) and issubclass(model, Issued)):
-        try:
-            return TypeAdapter(hint).validate_python(value, strict=True), ()
-        except ValidationError as exc:
-            raise _invalid(binding, hint, first_validation_error(exc)) from None
-    if origin is not list:
-        try:
-            return issue(binding, model, value), ()
-        except ValueError as exc:
-            raise _invalid(binding, model, _message(exc)) from None
+    issued = isinstance(model, type) and issubclass(model, Issued)
+    if not method.listing:
+        if not issued:
+            try:
+                return _strict(TypeAdapter(hint), value), ()
+            except ValueError as exc:
+                raise _invalid(binding, hint, _message(exc)) from None
+        if origin is not list:
+            try:
+                return issue(binding, model, value), ()
+            except ValueError as exc:
+                raise _invalid(binding, model, _message(exc)) from None
     if not isinstance(value, list):
         raise _invalid(binding, hint, f"expected a list, got {type(value).__name__}")
-    kept: list[Issued] = []
+    row = None if issued else TypeAdapter(model)
+    kept: list[Any] = []
     invalid: list[str] = []
     for index, item in enumerate(value):
         try:
-            kept.append(issue(binding, model, item))
+            kept.append(issue(binding, model, item) if row is None else _strict(row, item))
         except ValueError as exc:
             message = f"row {index + 1}: {_message(exc)}"
             if not method.listing:
                 raise _invalid(binding, model, message) from None
             invalid.append(message)
     return kept, tuple(invalid)
+
+
+def _strict(adapter: TypeAdapter[Any], value: Any) -> Any:
+    """``value`` validated strictly, through JSON, so a model built without validation counts."""
+    return adapter.validate_json(adapter.dump_json(value, warnings=False), strict=True)
 
 
 def _message(exc: ValueError) -> str:

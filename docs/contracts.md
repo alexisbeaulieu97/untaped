@@ -65,8 +65,8 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
 - **Filling.** `PluginSpec.provides` maps the owner's name to a function
   returning provider instances, with a local import (a provider class that
   breaks a rule raises when it is defined, so only a local import keeps
-  that to its own offer). The contract decides what is `@cached`; a
-  provider never adds it. `Configured[S]` gives
+  that to its own offer). The contract decides what is `@cached` or a
+  `@listing`; a provider never adds either. `Configured[S]` gives
   `self.settings` (S is the plugin's `settings` model), and a provider is
   ready when they validate; override `ready()` only for what a schema can't
   say. Use `self.http` for requests: it carries the profile's proxy, CA and
@@ -104,7 +104,7 @@ the profile is skipped silently; with none ready the command exits 4.
 - With any provider failed, a match from one ranked above every failure
   wins, with a warning; otherwise the first failure's own error and exit
   code stand. With nothing ranked, any failure blocks.
-- A stale cached listing confirms a match, never an absence.
+- A stale cached answer confirms a match, never an absence.
 - A quarantined provider, or one that returned invalid items, is skipped
   with a warning when unranked and fails when ranked.
 - Otherwise no match exits 2 (not found), and several matches with nothing
