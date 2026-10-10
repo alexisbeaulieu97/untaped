@@ -149,5 +149,3 @@ def make_candidate(
         entry_point_group=entry_point_group,
         requires_dist=tuple(requires_dist),
     )
-
-

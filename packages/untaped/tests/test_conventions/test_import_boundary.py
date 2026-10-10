@@ -38,7 +38,7 @@ _INIT = """
 
 
     SPEC = PluginSpec(
-        name="{name}", app_factory=build_app, settings=Settings
+        name="{name}", app_factory=build_app, settings=Settings, provides={provides}
     )
     {body}
 """
@@ -58,6 +58,7 @@ class Cap:
     package: str = ""
     installed: bool = True
     spec_target: bool = False
+    provides: tuple[str, ...] = ()
 
 
 def cap(
@@ -70,6 +71,7 @@ def cap(
     package: str = "",
     installed: bool = True,
     spec_target: bool = False,
+    provides: Sequence[str] = (),
 ) -> Cap:
     """A plugin; ``dist`` and ``package`` default to ``name``.
 
@@ -85,6 +87,7 @@ def cap(
         package or name,
         installed,
         spec_target,
+        tuple(provides),
     )
 
 
@@ -102,7 +105,8 @@ def boundary(install: Install) -> Boundary:
         candidates: list[PluginCandidate] = []
         for c in caps:
             body = 'SPEC = "broken"' if c.broken else ""
-            init = dedent(_INIT).format(name=c.name, body=body)
+            offers = "{" + "".join(f"{owner!r}: tuple, " for owner in c.provides) + "}"
+            init = dedent(_INIT).format(name=c.name, body=body, provides=offers)
             prefix = c.package.replace(".", "/")
             if c.installed:
                 files = {f"{prefix}/{k}": v for k, v in c.files.items()}
@@ -224,6 +228,25 @@ def test_a_requirement_guarded_by_an_extra_is_not_declared(boundary: Boundary) -
         "demo/cli/__init__.py:1::import-boundary::"
         "imports other.api but its distribution does not depend on other's"
     ]
+
+
+def test_a_requirement_under_a_provides_extra_is_declared(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap(
+            "demo",
+            files={"cli/__init__.py": "from other.api import x\n"},
+            requires=["other>=1,<2; extra == 'other'"],
+            provides=["other"],
+        ),
+    )
+    assert check("demo") == []
+
+
+def test_the_testing_module_is_public(boundary: Boundary) -> None:
+    source = "from untaped.testing import check_conventions\nfrom untaped import testing\n"
+    check = boundary(cap("demo", files={"testing.py": source}))
+    assert check("demo") == []
 
 
 def test_an_api_import_needs_a_declared_dependency(boundary: Boundary) -> None:
