@@ -2,7 +2,8 @@
 
 ## Install
 
-`untaped` needs Python 3.14.1 or newer and [uv](https://docs.astral.sh/uv/).
+`untaped` needs Python 3.14.1 or newer, [uv](https://docs.astral.sh/uv/) and Git
+2.29 or newer (`untaped doctor` checks Git's version).
 
 ```bash
 uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one plugin, e.g. 'untaped[awx]'
@@ -130,8 +131,8 @@ untaped profile current
 Each plugin's guide shows its main workflows and links its full reference:
 [workspace](../packages/untaped-workspace/README.md), [github](../packages/untaped-github/README.md),
 [jira](../packages/untaped-jira/README.md), [awx](../packages/untaped-awx/README.md),
-[ansible](../packages/untaped-ansible/README.md), [recipe](../packages/untaped-recipe/README.md)
-and [dotfiles](../packages/untaped-dotfiles/README.md).
+[ansible](../packages/untaped-ansible/README.md), [recipe](../packages/untaped-recipe/README.md),
+[dotfiles](../packages/untaped-dotfiles/README.md) and [git](../packages/untaped-git/README.md).
 
 ```bash
 # workspace: a task directory of git worktrees on a shared branch
