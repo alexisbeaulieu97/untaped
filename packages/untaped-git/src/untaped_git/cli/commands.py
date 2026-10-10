@@ -1,4 +1,4 @@
-"""Git command tree: ``credential`` (git's helper protocol) and ``hosts``."""
+"""Git command tree: ``credential`` (git's helper protocol), ``hosts`` and ``store``."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ app = create_app(
 )
 
 HOST = "git.host"
+STORE = "git.store"
 
 
 @app.command(name="credential")
@@ -77,6 +78,33 @@ def hosts_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
             missing_helper=missing_helper(root),
         )
         emit(rows, fmt=fmt, columns=columns, kind=HOST)
+
+
+@app.command(name="store")
+def store_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+    """Report what the repo store holds and costs, read from disk alone.
+
+    Shows the repos, their size, which plugins use them and the size of the
+    repos only one plugin uses (what releasing them would free), repos an
+    interrupted release left (finished on their next use) or that only a
+    branch or stash keeps, pack counts, hosts that ignore the partial-clone
+    filter, and repos where git paused automatic maintenance.
+    """
+    from untaped_git.cli.store_view import report_lines  # noqa: PLC0415
+    from untaped_git.infrastructure.report import store_report  # noqa: PLC0415
+    from untaped_git.infrastructure.version import git_version, version_text  # noqa: PLC0415
+
+    with report_errors():
+        version = git_version()
+        report = store_report(
+            git_settings().store_dir.expanduser(),
+            version=None if version is None else version_text(version),
+        )
+        if fmt == "table" and columns is None:
+            for line in report_lines(report):
+                echo(line)
+            return
+        emit(report, fmt=fmt, columns=columns, kind=STORE)
 
 
 def _read_fields() -> dict[str, str]:

@@ -12,18 +12,20 @@ if TYPE_CHECKING:
 
     from untaped_workspace.domain.models import (
         ArchivedRecord,
-        CachedRepo,
         Checkout,
         CommandResult,
+        RepoRelease,
         RepoSpec,
         ResolvedRepo,
+        StoredRepo,
+        StoreUse,
         WorkspaceRecord,
         WorktreeStatus,
     )
 
 
 class GitWorktrees(Protocol):
-    """Worktrees checked out from a shared bare cache per repo URL."""
+    """Worktrees checked out from the repo store, one store repo per repo URL."""
 
     def checkout(self, url: str, dest: Path, *, branch: str | None, base: str | None) -> Checkout:
         """Add a worktree at ``dest``: on ``branch``, or detached at the base when ``None``."""
@@ -33,22 +35,36 @@ class GitWorktrees(Protocol):
         """Git state of the worktree at ``dest``; ``None`` when it is missing."""
         ...
 
-    def fetch(self, url: str) -> None:
-        """Fetch the cache for ``url`` (no-op when it is missing)."""
+    def fetch(self, url: str, dest: Path) -> str | None:
+        """Fetch ``url``'s store repo and refresh ``dest``'s config (no-op when not stored).
+
+        Returns why the history backfill stopped (a warning, not a failure),
+        else ``None``.
+        """
         ...
 
-    def cache_exists(self, url: str) -> bool: ...
+    def in_store(self, url: str) -> bool:
+        """Whether the repo store holds ``url``'s repo."""
+        ...
 
     def remote_branches(self, url: str) -> list[str]:
-        """Branch names of ``url``'s cache as last fetched, sorted; ``[]`` when it is missing."""
+        """Branch names of ``url``'s store repo as last fetched, sorted; ``[]`` when not stored."""
         ...
 
-    def cached_repos(self) -> list[CachedRepo]:
-        """Every bare cache under the cache dir, sorted by :attr:`CachedRepo.ident`."""
+    def stored_repos(self) -> list[StoredRepo]:
+        """Every store repo workspace has used, sorted by :attr:`StoredRepo.ident`."""
         ...
 
     def remove(self, url: str, dest: Path, *, force: bool) -> None:
         """Remove the worktree at ``dest`` and prune stale worktree entries."""
+        ...
+
+    def store_use(self, url: str) -> StoreUse | None:
+        """Local branches and workspace worktrees of ``url``'s store repo; ``None``: not stored."""
+        ...
+
+    def release(self, url: str, *, branches: Sequence[str]) -> RepoRelease:
+        """Release ``url``'s store repo for workspace, deleting the local ``branches`` named."""
         ...
 
 
@@ -64,8 +80,12 @@ class WorkspaceStore(Protocol):
 
     def add_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord: ...
     def archive(self, name: str, *, at: datetime) -> ArchivedRecord: ...
+    def remove(self, name: str) -> list[WorkspaceRecord]:
+        """Drop every record named ``name``, active and archived; the records dropped."""
+        ...
+
     def locked(self, name: str) -> AbstractContextManager[None]:
-        """Serialise ``create``/``add``/``archive`` of workspace ``name`` across processes."""
+        """Serialise ``create``/``add``/``archive``/``remove`` of workspace ``name``."""
         ...
 
 

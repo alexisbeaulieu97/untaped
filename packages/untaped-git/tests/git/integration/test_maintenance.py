@@ -12,8 +12,8 @@ import pytest
 
 from git.conftest import StoreFor, all_refs, objects
 from untaped.testing.git import GitRemote, git_shim, trace2_events
-from untaped_git.application.report import store_report
 from untaped_git.infrastructure import store as store_module
+from untaped_git.infrastructure.report import store_report
 
 
 def _alive(pid: int) -> bool:

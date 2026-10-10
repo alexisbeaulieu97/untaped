@@ -28,7 +28,9 @@ old keys in every profile of `config.yml` (`--dry-run` first shows what it
 would change); it does not touch environment variables, so rename an
 `UNTAPED_*` variable yourself. After the next major release an old key is
 retired: it is no longer read, `untaped doctor` names it, and `config migrate`
-still renames it. The [configuration reference](./reference/config.md#renamed-settings)
+still renames it. A setting with no new name is deleted instead: doctor says
+why and what to set in its place, and `config migrate` removes the key,
+printing the value it held so you can carry it over. The [configuration reference](./reference/config.md#renamed-settings)
 lists every renamed setting.
 
 Two installs that share one config file can disagree about a renamed setting:
@@ -77,7 +79,6 @@ profiles:
       default_project: OPS
       default_board_id: 42
     workspace:
-      cache_dir: ~/.untaped/workspace-cache
       workspaces_dir: ~/.untaped/workspaces
       branch_template: "{name}"
 

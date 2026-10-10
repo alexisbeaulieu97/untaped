@@ -318,8 +318,9 @@ class SettingsFileRepository:
         """Rename every renamed or retired key in every profile, under one lock.
 
         Returns one row per change (``profile``, ``from``, ``to``, ``action``:
-        ``renamed`` or ``dropped``); ``dry_run`` writes nothing. Deprecated
-        settings and ``state.yml`` are left alone.
+        ``renamed``, ``dropped`` or ``deleted``, and ``detail``: for a delete,
+        the value the key held and why it went); ``dry_run`` writes nothing.
+        Deprecated settings and ``state.yml`` are left alone.
         """
         rows: list[dict[str, str]] = []
         renames: list[KeyRename] = []
@@ -331,12 +332,14 @@ class SettingsFileRepository:
                 for move in migration_moves(model, section_data):
                     if not apply_move(section_data, move):
                         continue
+                    deleted = move.action == "deleted"
                     rows.append(
                         {
                             "profile": name,
                             "from": f"{section}.{move.old}",
-                            "to": f"{section}.{move.to}",
+                            "to": "" if deleted else f"{section}.{move.to}",
                             "action": move.action,
+                            "detail": f"was {_shown(move.value)}; {move.note}" if deleted else "",
                         }
                     )
                     if move.action == "renamed":
@@ -454,3 +457,12 @@ def _parse_structured(key: str, raw_value: str) -> Any:
     except yaml.YAMLError as exc:
         problem = getattr(exc, "problem", None) or "not valid JSON or YAML"
         raise ConfigError(f"invalid value for {key!r}: {problem}", category="invalid") from exc
+
+
+def _shown(value: Any) -> str:
+    """A deleted key's value as ``config migrate`` prints it: the YAML scalar, or its shape."""
+    if isinstance(value, dict):
+        return "<mapping>"
+    if isinstance(value, list):
+        return "<list>"
+    return yaml.safe_dump(value, default_flow_style=True).removesuffix("\n...\n").strip()

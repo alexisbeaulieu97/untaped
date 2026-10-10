@@ -41,7 +41,8 @@ DESCRIPTIONS: dict[str, str] = {
     "http.verify_ssl": "Verify TLS certificates. `false` disables all certificate checks.",
     "http.verify_hostname": "Check the certificate host name. `false` keeps chain validation.",
     "http.timeout_seconds": "HTTP request timeout in seconds.",
-    "http.proxy": "Proxy URL for HTTP clients. When unset, standard proxy variables apply.",
+    "http.proxy": "Proxy URL for HTTP clients, and for Git fetches from the GitHub host. "
+    "When unset, standard proxy variables (and, for Git, your Git config) apply.",
     "ui.format": "Default `--format` for commands whose default is `table`. "
     "`UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both.",
     "ui.theme": "Built-in theme: `default`, `plain`, `compact`, `high-contrast`, `quiet`, "
@@ -60,8 +61,6 @@ DESCRIPTIONS: dict[str, str] = {
     + ".",
     "skills.updates": "What each run does when installed agent skills differ from this "
     "version: `warn` (print a warning), `auto` (update them in place), or `off`.",
-    "workspace.cache_dir": "Bare-clone cache that workspace worktrees are created from. "
-    "Worktrees depend on it: don't delete it while workspaces are active.",
     "workspace.workspaces_dir": "Parent directory of every workspace (`<workspaces_dir>/NAME`).",
     "workspace.parallel": "Default workers for `create`/`add`/`run` and for status/archive "
     "checks. Unset means `min(8, 2 * CPUs)`; "
@@ -78,7 +77,8 @@ DESCRIPTIONS: dict[str, str] = {
     "github.default_org": "Org scope for `repos list`, `search` (repos, code, issues), "
     "`sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, "
     "search uses `@me`.",
-    "github.cache_dir": "Local Git corpus that `github sweep` and `github cache` manage.",
+    "github.git_protocol": "How `sweep` and `cache sync` fetch repos on the GitHub host: "
+    "`https` or `ssh` (`git@HOST:OWNER/NAME.git`).",
     "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
     "this that GitHub reports as pushed since.",
     "github.sweep.parallel": "Default `sweep --parallel` and `cache sync --parallel` Git workers.",
@@ -374,11 +374,17 @@ def _renamed_table() -> list[str]:
                 kind = "retired" if old in mappings.retired else "renamed"
                 key = f"{section}.{old}"
                 rows.append(f"| `{key}` | `{_env_name(key)}` | `{section}.{new}` | {kind} |")
+            for old, deleted in sorted(mappings.deleted.items()):
+                key = f"{section}.{old}"
+                reason = deleted.reason()
+                status = reason if reason.startswith("deleted") else f"deleted: {reason}"
+                rows.append(f"| `{key}` | `{_env_name(key)}` | none | {status} |")
     if not rows:
         return []
     return [
         "## Renamed settings\n",
-        "A renamed key is still read with a warning; a retired one is no longer read. See "
+        "A renamed key is still read with a warning; a retired one is no longer read; a "
+        "deleted one is no longer read and `config migrate` removes it. See "
         "[Renamed settings](../configuration.md#renamed-settings).\n",
         "| Old key | Old environment variable | New key | Status |\n|---|---|---|---|",
         *rows,

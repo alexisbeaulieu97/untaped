@@ -1,10 +1,10 @@
-"""The repo picker's catalog: the GitHub inventory plus repos already in the cache.
+"""The repo picker's catalog: the GitHub inventory plus repos already in the repo store.
 
 Inventory items come from ``github.api.repo_inventory`` (imported lazily, so
-workspace startup stays free of github modules). Repos only in the bare-cache
-directory (:meth:`GitWorktrees.cached_repos`) are added so the picker also
-works offline or without GitHub configured. Branch completion reads the local
-cache only, never the network.
+workspace startup stays free of github modules). Repos workspace has used that
+only the repo store holds (:meth:`GitWorktrees.stored_repos`) are added so the
+picker also works offline or without GitHub configured. Branch completion
+reads the store only, never the network.
 """
 
 from __future__ import annotations
@@ -13,17 +13,17 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from untaped.sdk import PickCatalog, PickItem, UntapedError, cache_key
-from untaped_workspace.domain.models import CachedRepo, RepoArg
-from untaped_workspace.domain.naming import looks_like_url
+from untaped.sdk import PickCatalog, PickItem, UntapedError
+from untaped_workspace.domain.models import RepoArg, StoredRepo
+from untaped_workspace.domain.naming import looks_like_url, repo_key
 
 if TYPE_CHECKING:
     from untaped_github.api import RepoInventory
     from untaped_workspace.application.ports import GitWorktrees
 
 type _Key = tuple[str, ...]
-type _Entry = str | CachedRepo | None
-"""A loaded item: an inventory repo's clone URL (``None``: it has none), or a cached-only repo."""
+type _Entry = str | StoredRepo | None
+"""A loaded item: an inventory repo's clone URL (``None``: it has none), or a stored-only repo."""
 
 
 def _default_inventory(refresh: bool | None) -> RepoInventory:
@@ -44,10 +44,10 @@ def _age(delta: timedelta) -> str:
 
 
 class RepoPickSource:
-    """Picker items from the inventory and the local repo cache, plus branch completion.
+    """Picker items from the inventory and the repo store, plus branch completion.
 
-    ``exclude`` holds the cache identities (:func:`cache_key`) of repos the
-    workspace already has; they are not offered.
+    ``exclude`` holds the repo keys (:func:`repo_key`) of repos the workspace
+    already has; they are not offered.
     """
 
     def __init__(
@@ -67,19 +67,19 @@ class RepoPickSource:
         self._branches: dict[str, list[str]] = {}
 
     def catalog(self, *, refresh: bool | None) -> PickCatalog:
-        """Inventory items then cached-only repos; a footer note says how fresh that is."""
+        """Inventory items then stored-only repos; a footer note says how fresh that is."""
         note, inventory, known = self._inventory_items(refresh)
-        cached = self._cached_items(known, taken={item.id for item, _ in inventory})
-        loaded: list[tuple[PickItem, _Entry]] = [*inventory, *cached]
+        stored = self._stored_items(known, taken={item.id for item, _ in inventory})
+        loaded: list[tuple[PickItem, _Entry]] = [*inventory, *stored]
         self._loaded = {item.id: entry for item, entry in loaded}
         self._seen.update({item.id: url for item, url in inventory if url})
         return PickCatalog(items=tuple(item for item, _ in loaded), note=note)
 
     def url_for(self, item_id: str) -> str | None:
-        """Clone URL of ``item_id``: inventory, else cached origin, else the id if it is a URL."""
+        """Clone URL of ``item_id``: inventory, else the stored URL, else the id if it is a URL."""
         entry = self._loaded.get(item_id)
-        if isinstance(entry, CachedRepo):
-            return _cache_url(entry)
+        if isinstance(entry, StoredRepo):
+            return entry.origin
         return entry or self._seen.get(item_id) or (item_id if looks_like_url(item_id) else None)
 
     def pick_arg(self, arg: RepoArg) -> RepoArg:
@@ -87,17 +87,17 @@ class RepoPickSource:
 
         Inventory items keep their ``full_name`` (resolved through the
         inventory), falling back on the URL last seen for it, so a pick that
-        a refresh dropped still provisions; a cached-only repo may come from
+        a refresh dropped still provisions; a stored-only repo may come from
         another host, so its ``host/owner/name`` id is never resolved as a
-        GitHub name: its cache URL is resolved instead.
+        GitHub name: its stored URL is resolved instead.
         """
         entry = self._loaded.get(arg.ident)
-        if isinstance(entry, CachedRepo):
-            return arg.model_copy(update={"ident": _cache_url(entry), "fallback": None})
+        if isinstance(entry, StoredRepo):
+            return arg.model_copy(update={"ident": entry.origin, "fallback": None})
         return arg.model_copy(update={"fallback": self._seen.get(arg.ident)})
 
     def branches(self, item_id: str | None) -> list[str]:
-        """Cached remote branches of ``item_id`` (no network); ``[]`` for the all-items row."""
+        """Stored remote branches of ``item_id`` (no network); ``[]`` for the all-items row."""
         if item_id is None:
             return []
         if item_id in self._branches:
@@ -119,11 +119,11 @@ class RepoPickSource:
         except UntapedError as exc:
             if refresh is True:
                 raise
-            return f"cached repos only — {exc}", [], set()
+            return f"stored repos only — {exc}", [], set()
         items: list[tuple[PickItem, str | None]] = []
         known: set[_Key] = set()
         for repo in inventory.repos:
-            keys = {cache_key(url) for url in (repo.clone_url, repo.ssh_url) if url}
+            keys = {repo_key(url) for url in (repo.clone_url, repo.ssh_url) if url}
             known |= keys
             if keys & self._exclude:
                 continue
@@ -136,30 +136,23 @@ class RepoPickSource:
             items.append((item, repo.clone_url or repo.ssh_url))
         return _note(inventory), items, known
 
-    def _cached_items(
+    def _stored_items(
         self, known: Collection[_Key], *, taken: Collection[str]
-    ) -> list[tuple[PickItem, CachedRepo]]:
-        """Cached repos neither in ``known`` (the inventory's) nor excluded.
+    ) -> list[tuple[PickItem, StoredRepo]]:
+        """Stored repos neither in ``known`` (the inventory's) nor excluded.
 
-        A cached id in ``taken`` (the inventory's ids) is skipped: an owner-less
-        cache on a dotless host (``acme/api.git``) would otherwise shadow the
+        A stored id in ``taken`` (the inventory's ids) is skipped: an owner-less
+        repo on a dotless host (``acme/api.git``) would otherwise shadow the
         inventory's ``acme/api``.
         """
-        items: list[tuple[PickItem, CachedRepo]] = []
-        for cached in self._git.cached_repos():
-            if cached.key in known or cached.key in self._exclude or cached.ident in taken:
+        items: list[tuple[PickItem, StoredRepo]] = []
+        for stored in self._git.stored_repos():
+            if stored.key in known or stored.key in self._exclude or stored.ident in taken:
                 continue
-            if cached.origin and cache_key(cached.origin) != cached.key:
-                continue  # rewritten origin: would fill another cache
             items.append(
-                (PickItem(id=cached.ident, label=cached.ident, description="cached"), cached)
+                (PickItem(id=stored.ident, label=stored.ident, description="repo store"), stored)
             )
         return items
-
-
-def _cache_url(cached: CachedRepo) -> str:
-    """The cache's ``origin`` URL, else a URL with the same cache identity."""
-    return cached.origin or f"https://{cached.ident}"
 
 
 def _note(inventory: RepoInventory) -> str:

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from test_management.support import compose, make_spec, write_config
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
+from untaped.deprecated_keys import Retired
 from untaped.management.config import build_root_config_app
 from untaped.testing import CliInvoker, CliResult
 
@@ -23,13 +24,16 @@ class Sweep(BaseModel):
 
 
 class RenamedProfile(BaseModel):
-    """Section ``renamed``: one renamed key, one nested rename, one retired key."""
+    """Section ``renamed``: a renamed key, a nested rename, a retired key, a deleted key."""
 
     renamed_keys: ClassVar[dict[str, str]] = {
         "corpus_path": "cache_dir",
         "sweep.sync_concurrency": "sweep.parallel",
     }
-    retired_keys: ClassVar[dict[str, str]] = {"ancient_path": "cache_dir"}
+    retired_keys: ClassVar[dict[str, str | Retired]] = {
+        "ancient_path": "cache_dir",
+        "store_dir": Retired(note="deleted in 11.0; set git.store_dir"),
+    }
 
     cache_dir: str = "cache"
     sweep: Sweep = Field(default_factory=Sweep)
@@ -76,6 +80,17 @@ def test_get_a_retired_key_is_an_unknown_setting(_isolated_config: Path) -> None
     assert result.exit_code != 0
     assert "unknown setting: 'renamed.ancient_path' (retired; now renamed.cache_dir)" in (
         result.stderr
+    )
+    assert "hint: run `untaped config migrate`" in result.stderr
+
+
+@pytest.mark.parametrize("command", ["get", "unset"])
+def test_a_deleted_key_is_an_unknown_setting_with_its_note(command: str) -> None:
+    result = _config(command, "renamed.store_dir")
+
+    assert result.exit_code != 0
+    assert (
+        "unknown setting: 'renamed.store_dir' (deleted in 11.0; set git.store_dir)" in result.stderr
     )
     assert "hint: run `untaped config migrate`" in result.stderr
 

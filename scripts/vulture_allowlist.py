@@ -59,16 +59,12 @@ StoreReport.loose_objects
 StoreReport.filter_ignored
 StoreReport.gc_log
 
-# The git plugin's repo store API, unused until workspace, ansible and github move onto it.
+# The git plugin's repo store API, unused until ansible moves onto it.
 StoreError
-store_report
 GitHost.for_url
-RepoStore.for_url
-RepoStore.prefetched
-RepoStore.ls_tree
-RepoStore.worktree_add
-RepoStore.write_worktree_config
 RepoStore.filter_state
+RepoStore.delete_refs
+RepoCache.delete_refs  # its one caller, github's corpus, moved onto the repo store
 
 # untaped.testing.git: fixtures for plugins that test against the repo store.
 GitRemote.spread

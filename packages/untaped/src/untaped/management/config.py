@@ -96,6 +96,12 @@ class RootConfigContext:
             new = f"{first}.{scope.mappings.readable[rest]}"
             warn_once(_file_warning(first, rest) or deprecated_message(key, new), key=key)
             return new
+        if rest in scope.mappings.deleted:
+            note = scope.mappings.deleted[rest].reason()
+            raise ConfigError(
+                f"unknown setting: {key!r} ({note})\n{hint('config migrate')}",
+                category="invalid",
+            )
         if rest in scope.mappings.retired:
             new = f"{first}.{scope.mappings.migratable[rest]}"
             raise ConfigError(
@@ -267,7 +273,8 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         """Give renamed and retired keys their new names in every profile of config.yml.
 
         A key also set under its new name (or a closer old name) in the same
-        profile is dropped. Environment variables and ``state.yml`` are not
+        profile is dropped. A deleted key is removed, and the preview prints
+        the value it held so you can carry it over. Environment variables and ``state.yml`` are not
         changed.
         """
         _migrate(dry_run=dry_run, fmt=fmt, columns=columns)
@@ -448,21 +455,29 @@ def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> 
         rows = SettingsFileRepository().migrate_keys(dry_run=dry_run)
         ui = ui_context(strict=False)
         if not rows:
-            ui.message("info", "no renamed or retired keys in the config")
+            ui.message("info", "no renamed, retired or deleted keys in the config")
         else:
-            counts = Counter(row["action"] for row in rows)
-            renamed = plural(counts["renamed"], "key")
-            dropped = f", dropped {counts['dropped']}" if counts["dropped"] else ""
             if dry_run:
-                ui.message("info", f"would rename {renamed}{dropped}")
+                ui.message("info", f"would {_migration_summary(rows, past=False)}")
             else:
-                ui.success(f"renamed {renamed}{dropped}")
+                ui.success(_migration_summary(rows, past=True))
         if dry_run:
             rows = [{**row, "action": "planned"} for row in rows]
         emit(rows, fmt=fmt, columns=columns, kind=_MIGRATION_OUTCOME)
 
 
 _MIGRATION_OUTCOME = "untaped.config_migration_outcome"
+
+
+def _migration_summary(rows: list[dict[str, str]], *, past: bool) -> str:
+    """``rename 2 keys, delete 1``: the counts of each action, the first with its noun."""
+    counts = Counter(row["action"] for row in rows)
+    verbs = (("renamed", "rename"), ("dropped", "drop"), ("deleted", "delete"))
+    parts = [(done if past else do, counts[done]) for done, do in verbs if counts[done]]
+    first, *rest = parts
+    return ", ".join(
+        [f"{first[0]} {plural(first[1], 'key')}", *(f"{verb} {count}" for verb, count in rest)]
+    )
 
 
 __all__ = [

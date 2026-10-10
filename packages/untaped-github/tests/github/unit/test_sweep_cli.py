@@ -11,7 +11,10 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import CliInvoker, CliResult
+from untaped import bootstrap
+from untaped.testing import CliInvoker, CliResult, plugin_candidate
+from untaped_git import SPEC as GIT_SPEC
+from untaped_github import SPEC
 from untaped_github.cli import app
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
@@ -20,10 +23,7 @@ SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 @pytest.fixture(autouse=True)
 def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text(
-        "profiles:\n  default:\n    github:\n      token: ghp_test\n"
-        f"      cache_dir: {tmp_path / 'corpus'}\n"
-    )
+    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
 
@@ -75,11 +75,18 @@ def _json(result: CliResult) -> list[dict[str, object]]:
     return rows
 
 
+@pytest.mark.usefixtures("fresh_composition")
 def test_sweep_sends_the_token_only_to_the_enterprise_git_host(
-    tmp_path: Path, git_auth: dict[str, str | None]
+    tmp_path: Path,
+    source_repo: SourceRepo,
+    rewrite_to: Callable[..., None],
+    store_auth: dict[str, list[str | None]],
 ) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text(cfg.read_text() + "      base_url: https://ghe.example/api/v3\n")
+    origin = source_repo("origin", {"README.md": "needle\n"})
+    rewrite_to(origin, "https://ghe.example/acme/api.git", "https://other.example/acme/web.git")
+    bootstrap.compose_root(candidates=[plugin_candidate(GIT_SPEC), plugin_candidate(SPEC)])
     piped = "".join(
         json.dumps({"untaped": "1", "kind": "github.repo", "record": record}) + "\n"
         for record in (
@@ -88,10 +95,13 @@ def test_sweep_sends_the_token_only_to_the_enterprise_git_host(
         )
     )
 
-    CliInvoker().invoke(app, ["sweep", "--stdin", "--grep", "needle"], input=piped)
+    result = CliInvoker().invoke(
+        app, ["sweep", "--stdin", "--grep", "needle", "--no-owners", "-f", "json"], input=piped
+    )
 
-    assert git_auth["https://ghe.example/acme/api.git"] is not None
-    assert git_auth["https://other.example/acme/web.git"] is None
+    assert [row["repo"] for row in _json(result)] == ["acme/api", "acme/web"]
+    assert all(store_auth["https://ghe.example/acme/api.git"])
+    assert set(store_auth["https://other.example/acme/web.git"]) == {None}
 
 
 @pytest.mark.parametrize(

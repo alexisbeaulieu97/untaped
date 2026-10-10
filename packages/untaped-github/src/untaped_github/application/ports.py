@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Protocol
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
     from datetime import datetime
-    from pathlib import Path
 
     from untaped_github.domain import (
         CorpusFreshness,
@@ -76,88 +75,56 @@ class GithubRepositoryInventoryService(GithubRepoListService, Protocol):
 
 
 class GitCorpus(Protocol):
-    """Local Git corpus operations used by sweep and cache commands."""
+    """Local Git corpus operations used by sweep and cache commands.
 
-    def sync_repo(
-        self,
-        repo: CorpusRepoTarget,
-        *,
-        root: Path,
-        selector: RefSelector,
-        depth: int,
-        auth_header: str | None,
-    ) -> CorpusRepoResult: ...
+    The corpus lives in the git plugin's repo store: the adapter decides where
+    each repo is and how it is fetched, so no call takes a root or a depth.
+    """
 
-    def repo_freshness(self, repo: CorpusRepoTarget, *, root: Path) -> CorpusFreshness | None: ...
+    def sync_repo(self, repo: CorpusRepoTarget, *, selector: RefSelector) -> CorpusRepoResult: ...
 
-    def touch_repo(self, repo: CorpusRepoTarget, *, root: Path) -> datetime:
+    def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None: ...
+
+    def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         """Record that the cached copy is current without fetching; return the new time."""
         ...
 
     def local_refs(
-        self,
-        repo: CorpusRepoTarget,
-        *,
-        root: Path,
-        selector: RefSelector,
+        self, repo: CorpusRepoTarget, *, selector: RefSelector
     ) -> tuple[LocalRef, ...]: ...
 
     def grep_trees(
-        self,
-        repo: CorpusRepoTarget,
-        *,
-        root: Path,
-        trees: tuple[str, ...],
-        spec: GrepSpec,
+        self, repo: CorpusRepoTarget, *, trees: tuple[str, ...], spec: GrepSpec
     ) -> dict[str, tuple[GrepHit, ...]]:
         """Grep several trees in one pass; trees without hits are absent."""
         ...
 
-    def tree_has_match(
-        self,
-        repo: CorpusRepoTarget,
-        *,
-        root: Path,
-        tree: str,
-        spec: GrepSpec,
-    ) -> bool:
+    def tree_has_match(self, repo: CorpusRepoTarget, *, tree: str, spec: GrepSpec) -> bool:
         """Return whether ``spec`` matches anywhere in ``tree``, stopping at the first hit."""
         ...
 
-    def tree_paths(self, repo: CorpusRepoTarget, *, root: Path, ref: str) -> tuple[str, ...]: ...
+    def tree_paths(self, repo: CorpusRepoTarget, *, ref: str) -> tuple[str, ...]: ...
 
     def read_first_blob(
-        self,
-        repo: CorpusRepoTarget,
-        *,
-        root: Path,
-        ref: str,
-        paths: tuple[str, ...],
+        self, repo: CorpusRepoTarget, *, ref: str, paths: tuple[str, ...]
     ) -> str | None:
         """Read the first of ``paths`` that exists in ``ref``; None when none does."""
         ...
 
     def validate_pattern(
-        self,
-        *,
-        root: Path,
-        pattern: str,
-        paths: tuple[str, ...],
-        fixed_strings: bool,
+        self, *, pattern: str, paths: tuple[str, ...], fixed_strings: bool
     ) -> str | None: ...
 
-    def list_repos(self, *, root: Path) -> tuple[CorpusRepoResult, ...]: ...
+    def list_repos(self) -> tuple[CorpusRepoResult, ...]: ...
 
-    def get_repo(self, *, root: Path, repo: str) -> CorpusRepoTarget | None: ...
+    def get_repo(self, repo: str) -> CorpusRepoTarget | None: ...
 
-    def clean_repo(self, *, root: Path, repo: CorpusRepoResult) -> CorpusRepoResult: ...
+    def clean_repo(self, repo: CorpusRepoResult) -> CorpusRepoResult:
+        """Release ``repo``: ``removed`` with the bytes freed, or ``released`` and who kept it."""
+        ...
 
     def materialize_worktree(
-        self,
-        repo: CorpusRepoTarget,
-        *,
-        root: Path,
-        ref: str | None,
+        self, repo: CorpusRepoTarget, *, ref: str | None
     ) -> WorktreeResult: ...
 
 

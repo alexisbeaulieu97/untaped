@@ -12,9 +12,9 @@ unscanned before reporting "none" or "all".
 ## Setup
 
 - Settings live under `profiles.<name>.github`: `base_url`, `token` or
-  `token_command`, `default_org`, `cache_dir`, `sweep` freshness and
-  concurrency, and `inventory` (the cached repo list the workspace picker
-  searches).
+  `token_command`, `default_org`, `git_protocol` (`https` or `ssh` for
+  sweep fetches), `sweep` freshness and concurrency, and `inventory` (the
+  cached repo list the workspace picker searches).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server
   usually needs `untaped config set github.base_url https://HOST/api/v3`.
 - The user stores the token by running `untaped auth set github` in their own
@@ -25,7 +25,9 @@ unscanned before reporting "none" or "all".
   `~/.untaped/config.yml`, and never pass `--show-secrets`; `untaped auth
   status` says where tokens come from.
 - `untaped github whoami` checks the token. A rejected token exits 4.
-- `sweep` and `cache` run `git`, which must be on `PATH`.
+- `sweep` and `cache` run `git`, which must be on `PATH`, and keep repos in
+  the git plugin's repo store (`git.store_dir`). `http.proxy` covers their
+  fetches from the GitHub host too.
 
 ## Commands
 
@@ -36,7 +38,7 @@ unscanned before reporting "none" or "all".
 | Search indexed code | `untaped github search code "BaseModel" --org acme` | a quick look on default branches; no regex, no sort |
 | Search issues and PRs | `untaped github search issues --org acme --state open --kind pr` | finding issues or pull requests |
 | Sweep clones | `untaped github sweep --team acme/platform --grep old_api` | regexes, negation, path or file predicates, refs beyond the default branch, or repeated checks over many repos |
-| Warm the corpus | `untaped github cache sync --org acme` | before a batch of sweeps, or on a schedule; `cache status` shows size and fetch age |
+| Warm the stored repos | `untaped github cache sync --org acme` | before a batch of sweeps, or on a schedule; `cache status` shows size and fetch age |
 | Check out one cached ref | `untaped github cache worktree acme/api` | reading a repo's files once; use `untaped workspace` for checkouts you edit |
 | Free disk | `untaped github cache delete acme/api --dry-run`, `untaped github cache prune --org acme --dry-run` | see the protocol below |
 
@@ -90,13 +92,14 @@ should also fail the run; both exit 3.
 ## Safety
 
 `untaped github` never changes GitHub. Its only writes, `cache delete` and
-`cache prune`, remove local clones.
+`cache prune`, release its local copies: a repo another plugin (a workspace,
+ansible) still uses stays, and the row says who kept it.
 
 1. Preview: `untaped github cache delete acme/api --dry-run`, or
    `untaped github cache prune --org acme --dry-run` for repos that left the
    org or were archived.
-2. Show the user the listed repos. `cache delete --all` selects the whole
-   corpus; narrow it with `--org`.
+2. Show the user the listed repos. `cache delete --all` selects every repo
+   github has stored; narrow it with `--org`.
 3. After approval, rerun without `--dry-run` and with `--yes`.
 
 A named repo that is not cached fails with exit 1 before anything is
@@ -127,5 +130,5 @@ strict; exit 5 never means "no results"), 130 interrupted.
 
 | File | Read it when |
 |---|---|
-| [references/sweep.md](references/sweep.md) | a sweep's footer, freshness, failures, predicates, refs or row fields need explaining, or you manage the corpus |
+| [references/sweep.md](references/sweep.md) | a sweep's footer, freshness, failures, predicates, refs or row fields need explaining, or you manage the stored repos |
 | [references/search.md](references/search.md) | matching repo names in `repos list`, or a search over a large team or repo scope may be incomplete |

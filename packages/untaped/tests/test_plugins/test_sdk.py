@@ -138,11 +138,13 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     "doctor checks": ("connection_check", "executable_check", "online_check"),
     "conventions": (
         "ExitCode",
+        "Retired",
         "deprecated",
         "deprecated_alias",
         "experimental",
         "plural",
         "q",
+        "size_text",
         "writes",
     ),
     "screens": (

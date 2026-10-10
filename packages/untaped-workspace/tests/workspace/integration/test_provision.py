@@ -25,10 +25,10 @@ class UrlCatalog:
 
 
 @pytest.fixture
-def provision(tmp_path: Path) -> ProvisionRepos:
+def provision(tmp_path: Path, store_root: Path) -> ProvisionRepos:
     return ProvisionRepos(
         StateWorkspaceStore(workspaces_dir=tmp_path / "ws"),
-        LocalGitWorktrees(tmp_path / "cache"),
+        LocalGitWorktrees(),
         UrlCatalog(),
         workspaces_dir=tmp_path / "ws",
         branch_template="feature/{name}",

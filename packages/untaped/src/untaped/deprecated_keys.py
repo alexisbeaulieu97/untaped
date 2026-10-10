@@ -6,7 +6,10 @@ to the section:
 - ``renamed_keys`` (``{"old": "new"}``): the old key is still read, as the
   new one, with a warning, until the next major release;
 - ``retired_keys`` (same shape): the old key is no longer read, but
-  ``config migrate`` still renames it.
+  ``config migrate`` still renames it. A :class:`Retired` value instead of a
+  target retires a key nothing in its own section replaces: its ``note``
+  says why and what to do instead, and ``config migrate`` deletes the key,
+  printing the value it held. A chain may end at such a key.
 
 A current field that is still read with its old meaning is marked on the
 field instead: ``Annotated[T, deprecated(replacement="use X")]`` (see
@@ -24,7 +27,7 @@ import copy
 import types
 import typing
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from typing import Any, Literal
 
@@ -39,6 +42,38 @@ from untaped.stability import Deprecated, Stability, field_marks, mark_errors, r
 DECLARATIONS = ("renamed_keys", "retired_keys")
 
 KeyUseKind = Literal["renamed", "ignored", "retired", "deprecated"]
+
+
+@dataclass(frozen=True, slots=True)
+class Retired:
+    """A ``retired_keys`` value for a key with no successor in its own section.
+
+    ``note`` is data, printed by doctor and ``config migrate``: why the key
+    went and what to set instead (``deleted in 11.0; the repo store lives
+    under git.store_dir``).
+    """
+
+    note: str
+
+
+@dataclass(frozen=True, slots=True)
+class DeletedKey:
+    """An old key ``config migrate`` deletes: its :class:`Retired` note, and the hops to it."""
+
+    note: str
+    via: tuple[str, ...] = ()
+    """The keys between the old key and the :class:`Retired` one, that one included."""
+
+    def reason(self) -> str:
+        """The note, naming the retired key it was reached through after its first clause.
+
+        ``deleted in 11.0; the repo store …`` reached through ``cache_dir``
+        reads ``deleted in 11.0 (via cache_dir); the repo store …``.
+        """
+        if not self.via:
+            return self.note
+        head, sep, tail = self.note.partition("; ")
+        return f"{head} (via {self.via[-1]}){sep}{tail}"
 
 
 @dataclass(frozen=True)
@@ -60,8 +95,11 @@ class KeyMappings:
     deprecated: Mapping[str, str | None]
     """Current field → replacement text (``None`` when it has none), for each deprecated setting."""
 
+    deleted: Mapping[str, DeletedKey] = field(default_factory=dict)
+    """Old keys whose chain ends at a :class:`Retired` key (that key included)."""
+
     def __bool__(self) -> bool:
-        return bool(self.migratable or self.deprecated)
+        return bool(self.migratable or self.deprecated or self.deleted)
 
 
 @dataclass(frozen=True)
@@ -90,8 +128,21 @@ def _declared(model: type[BaseModel], name: str) -> object:
 
 
 def _valid(model: type[BaseModel], name: str) -> Mapping[str, str]:
-    """A declaration ``mapping_errors`` has already checked."""
-    return typing.cast(Mapping[str, str], _declared(model, name))
+    """The string targets of a declaration ``mapping_errors`` has already checked."""
+    declared = typing.cast(Mapping[str, object], _declared(model, name))
+    return {key: value for key, value in declared.items() if isinstance(value, str)}
+
+
+def _retired_notes(model: type[BaseModel]) -> Mapping[str, str]:
+    """The ``retired_keys`` declared with a :class:`Retired` value, key → note."""
+    declared = typing.cast(Mapping[str, object], _declared(model, "retired_keys"))
+    return {key: value.note for key, value in declared.items() if isinstance(value, Retired)}
+
+
+def _valid_value(name: str, value: object) -> bool:
+    if isinstance(value, str):
+        return bool(value)
+    return name == "retired_keys" and isinstance(value, Retired) and bool(value.note.strip())
 
 
 def _nested_models(model: type[BaseModel]) -> list[type[BaseModel]]:
@@ -100,8 +151,8 @@ def _nested_models(model: type[BaseModel]) -> list[type[BaseModel]]:
     pending = [model]
     while pending:
         current = pending.pop()
-        for field in current.model_fields.values():
-            for candidate in _model_args(field.annotation):
+        for info in current.model_fields.values():
+            for candidate in _model_args(info.annotation):
                 if candidate not in found and candidate is not model:
                     found.append(candidate)
                     pending.append(candidate)
@@ -124,14 +175,18 @@ def _is_model(value: object) -> bool:
 def mapping_errors(model: type[BaseModel]) -> list[str]:
     """One sentence per broken declaration rule of ``model``; ``[]`` when valid."""
     errors: list[str] = []
-    declared: dict[str, Mapping[str, str]] = {}
+    declared: dict[str, Mapping[str, object]] = {}
     for name in DECLARATIONS:
         value = _declared(model, name)
         if not isinstance(value, Mapping) or not all(
-            isinstance(key, str) and key and isinstance(item, str) and item
-            for key, item in value.items()
+            isinstance(key, str) and key and _valid_value(name, item) for key, item in value.items()
         ):
-            errors.append(f"{name} must map non-empty strings to non-empty strings")
+            target = (
+                "non-empty strings or Retired(note=)"
+                if name == "retired_keys"
+                else ("non-empty strings")
+            )
+            errors.append(f"{name} must map non-empty strings to {target}")
             value = {}
         declared[name] = value
     errors.extend(
@@ -156,8 +211,8 @@ def _leaf_paths(model: type[BaseModel], prefix: str = "") -> list[str]:
     while composing every plugin.
     """
     paths: list[str] = []
-    for name, field in model.model_fields.items():
-        annotation = unwrap_optional(field.annotation)
+    for name, info in model.model_fields.items():
+        annotation = unwrap_optional(info.annotation)
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             paths.extend(_leaf_paths(annotation, f"{prefix}{name}."))
         else:
@@ -166,14 +221,22 @@ def _leaf_paths(model: type[BaseModel], prefix: str = "") -> list[str]:
 
 
 def _mapping_errors(
-    renamed: Mapping[str, str], retired: Mapping[str, str], leaves: set[str]
+    renamed_declared: Mapping[str, object],
+    retired_declared: Mapping[str, object],
+    leaves: set[str],
 ) -> list[str]:
-    """The chain and collision rules of ``renamed_keys`` and ``retired_keys``."""
+    """The chain and collision rules of ``renamed_keys`` and ``retired_keys``.
+
+    A :class:`Retired` value ends a chain: a retired key may point at it.
+    """
+    renamed = typing.cast(Mapping[str, str], renamed_declared)
+    retired = {key: value for key, value in retired_declared.items() if isinstance(value, str)}
+    ends = {key for key, value in retired_declared.items() if isinstance(value, Retired)}
     errors = [
         f"{key!r} is in both renamed_keys and retired_keys"
-        for key in sorted(renamed.keys() & retired.keys())
+        for key in sorted(renamed.keys() & retired_declared.keys())
     ]
-    old_keys = sorted({*renamed, *retired})
+    old_keys = sorted({*renamed, *retired_declared})
     for key in old_keys:
         clash = _clashing_leaf(key, leaves)
         if clash is not None:
@@ -185,12 +248,17 @@ def _mapping_errors(
         if key.startswith(f"{parent}.")
     )
     for key, target in sorted(renamed.items()):
-        if target in retired:
+        if target in retired or target in ends:
             errors.append(f"renamed key {key!r} points at the retired key {target!r}")
         elif target not in leaves and target not in renamed:
             errors.append(f"renamed key {key!r} points at {target!r}, which is not a setting")
     for key, target in sorted(retired.items()):
-        if target not in leaves and target not in renamed and target not in retired:
+        if (
+            target not in leaves
+            and target not in renamed
+            and target not in retired
+            and target not in ends
+        ):
             errors.append(f"retired key {key!r} points at {target!r}, which is not a setting")
     mapped = {**retired, **renamed}
     errors.extend(
@@ -239,16 +307,38 @@ def key_mappings(model: type[BaseModel]) -> KeyMappings:
         return NO_KEY_MAPPINGS
     renamed = _valid(model, "renamed_keys")
     retired = _valid(model, "retired_keys")
+    notes = _retired_notes(model)
     mapped = {**retired, **renamed}
-    ends = {key: _chain_end(key, mapped) for key in mapped}
-    migratable = {key: end[0] for key, end in ends.items() if end is not None}
+    deleted = {key: DeletedKey(note) for key, note in notes.items()}
+    live: dict[str, tuple[str, int]] = {}
+    for key in mapped:
+        path = _chain(key, mapped)
+        if path is None:
+            continue
+        if path[-1] in notes:
+            deleted[key] = DeletedKey(notes[path[-1]], via=tuple(path[1:]))
+        else:
+            live[key] = (path[-1], len(path) - 1)
+    migratable = {key: end[0] for key, end in live.items()}
     return KeyMappings(
-        readable={key: migratable[key] for key in renamed},
+        readable={key: migratable[key] for key in renamed if key in migratable},
         migratable=migratable,
-        retired=frozenset(retired),
-        distance={key: end[1] for key, end in ends.items() if end is not None},
+        retired=frozenset(key for key in retired if key in migratable),
+        distance={key: end[1] for key, end in live.items()},
         deprecated=deprecated,
+        deleted=deleted,
     )
+
+
+def _chain(key: str, mapped: Mapping[str, str]) -> list[str] | None:
+    """``key`` and every hop after it to the chain's end; ``None`` on a cycle."""
+    path = [key]
+    while path[-1] in mapped:
+        nxt = mapped[path[-1]]
+        if nxt in path:
+            return None
+        path.append(nxt)
+    return path
 
 
 _MISSING = object()
@@ -358,9 +448,10 @@ class FoundKey:
     new: str | None
     """The current field; ``None`` for a deprecated setting, which keeps its name."""
 
-    kind: Literal["renamed", "retired", "deprecated"]
+    kind: Literal["renamed", "retired", "deleted", "deprecated"]
     message: str | None = None
-    """For a deprecated setting: its replacement text, if it names one."""
+    """For a deprecated setting: its replacement text, if it names one; for a
+    deleted key: its :class:`Retired` note."""
 
 
 def profile_sections(
@@ -402,6 +493,9 @@ def scan_keys(
             kind: Literal["renamed", "retired"] = (
                 "retired" if move.old in mappings.retired else "renamed"
             )
+            if move.action == "deleted":
+                found.append(FoundKey(profile, section, move.old, None, "deleted", move.note))
+                continue
             found.append(FoundKey(profile, section, move.old, mappings.migratable[move.old], kind))
         for key, message in sorted(mappings.deprecated.items()):
             if _lookup(data, key) is not _MISSING:
@@ -428,9 +522,14 @@ class KeyMove:
     old: str
     to: str
     """Where the value lives afterwards: the current field, or for a drop the
-    spelling that kept the value."""
+    spelling that kept the value; empty for a delete."""
 
-    action: Literal["renamed", "dropped"]
+    action: Literal["renamed", "dropped", "deleted"]
+    note: str | None = None
+    """For a delete: why the key went, naming the hop it was reached through."""
+
+    value: Any = None
+    """For a delete: the value the key held, which goes with it."""
 
 
 def migration_moves(model: type[BaseModel], data: Mapping[str, Any]) -> list[KeyMove]:
@@ -438,9 +537,14 @@ def migration_moves(model: type[BaseModel], data: Mapping[str, Any]) -> list[Key
 
     Every renamed or retired key moves to its current field; when the field
     or a closer old spelling is also set, the other spelling is dropped.
+    Every key whose chain ends at a :class:`Retired` key is deleted.
     """
     mappings = key_mappings(model)
-    moves: list[KeyMove] = []
+    moves = [
+        KeyMove(old, "", "deleted", note=deleted.reason(), value=value)
+        for old, deleted in sorted(mappings.deleted.items())
+        if (value := _lookup(data, old)) is not _MISSING
+    ]
     for new, keeper, ranked in _spellings(mappings, mappings.migratable, data):
         for old in ranked:
             if old == keeper:
@@ -454,7 +558,7 @@ def apply_move(data: dict[str, Any], move: KeyMove) -> bool:
     """Apply ``move`` to one section's data; ``False`` when it cannot be placed."""
     value = _lookup(data, move.old)
     _pop(data, move.old)
-    if move.action == "dropped" or _place(data, move.to, value):
+    if move.action != "renamed" or _place(data, move.to, value):
         return True
     _place(data, move.old, value)
     return False
@@ -508,10 +612,12 @@ def use_warning(use: KeyUse, *, old: str, new: str, kept: str | None = None) -> 
 
 __all__ = [
     "NO_KEY_MAPPINGS",
+    "DeletedKey",
     "FoundKey",
     "KeyMappings",
     "KeyMove",
     "KeyUse",
+    "Retired",
     "apply_move",
     "key_mappings",
     "mapping_errors",

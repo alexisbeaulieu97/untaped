@@ -1,4 +1,4 @@
-"""Workspace adapters: bare cache, git worktrees, state, and repo resolution."""
+"""Workspace adapters: git worktrees on the repo store, state, and repo resolution."""
 
 from untaped_workspace.infrastructure.catalog import GithubRepoCatalog
 from untaped_workspace.infrastructure.command_runner import SubprocessRunner

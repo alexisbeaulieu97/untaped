@@ -130,12 +130,17 @@ def test_every_project_and_the_plugin_template_share_a_python_floor_above_3_14_0
     assert Version("3.14.0") not in SpecifierSet(floor)
 
 
-def test_dependent_plugins_pin_github() -> None:
+def test_dependent_plugins_pin_their_siblings() -> None:
     projects = release.packages(REPO_ROOT)
     version = projects["untaped"]["version"]
-    for name in ("ansible", "workspace"):
+    siblings = {
+        "ansible": ("untaped-github",),
+        "github": ("untaped-git",),
+        "workspace": ("untaped-git", "untaped-github"),
+    }
+    for name, needs in siblings.items():
         project = projects[f"untaped-{name}"]
-        assert project["dependencies"] == [f"untaped=={version}", f"untaped-github=={version}"]
+        assert project["dependencies"] == [f"{dist}=={version}" for dist in ("untaped", *needs)]
 
 
 def test_core_holds_only_the_registry_under_plugins() -> None:

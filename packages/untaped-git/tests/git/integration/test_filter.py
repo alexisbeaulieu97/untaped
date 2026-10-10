@@ -8,7 +8,7 @@ import pytest
 
 from git.conftest import StoreFor, git
 from untaped.testing.git import GitRemote, trace2_events
-from untaped_git.application.report import store_report
+from untaped_git.infrastructure.report import store_report
 
 MAIN = "refs/untaped/github/heads/main"
 

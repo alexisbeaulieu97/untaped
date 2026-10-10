@@ -1,8 +1,8 @@
 """The repo store's report data (kind ``git.store``), read from disk alone.
 
 No git runs per repo: a store of a thousand repos reports in milliseconds.
-The ``untaped git store`` command that renders it lands with the store's
-first consumers.
+"Used by" comes from each repo's private ``untaped-<plugin>.json`` files and
+the ``untaped.owner`` of its worktrees, never from refs.
 """
 
 from __future__ import annotations
@@ -13,9 +13,13 @@ from collections.abc import Callable
 from pathlib import Path
 
 from untaped.sdk import list_caches
-from untaped_git.domain.records import StoreReport
-
-_UNTAPED_SECTION = "[untaped]"
+from untaped_git.domain.records import RepoCount, StoreReport
+from untaped_git.infrastructure.repo_files import (
+    config_value,
+    private_files,
+    tree_size,
+    worktree_entries,
+)
 
 
 def store_report(root: Path, *, version: str | None) -> StoreReport:
@@ -25,14 +29,34 @@ def store_report(root: Path, *, version: str | None) -> StoreReport:
         _count(repo / "objects" / "pack", lambda name: name.endswith(".pack")) for repo in repos
     ]
     ignored: dict[str, int] = {}
-    for repo in repos:
-        if _filter_value(repo) == "ignored":
+    used_by: dict[str, int] = {}
+    exclusive: dict[str, int] = {}
+    unowned, held = RepoCount(), RepoCount()
+    sizes = [tree_size(repo) for repo in repos]
+    for repo, size in zip(repos, sizes, strict=True):
+        if config_value(repo / "config", "untaped", "filter") == "ignored":
             host = repo.relative_to(root).parts[0]
             ignored[host] = ignored.get(host, 0) + 1
+        owners = {*private_files(repo)}
+        worktrees = worktree_entries(repo)
+        owners.update(entry.owner for entry in worktrees if entry.owner)
+        for owner in owners:
+            used_by[owner] = used_by.get(owner, 0) + 1
+        if len(owners) == 1:
+            (only,) = owners
+            exclusive[only] = exclusive.get(only, 0) + size
+        if config_value(repo / "config", "untaped", "release") is not None:
+            unowned = unowned.add(size)
+        elif not owners and not worktrees:
+            held = held.add(size)
     return StoreReport(
         store_dir=str(root),
         repos=len(repos),
-        size_bytes=sum(_size(repo) for repo in repos),
+        size_bytes=sum(sizes),
+        used_by=dict(sorted(used_by.items())),
+        exclusive_bytes=dict(sorted(exclusive.items())),
+        unowned=unowned,
+        held_by_branches=held,
         git_version=version,
         packs_median=statistics.median(packs) if packs else 0,
         packs_max=max(packs, default=0),
@@ -61,32 +85,3 @@ def _loose(repo: Path) -> int:
     except OSError:
         return 0
     return total
-
-
-def _size(path: Path) -> int:
-    total = 0
-    for directory, _dirs, files in os.walk(path):
-        for name in files:
-            try:
-                total += os.lstat(os.path.join(directory, name)).st_size
-            except OSError:
-                continue
-    return total
-
-
-def _filter_value(repo: Path) -> str | None:
-    """``untaped.filter`` from the repo's own config file (the last value wins)."""
-    try:
-        lines = (repo / "config").read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return None
-    section, value = "", None
-    for raw in lines:
-        line = raw.strip()
-        if line.startswith("["):
-            section = line.lower().replace(" ", "")
-            continue
-        key, sep, rest = line.partition("=")
-        if sep and section == _UNTAPED_SECTION and key.strip().lower() == "filter":
-            value = rest.strip()
-    return value

@@ -51,6 +51,7 @@ from untaped.sdk import (
     UntapedError,
     attribution,
     cache_origin,
+    list_caches,
     run_git,
     ui_context,
 )
@@ -64,8 +65,16 @@ from untaped_git.domain.namespace import (
     layout_for,
 )
 from untaped_git.domain.records import TreeEntry
+from untaped_git.domain.release import Released, Removed
 from untaped_git.domain.url import https_origin, url_host
 from untaped_git.infrastructure.lock import repo_lock
+from untaped_git.infrastructure.repo_files import (
+    WorktreeEntry,
+    private_file,
+    private_files,
+    tree_size,
+    worktree_entries,
+)
 from untaped_git.infrastructure.version import below_floor, floor_text, git_version, version_text
 
 #: Explicit refs fetched per command: a dropped connection loses one batch.
@@ -113,6 +122,13 @@ _LAZY_HINT = (
     "if this is a file's content, read it through RepoStore.prefetched(): it was never prefetched"
 )
 _STALE_LEFTOVER_SECONDS = 3600.0
+#: The mark ``release()`` writes before deleting anything; ``ensure()`` finishes from it.
+RELEASE_MARK = "untaped.release"
+#: Where a repo nobody holds goes, atomically, before it is deleted.
+REMOVING_SUFFIX = ".removing"
+#: Refs that are some user's data: a repo holding any stays on release.
+_HELD_ROOTS = ("refs/untaped/", "refs/remotes/", "refs/heads/", "refs/tags/", "refs/stash")
+_PLAIN_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 _HANDLE_REFUSED = ("fetch", "checkout", "worktree")
 
 
@@ -140,6 +156,7 @@ class RepoStore:
     ) -> None:
         self._path = path
         self._url = url
+        self._plugin = plugin
         self._layout = layout_for(plugin)
         self._plain = self._layout.heads == "refs/remotes/origin/"
         self._error = error
@@ -169,19 +186,52 @@ class RepoStore:
         from untaped_git.domain.url import store_key  # noqa: PLC0415
         from untaped_git.settings import git_settings  # noqa: PLC0415
 
-        name = getattr(plugin, "name", plugin)
-        if not isinstance(name, str):
-            raise TypeError("plugin= takes the caller's PluginSpec")
         settings = git_settings()
         return cls(
             settings.store_dir.expanduser().joinpath(*store_key(url)),
             url=url,
-            plugin=name,
+            plugin=_plugin_name(plugin),
             error=error,
             map_error=map_error,
             auth=resolve_host,
             helper_first=settings.untaped_helper_first,
         )
+
+    @classmethod
+    def owned_by(
+        cls,
+        plugin: object,
+        *,
+        error: type[UntapedError],
+        map_error: Callable[[GitCommandError], UntapedError] | None = None,
+    ) -> list[Self]:
+        """Every store repo holding ``plugin``'s private file, as ``plugin`` sees it.
+
+        Read from disk alone, sorted by path; each handle's URL is the repo's
+        label (``remote.origin.url``). A repo without a label is skipped.
+        """
+        from untaped_git.domain.hosts import resolve_host  # noqa: PLC0415  # contracts load lazily
+        from untaped_git.settings import git_settings  # noqa: PLC0415
+
+        name = _plugin_name(plugin)
+        settings = git_settings()
+        stores = []
+        for repo in list_caches(settings.store_dir.expanduser()):
+            label = cache_origin(repo)
+            if label is None or not private_file(repo, name).is_file():
+                continue
+            stores.append(
+                cls(
+                    repo,
+                    url=label,
+                    plugin=name,
+                    error=error,
+                    map_error=map_error,
+                    auth=resolve_host,
+                    helper_first=settings.untaped_helper_first,
+                )
+            )
+        return stores
 
     @property
     def path(self) -> Path:
@@ -193,8 +243,47 @@ class RepoStore:
         """The URL this store handle fetches from."""
         return self._url
 
+    @property
+    def private_file(self) -> Path:
+        """This plugin's own file in the repo, ``untaped-<plugin>.json``.
+
+        The plugin writes it (its presence is how the store's report and
+        :meth:`owned_by` know the plugin uses the repo); :meth:`release`
+        deletes it.
+        """
+        return private_file(self._path, self._plugin)
+
     def exists(self) -> bool:
         return (self._path / "HEAD").is_file()
+
+    @property
+    def roots(self) -> tuple[str, str]:
+        """Where this plugin's branches and tags live in the repo (``for-each-ref`` patterns)."""
+        return self._layout.roots
+
+    def ref(self, name: str) -> str:
+        """The full ref of ``heads/<branch>`` or ``tags/<tag>`` in this plugin's namespace."""
+        try:
+            return self._layout.absolute(name)
+        except ValueError as exc:
+            raise self._error(str(exc), category=ErrorCategory.INVALID) from None
+
+    def worktree_owners(self) -> dict[Path, str | None]:
+        """Each registered worktree's directory → the plugin owning it (``None``: a user's own).
+
+        Read from the repo's files; a worktree whose owner stamp names another
+        directory (git copied it when the user added one from an owned
+        worktree) is a user's own.
+        """
+        return {
+            entry.path: entry.owner
+            for entry in worktree_entries(self._path)
+            if entry.path is not None
+        }
+
+    def relative(self, ref: str) -> str | None:
+        """``heads/<b>`` or ``tags/<t>`` for a ref of this plugin's namespace, else ``None``."""
+        return self._layout.relative(ref)
 
     # ── lifecycle ──────────────────────────────────────────────────────────
 
@@ -204,6 +293,12 @@ class RepoStore:
             return self._ensure()
 
     def _ensure(self) -> bool:
+        self._remove_removing()
+        marked = self._config_get(RELEASE_MARK) if self.exists() else None
+        if marked is not None:
+            # An interrupted release: finish it before anything else uses the repo.
+            self._finish_release(marked, ())
+            self._settle()
         created = not self.exists()
         if created:
             try:
@@ -224,7 +319,164 @@ class RepoStore:
         for key, value in POLICY.items():
             if current.get(key.lower()) != [value]:
                 self._git(["config", "--local", "--replace-all", key, value])
+        if "remote.origin.fetch" in current:
+            # A 10.x workspace repo's shared refspec: each worktree carries its own now.
+            self._git(["config", "--local", "--unset-all", "remote.origin.fetch"])
+            if worktree_entries(self._path):
+                self._enable_worktree_config()
+                self._repair_worktrees(stripped=True)
         return created
+
+    # ── release ────────────────────────────────────────────────────────────
+
+    def release(
+        self, *, branches: Sequence[str] = (), unless_in_use: bool = False
+    ) -> Released | Removed:
+        """Say this plugin no longer needs the repo; it goes when nobody else holds it.
+
+        Deletes the plugin's refs (workspace's: ``refs/remotes/origin/*``, its
+        ``HEAD`` and ``refs/tags/*``, as with a deleted clone), its private
+        file, its worktrees and the local ``branches`` named (``refs/heads/*``
+        the caller's own rules let go; one a worktree has checked out is
+        refused before anything changes). Then, when another plugin's refs,
+        file or worktree, a worktree added by hand, a branch or a stash is
+        left, the repo stays (:class:`Released` names who kept it); otherwise
+        it is renamed to ``<repo>.git.removing`` and deleted
+        (:class:`Removed`). The ``untaped.release`` mark written first lets
+        the next :meth:`ensure` finish a release that was interrupted, and
+        another plugin's interrupted release is finished first.
+
+        ``unless_in_use`` changes nothing while one of this plugin's worktrees
+        is registered, checked under the repo lock (:class:`Released` then
+        counts it), so a worktree another process just added is never deleted.
+        """
+        refs = []
+        for name in branches:
+            reason = check_names([name])
+            if reason is None and is_glob(name):
+                reason = f"{name!r} is a glob; release takes exact branch names"
+            if reason is not None:
+                raise self._error(reason, category=ErrorCategory.INVALID)
+            refs.append(f"refs/heads/{name}")
+        with self._locked():
+            if not self.exists():
+                self._remove_removing()
+                return Removed()
+            if unless_in_use and any(
+                entry.owner == self._plugin and entry.path is not None and entry.path.is_dir()
+                for entry in worktree_entries(self._path)
+            ):
+                return self._holders() or Released()
+            checked_out = set(self._checked_out()) & set(refs)
+            if checked_out:
+                names = ", ".join(sorted(ref.removeprefix("refs/heads/") for ref in checked_out))
+                raise self._error(
+                    f"cannot release {self._path}: a worktree has {names} checked out",
+                    category=ErrorCategory.CONFLICT,
+                )
+            marked = self._config_get(RELEASE_MARK)
+            if marked is not None and marked != self._plugin:
+                # Another plugin's interrupted release: finish it before the mark is reused.
+                self._finish_release(marked, ())
+            self._git(["config", RELEASE_MARK, self._plugin])
+            self._finish_release(self._plugin, refs)
+            return self._settle()
+
+    def _finish_release(self, plugin: str, branches: Sequence[str]) -> None:
+        """Delete ``plugin``'s refs, private file and worktrees, and ``branches``."""
+        layout = layout_for(plugin)
+        refs = self._git(
+            ["for-each-ref", "--format=%(refname)", *layout.roots], capture=True
+        ).text.split()
+        if layout.heads == "refs/remotes/origin/":
+            refs.append(ORIGIN_HEAD)
+        self._delete(dict.fromkeys([*refs, *branches]))
+        private_file(self._path, plugin).unlink(missing_ok=True)
+        for entry in worktree_entries(self._path):
+            if entry.owner == plugin:
+                self._remove_worktree(entry)
+        self._git(["worktree", "prune"], check=False)
+
+    def _remove_worktree(self, entry: WorktreeEntry) -> None:
+        if entry.path is not None:
+            removed = self._git(
+                ["worktree", "remove", "--force", "--force", str(entry.path)], check=False
+            )
+            if removed.returncode == 0:
+                return
+            shutil.rmtree(entry.path, ignore_errors=True)
+        shutil.rmtree(entry.admin, ignore_errors=True)
+
+    def _settle(self) -> Released | Removed:
+        """Clear the mark when someone still holds the repo, else remove it."""
+        released = self._holders()
+        if released is not None:
+            self._git(["config", "--unset-all", RELEASE_MARK], check=False)
+            return released
+        freed = tree_size(self._path)
+        removing = self._removing_path()
+        self._remove_removing()
+        try:
+            self._path.rename(removing)
+        except OSError as exc:
+            raise self._error(
+                f"could not remove repo store directory {self._path}: {exc.strerror or exc}",
+                category=ErrorCategory.FAILED,
+                system="local",
+            ) from exc
+        shutil.rmtree(removing, ignore_errors=True)
+        return Removed(freed)
+
+    def _holders(self) -> Released | None:
+        """Who still holds the repo, or ``None`` when nobody does."""
+        refs = self._git(
+            ["for-each-ref", "--format=%(refname)", *_HELD_ROOTS], capture=True
+        ).text.split()
+        plugins: dict[str, int] = dict.fromkeys(private_files(self._path), 0)
+        branches, stash = [], False
+        for ref in refs:
+            if ref == ORIGIN_HEAD:
+                continue
+            if ref.startswith("refs/untaped/"):
+                plugins.setdefault(ref.split("/")[2], 0)
+            elif ref.startswith(("refs/remotes/", "refs/tags/")):
+                plugins.setdefault("workspace", 0)
+            elif ref.startswith("refs/heads/"):
+                branches.append(ref.removeprefix("refs/heads/"))
+            elif ref == "refs/stash":
+                stash = True
+        foreign = []
+        for entry in worktree_entries(self._path):
+            if entry.owner is None:
+                foreign.append(_shown_path(entry.path) if entry.path else str(entry.admin))
+            else:
+                plugins[entry.owner] = plugins.get(entry.owner, 0) + 1
+        if not plugins and not foreign and not branches and not stash:
+            return None
+        return Released(
+            plugins=dict(sorted(plugins.items())),
+            foreign_worktrees=tuple(foreign),
+            branches=tuple(branches),
+            stash=stash,
+        )
+
+    def _checked_out(self) -> list[str]:
+        """The branches registered worktrees have checked out (``worktree list``)."""
+        result = self._git(["worktree", "list", "--porcelain"], capture=True, check=False)
+        return [
+            line.removeprefix("branch ")
+            for line in result.text.splitlines()
+            if line.startswith("branch ")
+        ]
+
+    def _removing_path(self) -> Path:
+        return self._path.with_name(self._path.name + REMOVING_SUFFIX)
+
+    def _remove_removing(self) -> None:
+        """Delete what an interrupted removal left beside the repo."""
+        removing = self._removing_path()
+        if removing.is_dir() and not removing.is_symlink():
+            shutil.rmtree(removing, ignore_errors=True)
 
     # ── refs ───────────────────────────────────────────────────────────────
 
@@ -652,13 +904,40 @@ class RepoStore:
         self._git(["config", "--local", "--unset-all", "core.bare"], check=False)
         self._git(["config", "core.repositoryformatversion", "1"])
         self._git(["config", "extensions.worktreeConfig", "true"])
+        self._repair_worktrees(stripped=False)
 
-    def _write_owner_config(self, worktree: Path) -> None:
-        self._worktree_config(worktree, "untaped.owner", self._layout.plugin)
+    def _repair_worktrees(self, *, stripped: bool) -> None:
+        """Give each registered worktree its own fetch keys after a shared-config change.
+
+        A worktree workspace owns gets workspace's owner keys. With the shared
+        refspec just ``stripped``, a worktree nobody owns (a 10.x worktree, or
+        one added by hand) gets the refspec and filter it lost, never an
+        owner: release would then remove it.
+        """
+        if self._config_get("extensions.worktreeConfig") != "true":
+            return
+        for entry in worktree_entries(self._path):
+            if entry.path is None or not entry.path.is_dir():
+                continue
+            if entry.owner == "workspace":
+                self._write_owner_config(entry.path, owner="workspace")
+            elif entry.owner is None and stripped:
+                self._write_fetch_config(entry.path, plain=True)
+
+    def _write_owner_config(self, worktree: Path, *, owner: str | None = None) -> None:
+        owner = owner or self._plugin
+        self._worktree_config(worktree, "untaped.owner", owner)
+        # Stamps which worktree is owned: git copies this file into worktrees
+        # added from this one, which must stay a user's own.
+        self._worktree_config(worktree, "untaped.worktree", str(worktree.resolve()))
+        plain = layout_for(owner).heads == "refs/remotes/origin/"
+        self._write_fetch_config(worktree, plain=plain)
+
+    def _write_fetch_config(self, worktree: Path, *, plain: bool) -> None:
         refspec = "remote.origin.fetch"
         self._worktree_config(worktree, "--unset-all", refspec, check=False)
-        if self._plain:
-            self._worktree_config(worktree, refspec, "+refs/heads/*:refs/remotes/origin/*")
+        if plain:
+            self._worktree_config(worktree, refspec, _PLAIN_REFSPEC)
         # A user's own fetch here brings the blobs of new commits.
         self._worktree_config(worktree, "remote.origin.partialclonefilter", "")
 
@@ -766,10 +1045,13 @@ class RepoStore:
             )
 
     def _remove_stale_leftovers(self) -> None:
-        """Delete what an interrupted fetch or repack left: temporary packs, ``shallow.lock``.
+        """Delete what an interrupted fetch, repack or removal left.
 
-        Older than an hour only, so a git running outside untaped keeps its own.
+        Temporary packs and ``shallow.lock`` older than an hour only, so a git
+        running outside untaped keeps its own; a ``<repo>.git.removing``
+        always (only the store makes one, under the repo lock).
         """
+        self._remove_removing()
         cutoff = time.time() - _STALE_LEFTOVER_SECONDS
         candidates = [self._path / "shallow.lock"]
         try:
@@ -976,3 +1258,16 @@ def _helper_command(profile: str | None) -> str:
 
 def _warn(text: str) -> None:
     ui_context(strict=False).message("warning", text)
+
+
+def _plugin_name(plugin: object) -> str:
+    name = getattr(plugin, "name", plugin)
+    if not isinstance(name, str):
+        raise TypeError("plugin= takes the caller's PluginSpec")
+    return name
+
+
+def _shown_path(path: Path) -> str:
+    """``path`` with the home directory as ``~``."""
+    home = Path.home()
+    return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)

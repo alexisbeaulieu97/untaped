@@ -137,7 +137,13 @@ class CodeResult(BaseModel):
 
 
 class CorpusRepoResult(BaseModel):
-    """One repository row in the local scan corpus."""
+    """One repository row in the local scan corpus (``github.corpus_repo``).
+
+    ``path`` is the repo in the git plugin's repo store. ``cache delete`` and
+    ``prune`` rows say ``removed`` (nobody else used the repo; ``disk_bytes``
+    is what it freed) or ``released`` (github's refs, metadata and worktrees
+    went; ``kept`` names who still holds the repo, and ``disk_bytes`` is 0).
+    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -145,7 +151,8 @@ class CorpusRepoResult(BaseModel):
     ref: str
     path: str
     clone_url: str | None = None
-    status: Literal["synced", "cached", "removed"] = "cached"
+    status: Literal["synced", "cached", "released", "removed"] = "cached"
+    kept: str | None = None
     fetched_at: str | None = None
     profile: str = "default"
     ref_globs: tuple[str, ...] = ()

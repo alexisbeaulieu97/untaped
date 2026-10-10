@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from untaped.sdk import TokenCommand, TokenSources
+from untaped.sdk import Retired, TokenCommand, TokenSources
 
 
 class SweepSettings(BaseModel):
@@ -35,8 +35,9 @@ class GithubSettings(BaseModel):
     """GitHub API settings."""
 
     token_sources: ClassVar[TokenSources] = TokenSources(env=("GH_TOKEN", "GITHUB_TOKEN"))
-    retired_keys: ClassVar[Mapping[str, str]] = {
+    retired_keys: ClassVar[Mapping[str, str | Retired]] = {
         "corpus_path": "cache_dir",
+        "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
         "sweep.sync_concurrency": "sweep.parallel",
     }
 
@@ -46,6 +47,6 @@ class GithubSettings(BaseModel):
     token: SecretStr | None = None
     token_command: TokenCommand = None
     default_org: str | None = None
-    cache_dir: Path = Path("~/.untaped/github-cache")
+    git_protocol: Literal["https", "ssh"] = "https"
     sweep: SweepSettings = Field(default_factory=SweepSettings)
     inventory: InventorySettings = Field(default_factory=InventorySettings)
