@@ -144,6 +144,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "experimental",
         "plural",
         "q",
+        "size_text",
         "writes",
     ),
     "screens": (

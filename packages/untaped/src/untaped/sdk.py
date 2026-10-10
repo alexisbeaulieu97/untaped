@@ -84,7 +84,7 @@ from untaped.http import (
     resolve_verify,
     same_origin,
 )
-from untaped.messages import hint, not_found, plural, q, summary
+from untaped.messages import hint, not_found, plural, q, size_text, summary
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.plugins.registry import (
@@ -342,6 +342,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "experimental",
     "plural",
     "q",
+    "size_text",
     "writes",
     # screens (experimental)
     "Activate",

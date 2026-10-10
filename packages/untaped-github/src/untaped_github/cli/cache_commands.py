@@ -27,6 +27,7 @@ from untaped.sdk import (
     plural,
     report_errors,
     report_row_errors,
+    size_text,
     summary,
     writes,
 )
@@ -356,7 +357,7 @@ def worktree_command(
 
 
 def _status_summary(rows: tuple[CorpusRepoResult, ...]) -> None:
-    total = _human_size(sum(row.disk_bytes for row in rows))
+    total = size_text(sum(row.disk_bytes for row in rows))
     ages = sorted(age for row in rows if (age := _parse_time(row.fetched_at)) is not None)
     oldest = _relative_age(ages[0]) if ages else "n/a"
     newest = _relative_age(ages[-1]) if ages else "n/a"
@@ -371,22 +372,12 @@ def _status_display(records: list[dict[str, object]]) -> list[dict[str, object]]
             "ref": record["ref"],
             "profile": record["profile"],
             "archived": record["archived"],
-            "size": _human_size(int(str(record["disk_bytes"]))),
+            "size": size_text(int(str(record["disk_bytes"]))),
             "fetched": _relative_age(_parse_time(record["fetched_at"])),
             "path": record["path"],
         }
         for record in records
     ]
-
-
-def _human_size(size: int) -> str:
-    """Render a byte count with binary units: ``512 B``, ``1.5 KiB``, ``2.0 GiB``."""
-    value = float(size)
-    for unit in ("B", "KiB", "MiB", "GiB"):
-        if value < 1024 or unit == "GiB":
-            return f"{size} B" if unit == "B" else f"{value:.1f} {unit}"
-        value /= 1024
-    raise AssertionError("unreachable")
 
 
 def _parse_time(value: object) -> datetime | None:

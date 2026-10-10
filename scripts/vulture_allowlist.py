@@ -69,6 +69,8 @@ RepoStore.ls_tree
 RepoStore.worktree_add
 RepoStore.write_worktree_config
 RepoStore.filter_state
+RepoStore.owned_by
+Removed.freed_bytes
 
 # untaped.testing.git: fixtures for plugins that test against the repo store.
 GitRemote.spread
