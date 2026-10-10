@@ -463,12 +463,12 @@ def test_unknown_ui_theme_fails_ui_row(_isolated_config: Path) -> None:
 def test_bad_env_override_fails_its_row_and_names_the_variable(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT", "abc")
+    monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT_SECONDS", "abc")
     monkeypatch.setenv("UNTAPED_JIRA__TIMEOUT", "soon")
     code, rows = _rows(_doctor_app(make_spec("jira", settings=JiraProfile)))
     assert code == 1
     failed = _failed(rows)
-    assert "UNTAPED_HTTP__TIMEOUT" in failed["validate http"]
+    assert "UNTAPED_HTTP__TIMEOUT_SECONDS" in failed["validate http"]
     assert "UNTAPED_JIRA__TIMEOUT" in failed["validate settings"]
     assert "validate ui" not in failed
 

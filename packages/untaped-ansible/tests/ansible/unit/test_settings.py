@@ -68,15 +68,14 @@ def test_source_definition_is_frozen_and_normalized() -> None:
         ({"stale_after": 60}, "stale_after", "stale_after_seconds", 60),
     ],
 )
-def test_an_old_key_is_read_as_the_new_one(
+def test_a_retired_key_is_not_read(
     capsys: pytest.CaptureFixture[str], data: dict[str, object], old: str, new: str, value: object
 ) -> None:
     config = Path(os.environ["UNTAPED_CONFIG"])
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": data}}}))
 
-    assert getattr(get_config_section("ansible", AnsibleSettings), new) == value
-    assert (
-        f"warning: ansible.{old} is deprecated and will be removed in the next major release; "
-        f"use ansible.{new}"
-    ) in capsys.readouterr().err
+    settings = get_config_section("ansible", AnsibleSettings)
+
+    assert getattr(settings, new) == getattr(AnsibleSettings(), new) != value
+    assert old not in capsys.readouterr().err

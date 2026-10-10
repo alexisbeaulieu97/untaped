@@ -17,7 +17,7 @@ class AwxSettings(BaseModel):
     token_sources: ClassVar[TokenSources] = TokenSources(
         env=("CONTROLLER_OAUTH_TOKEN", "TOWER_OAUTH_TOKEN", "AAP_TOKEN")
     )
-    renamed_keys: ClassVar[Mapping[str, str]] = {"test_timeout": "test_timeout_seconds"}
+    retired_keys: ClassVar[Mapping[str, str]] = {"test_timeout": "test_timeout_seconds"}
 
     model_config = ConfigDict(frozen=True)
 
