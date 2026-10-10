@@ -149,7 +149,10 @@ def _added_by(requirement: Requirement, extras: frozenset[str]) -> bool:
     marker = requirement.marker
     if marker is None:
         return False
-    return any(marker.evaluate({"extra": extra}) for extra in extras)
+    try:
+        return any(marker.evaluate({"extra": extra}) for extra in extras)
+    except KeyError:  # a variable the environment can't fill (``extras``)
+        return False
 
 
 def _mentions_extra(marker: str) -> bool:

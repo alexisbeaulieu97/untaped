@@ -163,13 +163,14 @@ def _bound(cls: type) -> Provider:
         if isinstance(entry, Provider) and type(entry.instance) is cls:
             return entry
     owner = next((o for o, infos in owned_contracts().items() if contract in infos), None)
+    if owner is None:
+        raise LookupError(
+            f"{cls.__qualname__} fills {getattr(contract, 'name', contract)}, whose owner isn't "
+            "composed; compose it too: compose_with(owner, plugin)"
+        )
     for entry in entries:
         wanted = (None, getattr(contract, "cls", None))
-        if (
-            not isinstance(entry, Provider)
-            and entry.contract in wanted
-            and (owner is None or entry.owner == owner)
-        ):
+        if not isinstance(entry, Provider) and entry.contract in wanted and entry.owner == owner:
             raise AssertionError(
                 f"{entry.plugin}'s offer to {entry.owner} is quarantined ({entry.reason}): "
                 f"{entry.detail}"

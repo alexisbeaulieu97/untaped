@@ -209,7 +209,10 @@ def test_a_name_the_owners_api_does_not_export_is_refused(
 
 
 def _toy_imports(
-    monkeypatch: pytest.MonkeyPatch, names: set[str], **contract_globals: object
+    monkeypatch: pytest.MonkeyPatch,
+    names: set[str],
+    exports: dict[str, object] | None = None,
+    **contract_globals: object,
 ) -> str:
     """``_imports`` for a contract in ``untaped_toy._contract`` with ``api`` exporting Item."""
     from untaped.management.plugin_new import _imports
@@ -225,7 +228,7 @@ def _toy_imports(
 
     Source.__module__ = contract_module.__name__
     vars(contract_module).update(contract_globals, Item=Item, Source=Source)
-    api.Item = Item  # type: ignore[attr-defined]
+    vars(api).update(exports or {}, Item=Item)
     monkeypatch.setitem(sys.modules, contract_module.__name__, contract_module)
     return _imports(names, api, Source, "untaped_gitlab", "GitlabSettings")
 
@@ -237,11 +240,35 @@ def test_a_module_the_contract_imports_is_imported_whole(monkeypatch: pytest.Mon
     assert found.splitlines()[:2] == ["import datetime", "import datetime as dt"]
 
 
-def test_an_untaped_name_comes_from_its_public_module(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_untaped_names_come_from_the_modules_a_plugin_may_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from untaped.contracts import NotReady
+    from untaped.sdk import TargetRecord, UtcTimestamp
 
-    found = _toy_imports(monkeypatch, {"NotReady"}, NotReady=NotReady)
-    assert found.splitlines()[0] == "from untaped.contracts import NotReady"
+    found = _toy_imports(
+        monkeypatch,
+        {"Item", "NotReady", "TargetRecord", "UtcTimestamp", "Path"},
+        NotReady=NotReady,
+        TargetRecord=TargetRecord,
+        UtcTimestamp=UtcTimestamp,
+        Path=Path,
+    )
+    assert found == (
+        "from pathlib import Path\n\n"
+        "from untaped.contracts import Configured, NotReady\n"
+        "from untaped.sdk import TargetRecord, UtcTimestamp\n"
+        "from untaped_toy.api import Item\n\n"
+        "from untaped_gitlab.settings import GitlabSettings"
+    )
+
+
+def test_a_module_the_owners_api_exports_comes_from_the_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    models = ModuleType("untaped_toy.models")
+    found = _toy_imports(monkeypatch, {"models"}, {"models": models}, models=models)
+    assert found.splitlines()[1] == "from untaped_toy.api import models"
 
 
 @pytest.mark.parametrize(
@@ -249,15 +276,30 @@ def test_an_untaped_name_comes_from_its_public_module(monkeypatch: pytest.Monkey
     [
         dict[str, int] | None,
         type("Hidden", (), {"__module__": "untaped_toy._contract"}),
+        type("Lost", (), {"__module__": "nowhere_at_all.sub"}),
+        type("Inside", (), {"__module__": "untaped.records"}),
         ModuleType("untaped_toy.helpers"),
+        ModuleType("untaped.contracts._declare"),
     ],
-    ids=["alias", "owner-private", "owner-module"],
+    ids=["alias", "owner-private", "unimportable", "untaped-internal", "owner-module", "private"],
 )
 def test_a_name_without_a_public_home_is_refused(
     monkeypatch: pytest.MonkeyPatch, value: object
 ) -> None:
     with pytest.raises(UsageError, match=r"Source names Payload, which untaped_toy\.api doesn't"):
         _toy_imports(monkeypatch, {"Payload"}, Payload=value)
+
+
+def test_a_docstring_word_imports_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bootstrap.compose_root(candidates=[_RACK])
+    contract = importlib.import_module("untaped_rack._contract")
+    # ``items``'s docstring says "rack", a name with no public home in rack's module.
+    monkeypatch.setattr(contract, "rack", object(), raising=False)
+    _new(tmp_path)
+    provider = (tmp_path / "untaped-gitlab/src/untaped_gitlab/providers/rack.py").read_text(
+        encoding="utf-8"
+    )
+    assert "import rack" not in provider
 
 
 def test_a_local_version_is_left_out_of_the_range() -> None:

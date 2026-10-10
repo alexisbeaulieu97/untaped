@@ -134,12 +134,11 @@ def test_assert_fills_names_a_quarantined_offer() -> None:
         assert_fills(Unbridged, samples=[Volume(id=1, name="Dune")])
 
 
-def test_assert_fills_names_an_owner_that_is_not_composed() -> None:
+def test_assert_fills_asks_for_an_owner_that_is_not_composed() -> None:
+    lost = PluginSpec(name="aaa", provides={"elsewhere": lambda: ()})
     with (
-        compose_with(library_spec()),
-        pytest.raises(
-            AssertionError, match=r"library's offer to shelf is quarantined \(owner-not-installed\)"
-        ),
+        compose_with(lost, library_spec()),
+        pytest.raises(LookupError, match=r"Library fills book_source, whose owner isn't composed"),
     ):
         assert_fills(Library, samples=[Volume(id=1, name="Dune")])
 
