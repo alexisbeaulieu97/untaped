@@ -938,7 +938,8 @@ def record_default_branch(repo: Path, branch: str) -> None:
     if not (repo / "HEAD").is_file():
         return
     try:
-        with repo_lock(repo, timeout=TIMEOUT, error=UntapedError):
+        # Try once: a busy repo is fetching, and its fetch records the answer itself.
+        with repo_lock(repo, timeout=0, error=UntapedError):
             run_git(
                 ["config", "--file", str(repo / "config"), "untaped.defaultBranch", branch],
                 cwd=repo,
@@ -946,7 +947,7 @@ def record_default_branch(repo: Path, branch: str) -> None:
                 ceiling=True,
                 batch_ssh=False,
             )
-    except GitCommandError, UntapedError:
+    except UntapedError:  # GitCommandError included
         return
 
 

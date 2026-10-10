@@ -150,7 +150,7 @@ def test_a_fetch_without_the_default_branch_asks_nothing_more(
 ) -> None:
     remote.branch("feature")
     store = store_for("workspace")
-    store.fetch(branches=["main"])
+    store.fetch(branches=["feature"])  # origin/main never exists: origin/HEAD can't resolve
 
     trace = tmp_path / "trace.json"
     monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
