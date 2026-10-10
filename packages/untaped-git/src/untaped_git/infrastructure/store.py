@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -97,7 +98,9 @@ _NETWORK = {"maintenance.auto": "false"}
 _NETWORK_VERBS = frozenset({"fetch", "pull", "push", "ls-remote", "clone", "submodule"})
 _FILTER_IGNORED = "filtering not recognized by server"
 _REFUSED = ("unadvertised object", "not our ref", "allow-tip-sha1-in-want")
-_LAZY_READ = ("lazy fetch", "promisor remote")
+#: How git reports a read of an object it may not fetch lazily: older gits name
+#: the promisor remote, newer ones (2.55) only say an object id is not there.
+_LAZY_READ = re.compile(r"lazy fetch|promisor remote|not a valid object name [0-9a-f]{40,64}\b")
 _REFUSED_HINT = (
     "this host refuses blob fetches by object id (a protocol v0/v1 server without "
     "uploadpack.allowAnySHA1InWant), so the repo store cannot read files there: "
@@ -730,7 +733,9 @@ class RepoStore:
         """Git's own automatic maintenance, as the store's second command (a warning on failure)."""
         try:
             result = run_git(
-                ["maintenance", "run", "--auto", "--quiet"],
+                # The gc task alone, whatever the git's default strategy (newer
+                # gits default to geometric repacks, which the gc.* policy doesn't steer).
+                ["maintenance", "run", "--auto", "--quiet", "--task=gc"],
                 git_dir=self._path,
                 cwd=self._path,
                 timeout=MAINTENANCE_TIMEOUT,
@@ -868,9 +873,7 @@ class RepoStore:
                 category=ErrorCategory.CONFIG,
                 hint=f"install git {floor_text()} or newer",
             )
-        elif exc.category == ErrorCategory.FAILED and any(
-            marker in exc.stderr.lower() for marker in _LAZY_READ
-        ):
+        elif exc.category == ErrorCategory.FAILED and _LAZY_READ.search(exc.stderr.lower()):
             exc.hint = _LAZY_HINT
         if self._map_error is not None:
             return self._map_error(exc)
