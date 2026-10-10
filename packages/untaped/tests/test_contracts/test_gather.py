@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -409,6 +410,12 @@ def test_own_reads_back_the_providers_record() -> None:
     assert err.value.hint == "ask library for it again; its record shape changed since"
 
 
+@dataclass
+class _Pair:
+    left: int
+    right: int
+
+
 class _Tag(BaseModel):
     name: str = Field(alias="tagName")
 
@@ -428,13 +435,19 @@ class _TagSource(Contract):
     def token(self) -> SecretStr:
         raise NotImplementedError
 
+    def pairs(self) -> list[_Pair]:
+        raise NotImplementedError
+
 
 class _Tagger(_TagSource):
+    def pairs(self) -> list[_Pair]:
+        return [_Pair(1, 2)]
+
     def token(self) -> SecretStr:
         return SecretStr("s3cret")
 
     def tags(self) -> list[_Tag]:
-        return [_tag("a"), _Tag.model_construct(name=3)]  # type: ignore[arg-type]
+        return [_tag("a"), "oops"]  # type: ignore[list-item]  # a bad row
 
     everything = tags
 
@@ -453,7 +466,7 @@ def test_only_a_declared_listing_drops_a_bad_row_whatever_its_item_type() -> Non
     assert whole.reason == "invalid-item"
 
 
-def test_plain_answers_keep_secrets_and_aliases() -> None:
+def test_plain_answers_keep_secrets_aliases_and_dataclasses() -> None:
     compose(
         PluginSpec(name="tags", contracts=lambda: (_TagSource,)),
         PluginSpec(name="tagger", provides={"tags": lambda: (_Tagger(),)}),
@@ -464,3 +477,6 @@ def test_plain_answers_keep_secrets_and_aliases() -> None:
     [listed] = gather(_TagSource.tags)()
     assert isinstance(listed, Ok)
     assert listed.value[0].name == "a"
+    [pairs] = gather(_TagSource.pairs)()
+    assert isinstance(pairs, Ok)
+    assert pairs.value == [_Pair(1, 2)]

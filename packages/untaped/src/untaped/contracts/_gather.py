@@ -257,7 +257,7 @@ def validate(binding: Binding, method: Method, value: Any) -> tuple[Any, tuple[s
     if not method.listing:
         if not issued:
             try:
-                return _strict(TypeAdapter(hint), value), ()
+                return TypeAdapter(hint).validate_python(value, strict=True), ()
             except ValueError as exc:
                 raise _invalid(binding, hint, _message(exc)) from None
         if origin is not list:
@@ -272,23 +272,17 @@ def validate(binding: Binding, method: Method, value: Any) -> tuple[Any, tuple[s
     invalid: list[str] = []
     for index, item in enumerate(value):
         try:
-            kept.append(issue(binding, model, item) if row is None else _strict(row, item))
+            kept.append(
+                issue(binding, model, item)
+                if row is None
+                else row.validate_python(item, strict=True)
+            )
         except ValueError as exc:
             message = f"row {index + 1}: {_message(exc)}"
             if not method.listing:
                 raise _invalid(binding, model, message) from None
             invalid.append(message)
     return kept, tuple(invalid)
-
-
-def _strict(adapter: TypeAdapter[Any], value: Any) -> Any:
-    """``value`` validated strictly from its dump, so a model built without validation counts.
-
-    Python mode keeps secrets and native values as they are; aliases and the
-    round trip mirror what validation reads.
-    """
-    dumped = adapter.dump_python(value, by_alias=True, round_trip=True, warnings=False)
-    return adapter.validate_python(dumped, strict=True)
 
 
 def _message(exc: ValueError) -> str:
