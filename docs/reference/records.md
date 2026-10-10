@@ -22,7 +22,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `doctor`, `setup` | `untaped.doctor_check` |
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
-| `setup migrate-dirs` | `untaped.migration` (`id` of the plugin's migration, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`); with `--dry-run`, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep` or `then`, `source`, `destination`, `detail`, `bytes`) |
+| `setup migrate-dirs` | `untaped.migration` (`id` of the plugin's migration, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`); with `--dry-run`, or when no row would move or delete anything, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep`, `then` or `failed`, `source`, `destination`, `detail`, `bytes`) |
 | `plugin list` | `untaped.plugin` |
 | `plugin list --contracts` | `untaped.contract` |
 | `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |

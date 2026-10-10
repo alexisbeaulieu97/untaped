@@ -134,7 +134,7 @@ def test_dependent_plugins_pin_their_siblings() -> None:
     projects = release.packages(REPO_ROOT)
     version = projects["untaped"]["version"]
     siblings = {
-        "ansible": ("untaped-github",),
+        "ansible": ("untaped-git", "untaped-github"),
         "github": ("untaped-git",),
         "workspace": ("untaped-git",),
     }

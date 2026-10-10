@@ -23,6 +23,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "dir_bytes",
         "old_dirs",
         "plugin_dir",
+        "unsafe_dir",
     ),
     "settings and state": (
         "AppContext",

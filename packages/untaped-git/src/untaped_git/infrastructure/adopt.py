@@ -28,6 +28,7 @@ This module is the store's own: it uses :class:`RepoStore`'s internals.
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import os
 import shutil
@@ -54,6 +55,8 @@ from untaped_git.infrastructure.store import REMOVING_SUFFIX, TIMEOUT, RepoStore
 _FRESHNESS_KEYS = ("fetched_at", "pushed_at")
 #: The 10.x workspace layout mark, replaced by the store's ``untaped.store``.
 _OLD_LAYOUT_KEY = "untaped.layout"
+#: Where a copy across filesystems is built before it becomes the store repo.
+_COPYING_SUFFIX = ".adopting"
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,30 +88,48 @@ def adopt(
     is stamped as ``plugin``'s. ``owned`` names other worktrees to stamp as
     ``plugin``'s own, so its release removes them and nobody else's does.
     ``error`` is the plugin's error class. Raises it when ``source`` has no
-    ``origin`` URL, or when both it and the store's copy hold work
-    (``conflict``, nothing changed).
+    ``origin`` URL, is a store repo already or (for a plugin with its own
+    namespace) another plugin's 10.x repository, when the store's directory
+    for it exists without a repository in it, or when both it and the
+    store's copy hold work (``conflict``); nothing changed in each case.
+
+    The steps are ordered so a run cut short is finished by running again
+    while the old repository is still in place: its refs are renamed and its
+    worktrees moved and pointed at before the repository itself moves, and
+    once it has moved, the store's next ``ensure`` repairs the worktrees.
     """
     name = _plugin_name(plugin)
     label = cache_origin(source)
     if label is None:
         raise error(f"{source} has no origin URL, so it has no place in the repo store")
+    _refuse_foreign(source, plugin=name, error=error)
     store = RepoStore.for_url(label, plugin=plugin, error=error)
     target = store.path
+    if _same(source, target) or target.is_relative_to(_real(source)):
+        raise error(f"{source} is where the repo store keeps it; nothing to move")
     moves = _worktree_moves(source, worktrees)
     owned = [*owned, *moves.values()]
     with store._locked():
         action: Literal["moved", "replaced", "dropped"] = "moved"
-        if store.exists() and not _same(source, target):
+        if store.exists():
             action = _overlap(store, source, plugin=name, moves=moves, error=error)
             if action == "dropped":
                 return Adopted(target, "dropped")
-        if not _same(source, target):
-            _move(source, target, error=error)
-        _move_worktrees(moves, error=error)
-        _repoint(store, moves)
+        elif target.exists():
+            raise error(
+                f"repo store directory {target} exists but holds no repository; nothing changed",
+                category=ErrorCategory.CONFLICT,
+                hint=f"move {target} aside, then run `untaped setup migrate-dirs` again",
+            )
         if name not in PLAIN_CLONE:
-            _rename_refs(store, name)
-        store._git(["config", "--local", "--unset-all", _OLD_LAYOUT_KEY], check=False)
+            _rename_refs(source, name, error=error)
+        _git(
+            source, ["config", "--local", "--unset-all", _OLD_LAYOUT_KEY], error=error, check=False
+        )
+        _move_worktrees(moves, error=error)
+        _point_admins(source, moves)
+        _move(source, target, error=error)
+        _repoint(store, moves)
         stamped = [path for path in owned if path.is_dir()]
         if stamped or worktree_entries(target):
             store._enable_worktree_config()
@@ -119,14 +140,21 @@ def adopt(
 
 
 def _worktree_moves(source: Path, worktrees: tuple[Path, Path] | None) -> dict[Path, Path]:
-    """Each registered worktree of ``source`` inside the old directory → its new directory."""
+    """Each registered worktree of ``source`` inside the old directory → its new directory.
+
+    One already in the new directory (a run cut short after moving it) maps to itself.
+    """
     if worktrees is None:
         return {}
     old_root, new_root = _real(worktrees[0]), worktrees[1]
     moves = {}
     for entry in worktree_entries(source):
-        if entry.path is not None and _real(entry.path).is_relative_to(old_root):
+        if entry.path is None:
+            continue
+        if _real(entry.path).is_relative_to(old_root):
             moves[entry.path] = new_root / _real(entry.path).relative_to(old_root)
+        elif _real(entry.path).is_relative_to(_real(new_root)):
+            moves[entry.path] = entry.path
     return moves
 
 
@@ -141,7 +169,7 @@ def _overlap(
     """Settle which copy stays when the store already holds ``source``'s repo."""
     target = store.path
     mirror = plugin not in PLAIN_CLONE
-    source_work = _holds_work(source, mirror=mirror, error=error)
+    source_work = _holds_work(source, mirror=mirror, error=error, regenerable=moves)
     target_work = _holds_work(target, mirror=False, error=error)
     if source_work and target_work:
         raise error(
@@ -177,24 +205,36 @@ def _overlap(
     return "replaced"
 
 
-def _holds_work(repo: Path, *, mirror: bool, error: type[UntapedError]) -> bool:
+def _holds_work(
+    repo: Path, *, mirror: bool, error: type[UntapedError], regenerable: Iterable[Path] = ()
+) -> bool:
     """Local branches, a stash or a live worktree holding someone's work.
 
-    ``mirror``: the repo's ``refs/heads`` and unstamped worktrees are a
-    plugin's own (a 10.x github repo), never a user's.
+    ``mirror``: the repo's ``refs/heads`` are a plugin's own (a 10.x github
+    repo), never a user's. A worktree in ``regenerable`` (a sweep's) is
+    never work; any other with no owner or workspace's is.
     """
     roots = ["refs/stash"] if mirror else ["refs/heads", "refs/stash"]
     refs = _git(repo, ["for-each-ref", "--count=1", "--format=%(refname)", *roots], error=error)
     if refs.text.strip():
         return True
-    if mirror:
-        return False
+    skipped = {_real(path) for path in regenerable}
     for entry in worktree_entries(repo):
-        if entry.path is None or not entry.path.is_dir():
+        if entry.path is None or not entry.path.is_dir() or _real(entry.path) in skipped:
             continue
         if entry.owner is None or entry.owner in PLAIN_CLONE:
             return True
     return False
+
+
+def _refuse_foreign(source: Path, *, plugin: str, error: type[UntapedError]) -> None:
+    """A store repo, or workspace's 10.x repo for a plugin with its own namespace, stays put."""
+    config = _git(source, ["config", "--local", "--list"], error=error, check=False).text
+    keys = {line.partition("=")[0] for line in config.splitlines()}
+    if "untaped.store" in keys:
+        raise error(f"{source} is a repo store repository already; nothing changed")
+    if plugin not in PLAIN_CLONE and _OLD_LAYOUT_KEY in keys:
+        raise error(f"{source} is workspace's 10.x repository, not {plugin}'s; nothing changed")
 
 
 def _shallow(repo: Path) -> bool:
@@ -218,13 +258,28 @@ def _copy_private_files(loser: Path, winner: Path) -> None:
 
 
 def _move(source: Path, target: Path, *, error: type[UntapedError]) -> None:
+    """Rename ``source`` to ``target``; across filesystems, copy beside it first, then rename.
+
+    The copy goes to ``<target>.adopting`` and is deleted when it fails (a
+    full disk), so ``target`` never holds half a repository.
+    """
+    partial = target.with_name(target.name + _COPYING_SUFFIX)
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             source.rename(target)
+            return
+        except OSError as exc:
+            if exc.errno != errno.EXDEV:
+                raise
+        shutil.rmtree(partial, ignore_errors=True)
+        try:
+            shutil.copytree(source, partial, symlinks=True)
+            partial.rename(target)
         except OSError:
-            # Another filesystem (a custom git.store_dir): copy, then delete.
-            shutil.move(source, target)
+            shutil.rmtree(partial, ignore_errors=True)
+            raise
+        shutil.rmtree(source)
     except OSError as exc:
         raise error(
             f"could not move {source} to {target}: {exc.strerror or exc}",
@@ -238,6 +293,21 @@ def _move_worktrees(moves: Mapping[Path, Path], *, error: type[UntapedError]) ->
         if not old.is_dir() or new.exists():
             continue
         _move(old, new, error=error)
+
+
+def _point_admins(source: Path, moves: Mapping[Path, Path]) -> None:
+    """Point each moved worktree's admin directory at its new place, before the repo moves.
+
+    Once the repository has moved, ``git worktree repair`` run from it (the
+    store's ``ensure``) can then find every worktree, even if this run stops.
+    """
+    moved = {_real(old): new for old, new in moves.items()}
+    for entry in worktree_entries(source):
+        if entry.path is None:
+            continue
+        new = moved.get(_real(entry.path))
+        if new is not None and (new / ".git").is_file():
+            (entry.admin / "gitdir").write_text(f"{_real(new / '.git')}\n", encoding="utf-8")
 
 
 def _repoint(store: RepoStore, moves: Mapping[Path, Path]) -> None:
@@ -264,12 +334,13 @@ def _repoint(store: RepoStore, moves: Mapping[Path, Path]) -> None:
         store._git(["worktree", "repair", *repaired], check=False)
 
 
-def _rename_refs(store: RepoStore, plugin: str) -> None:
+def _rename_refs(repo: Path, plugin: str, *, error: type[UntapedError]) -> None:
     """Move ``refs/heads/*`` and ``refs/tags/*`` into ``plugin``'s namespace, in one transaction."""
     layout = layout_for(plugin)
-    listed = store._git(
+    listed = _git(
+        repo,
         ["for-each-ref", "--format=%(objectname) %(refname)", "refs/heads", "refs/tags"],
-        capture=True,
+        error=error,
     ).text
     lines = []
     for line in listed.splitlines():
@@ -278,10 +349,17 @@ def _rename_refs(store: RepoStore, plugin: str) -> None:
         new = layout.absolute(f"{kind}/{name}")
         lines += [f"update {new} {oid}\n", f"delete {ref} {oid}\n"]
     if lines:
-        store._git(["update-ref", "--no-deref", "--stdin"], stdin="".join(lines))
+        _git(repo, ["update-ref", "--no-deref", "--stdin"], error=error, stdin="".join(lines))
 
 
-def _git(repo: Path, argv: list[str], *, error: type[UntapedError]) -> GitResult:
+def _git(
+    repo: Path,
+    argv: list[str],
+    *,
+    error: type[UntapedError],
+    check: bool = True,
+    stdin: str | None = None,
+) -> GitResult:
     """A local git command on a bare repository outside the store."""
     try:
         return run_git(
@@ -290,6 +368,8 @@ def _git(repo: Path, argv: list[str], *, error: type[UntapedError]) -> GitResult
             cwd=repo,
             timeout=TIMEOUT,
             capture=True,
+            check=check,
+            stdin=stdin,
             ceiling=True,
             batch_ssh=False,
         )

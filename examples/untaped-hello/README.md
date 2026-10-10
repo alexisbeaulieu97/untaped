@@ -3,7 +3,8 @@
 A minimal, tested plugin for [untaped](https://github.com/alexisbeaulieu97/untaped):
 one command (`untaped hello greet`), one setting (`hello.greeting`), one
 packaged skill and one `untaped setup migrate-dirs` row (moving an older
-version's directory into the plugin's own). Copy this directory to start a plugin of your own.
+version's directory into the plugin's own). Copy this directory to start a
+plugin of your own.
 
 It is not published. In a virtualenv in a copy of this directory,
 `uv pip install untaped . pytest` installs `untaped` from PyPI. To test

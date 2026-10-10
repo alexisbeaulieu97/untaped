@@ -85,8 +85,10 @@ that asks for or reveals a token (`auth set`, `config set ….token
 A `migrate-dirs` row means an older version left directories behind. Run
 `untaped setup migrate-dirs --dry-run --format json`, show the user what
 would move or be deleted, and run it with `--yes` once they agree, before
-any `config migrate`. Add `--dissociate` only when they confirm no clone
-outside their workspaces borrows from `~/.untaped/repositories`.
+any `config migrate`. If they want the repo store outside its default, they
+set `git.store_dir` (to a new directory) before that run. Add
+`--dissociate` only when they confirm no clone outside their workspaces
+borrows from `~/.untaped/repositories`.
 
 ## Safety
 

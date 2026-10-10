@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import shutil
 import subprocess
@@ -213,7 +214,8 @@ def test_the_kept_copys_own_files_win_and_an_unreadable_one_is_skipped(
     (github / "untaped-github.json").write_text("{not json", encoding="utf-8")
     (github / "untaped-workspace.json").write_text('{"history": "partial"}\n', encoding="utf-8")
 
-    assert adopt(github, plugin="github", error=StoreError).action == "dropped"
+    moves = (tmp_path / "github-cache" / "worktrees", tmp_path / "new")
+    assert adopt(github, plugin="github", error=StoreError, worktrees=moves).action == "dropped"
 
     assert not (target / "untaped-github.json").exists()
     assert json.loads((target / "untaped-workspace.json").read_text()) == {"history": "complete"}
@@ -256,3 +258,103 @@ def test_a_move_that_fails_is_the_plugins_error(
 
 def test_a_missing_root_counts_as_gone(tmp_path: Path) -> None:
     assert remove_if_emptied(tmp_path / "nowhere")
+
+
+def test_a_store_directory_without_a_repository_is_refused(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    source, _ = _github_10x(remote, tmp_path / "github-cache")
+    (_store_repo() / "stray").mkdir(parents=True)
+
+    with pytest.raises(StoreError, match="holds no repository") as caught:
+        adopt(source, plugin="github", error=StoreError)
+
+    assert caught.value.category == ErrorCategory.CONFLICT
+    assert source.is_dir() and not (_store_repo() / "app.git").exists()
+
+
+def test_a_copy_across_filesystems_that_fails_leaves_no_half_repository(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source, _ = _github_10x(remote, tmp_path / "github-cache")
+    real_rename = Path.rename
+
+    def cross_device(self: Path, target: Path) -> Path:
+        if self == source:
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        return real_rename(self, target)
+
+    def disk_full(src: Path, dst: Path, **_kwargs: object) -> None:
+        Path(dst).mkdir(parents=True)
+        (Path(dst) / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(Path, "rename", cross_device)
+    monkeypatch.setattr(shutil, "copytree", disk_full)
+
+    with pytest.raises(StoreError, match="No space left"):
+        adopt(source, plugin="github", error=StoreError)
+
+    assert source.is_dir()
+    assert not _store_repo().exists()
+    assert not _store_repo().with_name("app.git.adopting").exists()
+
+
+def test_a_run_cut_short_before_the_repo_moved_is_finished_by_the_next(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "github-cache"
+    source, _ = _github_10x(remote, root)
+    new_root = tmp_path / "plugins" / "github" / "worktrees"
+    moves = (root / "worktrees", new_root)
+    real_rename = Path.rename
+
+    def crash(self: Path, target: Path) -> Path:
+        if self == source:
+            raise OSError(errno.EIO, "Input/output error")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", crash)
+    with pytest.raises(StoreError):
+        adopt(source, plugin="github", error=StoreError, worktrees=moves)
+    monkeypatch.setattr(Path, "rename", real_rename)
+
+    assert (new_root / "sweep-1").is_dir()  # the worktree moved first
+    assert adopt(source, plugin="github", error=StoreError, worktrees=moves).action == "moved"
+
+    moved = new_root / "sweep-1"
+    assert git(moved, "rev-parse", "HEAD", bare=False).strip() == remote.oid("main")
+    assert git(moved, "config", "--worktree", "untaped.owner", bare=False).strip() == "github"
+    assert "refs/untaped/github/heads/main" in all_refs(_store_repo())
+
+
+def test_a_store_repo_or_another_plugins_repo_is_refused(remote: GitRemote, tmp_path: Path) -> None:
+    tree = tmp_path / "ws" / "app"
+    workspace = _workspace_10x(remote, tmp_path / "workspace-cache", tree)
+
+    with pytest.raises(StoreError, match="workspace's 10\\.x repository"):
+        adopt(workspace, plugin="github", error=StoreError)
+
+    adopt(workspace, plugin="workspace", error=StoreError, owned=[tree])
+    copy = tmp_path / "copy.git"
+    shutil.copytree(_store_repo(), copy, symlinks=True)
+    with pytest.raises(StoreError, match="a repo store repository already"):
+        adopt(copy, plugin="workspace", error=StoreError)
+
+
+def test_a_hand_added_worktree_of_a_github_repo_is_work(remote: GitRemote, tmp_path: Path) -> None:
+    tree = tmp_path / "ws" / "app"
+    adopt(_workspace_10x(remote, tmp_path / "a", tree), plugin="workspace", error=StoreError)
+    root = tmp_path / "github-cache"
+    github, _ = _github_10x(remote, root)
+    mine = tmp_path / "mine"
+    git(github, "worktree", "add", "--quiet", "--detach", str(mine), "main")
+
+    with pytest.raises(StoreError, match="both hold work"):
+        adopt(
+            github,
+            plugin="github",
+            error=StoreError,
+            worktrees=(root / "worktrees", tmp_path / "n"),
+        )
+    assert git(mine, "rev-parse", "HEAD", bare=False).strip() == remote.oid("main")

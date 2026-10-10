@@ -9,8 +9,10 @@ still names in config.yml) into the git plugin's repo store with
 to ``~/.untaped/plugins/github/worktrees/``, stamped as github's (no refspec).
 A repository the store already holds is settled by the store's overlap rule.
 A 10.x repository is shallow; it stays readable and the first ``github cache
-sync`` fetches its history once. (``github.corpus``, the 9.x corpus's
-deletion, is a ``delete_migration`` in the plugin's spec.)
+sync`` fetches its history once. A root that is, holds or lies inside the
+repo store (or untaped's own directories) is a ``keep`` row and stays.
+(``github.corpus``, the 9.x corpus's deletion, is a ``delete_migration`` in
+the plugin's spec.)
 """
 
 from __future__ import annotations
@@ -19,15 +21,26 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from untaped.sdk import (
+    MigrationOptions,
     MigrationOutcome,
     MigrationRow,
+    UntapedError,
     cache_origin,
     dir_bytes,
     old_dirs,
     plugin_dir,
     plural,
+    shown_path,
+    unsafe_dir,
 )
-from untaped_git.api import RepoStore, adopt, bare_repos, remove_if_emptied
+from untaped_git.api import (
+    RepoStore,
+    adopt,
+    bare_repos,
+    overlaps_store,
+    remove_if_emptied,
+    store_root,
+)
 from untaped_github import SPEC
 from untaped_github.errors import GitCorpusError
 
@@ -39,14 +52,33 @@ _ID = "github.cache"
 
 
 def roots() -> list[Path]:
-    """The 10.x cache roots: the default and any custom ``github.cache_dir`` still configured."""
-    return old_dirs(DEFAULT_ROOT, "github", "cache_dir")
+    """The 10.x cache roots: the default and any custom ``github.cache_dir`` still configured.
+
+    ``github.corpus_path``, the name before 10.1, counts too.
+    """
+    found = old_dirs(DEFAULT_ROOT, "github", "cache_dir")
+    return [
+        *found,
+        *(path for path in old_dirs(DEFAULT_ROOT, "github", "corpus_path") if path not in found),
+    ]
 
 
-def preview_cache() -> Sequence[MigrationRow]:
+def refused(root: Path) -> str | None:
+    """Why ``root`` is never moved whole, or ``None``."""
+    if overlaps_store(root):
+        return (
+            f"it overlaps the repo store ({shown_path(store_root())}): set git.store_dir elsewhere"
+        )
+    return unsafe_dir(root)
+
+
+def preview_cache(options: MigrationOptions) -> Sequence[MigrationRow]:
     rows: list[MigrationRow] = []
     shallow = 0
     for root in roots():
+        if root.is_dir() and (reason := refused(root)) is not None:
+            rows.append(MigrationRow(action="keep", source=str(root), detail=f"kept: {reason}"))
+            continue
         repos = bare_repos(root, skip=(_WORKTREES,))
         worktrees = _worktrees(root)
         if not root.is_dir() or (not repos and not worktrees):
@@ -60,7 +92,7 @@ def preview_cache() -> Sequence[MigrationRow]:
             MigrationRow(
                 action="move",
                 source=str(root),
-                destination="the repo store",
+                destination=str(store_root()),
                 detail=(
                     f"{plural(len(repos), 'repo')}; refs/heads/* and refs/tags/* renamed to "
                     "refs/untaped/github/*"
@@ -71,7 +103,7 @@ def preview_cache() -> Sequence[MigrationRow]:
                         else ""
                     )
                 ),
-                bytes=dir_bytes(root) - sum(dir_bytes(path) for path in worktrees),
+                bytes=_size(root, options) - sum(_size(path, options) for path in worktrees),
             )
         )
         if worktrees:
@@ -81,7 +113,7 @@ def preview_cache() -> Sequence[MigrationRow]:
                     source=str(root / _WORKTREES),
                     destination=str(plugin_dir(SPEC) / _WORKTREES),
                     detail=f"{plural(len(worktrees), 'worktree')}, repaired, stamped as github's",
-                    bytes=sum(dir_bytes(path) for path in worktrees),
+                    bytes=sum(_size(path, options) for path in worktrees),
                 )
             )
     if shallow:
@@ -102,27 +134,28 @@ def apply_cache() -> Sequence[MigrationOutcome]:
     left: list[str] = []
     seen = False
     for root in roots():
-        if not root.is_dir():
+        if not root.is_dir() or refused(root) is not None:
             continue
         seen = True
         for repo in bare_repos(root, skip=(_WORKTREES,)):
-            _rename_metadata(repo)
             try:
+                _rename_metadata(repo)
                 adopted = adopt(
                     repo,
                     plugin=SPEC,
                     error=GitCorpusError,
                     worktrees=(root / _WORKTREES, plugin_dir(SPEC) / _WORKTREES),
                 )
-            except GitCorpusError as exc:
-                failures.append(f"{repo}: {exc}")
+            except (UntapedError, OSError) as exc:
+                reason = exc.strerror if isinstance(exc, OSError) and exc.strerror else exc
+                failures.append(f"{shown_path(repo)}: {reason}")
                 continue
             if adopted.action == "dropped":
                 dropped += 1
             else:
                 moved += 1
         if not remove_if_emptied(root):
-            left.append(str(root))
+            left.append(shown_path(root))
     if not seen:
         return [MigrationOutcome(id=_ID, action="unchanged", detail="no 10.x sweep cache")]
     parts = [f"moved {plural(moved, 'repo')} into the repo store"]
@@ -133,6 +166,10 @@ def apply_cache() -> Sequence[MigrationOutcome]:
         parts.append(f"kept {', '.join(left)}: something other than repositories is left there")
     action = "moved" if not failures else ("partial" if moved or dropped else "failed")
     return [MigrationOutcome(id=_ID, action=action, detail="; ".join(parts))]
+
+
+def _size(path: Path, options: MigrationOptions) -> int:
+    return dir_bytes(path) if options.measure else 0
 
 
 def _worktrees(root: Path) -> list[Path]:

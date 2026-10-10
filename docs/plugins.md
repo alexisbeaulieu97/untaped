@@ -241,11 +241,17 @@ SPEC = PluginSpec(
 ```
 
 `preview(ctx, options)` only reads: it returns `MigrationRow`s (`action`
-`move`, `delete`, `keep` or `then`, with `source`, `destination`, `detail`
-and `bytes`), none once there is nothing left, and must work with no
-settings (`ctx.settings` is `None` when yours don't validate). `apply(ctx,
-options)` does the work and returns one `MigrationOutcome` per row it ran; it
+`move`, `delete`, `keep` or `then`, with absolute `source` and
+`destination` paths, `detail` and `bytes`), none once there is nothing left,
+and must work with no settings (`ctx.settings` is `None` when yours don't
+validate); with `options.measure` false (doctor) it leaves `bytes` at 0.
+`apply(ctx, options)` does the work and returns its `MigrationOutcome`s; it
 runs again on every `migrate-dirs`, so make it do nothing the second time.
+Core applies nothing of a migration whose preview raised, nor of two
+migrations when one would delete a directory the other moves or keeps.
+`unsafe_dir(path)` says why a directory must never go whole (it holds home
+or untaped's own files, or is a symlink); `delete_migration` keeps such a
+path, and any its `guard` refuses, as a `keep` row.
 Move data into `plugin_dir(SPEC)`. An id is `<plugin>.<noun>`; a malformed
 row, an id of another shape or a repeated one quarantines the plugin
 (`bad-migration`, `duplicate-migration`). `delete_migration` is the whole

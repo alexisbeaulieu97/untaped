@@ -63,11 +63,11 @@ def _workspace() -> Sequence[Contract]:
     return (GithubRepos(),)
 
 
-def _cache_preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
+def _cache_preview(_ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
     """The 10.x sweep cache's move into the repo store (imports lazily)."""
     from untaped_github.infrastructure.migrations import preview_cache  # noqa: PLC0415
 
-    return preview_cache()
+    return preview_cache(options)
 
 
 def _cache_apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:

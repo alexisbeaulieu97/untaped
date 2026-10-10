@@ -11,6 +11,7 @@ The closed :data:`__all__` keeps the boundary explicit.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Collection, Sequence
 from pathlib import Path
 
@@ -42,8 +43,10 @@ __all__ = [
     "bare_repos",
     "default_branch",
     "ls_remote",
+    "overlaps_store",
     "remove_if_emptied",
     "store_key",
+    "store_root",
     "validate_git_url",
 ]
 
@@ -62,6 +65,21 @@ def default_branch(url: str) -> str | None:
     """The branch ``url``'s ``HEAD`` points at, or ``None`` (``ls-remote --symref``)."""
     root = git_settings().store_dir.expanduser()
     return remote.default_branch(url, root=root, auth=resolve_host)
+
+
+def store_root() -> Path:
+    """The repo store's directory (``git.store_dir``, ``~`` expanded)."""
+    return git_settings().store_dir.expanduser()
+
+
+def overlaps_store(path: Path) -> bool:
+    """Whether ``path`` is the repo store's directory, lies inside it or holds it.
+
+    An older version's directory that does is never moved or deleted whole:
+    a custom root configured to the same place as ``git.store_dir``.
+    """
+    real, root = Path(os.path.realpath(path.expanduser())), Path(os.path.realpath(store_root()))
+    return real == root or real.is_relative_to(root) or root.is_relative_to(real)
 
 
 def bare_repos(root: Path, *, skip: Collection[str] = ()) -> list[Path]:
