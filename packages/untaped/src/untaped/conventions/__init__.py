@@ -19,6 +19,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
 from untaped.bootstrap import SHELL_SPEC, build_root_app, composition
+from untaped.conventions.blob_reader import blob_reader_violations
 from untaped.conventions.help_tree import help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.layering import layering_violations
@@ -47,8 +48,8 @@ def plugin_violations(
 
     Builds the root once (from discovered candidates), finds the
     registered plugin, and runs help_tree, stability, messages, structure,
-    layering, terminal-boundary and import-boundary over its command subtree
-    and package. The private-test-import check runs only when ``tests_dir`` is
+    layering, terminal-boundary, blob-reader and import-boundary over its
+    command subtree and package. The private-test-import check runs only when ``tests_dir`` is
     given. ``candidates`` replaces entry-point discovery (as in
     :func:`untaped.bootstrap.compose_root`), so a test can check a provider
     that is not installed. Lines are ``<where>::<rule>::<detail>``, sorted. A
@@ -81,6 +82,7 @@ def plugin_violations(
             *structure_violations(spec, package, source_dir, files, tests_dir=tests_dir),
             *layering_violations(package, source_dir, files),
             *terminal_boundary_violations(source_dir, files),
+            *blob_reader_violations(package, source_dir, files),
             *import_boundary_violations(
                 package,
                 source_dir,
