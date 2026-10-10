@@ -470,13 +470,9 @@ def owner_requirement(
         parsed = _parse_requirement(line)
         if parsed is None or parsed.marker is None or canonicalize_name(parsed.name) != wanted:
             continue
-        try:
-            if parsed.marker.evaluate({"extra": owner}) and not parsed.marker.evaluate(
-                {"extra": ""}
-            ):
-                return parsed
-        except UndefinedEnvironmentName:
-            continue
+        # Every other marker variable has a default, so only ``extra`` decides.
+        if parsed.marker.evaluate({"extra": owner}) and not parsed.marker.evaluate({"extra": ""}):
+            return parsed
     return None
 
 

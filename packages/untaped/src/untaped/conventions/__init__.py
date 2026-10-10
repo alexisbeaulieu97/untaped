@@ -15,7 +15,6 @@ from collections.abc import Sequence
 from importlib.util import find_spec
 from pathlib import Path
 
-from packaging.markers import UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
@@ -148,10 +147,7 @@ def _added_by(requirement: Requirement, extras: frozenset[str]) -> bool:
     marker = requirement.marker
     if marker is None:
         return False
-    try:
-        return any(marker.evaluate({"extra": extra}) for extra in extras)
-    except UndefinedEnvironmentName:
-        return False
+    return any(marker.evaluate({"extra": extra}) for extra in extras)
 
 
 def _mentions_extra(marker: str) -> bool:

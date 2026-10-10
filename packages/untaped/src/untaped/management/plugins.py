@@ -146,7 +146,8 @@ def build_root_plugin_app(
 
         The package composes and follows the conventions as written: fill the
         provider's stubs, add samples to its assert_fills test, then run
-        plugin check NAME on the installed package.
+        plugin check NAME on the installed package. A plugin with only
+        commands starts from the repository's examples/untaped-hello instead.
         """
         from untaped.management.plugin_new import scaffold  # noqa: PLC0415 - imports contracts
 

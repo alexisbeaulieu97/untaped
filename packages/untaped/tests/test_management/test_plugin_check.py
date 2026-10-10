@@ -12,6 +12,8 @@ from test_management.contract_plugins import CORE_RANGE, candidates
 from untaped import bootstrap
 from untaped.contracts._registry import doctor_rows
 from untaped.management.plugin_check import PluginCheckRow, check_plugins, report_check_rows
+from untaped.plugins.registry import PluginCandidate
+from untaped.testing import assert_fills, compose_with, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 
@@ -51,6 +53,7 @@ def test_a_provider_that_fills_its_contract_passes_every_check(contract_plugins_
         ("conventions", "conventions", "pass", "no violations"),
         ("conformance", "rack.item_source", "pass", "rack's conformance checks pass"),
         ("live", "rack.item_source.items", "pass", "2 items"),
+        ("live", "rack.item_source.named", "pass", "skipped: it needs arguments"),
         ("fills", "rack.item_source", "pass", "2 live items"),
         ("schema", "rack.item_source", "pass", "tested against this owner's schema"),
     ]
@@ -136,3 +139,63 @@ def test_doctor_reports_owner_schema_drift(contract_plugins_site: Path) -> None:
     assert drift[0].status == "warn"
     _record(contract_plugins_site, _current_hash())
     assert not [row for row in doctor_rows() if row.title == "owner-schema-drift"]
+
+
+def test_a_provider_that_is_not_ready_skips_the_calls(contract_plugins_site: Path) -> None:
+    _bin().waiting = True
+    rows = _rows(_check())
+    waiting = "skipped: not ready: no bins yet (set bin.bins)"
+    assert ("conformance", "rack.item_source", "pass", waiting) in rows
+    assert ("live", "rack.item_source.items", "pass", waiting) in rows
+
+
+def test_a_convention_violation_is_a_failed_row(contract_plugins_site: Path) -> None:
+    (contract_plugins_site / "untaped_bin" / "leak.py").write_text(
+        "from untaped.bootstrap import composition\n", encoding="utf-8"
+    )
+    [violation] = [row for row in _check() if row.check == "conventions"]
+    assert violation.status == "fail"
+    assert violation.title == "import-boundary"
+    assert "untaped.bootstrap" in violation.detail
+
+
+def test_a_quarantined_plugin_fails_registration(contract_plugins_site: Path) -> None:
+    broken = PluginCandidate(distribution="untaped-gone", name="gone", target="untaped_gone:SPEC")
+    found = [*candidates(), broken]
+    result = bootstrap.compose_root(candidates=found)
+    [row] = check_plugins(result, found, "gone")
+    assert (row.check, row.status) == ("registration", "fail")
+
+
+def test_an_owner_whose_contracts_fail_is_reported(contract_plugins_site: Path) -> None:
+    importlib.import_module("untaped_rack").BROKEN = True
+    rows = _rows(_check("rack"))
+    assert ("contracts", "rack", "fail", "its contracts function fails; see doctor") in rows
+
+
+def test_the_command_prints_a_checklist_and_exits_one_on_a_failure(
+    contract_plugins_site: Path,
+) -> None:
+    _record(contract_plugins_site, _current_hash())
+    app = bootstrap.build_root_app(candidates=candidates()).meta
+    passed = invoke_cli(app, ["plugin", "check", "bin"])
+    assert passed.exit_code == 0, passed.output
+    assert "rack.item_source.items" in passed.stdout
+    assert "plugin check: 6 pass" in passed.stderr
+    _bin().broken = True
+    app = bootstrap.build_root_app(candidates=candidates()).meta
+    failed = invoke_cli(app, ["plugin", "check", "bin", "--format", "json"])
+    assert failed.exit_code == 1
+    assert {row["status"] for row in json.loads(failed.stdout)} == {"pass", "fail"}
+
+
+def test_assert_fills_finds_the_installed_plugin_and_its_owner(
+    contract_plugins_site: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("untaped.plugins.registry.discover_candidates", lambda: candidates())
+    with compose_with() as result:
+        assert sorted(plugin.spec.name for plugin in result.plugins) == ["bin", "rack"]
+    box = importlib.import_module("untaped_bin.adapters.rack").Box
+    assert_fills(_bin(), samples=[box(id=3, label="pens")])
+    recorded = json.loads((contract_plugins_site / "untaped_bin" / "fills.json").read_text("utf-8"))
+    assert recorded["fills"] == {"rack.item_source": _current_hash()}

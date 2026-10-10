@@ -21,9 +21,15 @@ RACK = {
 
         from untaped.sdk import PluginSpec
 
+        #: A test sets it to make ``contracts`` fail.
+        BROKEN = False
+
 
         def _contracts():
             from untaped_rack.api import ItemSource
+
+            if BROKEN:
+                raise RuntimeError("the rack fell over")
 
             return (ItemSource,)
 
@@ -90,7 +96,7 @@ BIN = {
 
         from typing import ClassVar
 
-        from untaped.contracts import Record
+        from untaped.contracts import NotReady, Record
         from untaped_rack.api import Item, ItemSource
 
 
@@ -103,6 +109,10 @@ BIN = {
             boxes: ClassVar[list[Box]] = [Box(id=1, label="tools"), Box(id=2, label="toys")]
             nonconforming: ClassVar[bool] = False
             broken: ClassVar[bool] = False
+            waiting: ClassVar[bool] = False
+
+            def ready(self) -> NotReady | None:
+                return NotReady("no bins yet", setting="bin.bins") if type(self).waiting else None
 
             def to_item(self, item: Box) -> Item:
                 return Item(name=item.label)
@@ -111,6 +121,9 @@ BIN = {
                 if type(self).broken:
                     raise RuntimeError("the bin is locked")
                 return [self.to_item(box) for box in type(self).boxes]
+
+            def named(self, name: str, *, limit: int = 10) -> list[Item]:
+                return [item for item in self.items() if item.name == name][:limit]
         ''',
 }
 
