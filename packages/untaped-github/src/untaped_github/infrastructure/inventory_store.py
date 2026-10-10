@@ -15,7 +15,8 @@ from datetime import datetime
 from pathlib import Path
 
 from untaped.sdk import atomic_write, file_lock
-from untaped_github.domain.inventory import RepoInventory, RepositoryInventoryItem
+from untaped_github.domain.inventory import RepoInventory
+from untaped_github.domain.models import GithubRepo
 from untaped_github.errors import GithubError
 
 _VERSION = 1
@@ -39,7 +40,7 @@ class JsonInventoryStore:
             if refreshed_at is not None and refreshed_at.tzinfo is None:
                 return None  # a naive timestamp cannot be compared with now(UTC)
             return RepoInventory(
-                repos=tuple(RepositoryInventoryItem.model_validate(row) for row in data["repos"]),
+                repos=tuple(GithubRepo.model_validate(row) for row in data["repos"]),
                 refreshed_at=refreshed_at,
                 scope_key=str(data["scope_key"]),
             )

@@ -3,18 +3,19 @@
 The cache is keyed by scope (GitHub host plus orgs and teams), so changing the
 scope or profile refetches instead of serving another org's repositories.
 Refreshes are serialized by the store's lock; a waiter re-reads the cache and
-reuses a refresh another process just finished.
+reuses a refresh another process just finished. A failed refresh raises: the
+contract answer cache in front of :class:`GithubRepos` is the only place stale
+rows are served from.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
-from untaped.sdk import UntapedError
 from untaped_github.application.ports import InventoryStore
-from untaped_github.domain.inventory import RepoInventory, RepositoryInventoryItem
+from untaped_github.domain.inventory import RepoInventory
+from untaped_github.domain.models import GithubRepo
 
 __all__ = ["CachedRepoInventory"]
 
@@ -29,7 +30,7 @@ class CachedRepoInventory:
     def __init__(
         self,
         store: InventoryStore,
-        fetch: Callable[[], tuple[RepositoryInventoryItem, ...]],
+        fetch: Callable[[], tuple[GithubRepo, ...]],
         *,
         scope_key: str,
         max_age: timedelta,
@@ -52,12 +53,7 @@ class CachedRepoInventory:
                 cached = self._usable(self._store.load())
                 if cached is not None and self._fresh(cached):
                     return cached
-            try:
-                repos = self._fetch()
-            except UntapedError as exc:
-                if refresh is None and cached is not None:
-                    return replace(cached, error=str(exc) or type(exc).__name__)
-                raise
+            repos = self._fetch()
             inventory = RepoInventory(
                 repos=repos, refreshed_at=self._now(), scope_key=self._scope_key
             )

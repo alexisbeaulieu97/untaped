@@ -57,7 +57,8 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   stand alone: an invalid row is dropped and the rest kept, where any other
   method's invalid item fails the provider's whole answer.
 - **The owner's model** is the item type parameter's default, an `Issued`
-  record with a kind. A provider issuing its own record type passes it
+  record with a kind (`Issued` and its `Source` are also in `untaped.sdk`, so
+  an owner's state model can hold issued records without loading contracts). A provider issuing its own record type passes it
   (`BookSource[Volume]`) directly, never through a generic base of its own,
   and fills every `@bridge` method; the bridge stamps `source` with the
   provider's plugin and record. A provider of the owner's model fills no
@@ -99,7 +100,10 @@ returned something else). A provider method
 the contract no longer has (`unused-method`) is simply never called.
 
 Each ask goes to every provider that fills the method. One not configured in
-the profile is skipped silently; with none ready the command exits 4.
+the profile is skipped silently; with none ready `gather` raises
+`NoProviderReady` (exit 4), whose `not_ready` maps each plugin to why it
+isn't ready, so an owner can turn it into its own error (workspace reports a
+repo name nobody could look up as not found, naming the setting to set).
 `select_one` then decides:
 
 - A ranked provider is above every unranked one; unranked ones are never

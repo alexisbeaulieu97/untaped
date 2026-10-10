@@ -27,14 +27,19 @@ stdout line; `-q` prints only the path. Other formats print records only.
 
 ## Piping
 
-Pipe `github.repo`, `github.repo_hit` or `github.sweep_repo` records to
-`create` or `add` with `--stdin`. Each record's full name (`full_name`, else
-`repo`) is resolved through the inventory, so `workspace.protocol` and the
-default branch apply; its clone URL is used when the inventory lacks it:
+Pipe repo records to `create` or `add` with `--stdin`: `workspace.repo`, or
+any kind a repo provider reads (`github.repo`, `github.sweep_repo`,
+`github.corpus_repo`). The plugin whose record it is turns it into a repo
+without an API call (GitHub applies `github.git_protocol`); a record without a
+kind, or of a kind no provider reads, exits 2:
 
 ```bash
 untaped github repos list --team acme/platform --format pipe | untaped workspace create NAME --stdin
 ```
+
+`repos resolve` writes `workspace.resolve_outcome` rows: `updated` (with
+`detail` "was OLD-URL"), `unchanged`, `skipped` (a typed URL, or its provider
+not installed or ready) or `failed`.
 
 `run --stdin` takes `status`, `create`/`add` or `run` rows (or repo
 names) to choose the repos it runs in; see

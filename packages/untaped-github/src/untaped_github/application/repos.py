@@ -11,7 +11,7 @@ from untaped_github.application.inventory import (
 )
 from untaped_github.application.ports import GithubRepositoryInventoryService
 from untaped_github.application.scopes import TeamScope
-from untaped_github.domain import ArchivedMode, RepoListResult, archived_allows
+from untaped_github.domain import ArchivedMode, GithubRepo, archived_allows
 from untaped_github.domain.repo_filters import compile_repo_pattern
 
 
@@ -38,24 +38,21 @@ class ListRepos:
         *,
         orgs: tuple[str, ...] = (),
         team_scopes: tuple[TeamScope, ...] = (),
-    ) -> Iterator[RepoListResult]:
-        rows = (
-            RepoListResult.model_validate(row.model_dump())
-            for row in ResolveRepositoryInventory(self._repos)(
-                RepositoryInventoryScope(orgs=orgs, teams=team_scopes)
-            )
+    ) -> Iterator[GithubRepo]:
+        rows = ResolveRepositoryInventory(self._repos)(
+            RepositoryInventoryScope(orgs=orgs, teams=team_scopes)
         )
         matcher = _compile_matcher(filters)
         filtered = (row for row in rows if _matches(row, filters=filters, matcher=matcher))
-        deduped = {row.repo: row for row in filtered}
-        yield from sorted(deduped.values(), key=lambda row: row.repo.casefold())
+        deduped = {row.full_name: row for row in filtered}
+        yield from sorted(deduped.values(), key=lambda row: row.full_name.casefold())
 
 
 def _matches(
-    row: RepoListResult,
+    row: GithubRepo,
     *,
     filters: RepoListFilters,
-    matcher: Callable[[RepoListResult], bool] | None,
+    matcher: Callable[[GithubRepo], bool] | None,
 ) -> bool:
     if not archived_allows(filters.archived, row.archived):
         return False
@@ -64,7 +61,7 @@ def _matches(
     return matcher(row) if matcher is not None else True
 
 
-def _compile_matcher(filters: RepoListFilters) -> Callable[[RepoListResult], bool] | None:
+def _compile_matcher(filters: RepoListFilters) -> Callable[[GithubRepo], bool] | None:
     pattern = filters.pattern
     if not pattern:
         return None

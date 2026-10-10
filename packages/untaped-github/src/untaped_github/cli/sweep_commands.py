@@ -290,17 +290,7 @@ def _validate_content_patterns(corpus: GitCorpus, query: SweepQuery) -> None:
 
 
 def _repo_records(rows: tuple[RepoSweepOutcome, ...]) -> list[dict[str, object]]:
-    return [
-        {
-            "repo": row.repo,
-            "clone_url": row.clone_url,
-            "refs_matched": list(row.refs_matched),
-            "hits": dict(row.hits),
-            "owners": list(row.owners),
-            "fetched_at": row.fetched_at,
-        }
-        for row in rows
-    ]
+    return [row.model_dump(mode="json") for row in rows]
 
 
 def _match_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
@@ -332,14 +322,14 @@ def _file_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
 def _display_rows(
     rows: list[dict[str, object]], *, query: SweepQuery, fmt: OutputFormat
 ) -> list[dict[str, object]]:
-    """Table rows: a count column per predicate after ``repo``, lists joined by commas."""
+    """Table rows: a count column per predicate after ``full_name``, lists joined by commas."""
     if fmt != "table":
         return rows
     labels = query.labels()
     display: list[dict[str, object]] = []
     for row in rows:
         hits = row["hits"]
-        display_row: dict[str, object] = {"repo": row["repo"]}
+        display_row: dict[str, object] = {"full_name": row["full_name"]}
         for label in labels:
             display_row[label] = hits.get(label, 0)  # type: ignore[attr-defined]
         display_row.update(row)
@@ -356,7 +346,7 @@ def _default_columns(*, query: SweepQuery, owners: bool, fmt: OutputFormat) -> l
     if fmt != "table":
         return None
     negated = ("not-grep:", "lacks-file:")
-    columns = ["repo", *(label for label in query.labels() if not label.startswith(negated))]
+    columns = ["full_name", *(label for label in query.labels() if not label.startswith(negated))]
     if query.refs.beyond_default():
         columns.append("refs_matched")
     if owners:

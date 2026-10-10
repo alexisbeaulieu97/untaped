@@ -8,7 +8,6 @@ from untaped_workspace.domain.models import (
     RepoArg,
     RepoRelease,
     RepoSpec,
-    ResolvedRepo,
     StoredRepo,
     StoreUse,
     WorkspaceRecord,
@@ -20,7 +19,9 @@ from untaped_workspace.domain.naming import (
     looks_like_url,
     repo_identity,
     repo_key,
+    typed_repo,
     validate_workspace_name,
+    workspace_match,
 )
 from untaped_workspace.domain.safety import (
     archive_blockers,
@@ -38,7 +39,6 @@ __all__ = [
     "RepoArg",
     "RepoRelease",
     "RepoSpec",
-    "ResolvedRepo",
     "StoreUse",
     "StoredRepo",
     "WorkspaceRecord",
@@ -52,6 +52,8 @@ __all__ = [
     "releasable_branches",
     "repo_identity",
     "repo_key",
+    "typed_repo",
     "unpushed_branch_blocker",
     "validate_workspace_name",
+    "workspace_match",
 ]

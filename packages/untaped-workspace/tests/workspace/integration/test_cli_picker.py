@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import Picked, PickItem, PickRequest, PickResult
+from untaped.testing.git import GitRemote
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from untaped_github import api as github_api
 from untaped_github.api import RepoInventory, RepositoryInventoryItem
@@ -17,7 +18,7 @@ from untaped_workspace.domain import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import git
 
-pytestmark = pytest.mark.usefixtures("workspace_env")
+pytestmark = pytest.mark.usefixtures("workspace_env", "composed")
 run = CliInvoker().invoke
 
 
@@ -31,9 +32,9 @@ def _pick(title: str, *urls: str) -> PickResult:
 
 
 def test_create_without_repos_opens_the_picker(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     backend = ScriptedPromptBackend(picks=[_pick("J-1", url)])
     result = run(app, ["create"], interactive=True, prompt_backend=backend)
     assert result.exit_code == 0, result.output
@@ -116,17 +117,17 @@ def test_occupied_name_is_refused_before_the_picker(workspace_env: Path) -> None
     assert backend.calls == []
 
 
-def test_repo_flags_without_a_name_is_a_usage_error(make_upstream: Callable[..., Path]) -> None:
-    result = run(app, ["create", "--repo", str(make_upstream("api"))], interactive=True)
+def test_repo_flags_without_a_name_is_a_usage_error(make_upstream: Callable[..., GitRemote]) -> None:
+    result = run(app, ["create", "--repo", make_upstream("api").url], interactive=True)
     assert result.exit_code == 2
     assert "workspace name is required" in result.output
 
 
-def test_repo_flags_skip_the_picker(make_upstream: Callable[..., Path]) -> None:
+def test_repo_flags_skip_the_picker(make_upstream: Callable[..., GitRemote]) -> None:
     backend = ScriptedPromptBackend()
     result = run(
         app,
-        ["create", "J-1", "--repo", str(make_upstream("api"))],
+        ["create", "J-1", "--repo", make_upstream("api").url],
         interactive=True,
         prompt_backend=backend,
     )
@@ -134,9 +135,9 @@ def test_repo_flags_skip_the_picker(make_upstream: Callable[..., Path]) -> None:
     assert backend.calls == []
 
 
-def test_add_opens_the_picker(make_upstream: Callable[..., Path], workspace_env: Path) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
-    web = str(make_upstream("web"))
+def test_add_opens_the_picker(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> None:
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
+    web = make_upstream("web").url
     backend = ScriptedPromptBackend(picks=[_pick("", web)])
     result = run(app, ["add", "J-1"], interactive=True, prompt_backend=backend)
     assert result.exit_code == 0, result.output
@@ -161,8 +162,8 @@ def test_create_picker_allows_confirming_no_repos(workspace_env: Path) -> None:
     assert [request.allow_empty for request in backend.requests] == [True]
 
 
-def test_add_picker_requires_a_repo(make_upstream: Callable[..., Path]) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+def test_add_picker_requires_a_repo(make_upstream: Callable[..., GitRemote]) -> None:
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     backend = _Capture(None)
     run(app, ["add", "J-1"], interactive=True, prompt_backend=backend)
     assert [request.allow_empty for request in backend.requests] == [False]
@@ -234,9 +235,9 @@ def test_add_does_not_offer_repos_already_in_the_workspace(
 
 
 def test_create_picker_prefills_the_name_and_flag_defaults(
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
 ) -> None:
-    backend = _Capture(_pick("J-1", str(make_upstream("api"))))
+    backend = _Capture(_pick("J-1", make_upstream("api").url))
     result = run(
         app,
         ["create", "J-1", "--base", "main", "--branch", "hotfix"],
@@ -254,9 +255,9 @@ def test_create_picker_prefills_the_name_and_flag_defaults(
 
 
 def test_read_only_pick_is_a_detached_checkout(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     settings = {"mode": "read-only", "base": "", "branch": ""}
     pick = PickResult(
         title="J-1",
@@ -274,7 +275,7 @@ def test_read_only_pick_is_a_detached_checkout(
 
 @pytest.mark.usefixtures("composed")
 def test_a_stored_only_pick_uses_its_stored_url(
-    make_upstream: Callable[..., Path], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The inventory is unavailable (no scope) while GitHub is the default host: the
     stored-only repo must come from its own stored URL, not github.com/acme/api."""
@@ -314,9 +315,9 @@ class _RefreshThenPick(_Capture):
 
 
 def test_a_pick_dropped_by_a_refresh_uses_its_remembered_url(
-    make_upstream: Callable[..., Path], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     item = RepositoryInventoryItem(full_name="acme/api", clone_url=url)
     refreshed: list[bool] = []
 

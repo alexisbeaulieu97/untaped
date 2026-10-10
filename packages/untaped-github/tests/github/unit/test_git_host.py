@@ -18,9 +18,9 @@ from untaped.testing import invoke_cli, plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import Credential, GitHost, HostAuth, RepoStore, ls_remote
 from untaped_github import SPEC
-from untaped_github.adapters.git import GithubHost
 from untaped_github.cli import app
 from untaped_github.errors import GitCorpusError
+from untaped_github.providers.git import GithubHost
 
 
 def configure(github: dict[str, object], **sections: dict[str, object]) -> None:
@@ -139,7 +139,7 @@ def test_an_unranked_overlap_on_the_github_host_is_a_config_error(
     monkeypatch.setenv("GH_TOKEN", "ghp_secret")
     compose(PluginSpec(name="other", provides={"git": lambda: (OtherForge(),)}))
     record = {
-        "repo": "acme/api",
+        "full_name": "acme/api",
         "clone_url": "https://github.com/acme/api.git",
         "default_branch": "main",
     }

@@ -66,7 +66,6 @@ DESCRIPTIONS: dict[str, str] = {
     "checks. Unset means `min(8, 2 * CPUs)`; "
     "values above `2 * CPUs` are clamped.",
     "workspace.branch_template": "Branch name for writable repos; `{name}` is the workspace name.",
-    "workspace.protocol": "Clone URL the GitHub inventory supplies: `https` or `ssh`.",
     "workspace.active": "Active workspaces. Managed by `workspace` commands.",
     "workspace.archived": "Archived workspaces. Managed by `workspace` commands.",
     "github.base_url": "GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",
