@@ -132,7 +132,12 @@ def test_a_users_own_fetch_still_prunes(tmp_path: Path) -> None:
 
 
 def test_a_handle_still_reads_what_gc_left_unreachable(tmp_path: Path) -> None:
-    """``gc.pruneExpire`` at repo scope: a global ``now`` cannot prune under an open handle."""
+    """A global ``gc.pruneExpire=now`` cannot prune what an open handle reads.
+
+    Git 2.43 through 2.55 keep every object of a promisor pack when they
+    repack, whatever ``gc.pruneExpire`` says, so today this passes without the
+    store's repo-scope key too; the key, and this test, cover a git that prunes them.
+    """
     hostile_git_home()
     remote = git_remote(tmp_path)
     topic = remote.commit("notes.txt", "kept\n", branch="topic")
@@ -146,10 +151,3 @@ def test_a_handle_still_reads_what_gc_left_unreachable(tmp_path: Path) -> None:
     git(store.path, "maintenance", "run", "--task=gc", "--quiet")
 
     assert handle.run(["cat-file", "-p", f"{topic}:notes.txt"]).text == "kept\n"
-
-    # The control: with the user's global in charge, the same run prunes it.
-    git(store.path, "config", "--unset", "gc.pruneExpire")
-    git(store.path, "config", "remote.origin.url", str(tmp_path / "gone.git"))
-    git(store.path, "maintenance", "run", "--task=gc", "--quiet")
-    with pytest.raises(StoreError):
-        handle.run(["cat-file", "-p", f"{topic}:notes.txt"])
