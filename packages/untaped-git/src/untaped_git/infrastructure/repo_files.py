@@ -9,12 +9,16 @@ are never read from files, since the ref backend is git's choice.
 from __future__ import annotations
 
 import os
+import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
 #: Each consumer's private file in a repo it uses: ``untaped-<plugin>.json``.
 PRIVATE_PREFIX = "untaped-"
 PRIVATE_SUFFIX = ".json"
+_ESCAPES = {"n": "\n", "t": "\t", "b": "\b"}
+_SPACE = " \t\n\r"
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,33 +119,97 @@ def tree_size(path: Path) -> int:
     return total
 
 
-def config_value(file: Path, section: str, key: str) -> str | None:
-    """``<section>.<key>`` from one git config file (the last value wins), else ``None``.
+def config_value(
+    file: Path, section: str, key: str, *, subsection: str | None = None
+) -> str | None:
+    """``<section>[.<subsection>].<key>`` from one config file, as ``git config --get`` reads it.
 
-    For a plain ``[section]`` header only (no subsection), which is all the
-    store writes for its own keys.
+    Only the file itself (no includes); the last value wins. Section and key
+    match case-insensitively, a subsection exactly, as in git. ``None`` when
+    the file is unreadable or holds no such key.
     """
     try:
-        lines = file.read_text(encoding="utf-8", errors="replace").splitlines()
+        text = file.read_text(encoding="utf-8", errors="replace", newline="")
     except OSError:
         return None
-    header = f"[{section.lower()}]"
-    current, value = "", None
-    for raw in lines:
-        line = raw.strip()
-        if line.startswith("["):
-            current = line.lower().replace(" ", "").replace("\t", "")
+    quoted = "" if subsection is None else rf'\s+"{re.escape(subsection)}"'
+    header = re.compile(rf"\[\s*(?i:{re.escape(section)}){quoted}\s*\]\s*(?:[#;].*)?")
+    value, inside = None, False
+    for line in text.split("\n"):
+        stripped = line.strip(_SPACE)
+        if stripped.startswith("["):
+            inside = header.fullmatch(stripped) is not None
             continue
-        name, sep, rest = line.partition("=")
-        if sep and current == header and name.strip().lower() == key.lower():
-            value = _unquote(rest.strip())
+        name, sep, raw = stripped.partition("=")
+        if inside and sep and name.strip(_SPACE).lower() == key.lower():
+            value = _config_value(raw)
     return value
 
 
-def _unquote(value: str) -> str:
-    for marker in (" #", "\t#", " ;", "\t;"):
-        if not value.startswith('"'):
-            value = value.split(marker, 1)[0].rstrip()
-    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
-        return value[1:-1]
+def list_repos(root: Path, *, skip: Collection[str] = ()) -> list[Path]:
+    """Every ``*.git`` directory under ``root``, sorted; never descends into one.
+
+    Skips symlinks and, at the top level only, hidden directories (names
+    starting with ``.``, e.g. scratch dirs) and the names in ``skip``; below
+    it a repo may be hidden (``github.com/acme/.github.git``). A missing or
+    unreadable directory is skipped. No git runs.
+    """
+    found: list[Path] = []
+    _collect(root, found, top=True, skip=skip)
+    return sorted(found)
+
+
+def _collect(directory: Path, found: list[Path], *, top: bool, skip: Collection[str] = ()) -> None:
+    try:
+        with os.scandir(directory) as scan:
+            entries = list(scan)
+    except OSError:
+        return
+    for entry in entries:
+        if top and (entry.name.startswith(".") or entry.name in skip):
+            continue
+        try:
+            if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                continue
+        except OSError:
+            continue
+        path = directory / entry.name
+        if entry.name.endswith(".git"):
+            found.append(path)
+        else:
+            _collect(path, found, top=False)
+
+
+def repo_origin(repo: Path) -> str | None:
+    """``remote.origin.url`` from ``<repo>/config`` (``None`` when unset or empty)."""
+    return config_value(repo / "config", "remote", "url", subsection="origin") or None
+
+
+def _config_value(raw: str) -> str:
+    """A git config value, parsed as git's ``parse_value`` does.
+
+    Quotes are removed and escapes decoded; a comment ends the value. Outside
+    quotes, leading and trailing whitespace is dropped and each inner
+    whitespace character becomes a space. Whitespace is ASCII ``" \\t\\n\\r"``
+    only, as git's ``isspace``.
+    """
+    value = ""
+    quoted = False
+    spaces = 0
+    chars = iter(raw)
+    for char in chars:
+        if not quoted and char in _SPACE:
+            spaces += 1 if value else 0
+            continue
+        if not quoted and char in "#;":
+            break
+        value += " " * spaces
+        spaces = 0
+        if char == "\\":
+            escaped = next(chars, "")
+            value += _ESCAPES.get(escaped, escaped)
+        elif char == '"':
+            quoted = not quoted
+        else:
+            value += char
     return value

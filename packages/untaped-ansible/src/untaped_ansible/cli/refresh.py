@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 from typing import Literal
 
-from untaped.sdk import HttpSettings, ProgressHandle, UiContext, git_auth_header, plural
+from untaped.sdk import HttpSettings, ProgressHandle, UiContext, plural
 from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     RefreshResult,
@@ -22,7 +22,7 @@ from untaped_ansible.infrastructure import (
     AutoRefProbe,
     GithubRefProbe,
     GitRemoteRefProbe,
-    GitRepositoryCache,
+    GitSourceStore,
     SqliteDependencyIndex,
 )
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
@@ -93,21 +93,14 @@ def refresh_source(
     on_progress: Callable[[RefreshProgressEvent], None] | None = None,
 ) -> RefreshResult:
     """Run a git-backed source refresh with fully wired adapters."""
+    # The forge decides how its URLs look; the git plugin's GitHost supplies its token.
+    protocol = github_settings.git_protocol
     with GithubClient(github_settings, http=http) as github:
-        token = (
-            github_settings.token.get_secret_value().strip()
-            if github_settings.token is not None
-            else ""
-        )
-        git = GitRepositoryCache(auth_host=github_web_host(github_settings.base_url))
+        git = GitSourceStore()
         selected_backend = backend or settings.source_refresh_backend
-        auth_header = git_auth_header(token) if token else None
         graphql_probe = GithubRefProbe(github, concurrency=settings.probe_parallel)
         git_probe = GitRemoteRefProbe(
-            git,
-            clone_protocol=settings.git_clone_protocol,
-            auth_header=auth_header,
-            concurrency=settings.probe_parallel,
+            git, clone_protocol=protocol, concurrency=settings.probe_parallel
         )
         result = RefreshGitSourceIndex(
             github=github,
@@ -116,11 +109,7 @@ def refresh_source(
             index=index,
             aliases=aliases,
             default_dependency_paths=settings.dependency_paths,
-            cache_dir=settings.cache_dir,
-            clone_protocol=settings.git_clone_protocol,
-            fetch_depth=settings.git_fetch_depth,
-            blob_filter=settings.git_blob_filter,
-            auth_header=auth_header,
+            clone_protocol=protocol,
             concurrency=concurrency,
             ref_scan_default=settings.ref_scan_default,
             repo_batch_size=settings.source_refresh_repo_batch_size,
@@ -225,7 +214,10 @@ _MAX_LISTED_COLLECTIONS = 10
 
 
 def warn_skipped_files(result: RefreshResult, *, ui: UiContext) -> None:
-    """Warn when dependency files were skipped during parsing."""
+    """Warn about refs the store refused and dependency files skipped during parsing."""
+    for ref in result.skipped_refs:
+        noun = "branch" if ref.kind == "heads" else "tag"
+        ui.message("warning", f"skipped {noun} {ref.repo}@{ref.ref}: {ref.reason}")
     for skipped in result.skipped_files:
         ui.message("warning", format_skipped_dependency_file(skipped))
 

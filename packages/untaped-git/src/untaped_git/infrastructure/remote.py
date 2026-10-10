@@ -17,7 +17,7 @@ from untaped_git.errors import GitError
 from untaped_git.infrastructure.store import (
     ATTEMPTS,
     TIMEOUT,
-    basic_header,
+    credential_config,
     parse_symref,
     record_default_branch,
 )
@@ -70,11 +70,11 @@ def _ls_remote(
         ) from exc
     host = auth(url)
     origin = https_origin(url)
-    header = None
+    secret: dict[str, str] = {}
     config: dict[str, str] = {}
     if host is not None and origin is not None:
         if host.credential is not None:
-            header = basic_header(host.credential.username, host.credential.password)
+            secret = credential_config(origin, host.credential)
         if host.proxy:
             config[f"http.{origin}/.proxy"] = host.proxy
     try:
@@ -83,8 +83,7 @@ def _ls_remote(
             cwd=root,
             timeout=TIMEOUT,
             capture=True,
-            auth_header=header,
-            auth_url=url if header else None,
+            auth_config=secret,
             ceiling=True,
             retry_transient=True,
             attempts=ATTEMPTS,

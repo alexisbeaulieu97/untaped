@@ -46,7 +46,6 @@ from untaped.sdk import (
     UntapedError,
     atomic_write,
     attribution,
-    cache_origin,
     dir_bytes,
     run_git,
 )
@@ -55,6 +54,7 @@ from untaped_git.infrastructure.repo_files import (
     names_admin,
     private_file,
     private_files,
+    repo_origin,
     worktree_entries,
 )
 from untaped_git.infrastructure.store import REMOVING_SUFFIX, TIMEOUT, RepoStore, _plugin_name
@@ -113,7 +113,7 @@ def adopt(
     reads as workspace's.
     """
     name = _plugin_name(plugin)
-    label = cache_origin(source)
+    label = repo_origin(source)
     if label is None:
         raise error(f"{source} has no origin URL, so it has no place in the repo store")
     _refuse_foreign(source, plugin=name, error=error)

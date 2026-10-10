@@ -13,8 +13,7 @@ import release  # scripts/release.py (``pythonpath = ["scripts"]``)
 from packaging.utils import canonicalize_name
 from pydantic import BaseModel
 
-from untaped import bootstrap, cli, repo_cache
-from untaped.git import GitResult
+from untaped import bootstrap, cli
 from untaped.plugins.registry import PluginCandidate, PluginSpec, discover_candidates
 from untaped.records import table_columns_of
 
@@ -119,24 +118,6 @@ def fresh_composition() -> Iterator[None]:
     bootstrap._clear_for_tests()
     yield
     bootstrap._clear_for_tests()
-
-
-#: One ``RepoCache`` git call seen by ``spy_run_git``: subcommand, auth header, auth URL.
-type GitCall = tuple[str, str | None, str | None]
-
-
-@pytest.fixture
-def spy_run_git(monkeypatch: pytest.MonkeyPatch) -> list[GitCall]:
-    """Record each ``RepoCache`` git call's subcommand and auth; git still runs."""
-    seen: list[GitCall] = []
-    real = repo_cache.run_git
-
-    def spy(args: Sequence[str], **kwargs: Any) -> GitResult:
-        seen.append((args[0], kwargs.get("auth_header"), kwargs.get("auth_url")))
-        return real(args, **kwargs)
-
-    monkeypatch.setattr(repo_cache, "run_git", spy)
-    return seen
 
 
 @pytest.fixture
