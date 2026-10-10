@@ -253,6 +253,6 @@ def test_load_settings_section_names_the_env_var_culprit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
-    monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT", "abc")
-    with pytest.raises(ConfigError, match="environment variable UNTAPED_HTTP__TIMEOUT"):
+    monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT_SECONDS", "abc")
+    with pytest.raises(ConfigError, match="environment variable UNTAPED_HTTP__TIMEOUT_SECONDS"):
         load_settings_section("http")
