@@ -466,6 +466,7 @@ def _import_every_shipped_module() -> None:
 def _samples() -> dict[str, Record]:
     from untaped.config.models import SettingOutcome, SettingRow
     from untaped.management.alias import AliasOutcome, AliasRow
+    from untaped.management.plugins import ContractRow
     from untaped.profile.models import ProfileOutcome, ProfileRow
 
     rows: list[Record] = [
@@ -480,6 +481,14 @@ def _samples() -> dict[str, Record]:
         ),
         ProfileRow(name="default", active=True, keys=3),
         ProfileOutcome(name="work", action="renamed", previous_name="old"),
+        ContractRow(
+            contract="workspace.repo_source",
+            method="repos",
+            owner="workspace",
+            stability="experimental",
+            providers=["github", "gitlab"],
+            ranked=["github"],
+        ),
     ]
     return {str(kind_of(type(row))): row for row in rows}
 

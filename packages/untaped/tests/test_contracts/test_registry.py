@@ -23,11 +23,15 @@ from test_contracts.support import (
 )
 from untaped.contracts import Configured, Contract, Failed, Ok, Skipped, gather
 from untaped.contracts._declare import contract_of
-from untaped.contracts._registry import Quarantined, doctor_row, every_offer, offers
+from untaped.contracts._registry import Quarantined, doctor_rows, every_offer, offers
 from untaped.errors import ConfigError, ExitCode
-from untaped.plugins.registry import PluginContext, PluginSpec
+from untaped.plugins.registry import PluginSpec
 from untaped.records import DuplicateKindError
 from untaped.testing import invoke_root
+
+
+def _rows() -> list[tuple[str, str, str, str]]:
+    return [(row.plugin, row.check, row.status, row.title) for row in doctor_rows()]
 
 
 def _info():  # type: ignore[no-untyped-def]
@@ -192,28 +196,38 @@ def test_s10_a_removed_method_is_never_called_and_doctor_notes_it() -> None:
     [answer] = gather(BookSource.books)()
     assert isinstance(answer, Ok)
     assert _reasons() == {}
-    row = doctor_row(PluginContext(settings=None))
-    assert row.ok and row.warn
-    assert "unused-method: search" in row.detail
+    [row] = doctor_rows()
+    assert (row.plugin, row.status, row.title) == ("gitlab", "warn", "unused-method")
+    assert "search" in row.detail
     assert "_helper" not in row.detail
 
 
-def test_the_doctor_row_passes_with_usable_providers_and_warns_on_quarantine() -> None:
-    compose(shelf_spec(), shop_spec())
-    row = doctor_row(PluginContext(settings=None))
-    assert (row.ok, row.warn, row.detail) == (True, False, "1 provider(s), all usable")
+def test_doctor_has_a_row_per_provider_and_an_inactive_one_passes() -> None:
+    write_config(LIBRARY_CONFIG)
+    compose(shelf_spec(), library_spec(), shop_spec())
+    assert _rows() == [
+        ("library", "contract-provider", "pass", "active"),
+        ("shop", "contract-provider", "pass", "active"),
+    ]
+    assert doctor_rows()[1].detail == (
+        "fills shelf.book_source: books, lookup, by_author, first, count"
+    )
+    write_config("")
+    [library, _] = doctor_rows()
+    assert (library.status, library.title) == ("pass", "not-configured")
+    assert library.detail == "shelf.book_source: waits for library.catalog"
     compose(shelf_spec(), library_spec(_NoBridge()))
-    row = doctor_row(PluginContext(settings=None))
-    assert row.warn
-    assert "missing-bridge" in row.detail
+    [row] = doctor_rows()
+    assert (row.status, row.title) == ("warn", "missing-bridge")
+    assert row.detail.endswith("; upgrade untaped-library")
     compose()
-    assert doctor_row(PluginContext(settings=None)).detail == "no plugin fills a contract"
+    assert doctor_rows() == []
 
 
-def test_doctor_shows_the_contract_providers_row() -> None:
+def test_doctor_shows_the_contract_rows() -> None:
     result = invoke_root(["doctor", "-f", "json"])
-    [row] = [row for row in json.loads(result.stdout) if row["check"] == "contract-providers"]
-    assert row["status"] == "pass"
+    checks = {row["check"] for row in json.loads(result.stdout)}
+    assert "contract-providers" not in checks
 
 
 def test_a_skipped_answer_names_why() -> None:
@@ -232,10 +246,9 @@ def test_an_owner_whose_contracts_break_takes_only_its_own_contracts_down() -> N
     compose(shelf_spec(), acme, odd, shop_spec())
     [shop] = gather(BookSource.books)()
     assert isinstance(shop, Ok)
-    row = doctor_row(PluginContext(settings=None))
-    assert row.ok and row.warn
-    assert "acme's contracts couldn't be read: acme api broke" in row.detail
-    assert "odd's contracts couldn't be read" in row.detail
+    rows = {(row.plugin, row.title): row.detail for row in doctor_rows()}
+    assert rows[("acme", "bad-contracts")] == "contracts couldn't be read: acme api broke"
+    assert ("odd", "bad-contracts") in rows
 
     class Gadgets(Contract):
         def gadgets(self) -> list[Book]:
@@ -247,16 +260,8 @@ def test_an_owner_whose_contracts_break_takes_only_its_own_contracts_down() -> N
 
 def test_an_offer_waiting_for_its_owner_is_a_pass_in_doctor() -> None:
     compose(shop_spec())
-    row = doctor_row(PluginContext(settings=None))
-    assert (row.ok, row.warn) == (True, False)
-    assert row.detail == "offers wait for shelf (not installed)"
+    [row] = doctor_rows()
+    assert (row.plugin, row.status, row.title) == ("shop", "pass", "owner-not-installed")
+    assert row.detail == "waits for shelf (not installed)"
     compose(shelf_spec(), library_spec(), PluginSpec(name="kiosk", provides={"git": lambda: ()}))
-    assert doctor_row(PluginContext(settings=None)).detail == (
-        "1 provider(s), all usable; offers wait for git (not installed)"
-    )
-    compose(
-        shelf_spec(), library_spec(_NoBridge()), PluginSpec(name="kiosk", provides={"git": dict})
-    )
-    row = doctor_row(PluginContext(settings=None))
-    assert row.warn
-    assert row.detail.endswith("; offers wait for git (not installed)")
+    assert ("kiosk", "contract-provider", "pass", "owner-not-installed") in _rows()

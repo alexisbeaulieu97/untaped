@@ -82,7 +82,7 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
         plugins = ", ".join(ok.plugin for ok, _ in found)
         raise Ambiguous(
             f"{plugins} each have a match; rank them to choose",
-            hint=answers.rank_command,
+            hint=f"run `{answers.rank_command}`",
             details={"providers": [ok.plugin for ok, _ in found]},
         )
     return _one(found[0], answers)

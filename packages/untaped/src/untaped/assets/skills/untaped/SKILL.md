@@ -21,7 +21,9 @@ every secret in their own terminal, so a token never passes through you.
 - Settings live in a config file as named profiles; `default` is the base and
   other profiles override it field by field. Read settings with
   `untaped config list` and `untaped config get KEY`, which mask secrets.
-- `untaped plugin list` lists what this install composes.
+- `untaped plugin list` lists what this install composes; `--contracts` lists
+  which plugins fill each contract. When two plugins match (an "ambiguous"
+  error), `untaped plugin rank` orders them, as the error's hint shows.
 
 ## Commands
 
