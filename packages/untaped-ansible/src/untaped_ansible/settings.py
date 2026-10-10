@@ -63,7 +63,7 @@ class SourceDefinition(BaseModel):
 class AnsibleSettings(BaseModel):
     """User-tunable profile settings."""
 
-    renamed_keys: ClassVar[Mapping[str, str]] = {
+    retired_keys: ClassVar[Mapping[str, str]] = {
         "stale_after": "stale_after_seconds",
         "repo_cache_path": "cache_dir",
         "git_fetch_concurrency": "git_fetch_parallel",

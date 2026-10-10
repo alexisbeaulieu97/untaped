@@ -11,7 +11,6 @@ import contextlib
 import contextvars
 import os
 import re
-import warnings
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from functools import cache, lru_cache
@@ -28,7 +27,6 @@ from pydantic import (
     StringConstraints,
     ValidationError,
     create_model,
-    model_validator,
 )
 from pydantic_settings import (
     BaseSettings,
@@ -61,35 +59,13 @@ FORMAT_VERSION = 1
 class HttpSettings(BaseModel):
     """Cross-cutting HTTP behaviour for a tool's HTTP client (per-profile)."""
 
-    renamed_keys: ClassVar[Mapping[str, str]] = {"timeout": "timeout_seconds"}
+    retired_keys: ClassVar[Mapping[str, str]] = {"timeout": "timeout_seconds"}
 
     ca_bundle: Path | None = None  # untaped: allow settings-naming
     verify_ssl: bool = True
     verify_hostname: bool = True
     timeout_seconds: float = Field(default=30.0, gt=0)
     proxy: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_timeout(cls, data: Any) -> Any:
-        """Accept the deprecated ``timeout=`` argument; ``timeout_seconds`` wins."""
-        if isinstance(data, Mapping) and "timeout" in data:
-            warnings.warn(
-                "HttpSettings(timeout=...) is deprecated; use timeout_seconds",
-                DeprecationWarning,
-                # Past pydantic's ``__init__`` / ``model_validate`` to the caller.
-                stacklevel=3,
-            )
-            data = dict(data)
-            timeout = data.pop("timeout")
-            data.setdefault("timeout_seconds", timeout)
-        return data
-
-    @property
-    @warnings.deprecated("use timeout_seconds")
-    def timeout(self) -> float:
-        """Deprecated alias of :attr:`timeout_seconds`, removed in the next major release."""
-        return self.timeout_seconds
 
 
 class SkillsSettings(BaseModel):
