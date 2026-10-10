@@ -255,6 +255,22 @@ class RepoStore:
     def exists(self) -> bool:
         return (self._path / "HEAD").is_file()
 
+    @property
+    def roots(self) -> tuple[str, str]:
+        """Where this plugin's branches and tags live in the repo (``for-each-ref`` patterns)."""
+        return self._layout.roots
+
+    def ref(self, name: str) -> str:
+        """The full ref of ``heads/<branch>`` or ``tags/<tag>`` in this plugin's namespace."""
+        try:
+            return self._layout.absolute(name)
+        except ValueError as exc:
+            raise self._error(str(exc), category=ErrorCategory.INVALID) from None
+
+    def relative(self, ref: str) -> str | None:
+        """``heads/<b>`` or ``tags/<t>`` for a ref of this plugin's namespace, else ``None``."""
+        return self._layout.relative(ref)
+
     # ── lifecycle ──────────────────────────────────────────────────────────
 
     def ensure(self) -> bool:
