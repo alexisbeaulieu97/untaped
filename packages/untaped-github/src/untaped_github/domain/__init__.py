@@ -13,15 +13,13 @@ from untaped_github.domain.corpus import (
     unchanged_upstream,
 )
 from untaped_github.domain.hosts import github_web_host
-from untaped_github.domain.inventory import RepoInventory, RepositoryInventoryItem
 from untaped_github.domain.models import (
     CodeResult,
     CorpusRepoResult,
     CorpusSyncOutcome,
+    GithubRepo,
     GithubUser,
     IssueResult,
-    RepoListResult,
-    RepoResult,
     UserResult,
     WorktreeResult,
 )
@@ -53,6 +51,7 @@ __all__ = [
     "CorpusRepoResult",
     "CorpusRepoTarget",
     "CorpusSyncOutcome",
+    "GithubRepo",
     "GithubUser",
     "GrepHit",
     "GrepSpec",
@@ -62,12 +61,8 @@ __all__ = [
     "RefEvaluation",
     "RefProfile",
     "RefSelector",
-    "RepoInventory",
-    "RepoListResult",
-    "RepoResult",
     "RepoSearchFilters",
     "RepoSweepOutcome",
-    "RepositoryInventoryItem",
     "SweepQuery",
     "UserResult",
     "UserSearchFilters",

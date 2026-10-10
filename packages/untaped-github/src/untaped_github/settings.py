@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
 from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -21,14 +20,18 @@ class SweepSettings(BaseModel):
 
 
 class InventorySettings(BaseModel):
-    """Settings for the cached repository inventory workspace `create`/`add` and the picker use."""
+    """The orgs and teams whose repos github lists for workspace (its ``RepoSource``)."""
 
     model_config = ConfigDict(frozen=True)
 
-    path: Path = Path("~/.untaped/github-inventory.json")
     orgs: list[str] = Field(default_factory=list)
     teams: list[str] = Field(default_factory=list)
-    max_age_seconds: int = Field(default=86400, ge=1)
+
+
+_INVENTORY_NOTE = (
+    "deleted in 11.0; workspace keeps the repos github lists for 6 hours "
+    "(ctrl-r in its picker refreshes them)"
+)
 
 
 class GithubSettings(BaseModel):
@@ -39,6 +42,8 @@ class GithubSettings(BaseModel):
         "corpus_path": "cache_dir",
         "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
         "sweep.sync_concurrency": "sweep.parallel",
+        "inventory.path": Retired(note=_INVENTORY_NOTE),
+        "inventory.max_age_seconds": Retired(note=_INVENTORY_NOTE),
     }
 
     model_config = ConfigDict(frozen=True)

@@ -121,7 +121,7 @@ class GitCorpusCache:
             },
         )
         return CorpusRepoResult(
-            repo=repo.full_name,
+            full_name=repo.full_name,
             ref=branch,
             path=str(store.path),
             clone_url=url,
@@ -274,7 +274,7 @@ class GitCorpusCache:
         """List the store repos github has synced, sorted by name."""
         rows = [
             CorpusRepoResult(
-                repo=str(data.get("repo") or ""),
+                full_name=str(data.get("repo") or ""),
                 ref=str(data.get("ref") or ""),
                 path=str(store.path),
                 clone_url=_optional_str(data.get("clone_url")),
@@ -287,7 +287,7 @@ class GitCorpusCache:
             for store, data in self._entries()
         ]
         # By name: host-less repos (`file://`, local paths) are keyed by a hash.
-        return tuple(sorted((row for row in rows if row.repo and row.ref), key=_by_name))
+        return tuple(sorted((row for row in rows if row.full_name and row.ref), key=_by_name))
 
     def get_repo(self, repo: str) -> CorpusRepoTarget | None:
         """Return the stored metadata of ``repo`` if github has synced it."""
@@ -328,7 +328,7 @@ class GitCorpusCache:
         ``released`` with who kept the repo in ``kept``.
         """
         if repo.clone_url is None:
-            raise GitCorpusError(f"{repo.repo} has no clone_url in its corpus metadata")
+            raise GitCorpusError(f"{repo.full_name} has no clone_url in its corpus metadata")
         outcome = self._store(repo.clone_url).release()
         if isinstance(outcome, Removed):
             return repo.model_copy(
@@ -628,4 +628,4 @@ def _metadata_archived(data: dict[str, object]) -> bool:
 
 
 def _by_name(row: CorpusRepoResult) -> tuple[str, str]:
-    return (row.repo, row.path)
+    return (row.full_name, row.path)

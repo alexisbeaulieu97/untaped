@@ -1,131 +1,141 @@
-"""Resolve repo identifiers to clone URLs through the GitHub inventory.
+"""Resolve what the user typed to a :class:`Repo`, asking every plugin that fills ``RepoSource``.
 
-URLs and paths pass through untouched; ``owner/name`` and bare names are
-looked up in the inventory ``untaped_github.api`` exposes
-(imported lazily so workspace startup stays free of github modules).
+A typed URL becomes a plain repo named by its full path and no provider is
+asked. A name is matched (:func:`workspace_match`) over every ready
+provider's ``repos()`` with the SDK's ``select_one``: a stale listing confirms
+a match, never an absence, and two unranked providers listing it are
+ambiguous until ``untaped plugin rank`` orders them. Every repo, typed,
+listed, picked or piped, passes the provenance check before anything is
+fetched.
 """
 
 from __future__ import annotations
 
 import difflib
-import re
-from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Sequence
 
-from untaped.sdk import UntapedError, UsageError, not_found, q
-from untaped_workspace.domain.models import ResolvedRepo
-from untaped_workspace.domain.naming import looks_like_url, repo_identity
+from untaped.contracts import Answers, NoProviderReady, NotFound, Ok, Skipped, gather, select_one
+from untaped.sdk import UsageError, not_found, q, repo_url_parts
+from untaped_git.api import GitHost
+from untaped_workspace.api import Repo, RepoSource
+from untaped_workspace.domain.naming import looks_like_url, typed_repo, workspace_match
 
-if TYPE_CHECKING:
-    from untaped_github.api import RepositoryInventoryItem
-
-_SLUG = re.compile(r"[A-Za-z0-9][\w.-]*")
-"""An owner or repo name a URL may be built from (so ``./x`` never becomes one)."""
-_REFRESH_HINT = (
-    "check the name, or the github.inventory orgs/teams settings that scope the inventory"
-)
-_URL_HINT = "pass a full clone URL instead"
+_URL_HINT = "pass the repo's clone URL"
 
 
-def _default_inventory() -> Sequence[RepositoryInventoryItem]:
-    from untaped_github.api import repo_inventory  # noqa: PLC0415
+class RepoSources:
+    """``RepoCatalog`` over the plugins filling ``RepoSource`` (asked once per catalog)."""
 
-    return repo_inventory().repos
+    def __init__(self) -> None:
+        self._answers: Answers[list[Repo]] | None = None
+        self._live: dict[str, Answers[list[Repo]] | None] = {}
 
+    def resolve(self, ident: str) -> Repo:
+        """The repo ``ident`` names; ``UsageError`` (exit 2) when it is unknown or ambiguous.
 
-class GithubRepoCatalog:
-    """``RepoCatalog`` backed by the GitHub repository inventory."""
-
-    def __init__(
-        self,
-        *,
-        protocol: Literal["https", "ssh"],
-        inventory: Callable[[], Sequence[RepositoryInventoryItem]] | None = None,
-    ) -> None:
-        self._protocol = protocol
-        self._inventory = inventory or _default_inventory
-        self._items: Sequence[RepositoryInventoryItem] | UntapedError | None = None
-
-    def resolve(self, ident: str) -> ResolvedRepo:
+        A provider's own failure that could hide the match raises with its
+        own category and exit code (an expired token is never "not found").
+        """
         if looks_like_url(ident):
-            owner, name = repo_identity(ident)
-            return ResolvedRepo(url=ident, name=f"{owner}/{name}" if owner else name)
-        items = self._load()
-        if isinstance(items, UntapedError):
-            return self._without_inventory(ident, items)
-        return self._from_item(self._match(ident, items))
+            return self.admit(typed_repo(ident))
+        try:
+            answers = self._ask()
+        except NoProviderReady as exc:
+            raise UsageError(not_found("repo", ident), hint=_unasked_hint(exc)) from None
+        try:
+            repo = select_one(answers, lambda repo: workspace_match(repo.name, ident))
+        except NotFound as exc:
+            raise UsageError(_not_found(ident, answers), hint=exc.hint or _URL_HINT) from None
+        return self.admit(repo)
 
-    def _load(self) -> Sequence[RepositoryInventoryItem] | UntapedError:
-        """The inventory (or why it is unavailable), read once per catalog."""
-        if self._items is None:
-            try:
-                self._items = self._inventory()
-            except UntapedError as error:
-                self._items = error
-        return self._items
+    def admit(self, repo: Repo) -> Repo:
+        """``repo``, unless its source vouches for another host than its URL's (exit 2).
 
-    def _without_inventory(self, ident: str, error: UntapedError) -> ResolvedRepo:
-        owner, _, name = ident.partition("/")
-        if _SLUG.fullmatch(owner) and _SLUG.fullmatch(name):
-            host = _web_host()
-            if host:
-                url = (
-                    f"git@{host}:{owner}/{name}.git"
-                    if self._protocol == "ssh"
-                    else f"https://{host}/{owner}/{name}.git"
+        A source plugin that fills the git plugin's ``GitHost`` for one host
+        never issues a URL on another; one that fills no ``GitHost`` (or a
+        typed URL, with no source) is not checked.
+        """
+        source = repo.source
+        if source is None:
+            return repo
+        try:
+            homes = gather(GitHost.home, plugins={source.plugin})()
+        except NoProviderReady:
+            return repo
+        host, _ = repo_url_parts(repo.url)
+        for answer in homes:
+            if isinstance(answer, Ok) and answer.value and answer.value.lower() != host:
+                raise UsageError(
+                    f"repo {q(repo.name)} from {source.plugin} has a URL on {host or 'no host'}, "
+                    f"but {source.plugin} serves {answer.value}: refusing to fetch it",
+                    hint=f"pass the clone URL yourself if you trust {repo.url}",
                 )
-                return ResolvedRepo(url=url, name=f"{owner}/{name}")
-        if not error.hint:
-            error.hint = _URL_HINT
-        raise error
+        return repo
 
-    def _match(
-        self, ident: str, items: Sequence[RepositoryInventoryItem]
-    ) -> RepositoryInventoryItem:
-        wanted = ident.lower()
-        if "/" in ident:
-            matches = [item for item in items if item.full_name.lower() == wanted]
-        else:
-            matches = [
-                item
-                for item in items
-                if wanted in {(item.name or "").lower(), item.full_name.rpartition("/")[2].lower()}
-            ]
-        if not matches:
-            raise UsageError(_not_found(ident, items), hint=_REFRESH_HINT)
-        if len(matches) > 1:
-            names = ", ".join(sorted(item.full_name for item in matches))
-            raise UsageError(f"repo name {q(ident)} is ambiguous: {names}", hint="pass owner/name")
-        return matches[0]
+    def reask(self, repo: Repo) -> Repo | None:
+        """``repo`` as its source plugin lists it now (a live call), admitted.
 
-    def _from_item(self, item: RepositoryInventoryItem) -> ResolvedRepo:
-        url = (item.ssh_url if self._protocol == "ssh" else None) or item.clone_url
-        if not url:
-            raise UsageError(
-                f"repo {q(item.full_name)} has no clone URL in the inventory",
-                hint=_URL_HINT,
-            )
-        return ResolvedRepo(url=url, name=item.full_name, default_branch=item.default_branch)
+        ``None`` when nobody can be asked: a typed URL (no source), or a
+        source plugin that is uninstalled or not ready in this profile. A
+        live call that failed raises its error, even when a stored answer
+        stood in: that answer is not "now".
+        """
+        source = repo.source
+        if source is None:
+            return None
+        answers = self._reask(source.plugin)
+        if answers is None:
+            return None
+        for answer in answers:
+            if isinstance(answer, Ok) and answer.stale is not None:
+                raise answer.stale.error
+        return self.admit(select_one(answers, lambda listed: listed.name == repo.name))
+
+    def _reask(self, plugin: str) -> Answers[list[Repo]] | None:
+        """``plugin``'s live listing, asked once per catalog however many repos it sourced."""
+        if plugin not in self._live:
+            try:
+                self._live[plugin] = gather(RepoSource.repos, refresh=True, plugins={plugin})()
+            except NoProviderReady:
+                self._live[plugin] = None
+        return self._live[plugin]
+
+    def _ask(self) -> Answers[list[Repo]]:
+        if self._answers is None:
+            self._answers = gather(RepoSource.repos)()
+        return self._answers
 
 
-def _not_found(ident: str, items: Sequence[RepositoryInventoryItem]) -> str:
-    """``repo not found: 'x'``, with the inventory's close matches when there are any."""
-    by_key: dict[str, list[str]] = {}
-    for item in items:
-        key = item.full_name if "/" in ident else item.full_name.rpartition("/")[2]
-        by_key.setdefault(key.lower(), []).append(item.full_name)
-    close = difflib.get_close_matches(ident.lower(), list(by_key), n=3)
-    suggestions = sorted({name for key in close for name in by_key[key]})
+def _unasked_hint(exc: NoProviderReady) -> str:
+    """``github wasn't asked: …; set github.default_org, or pass the repo's clone URL``."""
+    if not exc.not_ready:
+        # Nobody is merely unconfigured: none is installed, or each was set aside.
+        return (
+            f"{exc}; install or upgrade a plugin that lists repos (untaped[github]), or {_URL_HINT}"
+        )
+    parts = []
+    for plugin, ready in exc.not_ready.items():
+        setting = f"; set {ready.setting}" if ready.setting else ""
+        parts.append(f"{plugin} wasn't asked: {ready.reason}{setting}")
+    return f"{'; '.join(parts)}, or {_URL_HINT}"
+
+
+def _not_found(ident: str, answers: Answers[list[Repo]]) -> str:
+    """``repo not found: 'x'``, naming who wasn't asked and the close matches among every name."""
     message = not_found("repo", ident)
-    if suggestions:
+    unasked = [f"{a.plugin} ({a.reason})" for a in answers if isinstance(a, Skipped)]
+    if unasked:
+        message += f"; not asked: {', '.join(unasked)}"
+    names = [repo.name for answer in answers if isinstance(answer, Ok) for repo in answer.value]
+    if suggestions := _close(ident, names):
         message += f"; did you mean {', '.join(map(q, suggestions))}?"
     return message
 
 
-def _web_host() -> str | None:
-    from untaped_github.api import (  # noqa: PLC0415
-        github_settings,
-        github_web_host,
-    )
-
-    return github_web_host(github_settings().base_url)
+def _close(ident: str, names: Sequence[str]) -> list[str]:
+    by_key: dict[str, list[str]] = {}
+    for name in names:
+        key = name if "/" in ident else name.rpartition("/")[2]
+        by_key.setdefault(key.lower(), []).append(name)
+    close = difflib.get_close_matches(ident.lower(), list(by_key), n=3)
+    return sorted({name for key in close for name in by_key[key]})

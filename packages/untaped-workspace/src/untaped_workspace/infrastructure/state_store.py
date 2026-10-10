@@ -100,6 +100,31 @@ class StateWorkspaceStore:
         assert updated is not None
         return updated
 
+    def update_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord:
+        """Replace the repos of active workspace ``name`` that share a ``dir`` with ``repos``."""
+        by_dir = {spec.dir: spec for spec in repos}
+        updated: WorkspaceRecord | None = None
+
+        def _replace(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            nonlocal updated
+            out: list[dict[str, Any]] = []
+            for row in rows:
+                if row.get("name") == name:
+                    current = WorkspaceRecord.model_validate(row)
+                    specs = tuple(by_dir.get(spec.dir, spec) for spec in current.repos)
+                    updated = current.model_copy(update={"repos": specs})
+                    row = _dump(updated)
+                out.append(row)
+            if updated is None:
+                raise WorkspaceNotFoundError(
+                    not_found("workspace", name, known=[r.get("name") for r in rows])
+                )
+            return out
+
+        self._active.mutate(_replace)
+        assert updated is not None
+        return updated
+
     def archive(self, name: str, *, at: datetime) -> ArchivedRecord:
         """Move ``name`` to the archived list (callers hold :meth:`locked`).
 

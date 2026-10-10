@@ -8,10 +8,9 @@ from typing import Any
 from untaped.sdk import HttpError, UntapedError, attribution
 from untaped_github.application.ports import GithubRepositoryInventoryService
 from untaped_github.application.scopes import TeamScope
-from untaped_github.domain.inventory import RepositoryInventoryItem
+from untaped_github.domain.models import GithubRepo
 
 __all__ = [
-    "RepositoryInventoryItem",
     "RepositoryInventoryScope",
     "ResolveRepositoryInventory",
     "split_full_name",
@@ -33,8 +32,8 @@ class ResolveRepositoryInventory:
     def __init__(self, service: GithubRepositoryInventoryService) -> None:
         self._service = service
 
-    def __call__(self, scope: RepositoryInventoryScope) -> tuple[RepositoryInventoryItem, ...]:
-        explicit: dict[str, RepositoryInventoryItem] = {}
+    def __call__(self, scope: RepositoryInventoryScope) -> tuple[GithubRepo, ...]:
+        explicit: dict[str, GithubRepo] = {}
         for full_name in scope.repos:
             owner, repo = split_full_name(full_name)
             try:
@@ -49,7 +48,7 @@ class ResolveRepositoryInventory:
                 ) from exc
             explicit[item.full_name] = item
 
-        rows: dict[str, RepositoryInventoryItem] = {}
+        rows: dict[str, GithubRepo] = {}
         for org in scope.orgs:
             for row in self._service.list_org_repos(org):
                 item = _inventory_item(row, fallback=None)
@@ -70,11 +69,11 @@ def split_full_name(value: str) -> tuple[str, str]:
     return owner, repo
 
 
-def _inventory_item(row: dict[str, Any], *, fallback: str | None) -> RepositoryInventoryItem:
+def _inventory_item(row: dict[str, Any], *, fallback: str | None) -> GithubRepo:
     data = dict(row)
     full_name = data.get("full_name") or fallback
     if isinstance(full_name, str) and full_name:
         data["full_name"] = full_name
         if not data.get("name"):
             data["name"] = full_name.rsplit("/", 1)[1]
-    return RepositoryInventoryItem.model_validate(data)
+    return GithubRepo.model_validate(data)

@@ -25,6 +25,7 @@ def _repo(full_name: str, *, archived: bool = False, fork: bool = False) -> dict
         "full_name": full_name,
         "name": full_name.rsplit("/", 1)[1],
         "html_url": f"https://github.com/{full_name}",
+        "url": f"https://api.github.com/repos/{full_name}",
         "clone_url": f"https://github.com/{full_name}.git",
         "ssh_url": f"git@github.com:{full_name}.git",
         "default_branch": "main",
@@ -49,7 +50,9 @@ def _list(*args: str) -> CliResult:
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         for path, repos in LISTINGS.items():
             mock.get(path).mock(return_value=httpx.Response(200, json=repos))
-        return CliInvoker().invoke(app, ["repos", "list", *args, "--format", "raw", "-c", "repo"])
+        return CliInvoker().invoke(
+            app, ["repos", "list", *args, "--format", "raw", "-c", "full_name"]
+        )
 
 
 @pytest.mark.parametrize(
@@ -129,7 +132,7 @@ def test_repos_list_falls_back_to_github_default_org() -> None:
     assert team_only.stdout.splitlines() == ["acme/play-team"]
 
 
-def test_repos_list_pipe_record_carries_kind_urls_and_repo() -> None:
+def test_repos_list_pipe_record_carries_kind_urls_and_full_name() -> None:
     with respx.mock(base_url="https://api.github.com") as mock:
         mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=[_repo("acme/a")]))
         result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--format", "pipe"])
@@ -138,10 +141,12 @@ def test_repos_list_pipe_record_carries_kind_urls_and_repo() -> None:
     [envelope] = [json.loads(line) for line in result.stdout.splitlines()]
     record = envelope["record"]
     assert (envelope["untaped"], envelope["kind"]) == ("1", "github.repo")
-    assert record["repo"] == "acme/a"
-    assert record["url"] == "https://github.com/acme/a"
-    assert not {"full_name", "html_url", "name"} & set(record)
+    assert (record["full_name"], record["name"]) == ("acme/a", "a")
+    assert record["html_url"] == "https://github.com/acme/a"
+    assert record["clone_url"] == "https://github.com/acme/a.git"
     assert record["ssh_url"] == "git@github.com:acme/a.git"
+    # GitHub's API link never stands in for the web URL, and the old ``repo`` alias is gone.
+    assert not {"url", "repo"} & set(record)
 
 
 def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:
@@ -153,10 +158,11 @@ def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:
         as_json = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "-f", "json"])
 
     assert table.exit_code == listing.exit_code == 0, table.output + listing.output
-    assert "full_name" not in table.stdout
+    assert "acme/a" in table.stdout
     assert "ssh_url" not in table.stdout
+    assert "html_url" not in table.stdout
     starred = {line.split()[0] for line in listing.stderr.splitlines() if line.endswith(" *")}
-    assert starred == {"repo", "default_branch", "private", "pushed_at", "description"}
+    assert starred == {"full_name", "default_branch", "private", "pushed_at", "description"}
     [row] = json.loads(as_json.stdout)
     assert row["pushed_at"] == "2026-07-01T00:00:00Z"
     assert row["description"] == "API"

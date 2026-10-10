@@ -16,12 +16,12 @@ if TYPE_CHECKING:
         CommandResult,
         RepoRelease,
         RepoSpec,
-        ResolvedRepo,
         StoredRepo,
         StoreUse,
         WorkspaceRecord,
         WorktreeStatus,
     )
+    from untaped_workspace.domain.repo import Repo
 
 
 class GitWorktrees(Protocol):
@@ -41,6 +41,10 @@ class GitWorktrees(Protocol):
         Returns why the history backfill stopped (a warning, not a failure),
         else ``None``.
         """
+        ...
+
+    def configure(self, url: str, dest: Path) -> None:
+        """Rewrite ``dest``'s worktree config for ``url`` (a no-op when either is missing)."""
         ...
 
     def in_store(self, url: str) -> bool:
@@ -79,6 +83,10 @@ class WorkspaceStore(Protocol):
         ...
 
     def add_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord: ...
+    def update_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord:
+        """Replace the active workspace's repos that share a ``dir`` with one of ``repos``."""
+        ...
+
     def archive(self, name: str, *, at: datetime) -> ArchivedRecord: ...
     def remove(self, name: str) -> list[WorkspaceRecord]:
         """Drop every record named ``name``, active and archived; the records dropped."""
@@ -90,10 +98,21 @@ class WorkspaceStore(Protocol):
 
 
 class RepoCatalog(Protocol):
-    """Resolve a repo identifier to a clone URL."""
+    """Resolve what the user typed to a repo, and vet a repo chosen elsewhere."""
 
-    def resolve(self, ident: str) -> ResolvedRepo:
+    def resolve(self, ident: str) -> Repo:
         """Raise ``UsageError`` when ``ident`` is unknown or ambiguous."""
+        ...
+
+    def admit(self, repo: Repo) -> Repo:
+        """``repo`` (picked or piped), unless its source vouches for another host."""
+        ...
+
+    def reask(self, repo: Repo) -> Repo | None:
+        """``repo`` as its source lists it now; ``None`` when no source can be asked.
+
+        No source: a typed URL, or a source plugin that is gone or not ready.
+        """
         ...
 
 

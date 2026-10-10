@@ -8,16 +8,22 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from untaped.sdk import UtcTimestamp
+from untaped_workspace.domain.repo import Repo
 
 
-class RepoSpec(BaseModel):
-    """One repo in a workspace: where it comes from and how it is checked out."""
+class RepoSpec(Repo):
+    """One repo in a workspace (``state.yml``): the :class:`Repo` it was created from, frozen,
+    and how it is checked out.
 
-    model_config = ConfigDict(frozen=True)
+    The URL never changes after ``create``; ``untaped workspace repos resolve``
+    asks the repo's source again. ``name`` and ``url`` are plain strings here:
+    they were checked when the repo was added, and a workspace made before
+    11.0 from a URL untaped now refuses (a local path, ``http://``) must still
+    load, so it can be listed, archived and removed.
+    """
 
+    name: str  # stored, not re-checked (above)
     url: str
-    name: str
-    """Display name: ``owner/name`` when known, else derived from the URL."""
     dir: str
     branch: str | None
     """The workspace branch; ``None`` for a read-only (detached) checkout."""
@@ -53,18 +59,8 @@ class RepoArg(BaseModel):
     read_only: bool = False
     branch: str | None = None
     base: str | None = None
-    fallback: str | None = None
-    """Clone URL to use when ``ident`` cannot be resolved (a piped record's own URL)."""
-
-
-class ResolvedRepo(BaseModel):
-    """A repo identifier resolved to a clone URL."""
-
-    model_config = ConfigDict(frozen=True)
-
-    url: str
-    name: str
-    default_branch: str | None = None
+    repo: Repo | None = None
+    """The repo already chosen (a picked item, a piped record); ``ident`` is then its name."""
 
 
 class Checkout(BaseModel):
