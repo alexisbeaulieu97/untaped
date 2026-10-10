@@ -177,3 +177,14 @@ def test_a_symlinked_root_migrates_through_its_target(
     assert outcome.action == "moved", outcome.detail
     assert (store_root / "git.example" / "acme" / "api.git" / "HEAD").is_file()
     assert not target.exists() and not _cache().is_symlink()
+
+
+def test_a_removal_an_interrupted_run_left_is_finished(ctx: PluginContext) -> None:
+    leftover = _cache() / "git.example" / "acme" / "api.git.removing"
+    (leftover / "objects").mkdir(parents=True)
+
+    (row,) = migrations.preview_cache(ctx, KEEP)
+    assert (row.action, row.source) == ("delete", str(leftover))
+    migrations.apply_cache(ctx, KEEP)
+
+    assert not _cache().exists()

@@ -96,3 +96,15 @@ def test_workspaces_repos_in_a_shared_root_are_left_to_its_row(tmp_path: Path) -
 
     assert outcome.action == "moved" and "moved 0 repos" in outcome.detail
     assert repo.is_dir()
+
+
+def test_a_removal_an_interrupted_run_left_is_finished() -> None:
+    leftover = _root() / "git.example" / "app.git.removing"
+    (leftover / "objects").mkdir(parents=True)
+
+    (row,) = preview_cache(MigrationOptions())
+    assert (row.action, row.source) == ("delete", str(leftover))
+    (outcome,) = apply_cache()
+
+    assert outcome.action == "moved"
+    assert not _root().exists()

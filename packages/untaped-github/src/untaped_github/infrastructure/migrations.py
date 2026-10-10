@@ -41,6 +41,7 @@ from untaped_git.api import (
     overlaps_store,
     remove_if_emptied,
     store_root,
+    unfinished_removals,
 )
 from untaped_github import SPEC
 from untaped_github.errors import GitCorpusError
@@ -80,9 +81,12 @@ def preview_cache(options: MigrationOptions) -> Sequence[MigrationRow]:
         if root.is_dir() and (reason := refused(root)) is not None:
             rows.append(MigrationRow(action="keep", source=str(root), detail=f"kept: {reason}"))
             continue
+        if not root.is_dir():
+            continue
+        rows += unfinished_removals(root, options)
         repos = _repos(root)
         worktrees = _worktrees(root)
-        if not root.is_dir() or (not repos and not worktrees):
+        if not repos and not worktrees:
             continue
         overlap = 0
         for repo in repos:

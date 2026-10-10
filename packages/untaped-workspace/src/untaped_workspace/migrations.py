@@ -99,6 +99,7 @@ def preview_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Mig
             scanned[root] = _scan(root)
     borrowed = _borrowers(ctx, _mirrors(scanned))
     for root, found in scanned.items():
+        rows += _unfinished(root, options)
         adopted = [repo.path for repo in found if not repo.mirror]
         if adopted:
             stamped = sum(len(_worktrees_of(repo, listed)) for repo in adopted)
@@ -141,6 +142,12 @@ def preview_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Mig
                 )
             )
     return rows
+
+
+def _unfinished(root: Path, options: MigrationOptions) -> list[MigrationRow]:
+    from untaped_git.api import unfinished_removals  # noqa: PLC0415
+
+    return unfinished_removals(root, options) if root.is_dir() else []
 
 
 def apply_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationOutcome]:

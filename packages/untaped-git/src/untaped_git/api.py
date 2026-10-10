@@ -22,7 +22,7 @@ from untaped_git.domain.records import TreeEntry
 from untaped_git.domain.release import Released, Removed
 from untaped_git.domain.url import GitUrl, store_key, validate_git_url
 from untaped_git.infrastructure import remote
-from untaped_git.infrastructure.adopt import Adopted, adopt, remove_if_emptied
+from untaped_git.infrastructure.adopt import Adopted, adopt, remove_if_emptied, unfinished_removals
 from untaped_git.infrastructure.repo_files import config_value
 from untaped_git.infrastructure.store import Prefetched, RepoStore
 from untaped_git.settings import git_settings
@@ -48,6 +48,7 @@ __all__ = [
     "remove_if_emptied",
     "store_key",
     "store_root",
+    "unfinished_removals",
     "validate_git_url",
 ]
 
