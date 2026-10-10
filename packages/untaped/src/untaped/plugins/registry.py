@@ -13,7 +13,6 @@ stable surface from :mod:`untaped.sdk` instead.
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -36,7 +35,10 @@ from untaped.errors import ConfigError
 from untaped.records import DuplicateKindError
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
+    PLUGIN_NAME_PATTERN,
     RESERVED_SECTIONS,
+    owner_settings_model,
+    reserved_section_keys,
     validate_disjoint_settings_sections,
 )
 from untaped.stability import Stability, check_stability, mark_errors
@@ -50,13 +52,20 @@ _CORE_DISTRIBUTION = "untaped"
 #: Entry-point group every plugin is discovered from.
 PLUGINS_ENTRY_POINT_GROUP = "untaped.plugins"
 
-#: A plugin name: lowercase words joined by single hyphens. The name is also
-#: the plugin's config section, CLI group and :func:`plugin_dir`.
-PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
-
 #: Names no plugin may take, whatever they would collide with.
 RESERVED_PLUGIN_NAMES = frozenset(
-    {"untaped", "core", "sdk", "contracts", "plugins", "extensions", "profiles", "default", "shell"}
+    {
+        "untaped",
+        "core",
+        "sdk",
+        "contracts",
+        "plugins",
+        "extensions",
+        "caches",
+        "profiles",
+        "default",
+        "shell",
+    }
 )
 
 #: Management commands the root app mounts beside the plugins, in mount
@@ -72,9 +81,9 @@ ROOT_MANAGEMENT_COMMANDS = (
     "plugin",
 )
 
-#: Root commands core mounts or keeps for itself; a plugin's CLI group is its
-#: name, so no plugin may be named after one.
-RESERVED_COMMAND_GROUPS = frozenset({*ROOT_MANAGEMENT_COMMANDS, "rank", "contracts"})
+#: Root commands core mounts; a plugin's CLI group is its name, so no plugin
+#: may be named after one.
+RESERVED_COMMAND_GROUPS = frozenset(ROOT_MANAGEMENT_COMMANDS)
 
 
 @dataclass(frozen=True)
@@ -259,9 +268,25 @@ class _NoSettings(BaseModel):
     """The settings of a plugin that declares none: no fields."""
 
 
+def owns_contracts(spec: PluginSpec) -> bool:
+    """Whether ``spec`` declares contracts (read from the spec; nothing is imported)."""
+    return spec.contracts is not _no_contracts
+
+
+def section_settings(spec: PluginSpec) -> type[BaseModel] | None:
+    """The model registered for ``spec``'s config section; ``None`` when it has none.
+
+    A contract owner's section always exists: it carries the injected
+    ``extensions`` key (:func:`untaped.settings.owner_settings_model`).
+    """
+    if owns_contracts(spec):
+        return owner_settings_model(spec.settings or _NoSettings)
+    return spec.settings
+
+
 def settings_model(spec: PluginSpec) -> type[BaseModel]:
-    """``spec.settings``, or a model with no fields when the plugin has none."""
-    return spec.settings or _NoSettings
+    """The plugin's section model, or a model with no fields when it has none."""
+    return section_settings(spec) or _NoSettings
 
 
 def plugin_dir(spec: PluginSpec) -> Path:
@@ -550,6 +575,22 @@ def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
         )
 
 
+def _check_section_keys(spec: PluginSpec) -> None:
+    # Only an owner's settings section gets ``extensions`` injected.
+    injected = frozenset({"extensions"}) if owns_contracts(spec) else frozenset()
+    for label, model, keys in (
+        ("settings", spec.settings, injected),
+        ("state", spec.state, frozenset[str]()),
+    ):
+        taken = [] if model is None else reserved_section_keys(model, injected=keys)
+        if taken:
+            raise _Quarantine(
+                "bad-settings-keys",
+                f"plugin {spec.name!r} {label} declares {', '.join(taken)}, "
+                "which untaped reserves for its own section keys",
+            )
+
+
 def _check_state_model(spec: PluginSpec) -> None:
     if spec.state is None:
         return
@@ -601,6 +642,7 @@ def _check_doctor_checks(spec: PluginSpec, state: _CompositionState) -> None:
 
 
 def _check_key_mappings(spec: PluginSpec) -> None:
+    # The plugin's own model: an old key may never point at an injected key.
     if spec.settings is None:
         return
     errors = mapping_errors(spec.settings)
@@ -610,6 +652,7 @@ def _check_key_mappings(spec: PluginSpec) -> None:
 
 def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_reserved_name(spec, state)
+    _check_section_keys(spec)
     _check_key_mappings(spec)
     _check_state_model(spec)
     _check_skills(spec, state)

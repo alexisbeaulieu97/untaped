@@ -10,15 +10,26 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
+import re
 import warnings
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
-from typing import Any, ClassVar, Literal, cast
+from typing import Annotated, Any, ClassVar, Literal, cast
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, ValidationError, create_model, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StringConstraints,
+    ValidationError,
+    create_model,
+    model_validator,
+)
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -174,6 +185,87 @@ class Settings(_SettingsSources):
     http: HttpSettings = Field(default_factory=HttpSettings)
     ui: UiSettings = Field(default_factory=UiSettings)
     skills: SkillsSettings = Field(default_factory=SkillsSettings)
+
+
+#: A contract's or a contract method's name in settings: snake_case.
+ContractName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")]
+
+#: The grammar every plugin name follows.
+PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+
+#: A plugin's name in settings, checked against the grammar only: a ranking
+#: in ``profiles.default`` must not break a profile without that plugin.
+PluginName = Annotated[str, StringConstraints(pattern=PLUGIN_NAME_PATTERN.pattern)]
+
+
+def _distinct(names: list[str]) -> list[str]:
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise ValueError(f"{', '.join(repeated)} ranked twice")
+    return names
+
+
+class ExtensionSettings(BaseModel):
+    """One contract's settings under ``<owner>.extensions.<contract>``.
+
+    ``rank`` orders the providers of each method, first first; a provider
+    it doesn't name ranks below every one it does.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    rank: dict[ContractName, Annotated[list[PluginName], AfterValidator(_distinct)]] = Field(
+        default_factory=dict
+    )
+
+
+#: Keys the SDK injects into a plugin's section, so its own settings and
+#: state models may not declare them: ``extensions`` on every contract owner,
+#: ``caches`` for the caches a plugin declares.
+RESERVED_SECTION_KEYS = frozenset({"extensions", "caches"})
+
+
+def reserved_section_keys(
+    model: type[BaseModel], *, injected: frozenset[str] = frozenset()
+) -> list[str]:
+    """The keys of ``model`` that collide with a key the SDK injects.
+
+    No field and no field alias may take a :data:`RESERVED_SECTION_KEYS`
+    name. An old key (``renamed_keys``, ``retired_keys``) collides only with
+    a key the SDK actually ``injected`` into this section, so a plugin can
+    still move its own ``extensions`` setting away under a new name.
+    """
+    keys = set(model.model_fields)
+    for field in model.model_fields.values():
+        keys.update(
+            alias for alias in (field.alias, field.validation_alias) if isinstance(alias, str)
+        )
+    taken = RESERVED_SECTION_KEYS & keys
+    for name in ("renamed_keys", "retired_keys"):
+        declared = getattr(model, name, None)
+        if isinstance(declared, Mapping):
+            taken |= injected & {str(old).partition(".")[0] for old in declared}
+    return sorted(taken)
+
+
+@cache
+def owner_settings_model(model: type[BaseModel]) -> type[BaseModel]:
+    """``model`` with the injected ``extensions`` key every contract owner's section has.
+
+    Typed structurally (contract name → :class:`ExtensionSettings`), so
+    reading settings never imports an owner's contracts: whether a contract
+    or method exists is for ``gather`` and doctor to say, never a load error.
+    """
+    extensions: Any = (
+        dict[ContractName, ExtensionSettings],
+        Field(default_factory=dict, description="Settings of the contracts this plugin owns."),
+    )
+    return cast(
+        "type[BaseModel]",
+        create_model(
+            model.__name__, __base__=model, __module__=model.__module__, extensions=extensions
+        ),
+    )
 
 
 def model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
@@ -574,9 +666,11 @@ RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
 
 
 #: Config sections core owns: the ``Settings`` fields, the top-level layout
-#: keys and ``extensions`` (kept for contract settings). No tool section or
-#: state section may take one.
-RESERVED_SECTIONS = frozenset({"extensions", *Settings.model_fields, *RESERVED_STATE_SECTIONS})
+#: keys and the keys injected into plugin sections (:data:`RESERVED_SECTION_KEYS`).
+#: No tool section or state section may take one.
+RESERVED_SECTIONS = frozenset(
+    {*RESERVED_SECTION_KEYS, *Settings.model_fields, *RESERVED_STATE_SECTIONS}
+)
 
 
 def check_state_section_name(section: str) -> None:
