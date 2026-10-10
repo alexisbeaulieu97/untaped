@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing.git import GitRemote
 from untaped.testing import CliInvoker
+from untaped.testing.git import GitRemote
 from untaped_workspace.cli import app
 from untaped_workspace.cli.common import run_argv
 

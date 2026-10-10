@@ -2,8 +2,7 @@
 
 ``repos()`` lists the repositories of the inventory scope (``github.inventory.orgs``
 and ``teams``, else ``github.default_org``) live: a failed listing raises, so
-the contract's answer cache is the only place stale repos come from. The rows
-are still saved to the inventory file github's other commands read. A
+the contract's answer cache is the only place stale repos come from. A
 provider with no scope is not ready, so workspace says which setting to set.
 
 ``to_repo`` turns a ``github.repo`` row (listed, or piped from any github
@@ -14,9 +13,6 @@ or names another repo than ``full_name``, is refused.
 
 from __future__ import annotations
 
-import hashlib
-from datetime import timedelta
-
 from untaped.contracts import Configured, NotReady
 from untaped.sdk import UsageError, app_context
 from untaped_git.api import store_key
@@ -24,14 +20,12 @@ from untaped_github.application.inventory import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
 )
-from untaped_github.application.inventory_cache import CachedRepoInventory
 from untaped_github.application.scopes import normalize_team_scopes
 from untaped_github.domain.errors import github_failures
 from untaped_github.domain.hosts import github_web_host
 from untaped_github.domain.models import GithubRepo
 from untaped_github.errors import GithubError
 from untaped_github.infrastructure.github_client import GithubClient
-from untaped_github.infrastructure.inventory_store import JsonInventoryStore
 from untaped_github.settings import GithubSettings
 from untaped_workspace.api import Repo, RepoSource
 
@@ -71,18 +65,9 @@ class GithubRepos(RepoSource[GithubRepo], Configured[GithubSettings]):
     def repos(self) -> list[Repo]:
         settings = self.settings
         scope = inventory_scope(settings)
-
-        def fetch() -> tuple[GithubRepo, ...]:
-            with GithubClient(settings, http=app_context().http) as client, github_failures():
-                return ResolveRepositoryInventory(client)(scope)
-
-        cache = CachedRepoInventory(
-            JsonInventoryStore(settings.inventory.path.expanduser()),
-            fetch,
-            scope_key=_scope_key(settings, scope),
-            max_age=timedelta(seconds=settings.inventory.max_age_seconds),
-        )
-        return [self.to_repo(row) for row in cache(refresh=True).repos]
+        with GithubClient(settings, http=app_context().http) as client, github_failures():
+            rows = ResolveRepositoryInventory(client)(scope)
+        return [self.to_repo(row) for row in rows]
 
 
 def inventory_scope(settings: GithubSettings) -> RepositoryInventoryScope:
@@ -109,11 +94,3 @@ def inventory_scope(settings: GithubSettings) -> RepositoryInventoryScope:
             "or `untaped config set github.default_org ORG`",
         )
     return RepositoryInventoryScope(orgs=orgs, teams=teams)
-
-
-def _scope_key(settings: GithubSettings, scope: RepositoryInventoryScope) -> str:
-    teams = ",".join(sorted(f"{team.org}/{team.slug}" for team in scope.teams))
-    token = settings.token.get_secret_value() if settings.token else ""
-    # A short irreversible fingerprint: profiles with other tokens may see other repos.
-    identity = hashlib.sha256(token.encode()).hexdigest()[:16] if token else "anonymous"
-    return f"{settings.base_url}|token={identity}|orgs={','.join(sorted(scope.orgs))}|teams={teams}"

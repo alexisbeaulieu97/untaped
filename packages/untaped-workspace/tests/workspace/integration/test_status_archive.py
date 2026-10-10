@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from untaped.testing.git import GitRemote
-
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.application.status import WorkspaceStatus

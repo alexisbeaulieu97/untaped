@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 from untaped.testing.git import GitRemote
-
 from untaped_workspace.domain import LocalBranch, StoredRepo, StoreUse, archive_blockers
 from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees

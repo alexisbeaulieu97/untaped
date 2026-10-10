@@ -81,13 +81,10 @@ DESCRIPTIONS: dict[str, str] = {
     "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
     "this that GitHub reports as pushed since.",
     "github.sweep.parallel": "Default `sweep --parallel` and `cache sync --parallel` Git workers.",
-    "github.inventory.path": "Cached repository list (metadata only) that workspace "
-    "`create`/`add` resolve names from and the picker searches.",
-    "github.inventory.orgs": "Orgs whose repositories the inventory lists. With no orgs "
-    "or teams, `github.default_org`.",
+    "github.inventory.orgs": "Orgs whose repositories github lists for workspace (repo names, "
+    "the picker). With no orgs or teams, `github.default_org`.",
     "github.inventory.teams": "Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else "
-    "in `github.default_org`) whose repositories the inventory lists.",
-    "github.inventory.max_age_seconds": "Refresh the inventory when it is older than this.",
+    "in `github.default_org`) whose repositories github lists for workspace.",
     "jira.base_url": "Jira Data Center URL, for example `https://jira.example.com`.",
     "jira.token": "Jira personal access token. Falls back to `token_command`, then "
     "`JIRA_API_TOKEN`.",

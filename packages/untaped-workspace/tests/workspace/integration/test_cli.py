@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from untaped import quiet
-from untaped.testing.git import GitRemote
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend
+from untaped.testing.git import GitRemote
 from untaped_workspace.cli import app
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
@@ -248,7 +248,9 @@ def test_archive_reports_a_repo_that_changed_after_the_check_with_its_hint(
     )
 
 
-def test_archive_clean_workspace(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> None:
+def test_archive_clean_workspace(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
     run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     dry = run(app, ["archive", "J-1", "--dry-run", "--format", "json"])
     assert [r["action"] for r in _rows(dry)] == ["planned"]

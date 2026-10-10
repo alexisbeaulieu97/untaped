@@ -13,7 +13,6 @@ from untaped_github.domain.corpus import (
     unchanged_upstream,
 )
 from untaped_github.domain.hosts import github_web_host
-from untaped_github.domain.inventory import RepoInventory
 from untaped_github.domain.models import (
     CodeResult,
     CorpusRepoResult,
@@ -62,7 +61,6 @@ __all__ = [
     "RefEvaluation",
     "RefProfile",
     "RefSelector",
-    "RepoInventory",
     "RepoSearchFilters",
     "RepoSweepOutcome",
     "SweepQuery",

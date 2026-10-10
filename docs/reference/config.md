@@ -114,10 +114,8 @@ overridden for one process with the environment variable shown.
 | `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep` and `cache sync` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`). |
 | `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
-| `github.inventory.path` | path | `~/.untaped/github-inventory.json` | `UNTAPED_GITHUB__INVENTORY__PATH` | Cached repository list (metadata only) that workspace `create`/`add` resolve names from and the picker searches. |
-| `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories the inventory lists. With no orgs or teams, `github.default_org`. |
-| `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories the inventory lists. |
-| `github.inventory.max_age_seconds` | integer | `86400` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | Refresh the inventory when it is older than this. |
+| `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists for workspace (repo names, the picker). With no orgs or teams, `github.default_org`. |
+| `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists for workspace. |
 
 ## `jira`
 
@@ -175,6 +173,8 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
 | `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
+| `github.inventory.max_age_seconds` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | none | deleted in 11.0; workspace keeps the repos github lists for 6 hours (ctrl-r in its picker refreshes them) |
+| `github.inventory.path` | `UNTAPED_GITHUB__INVENTORY__PATH` | none | deleted in 11.0; workspace keeps the repos github lists for 6 hours (ctrl-r in its picker refreshes them) |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
 | `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `workspace.protocol` | `UNTAPED_WORKSPACE__PROTOCOL` | none | deleted in 11.0; set github.git_protocol |

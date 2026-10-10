@@ -8,15 +8,18 @@ from pathlib import Path
 
 import pytest
 
+from untaped.contracts import Source, gather
 from untaped.sdk import Picked, PickItem, PickRequest, PickResult
-from untaped.testing.git import GitRemote
-from untaped.testing import CliInvoker, ScriptedPromptBackend
-from untaped_github import api as github_api
-from untaped_github.api import RepoInventory, RepositoryInventoryItem
+from untaped.testing import CliInvoker, ScriptedPromptBackend, compose_with
+from untaped.testing.git import GitRemote, global_config
+from untaped_git import SPEC as GIT
+from untaped_workspace import SPEC as WORKSPACE
+from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.cli import app
 from untaped_workspace.domain import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import git
+from workspace.fakes import Listing
 
 pytestmark = pytest.mark.usefixtures("workspace_env", "composed")
 run = CliInvoker().invoke
@@ -117,7 +120,9 @@ def test_occupied_name_is_refused_before_the_picker(workspace_env: Path) -> None
     assert backend.calls == []
 
 
-def test_repo_flags_without_a_name_is_a_usage_error(make_upstream: Callable[..., GitRemote]) -> None:
+def test_repo_flags_without_a_name_is_a_usage_error(
+    make_upstream: Callable[..., GitRemote],
+) -> None:
     result = run(app, ["create", "--repo", make_upstream("api").url], interactive=True)
     assert result.exit_code == 2
     assert "workspace name is required" in result.output
@@ -273,20 +278,13 @@ def test_read_only_pick_is_a_detached_checkout(
     assert git(workspace_env / "J-1" / "api", "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"
 
 
-@pytest.mark.usefixtures("composed")
 def test_a_stored_only_pick_uses_its_stored_url(
-    make_upstream: Callable[..., GitRemote], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    """The inventory is unavailable (no scope) while GitHub is the default host: the
-    stored-only repo must come from its own stored URL, not github.com/acme/api."""
+    """No plugin lists repos: the stored-only repo comes from its own stored URL."""
     upstream = make_upstream("api")
     origin = "https://gitlab.example/acme/api.git"
-    for key, value in {
-        "GIT_CONFIG_COUNT": "1",
-        "GIT_CONFIG_KEY_0": f"url.{upstream}.insteadOf",
-        "GIT_CONFIG_VALUE_0": origin,
-    }.items():
-        monkeypatch.setenv(key, value)
+    global_config(f"url.file://{upstream.path}.insteadOf", origin, add=True)
     # A store repo, made the way `create` makes one; its worktree is gone again.
     worktrees = LocalGitWorktrees()
     scratch = workspace_env.parent / "scratch"
@@ -314,26 +312,23 @@ class _RefreshThenPick(_Capture):
         return super().pick_many(request)
 
 
-def test_a_pick_dropped_by_a_refresh_uses_its_remembered_url(
-    make_upstream: Callable[..., GitRemote], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_pick_dropped_by_a_refresh_uses_its_remembered_repo(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
     url = make_upstream("api").url
-    item = RepositoryInventoryItem(full_name="acme/api", clone_url=url)
-    refreshed: list[bool] = []
-
-    def inventory(*, refresh: bool | None = None) -> RepoInventory:
-        if refresh is True:
-            refreshed.append(True)
-        repos = () if refreshed else (item,)
-        return RepoInventory(repos=repos, refreshed_at=None, scope_key="k")
-
-    monkeypatch.setattr(github_api, "repo_inventory", inventory)
-    backend = _RefreshThenPick(_pick("J-1", "acme/api"))
-    result = run(app, ["create"], interactive=True, prompt_backend=backend)
+    github = Listing(Repo(name="acme/api", url=url, default_branch="main"))
+    with compose_with(GIT, WORKSPACE, provides={"github": [github]}):
+        gather(RepoSource.repos)()  # github's answer is stored: the picker's first pass shows it
+        github.rows = []  # and the refresh drops it
+        backend = _RefreshThenPick(_pick("J-1", "acme/api"))
+        result = run(app, ["create"], interactive=True, prompt_backend=backend)
     assert result.exit_code == 0, result.output
-    assert refreshed == [True]
+    assert [i.id for i in backend.requests[0].catalog.items] == ["acme/api"]
+    assert github.calls == 2
     record = StateWorkspaceStore().get("J-1")
-    assert record is not None and record.repos[0].url == url
+    assert record is not None
+    [spec] = record.repos
+    assert (spec.url, spec.source) == (url, Source(plugin="github", kind="workspace.repo"))
 
 
 def test_an_owner_less_hosted_repo_is_offered(workspace_env: Path, store_root: Path) -> None:
