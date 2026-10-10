@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from untaped.testing.git import GitRemote
+
 from untaped_workspace.domain import LocalBranch, StoredRepo, StoreUse, archive_blockers
 from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees
@@ -19,14 +21,15 @@ from workspace.conftest import add_submodule, commit_in, git, init_submodules, s
 
 
 @pytest.fixture
-def worktrees(store_root: Path) -> LocalGitWorktrees:
+def worktrees(store_root: Path, composed: None) -> LocalGitWorktrees:
+    """The adapter, in a root composing git and workspace (the store asks ``GitHost``)."""
     return LocalGitWorktrees()
 
 
 def test_new_branch_from_the_default_base(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     checkout = worktrees.checkout(url, dest, branch="feature/x", base=None)
     assert (checkout.action, checkout.base, checkout.backfill_error) == ("created", "main", None)
@@ -36,11 +39,11 @@ def test_new_branch_from_the_default_base(
 
 def test_a_checkout_lands_in_the_store_with_workspaces_file(
     worktrees: LocalGitWorktrees,
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
     store_root: Path,
     tmp_path: Path,
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     repo = store_repo(store_root, url)
@@ -51,9 +54,9 @@ def test_a_checkout_lands_in_the_store_with_workspaces_file(
 
 
 def test_existing_remote_branch_is_tracked(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api", branches=("feature/x",)))
+    url = make_upstream("api", branches=("feature/x",)).url
     dest = tmp_path / "ws" / "api"
     checkout = worktrees.checkout(url, dest, branch="feature/x", base=None)
     assert (checkout.action, checkout.detail) == ("checked_out", "tracking origin/feature/x")
@@ -61,27 +64,27 @@ def test_existing_remote_branch_is_tracked(
 
 
 def test_read_only_is_detached_at_the_base(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch=None, base=None)
     assert git(dest, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"
 
 
 def test_missing_base_is_not_found(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     with pytest.raises(GitError) as caught:
         worktrees.checkout(url, tmp_path / "ws" / "api", branch="x", base="nope")
     assert caught.value.category == "not_found"
 
 
 def test_branch_already_in_another_workspace_is_a_conflict(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     worktrees.checkout(url, tmp_path / "a" / "api", branch="feature/x", base=None)
     with pytest.raises(GitError) as caught:
         worktrees.checkout(url, tmp_path / "b" / "api", branch="feature/x", base=None)
@@ -90,9 +93,9 @@ def test_branch_already_in_another_workspace_is_a_conflict(
 
 
 def test_resume_after_removal_keeps_local_commits(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="feature/x", base=None)
     commit_in(first)
@@ -104,9 +107,9 @@ def test_resume_after_removal_keeps_local_commits(
 
 
 def test_status_counts_and_unpushed(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="feature/x", base=None)
     commit_in(dest)
@@ -121,9 +124,9 @@ def test_status_of_a_missing_worktree_is_none(worktrees: LocalGitWorktrees, tmp_
 
 
 def test_sibling_workspace_stashes_are_not_counted(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     mine, sibling = tmp_path / "a" / "api", tmp_path / "b" / "api"
     worktrees.checkout(url, mine, branch="mine", base=None)
     worktrees.checkout(url, sibling, branch="theirs", base=None)
@@ -135,9 +138,9 @@ def test_sibling_workspace_stashes_are_not_counted(
 
 
 def test_parallel_checkouts_of_one_repo(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     errors: list[BaseException] = []
 
     def run(name: str) -> None:
@@ -156,9 +159,9 @@ def test_parallel_checkouts_of_one_repo(
 
 
 def test_remove_prunes_a_hand_deleted_worktree(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     shutil.rmtree(dest)
@@ -167,9 +170,9 @@ def test_remove_prunes_a_hand_deleted_worktree(
 
 
 def test_remove_without_a_store_repo_needs_force(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     dest.mkdir(parents=True)
     with pytest.raises(GitError) as caught:
@@ -180,12 +183,12 @@ def test_remove_without_a_store_repo_needs_force(
 
 
 def test_a_renamed_default_branch_is_picked_up(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
     upstream = make_upstream("api")
-    url = str(upstream)
+    url = upstream.url
     worktrees.checkout(url, tmp_path / "a" / "api", branch="a", base=None)
-    git(upstream, "branch", "-m", "main", "trunk")  # origin renames its default branch
+    git(upstream.path, "branch", "-m", "main", "trunk")  # origin renames its default branch
     checkout = worktrees.checkout(url, tmp_path / "b" / "api", branch="b", base=None)
     assert checkout.base == "trunk"
 
@@ -198,9 +201,9 @@ def _advance_origin(url: str, branch: str, clone: Path) -> None:
 
 
 def test_in_use_remote_branch_is_a_conflict(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api", branches=("feature/x",)))
+    url = make_upstream("api", branches=("feature/x",)).url
     worktrees.checkout(url, tmp_path / "a" / "api", branch="feature/x", base=None)
     with pytest.raises(GitError) as caught:
         worktrees.checkout(url, tmp_path / "b" / "api", branch="feature/x", base=None)
@@ -209,9 +212,9 @@ def test_in_use_remote_branch_is_a_conflict(
 
 
 def test_resume_fast_forwards_a_branch_behind_origin(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="b", base=None)
     commit_in(first)
@@ -227,9 +230,9 @@ def test_resume_fast_forwards_a_branch_behind_origin(
 
 
 def test_resume_a_branch_ahead_of_origin(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api", branches=("b",)))
+    url = make_upstream("api", branches=("b",)).url
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="b", base=None)
     commit_in(first)
@@ -243,9 +246,9 @@ def test_resume_a_branch_ahead_of_origin(
 
 
 def test_resume_a_branch_diverged_from_origin(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api", branches=("b",)))
+    url = make_upstream("api", branches=("b",)).url
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="b", base=None)
     commit_in(first)
@@ -259,11 +262,11 @@ def test_resume_a_branch_diverged_from_origin(
 
 def test_a_half_created_store_repo_is_repaired(
     worktrees: LocalGitWorktrees,
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
     store_root: Path,
     tmp_path: Path,
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     repo = store_repo(store_root, url)
     repo.parent.mkdir(parents=True)
     git(tmp_path, "init", "-q", "--bare", str(repo))  # crashed before the label was written
@@ -273,9 +276,9 @@ def test_a_half_created_store_repo_is_repaired(
 
 
 def test_hand_deleted_destination_can_be_checked_out_again(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     shutil.rmtree(dest)
@@ -284,9 +287,9 @@ def test_hand_deleted_destination_can_be_checked_out_again(
 
 
 def test_read_only_commits_count_as_unpushed(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch=None, base=None)
     commit_in(dest)
@@ -295,31 +298,31 @@ def test_read_only_commits_count_as_unpushed(
 
 
 def test_unpushed_is_counted_when_the_base_is_gone_from_origin(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
     upstream = make_upstream("api", branches=("dev",))
-    url = str(upstream)
+    url = upstream.url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base="dev")
     commit_in(dest)
-    git(upstream, "branch", "-D", "dev")
+    git(upstream.path, "branch", "-D", "dev")
     assert worktrees.fetch(url, dest) is None
     status = worktrees.status(dest, branch="b")
     assert status is not None and status.unpushed == 1
 
 
 def test_fetch_without_a_store_repo_does_nothing(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     assert worktrees.fetch(url, tmp_path / "ws" / "api") is None
     assert not worktrees.in_store(url)
 
 
 def test_never_pushed_branch_has_no_upstream(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     status = worktrees.status(dest, branch="b")
@@ -330,11 +333,11 @@ def test_never_pushed_branch_has_no_upstream(
 
 
 def test_initialised_submodules_are_reported_and_force_removed(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
     upstream = make_upstream("api")
     add_submodule(upstream, make_upstream("lib"))
-    url = str(upstream)
+    url = upstream.url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     before = worktrees.status(dest, branch="b")
@@ -349,13 +352,13 @@ def test_initialised_submodules_are_reported_and_force_removed(
 @pytest.mark.parametrize("other", ["api", "web"])
 def test_status_of_an_unregistered_worktree_raises_git_error(
     worktrees: LocalGitWorktrees,
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
     store_root: Path,
     tmp_path: Path,
     other: str,
 ) -> None:
     """A recreated store repo leaves the old worktree orphaned, or (same dir name) aliased."""
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "a" / "api"
     worktrees.checkout(url, dest, branch="a", base=None)
     repo = store_repo(store_root, url)
@@ -374,12 +377,12 @@ def test_status_of_an_unregistered_worktree_raises_git_error(
 
 def test_status_accepts_a_relative_admin_gitdir(
     worktrees: LocalGitWorktrees,
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """git 2.48+ with worktree.useRelativePaths writes the admin gitdir relative to it."""
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     admin = Path(git(dest, "rev-parse", "--absolute-git-dir"))
@@ -391,12 +394,12 @@ def test_status_accepts_a_relative_admin_gitdir(
 
 def test_force_remove_reports_a_directory_it_cannot_delete(
     worktrees: LocalGitWorktrees,
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
     store_root: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     shutil.rmtree(store_repo(store_root, url))
@@ -412,20 +415,20 @@ def test_force_remove_reports_a_directory_it_cannot_delete(
 
 
 def test_an_existing_origin_head_is_not_refreshed_when_no_base_is_given(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
     upstream = make_upstream("api", branches=("dev",))
-    url = str(upstream)
+    url = upstream.url
     worktrees.checkout(url, tmp_path / "a" / "api", branch="a", base=None)
-    git(upstream, "symbolic-ref", "HEAD", "refs/heads/dev")
+    git(upstream.path, "symbolic-ref", "HEAD", "refs/heads/dev")
     checkout = worktrees.checkout(url, tmp_path / "b" / "api", branch="b", base=None)
     assert checkout.base == "main"  # origin/HEAD was already known; no extra remote query
 
 
 def test_an_existing_directory_hint_never_suggests_deleting(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     dest.mkdir(parents=True)
     (dest / "notes.md").write_text("keep")
@@ -450,11 +453,11 @@ def _stash_a_change(worktree: Path) -> None:
 )
 def test_remove_rechecks_for_work_made_after_the_status_check(
     worktrees: LocalGitWorktrees,
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
     tmp_path: Path,
     change: Callable[[Path], object],
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     assert archive_blockers(worktrees.status(dest, branch="b")) == ()
@@ -468,9 +471,9 @@ def test_remove_rechecks_for_work_made_after_the_status_check(
 
 
 def test_remote_branches_lists_the_stored_origin_branches(
-    worktrees: LocalGitWorktrees, make_upstream: Callable[..., Path], tmp_path: Path
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
-    url = str(make_upstream("api", branches=("release/2",)))
+    url = make_upstream("api", branches=("release/2",)).url
     assert worktrees.remote_branches(url) == []
     worktrees.checkout(url, tmp_path / "ws" / "api", branch=None, base=None)
     assert worktrees.remote_branches(url) == ["main", "release/2"]
@@ -532,11 +535,11 @@ def test_stored_repos_runs_no_git(
 
 def test_store_use_names_branches_worktrees_unpushed_work_and_stashes(
     worktrees: LocalGitWorktrees,
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
     store_root: Path,
     tmp_path: Path,
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     assert worktrees.store_use(url) is None
     live, pushed, ahead, stashed = (tmp_path / name / "api" for name in ("w", "x", "y", "z"))
     worktrees.checkout(url, live, branch="live", base=None)
@@ -564,11 +567,11 @@ def test_store_use_names_branches_worktrees_unpushed_work_and_stashes(
 
 def test_release_reports_who_kept_the_repo_or_what_it_freed(
     worktrees: LocalGitWorktrees,
-    make_upstream: Callable[..., Path],
+    make_upstream: Callable[..., GitRemote],
     store_root: Path,
     tmp_path: Path,
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
 

@@ -171,8 +171,13 @@ def _q(route: respx.Route) -> str:
         ),
         (
             ["code", "TODO", "--stdin"],
-            '{"untaped": "1", "kind": "github.sweep_repo", "record": {"repo": "acme/api"}}\n',
+            '{"untaped": "1", "kind": "github.sweep_repo", "record": {"full_name": "acme/api"}}\n',
             "TODO repo:acme/api",
+        ),
+        (
+            ["code", "TODO", "--stdin"],
+            '{"untaped": "1", "kind": "github.corpus_repo", "record": {"full_name": "acme/web"}}\n',
+            "TODO repo:acme/web",
         ),
         (
             ["issues", "--team", "acme/backend", "--state", "open"],
@@ -315,7 +320,7 @@ def test_search_large_limit_follows_link_pages_until_github_stops(limit: str) ->
     result, _ = _search(["repos", "--limit", limit, "--format", "json"], pages=pages)
 
     assert result.exit_code == 0, result.output
-    assert [row["repo"] for row in json.loads(result.stdout)] == [f"me/r{i}" for i in range(200)]
+    assert [row["full_name"] for row in json.loads(result.stdout)] == [f"me/r{i}" for i in range(200)]
 
 
 def test_search_limit_zero_is_a_usage_error() -> None:
@@ -405,7 +410,7 @@ def test_search_users_pipe_tags_user_hit_with_web_url() -> None:
 
 
 def test_search_repos_pipe_feeds_code_stdin_round_trip() -> None:
-    """``search repos --format pipe`` emits ``github.repo_hit`` envelopes that
+    """``search repos --format pipe`` emits ``github.repo`` envelopes that
     ``search code --stdin`` reads back into its repo scope."""
     repos = [
         {"id": 1, "name": "api", "full_name": "acme/api", "html_url": "https://x/acme/api"},
@@ -418,7 +423,8 @@ def test_search_repos_pipe_feeds_code_stdin_round_trip() -> None:
         ["code", "TODO", "--stdin", "--format", "json"], input=produced.stdout
     )
 
-    assert [(env["untaped"], env["kind"]) for env in envelopes] == [("1", "github.repo_hit")] * 2
+    assert [(env["untaped"], env["kind"]) for env in envelopes] == [("1", "github.repo")] * 2
+    assert [env["record"]["full_name"] for env in envelopes] == ["acme/api", "acme/web"]
     assert consumed.exit_code == 0, consumed.output
     assert _q(route) == "TODO (repo:acme/api OR repo:acme/web)"
 
@@ -461,7 +467,7 @@ def test_search_repos_rejects_oversized_query_before_http_and_explains_422() -> 
 @pytest.mark.parametrize(
     ("kind", "expected"),
     [
-        ("repos", {"repo", "description", "language", "stargazers_count", "updated_at"}),
+        ("repos", {"full_name", "description", "language", "stargazers_count", "updated_at"}),
         ("code", {"repo", "path"}),
         ("issues", {"repo", "number", "title", "state", "user_login"}),
         ("users", {"login", "type"}),

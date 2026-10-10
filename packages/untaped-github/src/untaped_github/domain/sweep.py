@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import ClassVar, Literal
+
+from pydantic import Field
+
+from untaped_github.domain.models import GithubRepo
 
 RefProfile = Literal["default", "branches", "tags", "all"]
 
@@ -59,17 +63,21 @@ class RefEvaluation:
     hits: Mapping[str, int]
 
 
-@dataclass(frozen=True)
-class RepoSweepOutcome:
-    """Aggregated sweep result for one repository."""
+class RepoSweepOutcome(GithubRepo, kind="github.sweep_repo"):
+    """Aggregated sweep result for one repository (``github.sweep_repo``).
 
-    repo: str
-    clone_url: str | None
-    matched: bool
-    refs_matched: tuple[str, ...]
-    hits: Mapping[str, int]
-    owners: tuple[str, ...]
-    fetched_at: str | None
+    A :class:`GithubRepo`, so a sweep's matches pipe into workspace (or a
+    second sweep) like any repo row.
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("full_name", "refs_matched", "hits", "fetched_at")
+
+    full_name: str
+    matched: bool = True
+    refs_matched: tuple[str, ...] = ()
+    hits: dict[str, int] = Field(default_factory=dict)
+    owners: tuple[str, ...] = ()
+    fetched_at: str | None = None
 
 
 def ref_matches(query: SweepQuery, evaluation: RefEvaluation) -> bool:

@@ -9,13 +9,13 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import UntapedError
-from untaped_github.application.inventory import RepositoryInventoryItem
 from untaped_github.domain.inventory import RepoInventory
+from untaped_github.domain.models import GithubRepo
 from untaped_github.infrastructure.inventory_store import JsonInventoryStore
 
 INVENTORY = RepoInventory(
     repos=(
-        RepositoryInventoryItem(
+        GithubRepo(
             full_name="acme/api",
             clone_url="https://github.com/acme/api.git",
             default_branch="main",

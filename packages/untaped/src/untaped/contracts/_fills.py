@@ -25,13 +25,13 @@ from typing import Any
 from pydantic import TypeAdapter, ValidationError
 
 from untaped.contracts._cache import return_type
-from untaped.contracts._declare import Binding, Issued, fills
+from untaped.contracts._declare import Binding, fills
 from untaped.contracts._gather import issue
 from untaped.contracts._registry import Provider
 from untaped.contracts._schema import schema_hash
 from untaped.errors import first_validation_error
 from untaped.fs import atomic_write
-from untaped.records import Record, kind_of
+from untaped.records import Issued, Record, kind_of
 
 #: The file in a provider's plugin package holding the owner schema hashes it was checked against.
 FILLS_FILE = "fills.json"

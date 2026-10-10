@@ -473,6 +473,30 @@ class CheckRecord(Record):
     status: CheckStatus
 
 
+class Source(BaseModel):
+    """Where an issued record came from: the provider's plugin and its own record.
+
+    ``record`` is the JSON dump of the provider's own record when its item type
+    is not the owner's model, else empty. The SDK fills it; a provider never does.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    plugin: str
+    kind: str
+    record: dict[str, Any] = {}
+
+
+class Issued(Record):
+    """A record a provider issues on an owner's behalf; ``source`` says which provider.
+
+    Exported from ``untaped.contracts``; it lives here so an owner's model
+    (kept in ``state.yml``, say) loads without the contracts machinery.
+    """
+
+    source: Source | None = None
+
+
 __all__ = [
     "FAILURE_ACTIONS",
     "KIND_PATTERN",
@@ -481,8 +505,10 @@ __all__ = [
     "CheckRecord",
     "CheckStatus",
     "DuplicateKindError",
+    "Issued",
     "OutcomeRecord",
     "Record",
+    "Source",
     "TableGlyph",
     "TargetRecord",
     "UtcTimestamp",

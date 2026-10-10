@@ -20,7 +20,6 @@ from untaped_workspace.domain.models import (
     Checkout,
     RepoArg,
     RepoSpec,
-    ResolvedRepo,
     WorkspaceRecord,
 )
 from untaped_workspace.domain.naming import (
@@ -31,6 +30,7 @@ from untaped_workspace.domain.naming import (
     validate_workspace_name,
 )
 from untaped_workspace.domain.records import RepoOutcome
+from untaped_workspace.domain.repo import Repo
 from untaped_workspace.errors import WorkspaceError
 
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ class _Job:
 
     index: int
     arg: RepoArg
-    resolved: ResolvedRepo
+    resolved: Repo
     dir: str
     branch: str | None
 
@@ -125,23 +125,20 @@ class ProvisionRepos:
             workspace_root(self._workspaces_dir, current.name).mkdir(parents=True, exist_ok=True)
             return self._provision(current, repos, resolved, on_done)
 
-    def _resolve(self, repos: Sequence[RepoArg]) -> list[ResolvedRepo]:
-        return [self._resolve_one(arg) for arg in repos]
-
-    def _resolve_one(self, arg: RepoArg) -> ResolvedRepo:
-        """Resolve ``arg.ident``; when that fails, its ``fallback`` URL if it has one."""
-        try:
-            return self._catalog.resolve(arg.ident)
-        except UntapedError:
-            if arg.fallback is None:
-                raise
-            return self._catalog.resolve(arg.fallback)
+    def _resolve(self, repos: Sequence[RepoArg]) -> list[Repo]:
+        """Each argument's repo: the one already chosen (picked, piped), else ``ident`` resolved."""
+        return [
+            self._catalog.admit(arg.repo)
+            if arg.repo is not None
+            else self._catalog.resolve(arg.ident)
+            for arg in repos
+        ]
 
     def _provision(
         self,
         record: WorkspaceRecord,
         repos: Sequence[RepoArg],
-        resolved: Sequence[ResolvedRepo],
+        resolved: Sequence[Repo],
         on_done: Callable[[RepoOutcome, int, int], None] | None,
     ) -> list[RepoOutcome]:
         workspace_dir = workspace_root(self._workspaces_dir, record.name)
@@ -173,8 +170,7 @@ class ProvisionRepos:
                         f"`untaped workspace status --fetch {record.name}` resumes it"
                     )
                 specs[job.index] = RepoSpec(
-                    url=job.resolved.url,
-                    name=job.resolved.name,
+                    **dict(job.resolved),
                     dir=job.dir,
                     branch=job.branch,
                     base=result.base,
@@ -188,7 +184,7 @@ class ProvisionRepos:
         return [rows[i] for i in sorted(rows)]
 
     def _jobs(
-        self, record: WorkspaceRecord, fresh: Sequence[tuple[int, RepoArg, ResolvedRepo]]
+        self, record: WorkspaceRecord, fresh: Sequence[tuple[int, RepoArg, Repo]]
     ) -> list[_Job]:
         """One checkout job per new repo, with its directory and branch."""
         dirs = assign_dirs([repo_identity(repo.url) for _, _, repo in fresh], record.repos)
@@ -247,16 +243,16 @@ def refuse_occupied(store: WorkspaceStore, workspaces_dir: Path, name: str) -> N
 def _partition(
     record: WorkspaceRecord,
     repos: Sequence[RepoArg],
-    resolved: Sequence[ResolvedRepo],
+    resolved: Sequence[Repo],
     workspace_dir: Path,
-) -> tuple[dict[int, RepoOutcome], list[tuple[int, RepoArg, ResolvedRepo]]]:
+) -> tuple[dict[int, RepoOutcome], list[tuple[int, RepoArg, Repo]]]:
     """Split requested repos into ``unchanged`` rows (already present) and new ones.
 
     Both are keyed by request position; a repo requested twice counts once.
     """
     rows: dict[int, RepoOutcome] = {}
     present = {repo_key(spec.url): spec for spec in record.repos}
-    fresh: list[tuple[int, RepoArg, ResolvedRepo]] = []
+    fresh: list[tuple[int, RepoArg, Repo]] = []
     seen: set[tuple[str, ...]] = set()
     for index, (arg, repo) in enumerate(zip(repos, resolved, strict=True)):
         key = repo_key(repo.url)

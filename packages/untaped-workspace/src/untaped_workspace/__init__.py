@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,6 +13,8 @@ from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 if TYPE_CHECKING:
     from cyclopts import App
 
+    from untaped.contracts import Contract
+
 __all__ = ["SPEC", "build_app"]
 
 
@@ -20,6 +23,12 @@ def build_app() -> App:
     from untaped_workspace.cli import app  # noqa: PLC0415
 
     return app
+
+
+def _contracts() -> Sequence[type[Contract]]:
+    from untaped_workspace.api import RepoSource  # noqa: PLC0415  # loads the contracts machinery
+
+    return (RepoSource,)
 
 
 SPEC = PluginSpec(
@@ -43,4 +52,5 @@ SPEC = PluginSpec(
         ),
     ),
     doctor_checks=(executable_check("workspace.git", "git", purpose="workspace commands"),),
+    contracts=_contracts,
 )

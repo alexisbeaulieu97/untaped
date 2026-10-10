@@ -6,20 +6,18 @@ import json
 import shutil
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from untaped import quiet
+from untaped.testing.git import GitRemote
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend
-from untaped_github import api as github_api
-from untaped_github.api import RepositoryInventoryItem
 from untaped_workspace.cli import app
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import add_submodule, commit_in, git, init_submodules
 
-pytestmark = pytest.mark.usefixtures("workspace_env")
+pytestmark = pytest.mark.usefixtures("workspace_env", "composed")
 run = CliInvoker().invoke
 
 
@@ -29,14 +27,15 @@ def _rows(result: CliResult) -> list[dict[str, object]]:
 
 
 @pytest.fixture
-def quiet_mode() -> Iterator[None]:
+def quiet_mode(composed: None) -> Iterator[None]:
+    """Quiet output, set after the root is composed (composing resets it)."""
     token = quiet.enable()
     yield
     quiet.reset(token)
 
 
-def test_create_list_path(make_upstream: Callable[..., Path], workspace_env: Path) -> None:
-    url = str(make_upstream("api"))
+def test_create_list_path(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> None:
+    url = make_upstream("api").url
     created = run(app, ["create", "J-1", "--repo", url, "--format", "json"])
     assert created.exit_code == 0, created.output
     [row] = _rows(created)
@@ -48,9 +47,9 @@ def test_create_list_path(make_upstream: Callable[..., Path], workspace_env: Pat
 
 
 def test_create_prints_the_path_last_in_table_mode(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    created = run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    created = run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     assert created.exit_code == 0, created.output
     lines = created.stdout.strip().splitlines()
     assert len(lines) > 1
@@ -59,28 +58,20 @@ def test_create_prints_the_path_last_in_table_mode(
 
 @pytest.mark.usefixtures("quiet_mode")
 def test_create_quiet_prints_only_the_path(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    created = run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    created = run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     assert created.exit_code == 0, created.output
     assert created.stdout.strip() == str(workspace_env / "J-1")
 
 
-def test_create_reads_repos_from_stdin_after_repo(make_upstream: Callable[..., Path]) -> None:
-    api, web = str(make_upstream("api")), str(make_upstream("web"))
+def test_create_reads_repos_from_stdin_after_repo(make_upstream: Callable[..., GitRemote]) -> None:
+    api, web = make_upstream("api").url, make_upstream("web").url
     created = run(
         app, ["create", "J-1", "--stdin", "--repo", api, "--format", "json"], input=web + "\n"
     )
     assert created.exit_code == 0, created.output
     assert [r["dir"] for r in _rows(created)] == ["api", "web"]
-
-
-def test_create_reads_clone_urls_from_pipe_records(make_upstream: Callable[..., Path]) -> None:
-    web = str(make_upstream("web"))
-    line = json.dumps({"untaped": "1", "kind": "github.repo", "record": {"clone_url": web}})
-    created = run(app, ["create", "J-1", "--stdin", "--format", "json"], input=line + "\n")
-    assert created.exit_code == 0, created.output
-    assert [r["dir"] for r in _rows(created)] == ["web"]
 
 
 def test_create_without_repos_makes_an_empty_workspace(workspace_env: Path) -> None:
@@ -107,9 +98,9 @@ def test_create_with_a_typo_leaves_nothing(workspace_env: Path) -> None:
 
 
 def test_status_from_inside_and_check(
-    make_upstream: Callable[..., Path], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     repo = workspace_env / "J-1" / "api"
     monkeypatch.chdir(repo)
     assert run(app, ["status", "--check"]).exit_code == 0
@@ -117,14 +108,14 @@ def test_status_from_inside_and_check(
     assert run(app, ["status", "--check"]).exit_code == 3
 
 
-def test_status_all(make_upstream: Callable[..., Path]) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
-    run(app, ["create", "J-2", "--repo", str(make_upstream("web"))])
+def test_status_all(make_upstream: Callable[..., GitRemote]) -> None:
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
+    run(app, ["create", "J-2", "--repo", make_upstream("web").url])
     rows = _rows(run(app, ["status", "--all", "--format", "json"]))
     assert [(r["workspace"], r["state"]) for r in rows] == [("J-1", "ok"), ("J-2", "ok")]
 
 
-def test_status_all_with_a_name_is_usage(make_upstream: Callable[..., Path]) -> None:
+def test_status_all_with_a_name_is_usage(make_upstream: Callable[..., GitRemote]) -> None:
     assert run(app, ["status", "J-1", "--all"]).exit_code == 2
 
 
@@ -142,8 +133,8 @@ def test_unknown_name_is_not_found(workspace_env: Path) -> None:
     assert run(app, ["path", "nope"]).exit_code == 1
 
 
-def test_duplicate_create_hint(make_upstream: Callable[..., Path]) -> None:
-    url = str(make_upstream("api"))
+def test_duplicate_create_hint(make_upstream: Callable[..., GitRemote]) -> None:
+    url = make_upstream("api").url
     run(app, ["create", "J-1", "--repo", url])
     again = run(app, ["create", "J-1", "--repo", url])
     assert again.exit_code == 1
@@ -152,9 +143,9 @@ def test_duplicate_create_hint(make_upstream: Callable[..., Path]) -> None:
 
 
 def test_a_repo_missing_from_the_store_blocks_archive_until_confirmed(
-    make_upstream: Callable[..., Path], workspace_env: Path, store_root: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, store_root: Path
 ) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     work = workspace_env / "J-1" / "api" / "scratch.txt"
     work.write_text("precious")
     shutil.rmtree(store_root)
@@ -169,10 +160,10 @@ def test_a_repo_missing_from_the_store_blocks_archive_until_confirmed(
     assert not work.exists()
 
 
-def test_status_fetch_failure_is_per_repo(make_upstream: Callable[..., Path]) -> None:
+def test_status_fetch_failure_is_per_repo(make_upstream: Callable[..., GitRemote]) -> None:
     api, web = make_upstream("api"), make_upstream("web")
-    run(app, ["create", "J-1", "--repo", str(api), "--repo", str(web)])
-    api.rename(api.with_name("moved.git"))
+    run(app, ["create", "J-1", "--repo", api.url, "--repo", web.url])
+    api.path.rename(api.path.with_name("moved.git"))
     result = run(app, ["status", "J-1", "--fetch", "--format", "json"])
     assert result.exit_code == 1, result.output
     rows = _rows(result)
@@ -203,9 +194,9 @@ class _ProbingBackend(ScriptedPromptBackend):
 
 
 def test_archive_holds_the_workspace_lock_from_check_to_removal(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     commit_in(workspace_env / "J-1" / "api")
     backend = _ProbingBackend(workspace_env)
     forced = run(app, ["archive", "J-1", "--force"], interactive=True, prompt_backend=backend)
@@ -215,9 +206,9 @@ def test_archive_holds_the_workspace_lock_from_check_to_removal(
 
 
 def test_archive_refuses_dirty_then_forces(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     repo = workspace_env / "J-1" / "api"
     commit_in(repo)
     refused = run(app, ["archive", "J-1", "--format", "json"])
@@ -238,9 +229,9 @@ def test_archive_refuses_dirty_then_forces(
 
 
 def test_archive_reports_a_repo_that_changed_after_the_check_with_its_hint(
-    make_upstream: Callable[..., Path], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     remove = LocalGitWorktrees.remove
 
     def edit_then_remove(self: LocalGitWorktrees, url: str, dest: Path, *, force: bool) -> None:
@@ -257,8 +248,8 @@ def test_archive_reports_a_repo_that_changed_after_the_check_with_its_hint(
     )
 
 
-def test_archive_clean_workspace(make_upstream: Callable[..., Path], workspace_env: Path) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+def test_archive_clean_workspace(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> None:
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     dry = run(app, ["archive", "J-1", "--dry-run", "--format", "json"])
     assert [r["action"] for r in _rows(dry)] == ["planned"]
     archived = run(app, ["archive", "J-1", "--format", "json"])
@@ -268,9 +259,9 @@ def test_archive_clean_workspace(make_upstream: Callable[..., Path], workspace_e
 
 
 def test_remove_previews_confirms_then_releases(
-    make_upstream: Callable[..., Path], workspace_env: Path, store_root: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, store_root: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     run(app, ["create", "J-1", "--repo", url])
     dry = run(app, ["remove", "J-1", "--dry-run", "--format", "json"])
     assert dry.exit_code == 0, dry.output
@@ -296,9 +287,9 @@ def test_remove_previews_confirms_then_releases(
 
 
 def test_remove_refuses_work_it_would_lose(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     (workspace_env / "J-1" / "api" / "scratch.txt").write_text("precious")
     refused = run(app, ["remove", "J-1", "--yes", "--format", "json"])
     assert refused.exit_code == 1
@@ -314,23 +305,23 @@ def test_remove_of_an_unknown_workspace_is_not_found(workspace_env: Path) -> Non
     assert result.stderr == "error: workspace not found: 'nope'; known: none\n"
 
 
-def test_add_a_second_repo(make_upstream: Callable[..., Path], workspace_env: Path) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
-    added = run(app, ["add", "J-1", "--repo", str(make_upstream("web")), "--format", "json"])
+def test_add_a_second_repo(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> None:
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
+    added = run(app, ["add", "J-1", "--repo", make_upstream("web").url, "--format", "json"])
     assert added.exit_code == 0, added.output
     assert (workspace_env / "J-1" / "web" / "README.md").exists()
 
 
-def test_add_read_only(make_upstream: Callable[..., Path], workspace_env: Path) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
-    added = run(app, ["add", "J-1", "--read-only", str(make_upstream("web")), "--format", "json"])
+def test_add_read_only(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> None:
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
+    added = run(app, ["add", "J-1", "--read-only", make_upstream("web").url, "--format", "json"])
     assert added.exit_code == 0, added.output
     [row] = _rows(added)
     assert (row["read_only"], row["branch"]) == (True, None)
 
 
-def test_same_branch_in_two_workspaces_conflicts(make_upstream: Callable[..., Path]) -> None:
-    url = str(make_upstream("api"))
+def test_same_branch_in_two_workspaces_conflicts(make_upstream: Callable[..., GitRemote]) -> None:
+    url = make_upstream("api").url
     run(app, ["create", "J-1", "--repo", url, "--branch", "feature/x"])
     second = run(app, ["create", "J-2", "--repo", url, "--branch", "feature/x", "--format", "json"])
     assert second.exit_code == 1
@@ -342,9 +333,9 @@ def test_same_branch_in_two_workspaces_conflicts(make_upstream: Callable[..., Pa
 
 
 def test_read_only_commit_blocks_archive(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    run(app, ["create", "J-1", "--read-only", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--read-only", make_upstream("api").url])
     repo = workspace_env / "J-1" / "api"
     commit_in(repo)
     assert run(app, ["status", "J-1", "--check"]).exit_code == 3
@@ -356,9 +347,9 @@ def test_read_only_commit_blocks_archive(
 
 
 def test_unreadable_worktree_is_an_error_row_and_force_archives(
-    make_upstream: Callable[..., Path], workspace_env: Path, store_root: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, store_root: Path
 ) -> None:
-    url = str(make_upstream("api"))
+    url = make_upstream("api").url
     run(app, ["create", "J-1", "--repo", url])
     store_root.rename(store_root.with_name("store-moved"))
     assert run(app, ["create", "J-2", "--repo", url]).exit_code == 0  # a fresh store repo
@@ -379,22 +370,22 @@ def test_unreadable_worktree_is_an_error_row_and_force_archives(
 
 
 def test_status_survives_a_base_deleted_on_origin(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
     upstream = make_upstream("api", branches=("dev",))
-    run(app, ["create", "J-1", "--repo", str(upstream), "--base", "dev"])
-    git(upstream, "branch", "-D", "dev")
+    run(app, ["create", "J-1", "--repo", upstream.url, "--base", "dev"])
+    git(upstream.path, "branch", "-D", "dev")
     result = run(app, ["status", "J-1", "--fetch", "--check", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert [r["state"] for r in _rows(result)] == ["ok"]
 
 
 def test_submodules_block_archive_until_forced(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
     upstream = make_upstream("api")
     add_submodule(upstream, make_upstream("lib"))
-    run(app, ["create", "J-1", "--repo", str(upstream)])
+    run(app, ["create", "J-1", "--repo", upstream.url])
     repo = workspace_env / "J-1" / "api"
     init_submodules(repo)
     checked = run(app, ["status", "J-1", "--check", "--format", "json"])
@@ -407,9 +398,9 @@ def test_submodules_block_archive_until_forced(
 
 
 def test_stash_hint_protects_other_workspaces_stashes(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     repo = workspace_env / "J-1" / "api"
     for key, value in (("user.email", "t@t"), ("user.name", "t")):
         git(repo, "config", key, value)
@@ -422,9 +413,9 @@ def test_stash_hint_protects_other_workspaces_stashes(
 
 
 def test_archive_with_leftover_files_skips_the_workspace_row(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     (workspace_env / "J-1" / "notes.md").write_text("keep")
     archived = run(app, ["archive", "J-1", "--format", "json"])
     assert archived.exit_code == 0, archived.output
@@ -433,45 +424,10 @@ def test_archive_with_leftover_files_skips_the_workspace_row(
     assert (workspace_env / "J-1" / "notes.md").exists()
 
 
-def _inventory(monkeypatch: pytest.MonkeyPatch, *items: RepositoryInventoryItem) -> None:
-    monkeypatch.setattr(
-        github_api, "repo_inventory", lambda **_: SimpleNamespace(repos=list(items))
-    )
-
-
-def test_stdin_records_resolve_their_full_name_through_the_inventory(
-    make_upstream: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    web = str(make_upstream("web", branches=("dev",)))
-    _inventory(
-        monkeypatch,
-        RepositoryInventoryItem(full_name="acme/web", clone_url=web, default_branch="dev"),
-    )
-    record = {"repo": "acme/web", "clone_url": "https://example.invalid/acme/web.git"}
-    line = json.dumps({"untaped": "1", "kind": "github.repo", "record": record})
-    created = run(app, ["create", "J-1", "--stdin", "--format", "json"], input=line + "\n")
-    assert created.exit_code == 0, created.output
-    [row] = _rows(created)
-    assert (row["repo"], row["base"]) == ("acme/web", "dev")
-
-
-def test_stdin_records_outside_the_inventory_use_their_clone_url(
-    make_upstream: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    web = str(make_upstream("web"))
-    _inventory(monkeypatch)
-    line = json.dumps(
-        {"untaped": "1", "kind": "github.repo", "record": {"repo": "acme/web", "clone_url": web}}
-    )
-    created = run(app, ["create", "J-1", "--stdin", "--format", "json"], input=line + "\n")
-    assert created.exit_code == 0, created.output
-    assert [r["dir"] for r in _rows(created)] == ["web"]
-
-
 def test_base_applies_to_read_only_repos(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    url = str(make_upstream("api", branches=("dev",)))
+    url = make_upstream("api", branches=("dev",)).url
     created = run(app, ["create", "J-1", "--read-only", url, "--base", "dev", "--format", "json"])
     assert created.exit_code == 0, created.output
     [row] = _rows(created)
@@ -479,12 +435,12 @@ def test_base_applies_to_read_only_repos(
 
 
 def test_create_refuses_an_old_workspace_directory(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
     old = workspace_env / "J-1"
     old.mkdir(parents=True)
     (old / "untaped.yml").write_text("an old workspace")
-    refused = run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    refused = run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     assert refused.exit_code == 1, refused.output
     assert "move it aside or pick another name" in refused.stderr
     assert run(app, ["list", "--format", "json"]).stdout.strip() in ("", "[]")

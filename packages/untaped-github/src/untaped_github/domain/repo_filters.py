@@ -7,9 +7,9 @@ import re
 from collections.abc import Callable
 from typing import Literal
 
-from untaped_github.domain.models import RepoListResult
+from untaped_github.domain.models import GithubRepo
 
-RepoMatcher = Callable[[RepoListResult], bool]
+RepoMatcher = Callable[[GithubRepo], bool]
 ArchivedMode = Literal["include", "exclude", "only"]
 """How a command treats archived repositories: keep them, drop them, or keep only them."""
 
@@ -29,7 +29,7 @@ def compile_repo_pattern(pattern: str, *, regex: bool = False) -> RepoMatcher:
     return lambda row: fnmatch.fnmatchcase(target(row).casefold(), glob)
 
 
-def _target_getter(pattern: str) -> Callable[[RepoListResult], str]:
+def _target_getter(pattern: str) -> Callable[[GithubRepo], str]:
     if "/" in pattern:
-        return lambda row: row.repo
-    return lambda row: row.repo.rpartition("/")[2]
+        return lambda row: row.full_name
+    return lambda row: row.full_name.rpartition("/")[2]

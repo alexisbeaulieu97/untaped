@@ -13,13 +13,13 @@ from untaped.sdk import (
     app_context,
     read_stdin_input,
 )
-from untaped_github.application.inventory import RepositoryInventoryItem
 from untaped_github.application.scopes import TeamScope, normalize_team_scopes
 from untaped_github.domain import ArchivedMode
+from untaped_github.domain.models import GithubRepo
 from untaped_github.settings import GithubSettings
 
-REPO_KINDS = frozenset({"github.repo", "github.repo_hit", "github.sweep_repo"})
-"""Pipe record kinds whose ``repo`` names a repository for ``--stdin``."""
+REPO_KINDS = frozenset({"github.repo", "github.sweep_repo", "github.corpus_repo"})
+"""Pipe record kinds whose ``full_name`` names a repository for ``--stdin``."""
 
 OrgOption = Annotated[
     list[str] | None,
@@ -77,7 +77,7 @@ def org_scope(org: list[str] | None, *, scoped: bool) -> tuple[str, ...]:
     return (default,) if default else ()
 
 
-def read_stdin_repos() -> tuple[tuple[str, ...], tuple[RepositoryInventoryItem, ...]]:
+def read_stdin_repos() -> tuple[tuple[str, ...], tuple[GithubRepo, ...]]:
     """Read ``--stdin`` repos as names to look up plus records complete enough to use as-is.
 
     A piped record that carries ``default_branch`` and a clone or web URL
@@ -88,20 +88,16 @@ def read_stdin_repos() -> tuple[tuple[str, ...], tuple[RepositoryInventoryItem, 
     if piped.records is None:
         return piped.values, ()
     names: list[str] = []
-    items: list[RepositoryInventoryItem] = []
+    items: list[GithubRepo] = []
     for env in piped.records:
         record = env.record
-        repo = record.get("repo")
-        if not isinstance(repo, str) or not repo.strip():
+        full_name = record.get("full_name")
+        if not isinstance(full_name, str) or not full_name.strip():
             raise ConfigError(
-                f"line {env.lineno}: record 'repo' is missing or blank", category="invalid"
+                f"line {env.lineno}: record 'full_name' is missing or blank", category="invalid"
             )
-        if record.get("default_branch") and (record.get("clone_url") or record.get("url")):
-            items.append(
-                RepositoryInventoryItem.model_validate(
-                    {**record, "full_name": repo.strip(), "html_url": record.get("url")}
-                )
-            )
+        if record.get("default_branch") and (record.get("clone_url") or record.get("html_url")):
+            items.append(GithubRepo.model_validate({**record, "full_name": full_name.strip()}))
         else:
-            names.append(repo.strip())
+            names.append(full_name.strip())
     return tuple(names), tuple(items)

@@ -17,8 +17,8 @@ Archiving refuses while a repo has uncommitted, stashed or unpushed work.
 
 ## Set up
 
-Repos named `OWNER/NAME` or `NAME` are looked up in the GitHub inventory, so
-set a GitHub token (see
+Repos named `OWNER/NAME` or `NAME` are looked up in the repos the installed
+repo providers list. For GitHub's, set a GitHub token (see
 [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md#set-up))
 and the orgs or teams to list:
 
@@ -30,7 +30,7 @@ untaped config set github.inventory.orgs '["acme"]'
 Fetching a private repo uses the token of the plugin that claims its host
 (GitHub's for `github.com`), else your own Git credentials; see the
 skill's [setup](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/src/untaped_workspace/skills/untaped-workspace/SKILL.md#setup).
-Full git URLs skip the inventory. Directories, branch
+Clone URLs (`https://`, `ssh://`, `user@host:path`) skip the lookup. Directories, branch
 naming and parallelism are in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#workspace).
 
@@ -63,7 +63,7 @@ untaped workspace add PROJ-123
 ```
 
 `add` takes repos by name, from a pipe, or, with no repos in a terminal, from
-a picker over the GitHub inventory, the repos in the repo store and any git
+a picker over the providers' repos, the repos in the repo store and any git
 URL you paste.
 `create` opens the same picker, which also creates the workspace with no
 repos selected. `create NAME --empty` makes an empty workspace to `add` to
@@ -96,4 +96,4 @@ The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packa
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#workspace) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#workspace)
-- [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md), which supplies the repo inventory
+- [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md), which lists repos for workspace (its `RepoSource` provider)

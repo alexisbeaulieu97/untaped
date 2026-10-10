@@ -8,25 +8,26 @@ from pathlib import Path
 
 import pytest
 
+from untaped.testing.git import GitRemote
 from untaped.testing import CliInvoker
 from untaped_workspace.cli import app
 from untaped_workspace.cli.common import run_argv
 
-pytestmark = pytest.mark.usefixtures("workspace_env")
+pytestmark = pytest.mark.usefixtures("workspace_env", "composed")
 run = CliInvoker().invoke
 
 
 @pytest.fixture
-def ws(make_upstream: Callable[..., Path], workspace_env: Path) -> Path:
+def ws(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> Path:
     result = run(
         app,
         [
             "create",
             "J-1",
             "--repo",
-            str(make_upstream("api")),
+            make_upstream("api").url,
             "--read-only",
-            str(make_upstream("docs")),
+            make_upstream("docs").url,
         ],
     )
     assert result.exit_code == 0, result.output
@@ -88,10 +89,10 @@ def test_unknown_repo_selector(ws: Path) -> None:
 
 
 @pytest.fixture
-def two(make_upstream: Callable[..., Path], workspace_env: Path) -> Path:
+def two(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> Path:
     result = run(
         app,
-        ["create", "J-2", "--repo", str(make_upstream("api")), "--repo", str(make_upstream("web"))],
+        ["create", "J-2", "--repo", make_upstream("api").url, "--repo", make_upstream("web").url],
     )
     assert result.exit_code == 0, result.output
     return workspace_env / "J-2"
@@ -211,9 +212,9 @@ def test_stdin_only_read_only_runs_nothing(ws: Path) -> None:
 
 
 def test_no_writable_repos_warns_and_exits_zero(
-    make_upstream: Callable[..., Path], workspace_env: Path
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    created = run(app, ["create", "J-3", "--read-only", str(make_upstream("docs"))])
+    created = run(app, ["create", "J-3", "--read-only", make_upstream("docs").url])
     assert created.exit_code == 0, created.output
     result = run(app, ["run", "J-3", "true"])
     assert result.exit_code == 0, result.output

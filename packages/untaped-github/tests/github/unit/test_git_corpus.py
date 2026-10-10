@@ -560,7 +560,7 @@ def test_list_clean_and_worktree(corpus: Callable[..., _Corpus]) -> None:
     [listed] = env.cache.list_repos()
     cleaned = env.cache.clean_repo(listed)
 
-    assert listed.repo == "acme/api"
+    assert listed.full_name == "acme/api"
     assert listed.path == str(env.store.path)
     assert Path(first.path).is_relative_to(Path.home() / ".untaped/plugins/github/worktrees")
     assert (cleaned.status, cleaned.kept) == ("removed", None)
@@ -655,7 +655,7 @@ def test_listing_reads_only_githubs_files_and_warns_on_corrupt_ones(
     )
     (broken / "untaped-github.json").write_text("{")
 
-    assert [row.repo for row in env.cache.list_repos()] == ["acme/api"]
+    assert [row.full_name for row in env.cache.list_repos()] == ["acme/api"]
     found = env.cache.get_repo("acme/api")
     assert found is not None and found.full_name == "acme/api"
     assert env.cache.get_repo("acme/stray") is None
@@ -764,7 +764,7 @@ def test_a_repo_named_with_a_leading_dot_is_listed(
 
     [row] = env.cache.list_repos()
 
-    assert (row.repo, row.path) == ("acme/.github", synced.path)
+    assert (row.full_name, row.path) == ("acme/.github", synced.path)
 
 
 def test_a_repo_moved_off_its_store_key_is_not_listed(corpus: Callable[..., _Corpus]) -> None:

@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_
 
 from pydantic import (
     BaseModel,
-    ConfigDict,
     Secret,
     SecretBytes,
     SecretStr,
@@ -35,7 +34,7 @@ from pydantic import (
 from pydantic_core import PydanticSerializationError, to_json
 
 from untaped.errors import ConfigError, UntapedError, first_validation_error
-from untaped.records import Record, kind_of
+from untaped.records import Issued, Record, Source, kind_of
 
 if TYPE_CHECKING:
     from untaped.http import HttpClient
@@ -58,26 +57,6 @@ class ContractError(TypeError):
     def __init__(self, message: str, *, reason: str) -> None:
         super().__init__(f"{message} [{reason}]")
         self.reason = reason
-
-
-class Source(BaseModel):
-    """Where an issued record came from: the provider's plugin and its own record.
-
-    ``record`` is the JSON dump of the provider's own record when its item type
-    is not the owner's model, else empty. The SDK fills it; a provider never does.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    plugin: str
-    kind: str
-    record: dict[str, Any] = {}
-
-
-class Issued(Record):
-    """A record a provider issues on an owner's behalf; ``source`` says which provider."""
-
-    source: Source | None = None
 
 
 @dataclass(frozen=True)

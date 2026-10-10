@@ -308,7 +308,7 @@ of any other kind exits 2 instead of being misread:
 ```python
 from untaped.sdk import read_identifiers
 
-identifiers = read_identifiers([], stdin=True, id_field="repo", accept_kinds={"github.repo"})
+identifiers = read_identifiers([], stdin=True, id_field="full_name", accept_kinds={"github.repo"})
 ```
 
 For whole records, `read_stdin_input(accept_kinds=...)` returns the bare

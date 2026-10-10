@@ -1,4 +1,4 @@
-"""Cached repository inventory: staleness, scope changes, locking and failures."""
+"""Cached repository inventory: staleness, scope changes, locking and failures (which raise)."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from untaped.sdk import UntapedError
-from untaped_github.application.inventory import RepositoryInventoryItem
 from untaped_github.application.inventory_cache import CachedRepoInventory
 from untaped_github.domain.inventory import RepoInventory
+from untaped_github.domain.models import GithubRepo
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
-API = RepositoryInventoryItem(full_name="acme/api", clone_url="https://github.com/acme/api.git")
-WEB = RepositoryInventoryItem(full_name="acme/web", clone_url="https://github.com/acme/web.git")
+API = GithubRepo(full_name="acme/api", clone_url="https://github.com/acme/api.git")
+WEB = GithubRepo(full_name="acme/web", clone_url="https://github.com/acme/web.git")
 
 
 class MemoryStore:
@@ -41,11 +41,11 @@ class MemoryStore:
 
 
 class Fetch:
-    def __init__(self, *results: tuple[RepositoryInventoryItem, ...] | Exception) -> None:
+    def __init__(self, *results: tuple[GithubRepo, ...] | Exception) -> None:
         self.results = list(results)
         self.calls = 0
 
-    def __call__(self) -> tuple[RepositoryInventoryItem, ...]:
+    def __call__(self) -> tuple[GithubRepo, ...]:
         self.calls += 1
         result = self.results.pop(0)
         if isinstance(result, Exception):
@@ -57,7 +57,7 @@ def _cached(
     age: timedelta,
     *,
     scope: str = "scope-a",
-    repos: tuple[RepositoryInventoryItem, ...] = (API,),
+    repos: tuple[GithubRepo, ...] = (API,),
 ) -> RepoInventory:
     return RepoInventory(repos=repos, refreshed_at=NOW - age, scope_key=scope)
 
@@ -116,12 +116,13 @@ def test_refresh_false_ignores_another_scope() -> None:
     assert _use(other, Fetch())(refresh=False).repos == ()
 
 
-def test_auto_refresh_failure_serves_the_stale_cache_with_the_error() -> None:
+def test_auto_refresh_failure_raises_instead_of_serving_the_stale_cache() -> None:
+    # The contract's answer cache is the only source of stale repos.
     store = MemoryStore(_cached(timedelta(hours=25)))
-    inventory = _use(store, Fetch(UntapedError("HTTP 503")))()
-    assert inventory.repos == (API,)
-    assert inventory.error == "HTTP 503"
+    with pytest.raises(UntapedError, match="HTTP 503"):
+        _use(store, Fetch(UntapedError("HTTP 503")))()
     assert store.saves == 0
+    assert store.inventory == _cached(timedelta(hours=25))
 
 
 def test_auto_refresh_failure_without_a_cache_raises() -> None:
