@@ -94,7 +94,8 @@ RESERVED = [
     "auth",
     "alias",
     "plugin",
-    "rank",
+    "caches",
+    "extensions",
 ]
 
 # (spec factory, reason, text the error/detail must name)

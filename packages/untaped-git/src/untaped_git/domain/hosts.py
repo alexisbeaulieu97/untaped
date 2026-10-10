@@ -110,10 +110,14 @@ def _choose(host: str, candidates: list[str], answers: Answers[Any] | None) -> s
         if ranks:
             return min(ranks, key=lambda plugin: ranks[plugin])
     named = ", ".join(candidates)
+    if answers is not None:
+        hint = answers.rank_command(candidates)
+    else:
+        hint = f"untaped plugin rank git.git_host {method} {' '.join(candidates)}"
     raise ConfigError(
         f"{named} all supply credentials for {host}; rank them to choose one",
         system="git",
-        hint=f"untaped plugin rank git.git_host {method} {' '.join(candidates)}",
+        hint=hint,
         details={"contract": "git.git_host", "method": method, "providers": candidates},
     )
 

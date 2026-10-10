@@ -10,13 +10,19 @@ loses its own contracts only; doctor names it.
 
 from __future__ import annotations
 
+import json
+import os
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Literal
 
+from untaped.config_file import read_config_dict
 from untaped.contracts._declare import (
     Binding,
     Contract,
     ContractError,
     ContractInfo,
+    NotReady,
     bind,
     contract_of,
     fills,
@@ -25,9 +31,16 @@ from untaped.contracts._declare import (
     unused_methods,
 )
 from untaped.errors import ConfigError
-from untaped.plugins.registry import CompositionResult, DoctorResult, PluginContext, PluginSpec
+from untaped.plugins.registry import CompositionResult, PluginSpec, owns_contracts
 from untaped.profile_resolver import selected_profile
 from untaped.records import DuplicateKindError
+from untaped.settings import (
+    ExtensionSettings,
+    active_settings_layout,
+    env_var_name,
+    load_settings_section,
+    registered_profile_model,
+)
 
 #: Why a provider is quarantined (closed set, stable surface).
 PROVIDER_REASONS = frozenset(
@@ -271,46 +284,59 @@ def _check(
     return Provider(value, binding)
 
 
+def owned_contracts() -> dict[str, list[ContractInfo]]:
+    """Every installed owner's readable contracts, by owner, each in declaration order."""
+    owned: dict[str, list[ContractInfo]] = {}
+    for cls, owner in _owners(_state()).items():
+        info = contract_of(cls)
+        if info is not None:
+            owned.setdefault(owner, []).append(info)
+    return owned
+
+
+def unreadable_owners() -> list[str]:
+    """The installed owners whose ``contracts`` function failed, by name."""
+    state = _state()
+    _owners(state)
+    return sorted(state.broken)
+
+
+def method_providers(contract: ContractInfo, method: str, order: Sequence[str]) -> list[str]:
+    """The plugins whose usable providers fill ``contract.method``, as ``gather`` asks them.
+
+    Ranked plugins come first, in ``order``, then the rest by name.
+    """
+    names = [
+        entry.plugin
+        for entry in offers(contract)
+        if isinstance(entry, Provider) and fills(type(entry.instance), contract, method)
+    ]
+    return sorted(
+        names, key=lambda name: (name not in order, order.index(name) if name in order else 0, name)
+    )
+
+
+def rankings(owner: str) -> Mapping[str, ExtensionSettings]:
+    """``owner``'s ``extensions`` settings in the selected profile, by contract name.
+
+    Only the owner's own section is read, so a broken sibling section never
+    blocks an ask; a broken owner section raises its ``ConfigError``.
+    """
+    if registered_profile_model(owner) is None:
+        return {}
+    section = load_settings_section(owner)
+    extensions: Mapping[str, ExtensionSettings] = getattr(section, "extensions", {})
+    return extensions
+
+
 def ranking(owner: str, contract: str, method: str) -> tuple[str, ...]:
     """The plugins ranked for ``owner.contract.method``, first first.
 
-    The ``extensions`` settings that hold rankings arrive with ``untaped plugin rank``;
-    until then nothing is ranked.
+    An entry for a contract or method that doesn't exist is never asked for,
+    so it changes nothing; doctor reports it (``rank-unknown-method``).
     """
-    del owner, contract, method
-    return ()
-
-
-@dataclass(frozen=True)
-class OfferReport:
-    """One offer as doctor reports it."""
-
-    plugin: str
-    owner: str
-    contract: str
-    #: The quarantine reason, or ``unused-method``; ``None`` for a clean offer.
-    reason: str | None = None
-    detail: str = ""
-
-
-def offer_reports() -> list[OfferReport]:
-    """Each offer with its problem: a quarantine, or methods the contract no longer has."""
-    reports: list[OfferReport] = []
-    for entry in every_offer():
-        if isinstance(entry, Quarantined):
-            name = "" if entry.contract is None else _contract_name(entry.contract)
-            reports.append(OfferReport(entry.plugin, entry.owner, name, entry.reason, entry.detail))
-            continue
-        info = entry.binding.contract
-        unused = unused_methods(type(entry.instance), info)
-        if unused:
-            detail = f"{', '.join(unused)} (not in {info.name}; never called)"
-            reports.append(
-                OfferReport(entry.plugin, entry.binding.owner, info.name, "unused-method", detail)
-            )
-        else:
-            reports.append(OfferReport(entry.plugin, entry.binding.owner, info.name))
-    return reports
+    extension = rankings(owner).get(contract)
+    return () if extension is None else tuple(extension.rank.get(method, ()))
 
 
 def _contract_name(contract: type[Contract]) -> str:
@@ -318,34 +344,193 @@ def _contract_name(contract: type[Contract]) -> str:
     return "" if info is None else info.name
 
 
-#: The doctor row reporting contract providers.
-DOCTOR_CHECK_ID = "contract-providers"
+#: The title of a doctor row about contracts: a reason (closed set, stable surface).
+DOCTOR_REASONS = frozenset(
+    {
+        "active",
+        "not-configured",
+        "unused-method",
+        "bad-contracts",
+        "rank-unknown-method",
+        "rank-not-installed",
+        *PROVIDER_REASONS,
+    }
+)
 
 
-def doctor_row(_context: PluginContext) -> DoctorResult:
-    """A ``warn`` naming each quarantined offer, unused method and unreadable owner, else a pass.
+@dataclass(frozen=True)
+class DoctorRow:
+    """One doctor row about contracts: a provider's offer, an owner or a ranking."""
 
-    An offer to an owner that isn't installed is no problem: it waits for that owner.
+    check: Literal["contract-provider", "contracts", "rank"]
+    plugin: str
+    status: Literal["pass", "warn"]
+    #: A :data:`DOCTOR_REASONS` member.
+    title: str
+    detail: str
+    #: The ``untaped`` command (without the program name) that repairs it.
+    fix: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.title not in DOCTOR_REASONS:
+            raise ValueError(f"unknown contract doctor reason: {self.title!r}")
+
+
+def ready_of(provider: Provider) -> NotReady | None:
+    """``provider``'s ``ready()``, a raising one counted as not ready."""
+    try:
+        return provider.instance.ready()
+    except Exception as exc:
+        return NotReady(f"ready() raised {type(exc).__name__}: {exc}")
+
+
+def doctor_rows(plugins: frozenset[str] | None = None) -> list[DoctorRow]:
+    """A row per provider offer, per owner whose contracts can't be read, per bad ranking.
+
+    An inactive provider (not configured, or waiting for an owner that isn't
+    installed) is a pass row; a quarantined offer, a method the contract no
+    longer has and a ranking naming a missing contract, method or plugin warn.
+    ``plugins`` limits the rows to those plugins (a provider's, or an owner's).
+    """
+
+    def wanted(name: str) -> bool:
+        return plugins is None or name in plugins
+
+    rows = [_offer_row(entry) for entry in every_offer() if wanted(entry.plugin)]
+    state = _state()
+    for plugin, why in state.broken.items():
+        if wanted(plugin):
+            detail = f"contracts couldn't be read: {why}"
+            rows.append(DoctorRow("contracts", plugin, "warn", "bad-contracts", detail))
+    known = {spec.name for spec in _plugins(state)}
+    known |= {record.name for record in state.composition.quarantine}
+    owners = owned_contracts()
+    for spec in _plugins(state):
+        if owns_contracts(spec) and spec.name not in state.broken and wanted(spec.name):
+            rows += _rank_rows(spec.name, owners.get(spec.name, []), known)
+    return rows
+
+
+def _offer_row(entry: Provider | Quarantined) -> DoctorRow:
+    upgrade = f"upgrade untaped-{entry.plugin}"
+    if isinstance(entry, Quarantined):
+        name = "" if entry.contract is None else f".{_contract_name(entry.contract)}"
+        if entry.reason == "owner-not-installed":
+            detail = f"waits for {entry.owner} (not installed)"
+            return DoctorRow("contract-provider", entry.plugin, "pass", entry.reason, detail)
+        detail = f"{entry.owner}{name}: {entry.detail}; {upgrade}"
+        return DoctorRow("contract-provider", entry.plugin, "warn", entry.reason, detail)
+    info = entry.binding.contract
+    what = f"{entry.binding.owner}.{info.name}"
+    provider = type(entry.instance)
+    unused = unused_methods(provider, info)
+    if unused:
+        detail = f"{what}: {', '.join(unused)} (not in {info.name}; never called); {upgrade}"
+        return DoctorRow("contract-provider", entry.plugin, "warn", "unused-method", detail)
+    ready = ready_of(entry)
+    if ready is not None:
+        why = f"waits for {ready.setting}" if ready.setting else f"inactive: {ready.reason}"
+        detail = f"{what}: {why}"
+        return DoctorRow("contract-provider", entry.plugin, "pass", "not-configured", detail)
+    methods = ", ".join(name for name in info.methods if fills(provider, info, name))
+    detail = f"fills {what}: {methods}"
+    return DoctorRow("contract-provider", entry.plugin, "pass", "active", detail)
+
+
+def _rank_rows(owner: str, contracts: list[ContractInfo], known: set[str]) -> list[DoctorRow]:
+    """Rows for rankings doctor can't follow; ``known`` holds installed and quarantined plugins.
+
+    A quarantined plugin stays in its ranking: it works again once upgraded.
     """
     try:
-        reports = offer_reports()
-    except ConfigError as exc:
-        return DoctorResult(id=DOCTOR_CHECK_ID, ok=False, detail=str(exc))
-    problems = [
-        f"{plugin}'s contracts couldn't be read: {why}" for plugin, why in _state().broken.items()
-    ]
-    problems += [
-        f"{report.plugin} for {report.owner}.{report.contract or '?'}: "
-        f"{report.reason}: {report.detail}"
-        for report in reports
-        if report.reason not in {None, "owner-not-installed"}
-    ]
-    waiting = sorted({report.owner for report in reports if report.reason == "owner-not-installed"})
-    tail = [f"offers wait for {', '.join(waiting)} (not installed)"] if waiting else []
-    if problems:
-        detail = "; ".join(problems + tail)
-        return DoctorResult(id=DOCTOR_CHECK_ID, ok=True, warn=True, detail=detail)
-    usable = sum(report.reason is None for report in reports)
-    parts = [f"{usable} provider(s), all usable"] if usable else []
-    detail = "; ".join(parts + tail) or "no plugin fills a contract"
-    return DoctorResult(id=DOCTOR_CHECK_ID, ok=True, detail=detail)
+        extensions = rankings(owner)
+    except ConfigError:
+        return []  # the owner's settings row already fails
+    declared = {info.name: info for info in contracts}
+    holders = _holders()
+    rows: list[DoctorRow] = []
+    for contract, extension in extensions.items():
+        info = declared.get(contract)
+        for method, plugins in extension.rank.items():
+            path = (owner, "extensions", contract, "rank", method)
+            key = ".".join(path)
+            holder = holders(path)
+            clear = f"plugin rank {owner}.{contract} {method}"
+            if info is None or method not in info.methods or info.methods[method].bridge:
+                missing = (
+                    f"declares no contract {contract}"
+                    if info is None
+                    else f"declares no method {contract}.{method}"
+                    if method not in info.methods
+                    else f"asks no one for {contract}.{method} (a bridge)"
+                )
+                detail = f"{key}: {owner} {missing}; the ranking is ignored{holder.where}"
+                fix = holder.fix(clear)
+                rows.append(DoctorRow("rank", owner, "warn", "rank-unknown-method", detail, fix))
+                continue
+            absent = [plugin for plugin in plugins if plugin not in known]
+            if absent:
+                kept = [plugin for plugin in plugins if plugin in known]
+                detail = (
+                    f"{key} ranks {', '.join(absent)}, which {_is_are(absent)} not installed"
+                    f"{holder.where}"
+                )
+                fix = holder.fix(" ".join([clear, *kept]))
+                rows.append(DoctorRow("rank", owner, "warn", "rank-not-installed", detail, fix))
+    return rows
+
+
+@dataclass(frozen=True)
+class _Holder:
+    """Where a ranking comes from: the profile whose own data holds it, or the environment."""
+
+    profile: str | None
+    env: str | None
+
+    @property
+    def where(self) -> str:
+        return f" (set by {self.env})" if self.env else ""
+
+    def fix(self, command: str) -> str | None:
+        """``command`` aimed at the holding profile; none when the environment sets it."""
+        if self.profile is None:
+            return None
+        return f"--profile {self.profile} {command}"
+
+
+def _holders() -> Callable[[tuple[str, ...]], _Holder]:
+    try:
+        raw = read_config_dict()
+    except ConfigError:
+        raw = {}
+    provenance = active_settings_layout().resolve(raw, profile=selected_profile(raw)).provenance
+
+    environ = {name.upper(): value for name, value in os.environ.items()}
+
+    def holder(path: tuple[str, ...]) -> _Holder:
+        for depth in range(len(path), 0, -1):
+            name = env_var_name(path[:depth])
+            if name in environ and _holds(environ[name], path[depth:]):
+                return _Holder(None, name)
+        return _Holder(provenance.get(path), None)
+
+    return holder
+
+
+def _holds(value: str, rest: tuple[str, ...]) -> bool:
+    """Whether an environment ``value`` sets the setting ``rest`` below its own (JSON)."""
+    if not rest:
+        return True
+    try:
+        cursor: object = json.loads(value)
+    except ValueError:
+        return False
+    for part in rest:
+        if not isinstance(cursor, dict) or part not in cursor:
+            return False
+        cursor = cursor[part]
+    return True
+
+
+def _is_are(names: list[str]) -> str:
+    return "is" if len(names) == 1 else "are"

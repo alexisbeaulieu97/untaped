@@ -466,6 +466,7 @@ def _import_every_shipped_module() -> None:
 def _samples() -> dict[str, Record]:
     from untaped.config.models import SettingOutcome, SettingRow
     from untaped.management.alias import AliasOutcome, AliasRow
+    from untaped.management.plugins import ContractRow
     from untaped.profile.models import ProfileOutcome, ProfileRow
     from untaped_git.domain.records import GitHostRecord, StoreReport, TreeEntry
 
@@ -484,6 +485,14 @@ def _samples() -> dict[str, Record]:
         GitHostRecord(host="github.com", plugins=["github"], credential=True),
         StoreReport(store_dir="/s", repos=1, size_bytes=2, filter_ignored={"git.example": 1}),
         TreeEntry(mode="100644", type="blob", oid="0" * 40, path="a.yml"),
+        ContractRow(
+            contract="workspace.repo_source",
+            method="repos",
+            owner="workspace",
+            stability="experimental",
+            providers=["github", "gitlab"],
+            ranked=["github"],
+        ),
     ]
     return {str(kind_of(type(row))): row for row in rows}
 
