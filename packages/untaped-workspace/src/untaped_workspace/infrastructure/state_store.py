@@ -1,22 +1,25 @@
 """``StateWorkspaceStore``: active and archived workspaces in ``state.yml``.
 
 Also the per-workspace advisory lock (``<workspaces_dir>/.<name>.lock``)
-that serialises ``create``, ``add`` and ``archive`` of one workspace.
+that serialises ``create``, ``add``, ``archive`` and ``remove`` of one workspace.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from untaped.sdk import StateCollection, cache_key, file_lock, not_found, q
+from untaped.sdk import StateCollection, file_lock, not_found, q
 from untaped_workspace.domain.models import ArchivedRecord, RepoSpec, WorkspaceRecord
+from untaped_workspace.domain.naming import repo_key
 from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError
 
 _BUSY_HINT = "wait for the other untaped command on this workspace to finish, then retry"
+
+type Rows = list[dict[str, Any]]
 
 
 def _dump(record: WorkspaceRecord) -> dict[str, Any]:
@@ -82,8 +85,8 @@ class StateWorkspaceStore:
             for row in rows:
                 if row.get("name") == name:
                     current = WorkspaceRecord.model_validate(row)
-                    have = {cache_key(spec.url) for spec in current.repos}
-                    new = [spec for spec in repos if cache_key(spec.url) not in have]
+                    have = {repo_key(spec.url) for spec in current.repos}
+                    new = [spec for spec in repos if repo_key(spec.url) not in have]
                     updated = current.model_copy(update={"repos": (*current.repos, *new)})
                     row = _dump(updated)
                 out.append(row)
@@ -112,3 +115,23 @@ class StateWorkspaceStore:
         self._archived.mutate(lambda rows: [*rows, _dump(archived)])
         self._active.remove(name)
         return archived
+
+    def remove(self, name: str) -> list[WorkspaceRecord]:
+        """Drop every record named ``name``, active and archived (callers hold :meth:`locked`).
+
+        Returns the records dropped, active first. The active one goes first: a
+        failure in between leaves an archived record, which ``remove`` drops on
+        a retry.
+        """
+        dropped: list[WorkspaceRecord] = []
+
+        def _drop(model: type[WorkspaceRecord]) -> Callable[[Rows], Rows]:
+            def _filter(rows: Rows) -> Rows:
+                dropped.extend(model.model_validate(row) for row in rows if row.get("name") == name)
+                return [row for row in rows if row.get("name") != name]
+
+            return _filter
+
+        self._active.mutate(_drop(WorkspaceRecord))
+        self._archived.mutate(_drop(ArchivedRecord))
+        return dropped

@@ -61,8 +61,6 @@ DESCRIPTIONS: dict[str, str] = {
     + ".",
     "skills.updates": "What each run does when installed agent skills differ from this "
     "version: `warn` (print a warning), `auto` (update them in place), or `off`.",
-    "workspace.cache_dir": "Bare-clone cache that workspace worktrees are created from. "
-    "Worktrees depend on it: don't delete it while workspaces are active.",
     "workspace.workspaces_dir": "Parent directory of every workspace (`<workspaces_dir>/NAME`).",
     "workspace.parallel": "Default workers for `create`/`add`/`run` and for status/archive "
     "checks. Unset means `min(8, 2 * CPUs)`; "

@@ -1,9 +1,9 @@
 """Provision repos into a workspace: resolve, check out in parallel, record the successes.
 
-Lock order: ``create``, ``add`` and ``archive`` take the per-workspace lock
-first, then each checkout or removal takes the per-repo cache lock inside it.
-Never take them the other way: a process holding a cache lock while it waits
-for a workspace lock can deadlock with one doing the opposite.
+Lock order: ``create``, ``add``, ``archive`` and ``remove`` take the
+per-workspace lock first, then each repo store call takes that repo's lock
+inside it. Never take them the other way: a process holding a repo lock while
+it waits for a workspace lock can deadlock with one doing the opposite.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, UsageError, bounded_map, cache_key, note_failure, q
+from untaped.sdk import UntapedError, UsageError, bounded_map, note_failure, q
 from untaped_workspace.application.locate import active_workspace, workspace_root
 from untaped_workspace.domain.models import (
     Checkout,
@@ -27,6 +27,7 @@ from untaped_workspace.domain.naming import (
     assign_dirs,
     branch_for,
     repo_identity,
+    repo_key,
     validate_workspace_name,
 )
 from untaped_workspace.domain.records import RepoOutcome
@@ -52,7 +53,11 @@ class _Job:
 
 
 class ProvisionRepos:
-    """The shared flow behind ``workspace create`` and ``workspace add``."""
+    """The shared flow behind ``workspace create`` and ``workspace add``.
+
+    ``warn`` gets one line per checkout whose history backfill stopped: the
+    worktree is there and usable, so it is no failure.
+    """
 
     def __init__(
         self,
@@ -64,6 +69,7 @@ class ProvisionRepos:
         branch_template: str,
         parallel: int,
         now: Callable[[], datetime],
+        warn: Callable[[str], None] | None = None,
     ) -> None:
         self._store = store
         self._git = git
@@ -72,6 +78,7 @@ class ProvisionRepos:
         self._branch_template = branch_template
         self._parallel = max(1, parallel)
         self._now = now
+        self._warn = warn
 
     def create(
         self,
@@ -159,6 +166,12 @@ class ProvisionRepos:
             if on_done is not None:
                 on_done(rows[job.index], finished, len(jobs))
             if isinstance(result, Checkout):
+                if result.backfill_error is not None and self._warn is not None:
+                    self._warn(
+                        f"history backfill of {job.resolved.name} stopped: "
+                        f"{result.backfill_error}; "
+                        f"`untaped workspace status --fetch {record.name}` resumes it"
+                    )
                 specs[job.index] = RepoSpec(
                     url=job.resolved.url,
                     name=job.resolved.name,
@@ -242,11 +255,11 @@ def _partition(
     Both are keyed by request position; a repo requested twice counts once.
     """
     rows: dict[int, RepoOutcome] = {}
-    present = {cache_key(spec.url): spec for spec in record.repos}
+    present = {repo_key(spec.url): spec for spec in record.repos}
     fresh: list[tuple[int, RepoArg, ResolvedRepo]] = []
     seen: set[tuple[str, ...]] = set()
     for index, (arg, repo) in enumerate(zip(repos, resolved, strict=True)):
-        key = cache_key(repo.url)
+        key = repo_key(repo.url)
         if key in seen:
             continue
         seen.add(key)

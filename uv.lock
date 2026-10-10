@@ -974,12 +974,14 @@ version = "10.1.0"
 source = { editable = "packages/untaped-workspace" }
 dependencies = [
     { name = "untaped" },
+    { name = "untaped-git" },
     { name = "untaped-github" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-git", editable = "packages/untaped-git" },
     { name = "untaped-github", editable = "packages/untaped-github" },
 ]
 

@@ -9,8 +9,9 @@ object id (:meth:`GitRemote.refuse_by_oid`, the protocol v0 case), and one
 that drops the connection mid-pack (:meth:`GitRemote.drop_pack`).
 :func:`hostile_git_home` adds the global settings a store must never obey,
 :func:`git_shim` puts a ``git`` on ``PATH`` that reports another version,
-refuses ``--stdin`` or stalls maintenance, and :func:`trace2_events` reads a
-``GIT_TRACE2_EVENT`` file. Everything runs without a network.
+refuses ``--stdin``, or stalls maintenance or a prefetch, and
+:func:`trace2_events` reads a ``GIT_TRACE2_EVENT`` file. Everything runs
+without a network.
 
 Tests run under ``untaped.testing.plugin``'s hermetic ``HOME``: the
 fixtures write to its ``~/.gitconfig``. Experimental (``docs/versioning.md``):
@@ -242,6 +243,7 @@ def git_shim(
     version: str | None = None,
     refuse_stdin: bool = False,
     stall_maintenance: Path | None = None,
+    stall_stdin_fetch: Path | None = None,
 ) -> None:
     """Put a ``git`` first on ``PATH`` that forwards to the real one, except as asked.
 
@@ -249,6 +251,9 @@ def git_shim(
     fails any command given ``--stdin`` as a git older than 2.29 does; while
     the file ``stall_maintenance`` exists, ``git maintenance run`` sleeps
     (its child's pid in ``<stall_maintenance>.pid``) until it is killed.
+    While the file ``stall_stdin_fetch`` exists, a ``git fetch --stdin`` (a
+    repo store prefetch) sleeps the same way, after letting through as many
+    as the number the file holds (counting down; empty means none).
     """
     real = shutil.which("git")
     if real is None:
@@ -272,6 +277,21 @@ def git_shim(
             f'    sleep 300 & echo $! > "{stall_maintenance}.pid"; wait; exit 1',
             "  fi",
             "done",
+        ]
+    if stall_stdin_fetch is not None:
+        lines += [
+            'fetch=; stdin=; for arg in "$@"; do',
+            '  [ "$arg" = "fetch" ] && fetch=1; [ "$arg" = "--stdin" ] && stdin=1',
+            "done",
+            f'if [ -n "$fetch" ] && [ -n "$stdin" ] && [ -e "{stall_stdin_fetch}" ]; then',
+            f'  left=$(cat "{stall_stdin_fetch}")',
+            '  if [ "${left:-0}" -gt 0 ]; then',
+            f'    echo $((left - 1)) > "{stall_stdin_fetch}"',
+            "  else",
+            "    echo 'error: stalled fetch' >&2",
+            f'    sleep 300 & echo $! > "{stall_stdin_fetch}.pid"; wait; exit 1',
+            "  fi",
+            "fi",
         ]
     lines.append(f'exec "{real}" "$@"')
     shim = bin_dir / "git"
