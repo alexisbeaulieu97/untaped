@@ -332,3 +332,24 @@ def test_a_listing_is_declared_and_returns_a_list() -> None:
             @listing
             def one(self) -> Book:
                 raise NotImplementedError
+
+
+def test_a_listing_is_the_contracts_call_and_composes_with_cached() -> None:
+    from untaped.contracts import listing
+
+    class Rows(Contract):
+        @cached(max_age=timedelta(minutes=5))
+        @listing
+        def rows(self) -> list[Book]:
+            raise NotImplementedError
+
+    info = contract_of(Rows)
+    assert info is not None
+    assert info.methods["rows"].listing
+    assert info.methods["rows"].max_age == timedelta(minutes=5)
+    with pytest.raises(TypeError, match=r"Eager\.lookup: only the contract decides"):
+
+        class Eager(Shop):
+            @listing
+            def lookup(self, title: str) -> list[Book]:
+                return []

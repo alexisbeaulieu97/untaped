@@ -485,7 +485,7 @@ def _rewrap(cls: type[Contract]) -> None:
 
     A filled method defined on ``cls`` or on a plain mixin it inherits is
     rewrapped onto ``cls``; one inherited from a provider base already is.
-    ``@cached`` anywhere in the provider's own code is a ``TypeError``.
+    ``@cached`` or ``@listing`` anywhere in the provider's own code is a ``TypeError``.
     """
     info = contract_of(cls)
     if info is None:
@@ -493,10 +493,11 @@ def _rewrap(cls: type[Contract]) -> None:
     own = [cls, *(klass for klass in cls.__mro__ if not issubclass(klass, Contract))]
     for klass in own:
         for name, value in vars(klass).items():
-            if _carries_cached(value):
-                raise TypeError(
-                    f"{klass.__qualname__}.{name}: only the contract decides what is @cached"
-                )
+            for marker, what in ((_CACHED, "@cached"), (_LISTING, "a @listing")):
+                if _carries(value, marker):
+                    raise TypeError(
+                        f"{klass.__qualname__}.{name}: only the contract decides what is {what}"
+                    )
     for name, method in info.methods.items():
         holder = next(klass for klass in cls.__mro__ if name in vars(klass))
         if holder is not cls and issubclass(holder, Contract):
@@ -513,9 +514,9 @@ def _rewrap(cls: type[Contract]) -> None:
             setattr(cls, name, wrapped)
 
 
-def _carries_cached(value: object) -> bool:
+def _carries(value: object, marker: str) -> bool:
     inner = [value, getattr(value, "__func__", None), getattr(value, "fget", None)]
-    return any(getattr(each, _CACHED, None) is not None for each in inner if each is not None)
+    return any(getattr(each, marker, None) is not None for each in inner if each is not None)
 
 
 def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
