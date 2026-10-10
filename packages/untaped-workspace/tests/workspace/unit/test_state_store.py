@@ -99,3 +99,23 @@ def test_archive_keeps_the_history_record_when_removing_the_active_one_fails(
     [archived] = store.archived()
     assert (archived.name, archived.repos) == ("w", (SPEC,))
     assert store.get("w") is not None  # a recoverable duplicate, not a loss
+
+
+def test_remove_drops_every_record_of_the_name() -> None:
+    store = StateWorkspaceStore()
+    for name in ("w", "w", "other"):
+        store.create(WorkspaceRecord(name=name, created_at=T0))
+        store.archive(name, at=T0)
+    store.create(WorkspaceRecord(name="w", created_at=T0))
+    store.add_repos("w", [SPEC])
+
+    dropped = store.remove("w")
+
+    assert [(record.name, record.repos) for record in dropped] == [
+        ("w", (SPEC,)),
+        ("w", ()),
+        ("w", ()),
+    ]
+    assert store.get("w") is None
+    assert [record.name for record in store.archived()] == ["other"]
+    assert store.remove("w") == []

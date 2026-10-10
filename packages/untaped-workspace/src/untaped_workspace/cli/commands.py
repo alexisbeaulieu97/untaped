@@ -1,4 +1,5 @@
-"""Workspace command tree: ``create``, ``add``, ``list``, ``status``, ``path``, ``archive``."""
+"""Workspace command tree: ``create``, ``add``, ``list``, ``status``, ``path``, ``archive``,
+``remove`` and ``run``."""
 
 from __future__ import annotations
 
@@ -34,6 +35,7 @@ from untaped.sdk import (
     writes,
 )
 from untaped_workspace.application.archive import ArchiveWorkspace
+from untaped_workspace.application.remove import RemoveWorkspace, RepoPlan, refusal_hint
 from untaped_workspace.application.run import RunInRepos, RunTarget
 from untaped_workspace.cli.common import (
     BaseOption,
@@ -70,11 +72,12 @@ from untaped_workspace.settings import WorkspaceSettings
 
 app = create_app(
     name="workspace",
-    help="Create and archive task workspaces (git worktrees of several repos).",
+    help="Create, archive and remove task workspaces (git worktrees of several repos).",
 )
 
 REPO_OUTCOME = "workspace.repo_outcome"
 ARCHIVE_OUTCOME = "workspace.archive_outcome"
+REMOVE = "workspace.remove_outcome"
 RUN_OUTCOME = "workspace.run_outcome"
 
 
@@ -131,10 +134,11 @@ def create_command(
             stdin=stdin,
             empty=empty,
         )
-        provision = provisioner(settings, parallel)
+        warnings: list[str] = []
+        provision = provisioner(settings, parallel, warn=warnings.append)
         with ui.progress(f"Creating workspace {name}…") as progress:
             rows = provision.create(name, args, on_done=_progress_line(progress))
-        _show_provisioned(rows, settings, name, fmt=fmt, columns=columns)
+        _show_provisioned(rows, settings, name, warnings, fmt=fmt, columns=columns)
 
 
 @writes
@@ -171,10 +175,11 @@ def add_command(
             base=base,
             stdin=stdin,
         )
-        provision = provisioner(settings, parallel)
+        warnings: list[str] = []
+        provision = provisioner(settings, parallel, warn=warnings.append)
         with ui.progress(f"Adding repos to {record.name}…") as progress:
             rows = provision.add(record, args, on_done=_progress_line(progress))
-        _show_provisioned(rows, settings, record.name, fmt=fmt, columns=columns)
+        _show_provisioned(rows, settings, record.name, warnings, fmt=fmt, columns=columns)
 
 
 def list_command(
@@ -221,7 +226,7 @@ def status_command(
             raise UsageError("--all cannot be combined with a workspace name")
         settings = workspace_settings()
         records = StateWorkspaceStore().active() if all_workspaces else [locate(settings, name)]
-        status = status_reader(settings, git_worktrees(settings))
+        status = status_reader(settings, git_worktrees())
         progress = ui_context(strict=False).progress("Fetching repos…") if fetch else nullcontext()
         with progress:
             rows = [row for record in records for row in status(record, fetch=fetch)]
@@ -262,12 +267,13 @@ def archive_command(
 
     Refuses (exit 1, nothing removed) while any repo has uncommitted,
     stashed or unpushed work, unless --force. Local branches stay in the
-    repo cache, so a later `create` with the same branch resumes the work.
+    repo store, so a later `create` with the same branch resumes the work;
+    `remove` gives the space back.
     """
     with report_errors():
         settings = workspace_settings()
         located = locate(settings, name)
-        git = git_worktrees(settings)
+        git = git_worktrees()
         root = workspaces_dir(settings)
         store = StateWorkspaceStore(workspaces_dir=root)
         archive = ArchiveWorkspace(store, git, workspaces_dir=root, now=utc_now)
@@ -290,6 +296,65 @@ def archive_command(
         failed = any(row.failed for row in outcomes)
         if not failed:
             ui_context(strict=False).success(f"archived workspace {q(record.name)}")
+    finish(failed)
+
+
+@writes(destructive=True)
+def remove_command(
+    name: Annotated[str, Parameter(name="NAME", help="Workspace to remove, active or archived.")],
+    /,
+    *,
+    force: Annotated[
+        bool,
+        Parameter(
+            name="--force",
+            negative="",
+            help=(
+                "Remove even when repos have uncommitted or unpushed work, deleting "
+                "unpushed branches (confirms first)."
+            ),
+        ),
+    ] = False,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Drop a workspace's records and release its repos from the repo store.
+
+    An active workspace is archived first, with archive's checks. Each repo
+    no other workspace (active or archived) uses is released: workspace's
+    refs and the local branches whose commits are all pushed go, and the
+    repo itself when nothing else uses it. Refuses (exit 1, nothing changed)
+    while work would be lost, unless --force; a stash is never deleted.
+    """
+    with report_errors():
+        settings = workspace_settings()
+        root = workspaces_dir(settings)
+        git = git_worktrees()
+        remove = RemoveWorkspace(
+            StateWorkspaceStore(workspaces_dir=root),
+            git,
+            status=status_reader(settings, git),
+            workspaces_dir=root,
+            now=utc_now,
+        )
+        with remove.hold(name) as plan:  # from the check through the removal
+            if dry_run or (plan.blocked and not force):
+                emit(remove.preview(plan, force=force), fmt=fmt, columns=columns, kind=REMOVE)
+                if dry_run:
+                    return
+                raise WorkspaceError(
+                    f"{plural(len(plan.blocked), 'repo')} would lose work; nothing removed",
+                    hint=refusal_hint(plan),
+                )
+            _confirm_remove(plan.name, plan.blocked, yes=yes)
+            outcomes = remove(plan, force=force)
+        emit(outcomes, fmt=fmt, columns=columns, kind=REMOVE)
+        report_row_errors(outcomes, item=lambda row: f"{row.workspace}/{row.repo}")
+        failed = any(row.failed for row in outcomes)
+        if not failed:
+            ui_context(strict=False).success(f"removed workspace {q(plan.name)}")
     finish(failed)
 
 
@@ -465,6 +530,7 @@ def _show_provisioned(
     rows: Sequence[RepoOutcome],
     settings: WorkspaceSettings,
     name: str,
+    warnings: Sequence[str],
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
@@ -472,10 +538,13 @@ def _show_provisioned(
     """Emit ``create``/``add`` rows; in table format the workspace path follows on stdout.
 
     With ``-q`` (and nothing failed) the table is left out, so the path is the
-    only stdout line. Other formats carry records only.
+    only stdout line. Other formats carry records only. ``warnings`` (history
+    backfills that stopped) go to stderr first.
     """
     failed = any(row.failed for row in rows)
     ui = ui_context(strict=False)
+    for warning in warnings:
+        ui.message("warning", warning)
     if fmt != "table":
         emit(rows, fmt=fmt, columns=columns, kind=REPO_OUTCOME)
     else:
@@ -524,10 +593,22 @@ def _confirm_discard(name: str, blocked: Sequence[StatusRow], *, yes: bool) -> N
     )
 
 
+def _confirm_remove(name: str, blocked: Sequence[RepoPlan], *, yes: bool) -> None:
+    """Confirm the removal, naming the work ``--force`` would discard."""
+    discard = "; ".join(f"{repo.spec.dir} ({', '.join(repo.blockers)})" for repo in blocked)
+    ui_context(strict=False).confirm_or_cancel(
+        f"Remove workspace {name} and release its repos"
+        + (f", discarding: {discard}?" if discard else "?"),
+        assume_yes=yes,
+        refusal="remove requires --yes when not interactive",
+    )
+
+
 app.command(create_command, name="create")
 app.command(add_command, name="add")
 app.command(list_command, name="list")
 app.command(status_command, name="status")
 app.command(path_command, name="path")
 app.command(archive_command, name="archive")
+app.command(remove_command, name="remove")
 app.command(run_command, name="run", usage="Usage: untaped workspace run [OPTIONS] [NAME] CMD")

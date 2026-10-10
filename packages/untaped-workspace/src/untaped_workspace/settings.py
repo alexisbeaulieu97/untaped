@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from untaped.sdk import Retired
 from untaped_workspace.domain.models import ArchivedRecord, WorkspaceRecord
 
 
@@ -15,7 +17,10 @@ class WorkspaceSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    cache_dir: Path = Field(default=Path("~/.untaped/workspace-cache"))
+    retired_keys: ClassVar[Mapping[str, str | Retired]] = {
+        "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
+    }
+
     workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
     parallel: int | None = Field(default=None, ge=1)
     """Workers for ``create``/``add`` checkouts and ``status``/``archive`` checks.

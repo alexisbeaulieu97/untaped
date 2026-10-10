@@ -25,7 +25,7 @@ def build_app() -> App:
 SPEC = PluginSpec(
     name="workspace",
     app_factory=build_app,
-    help="Create and archive task workspaces (git worktrees of several repos).",
+    help="Create, archive and remove task workspaces (git worktrees of several repos).",
     stability=experimental,
     settings=WorkspaceSettings,
     state=WorkspaceState,
@@ -34,11 +34,11 @@ SPEC = PluginSpec(
             name="untaped-workspace",
             source=Path(str(files("untaped_workspace").joinpath("skills", "untaped-workspace"))),
             description=(
-                "Creates, inspects and archives task workspaces through the `untaped workspace` "
-                "command (one directory per task holding git worktrees of several repos on a "
-                "shared branch, safe archiving once work is pushed). Use when the user starts "
-                "work on a ticket across repos, asks where a workspace is, or wants to clean "
-                "one up."
+                "Creates, inspects, archives and removes task workspaces through the "
+                "`untaped workspace` command (one directory per task holding git worktrees of "
+                "several repos on a shared branch, safe archiving once work is pushed). Use "
+                "when the user starts work on a ticket across repos, asks where a workspace "
+                "is, or wants to clean one up."
             ),
         ),
     ),

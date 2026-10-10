@@ -553,5 +553,5 @@ def test_rationale_lives_beside_the_code_it_protects() -> None:
     workspace = PACKAGES / "untaped-workspace/src/untaped_workspace"
     assert "load-bearing" in _docstring(workspace / "infrastructure/git_worktrees.py")
     provision = _docstring(workspace / "application/provision.py")
-    # the docstring names the workspace lock before the cache lock
-    assert provision.index("workspace lock") < provision.index("cache lock")
+    # the docstring names the workspace lock before the repo store lock
+    assert provision.index("workspace lock") < provision.index("repo lock")

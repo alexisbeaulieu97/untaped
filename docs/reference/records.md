@@ -59,6 +59,7 @@ a step that asks for or reveals a token, else `agent`.
 | `workspace create`, `workspace add` | `workspace.repo_outcome` |
 | `workspace status` | `workspace.status` |
 | `workspace archive` | `workspace.archive_outcome` |
+| `workspace remove` | `workspace.remove_outcome` |
 | `workspace run` | `workspace.run_outcome` |
 
 | Consumer | Reads | Field used |
