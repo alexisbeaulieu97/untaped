@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import inspect
 import sys
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from importlib import metadata
 from importlib.resources import files
 from itertools import chain
@@ -167,6 +168,32 @@ def compose_root(
     return result
 
 
+@contextmanager
+def composed_with(candidates: Sequence[PluginCandidate]) -> Iterator[CompositionResult]:
+    """Compose ``candidates`` for the block, then bring back the composition before it.
+
+    Settings registrations follow the composition; the profile, verbose and
+    quiet overrides are left as they are (``untaped plugin check`` runs under
+    the user's ``--profile``).
+    """
+    global _COMPOSED_RESULT
+    previous = _COMPOSED_RESULT
+    try:
+        yield compose_root(candidates=candidates)
+    finally:
+        _COMPOSED_RESULT = previous
+        _reregister()
+
+
+def _reregister() -> None:
+    reset_config_registry_for_tests()
+    get_settings.cache_clear()
+    get_settings_model.cache_clear()
+    get_profile_settings_model.cache_clear()
+    if _COMPOSED_RESULT is not None:
+        _register_shell_and_plugins(_COMPOSED_RESULT)
+
+
 def composition() -> CompositionResult:
     """The composition the last :func:`compose_root` (or :func:`build_root_app`) remembered."""
     if _COMPOSED_RESULT is None:
@@ -185,12 +212,7 @@ def reset() -> None:
     set_profile_override(None)
     _reset_verbose(None)
     _reset_quiet(None)
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
-    get_settings_model.cache_clear()
-    get_profile_settings_model.cache_clear()
-    if _COMPOSED_RESULT is not None:
-        _register_shell_and_plugins(_COMPOSED_RESULT)
+    _reregister()
 
 
 def _clear_for_tests() -> None:

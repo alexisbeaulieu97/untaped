@@ -47,7 +47,6 @@ from untaped.plugins.registry import (
 )
 from untaped.records import Record, record_kinds, record_model
 from untaped.settings import ContractName, ExtensionSettings
-from untaped.stability import Deprecated, Experimental, function_mark
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
@@ -163,6 +162,7 @@ def _contract_rows() -> list[ContractRow]:
         rankings,
         unreadable_owners,
     )
+    from untaped.contracts._schema import method_stability  # noqa: PLC0415
 
     rows: list[ContractRow] = []
     owned = owned_contracts()
@@ -178,28 +178,19 @@ def _contract_rows() -> list[ContractRow]:
             extensions = {}
         for info in sorted(infos, key=lambda each: each.name):
             extension = extensions.get(info.name)
-            for method, declared in info.methods.items():
+            for method in info.methods:
                 order = [] if extension is None else list(extension.rank.get(method, ()))
-                mark = function_mark(declared.function) or function_mark(info.cls)
                 rows.append(
                     ContractRow(
                         contract=f"{owner}.{info.name}",
                         method=method,
                         owner=owner,
-                        stability=_stability(mark),
+                        stability=method_stability(info, method),
                         providers=method_providers(info, method, order),
                         ranked=order,
                     )
                 )
     return rows
-
-
-def _stability(
-    mark: Experimental | Deprecated | None,
-) -> Literal["stable", "experimental", "deprecated"]:
-    if isinstance(mark, Deprecated):
-        return "deprecated"
-    return "experimental" if isinstance(mark, Experimental) else "stable"
 
 
 _EXTENSIONS = TypeAdapter(dict[ContractName, ExtensionSettings])

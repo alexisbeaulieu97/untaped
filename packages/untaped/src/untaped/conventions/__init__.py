@@ -218,7 +218,7 @@ def _boundary(
     found = list(candidates)
     packages: dict[str, str] = {}
     for candidate in found:
-        package = _candidate_package(candidate.target)
+        package = candidate_package(candidate.target)
         if package is not None:
             packages[package] = canonicalize_name(candidate.distribution)
     own = next((candidate for candidate in found if candidate.name == name), None)
@@ -228,7 +228,7 @@ def _boundary(
     return packages, frozenset(declared)
 
 
-def _candidate_package(target: object) -> str | None:
+def candidate_package(target: object) -> str | None:
     """The plugin package of a candidate ``target``, or ``None`` when unresolvable."""
     if isinstance(target, str):
         return target.partition(":")[0] if ":" in target else None

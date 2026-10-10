@@ -1,10 +1,11 @@
 """Testing helpers for driving Cyclopts command apps with captured output.
 
 :func:`check_conventions` checks one installed plugin against
-``docs/reference/conventions.md``; its ``candidates`` argument composes a provider
+``docs/reference/conventions.md``; its ``candidates`` argument composes a plugin
 passed in directly instead of one discovered through entry points.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
-providers.
+plugins. :func:`compose_with`, :func:`assert_fills` and
+:func:`assert_contract_schemas` test contracts (``untaped.testing.contracts``).
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from untaped.prompts import (
 )
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.stability import apply_marks
+from untaped.testing.contracts import assert_contract_schemas, assert_fills, compose_with
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
 
 if TYPE_CHECKING:
@@ -48,8 +50,11 @@ __all__ = [
     "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
+    "assert_contract_schemas",
     "assert_destructive_contract",
+    "assert_fills",
     "check_conventions",
+    "compose_with",
     "drive_screen",
     "invoke_cli",
     "invoke_root",
