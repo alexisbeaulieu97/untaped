@@ -18,7 +18,12 @@ Checks each visible command of a command subtree:
 - ``undeclared-write`` — a command exposes ``--yes``/``--dry-run`` without
   declaring ``@writes``;
 - ``mutation-format`` — a declared write has no ``--format``;
-- ``destructive-controls`` — a destructive command lacks ``--yes``/``--dry-run``.
+- ``destructive-controls`` — a destructive command lacks ``--yes``/``--dry-run``;
+- ``reserved-panel`` — a command or option group named after one of core's
+  panels (Plugins, Experimental, Deprecated, Global options) that is not
+  core's own: a same-named group would merge into it;
+- ``unkeyed-panel`` — a shown group of the plugin's own without a sort key
+  below 100, which would list after Global options.
 
 Lines are ``<command path>::<rule>::<detail>``; they carry no source line, so
 no inline marker can suppress them.
@@ -30,11 +35,13 @@ import inspect
 import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
+from itertools import chain
 from typing import Any
 
-from cyclopts import App
+from cyclopts import App, Group
 
 from untaped.cli import write_kind
+from untaped.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
 
 RESERVED_SHORTS = {
     "-f": "--format",
@@ -116,6 +123,78 @@ def _argument_violations(arguments: list[Any]) -> Iterator[tuple[str, str]]:
             yield "duplicate-option", flag
 
 
+#: cyclopts' own Commands, Parameters and Arguments panels, by their sort-key markers.
+_DEFAULT_KEYS = tuple(
+    group.sort_key
+    for group in (
+        Group.create_default_commands(),
+        Group.create_default_parameters(),
+        Group.create_default_arguments(),
+    )
+)
+_DEFAULT_NAMES = frozenset({"Commands", "Parameters", "Arguments"})
+
+
+def panel_violations(app: App) -> Iterator[tuple[str, str]]:
+    """Yield ``(rule, detail)`` for the help panels ``app`` names.
+
+    Every group an app can name counts: its own ``group``, its
+    ``group_commands``/``group_parameters``/``group_arguments`` and each
+    argument's group. Core's panels pass by identity, so the Plugins panel core
+    puts a plugin's top app in is never the plugin's mistake.
+    """
+    seen: set[str] = set()
+    for group in _named_groups(app):
+        name = str(group.name if isinstance(group, Group) else group)
+        if name in seen or is_core_panel(group):
+            continue
+        seen.add(name)
+        if name in RESERVED_PANELS:
+            yield "reserved-panel", name
+        elif not _default_or_hidden(group) and not _keyed(group):
+            yield (
+                "unkeyed-panel",
+                f"{name}: give it a sort_key below {PLUGIN_PANEL_KEY_LIMIT} "
+                "so Global options stays the last panel",
+            )
+
+
+def _named_groups(app: App) -> Iterator[Group | str]:
+    # A leaf inherits its parent's group_commands but lists no commands in it.
+    commands = app.group_commands if any(True for _ in _subcommands(app)) else None
+    for attribute in (app.group, commands, app.group_parameters, app.group_arguments):
+        yield from _as_groups(attribute)
+    if app.default_command is not None:
+        for argument in app.assemble_argument_collection(parse_docstring=True):
+            if argument.show and argument.parse:  # a hidden option lists in no panel
+                yield from _as_groups(argument.parameter.group)
+
+
+def _as_groups(value: Group | str | Iterable[Group | str] | None) -> Iterator[Group | str]:
+    if value is None:
+        return
+    if isinstance(value, Group | str):
+        yield value
+    else:
+        yield from value
+
+
+def _default_or_hidden(group: Group | str) -> bool:
+    if isinstance(group, str):
+        return group in _DEFAULT_NAMES
+    return group.show is False or any(group.sort_key is key for key in _DEFAULT_KEYS)
+
+
+def _keyed(group: Group | str) -> bool:
+    """Whether ``group`` has a numeric sort key below the plugin limit."""
+    key = group.sort_key if isinstance(group, Group) else None
+    if isinstance(key, tuple) and key:  # Group.create_ordered(sort_key=n) stores (n, counter)
+        key = key[0]
+    if isinstance(key, bool) or not isinstance(key, int | float):
+        return False
+    return key < PLUGIN_PANEL_KEY_LIMIT
+
+
 def _shorts(app: App) -> Iterator[tuple[str, str]]:
     for argument in app.assemble_argument_collection(parse_docstring=True):
         if not (argument.show and argument.parse):
@@ -135,7 +214,7 @@ def help_tree_violations(root: App, names: Iterable[str]) -> list[str]:
         subtree = root[top]
         for path, app in [((top,), subtree), *_walk(subtree, (top,))]:
             command = " ".join(path)
-            for rule, detail in command_violations(path, app):
+            for rule, detail in chain(command_violations(path, app), panel_violations(app)):
                 found.append(f"{command}::{rule}::{detail}")
             if app.default_command is not None:
                 for flag, long_name in _shorts(app):

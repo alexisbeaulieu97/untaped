@@ -30,6 +30,7 @@ from cyclopts import App
 
 from repo import quoted_commands
 from repo.support import FENCE, PACKAGES, REPO_ROOT, markdown_files
+from untaped._root_options import _root_options
 from untaped.bootstrap import build_root_app
 from untaped.plugins import registry
 from untaped.plugins.registry import PluginCandidate, PluginSpec
@@ -273,7 +274,9 @@ def test_every_workspace_member_has_a_readme() -> None:
     assert {r.parent for r in _package_readmes()} == members
 
 
-_ROOT_OPTIONS = {"--profile", "--verbose", "-v", "--quiet", "-q", "--help", "-h"}
+_ROOT_OPTIONS = {
+    name for option in _root_options().values() for name in (option.name, *option.aliases)
+} | {"--help", "-h"}
 _ROOT_ONLY_OPTIONS = _ROOT_OPTIONS | {"--version", "--install-completion"}
 _EXAMPLE_PROVIDER = "acme"
 

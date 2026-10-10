@@ -19,7 +19,7 @@ from importlib import metadata
 from pathlib import Path
 
 import pytest
-from cyclopts import App
+from cyclopts import App, Group
 from pydantic import BaseModel
 
 from test_plugins.plugin_harness import make_candidate, make_spec
@@ -868,3 +868,79 @@ def test_the_console_entry_point_forwards_signals_to_git_before_running(
     bootstrap.main(["--version"])
 
     assert calls == ["forward", ["--version"]]
+
+
+# --- help panels --------------------------------------------------------------
+
+
+def _panel_rows(root: App) -> dict[str, list[str]]:
+    """``{panel title: first word of each row}`` of the root's ``--help``."""
+    result = CliInvoker().invoke(root.meta, ["--help"])
+    assert result.exit_code == 0, result.output
+    panels: dict[str, list[str]] = {}
+    title = ""
+    for line in result.stdout.splitlines():
+        if line.startswith("╭"):
+            title = line.strip("╭─ ").split(" ─")[0]
+            panels[title] = []
+        elif line.startswith("│ ") and line[2:3] != " ":
+            panels[title].append(line[2:].split()[0])
+    return panels
+
+
+@pytest.mark.parametrize(
+    ("candidates", "panels"),
+    [
+        pytest.param([], ["Commands", "Global options"], id="bare"),
+        pytest.param(
+            [plugin_candidate(make_spec("demo"))],
+            ["Commands", "Plugins", "Global options"],
+            id="eager",
+        ),
+        pytest.param(
+            [make_candidate(make_spec("demo"), name="other")],
+            ["Commands", "Global options"],
+            id="quarantined",
+        ),
+    ],
+)
+def test_root_help_panels(candidates: list[PluginCandidate], panels: list[str]) -> None:
+    root = bootstrap.build_root_app(candidates=candidates)
+
+    assert list(_panel_rows(root)) == panels
+
+
+def test_lazy_and_eager_plugins_both_list_in_plugins() -> None:
+    calls: list[str] = []
+    root = bootstrap.build_root_app(
+        candidates=[
+            plugin_candidate(_counting_spec("lazy", calls, help="Lazy plugin.")),
+            plugin_candidate(_counting_spec("eager", calls)),
+        ]
+    )
+
+    rows = _panel_rows(root)
+
+    assert rows["Plugins"] == ["eager", "lazy"]
+    assert "lazy" not in rows["Commands"] and "eager" not in rows["Commands"]
+    assert calls == ["eager"]  # the lazy one is listed without being built
+
+
+def test_a_failing_lazy_plugin_stays_in_plugins_after_it_runs() -> None:
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(_raising_spec("bad", []))])
+    assert _panel_rows(root)["Plugins"] == ["bad"]
+
+    assert CliInvoker().invoke(root.meta, ["bad", "who"]).exit_code == 4
+
+    assert _panel_rows(root)["Plugins"] == ["bad"]
+
+
+def test_a_plugin_apps_own_group_is_ignored_at_the_root() -> None:
+    app = _who_app("mine", _token_body_for("mine"))
+    app.group = (Group("Mine"),)
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(_spec("mine", app))])
+
+    rows = _panel_rows(root)
+
+    assert rows["Plugins"] == ["mine"]
+    assert "Mine" not in rows
