@@ -313,6 +313,54 @@ class SqliteDependencyIndex:
         age = datetime.now(UTC) - status.scanned_at
         return age.total_seconds() > max_age_seconds
 
+    def source_repos(self, source_key: str) -> dict[str, tuple[str, ...]]:
+        """The repos ``source_key``'s last refresh selected, ``OWNER/NAME`` → clone URLs it used.
+
+        A repo with no scanned ref has no URL: its refresh never fetched it.
+        """
+        with self._db() as db:
+            rows = db.execute(
+                """
+                select source_repo, null as clone_url
+                from source_repo_metadata where source_key = ?
+                union
+                select source_repo, clone_url
+                from source_ref_scans where source_key = ?
+                """,
+                (source_key, source_key),
+            ).fetchall()
+        urls: dict[str, set[str]] = {}
+        for row in rows:
+            found = urls.setdefault(str(row["source_repo"]), set())
+            if row["clone_url"]:
+                found.add(str(row["clone_url"]))
+        return {repo: tuple(sorted(found)) for repo, found in sorted(urls.items())}
+
+    def selecting_sources(self, source_keys: Iterable[str]) -> dict[str, set[str]]:
+        """Which of ``source_keys`` selected each repo in their last refresh, by repo key."""
+        keys = sorted(set(source_keys))
+        selected: dict[str, set[str]] = {}
+        if not keys:
+            return selected
+        with self._db() as db:
+            for chunk in _chunks(keys, 400):
+                marks = ",".join("?" for _ in chunk)
+                rows = db.execute(
+                    f"""
+                    select source_key, source_repo_key from source_repo_metadata
+                    where source_key in ({marks})
+                    union
+                    select source_key, source_repo_key from source_ref_scans
+                    where source_key in ({marks})
+                    """,
+                    [*chunk, *chunk],
+                ).fetchall()
+                for row in rows:
+                    selected.setdefault(str(row["source_repo_key"]), set()).add(
+                        str(row["source_key"])
+                    )
+        return selected
+
     def clear(self, source_key: str) -> None:
         with self._db() as db:
             db.execute("delete from source_runs where source_key = ?", (source_key,))

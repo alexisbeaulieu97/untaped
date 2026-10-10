@@ -257,6 +257,22 @@ class RepoStore:
     def exists(self) -> bool:
         return (self._path / "HEAD").is_file()
 
+    def has_part(self) -> bool:
+        """Whether this plugin has a part in the repo, so :meth:`release` has work to do.
+
+        Its private file or refs are there, or a release of its own was
+        interrupted (the mark the next :meth:`ensure` or :meth:`release` finishes).
+        """
+        if not self.exists():
+            return False
+        if self.private_file.is_file() or self._config_get(RELEASE_MARK) == self._plugin:
+            return True
+        return bool(
+            self._git(
+                ["for-each-ref", "--count=1", "--format=%(refname)", *self.roots], capture=True
+            ).text.strip()
+        )
+
     @property
     def roots(self) -> tuple[str, str]:
         """Where this plugin's branches and tags live in the repo (``for-each-ref`` patterns)."""

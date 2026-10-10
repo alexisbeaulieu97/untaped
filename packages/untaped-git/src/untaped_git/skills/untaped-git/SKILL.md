@@ -37,9 +37,9 @@ from.
    untaped's worktrees then ask only untaped for that host.
 3. Reclaiming disk: `untaped git store` shows `exclusive` (repos only one
    plugin uses). That plugin's own delete command releases them (`github
-   cache delete`, `workspace remove`; ansible has none yet, so the repos its
-   sources use stay); a repo another plugin, a hand-added worktree, a branch
-   or a stash holds stays, and the row says who kept it.
+   cache delete`, `workspace remove`, `ansible source remove`); a repo
+   another plugin, a hand-added worktree, a branch or a stash holds stays,
+   and the row says who kept it.
 4. After an upgrade from 10.x, the old caches (`~/.untaped/github-cache`,
    `~/.untaped/workspace-cache`) are read by nothing until
    `untaped setup migrate-dirs` moves their repos into the store; doctor's
