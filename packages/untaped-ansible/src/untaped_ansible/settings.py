@@ -8,6 +8,7 @@ from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from untaped.sdk import Retired
 from untaped_github.api import normalize_team_scopes
 
 DEFAULT_DEPENDENCY_PATHS = (
@@ -63,9 +64,15 @@ class SourceDefinition(BaseModel):
 class AnsibleSettings(BaseModel):
     """User-tunable profile settings."""
 
-    retired_keys: ClassVar[Mapping[str, str]] = {
+    retired_keys: ClassVar[Mapping[str, str | Retired]] = {
         "stale_after": "stale_after_seconds",
         "repo_cache_path": "cache_dir",
+        "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
+        "git_fetch_depth": Retired(note="deleted in 11.0; the repo store fetches full history"),
+        "git_blob_filter": Retired(note="deleted in 11.0; the repo store is blobless"),
+        "git_clone_protocol": Retired(
+            note="deleted in 11.0; set github.git_protocol: ssh to keep ssh"
+        ),
         "git_fetch_concurrency": "git_fetch_parallel",
         "probe_concurrency": "probe_parallel",
     }
@@ -77,14 +84,10 @@ class AnsibleSettings(BaseModel):
     default_source: str | None = None
     ref_scan_default: Literal["all", "default_branch"] = "all"
     source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"
-    cache_dir: Path = Path("~/.untaped/ansible-cache")
-    git_clone_protocol: Literal["https", "ssh"] = "https"
-    git_fetch_depth: int = Field(default=1, ge=0)
     git_fetch_parallel: int = Field(default=8, ge=1, le=32)
     probe_parallel: int = Field(default=8, ge=1, le=32)
     source_refresh_repo_batch_size: int = Field(default=100, ge=1)
     source_refresh_rate_limit_floor: int = Field(default=500, ge=0)
-    git_blob_filter: bool = True
     dependency_paths: list[str] = Field(default_factory=lambda: list(DEFAULT_DEPENDENCY_PATHS))
 
 

@@ -18,10 +18,12 @@ from urllib.parse import urlparse
 
 from pydantic import AfterValidator
 
-from untaped.sdk import repo_url_parts, safe_path_segment
+from untaped.sdk import safe_path_segment
 
 _UNKNOWN = "_unknown"
 _SCP = re.compile(r"^[A-Za-z0-9._-]+@(?P<host>[A-Za-z0-9.-]+):(?P<path>[^/].*)$")
+#: Any ``user@host:path``, for splitting a URL that is already in use.
+_SCP_PARTS = re.compile(r"^(?P<user>[^@]+)@(?P<host>[^:]+):(?P<path>.+)$")
 
 
 def validate_git_url(value: str) -> str:
@@ -47,6 +49,26 @@ def validate_git_url(value: str) -> str:
 
 #: A remote URL, validated by :func:`validate_git_url`.
 type GitUrl = Annotated[str, AfterValidator(validate_git_url)]
+
+
+def repo_url_parts(url: str) -> tuple[str | None, list[str]]:
+    """``(host, path segments with the last .git removed)`` of a URL, ``user@host:path`` or path.
+
+    The host is lowercased, as ``urlparse`` does. A plain path or ``file://``
+    URL has no host.
+    """
+    match = _SCP_PARTS.match(url)
+    if "://" in url:
+        parsed = urlparse(url)
+        host, path = parsed.hostname, parsed.path or ""
+    elif match:
+        host, path = match.group("host").lower(), match.group("path")
+    else:
+        host, path = None, url
+    segments = [s for s in path.replace("\\", "/").split("/") if s]
+    if segments:
+        segments[-1] = segments[-1].removesuffix(".git")
+    return host, segments
 
 
 def url_host(url: str) -> str | None:

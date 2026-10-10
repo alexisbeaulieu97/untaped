@@ -68,7 +68,6 @@ from untaped.fs import atomic_write, file_lock, read_structured_file
 from untaped.git import (
     GitCommandError,
     GitResult,
-    git_auth_header,
     git_toplevel,
     run_git,
     safe_path_segment,
@@ -108,15 +107,6 @@ from untaped.records import (
     TableGlyph,
     TargetRecord,
     UtcTimestamp,
-)
-from untaped.repo_cache import (
-    RepoCache,
-    cache_key,
-    cache_origin,
-    cache_path,
-    list_caches,
-    repo_url_parts,
-    scoped_auth_header,
 )
 from untaped.settings import HttpSettings, get_config_section
 from untaped.stability import deprecated, deprecated_alias, experimental
@@ -307,20 +297,12 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     # git and filesystem
     "GitCommandError",
     "GitResult",
-    "RepoCache",
     "atomic_write",
-    "cache_key",
-    "cache_origin",
-    "cache_path",
     "file_lock",
-    "git_auth_header",
     "git_toplevel",
-    "list_caches",
-    "repo_url_parts",
     "run_git",
     "safe_path_segment",
     "same_origin",
-    "scoped_auth_header",
     "yaml_mapping_indent",
     # prompts and ui
     "PickCatalog",

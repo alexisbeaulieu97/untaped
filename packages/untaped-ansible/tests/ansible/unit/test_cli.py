@@ -6,8 +6,7 @@ import json
 import re
 import shutil
 import subprocess
-from base64 import b64encode
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
@@ -348,37 +347,35 @@ def _role(tmp_path: Path, content: str | None = "- src: https://github.com/acme/
 
 
 class _SeedGitCache:
-    """Git transport stub: fetches succeed, ``files`` are the dependency files."""
+    """Repo store stub: fetches succeed, ``files`` are the dependency files."""
 
     files: ClassVar[dict[str, str]] = {}
 
-    def __init__(self, *, auth_host: str | None) -> None:
-        assert auth_host == "github.com"
-
-    def ensure_bare(self, url: str, *, cache_dir: Path, auth_header: str | None) -> Path:
-        return cache_dir / url.removesuffix(".git").rsplit("/", maxsplit=1)[-1]
-
-    def fetch_refs(self, bare_path: Path, **kwargs: Any) -> None:
+    def fetch(self, url: str, refs: Any) -> None:
         return None
 
-    def read_files(self, bare_path: Path, sha: str, paths: list[str], **kwargs: Any) -> Any:
-        return {path: content for path, content in self.files.items() if path in paths}
+    def refusal(self, ref: Any) -> str | None:
+        return None
 
-    def ls_remote(self, url: str, **kwargs: Any) -> str:
+    def read_files(self, url: str, shas: Sequence[str], paths: Sequence[str]) -> Any:
+        found = {path: content for path, content in self.files.items() if path in paths}
+        return dict.fromkeys(shas, found)
+
+    def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
         name = url.removesuffix(".git").rsplit("/", maxsplit=1)[-1]
-        return f"ref: refs/heads/main\tHEAD\nsha-{name}\tHEAD\nsha-{name}\trefs/heads/main\n"
+        return {"HEAD": f"sha-{name}", "refs/heads/main": f"sha-{name}"}
+
+    def default_branch(self, url: str) -> str | None:
+        return "main"
 
 
 class _NoFetchGitCache(_SeedGitCache):
-    """Git transport stub proving unchanged repos never fetch or scan."""
+    """Repo store stub proving unchanged repos never fetch or scan."""
 
-    def ensure_bare(self, url: str, **kwargs: Any) -> Path:
+    def fetch(self, url: str, refs: Any) -> None:
         raise AssertionError(f"unexpected git fetch for {url}")
 
-    def fetch_refs(self, bare_path: Path, **kwargs: Any) -> None:
-        raise AssertionError("unexpected git fetch")
-
-    def read_files(self, bare_path: Path, sha: str, paths: list[str], **kwargs: Any) -> Any:
+    def read_files(self, url: str, shas: Sequence[str], paths: Sequence[str]) -> Any:
         raise AssertionError("unexpected dependency file read")
 
 
@@ -395,7 +392,7 @@ def _seed_unchanged_scan(
     fingerprints a subsequent refresh recomputes.
     """
     with monkeypatch.context() as patcher:
-        patcher.setattr(refresh, "GitRepositoryCache", _SeedGitCache)
+        patcher.setattr(refresh, "GitSourceStore", _SeedGitCache)
         with respx.mock(base_url="https://api.github.com") as mock:
             _mock_refresh_repos(mock, repos, missing=missing)
             result = _run("source", "refresh", "prod")
@@ -1461,7 +1458,7 @@ def _capture_git_refresh(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return captured
 
 
-def test_source_refresh_wires_token_aliases_and_defaults(tmp_path: Path, monkeypatch) -> None:
+def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monkeypatch) -> None:
     # The progress UiContext is built strict=False: an invalid theme degrades
     # the spinner instead of failing an otherwise-valid refresh.
     _use_config(
@@ -1477,8 +1474,7 @@ def test_source_refresh_wires_token_aliases_and_defaults(tmp_path: Path, monkeyp
 
     assert result.exit_code == 0, result.output
     assert "refreshed source 'prod': 1 repo, 1 ref, 0 edges" in result.stderr
-    credential = b64encode(b"x-access-token:ghp_test").decode()
-    assert captured["auth_header"] == f"AUTHORIZATION: basic {credential}"
+    assert captured["clone_protocol"] == "https"
     assert captured["aliases"] == {"common": "acme/common"}
     assert captured["concurrency"] == 8
     assert captured["backend"] == "auto"
@@ -1527,7 +1523,7 @@ def test_source_refresh_git_backend_skips_unchanged_fetch_and_graphql(
 ) -> None:
     _use_config(tmp_path, monkeypatch, _prod(), token=True)
     _seed_unchanged_scan(monkeypatch, {"acme/site": "sha-site"})
-    monkeypatch.setattr(refresh, "GitRepositoryCache", _NoFetchGitCache)
+    monkeypatch.setattr(refresh, "GitSourceStore", _NoFetchGitCache)
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=True) as mock:
         _mock_expansion(mock, ["acme/site"])
@@ -1600,7 +1596,7 @@ def test_source_refresh_reports_dependency_file_warnings(
 ) -> None:
     _use_config(tmp_path, monkeypatch, _prod(), token=True)
     monkeypatch.setattr(
-        refresh, "GitRepositoryCache", type("Cache", (_SeedGitCache,), {"files": files})
+        refresh, "GitSourceStore", type("Cache", (_SeedGitCache,), {"files": files})
     )
 
     with respx.mock(base_url="https://api.github.com") as mock:
@@ -1611,6 +1607,28 @@ def test_source_refresh_reports_dependency_file_warnings(
     assert warning in result.stderr
 
 
+class _RefusingGitCache(_SeedGitCache):
+    """Repo store stub refusing every ref name, as it refuses ``-wip``."""
+
+    def refusal(self, ref: Any) -> str | None:
+        return f"{ref.name!r} is not a branch or tag name"
+
+
+def test_source_refresh_warns_about_a_ref_the_store_refuses(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _prod(), token=True)
+    monkeypatch.setattr(refresh, "GitSourceStore", _RefusingGitCache)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_refresh_repos(mock, {"acme/site": "sha-site"})
+        result = _run("source", "refresh", "prod", "--backend", "graphql")
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "warning: skipped branch acme/site@main: 'main' is not a branch or tag name"
+        in result.stderr
+    )
+
+
 def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -1619,7 +1637,7 @@ def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(
     _seed_unchanged_scan(monkeypatch, {"acme/ok": "sha-ok"})
     _use_config(tmp_path, monkeypatch, _prod("acme/ok", "acme/flaky"), token=True, ansible=graphql)
     get_settings.cache_clear()
-    monkeypatch.setattr(refresh, "GitRepositoryCache", _NoFetchGitCache)
+    monkeypatch.setattr(refresh, "GitSourceStore", _NoFetchGitCache)
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_expansion(mock, ["acme/ok", "acme/flaky"])
@@ -1643,7 +1661,7 @@ def test_source_refresh_failures_report_their_own_and_the_run_s_category(
     _seed_unchanged_scan(monkeypatch, {"acme/ok": "sha-ok"})
     _use_config(tmp_path, monkeypatch, _prod("acme/ok", "acme/flaky"), token=True, ansible=graphql)
     get_settings.cache_clear()
-    monkeypatch.setattr(refresh, "GitRepositoryCache", _NoFetchGitCache)
+    monkeypatch.setattr(refresh, "GitSourceStore", _NoFetchGitCache)
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
 
     with respx.mock(base_url="https://api.github.com") as mock:
@@ -1685,7 +1703,7 @@ def test_source_refresh_default_backend_recovers_probe_failures_with_git_fallbac
     warning: str,
 ) -> None:
     _use_config(tmp_path, monkeypatch, _prod(*repos), token=True)
-    monkeypatch.setattr(refresh, "GitRepositoryCache", _SeedGitCache)
+    monkeypatch.setattr(refresh, "GitSourceStore", _SeedGitCache)
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_expansion(mock, repos)
