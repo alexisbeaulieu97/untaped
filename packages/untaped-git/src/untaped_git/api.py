@@ -39,7 +39,8 @@ __all__ = [
 def ls_remote(url: str, patterns: Sequence[str] = ()) -> dict[str, str]:
     """``ref → commit oid`` of ``url``'s refs matching ``patterns``, with untaped's credentials.
 
-    ``HEAD`` included; an annotated tag maps to its commit.
+    ``HEAD`` included (with no patterns, or when one asks for it); an annotated
+    tag maps to its commit.
     """
     root = git_settings().store_dir.expanduser()
     return remote.ls_remote(url, patterns, root=root, auth=resolve_host)
