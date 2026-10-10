@@ -295,8 +295,10 @@ def test_the_remotes_default_branch_and_the_names_the_store_holds(
     store = GitSourceStore()
 
     assert store.default_branch(site.url) == "main"
-    assert store.holds(GitRef(kind="heads", name="feature/+x", sha="0" * 40))
-    assert not store.holds(GitRef(kind="heads", name="-wip", sha="0" * 40))
+    assert store.refusal(GitRef(kind="heads", name="feature/+x", sha="0" * 40)) is None
+    assert "not a branch or tag name" in str(
+        store.refusal(GitRef(kind="heads", name="-wip", sha="0" * 40))
+    )
 
 
 def test_a_failed_default_branch_lookup_keeps_the_git_errors_attribution(

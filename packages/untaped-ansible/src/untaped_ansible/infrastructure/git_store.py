@@ -57,9 +57,9 @@ class GitSourceStore:
             # Its presence tells the store's report and a release that ansible uses the repo.
             atomic_write(store.private_file, json.dumps({"url": url}) + "\n")
 
-    def holds(self, ref: GitRef) -> bool:
-        """Whether the store takes ``ref``'s name (git allows some it refuses, like ``-wip``)."""
-        return check_names([ref.name]) is None
+    def refusal(self, ref: GitRef) -> str | None:
+        """Why the store refuses ``ref``'s name (git allows some, like ``-wip``), else ``None``."""
+        return check_names([ref.name])
 
     def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
         """``ref → commit`` of ``url``'s refs matching ``patterns``, with untaped's credentials."""

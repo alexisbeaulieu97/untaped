@@ -354,8 +354,8 @@ class _SeedGitCache:
     def fetch(self, url: str, refs: Any) -> None:
         return None
 
-    def holds(self, ref: Any) -> bool:
-        return True
+    def refusal(self, ref: Any) -> str | None:
+        return None
 
     def read_files(self, url: str, shas: Sequence[str], paths: Sequence[str]) -> Any:
         found = {path: content for path, content in self.files.items() if path in paths}
@@ -1605,6 +1605,25 @@ def test_source_refresh_reports_dependency_file_warnings(
 
     assert result.exit_code == 0, result.output
     assert warning in result.stderr
+
+
+class _RefusingGitCache(_SeedGitCache):
+    """Repo store stub refusing every ref name, as it refuses ``-wip``."""
+
+    def refusal(self, ref: Any) -> str | None:
+        return f"{ref.name!r} is not a branch or tag name"
+
+
+def test_source_refresh_warns_about_a_ref_the_store_refuses(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _prod(), token=True)
+    monkeypatch.setattr(refresh, "GitSourceStore", _RefusingGitCache)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_refresh_repos(mock, {"acme/site": "sha-site"})
+        result = _run("source", "refresh", "prod", "--backend", "graphql")
+
+    assert result.exit_code == 0, result.output
+    assert "warning: skipped acme/site@main: 'main' is not a branch or tag name" in result.stderr
 
 
 def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(

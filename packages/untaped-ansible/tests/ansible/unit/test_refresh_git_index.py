@@ -30,6 +30,7 @@ from untaped_ansible.domain.payloads import (
     ProbeTarget,
     RefreshProgressEvent,
     RefScan,
+    SkippedRef,
     SourceRepoMetadata,
 )
 from untaped_ansible.infrastructure.git_store import GitCacheError
@@ -150,8 +151,8 @@ class FakeGitCache:
             with self._lock:
                 self.active_fetches -= 1
 
-    def holds(self, ref: GitRef) -> bool:
-        return not ref.name.startswith("-")
+    def refusal(self, ref: GitRef) -> str | None:
+        return "refused" if ref.name.startswith("-") else None
 
     def read_files(
         self, url: str, shas: Sequence[str], paths: Sequence[str]
@@ -771,11 +772,12 @@ def test_git_refresh_reads_every_changed_ref_of_a_repo_in_one_call(h: Harness) -
 def test_git_refresh_leaves_out_a_ref_the_store_cannot_hold(h: Harness) -> None:
     h.set_refs("acme/site", ("main", "sha-main", _base()), ("-wip", "sha-wip", _base()))
 
-    h.run(_org(ref_patterns=["*"]), ref_scan_default="default_branch")
+    result = h.run(_org(ref_patterns=["*"]), ref_scan_default="default_branch")
 
     assert h.git.fetches == [("site", ("heads/main",))]
     assert h.cached("acme/site", "main")
     assert not h.cached("acme/site", "-wip")
+    assert result.skipped_refs == (SkippedRef(repo="acme/site", ref="-wip", reason="refused"),)
 
 
 def test_the_aliases_fingerprint_always_folds_the_github_host_in(h: Harness) -> None:

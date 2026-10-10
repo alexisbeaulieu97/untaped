@@ -109,6 +109,16 @@ class SkippedDependencyFile(BaseModel):
     reason: str
 
 
+class SkippedRef(BaseModel):
+    """One ref left out of a refresh because the repo store cannot hold its name."""
+
+    model_config = ConfigDict(frozen=True)
+
+    repo: str
+    ref: str
+    reason: str
+
+
 class RefreshProgressEvent(BaseModel):
     """Live progress for one source refresh phase."""
 

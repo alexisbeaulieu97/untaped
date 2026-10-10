@@ -174,8 +174,8 @@ class GitCache(Protocol):
         """Bring ``refs``, each at its probed commit, into the store repo of ``url``."""
         ...
 
-    def holds(self, ref: payloads.GitRef) -> bool:
-        """Whether the store can hold ``ref`` (git allows names it refuses)."""
+    def refusal(self, ref: payloads.GitRef) -> str | None:
+        """Why the store cannot hold ``ref``'s name (git allows some it refuses), else ``None``."""
         ...
 
     def read_files(
