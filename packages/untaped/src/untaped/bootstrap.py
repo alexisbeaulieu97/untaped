@@ -56,9 +56,6 @@ from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
     CompositionResult,
-    DoctorCheck,
-    DoctorResult,
-    PluginContext,
     ProviderCandidate,
     QuarantineRecord,
     RegisteredPlugin,
@@ -66,6 +63,7 @@ from untaped.plugins.registry import (
     compose,
     discover_candidates,
     run_deferred_factory,
+    section_settings,
 )
 from untaped.profile_resolver import set_profile_override
 from untaped.quiet import reset as _reset_quiet
@@ -97,13 +95,6 @@ def _shell_app() -> App:
     return App(name=SHELL_NAME, help="Unified untaped developer CLI.")
 
 
-def _contract_providers(context: PluginContext) -> DoctorResult:
-    # Imported here: ``untaped.contracts`` stays out of every run that asks no contract.
-    from untaped.contracts._registry import doctor_row  # noqa: PLC0415
-
-    return doctor_row(context)
-
-
 #: The root application. A singleton so repeated
 #: compositions re-register the identical models idempotently.
 SHELL_SPEC = ApplicationSpec(
@@ -124,9 +115,6 @@ SHELL_SPEC = ApplicationSpec(
             ),
         ),
     ),
-    doctor_checks=(
-        DoctorCheck(id="contract-providers", title="Contract providers", run=_contract_providers),
-    ),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -143,8 +131,9 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
         register_state_settings(SHELL_SPEC.section, SHELL_SPEC.state)
     for plugin in result.plugins:
         spec = plugin.spec
-        if spec.settings is not None:
-            register_profile_settings(spec.name, spec.settings, spec.stability)
+        section = section_settings(spec)
+        if section is not None:
+            register_profile_settings(spec.name, section, spec.stability)
         if spec.state is not None:
             register_state_settings(spec.name, spec.state)
 

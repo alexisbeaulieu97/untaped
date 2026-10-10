@@ -23,14 +23,16 @@ command runs and needs at least one row, so use it on a read command or add
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
 | `plugin list` | `untaped.plugin` |
+| `plugin list --contracts` | `untaped.contract` |
+| `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions.<contract>.rank.<method>`) |
 | `alias list` | `untaped.alias` |
 | `alias set`, `alias remove` | `untaped.alias_outcome` |
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
 skill names, one per line. With `--dry-run`, `config set/unset/migrate`,
-`auth unset/migrate`, `profile create/delete/rename`, `alias set/remove`
-and `doctor fix` validate, write nothing and print their outcome with
-`action` `planned`; `doctor fix`'s manual fixes stay `skipped` and its
+`plugin rank`, `auth unset/migrate`, `profile create/delete/rename`, `alias
+set/remove` and `doctor fix` validate, write nothing and print their outcome
+with `action` `planned`; `doctor fix`'s manual fixes stay `skipped` and its
 refused ones `failed`.
 
 A `fix_outcome` row has `fix` (the argv run after `untaped`), `checks` (the
