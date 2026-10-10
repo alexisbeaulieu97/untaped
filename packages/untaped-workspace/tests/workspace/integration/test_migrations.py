@@ -154,3 +154,26 @@ def test_a_root_configured_to_the_store_stays(
     assert "overlaps the repo store" in rows[0].detail
     migrations.apply_cache(ctx, KEEP)
     assert repo.is_dir()
+
+
+def test_a_symlinked_root_migrates_through_its_target(
+    make_upstream, tmp_path: Path, store_root: Path, ctx: PluginContext
+) -> None:
+    remote = make_upstream()
+    target = tmp_path / "data" / "wc"
+    repo = target / "git.example" / "acme" / "api.git"
+    repo.parent.mkdir(parents=True)
+    git(tmp_path, "init", "-q", "--bare", str(repo))
+    git(repo, "remote", "add", "origin", remote.url)
+    git(repo, "config", "untaped.layout", "2")
+    git(repo, "fetch", "-q", "origin", "+refs/heads/*:refs/remotes/origin/*")
+    _cache().parent.mkdir(parents=True, exist_ok=True)
+    _cache().symlink_to(target)
+
+    (row,) = migrations.preview_cache(ctx, KEEP)
+    assert row.action == "move"
+    (outcome,) = migrations.apply_cache(ctx, KEEP)
+
+    assert outcome.action == "moved", outcome.detail
+    assert (store_root / "git.example" / "acme" / "api.git" / "HEAD").is_file()
+    assert not target.exists() and not _cache().is_symlink()

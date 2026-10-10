@@ -17,6 +17,7 @@ the plugin's spec.)
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from untaped.sdk import (
     old_dirs,
     plugin_dir,
     plural,
+    run_git,
     shown_path,
     unsafe_dir,
 )
@@ -79,7 +81,7 @@ def preview_cache(options: MigrationOptions) -> Sequence[MigrationRow]:
         if root.is_dir() and (reason := refused(root)) is not None:
             rows.append(MigrationRow(action="keep", source=str(root), detail=f"kept: {reason}"))
             continue
-        repos = bare_repos(root, skip=(_WORKTREES,))
+        repos = _repos(root)
         worktrees = _worktrees(root)
         if not root.is_dir() or (not repos and not worktrees):
             continue
@@ -137,7 +139,8 @@ def apply_cache() -> Sequence[MigrationOutcome]:
         if not root.is_dir() or refused(root) is not None:
             continue
         seen = True
-        for repo in bare_repos(root, skip=(_WORKTREES,)):
+        root = Path(os.path.realpath(root))  # a symlinked root migrates through its target
+        for repo in _repos(root):
             try:
                 _rename_metadata(repo)
                 adopted = adopt(
@@ -156,6 +159,9 @@ def apply_cache() -> Sequence[MigrationOutcome]:
                 moved += 1
         if not remove_if_emptied(root):
             left.append(shown_path(root))
+    for root in roots():
+        if root.is_symlink() and not root.exists():
+            root.unlink()  # its directory was emptied and removed
     if not seen:
         return [MigrationOutcome(id=_ID, action="unchanged", detail="no 10.x sweep cache")]
     parts = [f"moved {plural(moved, 'repo')} into the repo store"]
@@ -166,6 +172,21 @@ def apply_cache() -> Sequence[MigrationOutcome]:
         parts.append(f"kept {', '.join(left)}: something other than repositories is left there")
     action = "moved" if not failures else ("partial" if moved or dropped else "failed")
     return [MigrationOutcome(id=_ID, action=action, detail="; ".join(parts))]
+
+
+def _repos(root: Path) -> list[Path]:
+    """The root's repositories but workspace's (in a root both used): its own row moves those."""
+    return [repo for repo in bare_repos(root, skip=(_WORKTREES,)) if not _workspaces(repo)]
+
+
+def _workspaces(repo: Path) -> bool:
+    marked = run_git(
+        ["config", "--file", str(repo / "config"), "--get", "untaped.layout"],
+        timeout=30.0,
+        capture=True,
+        check=False,
+    )
+    return bool(marked.text.strip())
 
 
 def _size(path: Path, options: MigrationOptions) -> int:

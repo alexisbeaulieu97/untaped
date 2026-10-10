@@ -358,3 +358,41 @@ def test_a_hand_added_worktree_of_a_github_repo_is_work(remote: GitRemote, tmp_p
             worktrees=(root / "worktrees", tmp_path / "n"),
         )
     assert git(mine, "rev-parse", "HEAD", bare=False).strip() == remote.oid("main")
+
+
+def test_a_workspace_repo_that_fails_to_move_keeps_its_mark_and_worktrees(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tree = tmp_path / "ws" / "app"
+    source = _workspace_10x(remote, tmp_path / "workspace-cache", tree)
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise OSError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(Path, "rename", refuse)
+    with pytest.raises(StoreError, match="could not move"):
+        adopt(source, plugin="workspace", error=StoreError, owned=[tree])
+    monkeypatch.undo()
+
+    assert git(source, "config", "untaped.layout").strip() == "2"
+    assert git(tree, "status", "--short", bare=False) == ""
+
+
+def test_worktrees_work_when_a_run_stops_right_after_the_repo_moved(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import untaped_git.infrastructure.adopt as adopt_module
+
+    tree = tmp_path / "ws" / "app"
+    source = _workspace_10x(remote, tmp_path / "workspace-cache", tree)
+
+    def stop(*_args: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(adopt_module, "_repoint", stop)
+    with pytest.raises(KeyboardInterrupt):
+        adopt(source, plugin="workspace", error=StoreError, owned=[tree])
+
+    assert not source.exists()
+    assert git(tree, "rev-parse", "HEAD", bare=False).strip() == remote.oid("main")
+    assert git(tree, "status", "--short", bare=False) == ""
