@@ -10,7 +10,7 @@ requires-python = ">=3.14.1"
 dependencies = ["untaped==10.1.0"]
 
 [project.entry-points."untaped.plugins"]
-git = "untaped_git:provider"
+git = "untaped_git:SPEC"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

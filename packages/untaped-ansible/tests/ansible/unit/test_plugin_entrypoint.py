@@ -10,7 +10,7 @@ from cyclopts import App
 
 from untaped import bootstrap
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 from untaped_ansible import SPEC
 
 
@@ -25,7 +25,7 @@ _ANSIBLE_PROFILE = "profiles:\n  default:\n    ansible:\n      {}\n"
 
 
 def _root() -> App:
-    return bootstrap.build_root_app(candidates=(provider_candidate(SPEC),))  # type: ignore[return-value]
+    return bootstrap.build_root_app(candidates=(plugin_candidate(SPEC),))  # type: ignore[return-value]
 
 
 def _doctor_rows(cfg: Path, body: str) -> dict[str, dict[str, object]]:

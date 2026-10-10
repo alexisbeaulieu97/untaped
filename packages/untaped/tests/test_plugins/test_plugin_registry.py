@@ -15,7 +15,6 @@ from test_plugins.plugin_harness import (
     OtherProfile,
     Profile,
     exploding_check,
-    function_provider,
     make_app,
     make_candidate,
     make_check,
@@ -26,9 +25,9 @@ from test_plugins.plugin_harness import (
 from untaped.errors import ConfigError
 from untaped.plugins.registry import (
     CompositionResult,
+    PluginCandidate,
+    PluginRef,
     PluginSpec,
-    ProviderCandidate,
-    ProviderRef,
     QuarantineRecord,
     RegisteredPlugin,
     SkillAsset,
@@ -105,15 +104,15 @@ def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     shell = make_shell()
     github_spec = make_spec(name="github", settings=Profile, skills=(make_skill("gh-skill"),))
     package = ModuleType("fake_github_package")
-    package.provider = lambda: github_spec  # type: ignore[attr-defined]
+    package.SPEC = github_spec  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "fake_github_package", package)
     jira_spec = make_spec(name="jira", settings=OtherProfile, checks=(make_check("jira.auth"),))
     result = compose(
         shell,
         [
             make_candidate(jira_spec, "example-jira"),
-            ProviderCandidate(
-                distribution="untaped", name="github", target="fake_github_package:provider"
+            PluginCandidate(
+                distribution="untaped", name="github", target="fake_github_package:SPEC"
             ),
         ],
     )
@@ -124,10 +123,10 @@ def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(github, RegisteredPlugin)
     assert github.spec is github_spec
     assert github.skills == github_spec.skills
-    assert github.provider_ref == ProviderRef(
-        distribution="untaped", entry_point="fake_github_package:provider"
+    assert github.plugin_ref == PluginRef(
+        distribution="untaped", entry_point="fake_github_package:SPEC"
     )
-    assert jira.provider_ref == ProviderRef(distribution="example-jira", entry_point="jira")
+    assert jira.plugin_ref == PluginRef(distribution="example-jira", entry_point="jira")
 
 
 def test_compose_shell_only() -> None:
@@ -136,14 +135,21 @@ def test_compose_shell_only() -> None:
     assert result.quarantine == ()
 
 
-def test_compose_accepts_function_provider() -> None:
-    spec = make_spec(name="func")
-    candidate = ProviderCandidate(
-        distribution="fn-dist", name="func", target=function_provider(spec)
-    )
+def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
+    calls: list[str] = []
+
+    def provider() -> PluginSpec:
+        calls.append("called")
+        return make_spec(name="func")
+
+    candidate = PluginCandidate(distribution="fn-dist", name="func", target=provider)
     result = compose(make_shell(), [candidate])
-    assert [cap.spec.name for cap in result.plugins] == ["func"]
-    assert result.quarantine == ()
+    assert result.plugins == ()
+    (record,) = result.quarantine
+    assert record.reason == "not-a-spec"
+    assert "names the callable" in record.detail
+    assert "'untaped_func:SPEC'" in record.detail
+    assert calls == []
 
 
 def test_compose_never_runs_doctor_bodies() -> None:
@@ -205,7 +211,7 @@ def test_plugins_compose_in_name_order_whatever_the_distribution() -> None:
     assert result.quarantine == ()
 
 
-def _github_rivals() -> list[ProviderCandidate]:
+def _github_rivals() -> list[PluginCandidate]:
     return [
         make_candidate(make_spec(name="github"), "acme-dist"),
         make_candidate(make_spec(name="github"), "untaped"),
@@ -270,11 +276,11 @@ def test_three_claimants_are_all_quarantined() -> None:
     ids=["provider-raises", "kind-declared-twice", "declaration-fails"],
 )
 def test_a_candidate_failing_its_own_checks_is_not_a_claimant(
-    broken: ProviderCandidate, reason: str
+    broken: PluginCandidate, reason: str
 ) -> None:
     sound = make_candidate(make_spec(name="github"), "b-dist")
     result = compose(make_shell(), [broken, sound])
-    assert [c.provider_ref.distribution for c in result.plugins] == ["b-dist"]
+    assert [c.plugin_ref.distribution for c in result.plugins] == ["b-dist"]
     assert [(q.distribution, q.reason) for q in result.quarantine] == [("a-dist", reason)]
 
 
@@ -345,7 +351,7 @@ def test_a_plugin_whose_import_redeclares_a_kind_is_quarantined(
         "def provide(): ...\n"
     )
     monkeypatch.syspath_prepend(tmp_path)
-    candidate = ProviderCandidate(
+    candidate = PluginCandidate(
         distribution="thief-dist", name="thief", target="untaped_kind_thief:provide"
     )
 

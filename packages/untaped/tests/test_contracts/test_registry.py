@@ -19,11 +19,12 @@ from test_contracts.support import (
     shop_spec,
     write_config,
 )
+from untaped import bootstrap
 from untaped.contracts import Configured, Contract, Failed, Ok, Skipped, gather
 from untaped.contracts._declare import contract_of
-from untaped.contracts._registry import Quarantined, doctor_rows, every_offer, offers
+from untaped.contracts._registry import Quarantined, doctor_rows, every_offer, offers, reset
 from untaped.errors import ConfigError, ExitCode
-from untaped.plugins.registry import PluginSpec
+from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.records import DuplicateKindError
 
 
@@ -256,3 +257,61 @@ def test_an_offer_waiting_for_its_owner_is_a_pass_in_doctor() -> None:
     assert row.detail == "waits for shelf (not installed)"
     compose(shelf_spec(), library_spec(), PluginSpec(name="kiosk", provides={"git": lambda: ()}))
     assert ("kiosk", "contract-provider", "pass", "owner-not-installed") in _rows()
+
+
+def _versioned(owner_version: str, *requires: str) -> None:
+    reset()
+    bootstrap.compose_root(
+        candidates=[
+            PluginCandidate(
+                distribution="untaped-shelf",
+                name="shelf",
+                target=shelf_spec(),
+                distribution_version=owner_version,
+            ),
+            PluginCandidate(
+                distribution="untaped-shop",
+                name="shop",
+                target=shop_spec(),
+                requires_dist=requires,
+            ),
+        ]
+    )
+
+
+def test_an_owner_outside_the_providers_range_quarantines_its_offer() -> None:
+    _versioned("2.0.0", "untaped-shelf>=1,<2; extra == 'shelf'")
+    [entry] = offers(_info())
+    assert isinstance(entry, Quarantined)
+    assert entry.reason == "owner-out-of-range"
+    assert entry.detail == "shop requires untaped-shelf>=1,<2 for shelf, but 2.0.0 is installed"
+    [row] = [row for row in doctor_rows() if row.plugin == "shop"]
+    assert (row.status, row.title) == ("warn", "owner-out-of-range")
+    assert row.detail.endswith("upgrade untaped-shop")
+
+
+@pytest.mark.parametrize(
+    "requires",
+    [
+        ("untaped-shelf>=1,<2; extra == 'shelf'",),
+        ("untaped-shelf>=9",),  # not under the shelf extra: not the owner range
+        (),
+    ],
+    ids=["in-range", "unguarded", "undeclared"],
+)
+def test_an_owner_in_range_or_without_a_declared_range_is_asked(requires: tuple[str, ...]) -> None:
+    _versioned("1.4.0", *requires)
+    [entry] = offers(_info())
+    assert not isinstance(entry, Quarantined)
+
+
+def test_an_owner_extra_behind_a_marker_the_environment_cannot_fill_adds_no_requirement() -> None:
+    from untaped.plugins.registry import owner_requirement
+
+    lines = [
+        'untaped-shelf>=1; extra == "shelf" and "x" in extras',
+        'untaped-shelf>=2; extra == "shelf"',
+    ]
+    found = owner_requirement(lines, "shelf")
+    assert found is not None
+    assert str(found.specifier) == ">=2"

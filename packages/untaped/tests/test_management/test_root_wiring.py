@@ -27,7 +27,7 @@ from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.profile_resolver import profile_override
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -35,7 +35,7 @@ _MANAGEMENT = ("config", "profile", "skills", "doctor", "plugins")
 
 
 def _root(*specs: object, candidates: object = ()) -> object:
-    composed = [provider_candidate(spec) for spec in specs]  # type: ignore[arg-type]
+    composed = [plugin_candidate(spec) for spec in specs]  # type: ignore[arg-type]
     return bootstrap.build_root_app(candidates=[*composed, *candidates])  # type: ignore[misc]
 
 

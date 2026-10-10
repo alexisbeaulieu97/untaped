@@ -24,7 +24,7 @@ from untaped.settings import (
     validate_config_file,
 )
 from untaped.stability import deprecated
-from untaped.testing import invoke_cli, provider_candidate
+from untaped.testing import invoke_cli, plugin_candidate
 
 
 class Sweep(BaseModel):
@@ -255,7 +255,7 @@ def _demo_root() -> object:
         return app
 
     spec = PluginSpec(name="demo", app_factory=_factory, settings=DemoSettings)
-    return bootstrap.build_root_app(candidates=(provider_candidate(spec),)).meta
+    return bootstrap.build_root_app(candidates=(plugin_candidate(spec),)).meta
 
 
 @pytest.mark.parametrize("flags", [[], ["--quiet"]])

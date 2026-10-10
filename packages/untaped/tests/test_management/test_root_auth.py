@@ -22,7 +22,7 @@ from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
 from untaped.sdk import TokenCommand, TokenSources
 from untaped.settings import get_config_section
-from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, provider_candidate
+from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -60,7 +60,7 @@ def _auth(*args: str, input: str | None = None, backend: Any = None) -> CliResul
         make_spec("other", settings=OtherProfile),
         make_spec("plain", settings=PlainProfile),
     )
-    root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
+    root = bootstrap.build_root_app(candidates=tuple(plugin_candidate(s) for s in specs))
     return invoke_cli(
         root.meta,
         ["auth", *args],
@@ -508,7 +508,7 @@ def test_set_in_a_named_profile_names_the_entry_after_it(
     result = _auth("set", "svc", "--stdin", input="tok")
     assert result.exit_code == 0
     root = bootstrap.build_root_app(
-        candidates=(provider_candidate(make_spec("svc", settings=SvcProfile)),)
+        candidates=(plugin_candidate(make_spec("svc", settings=SvcProfile)),)
     )
     result = invoke_cli(
         root.meta, ["--profile", "work", "auth", "set", "svc", "--stdin"], input="w"
@@ -921,7 +921,7 @@ def test_only_an_env_token_silences_the_warning(
 
 def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
     root = bootstrap.build_root_app(
-        candidates=(provider_candidate(make_spec("svc", settings=SvcProfile)),)
+        candidates=(plugin_candidate(make_spec("svc", settings=SvcProfile)),)
     )
     result = invoke_cli(root.meta, ["config", "set", "svc.token", "tok"])
     assert result.exit_code == 0, result.output

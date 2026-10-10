@@ -13,15 +13,15 @@ import pytest
 
 from untaped import bootstrap
 from untaped.messages import EXPERIMENTAL_LINE
-from untaped.plugins.registry import PluginSpec, ProviderCandidate
+from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.stability import enable_show_deprecated, reset_show_deprecated
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
 def test_default_composition_is_the_first_party_plugins(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     expected = tuple(candidate.name for candidate in first_party_candidates)
 
@@ -37,7 +37,7 @@ def test_default_composition_is_the_first_party_plugins(
 
 
 def test_root_option_after_a_lazy_plugin_name_is_not_a_command(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
     _isolated_config: Path,
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
@@ -50,12 +50,12 @@ def test_root_option_after_a_lazy_plugin_name_is_not_a_command(
 
 
 def test_lazy_first_party_plugins_render_like_eager_mounts(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
     first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     specs = first_party_specs
     eager_candidates = [
-        provider_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
+        plugin_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
     ]
     argv_cases = [["--help"]] + [
         [spec.name, flag] for spec in specs for flag in ("--help", "--version")
@@ -96,7 +96,7 @@ def _panels(text: str) -> dict[str, str]:
 
 
 def test_experimental_plugins_sit_in_the_root_experimental_panel(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
@@ -112,7 +112,7 @@ def test_experimental_plugins_sit_in_the_root_experimental_panel(
 
 
 def test_the_deprecated_flag_adds_the_deprecated_panel_before_parameters(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
@@ -123,7 +123,7 @@ def test_the_deprecated_flag_adds_the_deprecated_panel_before_parameters(
 
 
 def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visible(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
@@ -141,7 +141,7 @@ def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visib
 
 
 def test_awx_test_sits_in_awxs_experimental_panel(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
@@ -164,7 +164,7 @@ def test_awx_test_sits_in_awxs_experimental_panel(
     ],
 )
 def test_every_experimental_help_ends_with_the_experimental_line(
-    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
+    first_party_candidates: tuple[PluginCandidate, ...], argv: list[str]
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
@@ -176,7 +176,7 @@ def test_every_experimental_help_ends_with_the_experimental_line(
 
 @pytest.mark.parametrize("argv", [["awx", "jobs", "list", "--help"], ["awx", "ping", "--help"]])
 def test_stable_commands_do_not_carry_the_experimental_line(
-    first_party_candidates: tuple[ProviderCandidate, ...], argv: list[str]
+    first_party_candidates: tuple[PluginCandidate, ...], argv: list[str]
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 

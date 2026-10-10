@@ -466,6 +466,8 @@ def _import_every_shipped_module() -> None:
 def _samples() -> dict[str, Record]:
     from untaped.config.models import SettingOutcome, SettingRow
     from untaped.management.alias import AliasOutcome, AliasRow
+    from untaped.management.plugin_check import PluginCheckRow
+    from untaped.management.plugin_new import ScaffoldOutcome
     from untaped.management.plugins import ContractRow
     from untaped.profile.models import ProfileOutcome, ProfileRow
 
@@ -489,6 +491,10 @@ def _samples() -> dict[str, Record]:
             providers=["github", "gitlab"],
             ranked=["github"],
         ),
+        PluginCheckRow(
+            plugin="bin", check="live", title="rack.item_source.items", status="pass", detail="2"
+        ),
+        ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),
     ]
     if "untaped_git" in _SHIPPED:  # the core-only job installs no plugin
         from untaped_git.domain.records import GitHostRecord, StoreReport, TreeEntry

@@ -7,7 +7,7 @@ import pytest
 import respx
 
 from untaped import bootstrap
-from untaped.plugins.registry import ProviderCandidate
+from untaped.plugins.registry import PluginCandidate
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult
 from untaped_awx.cli import app
@@ -64,7 +64,7 @@ def test_ping_uses_configured_api_prefix(
 
 
 def test_ping_ignores_invalid_sibling_section(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
