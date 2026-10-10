@@ -469,6 +469,7 @@ def _samples() -> dict[str, Record]:
     from untaped.management.plugin_check import PluginCheckRow
     from untaped.management.plugin_new import ScaffoldOutcome
     from untaped.management.plugins import ContractRow
+    from untaped.plugins.registry import MigrationOutcome
     from untaped.profile.models import ProfileOutcome, ProfileRow
 
     rows: list[Record] = [
@@ -495,6 +496,7 @@ def _samples() -> dict[str, Record]:
             plugin="bin", check="live", title="rack.item_source.items", status="pass", detail="2"
         ),
         ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),
+        MigrationOutcome(id="github.cache", action="moved", detail="3 repos"),
     ]
     if "untaped_git" in _SHIPPED:  # the core-only job installs no plugin
         from untaped_git.domain.records import GitHostRecord, StoreReport, TreeEntry
