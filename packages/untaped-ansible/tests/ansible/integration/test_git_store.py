@@ -431,6 +431,27 @@ def test_removing_a_source_leaves_a_repo_it_never_fetched(tmp_path: Path, store_
     assert _git(_repo(store_root, "site"), "for-each-ref", "--format=%(refname)") == before
 
 
+def test_rerunning_a_remove_finishes_a_release_that_was_interrupted(
+    tmp_path: Path, store_root: Path
+) -> None:
+    """Killed after ansible's refs and file went, before the repo was removed."""
+    _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
+    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    _save_sources("a")
+    _refresh(index_dir, "site", source_key="source:a")
+    repo = _repo(store_root, "site")
+    _git(repo, "config", "untaped.release", "ansible")
+    for ref in _git(repo, "for-each-ref", "--format=%(refname)", _NAMESPACE).split():
+        _git(repo, "update-ref", "-d", ref)
+    (repo / "untaped-ansible.json").unlink()
+
+    assert _remove("a", "--dry-run") == ["would release acme/site"]
+    (change,) = _remove("a")
+
+    assert change.startswith("removed acme/site (")
+    assert not repo.exists()
+
+
 def test_removing_a_source_while_another_sources_refresh_holds_the_repo_keeps_it(
     tmp_path: Path, store_root: Path
 ) -> None:

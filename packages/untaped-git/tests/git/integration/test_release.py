@@ -71,6 +71,23 @@ def test_release_removes_a_repo_only_that_plugin_used(store_for: StoreFor) -> No
     assert not github.path.with_name("app.git.removing").exists()
 
 
+def test_has_part_names_a_file_refs_or_its_own_interrupted_release(
+    remote: GitRemote, store_for: StoreFor
+) -> None:
+    github, ansible = store_for("github"), store_for("ansible")
+    assert not github.has_part()  # no repo yet
+    github.fetch(branches=["main"])
+    assert github.has_part()  # its refs
+    assert not ansible.has_part()  # another plugin's repo
+    ansible.private_file.write_text("{}")
+    assert ansible.has_part()
+    ansible.private_file.unlink()
+    git(github.path, "config", RELEASE_MARK, "github")
+    assert not ansible.has_part()  # someone else's mark
+    git(github.path, "config", RELEASE_MARK, "ansible")
+    assert ansible.has_part()  # its own release, interrupted after its refs went
+
+
 def test_release_of_a_missing_repo_frees_nothing(store_for: StoreFor) -> None:
     assert store_for("github").release() == Removed(0)
 

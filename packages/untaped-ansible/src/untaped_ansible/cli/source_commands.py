@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 from typing import Annotated, Literal
 
 from cyclopts import Parameter
@@ -350,7 +351,7 @@ def source_remove_command(
         for repo, failure in failures:
             report_error(failure, item=repo)
         if failures:
-            echo(hint(f"ansible source remove {name}"), err=True)
+            echo(hint(f"ansible source remove {shlex.quote(name)}"), err=True)
         finish(bool(failures))
 
 
