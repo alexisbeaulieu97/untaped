@@ -303,3 +303,15 @@ def test_an_owner_in_range_or_without_a_declared_range_is_asked(requires: tuple[
     _versioned("1.4.0", *requires)
     [entry] = offers(_info())
     assert not isinstance(entry, Quarantined)
+
+
+def test_an_owner_extra_behind_a_marker_the_environment_cannot_fill_adds_no_requirement() -> None:
+    from untaped.plugins.registry import owner_requirement
+
+    lines = [
+        'untaped-shelf>=1; extra == "shelf" and "x" in extras',
+        'untaped-shelf>=2; extra == "shelf"',
+    ]
+    found = owner_requirement(lines, "shelf")
+    assert found is not None
+    assert str(found.specifier) == ">=2"

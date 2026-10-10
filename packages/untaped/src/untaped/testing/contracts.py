@@ -165,7 +165,11 @@ def _bound(cls: type) -> Provider:
     owner = next((o for o, infos in owned_contracts().items() if contract in infos), None)
     for entry in entries:
         wanted = (None, getattr(contract, "cls", None))
-        if not isinstance(entry, Provider) and entry.contract in wanted and entry.owner == owner:
+        if (
+            not isinstance(entry, Provider)
+            and entry.contract in wanted
+            and (owner is None or entry.owner == owner)
+        ):
             raise AssertionError(
                 f"{entry.plugin}'s offer to {entry.owner} is quarantined ({entry.reason}): "
                 f"{entry.detail}"

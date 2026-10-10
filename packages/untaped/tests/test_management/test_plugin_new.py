@@ -8,6 +8,7 @@ import sys
 import tomllib
 from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -205,3 +206,61 @@ def test_a_name_the_owners_api_does_not_export_is_refused(
     monkeypatch.delattr(importlib.import_module("untaped_rack.api"), "Item")
     with pytest.raises(UsageError, match=r"ItemSource names Item, which untaped_rack\.api doesn't"):
         scaffold(result, [_RACK], "gitlab", "rack.item_source", path=tmp_path, dry_run=True)
+
+
+def _toy_imports(
+    monkeypatch: pytest.MonkeyPatch, names: set[str], **contract_globals: object
+) -> str:
+    """``_imports`` for a contract in ``untaped_toy._contract`` with ``api`` exporting Item."""
+    from untaped.management.plugin_new import _imports
+
+    contract_module = ModuleType("untaped_toy._contract")
+    api = ModuleType("untaped_toy.api")
+
+    class Item:
+        pass
+
+    class Source:
+        pass
+
+    Source.__module__ = contract_module.__name__
+    vars(contract_module).update(contract_globals, Item=Item, Source=Source)
+    api.Item = Item  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, contract_module.__name__, contract_module)
+    return _imports(names, api, Source, "untaped_gitlab", "GitlabSettings")
+
+
+def test_a_module_the_contract_imports_is_imported_whole(monkeypatch: pytest.MonkeyPatch) -> None:
+    import datetime as dt
+
+    found = _toy_imports(monkeypatch, {"Item", "dt", "datetime"}, dt=dt, datetime=dt)
+    assert found.splitlines()[:2] == ["import datetime", "import datetime as dt"]
+
+
+def test_an_untaped_name_comes_from_its_public_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.contracts import NotReady
+
+    found = _toy_imports(monkeypatch, {"NotReady"}, NotReady=NotReady)
+    assert found.splitlines()[0] == "from untaped.contracts import NotReady"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        dict[str, int] | None,
+        type("Hidden", (), {"__module__": "untaped_toy._contract"}),
+        ModuleType("untaped_toy.helpers"),
+    ],
+    ids=["alias", "owner-private", "owner-module"],
+)
+def test_a_name_without_a_public_home_is_refused(
+    monkeypatch: pytest.MonkeyPatch, value: object
+) -> None:
+    with pytest.raises(UsageError, match=r"Source names Payload, which untaped_toy\.api doesn't"):
+        _toy_imports(monkeypatch, {"Payload"}, Payload=value)
+
+
+def test_a_local_version_is_left_out_of_the_range() -> None:
+    from untaped.management.plugin_new import _range
+
+    assert _range("11.0.0a1+g12ab") == ">=11.0.0a1,<12"
