@@ -46,7 +46,7 @@ from untaped_awx.domain.suite_starter import starter_suite
 SKILL_NAMES = ("untaped", *(f"untaped-{name}" for name in FIRST_PARTY))
 
 
-#: The skill template's sections (docs/plugins.md), in order.
+#: The skill template's sections (docs/plugin-skills.md), in order.
 SKILL_SECTIONS = ("Setup", "Commands", "Workflows", "Safety", "Pitfalls", "References")
 SKILL_BUDGET = 500
 REFERENCE_BUDGET = 300

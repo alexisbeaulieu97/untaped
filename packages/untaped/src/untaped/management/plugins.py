@@ -145,7 +145,7 @@ def build_root_plugin_app(
         """Scaffold a plugin package that fills an installed owner's contract.
 
         The package composes and follows the conventions as written: fill the
-        adapter's stubs, add samples to its assert_fills test, then run
+        provider's stubs, add samples to its assert_fills test, then run
         plugin check NAME on the installed package.
         """
         from untaped.management.plugin_new import scaffold  # noqa: PLC0415 - imports contracts

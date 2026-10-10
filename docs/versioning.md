@@ -24,8 +24,8 @@ them. For two installs that disagree about a renamed setting, see
   [configuration reference](./reference/config.md).
 - Environment variables:
   [environment variables](./reference/environment.md).
-- The `untaped.sdk` and `untaped.testing` surface, for
-  [provider authors](./plugins.md), except the
+- The `untaped.sdk`, `untaped.contracts` and `untaped.testing` surface, for
+  [plugin authors](./plugins.md), except the
   [experimental](#experimental) objects listed below.
 
 The pipe envelope is versioned on its own (`"untaped": "1"`) and outlives
