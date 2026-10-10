@@ -110,21 +110,30 @@ def make_shell(
 _TARGETS = itertools.count()
 
 
-def spec_target(spec: PluginSpec, *, error: Exception | None = None, result: Any = None) -> object:
+def spec_target(
+    spec: PluginSpec,
+    *,
+    error: Exception | None = None,
+    result: Any = None,
+    calls: list[str] | None = None,
+) -> object:
     """A candidate target resolving to ``spec``, to ``result``, or raising ``error``.
 
-    Plain specs are their own target; the others are a ``module:SPEC`` string
-    naming a synthetic module whose ``SPEC`` attribute raises or returns.
+    A plain spec is its own target; otherwise it is a ``module:SPEC`` string
+    naming a synthetic module whose ``SPEC`` attribute raises or returns, and
+    appends the spec's name to ``calls`` each time it is resolved.
     """
-    if error is None and result is None:
+    if error is None and result is None and calls is None:
         return spec
     name = f"untaped_test_target_{next(_TARGETS)}"
     module = ModuleType(name)
 
     def attribute(key: str) -> Any:
+        if calls is not None:
+            calls.append(spec.name)
         if error is not None:
             raise error
-        return result
+        return spec if result is None else result
 
     module.__getattr__ = attribute  # type: ignore[method-assign]  # resolved per access
     sys.modules[name] = module

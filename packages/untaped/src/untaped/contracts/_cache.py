@@ -77,10 +77,11 @@ def call_state(refresh: bool | None) -> Iterator[CallState]:
 def return_type(binding: Binding, name: str) -> Any:
     """The contract method's return type with the provider's ``T`` put in for the parameter."""
     hint = binding.contract.methods[name].hints["return"]
-    return _substitute(hint, binding.contract.item_param, binding.item)
+    return substitute(hint, binding.contract.item_param, binding.item)
 
 
-def _substitute(hint: Any, param: TypeVar | None, item: type | None) -> Any:
+def substitute(hint: Any, param: TypeVar | None, item: type | None) -> Any:
+    """``hint`` with ``item`` put in for the contract's type parameter (``T``, ``list[T]``)."""
     if param is None or item is None:
         return hint
     if hint is param:
