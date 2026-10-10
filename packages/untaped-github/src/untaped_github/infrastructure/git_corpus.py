@@ -59,8 +59,6 @@ from untaped_github.domain import (
 from untaped_github.errors import GitCorpusError
 
 DEFAULT_TIMEOUT = 60.0
-#: Where the git plugin keeps github's refs in a store repo (its namespace layout).
-_NAMESPACE = f"refs/untaped/{SPEC.name}/"
 _PLAIN_ROOTS = ("refs/heads/", "refs/tags/")
 #: A ``--ref`` glob the store takes as it is: one ``*`` at most, plain ref characters.
 _STORE_GLOB = re.compile(r"[\w.\-/]*\*?[\w.\-/]*")
@@ -164,15 +162,15 @@ class GitCorpusCache:
             [
                 "for-each-ref",
                 "--format=%(refname) %(tree) %(*tree)",
-                f"{_NAMESPACE}heads/",
-                f"{_NAMESPACE}tags/",
+                *store.roots,
             ],
             capture=True,
         )
         trees: dict[str, str] = {}
         for line in result.text.splitlines():
             stored, _, rest = line.partition(" ")
-            ref = _plain(stored)
+            relative = store.relative(stored)
+            ref = f"refs/{relative}" if relative is not None else None
             if ref is not None and _selector_covers_ref(selector, ref, default_branch=branch):
                 trees.setdefault(ref, next(iter(rest.split()), stored))
         ordered = _order_refs(tuple(trees), default_branch=f"refs/heads/{branch}")
@@ -218,8 +216,9 @@ class GitCorpusCache:
 
     def tree_paths(self, repo: CorpusRepoTarget, *, ref: str) -> tuple[str, ...]:
         """List paths in one stored tree (a tree id, or a plain ``refs/heads|tags/<x>``)."""
-        stored = f"{_NAMESPACE}{ref.removeprefix('refs/')}" if ref.startswith(_PLAIN_ROOTS) else ref
-        return tuple(entry.path for entry in self._existing(repo).ls_tree(stored))
+        store = self._existing(repo)
+        stored = store.ref(ref.removeprefix("refs/")) if ref.startswith(_PLAIN_ROOTS) else ref
+        return tuple(entry.path for entry in store.ls_tree(stored))
 
     def read_first_blob(
         self, repo: CorpusRepoTarget, *, ref: str, paths: tuple[str, ...]
@@ -229,7 +228,7 @@ class GitCorpusCache:
         relative = ref.removeprefix("refs/")
         if not ref.startswith(_PLAIN_ROOTS) or relative not in store.refs():
             return None
-        stored = f"{_NAMESPACE}{relative}"
+        stored = store.ref(relative)
         handle = store.prefetched(trees=[stored], paths=paths)
         result = handle.run(
             ["cat-file", "--batch"],
@@ -495,20 +494,12 @@ def _resolve_ref(store: RepoStore, ref: str) -> str | None:
         candidates = [f"tags/{ref}", f"heads/{ref}"]
     for candidate in candidates:
         if candidate in refs:
-            return f"{_NAMESPACE}{candidate}"
+            return store.ref(candidate)
     if _OID.fullmatch(ref):
         verify = ["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"]
         if store.run(verify, check=False).returncode == 0:
             return ref
     return None
-
-
-def _plain(stored: str) -> str | None:
-    """``refs/heads/<b>`` or ``refs/tags/<t>`` for a ref of github's namespace."""
-    if not stored.startswith(_NAMESPACE):
-        return None
-    ref = f"refs/{stored.removeprefix(_NAMESPACE)}"
-    return ref if ref.startswith(_PLAIN_ROOTS) else None
 
 
 def _https_host(url: str) -> str | None:
