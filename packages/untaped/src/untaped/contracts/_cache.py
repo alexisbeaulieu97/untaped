@@ -1,8 +1,10 @@
 """The answer cache behind ``@cached``: one JSON file per provider, method, profile and arguments.
 
-Path: ``~/.untaped/plugins/<provider>/cache/<owner>.<contract>.<method>/<profile>/<key>.json``,
-holding ``{"untaped": "1", "schema": …, "refreshed_at": …, "value": …}``. ``<key>`` is the
-sha256 of the arguments' canonical JSON and ``schema`` the sha256 of the return type's JSON
+Path: ``~/.untaped/plugins/<provider>/cache/<owner>.<contract>.<method>/<profile>/<hash>.json``,
+holding ``{"untaped": "1", "key": …, "schema": …, "refreshed_at": …, "value": …}``. ``<hash>`` is
+the sha256 of the arguments' canonical JSON; the entry's ``key`` is ``<provider>:<hash>``, since
+the cache is the owner's and the entry one provider's, so whatever reports an entry (a stale
+line) names whose it is. ``schema`` is the sha256 of the return type's JSON
 schema (with the provider's own record model's, which ``source.record`` carries), so an entry
 written for another shape of either model is a miss, never an error. A cache that can't be
 written never costs the live answer.
@@ -104,11 +106,16 @@ def _schema(binding: Binding, hint: Any) -> str:
     return hashlib.sha256(f"{schema}:{_adapter(binding.item)[1]}".encode()).hexdigest()
 
 
-def entry_path(binding: Binding, name: str, key: str) -> Path:
-    """Where ``name``'s answer for argument key ``key`` lives in the active profile."""
+def entry_key(binding: Binding, digest: str) -> str:
+    """The entry's key in the owner's cache: ``<provider>:<arguments hash>``."""
+    return f"{binding.plugin}:{digest}"
+
+
+def entry_path(binding: Binding, name: str, digest: str) -> Path:
+    """Where ``name``'s answer for the arguments hashing to ``digest`` lives in the profile."""
     folder = f"{binding.owner}.{binding.contract.name}.{name}"
     profile = safe_path_segment(binding.profile)
-    return plugin_dir(binding.spec) / "cache" / folder / profile / f"{key}.json"
+    return plugin_dir(binding.spec) / "cache" / folder / profile / f"{digest}.json"
 
 
 def argument_key(function: Callable[..., Any], provider: object, args: Any, kwargs: Any) -> str:
@@ -140,7 +147,9 @@ def _read(path: Path, adapter: TypeAdapter[Any], schema: str) -> _Entry | None:
     return _Entry(at if at.tzinfo else at.replace(tzinfo=UTC), value)
 
 
-def _write(path: Path, adapter: TypeAdapter[Any], schema: str, value: Any, at: datetime) -> None:
+def _write(
+    path: Path, key: str, adapter: TypeAdapter[Any], schema: str, value: Any, at: datetime
+) -> None:
     try:
         dumped = adapter.dump_python(
             value, mode="json", by_alias=True, round_trip=True, warnings=False
@@ -148,7 +157,13 @@ def _write(path: Path, adapter: TypeAdapter[Any], schema: str, value: Any, at: d
     except Exception:
         return
     text = json.dumps(
-        {"untaped": _FORMAT, "schema": schema, "refreshed_at": at.isoformat(), "value": dumped},
+        {
+            "untaped": _FORMAT,
+            "key": key,
+            "schema": schema,
+            "refreshed_at": at.isoformat(),
+            "value": dumped,
+        },
         ensure_ascii=False,
     )
     try:
@@ -169,7 +184,7 @@ def call(
     provider: Contract,
     name: str,
     function: Callable[..., Any],
-    ttl: timedelta,
+    max_age: timedelta,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> Any:
@@ -185,11 +200,12 @@ def call(
     refresh = None if state is None else state.refresh
     hint = return_type(binding, name)
     adapter, schema = _adapter(hint)[0], _schema(binding, hint)
-    path = entry_path(binding, name, argument_key(function, provider, args, kwargs))
+    digest = argument_key(function, provider, args, kwargs)
+    key, path = entry_key(binding, digest), entry_path(binding, name, digest)
     entry = _read(path, adapter, schema)
     now = datetime.now(UTC)
     if entry is not None and (
-        refresh is False or (refresh is None and now - entry.refreshed_at < ttl)
+        refresh is False or (refresh is None and now - entry.refreshed_at < max_age)
     ):
         if state is not None:
             state.served(entry.refreshed_at)
@@ -205,7 +221,7 @@ def call(
             state.served(entry.refreshed_at)
             state.stale = state.stale or exc
         return entry.value
-    _write(path, adapter, schema, value, now)
+    _write(path, key, adapter, schema, value, now)
     if state is not None:
         state.served(now)
     return value

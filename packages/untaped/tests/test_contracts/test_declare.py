@@ -34,9 +34,10 @@ def test_a_contract_is_declared_with_its_name_methods_and_owner_model() -> None:
     assert info.item is Book
     assert set(info.methods) == {"to_book", "books", "lookup", "by_author", "first", "count"}
     assert info.methods["to_book"].bridge
-    assert info.methods["books"].ttl == timedelta(hours=1)
+    assert info.methods["books"].max_age == timedelta(hours=1)
     assert info.methods["books"].listing
     assert not info.methods["lookup"].listing
+    assert not info.methods["by_author"].listing
     assert isinstance(function_mark(BookSource), Experimental)
 
 
@@ -99,7 +100,7 @@ def test_cached_is_refused_on_a_method_returning_a_secret() -> None:
     with pytest.raises(TypeError, match="never cached"):
 
         class Host(Contract):
-            @cached(ttl=timedelta(minutes=5))
+            @cached(max_age=timedelta(minutes=5))
             def credential(self, url: str) -> _Credential:
                 raise NotImplementedError
 
@@ -196,7 +197,7 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
         def make(self, item: Volume) -> Book:
             raise NotImplementedError
 
-        @cached(ttl=timedelta(seconds=1))
+        @cached(max_age=timedelta(seconds=1))
         @abstractmethod
         def listing(self) -> list[Book]: ...
 
@@ -205,21 +206,21 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
     assert list(inspect.signature(Direct.make).parameters) == ["self", "item"]
     assert getattr(Direct.listing, "__isabstractmethod__", False)
     with pytest.raises(TypeError, match="positive"):
-        cached(ttl=timedelta(0))
+        cached(max_age=timedelta(0))
 
 
 def test_only_the_contract_decides_what_is_cached() -> None:
     with pytest.raises(TypeError, match="only the contract decides what is @cached"):
 
         class Eager(Shop):
-            @cached(ttl=timedelta(minutes=1))
+            @cached(max_age=timedelta(minutes=1))
             def _load(self) -> list[Book]:
                 return []
 
     with pytest.raises(TypeError, match=r"Hasty\.books: only the contract decides"):
 
         class Hasty(Shop):
-            @cached(ttl=timedelta(seconds=1))
+            @cached(max_age=timedelta(seconds=1))
             def books(self) -> list[Book]:
                 return []
 
@@ -267,7 +268,7 @@ def test_a_method_filled_by_a_plain_mixin_is_rewrapped_too() -> None:
     assert getattr(Mixed.books, "__untaped_cached__", None) == timedelta(hours=1)
 
     class Cached:
-        @cached(ttl=timedelta(days=30))
+        @cached(max_age=timedelta(days=30))
         def books(self) -> list[Book]:
             return []
 
@@ -292,7 +293,7 @@ def test_a_provider_filling_a_method_with_a_base_helper_is_rewrapped() -> None:
             count = Shop.books  # type: ignore[assignment]  # a cached method in another slot
 
     class Popular:
-        @cached(ttl=timedelta(days=1))
+        @cached(max_age=timedelta(days=1))
         def popular(self) -> list[Book]:
             return []
 
@@ -305,6 +306,29 @@ def test_a_provider_filling_a_method_with_a_base_helper_is_rewrapped() -> None:
 
         class Static(Shop):
             @staticmethod
-            @cached(ttl=timedelta(days=1))
+            @cached(max_age=timedelta(days=1))
             def books() -> list[Book]:  # type: ignore[override]
                 return []
+
+
+def test_a_listing_is_declared_and_returns_a_list() -> None:
+    from untaped.contracts import listing
+
+    class Shelves(Contract):
+        @listing
+        def shelves(self, floor: int) -> list[Book]:
+            raise NotImplementedError
+
+        def everything(self) -> list[Book]:
+            raise NotImplementedError
+
+    info = contract_of(Shelves)
+    assert info is not None
+    assert info.methods["shelves"].listing
+    assert not info.methods["everything"].listing
+    with pytest.raises(TypeError, match=r"Single\.one: a @listing method returns a list"):
+
+        class Single(Contract):
+            @listing
+            def one(self) -> Book:
+                raise NotImplementedError

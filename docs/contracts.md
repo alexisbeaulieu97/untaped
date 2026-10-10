@@ -18,7 +18,8 @@ class BookSource[T: Record = Book](Contract):
     def to_book(self, item: T) -> Book:  # filled only when T is not Book
         raise NotImplementedError
 
-    @cached(ttl=timedelta(hours=1))
+    @listing
+    @cached(max_age=timedelta(hours=1))
     @abstractmethod
     def books(self) -> list[Book]: ...
 
@@ -50,8 +51,11 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   `settings`, `http`), and every parameter and return type must have a JSON
   schema, with no `*args`, positional-only parameters or non-JSON defaults:
   the class definition raises `TypeError` (`unserialisable-signature`)
-  otherwise. `shell=` is reserved for shell plugins. `@cached` is refused on
-  a method that returns a secret.
+  otherwise. `shell=` is reserved for shell plugins. `@cached(max_age=)`
+  keeps answers per provider, profile and arguments, and is refused on a
+  method that returns a secret. `@listing` declares a method whose rows
+  stand alone: an invalid row is dropped and the rest kept, where any other
+  method's invalid item fails the provider's whole answer.
 - **The owner's model** is the item type parameter's default, an `Issued`
   record with a kind. A provider issuing its own record type passes it
   (`BookSource[Volume]`) directly, never through a generic base of its own,

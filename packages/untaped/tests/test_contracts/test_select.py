@@ -69,7 +69,7 @@ def test_s3_two_unranked_matches_are_ambiguous_with_the_rank_hint() -> None:
     with pytest.raises(Ambiguous) as err:
         select_one(answers, _dune)
     assert err.value.exit_code == ExitCode.USAGE
-    assert err.value.hint == "untaped rank shelf.book_source books github gitlab"
+    assert err.value.hint == "untaped plugin rank shelf.book_source books github gitlab"
     ranked = _answers(_ok("gitlab", "Dune", rank=0), _ok("github", "Dune"))
     assert select_one(ranked, _dune) is ranked[0].value[0]  # type: ignore[union-attr]
 
