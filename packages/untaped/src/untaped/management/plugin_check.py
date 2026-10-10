@@ -159,8 +159,11 @@ def _offers(
     owners = [owner for owner in spec.provides if owner in installed]
     rows: list[PluginCheckRow] = []
     with composed_with(_hermetic([spec.name, *owners], candidates), quiet=True) as composed:
+        unusable = _unusable_owners(owners, composed)
+        rows += [row("registration", owner, "fail", why) for owner, why in unusable.items()]
         for entry in every_offer():
-            if entry.plugin != spec.name:
+            owner = entry.binding.owner if isinstance(entry, Provider) else entry.owner
+            if entry.plugin != spec.name or owner in unusable:
                 continue
             if not isinstance(entry, Provider):
                 title = (
@@ -175,6 +178,22 @@ def _offers(
                 continue
             rows += _provider(entry, composed, candidates, row)
     return rows
+
+
+def _unusable_owners(owners: Sequence[str], composed: CompositionResult) -> dict[str, str]:
+    """Installed owners whose contracts can't be read: quarantined, or ``contracts`` fails."""
+    from untaped.contracts._registry import unreadable_owners  # noqa: PLC0415
+
+    quarantined = {record.name: record for record in composed.quarantine}
+    broken = set(unreadable_owners())
+    found: dict[str, str] = {}
+    for owner in owners:
+        if owner in quarantined:
+            record = quarantined[owner]
+            found[owner] = f"{owner} is quarantined ({record.reason}): {record.detail}"
+        elif owner in broken:
+            found[owner] = f"{owner}'s contracts function fails; see doctor"
+    return found
 
 
 def _what(owner: str, contract: type) -> str:

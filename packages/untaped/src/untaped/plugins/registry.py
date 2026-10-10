@@ -1,13 +1,13 @@
 """Internal plugin composition kernel.
 
-Implements the provider pipeline: discovery and metadata pre-checks, provider
+Implements the plugin pipeline: discovery and metadata pre-checks, entry-point
 resolution, declaration validation, quarantine of every claimant of a contested
 name, then app-factory staging and commit. Every plugin,
 first-party ones included, arrives as an entry-point candidate; every violation
 yields a :class:`QuarantineRecord` while composition continues. Doctor-check
 bodies never run here.
 
-This module is intentionally NOT re-exported: provider authors import the
+This module is intentionally NOT re-exported: plugin authors import the
 stable surface from :mod:`untaped.sdk` instead.
 """
 
@@ -348,7 +348,7 @@ VALID_REASONS = frozenset(
 
 @dataclass(frozen=True)
 class QuarantineRecord:
-    """Why a provider was excluded.
+    """Why a plugin was excluded.
 
     ``name`` is the candidate's entry-point (plugin) name.
     """
@@ -403,7 +403,7 @@ def candidate_distribution(candidate: PluginCandidate) -> str:
 
 
 class _Quarantine(Exception):
-    """Internal control flow: one provider failed validation.
+    """Internal control flow: one plugin failed validation.
 
     :func:`compose` converts it to a :class:`QuarantineRecord`.
     """
@@ -589,7 +589,7 @@ def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[Plug
 
 
 class _CompositionState:
-    """Mutable accumulation of one composition run (shell + committed providers)."""
+    """Mutable accumulation of one composition run (shell + committed plugins)."""
 
     def __init__(self, shell: ApplicationSpec) -> None:
         self.shell = shell
@@ -860,7 +860,7 @@ def _candidate_order(candidate: PluginCandidate) -> tuple[str, str, str]:
 
 
 def candidate_entry_point(candidate: PluginCandidate) -> str:
-    """The entry point a candidate's provider records carry: its target, else its name."""
+    """The entry point a candidate's plugin records carry: its target, else its name."""
     return candidate.target if isinstance(candidate.target, str) else candidate.name
 
 

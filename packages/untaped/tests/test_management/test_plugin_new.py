@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import json
+import sys
 import tomllib
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -23,6 +25,14 @@ pytestmark = pytest.mark.usefixtures(
 
 _REPO = Path(__file__).resolve().parents[4]
 _RACK = next(candidate for candidate in candidates() if candidate.name == "rack")
+
+
+@pytest.fixture(autouse=True)
+def _forget_the_scaffold() -> Iterator[None]:
+    """Unload a scaffold a test imported, so the next test's is its own."""
+    yield
+    for module in [m for m in sys.modules if m.split(".")[0] == "untaped_gitlab"]:
+        del sys.modules[module]
 
 
 def _new(
@@ -52,9 +62,9 @@ def test_the_scaffold_composes_follows_the_conventions_and_fills_its_contract(
         "README.md",
         "pyproject.toml",
         "src/untaped_gitlab/__init__.py",
-        "src/untaped_gitlab/adapters/__init__.py",
-        "src/untaped_gitlab/adapters/rack.py",
         "src/untaped_gitlab/errors.py",
+        "src/untaped_gitlab/providers/__init__.py",
+        "src/untaped_gitlab/providers/rack.py",
         "src/untaped_gitlab/py.typed",
         "src/untaped_gitlab/settings.py",
         "tests/conftest.py",
@@ -76,31 +86,34 @@ def test_the_scaffold_composes_follows_the_conventions_and_fills_its_contract(
         requires_dist=_requires(pyproject),
     )
     assert plugin_violations("gitlab", candidates=[_RACK, gitlab]) == []
-    provider = importlib.import_module("untaped_gitlab.adapters.rack").GitlabItemSource
+    provider = importlib.import_module("untaped_gitlab.providers.rack").GitlabItemSource
     with compose_with(_RACK, gitlab):
         assert_fills(provider)
     assert (root / "src" / "untaped_gitlab" / "fills.json").exists()
 
 
-def test_the_adapter_carries_each_method_and_docstring(tmp_path: Path) -> None:
+def test_the_provider_carries_each_method_and_docstring(tmp_path: Path) -> None:
     _new(tmp_path)
-    adapter = (tmp_path / "untaped-gitlab/src/untaped_gitlab/adapters/rack.py").read_text(
+    provider = (tmp_path / "untaped-gitlab/src/untaped_gitlab/providers/rack.py").read_text(
         encoding="utf-8"
     )
-    assert "from untaped_rack.api import Item, ItemSource\n" in adapter
-    assert "class GitlabItemSource(ItemSource, Configured[GitlabSettings]):" in adapter
+    # date comes from where the contract's module found it, never from rack's api.
+    assert "from datetime import date\n\nfrom untaped.contracts import Configured\n" in provider
+    assert "from untaped_rack.api import Item, ItemSource\n" in provider
+    assert "class GitlabItemSource(ItemSource, Configured[GitlabSettings]):" in provider
     assert (
-        '    def items(self) -> list[Item]:\n        """Every item on the rack."""\n'
+        "    def items(self, since: date | None = None) -> list[Item]:\n"
+        '        """Every item on the rack."""\n'
         "        raise NotImplementedError\n"
-    ) in adapter
+    ) in provider
     # An optional method or a bridge is written commented out: a stub would fill it, and T
     # starts as the owner's model.
     assert (
         "    # def named(self, name: str, *, limit: int = 10) -> list[Item]:\n"
         '    #     """The items called ``name``."""\n'
-    ) in adapter
-    assert "    # def to_item(self, item: Item) -> Item:\n" in adapter
-    compile(adapter, "rack.py", "exec")
+    ) in provider
+    assert "    # def to_item(self, item: Item) -> Item:\n" in provider
+    compile(provider, "rack.py", "exec")
 
 
 def test_dry_run_plans_every_file_and_writes_none(tmp_path: Path) -> None:
@@ -156,7 +169,13 @@ def test_the_scaffold_builds_like_the_repository_packages() -> None:
 
 
 @pytest.mark.parametrize(
-    ("version", "expected"), [("10.1.0", ">=10,<11"), ("0.3.1", ">=0.3,<1"), ("", "")]
+    ("version", "expected"),
+    [
+        ("10.1.0", ">=10,<11"),
+        ("0.3.1", ">=0.3,<0.4"),
+        ("11.0.0a1", ">=11.0.0a1,<12"),
+        ("", ""),
+    ],
 )
 def test_an_owner_range_covers_its_installed_major(version: str, expected: str) -> None:
     from untaped.management.plugin_new import _range
@@ -173,4 +192,16 @@ def test_an_owner_without_its_contract_in_api_is_refused(
     assert owned_contracts()["rack"]  # loaded before the api stops exporting it
     monkeypatch.delattr(importlib.import_module("untaped_rack.api"), "ItemSource")
     with pytest.raises(UsageError, match=r"rack doesn't export ItemSource from untaped_rack\.api"):
+        scaffold(result, [_RACK], "gitlab", "rack.item_source", path=tmp_path, dry_run=True)
+
+
+def test_a_name_the_owners_api_does_not_export_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.contracts._registry import owned_contracts
+
+    result = bootstrap.compose_root(candidates=[_RACK])
+    assert owned_contracts()["rack"]
+    monkeypatch.delattr(importlib.import_module("untaped_rack.api"), "Item")
+    with pytest.raises(UsageError, match=r"ItemSource names Item, which untaped_rack\.api doesn't"):
         scaffold(result, [_RACK], "gitlab", "rack.item_source", path=tmp_path, dry_run=True)

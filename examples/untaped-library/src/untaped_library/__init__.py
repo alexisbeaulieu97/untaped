@@ -20,7 +20,7 @@ __all__ = ["SPEC"]
 
 
 def _shelf() -> Sequence[Contract]:
-    from untaped_library.adapters.shelf import LibraryBooks  # noqa: PLC0415
+    from untaped_library.providers.shelf import LibraryBooks  # noqa: PLC0415
 
     return (LibraryBooks(),)
 

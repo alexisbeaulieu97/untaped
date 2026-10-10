@@ -202,8 +202,9 @@ def test_the_library_fills_the_shelf_contract() -> None:
 - `assert_fills(Provider, samples=[...])` checks that each sample (a `T`
   or a mapping of one) survives a JSON round trip, and that each bridge
   method turns it into a valid owner record whose `source` gives it back.
-  `samples=` is required when `T` is not the owner's model. It records the
-  owner's schema hash in the plugin package's `fills.json`; commit it.
+  `samples=` is required when `T` is not the owner's model. Run from a
+  checkout or an editable install, it records the owner's schema hash in
+  the plugin package's `fills.json`; commit it.
 - `untaped plugin check [NAME]` checks an installed plugin (every one
   without a name), a developer's editable install included: the
   conventions and the import lint, then, composing only the plugin and the

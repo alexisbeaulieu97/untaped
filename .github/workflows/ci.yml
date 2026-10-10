@@ -170,6 +170,8 @@ jobs:
           printf 'profiles:\n  default:\n    library:\n      volumes:\n        - {shelf_mark: A1, name: Dune}\n' > "$RUNNER_TEMP/contracts.yml"
           UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check shelf
           UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check library
+          # owner-schema-drift only warns; the committed fills.json must match shelf here.
+          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check library --format json | jq -e 'all(.[]; .status == "pass")'
 
       - name: A broken example plugin is quarantined
         run: |

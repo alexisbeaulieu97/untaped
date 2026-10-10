@@ -231,7 +231,7 @@ untaped plugin new gitlab --fills workspace.repo_source
 `plugin new` writes `untaped-gitlab/` in the current directory (`--path`
 elsewhere, `--dry-run` to list the files first): the package with its
 `SPEC` offering the provider to the owner, the provider
-(`adapters/workspace.py`) with every method of the contract and its
+(`providers/workspace.py`) with every method of the contract and its
 docstring (the required ones as stubs, the optional ones and the bridge
 commented out, since a stub would count as filling them), a test running
 `check_conventions` and `assert_fills` with a list of samples to fill in,

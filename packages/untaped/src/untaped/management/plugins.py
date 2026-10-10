@@ -1,10 +1,10 @@
 """Root ``untaped plugin`` group: what is installed, and how contracts are filled.
 
 ``plugin list`` reports one record per candidate
-provider — ``name/status/distribution/version``, in name order — from the
+plugin — ``name/status/distribution/version``, in name order — from the
 composition outcome: ready rows for committed plugins plus quarantined
 rows carrying the entry-point name (or the ``unknown`` sentinels when the
-provider never resolved). The listing never touches settings, so invalid
+entry point never resolved). The listing never touches settings, so invalid
 plugin values cannot block it. ``plugin list --contracts`` lists every
 contract method instead: its owner, stability and providers.
 
@@ -87,7 +87,7 @@ def build_root_plugin_app(
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List installed plugins and quarantined providers, one row each."""
+        """List installed and quarantined plugins, one row each."""
         with report_errors():
             if contracts:
                 emit(
@@ -417,9 +417,9 @@ def _rows(
     result: CompositionResult,
     candidates: Sequence[PluginCandidate],
 ) -> list[dict[str, object]]:
-    # A distribution declares each entry-point name once, and a provider whose
+    # A distribution declares each entry-point name once, and a plugin whose
     # spec name differs from it is quarantined, so the reported (distribution,
-    # name) finds the candidate of every row, a provider that never resolved
+    # name) finds the candidate of every row, an entry point that never resolved
     # and a blank distribution (reported as ``unknown``) included.
     versions = {
         (candidate_distribution(item), item.name): item.distribution_version or _UNKNOWN

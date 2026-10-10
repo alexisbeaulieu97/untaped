@@ -12,8 +12,8 @@ from test_management.contract_plugins import CORE_RANGE, candidates
 from untaped import bootstrap
 from untaped.contracts._registry import doctor_rows
 from untaped.management.plugin_check import PluginCheckRow, check_plugins, report_check_rows
-from untaped.plugins.registry import PluginCandidate
-from untaped.testing import assert_fills, compose_with, invoke_cli
+from untaped.plugins.registry import PluginCandidate, PluginSpec
+from untaped.testing import assert_fills, compose_with, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 
@@ -29,7 +29,7 @@ def _rows(rows: list[PluginCheckRow]) -> list[tuple[str, str, str, str]]:
 
 
 def _bin() -> type:
-    return importlib.import_module("untaped_bin.adapters.rack").BinSource
+    return importlib.import_module("untaped_bin.providers.rack").BinSource
 
 
 def _record(site: Path, value: str) -> None:
@@ -195,7 +195,50 @@ def test_assert_fills_finds_the_installed_plugin_and_its_owner(
     monkeypatch.setattr("untaped.plugins.registry.discover_candidates", lambda: candidates())
     with compose_with() as result:
         assert sorted(plugin.spec.name for plugin in result.plugins) == ["bin", "rack"]
-    box = importlib.import_module("untaped_bin.adapters.rack").Box
+    box = importlib.import_module("untaped_bin.providers.rack").Box
     assert_fills(_bin(), samples=[box(id=3, label="pens")])
     recorded = json.loads((contract_plugins_site / "untaped_bin" / "fills.json").read_text("utf-8"))
     assert recorded["fills"] == {"rack.item_source": _current_hash()}
+
+
+def test_a_provider_fails_when_its_owner_cannot_be_read(contract_plugins_site: Path) -> None:
+    importlib.import_module("untaped_rack").BROKEN = True
+    rows = _rows(_check())
+    assert ("registration", "rack", "fail", "rack's contracts function fails; see doctor") in rows
+    assert not [row for row in rows if row[0] in {"live", "fills", "schema"}]
+
+
+def test_a_provider_fails_when_its_owner_is_quarantined(contract_plugins_site: Path) -> None:
+    found = [
+        candidate
+        if candidate.name != "rack"
+        else PluginCandidate(
+            distribution="untaped-rack",
+            name="rack",
+            target="untaped_rack:SPEC",
+            distribution_version="1.4",
+            requires_dist=("untaped>=99",),
+        )
+        for candidate in candidates()
+    ]
+    result = bootstrap.compose_root(candidates=found)
+    [registration] = [row for row in check_plugins(result, found, "bin") if row.title == "rack"]
+    assert registration.status == "fail"
+    assert registration.detail.startswith("rack is quarantined (")
+
+
+def test_a_provider_of_the_owners_own_model_is_checked_on_its_items(
+    contract_plugins_site: Path,
+) -> None:
+    api = importlib.import_module("untaped_rack.api")
+
+    class Shelf(api.ItemSource):  # type: ignore[misc,name-defined]
+        def items(self) -> list[object]:
+            return [api.Item(name="cup")]
+
+    shelf = PluginSpec(name="shelf", provides={"rack": lambda: (Shelf(),)})
+    found = [*candidates(), plugin_candidate(shelf)]
+    result = bootstrap.compose_root(candidates=found)
+    rows = _rows(check_plugins(result, found, "shelf"))
+    assert ("live", "rack.item_source.items", "pass", "1 item") in rows
+    assert ("fills", "rack.item_source", "pass", "1 live item") in rows

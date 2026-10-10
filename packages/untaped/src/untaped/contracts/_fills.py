@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import sys
+import sysconfig
 from collections.abc import Sequence
 from importlib.util import find_spec
 from pathlib import Path
@@ -28,6 +29,7 @@ from untaped.contracts._gather import issue
 from untaped.contracts._registry import Provider
 from untaped.contracts._schema import schema_hash
 from untaped.errors import first_validation_error
+from untaped.fs import atomic_write
 from untaped.records import Record, kind_of
 
 #: The file in a provider's plugin package holding the owner schema hashes it was checked against.
@@ -157,9 +159,15 @@ def current_hash(provider: Provider) -> str:
 
 
 def record_hash(provider: Provider) -> Path | None:
-    """Write the installed owner's schema hash into ``fills.json``; the file when it changed."""
+    """Write the installed owner's schema hash into ``fills.json``; the file when it changed.
+
+    Only a package outside the interpreter's site-packages (a checkout, an
+    editable install) is written: an installed wheel keeps the file it
+    shipped, so a stale committed hash still shows as ``owner-schema-drift``.
+    The write is atomic, so a parallel reader never sees half a file.
+    """
     path = fills_path(type(provider.instance))
-    if path is None:
+    if path is None or _installed(path):
         return None
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -172,5 +180,11 @@ def record_hash(provider: Provider) -> Path | None:
         return None
     entries[key] = value
     body = {"untaped": _FORMAT, "fills": dict(sorted(entries.items()))}
-    path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    atomic_write(path, json.dumps(body, indent=2) + "\n")
     return path
+
+
+def _installed(path: Path) -> bool:
+    paths = sysconfig.get_paths()
+    where = path.resolve()
+    return any(where.is_relative_to(Path(paths[key]).resolve()) for key in ("purelib", "platlib"))
