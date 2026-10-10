@@ -8,6 +8,8 @@ fetch in a store worktree still honours them.
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -134,9 +136,10 @@ def test_a_users_own_fetch_still_prunes(tmp_path: Path) -> None:
 def test_a_handle_still_reads_what_gc_left_unreachable(tmp_path: Path) -> None:
     """A global ``gc.pruneExpire=now`` cannot prune what an open handle reads.
 
-    Git 2.43 through 2.55 keep every object of a promisor pack when they
-    repack, whatever ``gc.pruneExpire`` says, so today this passes without the
-    store's repo-scope key too; the key, and this test, cover a git that prunes them.
+    Here the objects were fetched: the gits the store supports keep every
+    object of a promisor pack when they repack, whatever ``gc.pruneExpire``
+    says (2.43 and 2.55 measured), so this guards a git that prunes them. The
+    next test is the case the key decides today.
     """
     hostile_git_home()
     remote = git_remote(tmp_path)
@@ -151,3 +154,46 @@ def test_a_handle_still_reads_what_gc_left_unreachable(tmp_path: Path) -> None:
     git(store.path, "maintenance", "run", "--task=gc", "--quiet")
 
     assert handle.run(["cat-file", "-p", f"{topic}:notes.txt"]).text == "kept\n"
+
+
+@pytest.mark.parametrize("key", [True, False], ids=["repo-scope key", "global only"])
+def test_a_handle_still_reads_a_local_commit_gc_left_unreachable(tmp_path: Path, key: bool) -> None:
+    """A commit made in the store, as one in a worktree is, sits outside any promisor pack."""
+    hostile_git_home()
+    remote = git_remote(tmp_path)
+    store = _store(tmp_path, remote)
+    store.fetch(branches=["*"], prune=True)
+    blob = _git_in(store.path, "hash-object", "-w", "--stdin", stdin="local\n")
+    tree = _git_in(store.path, "mktree", stdin=f"100644 blob {blob}\tnotes.txt\n")
+    commit = _git_in(store.path, "commit-tree", tree, "-p", "refs/remotes/origin/main", "-m", "w")
+    git(store.path, "update-ref", "refs/heads/w", commit)
+    handle = store.prefetched(trees=["refs/heads/w"])
+    # Another process deletes the branch the handle read, then the maintenance runs.
+    git(store.path, "update-ref", "-d", "refs/heads/w")
+    if not key:
+        git(store.path, "config", "--unset", "gc.pruneExpire")
+    git(store.path, "maintenance", "run", "--task=gc", "--quiet")
+
+    if key:
+        assert handle.run(["cat-file", "-p", f"{commit}:notes.txt"]).text == "local\n"
+    else:
+        with pytest.raises(StoreError):
+            handle.run(["cat-file", "-p", f"{commit}:notes.txt"])
+
+
+def _git_in(repo: Path, *args: str, stdin: str = "") -> str:
+    """``git <args>`` on the bare ``repo`` with ``stdin``, as a test author; stdout."""
+    who = {
+        f"GIT_{role}_{key}": value
+        for role in ("AUTHOR", "COMMITTER")
+        for key, value in (("NAME", "Test"), ("EMAIL", "test@example.invalid"))
+    }
+    result = subprocess.run(
+        ["git", f"--git-dir={repo}", *args],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, **who},
+    )
+    return result.stdout.strip()
