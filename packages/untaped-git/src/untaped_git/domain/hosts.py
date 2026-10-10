@@ -3,11 +3,12 @@
 The git plugin owns it; a forge plugin (github, gitlab…) fills it for the
 host its own settings name. :func:`resolve_host` is how untaped picks the
 provider for a URL: the plugins whose ``home()`` is the URL's host are the
-candidates; none means plain git (the user's own git config answers); several
-are decided by their rank for ``credential`` (for ``proxy`` on an ssh URL,
-where no credential is asked), and an unranked tie is a configuration error
-(exit 4) naming them and the rank command. Credentials are asked only for ``https://``
-URLs, so an ssh remote never runs anyone's token command.
+candidates, and only they are asked for credentials and proxy; none means
+plain git (the user's own git config answers); several are decided by their
+rank for ``credential`` (for ``proxy`` on an ssh URL, where no credential is
+asked), and an unranked tie is a configuration error (exit 4) naming them and
+the rank command. Credentials are asked only for ``https://`` URLs, so an ssh
+remote never runs anyone's token command.
 
 Core never imports this module: the repo store asks it itself, so consumers
 never see a credential.
@@ -39,9 +40,8 @@ class Credential(BaseModel):
 class GitHost(Contract, shell=False):
     """A plugin that knows a Git host: its name, and credentials and proxy for its URLs.
 
-    untaped asks every provider and keeps the answer of the one whose
-    ``home()`` is the URL's host, so return ``None`` from ``credential`` and
-    ``proxy`` for a URL that is not on your host.
+    untaped asks ``credential`` and ``proxy`` only of the providers whose
+    ``home()`` is the URL's host.
     """
 
     @abstractmethod
@@ -86,15 +86,16 @@ def resolve_host(url: str) -> HostAuth | None:
     ]
     if not candidates:
         return None
-    credentials = _ask(GitHost.credential, url) if url.startswith("https://") else None
-    proxies = _ask(GitHost.proxy, url)
+    https = url.startswith("https://")
+    credentials = _ask(GitHost.credential, url, among=candidates) if https else None
+    proxies = _ask(GitHost.proxy, url, among=candidates)
     chosen = _choose(host, candidates, credentials or proxies)
     return HostAuth(chosen, _answer(credentials, chosen), _answer(proxies, chosen))
 
 
-def _ask(method: Any, *args: str) -> Answers[Any] | None:
+def _ask(method: Any, *args: str, among: list[str] | None = None) -> Answers[Any] | None:
     try:
-        return gather(method)(*args)
+        return gather(method, plugins=among)(*args)
     except ConfigError:  # no provider is ready: plain git
         return None
 

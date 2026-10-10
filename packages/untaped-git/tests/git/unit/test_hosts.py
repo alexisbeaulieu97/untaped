@@ -83,6 +83,7 @@ def test_the_provider_whose_home_matches_answers() -> None:
     assert auth.credential is not None
     assert auth.credential.username == "hub"
     assert GitHost.for_url("https://github.com/acme/app.git") == auth
+    assert set(Forge.asked) == {"hub"}  # lab's home is another host: never asked
 
 
 def test_ssh_asks_no_credential() -> None:

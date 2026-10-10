@@ -24,7 +24,7 @@ def _repo(root: Path, *parts: str, config: str = "", packs: int = 0, loose: int 
 
 def test_a_store_report(tmp_path: Path) -> None:
     root = tmp_path / "store"
-    ignored = "[core]\n\tbare = true\n[untaped]\n\tfilter = honoured\n[Untaped]\n\tfilter = ignored\n"
+    ignored = "[untaped]\n\tfilter = honoured\n[Untaped]\n\tfilter = ignored\n"
     _repo(root, "github.com", "acme", "a.git", config=ignored, packs=3, loose=2)
     gone = _repo(root, "github.com", "acme", "b.git", packs=1)
     (gone / "gc.log").write_text("error\n", encoding="utf-8")

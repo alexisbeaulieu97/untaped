@@ -9,9 +9,6 @@ for it; the repo store keeps one shared bare repository per remote, which
 other plugins fetch into and add worktrees from. `untaped git` itself has no
 setup: it reports what the other plugins supply.
 
-`git` is [experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/versioning.md#experimental) and may change in
-a minor release.
-
 ## Set up
 
 The repo store needs Git 2.29 or newer; `untaped doctor` checks the version.

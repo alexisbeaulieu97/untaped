@@ -9,8 +9,7 @@ Plugins that know a Git host supply credentials and a proxy for it; untaped
 uses them when it fetches, and the worktrees it creates ask
 `untaped git credential` for them. The repo store keeps one shared bare
 repository per remote, which other plugins fetch into and add worktrees
-from. `untaped git` is experimental: it may change in a minor release, so
-after upgrading untaped, check a command's `--help` before relying on it.
+from.
 
 ## Setup
 
