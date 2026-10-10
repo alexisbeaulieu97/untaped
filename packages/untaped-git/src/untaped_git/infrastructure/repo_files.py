@@ -115,7 +115,7 @@ def config_value(
     except OSError:
         return None
     quoted = "" if subsection is None else rf'\s+"{re.escape(subsection)}"'
-    header = re.compile(rf"\[\s*(?i:{re.escape(section)}){quoted}\s*\]")
+    header = re.compile(rf"\[\s*(?i:{re.escape(section)}){quoted}\s*\]\s*(?:[#;].*)?")
     value, inside = None, False
     for line in text.split("\n"):
         stripped = line.strip(_SPACE)
