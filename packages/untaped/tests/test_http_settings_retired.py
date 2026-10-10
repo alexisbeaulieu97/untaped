@@ -22,3 +22,16 @@ def test_the_retired_http_timeout_is_not_read(capsys: pytest.CaptureFixture[str]
 
     assert load_settings_section("http").timeout_seconds == HttpSettings().timeout_seconds
     assert "http.timeout" not in capsys.readouterr().err
+
+
+def test_the_timeout_argument_is_ignored() -> None:
+    assert HttpSettings(timeout=5).timeout_seconds == HttpSettings().timeout_seconds  # type: ignore[call-arg]
+
+
+def test_the_retired_variable_is_not_read(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT", "7")
+
+    assert load_settings_section("http").timeout_seconds == HttpSettings().timeout_seconds
+    assert capsys.readouterr().err == ""

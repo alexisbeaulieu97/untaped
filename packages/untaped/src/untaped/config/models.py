@@ -60,7 +60,7 @@ class SettingEntry(BaseModel):
     profile: str | None = None
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
     note: str | None = None
-    """Why the value deserves a look, e.g. ``from deprecated github.corpus_path``."""
+    """Why the value deserves a look, e.g. ``from deprecated demo.old_key``."""
     stability: SettingStability = "stable"
     """The setting's own mark, else its plugin's."""
     use: str | None = None
