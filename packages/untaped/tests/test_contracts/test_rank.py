@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+import os
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from cyclopts import App
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from test_contracts.support import (
     LIBRARY_CONFIG,
     Book,
     BookSource,
+    Shop,
     compose,
     kiosk_spec,
     library_spec,
@@ -150,6 +154,15 @@ class _Reserved(BaseModel):
     extensions: dict[str, str] = {}
 
 
+class _ReservedOldKey(BaseModel):
+    renamed_keys: ClassVar[Mapping[str, str]] = {"extensions": "plugins"}
+    plugins: dict[str, str] = {}
+
+
+class _ReservedAlias(BaseModel):
+    ext: dict[str, str] = Field(default_factory=dict, alias="caches")
+
+
 class _ReservedState(BaseModel):
     caches: dict[str, str] = {}
 
@@ -159,8 +172,11 @@ class _ReservedState(BaseModel):
     [
         PluginSpec(name="acme", settings=_Reserved),
         PluginSpec(name="acme", state=_ReservedState),
+        PluginSpec(name="acme", settings=_ReservedOldKey, contracts=lambda: ()),
+        PluginSpec(name="acme", settings=_ReservedOldKey),
+        PluginSpec(name="acme", settings=_ReservedAlias),
     ],
-    ids=["settings-extensions", "state-caches"],
+    ids=["settings-extensions", "state-caches", "owner-old-key", "old-key", "alias"],
 )
 def test_a_plugin_declaring_an_injected_key_is_quarantined(spec: PluginSpec) -> None:
     result = compose(spec)
@@ -175,7 +191,7 @@ def test_a_plugin_declaring_an_injected_key_is_quarantined(spec: PluginSpec) -> 
 def test_plugin_rank_writes_the_ranking_and_ranking_none_removes_it() -> None:
     result = _run(["plugin", "rank", "shelf.book_source", "books", "kiosk", "shop"], *_all())
     assert result.exit_code == 0, result.stderr
-    assert "key: shelf.extensions.book_source.rank.books" in result.stdout
+    assert "key: shelf.extensions\n" in result.stdout
     assert "ranked kiosk > shop" in result.stderr
     assert _extensions() == {"book_source": {"rank": {"books": ["kiosk", "shop"]}}}
     assert ranking("shelf", "book_source", "books") == ("kiosk", "shop")
@@ -210,9 +226,45 @@ def test_plugin_rank_keeps_a_plugin_that_doesnt_fill_the_method_with_a_warning()
     assert "shop doesn't" not in result.stderr
 
 
+def test_plugin_rank_removing_what_isnt_there_changes_nothing() -> None:
+    write_config("profiles:\n  default: {}\n")
+    result = _run(["plugin", "rank", "shelf.book_source", "books", "-f", "json"], *_all())
+    assert json.loads(result.stdout)["action"] == "unchanged"
+    assert "shelf.extensions.book_source.rank.books unchanged" in result.stderr
+    assert "shelf" not in Path(os.environ["UNTAPED_CONFIG"]).read_text()
+
+
+def test_plugin_rank_reports_unchanged_updated_and_deleted() -> None:
+    def action(*argv: str) -> str:
+        argv_ = ["plugin", "rank", "shelf.book_source", *argv, "-f", "json"]
+        return str(json.loads(_run(argv_, *_all()).stdout)["action"])
+
+    assert action("books", "shop") == "updated"
+    assert action("books", "shop") == "unchanged"
+    assert action("books") == "deleted"
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "book_source: null",
+        "book_source: x",
+        "book_source: {rank: [a]}",
+        "book_source: {rank: null}",
+    ],
+)
+def test_plugin_rank_repairs_a_malformed_stored_value(stored: str) -> None:
+    write_config(f"profiles:\n  default:\n    shelf:\n      extensions:\n        {stored}\n")
+    result = _run(["plugin", "rank", "shelf.book_source", "books", "shop"], *_all())
+    assert result.exit_code == 0, result.stderr
+    assert _extensions() == {"book_source": {"rank": {"books": ["shop"]}}}
+
+
 @pytest.mark.parametrize(
     ("argv", "message"),
     [
+        (["nobody.x", "y"], "'nobody' owns no contract"),
+        (["shelf.Bad-Name", "books"], "invalid ranking"),
         (["book_source", "books", "shop"], "name the contract as OWNER.CONTRACT"),
         (["library.book_source", "books", "shop"], "'library' owns no contract"),
         (["shelf.tags", "books", "shop"], "shelf declares no contract 'tags'"),
@@ -306,10 +358,42 @@ def test_plugin_schema_finds_a_kind_only_a_plugin_app_declares() -> None:
     assert json.loads(result.stdout)["required"] == ["size"]
 
 
+def test_plugin_schema_loads_contract_offers_to_find_a_kind(tmp_path: Path) -> None:
+    (tmp_path / "untaped_gadgets_records.py").write_text(
+        "from untaped.contracts import Record\n\n\n"
+        'class Gadget(Record, kind="gadgets.gadget"):\n'
+        "    name: str\n"
+    )
+
+    def offers() -> tuple[Contract, ...]:
+        import untaped_gadgets_records  # noqa: F401 - the lazy import under test
+
+        return ()
+
+    gadgets = PluginSpec(name="gadgets", provides={"shelf": offers})
+    with pytest.MonkeyPatch.context() as patch:
+        patch.syspath_prepend(str(tmp_path))
+        result = _run(["plugin", "schema", "gadgets.gadget"], shelf_spec(), gadgets)
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["required"] == ["name"]
+
+
+def test_plugin_list_contracts_names_an_owner_whose_contracts_break() -> None:
+    def broken() -> tuple[type[Contract], ...]:
+        raise ImportError("acme api broke")
+
+    result = _run(
+        ["plugin", "list", "--contracts"], *_all(), PluginSpec(name="acme", contracts=broken)
+    )
+    assert "acme's contracts couldn't be read" in result.stderr
+
+
 def test_plugin_schema_of_an_unknown_kind_exits_2() -> None:
     result = _run(["plugin", "schema", "nope.thing"], *_all())
     assert result.exit_code == 2
-    assert "no installed plugin declares the record kind 'nope.thing'" in result.stderr
+    assert "record kind not found: 'nope.thing'; known: none" in result.stderr
+    result = _run(["plugin", "schema", "shelf.nope"], *_all())
+    assert "known: shelf.book" in result.stderr
 
 
 # --- doctor -----------------------------------------------------------------
@@ -328,21 +412,21 @@ def test_doctor_warns_about_rankings_it_cant_follow_and_names_the_fix() -> None:
         (
             "rank-unknown-method",
             "shelf.extensions.gone.rank.x: shelf declares no contract gone; the ranking is ignored",
-        ): "plugin rank shelf.gone x",
+        ): "--profile default plugin rank shelf.gone x",
         (
             "rank-unknown-method",
             "shelf.extensions.book_source.rank.nope: shelf declares no method "
             "book_source.nope; the ranking is ignored",
-        ): "plugin rank shelf.book_source nope",
+        ): "--profile default plugin rank shelf.book_source nope",
         (
             "rank-unknown-method",
             "shelf.extensions.book_source.rank.to_book: shelf asks no one for "
             "book_source.to_book (a bridge); the ranking is ignored",
-        ): "plugin rank shelf.book_source to_book",
+        ): "--profile default plugin rank shelf.book_source to_book",
         (
             "rank-not-installed",
             "shelf.extensions.book_source.rank.books ranks gitlab, gitea, which are not installed",
-        ): "plugin rank shelf.book_source books shop",
+        ): "--profile default plugin rank shelf.book_source books shop",
     }
 
 
@@ -358,6 +442,69 @@ def test_doctor_rank_rows_carry_a_runnable_fix() -> None:
     assert _extensions() == {}
     result = _run(["doctor", "-f", "json"], *_all())
     assert not [row for row in json.loads(result.stdout) if row["check"] == "rank"]
+
+
+def test_doctors_rank_fix_targets_the_profile_that_holds_the_ranking() -> None:
+    """The ranking lives in ``default`` while ``work`` is active: the fix edits ``default``."""
+    write_config(
+        "active: work\nprofiles:\n  default:\n    shelf:\n      extensions:\n"
+        "        gone: {rank: {x: [shop]}}\n"
+        "        book_source: {rank: {books: [gitlab, shop]}}\n"
+        "  work: {}\n"
+    )
+    result = _run(["doctor", "-f", "json"], *_all())
+    fixes = sorted(row["fix"] for row in json.loads(result.stdout) if row["check"] == "rank")
+    assert fixes == [
+        ["--profile", "default", "plugin", "rank", "shelf.book_source", "books", "shop"],
+        ["--profile", "default", "plugin", "rank", "shelf.gone", "x"],
+    ]
+    for fix in fixes:
+        assert _run(fix, *_all()).exit_code == 0
+    result = _run(["doctor", "-f", "json"], *_all())
+    assert not [row for row in json.loads(result.stdout) if row["check"] == "rank"]
+    result = _run(["--profile", "work", "config", "get", "shelf.extensions"], *_all())
+    assert json.loads(result.stdout) == {"book_source": {"rank": {"books": ["shop"]}}}
+
+
+def test_a_ranking_set_in_the_environment_gets_no_config_fix() -> None:
+    compose(*_all())
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__BOOKS", '["gitlab","shop"]')
+        [row] = [row for row in doctor_rows() if row.check == "rank"]
+    assert row.fix is None
+    assert row.detail.endswith("(set by UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__BOOKS)")
+
+
+def test_a_quarantined_plugin_stays_in_its_ranking() -> None:
+    broken = PluginSpec(name="gitlab", settings=_Reserved)
+    write_config(RANKED.replace("[shop, library]", "[gitlab, shop]"))
+    compose(*_all(), broken)
+    assert not [row for row in doctor_rows() if row.check == "rank"]
+
+
+def test_doctor_limits_contract_rows_to_the_plugins_asked_for() -> None:
+    write_config(LIBRARY_CONFIG)
+    compose(*_all())
+    assert {row.plugin for row in doctor_rows(frozenset({"shop"}))} == {"shop"}
+
+
+def test_a_provider_whose_ready_raises_is_inactive_in_doctor() -> None:
+    class Broken(Shop):
+        def ready(self) -> None:
+            raise RuntimeError("boom")
+
+    compose(shelf_spec(), PluginSpec(name="shop", provides={"shelf": lambda: (Broken(),)}))
+    [row] = doctor_rows()
+    assert (row.status, row.title) == ("pass", "not-configured")
+    assert row.detail == "shelf.book_source: inactive: ready() raised RuntimeError: boom"
+
+
+def test_rank_rows_wait_for_a_broken_owner_section() -> None:
+    write_config(RANKED.replace("[shop, library]", "[shop, shop]"))
+    compose(*_all())
+    assert not [row for row in doctor_rows() if row.check == "rank"]
+    with pytest.raises(ConfigError, match="shop ranked twice"):
+        gather(BookSource.books)()
 
 
 def test_doctor_has_one_row_per_provider() -> None:

@@ -151,4 +151,5 @@ A `contracts` row warns about an owner whose `contracts` function fails
 (`bad-contracts`), and a `rank` row warns about a ranking it can't follow:
 `rank-unknown-method` (no such contract or method) and `rank-not-installed`
 (a ranked plugin isn't installed), each with the `plugin rank` command that
-repairs it.
+repairs it in the profile holding the ranking (none when an environment
+variable sets it).

@@ -13,7 +13,6 @@ stable surface from :mod:`untaped.sdk` instead.
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -41,6 +40,9 @@ from untaped.settings import (
     reserved_section_keys,
     validate_disjoint_settings_sections,
 )
+from untaped.settings import (
+    PLUGIN_NAME_PATTERN as _PLUGIN_NAME_PATTERN,
+)
 from untaped.stability import Stability, check_stability, mark_errors
 
 if TYPE_CHECKING:
@@ -54,7 +56,7 @@ PLUGINS_ENTRY_POINT_GROUP = "untaped.plugins"
 
 #: A plugin name: lowercase words joined by single hyphens. The name is also
 #: the plugin's config section, CLI group and :func:`plugin_dir`.
-PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+PLUGIN_NAME_PATTERN = _PLUGIN_NAME_PATTERN
 
 #: Names no plugin may take, whatever they would collide with.
 RESERVED_PLUGIN_NAMES = frozenset(
@@ -641,9 +643,10 @@ def _check_doctor_checks(spec: PluginSpec, state: _CompositionState) -> None:
 
 
 def _check_key_mappings(spec: PluginSpec) -> None:
-    if spec.settings is None:
+    model = section_settings(spec)
+    if model is None:
         return
-    errors = mapping_errors(spec.settings)
+    errors = mapping_errors(model)
     if errors:
         raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {errors[0]}")
 
