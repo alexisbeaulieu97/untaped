@@ -167,6 +167,10 @@ class _ReservedAlias(BaseModel):
     ext: dict[str, str] = Field(default_factory=dict, alias="caches")
 
 
+class _StateRetiringExtensions(BaseModel):
+    retired_keys: ClassVar[Mapping[str, str]] = {"extensions": "gone"}
+
+
 class _ReservedState(BaseModel):
     caches: dict[str, str] = {}
 
@@ -186,6 +190,12 @@ def test_a_plugin_declaring_an_injected_key_is_quarantined(spec: PluginSpec) -> 
     result = compose(spec)
     [record] = result.quarantine
     assert record.reason == "bad-settings-keys"
+    assert "extensions" in record.detail or "caches" in record.detail
+
+
+def test_an_owner_state_model_may_retire_an_extensions_key() -> None:
+    owner = PluginSpec(name="acme", state=_StateRetiringExtensions, contracts=lambda: ())
+    assert compose(owner).quarantine == ()
 
 
 def test_a_plugin_that_owns_no_contract_can_rename_its_extensions_setting_away() -> None:
@@ -488,11 +498,24 @@ def test_a_ranking_set_in_the_environment_gets_no_config_fix() -> None:
 
 
 def test_an_environment_variable_holds_a_ranking_whatever_its_case() -> None:
+    write_config(RANKED.replace("[shop, library]", "[gitlab, shop]"))
     compose(*_all())
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("untaped_shelf__extensions__book_source__rank__books", '["gitlab","shop"]')
         [row] = [row for row in doctor_rows() if row.check == "rank"]
     assert row.fix is None
+    assert row.detail.endswith("(set by UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__BOOKS)")
+
+
+def test_a_parent_variable_holds_the_rankings_its_json_sets() -> None:
+    write_config(RANKED.replace("[shop, library]", "[gitlab, shop]"))
+    compose(*_all())
+    blob = '{"book_source": {"rank": {"books": ["gitlab", "shop"]}}}'
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("UNTAPED_SHELF__EXTENSIONS", blob)
+        [row] = [row for row in doctor_rows() if row.check == "rank"]
+    assert row.fix is None
+    assert row.detail.endswith("(set by UNTAPED_SHELF__EXTENSIONS)")
 
 
 def test_a_parent_variable_holds_only_the_rankings_its_json_sets() -> None:
