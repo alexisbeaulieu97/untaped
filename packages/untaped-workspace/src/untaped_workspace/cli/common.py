@@ -16,6 +16,7 @@ from untaped.sdk import (
     ConfigError,
     ParallelOption,
     UsageError,
+    app_context,
     clamp_parallel,
     get_config_section,
     read_stdin_input,
@@ -105,7 +106,8 @@ def workspace_dir(settings: WorkspaceSettings, name: str) -> Path:
 
 
 def git_worktrees() -> LocalGitWorktrees:
-    return LocalGitWorktrees()
+    # The worktrees' credential helper asks untaped with this invocation's profile.
+    return LocalGitWorktrees(profile=app_context().profile)
 
 
 def utc_now() -> datetime:

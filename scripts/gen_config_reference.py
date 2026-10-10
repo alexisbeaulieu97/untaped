@@ -377,7 +377,8 @@ def _renamed_table() -> list[str]:
             for old, deleted in sorted(mappings.deleted.items()):
                 key = f"{section}.{old}"
                 reason = deleted.reason()
-                rows.append(f"| `{key}` | `{_env_name(key)}` | none | deleted: {reason} |")
+                status = reason if reason.startswith("deleted") else f"deleted: {reason}"
+                rows.append(f"| `{key}` | `{_env_name(key)}` | none | {status} |")
     if not rows:
         return []
     return [

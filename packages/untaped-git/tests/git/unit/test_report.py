@@ -50,7 +50,8 @@ def _worktree(repo: Path, name: str, owner: str | None) -> None:
     admin.mkdir(parents=True)
     (admin / "gitdir").write_text(f"/elsewhere/{name}/.git\n", encoding="utf-8")
     if owner is not None:
-        (admin / "config.worktree").write_text(f"[untaped]\n\towner = {owner}\n", encoding="utf-8")
+        stamp = f"[untaped]\n\towner = {owner}\n\tworktree = /elsewhere/{name}\n"
+        (admin / "config.worktree").write_text(stamp, encoding="utf-8")
 
 
 def test_who_uses_each_repo_and_what_only_one_plugin_uses(tmp_path: Path) -> None:

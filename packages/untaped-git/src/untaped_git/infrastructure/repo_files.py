@@ -28,7 +28,9 @@ class WorktreeEntry:
     """The worktree's directory, from the admin ``gitdir`` file (``None`` when unreadable)."""
 
     owner: str | None
-    """``untaped.owner`` from its ``config.worktree``; ``None`` for a worktree added by hand."""
+    """``untaped.owner`` from its ``config.worktree`` when ``untaped.worktree`` there
+    names this worktree; ``None`` for a worktree added by hand (git copies the
+    file into a worktree added from an owned one, stamp included)."""
 
 
 def private_file(repo: Path, plugin: str) -> Path:
@@ -66,9 +68,20 @@ def worktree_entries(repo: Path) -> list[WorktreeEntry]:
             path = Path(gitdir).parent if gitdir else None
         except OSError:
             path = None
-        owner = config_value(admin / "config.worktree", "untaped", "owner")
-        entries.append(WorktreeEntry(admin=admin, path=path, owner=owner or None))
+        config = admin / "config.worktree"
+        owner = config_value(config, "untaped", "owner") or None
+        # git copies config.worktree into a worktree added from this one, so an
+        # owner counts only where its stamp names this very worktree.
+        if owner is not None and not _same(config_value(config, "untaped", "worktree"), path):
+            owner = None
+        entries.append(WorktreeEntry(admin=admin, path=path, owner=owner))
     return entries
+
+
+def _same(stamp: str | None, path: Path | None) -> bool:
+    if not stamp or path is None:
+        return False
+    return os.path.realpath(stamp) == os.path.realpath(path)
 
 
 def config_value(file: Path, section: str, key: str) -> str | None:

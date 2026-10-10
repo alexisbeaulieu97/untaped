@@ -174,10 +174,10 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | `ansible.stale_after_seconds` | retired |
 | `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
-| `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted: deleted in 11.0; the repo store lives under git.store_dir |
-| `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted: deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
+| `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
+| `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
-| `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted: deleted in 11.0; the repo store lives under git.store_dir |
+| `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 
 ## See also
 
