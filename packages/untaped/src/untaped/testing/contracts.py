@@ -114,7 +114,7 @@ def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[objec
     record whose ``source`` names the provider and gives the sample back.
     ``samples=`` is required when ``T`` isn't the owner's model. The provider
     is the one an enclosing :func:`compose_with` offers, else the installed
-    plugin's. Records the owner's schema hash in the provider package's
+    plugin's. Records the owner's schema hash in the plugin package's
     ``fills.json``, which ``untaped plugin check`` and ``untaped doctor``
     compare with the installed owner's (``owner-schema-drift``).
     """

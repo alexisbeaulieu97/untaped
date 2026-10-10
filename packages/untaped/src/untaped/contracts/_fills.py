@@ -6,7 +6,7 @@ issues every answer; and each ``@bridge`` method turns it into a valid owner
 record whose ``source`` names the provider and carries the sample back.
 
 The owner's schema hash the provider was checked against lives in the
-provider package's ``fills.json`` (``{"untaped": "1", "fills": {"<owner>.<contract>":
+plugin package's ``fills.json`` (``{"untaped": "1", "fills": {"<owner>.<contract>":
 "<sha256>"}}``), so ``plugin check`` and doctor can say when the installed owner
 has changed since (``owner-schema-drift``).
 """
@@ -30,7 +30,7 @@ from untaped.contracts._schema import schema_hash
 from untaped.errors import first_validation_error
 from untaped.records import Record, kind_of
 
-#: The file in a provider package holding the owner schema hashes it was checked against.
+#: The file in a provider's plugin package holding the owner schema hashes it was checked against.
 FILLS_FILE = "fills.json"
 _FORMAT = "1"
 

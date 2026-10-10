@@ -439,7 +439,7 @@ def _names(code: str) -> set[str]:
 
 
 def _imports(names: set[str], api: ModuleType, package: str, settings: str) -> str:
-    """The provider module's imports: what it names from the owner's api, else from where it lives."""
+    """The provider module's imports: from the owner's api, else from where each name lives."""
     found = vars(api)
     owned: list[str] = []
     others: dict[str, list[str]] = {}
