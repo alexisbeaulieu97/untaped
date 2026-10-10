@@ -22,11 +22,10 @@ from untaped.sdk import (
     report_errors,
 )
 from untaped_github.application import RepositoryInventoryScope
-from untaped_github.cli._client import corpus_auth_header, open_client
+from untaped_github.cli._client import open_client, open_corpus
 from untaped_github.cli.scopes import (
     ArchivedOption,
     CorpusParallelOption,
-    DepthOption,
     OrgOption,
     RepoOption,
     TeamOption,
@@ -34,7 +33,6 @@ from untaped_github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
-from untaped_github.domain import github_web_host
 from untaped_github.settings import GithubSettings
 
 if TYPE_CHECKING:
@@ -163,7 +161,6 @@ def sweep_command(
         bool,
         Parameter(name="--fail-on-match", negative="", help="Exit 3 when any repository matches."),
     ] = False,
-    depth: DepthOption = 1,
     parallel: CorpusParallelOption | None = None,
 ) -> None:
     """Sweep repository refs for content and file-presence predicates."""
@@ -173,7 +170,6 @@ def sweep_command(
         SweepOptions,
     )
     from untaped_github.domain import RefSelector, SweepQuery  # noqa: PLC0415
-    from untaped_github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     with report_errors():
         ctx = app_context()
@@ -201,8 +197,8 @@ def sweep_command(
             cap=32,
             policy="Git corpus worker cap",
         )
-        corpus = GitCorpusCache(auth_host=github_web_host(settings.base_url))
-        _validate_content_patterns(corpus, settings, query)
+        corpus = open_corpus(settings)
+        _validate_content_patterns(corpus, query)
 
         sync_mode: Literal["auto", "force", "off"]
         sync_mode = "auto" if refresh is None else "force" if refresh else "off"
@@ -213,7 +209,6 @@ def sweep_command(
             query=query,
             sync=sync_mode,
             max_age_seconds=settings.sweep.max_age_seconds,
-            depth=depth,
             parallel=workers,
             owners=owners,
             stdin_items=stdin_items,
@@ -221,20 +216,14 @@ def sweep_command(
 
         if sync_mode == "off":
             with ctx.ui(strict=False).progress("Sweeping cached repositories…") as progress:
-                report = Sweep(
-                    inventory=lambda _scope: (),
-                    corpus=corpus,
-                    root=settings.cache_dir,
-                    auth_header=lambda: None,
-                )(options, progress=progress)
+                report = Sweep(inventory=lambda _scope: (), corpus=corpus)(
+                    options, progress=progress
+                )
         else:
             with open_client() as (client, ui), ui.progress("Sweeping repositories…") as progress:
-                report = Sweep(
-                    inventory=ResolveRepositoryInventory(client),
-                    corpus=corpus,
-                    root=settings.cache_dir,
-                    auth_header=corpus_auth_header(settings),
-                )(options, progress=progress)
+                report = Sweep(inventory=ResolveRepositoryInventory(client), corpus=corpus)(
+                    options, progress=progress
+                )
 
         if show == "files":
             emit(
@@ -284,23 +273,14 @@ def _scope(
     return RepositoryInventoryScope(orgs=orgs, teams=team_scopes, repos=repos)
 
 
-def _validate_content_patterns(
-    corpus: GitCorpus,
-    settings: GithubSettings,
-    query: SweepQuery,
-) -> None:
+def _validate_content_patterns(corpus: GitCorpus, query: SweepQuery) -> None:
     paths = query.paths
     fixed_strings = query.fixed_strings
     for flag, pattern in (
         *[("--grep", pattern) for pattern in query.greps],
         *[("--not-grep", pattern) for pattern in query.not_greps],
     ):
-        error = corpus.validate_pattern(
-            root=settings.cache_dir,
-            pattern=pattern,
-            paths=paths,
-            fixed_strings=fixed_strings,
-        )
+        error = corpus.validate_pattern(pattern=pattern, paths=paths, fixed_strings=fixed_strings)
         if error is None:
             continue
         path = next((path for path in paths if path in error), None)

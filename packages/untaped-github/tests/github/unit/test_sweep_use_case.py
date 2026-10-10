@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 from unittest.mock import ANY
 
@@ -109,10 +108,7 @@ class _Corpus:
         self,
         repo: CorpusRepoTarget,
         *,
-        root: Path,
         selector: RefSelector,
-        depth: int,
-        auth_header: str | None,
     ) -> CorpusRepoResult:
         self.synced.append(repo.full_name)
         error = self.sync_errors.get(repo.full_name)
@@ -123,22 +119,20 @@ class _Corpus:
             fetched_at=fetched_at, profile=selector.profile, ref_globs=selector.globs
         )
         return CorpusRepoResult(
-            repo=repo.full_name, ref="main", path=str(root), fetched_at=fetched_at.isoformat()
+            repo=repo.full_name, ref="main", path="/store", fetched_at=fetched_at.isoformat()
         )
 
-    def repo_freshness(self, repo: CorpusRepoTarget, *, root: Path) -> CorpusFreshness | None:
+    def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None:
         reason = self.freshness_errors.get(repo.full_name)
         if reason is not None:
             raise GitCorpusError(reason)
         return self.freshness.get(repo.full_name)
 
-    def touch_repo(self, repo: CorpusRepoTarget, *, root: Path) -> datetime:
+    def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         self.touched.append(repo.full_name)
         return datetime(2026, 7, 7, 12, tzinfo=UTC)
 
-    def local_refs(
-        self, repo: CorpusRepoTarget, *, root: Path, selector: RefSelector
-    ) -> tuple[LocalRef, ...]:
+    def local_refs(self, repo: CorpusRepoTarget, *, selector: RefSelector) -> tuple[LocalRef, ...]:
         names = self.local_ref_map.get(repo.full_name, ("main",))
         return tuple(
             LocalRef(name=name, tree=self.ref_trees.get((repo.full_name, name), name))
@@ -146,28 +140,26 @@ class _Corpus:
         )
 
     def grep_trees(
-        self, repo: CorpusRepoTarget, *, root: Path, trees: tuple[str, ...], spec: GrepSpec
+        self, repo: CorpusRepoTarget, *, trees: tuple[str, ...], spec: GrepSpec
     ) -> dict[str, tuple[GrepHit, ...]]:
         self.grep_calls.append((trees, spec.pattern))
         found = {tree: self.grep_map.get((repo.full_name, tree, spec.pattern)) for tree in trees}
         return {tree: hits for tree, hits in found.items() if hits}
 
-    def tree_has_match(
-        self, repo: CorpusRepoTarget, *, root: Path, tree: str, spec: GrepSpec
-    ) -> bool:
+    def tree_has_match(self, repo: CorpusRepoTarget, *, tree: str, spec: GrepSpec) -> bool:
         self.exists_calls.append((repo.full_name, tree, spec.pattern))
         return bool(self.grep_map.get((repo.full_name, tree, spec.pattern)))
 
-    def tree_paths(self, repo: CorpusRepoTarget, *, root: Path, ref: str) -> tuple[str, ...]:
+    def tree_paths(self, repo: CorpusRepoTarget, *, ref: str) -> tuple[str, ...]:
         return self.tree_map.get((repo.full_name, ref), ())
 
     def read_first_blob(
-        self, repo: CorpusRepoTarget, *, root: Path, ref: str, paths: tuple[str, ...]
+        self, repo: CorpusRepoTarget, *, ref: str, paths: tuple[str, ...]
     ) -> str | None:
         found = (self.blob_map.get((repo.full_name, ref, path)) for path in paths)
         return next((text for text in found if text is not None), None)
 
-    def list_repos(self, *, root: Path) -> tuple[CorpusRepoResult, ...]:
+    def list_repos(self) -> tuple[CorpusRepoResult, ...]:
         return self.cached_rows
 
 
@@ -191,15 +183,12 @@ def _sweep(
         "archived": "exclude",
         "sync": "auto",
         "max_age_seconds": 3600,
-        "depth": 1,
         "parallel": 1,
         "owners": True,
     }
     return Sweep(
         inventory=resolver or _Resolver(),
         corpus=corpus,
-        root=Path("/corpus"),
-        auth_header=lambda: "AUTHORIZATION: basic token",
     )(SweepOptions(query=query, **{**defaults, **options}), progress=progress)
 
 
@@ -614,9 +603,7 @@ def test_sync_corpus_reports_one_outcome_per_repo() -> None:
         *(_item(name, pushed_at=_PUSHED) for name in names), missing=frozenset({"acme/gone"})
     )
 
-    outcomes = SyncCorpus(
-        inventory=resolver, corpus=corpus, root=Path("/corpus"), auth_header=lambda: None
-    )(
+    outcomes = SyncCorpus(inventory=resolver, corpus=corpus)(
         CorpusSyncOptions(
             scope=RepositoryInventoryScope(orgs=("acme",), repos=("acme/gone",)),
             stdin_repos=(),
@@ -624,7 +611,6 @@ def test_sync_corpus_reports_one_outcome_per_repo() -> None:
             refs=RefSelector(),
             refresh=False,
             max_age_seconds=3600,
-            depth=1,
             parallel=1,
         )
     )

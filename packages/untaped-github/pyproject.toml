@@ -7,7 +7,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14.1"
-dependencies = ["untaped==10.1.0"]
+dependencies = ["untaped==10.1.0", "untaped-git==10.1.0"]
 
 [project.entry-points."untaped.plugins"]
 github = "untaped_github:provider"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from cyclopts import Parameter, validators
+from cyclopts import Parameter
 
 from untaped.sdk import (
     ConfigError,
@@ -52,12 +52,6 @@ RepoOption = Annotated[
 ArchivedOption = Annotated[
     ArchivedMode,
     Parameter(name="--archived", help="Keep, drop, or keep only archived repositories."),
-]
-DepthOption = Annotated[
-    int,
-    Parameter(
-        name="--depth", validator=validators.Number(gte=0), help="Git fetch depth; 0 is full."
-    ),
 ]
 CorpusParallelOption = Annotated[
     ParallelOption,

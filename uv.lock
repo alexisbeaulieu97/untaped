@@ -931,10 +931,14 @@ version = "10.1.0"
 source = { editable = "packages/untaped-github" }
 dependencies = [
     { name = "untaped" },
+    { name = "untaped-git" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+requires-dist = [
+    { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-git", editable = "packages/untaped-git" },
+]
 
 [[package]]
 name = "untaped-jira"

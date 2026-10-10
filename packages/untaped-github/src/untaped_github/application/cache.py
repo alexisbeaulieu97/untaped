@@ -18,23 +18,22 @@ class StatusCorpus:
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
-    def __call__(self, *, root: Path) -> tuple[CorpusRepoResult, ...]:
-        return tuple(with_disk_bytes(row) for row in self._corpus.list_repos(root=root))
+    def __call__(self) -> tuple[CorpusRepoResult, ...]:
+        return tuple(with_disk_bytes(row) for row in self._corpus.list_repos())
 
 
 class CleanCorpus:
-    """Remove repositories from the managed local corpus.
+    """Release repositories from the corpus: each goes from disk unless another plugin uses it.
 
-    The removed row keeps the ``disk_bytes`` of the ``repo`` it was given (the
-    space the removal freed; see :func:`with_disk_bytes`).
+    The row says ``removed`` with the bytes it freed in ``disk_bytes``, or
+    ``released`` with who kept the repo in ``kept``.
     """
 
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
-    def __call__(self, *, root: Path, repo: CorpusRepoResult) -> CorpusRepoResult:
-        removed = self._corpus.clean_repo(root=root, repo=repo)
-        return removed.model_copy(update={"disk_bytes": repo.disk_bytes})
+    def __call__(self, *, repo: CorpusRepoResult) -> CorpusRepoResult:
+        return self._corpus.clean_repo(repo)
 
 
 class WorktreeCorpus:
@@ -43,16 +42,16 @@ class WorktreeCorpus:
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
-    def __call__(self, repo: str, *, root: Path, ref: str | None) -> WorktreeResult:
+    def __call__(self, repo: str, *, ref: str | None) -> WorktreeResult:
         split_full_name(repo)
-        item = self._corpus.get_repo(root=root, repo=repo)
+        item = self._corpus.get_repo(repo)
         if item is None:
             raise GitCorpusError("repository is not in the local corpus")
-        return self._corpus.materialize_worktree(item, root=root, ref=ref)
+        return self._corpus.materialize_worktree(item, ref=ref)
 
 
 def with_disk_bytes(row: CorpusRepoResult) -> CorpusRepoResult:
-    """``row`` with ``disk_bytes`` measured from its bare repository on disk."""
+    """``row`` with ``disk_bytes`` measured from its store repository on disk."""
     return row.model_copy(update={"disk_bytes": _disk_bytes(Path(row.path))})
 
 
