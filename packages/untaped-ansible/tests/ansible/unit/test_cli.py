@@ -1623,7 +1623,10 @@ def test_source_refresh_warns_about_a_ref_the_store_refuses(tmp_path: Path, monk
         result = _run("source", "refresh", "prod", "--backend", "graphql")
 
     assert result.exit_code == 0, result.output
-    assert "warning: skipped acme/site@main: 'main' is not a branch or tag name" in result.stderr
+    assert (
+        "warning: skipped branch acme/site@main: 'main' is not a branch or tag name"
+        in result.stderr
+    )
 
 
 def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(

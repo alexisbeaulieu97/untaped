@@ -216,7 +216,8 @@ _MAX_LISTED_COLLECTIONS = 10
 def warn_skipped_files(result: RefreshResult, *, ui: UiContext) -> None:
     """Warn about refs the store refused and dependency files skipped during parsing."""
     for ref in result.skipped_refs:
-        ui.message("warning", f"skipped {ref.repo}@{ref.ref}: {ref.reason}")
+        noun = "branch" if ref.kind == "heads" else "tag"
+        ui.message("warning", f"skipped {noun} {ref.repo}@{ref.ref}: {ref.reason}")
     for skipped in result.skipped_files:
         ui.message("warning", format_skipped_dependency_file(skipped))
 
