@@ -246,7 +246,7 @@ and in [Depending on another plugin](#depending-on-another-plugin);
 keeps repo store blob reads on `store.prefetched(...).run()`; the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 A help panel (`Group`) of your own takes a `sort_key` below 100 and no core panel's name (`unkeyed-panel`, `reserved-panel`).
 `# untaped: allow <rule>` on the flagged node's first line allows one violation,
-except the default-table-columns and stability rules.
+except the default-table-columns, help-tree (panel rules too) and stability rules.
 
 ## Depending on another plugin
 

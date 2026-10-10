@@ -393,10 +393,9 @@ def _root_panel(spec: PluginSpec) -> Group:
 
 def _place(app: App, spec: PluginSpec) -> None:
     """Put a plugin's app in its root panel, however it was mounted (its own group is ignored)."""
-    if spec.stability is None:
-        app.group = (PLUGINS_GROUP,)
-    else:
-        mark_app(app, spec.stability, source="spec")
+    app.group = (_root_panel(spec),)
+    if spec.stability is not None:
+        mark_app(app, spec.stability, source="spec")  # its mark: help line and side table
 
 
 def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
