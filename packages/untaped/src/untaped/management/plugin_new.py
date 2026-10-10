@@ -308,7 +308,11 @@ class _Scaffold:
                 commented.append(
                     "# Optional: fill it when the API can answer it.\n" + _comment(text)
                 )
-        names = {info.cls.__name__, *_names("\n".join(live))}
+        # Names from the signatures only: a docstring's prose imports nothing.
+        signatures = [
+            line for text in live for line in text.splitlines() if line.startswith("def ")
+        ]
+        names = {info.cls.__name__, *_names("\n".join(signatures))}
         imports = _imports(names, self.api, info.cls, self.package, f"{self.camel}Settings")
         body = "\n".join([*live, *commented]) or "pass\n"
         return (
@@ -431,54 +435,70 @@ def _imports(names: set[str], api: ModuleType, contract: type, package: str, set
     """The provider module's imports: from the owner's api, else from a public home.
 
     A name the contract's own module sees but the api doesn't export comes
-    from the shortest public module holding that same object (``datetime``,
-    ``untaped.contracts``), unless it is the owner's own, which a provider
-    may only import from the api.
+    from a module that may hold that same object: an untaped name from
+    ``untaped.contracts``, ``untaped.sdk`` or ``untaped.testing``, any other
+    from the shortest public module along its ``__module__`` (``datetime``).
+    The owner's own names come only from its api.
     """
     seen = {**vars(sys.modules[contract.__module__]), **vars(api)}
     owner_top = api.__name__.partition(".")[0]
-    owned: list[str] = []
     plain: list[str] = []
-    others: dict[str, list[str]] = {}
+    froms: dict[str, set[str]] = {api.__name__: set(), "untaped.contracts": {"Configured"}}
     for name in sorted(names):
         if name not in seen:
             continue
         value = seen[name]
-        home: str | None
-        if isinstance(value, ModuleType):
-            home = value.__name__
-            if not _within(value.__name__, owner_top):
-                plain.append(f"import {home}" if home == name else f"import {home} as {name}")
-                continue
-        elif getattr(api, name, None) is value:
-            owned.append(name)
+        if getattr(api, name, None) is value:
+            froms[api.__name__].add(name)
             continue
-        else:
-            home = _public_home(name, value)
+        home = _home(name, value)
         if home is None or _within(home, owner_top):
             raise UsageError(
                 f"{contract.__name__} names {name}, which {api.__name__} doesn't export; "
                 "a provider may import only the owner's api"
             )
-        others.setdefault(home, []).append(name)
-    third = sorted([f"from {api.__name__} import {', '.join(owned)}", _CONFIGURED])
-    froms = [f"from {module} import {', '.join(each)}" for module, each in sorted(others.items())]
+        if isinstance(value, ModuleType):
+            plain.append(f"import {home}" if home == name else f"import {home} as {name}")
+        else:
+            froms.setdefault(home, set()).add(name)
+    if not froms[api.__name__]:
+        del froms[api.__name__]
+    sections: dict[bool, list[str]] = {True: [], False: []}
+    for line in sorted(plain):
+        sections[_stdlib(line.split()[1])].append(line)
+    for module, each in sorted(froms.items()):
+        sections[_stdlib(module)].append(f"from {module} import {', '.join(sorted(each))}")
     groups = [
-        "\n".join([*sorted(plain), *froms]),
-        "\n".join(third),
+        "\n".join(sections[True]),
+        "\n".join(sections[False]),
         f"from {package}.settings import {settings}",
     ]
     return "\n\n".join(group for group in groups if group)
+
+
+#: The modules a plugin may import untaped from (the import-boundary convention).
+_UNTAPED_PUBLIC = ("untaped.contracts", "untaped.sdk", "untaped.testing")
 
 
 def _within(module: str, top: str) -> bool:
     return module == top or module.startswith(f"{top}.")
 
 
-def _public_home(name: str, value: object) -> str | None:
-    """The shortest public module whose ``name`` is ``value``; None when there is none."""
+def _stdlib(module: str) -> bool:
+    return module.partition(".")[0] in sys.stdlib_module_names
+
+
+def _home(name: str, value: object) -> str | None:
+    """The public module to import ``value`` from as ``name``; None when there is none."""
+    if isinstance(value, ModuleType):
+        found = value.__name__
+        return None if any(part.startswith("_") for part in found.split(".")) else found
+    for public in _UNTAPED_PUBLIC:
+        module = import_module(public)
+        if name in module.__all__ and getattr(module, name) is value:
+            return public
     defined = getattr(value, "__module__", None)
-    if not isinstance(defined, str):
+    if not isinstance(defined, str) or _within(defined, "untaped"):
         return None
     parts = defined.split(".")
     for end in range(1, len(parts) + 1):
@@ -492,9 +512,6 @@ def _public_home(name: str, value: object) -> str | None:
         if getattr(module, name, None) is value:
             return candidate
     return None
-
-
-_CONFIGURED = "from untaped.contracts import Configured"
 
 
 class _Core:

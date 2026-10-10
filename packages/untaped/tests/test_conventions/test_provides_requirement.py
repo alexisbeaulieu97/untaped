@@ -90,3 +90,11 @@ def test_a_plugin_without_provides_has_nothing_to_declare(install: Install) -> N
         distribution="untaped-plain", name="plain", target="untaped_plain:SPEC"
     )
     assert plugin_violations("plain", candidates=[candidate]) == []
+
+
+def test_a_marker_the_environment_cannot_fill_is_reported_not_raised(install: Install) -> None:
+    requires = (*_RANGES[:2], "untaped-kiosk>=3,<4; extra == 'kiosk' and 'x' in extras")
+    assert _rule(install, requires) == [
+        "lend::provides-requirement::provides for kiosk but has no 'kiosk' extra "
+        "requiring untaped-kiosk"
+    ]
