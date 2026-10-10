@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from untaped import bootstrap
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import Prefetched, RepoStore
 from untaped_github import SPEC
@@ -88,7 +88,7 @@ def corpus(source_repo: Callable[[str, dict[str, str | bytes]], Path]) -> Callab
 @pytest.fixture
 def composed(fresh_composition: None) -> None:
     """Compose git and github: a store fetch from a host asks the ``GitHost`` providers."""
-    bootstrap.compose_root(candidates=[provider_candidate(GIT_SPEC), provider_candidate(SPEC)])
+    bootstrap.compose_root(candidates=[plugin_candidate(GIT_SPEC), plugin_candidate(SPEC)])
 
 
 def _branch(git: Git, commit: Commit, source: Path, name: str, rel: str) -> None:

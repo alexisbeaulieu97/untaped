@@ -106,4 +106,4 @@ untaped skills status --check   # exits 3 when a skill is outdated or orphaned
 ```
 
 To write a plugin's skill, see
-[Packaged skills](./plugins.md#packaged-skills).
+[Writing a plugin's skill](./plugin-skills.md).

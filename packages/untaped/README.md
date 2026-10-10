@@ -2,7 +2,7 @@
 
 `untaped` is one CLI for config, profiles, themes, consistent output, typed
 piping and HTTP/TLS, with one command subtree per plugin. This package is
-the core: the CLI shell, the provider SDK (`untaped.sdk`) and the management
+the core: the CLI shell, the plugin SDK (`untaped.sdk`) and the management
 commands. It is the only package that ships the `untaped` command.
 
 Plugins are extras of this package:

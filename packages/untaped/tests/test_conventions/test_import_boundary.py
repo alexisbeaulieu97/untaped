@@ -16,8 +16,8 @@ import pytest
 
 from test_conventions.support import Install
 from untaped.conventions import plugin_violations
-from untaped.plugins.registry import ProviderCandidate
-from untaped.testing import provider_candidate
+from untaped.plugins.registry import PluginCandidate
+from untaped.testing import plugin_candidate
 
 _INIT = """
     from __future__ import annotations
@@ -38,12 +38,9 @@ _INIT = """
 
 
     SPEC = PluginSpec(
-        name="{name}", app_factory=build_app, settings=Settings
+        name="{name}", app_factory=build_app, settings=Settings, provides={provides}
     )
-
-
-    def provider() -> PluginSpec:
-        {body}
+    {body}
 """
 
 Check = Callable[[str], list[str]]
@@ -60,7 +57,8 @@ class Cap:
     dist: str = ""
     package: str = ""
     installed: bool = True
-    callable_target: bool = False
+    spec_target: bool = False
+    provides: tuple[str, ...] = ()
 
 
 def cap(
@@ -72,12 +70,13 @@ def cap(
     dist: str = "",
     package: str = "",
     installed: bool = True,
-    callable_target: bool = False,
+    spec_target: bool = False,
+    provides: Sequence[str] = (),
 ) -> Cap:
     """A plugin; ``dist`` and ``package`` default to ``name``.
 
-    ``callable_target`` discovers it through :func:`untaped.testing.provider_candidate`
-    (a callable target) instead of a ``module:provider`` string.
+    ``spec_target`` discovers it through :func:`untaped.testing.plugin_candidate`
+    (a spec target) instead of a ``module:SPEC`` string.
     """
     return Cap(
         name,
@@ -87,7 +86,8 @@ def cap(
         dist or name,
         package or name,
         installed,
-        callable_target,
+        spec_target,
+        tuple(provides),
     )
 
 
@@ -102,23 +102,24 @@ def boundary(install: Install) -> Boundary:
     """
 
     def setup(*caps: Cap) -> Check:
-        candidates: list[ProviderCandidate] = []
+        candidates: list[PluginCandidate] = []
         for c in caps:
-            body = 'raise RuntimeError("broken")' if c.broken else "return SPEC"
-            init = dedent(_INIT).format(name=c.name, body=body)
+            body = 'SPEC = "broken"' if c.broken else ""
+            offers = "{" + "".join(f"{owner!r}: tuple, " for owner in c.provides) + "}"
+            init = dedent(_INIT).format(name=c.name, body=body, provides=offers)
             prefix = c.package.replace(".", "/")
             if c.installed:
                 files = {f"{prefix}/{k}": v for k, v in c.files.items()}
                 install({f"{prefix}/__init__.py": init, **files})
-            if c.callable_target:
+            if c.spec_target:
                 spec = importlib.import_module(c.package).SPEC
-                candidates.append(provider_candidate(spec, distribution=c.dist))
+                candidates.append(plugin_candidate(spec, distribution=c.dist))
                 continue
             candidates.append(
-                ProviderCandidate(
+                PluginCandidate(
                     distribution=c.dist,
                     name=c.name,
-                    target=f"{c.package}:provider",
+                    target=f"{c.package}:SPEC",
                     requires_dist=c.requires,
                 )
             )
@@ -229,6 +230,25 @@ def test_a_requirement_guarded_by_an_extra_is_not_declared(boundary: Boundary) -
     ]
 
 
+def test_a_requirement_under_a_provides_extra_is_declared(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap(
+            "demo",
+            files={"cli/__init__.py": "from other.api import x\n"},
+            requires=["other>=1,<2; extra == 'other'"],
+            provides=["other"],
+        ),
+    )
+    assert check("demo") == []
+
+
+def test_the_testing_module_is_public(boundary: Boundary) -> None:
+    source = "from untaped.testing import check_conventions\nfrom untaped import testing\n"
+    check = boundary(cap("demo", files={"testing.py": source}))
+    assert check("demo") == []
+
+
 def test_an_api_import_needs_a_declared_dependency(boundary: Boundary) -> None:
     check = boundary(
         cap("other", files={"api.py": "x = 1\n"}),
@@ -273,9 +293,9 @@ def test_a_plugin_nested_under_untaped_is_a_plugin_not_core(boundary: Boundary) 
     ]
 
 
-def test_a_plugin_given_as_a_callable_candidate_is_a_plugin(boundary: Boundary) -> None:
+def test_a_plugin_given_as_a_spec_candidate_is_a_plugin(boundary: Boundary) -> None:
     check = boundary(
-        cap("other", files={"domain/__init__.py": "y = 1\n"}, callable_target=True),
+        cap("other", files={"domain/__init__.py": "y = 1\n"}, spec_target=True),
         cap("demo", files={"cli/__init__.py": "from other.domain import y\n"}, requires=["other"]),
     )
     assert check("demo") == [

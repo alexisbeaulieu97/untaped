@@ -1,17 +1,17 @@
-"""``untaped.testing.provider_candidate`` composes a spec without installing it."""
+"""``untaped.testing.plugin_candidate`` composes a spec without installing it."""
 
 from __future__ import annotations
 
 from test_management.support import make_spec
 from untaped.bootstrap import build_root_app, composition
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 
 
-def test_provider_candidate_composes_a_spec_without_installing_it(
+def test_plugin_candidate_composes_a_spec_without_installing_it(
     fresh_composition: None,
 ) -> None:
     spec = make_spec("demo")
-    root = build_root_app(candidates=[provider_candidate(spec)])
+    root = build_root_app(candidates=[plugin_candidate(spec)])
     [registered] = [c for c in composition().plugins if c.spec.name == "demo"]
-    assert registered.provider_ref.distribution == "untaped-demo"
+    assert registered.plugin_ref.distribution == "untaped-demo"
     assert CliInvoker().invoke(root.meta, ["demo", "--help"]).exit_code == 0

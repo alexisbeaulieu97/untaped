@@ -12,7 +12,7 @@ import pytest
 import respx
 
 from untaped.bootstrap import build_root_app
-from untaped.plugins.registry import ProviderCandidate
+from untaped.plugins.registry import PluginCandidate
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, invoke_cli
 from untaped_github.cli import app
@@ -91,7 +91,7 @@ def _search(
     input: str | None = None,
     requests: list[str] | None = None,
     root_args: Sequence[str] = (),
-    candidates: tuple[ProviderCandidate, ...] = (),
+    candidates: tuple[PluginCandidate, ...] = (),
 ) -> tuple[CliResult, respx.Route]:
     """Run ``search <args>`` against a mocked API; ``pages`` chain via ``Link`` headers.
 
@@ -246,7 +246,7 @@ def test_search_notes_the_user_me_fallback(kind: str, scope: list[str]) -> None:
 
 
 def test_quiet_mutes_the_fallback_and_truncation_notices(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     items = [_repo(i) for i in range(5)]
 

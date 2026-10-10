@@ -27,11 +27,11 @@ from untaped import bootstrap
 from untaped.app_context import app_context
 from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
-from untaped.plugins.registry import PluginSpec, ProviderCandidate
+from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.profile_resolver import profile_override, set_profile_override
 from untaped.quiet import is_quiet
 from untaped.settings import get_settings, reset_config_registry_for_tests
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 from untaped.verbose import is_verbose
 
 
@@ -66,7 +66,7 @@ def _who_app(name: str, body: Callable[[], None]) -> App:
     return app
 
 
-def _ext_candidate(calls: list[str]) -> ProviderCandidate:
+def _ext_candidate(calls: list[str]) -> PluginCandidate:
     return make_candidate(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls=calls)
 
 
@@ -136,7 +136,7 @@ def test_discovery_runs_before_settings_registration(monkeypatch: pytest.MonkeyP
     calls: list[str] = []
     candidate = make_candidate(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls=calls)
 
-    def fake_discover(**kwargs: object) -> tuple[ProviderCandidate, ...]:
+    def fake_discover(**kwargs: object) -> tuple[PluginCandidate, ...]:
         events.append("discover")
         return (candidate,)
 
@@ -401,7 +401,7 @@ def test_quarantine_warning_follows_the_requested_format(
 ) -> None:
     for name, value in env.items():
         monkeypatch.setenv(name, value)
-    broken = ProviderCandidate(distribution="broken-dist", name="broken", target=lambda: None)
+    broken = PluginCandidate(distribution="broken-dist", name="broken", target=lambda: None)
     with pytest.raises(SystemExit) as exit_info:
         bootstrap.run_root(argv, candidates=(broken,))
     assert exit_info.value.code in (0, None)
@@ -413,7 +413,7 @@ def test_quarantine_warning_follows_the_requested_format(
 def test_quarantine_warning_is_text_without_a_structured_format(
     _isolated_config: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    broken = ProviderCandidate(distribution="broken-dist", name="broken", target=lambda: None)
+    broken = PluginCandidate(distribution="broken-dist", name="broken", target=lambda: None)
     with pytest.raises(SystemExit):
         bootstrap.run_root(["config", "list"], candidates=(broken,))
     assert capsys.readouterr().err.startswith(
@@ -422,7 +422,7 @@ def test_quarantine_warning_is_text_without_a_structured_format(
 
 
 def test_each_quarantined_plugin_warns_once_by_name(
-    broken_first_party_candidates: Callable[[], tuple[ProviderCandidate, ...]],
+    broken_first_party_candidates: Callable[[], tuple[PluginCandidate, ...]],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     bootstrap.compose_root(candidates=broken_first_party_candidates())
@@ -562,7 +562,7 @@ def _counting_spec(
 def test_lazy_factory_runs_only_on_dispatch_and_once() -> None:
     calls: list[str] = []
     spec = _counting_spec("lazy", calls, help="Lazy plugin.")
-    root = bootstrap.build_root_app(candidates=(provider_candidate(spec),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
     assert calls == []
 
     listed = CliInvoker().invoke(root.meta, ["--help"])
@@ -610,8 +610,8 @@ def test_a_failing_lazy_factory_fails_only_its_command_in_one_root() -> None:
     good_calls: list[str] = []
     root = bootstrap.build_root_app(
         candidates=[
-            provider_candidate(_raising_spec("bad", bad_calls), distribution="bad-dist"),
-            provider_candidate(_counting_spec("good", good_calls, help="Good plugin.")),
+            plugin_candidate(_raising_spec("bad", bad_calls), distribution="bad-dist"),
+            plugin_candidate(_counting_spec("good", good_calls, help="Good plugin.")),
         ]
     )
     assert bad_calls == [] and good_calls == []  # nothing built at startup
@@ -629,7 +629,7 @@ def test_a_failing_lazy_factory_fails_only_its_command_in_one_root() -> None:
 
 def test_a_failed_lazy_factory_runs_once_and_fails_every_dispatch() -> None:
     calls: list[str] = []
-    root = bootstrap.build_root_app(candidates=[provider_candidate(_raising_spec("bad", calls))])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(_raising_spec("bad", calls))])
     for argv in (["bad", "who"], ["bad", "--help"], ["bad"]):
         result = CliInvoker().invoke(root.meta, argv)
         assert result.exit_code == 4, argv
@@ -640,7 +640,7 @@ def test_a_failed_lazy_factory_runs_once_and_fails_every_dispatch() -> None:
 def test_a_lazy_factory_returning_a_non_app_exits_4_on_help_too() -> None:
     calls: list[str] = []
     bad = _counting_spec("bad", calls, help="Bad plugin.", result="not-an-app")
-    root = bootstrap.build_root_app(candidates=[provider_candidate(bad)])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(bad)])
     result = CliInvoker().invoke(root.meta, ["bad", "--help"])
     assert result.exit_code == 4
     assert "returned str, expected cyclopts App" in result.stderr
@@ -652,8 +652,8 @@ def test_completion_survives_a_plugin_whose_lazy_factory_fails(
     bad_calls: list[str] = []
     root = bootstrap.build_root_app(
         candidates=[
-            provider_candidate(_raising_spec("brokencap", bad_calls), distribution="bad-dist"),
-            provider_candidate(_counting_spec("goodcap", [], help="Good plugin.")),
+            plugin_candidate(_raising_spec("brokencap", bad_calls), distribution="bad-dist"),
+            plugin_candidate(_counting_spec("goodcap", [], help="Good plugin.")),
         ]
     )
     capsys.readouterr()
@@ -680,7 +680,7 @@ def test_run_root_reports_a_failing_lazy_factory_as_json_with_exit_4(
 ) -> None:
     with pytest.raises(SystemExit) as failed:
         bootstrap.run_root(
-            argv, candidates=[provider_candidate(_raising_spec("bad", []), distribution="bad-dist")]
+            argv, candidates=[plugin_candidate(_raising_spec("bad", []), distribution="bad-dist")]
         )
     assert failed.value.code == 4
     error = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
@@ -746,7 +746,7 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
     ("candidates", "expect_hint", "expect_quarantine"),
     [
         pytest.param([], True, False, id="bare"),
-        pytest.param([provider_candidate(make_spec("demo"))], False, False, id="plugin"),
+        pytest.param([plugin_candidate(make_spec("demo"))], False, False, id="plugin"),
         # entry-point/spec name mismatch
         pytest.param(
             [make_candidate(make_spec("demo"), name="other")], False, True, id="quarantined"
@@ -754,7 +754,7 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
     ],
 )
 def test_root_help_install_hint(
-    candidates: list[ProviderCandidate], expect_hint: bool, expect_quarantine: bool
+    candidates: list[PluginCandidate], expect_hint: bool, expect_quarantine: bool
 ) -> None:
     root = bootstrap.build_root_app(candidates=candidates)
     assert bool(bootstrap.composition().quarantine) is expect_quarantine
@@ -777,7 +777,7 @@ def test_a_plugin_with_only_a_name_mounts_and_registers_nothing() -> None:
     from untaped.management.doctor import collect_doctor_rows
     from untaped.settings import _CONFIG_REGISTRY
 
-    root = bootstrap.build_root_app(candidates=[provider_candidate(PluginSpec(name="bare"))])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(PluginSpec(name="bare"))])
 
     assert [plugin.spec.name for plugin in bootstrap.composition().plugins] == ["bare"]
     assert "bare" not in root
@@ -797,9 +797,7 @@ def test_a_plugin_with_state_only_registers_its_state_section() -> None:
     class _OnlyState(BaseModel):
         last_run: str = ""
 
-    bootstrap.compose_root(
-        candidates=[provider_candidate(PluginSpec(name="kept", state=_OnlyState))]
-    )
+    bootstrap.compose_root(candidates=[plugin_candidate(PluginSpec(name="kept", state=_OnlyState))])
 
     assert _CONFIG_REGISTRY.state_sections["kept"] is _OnlyState
     assert "kept" not in _CONFIG_REGISTRY.profile_sections
@@ -817,7 +815,7 @@ def test_a_hyphenated_plugin_reads_its_overrides_with_underscores(
     from untaped.settings import env_var_name, get_config_section
 
     spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
-    bootstrap.compose_root(candidates=[provider_candidate(spec)])
+    bootstrap.compose_root(candidates=[plugin_candidate(spec)])
     monkeypatch.setenv("UNTAPED_ACME_TOOLS__GREETING", "from env")
     monkeypatch.setenv("UNTAPED_ACME_TOOLS__TOKEN", "env-token")
     get_settings.cache_clear()
@@ -834,7 +832,7 @@ def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyP
     from untaped.settings import get_config_section
 
     spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
-    bootstrap.compose_root(candidates=[provider_candidate(spec)])
+    bootstrap.compose_root(candidates=[plugin_candidate(spec)])
     monkeypatch.setenv("UNTAPED_ACME_TOOLS", '{"greeting": "blob"}')
     get_settings.cache_clear()
 

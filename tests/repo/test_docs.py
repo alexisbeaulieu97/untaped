@@ -32,7 +32,7 @@ from repo import quoted_commands
 from repo.support import FENCE, PACKAGES, REPO_ROOT, markdown_files
 from untaped.bootstrap import build_root_app
 from untaped.plugins import registry
-from untaped.plugins.registry import PluginSpec, ProviderCandidate
+from untaped.plugins.registry import PluginCandidate, PluginSpec
 
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 
@@ -87,7 +87,7 @@ def _setting_command_problems(root: App, page: str) -> list[str]:
 
 
 def test_setting_descriptions_name_real_commands(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = build_root_app(candidates=first_party_candidates)
     assert _setting_command_problems(root, generator.render()) == []
@@ -110,7 +110,7 @@ def test_setting_descriptions_name_real_commands(
     ],
 )
 def test_setting_command_detector(
-    first_party_candidates: tuple[ProviderCandidate, ...], row: str, problem: str | None
+    first_party_candidates: tuple[PluginCandidate, ...], row: str, problem: str | None
 ) -> None:
     root = build_root_app(candidates=first_party_candidates)
     assert _setting_command_problems(root, row) == ([problem] if problem else [])
@@ -118,7 +118,7 @@ def test_setting_command_detector(
 
 def test_config_reference_refuses_a_quarantined_first_party_plugin(
     monkeypatch: pytest.MonkeyPatch,
-    broken_first_party_candidates: Callable[[], tuple[ProviderCandidate, ...]],
+    broken_first_party_candidates: Callable[[], tuple[PluginCandidate, ...]],
 ) -> None:
     monkeypatch.setattr(registry, "discover_candidates", broken_first_party_candidates)
     with pytest.raises(RuntimeError) as failed:
@@ -349,7 +349,7 @@ def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]
 
 
 def test_command_examples_use_real_commands_and_options(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     """Every ``untaped`` example in a ``bash`` block names a real command and options."""
     root = build_root_app(candidates=first_party_candidates)
@@ -384,7 +384,7 @@ def _prose_command_problem(root: App, command: str, aliases: set[str]) -> str | 
 
 
 def test_inline_commands_name_real_commands(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     """Every ``untaped …`` in inline code names a real command (skills are checked on their own)."""
     root = build_root_app(candidates=first_party_candidates)
@@ -418,7 +418,7 @@ def test_inline_commands_name_real_commands(
     ],
 )
 def test_inline_command_detector(
-    first_party_candidates: tuple[ProviderCandidate, ...], command: str, fails: bool
+    first_party_candidates: tuple[PluginCandidate, ...], command: str, fails: bool
 ) -> None:
     root = build_root_app(candidates=first_party_candidates)
     assert (_prose_command_problem(root, command, {"failed"}) is not None) is fails
@@ -429,6 +429,7 @@ DOCS_PAGES = [
     "configuration.md",
     "contracts.md",
     "getting-started.md",
+    "plugin-skills.md",
     "plugins.md",
     "reference/config.md",
     "reference/conventions.md",

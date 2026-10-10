@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
     from untaped.contracts import Contract
 
-__all__ = ["SPEC", "build_app", "provider"]
+__all__ = ["SPEC", "build_app"]
 
 
 def build_app() -> App:
@@ -75,8 +75,3 @@ SPEC = PluginSpec(
     ),
     provides={"git": _git_host},
 )
-
-
-def provider() -> PluginSpec:
-    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
-    return SPEC

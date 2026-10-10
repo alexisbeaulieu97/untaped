@@ -23,7 +23,7 @@ from untaped.stability import (
     mark_errors,
     pydantic_deprecated_fields,
 )
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -123,7 +123,7 @@ def test_a_pydantic_deprecated_field_still_loads_but_is_a_lint_error() -> None:
     assert pydantic_deprecated_fields(PythonDeprecated) == ["old"]
 
     composition = bootstrap.compose_root(
-        candidates=[provider_candidate(make_spec(name="svc", settings=PythonDeprecated))]
+        candidates=[plugin_candidate(make_spec(name="svc", settings=PythonDeprecated))]
     )
 
     assert [plugin.spec.name for plugin in composition.plugins] == ["svc"]
@@ -132,7 +132,7 @@ def test_a_pydantic_deprecated_field_still_loads_but_is_a_lint_error() -> None:
 def test_a_misplaced_mark_quarantines_its_provider() -> None:
     spec = make_spec(name="svc", settings=UnionMark)
 
-    composition = bootstrap.compose_root(candidates=[provider_candidate(spec)])
+    composition = bootstrap.compose_root(candidates=[plugin_candidate(spec)])
 
     assert composition.plugins == ()
     [record] = composition.quarantine
@@ -154,7 +154,7 @@ def test_a_mark_on_a_state_field_is_refused_and_quarantines_its_provider() -> No
     ]
     assert mark_errors(MarkedState) == []
 
-    composition = bootstrap.compose_root(candidates=[provider_candidate(_state_spec(MarkedState))])
+    composition = bootstrap.compose_root(candidates=[plugin_candidate(_state_spec(MarkedState))])
 
     [record] = composition.quarantine
     assert (record.reason, "state fields take no stability marks" in record.detail) == (
@@ -184,7 +184,7 @@ def test_the_lint_checks_a_state_model_for_marks() -> None:
 
 def test_a_clean_marked_section_composes() -> None:
     composition = bootstrap.compose_root(
-        candidates=[provider_candidate(make_spec(name="svc", settings=Section))]
+        candidates=[plugin_candidate(make_spec(name="svc", settings=Section))]
     )
 
     assert [plugin.spec.name for plugin in composition.plugins] == ["svc"]

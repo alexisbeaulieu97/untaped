@@ -40,7 +40,7 @@ from untaped.testing import (
     ScreenKeys,
     ScriptedPromptBackend,
     invoke_cli,
-    provider_candidate,
+    plugin_candidate,
 )
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -78,7 +78,7 @@ def _wiz() -> PluginSpec:
 
 
 def _cli(*args: str, specs: tuple[PluginSpec, ...] | None = None) -> CliResult:
-    candidates = tuple(provider_candidate(spec) for spec in (specs or (_wiz(),)))
+    candidates = tuple(plugin_candidate(spec) for spec in (specs or (_wiz(),)))
     root = bootstrap.build_root_app(candidates=candidates)
     return invoke_cli(root.meta, list(args))
 
@@ -334,7 +334,7 @@ def test_plan_setup_screen_and_doctor_agree(
         assert (online["state"] == "failed") is (api["status"] == "fail")
         assert online["run"] == (api["fix"] or [])
     backend = ScriptedPromptBackend(screens=[ScreenKeys("esc")])
-    root = bootstrap.build_root_app(candidates=(provider_candidate(_wiz()),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(_wiz()),))
     setup = invoke_cli(
         root.meta, ["setup"], interactive=True, prompt_backend=backend, terminal=True
     )
@@ -449,7 +449,7 @@ def test_every_run_parses(
 ) -> None:
     legacy = make_spec("legacy", settings=LegacyProfile)
     specs = (_wiz(), legacy)
-    root = bootstrap.build_root_app(candidates=tuple(provider_candidate(s) for s in specs))
+    root = bootstrap.build_root_app(candidates=tuple(plugin_candidate(s) for s in specs))
     runs: list[list[str]] = []
     for stores in ((), ("pass",)):
         install_fake_stores(tmp_path, monkeypatch, *stores)

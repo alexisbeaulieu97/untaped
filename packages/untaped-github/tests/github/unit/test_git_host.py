@@ -14,7 +14,7 @@ from pydantic import SecretStr
 from untaped import bootstrap
 from untaped.plugins.registry import PluginSpec
 from untaped.sdk import ConfigError
-from untaped.testing import invoke_cli, provider_candidate
+from untaped.testing import invoke_cli, plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import Credential, GitHost, HostAuth, RepoStore, ls_remote
 from untaped_github import SPEC
@@ -45,7 +45,7 @@ class OtherForge(GitHost):
 
 def compose(*extra: PluginSpec) -> None:
     specs = [GIT_SPEC, SPEC, *extra]
-    bootstrap.compose_root(candidates=[provider_candidate(spec) for spec in specs])
+    bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
 
 
 @pytest.fixture(autouse=True)

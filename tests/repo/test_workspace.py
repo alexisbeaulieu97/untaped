@@ -101,7 +101,7 @@ def test_plugin_packages_declare_their_entry_point_and_pin_core() -> None:
     for project in projects.values():
         name = project["name"].removeprefix("untaped-")
         assert project["version"] == version
-        assert project["entry-points"]["untaped.plugins"] == {name: f"untaped_{name}:provider"}
+        assert project["entry-points"]["untaped.plugins"] == {name: f"untaped_{name}:SPEC"}
         assert f"untaped=={version}" in project["dependencies"]
         assert core["optional-dependencies"][name] == [f"untaped-{name}=={version}"]
     assert sorted(core["optional-dependencies"]["all"]) == sorted(
@@ -133,7 +133,11 @@ def test_every_project_and_the_plugin_template_share_a_python_floor_above_3_14_0
 def test_dependent_plugins_pin_their_siblings() -> None:
     projects = release.packages(REPO_ROOT)
     version = projects["untaped"]["version"]
-    siblings = {"ansible": ("untaped-github",), "workspace": ("untaped-git", "untaped-github")}
+    siblings = {
+        "ansible": ("untaped-github",),
+        "github": ("untaped-git",),
+        "workspace": ("untaped-git", "untaped-github"),
+    }
     for name, needs in siblings.items():
         project = projects[f"untaped-{name}"]
         assert project["dependencies"] == [f"{dist}=={version}" for dist in ("untaped", *needs)]

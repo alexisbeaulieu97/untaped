@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import gc
+import sys
+import types
 import warnings
 from dataclasses import replace
 
@@ -14,7 +16,7 @@ from untaped import bootstrap
 from untaped.cli import create_app
 from untaped.errors import ConfigError
 from untaped.messages import EXPERIMENTAL_LINE
-from untaped.plugins.registry import PluginSpec, ProviderCandidate
+from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.stability import (
     Deprecated,
     Experimental,
@@ -27,7 +29,7 @@ from untaped.stability import (
     replacement_path,
     replacement_text,
 )
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -60,7 +62,7 @@ def _root(
 ) -> App:
     spec = make_spec(name=app.name[0], factory=lambda: app)
     spec = replace(spec, stability=stability, help="Service." if lazy else None)
-    return bootstrap.build_root_app(candidates=[provider_candidate(spec)])
+    return bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
 
 
 def _help(root: App, *argv: str) -> str:
@@ -129,11 +131,19 @@ def test_an_uncalled_deprecated_says_to_call_it() -> None:
         check_stability(deprecated, where="here")
 
 
-def test_a_provider_building_a_bad_spec_stability_is_quarantined() -> None:
-    def provider() -> PluginSpec:
+def test_a_plugin_building_a_bad_spec_stability_is_quarantined(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = types.ModuleType("bad_stability_plugin")
+
+    def build(name: str) -> PluginSpec:
         return replace(make_spec(name="bad"), stability=deprecated)  # type: ignore[arg-type]
 
-    candidate = ProviderCandidate(distribution="test-provider", name="bad", target=provider)
+    module.__getattr__ = build  # type: ignore[method-assign]  # SPEC is built on first access
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    candidate = PluginCandidate(
+        distribution="test-plugin", name="bad", target="bad_stability_plugin:SPEC"
+    )
 
     composition = bootstrap.compose_root(candidates=[candidate])
 

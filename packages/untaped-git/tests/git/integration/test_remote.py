@@ -11,7 +11,7 @@ from pydantic import SecretStr
 from git.conftest import StoreFor, git
 from untaped import bootstrap
 from untaped.sdk import PluginSpec
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 from untaped.testing.git import GitRemote, global_config, trace2_events
 from untaped_git import SPEC, api
 from untaped_git.domain.hosts import Credential, HostAuth
@@ -23,7 +23,7 @@ from untaped_git.settings import git_settings
 
 
 def test_ls_remote_and_default_branch_through_the_api(remote: GitRemote) -> None:
-    bootstrap.compose_root(candidates=[provider_candidate(SPEC)])
+    bootstrap.compose_root(candidates=[plugin_candidate(SPEC)])
     remote.branch("dev")
     remote.tag("v1")
 
@@ -89,7 +89,7 @@ def test_missing_helper_names_a_gone_untaped(tmp_path: Path) -> None:
 
 
 def test_for_url_keys_the_store_under_the_setting(remote: GitRemote) -> None:
-    bootstrap.compose_root(candidates=[provider_candidate(SPEC)])
+    bootstrap.compose_root(candidates=[plugin_candidate(SPEC)])
     store = RepoStore.for_url(remote.url, plugin=PluginSpec(name="github"), error=StoreError)
 
     store.fetch(branches=["main"])

@@ -23,7 +23,7 @@ from pydantic import SecretStr
 from untaped import bootstrap
 from untaped.plugins.registry import PluginSpec
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 from untaped.testing.git import GitRemote, git_remote, global_config
 from untaped_git import SPEC as GIT
 from untaped_git.api import Credential, GitHost
@@ -54,7 +54,7 @@ class Forge(GitHost):
 def forge(fresh_composition: None) -> Iterator[type[Forge]]:
     Forge.asked = []
     spec = PluginSpec(name="forge", provides={"git": lambda: (Forge(),)})
-    bootstrap.compose_root(candidates=[provider_candidate(s) for s in (GIT, WORKSPACE, spec)])
+    bootstrap.compose_root(candidates=[plugin_candidate(s) for s in (GIT, WORKSPACE, spec)])
     yield Forge
 
 

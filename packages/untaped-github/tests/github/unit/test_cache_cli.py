@@ -19,7 +19,7 @@ from untaped.testing import (
     CliInvoker,
     CliResult,
     assert_destructive_contract,
-    provider_candidate,
+    plugin_candidate,
 )
 from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import RepoStore
@@ -157,7 +157,7 @@ def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
     _config.write_text(_config.read_text() + "      base_url: https://ghe.example/api/v3\n")
     origin = source_repo("origin", {"README.md": "hello\n"})
     rewrite_to(origin, "https://ghe.example/acme/api.git", "https://other.example/acme/web.git")
-    bootstrap.compose_root(candidates=[provider_candidate(GIT_SPEC), provider_candidate(SPEC)])
+    bootstrap.compose_root(candidates=[plugin_candidate(GIT_SPEC), plugin_candidate(SPEC)])
     records = [
         {"untaped": "1", "kind": "github.repo", "record": {**row, "default_branch": "main"}}
         for row in (
