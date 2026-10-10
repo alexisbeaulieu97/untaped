@@ -24,14 +24,21 @@ from untaped.contracts._declare import (
     Contract,
     Issued,
     Method,
-    NotReady,
     Source,
     fills,
     method_contract,
 )
-from untaped.contracts._registry import Provider, Quarantined, offers, owner_of, ranking
+from untaped.contracts._registry import (
+    Provider,
+    Quarantined,
+    offers,
+    owner_of,
+    ranking,
+    ready_of,
+)
 from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.http import request_deadline
+from untaped.messages import command_line
 from untaped.records import kind_of
 
 #: Providers asked at once by one ``gather``.
@@ -109,11 +116,11 @@ class Answers[R](Sequence[Answer[R]]):
     def __repr__(self) -> str:
         return f"Answers({self.owner}.{self.contract}.{self.method}, {list(self._items)!r})"
 
-    @property
-    def rank_command(self) -> str:
-        """The ``untaped plugin rank`` line that orders these providers."""
-        plugins = " ".join(answer.plugin for answer in self._items)
-        return f"untaped plugin rank {self.owner}.{self.contract} {self.method} {plugins}".rstrip()
+    def rank_command(self, plugins: Sequence[str] | None = None) -> str:
+        """The ``untaped plugin rank`` line ordering ``plugins`` (default: every answer's)."""
+        named = [answer.plugin for answer in self._items] if plugins is None else plugins
+        args = " ".join([f"{self.owner}.{self.contract}", self.method, *named])
+        return command_line(f"plugin rank {args}")
 
 
 class _Invalid(Exception):
@@ -169,7 +176,7 @@ def gather[C: Contract, **P, R](
             provider_class = type(entry.instance)
             if not all(fills(provider_class, info, name) for name in needed):
                 continue
-            ready = _ready(entry)
+            ready = ready_of(entry)
             if ready is not None:
                 answers[entry.plugin] = Skipped(entry.plugin, "not-configured", ready.reason, rank)
                 setting = f" (set {ready.setting})" if ready.setting else ""
@@ -196,13 +203,6 @@ def gather[C: Contract, **P, R](
         return Answers(ordered, owner=owner, contract=info.name, method=wanted.name)
 
     return call
-
-
-def _ready(provider: Provider) -> NotReady | None:
-    try:
-        return provider.instance.ready()
-    except Exception as exc:
-        return NotReady(f"ready() raised {type(exc).__name__}: {exc}")
 
 
 def _excluded[R](plugin: str, reason: str, detail: str, rank: int | None) -> Answer[R]:

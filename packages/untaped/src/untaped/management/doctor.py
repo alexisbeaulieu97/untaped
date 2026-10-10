@@ -59,7 +59,9 @@ from untaped.plugins.registry import (
     PluginContext,
     PluginSpec,
     QuarantineRecord,
+    owns_contracts,
     run_deferred_factory,
+    section_settings,
 )
 from untaped.profile_resolver import (
     classify_active_profile,
@@ -295,7 +297,7 @@ def _plugin_scope(spec: PluginSpec) -> _SectionScope:
     return _SectionScope(
         plugin=spec.name,
         section=spec.name,
-        settings_model=spec.settings,
+        settings_model=section_settings(spec),
         state_model=spec.state,
         checks=tuple(spec.doctor_checks),
     )
@@ -341,6 +343,7 @@ def collect_doctor_rows(
             rows.append(_state_row(scope, scope.state_model, state))
     profile = selected_profile(raw or {})
     rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
+    rows.extend(_contract_rows(result, profile, plugins))
     rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
@@ -745,6 +748,31 @@ def _run_check(
     return _row(
         check_item.id, scope.plugin, status, title, detail, fix, automatic=outcome.automatic
     )
+
+
+def _contract_rows(
+    result: CompositionResult, profile: str, plugins: frozenset[str] | None
+) -> list[dict[str, object]]:
+    """Doctor's rows about contracts: one per provider offer, owner problem and bad ranking."""
+    specs = [registered.spec for registered in result.plugins]
+    if not any(owns_contracts(spec) or spec.provides for spec in specs):
+        return []
+    # Imported here: ``untaped.contracts`` stays out of a composition without contracts.
+    from untaped.contracts._registry import doctor_rows  # noqa: PLC0415
+
+    return [
+        _row(
+            row.check,
+            row.plugin,
+            row.status,
+            row.title,
+            row.detail,
+            None
+            if row.fix is None or row.status == _PASS
+            else command_argv(row.fix, profile=profile),
+        )
+        for row in doctor_rows(plugins)
+    ]
 
 
 def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
