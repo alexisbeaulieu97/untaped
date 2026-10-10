@@ -27,7 +27,8 @@ PLAIN_CLONE = frozenset({"workspace"})
 ORIGIN_HEAD = "refs/remotes/origin/HEAD"
 
 # Refused anywhere in a name: refspec syntax, revision syntax, git's ref rules.
-_BAD = re.compile(r"[\x00-\x20\x7f:~^?\[\\+]|\.\.|@\{|//|\.lock(/|$)|/\.|^\.|\.$|/$")
+# A ``+`` is a refspec's force prefix only at the start; git allows it inside a name.
+_BAD = re.compile(r"[\x00-\x20\x7f:~^?\[\\]|\.\.|@\{|//|\.lock(/|$)|/\.|^\.|\.$|/$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +86,7 @@ def check_names(names: Sequence[str]) -> str | None:
     for name in names:
         if (
             not name
-            or name.startswith(("-", "/", "refs/"))
+            or name.startswith(("-", "+", "/", "refs/"))
             or name.count("*") > 1
             or _BAD.search(name)
         ):

@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.git import git_auth_header, run_git
+from untaped.git import run_git
 from untaped.http import HttpClient, RetryPolicy
 
 
@@ -41,18 +41,18 @@ def test_git_logs_argv_with_credentials_masked(
     caplog: pytest.LogCaptureFixture, tmp_path: Path
 ) -> None:
     caplog.set_level(logging.DEBUG, logger="untaped")
-    header = git_auth_header("tok-123456789")
+    header = "AUTHORIZATION: basic tok-123456789"
     run_git(
         ["ls-remote", "https://x-access-token:tok-123456789@invalid.invalid/r.git"],
         timeout=10,
         cwd=tmp_path,
         check=False,
-        auth_header=header,
+        secret_config={"http.https://invalid.invalid/.extraHeader": header},
     )
     messages = [r.getMessage() for r in caplog.records if r.name == "untaped.git"]
     assert len(messages) == 1
     message = messages[0]
     assert message.startswith("git ls-remote https://***@invalid.invalid/r.git in ")
     assert "-> exit " in message
-    assert message.endswith("[auth header]")
+    assert message.endswith("[secret config]")
     assert "tok-123456789" not in message

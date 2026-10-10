@@ -1,4 +1,4 @@
-"""Tests for refreshing dependency sources through a local Git cache."""
+"""Tests for refreshing dependency sources through the repo store."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from untaped_ansible.domain.payloads import (
     RefScan,
     SourceRepoMetadata,
 )
-from untaped_ansible.infrastructure.git_cache import GitCacheError
+from untaped_ansible.infrastructure.git_store import GitCacheError
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.settings import SourceDefinition
 
@@ -116,50 +116,45 @@ class FakeRefProbe:
         )
 
 
+def _repo_name(url: str) -> str:
+    return url.removesuffix(".git").rsplit("/", maxsplit=1)[-1].rsplit(":", maxsplit=1)[-1]
+
+
 class FakeGitCache:
+    """The repo store as ansible sees it: fetches and reads keyed by the repo's name."""
+
     def __init__(self) -> None:
         self.files: dict[tuple[str, str, str], str] = {}
-        self.ensure_calls: list[str] = []
-        self.fetches: list[tuple[str, tuple[str, ...], int, bool, str | None]] = []
-        self.reads: list[tuple[str, str, str, str | None]] = []
+        self.urls: list[str] = []
+        self.fetches: list[tuple[str, tuple[str, ...]]] = []
+        self.reads: list[tuple[str, str, str]] = []
         self.fail_fetches: set[str] = set()
         self.active_fetches = 0
         self.max_active_fetches = 0
         self.fetch_delay = 0.0
         self._lock = threading.Lock()
 
-    def ensure_bare(self, url: str, *, cache_dir: Path, auth_header: str | None) -> Path:
-        self.ensure_calls.append(url)
-        return cache_dir / url.removesuffix(".git").rsplit("/", maxsplit=1)[-1]
-
-    def fetch_refs(
-        self,
-        bare_path: Path,
-        *,
-        refspecs: list[str],
-        depth: int,
-        blob_filter: bool,
-        auth_header: str | None,
-    ) -> None:
+    def fetch(self, url: str, refs: Sequence[GitRef]) -> None:
+        name = _repo_name(url)
         with self._lock:
+            self.urls.append(url)
             self.active_fetches += 1
             self.max_active_fetches = max(self.max_active_fetches, self.active_fetches)
         try:
             time.sleep(self.fetch_delay)
-            if bare_path.name in self.fail_fetches:
-                raise GitCacheError(f"git fetch failed for {bare_path.name}")
-            self.fetches.append((bare_path.name, tuple(refspecs), depth, blob_filter, auth_header))
+            if name in self.fail_fetches:
+                raise GitCacheError(f"git fetch failed for {name}")
+            self.fetches.append((name, tuple(f"{ref.kind}/{ref.name}" for ref in refs)))
         finally:
             with self._lock:
                 self.active_fetches -= 1
 
-    def read_files(
-        self, bare_path: Path, sha: str, paths: list[str], *, auth_header: str | None
-    ) -> dict[str, str]:
+    def read_files(self, url: str, sha: str, paths: list[str]) -> dict[str, str]:
+        name = _repo_name(url)
         found: dict[str, str] = {}
         for path in paths:
-            self.reads.append((bare_path.name, sha, path, auth_header))
-            content = self.files.get((bare_path.name, sha, path))
+            self.reads.append((name, sha, path))
+            content = self.files.get((name, sha, path))
             if content is not None:
                 found[path] = content
         return found
@@ -223,11 +218,7 @@ class Harness:
             "index": self.index,
             "aliases": {},
             "default_dependency_paths": [_REQS],
-            "cache_dir": self.tmp_path / "repos",
             "clone_protocol": "https",
-            "fetch_depth": 1,
-            "blob_filter": True,
-            "auth_header": None,
         }
         return RefreshGitSourceIndex(**(kwargs | overrides))
 
@@ -304,7 +295,7 @@ def test_probe_failure_skips_repo_without_git_work_and_records_failure(h: Harnes
 
     assert (result.repos, result.refs) == (2, 1)
     assert _failures(result) == [("acme/gone", "repository not found")]
-    assert all("gone" not in url for url in h.git.ensure_calls)
+    assert all("gone" not in url for url in h.git.urls)
     assert h.dependents("acme/base")
 
 
@@ -387,14 +378,13 @@ def test_expansion_failures_stay_fatal(h: Harness) -> None:
 
 def test_git_refresh_fetches_selected_refs_and_indexes_dependency_files(h: Harness) -> None:
     h.set_refs("acme/site", ("main", "sha-main", _base("v1")))
-    auth = "AUTHORIZATION: bearer test"
 
-    result = h.run(auth_header=auth, ref_scan_default="default_branch")
+    result = h.run(ref_scan_default="default_branch")
 
     assert (result.repos, result.refs, result.edges) == (1, 1, 1)
     assert h.probe.calls == [(("acme/site",), ("heads",), "default_branch")]
-    assert h.git.fetches == [("site", ("+refs/heads/main:refs/heads/main",), 1, True, auth)]
-    assert h.git.reads == [("site", "sha-main", _REQS, auth)]
+    assert h.git.fetches == [("site", ("heads/main",))]
+    assert h.git.reads == [("site", "sha-main", _REQS)]
     assert h.dependents("acme/base", "v1") == {"acme/site"}
 
 
@@ -407,8 +397,7 @@ def test_git_refresh_defaults_to_all_heads_and_tags(h: Harness) -> None:
 
     assert result.refs == 2
     assert h.probe.calls == [(("acme/site",), ("heads", "tags"), "all")]
-    refspecs = ("+refs/heads/master:refs/heads/master", "+refs/tags/v3:refs/tags/v3")
-    assert h.git.fetches == [("site", refspecs, 1, True, None)]
+    assert h.git.fetches == [("site", ("heads/master", "tags/v3"))]
     assert [
         edge.source_ref for edge in h.index.dependents("acme/base", "v3", source_key="source:prod")
     ] == ["master", "v3"]
@@ -482,8 +471,6 @@ def test_source_refresh_fingerprint_is_order_invariant_for_repos() -> None:
         "aliases_fingerprint": "aliases",
         "ref_scan_default": "all",
         "clone_protocol": "https",
-        "fetch_depth": 1,
-        "blob_filter": True,
     }
 
     assert source_refresh_fingerprint(_org(), repos=repos, **options) == (
@@ -714,10 +701,10 @@ def test_git_refresh_reads_ref_metadata_in_one_batch_per_repo(tmp_path: Path) ->
     ]
 
 
-def test_git_refresh_skips_bare_cache_work_for_unchanged_remote_refs(h: Harness) -> None:
+def test_git_refresh_skips_store_work_for_unchanged_remote_refs(h: Harness) -> None:
     h.set_refs("acme/site", ("main", "sha-main", _base("v1")))
     h.run()
-    h.git.ensure_calls.clear()
+    h.git.urls.clear()
     h.git.fetches.clear()
     h.git.reads.clear()
     h.git.files[("site", "sha-main", _REQS)] = _base(repo="acme/changed")
@@ -725,7 +712,7 @@ def test_git_refresh_skips_bare_cache_work_for_unchanged_remote_refs(h: Harness)
     second = h.run()
 
     assert (second.changed_refs, second.unchanged_refs, second.edges) == (0, 1, 1)
-    assert (h.git.ensure_calls, h.git.fetches, h.git.reads) == ([], [], [])
+    assert (h.git.urls, h.git.fetches, h.git.reads) == ([], [], [])
     assert h.dependents("acme/base", "v1")
     assert not h.dependents("acme/changed")
 
@@ -746,7 +733,7 @@ def test_git_refresh_fetches_only_changed_refs_and_prunes_deleted_remote_refs(
 
     h.run(source)
 
-    assert h.git.fetches == [("site", ("+refs/heads/main:refs/heads/main",), 1, True, None)]
+    assert h.git.fetches == [("site", ("heads/main",))]
     assert h.dependents("acme/base", "v2")
     assert not h.dependents("acme/base", "v1")
     assert not h.dependents("acme/release-base")
@@ -758,7 +745,7 @@ def test_git_refresh_reuses_parsed_dependencies_for_duplicate_remote_shas(h: Har
 
     h.run(_org(ref_patterns=["*"]), ref_scan_default="default_branch")
 
-    assert h.git.reads == [("site", "sha-shared", _REQS, None)]
+    assert h.git.reads == [("site", "sha-shared", _REQS)]
     assert {
         edge.source_ref for edge in h.index.dependents("acme/base", None, source_key="source:prod")
     } == {"main", "release"}
@@ -792,7 +779,7 @@ def test_git_refresh_reindexes_unchanged_ref_when_aliases_change(h: Harness) -> 
     h.run()
     h.run(aliases={"common": "acme/common"})
 
-    assert h.git.reads == [("site", "sha-main", _REQS, None)] * 2
+    assert h.git.reads == [("site", "sha-main", _REQS)] * 2
     assert h.dependents("acme/common")
     assert not h.index.dependencies("acme/site", "main", source_key="source:prod")[0].unresolved
 
@@ -807,7 +794,7 @@ def test_git_refresh_reparses_unchanged_ref_when_parser_version_changes(
     monkeypatch.setattr(refresh_git_index, "PARSER_VERSION", refresh_git_index.PARSER_VERSION + 1)
     third = h.run()
 
-    assert h.git.reads == [("site", "sha-main", _REQS, None)] * 2
+    assert h.git.reads == [("site", "sha-main", _REQS)] * 2
     assert third.changed_refs == 1
 
 
@@ -817,15 +804,15 @@ def test_git_refresh_reindexes_moved_tags_and_prunes_unselected_refs(h: Harness)
         ("tags/v1", "sha-v1", _base()),
         ("tags/v-old", "sha-old", _base(repo="acme/old")),
     )
-    h.configure(clone_protocol="ssh", fetch_depth=0, blob_filter=False)
+    h.configure(clone_protocol="ssh")
     source = _org(ref_kinds=["tags"], ref_patterns=["v*"])
     h.run(source)
     h.set_refs("acme/site", ("tags/v1", "sha-v2", _base("v2")))
 
     h.run(source)
 
-    refspecs = ("+refs/tags/v-old:refs/tags/v-old", "+refs/tags/v1:refs/tags/v1")
-    assert h.git.fetches[0] == ("site", refspecs, 0, False, None)
+    assert h.git.fetches[0] == ("site", ("tags/v-old", "tags/v1"))
+    assert h.git.urls[0] == "git@github.com:acme/site.git"
     assert h.dependents("acme/base", "v2")
     assert not h.dependents("acme/base", "v1")
     assert not h.dependents("acme/old")

@@ -15,7 +15,7 @@ from untaped_git.domain.delta import RefDelta, RefMove
 from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
 from untaped_git.domain.records import TreeEntry
 from untaped_git.domain.release import Released, Removed
-from untaped_git.domain.url import GitUrl, store_key, validate_git_url
+from untaped_git.domain.url import GitUrl, repo_url_parts, store_key, validate_git_url
 from untaped_git.infrastructure import remote
 from untaped_git.infrastructure.store import Prefetched, RepoStore
 from untaped_git.settings import git_settings
@@ -34,6 +34,7 @@ __all__ = [
     "TreeEntry",
     "default_branch",
     "ls_remote",
+    "repo_url_parts",
     "store_key",
     "validate_git_url",
 ]
