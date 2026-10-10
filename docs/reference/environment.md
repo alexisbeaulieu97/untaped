@@ -64,10 +64,19 @@ from environment variables.
 
 ## Git
 
-For every `git` call it makes, `untaped`:
+For every `git` call it makes, `untaped` does the following; Git you run
+yourself, in a workspace checkout or anywhere else, is unaffected:
 
+- runs Git in its own session, without the terminal, so nothing Git starts
+  (ssh included) can prompt there: a key with a passphrase must be in
+  `ssh-agent`, and a new host must be accepted once with your own
+  `git fetch`, as the error's hint says;
 - sets `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never`, so a remote that
-  needs credentials fails instead of waiting for input;
+  needs credentials fails instead of waiting for input, and
+  `SSH_ASKPASS_REQUIRE=never` and an empty `GIT_ASKPASS` unless you set
+  them, so neither ssh nor Git opens a graphical prompt instead (Git then
+  skips `core.askPass` and `SSH_ASKPASS`; a credential helper or your own
+  `GIT_ASKPASS` still supplies credentials);
 - sets `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` unless you set
   `GIT_SSH_COMMAND`, `GIT_SSH` or the `core.sshCommand` Git setting yourself;
 - removes `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
@@ -78,6 +87,12 @@ For every `git` call it makes, `untaped`:
 
 If you set `GIT_SSH_COMMAND` yourself, add `-o BatchMode=yes` to keep the
 fail-fast behavior.
+
+When a Git command times out, `untaped` stops it and every process it
+started: SIGTERM first, so Git removes its lock files, then SIGKILL two
+seconds later. Ctrl-C, SIGTERM and SIGHUP sent to `untaped` (a closed
+terminal, `timeout`, a cancelled CI job) are passed on to the Git commands it
+is running.
 
 ## Recipe hooks
 
