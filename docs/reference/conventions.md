@@ -271,10 +271,9 @@ The sections above name the helper for each rule. Beyond those:
   beside `token` on your settings model; see [Tokens](../configuration.md#tokens).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
-- To keep a bare-repo cache, use `RepoCache` rather than your own git plumbing.
-  Give your section its own root setting, resolve a repo's directory with
-  `cache_path`, and use `locked()`, `ensure`, `fetch` and `run` on the cache.
-  The `untaped.sdk` docstrings are the reference.
+- To keep a repository, use `RepoStore.for_url(url, plugin=SPEC, error=...)`
+  from `untaped_git.api`, not a bare repo or a root setting of your own; read
+  blobs through `store.prefetched(...).run(...)` (the `blob-reader` rule).
 
 A row-producing command uses `FormatOption`, `ColumnsOption` and `emit`, and
 its records declare their kind:
