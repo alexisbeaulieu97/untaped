@@ -14,7 +14,9 @@ provides for, so nothing else installed changes the verdict:
 - ``fills``: the ``assert_fills`` checks on the live items;
 - ``schema``: the owner schema hash the provider recorded (``fills.json``)
   against the installed owner's; a difference is ``owner-schema-drift``,
-  reported, never failed.
+  reported, never failed;
+- ``migrations``: each ``setup migrate-dirs`` preview runs against an empty
+  HOME and returns ``MigrationRow`` rows.
 
 An owner gets a ``contracts`` row: its ``contracts`` function loads.
 """
@@ -22,6 +24,8 @@ An owner gets a ``contracts`` row: its ``contracts`` function loads.
 from __future__ import annotations
 
 import inspect
+import os
+import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from importlib import import_module
 from importlib.util import find_spec
@@ -35,11 +39,15 @@ from untaped.management._render import emit_check_list, emit_isolated
 from untaped.messages import not_found, summary
 from untaped.plugins.registry import (
     CompositionResult,
+    MigrationOptions,
+    MigrationRow,
     PluginCandidate,
+    PluginContext,
     PluginSpec,
     owns_contracts,
 )
 from untaped.records import CheckRecord, kind_of
+from untaped.settings import get_settings
 from untaped.theme import OutputFormat
 
 if TYPE_CHECKING:
@@ -53,8 +61,8 @@ class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
 
     plugin: str
     check: str
-    """``conventions``, ``registration``, ``conformance``, ``live``, ``fills``, ``schema`` or
-    ``contracts``."""
+    """``conventions``, ``registration``, ``conformance``, ``live``, ``fills``, ``schema``,
+    ``contracts`` or ``migrations``."""
     title: str
     """What it is about: a convention rule, ``owner.contract`` or ``owner.contract.method``."""
     detail: str = ""
@@ -110,6 +118,8 @@ def _check(
         rows += _contracts(name, candidates, row)
     if spec.provides:
         rows += _offers(spec, candidates, row)
+    if spec.migrations:
+        rows += _migrations(spec, row)
     return rows
 
 
@@ -131,6 +141,44 @@ def _conventions(
     for line in found:
         where, rule, detail = [*line.split("::", 2), "", ""][:3]
         rows.append(row("conventions", rule, "fail", f"{where}: {detail}" if detail else where))
+    return rows
+
+
+_EMPTY_HOME = "preview runs on an empty HOME"
+
+
+def _migrations(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
+    """Each migration's preview, run against an empty HOME: it must read only and return rows."""
+    rows: list[PluginCheckRow] = []
+    saved = {key: os.environ.get(key) for key in ("HOME", "UNTAPED_CONFIG", "UNTAPED_STATE")}
+    with tempfile.TemporaryDirectory(prefix="untaped-plugin-check-") as home:
+        os.environ["HOME"] = home
+        os.environ["UNTAPED_CONFIG"] = os.path.join(home, ".untaped", "config.yml")
+        os.environ.pop("UNTAPED_STATE", None)
+        get_settings.cache_clear()
+        try:
+            for migration in spec.migrations:
+                try:
+                    found = migration.preview(PluginContext(settings=None), MigrationOptions())
+                except Exception as exc:  # the row reports a plugin's failure
+                    rows.append(row("migrations", migration.id, "fail", _message(exc)))
+                    continue
+                if not isinstance(found, Sequence) or not all(
+                    isinstance(each, MigrationRow) for each in found
+                ):
+                    detail = f"preview returned {type(found).__name__}, expected MigrationRow rows"
+                    rows.append(row("migrations", migration.id, "fail", detail))
+                    continue
+                rows.append(
+                    row("migrations", migration.id, "pass", "preview runs on an empty HOME")
+                )
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+            get_settings.cache_clear()
     return rows
 
 
