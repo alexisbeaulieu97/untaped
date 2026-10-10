@@ -38,6 +38,7 @@ from untaped_ansible.domain.payloads import (
     RefScanTouch,
     RepoFailure,
     SkippedDependencyFile,
+    SkippedRef,
     SourceRepoMetadata,
 )
 from untaped_ansible.domain.repo_targets import remote_url_for
@@ -82,6 +83,7 @@ class RefreshResult(BaseModel):
     unchanged_refs: int = 0
     failures: tuple[RepoFailure, ...] = ()
     skipped_files: tuple[SkippedDependencyFile, ...] = ()
+    skipped_refs: tuple[SkippedRef, ...] = ()
     probe_fallbacks: dict[str, str] = Field(default_factory=dict)
     rate_limit_cost: int | None = None
     rate_limit_remaining: int | None = None
@@ -103,6 +105,7 @@ class _RepoRefreshTask:
     repo: ProbeTarget
     default_branch: str
     refs: tuple[GitRef, ...]
+    skipped: tuple[SkippedRef, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -176,6 +179,7 @@ class RefreshGitSourceIndex:
         selected: set[tuple[str, str, str]] = set()
         ignored_collections: set[str] = set()
         skipped_files: list[SkippedDependencyFile] = []
+        skipped_refs: list[SkippedRef] = []
         checked_at = datetime.now(UTC)
         changed_refs = 0
         unchanged_refs = 0
@@ -209,6 +213,7 @@ class RefreshGitSourceIndex:
                 for repo in batch
                 if repo.full_name in probe_report.repos
             ]
+            skipped_refs.extend(skipped for task in tasks for skipped in task.skipped)
             batch_selected: set[tuple[str, str, str]] = set()
             batch_scans: list[RefScan] = []
             batch_touches: list[RefScanTouch] = []
@@ -262,6 +267,7 @@ class RefreshGitSourceIndex:
                     selected=selected,
                     ignored_collections=ignored_collections,
                     skipped_files=skipped_files,
+                    skipped_refs=skipped_refs,
                     changed_refs=changed_refs,
                     unchanged_refs=unchanged_refs,
                     failures=failures,
@@ -291,6 +297,7 @@ class RefreshGitSourceIndex:
             selected=selected,
             ignored_collections=ignored_collections,
             skipped_files=skipped_files,
+            skipped_refs=skipped_refs,
             changed_refs=changed_refs,
             unchanged_refs=unchanged_refs,
             failures=failures,
@@ -309,6 +316,7 @@ class RefreshGitSourceIndex:
         selected: set[tuple[str, str, str]],
         ignored_collections: set[str],
         skipped_files: list[SkippedDependencyFile],
+        skipped_refs: list[SkippedRef],
         changed_refs: int,
         unchanged_refs: int,
         failures: dict[str, RepoFailure],
@@ -334,6 +342,7 @@ class RefreshGitSourceIndex:
             unchanged_refs=unchanged_refs,
             failures=tuple(failures[repo] for repo in sorted(failures)),
             skipped_files=_dedupe_skipped_files(skipped_files),
+            skipped_refs=tuple(skipped_refs),
             probe_fallbacks=probe_fallbacks,
             rate_limit_cost=rate_limit_cost,
             rate_limit_remaining=rate_limit_remaining,
@@ -422,6 +431,7 @@ class RefreshGitSourceIndex:
             ref_scan_default=self._effective_ref_scan_default(source),
         )
         selected: dict[tuple[str, str], GitRef] = {}
+        skipped: dict[tuple[str, str], SkippedRef] = {}
         for selection in selections:
             for ref in probed.refs:
                 if ref.kind != selection.kind:
@@ -429,14 +439,19 @@ class RefreshGitSourceIndex:
                 if not pattern_matches(ref.name, selection.patterns):
                     continue
                 # A name git allows but the store refuses (``-wip``) is left
-                # out rather than failing the whole repo.
-                if not self._git.holds(ref):
+                # out with a warning rather than failing the whole repo.
+                refusal = self._git.refusal(ref)
+                if refusal is not None:
+                    skipped[(ref.kind, ref.name)] = SkippedRef(
+                        repo=repo.full_name, ref=ref.name, reason=refusal
+                    )
                     continue
                 selected[(ref.kind, ref.name)] = ref
         return _RepoRefreshTask(
             repo=repo,
             default_branch=default_branch,
             refs=tuple(selected[key] for key in sorted(selected)),
+            skipped=tuple(skipped[key] for key in sorted(skipped)),
         )
 
     def _refresh_repo(
