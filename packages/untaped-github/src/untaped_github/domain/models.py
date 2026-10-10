@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from untaped.sdk import AbsolutePath, OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.sdk import AbsolutePath, OutcomeRecord, Record, TargetRecord, UtcTimestamp
 
 RefKind = Literal["heads", "tags"]
 """Ref namespace probed by ``GithubClient.batch_repo_refs``."""
@@ -16,21 +16,16 @@ BatchRepoRefsFailureKind = Literal["server_error", "transport"]
 """Retryable per-repo failure class from a batched GraphQL ref probe."""
 
 
-def _with_aliases(data: Any, *, repo: bool = False) -> Any:
-    """Derive ``url`` from ``html_url`` (and ``repo`` from ``full_name``).
+def _with_aliases(data: Any) -> Any:
+    """Derive ``url`` from ``html_url``.
 
     ``url`` always mirrors ``html_url``: the raw GitHub payload's own ``url``
     is the API link, which must not leak into the web-URL field. A record
     without ``html_url`` (one this model already emitted) keeps its ``url``.
     """
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) or "html_url" not in data:
         return data
-    patch: dict[str, Any] = {}
-    if "html_url" in data:
-        patch["url"] = data["html_url"]
-    if repo and not data.get("repo"):
-        patch["repo"] = data.get("full_name", "")
-    return {**data, **patch}
+    return {**data, "url": data["html_url"]}
 
 
 class GithubUser(BaseModel):
@@ -44,65 +39,57 @@ class GithubUser(BaseModel):
     email: str | None = None
 
 
-class RepoResult(BaseModel):
-    """One row of ``GET /search/repositories``."""
+class GithubRepo(Record, kind="github.repo"):
+    """A GitHub repository, as every github command emits and reads it (``github.repo``).
 
-    model_config = ConfigDict(extra="ignore")
+    The fields are GitHub's own (``full_name``, ``html_url``, ``clone_url``…),
+    so a raw REST row validates as it is and unknown fields are dropped; only
+    ``full_name`` is required, and a field the row's source didn't report is
+    ``None``: a cache row lacks most of GitHub's metadata. github fills
+    workspace's ``RepoSource`` with it, so a piped row becomes a workspace repo
+    without an API call.
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
     table_columns: ClassVar[tuple[str, ...]] = (
-        "repo",
-        "description",
-        "language",
-        "stargazers_count",
-        "updated_at",
-    )
-
-    repo: str
-    id: int
-    url: str
-    description: str | None = None
-    language: str | None = None
-    stargazers_count: int = 0
-    forks_count: int = 0
-    archived: bool = False
-    fork: bool = False
-    private: bool = False
-    updated_at: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _aliases(cls, data: Any) -> Any:
-        return _with_aliases(data, repo=True)
-
-
-class RepoListResult(BaseModel):
-    """One row from GitHub repository inventory list endpoints."""
-
-    model_config = ConfigDict(extra="ignore")
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "repo",
+        "full_name",
         "default_branch",
         "private",
         "pushed_at",
         "description",
     )
 
-    repo: str
-    url: str | None = None
+    full_name: str
+    name: str | None = Field(default=None, validate_default=True)
+    html_url: str | None = None
     clone_url: str | None = None
     ssh_url: str | None = None
     default_branch: str | None = None
     description: str | None = None
-    private: bool = False
+    language: str | None = None
+    stargazers_count: int | None = None
+    forks_count: int | None = None
+    private: bool | None = None
     archived: bool = False
-    fork: bool = False
-    # GitHub's last push; renders in GitHub's own ``…Z`` form, so piped into
-    # sweep/cache sync it matches the stored value and skips an unchanged repo.
-    pushed_at: UtcTimestamp | None = None
+    fork: bool | None = None
+    # GitHub's last push, in GitHub's own ``…Z`` form: piped into sweep or
+    # cache sync it matches the stored value and skips an unchanged repo.
+    pushed_at: str | None = None
+    updated_at: str | None = None
 
-    @model_validator(mode="before")
+    @field_validator("name")
     @classmethod
-    def _aliases(cls, data: Any) -> Any:
-        return _with_aliases(data, repo=True)
+    def _short_name(cls, name: str | None, info: ValidationInfo) -> str | None:
+        # An "after" field validator, not a "before" model one: that would
+        # hand the rest of a JSON row to strict validation as Python values.
+        full_name = info.data.get("full_name")
+        if not name and isinstance(full_name, str):
+            return full_name.rpartition("/")[2]
+        return name
+
+
+#: The columns ``search repos`` shows by default.
+REPO_HIT_COLUMNS = ("full_name", "description", "language", "stargazers_count", "updated_at")
 
 
 class CodeResult(BaseModel):
@@ -136,27 +123,26 @@ class CodeResult(BaseModel):
         return data
 
 
-class CorpusRepoResult(BaseModel):
+class CorpusRepoResult(GithubRepo, kind="github.corpus_repo"):
     """One repository row in the local scan corpus (``github.corpus_repo``).
 
     ``path`` is the repo in the git plugin's repo store. ``cache delete`` and
     ``prune`` rows say ``removed`` (nobody else used the repo; ``disk_bytes``
     is what it freed) or ``released`` (github's refs, metadata and worktrees
     went; ``kept`` names who still holds the repo, and ``disk_bytes`` is 0).
+    A :class:`GithubRepo`, so it pipes into workspace like any repo row.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    table_columns: ClassVar[tuple[str, ...]] = ("full_name", "ref", "status", "fetched_at", "path")
 
-    repo: str
+    full_name: str
     ref: str
     path: str
-    clone_url: str | None = None
     status: Literal["synced", "cached", "released", "removed"] = "cached"
     kept: str | None = None
     fetched_at: str | None = None
     profile: str = "default"
     ref_globs: tuple[str, ...] = ()
-    archived: bool = False
     disk_bytes: int = 0
 
 

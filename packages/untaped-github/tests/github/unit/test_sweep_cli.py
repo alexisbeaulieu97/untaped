@@ -16,6 +16,7 @@ from untaped.testing import CliInvoker, CliResult, plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_github import SPEC
 from untaped_github.cli import app
+from untaped_github.domain import RepoSweepOutcome
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 
@@ -41,8 +42,8 @@ def _repo(full_name: str, source: Path, *, clone_url: str | None = None) -> dict
 def _record(repo: str, source: Path, *, clone_url: str | None = None) -> dict[str, object]:
     """A ``github.repo`` pipe record, as ``repos list --format pipe`` emits it."""
     return {
-        "repo": repo,
-        "url": f"https://github.com/{repo}",
+        "full_name": repo,
+        "html_url": f"https://github.com/{repo}",
         "clone_url": clone_url or source.as_uri(),
         "default_branch": "main",
         "archived": False,
@@ -99,7 +100,7 @@ def test_sweep_sends_the_token_only_to_the_enterprise_git_host(
         app, ["sweep", "--stdin", "--grep", "needle", "--no-owners", "-f", "json"], input=piped
     )
 
-    assert [row["repo"] for row in _json(result)] == ["acme/api", "acme/web"]
+    assert [row["full_name"] for row in _json(result)] == ["acme/api", "acme/web"]
     assert all(store_auth["https://ghe.example/acme/api.git"])
     assert set(store_auth["https://other.example/acme/web.git"]) == {None}
 
@@ -144,7 +145,9 @@ def test_sweep_pipe_records_per_show_mode(
     assert result.exit_code == 0, result.output
     envelopes = [json.loads(line) for line in result.stdout.splitlines()]
     assert {(env["untaped"], env["kind"]) for env in envelopes} == {("1", kind)}
-    assert [env["record"]["repo"] for env in envelopes] == ["acme/api"] * len(records)
+    # A sweep's repo rows are github repos (``full_name``); its match rows name ``repo``.
+    key = "full_name" if show == "repos" else "repo"
+    assert [env["record"][key] for env in envelopes] == ["acme/api"] * len(records)
     for envelope, expected in zip(envelopes, records, strict=True):
         assert envelope["record"].items() >= expected.items()
     if show == "repos":
@@ -266,7 +269,7 @@ def test_sweep_archived_is_include_exclude_or_only(
         ["--org", "acme", "--has-file", "README.md", *archived, "--format", "json"], org=listing
     )
 
-    assert [row["repo"] for row in _json(result)] == expected
+    assert [row["full_name"] for row in _json(result)] == expected
 
 
 def test_sweep_short_r_means_repo(source_repo: SourceRepo) -> None:
@@ -277,7 +280,7 @@ def test_sweep_short_r_means_repo(source_repo: SourceRepo) -> None:
         repos={"acme/api": httpx.Response(200, json=_repo("acme/api", source))},
     )
 
-    assert [row["repo"] for row in _json(result)] == ["acme/api"]
+    assert [row["full_name"] for row in _json(result)] == ["acme/api"]
     assert paths == ["/repos/acme/api"]
 
 
@@ -289,7 +292,7 @@ def test_sweep_default_org_fills_an_empty_scope(source_repo: SourceRepo) -> None
         ["--has-file", "README.md", "--format", "json"], org=[_repo("acme/api", source)]
     )
 
-    assert [row["repo"] for row in _json(result)] == ["acme/api"]
+    assert [row["full_name"] for row in _json(result)] == ["acme/api"]
     assert paths == ["/orgs/acme/repos"]
 
 
@@ -304,7 +307,7 @@ def test_missing_explicit_repo_is_unscanned_and_strict_fails(source_repo: Source
     lenient, _ = _sweep(args, repos=routes)
     strict, _ = _sweep([*args, "--strict"], repos=routes)
 
-    assert [row["repo"] for row in _json(lenient)] == ["acme/api"]
+    assert [row["full_name"] for row in _json(lenient)] == ["acme/api"]
     assert "warning: unscanned acme/gone" in lenient.stderr
     assert strict.exit_code == 3, strict.output
 
@@ -334,7 +337,7 @@ def test_failed_refresh_warns_that_cached_copy_was_scanned(source_repo: SourceRe
     refreshed, _ = _sweep([*args, "--refresh"], org=listing)
 
     assert first.exit_code == 0, first.output
-    assert [row["repo"] for row in _json(refreshed)] == ["acme/api"]
+    assert [row["full_name"] for row in _json(refreshed)] == ["acme/api"]
     assert "refresh failed for 1 repo; scanned cached copies" in refreshed.stderr
     assert "warning: stale acme/api:" in refreshed.stderr
 
@@ -357,7 +360,8 @@ def test_branch_and_tag_with_same_name_are_both_swept(
     assert row["refs_matched"] == ["heads/x", "tags/x"]
     # Regression: table-only per-predicate columns must not leak into json
     # (they produced "unknown column" warnings and null keys).
-    assert set(row) == {"repo", "clone_url", "refs_matched", "hits", "owners", "fetched_at"}
+    assert set(row) == set(RepoSweepOutcome.model_fields)
+    assert not any(":" in key for key in row)
     assert row["hits"] == {"grep:needle": 1}
     assert "unknown column" not in repos.stderr
     assert sorted((m["refs"], m["text"]) for m in _json(matches)) == [  # type: ignore[type-var]
@@ -370,7 +374,7 @@ def test_piped_records_skip_lookups_and_bare_names_are_resolved(source_repo: Sou
     source = source_repo("api", {"README.md": "needle\n"})
     other = source_repo("web", {"README.md": "needle\n"})
     listed = {"untaped": "1", "kind": "github.repo", "record": _record("acme/api", source)}
-    swept = {"untaped": "1", "kind": "github.sweep_repo", "record": {"repo": "acme/web"}}
+    swept = {"untaped": "1", "kind": "github.sweep_repo", "record": {"full_name": "acme/web"}}
 
     result, requested = _sweep(
         ["--stdin", "--grep", "needle", "--format", "json"],
@@ -378,7 +382,7 @@ def test_piped_records_skip_lookups_and_bare_names_are_resolved(source_repo: Sou
         input=f"{json.dumps(listed)}\n{json.dumps(swept)}\n",
     )
 
-    assert [row["repo"] for row in _json(result)] == ["acme/api", "acme/web"]
+    assert [row["full_name"] for row in _json(result)] == ["acme/api", "acme/web"]
     assert requested == ["/repos/acme/web"]
 
 

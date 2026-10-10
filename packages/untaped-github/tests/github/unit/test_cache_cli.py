@@ -58,9 +58,10 @@ def _cache(args: list[str], *, org: dict[str, list[dict[str, object]]] | None = 
         return CliInvoker().invoke(app, args)
 
 
-def _rows(result: CliResult) -> list[str]:
+def _rows(result: CliResult, key: str = "full_name") -> list[str]:
+    """The repos of a json result: ``full_name`` of corpus rows, ``repo`` of sync outcomes."""
     assert result.exit_code == 0, result.output
-    return [row["repo"] for row in json.loads(result.stdout)]
+    return [row[key] for row in json.loads(result.stdout)]
 
 
 def _cached() -> list[str]:
@@ -73,7 +74,7 @@ def _populate(source_repo: SourceRepo, *full_names: str) -> dict[str, dict[str, 
         org, name = full_name.split("/")
         listings[full_name] = _repo(full_name, source_repo(name, {"README.md": "hello\n"}))
         sync = ["cache", "sync", "--org", org, "--format", "json"]
-        assert _rows(_cache(sync, org={org: [listings[full_name]]})) == [full_name]
+        assert _rows(_cache(sync, org={org: [listings[full_name]]}), "repo") == [full_name]
     return listings
 
 
@@ -84,7 +85,7 @@ def test_cache_status_reports_profile_size_and_freshness(source_repo: SourceRepo
     table = CliInvoker().invoke(app, ["cache", "status"])
 
     [row] = json.loads(as_json.stdout)
-    assert (row["repo"], row["profile"]) == ("acme/api", "default")
+    assert (row["full_name"], row["profile"]) == ("acme/api", "default")
     assert row["disk_bytes"] > 0
     assert re.search(
         r"Cache: 1 repo, [0-9.]+ KiB, oldest just now, newest just now", as_json.stderr
@@ -161,8 +162,8 @@ def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
     records = [
         {"untaped": "1", "kind": "github.repo", "record": {**row, "default_branch": "main"}}
         for row in (
-            {"repo": "acme/api", "clone_url": "https://ghe.example/acme/api.git"},
-            {"repo": "acme/web", "clone_url": "https://other.example/acme/web.git"},
+            {"full_name": "acme/api", "clone_url": "https://ghe.example/acme/api.git"},
+            {"full_name": "acme/web", "clone_url": "https://other.example/acme/web.git"},
         )
     ]
 
@@ -320,7 +321,7 @@ def test_cache_sync_archived_modes_and_default_org(
 
     result = _cache(["cache", "sync", *args, "--format", "json"], org={"acme": listing})
 
-    assert _rows(result) == synced
+    assert _rows(result, "repo") == synced
 
 
 def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None:

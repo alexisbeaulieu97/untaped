@@ -80,7 +80,9 @@ def _repo_scopes(values: list[str] | None, *, stdin: bool) -> tuple[str, ...]:
     """Merge explicit ``--repo`` values with optional stdin repo scopes."""
     repos = list(values or ())
     if stdin:
-        repos.extend(read_identifiers([], stdin=True, id_field="repo", accept_kinds=REPO_KINDS))
+        repos.extend(
+            read_identifiers([], stdin=True, id_field="full_name", accept_kinds=REPO_KINDS)
+        )
     return tuple(repos)
 
 
@@ -139,6 +141,7 @@ def repos_command(
     """Search repositories (``GET /search/repositories``)."""
     from untaped_github.application import SearchRepos  # noqa: PLC0415
     from untaped_github.domain import RepoSearchFilters  # noqa: PLC0415
+    from untaped_github.domain.models import REPO_HIT_COLUMNS  # noqa: PLC0415
 
     with report_errors():
         repos = _repo_scopes(repo, stdin=stdin)
@@ -171,7 +174,8 @@ def repos_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="github.repo_hit",
+            kind="github.repo",
+            table_columns=REPO_HIT_COLUMNS,
             empty="No repositories found. Broaden your query or remove scope filters.",
         )
 

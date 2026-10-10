@@ -31,10 +31,7 @@ from untaped.sdk import (
     summary,
     writes,
 )
-from untaped_github.application import (
-    RepositoryInventoryItem,
-    RepositoryInventoryScope,
-)
+from untaped_github.application import RepositoryInventoryScope
 from untaped_github.cli._client import open_client, open_corpus
 from untaped_github.cli.scopes import (
     ArchivedOption,
@@ -46,7 +43,7 @@ from untaped_github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
-from untaped_github.domain import CorpusRepoResult
+from untaped_github.domain import CorpusRepoResult, GithubRepo
 from untaped_github.errors import GithubError
 from untaped_github.settings import GithubSettings
 
@@ -266,12 +263,12 @@ def _select(
         return _departed_or_archived(cached, live)
     if all_repos:
         return cached
-    known = {row.repo.casefold() for row in cached}
+    known = {row.full_name.casefold() for row in cached}
     missing = [name for name in repos if name.casefold() not in known]
     if missing:
         raise GithubError("; ".join(not_found("cached repo", name) for name in missing))
     requested = {name.casefold() for name in repos}
-    return tuple(row for row in cached if row.repo.casefold() in requested)
+    return tuple(row for row in cached if row.full_name.casefold() in requested)
 
 
 def _delete(
@@ -300,8 +297,8 @@ def _delete(
         lambda row: cleaner(repo=row),
         verb="delete",
         noun="cached GitHub repo",
-        label=lambda row: row.repo,
-        describe=lambda row: {"repo": row.repo, "ref": row.ref, "path": row.path},
+        label=lambda row: row.full_name,
+        describe=lambda row: {"repo": row.full_name, "ref": row.ref, "path": row.path},
         ui=ctx.ui(strict=False),
         destructive=True,
         assume_yes=yes,
@@ -356,7 +353,7 @@ def _status_display(records: list[dict[str, object]]) -> list[dict[str, object]]
     """Table rows with a readable size and fetch age; other formats keep raw values."""
     return [
         {
-            "repo": record["repo"],
+            "repo": record["full_name"],
             "ref": record["ref"],
             "profile": record["profile"],
             "archived": record["archived"],
@@ -372,7 +369,7 @@ def _released_display(records: list[dict[str, object]]) -> list[dict[str, object
     """Table rows of a delete: the repo, what became of it, and who kept it or what it freed."""
     return [
         {
-            "repo": record["repo"],
+            "repo": record["full_name"],
             "status": record["status"],
             "detail": (
                 f"{size_text(int(str(record['disk_bytes'])))} freed"
@@ -414,14 +411,16 @@ def _in_orgs(
     if not orgs:
         return cached
     owners = {org.casefold() for org in orgs}
-    return tuple(row for row in cached if row.repo.partition("/")[0].casefold() in owners)
+    return tuple(row for row in cached if row.full_name.partition("/")[0].casefold() in owners)
 
 
 def _departed_or_archived(
     cached: tuple[CorpusRepoResult, ...],
-    live: tuple[RepositoryInventoryItem, ...],
+    live: tuple[GithubRepo, ...],
 ) -> tuple[CorpusRepoResult, ...]:
     live_by_name = {row.full_name: row for row in live}
     return tuple(
-        row for row in cached if row.repo not in live_by_name or live_by_name[row.repo].archived
+        row
+        for row in cached
+        if row.full_name not in live_by_name or live_by_name[row.full_name].archived
     )

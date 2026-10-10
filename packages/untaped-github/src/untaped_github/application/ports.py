@@ -6,7 +6,6 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from contextlib import AbstractContextManager
     from datetime import datetime
 
     from untaped_github.domain import (
@@ -17,7 +16,6 @@ if TYPE_CHECKING:
         GrepSpec,
         LocalRef,
         RefSelector,
-        RepoInventory,
         WorktreeResult,
     )
 
@@ -126,19 +124,3 @@ class GitCorpus(Protocol):
     def materialize_worktree(
         self, repo: CorpusRepoTarget, *, ref: str | None
     ) -> WorktreeResult: ...
-
-
-class InventoryStore(Protocol):
-    """Where the cached repository inventory lives."""
-
-    def load(self) -> RepoInventory | None:
-        """The saved inventory, or ``None`` when there is none or it is unreadable."""
-        ...
-
-    def save(self, inventory: RepoInventory) -> None:
-        """Replace the saved inventory atomically."""
-        ...
-
-    def lock(self) -> AbstractContextManager[None]:
-        """Serialize refreshes across processes."""
-        ...

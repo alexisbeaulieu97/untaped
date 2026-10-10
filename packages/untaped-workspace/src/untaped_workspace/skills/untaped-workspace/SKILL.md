@@ -15,14 +15,14 @@ relying on it.
 
 ## Setup
 
-- Repos named `OWNER/NAME` or `NAME` are looked up in the GitHub inventory:
-  it needs the GitHub token and the `github.inventory` orgs or teams. Full
-  git URLs skip it.
+- Repos named `OWNER/NAME` or `NAME` are looked up in the repos the installed
+  repo providers list (GitHub: the token and `github.inventory` orgs or
+  teams, else `github.default_org`). Clone URLs skip the lookup.
 - Git never prompts for credentials. Fetching from a host a plugin claims
   (GitHub's token for `github.com`) needs nothing more, and `git push` in a
   worktree asks `untaped git credential` after your own credential helpers.
-  Otherwise use a credential helper, or an SSH agent with `workspace.protocol`
-  set to `ssh`.
+  Otherwise use a credential helper, or an SSH agent with the provider's
+  protocol setting (`github.git_protocol`) set to `ssh`.
 - Directories, branch naming and parallelism are `workspace.*` settings
   (`untaped config list`).
 
@@ -34,6 +34,7 @@ relying on it.
 | Add reference code you won't change | `untaped workspace create NAME --repo OWNER/NAME --read-only OWNER/NAME` |
 | Bring in another repo later | `untaped workspace add NAME --repo OWNER/NAME` |
 | Add repos from a GitHub listing | `untaped github repos list --team ORG/SLUG --format pipe` piped to `untaped workspace add NAME --stdin` |
+| Pick up a provider's new URLs (after changing `github.git_protocol`) | `untaped workspace repos resolve NAME` |
 | Find the directory | `untaped workspace path NAME` |
 | See branches, uncommitted and unpushed work | `untaped workspace status NAME` |
 | Check nothing blocks archiving (exit 3 while anything does) | `untaped workspace status NAME --check` |
@@ -101,7 +102,8 @@ the workspace directory, and exits 2 outside one.
 - `run`: quote the command; `-` reads a script from stdin (heredoc).
   Read-only repos are skipped unless `--include-read-only`.
 - An unknown repo name exits 2 and suggests close matches; an ambiguous one
-  exits 2 and lists the candidates.
+  exits 2 and lists the candidates. When two providers list the same name,
+  `untaped plugin rank workspace.repo_source repos PLUGIN...` picks the order.
 - A branch can be checked out in one workspace at a time; a second workspace
   on the same branch gets a `conflict` row.
 - `archive` refuses while any repo has uncommitted changes, stashes made on

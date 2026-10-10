@@ -1,0 +1,310 @@
+{
+  "contract": "repo_source",
+  "methods": {
+    "repos": {
+      "params": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "return": {
+        "$defs": {
+          "GitUrl": {
+            "type": "string"
+          },
+          "Repo": {
+            "additionalProperties": false,
+            "description": "A repository workspace can check out; ``source`` names the plugin that issued it.",
+            "properties": {
+              "archived": {
+                "default": false,
+                "title": "Archived",
+                "type": "boolean"
+              },
+              "default_branch": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Default Branch"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Description"
+              },
+              "name": {
+                "$ref": "#/$defs/RepoName"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Source"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "url": {
+                "$ref": "#/$defs/GitUrl"
+              }
+            },
+            "required": [
+              "name",
+              "url"
+            ],
+            "title": "Repo",
+            "type": "object"
+          },
+          "RepoName": {
+            "pattern": "^[^/\\s]+(/[^/\\s]+)*$",
+            "type": "string"
+          },
+          "Source": {
+            "additionalProperties": false,
+            "description": "Where an issued record came from: the provider's plugin and its own record.\n\n``record`` is the JSON dump of the provider's own record when its item type\nis not the owner's model, else empty. The SDK fills it; a provider never does.",
+            "properties": {
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "plugin": {
+                "title": "Plugin",
+                "type": "string"
+              },
+              "record": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Record",
+                "type": "object"
+              }
+            },
+            "required": [
+              "plugin",
+              "kind"
+            ],
+            "title": "Source",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/Repo"
+        },
+        "type": "array"
+      },
+      "stability": "experimental"
+    },
+    "to_repo": {
+      "params": {
+        "properties": {
+          "item": {
+            "$defs": {
+              "GitUrl": {
+                "type": "string"
+              },
+              "RepoName": {
+                "pattern": "^[^/\\s]+(/[^/\\s]+)*$",
+                "type": "string"
+              },
+              "Source": {
+                "additionalProperties": false,
+                "description": "Where an issued record came from: the provider's plugin and its own record.\n\n``record`` is the JSON dump of the provider's own record when its item type\nis not the owner's model, else empty. The SDK fills it; a provider never does.",
+                "properties": {
+                  "kind": {
+                    "title": "Kind",
+                    "type": "string"
+                  },
+                  "plugin": {
+                    "title": "Plugin",
+                    "type": "string"
+                  },
+                  "record": {
+                    "additionalProperties": true,
+                    "default": {},
+                    "title": "Record",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "plugin",
+                  "kind"
+                ],
+                "title": "Source",
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "description": "A repository workspace can check out; ``source`` names the plugin that issued it.",
+            "properties": {
+              "archived": {
+                "default": false,
+                "title": "Archived",
+                "type": "boolean"
+              },
+              "default_branch": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Default Branch"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Description"
+              },
+              "name": {
+                "$ref": "#/$defs/RepoName"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Source"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "url": {
+                "$ref": "#/$defs/GitUrl"
+              }
+            },
+            "required": [
+              "name",
+              "url"
+            ],
+            "title": "Repo",
+            "type": "object"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "type": "object"
+      },
+      "return": {
+        "$defs": {
+          "GitUrl": {
+            "type": "string"
+          },
+          "RepoName": {
+            "pattern": "^[^/\\s]+(/[^/\\s]+)*$",
+            "type": "string"
+          },
+          "Source": {
+            "additionalProperties": false,
+            "description": "Where an issued record came from: the provider's plugin and its own record.\n\n``record`` is the JSON dump of the provider's own record when its item type\nis not the owner's model, else empty. The SDK fills it; a provider never does.",
+            "properties": {
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "plugin": {
+                "title": "Plugin",
+                "type": "string"
+              },
+              "record": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Record",
+                "type": "object"
+              }
+            },
+            "required": [
+              "plugin",
+              "kind"
+            ],
+            "title": "Source",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A repository workspace can check out; ``source`` names the plugin that issued it.",
+        "properties": {
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "default_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default Branch"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "name": {
+            "$ref": "#/$defs/RepoName"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Source"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "url": {
+            "$ref": "#/$defs/GitUrl"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "Repo",
+        "type": "object"
+      },
+      "stability": "experimental"
+    }
+  },
+  "untaped": "1"
+}

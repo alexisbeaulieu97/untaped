@@ -106,6 +106,27 @@ class RemoveOutcome(OutcomeRecord, TargetRecord):
     freed_bytes: int = 0
 
 
+ResolveAction = Literal["updated", "unchanged", "skipped", "failed"]
+
+
+class ResolveOutcome(OutcomeRecord, TargetRecord):
+    """``workspace.resolve_outcome``: what ``repos resolve`` did for one repo.
+
+    ``updated``: its source lists it under a new URL for the same store repo,
+    now saved; ``skipped``: nobody to ask (a typed URL, a source plugin that
+    is gone or not ready).
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "url", "detail")
+
+    workspace: str
+    repo: str
+    dir: str
+    action: ResolveAction
+    url: str
+    detail: str = ""
+
+
 RunAction = Literal["ran", "failed", "skipped"]
 
 
