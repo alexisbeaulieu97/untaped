@@ -15,13 +15,11 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pydantic import ValidationError
-
 from untaped.contracts import Answers, Failed, NoProviderReady, Ok, Skipped, gather
-from untaped.sdk import PickCatalog, PickItem
+from untaped.sdk import PickCatalog, PickItem, UsageError
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.models import RepoArg
-from untaped_workspace.domain.naming import repo_key
+from untaped_workspace.domain.naming import repo_key, typed_repo
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import GitWorktrees
@@ -141,7 +139,7 @@ class RepoPickSource:
     def _stored(
         self, known: Collection[_Key], *, taken: Collection[str]
     ) -> list[tuple[PickItem, Repo]]:
-        """Stored repos neither listed (``known``) nor excluded, as plain repos of their URL.
+        """Stored repos neither listed (``known``) nor excluded, as typed repos of their URL.
 
         A stored id in ``taken`` (the listed ids) is skipped: an owner-less
         repo on a dotless host (``acme/api.git``) would otherwise shadow a
@@ -153,8 +151,8 @@ class RepoPickSource:
             if stored.key in known or stored.key in self._exclude or stored.ident in taken:
                 continue
             try:
-                repo = Repo(name=stored.ident, url=stored.origin)
-            except ValidationError:
+                repo = typed_repo(stored.origin)
+            except UsageError:
                 continue
             item = PickItem(id=stored.ident, label=stored.ident, description="repo store")
             items.append((item, repo))

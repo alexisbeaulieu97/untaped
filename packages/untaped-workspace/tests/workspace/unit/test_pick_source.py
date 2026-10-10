@@ -192,13 +192,14 @@ def test_branches_before_the_catalog_is_not_memoised() -> None:
     assert git.calls == ["https://github.com/team/tool"]
 
 
-def test_a_stored_only_pick_is_a_plain_repo_of_its_stored_origin() -> None:
+def test_a_stored_only_pick_is_named_like_its_typed_url() -> None:
+    """The picker id keeps the host; the repo is named by its URL path, as typing it would."""
     git = FakeGit(_stored("gitlab.example/team/tool", "git@gitlab.example:team/tool.git"))
     source = _source(git, ask=always(Failed("github", UntapedError("HTTP 503"))))
     source.catalog(refresh=None)
     assert source.pick_arg(RepoArg(ident="gitlab.example/team/tool")) == RepoArg(
-        ident="gitlab.example/team/tool",
-        repo=Repo(name="gitlab.example/team/tool", url="git@gitlab.example:team/tool.git"),
+        ident="team/tool",
+        repo=Repo(name="team/tool", url="git@gitlab.example:team/tool.git"),
     )
 
 

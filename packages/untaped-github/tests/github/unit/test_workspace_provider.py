@@ -117,7 +117,7 @@ def test_without_an_inventory_scope_github_is_not_ready_and_names_the_setting() 
 
     not_ready = caught.value.not_ready["github"]
     assert not_ready.setting == "github.default_org"
-    assert "no scope" in not_ready.reason
+    assert not_ready.reason == "no inventory scope"
     assert caught.value.exit_code == ExitCode.ENVIRONMENT
 
 

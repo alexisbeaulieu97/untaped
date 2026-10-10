@@ -53,8 +53,10 @@ class ResolveRepos:
                     changed.append(new)
             if changed:
                 self._store.update_repos(record.name, changed)
+                old = {spec.dir: spec.url for spec in record.repos}
                 for spec in changed:
-                    self._git.configure(spec.url, root / spec.dir)
+                    if spec.url != old[spec.dir]:
+                        self._git.configure(spec.url, root / spec.dir)
             return rows
 
     def _one(
@@ -79,21 +81,21 @@ class ResolveRepos:
             )
 
         if spec.source is None:
-            return row("skipped", "a typed URL: no source to ask"), None
+            return row("skipped", "no source to ask"), None
         try:
             listed = self._catalog.reask(spec)
         except UntapedError as exc:
             return row("failed", str(exc), error=exc), None
         if listed is None:
             return row("skipped", f"{spec.source.plugin} is not installed or not ready"), None
-        if all(getattr(listed, field) == getattr(spec, field) for field in _FIELDS):
-            return row("unchanged"), None
+        new = spec.model_copy(update={field: getattr(listed, field) for field in _FIELDS})
+        if listed.url == spec.url:
+            # Metadata only (a push, a new description): saved, not reported.
+            return row("unchanged"), (None if new == spec else new)
         if repo_key(listed.url) != repo_key(spec.url):
             detail = (
                 f"{spec.source.plugin} now lists {listed.url}, another store repo than {spec.url}; "
                 f"remove {spec.dir} from the workspace and add it again"
             )
             return row("failed", detail, url=listed.url), None
-        new = spec.model_copy(update={field: getattr(listed, field) for field in _FIELDS})
-        detail = "" if listed.url == spec.url else f"was {spec.url}"
-        return row("updated", detail, url=listed.url), new
+        return row("updated", f"was {spec.url}", url=listed.url), new

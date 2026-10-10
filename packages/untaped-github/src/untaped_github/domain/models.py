@@ -45,8 +45,7 @@ class GithubRepo(Record, kind="github.repo"):
     The fields are GitHub's own (``full_name``, ``html_url``, ``clone_url``…),
     so a raw REST row validates as it is and unknown fields are dropped; only
     ``full_name`` is required, and a field the row's source didn't report is
-    ``None``: a search hit lacks ``clone_url`` and ``pushed_at``, a cache row
-    most of GitHub's metadata. github fills
+    ``None``: a cache row lacks most of GitHub's metadata. github fills
     workspace's ``RepoSource`` with it, so a piped row becomes a workspace repo
     without an API call.
     """

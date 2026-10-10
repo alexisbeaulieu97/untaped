@@ -16,9 +16,14 @@ class RepoSpec(Repo):
     and how it is checked out.
 
     The URL never changes after ``create``; ``untaped workspace repos resolve``
-    asks the repo's source again.
+    asks the repo's source again. ``name`` and ``url`` are plain strings here:
+    they were checked when the repo was added, and a workspace made before
+    11.0 from a URL untaped now refuses (a local path, ``http://``) must still
+    load, so it can be listed, archived and removed.
     """
 
+    name: str  # stored, not re-checked (above)
+    url: str
     dir: str
     branch: str | None
     """The workspace branch; ``None`` for a read-only (detached) checkout."""
