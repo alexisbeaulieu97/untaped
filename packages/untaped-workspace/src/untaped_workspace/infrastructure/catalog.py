@@ -28,6 +28,7 @@ class RepoSources:
 
     def __init__(self) -> None:
         self._answers: Answers[list[Repo]] | None = None
+        self._live: dict[str, Answers[list[Repo]] | None] = {}
 
     def resolve(self, ident: str) -> Repo:
         """The repo ``ident`` names; ``UsageError`` (exit 2) when it is unknown or ambiguous.
@@ -82,14 +83,22 @@ class RepoSources:
         source = repo.source
         if source is None:
             return None
-        try:
-            answers = gather(RepoSource.repos, refresh=True, plugins={source.plugin})()
-        except NoProviderReady:
+        answers = self._reask(source.plugin)
+        if answers is None:
             return None
         for answer in answers:
             if isinstance(answer, Ok) and answer.stale is not None:
                 raise answer.stale.error
         return self.admit(select_one(answers, lambda listed: listed.name == repo.name))
+
+    def _reask(self, plugin: str) -> Answers[list[Repo]] | None:
+        """``plugin``'s live listing, asked once per catalog however many repos it sourced."""
+        if plugin not in self._live:
+            try:
+                self._live[plugin] = gather(RepoSource.repos, refresh=True, plugins={plugin})()
+            except NoProviderReady:
+                self._live[plugin] = None
+        return self._live[plugin]
 
     def _ask(self) -> Answers[list[Repo]]:
         if self._answers is None:
@@ -100,7 +109,10 @@ class RepoSources:
 def _unasked_hint(exc: NoProviderReady) -> str:
     """``github wasn't asked: …; set github.default_org, or pass the repo's clone URL``."""
     if not exc.not_ready:
-        return f"install a plugin that lists repos (untaped[github]), or {_URL_HINT}"
+        # Nobody is merely unconfigured: none is installed, or each was set aside.
+        return (
+            f"{exc}; install or upgrade a plugin that lists repos (untaped[github]), or {_URL_HINT}"
+        )
     parts = []
     for plugin, ready in exc.not_ready.items():
         setting = f"; set {ready.setting}" if ready.setting else ""

@@ -324,7 +324,7 @@ def test_resolve_saves_the_url_the_source_lists_now_and_rewrites_the_worktree_co
     assert [(r["repo"], r["action"], r["url"], r["detail"]) for r in _rows(resolved)] == [
         ("acme/api", "updated", ssh, f"was {api.url}"),
         ("acme/web", "unchanged", web.url, ""),
-        ("acme/docs", "skipped", docs.url, "a typed URL: no source to ask"),
+        ("acme/docs", "skipped", docs.url, "no source to ask"),
     ]
     record = StateWorkspaceStore().get("J-1")
     assert record is not None
@@ -335,6 +335,19 @@ def test_resolve_saves_the_url_the_source_lists_now_and_rewrites_the_worktree_co
     ]
     worktree = workspace_env / "J-1" / "api"
     assert git(worktree, "config", "--worktree", f"url.{ssh}.insteadOf") == api.url
+
+
+def test_resolve_saves_metadata_only_changes_without_reporting_them(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
+    web = make_upstream("web")
+    _create(_listed(web))
+    with providers(github=[Listing(_listed(web, description="now described"))]):
+        resolved = run(app, ["repos", "resolve", "J-1", "--format", "json"])
+    assert resolved.exit_code == 0, resolved.output
+    assert [(r["action"], r["detail"]) for r in _rows(resolved)] == [("unchanged", "")]
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None and record.repos[0].description == "now described"
 
 
 def test_resolve_refuses_a_url_of_another_store_repo(

@@ -121,3 +121,22 @@ def test_remove_drops_every_record_of_the_name() -> None:
     assert store.get("w") is None
     assert [record.name for record in store.archived()] == ["other"]
     assert store.remove("w") == []
+
+
+def test_a_workspace_made_before_11_from_a_url_untaped_now_refuses_still_loads() -> None:
+    """10.x took local paths and ``http://`` URLs; such a workspace still loads and removes."""
+    store = StateWorkspaceStore()
+    store.create(WorkspaceRecord(name="w", created_at=T0))
+    store.create(WorkspaceRecord(name="other", created_at=T0))
+    store.add_repos("other", [SPEC])
+    state = Path.home() / ".untaped" / "state.yml"
+    text = state.read_text()
+    state.write_text(text.replace("https://github.com/acme/api.git", "/srv/git/api.git"))
+    store.add_repos(
+        "w",
+        [SPEC.model_copy(update={"url": "http://git.example/acme/web.git", "dir": "web"})],
+    )
+
+    assert [spec.url for spec in store.get("other").repos] == ["/srv/git/api.git"]  # type: ignore[union-attr]
+    assert [spec.url for spec in store.get("w").repos] == ["http://git.example/acme/web.git"]  # type: ignore[union-attr]
+    assert [record.name for record in store.remove("other")] == ["other"]

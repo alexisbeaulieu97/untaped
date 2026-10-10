@@ -216,7 +216,9 @@ def test_with_no_provider_installed_a_name_is_not_found() -> None:
     with providers(), pytest.raises(UsageError) as caught:
         _resolve("acme/api")
     assert caught.value.hint == (
-        "install a plugin that lists repos (untaped[github]), or pass the repo's clone URL"
+        "no provider of workspace.repo_source.repos is ready: no installed plugin fills it; "
+        "install or upgrade a plugin that lists repos (untaped[github]), "
+        "or pass the repo's clone URL"
     )
 
 
@@ -312,10 +314,20 @@ def test_reask_asks_the_repos_source_live_and_admits_what_it_lists_now() -> None
         again = catalog.reask(saved)
         assert again is not None and again.description == "moved"
         assert (github.calls, gitlab.calls) == (2, 1)  # live, and only the source is asked
+        assert catalog.reask(catalog.resolve("https://github.com/acme/api.git")) is None
         github.rows = [repo("acme/api", "evil.example")]
         with pytest.raises(UsageError, match="refusing to fetch it"):
-            catalog.reask(saved)
-        assert catalog.reask(catalog.resolve("https://github.com/acme/api.git")) is None
+            RepoSources().reask(saved)
+
+
+def test_reask_lists_each_source_once_however_many_repos_it_sourced() -> None:
+    github = Listing(repo("acme/api"), repo("acme/web"), repo("acme/docs"))
+    with providers(github=[github, Host("github.com")]):
+        saved = [RepoSources().resolve(name) for name in ("acme/api", "acme/web", "acme/docs")]
+        calls = github.calls
+        catalog = RepoSources()
+        assert [catalog.reask(each) for each in saved] == saved
+        assert github.calls == calls + 1
 
 
 def test_reask_of_a_source_that_is_down_raises_its_error_not_the_stored_answer() -> None:

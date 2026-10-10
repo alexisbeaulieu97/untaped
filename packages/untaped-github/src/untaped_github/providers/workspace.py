@@ -40,7 +40,11 @@ class GithubRepos(RepoSource[GithubRepo], Configured[GithubSettings]):
         try:
             inventory_scope(self.settings)
         except GithubError as exc:
-            return NotReady(str(exc), setting="github.default_org")
+            teams = isinstance(exc.__cause__, ValueError)  # a malformed team, not no scope
+            return NotReady(
+                "github.inventory.teams needs ORG/SLUG entries" if teams else "no inventory scope",
+                setting="github.inventory.teams" if teams else "github.default_org",
+            )
         return None
 
     def to_repo(self, item: GithubRepo) -> Repo:
