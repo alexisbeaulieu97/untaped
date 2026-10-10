@@ -13,7 +13,8 @@ from.
 
 ## Setup
 
-- Git 2.29 or newer; `untaped doctor` checks it (`git.version`).
+- Git 2.29 or newer; `untaped doctor` checks it (`git.version`) and the
+  store (`git.store`: paused maintenance, interrupted releases).
 - Settings live under `profiles.<name>.git`: `store_dir` (the repo store,
   default `~/.untaped/plugins/git/store`) and `untaped_helper_first`.
 
@@ -22,6 +23,7 @@ from.
 | When | Command |
 |---|---|
 | See which plugin answers for each host | `untaped git hosts` |
+| See what the store holds and who uses it | `untaped git store` (`-f json` for the record) |
 | Check what a worktree's helper would answer | `printf 'protocol=https\nhost=github.com\n\n' \| untaped git credential get` |
 
 ## Workflows
@@ -33,6 +35,10 @@ from.
 2. `helpers_first` names helpers your own Git config asks before untaped.
    If one holds a stale password, set `git.untaped_helper_first: true`;
    untaped's worktrees then ask only untaped for that host.
+3. Reclaiming disk: `untaped git store` shows `exclusive` (repos only one
+   plugin uses). That plugin's own delete command releases them (`github
+   cache delete`, `workspace remove`); a repo another plugin, a hand-added
+   worktree, a branch or a stash holds stays, and the row says who kept it.
 
 ## Safety
 
@@ -43,6 +49,9 @@ from.
 
 ## Pitfalls
 
+- `unowned` repos carry an interrupted release; the next fetch of that URL
+  finishes it. `held by branches` repos are kept only by a local branch or
+  stash a release left; untaped never deletes those for you.
 - Two plugins claiming one host is a configuration error (exit 4) until
   one is ranked first; the error names the rank command.
 - Refs under `refs/untaped/` belong to other plugins; they show up in
@@ -50,5 +59,5 @@ from.
 
 ## References
 
-- `untaped git hosts --help` and `untaped git credential --help` list each
-  command's options.
+- `untaped git hosts --help`, `untaped git store --help` and
+  `untaped git credential --help` list each command's options.

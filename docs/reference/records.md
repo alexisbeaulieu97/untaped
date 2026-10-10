@@ -222,6 +222,7 @@ the user), for prompt segments.
 | Command | Writes |
 |---|---|
 | `git hosts` | `git.host` |
+| `git store` | `git.store` (`-f json` and the other formats; `table` prints labelled lines: `used_by` repos per plugin, `exclusive_bytes` the size of repos only that plugin uses, `unowned` and `held_by_branches` as `{repos, size_bytes}`) |
 
 `git credential` speaks Git's credential-helper protocol on stdout, not
 records.

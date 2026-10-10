@@ -30,8 +30,8 @@ def report_lines(report: StoreReport) -> list[str]:
         rows.append(
             (
                 "held by branches",
-                f"{_repos_text(report.held_by_branches)} (a branch or stash a release kept; "
-                "push it, or remove with --force, to reclaim it)",
+                f"{_repos_text(report.held_by_branches)} "
+                "(only a branch or stash a release left keeps them)",
             )
         )
     if report.repos:
