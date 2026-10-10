@@ -152,12 +152,9 @@ class _DeprecatedGroup(Group):
         return show_deprecated()
 
 
-# Sort keys leave 0-99 to other panels; cyclopts sorts its unkeyed default
-# panels before any keyed one, so the root Parameters panel is keyed last.
+# The order of all core panels is untaped.help_panels'.
 EXPERIMENTAL_GROUP = Group("Experimental", sort_key=100)
 DEPRECATED_GROUP = _DeprecatedGroup("Deprecated", sort_key=200)
-ROOT_PARAMETERS_GROUP = Group("Parameters", sort_key=300)
-RESERVED_PANELS = frozenset({"Experimental", "Deprecated"})
 
 
 def panel_for(stability: Stability) -> Group:

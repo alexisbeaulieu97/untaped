@@ -19,7 +19,7 @@ from itertools import chain
 from pathlib import Path
 from typing import Annotated, Any
 
-from cyclopts import App, Parameter
+from cyclopts import App, Group, Parameter
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
 
@@ -42,6 +42,7 @@ from untaped.cli import (
 from untaped.diagnostics import diagnostics_scope
 from untaped.errors import ConfigError
 from untaped.git import forward_signals
+from untaped.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.management import (
     build_root_alias_app,
     build_root_auth_app,
@@ -59,6 +60,7 @@ from untaped.plugins.registry import (
     ApplicationSpec,
     CompositionResult,
     PluginCandidate,
+    PluginSpec,
     QuarantineRecord,
     RegisteredPlugin,
     SkillAsset,
@@ -79,7 +81,7 @@ from untaped.settings import (
 )
 from untaped.shell_settings import ShellProfileSettings
 from untaped.skills import InstallableSkill
-from untaped.stability import ROOT_PARAMETERS_GROUP, apply_marks, mark_app, panel_for
+from untaped.stability import apply_marks, mark_app, panel_for
 from untaped.verbose import reset as _reset_verbose
 
 #: Unified executable name; also the identity reported before dispatch selects
@@ -265,7 +267,7 @@ def build_root_app(
     candidates = list(candidates) if candidates is not None else list(discover_candidates())
     result = compose_root(candidates=candidates)
     root = _shell_app()
-    root.meta.group_parameters = ROOT_PARAMETERS_GROUP  # keyed, so Parameters sorts last
+    root.meta.group_parameters = GLOBAL_OPTIONS_GROUP
     if not result.plugins and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     management = {
@@ -296,7 +298,9 @@ def build_root_app(
         _root_options(),
         after_command=lambda tokens, failed: _check_skills_after(tokens, skills, failed=failed),
     )
-    root.register_install_completion_command()
+    for flag in chain(root.help_flags, root.version_flags):
+        root[flag].group = (GLOBAL_OPTIONS_GROUP,)
+    root.register_install_completion_command(group=GLOBAL_OPTIONS_GROUP)
     return root
 
 
@@ -332,8 +336,7 @@ class _LazyPluginCommand(CommandSpec):
             import_path=f"<plugin {spec.name}>",
             name=spec.name,
             help=spec.help,
-            # placed in its panel without importing the plugin
-            group=None if spec.stability is None else panel_for(spec.stability),
+            group=_root_panel(spec),  # placed without importing the plugin
         )
         self._plugin = plugin
         self._mount_parent = mount_parent
@@ -350,8 +353,8 @@ class _LazyPluginCommand(CommandSpec):
             app[flag].show = False
         if app._name_transform is None:
             app.name_transform = self._mount_parent.name_transform
-        if self._plugin.spec.stability is not None:
-            mark_app(app, self._plugin.spec.stability, source="spec")
+        # Once resolved, cyclopts lists the app by its own group, not the spec's.
+        _place(app, self._plugin.spec)
         apply_marks(app, path=(self._plugin.spec.name,))
         self._resolved = app
         return app
@@ -383,14 +386,26 @@ def _unbuildable_app(failure: QuarantineRecord) -> App:
     return stub
 
 
+def _root_panel(spec: PluginSpec) -> Group:
+    """The root help panel of ``spec``'s command: Plugins, or its stability panel."""
+    return PLUGINS_GROUP if spec.stability is None else panel_for(spec.stability)
+
+
+def _place(app: App, spec: PluginSpec) -> None:
+    """Put a plugin's app in its root panel, however it was mounted (its own group is ignored)."""
+    if spec.stability is None:
+        app.group = (PLUGINS_GROUP,)
+    else:
+        mark_app(app, spec.stability, source="spec")
+
+
 def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
     """Mount one composed plugin's commands, lazily when its factory was deferred."""
     spec = plugin.spec
     if spec.app_factory is None:
         return
     if plugin.app is not None:
-        if spec.stability is not None:
-            mark_app(plugin.app, spec.stability, source="spec")
+        _place(plugin.app, spec)
         _mount(root, plugin.app, name=spec.name)
         return
     if spec.name in root:
