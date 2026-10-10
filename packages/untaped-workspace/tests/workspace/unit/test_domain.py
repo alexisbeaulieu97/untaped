@@ -20,7 +20,7 @@ from untaped_workspace.domain import (
     validate_workspace_name,
 )
 from untaped_workspace.domain.records import RepoOutcome, StatusRow
-from untaped_workspace.domain.safety import CACHE_MISSING, SUBMODULES
+from untaped_workspace.domain.safety import NOT_STORED, SUBMODULES
 
 
 @pytest.mark.parametrize("name", ["JIRA-1234", "feature_x", "a.b"])
@@ -138,7 +138,7 @@ def test_hint_for_stashes_names_the_branch_and_protects_other_stashes() -> None:
     assert "--force" not in hint
 
 
-@pytest.mark.parametrize("blocker", [CACHE_MISSING, SUBMODULES, "git state unreadable: boom"])
+@pytest.mark.parametrize("blocker", [NOT_STORED, SUBMODULES, "git state unreadable: boom"])
 def test_hint_for_unverifiable_repos_is_check_by_hand(blocker: str) -> None:
     assert archive_hint([_blocked((blocker,))]) == "check the repo by hand, then pass --force"
 
@@ -147,7 +147,7 @@ def test_hints_combine_once_per_kind() -> None:
     rows = [
         _blocked(("uncommitted changes",)),
         _blocked(("2 commits not pushed", SUBMODULES)),
-        _blocked((CACHE_MISSING,)),
+        _blocked((NOT_STORED,)),
     ]
     assert archive_hint(rows) == (
         "commit and push your changes; check the repo by hand, then pass --force"

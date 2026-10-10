@@ -94,3 +94,33 @@ def test_run_allows_local_commands(store_for: StoreFor) -> None:
     store = store_for("github")
     store.fetch(branches=["main"])
     assert store.run(["remote", "get-url", "origin"], capture=True).text.strip()
+
+
+def test_stripping_a_shared_refspec_repairs_every_sibling_worktree(
+    remote: GitRemote, store_for: StoreFor, tmp_path: Path
+) -> None:
+    """S35: a 10.x repo's shared refspec goes; each worktree keeps an upstream, none is stamped."""
+    workspace = store_for("workspace")
+    workspace.fetch(branches=["*"], tags=["*"], prune=True)
+    owned = tmp_path / "ws" / "owned"
+    workspace.worktree_add(owned, "refs/remotes/origin/main", branch="owned")
+    git(owned, "config", "--worktree", "--unset-all", "remote.origin.fetch", bare=False)
+    git(workspace.path, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+    old = tmp_path / "ws" / "old"
+    git(workspace.path, "worktree", "add", "--quiet", "-b", "old", str(old), "origin/main")
+    git(old, "branch", "--quiet", "--set-upstream-to=origin/main", bare=False)
+
+    store_for("github").ensure()
+
+    assert "remote.origin.fetch" not in git(workspace.path, "config", "--local", "--list")
+    for tree in (owned, old):
+        fetch = git(tree, "config", "--worktree", "--get", "remote.origin.fetch", bare=False)
+        assert fetch.strip() == "+refs/heads/*:refs/remotes/origin/*"
+        assert git(tree, "rev-parse", "--abbrev-ref", "@{upstream}", bare=False).strip() == (
+            "origin/main"
+        )
+    owner = subprocess.run(
+        ["git", "-C", str(old), "config", "--worktree", "untaped.owner"], capture_output=True
+    )
+    assert owner.returncode == 1
+    assert git(owned, "config", "--worktree", "untaped.owner", bare=False).strip() == "workspace"

@@ -7,7 +7,18 @@ from typing import Annotated, Any, ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from untaped.deprecated_keys import KeyUse, key_mappings, mapping_errors, rename_keys
+from untaped.deprecated_keys import (
+    DeletedKey,
+    KeyMove,
+    KeyUse,
+    Retired,
+    apply_move,
+    key_mappings,
+    mapping_errors,
+    migration_moves,
+    rename_keys,
+    scan_keys,
+)
 from untaped.errors import ConfigError
 from untaped.stability import deprecated
 
@@ -107,6 +118,19 @@ def test_a_model_without_declarations_maps_nothing() -> None:
             "'a' is in both renamed_keys and retired_keys",
         ),
         ({"renamed_keys": {"old": 3}}, "renamed_keys must map non-empty strings"),
+        (
+            {"retired_keys": {"old": Retired(note=" ")}},
+            "retired_keys must map non-empty strings to non-empty strings or Retired(note=)",
+        ),
+        ({"renamed_keys": {"old": Retired(note="gone")}}, "renamed_keys must map non-empty"),
+        (
+            {"renamed_keys": {"old": "gone"}, "retired_keys": {"gone": Retired(note="gone")}},
+            "renamed key 'old' points at the retired key 'gone'",
+        ),
+        (
+            {"retired_keys": {"cache_dir": Retired(note="gone")}},
+            "clashes with the current setting 'cache_dir'",
+        ),
     ],
 )
 def test_broken_declarations_are_reported(declarations: dict[str, Any], error: str) -> None:
@@ -182,3 +206,78 @@ def test_an_old_key_whose_new_parent_is_not_a_mapping_stays() -> None:
 
     assert data == {"workers": 3, "sweep": 5}
     assert uses == ()
+
+
+NOTE = "deleted in 11.0; the store lives elsewhere"
+
+
+class Deleting(BaseModel):
+    """``corpus_path`` → ``store_path`` (deleted); ``older_path`` → ``corpus_path``."""
+
+    retired_keys: ClassVar[dict[str, str | Retired]] = {
+        "older_path": "corpus_path",
+        "corpus_path": "store_path",
+        "store_path": Retired(note=NOTE),
+        "ancient_path": "cache_dir",
+    }
+
+    cache_dir: str = "cache"
+
+
+def test_a_chain_ending_at_a_retired_note_is_deleted() -> None:
+    mappings = key_mappings(Deleting)
+
+    assert mappings.deleted == {
+        "store_path": DeletedKey(NOTE),
+        "corpus_path": DeletedKey(NOTE, via=("store_path",)),
+        "older_path": DeletedKey(NOTE, via=("corpus_path", "store_path")),
+    }
+    assert mappings.migratable == {"ancient_path": "cache_dir"}
+    assert mappings.retired == {"ancient_path"}
+    assert mappings.readable == {}
+
+
+def test_the_reason_names_the_hop_after_the_first_clause() -> None:
+    assert DeletedKey(NOTE).reason() == NOTE
+    assert (
+        DeletedKey(NOTE, via=("corpus_path", "store_path")).reason()
+        == "deleted in 11.0 (via store_path); the store lives elsewhere"
+    )
+    assert DeletedKey("gone", via=("x",)).reason() == "gone (via x)"
+
+
+def test_a_deleted_key_is_not_read() -> None:
+    data, uses = rename_keys(Deleting, {"store_path": "/s", "corpus_path": "/c"})
+
+    assert data == {"store_path": "/s", "corpus_path": "/c"}
+    assert uses == ()
+
+
+def test_migration_deletes_each_key_with_its_value() -> None:
+    data = {"corpus_path": "/c", "ancient_path": "/a", "store_path": {"a": 1}}
+
+    moves = migration_moves(Deleting, data)
+
+    assert moves == [
+        KeyMove(
+            "corpus_path",
+            "",
+            "deleted",
+            note="deleted in 11.0 (via store_path); the store lives elsewhere",
+            value="/c",
+        ),
+        KeyMove("store_path", "", "deleted", note=NOTE, value={"a": 1}),
+        KeyMove("ancient_path", "cache_dir", "renamed"),
+    ]
+    for move in moves:
+        assert apply_move(data, move)
+    assert data == {"cache_dir": "/a"}
+
+
+def test_scan_reports_deleted_keys_with_their_note() -> None:
+    raw = {"profiles": {"default": {"sec": {"older_path": "/o"}}}}
+
+    (found,) = scan_keys(raw, {"sec": Deleting})
+
+    assert (found.old, found.new, found.kind) == ("older_path", None, "deleted")
+    assert found.message == "deleted in 11.0 (via store_path); the store lives elsewhere"

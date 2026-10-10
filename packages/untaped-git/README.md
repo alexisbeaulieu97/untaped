@@ -25,6 +25,17 @@ available:
 untaped git hosts
 ```
 
+See what the repo store holds, which plugins use each repository, and what
+only one plugin uses (what releasing it would free):
+
+```bash
+untaped git store
+```
+
+A plugin's own delete or remove command releases a repository: its refs,
+file and worktrees go, and the repository itself goes once no other plugin,
+hand-added worktree, branch or stash holds it.
+
 In the worktrees untaped creates, Git asks `untaped git credential` for the
 host's credentials, after your own credential helpers. When an old keychain
 entry answers first, set `git.untaped_helper_first: true`: untaped's worktrees

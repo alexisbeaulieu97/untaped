@@ -10,7 +10,7 @@ import pytest
 from untaped.sdk import Picked, PickItem, PickResult, UntapedError
 from untaped_github.api import RepoInventory, RepositoryInventoryItem
 from untaped_workspace.cli.picker import build_request, name_validator, repo_args
-from untaped_workspace.domain import CachedRepo, RepoArg, WorkspaceRecord
+from untaped_workspace.domain import RepoArg, StoredRepo, WorkspaceRecord
 from untaped_workspace.infrastructure import StateWorkspaceStore
 from untaped_workspace.infrastructure.pick_source import RepoPickSource
 
@@ -63,7 +63,7 @@ class FakeGit:
         self.calls.append(url)
         return ["main", "release/2"]
 
-    def cached_repos(self) -> list[CachedRepo]:
+    def stored_repos(self) -> list[StoredRepo]:
         return []
 
 

@@ -25,6 +25,17 @@ def looks_like_url(ident: str) -> bool:
     )
 
 
+def repo_key(url: str) -> tuple[str, ...]:
+    """Which repo ``url`` names: its repo store key.
+
+    The store keeps one repo per key (the https and ssh URLs of a repo, and
+    two spellings of its path, are one), so workspace counts them as one too.
+    """
+    from untaped_git.api import store_key  # noqa: PLC0415  # keeps CLI startup free of git
+
+    return store_key(url)
+
+
 def repo_identity(url: str) -> tuple[str, str]:
     """``(owner, name)`` from a clone URL or path; owner is ``""`` when absent."""
     _, segments = repo_url_parts(url)

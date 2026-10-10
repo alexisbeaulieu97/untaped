@@ -931,10 +931,21 @@ version = "10.1.0"
 source = { editable = "packages/untaped-github" }
 dependencies = [
     { name = "untaped" },
+    { name = "untaped-git" },
+]
+
+[package.optional-dependencies]
+git = [
+    { name = "untaped-git" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+requires-dist = [
+    { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-git", editable = "packages/untaped-git" },
+    { name = "untaped-git", marker = "extra == 'git'", editable = "packages/untaped-git" },
+]
+provides-extras = ["git"]
 
 [[package]]
 name = "untaped-jira"
@@ -970,12 +981,14 @@ version = "10.1.0"
 source = { editable = "packages/untaped-workspace" }
 dependencies = [
     { name = "untaped" },
+    { name = "untaped-git" },
     { name = "untaped-github" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-git", editable = "packages/untaped-git" },
     { name = "untaped-github", editable = "packages/untaped-github" },
 ]
 

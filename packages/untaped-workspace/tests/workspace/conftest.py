@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from untaped import bootstrap
 from untaped.settings import get_settings
+from untaped.testing import plugin_candidate
+from untaped_git import SPEC as GIT
+from untaped_git.api import store_key
+from untaped_workspace import SPEC as WORKSPACE
 
 
 def _git_dir(cwd: Path) -> list[str]:
@@ -37,6 +42,7 @@ def make_upstream(tmp_path: Path) -> Callable[..., Path]:
         bare = tmp_path / "remotes" / "acme" / f"{name}.git"
         bare.parent.mkdir(parents=True, exist_ok=True)
         git(tmp_path, "init", "-q", "--bare", "--initial-branch=main", str(bare))
+        git(bare, "config", "uploadpack.allowFilter", "true")  # blobless, as GitHub serves it
         seed = tmp_path / f"_seed_{name}"
         git(tmp_path, "clone", "-q", str(bare), str(seed))
         for key, value in (("user.email", "t@t"), ("user.name", "t"), ("commit.gpgsign", "false")):
@@ -54,10 +60,33 @@ def make_upstream(tmp_path: Path) -> Callable[..., Path]:
 
 
 @pytest.fixture
-def workspace_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Point the workspace cache and workspaces dir at tmp; return the workspaces dir."""
+def store_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Point the repo store (``git.store_dir``) at tmp; return its root."""
+    root = tmp_path / "store"
+    monkeypatch.setenv("UNTAPED_GIT__STORE_DIR", str(root))
+    get_settings.cache_clear()
+    yield root
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def composed(fresh_composition: None) -> None:
+    """A root composed of the git and workspace plugins: a store fetch of a hosted URL asks
+    the plugins filling ``GitHost`` (none here) for credentials."""
+    bootstrap.compose_root(candidates=[plugin_candidate(GIT), plugin_candidate(WORKSPACE)])
+
+
+def store_repo(root: Path, url: str) -> Path:
+    """The store repo of ``url`` under the store ``root``."""
+    return root.joinpath(*store_key(url))
+
+
+@pytest.fixture
+def workspace_env(
+    store_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Path]:
+    """Point the repo store and workspaces dir at tmp; return the workspaces dir."""
     workspaces = tmp_path / "workspaces"
-    monkeypatch.setenv("UNTAPED_WORKSPACE__CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("UNTAPED_WORKSPACE__WORKSPACES_DIR", str(workspaces))
     get_settings.cache_clear()
     yield workspaces

@@ -70,6 +70,13 @@ class AppContext:
         return resolve_token(model_cls.model_validate(value), section=name)
 
     @property
+    def profile(self) -> str:
+        """The profile this invocation acts on (``--profile``, ``UNTAPED_PROFILE``, ``active``)."""
+        from untaped.profile_resolver import selected_profile  # noqa: PLC0415
+
+        return selected_profile()
+
+    @property
     def http(self) -> HttpSettings:
         """Cross-cutting HTTP settings for building clients."""
         return self.section("http", HttpSettings)

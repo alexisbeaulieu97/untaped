@@ -68,13 +68,18 @@ class ResolvedRepo(BaseModel):
 
 
 class Checkout(BaseModel):
-    """What setting up one worktree did."""
+    """What setting up one worktree did.
+
+    ``backfill_error`` says why the history backfill after it stopped: the
+    worktree is usable, and the next ``status --fetch`` resumes the backfill.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     action: Literal["created", "checked_out"]
     base: str
     detail: str = ""
+    backfill_error: str | None = None
 
 
 class WorktreeStatus(BaseModel):
@@ -98,18 +103,50 @@ class WorktreeStatus(BaseModel):
 
 
 @dataclass(frozen=True)
-class CachedRepo:
-    """A bare repo cache found under the cache dir."""
+class StoredRepo:
+    """A repo of the repo store that workspace has used."""
 
     key: tuple[str, ...]
-    """Its path under the cache dir, a ``cache_key``: ``(host, [owner, ...] name.git)``."""
-    origin: str | None
-    """Its ``remote.origin.url``; ``None`` when unreadable."""
+    """Its path in the store, a ``store_key``: ``(host, [owner, ...] name.git)``."""
+    origin: str
+    """The URL it was first fetched from (the store repo's ``remote.origin.url``)."""
 
     @property
     def ident(self) -> str:
         """``host/owner/name`` (``host/name`` without an owner): the key without ``.git``."""
         return "/".join((*self.key[:-1], self.key[-1].removesuffix(".git")))
+
+
+@dataclass(frozen=True)
+class LocalBranch:
+    """A local branch (``refs/heads/*``) of a store repo, as ``remove`` weighs it."""
+
+    name: str
+    checked_out: bool
+    """Whether a registered worktree has it checked out."""
+    unpushed: int
+    """Commits on it that no ``refs/remotes/origin/*`` has."""
+    stashed: bool
+    """Whether a stash entry was made on it."""
+
+
+@dataclass(frozen=True)
+class StoreUse:
+    """What a store repo holds that ``remove`` must not lose: branches and live worktrees."""
+
+    branches: tuple[LocalBranch, ...]
+    worktrees: int
+    """Registered worktrees workspace owns (a ``create`` running meanwhile adds one)."""
+
+
+@dataclass(frozen=True)
+class RepoRelease:
+    """What releasing one repo from the store did: ``released`` (the repo stayed for
+    someone else), ``removed``, or ``kept`` (a workspace worktree still uses it)."""
+
+    action: Literal["released", "removed", "kept"]
+    detail: str
+    freed_bytes: int = 0
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,6 @@ import fnmatch
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Literal
 
 from untaped.sdk import (
@@ -50,7 +49,6 @@ from untaped_github.domain.errors import is_global_github_failure
 from untaped_github.errors import GitCorpusError
 
 InventoryResolver = Callable[[RepositoryInventoryScope], tuple[RepositoryInventoryItem, ...]]
-AuthHeaderSupplier = Callable[[], str | None]
 # Parallel per-repo API lookups; kept low to stay clear of GitHub's secondary rate limits.
 _API_CONCURRENCY = 4
 
@@ -65,7 +63,6 @@ class SweepOptions:
     query: SweepQuery
     sync: Literal["auto", "force", "off"]
     max_age_seconds: int
-    depth: int
     parallel: int
     owners: bool
     # Piped records complete enough to skip the per-repo API lookup.
@@ -82,7 +79,6 @@ class CorpusSyncOptions:
     refs: RefSelector
     refresh: bool
     max_age_seconds: int
-    depth: int
     parallel: int
     stdin_items: tuple[RepositoryInventoryItem, ...] = ()
 
@@ -170,13 +166,11 @@ class _TreeScanner:
         corpus: GitCorpus,
         repo: CorpusRepoTarget,
         *,
-        root: Path,
         trees: tuple[str, ...],
         query: SweepQuery,
     ) -> None:
         self._corpus = corpus
         self._repo = repo
-        self._root = root
         self._query = query
         self._scans = {tree: _TreeScan(hits={}, owner_paths=set(), grep_hits=[]) for tree in trees}
         self._live = list(trees)
@@ -207,7 +201,7 @@ class _TreeScanner:
         for pattern in query.not_greps:
             spec = _spec(query, pattern)
             for tree in self._live:
-                hit = self._corpus.tree_has_match(self._repo, root=self._root, tree=tree, spec=spec)
+                hit = self._corpus.tree_has_match(self._repo, tree=tree, spec=spec)
                 self._scans[tree].hits[f"not-grep:{pattern}"] = 1 if hit else 0
             self._keep(f"not-grep:{pattern}", positive=False)
         return self._scans
@@ -217,7 +211,6 @@ class _TreeScanner:
         found = (
             self._corpus.grep_trees(
                 self._repo,
-                root=self._root,
                 trees=tuple(self._live),
                 spec=_spec(self._query, pattern),
             )
@@ -234,7 +227,7 @@ class _TreeScanner:
 
     def _tree_paths(self, tree: str) -> tuple[str, ...]:
         if tree not in self._paths:
-            self._paths[tree] = self._corpus.tree_paths(self._repo, root=self._root, ref=tree)
+            self._paths[tree] = self._corpus.tree_paths(self._repo, ref=tree)
         return self._paths[tree]
 
     def _keep(self, label: str, *, positive: bool) -> None:
@@ -254,13 +247,9 @@ class _CorpusUseCase:
         *,
         inventory: InventoryResolver,
         corpus: GitCorpus,
-        root: Path,
-        auth_header: AuthHeaderSupplier,
     ) -> None:
         self._inventory = inventory
         self._corpus = corpus
-        self._root = root
-        self._auth_header = auth_header
 
 
 class Sweep(_CorpusUseCase):
@@ -287,12 +276,9 @@ class Sweep(_CorpusUseCase):
             prepared = _prepare_repo(
                 self._corpus,
                 repo,
-                root=self._root,
                 selector=options.query.refs,
                 sync=options.sync,
                 max_age_seconds=options.max_age_seconds,
-                depth=options.depth,
-                auth_header=self._auth_header,
             )
             if isinstance(prepared, CorpusFailure):
                 return None, prepared
@@ -382,7 +368,7 @@ class Sweep(_CorpusUseCase):
             )
         }
         owners = {org.casefold() for org in options.scope.orgs}
-        rows = self._corpus.list_repos(root=self._root)
+        rows = self._corpus.list_repos()
         targets: list[CorpusRepoTarget] = []
         for row in rows:
             if not archived_allows(options.archived, row.archived):
@@ -414,12 +400,11 @@ class Sweep(_CorpusUseCase):
         # Scan by full refname (a branch and a tag may share a short name);
         # report the unambiguous short display name. Refs that share a tree
         # (a tag on a branch tip, say) are scanned once.
-        refs = self._corpus.local_refs(ready.repo, root=self._root, selector=options.query.refs)
+        refs = self._corpus.local_refs(ready.repo, selector=options.query.refs)
         display_names = ref_display_names(ref.name for ref in refs)
         tree_scans = _TreeScanner(
             self._corpus,
             ready.repo,
-            root=self._root,
             trees=tuple(dict.fromkeys(ref.tree for ref in refs)),
             query=options.query,
         ).run()
@@ -461,7 +446,7 @@ class Sweep(_CorpusUseCase):
             return ()
         try:
             text = self._corpus.read_first_blob(
-                repo, root=self._root, ref=f"refs/heads/{branch}", paths=CODEOWNERS_LOCATIONS
+                repo, ref=f"refs/heads/{branch}", paths=CODEOWNERS_LOCATIONS
             )
         except GitCorpusError:
             return ()
@@ -577,12 +562,9 @@ class SyncCorpus(_CorpusUseCase):
             return _prepare_repo(
                 self._corpus,
                 repo,
-                root=self._root,
                 selector=options.refs,
                 sync="force" if options.refresh else "auto",
                 max_age_seconds=options.max_age_seconds,
-                depth=options.depth,
-                auth_header=self._auth_header,
             )
 
         def record(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> None:
@@ -625,12 +607,9 @@ def _prepare_repo(
     corpus: GitCorpus,
     repo: CorpusRepoTarget,
     *,
-    root: Path,
     selector: RefSelector,
     sync: Literal["auto", "force", "off"],
     max_age_seconds: int,
-    depth: int,
-    auth_header: AuthHeaderSupplier,
 ) -> _ReadyRepo | CorpusFailure:
     """Bring one repo's cached copy up to date for ``selector``, fetching only when needed.
 
@@ -640,7 +619,7 @@ def _prepare_repo(
     ``off`` never does. A failed fetch falls back to a covering cached copy.
     """
     try:
-        freshness = corpus.repo_freshness(repo, root=root)
+        freshness = corpus.repo_freshness(repo)
     except (GitCorpusError, OSError) as exc:
         return _failure(repo, exc)
     if sync == "off":
@@ -651,14 +630,12 @@ def _prepare_repo(
             return _ReadyRepo(repo=repo, fetched_at=freshness.fetched_at, refreshed=False)
         if unchanged_upstream(freshness, repo):
             try:
-                touched = corpus.touch_repo(repo, root=root)
+                touched = corpus.touch_repo(repo)
             except GitCorpusError, OSError:
                 touched = freshness.fetched_at
             return _ReadyRepo(repo=repo, fetched_at=touched, refreshed=False, unchanged=True)
     try:
-        result = corpus.sync_repo(
-            repo, root=root, selector=selector, depth=depth, auth_header=auth_header()
-        )
+        result = corpus.sync_repo(repo, selector=selector)
     except (GitCorpusError, OSError) as exc:
         if freshness is not None and covers(freshness, selector):
             return _ReadyRepo(

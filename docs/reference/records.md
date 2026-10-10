@@ -11,7 +11,7 @@ command runs and needs at least one row, so use it on a read command or add
 |---|---|
 | `config list`, `config get` | `untaped.setting` (`stability`: `stable`, `experimental` or `deprecated`; `table` lists the last two apart) |
 | `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
-| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`; `action` `renamed` or `dropped`) |
+| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`, `detail`; `action` `renamed`, `dropped` or `deleted`, with an empty `to` and the old value in `detail`) |
 | `auth set`, `auth unset`, `auth migrate` | `untaped.auth_outcome` (never the token; `action` `gone` when `unset` found the entry already deleted; a token `migrate` could not move is `failed`, with `error`) |
 | `auth status` | `untaped.token_source` |
 | `profile list` | `untaped.profile` |
@@ -61,6 +61,7 @@ a step that asks for or reveals a token, else `agent`.
 | `workspace create`, `workspace add` | `workspace.repo_outcome` |
 | `workspace status` | `workspace.status` |
 | `workspace archive` | `workspace.archive_outcome` |
+| `workspace remove` | `workspace.remove_outcome` |
 | `workspace run` | `workspace.run_outcome` |
 
 | Consumer | Reads | Field used |
@@ -79,7 +80,7 @@ a step that asks for or reveals a token, else `agent`.
 | `github search issues` | `github.issue` |
 | `github search users` | `github.user_hit` |
 | `github sweep` | `github.sweep_repo`; `github.sweep_file` with `--show files`; `github.sweep_match` with `--show matches` |
-| `github cache status`, `cache delete`, `cache prune` | `github.corpus_repo` |
+| `github cache status`, `cache delete`, `cache prune` | `github.corpus_repo` (`cache delete` and `cache prune`: `status` `removed` with the `disk_bytes` freed, or `released` with `kept` naming who still uses the repo) |
 | `github cache sync` | `github.sync_outcome` |
 | `github cache worktree` | `github.worktree` |
 
@@ -224,6 +225,7 @@ the user), for prompt segments.
 | Command | Writes |
 |---|---|
 | `git hosts` | `git.host` |
+| `git store` | `git.store` (`-f json` and the other formats; `table` prints labelled lines: `used_by` repos per plugin, `exclusive_bytes` the size of repos only that plugin uses, `unowned` and `held_by_branches` as `{repos, size_bytes}`) |
 
 `git credential` speaks Git's credential-helper protocol on stdout, not
 records.

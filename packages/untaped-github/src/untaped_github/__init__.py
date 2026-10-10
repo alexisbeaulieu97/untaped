@@ -7,6 +7,7 @@ mounts the plugin. Other plugins import GitHub only through
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,6 +24,8 @@ from untaped_github.settings import GithubSettings
 if TYPE_CHECKING:
     from cyclopts import App
 
+    from untaped.contracts import Contract
+
 __all__ = ["SPEC", "build_app"]
 
 
@@ -38,6 +41,13 @@ def _probe_api() -> str:
     from untaped_github.cli.doctor import probe_api  # noqa: PLC0415
 
     return probe_api()
+
+
+def _git_host() -> Sequence[Contract]:
+    """GitHub's ``GitHost``: credentials and proxy for its Git host (imports lazily)."""
+    from untaped_github.adapters.git import GithubHost  # noqa: PLC0415
+
+    return (GithubHost(),)
 
 
 SPEC = PluginSpec(
@@ -63,4 +73,5 @@ SPEC = PluginSpec(
         online_check("github.api", section="github", probe=_probe_api),
         executable_check("github.git", "git", purpose="`untaped github sweep`"),
     ),
+    provides={"git": _git_host},
 )

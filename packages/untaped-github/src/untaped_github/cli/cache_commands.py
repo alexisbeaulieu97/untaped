@@ -27,6 +27,7 @@ from untaped.sdk import (
     plural,
     report_errors,
     report_row_errors,
+    size_text,
     summary,
     writes,
 )
@@ -34,11 +35,10 @@ from untaped_github.application import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
 )
-from untaped_github.cli._client import corpus_auth_header, open_client
+from untaped_github.cli._client import open_client, open_corpus
 from untaped_github.cli.scopes import (
     ArchivedOption,
     CorpusParallelOption,
-    DepthOption,
     OrgOption,
     RepoOption,
     TeamOption,
@@ -46,7 +46,7 @@ from untaped_github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
-from untaped_github.domain import CorpusRepoResult, github_web_host
+from untaped_github.domain import CorpusRepoResult
 from untaped_github.errors import GithubError
 from untaped_github.settings import GithubSettings
 
@@ -75,11 +75,10 @@ def status_command(
 ) -> None:
     """List repositories cached in the local corpus."""
     from untaped_github.application import StatusCorpus  # noqa: PLC0415
-    from untaped_github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     with report_errors():
         settings = app_context().section("github", GithubSettings)
-        rows = StatusCorpus(GitCorpusCache(auth_host=None))(root=settings.cache_dir)
+        rows = StatusCorpus(open_corpus(settings))()
         records = [row.model_dump() for row in rows]
         emit(
             _status_display(records) if fmt == "table" and not columns else records,
@@ -123,7 +122,6 @@ def sync_command(
             ),
         ),
     ] = False,
-    depth: DepthOption = 1,
     parallel: CorpusParallelOption | None = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -135,7 +133,6 @@ def sync_command(
         SyncCorpus,
     )
     from untaped_github.domain import RefSelector  # noqa: PLC0415
-    from untaped_github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     with report_errors():
         settings = app_context().section("github", GithubSettings)
@@ -157,7 +154,6 @@ def sync_command(
             refs=RefSelector(profile=refs, globs=tuple(ref or ())),
             refresh=refresh,
             max_age_seconds=settings.sweep.max_age_seconds,
-            depth=depth,
             parallel=clamp_parallel(
                 parallel if parallel is not None else settings.sweep.parallel,
                 cap=32,
@@ -167,9 +163,7 @@ def sync_command(
         with open_client() as (client, ui), ui.progress("Syncing repositories…") as progress:
             outcomes = SyncCorpus(
                 inventory=ResolveRepositoryInventory(client),
-                corpus=GitCorpusCache(auth_host=github_web_host(settings.base_url)),
-                root=settings.cache_dir,
-                auth_header=corpus_auth_header(settings),
+                corpus=open_corpus(settings),
             )(options, progress=progress)
         emit(
             outcomes,
@@ -199,7 +193,7 @@ def delete_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Delete cached repositories from the managed local corpus."""
+    """Delete cached repositories from the corpus; a repo another plugin uses stays for it."""
     with report_errors():
         names = tuple(repos or ())
         if names and all_repos:
@@ -236,7 +230,7 @@ def prune_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Delete cached repositories that left or were archived in their org."""
+    """Delete cached repositories that left or were archived in their org (as `cache delete`)."""
     with report_errors():
         orgs = org_scope(org, scoped=False)
         if not orgs:
@@ -261,12 +255,9 @@ def _select(
     from untaped_github.application import (  # noqa: PLC0415
         ResolveRepositoryInventory,
     )
-    from untaped_github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     settings = app_context().section("github", GithubSettings)
-    cached = _in_orgs(
-        GitCorpusCache(auth_host=None).list_repos(root=settings.cache_dir), orgs=tuple(org or ())
-    )
+    cached = _in_orgs(open_corpus(settings).list_repos(), orgs=tuple(org or ()))
     if prune:
         with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
             live = ResolveRepositoryInventory(client)(
@@ -291,20 +282,22 @@ def _delete(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    """Confirm, then delete ``selected`` from the corpus and emit the removed rows."""
+    """Confirm, then release ``selected`` from the corpus and emit what became of each.
+
+    A repo nobody else uses is ``removed`` (``disk_bytes`` freed); one another
+    plugin or a hand-added worktree still uses is ``released`` (``kept`` says who).
+    """
     from untaped_github.application import (  # noqa: PLC0415
         CleanCorpus,
         with_disk_bytes,
     )
-    from untaped_github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     ctx = app_context()
     settings = ctx.section("github", GithubSettings)
-    cleaner = CleanCorpus(GitCorpusCache(auth_host=None))
+    cleaner = CleanCorpus(open_corpus(settings))
     outcome = batch_apply(
         selected,
-        # Measured just before deleting: each row reports the space it frees.
-        lambda row: cleaner(root=settings.cache_dir, repo=with_disk_bytes(row)),
+        lambda row: cleaner(repo=row),
         verb="delete",
         noun="cached GitHub repo",
         label=lambda row: row.repo,
@@ -314,13 +307,14 @@ def _delete(
         assume_yes=yes,
         preview_only=dry_run,
     )
-    removed = (
-        tuple(with_disk_bytes(row) for row in selected)
-        if dry_run
-        else tuple(row for _, row in outcome.results)
-    )
+    if dry_run:
+        records = [with_disk_bytes(row).model_dump() for row in selected]
+    else:
+        records = [row.model_dump() for _, row in outcome.results]
+        if fmt == "table" and not columns:
+            records = _released_display(records)
     emit(
-        [row.model_dump() for row in removed],
+        records,
         fmt=fmt,
         columns=columns,
         kind="github.corpus_repo",
@@ -340,23 +334,18 @@ def worktree_command(
 ) -> None:
     """Materialize one cached repo/ref and print the worktree path."""
     from untaped_github.application import WorktreeCorpus  # noqa: PLC0415
-    from untaped_github.infrastructure import GitCorpusCache  # noqa: PLC0415
 
     with report_errors():
         ctx = app_context()
         ui = ctx.ui()
         settings = ctx.section("github", GithubSettings)
         with ui.progress("Materializing worktree…"):
-            result = WorktreeCorpus(GitCorpusCache(auth_host=None))(
-                repo,
-                root=settings.cache_dir,
-                ref=ref,
-            )
+            result = WorktreeCorpus(open_corpus(settings))(repo, ref=ref)
         emit(result, fmt=fmt, columns=columns, kind="github.worktree")
 
 
 def _status_summary(rows: tuple[CorpusRepoResult, ...]) -> None:
-    total = _human_size(sum(row.disk_bytes for row in rows))
+    total = size_text(sum(row.disk_bytes for row in rows))
     ages = sorted(age for row in rows if (age := _parse_time(row.fetched_at)) is not None)
     oldest = _relative_age(ages[0]) if ages else "n/a"
     newest = _relative_age(ages[-1]) if ages else "n/a"
@@ -371,7 +360,7 @@ def _status_display(records: list[dict[str, object]]) -> list[dict[str, object]]
             "ref": record["ref"],
             "profile": record["profile"],
             "archived": record["archived"],
-            "size": _human_size(int(str(record["disk_bytes"]))),
+            "size": size_text(int(str(record["disk_bytes"]))),
             "fetched": _relative_age(_parse_time(record["fetched_at"])),
             "path": record["path"],
         }
@@ -379,14 +368,20 @@ def _status_display(records: list[dict[str, object]]) -> list[dict[str, object]]
     ]
 
 
-def _human_size(size: int) -> str:
-    """Render a byte count with binary units: ``512 B``, ``1.5 KiB``, ``2.0 GiB``."""
-    value = float(size)
-    for unit in ("B", "KiB", "MiB", "GiB"):
-        if value < 1024 or unit == "GiB":
-            return f"{size} B" if unit == "B" else f"{value:.1f} {unit}"
-        value /= 1024
-    raise AssertionError("unreachable")
+def _released_display(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Table rows of a delete: the repo, what became of it, and who kept it or what it freed."""
+    return [
+        {
+            "repo": record["repo"],
+            "status": record["status"],
+            "detail": (
+                f"{size_text(int(str(record['disk_bytes'])))} freed"
+                if record["status"] == "removed"
+                else f"kept: {record['kept']}"
+            ),
+        }
+        for record in records
+    ]
 
 
 def _parse_time(value: object) -> datetime | None:
