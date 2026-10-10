@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import pytest
 
 from untaped import quiet
-from untaped.sdk import cache_path
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend
 from untaped_github import api as github_api
 from untaped_github.api import RepositoryInventoryItem
@@ -152,13 +151,13 @@ def test_duplicate_create_hint(make_upstream: Callable[..., Path]) -> None:
     assert "hint: hint:" not in again.stderr
 
 
-def test_missing_cache_blocks_archive_until_confirmed(
-    make_upstream: Callable[..., Path], workspace_env: Path, tmp_path: Path
+def test_a_repo_missing_from_the_store_blocks_archive_until_confirmed(
+    make_upstream: Callable[..., Path], workspace_env: Path, store_root: Path
 ) -> None:
     run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
     work = workspace_env / "J-1" / "api" / "scratch.txt"
     work.write_text("precious")
-    shutil.rmtree(tmp_path / "cache")
+    shutil.rmtree(store_root)
     assert run(app, ["status", "J-1", "--check"]).exit_code == 3
     refused = run(app, ["archive", "J-1"])
     assert refused.exit_code == 1
@@ -268,6 +267,53 @@ def test_archive_clean_workspace(make_upstream: Callable[..., Path], workspace_e
     assert run(app, ["list", "--format", "json"]).stdout.strip() in ("", "[]")
 
 
+def test_remove_previews_confirms_then_releases(
+    make_upstream: Callable[..., Path], workspace_env: Path, store_root: Path
+) -> None:
+    url = str(make_upstream("api"))
+    run(app, ["create", "J-1", "--repo", url])
+    dry = run(app, ["remove", "J-1", "--dry-run", "--format", "json"])
+    assert dry.exit_code == 0, dry.output
+    assert [(r["repo"], r["action"]) for r in _rows(dry)] == [
+        ("acme/api", "planned"),
+        ("", "planned"),
+    ]
+    unconfirmed = run(app, ["remove", "J-1"])  # no terminal, no --yes
+    assert unconfirmed.exit_code == 2
+    assert "remove requires --yes when not interactive" in unconfirmed.stderr
+    assert (workspace_env / "J-1" / "api").exists()
+
+    removed = run(app, ["remove", "J-1", "--yes", "--format", "json"])
+
+    assert removed.exit_code == 0, removed.output
+    assert [(r["repo"], r["action"]) for r in _rows(removed)] == [
+        ("acme/api", "removed"),
+        ("", "removed"),
+    ]
+    assert not (workspace_env / "J-1").exists()
+    assert list(store_root.rglob("*.git")) == []
+    assert run(app, ["list", "--archived", "--format", "json"]).stdout.strip() in ("", "[]")
+
+
+def test_remove_refuses_work_it_would_lose(
+    make_upstream: Callable[..., Path], workspace_env: Path
+) -> None:
+    run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
+    (workspace_env / "J-1" / "api" / "scratch.txt").write_text("precious")
+    refused = run(app, ["remove", "J-1", "--yes", "--format", "json"])
+    assert refused.exit_code == 1
+    assert [r["action"] for r in _rows(refused)] == ["skipped", "planned"]
+    assert "error: 1 repo would lose work; nothing removed" in refused.stderr
+    assert "hint: commit and push your changes" in refused.stderr
+    assert (workspace_env / "J-1" / "api" / "scratch.txt").exists()
+
+
+def test_remove_of_an_unknown_workspace_is_not_found(workspace_env: Path) -> None:
+    result = run(app, ["remove", "nope", "--yes"])
+    assert result.exit_code == 1, result.output
+    assert result.stderr == "error: workspace not found: 'nope'; known: none\n"
+
+
 def test_add_a_second_repo(make_upstream: Callable[..., Path], workspace_env: Path) -> None:
     run(app, ["create", "J-1", "--repo", str(make_upstream("api"))])
     added = run(app, ["add", "J-1", "--repo", str(make_upstream("web")), "--format", "json"])
@@ -295,22 +341,6 @@ def test_same_branch_in_two_workspaces_conflicts(make_upstream: Callable[..., Pa
     assert error["category"] == "conflict"
 
 
-def test_a_9x_cache_failure_shows_its_hint_on_stderr(
-    make_upstream: Callable[..., Path], workspace_env: Path
-) -> None:
-    url = str(make_upstream("api"))
-    cache = cache_path(url, root=workspace_env.parent / "cache")
-    cache.parent.mkdir(parents=True)
-    git(workspace_env.parent, "clone", "-q", "--bare", url, str(cache))
-    result = run(app, ["create", "J-1", "--repo", url])
-    assert result.exit_code == 1
-    assert f"error: J-1/api: {cache} is a cache from untaped 9.x" in result.stderr
-    assert (
-        "set workspace.cache_dir to a new directory; keep this one while clones"
-        " made before untaped 7.0 borrow objects from it"
-    ) in result.stderr
-
-
 def test_read_only_commit_blocks_archive(
     make_upstream: Callable[..., Path], workspace_env: Path
 ) -> None:
@@ -326,12 +356,12 @@ def test_read_only_commit_blocks_archive(
 
 
 def test_unreadable_worktree_is_an_error_row_and_force_archives(
-    make_upstream: Callable[..., Path], workspace_env: Path, tmp_path: Path
+    make_upstream: Callable[..., Path], workspace_env: Path, store_root: Path
 ) -> None:
     url = str(make_upstream("api"))
     run(app, ["create", "J-1", "--repo", url])
-    (tmp_path / "cache").rename(tmp_path / "cache-moved")
-    assert run(app, ["create", "J-2", "--repo", url]).exit_code == 0  # a fresh cache
+    store_root.rename(store_root.with_name("store-moved"))
+    assert run(app, ["create", "J-2", "--repo", url]).exit_code == 0  # a fresh store repo
     status = run(app, ["status", "--all", "--format", "json"])
     assert status.exit_code == 1, status.output
     rows = _rows(status)

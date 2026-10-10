@@ -149,7 +149,6 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `workspace.cache_dir` | path | `~/.untaped/workspace-cache` | `UNTAPED_WORKSPACE__CACHE_DIR` | Bare-clone cache that workspace worktrees are created from. Worktrees depend on it: don't delete it while workspaces are active. Experimental: may change in a minor release. |
 | `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). Experimental: may change in a minor release. |
 | `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. Experimental: may change in a minor release. |
 | `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. Experimental: may change in a minor release. |
@@ -177,6 +176,7 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | `github.cache_dir` | retired |
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
+| `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted: deleted in 11.0; the repo store lives under git.store_dir |
 
 ## See also
 

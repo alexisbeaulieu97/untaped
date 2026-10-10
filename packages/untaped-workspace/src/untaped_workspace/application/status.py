@@ -8,11 +8,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk import ErrorInfo, UntapedError, bounded_map, note_failure
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.records import StatusRow
-from untaped_workspace.domain.safety import (
-    CACHE_MISSING,
-    UNREADABLE,
-    archive_blockers,
-)
+from untaped_workspace.domain.safety import NOT_STORED, UNREADABLE, archive_blockers
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import GitWorktrees
@@ -26,6 +22,8 @@ class WorkspaceStatus:
 
     A failed fetch does not stop the others: that repo's row still reports
     its local state, with ``detail`` and ``error`` saying why the fetch failed.
+    A history backfill that stopped after a good fetch is no failure: the
+    row's ``detail`` says so, and the next ``--fetch`` resumes it.
     A worktree git cannot read gets an ``error`` row that blocks archiving.
     """
 
@@ -40,11 +38,16 @@ class WorkspaceStatus:
 
         def _one(item: tuple[int, RepoSpec]) -> StatusRow:
             spec = item[1]
-            failure = self._fetch(spec.url) if fetch else None
+            outcome = self._fetch(spec.url, root / spec.dir) if fetch else None
             row = self._row(record.name, root, spec)
-            if failure is not None and row.error is None:
+            if isinstance(outcome, ErrorInfo) and row.error is None:
                 row = row.model_copy(
-                    update={"detail": f"fetch failed: {failure.message}", "error": failure}
+                    update={"detail": f"fetch failed: {outcome.message}", "error": outcome}
+                )
+            elif isinstance(outcome, str) and not row.detail:
+                resume = f"`untaped workspace status --fetch {record.name}` resumes it"
+                row = row.model_copy(
+                    update={"detail": f"history backfill stopped: {outcome}; {resume}"}
                 )
             return row
 
@@ -56,12 +59,12 @@ class WorkspaceStatus:
         )
         return [rows[i] for i in sorted(rows)]
 
-    def _fetch(self, url: str) -> ErrorInfo | None:
+    def _fetch(self, url: str, dest: Path) -> ErrorInfo | str | None:
+        """Why the fetch failed, else why its history backfill stopped, else ``None``."""
         try:
-            self._git.fetch(url)
+            return self._git.fetch(url, dest)
         except UntapedError as exc:
             return note_failure(exc, message=str(exc))
-        return None
 
     def _row(self, workspace: str, root: Path, spec: RepoSpec) -> StatusRow:
         common = {
@@ -72,9 +75,9 @@ class WorkspaceStatus:
             "read_only": spec.read_only,
             "target_path": root / spec.dir,
         }
-        if not self._git.cache_exists(spec.url):
+        if not self._git.in_store(spec.url):
             return StatusRow(
-                **common, branch=spec.branch, state="cache_missing", blockers=(CACHE_MISSING,)
+                **common, branch=spec.branch, state="cache_missing", blockers=(NOT_STORED,)
             )
         try:
             status = self._git.status(root / spec.dir, branch=spec.branch)

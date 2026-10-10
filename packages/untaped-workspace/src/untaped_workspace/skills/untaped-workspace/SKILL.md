@@ -1,14 +1,15 @@
 ---
 name: untaped-workspace
-description: Creates, inspects and archives task workspaces through the `untaped workspace` command (one directory per task holding git worktrees of several repos on a shared branch, safe archiving once work is pushed). Use when the user starts work on a ticket across repos, asks where a workspace is, or wants to clean one up.
+description: Creates, inspects, archives and removes task workspaces through the `untaped workspace` command (one directory per task holding git worktrees of several repos on a shared branch, safe archiving once work is pushed). Use when the user starts work on a ticket across repos, asks where a workspace is, or wants to clean one up.
 ---
 
 # untaped workspace
 
 A workspace is one directory per task, under `workspace.workspaces_dir`. Each
-repo in it is a git worktree of a shared bare cache, on the task branch, or
-read-only at a base branch. Create one per ticket, work and push in it, then
-archive it. `untaped workspace` is experimental: it may change in a minor
+repo in it is a git worktree of that repo's shared copy in the repo store
+(`git.store_dir`), on the task branch, or read-only at a base branch. Create
+one per ticket, work and push in it, then archive it, and remove it when
+nothing in it is needed any more. `untaped workspace` is experimental: it may change in a minor
 release, so after upgrading untaped, check a command's `--help` before
 relying on it.
 
@@ -17,8 +18,11 @@ relying on it.
 - Repos named `OWNER/NAME` or `NAME` are looked up in the GitHub inventory:
   it needs the GitHub token and the `github.inventory` orgs or teams. Full
   git URLs skip it.
-- Git never prompts for credentials. Use a credential helper, or an SSH agent
-  with `workspace.protocol` set to `ssh`.
+- Git never prompts for credentials. Fetching from a host a plugin claims
+  (GitHub's token for `github.com`) needs nothing more, and `git push` in a
+  worktree asks `untaped git credential` after your own credential helpers.
+  Otherwise use a credential helper, or an SSH agent with `workspace.protocol`
+  set to `ssh`.
 - Directories, branch naming and parallelism are `workspace.*` settings
   (`untaped config list`).
 
@@ -35,6 +39,7 @@ relying on it.
 | Check nothing blocks archiving (exit 3 while anything does) | `untaped workspace status NAME --check` |
 | Run one command or script in each repo | `untaped workspace run NAME 'CMD'` |
 | Clean up after pushing | `untaped workspace archive NAME` |
+| Give the disk space back once the work is merged or dropped | `untaped workspace remove NAME` |
 | List workspaces | `untaped workspace list`, `untaped workspace list --archived` |
 
 In a terminal, `untaped workspace create` or `add` with no repos opens a
@@ -59,8 +64,13 @@ the workspace directory, and exits 2 outside one.
    archiving. It is the gate: `archive --dry-run` only previews and exits 0
    even when repos would block.
 4. `untaped workspace archive NAME` removes the worktrees and keeps a record.
-   Branches stay in the cache and on the remote, so creating a workspace with the
-   same branch later resumes the work.
+   Branches stay in the repo store and on the remote, so creating a workspace
+   with the same branch later resumes the work.
+5. `untaped workspace remove NAME` once nothing in the workspace is needed
+   (active or archived; an active one is archived first, with archive's
+   checks). It drops the workspace's records and releases each repo no other
+   workspace uses: pushed branches go, a branch with a stash stays. It
+   refuses while a branch has commits the remote lacks; `--dry-run` previews.
 
 ## Safety
 
@@ -71,9 +81,12 @@ the workspace directory, and exits 2 outside one.
   2. showing the user which repos and what work would be lost;
   3. waiting for explicit approval;
   4. then `untaped workspace archive NAME --force --yes`.
+- `remove --force` also deletes branches whose commits were never pushed. The
+  same four steps apply, previewing with `untaped workspace remove NAME
+  --dry-run`. `remove` always confirms; without a terminal it needs `--yes`.
 - `run` has no preview. List the selection with `untaped workspace status NAME`
   and get approval before commands that rewrite history or push.
-- Exit codes: 0 success, 1 a `failed` row or a refused archive, 2 usage
+- Exit codes: 0 success, 1 a `failed` row or a refused archive or remove, 2 usage
   error, 3 `status --check` found a blocker, 4 fix the environment, 5 retry
   later, 130 interrupted; details in
   [references/output.md](references/output.md#exit-codes).
@@ -100,6 +113,6 @@ the workspace directory, and exits 2 outside one.
 
 | File | Read it when |
 |---|---|
-| [references/lifecycle.md](references/lifecycle.md) | creating or extending a workspace, the interactive picker, choosing branches and bases, read-only repos, how existing branches are reused, archiving and what blocks it |
+| [references/lifecycle.md](references/lifecycle.md) | creating or extending a workspace, the interactive picker, choosing branches and bases, read-only repos, how existing branches are reused, archiving and what blocks it, removing a workspace and what it releases |
 | [references/run.md](references/run.md) | running a command or script in each repo, the `UNTAPED_*` variables, selecting repos, failures and timeouts |
 | [references/output.md](references/output.md) | reading rows, piping records, or exit codes |

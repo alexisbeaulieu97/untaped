@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -104,8 +104,8 @@ def workspace_dir(settings: WorkspaceSettings, name: str) -> Path:
     return workspace_root(settings.workspaces_dir, name)
 
 
-def git_worktrees(settings: WorkspaceSettings) -> LocalGitWorktrees:
-    return LocalGitWorktrees(settings.cache_dir.expanduser())
+def git_worktrees() -> LocalGitWorktrees:
+    return LocalGitWorktrees()
 
 
 def utc_now() -> datetime:
@@ -134,16 +134,22 @@ def status_reader(settings: WorkspaceSettings, git: LocalGitWorktrees) -> Worksp
     )
 
 
-def provisioner(settings: WorkspaceSettings, parallel: int | None) -> ProvisionRepos:
+def provisioner(
+    settings: WorkspaceSettings,
+    parallel: int | None,
+    *,
+    warn: Callable[[str], None] | None = None,
+) -> ProvisionRepos:
     """The ``create``/``add`` use case wired to the real adapters."""
     return ProvisionRepos(
         StateWorkspaceStore(workspaces_dir=workspaces_dir(settings)),
-        git_worktrees(settings),
+        git_worktrees(),
         GithubRepoCatalog(protocol=settings.protocol),
         workspaces_dir=workspaces_dir(settings),
         branch_template=settings.branch_template,
         parallel=parallel_workers(settings, parallel),
         now=utc_now,
+        warn=warn,
     )
 
 

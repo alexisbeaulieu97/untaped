@@ -1,4 +1,4 @@
-"""Building the picker catalog from the inventory and the local cache."""
+"""Building the picker catalog from the inventory and the repo store."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk import UntapedError, cache_key
+from untaped.sdk import UntapedError
 from untaped_github.api import RepoInventory, RepositoryInventoryItem
-from untaped_workspace.domain import CachedRepo, RepoArg, looks_like_url
+from untaped_workspace.domain import RepoArg, StoredRepo, looks_like_url, repo_key
 from untaped_workspace.infrastructure.pick_source import RepoPickSource
 
 NOW = datetime.now(UTC)
@@ -24,23 +24,23 @@ ITEMS = (
 )
 
 
-def _cached(ident: str, origin: str | None = None) -> CachedRepo:
-    """The cache of ``ident`` (``host/[owner/]name``)."""
+def _stored(ident: str, origin: str | None = None) -> StoredRepo:
+    """The store repo of ``ident`` (``host/[owner/]name``), first fetched from ``origin``."""
     *parents, name = ident.split("/")
-    return CachedRepo(key=(*parents, f"{name}.git"), origin=origin)
+    return StoredRepo(key=(*parents, f"{name}.git"), origin=origin or f"https://{ident}")
 
 
 class FakeGit:
-    def __init__(self, *cached: CachedRepo) -> None:
+    def __init__(self, *stored: StoredRepo) -> None:
         self.calls: list[str] = []
-        self._cached = sorted(cached, key=lambda repo: repo.ident)
+        self._stored = sorted(stored, key=lambda repo: repo.ident)
 
     def remote_branches(self, url: str) -> list[str]:
         self.calls.append(url)
         return ["main", "release/2"]
 
-    def cached_repos(self) -> list[CachedRepo]:
-        return self._cached
+    def stored_repos(self) -> list[StoredRepo]:
+        return self._stored
 
 
 def _inventory(error: str = "") -> Callable[[bool | None], RepoInventory]:
@@ -57,8 +57,8 @@ def _source(git: FakeGit | None = None, **kwargs: Any) -> RepoPickSource:
     return RepoPickSource(git=git or FakeGit(), **kwargs)  # type: ignore[arg-type]
 
 
-def test_inventory_items_and_cached_only_repos() -> None:
-    git = FakeGit(_cached("github.com/acme/api"), _cached("github.com/team/tool"))
+def test_inventory_items_and_stored_only_repos() -> None:
+    git = FakeGit(_stored("github.com/acme/api"), _stored("github.com/team/tool"))
     catalog = _source(git, inventory=_inventory()).catalog(refresh=False)
     assert [(i.id, i.dimmed) for i in catalog.items] == [
         ("acme/api", False),
@@ -66,18 +66,18 @@ def test_inventory_items_and_cached_only_repos() -> None:
         ("github.com/team/tool", False),
     ]
     assert catalog.items[0].description == "Core API"
-    assert catalog.items[2].description == "cached"
+    assert catalog.items[2].description == "repo store"
     assert catalog.note == "refreshed 2h ago"
 
 
-def test_github_not_configured_falls_back_to_the_cache() -> None:
+def test_github_not_configured_falls_back_to_the_store() -> None:
     def broken(refresh: bool | None) -> RepoInventory:
         raise UntapedError("no scope", category="config", system="github")
 
-    source = _source(FakeGit(_cached("github.com/team/tool")), inventory=broken)
+    source = _source(FakeGit(_stored("github.com/team/tool")), inventory=broken)
     catalog = source.catalog(refresh=None)
     assert [i.id for i in catalog.items] == ["github.com/team/tool"]
-    assert catalog.note == "cached repos only — no scope"
+    assert catalog.note == "stored repos only — no scope"
     with pytest.raises(UntapedError):
         source.catalog(refresh=True)
 
@@ -91,7 +91,7 @@ def test_a_failed_forced_refresh_keeps_the_last_catalog() -> None:
             raise UntapedError("offline")
         return RepoInventory(repos=ITEMS, refreshed_at=NOW, scope_key="k")
 
-    git = FakeGit(_cached("gitlab.example/team/tool", "git@gitlab.example:team/tool.git"))
+    git = FakeGit(_stored("gitlab.example/team/tool", "git@gitlab.example:team/tool.git"))
     source = _source(git, inventory=flaky)
     source.catalog(refresh=False)
     with pytest.raises(UntapedError):
@@ -109,11 +109,11 @@ def test_stale_error_is_noted() -> None:
 
 def test_excluded_repos_are_not_offered() -> None:
     source = _source(
-        FakeGit(_cached("github.com/team/tool")),
+        FakeGit(_stored("github.com/team/tool")),
         inventory=_inventory(),
         exclude={
-            cache_key("git@github.com:acme/api.git"),
-            cache_key("https://github.com/team/tool"),
+            repo_key("git@github.com:acme/api.git"),
+            repo_key("https://github.com/team/tool"),
         },
     )
     assert [i.id for i in source.catalog(refresh=False).items] == ["acme/old"]
@@ -129,32 +129,26 @@ def test_branch_completion_is_memoised() -> None:
     assert source.branches(None) == []
 
 
-def test_cached_only_url_is_the_cache_origin() -> None:
-    git = FakeGit(
-        _cached("github.com/team/tool", "git@github.com:team/tool.git"),
-        _cached("github.com/team/other"),
-    )
+def test_a_stored_only_url_is_the_stored_origin() -> None:
+    git = FakeGit(_stored("github.com/team/tool", "git@github.com:team/tool.git"))
     source = _source(git, inventory=_inventory())
     source.catalog(refresh=False)
     assert source.url_for("github.com/team/tool") == "git@github.com:team/tool.git"
-    # No readable origin: a URL with the same cache identity.
-    assert cache_key(source.url_for("github.com/team/other") or "") == (
-        "github.com",
-        "team",
-        "other.git",
-    )
     assert source.url_for("nope/missing") is None
     assert source.url_for("https://h/o/r") == "https://h/o/r"
 
 
-def test_cached_repo_with_a_rewritten_origin_is_skipped() -> None:
-    git = FakeGit(
-        _cached("github.com/team/tool", "https://github.com/other/place.git"),
-        _cached("github.com/team/ok"),
+def test_an_inventory_repo_spelled_in_another_case_is_listed_once() -> None:
+    git = FakeGit(_stored("github.com/acme/api"))
+    inventory = RepoInventory(
+        repos=(
+            RepositoryInventoryItem(full_name="Acme/API", clone_url="https://github.com/Acme/API"),
+        ),
+        refreshed_at=NOW,
+        scope_key="k",
     )
-    ids = [item.id for item in _source(git, inventory=_inventory()).catalog(refresh=False).items]
-    assert "github.com/team/tool" not in ids
-    assert "github.com/team/ok" in ids
+    items = _source(git, inventory=lambda refresh: inventory).catalog(refresh=False).items
+    assert [i.id for i in items] == ["Acme/API"]
 
 
 @pytest.mark.parametrize(
@@ -176,7 +170,7 @@ def test_looks_like_url(ident: str, expected: bool) -> None:
 
 
 def test_branches_before_the_catalog_is_not_memoised() -> None:
-    git = FakeGit(_cached("github.com/team/tool"))
+    git = FakeGit(_stored("github.com/team/tool"))
     source = _source(git, inventory=_inventory())
     assert source.branches("github.com/team/tool") == []
     source.catalog(refresh=False)
@@ -184,8 +178,8 @@ def test_branches_before_the_catalog_is_not_memoised() -> None:
     assert git.calls == ["https://github.com/team/tool"]
 
 
-def test_one_repo_cached_from_two_hosts_is_two_items() -> None:
-    git = FakeGit(_cached("github.com/team/tool"), _cached("gitlab.example/team/tool"))
+def test_one_repo_stored_from_two_hosts_is_two_items() -> None:
+    git = FakeGit(_stored("github.com/team/tool"), _stored("gitlab.example/team/tool"))
     items = _source(git, inventory=_no_inventory).catalog(refresh=False).items
     assert [(i.id, i.label) for i in items] == [
         ("github.com/team/tool", "github.com/team/tool"),
@@ -193,11 +187,11 @@ def test_one_repo_cached_from_two_hosts_is_two_items() -> None:
     ]
 
 
-def test_a_cached_only_pick_resolves_its_cache_url() -> None:
+def test_a_stored_only_pick_resolves_its_stored_url() -> None:
     def broken(refresh: bool | None) -> RepoInventory:
         raise UntapedError("HTTP 503", category="failed", system="github")
 
-    git = FakeGit(_cached("gitlab.example/team/tool", "git@gitlab.example:team/tool.git"))
+    git = FakeGit(_stored("gitlab.example/team/tool", "git@gitlab.example:team/tool.git"))
     source = _source(git, inventory=broken)
     source.catalog(refresh=None)
     assert source.pick_arg(RepoArg(ident="gitlab.example/team/tool")) == RepoArg(
@@ -206,7 +200,7 @@ def test_a_cached_only_pick_resolves_its_cache_url() -> None:
 
 
 def test_an_inventory_pick_resolves_its_full_name_falling_back_on_its_url() -> None:
-    source = _source(FakeGit(_cached("github.com/acme/api")), inventory=_inventory())
+    source = _source(FakeGit(_stored("github.com/acme/api")), inventory=_inventory())
     source.catalog(refresh=False)
     assert source.pick_arg(RepoArg(ident="acme/api", read_only=True)) == RepoArg(
         ident="acme/api", read_only=True, fallback="https://github.com/acme/api.git"
@@ -225,16 +219,16 @@ def test_a_pick_dropped_by_a_refresh_keeps_its_url() -> None:
     assert source.url_for("acme/api") == "https://github.com/acme/api.git"
 
 
-def test_an_owner_less_hosted_cache_is_offered() -> None:
-    git = FakeGit(_cached("git.example/project", "https://git.example/project.git"))
+def test_an_owner_less_hosted_repo_is_offered() -> None:
+    git = FakeGit(_stored("git.example/project", "https://git.example/project.git"))
     items = _source(git, inventory=_no_inventory).catalog(refresh=False).items
     assert [i.id for i in items] == ["git.example/project"]
-    assert cache_key("https://git.example/project.git") == ("git.example", "project.git")
+    assert repo_key("https://git.example/project.git") == ("git.example", "project.git")
 
 
-def test_a_cached_id_never_shadows_an_inventory_id() -> None:
-    """An owner-less cache on a dotless host (``acme/api.git``) has the id ``acme/api``."""
-    git = FakeGit(_cached("acme/api", "http://acme/api.git"))
+def test_a_stored_id_never_shadows_an_inventory_id() -> None:
+    """An owner-less repo on a dotless host (``acme/api.git``) has the id ``acme/api``."""
+    git = FakeGit(_stored("acme/api", "http://acme/api.git"))
     source = _source(git, inventory=_inventory())
     ids = [item.id for item in source.catalog(refresh=False).items]
     assert ids == ["acme/api", "acme/old"]
