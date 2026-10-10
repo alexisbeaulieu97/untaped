@@ -40,6 +40,10 @@ from.
    cache delete`, `workspace remove`, `ansible source remove`); a repo
    another plugin, a hand-added worktree, a branch or a stash holds stays,
    and the row says who kept it.
+4. After an upgrade from 10.x, the old caches (`~/.untaped/github-cache`,
+   `~/.untaped/workspace-cache`) are read by nothing until
+   `untaped setup migrate-dirs` moves their repos into the store; doctor's
+   `migrate-dirs` row says what is left.
 
 ## Safety
 

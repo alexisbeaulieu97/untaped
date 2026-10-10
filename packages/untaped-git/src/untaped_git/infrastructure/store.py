@@ -69,6 +69,7 @@ from untaped_git.infrastructure.lock import repo_lock
 from untaped_git.infrastructure.repo_files import (
     WorktreeEntry,
     list_repos,
+    names_admin,
     private_file,
     private_files,
     repo_origin,
@@ -98,7 +99,7 @@ POLICY: Mapping[str, str] = {
     "gc.auto": "6700",
     "gc.autoDetach": "false",
     "gc.autoPackLimit": "10",
-    # Unlocked handle reads rely on unreachable objects outliving them.
+    # Git's default, restated so a global ``now`` cannot prune under an unlocked handle read.
     "gc.pruneExpire": "2.weeks.ago",
 }
 _NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}
@@ -917,7 +918,7 @@ class RepoStore:
         if self._config_get("extensions.worktreeConfig") != "true":
             return
         for entry in worktree_entries(self._path):
-            if entry.path is None or not entry.path.is_dir():
+            if entry.path is None or not names_admin(entry.path / ".git", entry.admin):
                 continue
             if entry.owner == "workspace":
                 self._write_owner_config(entry.path, owner="workspace")

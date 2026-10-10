@@ -6,11 +6,12 @@ GitHub behavior is consumed through the closed API in
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import PluginSpec, SkillAsset
+from untaped.sdk import PluginSpec, SkillAsset, delete_migration, old_dirs, shown_path
 from untaped_ansible.doctor import DOCTOR_CHECKS
 from untaped_ansible.settings import AnsibleSettings, AnsibleState
 
@@ -25,6 +26,25 @@ def build_app() -> App:
     from untaped_ansible.cli import app  # noqa: PLC0415
 
     return app
+
+
+def _git_cache_10x() -> Sequence[Path]:
+    """10.x's git cache, with any custom root config.yml still names (9.x's key included)."""
+    roots = old_dirs("~/.untaped/ansible-cache", "ansible", "cache_dir")
+    return [*roots, *old_dirs("~/.untaped/ansible-cache", "ansible", "repo_cache_path")]
+
+
+def _not_the_store(path: Path) -> str | None:
+    """A custom root configured to ``git.store_dir``'s place is the store now: it stays."""
+    from untaped_git.api import overlaps_store, store_root  # noqa: PLC0415
+
+    if overlaps_store(path):
+        return f"it overlaps the repo store ({shown_path(store_root())})"
+    return None
+
+
+def _git_cache_9x() -> Sequence[Path]:
+    return [Path("~/.untaped/ansible-repositories").expanduser()]
 
 
 SPEC = PluginSpec(
@@ -47,4 +67,20 @@ SPEC = PluginSpec(
         ),
     ),
     doctor_checks=DOCTOR_CHECKS,
+    migrations=(
+        delete_migration(
+            "ansible.cache",
+            "10.x git cache",
+            _git_cache_10x,
+            detail="the index keeps each ref's commit: the next refresh fetches only what changed",
+            guard=_not_the_store,
+        ),
+        delete_migration(
+            "ansible.repositories",
+            "9.x git cache",
+            _git_cache_9x,
+            detail="9.x layout",
+            guard=_not_the_store,
+        ),
+    ),
 )

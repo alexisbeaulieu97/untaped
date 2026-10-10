@@ -45,7 +45,7 @@ from untaped.cli import (
     writes,
 )
 from untaped.concurrency import bounded_map
-from untaped.deprecated_keys import Retired
+from untaped.deprecated_keys import Retired, retired_values
 from untaped.diagnostics import ErrorInfo, note_failure
 from untaped.diff import unified_diff_text
 from untaped.doctor_checks import connection_check, executable_check, online_check
@@ -83,13 +83,18 @@ from untaped.http import (
     resolve_verify,
     same_origin,
 )
-from untaped.messages import hint, not_found, plural, q, size_text, summary
+from untaped.messages import hint, not_found, plural, q, shown_path, size_text, summary
+from untaped.migrations import delete_migration, dir_bytes, old_dirs, unsafe_dir
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.plugins.registry import (
     ApplicationSpec,
+    DirMigration,
     DoctorCheck,
     DoctorResult,
+    MigrationOptions,
+    MigrationOutcome,
+    MigrationRow,
     PluginContext,
     PluginSpec,
     SkillAsset,
@@ -209,9 +214,17 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "PluginSpec",
     "DoctorCheck",
     "DoctorResult",
+    "DirMigration",
+    "MigrationOptions",
+    "MigrationOutcome",
+    "MigrationRow",
     "SkillAsset",
     "create_app",
+    "delete_migration",
+    "dir_bytes",
+    "old_dirs",
     "plugin_dir",
+    "unsafe_dir",
     # settings and state
     "AppContext",
     "StateCollection",
@@ -328,6 +341,8 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "experimental",
     "plural",
     "q",
+    "retired_values",
+    "shown_path",
     "size_text",
     "writes",
     # screens (experimental)
