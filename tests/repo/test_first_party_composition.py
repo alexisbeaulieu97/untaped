@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from untaped import bootstrap
+from untaped._root_options import _root_options
 from untaped.messages import EXPERIMENTAL_LINE
 from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.stability import enable_show_deprecated, mark_of, panel_for, reset_show_deprecated
@@ -95,6 +96,9 @@ def _panels(text: str) -> dict[str, str]:
     return panels
 
 
+_GLOBAL_OPTIONS = list(_root_options())
+
+
 def _rows(panel: str) -> list[str]:
     """The first word of each row of a panel (wrapped continuation lines skipped)."""
     return [
@@ -121,17 +125,17 @@ def test_each_root_command_sits_in_exactly_one_panel(
         else:
             expected[name] = "Plugins" if spec is not None else "Commands"
 
-    def placed() -> dict[str, str]:
+    def placed() -> list[tuple[str, str]]:
         text = CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout
-        return {
-            row: title
+        return sorted(
+            (row, title)
             for title, panel in _panels(text).items()
             if title != "Global options"
             for row in _rows(panel)
-        }
+        )
 
     fresh = CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout
-    assert placed() == expected, (
+    assert placed() == sorted(expected.items()), (
         "root help panels are core's to assign: a plugin goes in Plugins (or its "
         "stability panel) through bootstrap._root_panel, every other root command in "
         "Commands unless marked"
@@ -154,10 +158,7 @@ def test_root_help_lists_core_then_plugins_then_global_options(
     assert {"awx", "jira", "ansible"} <= set(_rows(panels["Plugins"]))
     assert {"workspace", "dotfiles"} <= set(_rows(panels["Experimental"]))
     assert _rows(panels["Global options"]) == [
-        "--profile",
-        "--verbose",
-        "--quiet",
-        "--deprecated",
+        *_GLOBAL_OPTIONS,
         "--help",
         "--version",
         "--install-completion",
@@ -175,10 +176,10 @@ def test_global_options_are_the_last_panel_of_every_help(
     panels = _panels(CliInvoker().invoke(root.meta, argv).stdout)
 
     assert list(panels)[-1] == "Global options"
-    assert _rows(panels["Global options"]) == ["--profile", "--verbose", "--quiet", "--deprecated"]
+    assert _rows(panels["Global options"]) == _GLOBAL_OPTIONS
     for title, panel in panels.items():
         if title != "Global options":
-            assert not {"--profile", "--verbose", "--quiet"} & set(_rows(panel)), title
+            assert not set(_GLOBAL_OPTIONS) & set(_rows(panel)), title
 
 
 def test_a_plugin_section_lists_before_global_options(

@@ -168,9 +168,9 @@ SPEC = PluginSpec(
 )
 ```
 
-The optional `help` field (one non-empty line) is the summary in the Plugins
-panel of `untaped --help`. With it, the plugin is mounted lazily: `build_app()` runs
-only when its command is dispatched, so `untaped --help` never imports its CLI.
+The optional `help` field (one non-empty line) is its summary in the Plugins
+panel of `untaped --help`. With it, the plugin is mounted lazily: `build_app()`
+runs only when dispatched, so `untaped --help` never imports its CLI.
 A factory that raises or returns something other than a cyclopts `App` then
 fails that command, `--help` included, with exit 4, naming the plugin;
 other commands and shell completion keep working. `untaped doctor` runs every

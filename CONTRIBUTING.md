@@ -355,10 +355,6 @@ command group, config section and data directory, and the distribution
 skills, doctor checks and contracts; each is optional.
 _Avoid_: capability, provider (for the package).
 
-**Global option**: one of the options that work anywhere in a command
-(`--profile`, `--verbose`, `--quiet`, `--deprecated`); the code calls them
-root options (`_root_options.py`).
-
 **Contract**: an interface one plugin declares and others fill, so the
 plugin asking never names who answers.
 
@@ -410,6 +406,10 @@ _Avoid_: option (a command-line flag).
 
 **Profile**: a named set of settings in `config.yml`; the selected profile is
 layered over `default`.
+
+**Global option**: one of the options that work anywhere in a command
+(`--profile`, `--verbose`, `--quiet`, `--deprecated`); the code calls them
+root options (`_root_options.py`).
 
 **Renamed key**: an old name of a setting that still works, with a warning,
 until the next major release.

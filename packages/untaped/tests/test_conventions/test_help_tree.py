@@ -249,10 +249,11 @@ def test_core_panels_pass_for_a_marked_plugin_and_its_marks() -> None:
         (Group("Late", sort_key=100), True),
         (Group("Named", sort_key="a"), True),
         (Group("Early", sort_key=10), False),
-        (Group.create_ordered("Ordered", sort_key=5), False),
+        (Group.create_ordered("Ordered", sort_key=5), True),
+        (Group("Tuple", sort_key=(1, 2)), True),
         (Group("Hidden", show=False), False),
     ],
-    ids=["unkeyed", "key-100", "text-key", "key-10", "ordered", "hidden"],
+    ids=["unkeyed", "key-100", "text-key", "key-10", "ordered", "tuple-key", "hidden"],
 )
 def test_unkeyed_panel_for_a_plugin_group_not_keyed_below_100(group: Group, flagged: bool) -> None:
     def factory() -> App:

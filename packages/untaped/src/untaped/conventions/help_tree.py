@@ -160,10 +160,10 @@ def panel_violations(app: App) -> Iterator[tuple[str, str]]:
 
 
 def _named_groups(app: App) -> Iterator[Group | str]:
-    # A leaf inherits its parent's group_commands but lists no commands in it.
-    commands = app.group_commands if any(True for _ in _subcommands(app)) else None
-    for attribute in (app.group, commands, app.group_parameters, app.group_arguments):
-        yield from _as_groups(attribute)
+    yield from _as_groups(app.group)
+    # Apps inherit their parent's group_* defaults; only what they list counts.
+    if next(_subcommands(app), None) is not None:
+        yield from _as_groups(app.group_commands)
     if app.default_command is not None:
         for argument in app.assemble_argument_collection(parse_docstring=True):
             if argument.show and argument.parse:  # a hidden option lists in no panel
@@ -186,10 +186,12 @@ def _default_or_hidden(group: Group | str) -> bool:
 
 
 def _keyed(group: Group | str) -> bool:
-    """Whether ``group`` has a numeric sort key below the plugin limit."""
+    """Whether ``group`` has a plain numeric sort key below the plugin limit.
+
+    A tuple key (``Group.create_ordered``) is not one: cyclopts sorts it among
+    core's int keys and help fails comparing the two.
+    """
     key = group.sort_key if isinstance(group, Group) else None
-    if isinstance(key, tuple) and key:  # Group.create_ordered(sort_key=n) stores (n, counter)
-        key = key[0]
     if isinstance(key, bool) or not isinstance(key, int | float):
         return False
     return key < PLUGIN_PANEL_KEY_LIMIT
