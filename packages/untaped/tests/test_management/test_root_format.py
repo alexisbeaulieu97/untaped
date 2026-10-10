@@ -17,7 +17,7 @@ from cyclopts import App
 from test_management.support import GithubProfile, make_spec, write_config
 from untaped import bootstrap
 from untaped.sdk import FormatOption, PluginSpec, create_app, emit
-from untaped.testing import CliInvoker, CliResult, provider_candidate
+from untaped.testing import CliInvoker, CliResult, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -26,7 +26,7 @@ _CONFIG = "profiles:\n  default:\n    github:\n      base_url: https://g\n"
 
 def _invoke(argv: list[str]) -> CliResult:
     root = bootstrap.build_root_app(
-        candidates=(provider_candidate(make_spec("github", settings=GithubProfile)),)
+        candidates=(plugin_candidate(make_spec("github", settings=GithubProfile)),)
     )
     return CliInvoker().invoke(root.meta, argv)
 
@@ -120,7 +120,7 @@ def _lazy_spec() -> PluginSpec:
 
 def test_ui_format_reaches_a_lazily_mounted_plugin(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      format: json\n")
-    root = bootstrap.build_root_app(candidates=(provider_candidate(_lazy_spec()),))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(_lazy_spec()),))
     result = CliInvoker().invoke(root.meta, ["lazy", "list"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [{"name": "row"}]

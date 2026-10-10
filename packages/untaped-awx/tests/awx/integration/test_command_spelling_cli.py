@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from untaped.bootstrap import build_root_app
-from untaped.plugins.registry import ProviderCandidate
+from untaped.plugins.registry import PluginCandidate
 from untaped.testing import invoke_cli
 
 
 def test_help_lists_only_the_current_spellings(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = build_root_app(candidates=first_party_candidates)
 
@@ -25,7 +25,7 @@ def test_help_lists_only_the_current_spellings(
 
 
 def test_ping_options_are_keyword_only(
-    first_party_candidates: tuple[ProviderCandidate, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     result = invoke_cli(build_root_app(candidates=first_party_candidates), ["awx", "ping", "json"])
 

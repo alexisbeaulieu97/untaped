@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import itertools
+import sys
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from cyclopts import App
@@ -15,8 +18,8 @@ from untaped.plugins.registry import (
     ApplicationSpec,
     DoctorCheck,
     DoctorResult,
+    PluginCandidate,
     PluginSpec,
-    ProviderCandidate,
     SkillAsset,
 )
 
@@ -104,31 +107,28 @@ def make_shell(
     )
 
 
-class Provider:
-    """Configurable provider double; appends its spec's name to ``calls`` per call."""
+_TARGETS = itertools.count()
 
-    def __init__(
-        self,
-        spec: PluginSpec | None = None,
-        *,
-        error: Exception | None = None,
-        result: Any = None,
-        calls: list[str] | None = None,
-    ) -> None:
-        self._spec = spec
-        self._error = error
-        self._result = result
-        self._calls = calls
 
-    def __call__(self) -> Any:
-        if self._calls is not None and self._spec is not None:
-            self._calls.append(self._spec.name)
-        if self._error is not None:
-            raise self._error
-        if self._result is not None:
-            return self._result
-        assert self._spec is not None
-        return self._spec
+def spec_target(spec: PluginSpec, *, error: Exception | None = None, result: Any = None) -> object:
+    """A candidate target resolving to ``spec``, to ``result``, or raising ``error``.
+
+    Plain specs are their own target; the others are a ``module:SPEC`` string
+    naming a synthetic module whose ``SPEC`` attribute raises or returns.
+    """
+    if error is None and result is None:
+        return spec
+    name = f"untaped_test_target_{next(_TARGETS)}"
+    module = ModuleType(name)
+
+    def attribute(key: str) -> Any:
+        if error is not None:
+            raise error
+        return result
+
+    module.__getattr__ = attribute  # type: ignore[method-assign]  # resolved per access
+    sys.modules[name] = module
+    return f"{name}:SPEC"
 
 
 def make_candidate(
@@ -140,19 +140,14 @@ def make_candidate(
     entry_point_group: str = PLUGINS_ENTRY_POINT_GROUP,
     requires_dist: tuple[str, ...] | list[str] = (),
     **kwargs: Any,
-) -> ProviderCandidate:
-    return ProviderCandidate(
+) -> PluginCandidate:
+    return PluginCandidate(
         distribution=distribution,
         name=name or spec.name,
-        target=Provider(spec, **kwargs),
+        target=spec_target(spec, **kwargs),
         distribution_version=distribution_version,
         entry_point_group=entry_point_group,
         requires_dist=tuple(requires_dist),
     )
 
 
-def function_provider(spec: PluginSpec) -> Callable[[], PluginSpec]:
-    def _provide() -> PluginSpec:
-        return spec
-
-    return _provide

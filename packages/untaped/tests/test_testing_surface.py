@@ -19,7 +19,7 @@ EXPECTED_ALL = [
     "drive_screen",
     "invoke_cli",
     "invoke_root",
-    "provider_candidate",
+    "plugin_candidate",
 ]
 
 

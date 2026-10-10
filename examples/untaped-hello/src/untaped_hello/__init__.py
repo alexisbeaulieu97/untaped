@@ -1,6 +1,6 @@
 """The example ``hello`` plugin: one command, one setting, one skill.
 
-The ``untaped.plugins`` entry point names :func:`provider`. ``help`` is
+The ``untaped.plugins`` entry point names :data:`SPEC`. ``help`` is
 set, so the root mounts the app lazily and ``untaped --help`` never imports
 :mod:`untaped_hello.cli`.
 """
@@ -17,7 +17,7 @@ from untaped_hello.settings import HelloSettings
 if TYPE_CHECKING:
     from cyclopts import App
 
-__all__ = ["SPEC", "build_app", "provider"]
+__all__ = ["SPEC", "build_app"]
 
 
 def build_app() -> App:
@@ -43,8 +43,3 @@ SPEC = PluginSpec(
         ),
     ),
 )
-
-
-def provider() -> PluginSpec:
-    """Entry-point provider: the ``untaped.plugins`` entry point names this."""
-    return SPEC

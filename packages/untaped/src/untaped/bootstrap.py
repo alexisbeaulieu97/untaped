@@ -56,7 +56,7 @@ from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
     CompositionResult,
-    ProviderCandidate,
+    PluginCandidate,
     QuarantineRecord,
     RegisteredPlugin,
     SkillAsset,
@@ -150,7 +150,7 @@ def _warn_quarantined(result: CompositionResult) -> None:
 
 def compose_root(
     *,
-    candidates: Sequence[ProviderCandidate] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
 ) -> CompositionResult:
     """Discover, validate, and register one composition.
 
@@ -212,7 +212,7 @@ def _resolve_version() -> str:
 
 def build_root_app(
     *,
-    candidates: Sequence[ProviderCandidate] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
 ) -> App:
     """Compose the shell plus plugins and return the root app.
 
@@ -454,7 +454,7 @@ def _install_root_callback(
 def run_root(
     tokens: Iterable[str] | None = None,
     *,
-    candidates: Sequence[ProviderCandidate] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
     console: Any | None = None,
     error_console: Any | None = None,
 ) -> object:

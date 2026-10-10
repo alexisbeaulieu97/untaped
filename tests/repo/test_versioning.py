@@ -16,7 +16,7 @@ from types import ModuleType
 
 from repo.support import REPO_ROOT
 from untaped import bootstrap, sdk, testing
-from untaped.plugins.registry import ProviderCandidate
+from untaped.plugins.registry import PluginCandidate
 from untaped.stability import Experimental, function_mark, marks
 
 _BULLET = re.compile(r"^- `([^`]+)`:", re.MULTILINE)
@@ -109,7 +109,7 @@ def test_only_the_experimental_section_counts() -> None:
 
 
 def test_every_experimental_mark_of_the_repo_is_on_the_versioning_page(
-    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+    first_party_candidates: tuple[PluginCandidate, ...], fresh_composition: None
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
     marked = {
@@ -124,7 +124,7 @@ def test_every_experimental_mark_of_the_repo_is_on_the_versioning_page(
 
 
 def test_every_experimental_setting_of_the_repo_is_on_the_versioning_page(
-    first_party_candidates: tuple[ProviderCandidate, ...], fresh_composition: None
+    first_party_candidates: tuple[PluginCandidate, ...], fresh_composition: None
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
     keys = {

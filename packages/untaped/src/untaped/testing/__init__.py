@@ -37,7 +37,7 @@ from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
 
 if TYPE_CHECKING:
     from untaped.picker import PickRequest, PickResult
-    from untaped.plugins.registry import PluginSpec, ProviderCandidate
+    from untaped.plugins.registry import PluginCandidate, PluginSpec
     from untaped.theme import ThemeSpec
 
 __all__ = [
@@ -53,7 +53,7 @@ __all__ = [
     "drive_screen",
     "invoke_cli",
     "invoke_root",
-    "provider_candidate",
+    "plugin_candidate",
 ]
 
 
@@ -225,19 +225,28 @@ def assert_destructive_contract(
         assert_unchanged()
 
 
-def provider_candidate(spec: PluginSpec, *, distribution: str | None = None) -> ProviderCandidate:
+def plugin_candidate(
+    spec: PluginSpec,
+    *,
+    distribution: str | None = None,
+    requires_dist: Sequence[str] = (),
+) -> PluginCandidate:
     """``spec`` as a discovered candidate, for composing it without installing it.
 
     ``distribution`` defaults to ``untaped-<name>``, the name the
-    ``plugin-name`` convention expects.
+    ``plugin-name`` convention expects; ``requires_dist`` stands for the
+    distribution's ``Requires-Dist`` lines (a provider's owner requirement).
 
     Pass the result to ``check_conventions(..., candidates=[...])`` or
     ``untaped.bootstrap.build_root_app(candidates=[...])``.
     """
-    from untaped.plugins.registry import ProviderCandidate  # noqa: PLC0415
+    from untaped.plugins.registry import PluginCandidate  # noqa: PLC0415
 
-    return ProviderCandidate(
-        distribution=distribution or f"untaped-{spec.name}", name=spec.name, target=lambda: spec
+    return PluginCandidate(
+        distribution=distribution or f"untaped-{spec.name}",
+        name=spec.name,
+        target=spec,
+        requires_dist=tuple(requires_dist),
     )
 
 
@@ -245,7 +254,7 @@ def check_conventions(
     plugin: str,
     *,
     tests_dir: Path | None = None,
-    candidates: Sequence[ProviderCandidate] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
 ) -> None:
     """Fail with every convention violation of ``plugin``.
 

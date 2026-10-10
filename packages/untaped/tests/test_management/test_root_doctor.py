@@ -34,12 +34,12 @@ from untaped import bootstrap
 from untaped.management.doctor import build_root_doctor_app, collect_doctor_rows
 from untaped.plugins.registry import (
     CompositionResult,
+    PluginCandidate,
     PluginSpec,
-    ProviderCandidate,
     QuarantineRecord,
 )
 from untaped.settings import FORMAT_VERSION, get_settings
-from untaped.testing import CliInvoker, provider_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -333,8 +333,8 @@ def test_doctor_reports_a_failing_lazy_factory_as_a_quarantine_row(
 ) -> None:
     result = bootstrap.compose_root(
         candidates=[
-            provider_candidate(_deferred("bad", factory), distribution="bad-dist"),
-            provider_candidate(_deferred("good", lambda: App(name="good"))),
+            plugin_candidate(_deferred("bad", factory), distribution="bad-dist"),
+            plugin_candidate(_deferred("good", lambda: App(name="good"))),
         ]
     )
     rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
@@ -346,7 +346,7 @@ def test_doctor_reports_a_failing_lazy_factory_as_a_quarantine_row(
 
 
 def test_doctor_names_each_quarantined_plugin(
-    broken_first_party_candidates: Callable[[], tuple[ProviderCandidate, ...]],
+    broken_first_party_candidates: Callable[[], tuple[PluginCandidate, ...]],
 ) -> None:
     result = bootstrap.compose_root(candidates=broken_first_party_candidates())
     rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
@@ -360,7 +360,7 @@ def test_doctor_names_each_quarantined_plugin(
 
 def test_doctor_limits_factory_rows_to_the_requested_plugins() -> None:
     result = bootstrap.compose_root(
-        candidates=[provider_candidate(_deferred("bad", _returns_a_string))]
+        candidates=[plugin_candidate(_deferred("bad", _returns_a_string))]
     )
     rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result, plugins=frozenset({"other"}))
     assert [row for row in rows if row["check"] == "quarantine"] == []
@@ -368,7 +368,7 @@ def test_doctor_limits_factory_rows_to_the_requested_plugins() -> None:
 
 def test_doctor_cli_exits_1_on_a_failing_lazy_factory() -> None:
     root = bootstrap.build_root_app(
-        candidates=[provider_candidate(_deferred("bad", _returns_a_string))]
+        candidates=[plugin_candidate(_deferred("bad", _returns_a_string))]
     )
     result = CliInvoker().invoke(root.meta, ["doctor", "--format", "json"])
     assert result.exit_code == 1

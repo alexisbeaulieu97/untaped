@@ -20,7 +20,7 @@ from untaped.plugins.registry import (
 from untaped.sdk import HttpStatusError, TokenCommand, TokenSources, online_check
 from untaped.settings import get_settings
 from untaped.stability import Stability
-from untaped.testing import provider_candidate
+from untaped.testing import plugin_candidate
 
 # NOTE: section models are module-level on purpose. The settings registry
 # rejects re-registration of a section under a *different* model object, so
@@ -135,7 +135,7 @@ def make_spec(
 
 def compose(*specs: PluginSpec) -> CompositionResult:
     """Compose ``specs`` as providers (registers settings sections)."""
-    return bootstrap.compose_root(candidates=[provider_candidate(spec) for spec in specs])
+    return bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
 
 
 def write_config(path: Path, text: str) -> None:

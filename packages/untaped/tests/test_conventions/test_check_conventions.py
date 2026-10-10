@@ -11,15 +11,15 @@ from pydantic import BaseModel
 
 from test_conventions.support import Install
 from untaped.conventions import plugin_violations
-from untaped.plugins.registry import PluginSpec, ProviderCandidate
-from untaped.testing import check_conventions, provider_candidate
+from untaped.plugins.registry import PluginCandidate, PluginSpec
+from untaped.testing import check_conventions, plugin_candidate
 
-# A provider package outside src/untaped, one file per convention family:
+# A plugin package outside src/untaped, one file per convention family:
 # an undeclared write (help tree), a print (messages, one allowed), a
 # Protocol outside the ports (structure) and a domain -> cli import (layering).
 _PLUGIN = {
     "demo_plugin/__init__.py": '''
-        """Demo plugin provider."""
+        """Demo plugin."""
 
         from __future__ import annotations
 
@@ -50,10 +50,6 @@ _PLUGIN = {
             app_factory=build_app,
             settings=DemoSettings,
         )
-
-
-        def provider() -> PluginSpec:
-            return SPEC
 
         ''',
     "demo_plugin/errors.py": '''
@@ -103,12 +99,10 @@ _TESTS = {
 
 
 @pytest.fixture
-def demo(install: Install) -> list[ProviderCandidate]:
+def demo(install: Install) -> list[PluginCandidate]:
     """The demo plugin installed in ``tmp_path/site`` and discovered through its entry point."""
     install({**_PLUGIN, **_TESTS})
-    return [
-        ProviderCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:provider")
-    ]
+    return [PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:SPEC")]
 
 
 _FOUND = [
@@ -136,7 +130,7 @@ def test_a_quarantined_plugin_fails_with_why() -> None:
     spec = PluginSpec(name="bad", app_factory=App, settings=_BrokenRenames)
 
     with pytest.raises(AssertionError) as raised:
-        check_conventions("bad", candidates=[provider_candidate(spec)])
+        check_conventions("bad", candidates=[plugin_candidate(spec)])
 
     [line] = str(raised.value).splitlines()[1:]
     assert line.startswith("  bad::quarantined::bad-settings-keys: ")
@@ -144,14 +138,14 @@ def test_a_quarantined_plugin_fails_with_why() -> None:
 
 
 def test_test_imports_are_checked_only_with_a_tests_dir(
-    demo: list[ProviderCandidate], tmp_path: Path
+    demo: list[PluginCandidate], tmp_path: Path
 ) -> None:
     found = plugin_violations("demo", tests_dir=tmp_path / "site" / "demo_tests", candidates=demo)
     assert found == sorted([*_FOUND, _PRIVATE_IMPORT])
 
 
 def test_a_third_party_plugin_fails_with_every_violation_in_its_own_files(
-    demo: list[ProviderCandidate],
+    demo: list[PluginCandidate],
 ) -> None:
     """A plugin outside src/untaped is checked from its own files."""
     with pytest.raises(AssertionError) as raised:
@@ -162,22 +156,22 @@ def test_a_third_party_plugin_fails_with_every_violation_in_its_own_files(
 
 
 def test_a_main_module_is_checked_without_running_it(
-    demo: list[ProviderCandidate], install: Install
+    demo: list[PluginCandidate], install: Install
 ) -> None:
     install({"demo_plugin/__main__.py": 'raise SystemExit("ran __main__")\n'})
     assert plugin_violations("demo", candidates=demo) == _FOUND
 
 
-def test_a_quarantined_provider_is_warned_about_once(
-    demo: list[ProviderCandidate], capsys: pytest.CaptureFixture[str]
+def test_a_quarantined_plugin_is_warned_about_once(
+    demo: list[PluginCandidate], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    broken = ProviderCandidate(distribution="broken", name="broken", target="no_such_mod:provider")
+    broken = PluginCandidate(distribution="broken", name="broken", target="no_such_mod:SPEC")
     plugin_violations("demo", candidates=[*demo, broken])
     assert capsys.readouterr().err.count("quarantined") == 1
 
 
 def test_an_app_factory_outside_any_package_names_the_plugin(
-    demo: list[ProviderCandidate], tmp_path: Path
+    demo: list[PluginCandidate], tmp_path: Path
 ) -> None:
     init = tmp_path / "site" / "demo_plugin" / "__init__.py"
     text = init.read_text(encoding="utf-8")
@@ -194,7 +188,7 @@ def test_an_app_factory_outside_any_package_names_the_plugin(
 
 
 def test_stability_rules_run_with_the_other_checks(
-    demo: list[ProviderCandidate], install: Install
+    demo: list[PluginCandidate], install: Install
 ) -> None:
     marked = (
         _PLUGIN["demo_plugin/cli.py"]
@@ -213,7 +207,7 @@ def test_a_plugin_without_commands_is_found_through_its_settings(install: Instal
     install(
         {
             "untaped_quiet/__init__.py": '''
-                """Quiet plugin provider: settings, no commands."""
+                """Quiet plugin: settings, no commands."""
 
                 from pydantic import BaseModel, ConfigDict
 
@@ -226,16 +220,15 @@ def test_a_plugin_without_commands_is_found_through_its_settings(install: Instal
                     model_config = ConfigDict(frozen=True)
 
 
-                def provider() -> PluginSpec:
-                    return PluginSpec(name="quiet", settings=QuietSettings)
+                SPEC = PluginSpec(name="quiet", settings=QuietSettings)
                 ''',
             "untaped_quiet/errors.py": '''
                 """Quiet errors."""
                 ''',
         }
     )
-    candidate = ProviderCandidate(
-        distribution="untaped-quiet", name="quiet", target="untaped_quiet:provider"
+    candidate = PluginCandidate(
+        distribution="untaped-quiet", name="quiet", target="untaped_quiet:SPEC"
     )
     assert plugin_violations("quiet", candidates=[candidate]) == []
 
@@ -244,27 +237,26 @@ def test_a_plugin_with_only_a_name_is_found_through_its_entry_point(install: Ins
     install(
         {
             "untaped_bare/__init__.py": '''
-                """Bare plugin provider: a name and nothing else."""
+                """Bare plugin: a name and nothing else."""
 
                 from untaped.sdk import PluginSpec
 
 
-                def provider() -> PluginSpec:
-                    return PluginSpec(name="bare")
+                SPEC = PluginSpec(name="bare")
                 ''',
             "untaped_bare/errors.py": '''
                 """Bare errors."""
                 ''',
         }
     )
-    candidate = ProviderCandidate(
-        distribution="untaped-bare", name="bare", target="untaped_bare:provider"
+    candidate = PluginCandidate(
+        distribution="untaped-bare", name="bare", target="untaped_bare:SPEC"
     )
     assert plugin_violations("bare", candidates=[candidate]) == []
 
 
 def test_a_plugin_with_only_a_name_and_no_entry_point_cannot_be_located() -> None:
-    candidate = provider_candidate(PluginSpec(name="bare"))
+    candidate = plugin_candidate(PluginSpec(name="bare"))
     with pytest.raises(LookupError, match="'bare' declares nothing to locate its package by"):
         plugin_violations("bare", candidates=[candidate])
 
@@ -278,16 +270,15 @@ def test_a_hyphenated_plugin_is_named_with_underscores_to_import(install: Instal
                 from untaped.sdk import PluginSpec
 
 
-                def provider() -> PluginSpec:
-                    return PluginSpec(name="acme-tools")
+                SPEC = PluginSpec(name="acme-tools")
                 ''',
             "acme_tools/errors.py": '''
                 """Errors."""
                 ''',
         }
     )
-    candidate = ProviderCandidate(
-        distribution="untaped-acme-tools", name="acme-tools", target="acme_tools:provider"
+    candidate = PluginCandidate(
+        distribution="untaped-acme-tools", name="acme-tools", target="acme_tools:SPEC"
     )
     assert plugin_violations("acme-tools", candidates=[candidate]) == [
         "acme-tools::plugin-name::import package 'acme_tools' is not 'untaped_acme_tools'"

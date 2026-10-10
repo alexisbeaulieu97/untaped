@@ -30,8 +30,8 @@ from untaped.conventions.structure import structure_violations
 from untaped.conventions.terminal_boundary import terminal_boundary_violations
 from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
+    PluginCandidate,
     PluginSpec,
-    ProviderCandidate,
     discover_candidates,
 )
 from untaped.settings import Settings, model_sections
@@ -41,7 +41,7 @@ def plugin_violations(
     name: str,
     *,
     tests_dir: Path | None = None,
-    candidates: Sequence[ProviderCandidate] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
 ) -> list[str]:
     """Every convention violation of the installed plugin ``name``.
 
@@ -92,7 +92,7 @@ def plugin_violations(
     )
 
 
-def _name_violations(name: str, package: str, candidate: ProviderCandidate | None) -> list[str]:
+def _name_violations(name: str, package: str, candidate: PluginCandidate | None) -> list[str]:
     """Where the plugin's distribution or import package is not named after it.
 
     One name runs through a plugin: ``untaped-<name>`` on PyPI,
@@ -139,14 +139,14 @@ def _mentions_extra(marker: str) -> bool:
 
 
 def _boundary(
-    name: str, candidates: Sequence[ProviderCandidate]
+    name: str, candidates: Sequence[PluginCandidate]
 ) -> tuple[dict[str, str], frozenset[str]]:
     """Plugin packages (to distributions) and what plugin ``name`` may import from.
 
     Every candidate counts as a plugin, composed or quarantined: a
-    ``module:attr`` target names its package; a callable target (as from
-    :func:`untaped.testing.provider_candidate`) gives it through the spec it
-    provides, and is skipped when that cannot be resolved. The checked
+    ``module:attr`` target names its package; a spec target (as from
+    :func:`untaped.testing.plugin_candidate`) gives it through what the spec
+    declares, and is skipped when that cannot be resolved. The checked
     plugin's own distribution is always declared.
     """
     found = list(candidates)
@@ -166,12 +166,11 @@ def _candidate_package(target: object) -> str | None:
     """The plugin package of a candidate ``target``, or ``None`` when unresolvable."""
     if isinstance(target, str):
         return target.partition(":")[0] if ":" in target else None
-    if not callable(target):
+    if not isinstance(target, PluginSpec):
         return None
     try:
-        spec = target()
-        return _package_of(spec, target)[0] if isinstance(spec, PluginSpec) else None
-    except Exception:
+        return _package_of(target)[0]
+    except LookupError:
         return None
 
 
@@ -203,7 +202,7 @@ def _package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
     """The package owning ``spec`` and its source directory.
 
     That is the module of what the spec declares (its app factory, else its
-    settings or state model), or of its ``package:provider`` entry-point
+    settings or state model), or of its ``package:SPEC`` entry-point
     ``target`` when it declares none of them, when it is a package, else the
     module's parent package.
     """
@@ -215,7 +214,7 @@ def _package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
     else:
         raise LookupError(
             f"plugin {spec.name!r} declares nothing to locate its package by; "
-            "pass a ProviderCandidate whose target is 'package:provider'"
+            "pass a PluginCandidate whose target is 'package:SPEC'"
         )
     found = find_spec(module) if module else None
     if found is not None and found.submodule_search_locations:
