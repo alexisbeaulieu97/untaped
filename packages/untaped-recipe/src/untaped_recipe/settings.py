@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class RecipeSettings(BaseModel):
     """Profile settings for local recipe storage."""
 
-    renamed_keys: ClassVar[Mapping[str, str]] = {"library_root": "library_dir"}
+    retired_keys: ClassVar[Mapping[str, str]] = {"library_root": "library_dir"}
 
     model_config = ConfigDict(frozen=True)
 

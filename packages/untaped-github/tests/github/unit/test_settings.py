@@ -38,15 +38,14 @@ def test_sweep_settings_reject_out_of_range_values(sweep: dict[str, int]) -> Non
         ({"sweep": {"sync_concurrency": 3}}, "sweep.sync_concurrency", "sweep.parallel", 3),
     ],
 )
-def test_an_old_key_is_read_as_the_new_one(
+def test_a_retired_key_is_not_read(
     capsys: pytest.CaptureFixture[str], data: dict[str, object], old: str, new: str, value: object
 ) -> None:
     config = Path(os.environ["UNTAPED_CONFIG"])
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"profiles": {"default": {"github": data}}}))
 
-    assert attrgetter(new)(get_config_section("github", GithubSettings)) == value
-    assert (
-        f"warning: github.{old} is deprecated and will be removed in the next major release; "
-        f"use github.{new}"
-    ) in capsys.readouterr().err
+    settings = get_config_section("github", GithubSettings)
+
+    assert attrgetter(new)(settings) == attrgetter(new)(GithubSettings()) != value
+    assert old not in capsys.readouterr().err
