@@ -11,7 +11,7 @@ command runs and needs at least one row, so use it on a read command or add
 |---|---|
 | `config list`, `config get` | `untaped.setting` (`stability`: `stable`, `experimental` or `deprecated`; `table` lists the last two apart) |
 | `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
-| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`; `action` `renamed` or `dropped`) |
+| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`, `detail`; `action` `renamed`, `dropped` or `deleted`, with an empty `to` and the old value in `detail`) |
 | `auth set`, `auth unset`, `auth migrate` | `untaped.auth_outcome` (never the token; `action` `gone` when `unset` found the entry already deleted; a token `migrate` could not move is `failed`, with `error`) |
 | `auth status` | `untaped.token_source` |
 | `profile list` | `untaped.profile` |

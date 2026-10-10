@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from test_management.support import compose, make_spec, write_config
 from untaped import bootstrap
+from untaped.deprecated_keys import Retired
 from untaped.management.config import build_root_config_app
 from untaped.stability import deprecated
 from untaped.testing import CliInvoker, CliResult
@@ -85,19 +86,28 @@ def test_apply_renames_every_profile_and_keeps_comments_and_order(_isolated_conf
             "from": "mig.git_fetch_concurrency",
             "to": "mig.git_fetch_parallel",
             "action": "renamed",
+            "detail": "",
         },
         {
             "profile": "default",
             "from": "mig.probe_concurrency",
             "to": "mig.probe_parallel",
             "action": "renamed",
+            "detail": "",
         },
-        {"profile": "work", "from": "mig.ancient_path", "to": "mig.cache_dir", "action": "renamed"},
+        {
+            "profile": "work",
+            "from": "mig.ancient_path",
+            "to": "mig.cache_dir",
+            "action": "renamed",
+            "detail": "",
+        },
         {
             "profile": "work",
             "from": "mig.sweep.sync_concurrency",
             "to": "mig.sweep.parallel",
             "action": "renamed",
+            "detail": "",
         },
     ]
     assert "renamed 4 keys" in result.stderr
@@ -126,7 +136,13 @@ def test_a_redundant_spelling_is_dropped(
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert {"profile": "default", "from": dropped, "to": kept, "action": "dropped"} in rows
+    assert {
+        "profile": "default",
+        "from": dropped,
+        "to": kept,
+        "action": "dropped",
+        "detail": "",
+    } in rows
     assert "dropped 1" in result.stderr
     assert "mig:\n      cache_dir: /b\n" in _isolated_config.read_text()
 
@@ -139,7 +155,7 @@ def test_state_and_deprecated_settings_are_left_alone(_isolated_config: Path) ->
     result = _migrate()
 
     assert result.exit_code == 0, result.output
-    assert "no renamed or retired keys in the config" in result.stderr
+    assert "no renamed, retired or deleted keys in the config" in result.stderr
     assert state.read_text() == "mig:\n  corpus_path: /s\n"
     assert "legacy: true" in _isolated_config.read_text()
 
@@ -187,6 +203,99 @@ def test_a_key_that_cannot_be_placed_stays_and_other_profiles_still_migrate(
 
     assert migrated.exit_code == 0, migrated.output
     assert json.loads(migrated.stdout) == [
-        {"profile": "work", "from": "blk.workers", "to": "blk.sweep.parallel", "action": "renamed"}
+        {
+            "profile": "work",
+            "from": "blk.workers",
+            "to": "blk.sweep.parallel",
+            "action": "renamed",
+            "detail": "",
+        }
     ]
     assert "workers: 3\n      sweep: 5\n" in _isolated_config.read_text()
+
+
+class DeletingProfile(BaseModel):
+    """Section ``del``: a deleted key, a rename chain ending at it, and a live rename."""
+
+    retired_keys: ClassVar[dict[str, str | Retired]] = {
+        "corpus_path": "cache_dir",
+        "cache_dir": Retired(note="deleted in 11.0; the store lives under git.store_dir"),
+        "protocol": Retired(note="deleted in 11.0; set github.git_protocol"),
+        "old_parallel": "parallel",
+    }
+
+    parallel: int = 4
+
+
+def _migrate_deleting(*args: str) -> CliResult:
+    result = compose(make_spec("del", settings=DeletingProfile))
+    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=result)
+    return CliInvoker().invoke(app, ["migrate", *args])
+
+
+DELETING = """profiles:
+  default:
+    del:
+      corpus_path: ~/corpus
+      protocol: ssh
+      old_parallel: 2
+      symbols:
+        a: b
+"""
+
+
+def test_the_preview_prints_each_deleted_value_and_why(_isolated_config: Path) -> None:
+    write_config(_isolated_config, DELETING)
+
+    result = _migrate_deleting("--dry-run", "--format", "json")
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert rows[:2] == [
+        {
+            "profile": "default",
+            "from": "del.corpus_path",
+            "to": "",
+            "action": "planned",
+            "detail": "was ~/corpus; deleted in 11.0 (via cache_dir); "
+            "the store lives under git.store_dir",
+        },
+        {
+            "profile": "default",
+            "from": "del.protocol",
+            "to": "",
+            "action": "planned",
+            "detail": "was ssh; deleted in 11.0; set github.git_protocol",
+        },
+    ]
+    assert "would rename 1 key, delete 2" in result.stderr
+    assert _isolated_config.read_text() == DELETING
+
+
+def test_apply_deletes_the_keys(_isolated_config: Path) -> None:
+    write_config(_isolated_config, DELETING)
+
+    result = _migrate_deleting("--format", "json")
+
+    assert result.exit_code == 0, result.output
+    assert [row["action"] for row in json.loads(result.stdout)] == [
+        "deleted",
+        "deleted",
+        "renamed",
+    ]
+    assert "renamed 1 key, deleted 2" in result.stderr
+    assert _isolated_config.read_text() == (
+        "profiles:\n  default:\n    del:\n      parallel: 2\n      symbols:\n        a: b\n"
+    )
+
+
+def test_only_deletes_lead_the_summary(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    del:\n      cache_dir:\n        a: 1\n"
+    )
+
+    result = _migrate_deleting("--dry-run", "--format", "json")
+
+    (row,) = json.loads(result.stdout)
+    assert row["detail"].startswith("was <mapping>; deleted in 11.0;")
+    assert "would delete 1 key" in result.stderr

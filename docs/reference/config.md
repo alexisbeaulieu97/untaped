@@ -164,7 +164,7 @@ overridden for one process with the environment variable shown.
 
 ## Renamed settings
 
-A renamed key is still read with a warning; a retired one is no longer read. See [Renamed settings](../configuration.md#renamed-settings).
+A renamed key is still read with a warning; a retired one is no longer read; a deleted one is no longer read and `config migrate` removes it. See [Renamed settings](../configuration.md#renamed-settings).
 
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|

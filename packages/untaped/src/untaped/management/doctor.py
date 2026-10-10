@@ -12,7 +12,7 @@ Each row is isolated: invalid settings for one plugin surface as failed
 rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
-profile keys no settings model declares, renamed, retired or deprecated keys
+profile keys no settings model declares, renamed, retired, deleted or deprecated keys
 in any profile (fixed by ``config migrate``, except deprecated settings),
 installed skills that differ from their packaged copy, and a plugin
 check that returns ``DoctorResult(..., warn=True)``. ``doctor fix``
@@ -497,11 +497,11 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
     title = "unknown config keys"
     model = get_profile_settings_model()
     leaves = {d.path for d in walk_settings(model, include_collections=True)}
-    # Old keys are the deprecated-keys row's to report.
+    # Old keys are the deprecated-keys row's to report; deleted ones are listed below.
     leaves |= {
         (section, *old.split("."))
         for section, section_model in profile_section_models().items()
-        for old in key_mappings(section_model).migratable
+        for old in (*key_mappings(section_model).migratable, *key_mappings(section_model).deleted)
     }
     prefixes = {path[:depth] for path in leaves for depth in range(1, len(path))}
     unknown = [str(key) for key in raw if key not in RESERVED_STATE_SECTIONS]
@@ -509,15 +509,30 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
     for name, data in profiles.items() if isinstance(profiles, dict) else ():
         if isinstance(data, dict):
             _collect_unknown(data, ("profiles", str(name)), (), leaves, prefixes, unknown)
-    if unknown:
-        return _row("unknown-keys", shell.name, _WARN, title, "ignored: " + ", ".join(unknown))
-    return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
+    deleted = [
+        f"{item.section}.{item.old} (profile {item.profile}): {item.message}"
+        for item in scan_keys(raw, profile_section_models())
+        if item.kind == "deleted"
+    ]
+    parts = ([f"ignored: {', '.join(unknown)}"] if unknown else []) + deleted
+    if not parts:
+        return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
+    fix = None
+    if deleted:
+        fix = command_argv("config migrate", profile=selected_profile(dict(raw)))
+    return _row(
+        "unknown-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=bool(deleted)
+    )
 
 
 def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
     """Warn about old keys and deprecated settings in any profile."""
     title = "deprecated config keys"
-    found = scan_keys(raw, profile_section_models(), section_stabilities())
+    found = [
+        item
+        for item in scan_keys(raw, profile_section_models(), section_stabilities())
+        if item.kind != "deleted"
+    ]
     if not found:
         return _row("deprecated-keys", shell.name, _PASS, title, "no deprecated keys")
     parts = []

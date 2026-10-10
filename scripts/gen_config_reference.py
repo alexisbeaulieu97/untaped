@@ -374,11 +374,16 @@ def _renamed_table() -> list[str]:
                 kind = "retired" if old in mappings.retired else "renamed"
                 key = f"{section}.{old}"
                 rows.append(f"| `{key}` | `{_env_name(key)}` | `{section}.{new}` | {kind} |")
+            for old, deleted in sorted(mappings.deleted.items()):
+                key = f"{section}.{old}"
+                reason = deleted.reason()
+                rows.append(f"| `{key}` | `{_env_name(key)}` | none | deleted: {reason} |")
     if not rows:
         return []
     return [
         "## Renamed settings\n",
-        "A renamed key is still read with a warning; a retired one is no longer read. See "
+        "A renamed key is still read with a warning; a retired one is no longer read; a "
+        "deleted one is no longer read and `config migrate` removes it. See "
         "[Renamed settings](../configuration.md#renamed-settings).\n",
         "| Old key | Old environment variable | New key | Status |\n|---|---|---|---|",
         *rows,
