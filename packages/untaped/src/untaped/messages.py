@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shlex
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 
 _ROOT_COMMAND = "untaped"
 
@@ -123,6 +124,15 @@ def deprecated_line(replacement: str | None = None) -> str:
     """The help line every deprecated command ends with: ``Deprecated: removed …[; use <new>].``"""
     suffix = "" if replacement is None else f"; use {replacement}"
     return f"Deprecated: removed in the next major release{suffix}."
+
+
+def shown_path(path: Path | str) -> str:
+    """``path`` with the home directory written ``~``, as people read it."""
+    path = Path(path)
+    home = Path.home()
+    if path == home:
+        return "~"
+    return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)
 
 
 def size_text(size: int) -> str:

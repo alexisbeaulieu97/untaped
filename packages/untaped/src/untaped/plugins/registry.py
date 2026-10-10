@@ -21,18 +21,18 @@ from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from cyclopts import App
 from packaging.markers import UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
-from untaped.records import DuplicateKindError
+from untaped.records import DuplicateKindError, OutcomeRecord
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
@@ -145,9 +145,71 @@ class DoctorResult:
 
 @dataclass(frozen=True)
 class PluginContext:
-    """Frozen per-invocation snapshot handed to a doctor-check body."""
+    """Frozen per-invocation snapshot handed to a doctor-check or migration body."""
 
     settings: BaseModel | None
+
+
+class MigrationOptions(BaseModel):
+    """``untaped setup migrate-dirs``'s flags, passed to every migration.
+
+    ``dissociate`` names one plugin's step (repacking clones that borrow
+    objects from a directory, so it can go); every migration receives it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    dry_run: bool = False
+    dissociate: bool = False
+
+
+class MigrationRow(BaseModel):
+    """One line of ``setup migrate-dirs``' preview: what a migration would do to one directory.
+
+    ``action`` is ``move`` (``source`` → ``destination``), ``delete``,
+    ``keep`` (left in place, ``detail`` says why) or ``then`` (what happens
+    afterwards, such as a one-time download). ``bytes`` is the size of
+    ``source`` (0 when not measured); doctor adds up the sizes of the
+    ``move`` and ``delete`` rows.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    action: Literal["move", "delete", "keep", "then"]
+    source: str = ""
+    destination: str = ""
+    detail: str = ""
+    bytes: int = 0
+
+
+class MigrationOutcome(OutcomeRecord, kind="untaped.migration"):
+    """What one migration did when applied: ``moved``, ``deleted``, ``unchanged``, ``failed``…"""
+
+    table_columns: ClassVar[tuple[str, ...]] = ("id", "action", "detail")
+
+    id: str
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class DirMigration:
+    """A plugin's own directory moves for ``untaped setup migrate-dirs``.
+
+    ``id`` is ``<plugin>.<noun>``, unique across plugins. ``preview``
+    returns what would change and only reads; ``apply`` does it and returns
+    one outcome per thing it handled (core reports one row per migration).
+    ``apply`` is idempotent: run again after a crash or a second time, it
+    finishes what is left and changes nothing else. A migration is
+    self-contained: it owns its old directory and everything pointing
+    there. Core runs every plugin's migrations in registry order (by plugin
+    name); one that relies on another plugin's having run first says so in
+    its docstring.
+    """
+
+    id: str
+    title: str
+    preview: Callable[[PluginContext, MigrationOptions], Sequence[MigrationRow]]
+    apply: Callable[[PluginContext, MigrationOptions], Sequence[MigrationOutcome]]
 
 
 def _check_model(model: object, field: str, label: str) -> None:
@@ -234,6 +296,7 @@ class PluginSpec:
     provides: Mapping[str, Callable[[], Sequence[Contract]]] = field(
         default_factory=lambda: MappingProxyType({}), hash=False
     )
+    migrations: tuple[DirMigration, ...] = ()
 
     def __post_init__(self) -> None:
         check_plugin_name(self.name)
@@ -261,6 +324,7 @@ class PluginSpec:
                 raise ConfigError(f"plugin {self.name!r} provides[{owner!r}] must be a function")
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
+        object.__setattr__(self, "migrations", tuple(self.migrations))
         object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
 
 
@@ -336,6 +400,8 @@ VALID_REASONS = frozenset(
         "bad-skill-asset",
         "duplicate-doctor-check",
         "doctor-check-failed",
+        "duplicate-migration",
+        "bad-migration",
         "malformed-entry-point",
         "not-a-spec",
         "bad-app-factory",
@@ -601,6 +667,7 @@ class _CompositionState:
         self.shell = shell
         self.skill_names: set[str] = {skill.name for skill in shell.skills}
         self.doctor_ids: set[str] = {check.id for check in shell.doctor_checks}
+        self.migration_ids: set[str] = set()
 
     @cached_property
     def sdk_version(self) -> str | None:
@@ -696,6 +763,30 @@ def _check_doctor_checks(spec: PluginSpec, state: _CompositionState) -> None:
         seen_checks.add(check.id)
 
 
+def _check_migrations(spec: PluginSpec, state: _CompositionState) -> None:
+    seen: set[str] = set()
+    for migration in spec.migrations:
+        if (
+            not isinstance(migration, DirMigration)
+            or not migration.title.strip()
+            or not callable(migration.preview)
+            or not callable(migration.apply)
+        ):
+            raise _Quarantine(
+                "bad-migration", f"malformed migration of plugin {spec.name!r}: {migration!r}"
+            )
+        prefix, dot, noun = migration.id.partition(".")
+        if prefix != spec.name or not dot or not noun.strip():
+            raise _Quarantine(
+                "bad-migration",
+                f"migration id {migration.id!r} of plugin {spec.name!r} is not "
+                f"'{spec.name}.<noun>'",
+            )
+        if migration.id in state.migration_ids or migration.id in seen:
+            raise _Quarantine("duplicate-migration", f"duplicate migration id: {migration.id!r}")
+        seen.add(migration.id)
+
+
 def _check_key_mappings(spec: PluginSpec) -> None:
     # The plugin's own model: an old key may never point at an injected key.
     if spec.settings is None:
@@ -712,6 +803,7 @@ def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_state_model(spec)
     _check_skills(spec, state)
     _check_doctor_checks(spec, state)
+    _check_migrations(spec, state)
 
 
 def _check_factory(spec: PluginSpec, factory: Callable[[], App]) -> App:
@@ -767,6 +859,8 @@ def _commit(
         state.skill_names.add(skill.name)
     for check in spec.doctor_checks:
         state.doctor_ids.add(check.id)
+    for migration in spec.migrations:
+        state.migration_ids.add(migration.id)
     return registered
 
 
@@ -816,6 +910,7 @@ def compose(
         try:
             _check_skills(spec, state)
             _check_doctor_checks(spec, state)
+            _check_migrations(spec, state)
             factory = spec.app_factory
             staged = (
                 None if factory is None or spec.help is not None else _check_factory(spec, factory)
