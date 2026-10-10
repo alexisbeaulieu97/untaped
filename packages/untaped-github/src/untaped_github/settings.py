@@ -35,7 +35,7 @@ class GithubSettings(BaseModel):
     """GitHub API settings."""
 
     token_sources: ClassVar[TokenSources] = TokenSources(env=("GH_TOKEN", "GITHUB_TOKEN"))
-    renamed_keys: ClassVar[Mapping[str, str]] = {
+    retired_keys: ClassVar[Mapping[str, str]] = {
         "corpus_path": "cache_dir",
         "sweep.sync_concurrency": "sweep.parallel",
     }
