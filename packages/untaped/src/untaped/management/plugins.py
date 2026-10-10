@@ -10,14 +10,16 @@ contract method instead: its owner, stability and providers.
 
 ``plugin rank`` writes the order of a contract method's providers into the
 owner's ``extensions`` settings; ``plugin schema`` prints a record kind's
-JSON Schema. Both, and ``--contracts``, import ``untaped.contracts`` only
-when they run.
+JSON Schema. ``plugin new`` scaffolds a plugin filling a contract and
+``plugin check`` checks an installed one. These, and ``--contracts``, import
+``untaped.contracts`` only when they run.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal
 
 from cyclopts import App, Parameter
@@ -119,6 +121,38 @@ def build_root_plugin_app(
         with report_errors():
             outcome = _rank(result, contract, method, list(plugins), dry_run=dry_run)
             emit(outcome, fmt=fmt, columns=columns)
+
+    @app.command(name="new")
+    @writes
+    def new_command(
+        name: Annotated[str, Parameter(help="The plugin name; the package is untaped-NAME.")],
+        /,
+        *,
+        fills: Annotated[
+            str,
+            Parameter(
+                name="--fills",
+                help="The contract the plugin fills, as OWNER.CONTRACT (plugin list --contracts).",
+            ),
+        ],
+        path: Annotated[
+            Path, Parameter(name="--path", help="Where to create untaped-NAME.")
+        ] = Path(),
+        dry_run: DryRunOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
+    ) -> None:
+        """Scaffold a plugin package that fills an installed owner's contract.
+
+        The package composes and follows the conventions as written: fill the
+        adapter's stubs, add samples to its assert_fills test, then run
+        plugin check NAME on the installed package.
+        """
+        from untaped.management.plugin_new import scaffold  # noqa: PLC0415 - imports contracts
+
+        with report_errors():
+            outcomes = scaffold(result, candidates, name, fills, path=path, dry_run=dry_run)
+            emit(outcomes, fmt=fmt, columns=columns)
 
     @app.command(name="check")
     def check_command(

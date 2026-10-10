@@ -490,6 +490,13 @@ def admits(requirement: Requirement, version: str) -> bool:
         return True
 
 
+def range_text(requirement: Requirement) -> str:
+    """``requirement``'s range as people write it, lower bound first: ``>=2,<3``."""
+    return ",".join(
+        sorted((str(each) for each in requirement.specifier), key=lambda each: each[0] != ">")
+    )
+
+
 def _running_sdk_version() -> str | None:
     """Running SDK version via importlib.metadata; None when unresolvable."""
     try:
@@ -599,7 +606,7 @@ class _CompositionState:
         return _running_sdk_version()
 
 
-def _reserved_as(name: str) -> str | None:
+def reserved_as(name: str) -> str | None:
     """What a reserved ``name`` would collide with; ``None`` when it is free."""
     if name in RESERVED_PLUGIN_NAMES:
         return "plugin name"
@@ -611,7 +618,7 @@ def _reserved_as(name: str) -> str | None:
 
 
 def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
-    reserved = _reserved_as(spec.name)
+    reserved = reserved_as(spec.name)
     if reserved is not None:
         raise _Quarantine("reserved-name", f"reserved {reserved}: {spec.name!r}")
     if spec.name in (state.shell.name, state.shell.section):
