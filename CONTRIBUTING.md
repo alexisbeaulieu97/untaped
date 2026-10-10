@@ -21,7 +21,7 @@ each package directory instead (one line, so it pastes unchanged in bash and
 PowerShell):
 
 ```
-uv tool install --force "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-ansible" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-awx" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-dotfiles" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-github" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-jira" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-recipe" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-workspace"
+uv tool install --force "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-ansible" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-awx" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-dotfiles" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-git" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-github" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-jira" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-recipe" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-workspace"
 ```
 
 To pick a ref, put `@<branch-or-sha>` before `#subdirectory=` in each URL.
@@ -397,3 +397,7 @@ _Avoid_: autofix.
 
 **Screen**: an interactive terminal UI built on the SDK's runtime.
 _Avoid_: TUI app, program, view.
+
+**Repo store**: the git plugin's shared bare repositories under
+`plugins/git/store/`, which every consumer's refs and worktrees depend on.
+_Avoid_: cache, corpus, bare cache.

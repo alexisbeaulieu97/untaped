@@ -467,6 +467,7 @@ def _samples() -> dict[str, Record]:
     from untaped.config.models import SettingOutcome, SettingRow
     from untaped.management.alias import AliasOutcome, AliasRow
     from untaped.profile.models import ProfileOutcome, ProfileRow
+    from untaped_git.domain.records import GitHostRecord, StoreReport, TreeEntry
 
     rows: list[Record] = [
         SettingRow(key="k", value={"a": [1]}, default=None, source="default", profile=None),
@@ -480,6 +481,9 @@ def _samples() -> dict[str, Record]:
         ),
         ProfileRow(name="default", active=True, keys=3),
         ProfileOutcome(name="work", action="renamed", previous_name="old"),
+        GitHostRecord(host="github.com", plugins=["github"], credential=True),
+        StoreReport(store_dir="/s", repos=1, size_bytes=2, filter_ignored={"git.example": 1}),
+        TreeEntry(mode="100644", type="blob", oid="0" * 40, path="a.yml"),
     ]
     return {str(kind_of(type(row))): row for row in rows}
 
