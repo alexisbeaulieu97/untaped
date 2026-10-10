@@ -150,6 +150,7 @@ def adopt(
         for path in stamped:
             store._write_owner_config(path)
         store._ensure()
+        _discard(source)  # a copy's original, last: the repo is complete in the store
     return Adopted(target, action)
 
 
@@ -309,7 +310,7 @@ def _copy_beside(source: Path, target: Path, *, error: type[UntapedError]) -> Pa
 
 
 def _move(source: Path, target: Path, staged: Path | None, *, error: type[UntapedError]) -> None:
-    """Rename ``source`` (or its staged copy, then delete ``source``) to ``target``."""
+    """Rename ``source``, or its staged copy, to ``target`` (a copy's ``source`` stays)."""
     try:
         if staged is None:
             try:
@@ -322,7 +323,22 @@ def _move(source: Path, target: Path, staged: Path | None, *, error: type[Untape
         staged.rename(target)
     except OSError as exc:
         raise _move_error(source, target, exc, error) from exc
-    shutil.rmtree(source, ignore_errors=True)
+
+
+def _discard(source: Path) -> None:
+    """Delete what a copy left at ``source``, under a name no later run adopts.
+
+    Renamed first, so a removal cut short leaves ``<repo>.git.removing``,
+    which :func:`remove_if_emptied` finishes, never a broken repository.
+    """
+    if not source.exists():
+        return
+    removing = source.with_name(source.name + REMOVING_SUFFIX)
+    try:
+        source.rename(removing)
+    except OSError:
+        removing = source
+    shutil.rmtree(removing, ignore_errors=True)
 
 
 def _move_error(
@@ -450,8 +466,9 @@ def remove_if_emptied(root: Path) -> bool:
     """Delete ``root`` once only empty directories and lock files are left in it.
 
     What an older cache root holds after every repository moved out: its
-    ``<repo>.git.lock`` files and the host and owner directories. Never
-    looks inside a ``*.git`` directory. Anything
+    ``<repo>.git.lock`` files, the host and owner directories, and any
+    ``<repo>.git.removing`` an interrupted run left. Never looks inside a
+    ``*.git`` directory. Anything
     else (a repository that could not move, a file of the user's) keeps it.
     Returns whether ``root`` is gone.
     """
@@ -461,7 +478,10 @@ def remove_if_emptied(root: Path) -> bool:
     for directory, dirs, files in os.walk(root):
         here = Path(directory)
         # Never into a repository: an empty refs/ directory there is load-bearing.
-        dirs[:] = [name for name in dirs if not name.endswith(".git")]
+        for name in dirs:
+            if name.endswith(".git" + REMOVING_SUFFIX):
+                shutil.rmtree(here / name, ignore_errors=True)
+        dirs[:] = [name for name in dirs if not name.endswith((".git", REMOVING_SUFFIX))]
         directories.append(here)
         for name in files:
             if name.endswith(".git.lock"):
