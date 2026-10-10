@@ -134,6 +134,31 @@ def test_assert_fills_names_a_quarantined_offer() -> None:
         assert_fills(Unbridged, samples=[Volume(id=1, name="Dune")])
 
 
+def test_assert_fills_names_an_owner_that_is_not_composed() -> None:
+    with (
+        compose_with(library_spec()),
+        pytest.raises(
+            AssertionError, match=r"library's offer to shelf is quarantined \(owner-not-installed\)"
+        ),
+    ):
+        assert_fills(Library, samples=[Volume(id=1, name="Dune")])
+
+
+def test_a_package_in_site_packages_keeps_its_fills_even_through_a_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site, cache = tmp_path / "site", tmp_path / "cache"
+    (site / "untaped_acme").mkdir(parents=True)
+    cache.mkdir()
+    (cache / "fills.json").write_text("{}", encoding="utf-8")
+    linked = site / "untaped_acme" / "fills.json"
+    linked.symlink_to(cache / "fills.json")
+    paths = {"purelib": str(site), "platlib": str(site)}
+    monkeypatch.setattr(_fills.sysconfig, "get_paths", lambda: paths)
+    assert _fills._installed(linked)
+    assert not _fills._installed(cache / "fills.json")
+
+
 def test_assert_fills_refuses_a_contract_and_an_uncomposed_provider() -> None:
     with pytest.raises(TypeError, match="BookSource is not a provider"):
         assert_fills(BookSource)  # type: ignore[type-abstract]

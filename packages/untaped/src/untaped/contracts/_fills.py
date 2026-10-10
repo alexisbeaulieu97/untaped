@@ -14,6 +14,7 @@ has changed since (``owner-schema-drift``).
 from __future__ import annotations
 
 import json
+import site
 import sys
 import sysconfig
 from collections.abc import Sequence
@@ -185,6 +186,10 @@ def record_hash(provider: Provider) -> Path | None:
 
 
 def _installed(path: Path) -> bool:
+    """Whether ``path``'s directory is in a site-packages (the file may link into a cache)."""
     paths = sysconfig.get_paths()
-    where = path.resolve()
-    return any(where.is_relative_to(Path(paths[key]).resolve()) for key in ("purelib", "platlib"))
+    roots = [paths["purelib"], paths["platlib"], *site.getsitepackages()]
+    if site.ENABLE_USER_SITE:
+        roots.append(site.getusersitepackages())
+    where = path.parent.resolve()
+    return any(where.is_relative_to(Path(root).resolve()) for root in roots)

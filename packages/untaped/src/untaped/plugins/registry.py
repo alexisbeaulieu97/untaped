@@ -470,8 +470,14 @@ def owner_requirement(
         parsed = _parse_requirement(line)
         if parsed is None or parsed.marker is None or canonicalize_name(parsed.name) != wanted:
             continue
-        # Every other marker variable has a default, so only ``extra`` decides.
-        if parsed.marker.evaluate({"extra": owner}) and not parsed.marker.evaluate({"extra": ""}):
+        # The environment fills every other variable, so ``extra`` decides; a marker
+        # naming one it can't (``extras``) adds no owner requirement.
+        try:
+            added = parsed.marker.evaluate({"extra": owner})
+            added = added and not parsed.marker.evaluate({"extra": ""})
+        except KeyError:
+            continue
+        if added:
             return parsed
     return None
 
@@ -535,7 +541,7 @@ def _check_requires_dist(candidate: PluginCandidate, state: _CompositionState) -
     for requirement, parsed in untaped_requirements:
         try:
             admits = _requirement_admits(parsed, sdk_version)
-        except InvalidVersion, UndefinedEnvironmentName:
+        except InvalidVersion, UndefinedEnvironmentName, KeyError:
             raise _Quarantine(
                 "bad-metadata",
                 f"malformed Requires-Dist entry {requirement!r} of distribution "
