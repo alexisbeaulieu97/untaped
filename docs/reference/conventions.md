@@ -6,8 +6,9 @@ the helper rather than your own version.
 
 A provider also follows these rules:
 
-- Provider code imports only `untaped.sdk` (plus `untaped.testing` in
-  tests), and another plugin only through its `api` module (see
+- Provider code imports only `untaped.sdk` and
+  [`untaped.contracts`](../contracts.md) (plus `untaped.testing` in tests),
+  and another plugin only through its `api` module (see
   [Depending on another plugin](#depending-on-another-plugin)).
 - A plugin reads and writes only its own config section, state, skills
   and doctor checks.
@@ -390,10 +391,10 @@ whose declarations or marks break these rules (`bad-settings-keys`).
 
 ## SDK stability
 
-`untaped.sdk` and `untaped.testing` are stable within a major release: a
-minor or patch release adds to them and never breaks them.
-Providers import only `untaped.sdk`, plus `untaped.testing` in tests; other
-`untaped` modules are internal.
+`untaped.sdk`, `untaped.contracts` and `untaped.testing` are stable within a
+major release: a minor or patch release adds to them and never breaks them.
+Providers import only these (`untaped.testing` in tests); other `untaped`
+modules are internal.
 A deprecated SDK attribute or callable is marked with `warnings.deprecated`
 and removed in the next major release.
 For what users can rely on, see [Versioning](../versioning.md).

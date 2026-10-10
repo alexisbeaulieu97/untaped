@@ -74,9 +74,18 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
 
 @pytest.fixture(autouse=True)
 def _isolate_config_registry_for_tests() -> Iterator[None]:
-    """Reset the registered config sections around each test."""
+    """Reset the registered config sections, and any loaded contract providers, around each test."""
     reset_config_registry_for_tests()
     get_settings.cache_clear()
+    _forget_contract_providers()
     yield
     reset_config_registry_for_tests()
     get_settings.cache_clear()
+    _forget_contract_providers()
+
+
+def _forget_contract_providers() -> None:
+    # Only when loaded: a test that asks no contract never imports untaped.contracts.
+    registry = sys.modules.get("untaped.contracts._registry")
+    if registry is not None:
+        registry.reset()

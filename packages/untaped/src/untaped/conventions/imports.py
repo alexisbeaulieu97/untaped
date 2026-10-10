@@ -1,8 +1,9 @@
-"""Import boundary of a plugin: core only through ``untaped.sdk``.
+"""Import boundary of a plugin: core only through ``untaped.sdk`` and ``untaped.contracts``.
 
-A plugin's own source may import ``untaped`` only as ``untaped.sdk``,
-and another plugin only as that plugin's ``api`` module, and only
-when its distribution declares a dependency on the other's. Its own package
+A plugin's own source may import ``untaped`` only as ``untaped.sdk`` or
+``untaped.contracts`` (declaring and filling contracts), and another
+plugin only as that plugin's ``api`` module, and only when its
+distribution declares a dependency on the other's. Its own package
 is always allowed; third-party libraries are not this rule's business.
 Every import counts, including function-level and ``TYPE_CHECKING`` ones.
 Violations are ``<file>:<line>::import-boundary::<detail>``;
@@ -20,6 +21,8 @@ from untaped.conventions.source import SourceFile, import_targets
 
 RULE = "import-boundary"
 _SDK = "untaped.sdk"
+#: The core modules a plugin's own source may import.
+_PUBLIC = frozenset({_SDK, "untaped.contracts"})
 
 
 def _targets(
@@ -59,7 +62,7 @@ def _detail(
                 f"{plugin_packages[other]}'s"
             )
         return None
-    if _is_within(target, "untaped") and target != _SDK:
+    if _is_within(target, "untaped") and target not in _PUBLIC:
         return f"imports {target}; use {_SDK}"
     return None
 
