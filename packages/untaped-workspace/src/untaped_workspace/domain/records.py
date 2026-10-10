@@ -85,6 +85,27 @@ class ArchiveOutcome(OutcomeRecord, TargetRecord):
     detail: str = ""
 
 
+RemoveAction = Literal["planned", "released", "removed", "kept", "skipped", "failed"]
+
+
+class RemoveOutcome(OutcomeRecord, TargetRecord):
+    """``workspace.remove_outcome``: what ``remove`` did (or would do) for one repo.
+
+    ``released``: the repo store kept the repo for someone else (``detail``
+    names who); ``removed``: it went (``freed_bytes``); ``kept``: another
+    workspace still uses it. A last row with an empty ``repo`` is the
+    workspace itself.
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
+
+    workspace: str
+    repo: str
+    action: RemoveAction
+    detail: str = ""
+    freed_bytes: int = 0
+
+
 RunAction = Literal["ran", "failed", "skipped"]
 
 

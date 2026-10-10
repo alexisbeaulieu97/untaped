@@ -1,8 +1,11 @@
-"""Whether a worktree can be removed without losing work, and what to do when not.
+"""Whether a worktree or a branch can be removed without losing work, and what to do when not.
 
 Archive never discards uncommitted, stashed or unpushed work without
 ``--force``: a worktree is the only copy of what was not pushed, so every
-blocker found here must stop a plain ``archive``.
+blocker found here must stop a plain ``archive``. ``remove`` applies the same
+rule to the local branches it lets the repo store delete: a branch goes only
+when every commit on it is pushed and no stash was made on it, unless the
+removal is forced, and never while a worktree has it checked out.
 """
 
 from __future__ import annotations
@@ -10,12 +13,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from untaped.sdk import plural
-from untaped_workspace.domain.models import WorktreeStatus
+from untaped_workspace.domain.models import LocalBranch, WorktreeStatus
 from untaped_workspace.domain.records import StatusRow
 
 UNCOMMITTED = "uncommitted changes"
-CACHE_MISSING = "repo cache missing; local work cannot be checked"
-"""Blocker for a repo whose cache is gone: its worktree's state is unknown."""
+NOT_STORED = "repo missing from the repo store; local work cannot be checked"
+"""Blocker for a repo the store no longer holds: its worktree's state is unknown."""
 SUBMODULES = "submodules: archive cannot verify or remove them safely"
 UNREADABLE = "git state unreadable"
 """Prefix of the blocker for a worktree git cannot read (``UNREADABLE: <reason>``)."""
@@ -67,7 +70,28 @@ def archive_hint(blocked: Sequence[StatusRow]) -> str:
             "(`git stash list` also shows other workspaces' stashes of this repo: "
             "never drop those)"
         )
-    by_hand = any(b in (CACHE_MISSING, SUBMODULES) or b.startswith(UNREADABLE) for _, b in pairs)
+    by_hand = any(b in (NOT_STORED, SUBMODULES) or b.startswith(UNREADABLE) for _, b in pairs)
     if by_hand or not parts:
         parts.append(_BY_HAND_HINT)
     return "; ".join(parts)
+
+
+def releasable_branches(branches: Sequence[LocalBranch], *, force: bool) -> list[str]:
+    """The local branches a release may delete, by name.
+
+    Never one a worktree has checked out; otherwise only a branch whose
+    commits are all pushed and with no stash made on it, or, ``force``d,
+    every one. A stash itself (``refs/stash``) is never deleted.
+    """
+    return [
+        branch.name
+        for branch in branches
+        if not branch.checked_out and (force or (not branch.unpushed and not branch.stashed))
+    ]
+
+
+def unpushed_branch_blocker(branch: LocalBranch) -> str | None:
+    """Why releasing would lose ``branch``'s commits; ``None`` when they are all pushed."""
+    if not branch.unpushed:
+        return None
+    return f"branch {branch.name}: {plural(branch.unpushed, 'commit')} not pushed"

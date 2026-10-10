@@ -203,10 +203,20 @@ def test_empty_flag_refuses_repo_flags(flag: list[str]) -> None:
     assert StateWorkspaceStore().get("J-1") is None
 
 
-def test_add_does_not_offer_repos_already_in_the_workspace(workspace_env: Path) -> None:
-    cache = workspace_env.parent / "cache" / "github.com" / "acme"
+def _plant(store_root: Path, ident: str, origin: str) -> None:
+    """A store repo of ``ident`` that workspace has used, first fetched from ``origin``."""
+    repo = store_root / f"{ident}.git"
+    repo.parent.mkdir(parents=True, exist_ok=True)
+    git(store_root, "init", "-q", "--bare", str(repo))
+    git(repo, "config", "remote.origin.url", origin)
+    (repo / "untaped-workspace.json").write_text('{"history": "complete"}\n')
+
+
+def test_add_does_not_offer_repos_already_in_the_workspace(
+    workspace_env: Path, store_root: Path
+) -> None:
     for name in ("api", "web"):
-        (cache / f"{name}.git").mkdir(parents=True)
+        _plant(store_root, f"github.com/acme/{name}", f"https://github.com/acme/{name}.git")
     store = StateWorkspaceStore()
     store.create(WorkspaceRecord(name="J-1", created_at=datetime(2026, 10, 1, tzinfo=UTC)))
     spec = RepoSpec(
@@ -262,11 +272,12 @@ def test_read_only_pick_is_a_detached_checkout(
     assert git(workspace_env / "J-1" / "api", "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"
 
 
-def test_cached_only_pick_uses_its_cache_url(
+@pytest.mark.usefixtures("composed")
+def test_a_stored_only_pick_uses_its_stored_url(
     make_upstream: Callable[..., Path], workspace_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The inventory is unavailable (no scope) while GitHub is the default host: the
-    cached-only repo must come from its own cache's origin, not github.com/acme/api."""
+    stored-only repo must come from its own stored URL, not github.com/acme/api."""
     upstream = make_upstream("api")
     origin = "https://gitlab.example/acme/api.git"
     for key, value in {
@@ -275,11 +286,11 @@ def test_cached_only_pick_uses_its_cache_url(
         "GIT_CONFIG_VALUE_0": origin,
     }.items():
         monkeypatch.setenv(key, value)
-    # A 10.x cache, made the way `create` makes one; its worktree is gone again.
-    caches = LocalGitWorktrees(workspace_env.parent / "cache")
+    # A store repo, made the way `create` makes one; its worktree is gone again.
+    worktrees = LocalGitWorktrees()
     scratch = workspace_env.parent / "scratch"
-    caches.checkout(origin, scratch, branch=None, base=None)
-    caches.remove(origin, scratch, force=True)
+    worktrees.checkout(origin, scratch, branch=None, base=None)
+    worktrees.remove(origin, scratch, force=True)
     settings = {"mode": "write", "base": "", "branch": ""}
     item = PickItem(id="gitlab.example/acme/api", label="gitlab.example/acme/api")
     backend = _Capture(
@@ -324,11 +335,8 @@ def test_a_pick_dropped_by_a_refresh_uses_its_remembered_url(
     assert record is not None and record.repos[0].url == url
 
 
-def test_an_owner_less_hosted_cache_is_offered(workspace_env: Path) -> None:
-    cache = workspace_env.parent / "cache" / "git.example" / "project.git"
-    cache.parent.mkdir(parents=True)
-    git(workspace_env.parent, "init", "-q", "--bare", str(cache))
-    git(cache, "remote", "add", "origin", "https://git.example/project.git")
+def test_an_owner_less_hosted_repo_is_offered(workspace_env: Path, store_root: Path) -> None:
+    _plant(store_root, "git.example/project", "https://git.example/project.git")
     backend = _Capture(None)
     run(app, ["create", "J-1"], interactive=True, prompt_backend=backend)
     (request,) = backend.requests

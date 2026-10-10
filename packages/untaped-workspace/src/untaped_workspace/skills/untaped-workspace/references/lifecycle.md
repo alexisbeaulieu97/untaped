@@ -1,10 +1,11 @@
 # Workspace lifecycle
 
-Create, extend and archive a task workspace. Options are in
+Create, extend, archive and remove a task workspace. Options are in
 `untaped workspace <command> --help`.
 
 Contents: names, naming repos, the picker, branches and bases, read-only
-repos, partial failure, archiving and force, after archiving, the cache.
+repos, partial failure, the history backfill, archiving and force, after
+archiving, removing, the repo store.
 
 ## Names
 
@@ -44,11 +45,11 @@ picker.
 - `create` with no NAME asks for one first, refusing invalid names, active
   workspace names and non-empty existing directories.
 - It lists the GitHub inventory (opened from the cache, refreshed when
-  stale), repos in the local cache (as `host/[owner/]name`, checked out from
-  their cached URL) and any git URL typed in. `add` leaves out repos already
+  stale), repos workspace has in the repo store (as `host/[owner/]name`,
+  checked out from their stored URL) and any git URL typed in. `add` leaves out repos already
   in the workspace.
 - Each selected repo has a mode (write or read-only), a base (completes from
-  cached branches) and a branch (empty uses `workspace.branch_template`).
+  the stored branches) and a branch (empty uses `workspace.branch_template`).
   `--branch` and `--base` without repo flags prefill these.
 - Keys: `space` toggles a repo (`enter` too, in the list), `/` searches,
   `tab` switches pane, `enter` edits a setting in the selected pane and
@@ -67,7 +68,7 @@ fails that repo as `not_found`.
 
 How a writable repo is checked out, with the row's `action` and `detail`:
 
-| Branch state in the cache | Result |
+| Branch state in the repo store | Result |
 |---|---|
 | Exists nowhere | `created`, `from origin/BASE` |
 | On origin only | `checked_out`, `tracking origin/BRANCH` |
@@ -92,6 +93,19 @@ recorded even when another fails; the command exits 1. Fix the cause and run
 `untaped workspace add NAME --repo ...` for the failed repos. Repos already
 present report `unchanged`.
 
+## The history backfill
+
+The repo store keeps repos blobless: a checkout fetches the files of its own
+commit only. After the worktree is in place, `create` and `add` fetch the
+files of every commit of the remote's branches and tags, so `git blame`,
+`git log -p` and checking out an old tag work offline. The backfill never
+fails a repo: when it stops (a timeout, a dropped connection), the row is
+still `created` or `checked_out`, the command exits 0, and a warning says
+"history backfill of REPO stopped: ...; `untaped workspace status --fetch
+NAME` resumes it". Until then, git fetches missing files on demand. Each
+`status --fetch` backfills what the fetch brought; one that stops again says
+so in the row's `detail`.
+
 ## Archiving
 
 `untaped workspace archive NAME` checks each repo offline, so push (or fetch)
@@ -103,9 +117,9 @@ first. A repo blocks archiving with any of:
   read-only repos too;
 - "submodules: archive cannot verify or remove them safely" (any initialised
   submodule);
-- "repo cache missing; local work cannot be checked";
+- "repo missing from the repo store; local work cannot be checked";
 - "git state unreadable: ..." (status `state` `error`, for example after the
-  cache was recreated).
+  store repo was recreated).
 
 While any repo blocks, archive exits 1, removes nothing, and its hint says
 what to do for each kind of blocker. `untaped workspace status NAME --check`
@@ -116,7 +130,7 @@ and always exits 0.
 `--force` archives anyway after a confirmation; without a terminal it needs
 `--yes` (else exit 2). It discards uncommitted work and removes the
 directories, deleting a worktree git refuses to remove. Branch commits and
-stashes stay in the repo cache. Never run it without the four steps in
+stashes stay in the repo store. Never run it without the four steps in
 [Safety](../SKILL.md#safety).
 
 If removing a repo fails, the workspace stays active so archive can be retried.
@@ -131,14 +145,42 @@ Archiving removes the worktrees and the workspace directory, and records the
 workspace under `untaped workspace list --archived`. Other files left in the
 workspace directory stay, with a `skipped` workspace row; `create` refuses
 that name until the directory is moved aside. The branches stay in the
-repo cache and on the remote, so a later `untaped workspace create NAME --repo
+repo store and on the remote, so a later `untaped workspace create NAME --repo
 OWNER/NAME --branch BRANCH` resumes the work.
 
-## The cache is load-bearing
+## Removing
 
-Worktrees point into the bare cache at `workspace.cache_dir`. Do not delete
-it while workspaces are active. Every cache write runs under a per-repo lock,
-so concurrent runs wait rather than corrupt it. `create`, `add` and `archive` of one workspace also
-wait for each other (`archive` holds the workspace from its check, through
-any confirmation, to the removal): an `add` queued behind an `archive` then
-fails as not found.
+`untaped workspace remove NAME` gives the space back. It takes an active
+workspace (archived first, with archive's checks, refusals and `--force`) or
+an archived one, and drops every record of NAME. Then, for each of its repos
+that no other workspace, active or archived, names, it releases the repo
+from the repo store: workspace's refs (`origin/*`, the tags), its file and
+the local branches that no worktree has checked out and whose commits are
+all on the remote go, and the repo itself when no other plugin uses it.
+
+- Before anything changes, a branch of the workspace with commits the remote
+  lacks refuses the removal (exit 1, "branch BRANCH: N commits not pushed"),
+  as archive's blockers do. Push it from a workspace on that branch, or pass
+  `--force`, which deletes it.
+- A branch with a stash made on it stays, and so does the stash: `--force`
+  never deletes a stash. The repo then stays too, listed under `held by
+  branches` in `untaped git store`.
+- `remove` always confirms; without a terminal it needs `--yes` (else exit
+  2). `--dry-run` previews with `planned` and `skipped` rows and exits 0.
+
+Each repo's row says what happened: `removed` (with the space freed),
+`released` (`kept: ...` names who still uses the repo: another plugin, a
+branch, a stash, a worktree added by hand), `kept` (another workspace uses
+it), `skipped` (not in the repo store) or `failed`. A last row with an empty
+`repo` is the workspace itself.
+
+## The repo store is load-bearing
+
+Worktrees point into the repo's copy in the git plugin's repo store
+(`git.store_dir`; `untaped git store` reports it). Never delete a store repo
+by hand while workspaces use it: `remove` releases what workspace no longer
+needs. The store locks each repo for every write, so concurrent runs wait
+rather than corrupt it. `create`, `add`, `archive` and `remove` of one
+workspace also wait for each other (`archive` and `remove` hold the
+workspace from their check, through any confirmation, to the removal): an
+`add` queued behind an `archive` then fails as not found.

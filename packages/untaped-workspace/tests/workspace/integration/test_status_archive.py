@@ -43,8 +43,8 @@ class Env:
 
 
 @pytest.fixture
-def env(tmp_path: Path, make_upstream: Callable[..., Path]) -> Env:
-    git_ = LocalGitWorktrees(tmp_path / "cache")
+def env(tmp_path: Path, store_root: Path, make_upstream: Callable[..., Path]) -> Env:
+    git_ = LocalGitWorktrees()
     workspaces = tmp_path / "ws"
     store = StateWorkspaceStore(workspaces_dir=workspaces)
     provision = ProvisionRepos(
@@ -99,8 +99,10 @@ def test_hand_deleted_repo_is_missing(env: Env) -> None:
     assert row.state == "missing"
 
 
-def test_read_only_commit_blocks(tmp_path: Path, make_upstream: Callable[..., Path]) -> None:
-    git_ = LocalGitWorktrees(tmp_path / "cache")
+def test_read_only_commit_blocks(
+    tmp_path: Path, store_root: Path, make_upstream: Callable[..., Path]
+) -> None:
+    git_ = LocalGitWorktrees()
     store = StateWorkspaceStore(workspaces_dir=tmp_path / "ws")
     ProvisionRepos(
         store,
@@ -118,11 +120,11 @@ def test_read_only_commit_blocks(tmp_path: Path, make_upstream: Callable[..., Pa
     assert row.blockers == ("1 commit not pushed",)
 
 
-def test_deleted_cache_is_cache_missing(env: Env, tmp_path: Path) -> None:
-    shutil.rmtree(tmp_path / "cache")
+def test_a_repo_gone_from_the_store_is_cache_missing(env: Env, store_root: Path) -> None:
+    shutil.rmtree(store_root)
     [row] = env.status(env.record)
     assert row.state == "cache_missing"
-    assert row.blockers == ("repo cache missing; local work cannot be checked",)
+    assert row.blockers == ("repo missing from the repo store; local work cannot be checked",)
 
 
 def test_archive_removes_and_records(env: Env) -> None:
@@ -189,10 +191,10 @@ class _GatedGit:
 
 
 def test_add_during_archive_waits_then_fails_without_a_worktree(
-    tmp_path: Path, make_upstream: Callable[..., Path]
+    tmp_path: Path, store_root: Path, make_upstream: Callable[..., Path]
 ) -> None:
     workspaces = tmp_path / "ws"
-    real = LocalGitWorktrees(tmp_path / "cache")
+    real = LocalGitWorktrees()
     store = StateWorkspaceStore(workspaces_dir=workspaces)
     provision = ProvisionRepos(
         store,
