@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from untaped_ansible.domain import payloads
@@ -169,48 +168,33 @@ class EdgeBatchRead(Protocol):
 
 
 class GitCache(Protocol):
-    """Git operations needed by git-backed source refresh."""
+    """Git operations needed by git-backed source refresh (the repo store)."""
 
-    def ensure_bare(
-        self,
-        url: str,
-        *,
-        cache_dir: Path,
-        auth_header: str | None,
-    ) -> Path: ...
+    def fetch(self, url: str, refs: Sequence[payloads.GitRef]) -> None:
+        """Bring ``refs``, each at its probed commit, into the store repo of ``url``."""
+        ...
 
-    def fetch_refs(
-        self,
-        bare_path: Path,
-        *,
-        refspecs: list[str],
-        depth: int,
-        blob_filter: bool,
-        auth_header: str | None,
-    ) -> None: ...
+    def refusal(self, ref: payloads.GitRef) -> str | None:
+        """Why the store cannot hold ``ref``'s name (git allows some it refuses), else ``None``."""
+        ...
 
     def read_files(
-        self,
-        bare_path: Path,
-        sha: str,
-        paths: list[str],
-        *,
-        auth_header: str | None,
-    ) -> dict[str, str]:
-        """Return contents for the ``paths`` that exist at ``sha``; omit the rest."""
+        self, url: str, shas: Sequence[str], paths: Sequence[str]
+    ) -> dict[str, dict[str, str]]:
+        """``sha → path → content`` for the ``paths`` present at each of ``shas``."""
         ...
 
 
 class LsRemoteGit(Protocol):
     """The ``git ls-remote`` call the Git ref probe needs."""
 
-    def ls_remote(
-        self,
-        url: str,
-        *,
-        patterns: list[str],
-        auth_header: str | None,
-    ) -> str: ...
+    def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
+        """``ref → commit`` (annotated tags peeled) of ``url``'s refs matching ``patterns``."""
+        ...
+
+    def default_branch(self, url: str) -> str | None:
+        """The branch ``url``'s ``HEAD`` points at, or ``None``."""
+        ...
 
 
 class BatchRepoRefsClient(Protocol):

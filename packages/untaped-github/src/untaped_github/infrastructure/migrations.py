@@ -26,7 +26,6 @@ from untaped.sdk import (
     MigrationOutcome,
     MigrationRow,
     UntapedError,
-    cache_origin,
     dir_bytes,
     old_dirs,
     plugin_dir,
@@ -40,6 +39,7 @@ from untaped_git.api import (
     bare_repos,
     overlaps_store,
     remove_if_emptied,
+    repo_origin,
     store_root,
     unfinished_removals,
 )
@@ -195,7 +195,7 @@ def _worktrees(root: Path) -> list[Path]:
 
 
 def _target(repo: Path) -> Path | None:
-    label = cache_origin(repo)
+    label = repo_origin(repo)
     if label is None:
         return None
     return RepoStore.for_url(label, plugin=SPEC, error=GitCorpusError).path

@@ -39,7 +39,6 @@ from untaped.sdk import (
     PluginContext,
     UntapedError,
     app_context,
-    cache_origin,
     dir_bytes,
     old_dirs,
     plural,
@@ -192,14 +191,14 @@ def apply_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Migra
 
 def _mover(listed: Sequence[Path]) -> Callable[[Path], None]:
     """Move one 10.x repository into the store, then give workspace's worktrees their config."""
-    from untaped_git.api import adopt  # noqa: PLC0415
+    from untaped_git.api import adopt, repo_origin  # noqa: PLC0415
     from untaped_workspace import SPEC  # noqa: PLC0415
     from untaped_workspace.infrastructure.git_worktrees import LocalGitWorktrees  # noqa: PLC0415
 
     worktrees = LocalGitWorktrees(profile=app_context().profile)
 
     def move(repo: Path) -> None:
-        label = cache_origin(repo)
+        label = repo_origin(repo)
         owned = _worktrees_of(repo, listed)
         adopt(repo, plugin=SPEC, error=GitError, owned=owned)
         if label is not None:
@@ -247,10 +246,10 @@ def _is_mirror(repo: Path) -> bool:
 
 
 def _in_store(repo: Path) -> bool:
-    from untaped_git.api import RepoStore  # noqa: PLC0415
+    from untaped_git.api import RepoStore, repo_origin  # noqa: PLC0415
     from untaped_workspace import SPEC  # noqa: PLC0415
 
-    label = cache_origin(repo)
+    label = repo_origin(repo)
     if label is None:
         return False
     return RepoStore.for_url(label, plugin=SPEC, error=GitError).exists()

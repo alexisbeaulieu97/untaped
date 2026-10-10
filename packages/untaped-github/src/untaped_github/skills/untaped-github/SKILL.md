@@ -13,9 +13,9 @@ unscanned before reporting "none" or "all".
 
 - Settings live under `profiles.<name>.github`: `base_url`, `token` or
   `token_command`, `default_org`, `git_protocol` (`https` or `ssh` for
-  sweep fetches and workspace clone URLs), `sweep` freshness and
-  concurrency, and `inventory` (the orgs and teams whose repos workspace
-  looks names up in and its picker lists).
+  sweep fetches, workspace clone URLs and `untaped ansible source
+  refresh`), `sweep` freshness and concurrency, and `inventory` (the orgs
+  and teams whose repos workspace looks names up in and its picker lists).
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server
   usually needs `untaped config set github.base_url https://HOST/api/v3`.
 - The user stores the token by running `untaped auth set github` in their own

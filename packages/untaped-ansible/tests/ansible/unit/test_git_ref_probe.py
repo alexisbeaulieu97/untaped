@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from untaped.settings import get_settings
 from untaped_ansible.domain.payloads import GitRef, ProbeTarget
-from untaped_ansible.infrastructure.git_cache import GitCacheError, GitRepositoryCache
 from untaped_ansible.infrastructure.git_ref_probe import GitRemoteRefProbe
+from untaped_ansible.infrastructure.git_store import GitCacheError, GitSourceStore
 
 _URL = "https://github.com/acme/site.git"
 _TARGET = ProbeTarget(full_name="acme/site", default_branch="main", clone_url=_URL)
@@ -18,40 +19,34 @@ _TARGET = ProbeTarget(full_name="acme/site", default_branch="main", clone_url=_U
 
 class FakeGit:
     def __init__(self) -> None:
-        self.outputs: dict[str, str] = {}
+        self.outputs: dict[str, dict[str, str]] = {}
+        self.heads: dict[str, str | None] = {}
         self.failures: dict[str, Exception] = {}
-        self.calls: list[tuple[str, tuple[str, ...], str | None]] = []
+        self.calls: list[tuple[str, tuple[str, ...]]] = []
 
-    def ls_remote(
-        self,
-        url: str,
-        *,
-        patterns: list[str],
-        auth_header: str | None,
-    ) -> str:
-        self.calls.append((url, tuple(patterns), auth_header))
+    def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
+        self.calls.append((url, tuple(patterns)))
         failure = self.failures.get(url)
         if failure is not None:
             raise failure
-        return self.outputs.get(url, "")
+        return self.outputs.get(url, {})
+
+    def default_branch(self, url: str) -> str | None:
+        self.calls.append((url, ("--symref",)))
+        return self.heads.get(url)
 
 
-def test_git_probe_all_mode_parses_branches_tags_and_peeled_tags() -> None:
+def test_git_probe_all_mode_reads_branches_and_peeled_tags() -> None:
     git = FakeGit()
-    git.outputs[_URL] = "\n".join(
-        [
-            "ref: refs/heads/main\tHEAD",
-            "sha-head\tHEAD",
-            "sha-dev\trefs/heads/dev",
-            "sha-main\trefs/heads/main",
-            "sha-light\trefs/tags/v1",
-            "sha-tag-object\trefs/tags/v2",
-            "sha-peeled\trefs/tags/v2^{}",
-            "",
-        ]
-    )
+    git.outputs[_URL] = {
+        "HEAD": "sha-head",
+        "refs/heads/dev": "sha-dev",
+        "refs/heads/main": "sha-main",
+        "refs/tags/v1": "sha-light",
+        "refs/tags/v2": "sha-peeled",  # ls_remote peels annotated tags
+    }
 
-    report = GitRemoteRefProbe(git, clone_protocol="https", auth_header="AUTH").probe(
+    report = GitRemoteRefProbe(git, clone_protocol="https").probe(
         [_TARGET],
         kinds=("heads", "tags"),
     )
@@ -65,54 +60,58 @@ def test_git_probe_all_mode_parses_branches_tags_and_peeled_tags() -> None:
         GitRef(kind="tags", name="v2", sha="sha-peeled"),
     )
     assert git.calls == [
-        (
-            "https://github.com/acme/site.git",
-            ("HEAD", "refs/heads/*", "refs/tags/*"),
-            "AUTH",
-        )
+        ("https://github.com/acme/site.git", ("HEAD", "refs/heads/*", "refs/tags/*"))
     ]
 
 
 def test_git_probe_respects_requested_ref_kinds() -> None:
     git = FakeGit()
-    git.outputs[_URL] = "sha-main\trefs/heads/main\n"
+    git.outputs[_URL] = {"refs/heads/main": "sha-main"}
 
-    GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
+    GitRemoteRefProbe(git, clone_protocol="https").probe(
         [_TARGET],
         kinds=("heads",),
     )
 
-    assert git.calls == [("https://github.com/acme/site.git", ("HEAD", "refs/heads/*"), None)]
+    assert git.calls == [("https://github.com/acme/site.git", ("HEAD", "refs/heads/*"))]
 
 
-@pytest.mark.parametrize(
-    ("output", "branch"),
-    [
-        ("ref: refs/heads/trunk\tHEAD\nsha-trunk\tHEAD\nsha-trunk\trefs/heads/trunk\n", "trunk"),
-        # no HEAD symref: fall back to the inventory's default branch
-        ("sha-main\trefs/heads/main\n", "main"),
-    ],
-)
-def test_git_probe_default_branch_mode_resolves_head_symref(output: str, branch: str) -> None:
+def test_git_probe_default_branch_mode_takes_the_inventorys_branch() -> None:
     git = FakeGit()
-    git.outputs[_URL] = output
+    git.outputs[_URL] = {"HEAD": "sha-main", "refs/heads/main": "sha-main"}
 
-    report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
+    report = GitRemoteRefProbe(git, clone_protocol="https").probe(
         [_TARGET], kinds=("heads", "tags"), mode="default_branch"
     )
 
-    assert report.repos["acme/site"].default_branch == branch
-    assert report.repos["acme/site"].refs == (
-        GitRef(kind="heads", name=branch, sha=f"sha-{branch}"),
+    assert report.repos["acme/site"].default_branch == "main"
+    assert report.repos["acme/site"].refs == (GitRef(kind="heads", name="main", sha="sha-main"),)
+    assert git.calls == [(_URL, ("HEAD", "refs/heads/main"))]
+
+
+@pytest.mark.parametrize(("head", "branch"), [("trunk", "trunk"), (None, "HEAD")])
+def test_git_probe_asks_the_remotes_head_when_the_inventory_names_no_branch(
+    head: str | None, branch: str
+) -> None:
+    git = FakeGit()
+    git.heads[_URL] = head
+    git.outputs[_URL] = {"HEAD": "sha-tip", "refs/heads/trunk": "sha-tip"}
+    target = _TARGET.model_copy(update={"default_branch": "HEAD"})
+
+    report = GitRemoteRefProbe(git, clone_protocol="https").probe(
+        [target], kinds=("heads",), mode="default_branch"
     )
-    assert git.calls == [(_URL, ("HEAD", "refs/heads/main"), None)]
+
+    assert report.repos["acme/site"].default_branch == branch
+    assert report.repos["acme/site"].refs == (GitRef(kind="heads", name=branch, sha="sha-tip"),)
+    assert git.calls[0] == (_URL, ("--symref",))
 
 
 def test_git_probe_reports_git_failures_per_repo() -> None:
     git = FakeGit()
     git.failures[_URL] = GitCacheError("git ls-remote failed")
 
-    report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
+    report = GitRemoteRefProbe(git, clone_protocol="https").probe(
         [_TARGET],
         kinds=("heads",),
     )
@@ -127,7 +126,7 @@ def test_git_probe_timeout_is_a_retryable_failure() -> None:
     git = FakeGit()
     git.failures[_URL] = GitCacheError("git ls-remote timed out after 60s", category="unavailable")
 
-    report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
+    report = GitRemoteRefProbe(git, clone_protocol="https").probe(
         [_TARGET],
         kinds=("heads",),
     )
@@ -138,7 +137,7 @@ def test_git_probe_timeout_is_a_retryable_failure() -> None:
 def test_git_probe_empty_output_is_success_with_no_refs() -> None:
     git = FakeGit()
 
-    report = GitRemoteRefProbe(git, clone_protocol="https", auth_header=None).probe(
+    report = GitRemoteRefProbe(git, clone_protocol="https").probe(
         [_TARGET],
         kinds=("heads",),
     )
@@ -150,8 +149,8 @@ def test_git_probe_empty_output_is_success_with_no_refs() -> None:
 
 def test_git_probe_reports_progress() -> None:
     git = FakeGit()
-    git.outputs["https://github.com/acme/a.git"] = ""
-    git.outputs["https://github.com/acme/b.git"] = ""
+    git.outputs["https://github.com/acme/a.git"] = {}
+    git.outputs["https://github.com/acme/b.git"] = {}
     progress: list[tuple[int, int]] = []
     targets = [
         ProbeTarget(
@@ -162,7 +161,7 @@ def test_git_probe_reports_progress() -> None:
         ),
     ]
 
-    GitRemoteRefProbe(git, clone_protocol="https", auth_header=None, concurrency=1).probe(
+    GitRemoteRefProbe(git, clone_protocol="https", concurrency=1).probe(
         targets,
         kinds=("heads",),
         on_progress=lambda done, total: progress.append((done, total)),
@@ -175,12 +174,16 @@ def test_git_probe_validates_construction_arguments() -> None:
     git = FakeGit()
 
     with pytest.raises(ValueError, match="clone_protocol"):
-        GitRemoteRefProbe(git, clone_protocol="file", auth_header=None)
+        GitRemoteRefProbe(git, clone_protocol="file")
     with pytest.raises(ValueError, match="concurrency"):
-        GitRemoteRefProbe(git, clone_protocol="https", auth_header=None, concurrency=0)
+        GitRemoteRefProbe(git, clone_protocol="https", concurrency=0)
 
 
-def test_git_probe_uses_real_local_ls_remote_subprocess(tmp_path: Path) -> None:
+def test_git_probe_uses_real_local_ls_remote_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_GIT__STORE_DIR", str(tmp_path / "store"))
+    get_settings.cache_clear()
     worktree = tmp_path / "worktree"
     bare = tmp_path / "remote.git"
     _git(["init", "-q", str(worktree)])
@@ -201,12 +204,10 @@ def test_git_probe_uses_real_local_ls_remote_subprocess(tmp_path: Path) -> None:
     branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=worktree).strip()
     target = ProbeTarget(full_name="acme/site", default_branch=branch, clone_url=str(bare))
 
-    report = GitRemoteRefProbe(
-        GitRepositoryCache(auth_host=None),
-        clone_protocol="https",
-        auth_header=None,
-        concurrency=1,
-    ).probe([target], kinds=("heads", "tags"))
+    report = GitRemoteRefProbe(GitSourceStore(), clone_protocol="https", concurrency=1).probe(
+        [target], kinds=("heads", "tags")
+    )
+    get_settings.cache_clear()
 
     refs = {(ref.kind, ref.name): ref.sha for ref in report.repos["acme/site"].refs}
     assert refs[("heads", branch)] == commit_sha

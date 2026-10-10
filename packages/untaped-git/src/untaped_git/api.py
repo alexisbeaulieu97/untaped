@@ -4,6 +4,7 @@
 shared by plugins, each in its own ref namespace); ``GitHost`` is the
 contract a forge plugin fills to supply credentials and a proxy for its host;
 ``ls_remote`` and ``default_branch`` query a remote with those credentials;
+``check_names`` says why a branch or tag name is one the store refuses.
 ``adopt`` moves a repository an older untaped version left into the store
 (``setup migrate-dirs`` rows call it).
 The closed :data:`__all__` keeps the boundary explicit.
@@ -15,15 +16,15 @@ import os
 from collections.abc import Collection, Sequence
 from pathlib import Path
 
-from untaped.sdk import list_caches
 from untaped_git.domain.delta import RefDelta, RefMove
 from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
+from untaped_git.domain.namespace import check_names
 from untaped_git.domain.records import TreeEntry
 from untaped_git.domain.release import Released, Removed
-from untaped_git.domain.url import GitUrl, store_key, validate_git_url
+from untaped_git.domain.url import GitUrl, repo_url_parts, store_key, validate_git_url
 from untaped_git.infrastructure import remote
 from untaped_git.infrastructure.adopt import Adopted, adopt, remove_if_emptied, unfinished_removals
-from untaped_git.infrastructure.repo_files import config_value
+from untaped_git.infrastructure.repo_files import config_value, list_repos, repo_origin
 from untaped_git.infrastructure.store import Prefetched, RepoStore
 from untaped_git.settings import git_settings
 
@@ -42,10 +43,13 @@ __all__ = [
     "TreeEntry",
     "adopt",
     "bare_repos",
+    "check_names",
     "default_branch",
     "ls_remote",
     "overlaps_store",
     "remove_if_emptied",
+    "repo_origin",
+    "repo_url_parts",
     "store_key",
     "store_root",
     "unfinished_removals",
@@ -95,7 +99,7 @@ def bare_repos(
     repos 10.x workspace marked ``untaped.layout`` (``True``) or only the
     others (``False``).
     """
-    repos = list_caches(root, skip=skip)
+    repos = list_repos(root, skip=skip)
     if workspace_layout is None:
         return repos
     return [

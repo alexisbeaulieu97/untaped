@@ -13,9 +13,10 @@ source's cache), how fresh that cache is, and where the walk stopped.
 
 - GitHub access comes from the `github` settings: a token is required.
   Private repos also need Git access over HTTPS with that token, or SSH when
-  `ansible.git_clone_protocol` is `ssh`.
+  `github.git_protocol` is `ssh`.
 - A *source* is a saved set of orgs, teams and repos whose dependency files
-  are scanned into a local cache. Sources and source aliases are `ansible`
+  are scanned into a local cache (the repos themselves live in the git
+  plugin's repo store, `untaped git store`). Sources and source aliases are `ansible`
   state; `ansible.default_source` names the source used when no `--source`
   or inline selector is given.
 

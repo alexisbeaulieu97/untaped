@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 from pydantic import ValidationError
 
-from untaped.sdk import UsageError, first_validation_error, q, repo_url_parts, safe_path_segment
+from untaped.sdk import UsageError, first_validation_error, q, safe_path_segment
 from untaped_workspace.domain.models import RepoSpec
 from untaped_workspace.domain.repo import Repo
 
@@ -20,6 +20,8 @@ def validate_workspace_name(name: str) -> str:
 
 def looks_like_url(ident: str) -> bool:
     """Whether ``ident`` is a URL, scp-style ``user@host:path``, a path, or ends in ``.git``."""
+    from untaped_git.api import repo_url_parts  # noqa: PLC0415  # keeps CLI startup free of git
+
     return (
         "://" in ident
         or ident.startswith(("/", "~"))
@@ -55,6 +57,8 @@ def typed_repo(url: str) -> Repo:
     git plugin's ``GitHost`` for the URL's host. A URL untaped refuses
     (a path, ``file://``, credentials in it) is a :class:`UsageError`.
     """
+    from untaped_git.api import repo_url_parts  # noqa: PLC0415  # keeps CLI startup free of git
+
     _, segments = repo_url_parts(url)
     name = "/".join(segments) or url
     try:
@@ -68,6 +72,8 @@ def typed_repo(url: str) -> Repo:
 
 def repo_identity(url: str) -> tuple[str, str]:
     """``(owner, name)`` from a clone URL or path; owner is ``""`` when absent."""
+    from untaped_git.api import repo_url_parts  # noqa: PLC0415  # keeps CLI startup free of git
+
     _, segments = repo_url_parts(url)
     name = segments[-1] if segments else url
     owner = segments[-2] if len(segments) > 1 else ""
