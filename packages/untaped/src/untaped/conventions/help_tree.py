@@ -138,9 +138,10 @@ _DEFAULT_NAMES = frozenset({"Commands", "Parameters", "Arguments"})
 def panel_violations(app: App) -> Iterator[tuple[str, str]]:
     """Yield ``(rule, detail)`` for the help panels ``app`` names.
 
-    Every group an app can name counts: its own ``group``, its
-    ``group_commands``/``group_parameters``/``group_arguments`` and each
-    argument's group. Core's panels pass by identity, so the Plugins panel core
+    The groups its help can render count: its own ``group``, its
+    ``group_commands`` when it lists subcommands, and each shown argument's
+    resolved group (which carries ``group_parameters``/``group_arguments``,
+    own or inherited). Core's panels pass by identity, so the Plugins panel core
     puts a plugin's top app in is never the plugin's mistake.
     """
     seen: set[str] = set()
