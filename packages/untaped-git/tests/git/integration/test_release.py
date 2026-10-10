@@ -13,6 +13,7 @@ from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote
 from untaped_git.domain.release import Released, Removed
 from untaped_git.errors import StoreError
+from untaped_git.infrastructure.repo_files import worktree_entries
 from untaped_git.infrastructure.store import RELEASE_MARK, RepoStore
 
 
@@ -305,3 +306,27 @@ def test_a_worktree_registered_with_a_relative_path_is_still_owned(
     assert github.worktree_owners() == {tree.resolve(): "github"}
     assert isinstance(github.release(), Removed)
     assert not tree.exists()
+
+
+def test_a_relative_worktree_path_resolves_through_a_symlinked_store(
+    store_for: StoreFor, tmp_path: Path
+) -> None:
+    """git computes the relative path between real paths; ``..`` must not apply to the link."""
+    github = store_for("github")
+    github.fetch(branches=["main"])
+    tree = tmp_path / "plugins" / "github" / "worktrees" / "app"
+    github.worktree_add(tree, "refs/untaped/github/heads/main")
+    deep = tmp_path / "real" / "a" / "b"
+    deep.mkdir(parents=True)
+    moved = deep / github.path.name
+    github.path.rename(moved)
+    link = tmp_path / "link"
+    link.symlink_to(deep)
+    (admin,) = ((link / github.path.name) / "worktrees").iterdir()
+    target = os.path.relpath(tree.resolve() / ".git", admin.resolve())
+    (admin / "gitdir").write_text(target + "\n")
+
+    (entry,) = worktree_entries(link / github.path.name)
+
+    assert entry.path == tree.resolve()
+    assert entry.owner == "github"

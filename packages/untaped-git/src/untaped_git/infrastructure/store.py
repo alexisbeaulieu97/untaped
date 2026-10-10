@@ -363,7 +363,8 @@ class RepoStore:
                 self._remove_removing()
                 return Removed()
             if unless_in_use and any(
-                entry.owner == self._plugin for entry in worktree_entries(self._path)
+                entry.owner == self._plugin and entry.path is not None and entry.path.is_dir()
+                for entry in worktree_entries(self._path)
             ):
                 return self._holders() or Released()
             checked_out = set(self._checked_out()) & set(refs)

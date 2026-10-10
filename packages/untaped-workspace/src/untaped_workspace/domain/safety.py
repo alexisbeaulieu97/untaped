@@ -104,4 +104,5 @@ def unpushed_branch_blocker(branch: LocalBranch) -> str | None:
     """Why releasing would lose ``branch``'s commits; ``None`` when they are all pushed."""
     if not branch.unpushed:
         return None
-    return f"branch {branch.name}: {plural(branch.unpushed, 'commit')} not pushed"
+    stash = ", a stash made on it" if branch.stashed else ""
+    return f"branch {branch.name}: {plural(branch.unpushed, 'commit')} not pushed{stash}"

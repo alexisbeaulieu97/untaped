@@ -65,8 +65,9 @@ def worktree_entries(repo: Path) -> list[WorktreeEntry]:
         path: Path | None
         try:
             gitdir = (admin / "gitdir").read_text(encoding="utf-8", errors="replace").strip()
-            # Relative since git 2.48 with worktree.useRelativePaths: from the admin dir.
-            path = Path(os.path.normpath(admin / gitdir)).parent if gitdir else None
+            # Relative with git 2.48+ worktree.useRelativePaths, from the admin
+            # directory's real path, so symlinks resolve before any ``..``.
+            path = Path(os.path.realpath(admin / gitdir)).parent if gitdir else None
         except OSError:
             path = None
         config = admin / "config.worktree"

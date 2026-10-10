@@ -318,6 +318,9 @@ def test_releasable_branches_follow_the_rule() -> None:
 def test_unpushed_branch_blocker() -> None:
     assert unpushed_branch_blocker(_branch("b")) is None
     assert unpushed_branch_blocker(_branch("b", unpushed=1)) == "branch b: 1 commit not pushed"
+    assert unpushed_branch_blocker(_branch("b", unpushed=2, stashed=True)) == (
+        "branch b: 2 commits not pushed, a stash made on it"
+    )
 
 
 def test_branch_work_names_commits_and_a_stash() -> None:
