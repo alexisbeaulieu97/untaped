@@ -21,7 +21,7 @@ from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo
 from untaped_workspace.cli import app
-from untaped_workspace.infrastructure import StateWorkspaceStore
+from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import git
 from workspace.fakes import Forge, Host, Listing, Project, rank, repo
 
@@ -333,6 +333,35 @@ def test_resolve_saves_the_url_the_source_lists_now_and_rewrites_the_worktree_co
         (web.url, GITHUB),
         (docs.url, None),
     ]
+    worktree = workspace_env / "J-1" / "api"
+    assert git(worktree, "config", "--worktree", f"url.{ssh}.insteadOf") == api.url
+
+
+def test_resolve_keeps_the_old_url_when_the_worktree_cannot_be_configured(
+    make_upstream: Callable[..., GitRemote],
+    workspace_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The new URL is saved only once the worktree follows it, so a retry configures it."""
+    api = make_upstream("api")
+    _create(_listed(api))
+    ssh = "ssh://git@git.example/acme/api.git"
+
+    def broken(self: object, url: str, dest: Path) -> None:
+        raise UntapedError("disk full")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(LocalGitWorktrees, "configure", broken)
+        with providers(github=[Listing(Repo(name="acme/api", url=ssh))]):
+            failed = run(app, ["repos", "resolve", "J-1", "--format", "json"])
+    assert failed.exit_code != 0
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None and record.repos[0].url == api.url
+
+    with providers(github=[Listing(Repo(name="acme/api", url=ssh))]):
+        retried = run(app, ["repos", "resolve", "J-1", "--format", "json"])
+    assert retried.exit_code == 0, retried.output
+    assert [r["action"] for r in _rows(retried)] == ["updated"]
     worktree = workspace_env / "J-1" / "api"
     assert git(worktree, "config", "--worktree", f"url.{ssh}.insteadOf") == api.url
 
