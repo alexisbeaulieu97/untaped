@@ -43,10 +43,7 @@ def list_hosts(
 
 def _has_credential(url: str, plugins: list[str]) -> bool:
     try:
-        answers = gather(GitHost.credential)(url)
+        answers = gather(GitHost.credential, plugins=plugins)(url)
     except ConfigError:
         return False
-    return any(
-        isinstance(answer, Ok) and answer.plugin in plugins and answer.value is not None
-        for answer in answers
-    )
+    return any(isinstance(answer, Ok) and answer.value is not None for answer in answers)

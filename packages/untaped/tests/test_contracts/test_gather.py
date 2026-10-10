@@ -480,3 +480,13 @@ def test_plain_answers_keep_secrets_aliases_and_dataclasses() -> None:
     [pairs] = gather(_TagSource.pairs)()
     assert isinstance(pairs, Ok)
     assert pairs.value == [_Pair(1, 2)]
+
+
+def test_plugins_asks_only_those_providers() -> None:
+    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    Shop.rows = [Book(title="Dune")]
+
+    answers = gather(BookSource.books, plugins={"shop"})()
+
+    assert [answer.plugin for answer in answers] == ["shop"]
+    assert Library.calls == 0

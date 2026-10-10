@@ -15,7 +15,7 @@ the same output and piping rules:
 - **`dotfiles`**: place config files from dotfiles repos, with a policy per
   item per machine (experimental).
 - **`git`**: credentials for Git hosts, and the repo store the other plugins
-  keep repositories in (experimental).
+  keep repositories in.
 
 Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
 `skills`, `doctor` and `plugin`.

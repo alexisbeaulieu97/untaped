@@ -13,7 +13,6 @@ from untaped.sdk import (
     PluginContext,
     PluginSpec,
     SkillAsset,
-    experimental,
 )
 from untaped_git.settings import GitSettings
 
@@ -48,7 +47,6 @@ SPEC = PluginSpec(
     name="git",
     app_factory=build_app,
     help="Credentials for Git hosts, and the repo store other plugins keep repositories in.",
-    stability=experimental,
     settings=GitSettings,
     skills=(
         SkillAsset(
