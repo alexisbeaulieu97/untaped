@@ -27,7 +27,14 @@ from untaped.sdk import (
 )
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import GitCacheError as GitCacheError
-from untaped_git.api import RepoStore, check_names, default_branch, ls_remote
+from untaped_git.api import (
+    Released,
+    Removed,
+    RepoStore,
+    check_names,
+    default_branch,
+    ls_remote,
+)
 
 DEFAULT_TIMEOUT = 60.0
 # ``cat-file --batch`` reads many blobs in one process: allow extra time per blob.
@@ -56,6 +63,21 @@ class GitSourceStore:
         if store.exists() and not store.private_file.is_file():
             # Its presence tells the store's report and a release that ansible uses the repo.
             atomic_write(store.private_file, json.dumps({"url": url}) + "\n")
+
+    def holds(self, url: str) -> bool:
+        """Whether ansible has a part in ``url``'s store repo (see :meth:`RepoStore.has_part`)."""
+        return self._store(url).has_part()
+
+    def release(self, url: str) -> Released | Removed | None:
+        """Give up ansible's part of ``url``'s store repo (``None`` when there is none).
+
+        The repo goes when no other plugin holds it; otherwise :class:`Released`
+        names who kept it. Waits on the repo's lock, so a fetch in progress
+        finishes first.
+        """
+        if not self.holds(url):
+            return None
+        return self._store(url).release()
 
     def refusal(self, ref: GitRef) -> str | None:
         """Why the store refuses ``ref``'s name (git allows some, like ``-wip``), else ``None``."""

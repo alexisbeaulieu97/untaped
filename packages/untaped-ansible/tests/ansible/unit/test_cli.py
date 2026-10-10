@@ -30,7 +30,8 @@ from untaped_ansible.domain.payloads import (
     RepoFailure,
     SourceRepoMetadata,
 )
-from untaped_ansible.infrastructure import SqliteDependencyIndex
+from untaped_ansible.errors import GitCacheError
+from untaped_ansible.infrastructure import GitSourceStore, SqliteDependencyIndex
 
 _REQS = "roles/requirements.yml"
 _TEMPLATED = "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
@@ -503,6 +504,30 @@ def test_source_set_get_remove_updates_state(tmp_path: Path, monkeypatch) -> Non
 
     assert _run("source", "remove", "prod", "--yes").exit_code == 0
     assert "sources" not in _state(tmp_path)
+
+
+def test_source_remove_keeps_the_source_when_a_release_fails(tmp_path: Path, monkeypatch) -> None:
+    _use_config(tmp_path, monkeypatch, _prod(), token=True)
+    _seed_unchanged_scan(monkeypatch, {"acme/site": "sha-site"})
+
+    def fail(self: GitSourceStore, url: str) -> None:
+        raise GitCacheError(f"could not lock repo store for {url}", category="unavailable")
+
+    monkeypatch.setattr(GitSourceStore, "release", fail)
+    result = _run("source", "remove", "prod", "--yes", "--format", "json")
+
+    assert result.exit_code == 5  # the lock was unavailable: retry later
+    row = json.loads(result.stdout)
+    assert row["changes"] == ["failed to release acme/site"]
+    assert row["error"]["category"] == "unavailable"
+    assert row["error"]["message"] == "1 repo not released; source kept"
+    assert "error: acme/site: could not lock repo store for https://github.com/acme/site.git" in (
+        result.stderr
+    )
+    assert "hint: run `untaped ansible source remove prod`" in result.stderr
+    # Kept, with its index rows, so the rerun finds what to release.
+    assert _state(tmp_path)["sources"][0]["name"] == "prod"
+    assert _index(tmp_path).status("source:prod") is not None
 
 
 def test_source_patch_add_remove_and_clear_updates_state(tmp_path: Path, monkeypatch) -> None:

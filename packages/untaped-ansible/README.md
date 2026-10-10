@@ -89,7 +89,9 @@ untaped ansible source remove platform --dry-run
 Patch a source rather than replacing it, and map Galaxy role names to their
 repos with source aliases. A patch drops the source's cached data, and an
 alias applies only at the next scan, so run `source refresh` after either.
-`source remove` and `source-alias remove` preview and ask first.
+`source remove` and `source-alias remove` preview and ask first. Removing a
+source also frees the repos only it used from the repo store; a repo another
+saved source or plugin still uses stays.
 
 ## Reference
 
