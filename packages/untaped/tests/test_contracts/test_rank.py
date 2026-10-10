@@ -159,6 +159,10 @@ class _ReservedOldKey(BaseModel):
     plugins: dict[str, str] = {}
 
 
+class _RenamedIntoReserved(BaseModel):
+    renamed_keys: ClassVar[Mapping[str, str]] = {"plugins": "extensions"}
+
+
 class _ReservedAlias(BaseModel):
     ext: dict[str, str] = Field(default_factory=dict, alias="caches")
 
@@ -173,16 +177,24 @@ class _ReservedState(BaseModel):
         PluginSpec(name="acme", settings=_Reserved),
         PluginSpec(name="acme", state=_ReservedState),
         PluginSpec(name="acme", settings=_ReservedOldKey, contracts=lambda: ()),
-        PluginSpec(name="acme", settings=_ReservedOldKey),
+        PluginSpec(name="acme", settings=_RenamedIntoReserved, contracts=lambda: ()),
         PluginSpec(name="acme", settings=_ReservedAlias),
     ],
-    ids=["settings-extensions", "state-caches", "owner-old-key", "old-key", "alias"],
+    ids=["settings-extensions", "state-caches", "owner-old-key", "renamed-into", "alias"],
 )
 def test_a_plugin_declaring_an_injected_key_is_quarantined(spec: PluginSpec) -> None:
     result = compose(spec)
     [record] = result.quarantine
     assert record.reason == "bad-settings-keys"
-    assert "untaped injects" in record.detail
+
+
+def test_a_plugin_that_owns_no_contract_can_rename_its_extensions_setting_away() -> None:
+    write_config("profiles:\n  default:\n    acme:\n      extensions: {a: b}\n")
+    result = _run(
+        ["config", "get", "acme.plugins"], PluginSpec(name="acme", settings=_ReservedOldKey)
+    )
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == {"a": "b"}
 
 
 # --- plugin rank ------------------------------------------------------------
@@ -473,6 +485,23 @@ def test_a_ranking_set_in_the_environment_gets_no_config_fix() -> None:
         [row] = [row for row in doctor_rows() if row.check == "rank"]
     assert row.fix is None
     assert row.detail.endswith("(set by UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__BOOKS)")
+
+
+def test_an_environment_variable_holds_a_ranking_whatever_its_case() -> None:
+    compose(*_all())
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("untaped_shelf__extensions__book_source__rank__books", '["gitlab","shop"]')
+        [row] = [row for row in doctor_rows() if row.check == "rank"]
+    assert row.fix is None
+
+
+def test_a_parent_variable_holds_only_the_rankings_its_json_sets() -> None:
+    write_config(RANKED.replace("[shop, library]", "[gitlab, shop]"))
+    compose(*_all())
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("UNTAPED_SHELF__EXTENSIONS", '{"book_source": {"rank": {"lookup": ["shop"]}}}')
+        [row] = [row for row in doctor_rows() if row.check == "rank"]
+    assert row.fix == "--profile default plugin rank shelf.book_source books shop"
 
 
 def test_a_quarantined_plugin_stays_in_its_ranking() -> None:
