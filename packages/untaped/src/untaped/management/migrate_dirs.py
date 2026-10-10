@@ -7,20 +7,25 @@ every composed plugin's migrations in registry order (by plugin name), shows
 them as one table, confirms (``--yes`` skips it; with no terminal it exits 2),
 then applies them in the same order and reports one ``untaped.migration``
 outcome per migration. A migration that fails is a ``failed`` row naming its
-id; the others still run, and the command exits 1. ``--dry-run`` stops after
-the preview. Doctor's ``migrate-dirs`` row runs the same previews.
+id; the others still run, and the command exits 1. A migration whose preview
+failed is never applied, and neither are two migrations when one would
+delete what the other moves or keeps (two old settings naming one
+directory): both are ``failed``, naming each other. ``--dry-run`` stops
+after the preview. Doctor's ``migrate-dirs`` row runs the same previews.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 from untaped.cli import echo, emit, report_declined
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
-from untaped.messages import plural, shown_path, size_text
+from untaped.messages import plural, shown_path
+from untaped.migrations import overlapping
 from untaped.plugins.registry import (
     CompositionResult,
     DirMigration,
@@ -83,7 +88,44 @@ def plan(result: CompositionResult, options: MigrationOptions) -> list[Planned]:
                 planned.append(Planned(spec.name, migration, error=_raised(exc)))
                 continue
             planned.append(Planned(spec.name, migration, rows))
-    return planned
+    return _clashes(planned)
+
+
+def _clashes(planned: list[Planned]) -> list[Planned]:
+    """Fail both migrations when one would delete a directory the other moves or keeps."""
+    errors: dict[int, str] = {}
+    for index, item in enumerate(planned):
+        for row in item.rows:
+            if row.action != "delete" or not row.source:
+                continue
+            for other_index, other in enumerate(planned):
+                if other_index == index:
+                    continue
+                used = _paths(other.rows)
+                hit = next((path for path in used if overlapping(Path(row.source), path)), None)
+                if hit is None:
+                    continue
+                shown = shown_path(row.source)
+                errors.setdefault(
+                    index, f"would delete {shown}, which {other.migration.id} uses; nothing ran"
+                )
+                errors.setdefault(
+                    other_index,
+                    f"{item.migration.id} would delete {shown}, which this uses; nothing ran",
+                )
+    return [
+        replace(item, error=errors[index]) if index in errors and item.error is None else item
+        for index, item in enumerate(planned)
+    ]
+
+
+def _paths(rows: Sequence[MigrationRow]) -> list[Path]:
+    paths = []
+    for row in rows:
+        for value in (row.source, row.destination):
+            if value and Path(value).is_absolute():
+                paths.append(Path(value))
+    return paths
 
 
 def preview_records(planned: Sequence[Planned]) -> list[dict[str, object]]:
@@ -95,11 +137,6 @@ def preview_records(planned: Sequence[Planned]) -> list[dict[str, object]]:
             continue
         records.extend({"id": item.migration.id, **row.model_dump()} for row in item.rows)
     return records
-
-
-def leftover_bytes(planned: Sequence[Planned]) -> int:
-    """What the ``move`` and ``delete`` rows would free or move, in bytes."""
-    return sum(row.bytes for item in planned for row in item.rows if row.action in _CHANGES)
 
 
 def _run(
@@ -141,6 +178,10 @@ def _apply(
     outcomes: list[MigrationOutcome] = []
     for item in planned:
         migration = item.migration
+        if item.error is not None:
+            detail = f"not applied: {item.error}"
+            outcomes.append(MigrationOutcome(id=migration.id, action="failed", detail=detail))
+            continue
         try:
             done = migration.apply(contexts[item.plugin], options)
             outcomes.extend(_outcomes(migration, done))
@@ -235,10 +276,9 @@ def _settings(spec: PluginSpec, effective: Mapping[str, Any] | None) -> Any:
 
 
 def summary_text(planned: Sequence[Planned]) -> str:
-    """``3 directories to migrate (4.7 GB)``: what doctor's row says."""
+    """``3 directories to migrate``: what doctor's row says (sizes are migrate-dirs' to measure)."""
     count = sum(1 for item in planned for row in item.rows if row.action in _CHANGES)
-    size = size_text(leftover_bytes(planned))
-    return f"{plural(count, 'directory', 'directories')} to migrate ({size})"
+    return f"{plural(count, 'directory', 'directories')} to migrate"
 
 
 __all__ = ["MIGRATE_COMMAND", "Planned", "migrate_dirs", "plan", "summary_text"]

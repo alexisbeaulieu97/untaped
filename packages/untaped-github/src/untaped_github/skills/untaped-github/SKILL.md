@@ -118,6 +118,9 @@ strict; exit 5 never means "no results"), 130 interrupted.
   Pass on what the user would want to know about, with any hint, whatever
   its `level`: a deprecated setting or flag, a skipped or partial result, a
   clamped option. Leave out progress and routine lines.
+- After an upgrade from 10.x, `untaped setup migrate-dirs` moves
+  `~/.untaped/github-cache` into the repo store; without it the next
+  `cache sync` downloads every repo again.
 - Sweep patterns are POSIX extended regexes: `a|b` alternates, `\(` is a
   literal parenthesis, and `\d` does not work (use `[0-9]`).
 - `--any` ORs the positive predicates only; `--not-grep` and `--lacks-file`

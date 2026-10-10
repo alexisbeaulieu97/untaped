@@ -239,13 +239,30 @@ def test_a_deleted_keys_values_are_still_found_in_every_profile(_isolated_config
     ]
 
 
-def test_delete_migration_never_deletes_home_or_above() -> None:
-    row = delete_migration("alpha.x", "x", lambda: [Path.home(), Path("/")])
+def test_delete_migration_keeps_home_untapeds_own_dirs_and_symlinks(tmp_path: Path) -> None:
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path)
+    untaped = Path.home() / ".untaped"
+    (untaped / "plugins" / "alpha").mkdir(parents=True)
+    paths = [Path.home(), untaped, untaped / "plugins" / "alpha", link]
+    row = delete_migration("alpha.x", "x", lambda: paths, guard=lambda p: None)
     ctx, options = PluginContext(settings=None), MigrationOptions()
 
-    assert row.preview(ctx, options) == []
+    rows = row.preview(ctx, options)
+    assert [r.action for r in rows] == ["keep"] * 4
+    assert "home directory" in rows[0].detail and "a symlink" in rows[3].detail
     assert [o.action for o in row.apply(ctx, options)] == ["unchanged"]
-    assert Path.home().is_dir()
+    assert link.is_symlink() and (untaped / "plugins" / "alpha").is_dir()
+
+
+def test_a_guard_keeps_a_path_another_plugin_uses() -> None:
+    _plant()
+    row = delete_migration("beta.x", "x", lambda: [_old("beta")], guard=lambda _p: "in use")
+    ctx, options = PluginContext(settings=None), MigrationOptions()
+
+    assert [(r.action, r.detail) for r in row.preview(ctx, options)] == [("keep", "kept: in use")]
+    row.apply(ctx, options)
+    assert _old("beta").is_dir()
 
 
 def test_plugin_dir_is_where_a_row_moves_data() -> None:
@@ -383,3 +400,48 @@ def test_shown_path_writes_home_as_a_tilde() -> None:
     assert shown_path(Path.home()) == "~"
     assert shown_path(Path.home() / "x") == "~/x"
     assert shown_path("/elsewhere") == "/elsewhere"
+
+
+def test_a_preview_that_raised_is_never_applied() -> None:
+    _plant()
+    specs = (_spec("alpha", replace(_raising_preview("alpha"), apply=_move_row("alpha").apply)),)
+
+    result = _run("--yes", "--format", "json", specs=specs)
+
+    assert result.exit_code == 1
+    (outcome,) = json.loads(result.stdout)
+    assert outcome["action"] == "failed" and outcome["detail"].startswith("not applied:")
+    assert CALLS == [] and _old("alpha").is_dir()
+
+
+def test_two_rows_claiming_one_directory_both_fail_and_nothing_changes() -> None:
+    _plant()
+    # beta deletes alpha's old directory, which alpha moves: two old settings naming one place.
+    clash = delete_migration("beta.cache", "old cache", lambda: [_old("alpha")])
+    specs = (_spec("alpha", _move_row("alpha")), _spec("beta", clash))
+
+    preview = _run("--dry-run", "--format", "json", specs=specs)
+    assert preview.exit_code == 1
+    rows = json.loads(preview.stdout)
+    assert [(row["id"], row["action"]) for row in rows] == [
+        ("alpha.data", "failed"),
+        ("beta.cache", "failed"),
+    ]
+    assert "beta.cache would delete" in rows[0]["detail"]
+
+    applied = _run("--yes", "--format", "json", specs=specs)
+    assert applied.exit_code == 1
+    assert [o["action"] for o in json.loads(applied.stdout)] == ["failed", "failed"]
+    assert CALLS == [] and _old("alpha").is_dir()
+
+
+def test_old_dirs_reads_the_environment_and_skips_relative_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNTAPED_ALPHA__CACHE_DIR", "~/from-env")
+    assert old_dirs("~/a", "alpha", "cache_dir") == [
+        Path("~/a").expanduser(),
+        Path("~/from-env").expanduser(),
+    ]
+    monkeypatch.setenv("UNTAPED_ALPHA__CACHE_DIR", "relative/cache")
+    assert old_dirs("~/a", "alpha", "cache_dir") == [Path("~/a").expanduser()]

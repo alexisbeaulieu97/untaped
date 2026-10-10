@@ -155,12 +155,15 @@ class MigrationOptions(BaseModel):
 
     ``dissociate`` names one plugin's step (repacking clones that borrow
     objects from a directory, so it can go); every migration receives it.
+    ``measure`` is false when only whether anything is left matters (doctor):
+    a preview then leaves ``bytes`` at 0 instead of walking each directory.
     """
 
     model_config = ConfigDict(frozen=True)
 
     dry_run: bool = False
     dissociate: bool = False
+    measure: bool = True
 
 
 class MigrationRow(BaseModel):
@@ -168,9 +171,10 @@ class MigrationRow(BaseModel):
 
     ``action`` is ``move`` (``source`` → ``destination``), ``delete``,
     ``keep`` (left in place, ``detail`` says why) or ``then`` (what happens
-    afterwards, such as a one-time download). ``bytes`` is the size of
-    ``source`` (0 when not measured); doctor adds up the sizes of the
-    ``move`` and ``delete`` rows.
+    afterwards, such as a one-time download). ``source`` and ``destination``
+    are absolute paths: core refuses to apply two migrations when one would
+    delete what the other moves or keeps. ``bytes`` is the size of
+    ``source`` (0 when not measured).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -197,7 +201,7 @@ class DirMigration:
 
     ``id`` is ``<plugin>.<noun>``, unique across plugins. ``preview``
     returns what would change and only reads; ``apply`` does it and returns
-    one outcome per thing it handled (core reports one row per migration).
+    its outcomes (usually one; core reports each).
     ``apply`` is idempotent: run again after a crash or a second time, it
     finishes what is left and changes nothing else. A migration is
     self-contained: it owns its old directory and everything pointing

@@ -85,7 +85,7 @@ from untaped.http import (
     same_origin,
 )
 from untaped.messages import hint, not_found, plural, q, shown_path, size_text, summary
-from untaped.migrations import delete_migration, dir_bytes, old_dirs
+from untaped.migrations import delete_migration, dir_bytes, old_dirs, unsafe_dir
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.plugins.registry import (
@@ -234,6 +234,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "dir_bytes",
     "old_dirs",
     "plugin_dir",
+    "unsafe_dir",
     # settings and state
     "AppContext",
     "StateCollection",

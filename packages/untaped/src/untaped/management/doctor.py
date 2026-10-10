@@ -597,7 +597,7 @@ def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     )
 
     title = "no directories left by older versions"
-    planned = plan(result, MigrationOptions())
+    planned = plan(result, MigrationOptions(measure=False))
     failed = [f"{item.migration.id}: {item.error}" for item in planned if item.error is not None]
     if failed:
         return _row("migrate-dirs", shell.name, _WARN, title, "; ".join(failed))

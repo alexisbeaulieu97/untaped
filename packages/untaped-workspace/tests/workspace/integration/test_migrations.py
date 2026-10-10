@@ -139,3 +139,18 @@ def test_a_borrower_that_cannot_repack_keeps_repositories(
         pytest.skip("running as root: the read-only pack directory doesn't stop the repack")
     assert done.action == "failed"
     assert lender.is_dir()
+
+
+def test_a_root_configured_to_the_store_stays(
+    make_upstream, store_root: Path, ctx: PluginContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = store_root / "git.example" / "acme" / "api.git"
+    repo.parent.mkdir(parents=True)
+    git(store_root, "clone", "-q", "--mirror", make_upstream().url, str(repo))
+    monkeypatch.setenv("UNTAPED_WORKSPACE__CACHE_DIR", str(store_root))
+
+    rows = [row for row in migrations.preview_cache(ctx, KEEP) if row.source == str(store_root)]
+    assert [row.action for row in rows] == ["keep"]
+    assert "overlaps the repo store" in rows[0].detail
+    migrations.apply_cache(ctx, KEEP)
+    assert repo.is_dir()

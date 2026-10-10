@@ -37,6 +37,7 @@ from untaped.sdk import (
     MigrationOutcome,
     MigrationRow,
     PluginContext,
+    UntapedError,
     app_context,
     cache_origin,
     dir_bytes,
@@ -45,6 +46,7 @@ from untaped.sdk import (
     run_git,
     shown_path,
     size_text,
+    unsafe_dir,
 )
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.errors import GitError
@@ -54,7 +56,6 @@ from untaped_workspace.settings import WorkspaceSettings
 DEFAULT_ROOT = "~/.untaped/workspace-cache"
 #: The 9.x cache, which clones made before 7.0 may borrow objects from.
 REPOSITORIES = "~/.untaped/repositories"
-_LAYOUT_KEY = "untaped.layout"
 _TIMEOUT = 60.0
 _REPACK_TIMEOUT = 1800.0
 _CACHE_ID = "workspace.cache"
@@ -90,7 +91,12 @@ def roots() -> list[Path]:
 def preview_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
     rows: list[MigrationRow] = []
     listed = _listed_worktrees(ctx)
-    scanned = {root: _scan(root) for root in roots()}
+    scanned: dict[Path, list[_Old]] = {}
+    for root in roots():
+        if root.is_dir() and (reason := _refused(root)) is not None:
+            rows.append(MigrationRow(action="keep", source=str(root), detail=f"kept: {reason}"))
+        else:
+            scanned[root] = _scan(root)
     borrowed = _borrowers(ctx, _mirrors(scanned))
     for root, found in scanned.items():
         adopted = [repo.path for repo in found if not repo.mirror]
@@ -111,9 +117,9 @@ def preview_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Mig
                 MigrationRow(
                     action="move",
                     source=str(root),
-                    destination="the repo store",
+                    destination=str(_store_root()),
                     detail=detail,
-                    bytes=sum(dir_bytes(repo) for repo in adopted),
+                    bytes=sum(_size(repo, options) for repo in adopted),
                 )
             )
         for repo in found:
@@ -121,7 +127,7 @@ def preview_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Mig
                 continue
             users = _users(borrowed, repo.path)
             if users and not options.dissociate:
-                rows.append(_kept(repo.path, users))
+                rows.append(_kept(repo.path, users, options))
                 continue
             detail = "9.x mirror, never adopted"
             if users:
@@ -131,7 +137,7 @@ def preview_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Mig
                     action="delete",
                     source=str(repo.path),
                     detail=detail,
-                    bytes=dir_bytes(repo.path),
+                    bytes=_size(repo.path, options),
                 )
             )
     return rows
@@ -148,7 +154,7 @@ def apply_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Migra
     failures: list[str] = []
     left: list[str] = []
     seen = False
-    scanned = {root: _scan(root) for root in roots() if root.is_dir()}
+    scanned = {root: _scan(root) for root in roots() if root.is_dir() and _refused(root) is None}
     borrowed = _borrowers(ctx, _mirrors(scanned))
     for root, found in scanned.items():
         seen = True
@@ -169,7 +175,7 @@ def apply_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Migra
                 if label is not None:
                     worktrees.adopted(label, owned)
                 moved += 1
-            except (GitError, OSError) as exc:
+            except (UntapedError, OSError) as exc:
                 failures.append(f"{shown_path(repo.path)}: {_reason(exc)}")
         if not remove_if_emptied(root):
             left.append(shown_path(root))
@@ -201,9 +207,12 @@ def _mirrors(scanned: dict[Path, list[_Old]]) -> list[Path]:
 
 
 def _is_mirror(repo: Path) -> bool:
-    """Unmarked and holding ``refs/heads``: a 9.x mirror (10.x's own rule)."""
-    marked = _git(repo, ["config", "--get", _LAYOUT_KEY], check=False).strip()
-    if marked:
+    """Unmarked and holding ``refs/heads``: a 9.x mirror (10.x's own rule).
+
+    A repo marked by 10.x (``untaped.layout``) or by the store (``untaped.store``) is not.
+    """
+    marks = _git(repo, ["config", "--get-regexp", r"^untaped\.(layout|store)$"], check=False)
+    if marks.strip():
         return False
     return bool(
         _git(repo, ["for-each-ref", "--count=1", "--format=%(refname)", "refs/heads"]).strip()
@@ -256,11 +265,10 @@ def preview_repositories(ctx: PluginContext, options: MigrationOptions) -> Seque
         return []
     users = _users(_borrowers(ctx, [lender]), lender)
     if not options.dissociate:
-        return [_kept(lender, users)]
+        return [_kept(lender, users, options)]
     detail = "9.x cache" + (f"; {_repacks(users)} first" if users else "")
-    return [
-        MigrationRow(action="delete", source=str(lender), detail=detail, bytes=dir_bytes(lender))
-    ]
+    size = _size(lender, options)
+    return [MigrationRow(action="delete", source=str(lender), detail=detail, bytes=size)]
 
 
 def apply_repositories(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationOutcome]:
@@ -275,7 +283,7 @@ def apply_repositories(ctx: PluginContext, options: MigrationOptions) -> Sequenc
     try:
         _dissociate(users)
         shutil.rmtree(lender)
-    except (GitError, OSError) as exc:
+    except (UntapedError, OSError) as exc:
         detail = f"kept {shown_path(lender)}: {_reason(exc)}"
         return [MigrationOutcome(id=_REPOSITORIES_ID, action="failed", detail=detail)]
     detail = f"deleted {shown_path(lender)} ({size_text(size)} freed)"
@@ -359,7 +367,7 @@ def _dissociate(clones: Sequence[Path]) -> None:
         (clone / ".git" / "objects" / "info" / "alternates").unlink(missing_ok=True)
 
 
-def _kept(lender: Path, users: Sequence[Path]) -> MigrationRow:
+def _kept(lender: Path, users: Sequence[Path], options: MigrationOptions) -> MigrationRow:
     if users:
         detail = (
             f"{plural(len(users), 'clone')} ({', '.join(shown_path(user) for user in users)}) "
@@ -370,7 +378,9 @@ def _kept(lender: Path, users: Sequence[Path]) -> MigrationRow:
             "no clone under workspaces_dir or in state.yml borrows from it, but one elsewhere "
             "on disk can't be found; --dissociate deletes it"
         )
-    return MigrationRow(action="keep", source=str(lender), detail=detail, bytes=dir_bytes(lender))
+    return MigrationRow(
+        action="keep", source=str(lender), detail=detail, bytes=_size(lender, options)
+    )
 
 
 def _repacks(users: Sequence[Path]) -> str:
@@ -378,6 +388,27 @@ def _repacks(users: Sequence[Path]) -> str:
 
 
 # -- plumbing -------------------------------------------------------------
+
+
+def _refused(root: Path) -> str | None:
+    """Why ``root`` is never moved whole, or ``None``."""
+    from untaped_git.api import overlaps_store  # noqa: PLC0415
+
+    if overlaps_store(root):
+        return (
+            f"it overlaps the repo store ({shown_path(_store_root())}): set git.store_dir elsewhere"
+        )
+    return unsafe_dir(root)
+
+
+def _store_root() -> Path:
+    from untaped_git.api import store_root  # noqa: PLC0415
+
+    return store_root()
+
+
+def _size(path: Path, options: MigrationOptions) -> int:
+    return dir_bytes(path) if options.measure else 0
 
 
 def _workspaces_dir(ctx: PluginContext) -> Path:
