@@ -250,3 +250,136 @@ def test_delete_migration_never_deletes_home_or_above() -> None:
 
 def test_plugin_dir_is_where_a_row_moves_data() -> None:
     assert plugin_dir(make_spec("alpha")) == Path.home() / ".untaped" / "plugins" / "alpha"
+
+
+def _raising_preview(name: str) -> DirMigration:
+    def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
+        raise RuntimeError("cannot read")
+
+    return replace(_move_row(name), preview=preview)
+
+
+def test_a_preview_that_raises_is_a_failed_row_in_the_preview_doctor_and_check() -> None:
+    _plant()
+    specs = (_spec("alpha", _raising_preview("alpha")),)
+
+    result = _run("--dry-run", "--format", "json", specs=specs)
+    assert result.exit_code == 1
+    (row,) = json.loads(result.stdout)
+    assert (row["id"], row["action"]) == ("alpha.data", "failed")
+    assert "RuntimeError: cannot read" in row["detail"]
+
+    candidates = [plugin_candidate(spec) for spec in specs]
+    composed = bootstrap.compose_root(candidates=candidates)
+    (doctor,) = [
+        r
+        for r in collect_doctor_rows(bootstrap.SHELL_SPEC, composed)
+        if r["check"] == "migrate-dirs"
+    ]
+    assert doctor["status"] == "warn" and "alpha.data" in str(doctor["detail"])
+    (checked,) = [
+        r for r in check_plugins(composed, candidates, "alpha") if r.check == "migrations"
+    ]
+    assert checked.status == "fail"
+
+
+def test_rows_with_nothing_to_move_are_shown_without_asking() -> None:
+    def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
+        return [MigrationRow(action="keep", source="/somewhere", detail="kept")]
+
+    specs = (_spec("alpha", replace(_move_row("alpha"), preview=preview)),)
+    result = _run("--format", "json", specs=specs)
+
+    assert result.exit_code == 0
+    assert [row["action"] for row in json.loads(result.stdout)] == ["keep"]
+    assert "nothing to move or delete" in result.stderr
+
+
+def test_an_apply_returning_the_wrong_type_is_a_failed_outcome() -> None:
+    _plant()
+
+    def apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
+        return "done"  # type: ignore[return-value]
+
+    specs = (_spec("alpha", replace(_move_row("alpha"), apply=apply)),)
+    result = _run("--yes", "--format", "json", specs=specs)
+
+    assert result.exit_code == 1
+    (outcome,) = json.loads(result.stdout)
+    assert outcome["action"] == "failed" and "expected MigrationOutcome" in outcome["detail"]
+
+
+def test_a_preview_returning_the_wrong_type_fails_its_row() -> None:
+    def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
+        return {"action": "move"}  # type: ignore[return-value]
+
+    specs = (_spec("alpha", replace(_move_row("alpha"), preview=preview)),)
+    (row,) = json.loads(_run("--dry-run", "--format", "json", specs=specs).stdout)
+
+    assert row["action"] == "failed" and "expected MigrationRow" in row["detail"]
+
+
+def test_an_untaped_error_reads_as_its_own_message() -> None:
+    from untaped.errors import UntapedError
+
+    def apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
+        raise UntapedError("the disk is full")
+
+    _plant()
+    specs = (_spec("alpha", replace(_move_row("alpha"), apply=apply)),)
+    (outcome,) = json.loads(_run("--yes", "--format", "json", specs=specs).stdout)
+
+    assert outcome["detail"] == "the disk is full"
+
+
+def test_a_malformed_row_quarantines_the_plugin() -> None:
+    spec = _spec("alpha", replace(_move_row("alpha"), preview="not callable"))  # type: ignore[arg-type]
+    result = bootstrap.compose_root(candidates=[plugin_candidate(spec)])
+
+    assert [record.reason for record in result.quarantine] == ["bad-migration"]
+
+
+def test_dir_bytes_counts_files_and_tolerates_what_is_missing(tmp_path: Path) -> None:
+    from untaped.sdk import dir_bytes
+
+    (tmp_path / "d" / "sub").mkdir(parents=True)
+    (tmp_path / "d" / "sub" / "f").write_text("abcd", encoding="utf-8")
+    (tmp_path / "file").write_text("ab", encoding="utf-8")
+
+    assert dir_bytes(tmp_path / "d") == 4
+    assert dir_bytes(tmp_path / "file") == 2
+    assert dir_bytes(tmp_path / "missing") == 0
+
+
+def test_old_dirs_skips_values_that_are_not_paths(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    alpha:\n      cache_dir: 3\n  work:\n    alpha:\n"
+        "      cache_dir: ' '\n",
+    )
+
+    assert old_dirs("~/a", "alpha", "cache_dir") == [Path("~/a").expanduser()]
+
+
+def test_delete_migration_reports_a_path_it_cannot_delete(tmp_path: Path) -> None:
+    locked = tmp_path / "locked"
+    (locked / "inner").mkdir(parents=True)
+    (locked / "inner" / "f").write_text("x", encoding="utf-8")
+    row = delete_migration("alpha.x", "x", lambda: [locked / "inner"])
+    locked.chmod(0o500)
+    try:
+        (outcome,) = row.apply(PluginContext(settings=None), MigrationOptions())
+    finally:
+        locked.chmod(0o700)
+
+    if outcome.action == "deleted":
+        pytest.skip("running as root: a read-only parent doesn't stop the delete")
+    assert outcome.action == "failed" and "could not delete" in outcome.detail
+
+
+def test_shown_path_writes_home_as_a_tilde() -> None:
+    from untaped.sdk import shown_path
+
+    assert shown_path(Path.home()) == "~"
+    assert shown_path(Path.home() / "x") == "~/x"
+    assert shown_path("/elsewhere") == "/elsewhere"
