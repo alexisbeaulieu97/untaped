@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -20,10 +21,11 @@ import yaml
 from untaped import bootstrap
 from untaped.sdk import ErrorCategory, GitCommandError, GitResult
 from untaped.settings import get_settings
-from untaped.testing import plugin_candidate
+from untaped.testing import CliInvoker, plugin_candidate
 from untaped.testing.git import GitRemote, git_remote
 from untaped_ansible import SPEC as ANSIBLE
 from untaped_ansible.application.refresh_git_index import RefreshGitSourceIndex, RefreshResult
+from untaped_ansible.cli import app
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.infrastructure import GitRemoteRefProbe, GitSourceStore, SqliteDependencyIndex
 from untaped_ansible.infrastructure.git_store import GitCacheError
@@ -309,3 +311,108 @@ def test_a_failed_default_branch_lookup_keeps_the_git_errors_attribution(
         GitSourceStore().default_branch("https://github.com/acme/site.git")
 
     assert (caught.value.system, caught.value.category) == ("local", ErrorCategory.CONFIG)
+
+
+def _save_sources(*names: str, repo: str = "acme/site") -> None:
+    """Save sources ``names`` (each selecting ``repo``) and point the index at the tests' file."""
+    config = Path(os.environ["UNTAPED_CONFIG"])
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    data["profiles"]["default"]["ansible"] = {"index_path": str(config.parent / "index.sqlite3")}
+    config.write_text(yaml.safe_dump(data), encoding="utf-8")
+    sources = [{"name": name, "repos": [repo]} for name in names]
+    state = {"ansible": {"sources": sources}}
+    (config.parent / "state.yml").write_text(yaml.safe_dump(state), encoding="utf-8")
+    get_settings.cache_clear()
+
+
+def _remove(name: str, *flags: str) -> list[str]:
+    result = CliInvoker().invoke(
+        app, ["source", "remove", name, "--yes", "--format", "json", *flags]
+    )
+    assert result.exit_code == 0, result.output
+    return list(json.loads(result.stdout)["changes"])
+
+
+def test_removing_a_source_keeps_a_repo_another_source_selects_then_removes_it(
+    tmp_path: Path, store_root: Path
+) -> None:
+    site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
+    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    _save_sources("a", "b")
+    _refresh(index_dir, "site", source_key="source:a")
+    _refresh(index_dir, "site", source_key="source:b")
+    repo = _repo(store_root, "site")
+
+    assert _remove("a") == ["kept acme/site (selected by source b)"]
+    assert repo.is_dir()
+    site.commit(_REQS, "- src: https://github.com/acme/other\n")
+    assert _refresh(index_dir, "site", source_key="source:b").changed_refs == 1
+
+    _save_sources("b")
+    (change,) = _remove("b")
+
+    assert change.startswith("removed acme/site (") and change.endswith(" freed)")
+    assert not repo.exists()
+
+
+def test_a_dry_run_plans_the_release_and_frees_nothing(tmp_path: Path, store_root: Path) -> None:
+    _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
+    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    _save_sources("a")
+    _refresh(index_dir, "site", source_key="source:a")
+
+    assert _remove("a", "--dry-run") == ["release acme/site"]
+    assert _repo(store_root, "site").is_dir()
+    assert _dependents(index_dir, "acme/base", source_key="source:a") == {"acme/site@main"}
+
+
+def test_removing_a_source_releases_a_repo_workspace_holds(
+    tmp_path: Path, store_root: Path
+) -> None:
+    site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
+    workspace = RepoStore.for_url(site.url, plugin="workspace", error=GitCacheError)
+    workspace.fetch(branches=["*"], tags=["*"], prune=True)
+    worktree = tmp_path / "ws" / "site"
+    workspace.worktree_add(worktree, "refs/remotes/origin/main", branch="fix")
+    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    _save_sources("a")
+    _refresh(index_dir, "site", source_key="source:a")
+
+    (change,) = _remove("a")
+
+    assert change.startswith("released acme/site (kept: workspace")
+    refs = _git(_repo(store_root, "site"), "for-each-ref", "--format=%(refname)").splitlines()
+    assert "refs/remotes/origin/main" in refs
+    assert not [ref for ref in refs if ref.startswith(_NAMESPACE)]
+    status = store_module.run_git(["status", "--porcelain"], timeout=30, cwd=worktree, capture=True)
+    assert status.text == ""
+    assert (worktree / _REQS).read_text() == "- src: https://github.com/acme/base\n"
+
+
+def test_removing_a_source_while_another_sources_refresh_holds_the_repo_keeps_it(
+    tmp_path: Path, store_root: Path
+) -> None:
+    """The decision reads the other sources' last refreshes, not the store: no wait, no release."""
+    site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
+    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    _save_sources("a", "b")
+    _refresh(index_dir, "site", source_key="source:a")
+    _refresh(index_dir, "site", source_key="source:b")
+    store = RepoStore.for_url(site.url, plugin=ANSIBLE, error=GitCacheError)
+    held = threading.Event()
+    done = threading.Event()
+
+    def refresh_holding_the_lock() -> None:
+        with store._locked():  # what b's fetch holds
+            held.set()
+            done.wait(timeout=30)
+
+    holder = threading.Thread(target=refresh_holding_the_lock)
+    holder.start()
+    try:
+        assert held.wait(timeout=10)
+        assert _remove("a") == ["kept acme/site (selected by source b)"]
+    finally:
+        done.set()
+        holder.join()
+    assert _repo(store_root, "site").is_dir()

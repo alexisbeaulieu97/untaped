@@ -40,6 +40,10 @@ failed and paused refreshes, the cache.
   `planned` (with `--dry-run`).
 - `source remove` and `source-alias remove` confirm first; see
   [Safety](../SKILL.md#safety).
+- `source remove` also releases the repos only that source used from the
+  git plugin's repo store. Its `changes` name each repo: `removed` (with the
+  space freed), `released` (another plugin kept it), or `kept` (another
+  saved source still selects it); with `--dry-run`, `release`.
 - `source status` reports `state` (`fresh`, `stale` or `not_refreshed`) and
   `scanned_at` in UTC.
 

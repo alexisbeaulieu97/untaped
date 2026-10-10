@@ -14,6 +14,7 @@ from untaped.sdk import (
     DryRunOption,
     FormatOption,
     ParallelOption,
+    UntapedError,
     UsageError,
     YesOption,
     app_context,
@@ -29,10 +30,12 @@ from untaped.sdk import (
     q,
     report_error,
     report_errors,
+    size_text,
     writes,
 )
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli.refresh import GIT_PARALLEL_CAP, run_source_refresh
+from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.domain.payloads import SourceOutcome
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
@@ -290,11 +293,25 @@ def source_remove_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Remove a saved source and its cached source data."""
+    """Remove a saved source, its cached source data and the repos only it used.
+
+    A repo another saved source still selects is kept. Every other repo it
+    fetched is released from the repo store: ``removed`` when no other plugin
+    holds it, else ``released`` with who kept it.
+    """
     with report_errors():
         source_repo = SourceRepository()
         if source_repo.get(name) is None:
             raise AnsibleError(_unknown_source(name, source_repo), category="not_found")
+        settings = get_config_section("ansible", AnsibleSettings)
+        index = SqliteDependencyIndex(settings.index_path)
+        others = {
+            _saved_source_key(source.name): source.name
+            for source in source_repo.entries()
+            if source.name != name
+        }
+        repos = index.source_repos(_saved_source_key(name))
+        selected = index.selecting_sources(others)
         if not dry_run:
             app_context().ui(strict=False).confirm_or_cancel(
                 f"Remove source {q(name)} and its cached source data?",
@@ -302,13 +319,22 @@ def source_remove_command(
                 refusal="source remove requires --yes when not interactive",
             )
             source_repo.remove(name)
-            settings = get_config_section("ansible", AnsibleSettings)
-            SqliteDependencyIndex(settings.index_path).clear(_saved_source_key(name))
+            index.clear(_saved_source_key(name))
+        changes, failures = _release_repos(
+            repos,
+            {key: sorted(others[source] for source in keys) for key, keys in selected.items()},
+            dry_run=dry_run,
+        )
         _emit_outcome(
-            SourceOutcome(action="planned" if dry_run else "deleted", name=name),
+            SourceOutcome(action="planned" if dry_run else "deleted", name=name, changes=changes),
             fmt=fmt,
             columns=columns,
         )
+        if failures:
+            # The source is gone either way; the repos that failed stay in the store.
+            for failure in failures[:-1]:
+                report_error(failure)
+            raise failures[-1]
 
 
 @app.command(name="status")
@@ -641,6 +667,44 @@ def _normalized_team_edit_values(values: list[str] | None, orgs: list[str]) -> l
 
 def _source_row(source: SourceDefinition) -> dict[str, object]:
     return source.model_dump(exclude_none=True)
+
+
+def _release_repos(
+    repos: dict[str, tuple[str, ...]],
+    selected: dict[str, list[str]],
+    *,
+    dry_run: bool,
+) -> tuple[list[str], list[UntapedError]]:
+    """Release ``repos`` (``OWNER/NAME`` → clone URLs) no other saved source selects.
+
+    Returns the outcome lines and the errors of the releases that failed.
+    """
+    from untaped_ansible.infrastructure import GitSourceStore  # noqa: PLC0415
+    from untaped_git.api import Removed, store_key  # noqa: PLC0415
+
+    store = GitSourceStore()
+    changes: list[str] = []
+    failures: list[UntapedError] = []
+    for repo, urls in repos.items():
+        keepers = selected.get(repo_key(repo))
+        if keepers:
+            noun = "source" if len(keepers) == 1 else "sources"
+            changes.append(f"kept {repo} (selected by {noun} {', '.join(keepers)})")
+            continue
+        for url in {store_key(url): url for url in urls}.values():
+            if dry_run:
+                changes.append(f"release {repo}")
+                continue
+            try:
+                outcome = store.release(url)
+            except UntapedError as exc:
+                failures.append(exc)
+                continue
+            if isinstance(outcome, Removed):
+                changes.append(f"removed {repo} ({size_text(outcome.freed_bytes)} freed)")
+            elif outcome is not None:
+                changes.append(f"released {repo} (kept: {outcome.kept()})")
+    return changes, failures
 
 
 def _saved_source_key(name: str) -> str:
