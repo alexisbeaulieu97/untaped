@@ -8,8 +8,6 @@ fetch in a store worktree still honours them.
 
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -158,14 +156,18 @@ def test_a_handle_still_reads_what_gc_left_unreachable(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("key", [True, False], ids=["repo-scope key", "global only"])
 def test_a_handle_still_reads_a_local_commit_gc_left_unreachable(tmp_path: Path, key: bool) -> None:
-    """A commit made in the store, as one in a worktree is, sits outside any promisor pack."""
+    """A commit made in the store, as one in a worktree is, sits outside any promisor pack.
+
+    The key keeps it readable; with only the global ``now`` (the control) gc prunes it.
+    """
     hostile_git_home()
     remote = git_remote(tmp_path)
     store = _store(tmp_path, remote)
     store.fetch(branches=["*"], prune=True)
-    blob = _git_in(store.path, "hash-object", "-w", "--stdin", stdin="local\n")
-    tree = _git_in(store.path, "mktree", stdin=f"100644 blob {blob}\tnotes.txt\n")
-    commit = _git_in(store.path, "commit-tree", tree, "-p", "refs/remotes/origin/main", "-m", "w")
+    blob = git(store.path, "hash-object", "-w", "--stdin", input="local\n").strip()
+    tree = git(store.path, "mktree", input=f"100644 blob {blob}\tnotes.txt\n").strip()
+    author = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    commit = git(store.path, *author, "commit-tree", tree, "-m", "w").strip()
     git(store.path, "update-ref", "refs/heads/w", commit)
     handle = store.prefetched(trees=["refs/heads/w"])
     # Another process deletes the branch the handle read, then the maintenance runs.
@@ -177,23 +179,5 @@ def test_a_handle_still_reads_a_local_commit_gc_left_unreachable(tmp_path: Path,
     if key:
         assert handle.run(["cat-file", "-p", f"{commit}:notes.txt"]).text == "local\n"
     else:
-        with pytest.raises(StoreError):
+        with pytest.raises(StoreError, match=r"does not exist|not a valid object"):
             handle.run(["cat-file", "-p", f"{commit}:notes.txt"])
-
-
-def _git_in(repo: Path, *args: str, stdin: str = "") -> str:
-    """``git <args>`` on the bare ``repo`` with ``stdin``, as a test author; stdout."""
-    who = {
-        f"GIT_{role}_{key}": value
-        for role in ("AUTHOR", "COMMITTER")
-        for key, value in (("NAME", "Test"), ("EMAIL", "test@example.invalid"))
-    }
-    result = subprocess.run(
-        ["git", f"--git-dir={repo}", *args],
-        input=stdin,
-        capture_output=True,
-        text=True,
-        check=True,
-        env={**os.environ, **who},
-    )
-    return result.stdout.strip()
