@@ -475,8 +475,8 @@ def _has_transient_ref_probe_failure(result: RefreshResult) -> bool:
 
 def _transient_ref_probe_rerun_hint(name: str) -> str:
     return (
-        f"hint: rerun `untaped ansible source refresh {name}`; unchanged repos skip Git fetch "
-        "and dependency scan work"
+        f"hint: rerun `untaped ansible source refresh {shlex.quote(name)}`; "
+        "unchanged repos skip Git fetch and dependency scan work"
     )
 
 
