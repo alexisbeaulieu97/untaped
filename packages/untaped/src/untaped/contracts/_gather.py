@@ -282,8 +282,13 @@ def validate(binding: Binding, method: Method, value: Any) -> tuple[Any, tuple[s
 
 
 def _strict(adapter: TypeAdapter[Any], value: Any) -> Any:
-    """``value`` validated strictly, through JSON, so a model built without validation counts."""
-    return adapter.validate_json(adapter.dump_json(value, warnings=False), strict=True)
+    """``value`` validated strictly from its dump, so a model built without validation counts.
+
+    Python mode keeps secrets and native values as they are; aliases and the
+    round trip mirror what validation reads.
+    """
+    dumped = adapter.dump_python(value, by_alias=True, round_trip=True, warnings=False)
+    return adapter.validate_python(dumped, strict=True)
 
 
 def _message(exc: ValueError) -> str:

@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, SecretStr
 
 from test_contracts.support import (
     LIBRARY_CONFIG,
@@ -410,7 +410,11 @@ def test_own_reads_back_the_providers_record() -> None:
 
 
 class _Tag(BaseModel):
-    name: str
+    name: str = Field(alias="tagName")
+
+
+def _tag(name: str) -> _Tag:
+    return _Tag.model_validate({"tagName": name})
 
 
 class _TagSource(Contract):
@@ -421,10 +425,16 @@ class _TagSource(Contract):
     def everything(self) -> list[_Tag]:
         raise NotImplementedError
 
+    def token(self) -> SecretStr:
+        raise NotImplementedError
+
 
 class _Tagger(_TagSource):
+    def token(self) -> SecretStr:
+        return SecretStr("s3cret")
+
     def tags(self) -> list[_Tag]:
-        return [_Tag(name="a"), _Tag.model_construct(name=3)]  # type: ignore[arg-type]
+        return [_tag("a"), _Tag.model_construct(name=3)]  # type: ignore[arg-type]
 
     everything = tags
 
@@ -436,8 +446,21 @@ def test_only_a_declared_listing_drops_a_bad_row_whatever_its_item_type() -> Non
     )
     [listed] = gather(_TagSource.tags)()
     assert isinstance(listed, Ok)
-    assert listed.value == [_Tag(name="a")]
+    assert listed.value == [_tag("a")]
     assert listed.invalid[0].startswith("row 2:")
     [whole] = gather(_TagSource.everything)()
     assert isinstance(whole, Skipped)
     assert whole.reason == "invalid-item"
+
+
+def test_plain_answers_keep_secrets_and_aliases() -> None:
+    compose(
+        PluginSpec(name="tags", contracts=lambda: (_TagSource,)),
+        PluginSpec(name="tagger", provides={"tags": lambda: (_Tagger(),)}),
+    )
+    [token] = gather(_TagSource.token)()
+    assert isinstance(token, Ok)
+    assert token.value.get_secret_value() == "s3cret"
+    [listed] = gather(_TagSource.tags)()
+    assert isinstance(listed, Ok)
+    assert listed.value[0].name == "a"
