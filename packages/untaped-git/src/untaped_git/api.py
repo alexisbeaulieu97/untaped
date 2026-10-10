@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from untaped_git.domain.delta import RefDelta, RefMove
 from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
 from untaped_git.domain.records import TreeEntry
+from untaped_git.domain.release import Released, Removed
 from untaped_git.domain.url import GitUrl, store_key, validate_git_url
 from untaped_git.infrastructure import remote
 from untaped_git.infrastructure.store import Prefetched, RepoStore
@@ -27,6 +28,8 @@ __all__ = [
     "Prefetched",
     "RefDelta",
     "RefMove",
+    "Released",
+    "Removed",
     "RepoStore",
     "TreeEntry",
     "default_branch",

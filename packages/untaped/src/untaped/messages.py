@@ -125,6 +125,16 @@ def deprecated_line(replacement: str | None = None) -> str:
     return f"Deprecated: removed in the next major release{suffix}."
 
 
+def size_text(size: int) -> str:
+    """A byte count in binary units: ``512 B``, ``1.5 KiB``, ``2.0 GiB``."""
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{size} B" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    raise AssertionError("unreachable")
+
+
 def summary(operation: str, counts: Mapping[str, int]) -> str:
     """A batch summary line: ``<operation>: 2 cloned, 1 failed``.
 
@@ -145,6 +155,7 @@ __all__ = [
     "not_found",
     "plural",
     "q",
+    "size_text",
     "split_profile",
     "summary",
 ]

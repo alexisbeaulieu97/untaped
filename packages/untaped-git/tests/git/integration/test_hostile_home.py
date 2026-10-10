@@ -3,7 +3,7 @@
 The store's explicit ``--prune``/``--no-prune`` and its repo-scope policy
 beat ``fetch.prune``, ``fetch.pruneTags``, ``fetch.unpackLimit``, ``gc.auto``,
 ``gc.pruneExpire`` and ``maintenance.auto`` set globally, while a user's own
-fetch in a store worktree still honours them. ``release`` joins the writers with its callers.
+fetch in a store worktree still honours them.
 """
 
 from __future__ import annotations
@@ -62,6 +62,8 @@ def _exercise(base: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, li
         ("prefetched", lambda: store.prefetched(trees=["refs/remotes/origin/main"])),
         ("checkout", lambda: store.checkout(tree, "refs/remotes/origin/main")),
         ("delete_refs", lambda: store.delete_refs(["heads/none"])),
+        # Another plugin lets go; workspace's refs, tag and worktree keep the repo.
+        ("release", lambda: _store(base, remote, "github").release()),
     ]
     lines: list[tuple[str, list[str]]] = []
     for name, step in steps:
@@ -97,6 +99,7 @@ def test_every_writer_ignores_hostile_globals(
         "refetch",
         "prefetch",
         "checkout",
+        "release",
     }
 
 

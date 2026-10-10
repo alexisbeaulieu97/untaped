@@ -43,6 +43,12 @@ def _git_version(ctx: PluginContext) -> DoctorResult:
     return version_check(ctx)
 
 
+def _git_store(ctx: PluginContext) -> DoctorResult:
+    from untaped_git.doctor import store_check  # noqa: PLC0415  # keeps startup light
+
+    return store_check(ctx)
+
+
 SPEC = PluginSpec(
     name="git",
     app_factory=build_app,
@@ -62,7 +68,10 @@ SPEC = PluginSpec(
             ),
         ),
     ),
-    doctor_checks=(DoctorCheck(id="git.version", title="git version", run=_git_version),),
+    doctor_checks=(
+        DoctorCheck(id="git.version", title="git version", run=_git_version),
+        DoctorCheck(id="git.store", title="git store", run=_git_store),
+    ),
     contracts=_contracts,
 )
 
