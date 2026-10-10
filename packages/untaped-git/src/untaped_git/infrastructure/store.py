@@ -267,6 +267,19 @@ class RepoStore:
         except ValueError as exc:
             raise self._error(str(exc), category=ErrorCategory.INVALID) from None
 
+    def worktree_owners(self) -> dict[Path, str | None]:
+        """Each registered worktree's directory → the plugin owning it (``None``: a user's own).
+
+        Read from the repo's files; a worktree whose owner stamp names another
+        directory (git copied it when the user added one from an owned
+        worktree) is a user's own.
+        """
+        return {
+            entry.path: entry.owner
+            for entry in worktree_entries(self._path)
+            if entry.path is not None
+        }
+
     def relative(self, ref: str) -> str | None:
         """``heads/<b>`` or ``tags/<t>`` for a ref of this plugin's namespace, else ``None``."""
         return self._layout.relative(ref)
@@ -896,6 +909,9 @@ class RepoStore:
     def _write_owner_config(self, worktree: Path, *, owner: str | None = None) -> None:
         owner = owner or self._plugin
         self._worktree_config(worktree, "untaped.owner", owner)
+        # Stamps which worktree is owned: git copies this file into worktrees
+        # added from this one, which must stay a user's own.
+        self._worktree_config(worktree, "untaped.worktree", str(worktree.resolve()))
         plain = layout_for(owner).heads == "refs/remotes/origin/"
         self._write_fetch_config(worktree, plain=plain)
 

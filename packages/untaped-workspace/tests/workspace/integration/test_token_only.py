@@ -68,7 +68,10 @@ def untaped_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     shim.write_text(
         "#!/bin/sh\n"
         f'echo "$*" >> "{calls}"\n'
-        'if [ "$3" = "get" ]; then echo username=x-access-token; echo password=untaped-token; fi\n',
+        "for last; do :; done\n"
+        'if [ "$last" = "get" ]; then\n'
+        "  echo username=x-access-token; echo password=untaped-token\n"
+        "fi\n",
         encoding="utf-8",
     )
     shim.chmod(shim.stat().st_mode | stat.S_IXUSR)
@@ -105,7 +108,8 @@ def test_the_store_fetch_asks_the_forge_and_git_asks_untaped(
     assert forge.asked and set(forge.asked) == {remote.url}
     wt = workspace_env / "J-1" / "app"
     assert fill(wt)["password"] == "untaped-token"
-    assert untaped_on_path.read_text().splitlines() == ["git credential get"]
+    # The helper asks with the profile the workspace was created under.
+    assert untaped_on_path.read_text().splitlines() == ["--profile default git credential get"]
 
 
 def test_helper_first_puts_a_stale_helper_behind_untaped_in_its_worktrees_only(

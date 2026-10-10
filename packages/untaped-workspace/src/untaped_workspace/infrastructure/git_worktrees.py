@@ -70,9 +70,12 @@ _EXISTS_HINT = "move the existing directory aside, or use another branch name"
 class LocalGitWorktrees:
     """:class:`GitWorktrees` backed by the repo store (``git.store_dir``)."""
 
-    def __init__(self, *, git: str = "git", timeout: float = 60.0) -> None:
+    def __init__(
+        self, *, git: str = "git", timeout: float = 60.0, profile: str | None = None
+    ) -> None:
         self._git = git
         self._timeout = timeout
+        self._profile = profile
 
     # -- public port -------------------------------------------------------
 
@@ -101,7 +104,7 @@ class LocalGitWorktrees:
         else:
             checkout = self._add_writable(store, target, branch, picked, refs)
             self._set_upstream(store, branch)
-        store.write_worktree_config(target, profile=None)
+        store.write_worktree_config(target, profile=self._profile)
         failure = self._backfill(store, delta, history)
         return checkout.model_copy(update={"backfill_error": failure})
 
@@ -139,7 +142,7 @@ class LocalGitWorktrees:
         delta = store.fetch(branches=["*"], tags=["*"], prune=True)
         history = self._history(store)
         if dest.is_dir():
-            store.write_worktree_config(dest.absolute(), profile=None)
+            store.write_worktree_config(dest.absolute(), profile=self._profile)
         return self._backfill(store, delta, history)
 
     def in_store(self, url: str) -> bool:
@@ -193,7 +196,11 @@ class LocalGitWorktrees:
             return None
         listed = store.run(["worktree", "list", "--porcelain"], capture=True).text
         checked_out: set[str] = set()
-        owned = 0
+        owned = sum(
+            1
+            for path, owner in store.worktree_owners().items()
+            if owner == "workspace" and path.is_dir()
+        )
         for block in listed.split("\n\n"):
             lines = block.splitlines()
             if not lines or "bare" in lines:
@@ -203,9 +210,6 @@ class LocalGitWorktrees:
                 for line in lines
                 if line.startswith("branch refs/heads/")
             )
-            path = Path(lines[0].removeprefix("worktree "))
-            if path.is_dir() and self._owner(path) == "workspace":
-                owned += 1
         stashed = self._stash_branches(store)
         names = store.run(
             ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads/"], capture=True
@@ -282,14 +286,6 @@ class LocalGitWorktrees:
             if not force:
                 raise
             _delete_tree(dest)
-
-    def _owner(self, worktree: Path) -> str | None:
-        """The plugin owning ``worktree`` (its ``untaped.owner``), ``None`` for a hand-made one."""
-        args = ["config", "--worktree", "--get", "untaped.owner"]
-        result = self._in(worktree, args, capture=True, check=False)
-        if result.returncode != 0:
-            return None
-        return result.text.strip() or None
 
     def _stash_branches(self, store: RepoStore) -> set[str]:
         """Branches stash entries were made on (``WIP on <b>:``, ``On <b>:``)."""

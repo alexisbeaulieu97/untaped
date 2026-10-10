@@ -146,3 +146,13 @@ def test_section_is_resolved_once_per_context(_isolated_config: Path) -> None:
 
     assert ctx.section("demo", DemoSettings).endpoint == "https://a"
     assert app_context().section("demo", DemoSettings).endpoint == "https://b"
+
+
+def test_profile_names_the_selected_profile(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolated_config.write_text("active: work\nprofiles:\n  default: {}\n  work: {}\n")
+    assert app_context().profile == "work"
+
+    monkeypatch.setenv("UNTAPED_PROFILE", "default")
+    assert app_context().profile == "default"

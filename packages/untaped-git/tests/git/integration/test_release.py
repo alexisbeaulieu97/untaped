@@ -233,3 +233,23 @@ def test_owned_by_lists_repos_holding_the_private_file(
     assert found.path == github.path
     assert found.private_file == github.private_file
     assert RepoStore.owned_by("ansible", error=StoreError) == []
+
+
+def test_a_worktree_added_from_an_owned_one_stays_the_users(
+    store_for: StoreFor, tmp_path: Path
+) -> None:
+    """git copies config.worktree into it, owner included; the path stamp says it isn't ours."""
+    workspace = store_for("workspace")
+    workspace.fetch(branches=["*"], tags=["*"], prune=True)
+    owned = tmp_path / "ws" / "one"
+    workspace.worktree_add(owned, "refs/remotes/origin/main", branch="one")
+    hand = tmp_path / "scratch" / "copy"
+    git(owned, "worktree", "add", "--quiet", "--detach", str(hand), bare=False)
+
+    assert workspace.worktree_owners() == {owned.resolve(): "workspace", hand: None}
+    outcome = workspace.release()
+
+    assert isinstance(outcome, Released)
+    assert outcome.foreign_worktrees == (str(hand),)
+    assert hand.is_dir()
+    assert not owned.exists()
