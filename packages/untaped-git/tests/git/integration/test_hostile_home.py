@@ -2,9 +2,8 @@
 
 The store's explicit ``--prune``/``--no-prune`` and its repo-scope policy
 beat ``fetch.prune``, ``fetch.pruneTags``, ``fetch.unpackLimit``, ``gc.auto``,
-``gc.pruneExpire``
-and ``maintenance.auto`` set globally, while a user's own fetch in a store
-worktree still honours them. ``release`` joins the writers with its callers.
+``gc.pruneExpire`` and ``maintenance.auto`` set globally, while a user's own
+fetch in a store worktree still honours them. ``release`` joins the writers with its callers.
 """
 
 from __future__ import annotations
