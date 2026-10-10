@@ -1,9 +1,7 @@
 """The installed git's version, and the floors the repo store depends on.
 
 The floor is 2.29 (``fetch --stdin``, the ``noop`` negotiator and
-``--no-write-fetch-head``, all used by the store's prefetch). From 2.46 git
-honours ``GIT_NO_LAZY_FETCH``, so a blob read nobody prefetched fails loudly;
-below it the prefetch's guard is the only check.
+``--no-write-fetch-head``, all used by the store's prefetch).
 """
 
 from __future__ import annotations

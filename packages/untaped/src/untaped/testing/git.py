@@ -13,7 +13,8 @@ refuses ``--stdin`` or stalls maintenance, and :func:`trace2_events` reads a
 ``GIT_TRACE2_EVENT`` file. Everything runs without a network.
 
 Tests run under ``untaped.testing.plugin``'s hermetic ``HOME``: the
-fixtures write to its ``~/.gitconfig``.
+fixtures write to its ``~/.gitconfig``. Experimental (``docs/versioning.md``):
+the module may change in a minor release while the store gets its consumers.
 """
 
 from __future__ import annotations
@@ -117,9 +118,14 @@ class GitRemote:
     def delete_branch(self, name: str) -> None:
         _git("push", "--quiet", "origin", f":refs/heads/{name}", cwd=self.work)
 
-    def tag(self, name: str, at: str = "main") -> str:
+    def tag(self, name: str, at: str = "main", *, message: str | None = None) -> str:
+        """Tag ``at`` on the remote (annotated with ``message``); the commit's oid."""
         oid = self.oid(at)
-        _git("push", "--quiet", "--force", "origin", f"{oid}:refs/tags/{name}", cwd=self.work)
+        source = oid
+        if message is not None:
+            _git("tag", "--force", "-a", "-m", message, name, oid, cwd=self.work)
+            source = f"refs/tags/{name}"
+        _git("push", "--quiet", "--force", "origin", f"{source}:refs/tags/{name}", cwd=self.work)
         return oid
 
     def oid(self, rev: str) -> str:

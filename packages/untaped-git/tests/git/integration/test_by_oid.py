@@ -24,11 +24,23 @@ def fetched(remote: GitRemote, store_for: StoreFor) -> RepoStore:
     return store
 
 
-def test_v0_refusal_is_unavailable(remote: GitRemote, fetched: RepoStore) -> None:
+def test_v0_refusal_is_unavailable(
+    remote: GitRemote, fetched: RepoStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     remote.refuse_by_oid()
+    real = RepoStore._missing
+    listings: list[int] = []
+
+    def missing(self: RepoStore, revisions: Sequence[str], paths: Sequence[str] = ()) -> list[str]:
+        listings.append(1)
+        return real(self, revisions, paths)
+
+    monkeypatch.setattr(RepoStore, "_missing", missing)
 
     with pytest.raises(StoreError) as caught:
         fetched.prefetched(trees=[MAIN], paths=["src"])
+
+    assert len(listings) == 1  # the refusal stops it before the guard's second listing
 
     assert caught.value.category == ErrorCategory.UNAVAILABLE
     assert caught.value.exit_code == 5

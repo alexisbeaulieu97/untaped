@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -12,6 +14,7 @@ from pydantic import SecretStr
 from untaped import bootstrap
 from untaped.plugins.registry import PluginSpec
 from untaped.sdk import ConfigError
+from untaped.settings import get_settings
 from untaped.testing import invoke_cli, provider_candidate
 from untaped_git import SPEC
 from untaped_git.cli import app
@@ -56,8 +59,17 @@ def _fresh() -> Iterator[None]:
     yield
 
 
-def rank(monkeypatch: pytest.MonkeyPatch, *plugins: str) -> None:
-    monkeypatch.setattr("untaped.contracts._gather.ranking", lambda *_: plugins)
+def rank(method: str, *plugins: str) -> None:
+    """Rank ``plugins`` for ``GitHost.<method>`` in config, as `untaped plugin rank` writes it."""
+    path = Path(os.environ["UNTAPED_CONFIG"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    listed = ", ".join(plugins)
+    path.write_text(
+        "profiles:\n  default:\n    git:\n      extensions:\n        git_host:\n"
+        f"          rank:\n            {method}: [{listed}]\n",
+        encoding="utf-8",
+    )
+    get_settings.cache_clear()
 
 
 def test_no_provider_means_plain_git() -> None:
@@ -105,15 +117,26 @@ def test_a_failing_credential_is_raised() -> None:
         resolve_host("https://github.com/acme/app.git")
 
 
-def test_rank_decides_between_two_homes(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("url", ["https://github.com/acme/app.git", "git@github.com:acme/app.git"])
+def test_the_credential_rank_decides_between_two_homes(url: str) -> None:
     compose("hub", "lab")
     Forge.homes = {"hub": "github.com", "lab": "github.com"}
-    rank(monkeypatch, "lab")
+    rank("credential", "lab")
 
-    auth = resolve_host("https://github.com/acme/app.git")
+    auth = resolve_host(url)
 
     assert auth is not None
     assert auth.plugin == "lab"
+    assert set(Forge.asked) <= {"lab"}  # the other is never asked for a token
+
+
+def test_another_methods_rank_does_not_decide() -> None:
+    compose("hub", "lab")
+    Forge.homes = {"hub": "github.com", "lab": "github.com"}
+    rank("proxy", "lab")
+
+    with pytest.raises(ConfigError, match="rank them"):
+        resolve_host("git@github.com:acme/app.git")
 
 
 def test_an_unranked_tie_is_a_config_error() -> None:

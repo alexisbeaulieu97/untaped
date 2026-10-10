@@ -32,7 +32,7 @@ from.
    with `untaped auth set`).
 2. `helpers_first` names helpers your own Git config asks before untaped.
    If one holds a stale password, set `git.untaped_helper_first: true`;
-   untaped's worktrees then ask untaped first.
+   untaped's worktrees then ask only untaped for that host.
 
 ## Safety
 

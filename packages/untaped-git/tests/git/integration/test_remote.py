@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 from pydantic import SecretStr
 
+from git.conftest import StoreFor, git
 from untaped import bootstrap
 from untaped.sdk import PluginSpec
 from untaped.testing import provider_candidate
-from untaped.testing.git import GitRemote, global_config
+from untaped.testing.git import GitRemote, global_config, trace2_events
 from untaped_git import SPEC, api
 from untaped_git.domain.hosts import Credential, HostAuth
 from untaped_git.errors import GitError, StoreError
@@ -26,6 +28,7 @@ def test_ls_remote_and_default_branch_through_the_api(remote: GitRemote) -> None
     remote.tag("v1")
 
     assert api.ls_remote(remote.url) == {
+        "HEAD": remote.oid("main"),
         "refs/heads/dev": remote.oid("main"),
         "refs/heads/main": remote.oid("main"),
         "refs/tags/v1": remote.oid("main"),
@@ -96,3 +99,47 @@ def test_for_url_keys_the_store_under_the_setting(remote: GitRemote) -> None:
     assert store.refs() == {"heads/main": remote.oid("main")}
     with pytest.raises(TypeError, match="PluginSpec"):
         RepoStore.for_url(remote.url, plugin=3, error=StoreError)
+
+
+def test_an_annotated_tag_maps_to_its_commit(remote: GitRemote, tmp_path: Path) -> None:
+    remote.tag("v2", message="release")
+
+    refs = ls_remote(remote.url, ["HEAD", "refs/tags/*"], root=tmp_path / "s", auth=lambda _: None)
+
+    assert refs == {"HEAD": remote.oid("main"), "refs/tags/v2": remote.oid("main")}
+
+
+def test_an_option_shaped_url_is_never_an_option(tmp_path: Path) -> None:
+    planted = tmp_path / "planted"
+    with pytest.raises(GitError):
+        ls_remote(f"--upload-pack=touch {planted}", [], root=tmp_path / "s", auth=lambda _: None)
+    assert not planted.exists()
+
+
+def test_default_branch_is_recorded_and_heals_after_a_rename(
+    remote: GitRemote, store_for: StoreFor, tmp_path: Path
+) -> None:
+    store = store_for("workspace")
+    root = tmp_path / "store"
+    store.ensure()
+    assert default_branch(remote.url, root=root, auth=lambda _: None) == "main"
+    assert git(store.path, "config", "untaped.defaultBranch").strip() == "main"
+
+    trace = tmp_path / "trace.json"
+    os.environ["GIT_TRACE2_EVENT"] = str(trace)
+    try:
+        store.fetch(branches=["*"])
+    finally:
+        del os.environ["GIT_TRACE2_EVENT"]
+    starts = [e["argv"] for e in trace2_events(trace) if e.get("event") == "start"]
+    assert not any("ls-remote" in argv for argv in starts)
+    assert git(store.path, "symbolic-ref", "refs/remotes/origin/HEAD").strip().endswith("/main")
+
+    remote.branch("trunk")
+    git(remote.path, "symbolic-ref", "HEAD", "refs/heads/trunk")
+    remote.delete_branch("main")
+    store.fetch(branches=["*"], prune=True)
+
+    head = git(store.path, "symbolic-ref", "refs/remotes/origin/HEAD").strip()
+    assert head == "refs/remotes/origin/trunk"
+    assert git(store.path, "config", "untaped.defaultBranch").strip() == "trunk"

@@ -25,3 +25,10 @@ def git_settings() -> GitSettings:
     settings rather than receiving them from a command.
     """
     return get_config_section("git", GitSettings)
+
+
+def credential_rank() -> tuple[str, ...]:
+    """The plugins ranked for ``GitHost.credential`` (``git.extensions.git_host.rank``)."""
+    extensions = getattr(git_settings(), "extensions", None) or {}
+    extension = extensions.get("git_host")
+    return () if extension is None else tuple(extension.rank.get("credential", ()))
