@@ -339,13 +339,14 @@ def test_removing_a_source_keeps_a_repo_another_source_selects_then_removes_it(
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
     index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
-    _save_sources("a", "b", "c")
-    _refresh(index_dir, "site", source_key="source:a")
-    _refresh(index_dir, "site", source_key="source:b")
-    _refresh(index_dir, "site", source_key="source:c")
+    _save_sources("a", "b", "c", "d")
+    for key in ("a", "b", "c", "d"):
+        _refresh(index_dir, "site", source_key=f"source:{key}")
     repo = _repo(store_root, "site")
 
-    assert _remove("a") == ["kept acme/site (selected by sources b and c)"]
+    assert _remove("a") == ["kept acme/site (selected by sources b, c and d)"]
+    _save_sources("b", "c", "d")
+    assert _remove("d") == ["kept acme/site (selected by sources b and c)"]
     _save_sources("b", "c")
     assert _remove("c") == ["kept acme/site (selected by source b)"]
     assert repo.is_dir()
@@ -413,6 +414,21 @@ def test_removing_a_source_releases_a_repo_workspace_holds(
     status = store_module.run_git(["status", "--porcelain"], timeout=30, cwd=worktree, capture=True)
     assert status.text == ""
     assert (worktree / _REQS).read_text() == "- src: https://github.com/acme/base\n"
+
+
+def test_removing_a_source_leaves_a_repo_it_never_fetched(tmp_path: Path, store_root: Path) -> None:
+    """The source selects the repo, but no ref matched: ansible has no part in it to release."""
+    site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
+    workspace = RepoStore.for_url(site.url, plugin="workspace", error=GitCacheError)
+    workspace.fetch(branches=["*"], tags=["*"], prune=True)
+    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    _save_sources("a")
+    _refresh(index_dir, "site", source_key="source:a", ref_patterns=["nomatch-*"])
+    before = _git(_repo(store_root, "site"), "for-each-ref", "--format=%(refname)")
+
+    assert _remove("a", "--dry-run") == []
+    assert _remove("a") == []
+    assert _git(_repo(store_root, "site"), "for-each-ref", "--format=%(refname)") == before
 
 
 def test_removing_a_source_while_another_sources_refresh_holds_the_repo_keeps_it(

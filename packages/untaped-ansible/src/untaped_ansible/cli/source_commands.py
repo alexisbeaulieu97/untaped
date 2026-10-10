@@ -25,8 +25,10 @@ from untaped.sdk import (
     finish,
     first_validation_error,
     get_config_section,
+    hint,
     most_severe,
     not_found,
+    note_failure,
     plural,
     q,
     report_error,
@@ -332,18 +334,23 @@ def source_remove_command(
             source_repo.remove(name)
             index.clear(_saved_source_key(name))
         action = "planned" if dry_run else "failed" if failures else "deleted"
+        error = (
+            note_failure(
+                most_severe(failure for _, failure in failures),
+                message=f"{plural(len(failures), 'repo')} not released; source kept",
+            )
+            if failures
+            else None
+        )
         _emit_outcome(
-            SourceOutcome(action=action, name=name, changes=changes),
+            SourceOutcome(action=action, name=name, changes=changes, error=error),
             fmt=fmt,
             columns=columns,
         )
         for repo, failure in failures:
             report_error(failure, item=repo)
         if failures:
-            echo(
-                f"hint: source {q(name)} is kept so a rerun retries the release",
-                err=True,
-            )
+            echo(hint(f"ansible source remove {name}"), err=True)
         finish(bool(failures))
 
 
@@ -690,8 +697,8 @@ def _release_repos(
 
     Every repo is also tried at its ``https://<host>/OWNER/NAME.git`` URL, so
     one the source still selects but whose refs were all pruned is found
-    too; https and ssh URLs of a repo are one store repo. Repos the store does
-    not hold are skipped. Returns the outcome lines and the failed releases.
+    too; https and ssh URLs of a repo are one store repo. Repos ansible has no
+    part in are skipped. Returns the outcome lines and the failed releases.
     """
     store = GitSourceStore()
     changes: list[str] = []
@@ -700,7 +707,7 @@ def _release_repos(
         keepers = selected.get(repo_key(repo))
         if keepers:
             noun = "source" if len(keepers) == 1 else "sources"
-            changes.append(f"kept {repo} (selected by {noun} {' and '.join(keepers)})")
+            changes.append(f"kept {repo} (selected by {noun} {_and_list(keepers)})")
             continue
         candidates = [*([f"https://{host}/{repo}.git"] if host else []), *urls]
         for url in {store_key(url): url for url in candidates}.values():
@@ -717,9 +724,13 @@ def _release_repos(
             if isinstance(outcome, Removed):
                 changes.append(f"removed {repo} ({size_text(outcome.freed_bytes)} freed)")
             elif outcome is not None:
-                kept = outcome.kept().replace(", ", "; ")
-                changes.append(f"released {repo} (kept: {kept})")
+                changes.append(f"released {repo} (kept: {outcome.kept()})")
     return changes, failures
+
+
+def _and_list(names: list[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c``."""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def _saved_source_key(name: str) -> str:

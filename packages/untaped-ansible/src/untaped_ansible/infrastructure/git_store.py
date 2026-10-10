@@ -65,8 +65,9 @@ class GitSourceStore:
             atomic_write(store.private_file, json.dumps({"url": url}) + "\n")
 
     def holds(self, url: str) -> bool:
-        """Whether the store has a repo for ``url``."""
-        return self._store(url).exists()
+        """Whether ansible has a part in ``url``'s store repo (its file or refs are there)."""
+        store = self._store(url)
+        return store.exists() and (store.private_file.is_file() or bool(_peeled_refs(store)))
 
     def release(self, url: str) -> Released | Removed | None:
         """Give up ansible's part of ``url``'s store repo (``None`` when there is none).
@@ -75,10 +76,9 @@ class GitSourceStore:
         names who kept it. Waits on the repo's lock, so a fetch in progress
         finishes first.
         """
-        store = self._store(url)
-        if not store.exists():
+        if not self.holds(url):
             return None
-        return store.release()
+        return self._store(url).release()
 
     def refusal(self, ref: GitRef) -> str | None:
         """Why the store refuses ``ref``'s name (git allows some, like ``-wip``), else ``None``."""
