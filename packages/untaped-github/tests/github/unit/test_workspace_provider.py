@@ -121,6 +121,17 @@ def test_without_an_inventory_scope_github_is_not_ready_and_names_the_setting() 
     assert caught.value.exit_code == ExitCode.ENVIRONMENT
 
 
+def test_a_bare_team_with_several_orgs_names_the_teams_setting() -> None:
+    configure(inventory={"orgs": ["a", "b"], "teams": ["slug"]})
+
+    with pytest.raises(NoProviderReady) as caught:
+        gather(RepoSource.repos, refresh=True)()
+
+    not_ready = caught.value.not_ready["github"]
+    assert not_ready.setting == "github.inventory.teams"
+    assert not_ready.reason == "github.inventory.teams needs ORG/SLUG entries"
+
+
 @pytest.mark.parametrize(
     "github",
     [{"default_org": "acme"}, {"inventory": {"orgs": ["acme"]}}],
