@@ -27,7 +27,7 @@ stream (`--follow`) prints json as one object per line (NDJSON).
 `--format pipe` writes NDJSON: one JSON object per line.
 
 ```json
-{"untaped": "1", "kind": "github.repo", "record": {"repo": "acme/api", "...": "..."}}
+{"untaped": "1", "kind": "github.repo", "record": {"full_name": "acme/api", "...": "..."}}
 ```
 
 | Field | Meaning |

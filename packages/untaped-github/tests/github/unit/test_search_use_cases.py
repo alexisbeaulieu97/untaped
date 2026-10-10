@@ -255,7 +255,7 @@ def test_search_repos_dedupes_across_batches_then_applies_limit() -> None:
         teams={("acme", "t"): _repos(7)},
     )
 
-    assert [row.repo for row in rows] == ["acme/api", "acme/web", "acme/worker"]
+    assert [row.full_name for row in rows] == ["acme/api", "acme/web", "acme/worker"]
     assert [call[2] for call in search.calls] == [3, 3]
 
 
@@ -313,7 +313,7 @@ def test_search_repos_sorted_batches_are_globally_sorted(
         teams={("acme", "t"): _repos(7)},
     )
 
-    assert [row.repo for row in rows] == expected
+    assert [row.full_name for row in rows] == expected
     assert [call[1:] for call in search.calls] == [(sort, 3), (sort, 3)]
 
 

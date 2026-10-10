@@ -1,5 +1,5 @@
 """Workspace command tree: ``create``, ``add``, ``list``, ``status``, ``path``, ``archive``,
-``remove`` and ``run``."""
+``remove``, ``run`` and ``repos resolve``."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ from untaped.sdk import (
 )
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.remove import RemovalPlan, RemoveWorkspace, refusal_hint
+from untaped_workspace.application.resolve import ResolveRepos
 from untaped_workspace.application.run import RunInRepos, RunTarget
 from untaped_workspace.cli.common import (
     BaseOption,
@@ -79,6 +80,9 @@ REPO_OUTCOME = "workspace.repo_outcome"
 ARCHIVE_OUTCOME = "workspace.archive_outcome"
 REMOVE = "workspace.remove_outcome"
 RUN_OUTCOME = "workspace.run_outcome"
+RESOLVE_OUTCOME = "workspace.resolve_outcome"
+
+repos_app = create_app(name="repos", help="Inspect and refresh a workspace's repos.")
 
 
 @writes
@@ -243,6 +247,35 @@ def path_command(name: NameArg = None, /) -> None:
     with report_errors():
         settings = workspace_settings()
         echo(str(workspace_dir(settings, locate(settings, name).name)))
+
+
+@writes
+def resolve_command(
+    name: NameArg = None, /, *, fmt: FormatOption = "table", columns: ColumnsOption = None
+) -> None:
+    """Ask each repo's source again and save the URL it lists now.
+
+    A repo's URL is frozen when it joins the workspace; this picks up a
+    change on the provider's side (a new github.git_protocol, say). A new URL
+    that names another store repo is refused: remove the repo and add it
+    again. Repos added by URL have no source and are skipped.
+    """
+    from untaped_workspace.infrastructure.catalog import RepoSources  # noqa: PLC0415  # contracts
+
+    with report_errors():
+        settings = workspace_settings()
+        root = workspaces_dir(settings)
+        record = locate(settings, name)
+        resolve = ResolveRepos(
+            StateWorkspaceStore(workspaces_dir=root),
+            git_worktrees(),
+            RepoSources(),
+            workspaces_dir=root,
+        )
+        rows = resolve(record.name)
+        emit(rows, fmt=fmt, columns=columns, kind=RESOLVE_OUTCOME, empty="No repos found.")
+        report_row_errors(rows, item=lambda row: f"{row.workspace}/{row.dir}")
+    finish(any(row.failed for row in rows))
 
 
 @writes(destructive=True)
@@ -615,3 +648,5 @@ app.command(path_command, name="path")
 app.command(archive_command, name="archive")
 app.command(remove_command, name="remove")
 app.command(run_command, name="run", usage="Usage: untaped workspace run [OPTIONS] [NAME] CMD")
+repos_app.command(resolve_command, name="resolve")
+app.command(repos_app, name="repos")

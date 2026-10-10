@@ -21,16 +21,21 @@ archiving, removing, the repo store.
 
 `--repo` and `--read-only` take, and `--stdin` reads:
 
-- `OWNER/NAME`, or a bare `NAME` that is unique, both looked up in the GitHub
-  inventory (`github.inventory` orgs and teams; refreshing it needs the
-  GitHub token);
-- a git URL or path: it contains `://`, starts with `/` or `~`, is
-  `user@host:path`, or ends with `.git`. These skip the inventory.
+- `OWNER/NAME`, or a bare `NAME` that is unique, both looked up in the repos
+  every installed repo provider lists (GitHub's are its `github.inventory`
+  orgs and teams, else `github.default_org`; listing them needs the token).
+  Lists are cached for 6 hours;
+- a clone URL: `https://…`, `ssh://…` or `user@host:path`. It skips the
+  lookup and its repo is named by its path (`acme/api`). Local paths and
+  `file://` URLs are refused. A URL on a host a plugin claims (GitHub's)
+  must name a repo that plugin's settings can reach.
 
-An unknown or ambiguous name exits 2 and lists candidates. If a repo you
-expect is not found, check the `github.inventory` orgs and teams settings.
-`workspace.protocol` (`https` or `ssh`, default `https`) picks which clone
-URL the inventory supplies.
+An unknown or ambiguous name exits 2 and lists candidates; a name no provider
+could look up says which setting to set. The provider decides each repo's
+clone URL (`github.git_protocol`: `https` or `ssh`). The URL is saved with the
+workspace: after changing that setting, `untaped workspace repos resolve NAME`
+asks each repo's provider again and saves the new URL (a URL naming another
+repo is refused, `failed`).
 
 ## The picker
 
@@ -44,8 +49,9 @@ picker.
 
 - `create` with no NAME asks for one first, refusing invalid names, active
   workspace names and non-empty existing directories.
-- It lists the GitHub inventory (opened from the cache, refreshed when
-  stale), repos workspace has in the repo store (as `host/[owner/]name`,
+- It lists every repo provider's repos (opened from the cache, then
+  refreshed; the footer says how fresh each provider's are), repos workspace
+  has in the repo store (as `host/[owner/]name`,
   checked out from their stored URL) and any git URL typed in. `add` leaves out repos already
   in the workspace.
 - Each selected repo has a mode (write or read-only), a base (completes from
@@ -55,7 +61,7 @@ picker.
   `tab` switches pane, `enter` edits a setting in the selected pane and
   `←`/`→` change it, `ctrl-s` creates or adds the selection (`create` also
   with nothing selected: an empty workspace), `ctrl-r` refreshes the
-  inventory, `esc` clears a typed search and otherwise quits like `ctrl-c`,
+  providers' lists, `esc` clears a typed search and otherwise quits like `ctrl-c`,
   which asks first when anything is selected and creates nothing.
 
 ## Branches and bases

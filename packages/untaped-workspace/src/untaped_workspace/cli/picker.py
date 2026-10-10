@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from untaped.sdk import (
     PickCatalog,
@@ -38,8 +39,10 @@ from untaped_workspace.domain.naming import (
     repo_key,
     validate_workspace_name,
 )
-from untaped_workspace.infrastructure.pick_source import RepoPickSource
 from untaped_workspace.settings import WorkspaceSettings
+
+if TYPE_CHECKING:
+    from untaped_workspace.infrastructure.pick_source import RepoPickSource
 
 READ_ONLY = "read-only"
 
@@ -207,6 +210,8 @@ def _pick(
         template = branch_for(settings.branch_template, record.name)
         title, title_label, fixed_name = "", "", record.name
         exclude = {repo_key(spec.url) for spec in record.repos}
+    from untaped_workspace.infrastructure.pick_source import RepoPickSource  # noqa: PLC0415
+
     source = RepoPickSource(git=git_worktrees(), exclude=exclude)
     request = build_request(
         heading=heading,

@@ -45,9 +45,16 @@ def _probe_api() -> str:
 
 def _git_host() -> Sequence[Contract]:
     """GitHub's ``GitHost``: credentials and proxy for its Git host (imports lazily)."""
-    from untaped_github.adapters.git import GithubHost  # noqa: PLC0415
+    from untaped_github.providers.git import GithubHost  # noqa: PLC0415
 
     return (GithubHost(),)
+
+
+def _workspace() -> Sequence[Contract]:
+    """GitHub's ``RepoSource``: its inventory as workspace repos (imports lazily)."""
+    from untaped_github.providers.workspace import GithubRepos  # noqa: PLC0415
+
+    return (GithubRepos(),)
 
 
 SPEC = PluginSpec(
@@ -73,5 +80,5 @@ SPEC = PluginSpec(
         online_check("github.api", section="github", probe=_probe_api),
         executable_check("github.git", "git", purpose="`untaped github sweep`"),
     ),
-    provides={"git": _git_host},
+    provides={"git": _git_host, "workspace": _workspace},
 )

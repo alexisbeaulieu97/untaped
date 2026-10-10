@@ -5,7 +5,6 @@ from untaped_github.application.cache import (
     with_disk_bytes,
 )
 from untaped_github.application.inventory import (
-    RepositoryInventoryItem,
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
 )
@@ -42,7 +41,6 @@ __all__ = [
     "GithubTeamService",
     "ListRepos",
     "RepoListFilters",
-    "RepositoryInventoryItem",
     "RepositoryInventoryScope",
     "ResolveRepositoryInventory",
     "SearchCode",

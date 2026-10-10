@@ -504,6 +504,25 @@ def _samples() -> dict[str, Record]:
             StoreReport(store_dir="/s", repos=1, size_bytes=2, filter_ignored={"git.example": 1}),
             TreeEntry(mode="100644", type="blob", oid="0" * 40, path="a.yml"),
         ]
+    if "untaped_workspace" in _SHIPPED:
+        from untaped_workspace.api import Repo
+
+        rows.append(
+            Repo(
+                name="acme/api",
+                url="https://github.com/acme/api.git",
+                source={"plugin": "github", "kind": "github.repo", "record": {"x": 1}},
+            )
+        )
+    if "untaped_github" in _SHIPPED:
+        from untaped_github.domain.models import CorpusRepoResult, GithubRepo
+        from untaped_github.domain.sweep import RepoSweepOutcome
+
+        rows += [
+            GithubRepo(full_name="acme/api", private=False, pushed_at="2026-10-10T00:00:00Z"),
+            CorpusRepoResult(full_name="acme/api", ref="main", path="/s/acme/api.git"),
+            RepoSweepOutcome(full_name="acme/api", hits={"a.yml": 2}, owners=("@acme/team",)),
+        ]
     return {str(kind_of(type(row))): row for row in rows}
 
 

@@ -10,11 +10,7 @@ from unittest.mock import ANY
 import pytest
 
 from untaped.sdk import ConfigError, HttpStatusError, UntapedError, UsageError
-from untaped_github.application import (
-    RepositoryInventoryItem,
-    RepositoryInventoryScope,
-    TeamScope,
-)
+from untaped_github.application import RepositoryInventoryScope, TeamScope
 from untaped_github.application.sweep import (
     CorpusSyncOptions,
     Sweep,
@@ -28,6 +24,7 @@ from untaped_github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
     CorpusRepoTarget,
+    GithubRepo,
     GrepHit,
     GrepSpec,
     LocalRef,
@@ -39,10 +36,8 @@ from untaped_github.errors import GitCorpusError
 README = SweepQuery(has_files=("README.md",))
 
 
-def _item(
-    full_name: str, *, archived: bool = False, pushed_at: str | None = None
-) -> RepositoryInventoryItem:
-    return RepositoryInventoryItem(
+def _item(full_name: str, *, archived: bool = False, pushed_at: str | None = None) -> GithubRepo:
+    return GithubRepo(
         full_name=full_name,
         name=full_name.rsplit("/", maxsplit=1)[-1],
         html_url=f"https://github.example.com/{full_name}",
@@ -55,7 +50,7 @@ def _item(
 
 def _row(full_name: str, *, archived: bool = False) -> CorpusRepoResult:
     return CorpusRepoResult(
-        repo=full_name,
+        full_name=full_name,
         ref="main",
         path=f"/corpus/{full_name}",
         clone_url=f"https://github.example.com/{full_name}.git",
@@ -67,12 +62,12 @@ def _row(full_name: str, *, archived: bool = False) -> CorpusRepoResult:
 class _Resolver:
     """Inventory stub: every scope resolves to ``rows``; names in ``missing`` raise a 404."""
 
-    def __init__(self, *rows: RepositoryInventoryItem, missing: frozenset[str] = frozenset()):
+    def __init__(self, *rows: GithubRepo, missing: frozenset[str] = frozenset()):
         self.rows = rows
         self.missing = missing
         self.scopes: list[RepositoryInventoryScope] = []
 
-    def __call__(self, scope: RepositoryInventoryScope) -> tuple[RepositoryInventoryItem, ...]:
+    def __call__(self, scope: RepositoryInventoryScope) -> tuple[GithubRepo, ...]:
         self.scopes.append(scope)
         for name in set(scope.repos) & self.missing:
             raise UntapedError(f"failed to expand repository {name}: 404 Not Found")
@@ -119,7 +114,7 @@ class _Corpus:
             fetched_at=fetched_at, profile=selector.profile, ref_globs=selector.globs
         )
         return CorpusRepoResult(
-            repo=repo.full_name, ref="main", path="/store", fetched_at=fetched_at.isoformat()
+            full_name=repo.full_name, ref="main", path="/store", fetched_at=fetched_at.isoformat()
         )
 
     def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None:
@@ -193,7 +188,7 @@ def _sweep(
 
 
 def _names(report: SweepReport) -> list[str]:
-    return [row.repo for row in report.rows]
+    return [row.full_name for row in report.rows]
 
 
 _CACHED = (_row("acme/api"), _row("acme/old", archived=True), _row("Other/Tool"), _row("zed/x"))
@@ -212,7 +207,7 @@ _CACHED = (_row("acme/api"), _row("acme/old", archived=True), _row("Other/Tool")
 def test_cached_sweep_scopes_corpus_rows_case_insensitively(
     scope: RepositoryInventoryScope, archived: ArchivedMode, expected: list[str]
 ) -> None:
-    corpus = _readme(_Corpus(cached_rows=_CACHED), *(row.repo for row in _CACHED))
+    corpus = _readme(_Corpus(cached_rows=_CACHED), *(row.full_name for row in _CACHED))
 
     report = _sweep(corpus, scope=scope, archived=archived, sync="off")
 
@@ -338,7 +333,7 @@ def test_auth_and_rate_limit_failures_abort_instead_of_unscanned(status: int, bo
     # aborts the sweep instead of turning each repo into an unscanned row.
     calls: list[RepositoryInventoryScope] = []
 
-    def resolver(scope: RepositoryInventoryScope) -> tuple[RepositoryInventoryItem, ...]:
+    def resolver(scope: RepositoryInventoryScope) -> tuple[GithubRepo, ...]:
         calls.append(scope)
         cause = HttpStatusError(f"HTTP {status}", status_code=status, body=body)
         raise UntapedError(f"failed to expand repository {scope.repos[0]}") from cause

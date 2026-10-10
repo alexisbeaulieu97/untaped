@@ -66,7 +66,6 @@ DESCRIPTIONS: dict[str, str] = {
     "checks. Unset means `min(8, 2 * CPUs)`; "
     "values above `2 * CPUs` are clamped.",
     "workspace.branch_template": "Branch name for writable repos; `{name}` is the workspace name.",
-    "workspace.protocol": "Clone URL the GitHub inventory supplies: `https` or `ssh`.",
     "workspace.active": "Active workspaces. Managed by `workspace` commands.",
     "workspace.archived": "Archived workspaces. Managed by `workspace` commands.",
     "github.base_url": "GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",
@@ -77,19 +76,15 @@ DESCRIPTIONS: dict[str, str] = {
     "github.default_org": "Org scope for `repos list`, `search` (repos, code, issues), "
     "`sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, "
     "search uses `@me`.",
-    "github.git_protocol": "How `sweep`, `cache sync` and `ansible source refresh` fetch "
-    "repos on the GitHub host: "
-    "`https` or `ssh` (`git@HOST:OWNER/NAME.git`).",
+    "github.git_protocol": "How `sweep`, `cache sync`, workspace and `ansible source refresh` "
+    "fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`).",
     "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
     "this that GitHub reports as pushed since.",
     "github.sweep.parallel": "Default `sweep --parallel` and `cache sync --parallel` Git workers.",
-    "github.inventory.path": "Cached repository list (metadata only) that workspace "
-    "`create`/`add` resolve names from and the picker searches.",
-    "github.inventory.orgs": "Orgs whose repositories the inventory lists. With no orgs "
-    "or teams, `github.default_org`.",
+    "github.inventory.orgs": "Orgs whose repositories github lists for workspace (repo names, "
+    "the picker). With no orgs or teams, `github.default_org`.",
     "github.inventory.teams": "Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else "
-    "in `github.default_org`) whose repositories the inventory lists.",
-    "github.inventory.max_age_seconds": "Refresh the inventory when it is older than this.",
+    "in `github.default_org`) whose repositories github lists for workspace.",
     "jira.base_url": "Jira Data Center URL, for example `https://jira.example.com`.",
     "jira.token": "Jira personal access token. Falls back to `token_command`, then "
     "`JIRA_API_TOKEN`.",

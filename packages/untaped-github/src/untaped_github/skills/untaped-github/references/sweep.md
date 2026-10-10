@@ -86,9 +86,9 @@ lists each kind's fields.
 ## Piped input
 
 - `sweep --stdin` and `cache sync --stdin` read bare `owner/name` lines or
-  `github.repo`, `github.repo_hit` and `github.sweep_repo` records; other
-  kinds exit 2.
-- `github.repo` records from `repos list` are used as they are, with no
+  `github.repo`, `github.sweep_repo` and `github.corpus_repo` records (by
+  `full_name`); other kinds exit 2.
+- Records from `repos list` are used as they are, with no
   per-repo API call, and their `pushed_at` enables the unchanged-repo skip.
   Other records and bare names are looked up.
 - Git fetches send the token only to the Git host of `github.base_url`; a

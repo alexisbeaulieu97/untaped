@@ -1,4 +1,4 @@
-"""The workspace picker as a screen: the reducer is its update, the components draw it.
+"""The multi-select picker as a screen: the reducer is its update, the components draw it.
 
 :func:`picker_screen` wraps a :class:`~untaped.picker.PickRequest` in a
 :class:`~untaped.screen.core.Screen`. The model is the reducer's

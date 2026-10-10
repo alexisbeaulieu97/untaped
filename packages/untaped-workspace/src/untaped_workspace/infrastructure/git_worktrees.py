@@ -146,6 +146,15 @@ class LocalGitWorktrees:
             store.write_worktree_config(dest.absolute(), profile=self._profile)
         return self._backfill(store, delta, history)
 
+    def configure(self, url: str, dest: Path) -> None:
+        """Rewrite ``dest``'s worktree config for ``url`` (its remote URL and credentials helper).
+
+        A no-op when the store has no repo for ``url`` or ``dest`` is gone.
+        """
+        store = self._store(url)
+        if store.exists() and dest.is_dir():
+            store.write_worktree_config(dest.absolute(), profile=self._profile)
+
     def in_store(self, url: str) -> bool:
         """Whether the repo store holds ``url``'s repo."""
         return self._store(url).exists()

@@ -13,9 +13,9 @@ from untaped_github.application.scopes import TeamScope
 from untaped_github.domain import (
     CodeResult,
     CodeSearchFilters,
+    GithubRepo,
     IssueResult,
     IssueSearchFilters,
-    RepoResult,
     RepoSearchFilters,
     UserResult,
     UserSearchFilters,
@@ -214,13 +214,13 @@ def _github_search_validation_error(
     )
 
 
-def _sort_repo_results(rows: list[RepoResult], sort: str | None) -> list[RepoResult]:
+def _sort_repo_results(rows: list[GithubRepo], sort: str | None) -> list[GithubRepo]:
     if sort == "stars":
-        return sorted(rows, key=lambda row: (-row.stargazers_count, row.repo))
+        return sorted(rows, key=lambda row: (-(row.stargazers_count or 0), row.full_name))
     if sort == "forks":
-        return sorted(rows, key=lambda row: (-row.forks_count, row.repo))
+        return sorted(rows, key=lambda row: (-(row.forks_count or 0), row.full_name))
     if sort == "updated":
-        by_name = sorted(rows, key=lambda row: row.repo)
+        by_name = sorted(rows, key=lambda row: row.full_name)
         return sorted(by_name, key=lambda row: row.updated_at or "", reverse=True)
     return rows
 
@@ -338,10 +338,10 @@ class SearchRepos(_ScopedSearch):
         filters: RepoSearchFilters,
         *,
         team_scopes: tuple[TeamScope, ...] = (),
-    ) -> Iterator[RepoResult]:
+    ) -> Iterator[GithubRepo]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
         effective = _apply_scope_defaults(filters, team_repos, note=self._note)
-        rows: list[RepoResult] = []
+        rows: list[GithubRepo] = []
         seen: set[str] = set()
         globally_sort = effective.sort in _GLOBAL_REPO_SORTS
 
@@ -364,10 +364,10 @@ class SearchRepos(_ScopedSearch):
                 for row in self._search.search_repositories(
                     batch.to_query_string(), sort=batch.sort, limit=batch.limit
                 ):
-                    result = RepoResult.model_validate(row)
-                    if result.repo in seen:
+                    result = GithubRepo.model_validate(row)
+                    if result.full_name in seen:
                         continue
-                    seen.add(result.repo)
+                    seen.add(result.full_name)
                     rows.append(result)
                     if filled():
                         break

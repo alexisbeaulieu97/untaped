@@ -11,26 +11,19 @@ from pathlib import Path
 
 import pytest
 
+from untaped.testing.git import GitRemote
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.application.status import WorkspaceStatus
-from untaped_workspace.domain import (
-    RepoArg,
-    ResolvedRepo,
-    WorkspaceRecord,
-    repo_identity,
-)
+from untaped_workspace.domain import RepoArg, WorkspaceRecord
 from untaped_workspace.errors import WorkspaceNotFoundError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
+from untaped_workspace.infrastructure.catalog import RepoSources
 from workspace.conftest import commit_in, git
 
+#: The store asks the plugins filling ``GitHost`` (none here) for the https remotes.
+pytestmark = pytest.mark.usefixtures("composed")
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
-
-
-class UrlCatalog:
-    def resolve(self, ident: str) -> ResolvedRepo:
-        owner, name = repo_identity(ident)
-        return ResolvedRepo(url=ident, name=f"{owner}/{name}")
 
 
 @dataclass(frozen=True)
@@ -43,20 +36,20 @@ class Env:
 
 
 @pytest.fixture
-def env(tmp_path: Path, store_root: Path, make_upstream: Callable[..., Path]) -> Env:
+def env(tmp_path: Path, store_root: Path, make_upstream: Callable[..., GitRemote]) -> Env:
     git_ = LocalGitWorktrees()
     workspaces = tmp_path / "ws"
     store = StateWorkspaceStore(workspaces_dir=workspaces)
     provision = ProvisionRepos(
         store,
         git_,
-        UrlCatalog(),
+        RepoSources(),
         workspaces_dir=workspaces,
         branch_template="{name}",
         parallel=2,
         now=lambda: T0,
     )
-    provision.create("J-1", [RepoArg(ident=str(make_upstream("api")))])
+    provision.create("J-1", [RepoArg(ident=make_upstream("api").url)])
     record = store.get("J-1")
     assert record is not None
     return Env(
@@ -100,19 +93,19 @@ def test_hand_deleted_repo_is_missing(env: Env) -> None:
 
 
 def test_read_only_commit_blocks(
-    tmp_path: Path, store_root: Path, make_upstream: Callable[..., Path]
+    tmp_path: Path, store_root: Path, make_upstream: Callable[..., GitRemote]
 ) -> None:
     git_ = LocalGitWorktrees()
     store = StateWorkspaceStore(workspaces_dir=tmp_path / "ws")
     ProvisionRepos(
         store,
         git_,
-        UrlCatalog(),
+        RepoSources(),
         workspaces_dir=tmp_path / "ws",
         branch_template="{name}",
         parallel=1,
         now=lambda: T0,
-    ).create("J-2", [RepoArg(ident=str(make_upstream("web")), read_only=True)])
+    ).create("J-2", [RepoArg(ident=make_upstream("web").url, read_only=True)])
     commit_in(tmp_path / "ws" / "J-2" / "web")
     record = store.get("J-2")
     assert record is not None
@@ -159,9 +152,9 @@ def test_archive_failure_keeps_the_record(env: Env) -> None:
 
 
 def test_archive_removes_repos_added_after_its_record_was_read(
-    env: Env, make_upstream: Callable[..., Path]
+    env: Env, make_upstream: Callable[..., GitRemote]
 ) -> None:
-    env.provision.add(env.record, [RepoArg(ident=str(make_upstream("web")))])
+    env.provision.add(env.record, [RepoArg(ident=make_upstream("web").url)])
     with env.archive.hold(env.record.name) as record:  # env.record predates the add
         rows = env.archive(record, force=False)
     assert [(r.repo, r.action) for r in rows if r.repo] == [
@@ -191,7 +184,7 @@ class _GatedGit:
 
 
 def test_add_during_archive_waits_then_fails_without_a_worktree(
-    tmp_path: Path, store_root: Path, make_upstream: Callable[..., Path]
+    tmp_path: Path, store_root: Path, make_upstream: Callable[..., GitRemote]
 ) -> None:
     workspaces = tmp_path / "ws"
     real = LocalGitWorktrees()
@@ -199,14 +192,14 @@ def test_add_during_archive_waits_then_fails_without_a_worktree(
     provision = ProvisionRepos(
         store,
         real,
-        UrlCatalog(),
+        RepoSources(),
         workspaces_dir=workspaces,
         branch_template="{name}",
         parallel=1,
         now=lambda: T0,
     )
-    provision.create("J-1", [RepoArg(ident=str(make_upstream("api")))])
-    web = RepoArg(ident=str(make_upstream("web")))
+    provision.create("J-1", [RepoArg(ident=make_upstream("api").url)])
+    web = RepoArg(ident=make_upstream("web").url)
     record = store.get("J-1")
     assert record is not None
     gated = _GatedGit(real)
