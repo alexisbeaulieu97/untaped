@@ -1,7 +1,8 @@
 """S32: a user's hostile global git config changes nothing the store does.
 
 The store's explicit ``--prune``/``--no-prune`` and its repo-scope policy
-beat ``fetch.prune``, ``fetch.pruneTags``, ``fetch.unpackLimit``, ``gc.auto``
+beat ``fetch.prune``, ``fetch.pruneTags``, ``fetch.unpackLimit``, ``gc.auto``,
+``gc.pruneExpire``
 and ``maintenance.auto`` set globally, while a user's own fetch in a store
 worktree still honours them. ``release`` joins the writers with its callers.
 """
@@ -76,6 +77,7 @@ def _exercise(base: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, li
     config = git(store.path, "config", "--local", "--list").lower()
     assert "fetch.prune" not in config
     assert "fetch.prunetags" not in config
+    assert git(store.path, "config", "gc.pruneExpire").strip() == "2.weeks.ago"
     assert "refs/remotes/origin/gone" not in all_refs(store.path)
     return lines
 

@@ -87,6 +87,8 @@ POLICY: Mapping[str, str] = {
     "gc.auto": "6700",
     "gc.autoDetach": "false",
     "gc.autoPackLimit": "10",
+    # Unlocked handle reads rely on unreachable objects outliving them.
+    "gc.pruneExpire": "2.weeks.ago",
 }
 _NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}
 _NETWORK = {"maintenance.auto": "false"}
