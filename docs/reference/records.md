@@ -77,7 +77,7 @@ a step that asks for or reveals a token, else `agent`.
 | `github search issues` | `github.issue` |
 | `github search users` | `github.user_hit` |
 | `github sweep` | `github.sweep_repo`; `github.sweep_file` with `--show files`; `github.sweep_match` with `--show matches` |
-| `github cache status`, `cache delete`, `cache prune` | `github.corpus_repo` |
+| `github cache status`, `cache delete`, `cache prune` | `github.corpus_repo` (`cache delete` and `cache prune`: `status` `removed` with the `disk_bytes` freed, or `released` with `kept` naming who still uses the repo) |
 | `github cache sync` | `github.sync_outcome` |
 | `github cache worktree` | `github.worktree` |
 

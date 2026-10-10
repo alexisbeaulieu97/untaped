@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -12,8 +14,18 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import CliInvoker, CliResult, assert_destructive_contract
+from untaped import bootstrap
+from untaped.testing import (
+    CliInvoker,
+    CliResult,
+    assert_destructive_contract,
+    provider_candidate,
+)
+from untaped_git import SPEC as GIT_SPEC
+from untaped_git.api import RepoStore
+from untaped_github import SPEC
 from untaped_github.cli import app
+from untaped_github.errors import GitCorpusError
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 
@@ -21,10 +33,7 @@ SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 @pytest.fixture(autouse=True)
 def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
-    cfg.write_text(
-        "profiles:\n  default:\n    github:\n      token: ghp_test\n"
-        f"      cache_dir: {tmp_path / 'corpus'}\n"
-    )
+    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     return cfg
 
@@ -138,10 +147,17 @@ def test_cache_sync_of_piped_repos_list_skips_fetch_when_github_reports_no_push(
     assert actions == ["unchanged", "unchanged"]
 
 
+@pytest.mark.usefixtures("fresh_composition")
 def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
-    _config: Path, git_auth: dict[str, str | None]
+    _config: Path,
+    source_repo: SourceRepo,
+    rewrite_to: Callable[..., None],
+    store_auth: dict[str, list[str | None]],
 ) -> None:
     _config.write_text(_config.read_text() + "      base_url: https://ghe.example/api/v3\n")
+    origin = source_repo("origin", {"README.md": "hello\n"})
+    rewrite_to(origin, "https://ghe.example/acme/api.git", "https://other.example/acme/web.git")
+    bootstrap.compose_root(candidates=[provider_candidate(GIT_SPEC), provider_candidate(SPEC)])
     records = [
         {"untaped": "1", "kind": "github.repo", "record": {**row, "default_branch": "main"}}
         for row in (
@@ -157,8 +173,11 @@ def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
     )
 
     assert result.exit_code == 0, result.output
-    assert git_auth["https://ghe.example/acme/api.git"] is not None
-    assert git_auth["https://other.example/acme/web.git"] is None
+    assert [row["action"] for row in json.loads(result.stdout)] == ["synced", "synced"]
+    [header, *_] = store_auth["https://ghe.example/acme/api.git"]
+    assert header is not None
+    assert base64.b64decode(header.rpartition(" ")[2]) == b"x-access-token:ghp_test"
+    assert set(store_auth["https://other.example/acme/web.git"]) == {None}
 
 
 def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
@@ -188,6 +207,7 @@ def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
         (["prune", "--team", "acme/backend", "--yes"], "--team"),
         (["clean", "--all", "--yes"], "clean"),
         (["sync", "--org", "acme", "--archived"], "--archived"),
+        (["sync", "--org", "acme", "--depth", "1"], "--depth"),
     ],
 )
 def test_cache_selection_usage_errors_exit_2(args: list[str], message: str) -> None:
@@ -312,6 +332,7 @@ def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None
     row = json.loads(result.stdout)
     assert row["repo"] == "acme/api"
     assert (Path(row["path"]) / "README.md").is_file()
+    assert Path(row["path"]).is_relative_to(Path.home() / ".untaped/plugins/github/worktrees")
     assert next(iter(row)) == "target_path" and row["target_path"] == row["path"]
 
 
@@ -356,7 +377,85 @@ def test_cache_delete_reports_the_size_it_frees(source_repo: SourceRepo, dry_run
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
     assert size > 0
-    assert row["disk_bytes"] == size
+    if dry_run:
+        assert (row["status"], row["disk_bytes"]) == ("cached", size)
+    else:
+        # Measured after github's refs and file go, just before the directory does.
+        assert row["status"] == "removed"
+        assert 0 < row["disk_bytes"] <= size
+        assert not Path(row["path"]).exists()
+
+
+def _git_dir(store: RepoStore, *args: str) -> str:
+    return subprocess.run(
+        ["git", "--git-dir", str(store.path), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def test_cache_delete_leaves_a_repo_other_plugins_still_use(
+    source_repo: SourceRepo, tmp_path: Path
+) -> None:
+    """S25: github lets go of a repo ansible and workspace share; theirs stays intact."""
+    url = str(_populate(source_repo, "acme/api")["acme/api"]["clone_url"])
+    RepoStore.for_url(url, plugin="ansible", error=GitCorpusError).fetch(branches=["main"])
+    workspace = RepoStore.for_url(url, plugin="workspace", error=GitCorpusError)
+    workspace.fetch(branches=["main"])
+    trees = [tmp_path / "ws" / "one", tmp_path / "ws" / "two"]
+    for tree in trees:
+        workspace.worktree_add(tree, "refs/remotes/origin/main")
+    github = RepoStore.for_url(url, plugin=SPEC, error=GitCorpusError)
+    assert github.private_file.is_file()
+
+    result = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--yes", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["status"], row["kept"], row["disk_bytes"]) == (
+        "released",
+        "ansible, workspace (2 worktrees)",
+        0,
+    )
+    assert not github.private_file.exists()
+    assert _git_dir(github, "for-each-ref", "refs/untaped/github/") == ""
+    assert _git_dir(github, "for-each-ref", "--format=%(refname)", "refs/untaped/ansible/") != ""
+    assert all((tree / "README.md").read_text() == "hello\n" for tree in trees)
+    assert _cached() == []
+
+
+def test_cache_delete_names_a_worktree_added_by_hand(
+    source_repo: SourceRepo, tmp_path: Path
+) -> None:
+    url = str(_populate(source_repo, "acme/api")["acme/api"]["clone_url"])
+    github = RepoStore.for_url(url, plugin=SPEC, error=GitCorpusError)
+    by_hand = tmp_path / "scratch"
+    _git_dir(
+        github,
+        "worktree",
+        "add",
+        "--quiet",
+        "--detach",
+        str(by_hand),
+        "refs/untaped/github/heads/main",
+    )
+
+    table = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--yes"])
+
+    assert table.exit_code == 0, table.output
+    assert "released" in table.stdout
+    assert f"1 worktree not untaped's ({by_hand})" in table.stdout
+    assert (by_hand / "README.md").is_file()
+
+
+def test_cache_delete_table_shows_what_it_freed(source_repo: SourceRepo) -> None:
+    _populate(source_repo, "acme/api")
+
+    table = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--yes"])
+
+    assert table.exit_code == 0, table.output
+    assert re.search(r"acme/api\W+removed\W+[0-9.]+ KiB freed", table.stdout), table.stdout
 
 
 def test_cache_size_counts_links_not_what_they_point_at(
@@ -364,7 +463,8 @@ def test_cache_size_counts_links_not_what_they_point_at(
 ) -> None:
     _populate(source_repo, "acme/api")
     size = _status_bytes()
-    [bare] = [p for p in (tmp_path / "corpus").rglob("*.git") if p.is_dir()]
+    [row] = json.loads(CliInvoker().invoke(app, ["cache", "status", "--format", "json"]).stdout)
+    bare = Path(row["path"])
     outside = tmp_path / "large.bin"
     outside.write_bytes(b"x" * 1_000_000)
     (bare / "link.bin").symlink_to(outside)

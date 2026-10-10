@@ -1,9 +1,10 @@
-"""Integration tests for the local Git corpus adapter against real source repos."""
+"""Integration tests for the sweep's corpus in the repo store, against real source repos."""
 
 from __future__ import annotations
 
-import os
+import json
 import re
+import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -12,10 +13,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from filelock import FileLock
 
-import untaped.git
-from untaped.sdk import cache_path
+from untaped import bootstrap
+from untaped.testing import provider_candidate
+from untaped_git import SPEC as GIT_SPEC
+from untaped_git.api import Prefetched, RepoStore
+from untaped_github import SPEC
 from untaped_github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -26,22 +29,21 @@ from untaped_github.domain import (
     covers,
 )
 from untaped_github.errors import GitCorpusError
-from untaped_github.infrastructure.git_corpus import GitCorpusCache
-
-#: One ``RepoCache`` git call seen by ``spy_run_git``: subcommand, auth header, auth URL.
-type GitCall = tuple[str, str | None, str | None]
+from untaped_github.infrastructure.git_corpus import GitCorpusCache, prefetch_paths
 
 Git = Callable[..., str]
 Commit = Callable[..., None]
 Rewrite = Callable[..., None]
 
+#: Where github keeps its refs in a store repo.
+NAMESPACE = "refs/untaped/github/"
+
 
 @dataclass
 class _Corpus:
-    """One source repo, the corpus root it syncs into, and the cache under test."""
+    """One source repo and the corpus cache under test."""
 
     source: Path
-    root: Path
     cache: GitCorpusCache
 
     @property
@@ -51,42 +53,42 @@ class _Corpus:
         )
 
     @property
-    def bare(self) -> Path:
-        return cache_path(self.source.as_uri(), root=self.root)
+    def store(self) -> RepoStore:
+        return RepoStore.for_url(self.source.as_uri(), plugin=SPEC, error=GitCorpusError)
 
     def sync(self, selector: RefSelector | None = None, **kwargs: Any) -> CorpusRepoResult:
         return self.cache.sync_repo(
-            kwargs.pop("repo", self.repo),
-            root=self.root,
-            selector=selector or RefSelector(),
-            depth=1,
-            auth_header=kwargs.pop("auth_header", None),
+            kwargs.pop("repo", self.repo), selector=selector or RefSelector()
         )
 
-    def grep(self, pattern: str, ref: str = "main") -> tuple[GrepHit, ...]:
-        found = self.cache.grep_trees(
-            self.repo, root=self.root, trees=(ref,), spec=GrepSpec(pattern)
-        )
-        return found.get(ref, ())
+    def trees(self) -> dict[str, str]:
+        """Each stored ref's tree, by its plain name."""
+        refs = self.cache.local_refs(self.repo, selector=RefSelector(profile="all"))
+        return {ref.name: ref.tree for ref in refs}
+
+    def grep(self, pattern: str, ref: str = "refs/heads/main", **spec: Any) -> tuple[GrepHit, ...]:
+        tree = self.trees().get(ref, ref)
+        found = self.cache.grep_trees(self.repo, trees=(tree,), spec=GrepSpec(pattern, **spec))
+        return found.get(tree, ())
 
     def has_ref(self, ref: str) -> bool:
-        return (
-            subprocess.run(
-                ["git", "--git-dir", str(self.bare), "show-ref", "--verify", "--quiet", ref]
-            ).returncode
-            == 0
-        )
+        stored = f"{NAMESPACE}{ref.removeprefix('refs/')}"
+        argv = ["git", "--git-dir", str(self.store.path), "show-ref", "--verify", "--quiet", stored]
+        return subprocess.run(argv, check=False).returncode == 0
 
 
 @pytest.fixture
-def corpus(
-    tmp_path: Path, source_repo: Callable[[str, dict[str, str | bytes]], Path]
-) -> Callable[..., _Corpus]:
+def corpus(source_repo: Callable[[str, dict[str, str | bytes]], Path]) -> Callable[..., _Corpus]:
     def create(files: dict[str, str | bytes], **cache_options: Any) -> _Corpus:
-        source = source_repo("source", files)
-        return _Corpus(source, tmp_path / "corpus", GitCorpusCache(auth_host=None, **cache_options))
+        return _Corpus(source_repo("source", files), GitCorpusCache(**cache_options))
 
     return create
+
+
+@pytest.fixture
+def composed(fresh_composition: None) -> None:
+    """Compose git and github: a store fetch from a host asks the ``GitHost`` providers."""
+    bootstrap.compose_root(candidates=[provider_candidate(GIT_SPEC), provider_candidate(SPEC)])
 
 
 def _branch(git: Git, commit: Commit, source: Path, name: str, rel: str) -> None:
@@ -95,23 +97,49 @@ def _branch(git: Git, commit: Commit, source: Path, name: str, rel: str) -> None
     git(source, "checkout", "-q", "main")
 
 
-def test_v1_metadata_reads_as_default_profile(corpus: Callable[..., _Corpus]) -> None:
+def test_metadata_without_a_profile_reads_as_the_default_profile(
+    corpus: Callable[..., _Corpus],
+) -> None:
     env = corpus({"README.md": "hello\n"})
-    env.bare.mkdir(parents=True)
-    (env.bare / "HEAD").write_text("ref: refs/heads/main\n")
-    (env.bare / "untaped-corpus.json").write_text(
-        '{"repo": "acme/api", "ref": "main", "clone_url": "'
-        + env.source.as_uri()
-        + '", "fetched_at": "2026-07-06T12:00:00+00:00"}\n'
+    env.store.ensure()
+    env.store.private_file.write_text(
+        json.dumps(
+            {
+                "repo": "acme/api",
+                "ref": "main",
+                "clone_url": env.source.as_uri(),
+                "fetched_at": "2026-07-06T12:00:00+00:00",
+            }
+        )
     )
 
-    assert env.cache.repo_freshness(env.repo, root=env.root) == CorpusFreshness(
+    assert env.cache.repo_freshness(env.repo) == CorpusFreshness(
         fetched_at=datetime(2026, 7, 6, 12, 0, tzinfo=UTC),
         profile="default",
         ref_globs=(),
         archived=False,
         default_branch="main",
     )
+
+
+def test_sync_keeps_its_refs_and_metadata_to_itself(corpus: Callable[..., _Corpus]) -> None:
+    env = corpus({"README.md": "hello\n"})
+
+    synced = env.sync()
+
+    store = env.store
+    assert synced.path == str(store.path)
+    assert store.path.is_relative_to(Path.home() / ".untaped/plugins/git/store")
+    assert store.private_file.name == "untaped-github.json"
+    assert json.loads(store.private_file.read_text())["repo"] == "acme/api"
+    assert set(store.refs()) == {"heads/main"}
+    shown = subprocess.run(
+        ["git", "--git-dir", str(store.path), "for-each-ref", "--format=%(refname)"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert shown == [f"{NAMESPACE}heads/main"]
 
 
 def test_sync_widens_the_stored_profile_and_never_narrows_it(
@@ -123,7 +151,7 @@ def test_sync_widens_the_stored_profile_and_never_narrows_it(
     default = env.sync()
     widened = env.sync(RefSelector(profile="branches"))
     narrowed = env.sync()
-    freshness = env.cache.repo_freshness(env.repo, root=env.root)
+    freshness = env.cache.repo_freshness(env.repo)
 
     assert (default.profile, widened.profile, narrowed.profile) == (
         "default",
@@ -154,126 +182,23 @@ def test_ref_glob_fetches_matching_refs_only(
     assert not env.has_ref("refs/tags/ignored")
 
 
-_TRANSIENT_STDERR = (
-    "error: RPC failed; curl 56 GnuTLS recv error (-110): "
-    "The TLS connection was non-properly terminated.\n"
-    "fetch-pack: unexpected disconnect while reading sideband packet\n"
-    "fatal: early EOF\n"
-)
-
-
-def _tagged(env: _Corpus, git: Git, commit: Commit, tags: int) -> _Corpus:
-    for index in range(1, tags + 1):
-        commit(env.source, "README.md", f"v{index}\n")
-        git(env.source, "tag", "-a", f"v{index}", "-m", f"release {index}")
-    return env
-
-
-def _record_fetches(
-    monkeypatch: pytest.MonkeyPatch, fail: dict[int, str] | None = None
-) -> list[list[str]]:
-    """Record ``git fetch`` subprocesses; ``fail`` maps a fetch number to injected stderr."""
-    fetches: list[list[str]] = []
-    real_run = untaped.git._run_process
-
-    def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-        argv = args[2:] if args[1].startswith("--git-dir=") else args[1:]
-        if argv[:1] == ["fetch"]:
-            fetches.append(argv)
-            stderr = (fail or {}).get(len(fetches))
-            if stderr is not None:
-                return subprocess.CompletedProcess(args, 128, stdout=b"", stderr=stderr.encode())
-        return real_run(args, **kwargs)
-
-    monkeypatch.setattr(untaped.git, "_run_process", run)
-    return fetches
-
-
-@pytest.mark.parametrize(
-    ("fail", "fetches", "sleeps", "error"),
-    [
-        pytest.param({1: _TRANSIENT_STDERR}, 2, [1.0], None, id="transient-retried"),
-        pytest.param({1: "fatal: repository 'x' not found\n"}, 1, [], "not found", id="permanent"),
-        pytest.param(
-            dict.fromkeys(range(1, 10), _TRANSIENT_STDERR),
-            3,
-            [1.0, 2.0],
-            "early EOF.*after 3 attempts|after 3 attempts.*early EOF",
-            id="bounded",
-        ),
-    ],
-)
-def test_sync_retries_only_transient_fetch_failures_a_bounded_number_of_times(
-    corpus: Callable[..., _Corpus],
-    monkeypatch: pytest.MonkeyPatch,
-    fail: dict[int, str],
-    fetches: int,
-    sleeps: list[float],
-    error: str | None,
+def test_a_glob_the_store_cannot_take_is_matched_against_the_remote(
+    corpus: Callable[..., _Corpus], git: Git, commit_file: Commit
 ) -> None:
-    slept: list[float] = []
-    env = corpus({"README.md": "hello\n"}, sleep=slept.append, fetch_attempts=3)
-    recorded = _record_fetches(monkeypatch, fail)
+    """``?``, ``[...]`` and two ``*``: listed with ls-remote, fetched by name."""
+    env = corpus({"README.md": "main\n"})
+    for name in ("release/1", "release/22", "hotfix-a-b"):
+        _branch(git, commit_file, env.source, name, f"{name.replace('/', '-')}.txt")
+    for tag in ("v1", "v2", "va"):
+        git(env.source, "tag", tag)
 
-    if error is None:
-        assert env.sync().status == "synced"
-    else:
-        with pytest.raises(GitCorpusError, match=f"(?s){error}"):
-            env.sync()
+    env.sync(RefSelector(globs=("release/?", "v[0-9]", "*-*-*")))
 
-    assert (len(recorded), slept) == (fetches, sleeps)
-
-
-def test_wide_profile_fetches_refs_in_bounded_batches(
-    corpus: Callable[..., _Corpus], git: Git, commit_file: Commit, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    env = _tagged(corpus({"README.md": "v0\n"}, fetch_batch_size=2), git, commit_file, tags=5)
-    fetches = _record_fetches(monkeypatch)
-
-    env.sync(RefSelector(profile="all"))
-
-    # main + 5 tags = 6 refs in batches of 2.
-    assert [len([arg for arg in fetch if arg.startswith("+refs/")]) for fetch in fetches] == [
-        2,
-        2,
-        2,
-    ]
-    assert env.has_ref("refs/heads/main")
-    assert all(env.has_ref(f"refs/tags/v{index}") for index in range(1, 6))
-
-
-def test_wide_profile_resync_fetches_only_changed_refs(
-    corpus: Callable[..., _Corpus], git: Git, commit_file: Commit, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    env = _tagged(corpus({"README.md": "v0\n"}), git, commit_file, tags=3)
-    env.sync(RefSelector(profile="all"))
-    fetches = _record_fetches(monkeypatch)
-
-    env.sync(RefSelector(profile="all"))
-    assert fetches == []
-
-    commit_file(env.source, "README.md", "next\n")
-    env.sync(RefSelector(profile="all"))
-    [fetch] = fetches
-    assert "+refs/heads/main:refs/heads/main" in fetch
-    assert not any(arg.startswith("+refs/tags/") for arg in fetch)
-
-
-def test_wide_profile_failed_batch_keeps_earlier_batches_for_resume(
-    corpus: Callable[..., _Corpus], git: Git, commit_file: Commit, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    env = _tagged(corpus({"README.md": "v0\n"}, fetch_batch_size=2), git, commit_file, tags=3)
-    _record_fetches(monkeypatch, fail={2: "fatal: refusing to fetch\n"})
-
-    with pytest.raises(GitCorpusError, match="refusing"):
-        env.sync(RefSelector(profile="all"))
-    assert env.cache.repo_freshness(env.repo, root=env.root) is None
-
-    fetches = _record_fetches(monkeypatch)
-    env.sync(RefSelector(profile="all"))
-
-    assert len(fetches) == 1
-    assert all(env.has_ref(f"refs/tags/v{index}") for index in range(1, 4))
+    assert env.has_ref("refs/heads/release/1")
+    assert not env.has_ref("refs/heads/release/22")
+    assert env.has_ref("refs/heads/hotfix-a-b")
+    assert env.has_ref("refs/tags/v1") and env.has_ref("refs/tags/v2")
+    assert not env.has_ref("refs/tags/va")
 
 
 def test_wide_profile_prunes_refs_deleted_upstream(
@@ -350,21 +275,21 @@ def test_grep_pins_extended_regex_and_parses_hits(
     monkeypatch.setenv("GIT_CONFIG_VALUE_0", "fixed")
     env = corpus(_GREP_FILES)
     env.sync()
+    tree = env.trees()["refs/heads/main"]
 
     assert [(hit.path, hit.line, hit.text) for hit in env.grep(pattern)] == expected
-    assert env.cache.tree_has_match(
-        env.repo, root=env.root, tree="main", spec=GrepSpec(pattern)
-    ) == bool(expected)
+    assert env.cache.tree_has_match(env.repo, tree=tree, spec=GrepSpec(pattern)) == bool(expected)
 
 
 def test_invalid_pattern_is_a_corpus_error(corpus: Callable[..., _Corpus]) -> None:
     env = corpus({"README.md": "nothing here\n"})
     env.sync()
+    tree = env.trees()["refs/heads/main"]
 
     with pytest.raises(GitCorpusError, match=r"regular expression|brackets"):
         env.grep("[")
     with pytest.raises(GitCorpusError, match=r"regular expression|brackets"):
-        env.cache.tree_has_match(env.repo, root=env.root, tree="main", spec=GrepSpec("["))
+        env.cache.tree_has_match(env.repo, tree=tree, spec=GrepSpec("["))
 
 
 def test_one_grep_covers_several_trees_and_keys_hits_by_tree(
@@ -380,14 +305,9 @@ def test_one_grep_covers_several_trees_and_keys_hits_by_tree(
     git(env.source, "checkout", "-q", "main")
     selector = RefSelector(profile="branches")
     env.sync(selector)
-    trees = {
-        ref.name: ref.tree
-        for ref in env.cache.local_refs(env.repo, root=env.root, selector=selector)
-    }
+    trees = {ref.name: ref.tree for ref in env.cache.local_refs(env.repo, selector=selector)}
 
-    hits = env.cache.grep_trees(
-        env.repo, root=env.root, trees=tuple(trees.values()), spec=GrepSpec("acme/action")
-    )
+    hits = env.cache.grep_trees(env.repo, trees=tuple(trees.values()), spec=GrepSpec("acme/action"))
 
     readme = GrepHit(path="README.md", line=1, text="uses: acme/action@v1")
     assert hits == {
@@ -406,10 +326,8 @@ def test_local_refs_default_first_then_sorted(
     git(env.source, "tag", "ignored")
     env.sync(RefSelector(profile="all", globs=("v*",)))
 
-    branches = env.cache.local_refs(
-        env.repo, root=env.root, selector=RefSelector(profile="branches")
-    )
-    tagged = env.cache.local_refs(env.repo, root=env.root, selector=RefSelector(globs=("v*",)))
+    branches = env.cache.local_refs(env.repo, selector=RefSelector(profile="branches"))
+    tagged = env.cache.local_refs(env.repo, selector=RefSelector(globs=("v*",)))
 
     assert [ref.name for ref in branches] == [
         "refs/heads/main",
@@ -422,6 +340,20 @@ def test_local_refs_default_first_then_sorted(
     assert len({ref.tree for ref in branches}) == 3
 
 
+def test_local_refs_list_only_githubs_refs(corpus: Callable[..., _Corpus], git: Git) -> None:
+    """Another plugin's refs in the shared repo never show up in a sweep."""
+    env = corpus({"README.md": "main\n"})
+    git(env.source, "branch", "theirs")
+    env.sync()
+    RepoStore.for_url(env.source.as_uri(), plugin="ansible", error=GitCorpusError).fetch(
+        branches=["*"]
+    )
+
+    refs = env.cache.local_refs(env.repo, selector=RefSelector(profile="all"))
+
+    assert [ref.name for ref in refs] == ["refs/heads/main"]
+
+
 def test_branch_and_tag_with_same_name_are_both_listed_and_greppable(
     corpus: Callable[..., _Corpus], git: Git, commit_file: Commit
 ) -> None:
@@ -430,12 +362,12 @@ def test_branch_and_tag_with_same_name_are_both_listed_and_greppable(
     _branch(git, commit_file, env.source, "x", "branch.txt")
     env.sync(RefSelector(profile="all"))
 
-    refs = env.cache.local_refs(env.repo, root=env.root, selector=RefSelector(profile="all"))
+    refs = env.cache.local_refs(env.repo, selector=RefSelector(profile="all"))
 
     assert [ref.name for ref in refs] == ["refs/heads/main", "refs/heads/x", "refs/tags/x"]
     assert [hit.path for hit in env.grep("x", ref="refs/heads/x")] == ["branch.txt"]
     assert env.grep("x", ref="refs/tags/x") == ()
-    assert env.cache.tree_paths(env.repo, root=env.root, ref="refs/tags/x") == ("README.md",)
+    assert env.cache.tree_paths(env.repo, ref="refs/tags/x") == ("README.md",)
 
 
 def test_annotated_tag_resolves_to_its_commit_tree(
@@ -445,21 +377,26 @@ def test_annotated_tag_resolves_to_its_commit_tree(
     git(env.source, "tag", "-a", "v1", "-m", "release")
     env.sync(RefSelector(profile="tags"))
 
-    main, tag = env.cache.local_refs(env.repo, root=env.root, selector=RefSelector(profile="tags"))
+    main, tag = env.cache.local_refs(env.repo, selector=RefSelector(profile="tags"))
 
     assert tag.name == "refs/tags/v1"
     assert tag.tree == main.tree
     assert [hit.path for hit in env.grep("needle", ref=tag.tree)] == ["README.md"]
 
 
-def test_tree_paths_and_first_blob_read_the_cached_tree(corpus: Callable[..., _Corpus]) -> None:
+def test_tree_paths_and_first_blob_read_the_stored_tree(corpus: Callable[..., _Corpus]) -> None:
     env = corpus({"README.md": "hello\n", "docs/x.md": "x\n", "b.txt": "second\n"})
     env.sync()
 
-    def read(*paths: str, ref: str = "main") -> str | None:
-        return env.cache.read_first_blob(env.repo, root=env.root, ref=ref, paths=paths)
+    def read(*paths: str, ref: str = "refs/heads/main") -> str | None:
+        return env.cache.read_first_blob(env.repo, ref=ref, paths=paths)
 
-    assert env.cache.tree_paths(env.repo, root=env.root, ref="main") == (
+    assert env.cache.tree_paths(env.repo, ref=env.trees()["refs/heads/main"]) == (
+        "README.md",
+        "b.txt",
+        "docs/x.md",
+    )
+    assert env.cache.tree_paths(env.repo, ref="refs/heads/main") == (
         "README.md",
         "b.txt",
         "docs/x.md",
@@ -467,6 +404,131 @@ def test_tree_paths_and_first_blob_read_the_cached_tree(corpus: Callable[..., _C
     assert read("missing.txt", "docs", "README.md", "b.txt") == "hello\n"
     assert read("missing.txt") is None
     assert read("README.md", ref="refs/heads/nope") is None
+    assert read("README.md", ref="main") is None
+
+
+@pytest.mark.parametrize(
+    ("pathspecs", "expected"),
+    [
+        ((), ()),
+        (("README.md", "docs/"), ("README.md", "docs/")),
+        (("src/**",), ("src/",)),
+        (("src/x/*.py", "src/x/a.txt"), ("src/x/", "src/x/a.txt")),
+        (("src/a?.py",), ("src/",)),
+        (("src/[ab].py",), ("src/",)),
+        (("*.py",), ()),
+        (("**/*.py",), ()),
+        (("docs", "*/c.py"), ()),
+        (("docs", ":!docs/old", ":^tmp", ":(exclude)*.py", ":(top,exclude)x"), ("docs",)),
+        ((":!docs",), ()),
+        ((":(icase)README.md",), ()),
+        (("a", ":(glob)**/x"), ()),
+        (("src/", "src/"), ("src/",)),
+    ],
+)
+def test_prefetch_paths_widen_wildcards_to_their_directory(
+    pathspecs: tuple[str, ...], expected: tuple[str, ...]
+) -> None:
+    assert prefetch_paths(pathspecs) == expected
+
+
+#: Distinct contents, so each file is its own blob.
+_LAYOUT: dict[str, str | bytes] = {
+    "a.py": "needle at the top\n",
+    "README.MD": "Needle in the readme\n",
+    "src/b.py": "needle in src\n",
+    "src/x.txt": "a needles b\n",
+    "src/deep/c.py": "NEEDLE\n",
+    "docs/d.md": "needle in docs\n",
+    "docs/e.py": "needle.x\n",
+    "docs/old/f.py": "old needle\n",
+}
+
+
+@pytest.mark.parametrize(
+    "pathspecs",
+    [
+        (),
+        ("*.py",),
+        ("**/*.py",),
+        ("src/**",),
+        ("src/*.py",),
+        ("*/c.py",),
+        ("docs/",),
+        ("src", ":(exclude)*.py"),
+        (":!docs",),
+        ("docs", ":!docs/old"),
+        (":(icase)readme.md",),
+        (":(glob)**/*.py",),
+        ("src/deep/c.py", "a.py"),
+        ("src/?.py",),
+        ("src/[bc].py",),
+    ],
+)
+@pytest.mark.parametrize(
+    "flags",
+    [
+        {},
+        {"ignore_case": True},
+        {"fixed_strings": True},
+        {"word_regexp": True},
+        {"ignore_case": True, "word_regexp": True},
+    ],
+    ids=["regex", "icase", "fixed", "word", "icase-word"],
+)
+def test_grep_through_the_handle_matches_a_full_clone(
+    corpus: Callable[..., _Corpus],
+    git: Git,
+    monkeypatch: pytest.MonkeyPatch,
+    pathspecs: tuple[str, ...],
+    flags: dict[str, bool],
+) -> None:
+    """The prefetch covers every blob the grep reads: with the remote gone, hits match.
+
+    ``rev-list`` (what the prefetch lists) and ``git grep`` read wildcard
+    pathspecs differently; a blob the prefetch misses would need a lazy fetch
+    that cannot happen here.
+    """
+    env = corpus(_LAYOUT)
+    git(env.source, "config", "uploadpack.allowFilter", "true")
+    env.sync()
+    listed = git(
+        env.store.path, "rev-list", "--objects", "--missing=print", f"{NAMESPACE}heads/main"
+    )
+    assert listed.count("\n?") == len(_LAYOUT)  # blobless: every blob is still missing
+    pattern = "needle." if flags.get("fixed_strings") else "needle"
+    moved = env.source.with_name("gone")
+    original = Prefetched.run
+
+    def offline(self: Prefetched, argv: Any, **kwargs: Any) -> Any:
+        env.source.rename(moved)
+        try:
+            return original(self, argv, **kwargs)
+        finally:
+            moved.rename(env.source)
+
+    monkeypatch.setattr(Prefetched, "run", offline)
+
+    hits = env.grep(pattern, paths=pathspecs, **flags)
+
+    args = ["grep", "-n", "-I"]
+    args += ["--ignore-case"] if flags.get("ignore_case") else []
+    args += ["--fixed-strings"] if flags.get("fixed_strings") else ["--extended-regexp"]
+    args += ["--word-regexp"] if flags.get("word_regexp") else []
+    full = subprocess.run(
+        ["git", "-C", str(env.source), *args, "-e", pattern, "main", "--", *pathspecs],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert full.returncode in {0, 1}, full.stderr
+    expected = sorted(
+        (path, int(line), text)
+        for path, line, text in (
+            row.removeprefix("main:").split(":", 2) for row in full.stdout.splitlines()
+        )
+    )
+    assert sorted((hit.path, hit.line, hit.text) for hit in hits) == expected
 
 
 @pytest.mark.parametrize(
@@ -479,11 +541,9 @@ def test_tree_paths_and_first_blob_read_the_cached_tree(corpus: Callable[..., _C
     ],
 )
 def test_validate_pattern_uses_extended_regex_and_checks_pathspecs(
-    tmp_path: Path, pattern: str, paths: tuple[str, ...], error: str | None
+    pattern: str, paths: tuple[str, ...], error: str | None
 ) -> None:
-    found = GitCorpusCache(auth_host=None).validate_pattern(
-        root=tmp_path / "corpus", pattern=pattern, paths=paths, fixed_strings=False
-    )
+    found = GitCorpusCache().validate_pattern(pattern=pattern, paths=paths, fixed_strings=False)
 
     if error is None:
         assert found is None
@@ -492,57 +552,118 @@ def test_validate_pattern_uses_extended_regex_and_checks_pathspecs(
         assert re.search(error, found)
 
 
-def test_list_clean_and_worktree_are_confined_to_managed_root(
-    corpus: Callable[..., _Corpus],
-) -> None:
+def test_list_clean_and_worktree(corpus: Callable[..., _Corpus]) -> None:
     env = corpus({"README.md": "uses: acme/action@v1\n"})
     env.sync()
-    first = env.cache.materialize_worktree(env.repo, root=env.root, ref=None)
+    first = env.cache.materialize_worktree(env.repo, ref=None)
 
-    [listed] = env.cache.list_repos(root=env.root)
-    cleaned = env.cache.clean_repo(root=env.root, repo=listed)
+    [listed] = env.cache.list_repos()
+    cleaned = env.cache.clean_repo(listed)
 
     assert listed.repo == "acme/api"
-    assert listed.path.startswith(str(env.root))
-    assert cleaned.status == "removed"
+    assert listed.path == str(env.store.path)
+    assert Path(first.path).is_relative_to(Path.home() / ".untaped/plugins/github/worktrees")
+    assert (cleaned.status, cleaned.kept) == ("removed", None)
+    assert cleaned.disk_bytes is not None and cleaned.disk_bytes > 0
     assert not Path(first.path).exists()
-    assert env.cache.list_repos(root=env.root) == ()
+    assert not env.store.path.exists()
+    assert env.cache.list_repos() == ()
 
     env.sync()
-    second = env.cache.materialize_worktree(env.repo, root=env.root, ref=None)
+    second = env.cache.materialize_worktree(env.repo, ref=None)
     assert second.path == first.path
     assert (Path(second.path) / "README.md").is_file()
     with pytest.raises(GitCorpusError, match="ref is not cached"):
-        env.cache.materialize_worktree(env.repo, root=env.root, ref="v1.0")
+        env.cache.materialize_worktree(env.repo, ref="v1.0")
 
 
-def test_listing_reads_only_bare_repo_metadata_and_warns_on_corrupt_files(
+def test_worktree_takes_a_tag_a_branch_or_a_commit(
+    corpus: Callable[..., _Corpus], git: Git, commit_file: Commit
+) -> None:
+    env = corpus({"README.md": "main\n"})
+    git(env.source, "tag", "v1")
+    commit_file(env.source, "README.md", "next\n")
+    env.sync(RefSelector(profile="all"))
+    commit = git(env.source, "rev-parse", "v1")
+
+    tagged = env.cache.materialize_worktree(env.repo, ref="v1")
+    branch = env.cache.materialize_worktree(env.repo, ref="refs/heads/main")
+    by_oid = env.cache.materialize_worktree(env.repo, ref=commit)
+    again = env.cache.materialize_worktree(env.repo, ref="v1")
+
+    assert (Path(tagged.path) / "README.md").read_text() == "main\n"
+    assert (Path(branch.path) / "README.md").read_text() == "next\n"
+    assert (Path(by_oid.path) / "README.md").read_text() == "main\n"
+    assert again.path == tagged.path
+    assert len({tagged.path, branch.path, by_oid.path}) == 3
+
+
+def test_clean_releases_a_repo_another_plugin_holds(corpus: Callable[..., _Corpus]) -> None:
+    env = corpus({"README.md": "hello\n"})
+    env.sync()
+    worktree = env.cache.materialize_worktree(env.repo, ref=None)
+    RepoStore.for_url(env.source.as_uri(), plugin="ansible", error=GitCorpusError).fetch(
+        branches=["main"]
+    )
+    [listed] = env.cache.list_repos()
+
+    cleaned = env.cache.clean_repo(listed)
+
+    assert (cleaned.status, cleaned.kept, cleaned.disk_bytes) == ("released", "ansible", 0)
+    assert env.store.path.is_dir()
+    assert not env.store.private_file.exists()
+    assert not env.has_ref("refs/heads/main")
+    assert not Path(worktree.path).exists()
+    assert env.cache.list_repos() == ()
+
+
+def test_clean_repo_of_an_already_removed_repo_succeeds(corpus: Callable[..., _Corpus]) -> None:
+    """A concurrent delete or a stale piped row: the second clean still reports removed."""
+    env = corpus({"README.md": "hello\n"})
+    env.sync()
+    [listed] = env.cache.list_repos()
+
+    first = env.cache.clean_repo(listed)
+    second = env.cache.clean_repo(listed)
+
+    assert first.status == second.status == "removed"
+    assert second.disk_bytes == 0
+    assert not env.store.path.exists()
+
+
+def test_listing_reads_only_githubs_files_and_warns_on_corrupt_ones(
     corpus: Callable[..., _Corpus], capfd: pytest.CaptureFixture[str]
 ) -> None:
     warnings: list[str] = []
     env = corpus({"README.md": "hello\n"}, warn=warnings.append)
     env.sync()
-    stray = '{"repo": "acme/stray", "ref": "main", "clone_url": "x"}\n'
+    store_root = Path.home() / ".untaped/plugins/git/store"
+    stray = json.dumps({"repo": "acme/stray", "ref": "main", "clone_url": "x"})
     for path in (
-        env.root / "worktrees/acme_api-main-abc/untaped-corpus.json",
-        env.root / "untaped-corpus.json",
-        env.bare / "objects" / "untaped-corpus.json",
+        store_root / "untaped-github.json",
+        env.store.path / "objects" / "untaped-github.json",
+        Path.home() / ".untaped/plugins/github/worktrees/acme_api-main-abc/untaped-github.json",
     ):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(stray)
-    corrupt = env.root / "github.com" / "broken.git" / "untaped-corpus.json"
-    corrupt.parent.mkdir(parents=True)
-    corrupt.write_text("{")
+    other = RepoStore.for_url(env.source.as_uri(), plugin="ansible", error=GitCorpusError)
+    (other.path / "untaped-ansible.json").write_text(stray)
+    broken = store_root / "github.com" / "acme" / "broken.git"
+    broken.mkdir(parents=True)
+    (broken / "config").write_text(
+        '[remote "origin"]\n\turl = https://github.com/acme/broken.git\n'
+    )
+    (broken / "untaped-github.json").write_text("{")
 
-    assert [row.repo for row in env.cache.list_repos(root=env.root)] == ["acme/api"]
-    found = env.cache.get_repo(root=env.root, repo="acme/api")
+    assert [row.repo for row in env.cache.list_repos()] == ["acme/api"]
+    found = env.cache.get_repo("acme/api")
     assert found is not None and found.full_name == "acme/api"
-    assert env.cache.get_repo(root=env.root, repo="acme/stray") is None
-    assert len(warnings) == 3
+    assert env.cache.get_repo("acme/stray") is None
+    assert len(warnings) == 2  # list_repos, then get_repo of a name it never finds
     assert all("could not read corpus metadata" in warning for warning in warnings)
     assert capfd.readouterr().err == ""
 
-    GitCorpusCache(auth_host=None).list_repos(root=env.root)
+    GitCorpusCache().list_repos()
     assert "warning: could not read corpus metadata" in capfd.readouterr().err
 
 
@@ -552,81 +673,9 @@ def test_sync_and_worktree_emit_no_git_chatter(
     env = corpus({"README.md": "hello\n"})
 
     env.sync()
-    env.cache.materialize_worktree(env.repo, root=env.root, ref=None)
+    env.cache.materialize_worktree(env.repo, ref=None)
 
     assert capfd.readouterr() == ("", "")
-
-
-def test_authenticated_sync_requires_an_https_remote(corpus: Callable[..., _Corpus]) -> None:
-    env = corpus({"README.md": "hello\n"})
-    ssh = replace(env.repo, clone_url="git@github.com:acme/api.git")
-
-    with pytest.raises(GitCorpusError, match="requires an HTTPS clone_url"):
-        env.sync(repo=ssh, auth_header="AUTHORIZATION: basic secret")
-
-
-def test_cache_setup_carries_no_token(
-    tmp_path: Path,
-    corpus: Callable[..., _Corpus],
-    rewrite_to: Rewrite,
-    spy_run_git: list[GitCall],
-) -> None:
-    # Security: setting up the cache and its origin never carries the token.
-    url = "https://github.example.com/acme/api.git"
-    root = tmp_path / "corpus"
-    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
-    cache = GitCorpusCache(auth_host="github.example.com")
-
-    cache.sync_repo(
-        CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
-        root=root,
-        selector=RefSelector(),
-        depth=1,
-        auth_header="AUTHORIZATION: basic secret",
-    )
-
-    seen = spy_run_git
-    assert [auth for command, auth, _ in seen if command in {"init", "config"}] == [None, None]
-    assert any(auth is not None for command, auth, _ in seen if command == "fetch")
-
-
-@pytest.mark.parametrize(
-    ("url", "auth_host", "sent"),
-    [
-        ("https://github.com/acme/api.git", "github.com", True),
-        ("https://GitHub.com:443/acme/api.git", "github.com", True),
-        ("https://ghe.example/acme/api.git", "ghe.example", True),
-        ("https://evil.example/acme/api.git", "github.com", False),
-        ("https://github.com.evil.example/acme/api.git", "github.com", False),
-        ("https://github.com@evil.example/acme/api.git", "github.com", False),
-        ("https://github.com/acme/api.git", None, False),
-    ],
-    ids=["github", "port-and-case", "enterprise", "other", "suffix", "userinfo", "no-host"],
-)
-def test_sync_sends_the_token_only_to_the_github_git_host(
-    tmp_path: Path,
-    corpus: Callable[..., _Corpus],
-    rewrite_to: Rewrite,
-    spy_run_git: list[GitCall],
-    url: str,
-    auth_host: str | None,
-    sent: bool,
-) -> None:
-    # Security: a piped clone_url on another host must not receive the token.
-    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
-    cache = GitCorpusCache(auth_host=auth_host)
-
-    cache.sync_repo(
-        CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
-        root=tmp_path / "corpus",
-        selector=RefSelector(),
-        depth=1,
-        auth_header="AUTHORIZATION: basic secret",
-    )
-
-    network = [auth for command, auth, _ in spy_run_git if command in {"fetch", "ls-remote"}]
-    assert network
-    assert all((auth is not None) is sent for auth in network)
 
 
 def test_sync_without_pushed_at_keeps_the_stored_one(corpus: Callable[..., _Corpus]) -> None:
@@ -635,7 +684,7 @@ def test_sync_without_pushed_at_keeps_the_stored_one(corpus: Callable[..., _Corp
     env.sync(repo=replace(env.repo, pushed_at="2026-07-01T00:00:00Z"))
 
     env.sync()
-    freshness = env.cache.repo_freshness(env.repo, root=env.root)
+    freshness = env.cache.repo_freshness(env.repo)
 
     assert freshness is not None and freshness.pushed_at == "2026-07-01T00:00:00Z"
 
@@ -646,10 +695,10 @@ def test_sync_records_pushed_at_and_touch_marks_copy_current(
     env = corpus({"README.md": "hello\n"})
     repo = replace(env.repo, pushed_at="2026-07-01T00:00:00Z")
     env.sync(repo=repo)
-    before = env.cache.repo_freshness(repo, root=env.root)
+    before = env.cache.repo_freshness(repo)
 
-    touched = env.cache.touch_repo(replace(repo, archived=True), root=env.root)
-    after = env.cache.repo_freshness(repo, root=env.root)
+    touched = env.cache.touch_repo(replace(repo, archived=True))
+    after = env.cache.repo_freshness(repo)
 
     assert before is not None and after is not None
     assert (before.pushed_at, before.default_branch) == ("2026-07-01T00:00:00Z", "main")
@@ -658,52 +707,52 @@ def test_sync_records_pushed_at_and_touch_marks_copy_current(
     assert after.pushed_at == before.pushed_at
 
 
-def test_writers_wait_for_the_repo_lock_and_time_out(corpus: Callable[..., _Corpus]) -> None:
-    env = corpus({"README.md": "hello\n"}, lock_timeout=0.05)
-    env.sync()
-
-    with FileLock(f"{env.bare}.lock"):
-        with pytest.raises(GitCorpusError, match="repo cache is busy"):
-            env.sync()
-        with pytest.raises(GitCorpusError, match="repo cache is busy"):
-            env.cache.touch_repo(env.repo, root=env.root)
-
-    assert env.sync().status == "synced"
-
-
-@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="POSIX permissions")
-def test_an_unlockable_repo_is_a_corpus_error(corpus: Callable[..., _Corpus]) -> None:
-    env = corpus({"README.md": "hello\n"})
-    env.sync()
-    Path(f"{env.bare}.lock").unlink(missing_ok=True)
-    env.bare.parent.chmod(0o555)  # a read-only shared corpus: no lock file can be created
-    try:
-        with pytest.raises(
-            GitCorpusError, match=r"^could not lock repo cache .+: Permission denied$"
-        ):
-            env.sync()
-    finally:
-        env.bare.parent.chmod(0o755)
-
-
-def test_https_and_ssh_forms_of_one_repo_share_the_cache(
+@pytest.mark.usefixtures("composed")
+def test_https_and_ssh_forms_of_one_repo_share_the_store_repo(
     corpus: Callable[..., _Corpus], rewrite_to: Rewrite
 ) -> None:
-    """The cache key ignores the URL form: sync over https, look up over ssh."""
+    """The store key ignores the URL form: sync over https, look up over ssh."""
     env = corpus({"README.md": "hello\n"})
     https, ssh = "https://github.com/acme/app.git", "git@github.com:acme/app.git"
     rewrite_to(env.source, https)
     target = CorpusRepoTarget(full_name="acme/app", clone_url=https, default_branch="main")
 
-    synced = env.cache.sync_repo(
-        target, root=env.root, selector=RefSelector(), depth=1, auth_header=None
-    )
+    synced = env.cache.sync_repo(target, selector=RefSelector())
 
-    expected = (env.root / "github.com" / "acme" / "app.git").resolve()
+    expected = Path.home() / ".untaped/plugins/git/store/github.com/acme/app.git"
     assert synced.path == str(expected)
-    assert env.cache.repo_freshness(replace(target, clone_url=ssh), root=env.root) is not None
+    assert env.cache.repo_freshness(replace(target, clone_url=ssh)) is not None
 
 
+@pytest.mark.parametrize(
+    ("web_host", "clone_url", "fetched"),
+    [
+        ("github.com", "https://github.com/acme/app.git", "git@github.com:acme/app.git"),
+        ("ghe.example", "https://ghe.example/acme/app.git", "git@ghe.example:acme/app.git"),
+        ("github.com", "https://other.example/acme/app.git", "https://other.example/acme/app.git"),
+    ],
+    ids=["github", "enterprise", "other-host-unchanged"],
+)
+@pytest.mark.usefixtures("composed")
+def test_ssh_protocol_fetches_the_github_host_over_ssh(
+    corpus: Callable[..., _Corpus],
+    rewrite_to: Rewrite,
+    web_host: str,
+    clone_url: str,
+    fetched: str,
+) -> None:
+    env = corpus({"README.md": "hello\n"}, web_host=web_host, protocol="ssh")
+    rewrite_to(env.source, fetched)
+    target = CorpusRepoTarget(full_name="acme/app", clone_url=clone_url, default_branch="main")
+
+    synced = env.cache.sync_repo(target, selector=RefSelector())
+
+    assert synced.clone_url == fetched
+    [listed] = env.cache.list_repos()
+    assert listed.clone_url == fetched
+
+
+@pytest.mark.usefixtures("composed")
 def test_a_repo_named_with_a_leading_dot_is_listed(
     corpus: Callable[..., _Corpus], rewrite_to: Rewrite
 ) -> None:
@@ -711,126 +760,19 @@ def test_a_repo_named_with_a_leading_dot_is_listed(
     url = "https://github.com/acme/.github.git"
     rewrite_to(env.source, url)
     target = CorpusRepoTarget(full_name="acme/.github", clone_url=url, default_branch="main")
-    synced = env.cache.sync_repo(
-        target, root=env.root, selector=RefSelector(), depth=1, auth_header=None
-    )
+    synced = env.cache.sync_repo(target, selector=RefSelector())
 
-    [row] = env.cache.list_repos(root=env.root)
+    [row] = env.cache.list_repos()
 
     assert (row.repo, row.path) == ("acme/.github", synced.path)
 
 
-def test_an_old_layout_cache_is_not_listed(corpus: Callable[..., _Corpus]) -> None:
-    # 9.x keyed caches as <host>/<name>-<hash>.git; its metadata is still valid.
+def test_a_repo_moved_off_its_store_key_is_not_listed(corpus: Callable[..., _Corpus]) -> None:
     env = corpus({"README.md": "hello\n"})
     synced = env.sync()
-    old = env.root / "github.com" / "app-0123abcd.git"
-    old.mkdir(parents=True)
-    (old / "untaped-corpus.json").write_text(
-        '{"repo": "acme/app", "ref": "main", '
-        '"clone_url": "https://github.com/acme/app.git", '
-        '"fetched_at": "2026-07-06T12:00:00+00:00"}\n'
-    )
+    moved = Path(synced.path).with_name("elsewhere.git")
+    shutil.copytree(synced.path, moved)
 
-    [row] = env.cache.list_repos(root=env.root)
+    [row] = env.cache.list_repos()
 
-    assert (row.repo, row.path) == ("acme/api", synced.path)
-    assert env.cache.get_repo(root=env.root, repo="acme/app") is None
-
-
-def test_status_ignores_materialized_worktrees(corpus: Callable[..., _Corpus]) -> None:
-    # A checkout holding a cache-like dir whose metadata is canonical (its path
-    # is ``cache_path`` of its clone_url) must not list it: only the skip hides it.
-    env = corpus({"README.md": "hello\n"})
-    env.sync()
-    worktree = env.cache.materialize_worktree(env.repo, root=env.root, ref=None)
-    rel = Path(worktree.path).resolve().relative_to(env.root.resolve())
-    clone_url = f"https://{'/'.join(rel.parts)}/vendor/x.git"
-    vendored = cache_path(clone_url, root=env.root)
-    assert vendored == Path(worktree.path).resolve() / "vendor" / "x.git"
-    vendored.mkdir(parents=True)
-    (vendored / "untaped-corpus.json").write_text(
-        f'{{"repo": "acme/vendored", "ref": "main", "clone_url": "{clone_url}", '
-        '"fetched_at": "2026-07-06T12:00:00+00:00"}\n'
-    )
-
-    [row] = env.cache.list_repos(root=env.root)
-
-    assert (row.repo, row.path) == ("acme/api", str(env.bare))
-
-
-def test_clean_repo_removes_the_cache_and_keeps_its_lock_file(
-    corpus: Callable[..., _Corpus],
-) -> None:
-    """The empty lock file stays: unlinking it could let two lockers run at once."""
-    env = corpus({"README.md": "hello\n"})
-    env.sync()
-    [listed] = env.cache.list_repos(root=env.root)
-
-    env.cache.clean_repo(root=env.root, repo=listed)
-
-    assert not env.bare.exists()
-    assert Path(f"{env.bare}.lock").is_file()
-    assert env.cache.list_repos(root=env.root) == ()
-
-
-def test_clean_repo_of_an_already_removed_cache_succeeds(
-    corpus: Callable[..., _Corpus],
-) -> None:
-    """A concurrent delete or a stale piped row: the second clean still reports removed."""
-    env = corpus({"README.md": "hello\n"})
-    env.sync()
-    [listed] = env.cache.list_repos(root=env.root)
-
-    first = env.cache.clean_repo(root=env.root, repo=listed)
-    second = env.cache.clean_repo(root=env.root, repo=listed)
-
-    assert first == second == listed.model_copy(update={"status": "removed"})
-    assert not env.bare.exists()
-
-
-def test_a_symlinked_root_lists_the_path_it_synced(
-    tmp_path: Path, corpus: Callable[..., _Corpus]
-) -> None:
-    env = corpus({"README.md": "hello\n"})
-    link = tmp_path / "linked-corpus"
-    env.root.mkdir()
-    link.symlink_to(env.root)
-    env = replace(env, root=link)
-
-    synced = env.sync()
-    [row] = env.cache.list_repos(root=link)
-
-    assert row.path == synced.path == str(env.bare)
-
-
-@pytest.mark.parametrize(
-    ("url", "auth_host", "sent"),
-    [
-        ("https://github.com/acme/api.git", "github.com", True),
-        ("https://evil.example/acme/api.git", "github.com", False),
-    ],
-    ids=["github", "other"],
-)
-def test_a_wide_sync_scopes_the_token_on_ls_remote(
-    tmp_path: Path,
-    corpus: Callable[..., _Corpus],
-    rewrite_to: Rewrite,
-    spy_run_git: list[GitCall],
-    url: str,
-    auth_host: str,
-    sent: bool,
-) -> None:
-    rewrite_to(corpus({"README.md": "hello\n"}).source, url)
-    cache = GitCorpusCache(auth_host=auth_host)
-
-    cache.sync_repo(
-        CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
-        root=tmp_path / "corpus",
-        selector=RefSelector(profile="all"),
-        depth=1,
-        auth_header="AUTHORIZATION: basic secret",
-    )
-
-    listed = [auth for command, auth, _ in spy_run_git if command == "ls-remote"]
-    assert listed == ["AUTHORIZATION: basic secret" if sent else None]
+    assert row.path == synced.path

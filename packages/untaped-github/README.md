@@ -4,9 +4,9 @@ Install it as part of `untaped`: `uv tool install 'untaped[github]'` or `pip ins
 To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
 `untaped github` lists repository inventory, searches GitHub, and sweeps
-many repositories for content with local `git grep`. Sweeps run over a local
-Git corpus, so repeated questions over hundreds of repos avoid GitHub's search
-limits.
+many repositories for content with local `git grep`. Sweeps run over local
+copies in the git plugin's repo store, so repeated questions over hundreds of
+repos avoid GitHub's search limits.
 
 ## Set up
 
@@ -26,7 +26,9 @@ With a default org,
 commands given no `--org`, `--team` or `--repo` use it. The token can also
 come from the GitHub CLI or `GH_TOKEN`; see
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens).
-`sweep` and `cache` need `git` on your `PATH`. Every setting is in the
+`sweep` and `cache` need `git` on your `PATH`; they fetch over HTTPS with the
+same token (and through `http.proxy` when set), or over SSH with your own
+keys after `untaped config set github.git_protocol ssh`. Every setting is in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#github).
 
 ## List an org's or team's repos
@@ -64,11 +66,12 @@ untaped github sweep --org acme --grep 'BEGIN RSA PRIVATE KEY' --fail-on-match
 ```
 
 Answers "which repos still call the old API?" across every repo in a scope:
-each repo is fetched into the local corpus, then grepped on the refs you
-choose. Repeated sweeps reuse the corpus, `--fail-on-match` gates CI, and a
+each repo is fetched into the repo store (full history, file contents only
+as a grep reads them), then grepped on the refs you choose. Repeated sweeps
+reuse what is stored, `--fail-on-match` gates CI, and a
 `--format pipe` sweep feeds the next one's `--stdin`.
 
-## Manage the corpus
+## Manage the stored repos
 
 ```bash
 untaped github cache sync --team acme/platform --refs all
@@ -76,9 +79,10 @@ untaped github cache worktree acme/api --ref main
 untaped github cache prune --org acme --dry-run
 ```
 
-Warm the corpus before a batch of sweeps, check out one cached ref to read
-it, and drop repos that left the org. Deletes preview and ask first; see the
-skill. For clones you work in, use
+Warm the store before a batch of sweeps, check out one stored ref to read
+it, and drop repos that left the org. A repo a workspace or another plugin
+still uses stays when github lets go of it, and the delete says who kept it.
+Deletes preview and ask first; see the skill. For clones you work in, use
 [workspaces](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/README.md).
 
 ## Reference
