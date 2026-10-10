@@ -296,8 +296,8 @@ def test_the_remotes_default_branch_and_the_names_the_store_holds(
 
     assert store.default_branch(site.url) == "main"
     assert store.refusal(GitRef(kind="heads", name="feature/+x", sha="0" * 40)) is None
-    assert "not a branch or tag name" in str(
-        store.refusal(GitRef(kind="heads", name="-wip", sha="0" * 40))
+    assert store.refusal(GitRef(kind="heads", name="-wip", sha="0" * 40)) == (
+        "git allows this name, but the repo store cannot hold it"
     )
 
 

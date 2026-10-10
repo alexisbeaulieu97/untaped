@@ -68,7 +68,7 @@ def test_repo_origin_parses_hand_written_values_like_git(
     tmp_path: Path, line: str, expected: str
 ) -> None:
     config = _config_file(tmp_path)
-    config.write_bytes(f'[remote "origin"]\n\t{line}\n'.encode())
+    config.write_bytes(f'[remote "origin"] # a comment\n\t{line}\n'.encode())
 
     assert repo_origin(config.parent) == _git_get(config, "remote.origin.url") == expected
 
@@ -86,7 +86,7 @@ def test_repo_origin_is_none_without_an_origin_or_a_config(tmp_path: Path) -> No
 def test_a_plain_section_matches_any_case_and_the_last_value_wins(tmp_path: Path) -> None:
     config = _config_file(tmp_path)
     config.write_text(
-        '[untaped]\n\towner = a\n[untaped "sub"]\n\towner = b\n[UNTAPED]\n\tOwner = "c" # n\n'
+        '[untaped]\n\towner = a\n[untaped "sub"]\n\towner = b\n[UNTAPED] ; c\n\tOwner = "c" # n\n'
     )
 
     assert config_value(config, "untaped", "owner") == _git_get(config, "untaped.owner") == "c"

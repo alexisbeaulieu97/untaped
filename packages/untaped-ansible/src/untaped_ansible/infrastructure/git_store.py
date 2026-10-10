@@ -59,7 +59,9 @@ class GitSourceStore:
 
     def refusal(self, ref: GitRef) -> str | None:
         """Why the store refuses ``ref``'s name (git allows some, like ``-wip``), else ``None``."""
-        return check_names([ref.name])
+        if check_names([ref.name]) is None:
+            return None
+        return "git allows this name, but the repo store cannot hold it"
 
     def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
         """``ref → commit`` of ``url``'s refs matching ``patterns``, with untaped's credentials."""
