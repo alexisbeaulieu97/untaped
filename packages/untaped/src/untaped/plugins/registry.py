@@ -558,7 +558,7 @@ def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[Plug
     """Discover every plugin candidate from entry points.
 
     Reads distribution version, entry-point group, and Requires-Dist strings
-    via :mod:`importlib.metadata` without importing any provider code.
+    via :mod:`importlib.metadata` without importing any plugin code.
     """
     found: list[PluginCandidate] = []
     # Entry points of one distribution share its object; read its metadata once.
@@ -892,7 +892,7 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
     """
     # Metadata-only gates precede any import: group and Requires-Dist
     # admission are decided from distribution metadata without executing
-    # provider code.
+    # plugin code.
     _check_entry_point_group(candidate)
     _check_requires_dist(candidate, state)
     try:

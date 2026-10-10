@@ -58,7 +58,7 @@ if TYPE_CHECKING:
 _UNKNOWN = "unknown"
 
 #: Shown by root ``--help`` and an empty ``plugin list`` when a bare
-#: ``untaped`` install has no plugin providers.
+#: ``untaped`` install has no plugins.
 INSTALL_HINT = (
     "No plugins are installed. Reinstall untaped with an extra: 'untaped[all]' "
     "for all of them, or one, e.g. 'untaped[awx]'."
