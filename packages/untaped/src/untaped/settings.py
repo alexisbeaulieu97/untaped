@@ -861,7 +861,7 @@ def settings_error_message(exc: ValidationError, settings_cls: type[BaseModel]) 
     """Describe a settings ``ValidationError``, naming an env var culprit.
 
     An old-spelling variable of a renamed key of ``settings_cls`` is named
-    too (``UNTAPED_GITHUB__CORPUS_PATH`` for ``github.cache_dir``).
+    too (``UNTAPED_DEMO__OLD_KEY`` for ``demo.new_key``).
     """
     detail = first_validation_error(exc)
     env_var = _env_culprit(exc, settings_cls)
