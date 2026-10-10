@@ -938,7 +938,7 @@ def record_default_branch(repo: Path, branch: str) -> None:
     if not (repo / "HEAD").is_file():
         return
     try:
-        # Try once: a busy repo is fetching, and its fetch records the answer itself.
+        # Try once: when another writer holds the repo, its next fetch asks the remote itself.
         with repo_lock(repo, timeout=0, error=UntapedError):
             run_git(
                 ["config", "--file", str(repo / "config"), "untaped.defaultBranch", branch],
