@@ -22,6 +22,7 @@ from untaped.sdk import (
     create_app,
     echo,
     emit,
+    finish,
     first_validation_error,
     get_config_section,
     most_severe,
@@ -40,6 +41,7 @@ from untaped_ansible.domain.payloads import SourceOutcome
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
     AliasRepository,
+    GitSourceStore,
     SourceRepository,
     SqliteDependencyIndex,
 )
@@ -51,7 +53,8 @@ from untaped_ansible.settings import (
     SourceDefinition,
     normalize_team_refs,
 )
-from untaped_github.api import github_settings
+from untaped_git.api import Removed, store_key
+from untaped_github.api import github_settings, github_web_host
 
 _FINGERPRINT_HEX_CHARS = 16
 _OUTCOME_KIND = "ansible.source_outcome"
@@ -295,46 +298,53 @@ def source_remove_command(
 ) -> None:
     """Remove a saved source, its cached source data and the repos only it used.
 
-    A repo another saved source still selects is kept. Every other repo it
-    fetched is released from the repo store: ``removed`` when no other plugin
-    holds it, else ``released`` with who kept it.
+    A repo another saved source still selects is kept. Every other repo the
+    source selected is released from the repo store first: ``removed`` when no
+    other plugin holds it, else ``released`` with who kept it. The source and
+    its index rows go only once every release succeeded, so a rerun retries.
     """
     with report_errors():
         source_repo = SourceRepository()
         if source_repo.get(name) is None:
             raise AnsibleError(_unknown_source(name, source_repo), category="not_found")
-        settings = get_config_section("ansible", AnsibleSettings)
-        index = SqliteDependencyIndex(settings.index_path)
-        others = {
-            _saved_source_key(source.name): source.name
-            for source in source_repo.entries()
-            if source.name != name
-        }
-        repos = index.source_repos(_saved_source_key(name))
-        selected = index.selecting_sources(others)
         if not dry_run:
             app_context().ui(strict=False).confirm_or_cancel(
                 f"Remove source {q(name)} and its cached source data?",
                 assume_yes=yes,
                 refusal="source remove requires --yes when not interactive",
             )
-            source_repo.remove(name)
-            index.clear(_saved_source_key(name))
+        settings = get_config_section("ansible", AnsibleSettings)
+        index = SqliteDependencyIndex(settings.index_path)
+        host = github_web_host(github_settings().base_url)
+        others = {
+            _saved_source_key(source.name): source.name
+            for source in source_repo.entries()
+            if source.name != name
+        }
+        selected = index.selecting_sources(others)
         changes, failures = _release_repos(
-            repos,
+            index.source_repos(_saved_source_key(name)),
             {key: sorted(others[source] for source in keys) for key, keys in selected.items()},
+            host=host,
             dry_run=dry_run,
         )
+        if not dry_run and not failures:
+            source_repo.remove(name)
+            index.clear(_saved_source_key(name))
+        action = "planned" if dry_run else "failed" if failures else "deleted"
         _emit_outcome(
-            SourceOutcome(action="planned" if dry_run else "deleted", name=name, changes=changes),
+            SourceOutcome(action=action, name=name, changes=changes),
             fmt=fmt,
             columns=columns,
         )
+        for repo, failure in failures:
+            report_error(failure, item=repo)
         if failures:
-            # The source is gone either way; the repos that failed stay in the store.
-            for failure in failures[:-1]:
-                report_error(failure)
-            raise failures[-1]
+            echo(
+                f"hint: source {q(name)} is kept so a rerun retries the release",
+                err=True,
+            )
+        finish(bool(failures))
 
 
 @app.command(name="status")
@@ -673,37 +683,42 @@ def _release_repos(
     repos: dict[str, tuple[str, ...]],
     selected: dict[str, list[str]],
     *,
+    host: str | None,
     dry_run: bool,
-) -> tuple[list[str], list[UntapedError]]:
+) -> tuple[list[str], list[tuple[str, UntapedError]]]:
     """Release ``repos`` (``OWNER/NAME`` → clone URLs) no other saved source selects.
 
-    Returns the outcome lines and the errors of the releases that failed.
+    Every repo is also tried at its ``https://<host>/OWNER/NAME.git`` URL, so
+    one the source still selects but whose refs were all pruned is found
+    too; https and ssh URLs of a repo are one store repo. Repos the store does
+    not hold are skipped. Returns the outcome lines and the failed releases.
     """
-    from untaped_ansible.infrastructure import GitSourceStore  # noqa: PLC0415
-    from untaped_git.api import Removed, store_key  # noqa: PLC0415
-
     store = GitSourceStore()
     changes: list[str] = []
-    failures: list[UntapedError] = []
+    failures: list[tuple[str, UntapedError]] = []
     for repo, urls in repos.items():
         keepers = selected.get(repo_key(repo))
         if keepers:
             noun = "source" if len(keepers) == 1 else "sources"
-            changes.append(f"kept {repo} (selected by {noun} {', '.join(keepers)})")
+            changes.append(f"kept {repo} (selected by {noun} {' and '.join(keepers)})")
             continue
-        for url in {store_key(url): url for url in urls}.values():
+        candidates = [*([f"https://{host}/{repo}.git"] if host else []), *urls]
+        for url in {store_key(url): url for url in candidates}.values():
             if dry_run:
-                changes.append(f"release {repo}")
+                if store.holds(url):
+                    changes.append(f"would release {repo}")
                 continue
             try:
                 outcome = store.release(url)
             except UntapedError as exc:
-                failures.append(exc)
+                failures.append((repo, exc))
+                changes.append(f"failed to release {repo}")
                 continue
             if isinstance(outcome, Removed):
                 changes.append(f"removed {repo} ({size_text(outcome.freed_bytes)} freed)")
             elif outcome is not None:
-                changes.append(f"released {repo} (kept: {outcome.kept()})")
+                kept = outcome.kept().replace(", ", "; ")
+                changes.append(f"released {repo} (kept: {kept})")
     return changes, failures
 
 
