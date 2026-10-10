@@ -383,6 +383,11 @@ def test_ci_wheel_matrix_smokes_each_install_shape_from_the_built_wheels() -> No
             '"$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)'
         )
         assert _find(steps, run=tests) == pair
+        check = (
+            'UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" '
+            f'"$RUNNER_TEMP/contracts/bin/untaped" plugin check {example}'
+        )
+        assert _find(steps, run=check) == pair
     broken = _find(steps, run='cp -r examples/untaped-hello "$RUNNER_TEMP/hello-broken"')
     breaks = (
         "sed -i 's/untaped_hello:SPEC/untaped_hello:missing/'"

@@ -167,6 +167,9 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/contracts/bin/python" "$CORE" "$RUNNER_TEMP/shelf-src" "$RUNNER_TEMP/library-src" pytest
           (cd "$RUNNER_TEMP/shelf-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
           (cd "$RUNNER_TEMP/library-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
+          printf 'profiles:\n  default:\n    library:\n      volumes:\n        - {shelf_mark: A1, name: Dune}\n' > "$RUNNER_TEMP/contracts.yml"
+          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check shelf
+          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check library
 
       - name: A broken example plugin is quarantined
         run: |
