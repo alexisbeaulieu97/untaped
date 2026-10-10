@@ -40,9 +40,7 @@ from untaped.settings import (
     reserved_section_keys,
     validate_disjoint_settings_sections,
 )
-from untaped.settings import (
-    PLUGIN_NAME_PATTERN as _PLUGIN_NAME_PATTERN,
-)
+from untaped.settings import PLUGIN_NAME_PATTERN as PLUGIN_NAME_PATTERN
 from untaped.stability import Stability, check_stability, mark_errors
 
 if TYPE_CHECKING:
@@ -53,10 +51,6 @@ _CORE_DISTRIBUTION = "untaped"
 
 #: Entry-point group every plugin is discovered from.
 PLUGINS_ENTRY_POINT_GROUP = "untaped.plugins"
-
-#: A plugin name: lowercase words joined by single hyphens. The name is also
-#: the plugin's config section, CLI group and :func:`plugin_dir`.
-PLUGIN_NAME_PATTERN = _PLUGIN_NAME_PATTERN
 
 #: Names no plugin may take, whatever they would collide with.
 RESERVED_PLUGIN_NAMES = frozenset(
@@ -582,8 +576,9 @@ def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
 
 
 def _check_section_keys(spec: PluginSpec) -> None:
+    injected = frozenset({"extensions"}) if owns_contracts(spec) else frozenset()
     for label, model in (("settings", spec.settings), ("state", spec.state)):
-        taken = [] if model is None else reserved_section_keys(model)
+        taken = [] if model is None else reserved_section_keys(model, injected=injected)
         if taken:
             raise _Quarantine(
                 "bad-settings-keys",
@@ -643,10 +638,10 @@ def _check_doctor_checks(spec: PluginSpec, state: _CompositionState) -> None:
 
 
 def _check_key_mappings(spec: PluginSpec) -> None:
-    model = section_settings(spec)
-    if model is None:
+    # The plugin's own model: an old key may never point at an injected key.
+    if spec.settings is None:
         return
-    errors = mapping_errors(model)
+    errors = mapping_errors(spec.settings)
     if errors:
         raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {errors[0]}")
 

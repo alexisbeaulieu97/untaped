@@ -168,7 +168,7 @@ def _contract_rows() -> list[ContractRow]:
     owned = owned_contracts()
     for owner in unreadable_owners():
         ui_context(strict=False).message(
-            "warning", f"{owner}'s contracts couldn't be read; `untaped doctor` says why"
+            "warning", f"{owner}'s contracts couldn't be read; `{command_line('doctor')}` says why"
         )
     for owner, infos in sorted(owned.items()):
         try:
@@ -291,7 +291,9 @@ def _check_rankable(owner: str, name: str, method: str, plugins: list[str]) -> N
 
     owned = owned_contracts()
     if owner not in owned:
-        raise UsageError(f"{owner}'s contracts couldn't be read", hint="run `untaped doctor`")
+        raise UsageError(
+            f"{owner}'s contracts couldn't be read", hint=f"run `{command_line('doctor')}`"
+        )
     info: ContractInfo | None = next((each for each in owned[owner] if each.name == name), None)
     if info is None:
         known = ", ".join(sorted(each.name for each in owned[owner]))

@@ -190,12 +190,12 @@ class Settings(_SettingsSources):
 #: A contract's or a contract method's name in settings: snake_case.
 ContractName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")]
 
+#: The grammar every plugin name follows.
+PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+
 #: A plugin's name in settings, checked against the grammar only: a ranking
 #: in ``profiles.default`` must not break a profile without that plugin.
-PluginName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")]
-
-#: :data:`PluginName`'s grammar, the one every plugin name follows.
-PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+PluginName = Annotated[str, StringConstraints(pattern=PLUGIN_NAME_PATTERN.pattern)]
 
 
 def _distinct(names: list[str]) -> list[str]:
@@ -225,22 +225,27 @@ class ExtensionSettings(BaseModel):
 RESERVED_SECTION_KEYS = frozenset({"extensions", "caches"})
 
 
-def reserved_section_keys(model: type[BaseModel]) -> list[str]:
-    """The keys of ``model`` that take one the SDK injects (:data:`RESERVED_SECTION_KEYS`).
+def reserved_section_keys(
+    model: type[BaseModel], *, injected: frozenset[str] = frozenset()
+) -> list[str]:
+    """The keys of ``model`` that collide with a key the SDK injects.
 
-    A key is a field name, a field's alias, or the first segment of an old
-    key the model still declares (``renamed_keys``, ``retired_keys``).
+    No field and no field alias may take a :data:`RESERVED_SECTION_KEYS`
+    name. An old key (``renamed_keys``, ``retired_keys``) collides only with
+    a key the SDK actually ``injected`` into this section, so a plugin can
+    still move its own ``extensions`` setting away under a new name.
     """
     keys = set(model.model_fields)
     for field in model.model_fields.values():
         keys.update(
             alias for alias in (field.alias, field.validation_alias) if isinstance(alias, str)
         )
+    taken = RESERVED_SECTION_KEYS & keys
     for name in ("renamed_keys", "retired_keys"):
         declared = getattr(model, name, None)
         if isinstance(declared, Mapping):
-            keys.update(str(old).partition(".")[0] for old in declared)
-    return sorted(RESERVED_SECTION_KEYS & keys)
+            taken |= injected & {str(old).partition(".")[0] for old in declared}
+    return sorted(taken)
 
 
 @cache

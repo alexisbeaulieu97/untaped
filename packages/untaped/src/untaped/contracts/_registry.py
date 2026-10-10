@@ -10,6 +10,7 @@ loses its own contracts only; doctor names it.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -504,14 +505,31 @@ def _holders() -> Callable[[tuple[str, ...]], _Holder]:
         raw = {}
     provenance = active_settings_layout().resolve(raw, profile=selected_profile(raw)).provenance
 
+    environ = {name.upper(): value for name, value in os.environ.items()}
+
     def holder(path: tuple[str, ...]) -> _Holder:
         for depth in range(len(path), 0, -1):
             name = env_var_name(path[:depth])
-            if name in os.environ:
+            if name in environ and _holds(environ[name], path[depth:]):
                 return _Holder(None, name)
         return _Holder(provenance.get(path), None)
 
     return holder
+
+
+def _holds(value: str, rest: tuple[str, ...]) -> bool:
+    """Whether an environment ``value`` sets the setting ``rest`` below its own (JSON)."""
+    if not rest:
+        return True
+    try:
+        cursor: object = json.loads(value)
+    except ValueError:
+        return False
+    for part in rest:
+        if not isinstance(cursor, dict) or part not in cursor:
+            return False
+        cursor = cursor[part]
+    return True
 
 
 def _is_are(names: list[str]) -> str:
