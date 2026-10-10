@@ -26,12 +26,12 @@ import re
 from annotationlib import Format
 from collections.abc import Callable, Sequence
 from importlib import import_module
-from importlib.metadata import PackageNotFoundError, metadata
+from importlib.metadata import metadata
 from pathlib import Path
 from textwrap import dedent, indent
 from typing import TYPE_CHECKING, ClassVar
 
-from packaging.requirements import InvalidRequirement, Requirement
+from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
@@ -395,32 +395,25 @@ def _method(
 
 
 def _signature(function: Callable[..., object]) -> str:
-    """``(self, a: int = 1, *, b: str) -> list[Book]``, each annotation as the source writes it."""
+    """``(self, a: int = 1, *, b: str) -> list[Book]``, each annotation as the source writes it.
+
+    A contract method has no ``*args``, ``**kwargs`` or positional-only
+    parameter (its declaration refuses them), so only ``*`` is written.
+    """
     signature = inspect.signature(function, annotation_format=Format.STRING)
     parts: list[str] = []
-    keyword_only = False
     for parameter in signature.parameters.values():
-        kind = parameter.kind
-        if kind is parameter.KEYWORD_ONLY and not keyword_only:
+        if parameter.kind is parameter.KEYWORD_ONLY and "*" not in parts:
             parts.append("*")
-        keyword_only = keyword_only or kind in (parameter.KEYWORD_ONLY, parameter.VAR_POSITIONAL)
-        prefix = {"VAR_POSITIONAL": "*", "VAR_KEYWORD": "**"}.get(kind.name, "")
-        text = f"{prefix}{parameter.name}"
+        text = parameter.name
         if parameter.annotation is not parameter.empty:
             text += f": {parameter.annotation}"
         if parameter.default is not parameter.empty:
             text += f" = {parameter.default!r}" if ":" in text else f"={parameter.default!r}"
         parts.append(text)
-        if kind is parameter.POSITIONAL_ONLY and _last_positional(signature, parameter):
-            parts.append("/")
     returns = signature.return_annotation
     arrow = "" if returns is signature.empty else f" -> {returns}"
     return f"({', '.join(parts)}){arrow}"
-
-
-def _last_positional(signature: inspect.Signature, parameter: inspect.Parameter) -> bool:
-    names = [p.name for p in signature.parameters.values() if p.kind is p.POSITIONAL_ONLY]
-    return names[-1] == parameter.name
 
 
 def _comment(text: str) -> str:
@@ -475,21 +468,13 @@ class _Core:
 
 def _core_metadata() -> _Core:
     """This untaped's major range, its Python requirement and its pydantic requirement."""
-    try:
-        found = metadata("untaped")
-    except PackageNotFoundError:
-        return _Core(_range(""), ">=3.14.1", "pydantic>=2,<3")
-    pydantic = "pydantic>=2,<3"
-    for line in found.get_all("Requires-Dist") or []:
-        try:
-            requirement = Requirement(line)
-        except InvalidRequirement:
-            continue
-        if requirement.name == "pydantic" and requirement.marker is None:
-            pydantic = f"pydantic{range_text(requirement)}"
-    return _Core(
-        _range(found.get("Version") or ""), found.get("Requires-Python") or ">=3.14.1", pydantic
+    found = metadata("untaped")
+    requirements = [Requirement(line) for line in found.get_all("Requires-Dist") or []]
+    pydantic = next(
+        (f"pydantic{range_text(r)}" for r in requirements if r.name == "pydantic" and not r.marker),
+        "pydantic>=2,<3",
     )
+    return _Core(_range(found["Version"]), found["Requires-Python"], pydantic)
 
 
 def _range(version: str) -> str:

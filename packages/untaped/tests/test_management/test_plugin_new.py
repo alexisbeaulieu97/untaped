@@ -153,3 +153,24 @@ def test_the_command_emits_scaffold_outcomes_and_exits_2_on_a_usage_error(tmp_pa
 def test_the_scaffold_builds_like_the_repository_packages() -> None:
     core = tomllib.loads((_REPO / "packages" / "untaped" / "pyproject.toml").read_text("utf-8"))
     assert tomllib.loads(f"[build-system]\n{BUILD_SYSTEM}")["build-system"] == core["build-system"]
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"), [("10.1.0", ">=10,<11"), ("0.3.1", ">=0.3,<1"), ("", "")]
+)
+def test_an_owner_range_covers_its_installed_major(version: str, expected: str) -> None:
+    from untaped.management.plugin_new import _range
+
+    assert _range(version) == expected
+
+
+def test_an_owner_without_its_contract_in_api_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.contracts._registry import owned_contracts
+
+    result = bootstrap.compose_root(candidates=[_RACK])
+    assert owned_contracts()["rack"]  # loaded before the api stops exporting it
+    monkeypatch.delattr(importlib.import_module("untaped_rack.api"), "ItemSource")
+    with pytest.raises(UsageError, match=r"rack doesn't export ItemSource from untaped_rack\.api"):
+        scaffold(result, [_RACK], "gitlab", "rack.item_source", path=tmp_path, dry_run=True)
