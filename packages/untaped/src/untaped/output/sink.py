@@ -285,6 +285,14 @@ class Sink(Protocol):
         """Print ``text`` verbatim, or its diagnostic as a JSON line (:func:`echo_diagnostic`)."""
         ...
 
+    def relay(self, text: str, *, end: str = "\n") -> None:
+        """Print another tool's output line as is: never parsed, never counted, never muted.
+
+        Under JSON diagnostics it is an ``info`` line, whatever prefix it has
+        (a hook that prints ``error: …`` and succeeds is not a failure).
+        """
+        ...
+
     def passthrough(self, text: str) -> None:
         """Write ``text`` verbatim (a relayed child's output), never parsed or counted."""
         ...
@@ -380,8 +388,6 @@ class _ScopeSink:
             )
         if isinstance(diagnostic, StaleData) and not self._first_stale(diagnostic):
             return
-        if self._recorder is not None:
-            self._recorder.append(diagnostic)
         if isinstance(diagnostic, Failure) and self._scope is not None:
             self._scope.note(diagnostic.exit_code)
         policy = self.policy
@@ -390,6 +396,8 @@ class _ScopeSink:
             return
         if policy.quiet and not unmuted and level in ("info", "success"):
             return
+        if self._recorder is not None:  # what was shown, as the stderr tee shows it
+            self._recorder.append(diagnostic)
         if policy.diagnostics == "json":
             _write(_json(diagnostic) + "\n")
             return
@@ -398,6 +406,14 @@ class _ScopeSink:
         else:
             text = rendered if rendered is not None else _text(diagnostic)
         self._out(text + end)
+
+    def relay(self, text: str, *, end: str = "\n") -> None:
+        if not text.strip():
+            if self.policy.diagnostics == "text":
+                self._out(text + end)
+            return
+        message = Message(level="info", message=redact_url_password(text).strip())
+        self._emit(message, text, unmuted=True, end=end)
 
     def passthrough(self, text: str) -> None:
         self._out(text)
@@ -548,6 +564,22 @@ def exit_on_counted_failure() -> None:
         raise SystemExit(scope.worst)
 
 
+def derived_exit_code(code: str | int | None) -> str | int | None:
+    """The code a run exiting with ``code`` ends with, given the failures it counted.
+
+    The most severe of the two wins (a predicate hit, ``3``, never hides a
+    counted failure); a code that is not a number is left alone.
+    """
+    scope = _scope()
+    if scope is None or scope.worst == ExitCode.OK:
+        return code
+    if code is None:
+        return scope.worst
+    if isinstance(code, str):
+        return code
+    return combine_exit_codes(code, scope.worst)
+
+
 def failure_text(error: UntapedError | Failure, *, item: str | None = None) -> str:
     """A failure's text line: ``error: [<item>: ]<message>``, then its ``hint:`` line."""
     prefix = "" if item is None else f"{item}: "
@@ -612,6 +644,13 @@ class Diagnostics:
             failure = failure.model_copy(update={"item": item})
         current_sink().emit(failure, rendered=failure_text(error, item=item))
         return failure
+
+    def relay(self, text: str) -> None:
+        """Print another tool's output (a hook's stderr, a job log) as is, never counted.
+
+        Unlike ``echo(err=True)``, an ``error:`` line it relays is not a failure.
+        """
+        current_sink().relay(text)
 
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
         """Report progress for a blocking operation (a spinner on a terminal)."""

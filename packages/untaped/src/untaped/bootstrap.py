@@ -55,7 +55,7 @@ from untaped.management import (
 from untaped.management.plugins import INSTALL_HINT
 from untaped.management.skills import check_installed_skills, composed_skills
 from untaped.output.policy import reset_quiet as _reset_quiet
-from untaped.output.sink import diagnostics_scope, exit_on_counted_failure
+from untaped.output.sink import derived_exit_code, diagnostics_scope, exit_on_counted_failure
 from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
@@ -482,6 +482,7 @@ def _install_root_callback(
                 failed = False
                 return result
         except SystemExit as exc:
+            exc.code = derived_exit_code(exc.code)
             failed = exc.code not in (0, None)
             raise
         finally:
