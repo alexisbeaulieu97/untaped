@@ -29,11 +29,7 @@ def list_books(*, fmt: FormatOption = "table") -> None:
     books: list[Book] = []
     for answer in answers:
         if isinstance(answer, Ok):
-            books.extend(answer.value)
-            if answer.stale is not None:
-                ui_context().message(
-                    "warning", f"{answer.plugin}: cached answer ({answer.stale.error})"
-                )
+            books.extend(answer.value)  # a stale one already said so on stderr
         elif isinstance(answer, Failed):
             report_error(answer.error, item=answer.plugin)
         elif isinstance(answer, Skipped) and answer.reason != "not-configured":
