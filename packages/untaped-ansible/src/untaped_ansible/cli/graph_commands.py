@@ -122,7 +122,8 @@ AllRefsOption = Annotated[
 
 # LimitedChoice() defaults to at-most-one selection — cyclopts' MutuallyExclusive
 # is an untyped alias for exactly this, so the typed parent is used directly.
-_SOURCE_DATA_GROUP = Group("Source Data", validator=validators.LimitedChoice())
+# Keyed below 100 so it lists before core's panels, keeping Global options last.
+_SOURCE_DATA_GROUP = Group("Source Data", sort_key=10, validator=validators.LimitedChoice())
 LiveOption = Annotated[
     bool,
     Parameter(

@@ -8,7 +8,7 @@ from dataclasses import replace
 from typing import Annotated
 
 import pytest
-from cyclopts import App, Group, Parameter
+from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
 from test_plugins.plugin_harness import make_spec
@@ -218,26 +218,6 @@ def test_mark_on_spec_when_the_factory_marks_its_top_app() -> None:
         return create_app(name="svc", help="Service.", stability=experimental)
 
     assert _violations(factory) == ["svc::mark-on-spec::svc"]
-
-
-def test_reserved_panel_for_a_group_named_like_a_stability_panel() -> None:
-    def factory() -> App:
-        app = _app()
-        app["set"].group = "Experimental"
-        other = create_app(name="other", help="Other.")
-        other.group = (Group("Deprecated"),)
-        app.command(other)
-
-        @other.command(name="x")
-        def x() -> None:
-            """X."""
-
-        return app
-
-    assert _violations(factory) == [
-        "svc other::reserved-panel::Deprecated",
-        "svc set::reserved-panel::Experimental",
-    ]
 
 
 def test_bad_replacement_an_object_that_is_not_mounted() -> None:

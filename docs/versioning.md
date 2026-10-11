@@ -43,7 +43,8 @@ These may change in any release:
 - Commands and file formats marked experimental (below).
 - The rules `untaped.testing.check_conventions` applies: a minor release may
   add one, so a plugin's convention test can start failing. Mark a line with
-  `# untaped: allow <rule>` to waive that rule there.
+  `# untaped: allow <rule>` to waive that rule there, where the rule
+  [allows it](./reference/conventions.md#enforcement).
 - Anything not documented, including internal modules, except the record
   fields covered above.
 

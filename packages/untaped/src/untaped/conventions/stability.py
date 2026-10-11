@@ -18,9 +18,10 @@ Checks every command of a subtree against ``docs/plugins.md``:
   command of the plugin itself (pass the object), or a setting that does
   not exist (a setting's replacement is always text);
 - ``mark-on-spec`` — a plugin's top app carries a mark of its own, which a
-  lazy mount cannot see (mark the ``PluginSpec`` instead);
-- ``reserved-panel`` — a group named ``Experimental`` or ``Deprecated`` that is
-  not core's panel.
+  lazy mount cannot see (mark the ``PluginSpec`` instead).
+
+A group named after a stability panel is ``reserved-panel``, one of the help
+tree's rules (:mod:`untaped.conventions.help_tree`).
 
 Lines are ``<command path or setting key>::<rule>::<detail>``; they carry no
 source line, so no inline marker can suppress them.
@@ -32,7 +33,7 @@ import inspect
 import re
 from collections.abc import Iterable, Iterator
 
-from cyclopts import App, Group
+from cyclopts import App
 
 from untaped._root_options import resolve_command
 from untaped.config_schema import walk_settings
@@ -40,10 +41,7 @@ from untaped.plugins.registry import CompositionResult, PluginSpec
 from untaped.settings import get_profile_settings_model, profile_section_models
 from untaped.stability import (
     COMMAND_TEXT,
-    DEPRECATED_GROUP,
-    EXPERIMENTAL_GROUP,
     KEY_TEXT,
-    RESERVED_PANELS,
     Deprecated,
     Experimental,
     Mark,
@@ -98,7 +96,6 @@ def stability_violations(
             found.extend(f"{where}::hand-typed-mark::{detail}" for detail in _hand_typed(app))
             if getattr(app.default_command, "__deprecated__", None) is not None:
                 found.append(f"{where}::wrong-deprecated::{path[-1]} uses warnings.deprecated")
-            found.extend(f"{where}::reserved-panel::{name}" for name in _reserved_panels(app))
     every = marks(root, result)
     found.extend(_setting_violations(root, result, settings, every))
     for mark in (mark for mark in every if mark.target != "setting"):
@@ -178,15 +175,6 @@ def _hand_typed(app: App) -> Iterator[str]:
             text = argument.parameter.help
             if text and _HAND_TYPED.search(text):
                 yield f"{argument.names[0] if argument.names else argument.field_info.name} help"
-
-
-def _reserved_panels(app: App) -> Iterator[str]:
-    groups = app.group if isinstance(app.group, tuple) else (app.group,)
-    for group in groups:
-        name = group.name if isinstance(group, Group) else group
-        core = group is EXPERIMENTAL_GROUP or group is DEPRECATED_GROUP
-        if name in RESERVED_PANELS and not core:
-            yield str(name)
 
 
 def _bad_replacement(root: App, mark: Deprecated, plugin: str | None) -> Iterator[str]:

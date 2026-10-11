@@ -277,7 +277,7 @@ class PluginSpec:
     (none when it is ``None``), ``settings`` is the settings model of the
     plugin's config section and ``state`` its ``state.yml`` model.
 
-    ``help`` is the one-line summary shown in the root command listing. A
+    ``help`` is the one-line summary shown in the Plugins panel of root help. A
     plugin that declares it is mounted lazily: its ``app_factory`` (and
     so its CLI import tree) runs only when the command is dispatched. Without
     it, the factory runs during composition and the listing falls back to
