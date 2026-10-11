@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, note_failure
+from untaped.sdk import Failure, UntapedError
 from untaped_workspace.application.locate import active_workspace, workspace_root
 from untaped_workspace.domain.models import RepoSpec
 from untaped_workspace.domain.naming import repo_key
@@ -79,7 +79,7 @@ class ResolveRepos:
                 url=url,
                 detail=detail,
                 target_path=root / spec.dir,
-                error=None if error is None else note_failure(error, message=detail),
+                error=None if error is None else Failure.from_exception(error, message=detail),
             )
 
         if spec.source is None:

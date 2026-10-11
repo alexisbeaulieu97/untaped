@@ -1,6 +1,7 @@
 [
   {
     "level": "debug",
+    "kind": "untaped.debug",
     "logger": "untaped.http",
     "message": "GET https://example.test/api"
   }

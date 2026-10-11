@@ -1,22 +1,33 @@
 [
   {
     "level": "success",
+    "kind": "untaped.message",
     "message": "a success line"
   },
   {
     "level": "info",
+    "kind": "untaped.message",
     "message": "a info line"
   },
   {
     "level": "warning",
+    "kind": "untaped.message",
     "message": "a warning line"
   },
   {
     "level": "error",
-    "message": "a error line"
+    "kind": "untaped.failure",
+    "category": "failed",
+    "system": "untaped",
+    "retryable": false,
+    "message": "a error line",
+    "hint": null,
+    "exit_code": 1,
+    "details": {}
   },
   {
     "level": "success",
+    "kind": "untaped.message",
     "message": "done"
   }
 ]

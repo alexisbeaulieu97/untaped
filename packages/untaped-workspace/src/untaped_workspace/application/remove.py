@@ -35,7 +35,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, not_found, note_failure, plural
+from untaped.sdk import Failure, UntapedError, not_found, plural
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.naming import repo_key
@@ -286,7 +286,7 @@ class RemoveWorkspace:
                 **common,
                 action="failed",
                 detail=str(exc),
-                error=note_failure(exc, message=str(exc)),
+                error=Failure.from_exception(exc, message=str(exc)),
             )
         return RemoveOutcome(
             **common,

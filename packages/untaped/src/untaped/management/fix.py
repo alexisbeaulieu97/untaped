@@ -29,7 +29,6 @@ from pydantic import ValidationError
 
 from untaped.batch import batch_apply, finish
 from untaped.cli import echo
-from untaped.diagnostics import DIAGNOSTICS_ENV, ErrorInfo, note_failure
 from untaped.errors import ErrorCategory, ExitCode, UntapedError
 from untaped.management._render import emit_fix_list, emit_fix_plan, emit_isolated
 from untaped.management.doctor import (
@@ -40,6 +39,9 @@ from untaped.management.doctor import (
     run_line,
 )
 from untaped.messages import command_argv, hint, not_found, split_profile, summary
+from untaped.output.diagnostic import Failure
+from untaped.output.policy import DIAGNOSTICS_ENV
+from untaped.output.sink import count_row_failures, current_sink
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
@@ -215,8 +217,7 @@ def _drain(stream: IO[str] | None, into: list[str], relay: bool) -> None:
     for line in stream or ():
         into.append(line)
         if relay:
-            sys.stderr.write(line)
-            sys.stderr.flush()
+            current_sink().passthrough(line)
 
 
 def _parse_rows(text: str) -> list[Row]:
@@ -251,17 +252,17 @@ def _outcome(
 ) -> Row:
     row: Row = {"fix": list(fix.argv), "checks": list(fix.checks)}
     if refusal is not None:
-        info = note_failure(refusal)
+        info = Failure.from_exception(refusal)
         return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}
     if not fix.automatic:
         return row | {"action": "skipped", "detail": f"{_needs(fix)}; run it yourself"}
     if dry_run:
         return row | {"action": "planned", "detail": f"would fix {', '.join(fix.checks)}"}
     if not isinstance(run, ChildRun):
-        info = note_failure(run or UntapedError("did not run"))
+        info = Failure.from_exception(run or UntapedError("did not run"))
         return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}
     if run.code != 0:
-        info = note_failure(_child_error(run))
+        info = _child_error(run)
         return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}
     detail = _done_detail(run)
     remaining = [r for r in after if _key(r) in fix.keys and r["status"] != "pass"]
@@ -294,18 +295,18 @@ def _done_detail(run: ChildRun) -> str:
     return messages[-1] if messages else "done"
 
 
-def _child_error(run: ChildRun) -> ErrorInfo:
-    """The child's last JSON error line as an :class:`ErrorInfo`, else a generic failure."""
+def _child_error(run: ChildRun) -> Failure:
+    """The child's last JSON error line as a :class:`Failure`, else a generic failure."""
     for record in reversed(run.diagnostics):
         if record.get("level") != "error":
             continue
         try:
-            return ErrorInfo.model_validate(
-                {name: record[name] for name in ErrorInfo.model_fields if name in record}
+            return Failure.model_validate(
+                {name: record[name] for name in Failure.model_fields if name in record}
             )
         except ValidationError:
             break
-    return ErrorInfo(
+    return Failure(
         category=ErrorCategory.FAILED,
         system="untaped",
         retryable=False,
@@ -313,15 +314,16 @@ def _child_error(run: ChildRun) -> ErrorInfo:
     )
 
 
-def _error_detail(info: ErrorInfo) -> str:
+def _error_detail(info: Failure) -> str:
     return f"{info.message}; {info.hint}" if info.hint else info.message
 
 
-def _dump(info: ErrorInfo) -> dict[str, Any]:
+def _dump(info: Failure) -> dict[str, Any]:
     return info.model_dump(mode="json")
 
 
 def _emit(rows: list[Row], *, fmt: OutputFormat, columns: list[str] | None, profile: str) -> None:
+    count_row_failures(rows)  # a failed fix's ``error`` sets the exit code
     if fmt == "table" and columns is None:
         if rows:
             emit_fix_list(rows, run_line=lambda argv: run_line(argv, profile))

@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorInfo, UntapedError, note_failure, q
+from untaped.sdk import Failure, UntapedError, q
 from untaped_dotfiles.domain.models import AppliedRecord, RepoRecord
 from untaped_dotfiles.domain.records import PlaceAction, PlaceOutcome, RepoOutcome
 from untaped_dotfiles.domain.status import Action, sync_action, target_modified
@@ -73,7 +73,7 @@ class Applier:
                         name=repo.name,
                         action="failed",
                         detail=f"fetch failed: {exc}",
-                        error=note_failure(exc, message=str(exc)),
+                        error=Failure.from_exception(exc, message=str(exc)),
                     )
                 )
         return rows
@@ -118,7 +118,7 @@ class Applier:
                 name=repo.name,
                 action="failed",
                 detail=str(exc),
-                error=note_failure(exc, message=str(exc)),
+                error=Failure.from_exception(exc, message=str(exc)),
             )
         self._evaluator.reset()
         if moved:
@@ -229,11 +229,14 @@ class Applier:
         except (UntapedError, OSError) as exc:
             failure = exc if isinstance(exc, UntapedError) else DotfilesError(str(exc))
             return self._row(
-                step, "failed", str(failure), error=note_failure(failure, message=str(failure))
+                step,
+                "failed",
+                str(failure),
+                error=Failure.from_exception(failure, message=str(failure)),
             )
 
     def _row(
-        self, step: Step, action: PlaceAction, detail: str, *, error: ErrorInfo | None = None
+        self, step: Step, action: PlaceAction, detail: str, *, error: Failure | None = None
     ) -> PlaceOutcome:
         p = step.placement
         return PlaceOutcome(
@@ -336,7 +339,7 @@ class Applier:
                         step,
                         "failed",
                         str(failure),
-                        error=note_failure(failure, message=str(failure)),
+                        error=Failure.from_exception(failure, message=str(failure)),
                     )
                 )
                 continue

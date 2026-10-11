@@ -145,6 +145,21 @@ def size_text(size: int) -> str:
     raise AssertionError("unreachable")
 
 
+def duration_text(seconds: float) -> str:
+    """A length of time in its largest whole unit: ``45 s``, ``2 min``, ``26 h``, ``3 d``.
+
+    Days start at two, so a day and a bit still reads in hours (``26 h``).
+    """
+    whole = max(int(seconds), 0)
+    if whole >= 2 * 86400:
+        return f"{whole // 86400} d"
+    if whole >= 3600:
+        return f"{whole // 3600} h"
+    if whole >= 60:
+        return f"{whole // 60} min"
+    return f"{whole} s"
+
+
 def summary(operation: str, counts: Mapping[str, int]) -> str:
     """A batch summary line: ``<operation>: 2 cloned, 1 failed``.
 
@@ -161,6 +176,7 @@ __all__ = [
     "command_line",
     "deprecated_line",
     "deprecated_message",
+    "duration_text",
     "hint",
     "not_found",
     "plural",

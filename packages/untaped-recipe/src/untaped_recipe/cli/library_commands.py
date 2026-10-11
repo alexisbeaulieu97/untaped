@@ -13,7 +13,7 @@ from cyclopts import Parameter
 from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
-    ErrorInfo,
+    Failure,
     FormatOption,
     OutcomeRecord,
     OutputFormat,
@@ -403,7 +403,7 @@ def _pack_outcome(
 
     A failed row's ``error`` was already reported (and counted) on stderr.
     """
-    info = None if error is None else ErrorInfo.from_exception(error)
+    info = None if error is None else Failure.from_exception(error)
     return PackOutcomeRecord(
         name=name,
         action=action,
