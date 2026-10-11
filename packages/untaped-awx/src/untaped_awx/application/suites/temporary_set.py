@@ -42,7 +42,7 @@ from typing import Any
 from untaped.sdk import (
     ConfigError,
     ErrorCategory,
-    ErrorInfo,
+    Failure,
     UntapedError,
     q,
 )
@@ -291,7 +291,7 @@ class TemporarySets:
                 ]
                 break
             except Exception as exc:
-                info = ErrorInfo.from_exception(exc)
+                info = Failure.from_exception(exc)
                 rows.append(copy.outcome("failed", detail=info.message, error=info))
             else:
                 rows.append(copy.outcome("deleted"))
@@ -493,13 +493,13 @@ def preflight_copy(
         )
 
 
-def _error(info: ErrorInfo) -> UntapedError:
+def _error(info: Failure) -> UntapedError:
     """A failed row's error as one to raise, keeping its attribution."""
     return UntapedError(info.message, category=info.category, system=info.system, hint=info.hint)
 
 
-def _interrupted() -> ErrorInfo:
-    return ErrorInfo(
+def _interrupted() -> Failure:
+    return Failure(
         category=ErrorCategory.INTERRUPTED,
         system="untaped",
         retryable=False,
@@ -509,7 +509,7 @@ def _interrupted() -> ErrorInfo:
 
 def _unlisted(run: Marker, exc: BaseException) -> TemporaryCopyOutcome:
     """The row of a teardown that could not even list the run's copies."""
-    info = _interrupted() if isinstance(exc, KeyboardInterrupt) else ErrorInfo.from_exception(exc)
+    info = _interrupted() if isinstance(exc, KeyboardInterrupt) else Failure.from_exception(exc)
     return TemporaryCopyOutcome(
         name=f"[{TAG} {run.sha} {run.run_id}]",
         kind="unknown",

@@ -20,13 +20,21 @@ from untaped.cli import (
     apply_default_format,
     echo,
     emit,
+    report_declined,
     report_errors,
     report_row_errors,
     resolve_each,
 )
-from untaped.errors import ConfigError, HttpStatusError, HttpTransportError, UntapedError
+from untaped.errors import (
+    ConfigError,
+    HttpStatusError,
+    HttpTransportError,
+    OperationCancelledError,
+    UntapedError,
+)
 from untaped.messages import hint
-from untaped.records import ErrorInfo, OutcomeRecord
+from untaped.output.sink import Diagnostics
+from untaped.records import Failure, OutcomeRecord
 from untaped.testing import invoke_cli
 from untaped.ui import UiContext
 
@@ -66,6 +74,7 @@ def test_structured_formats_write_json_error_lines(fmt: str) -> None:
     assert _lines(result.stderr) == [
         {
             "level": "error",
+            "kind": "untaped.failure",
             "message": "AWX rejected the token (HTTP 401)",
             "category": "auth",
             "system": "awx",
@@ -132,10 +141,10 @@ def test_warnings_hints_and_notes_are_json_lines_and_stdout_is_unchanged() -> No
     assert result.exit_code == 0
     assert result.stdout == plain.stdout == '[{"id": 1}]\n'
     assert _lines(result.stderr) == [
-        {"level": "warning", "message": "--parallel 64 clamped to 16"},
-        {"level": "warning", "message": "stale skill"},
-        {"level": "hint", "message": "run `untaped skills install`"},
-        {"level": "info", "message": "sync: 2 cloned"},
+        {"level": "warning", "kind": "untaped.message", "message": "--parallel 64 clamped to 16"},
+        {"level": "warning", "kind": "untaped.message", "message": "stale skill"},
+        {"level": "hint", "kind": "untaped.message", "message": "run `untaped skills install`"},
+        {"level": "info", "kind": "untaped.message", "message": "sync: 2 cloned"},
     ]
 
 
@@ -159,7 +168,7 @@ class _Row(OutcomeRecord):
 
 
 def test_report_row_errors_reports_only_failed_rows_under_their_item_with_the_hint() -> None:
-    error = ErrorInfo(
+    error = Failure(
         category="not_found", system="git", retryable=False, message="gone", hint="re-clone it"
     )
     rows = [
@@ -238,5 +247,86 @@ def test_url_passwords_never_leave_the_process() -> None:
     assert (
         _lines(structured.stderr)[0]["details"]["url"] == "https://bot:***@aap.example/api/v2/me/"
     )
-    info = ErrorInfo.from_exception(HttpTransportError("down", url="http://u:pw@h/x"))
+    info = Failure.from_exception(HttpTransportError("down", url="http://u:pw@h/x"))
     assert "pw" not in info.message
+
+
+# ---- the derived exit code ---------------------------------------------------
+
+
+def test_an_emitted_failure_alone_sets_the_exit_code_of_a_failed_run() -> None:
+    def body() -> None:
+        Diagnostics().failure(ConfigError("token rejected", category="auth"))
+        finish(True)
+
+    assert invoke_cli(_app(body), []).exit_code == 4
+
+
+def test_a_command_that_emits_a_failure_and_returns_still_fails() -> None:
+    def body() -> None:
+        Diagnostics().failure(HttpTransportError("down", system="awx"))
+
+    result = invoke_cli(_app(body), [])
+
+    assert result.exit_code == 5
+    assert result.stdout  # the rows still print
+
+
+def test_a_warning_alone_keeps_exit_0() -> None:
+    assert invoke_cli(_app(lambda: Diagnostics().warning("careful")), []).exit_code == 0
+
+
+class _Outcome(OutcomeRecord, kind="acme-tools.thing_outcome"):
+    name: str
+
+
+@pytest.mark.parametrize("as_dict", [False, True])
+def test_an_emitted_failed_row_sets_exit_1(as_dict: bool) -> None:
+    error = Failure.from_exception(UntapedError("broke"))
+    row = _Outcome(name="a", action="failed", error=error)
+    rows: list[Any] = [row.model_dump(mode="json") if as_dict else row]
+
+    app = App(name="demo")
+
+    @app.default
+    def run() -> None:
+        emit(rows, fmt="json")
+
+    assert invoke_cli(app, []).exit_code == 1
+
+
+def test_a_predicate_hit_keeps_exit_3() -> None:
+    def body() -> None:
+        raise SystemExit(3)
+
+    assert invoke_cli(_app(body), []).exit_code == 3
+
+
+def test_a_declined_run_exits_1_with_its_bare_line() -> None:
+    def body() -> None:
+        report_declined(OperationCancelledError("cancelled; no changes made"))
+        raise SystemExit(1)
+
+    result = invoke_cli(_app(body), [])
+
+    assert (result.exit_code, result.stderr) == (1, "cancelled; no changes made\n")
+
+
+@pytest.mark.parametrize("structured", [False, True])
+def test_a_plain_error_message_is_a_counted_failure(structured: bool) -> None:
+    result = invoke_cli(
+        _app(lambda: UiContext().message("error", "it broke")),
+        ["--format", "json"] if structured else [],
+    )
+
+    assert result.exit_code == 1
+    if structured:
+        [line] = _lines(result.stderr)
+        assert (line["kind"], line["category"], line["message"]) == (
+            "untaped.failure",
+            "failed",
+            "it broke",
+        )
+    else:
+        assert result.stderr == "error: it broke\n"
+    assert [type(each).__name__ for each in result.diagnostics] == ["Failure"]

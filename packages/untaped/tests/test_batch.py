@@ -5,13 +5,14 @@ from __future__ import annotations
 import io
 import json
 from collections.abc import Callable
+from contextlib import redirect_stderr
 from typing import Any
 
 import pytest
 
 from untaped.batch import BatchOutcome, batch_apply, finish
-from untaped.diagnostics import diagnostics_scope
 from untaped.errors import HttpError, UntapedError, UsageError
+from untaped.output.sink import diagnostics_scope
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.testing import ScriptedPromptBackend, TtyStringIO
 from untaped.ui import UiContext
@@ -260,7 +261,7 @@ def test_partial_failure_counts_and_continues(
         ui=ui,
     )
 
-    assert "error: id=a: boom" in ui.stderr.getvalue()  # type: ignore[attr-defined]
+    assert "error: id=a: boom" in capsys.readouterr().err
     assert outcome.failed == 1
     assert [(item, str(error)) for item, error in outcome.failures] == [("a", "boom")]
     assert outcome.results == [("b", "done-b")]
@@ -268,7 +269,7 @@ def test_partial_failure_counts_and_continues(
 
 
 def test_per_item_errors_are_json_lines_under_json_diagnostics(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
 
@@ -282,10 +283,11 @@ def test_per_item_errors_are_json_lines_under_json_diagnostics(
             finish(outcome)
 
     assert excinfo.value.code == 5
-    lines = ui.stderr.getvalue().splitlines()  # type: ignore[attr-defined]
-    assert [json.loads(line) for line in lines] == [
+    lines = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert [line for line in lines if line["level"] == "error"] == [
         {
             "level": "error",
+            "kind": "untaped.failure",
             "item": "a",
             "message": "HTTP 503 for https://h/x",
             "category": "unavailable",
@@ -360,7 +362,9 @@ def test_custom_preview_replaces_generic_rows(capsys: pytest.CaptureFixture[str]
     assert "About to delete" not in capsys.readouterr().err
 
 
-def test_failure_lines_use_the_shared_error_formatter() -> None:
+def test_failure_lines_use_the_shared_error_formatter(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """API messages from an HttpError body are kept (same as ``report_errors``)."""
 
     def action(item: str) -> str:
@@ -369,7 +373,7 @@ def test_failure_lines_use_the_shared_error_formatter() -> None:
     ui = _ui(interactive=False)
     _run(interactive=False, items=["a"], action=action, assume_yes=True, ui=ui)
 
-    assert "error: a: HTTP 400 — name taken" in ui.stderr.getvalue()  # type: ignore[attr-defined]
+    assert "error: a: HTTP 400 — name taken" in capsys.readouterr().err
 
 
 def test_failure_lines_do_not_interleave_with_the_spinner() -> None:
@@ -377,8 +381,9 @@ def test_failure_lines_do_not_interleave_with_the_spinner() -> None:
         raise HttpError("boom")
 
     stderr = TtyStringIO()
-    ui = UiContext(stdin=io.StringIO(), stdout=io.StringIO(), stderr=stderr)
-    _run(interactive=False, items=["a"], action=action, assume_yes=True, ui=ui)
+    ui = UiContext(stdin=io.StringIO(), stdout=io.StringIO())
+    with redirect_stderr(stderr):
+        _run(interactive=False, items=["a"], action=action, assume_yes=True, ui=ui)
 
     lines = stderr.getvalue().split("\n")
     error_line = next(line for line in lines if "error: a: boom" in line)

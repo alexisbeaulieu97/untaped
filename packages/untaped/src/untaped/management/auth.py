@@ -31,9 +31,9 @@ from untaped.cli import (
 )
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
-from untaped.diagnostics import note_failure
 from untaped.errors import ConfigError, most_severe
 from untaped.messages import hint, plural
+from untaped.output.diagnostic import Failure
 from untaped.plugins.registry import CompositionResult, settings_model
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
@@ -471,7 +471,7 @@ def _move_all(
             where = save_token(repo, section, profile, token, store)
         except ConfigError as exc:
             failures.append(exc)
-            error = note_failure(exc).model_dump(mode="json")
+            error = Failure.from_exception(exc).model_dump(mode="json")
             rows.append(
                 {**row, "store": None, "action": "failed", "detail": str(exc), "error": error}
             )

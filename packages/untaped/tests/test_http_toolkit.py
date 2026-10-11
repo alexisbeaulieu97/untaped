@@ -11,7 +11,6 @@ import respx
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from untaped.auth import TokenCommand, TokenSources
-from untaped.diagnostics import format_error
 from untaped.errors import ConfigError, HttpError, UntapedError
 from untaped.http import (
     connected_client,
@@ -22,6 +21,7 @@ from untaped.http import (
     rejected_token_error,
     same_origin,
 )
+from untaped.output.diagnostic import format_error
 from untaped.settings import (
     HttpSettings,
     register_profile_settings,

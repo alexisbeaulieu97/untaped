@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, UsageError, bounded_map, note_failure, q
+from untaped.sdk import Failure, UntapedError, UsageError, bounded_map, q
 from untaped_workspace.application.locate import active_workspace, workspace_root
 from untaped_workspace.domain.models import (
     Checkout,
@@ -219,7 +219,7 @@ class ProvisionRepos:
             action="failed",
             base=job.arg.base or job.resolved.default_branch or "",
             detail=str(result),
-            error=note_failure(result, message=str(result)),
+            error=Failure.from_exception(result, message=str(result)),
         )
 
 

@@ -1,6 +1,7 @@
 [
   {
     "level": "error",
+    "kind": "untaped.failure",
     "category": "config",
     "system": "local",
     "retryable": false,

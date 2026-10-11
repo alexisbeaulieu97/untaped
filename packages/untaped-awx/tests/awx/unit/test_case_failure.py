@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk import ConfigError, ErrorCategory, ErrorInfo, HttpTransportError
+from untaped.sdk import ConfigError, ErrorCategory, Failure, HttpTransportError
 from untaped_awx.domain import Job
 from untaped_awx.domain.case_failure import (
     CaseFailure,
@@ -76,13 +76,15 @@ def _finished(
 
 def test_a_case_failure_is_an_error_info_with_evidence() -> None:
     failure = _finished(_job("successful"), reasons=["expected status failed, got successful"])
-    assert isinstance(failure, ErrorInfo)
+    assert isinstance(failure, Failure)
     assert failure.model_dump(mode="json") == {
         "category": "failed",
         "system": "awx.expectation",
         "retryable": False,
         "message": "expected status failed, got successful",
         "hint": "compare expectations with what the job did; fix the change or the case",
+        "exit_code": 1,
+        "details": {},
         "evidence": {
             "job_explanation": None,
             "result_traceback": None,
@@ -422,7 +424,7 @@ def test_a_request_failure_keeps_its_category_and_names_the_system(
     error: Exception, launching: bool, expected: str
 ) -> None:
     failure = request_failure(error, launching=launching)
-    info = ErrorInfo.from_exception(error)
+    info = Failure.from_exception(error)
     assert (failure.system, failure.category, failure.message) == (
         expected,
         info.category,

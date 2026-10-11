@@ -7,7 +7,6 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, TextIO
 
-from untaped.diagnostics import json_diagnostics, write_record
 from untaped.errors import (
     ConfigError,
     OperationCancelledError,
@@ -15,7 +14,10 @@ from untaped.errors import (
     UsageError,
 )
 from untaped.messages import plural
-from untaped.progress import ProgressHandle, progress_reporter
+from untaped.output.diagnostic import Failure, Message
+from untaped.output.policy import is_quiet, is_verbose
+from untaped.output.sink import count_row_failures, current_sink
+from untaped.progress import ProgressHandle
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -24,7 +26,6 @@ from untaped.prompts import (
     open_controlling_terminal,
     prompt_backend_override,
 )
-from untaped.quiet import is_quiet
 from untaped.render import (
     MessageKind,
     Renderer,
@@ -41,7 +42,6 @@ from untaped.theme import (
     ThemeSpec,
     resolve_theme_or_default,
 )
-from untaped.verbose import is_verbose
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -127,6 +127,7 @@ class UiContext:
         empty: str | bool | None = None,
         kind: str | None = None,
     ) -> str:
+        count_row_failures(rows)
         rendered = self.renderer.render_collection(
             rows,
             fmt=fmt,
@@ -147,6 +148,7 @@ class UiContext:
         columns: list[str] | None = None,
         kind: str | None = None,
     ) -> str:
+        count_row_failures([record])
         return self.renderer.render_detail(
             record,
             fmt=fmt,
@@ -159,21 +161,19 @@ class UiContext:
     def message(self, kind: MessageKind, text: str) -> None:
         """Print a ``success``/``info``/``warning``/``error`` line to stderr.
 
-        ``--quiet`` mutes ``success`` and ``info``. Under JSON diagnostics
-        the line is ``{"level": kind, "message": text}``.
+        ``--quiet`` (or a context built with ``quiet=True``) mutes ``success``
+        and ``info``. An ``error`` line is a counted failure (category
+        ``failed``). Under JSON diagnostics the line is
+        ``{"level": kind, "kind": …, "message": text}``.
         """
         if self.quiet and kind in ("success", "info"):
             return
-        if json_diagnostics():
-            write_record({"level": kind, "message": text}, self.stderr)
-            return
-        rendered = self.renderer.render_message(
-            kind,
-            text,
-            theme=self.theme,
-            colorize=should_colorize(self.stderr),
-        )
-        print(rendered, file=self.stderr)
+        diagnostic = Failure.plain(text) if kind == "error" else Message(level=kind, message=text)
+
+        def rendered(color: bool) -> str:
+            return self.renderer.render_message(kind, text, theme=self.theme, colorize=color)
+
+        current_sink().emit(diagnostic, rendered=rendered)
 
     def success(self, text: str) -> None:
         """Print a success line to stderr (muted by ``--quiet``)."""
@@ -194,37 +194,32 @@ class UiContext:
         such as trees). Under JSON diagnostics a stderr line is an ``info``
         JSON line.
         """
-        stream = self.stderr if err else self.stdout
         plain = text if isinstance(text, str) else text.plain
-        if err and json_diagnostics():
-            write_record({"level": "info", "message": plain + tail}, stream)
-            return
         # Rendering may drop trailing spaces: render without them, then restore.
         trailing = plain[len(plain.rstrip()) :] if tail else ""
         if trailing:
             text = text[: len(plain) - len(trailing)]
-        styled = (
-            render_styled(text, colorize=should_colorize(stream), truncate=truncate)
-            if plain.strip()
-            else ""
-        )
-        print(styled + trailing + tail, file=stream, flush=True)
+
+        def rendered(color: bool) -> str:
+            styled = render_styled(text, colorize=color, truncate=truncate) if plain.strip() else ""
+            return styled + trailing + tail
+
+        if err:
+            message = Message(level="info", message=plain + tail)
+            current_sink().emit(message, rendered=rendered, unmuted=True)
+            return
+        print(rendered(should_colorize(self.stdout)), file=self.stdout, flush=True)
 
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
         """Report progress for a blocking operation on stderr.
 
         TTY renders an animated spinner; non-TTY emits throttled lines; under
         ``verbose`` the wrapped tool's own output streams through. stdout stays
-        untouched so piped data is never polluted. Under JSON diagnostics it
-        is silent, like ``--quiet``, so stderr stays JSON Lines.
+        untouched so piped data is never polluted. Under JSON diagnostics or
+        ``--quiet`` (or a context built with ``quiet=True``) it is silent, so
+        stderr stays JSON Lines.
         """
-        return progress_reporter(
-            label,
-            stream=self.stderr,
-            verbose=self.verbose,
-            quiet=self.quiet or json_diagnostics(),
-            isatty=stream_is_tty(self.stderr),
-        )
+        return current_sink().progress(label, verbose=self.verbose, quiet=self.quiet)
 
     def confirm(self, message: str, *, default: bool = False) -> bool:
         """Prompt for a yes/no response."""
@@ -390,7 +385,8 @@ class UiContext:
         (the scripted backend of :mod:`untaped.testing`, which never touches a
         terminal) gets the screen without one. A user who quits without a
         result raises :class:`OperationCancelledError`; an interrupt raises
-        :class:`PromptInterruptedError` (exit 130), like every prompt.
+        :class:`PromptInterruptedError` (exit 130), like every prompt. stderr
+        lines emitted while the screen runs print after it exits.
         """
         from untaped.screen.core import (  # noqa: PLC0415 - keeps screens off the startup path
             Cancel,
@@ -411,7 +407,8 @@ class UiContext:
                     system="untaped",
                 )
             try:
-                outcome = run_screen(screen, theme=self.theme)
+                with current_sink().hold():  # a line from a refresh never paints over it
+                    outcome = run_screen(screen, theme=self.theme)
             except (ConfigError, EOFError, KeyboardInterrupt) as exc:
                 raise handle_prompt_exception(exc) from exc
         if isinstance(outcome, Quit):
@@ -506,7 +503,8 @@ class UiContext:
             )
         with self._screen_terminal(command=request.command, alternative=request.alternative):
             try:
-                picked = self.prompt_backend.pick_many(request)
+                with current_sink().hold():
+                    picked = self.prompt_backend.pick_many(request)
             except (ConfigError, EOFError, KeyboardInterrupt) as exc:
                 raise handle_prompt_exception(exc) from exc
         if picked is None:

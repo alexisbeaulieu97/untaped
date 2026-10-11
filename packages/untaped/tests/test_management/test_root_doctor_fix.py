@@ -190,7 +190,9 @@ def test_a_fix_that_heals_its_rows_is_fixed_with_the_childs_counts(
             "detail": "2 moved",
         }
     ]
-    assert result.stderr.splitlines()[-1] == '{"level": "info", "message": "doctor fix: 1 fixed"}'
+    assert result.stderr.splitlines()[-1] == (
+        '{"level": "info", "kind": "untaped.message", "message": "doctor fix: 1 fixed"}'
+    )
 
 
 def test_a_row_still_warning_makes_the_fix_partial(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -223,13 +225,7 @@ def test_a_failed_fix_carries_the_childs_error_and_the_next_one_runs(
     rows = _rows(result)
     assert [row["action"] for row in rows] == ["failed", "fixed"]
     assert rows[0]["detail"] == "token rejected; run `untaped auth set awx`"
-    assert rows[0]["error"] == {
-        "category": "auth",
-        "system": "awx",
-        "retryable": False,
-        "message": "token rejected",
-        "hint": "run `untaped auth set awx`",
-    }
+    assert rows[0]["error"] == {key: value for key, value in error.items() if key != "level"}
     assert "error" not in rows[1]
     assert "error: untaped auth migrate" not in result.stderr
 
@@ -410,7 +406,9 @@ def test_a_check_still_failing_after_the_run_exits_1(monkeypatch: pytest.MonkeyP
     result = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
     assert result.exit_code == 1
     assert [row["action"] for row in _rows(result)] == ["fixed", "skipped"]
-    assert result.stderr.splitlines()[-1] == '{"level": "hint", "message": "run `untaped doctor`"}'
+    assert result.stderr.splitlines()[-1] == (
+        '{"level": "hint", "kind": "untaped.message", "message": "run `untaped doctor`"}'
+    )
 
 
 def test_nothing_to_fix_and_healthy_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:

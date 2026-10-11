@@ -17,20 +17,17 @@ from cyclopts.validators import Number
 from pydantic import BaseModel
 from rich.console import Console
 
-from untaped.diagnostics import (
-    ErrorInfo,
-    diagnostics_scope,
-    error_record,
-    failure_exit_code,
-    format_error,
-    json_diagnostics,
-    line_record,
-    note_failure,
-    note_output_format,
-    render_record,
-    write_record,
-)
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
+from untaped.output.diagnostic import Failure
+from untaped.output.policy import note_format
+from untaped.output.sink import (
+    Diagnostics,
+    count_row_failures,
+    current_sink,
+    diagnostics_scope,
+    exit_on_counted_failure,
+    failure_exit_code,
+)
 from untaped.records import TableGlyph, check_data_kind, kind_of, table_columns_of
 from untaped.render import column_value
 from untaped.stability import Stability, check_stability, mark_app
@@ -71,13 +68,16 @@ def apply_default_format(
     a usage error, except under ``doctor`` and ``setup``, which ignore it.
     A ``--format`` the user chose (the flag, ``UNTAPED_FORMAT`` or
     ``ui.format``; not a command's own default) is recorded for the stderr
-    diagnostics (:func:`untaped.diagnostics.note_output_format`).
+    diagnostics (:func:`untaped.output.policy.note_format`, phase 2).
     """
     del app
     _default_format(commands, arguments)
-    for argument in arguments:
-        if "--format" in argument.names and argument.tokens:
-            note_output_format(str(argument.tokens[-1].value))
+    chosen = [
+        str(argument.tokens[-1].value)
+        for argument in arguments
+        if "--format" in argument.names and argument.tokens
+    ]
+    note_format(chosen[-1] if chosen else None)
 
 
 def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) -> None:
@@ -224,21 +224,20 @@ def create_app(*, name: str, help: str = "", stability: Stability | None = None)
 def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
     """Print a CLI message to stdout or stderr.
 
-    Under JSON diagnostics a stderr message becomes one JSON line, its level
-    taken from an ``error:``, ``warning:`` or ``hint:`` prefix (else
+    A stderr message prints verbatim (``--quiet`` never mutes it). Under JSON
+    diagnostics it becomes one JSON line, its level taken from an ``error:``
+    (counted, like any failure), ``warning:`` or ``hint:`` prefix (else
     ``info``); a blank one is dropped.
     """
-    if err and json_diagnostics():
-        record = line_record(str(message))
-        if record is not None:
-            write_record(record)
-        return
     end = "\n" if nl else ""
-    print(message, file=sys.stderr if err else sys.stdout, end=end)
+    if err:
+        current_sink().echo(str(message), end=end)
+        return
+    print(message, end=end)
 
 
 def report_error(
-    exc: UntapedError | ErrorInfo,
+    exc: UntapedError | Failure,
     *,
     item: str | None = None,
     write: Callable[[str], None] | None = None,
@@ -246,34 +245,21 @@ def report_error(
     """Print one failure on stderr and count it toward the run's exit code.
 
     Text is ``error: <msg>`` (``error: <item>: <msg>`` for a per-item
-    failure, as :func:`format_error` renders it); under JSON diagnostics it
-    is one JSON line with the error's category, system and hint. A failed
-    row's :class:`~untaped.diagnostics.ErrorInfo` reports the same way.
-    ``write`` replaces the stderr print (e.g. a progress handle's ``log``).
+    failure, as :func:`~untaped.output.diagnostic.format_error` renders it);
+    under JSON diagnostics it is one JSON line with the error's category,
+    system and hint. A failed row's :class:`~untaped.output.diagnostic.Failure`
+    reports the same way. ``write`` is accepted and ignored: every stderr line
+    clears and redraws a progress spinner already.
     """
-    note_failure(exc)
-    if json_diagnostics():
-        line = render_record(error_record(exc, item=item))
-    else:
-        prefix = "" if item is None else f"{item}: "
-        line = f"error: {prefix}{_error_text(exc)}"
-    if write is not None:
-        write(line)
-    else:
-        print(line, file=sys.stderr)
-
-
-def _error_text(failure: UntapedError | ErrorInfo) -> str:
-    if isinstance(failure, UntapedError):
-        return format_error(failure)
-    return failure.message if failure.hint is None else f"{failure.message}\nhint: {failure.hint}"
+    del write
+    Diagnostics().failure(exc, item=item)
 
 
 class _FailableRow(Protocol):
-    """A row that may carry the :class:`ErrorInfo` of its failure."""
+    """A row that may carry the :class:`~untaped.output.diagnostic.Failure` of its failure."""
 
     @property
-    def error(self) -> ErrorInfo | None: ...
+    def error(self) -> Failure | None: ...
 
 
 def report_row_errors[RowT: _FailableRow](
@@ -301,17 +287,16 @@ def note_requested_format(tokens: Sequence[str]) -> None:
                 value = inline
             elif index + 1 < len(tokens):
                 value = tokens[index + 1]
-    note_output_format(value)
+    note_format(value)
 
 
 def report_declined(exc: OperationCancelledError) -> None:
-    """Print a declined confirmation: its bare message (a JSON error line under JSON)."""
-    if json_diagnostics():
-        report_error(exc)
-        return
+    """Print a declined confirmation: its bare message (a JSON error line under JSON).
+
+    It counts toward the exit code like any failure.
+    """
     # A declined confirmation is the user's choice, not an error: no prefix.
-    note_failure(exc)
-    echo(str(exc), err=True)
+    current_sink().emit(Failure.from_exception(exc), rendered=str(exc))
 
 
 def raise_usage(message: str) -> NoReturn:
@@ -532,7 +517,7 @@ def _row_keys(rows: Iterable[Mapping[str, object]]) -> list[str]:
 
 
 def _is_error_column(rows: Sequence[Mapping[str, object]], key: str) -> bool:
-    """Whether ``key`` is the ``error`` of failed rows (an ``ErrorInfo`` mapping)."""
+    """Whether ``key`` is the ``error`` of failed rows (a ``Failure`` mapping)."""
     return key == "error" and all(
         row.get(key) is None or isinstance(row.get(key), Mapping) for row in rows
     )
@@ -611,6 +596,7 @@ def emit_with(
     items: Sequence[BaseModel | Mapping[str, object]] = (
         [records] if isinstance(records, BaseModel | Mapping) else records
     )
+    count_row_failures(items)
     kind = _rows_kind(items, kind)
     if table_columns is None and not single:
         table_columns = _record_table_columns(items)
@@ -727,8 +713,10 @@ def run_cyclopts_app(
     the consumer chose to stop reading, which is not a failure). Without this the producer's
     buffered stdout flush fails at interpreter shutdown and Python prints a
     noisy ``Exception ignored while flushing sys.stdout: BrokenPipeError``.
-    The invocation runs in its own :func:`~untaped.diagnostics.diagnostics_scope`;
-    a parse error follows the ``--format`` its tokens ask for.
+    The invocation runs in its own :func:`~untaped.output.sink.diagnostics_scope`;
+    a parse error follows the ``--format`` its tokens ask for. A command that
+    emitted a failure and returned normally exits with the worst code it
+    counted.
     """
     argv = list(tokens) if tokens is not None else sys.argv[1:]
     try:
@@ -745,6 +733,11 @@ def run_cyclopts_app(
             except CycloptsError as exc:
                 note_requested_format(argv)
                 raise_usage(str(exc))
+            except SystemExit as exc:
+                if exc.code in (0, None):
+                    exit_on_counted_failure()
+                raise
+            exit_on_counted_failure()
     except KeyboardInterrupt:
         _flush_stdout()
         raise SystemExit(ExitCode.INTERRUPTED) from None
@@ -892,7 +885,7 @@ def report_errors() -> Iterator[None]:
     instead of a Python traceback. The exit code follows the error's
     ``category`` (``2`` usage, ``4`` environment, ``5`` unavailable, ``130``
     interrupted, ``1`` otherwise), raised to the most severe failure already
-    reported in the run (:func:`~untaped.diagnostics.failure_exit_code`). A
+    reported in the run (:func:`~untaped.output.sink.failure_exit_code`). A
     declined confirmation (:class:`~untaped.errors.OperationCancelledError`)
     prints its message without the ``error:`` prefix. Under JSON diagnostics
     the error is one JSON line (:func:`report_error`). Non-:class:`UntapedError`

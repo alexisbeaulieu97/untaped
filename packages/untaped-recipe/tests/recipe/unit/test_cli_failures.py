@@ -85,6 +85,8 @@ def test_a_failed_apply_row_carries_a_structured_error(tmp_path: Path) -> None:
         "retryable": False,
         "message": "template not found: template.txt",
         "hint": None,
+        "exit_code": 1,
+        "details": {},
     }
 
 

@@ -819,10 +819,18 @@ class SuiteRunOutcome(BaseModel):
         The rows that fail the run, the ``carried`` ones, and a run where no
         case ran.
         """
-        counted = [row.failure for row in self.results if row.fails_run and row.failure]
+        return [failure for _, failure in self.deciding()]
+
+    def deciding(self) -> list[tuple[str | None, CaseFailure]]:
+        """:meth:`counted`, each with its ``suite/case`` (``None``: not one case's)."""
+        deciding: list[tuple[str | None, CaseFailure]] = [
+            (f"{row.suite}/{row.case}", row.failure)
+            for row in self.results
+            if row.fails_run and row.failure
+        ]
         if all(row.result is None for row in self.results):
-            counted.append(_NOTHING_RAN)
-        return [*counted, *self.carried]
+            deciding.append((None, _NOTHING_RAN))
+        return [*deciding, *((None, failure) for failure in self.carried)]
 
     def compared(
         self,

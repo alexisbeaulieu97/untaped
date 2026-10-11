@@ -410,6 +410,16 @@ def test_plugin_list_contracts_names_an_owner_whose_contracts_break() -> None:
     assert "acme's contracts couldn't be read" in result.stderr
 
 
+def test_plugin_schema_prints_a_diagnostic_kinds_schema() -> None:
+    result = _run(["plugin", "schema", "untaped.failure"], *_all())
+    schema = json.loads(result.stdout)
+    assert schema["$id"] == "untaped.failure"
+    assert {"category", "system", "message", "exit_code", "details"} <= set(schema["properties"])
+    result = _run(["plugin", "schema", "untaped.nope"], *_all())
+    assert "untaped.failure" in result.stderr
+    assert "untaped.stale" in result.stderr
+
+
 def test_plugin_schema_of_an_unknown_kind_exits_2() -> None:
     result = _run(["plugin", "schema", "nope.thing"], *_all())
     assert result.exit_code == 2

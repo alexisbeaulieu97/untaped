@@ -39,7 +39,6 @@ from untaped.cli import (
     report_errors,
     run_cyclopts_app,
 )
-from untaped.diagnostics import diagnostics_scope
 from untaped.errors import ConfigError
 from untaped.git import forward_signals
 from untaped.management import (
@@ -54,6 +53,8 @@ from untaped.management import (
 )
 from untaped.management.plugins import INSTALL_HINT
 from untaped.management.skills import check_installed_skills, composed_skills
+from untaped.output.policy import reset_quiet as _reset_quiet
+from untaped.output.sink import diagnostics_scope, exit_on_counted_failure
 from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
@@ -68,7 +69,6 @@ from untaped.plugins.registry import (
     section_settings,
 )
 from untaped.profile_resolver import set_profile_override
-from untaped.quiet import reset as _reset_quiet
 from untaped.settings import (
     get_profile_settings_model,
     get_settings,
@@ -463,6 +463,8 @@ def _install_root_callback(
                 result = _dispatch_with_root_options(
                     app, command_tokens, root_options, applied_tokens
                 )
+                # A command that emitted a failure and returned still fails.
+                exit_on_counted_failure()
                 failed = False
                 return result
         except SystemExit as exc:
