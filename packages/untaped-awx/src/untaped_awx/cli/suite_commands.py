@@ -562,7 +562,7 @@ def _show_failure(result: CaseResult, failure: CaseFailure) -> None:
         detail = task.msg or task.stderr or ""
         echo(f"{task.status}: [{task.host or '?'}] {task.task or '?'}: {detail}", err=True)
     for line in tail or ():
-        echo(line, err=True)
+        Diagnostics().relay(line)  # the job's own log: an "error:" in it is not ours
 
 
 def _summary(outcome: SuiteRunOutcome) -> list[str]:

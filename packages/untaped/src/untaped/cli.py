@@ -24,6 +24,7 @@ from untaped.output.sink import (
     Diagnostics,
     count_row_failures,
     current_sink,
+    derived_exit_code,
     diagnostics_scope,
     exit_on_counted_failure,
     failure_exit_code,
@@ -734,8 +735,7 @@ def run_cyclopts_app(
                 note_requested_format(argv)
                 raise_usage(str(exc))
             except SystemExit as exc:
-                if exc.code in (0, None):
-                    exit_on_counted_failure()
+                exc.code = derived_exit_code(exc.code)
                 raise
             exit_on_counted_failure()
     except KeyboardInterrupt:

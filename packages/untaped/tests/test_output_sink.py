@@ -25,6 +25,7 @@ from untaped.output.sink import (
     diagnostics_scope,
     exit_on_counted_failure,
     failure_exit_code,
+    recording,
 )
 from untaped.screen.core import Cmd, Quit, Screen
 from untaped.testing import ScriptedPromptBackend, TtyStringIO
@@ -71,14 +72,19 @@ def test_json_lines_from_the_main_and_a_bare_thread_never_interleave(
         for n in range(1_000):
             current_sink().emit(Failure.from_exception(ConfigError(f"bad {n}", category="auth")))
 
-    with redirect_stderr(stream), diagnostics_scope():
-        other = _bare_thread(failures)
-        other.start()
-        for n in range(10_000):
-            Diagnostics().warning(f"warning {n}")
-        other.join(_DEADLINE)
-        code = failure_exit_code()
+    codes: list[int] = []
 
+    def run() -> None:
+        with redirect_stderr(stream), diagnostics_scope():
+            other = _bare_thread(failures)
+            other.start()
+            for n in range(10_000):
+                Diagnostics().warning(f"warning {n}")
+            other.join(_DEADLINE)
+            codes.append(failure_exit_code())
+
+    _finishes(run)
+    [code] = codes
     lines = [json.loads(line) for line in stream.getvalue().splitlines()]
     assert len(lines) == 11_000
     assert sum(line["kind"] == "untaped.failure" for line in lines) == 1_000
@@ -92,14 +98,20 @@ def test_text_lines_stay_whole_around_the_spinner() -> None:
         for n in range(500):
             Diagnostics().failure(ConfigError(f"bad {n}"))
 
-    with redirect_stderr(stream), diagnostics_scope():
-        with Diagnostics().progress("Working"):
-            other = _bare_thread(failures)
-            other.start()
-            for n in range(2_000):
-                Diagnostics().warning(f"careful {n}")
-            other.join(_DEADLINE)
-        code = failure_exit_code()
+    codes: list[int] = []
+
+    def run() -> None:
+        with redirect_stderr(stream), diagnostics_scope():
+            with Diagnostics().progress("Working"):
+                other = _bare_thread(failures)
+                other.start()
+                for n in range(2_000):
+                    Diagnostics().warning(f"careful {n}")
+                other.join(_DEADLINE)
+            codes.append(failure_exit_code())
+
+    _finishes(run)
+    [code] = codes
 
     *lines, _last = stream.getvalue().split("\n")
     shown = [line.rsplit("\r", 1)[-1] for line in lines]
@@ -421,3 +433,16 @@ def test_an_echoed_error_line_counts() -> None:
             exit_on_counted_failure()
 
     assert exited.value.code == 1
+
+
+def test_recorded_diagnostics_are_the_lines_shown() -> None:
+    token = enable_quiet()
+    try:
+        with recording() as emitted, redirect_stderr(io.StringIO()), diagnostics_scope():
+            Diagnostics().info("muted")
+            Diagnostics().warning("kept")
+            current_sink().emit(Debug(logger="untaped.x", message="hidden"))
+    finally:
+        reset_quiet(token)
+
+    assert [each.message for each in emitted] == ["kept"]

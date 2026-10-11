@@ -118,8 +118,8 @@ a `warn` callback), or build a `rich.console.Console` yourself. A
 
 **Typed diagnostics.** Each stderr line has a `kind`. To add one, subclass
 `Message` or `Failure` with `kind="<plugin>.<name>"` (add fields, never
-levels) and emit it with `app_context().diag.emit(...)`;
-`CliResult.diagnostics` lists what a command emitted.
+levels) and emit it with `app_context().diag.emit(...)`. Relay another tool's
+output (a hook's stderr, a job log) with `diag.relay(text)`: it never counts.
 
 ## Options
 

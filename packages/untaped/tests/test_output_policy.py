@@ -6,7 +6,13 @@ from collections.abc import Iterator
 
 import pytest
 
-from untaped.output.policy import current_policy, is_quiet, note_format, policy_from_request
+from untaped.output.policy import (
+    current_policy,
+    is_quiet,
+    note_format,
+    unscoped_policy,
+    with_format,
+)
 from untaped.output.policy import enable_quiet as enable
 from untaped.output.policy import reset_quiet as reset
 from untaped.output.sink import diagnostics_scope
@@ -47,12 +53,12 @@ def test_the_environment_forces_the_diagnostics_either_way(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "text")
-    assert policy_from_request("json").diagnostics == "text"
+    assert with_format(unscoped_policy(), "json").diagnostics == "text"
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    assert policy_from_request(None).diagnostics == "json"
+    assert with_format(unscoped_policy(), None).diagnostics == "json"
     monkeypatch.delenv("UNTAPED_DIAGNOSTICS")
-    assert policy_from_request("yaml").diagnostics == "json"
-    assert policy_from_request("table").diagnostics == "text"
+    assert with_format(unscoped_policy(), "yaml").diagnostics == "json"
+    assert with_format(unscoped_policy(), "table").diagnostics == "text"
 
 
 def test_quiet_set_outside_every_scope_reaches_a_new_one() -> None:

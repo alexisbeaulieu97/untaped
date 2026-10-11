@@ -1,9 +1,10 @@
 """How one invocation writes stderr: its output policy, and where the current one is.
 
-:class:`OutputPolicy` is decided in two phases: from argv and the environment
-before parsing (:func:`policy_from_request`, so a parse error renders the way
-``-f json`` asks), then from the command's own ``--format`` once settings are
-loaded (:func:`with_format`). ``--quiet`` and ``--verbose`` are flags on it,
+:class:`OutputPolicy` is decided in two phases, both through
+:func:`note_format`: from argv before parsing (``note_requested_format``, so a
+parse error renders the way ``-f json`` asks), then from the command's own
+``--format`` once settings are loaded (``apply_default_format``);
+``UNTAPED_DIAGNOSTICS`` overrides both. ``--quiet`` and ``--verbose`` are flags on it,
 set by their root-option handlers. It is internal: a plugin that could read
 the policy would branch on JSON around the sink.
 
@@ -63,17 +64,8 @@ def _forced() -> Literal["text", "json"] | None:
     return None
 
 
-def policy_from_request(fmt: str | None = None) -> OutputPolicy:
-    """Phase 1: the policy argv and the environment ask for, before parsing.
-
-    ``UNTAPED_DIAGNOSTICS=json`` or ``text`` decides; any other value (or
-    none) follows ``fmt``: ``json``, ``yaml`` and ``pipe`` get JSON.
-    """
-    return OutputPolicy(format=fmt, forced=_forced())
-
-
 def with_format(policy: OutputPolicy, fmt: str | None) -> OutputPolicy:
-    """Phase 2: ``policy`` with the ``--format`` the parsed command chose."""
+    """``policy`` with the ``--format`` the invocation chose."""
     return replace(policy, format=fmt)
 
 
@@ -231,7 +223,6 @@ __all__ = [
     "is_quiet",
     "is_verbose",
     "note_format",
-    "policy_from_request",
     "reset_quiet",
     "with_format",
 ]

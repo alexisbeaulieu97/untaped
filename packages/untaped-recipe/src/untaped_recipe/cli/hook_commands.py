@@ -11,6 +11,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     UsageError,
     echo,
     emit,
@@ -339,7 +340,7 @@ def _json_context(value: dict[str, object]) -> str:
 
 def _print_hook_diagnostics(diagnostics: str) -> None:
     if diagnostics:
-        echo(diagnostics.rstrip(), err=True)
+        Diagnostics().relay(diagnostics.rstrip())
 
 
 def _print_hook_warnings(warnings: tuple[str, ...]) -> None:
