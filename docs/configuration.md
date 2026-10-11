@@ -139,11 +139,11 @@ untaped profile use stage
 untaped profile delete stage --dry-run
 ```
 
-The active profile is the first of: the root `--profile`, `UNTAPED_PROFILE`,
+The active profile is the first of: the global `--profile`, `UNTAPED_PROFILE`,
 the `active:` key, then `default`. The first three must name an existing
 profile; before any profile exists, only `default` may be named.
 
-`--profile` is a root option and goes anywhere in the command: before the
+`--profile` is a global option and goes anywhere in the command: before the
 plugin, between command names (`untaped github --profile work whoami`) or
 after the command. So do `--verbose`/`-v`, `--quiet`/`-q` and `--deprecated`.
 Tokens after `--` belong to the command and are never read as `untaped` options.
