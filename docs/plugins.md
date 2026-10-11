@@ -373,8 +373,9 @@ Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests,
 and `untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
-hello` in-process against the installed plugins; it returns the exit code
-and captured output.
+hello` in-process against the installed plugins; it returns the exit code,
+the captured output and `diagnostics`, the typed stderr lines the command
+emitted.
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

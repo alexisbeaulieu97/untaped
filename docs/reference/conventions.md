@@ -81,16 +81,16 @@ lists the categories. A plugin's error classes declare them as class defaults
   category, system, hint and details survive.
 - A run exits with the most severe failure it saw (see
   [precedence](./exit-codes.md#precedence)).
-  `report_errors()`, `resolve_each`, `batch_apply` and `report_error` note
-  each failure they print, and `finish(any_failed)` exits with the most
-  severe one. A failure that becomes a row instead is noted with
-  `note_failure(exc)`.
+  The code is derived from what the command emitted: every failure printed
+  (`report_errors()`, `resolve_each`, `batch_apply`, `report_error`,
+  `ctx.diag.failure`, a plain `error:` line) and every failed row `emit`
+  writes counts, and a command that counted one exits with it even when it
+  returns normally. `finish(any_failed)` exits with the most severe one.
 - A failed row carries the structured failure next to its `detail`:
-  `error=note_failure(exc, message=detail)` on `OutcomeRecord` and
-  `TargetRecord` rows (`.model_dump(mode="json")` for a dict row). It returns
-  the `ErrorInfo` and counts the failure; `ErrorInfo.from_exception` alone
-  builds one without counting it. Keep the exception until the row is built;
-  never flatten it into a string first.
+  `error=Failure.from_exception(exc, message=detail)` on `OutcomeRecord` and
+  `TargetRecord` rows (`.model_dump(mode="json")` for a dict row). Building
+  the `Failure` counts nothing; `emit` counts the row. Keep the exception
+  until the row is built; never flatten it into a string first.
 
 See [exit codes](./exit-codes.md) for the category table.
 
@@ -120,6 +120,16 @@ Do not call `echo()` for `error:`, `warning:` or `failed:` lines, `print()`,
 `warnings.warn()` (use `ui.message("warning", …)`, or have an inner layer take
 a `warn` callback), or build a `rich.console.Console` yourself. A
 `DeprecationWarning` for a Python API is the exception.
+
+### Typed diagnostics
+
+Every stderr line is a typed diagnostic with a `kind` (`untaped.message`,
+`untaped.failure`, …), and a plugin may declare its own: subclass `Message`
+or `Failure` with `kind="<plugin>.<name>"`, add fields, and emit it with
+`ctx.diag.emit(...)` (`ctx` is the command's `app_context()`). A plugin adds
+fields, never levels. `ctx.diag` also has one method per level (`info`,
+`success`, `warning`, `hint`, `failure`, `progress`). In tests,
+`CliResult.diagnostics` lists what a command emitted.
 
 ## Options
 
@@ -222,7 +232,7 @@ free, but a command that writes declares it with `@writes`, or
 - Base records about files or directories on `TargetRecord`, which requires an
   absolute `target_path`.
 - `error` is reserved: both bases give a failed row an optional `error`
-  (`ErrorInfo`, whose fields [Scripting](../scripting.md#failed-rows-the-error-field)
+  (`Failure`, whose fields [Scripting](../scripting.md#failed-rows-the-error-field)
   lists), left out of rows that did not fail and of tables. Put the human text in `detail`;
   never declare your own `error` field.
 - Base check results on `CheckRecord`, with `status` set to `pass`, `warn`,
