@@ -136,7 +136,7 @@ def _owners(state: _State) -> dict[type[Contract], str]:
                 declared = _declared(spec)
             except Exception as exc:
                 _LOG.debug("%s's contracts raised %s", spec.name, type(exc).__name__, exc_info=exc)
-                state.broken[spec.name] = str(exc) or type(exc).__name__
+                state.broken[spec.name] = f"{type(exc).__name__}: {exc}"
                 continue
             owners.update(dict.fromkeys(declared, spec.name))
         state.owners = owners
@@ -228,7 +228,9 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[Provider | Quara
     except ContractError as exc:
         return whole(exc.reason, str(exc))
     except Exception as exc:
-        _LOG.debug("provides[%r] of %s raised", owner, spec.name, exc_info=exc)
+        _LOG.debug(
+            "provides[%r] of %s raised %s", owner, spec.name, type(exc).__name__, exc_info=exc
+        )
         detail = f"{type(exc).__name__}: {exc}"
         return whole("bad-provider", f"provides[{owner!r}] of {spec.name} raised {detail}")
     owned = {cls for cls, name in _owners(state).items() if name == owner}
