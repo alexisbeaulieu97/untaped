@@ -9,7 +9,14 @@ from unittest.mock import ANY
 
 import pytest
 
-from untaped.sdk import ConfigError, HttpStatusError, UntapedError, UsageError
+from untaped.sdk import (
+    NO_PROGRESS,
+    ConfigError,
+    HttpStatusError,
+    ProgressHandle,
+    UntapedError,
+    UsageError,
+)
 from untaped_github.application import RepositoryInventoryScope, TeamScope
 from untaped_github.application.sweep import (
     CorpusSyncOptions,
@@ -98,14 +105,17 @@ class _Corpus:
         self.blob_map: dict[tuple[str, str, str], str | None] = {}
         self.grep_calls: list[tuple[tuple[str, ...], str]] = []
         self.exists_calls: list[tuple[str, str, str]] = []
+        self.handles: list[ProgressHandle] = []
 
     def sync_repo(
         self,
         repo: CorpusRepoTarget,
         *,
         selector: RefSelector,
+        progress: ProgressHandle = NO_PROGRESS,
     ) -> CorpusRepoResult:
         self.synced.append(repo.full_name)
+        self.handles.append(progress)
         error = self.sync_errors.get(repo.full_name)
         if error is not None:
             raise error
@@ -169,7 +179,7 @@ def _sweep(
     query: SweepQuery = README,
     *,
     resolver: _Resolver | None = None,
-    progress: Any = None,
+    progress: ProgressHandle = NO_PROGRESS,
     **options: Any,
 ) -> SweepReport:
     defaults: dict[str, Any] = {
@@ -558,15 +568,17 @@ def test_piped_records_skip_the_per_repo_lookup() -> None:
 
 class _Progress:
     def __init__(self) -> None:
-        self.updates: list[tuple[str, float | None, bool]] = []
+        self.updates: list[tuple[str | None, str | None, int | None, int | None]] = []
 
     def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
     ) -> None:
-        self.updates.append((message, fraction, new_phase))
-
-    def log(self, line: str) -> None:
-        return None
+        self.updates.append((message, phase, done, total))
 
 
 def test_progress_reports_phases_and_per_repo_counts() -> None:
@@ -578,11 +590,11 @@ def test_progress_reports_phases_and_per_repo_counts() -> None:
         progress=progress,
     )
 
-    assert [message for message, _, phase in progress.updates if phase] == [
-        "Resolving repositories…",
-        "Sweeping 2 repos…",
+    assert progress.updates[:2] == [
+        (None, "resolving repositories", None, None),
+        (None, "sweeping", 0, 2),
     ]
-    assert progress.updates[-1] == ("Sweeping 2/2 repos (1 fetched, 1 failed)", 1.0, False)
+    assert progress.updates[-1] == ("1 fetched, 1 failed", "sweeping", 2, 2)
 
 
 def test_sync_corpus_reports_one_outcome_per_repo() -> None:
@@ -623,3 +635,30 @@ def test_sync_corpus_reports_one_outcome_per_repo() -> None:
     assert (outcomes[0].error.category, outcomes[0].error.system) == ("failed", "git")
     assert outcomes[1].error is None
     assert next(iter(outcomes[0].model_dump())) == "repo"
+
+
+@pytest.mark.parametrize(
+    ("names", "passed_on"), [(("acme/one",), True), (("acme/a", "acme/b"), False)]
+)
+def test_sync_corpus_passes_its_handle_to_the_store_only_for_one_repo(
+    names: tuple[str, ...], passed_on: bool
+) -> None:
+    corpus = _Corpus()
+    progress = _Progress()
+
+    SyncCorpus(inventory=_Resolver(*(_item(name) for name in names)), corpus=corpus)(
+        CorpusSyncOptions(
+            scope=RepositoryInventoryScope(orgs=("acme",)),
+            stdin_repos=(),
+            archived="exclude",
+            refs=RefSelector(),
+            refresh=True,
+            max_age_seconds=3600,
+            parallel=2,
+        ),
+        progress=progress,
+    )
+
+    # One repo: the store's phases are the line; many: the per-repo count is.
+    assert corpus.handles == [progress if passed_on else NO_PROGRESS] * len(names)
+    assert progress.updates[-1][1:] == ("syncing", len(names), len(names))

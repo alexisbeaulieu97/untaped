@@ -32,8 +32,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from untaped.sdk import (
+    NO_PROGRESS,
     GitCommandError,
     GitResult,
+    ProgressHandle,
     UntapedError,
     atomic_write,
     attribution,
@@ -130,7 +132,7 @@ class LocalGitWorktrees:
             submodules=(dest / ".gitmodules").exists() and self._has_submodules(dest),
         )
 
-    def fetch(self, url: str, dest: Path) -> str | None:
+    def fetch(self, url: str, dest: Path, *, progress: ProgressHandle = NO_PROGRESS) -> str | None:
         """Fetch ``url``'s store repo, rewrite ``dest``'s config and backfill what moved.
 
         A no-op when the store has no repo for ``url``. Returns why the
@@ -140,11 +142,11 @@ class LocalGitWorktrees:
         store = self._store(url)
         if not store.exists():
             return None
-        delta = store.fetch(branches=["*"], tags=["*"], prune=True)
+        delta = store.fetch(branches=["*"], tags=["*"], prune=True, progress=progress)
         history = self._history(store)
         if dest.is_dir():
             store.write_worktree_config(dest.absolute(), profile=self._profile)
-        return self._backfill(store, delta, history)
+        return self._backfill(store, delta, history, progress=progress)
 
     def configure(self, url: str, dest: Path) -> None:
         """Rewrite ``dest``'s worktree config for ``url`` (its remote URL and credentials helper).
@@ -438,7 +440,14 @@ class LocalGitWorktrees:
                 system="local",
             ) from exc
 
-    def _backfill(self, store: RepoStore, delta: RefDelta, history: History) -> str | None:
+    def _backfill(
+        self,
+        store: RepoStore,
+        delta: RefDelta,
+        history: History,
+        *,
+        progress: ProgressHandle = NO_PROGRESS,
+    ) -> str | None:
         """Bring the blobs of the history the refs reach; why it stopped, else ``None``.
 
         A ``partial`` history walks every ref whole (an interrupted backfill
@@ -454,7 +463,7 @@ class LocalGitWorktrees:
         else:
             revisions = list(HISTORY)
         try:
-            store.prefetch(history=revisions)
+            store.prefetch(history=revisions, progress=progress)
         except UntapedError as exc:
             if history == "complete":
                 self._record_history(store, "partial")

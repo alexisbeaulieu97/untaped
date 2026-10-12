@@ -146,6 +146,8 @@ _STARTUP_PROBE = (
 #: (the git plugin adds two: its package and settings model). The stderr
 #: sink (``untaped.output``: four modules for the two it replaced) adds two
 #: more: 126 against 124 on its base, measured 2026-10-11 in a container.
+#: Progress lines and JSON (#537) replace ``untaped.progress`` with
+#: ``untaped.output.progress``: 127 on A2a and on its base, 2026-10-12.
 #: The budget sits six above that measurement, the same headroom the
 #: previous one had, to absorb dependency and patch-release drift; a new
 #: built-in plugin adds a few ``untaped.*`` modules (its SPEC and settings).

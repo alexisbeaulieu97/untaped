@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import CliInvoker, CliResult
+from untaped.testing import CliInvoker, CliResult, progress_clock
 from untaped_github.cli import app
 
 
@@ -88,6 +88,22 @@ def test_repos_list_combines_scopes_and_filters_into_sorted_rows(
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == expected
+
+
+def test_repos_list_reports_progress_while_it_waits() -> None:
+    with (
+        progress_clock() as clock,
+        respx.mock(base_url="https://api.github.com") as mock,
+    ):
+
+        def slow(request: httpx.Request) -> httpx.Response:
+            clock.advance(2)  # a slow listing passes the quiet period
+            return httpx.Response(200, json=LISTINGS["/orgs/acme/repos"])
+
+        mock.get("/orgs/acme/repos").mock(side_effect=slow)
+        result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
     assert "Listing repositories" in result.stderr
 
 

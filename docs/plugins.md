@@ -375,7 +375,8 @@ Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests,
 and `untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
 hello` in-process against the installed plugins; it returns the exit code,
 the captured output and `diagnostics`, the typed stderr lines the command
-emitted.
+emitted (progress lines only under `--verbose`, or when the test advances
+the clock with `untaped.testing.progress_clock()`).
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

@@ -16,8 +16,8 @@ from untaped.errors import (
 from untaped.messages import plural
 from untaped.output.diagnostic import Failure, Message
 from untaped.output.policy import is_quiet, is_verbose
+from untaped.output.progress import ProgressHandle
 from untaped.output.sink import count_row_failures, current_sink
-from untaped.progress import ProgressHandle
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -213,11 +213,11 @@ class UiContext:
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
         """Report progress for a blocking operation on stderr.
 
-        TTY renders an animated spinner; non-TTY emits throttled lines; under
-        ``verbose`` the wrapped tool's own output streams through. stdout stays
-        untouched so piped data is never polluted. Under JSON diagnostics or
-        ``--quiet`` (or a context built with ``quiet=True``) it is silent, so
-        stderr stays JSON Lines.
+        TTY renders an animated spinner; elsewhere it prints lines at the
+        sink's cadence (``untaped.progress`` lines under JSON diagnostics);
+        under ``verbose`` every update is a line. stdout stays untouched so
+        piped data is never polluted. ``--quiet`` (or a context built with
+        ``quiet=True``) silences it.
         """
         return current_sink().progress(label, verbose=self.verbose, quiet=self.quiet)
 

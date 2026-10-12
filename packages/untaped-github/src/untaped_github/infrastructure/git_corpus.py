@@ -32,8 +32,10 @@ from typing import Literal, cast
 from urllib.parse import urlparse
 
 from untaped.sdk import (
+    NO_PROGRESS,
     GitCommandError,
     GitResult,
+    ProgressHandle,
     UntapedError,
     atomic_write,
     attribution,
@@ -92,7 +94,13 @@ class GitCorpusCache:
         self._timeout = timeout
         self._warn = warn or _ui_warning
 
-    def sync_repo(self, repo: CorpusRepoTarget, *, selector: RefSelector) -> CorpusRepoResult:
+    def sync_repo(
+        self,
+        repo: CorpusRepoTarget,
+        *,
+        selector: RefSelector,
+        progress: ProgressHandle = NO_PROGRESS,
+    ) -> CorpusRepoResult:
         """Fetch the requested ref profile, widened by what was fetched before, into the store."""
         url = self._remote_url(repo)
         branch = _default_branch(repo)
@@ -103,7 +111,7 @@ class GitCorpusCache:
         effective = RefSelector(profile=profile, globs=ref_globs)
         branches, tags = self._ref_names(url, effective, default_branch=branch)
         # prune=True: refs the selector no longer covers, or the remote no longer has, go.
-        store.fetch(branches=branches, tags=tags, prune=True)
+        store.fetch(branches=branches, tags=tags, prune=True, progress=progress)
 
         fetched_at = datetime.now(UTC).isoformat()
         _write_metadata(

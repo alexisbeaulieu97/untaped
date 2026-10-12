@@ -14,6 +14,7 @@ from cyclopts import Parameter
 from cyclopts.validators import Number
 
 from untaped.sdk import (
+    NO_PROGRESS,
     ColumnsOption,
     DryRunOption,
     FormatOption,
@@ -231,9 +232,15 @@ def status_command(
         settings = workspace_settings()
         records = StateWorkspaceStore().active() if all_workspaces else [locate(settings, name)]
         status = status_reader(settings, git_worktrees())
-        progress = ui_context(strict=False).progress("Fetching repos…") if fetch else nullcontext()
-        with progress:
-            rows = [row for record in records for row in status(record, fetch=fetch)]
+        task = (
+            ui_context(strict=False).progress("Fetching repos…")
+            if fetch
+            else nullcontext(NO_PROGRESS)
+        )
+        with task as progress:
+            rows = [
+                row for record in records for row in status(record, fetch=fetch, progress=progress)
+            ]
         emit(rows, fmt=fmt, columns=columns, kind="workspace.status", empty="No repos found.")
         report_row_errors(rows, item=lambda row: f"{row.workspace}/{row.dir}")
     finish(
@@ -551,10 +558,10 @@ def _show_run_summary(rows: Sequence[RunOutcome]) -> None:
 
 
 def _progress_line(progress: ProgressHandle) -> Callable[[RepoOutcome, int, int], None]:
-    """``on_done`` for provisioning: ``<done>/<total> <repo>`` per finished checkout."""
+    """``on_done`` for provisioning: the count and the repo of each finished checkout."""
 
     def update(row: RepoOutcome, done: int, total: int) -> None:
-        progress.update(f"{done}/{total} {row.repo}", fraction=done / total)
+        progress.update(row.repo, done=done, total=total)
 
     return update
 

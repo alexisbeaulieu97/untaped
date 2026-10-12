@@ -17,9 +17,9 @@ import pytest
 import respx
 import yaml
 
-from untaped.sdk import ui_context
+from untaped.sdk import Progress, ui_context
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, CliResult
+from untaped.testing import CliInvoker, CliResult, progress_clock
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli import app, refresh
 from untaped_ansible.domain.payloads import (
@@ -31,7 +31,7 @@ from untaped_ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped_ansible.errors import GitCacheError
-from untaped_ansible.infrastructure import GitSourceStore, SqliteDependencyIndex
+from untaped_ansible.infrastructure import GithubRefProbe, GitSourceStore, SqliteDependencyIndex
 
 _REQS = "roles/requirements.yml"
 _TEMPLATED = "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
@@ -1812,14 +1812,28 @@ def test_source_refresh_progress_and_low_rate_limit_warning_on_stderr(
     _use_config(tmp_path, monkeypatch, _prod("acme/ok"), token=True, ansible=ansible)
     _seed_unchanged_scan(monkeypatch, {"acme/ok": "sha-ok"})
 
-    with respx.mock(base_url="https://api.github.com") as mock:
+    probe = GithubRefProbe.probe
+
+    with progress_clock() as clock, respx.mock(base_url="https://api.github.com") as mock:
+
+        def slow_probe(self: GithubRefProbe, *args: Any, **kwargs: Any) -> Any:
+            clock.advance(2)  # a slow probe: past the quiet period
+            return probe(self, *args, **kwargs)
+
+        monkeypatch.setattr(GithubRefProbe, "probe", slow_probe)
         _mock_refresh_repos(mock, {"acme/ok": "sha-ok"}, rate_limit_remaining=200)
         result = _run("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
-    assert "probing refs: 1/1 repos" in result.stderr
-    assert "fetching changes: 1/1 repos, 0 changed" in result.stderr
+    shown = [d for d in result.diagnostics if isinstance(d, Progress)]
+    assert [(d.phase, d.done, d.total, d.state) for d in shown] == [
+        ("expanding source", 1, 1, "running"),
+        ("probing refs", 1, 1, "running"),
+        ("fetching changes", 1, 1, "running"),
+        (None, None, None, "done"),
+    ]
+    assert shown[2].message.endswith(" · fetching changes 1/1 · 0 changed (2s)")
     low = "warning: GitHub GraphQL rate limit is low: 200 points remaining"
     assert (low in result.stderr) is warned
 

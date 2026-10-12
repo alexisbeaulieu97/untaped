@@ -120,17 +120,6 @@ class SkippedRef(BaseModel):
     reason: str
 
 
-class RefreshProgressEvent(BaseModel):
-    """Live progress for one source refresh phase."""
-
-    model_config = ConfigDict(frozen=True)
-
-    phase: Literal["expanding", "probing", "fetching"]
-    done: int
-    total: int
-    changed: int | None = None
-
-
 class CachedRef(BaseModel):
     """Cached ref metadata for graph display."""
 

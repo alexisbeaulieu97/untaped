@@ -326,10 +326,7 @@ def _apply_context(
                 local_hook_project=recipe_resolution.local_hook_project,
                 resolved=resolved,
                 parallel=workers,
-                on_progress=lambda done, total: progress.update(
-                    f"{done}/{total}",
-                    fraction=done / total if total else None,
-                ),
+                on_progress=lambda done, total: progress.update(done=done, total=total),
             )
     return ApplyContext(
         root=root,

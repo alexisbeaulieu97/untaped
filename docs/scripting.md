@@ -90,7 +90,10 @@ reserved record field.
 
 stdout carries data only. With `--format json`, `yaml` or `pipe`, stderr
 carries JSON Lines: one object per error, per-item error, warning, hint or
-info message. Progress spinners are silent in this mode.
+info message. Progress is an `untaped.progress` line at the same cadence as
+text progress on a pipe: nothing for 2 s, then a line per phase, per 10 %
+and every 30 s while a step waits, and one `done` or `failed` line if a
+line printed; `--verbose` prints every update and `--quiet` none.
 
 - The format counts whether it comes from the flag, `UNTAPED_FORMAT` or
   `ui.format`. A command's own default, such as `export`'s YAML, does not.
@@ -105,6 +108,7 @@ info message. Progress spinners are silent in this mode.
 {"level": "error", "kind": "untaped.failure", "item": "Deploy", "category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/", "attempts": 3}}
 {"level": "warning", "kind": "untaped.message", "message": "--parallel 64 clamped to 16 (2 * os.cpu_count())"}
 {"level": "warning", "kind": "untaped.stale", "cache": "shelf.book_source_books", "key": "library:3f2a…", "refreshed_at": "2026-10-09T10:00:00Z", "age_seconds": 93600.0, "max_age_seconds": 3600, "partial": false, "attempted_at": "2026-10-10T12:00:00Z", "retry_at": null, "error": {"category": "unavailable", "system": "library", "retryable": true, "message": "HTTP 503", "hint": null, "exit_code": 5, "details": {}}, "message": "library: refresh failed (HTTP 503); using data from 2026-10-09 10:00 UTC, 26 h old"}
+{"level": "progress", "kind": "untaped.progress", "label": "Refreshing source 'prod'", "phase": "probing refs", "done": 312, "total": 780, "elapsed": 9.0, "state": "running", "message": "Refreshing source 'prod' \u00b7 probing refs 312/780 (9s)"}
 {"level": "hint", "kind": "untaped.message", "message": "run `untaped skills install`"}
 {"level": "info", "kind": "untaped.message", "message": "sync: 2 cloned, 1 failed"}
 ```
@@ -119,13 +123,15 @@ a kind's fields, and a plugin may add kinds of its own. Ignore a `level` or
 | `untaped.failure` | `error` | A failure; it counts toward the exit code |
 | `untaped.stale` | `warning` | Cached data served past its freshness, and why (never counted) |
 | `untaped.debug` | `debug` | A log line, with `--verbose` only |
+| `untaped.progress` | `progress` | A step of a long operation; never counted |
 
 | Field | On | Meaning |
 |---|---|---|
-| `level` | every line | `error`, `warning`, `hint`, `info`, `success`, or `debug` (with `--verbose`) |
+| `level` | every line | `error`, `warning`, `hint`, `info`, `success`, `progress`, or `debug` (with `--verbose`) |
 | `kind` | every line | The line's type, as in the table above |
 | `message` | every line | The text the line would show, without its `error:`/`warning:`/`hint:` prefix |
 | `item` | per-item errors | The item that failed (a name, an ID) |
+| `label`, `phase`, `done`, `total`, `elapsed`, `state` | progress | The operation, its current phase, its counts (`null` when unknown), seconds since it began, and `running`, `done` or `failed` |
 | `category`, `system`, `retryable`, `hint`, `exit_code`, `details` | errors | As in the `error` field above; `exit_code` is the code this failure alone selects, and `details` holds machine context such as `status`, `url` and `attempts` |
 
 A plain `error: …` line (one that does not come from a raised failure) is an
