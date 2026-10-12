@@ -41,6 +41,7 @@ from untaped.config_file import read_config_dict
 from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, key_mappings, warn_once
 from untaped.errors import ConfigError
 from untaped.messages import deprecated_message, hint, plural
+from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
 from untaped.settings import (
     Settings,
@@ -51,7 +52,8 @@ from untaped.settings import (
 )
 from untaped.stability import show_deprecated
 from untaped.theme import OutputFormat
-from untaped.ui import ui_context
+
+_diag = Diagnostics()
 
 
 @dataclass(frozen=True)
@@ -301,10 +303,9 @@ def _list(
         else:
             list_settings = ListSettings(repo)
             entries = list_settings(reveal_secrets=show_secrets)
-            ui = ui_context(strict=False)
             for error in list_settings.errors.values():
                 # The error already names the section (or env var) and file.
-                ui.message("warning", f"{error} (its keys show unvalidated values)")
+                _diag.warning(f"{error} (its keys show unvalidated values)")
         human = fmt in ("table", "raw")
         if fmt != "table" or columns == ["?"]:
             rows = [setting_entry_row(e, human=human) for e in entries]
@@ -396,7 +397,7 @@ def _set(
         )
         if not dry_run:
             message = f"set {resolved} in profile {profile}{_removed_note(removed)}"
-            ui_context(strict=False).success(f"{message} (config: {resolve_config_path()})")
+            _diag.success(f"{message} (config: {resolve_config_path()})")
         action = "planned" if dry_run else "updated"
         outcome = SettingOutcome(key=resolved, profile=profile, action=action)
         emit(outcome, fmt=fmt, columns=columns)
@@ -416,9 +417,7 @@ def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
     scope = ctx.sections.get(section)
     if rest == "token" and scope is not None and "token_command" in scope.settings_fields:
         fix = hint(f"auth set {section}")
-        ui_context(strict=False).message(
-            "warning", f"storing {key} in plain text in config.yml is deprecated\n{fix}"
-        )
+        _diag.warning(f"storing {key} in plain text in config.yml is deprecated\n{fix}")
 
 
 def _unset(
@@ -435,12 +434,11 @@ def _unset(
         removed, profile = SettingsFileRepository().unset_value(
             resolved, dry_run=dry_run, on_spelling_removed=spellings.append
         )
-        ui = ui_context(strict=False)
         where = f"in profile {profile}"
         if not removed:
-            ui.message("info", f"{resolved} was not set {where}")
+            _diag.info(f"{resolved} was not set {where}")
         elif not dry_run:
-            ui.success(f"unset {resolved} {where}{_removed_note(spellings)}")
+            _diag.success(f"unset {resolved} {where}{_removed_note(spellings)}")
         action = "unchanged" if not removed else "planned" if dry_run else "deleted"
         outcome = SettingOutcome(key=resolved, profile=profile, action=action)
         emit(outcome, fmt=fmt, columns=columns)
@@ -453,14 +451,13 @@ def _removed_note(spellings: list[str]) -> str:
 def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> None:
     with report_errors():
         rows = SettingsFileRepository().migrate_keys(dry_run=dry_run)
-        ui = ui_context(strict=False)
         if not rows:
-            ui.message("info", "no renamed, retired or deleted keys in the config")
+            _diag.info("no renamed, retired or deleted keys in the config")
         else:
             if dry_run:
-                ui.message("info", f"would {_migration_summary(rows, past=False)}")
+                _diag.info(f"would {_migration_summary(rows, past=False)}")
             else:
-                ui.success(_migration_summary(rows, past=True))
+                _diag.success(_migration_summary(rows, past=True))
         if dry_run:
             rows = [{**row, "action": "planned"} for row in rows]
         emit(rows, fmt=fmt, columns=columns, kind=_MIGRATION_OUTCOME)

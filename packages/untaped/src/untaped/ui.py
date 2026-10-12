@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, TextIO
@@ -13,7 +14,7 @@ from untaped.errors import (
     PromptInterruptedError,
     UsageError,
 )
-from untaped.messages import plural
+from untaped.messages import deprecated_message, plural
 from untaped.output.diagnostic import Failure, Message
 from untaped.output.policy import is_quiet, is_verbose
 from untaped.output.progress import ProgressHandle
@@ -48,6 +49,12 @@ if TYPE_CHECKING:
 
     from untaped.picker import PickRequest, PickResult
     from untaped.screen.core import Screen
+
+
+_STYLED_ERR = deprecated_message(
+    "UiContext.styled(…, err=True)",
+    "ctx.diag.info(text, unmuted=True), or ctx.diag.relay for another tool's output",
+)
 
 
 class UiContext:
@@ -137,7 +144,7 @@ class UiContext:
             kind=kind,
         )
         if not rows and fmt == "table" and empty:
-            self.message("info", empty if isinstance(empty, str) else "No results.")
+            self._emit_message("info", empty if isinstance(empty, str) else "No results.")
         return rendered
 
     def detail(
@@ -158,14 +165,25 @@ class UiContext:
             kind=kind,
         )
 
+    # A literal message, so mypy reports the call (``deprecated_message``'s wording).
+    @warnings.deprecated(
+        "UiContext.message is deprecated and will be removed in the next major release; "
+        "use ctx.diag.info, .success or .warning, or ctx.diag.failure(Failure.plain(text))"
+    )
     def message(self, kind: MessageKind, text: str) -> None:
         """Print a ``success``/``info``/``warning``/``error`` line to stderr.
+
+        Deprecated until 12.0: write through ``ctx.diag`` instead.
 
         ``--quiet`` (or a context built with ``quiet=True``) mutes ``success``
         and ``info``. An ``error`` line is a counted failure (category
         ``failed``). Under JSON diagnostics the line is
         ``{"level": kind, "kind": …, "message": text}``.
         """
+        self._emit_message(kind, text)
+
+    def _emit_message(self, kind: MessageKind, text: str) -> None:
+        """:meth:`message`'s body, rendered with this context's own theme and ``quiet``."""
         if self.quiet and kind in ("success", "info"):
             return
         diagnostic = Failure.plain(text) if kind == "error" else Message(level=kind, message=text)
@@ -175,9 +193,13 @@ class UiContext:
 
         current_sink().emit(diagnostic, rendered=rendered)
 
+    @warnings.deprecated(
+        "UiContext.success is deprecated and will be removed in the next major release; "
+        "use ctx.diag.success"
+    )
     def success(self, text: str) -> None:
-        """Print a success line to stderr (muted by ``--quiet``)."""
-        self.message("success", text)
+        """Print a success line to stderr (muted by ``--quiet``); deprecated: ``ctx.diag``."""
+        self._emit_message("success", text)
 
     def styled(
         self, text: Text | str, *, err: bool = False, tail: str = "", truncate: bool = False
@@ -205,13 +227,18 @@ class UiContext:
             return styled + trailing + tail
 
         if err:
+            warnings.warn(_STYLED_ERR, DeprecationWarning, stacklevel=2)
             message = Message(level="info", message=plain + tail)
             current_sink().emit(message, rendered=rendered, unmuted=True)
             return
         print(rendered(should_colorize(self.stdout)), file=self.stdout, flush=True)
 
+    @warnings.deprecated(
+        "UiContext.progress is deprecated and will be removed in the next major release; "
+        "use ctx.diag.progress"
+    )
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
-        """Report progress for a blocking operation on stderr.
+        """Report progress for a blocking operation on stderr (deprecated: ``ctx.diag``).
 
         TTY renders an animated spinner; elsewhere it prints lines at the
         sink's cadence (``untaped.progress`` lines under JSON diagnostics);

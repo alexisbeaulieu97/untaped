@@ -27,7 +27,6 @@ from untaped.cli import (
     FormatOption,
     YesOption,
     create_app,
-    echo,
     emit,
     existing_directory,
     raise_usage,
@@ -35,7 +34,9 @@ from untaped.cli import (
     writes,
 )
 from untaped.errors import ConfigError, UntapedError, UsageError
-from untaped.messages import hint, not_found, plural
+from untaped.messages import not_found, plural, run_hint
+from untaped.output.diagnostic import Failure
+from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.settings import SkillsSettings, load_settings_section
 from untaped.skills import (
@@ -64,6 +65,8 @@ from untaped.skills import (
 from untaped.stdin import read_identifiers
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
+
+_diag = Diagnostics()
 
 _INSTALLED_KIND = "untaped.installed_skill"
 _OUTCOME_KIND = "untaped.skill_outcome"
@@ -257,7 +260,6 @@ def check_installed_skills(
     stale = outdated_skills(skills, project_dir=project_root(Path.cwd()))
     if not stale:
         return
-    ui = ui_context(strict=False)
     outdated = [item for item in stale if item.state is SkillState.outdated]
     if mode == "auto" and outdated:
         failed: list[InstalledSkill] = []
@@ -268,19 +270,18 @@ def check_installed_skills(
                 failed.append(item)
         updated = len(outdated) - len(failed)
         if updated:
-            ui.message("info", f"updated {plural(updated, 'outdated skill')}")
+            _diag.info(f"updated {plural(updated, 'outdated skill')}")
         outdated = failed
     if outdated:
-        ui.message("warning", f"installed skills are out of date: {_names(outdated)}")
-        echo(
-            f"{hint('skills update')} (set skills.updates to auto or off to change this)",
-            err=True,
+        _diag.warning(f"installed skills are out of date: {_names(outdated)}")
+        _diag.hint(
+            f"{run_hint('skills update')} (set skills.updates to auto or off to change this)"
         )
     orphaned = [item for item in stale if item.state is SkillState.orphaned]
     if orphaned:
         names = _names(orphaned)
-        ui.message("warning", f"installed skills are no longer shipped: {names}")
-        echo(hint(f"skills remove {names.replace(',', '')}"), err=True)
+        _diag.warning(f"installed skills are no longer shipped: {names}")
+        _diag.hint(run_hint(f"skills remove {names.replace(',', '')}"))
 
 
 def _updates_mode() -> str:
@@ -358,7 +359,6 @@ def _update(
         named = bool(skill_names) or stdin
         rows: list[dict[str, object]] = []
         failed = False
-        ui = ui_context(strict=False)
         for item in found:
             if item.state is SkillState.current:
                 if named:
@@ -366,7 +366,7 @@ def _update(
                 continue
             if item.state is SkillState.orphaned:
                 if named:
-                    ui.message("error", f"{item.name}: skill no longer shipped")
+                    _diag.failure(Failure.plain(f"{item.name}: skill no longer shipped"))
                     rows.append(_outcome_row(item, "failed"))
                     failed = True
                 continue
@@ -376,7 +376,7 @@ def _update(
             try:
                 update_installed_skill(skills, item)
             except UntapedError as exc:
-                ui.message("error", f"{item.name}: {exc}")
+                _diag.failure(Failure.plain(f"{item.name}: {exc}"))
                 rows.append(_outcome_row(item, "failed"))
                 failed = True
                 continue
@@ -384,7 +384,7 @@ def _update(
         emit(rows, fmt=fmt, columns=columns, kind=_OUTCOME_KIND, empty="No outdated skills found.")
         updated = sum(1 for row in rows if row["action"] == "updated")
         if updated:
-            ui.success(f"updated {plural(updated, 'skill')}")
+            _diag.success(f"updated {plural(updated, 'skill')}")
     finish(failed)
 
 
@@ -432,7 +432,7 @@ def _remove(
         )
         emit(rows, fmt=fmt, columns=columns, kind=_OUTCOME_KIND, empty="No installed skills found.")
         if outcome.results:
-            ui_context(strict=False).success(f"removed {plural(len(outcome.results), 'skill')}")
+            _diag.success(f"removed {plural(len(outcome.results), 'skill')}")
     finish(outcome)
 
 
@@ -497,9 +497,7 @@ def _install(
             scope=scope,
             project_dir=project_dir,
             target_dir=target_dir,
-            on_installed=lambda result: ui_context(strict=False).success(
-                f"installed skill: {result.name}"
-            ),
+            on_installed=lambda result: _diag.success(f"installed skill: {result.name}"),
         )
 
 

@@ -10,12 +10,14 @@ from untaped.output.policy import (
     current_policy,
     is_quiet,
     note_format,
+    note_theme,
     unscoped_policy,
     with_format,
 )
 from untaped.output.policy import enable_quiet as enable
 from untaped.output.policy import reset_quiet as reset
 from untaped.output.sink import diagnostics_scope
+from untaped.theme import BUILTIN_THEMES
 
 
 @pytest.fixture(autouse=True)
@@ -65,3 +67,18 @@ def test_quiet_set_outside_every_scope_reaches_a_new_one() -> None:
     enable()
     with diagnostics_scope():
         assert is_quiet() is True
+
+
+def test_note_theme_records_on_the_scope_and_a_nested_scope_inherits_it() -> None:
+    theme = BUILTIN_THEMES["high-contrast"]
+    with diagnostics_scope():
+        note_theme(theme)
+        with diagnostics_scope():
+            assert current_policy().theme is theme
+        assert current_policy().theme is theme
+    assert current_policy().theme is None
+
+
+def test_note_theme_outside_every_scope_does_nothing() -> None:
+    note_theme(BUILTIN_THEMES["high-contrast"])
+    assert current_policy().theme is None

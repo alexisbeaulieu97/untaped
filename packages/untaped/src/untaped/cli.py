@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from functools import cache
@@ -18,8 +19,9 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
+from untaped.messages import deprecated_message
 from untaped.output.diagnostic import Failure
-from untaped.output.policy import note_format
+from untaped.output.policy import current_policy, note_format, note_theme
 from untaped.output.sink import (
     Diagnostics,
     count_row_failures,
@@ -32,7 +34,7 @@ from untaped.output.sink import (
 from untaped.records import TableGlyph, check_data_kind, kind_of, table_columns_of
 from untaped.render import column_value
 from untaped.stability import Stability, check_stability, mark_app
-from untaped.theme import OutputFormat
+from untaped.theme import OutputFormat, ThemeSpec, resolve_theme_or_default
 from untaped.ui import UiContext, ui_context
 
 
@@ -69,7 +71,10 @@ def apply_default_format(
     a usage error, except under ``doctor`` and ``setup``, which ignore it.
     A ``--format`` the user chose (the flag, ``UNTAPED_FORMAT`` or
     ``ui.format``; not a command's own default) is recorded for the stderr
-    diagnostics (:func:`untaped.output.policy.note_format`, phase 2).
+    diagnostics (:func:`untaped.output.policy.note_format`, phase 2), and,
+    when they are text, the ``ui.theme`` messages render with
+    (:func:`untaped.output.policy.note_theme`; a broken ``ui`` section
+    degrades to the default theme).
     """
     del app
     _default_format(commands, arguments)
@@ -79,6 +84,16 @@ def apply_default_format(
         if "--format" in argument.names and argument.tokens
     ]
     note_format(chosen[-1] if chosen else None)
+    # Called for the root (no command) and again for the command parsed.
+    note_theme(_user_theme() if commands and current_policy().diagnostics == "text" else None)
+
+
+def _user_theme() -> ThemeSpec:
+    """The user's ``ui.theme`` for stderr messages; the default on a broken ``ui`` section."""
+    # Keep settings lazy, as ``_default_format`` does.
+    from untaped.settings import load_settings_section  # noqa: PLC0415
+
+    return resolve_theme_or_default(lambda: load_settings_section("ui"), strict=False)
 
 
 def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) -> None:
@@ -222,9 +237,13 @@ def create_app(*, name: str, help: str = "", stability: Stability | None = None)
     return app
 
 
+_ECHO_ERR = deprecated_message("echo(…, err=True)", "ctx.diag")
+
+
 def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
     """Print a CLI message to stdout or stderr.
 
+    ``err=True`` is deprecated until 12.0: write stderr through ``ctx.diag``.
     A stderr message prints verbatim (``--quiet`` never mutes it). Under JSON
     diagnostics it becomes one JSON line, its level taken from an ``error:``
     (counted, like any failure), ``warning:`` or ``hint:`` prefix (else
@@ -232,17 +251,25 @@ def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
     """
     end = "\n" if nl else ""
     if err:
+        warnings.warn(_ECHO_ERR, DeprecationWarning, stacklevel=2)
         current_sink().echo(str(message), end=end)
         return
     print(message, end=end)
 
 
+# Literal messages, so mypy reports the calls (``deprecated_message``'s wording).
+@warnings.deprecated(
+    "report_error is deprecated and will be removed in the next major release; "
+    "use ctx.diag.failure(exc, item=…)"
+)
 def report_error(
     exc: UntapedError | Failure,
     *,
     item: str | None = None,
 ) -> None:
     """Print one failure on stderr and count it toward the run's exit code.
+
+    Deprecated until 12.0: use ``ctx.diag.failure``.
 
     Text is ``error: <msg>`` (``error: <item>: <msg>`` for a per-item
     failure, as :func:`~untaped.output.diagnostic.format_error` renders it);
@@ -260,13 +287,17 @@ class _FailableRow(Protocol):
     def error(self) -> Failure | None: ...
 
 
+@warnings.deprecated(
+    "report_row_errors is deprecated and will be removed in the next major release; "
+    "use ctx.diag.failure(row.error, item=…) for each row"
+)
 def report_row_errors[RowT: _FailableRow](
     rows: Iterable[RowT], *, item: Callable[[RowT], str]
 ) -> None:
-    """:func:`report_error` each row that carries an ``error``, labelled ``item(row)``."""
+    """Report each row that carries an ``error`` as a failure, labelled ``item(row)``."""
     for row in rows:
         if row.error is not None:
-            report_error(row.error, item=item(row))
+            Diagnostics().failure(row.error, item=item(row))
 
 
 def note_requested_format(tokens: Sequence[str]) -> None:
@@ -304,7 +335,7 @@ def raise_usage(message: str) -> NoReturn:
     parsing). Inside a ``report_errors`` block prefer
     ``raise UsageError(message)``, which exits the same way.
     """
-    report_error(UsageError(message))
+    Diagnostics().failure(UsageError(message))
     raise SystemExit(ExitCode.USAGE)
 
 
@@ -477,7 +508,7 @@ def _check_columns(
     )
     if schema is not None:
         raise_usage(message)
-    echo(f"warning: {message}", err=True)
+    Diagnostics().warning(message)
 
 
 def _table_columns(
@@ -532,14 +563,18 @@ def _print_available_columns(keys: Iterable[str], *, defaults: Sequence[str] | N
 
     With a command's default ``table`` columns, those are marked ``*``.
     """
+    diag = Diagnostics()
     names = list(dict.fromkeys(keys))
     if not names:
-        echo("no columns available (no records to inspect)", err=True)
+        diag.info("no columns available (no records to inspect)", unmuted=True)
         return
     marked = set(defaults or ())
-    echo("available columns (* = shown by default):" if marked else "available columns:", err=True)
+    diag.info(
+        "available columns (* = shown by default):" if marked else "available columns:",
+        unmuted=True,
+    )
     for name in names:
-        echo(f"  {name} *" if name in marked else f"  {name}", err=True)
+        diag.info(f"  {name} *" if name in marked else f"  {name}", unmuted=True)
 
 
 def emit(
@@ -841,7 +876,7 @@ def parse_json_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, An
 def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bool]:
     """Resolve each identifier via ``fn``; aggregate per-id failures.
 
-    Reports ``error: <id>: <exc>`` (:func:`report_error`) for any
+    Reports ``error: <id>: <exc>`` (``Diagnostics.failure``) for any
     :class:`UntapedError` and
     returns ``(results, any_failed)`` so the caller decides exit code and
     aggregate rendering. Companion to :func:`read_identifiers` for stdin-fed
@@ -858,7 +893,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
         try:
             results.append(fn(id_))
         except UntapedError as exc:
-            report_error(exc, item=id_)
+            Diagnostics().failure(exc, item=id_)
             any_failed = True
     return results, any_failed
 
@@ -872,7 +907,7 @@ def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
     """
     if requested <= cap:
         return requested
-    echo(f"warning: --parallel {requested} clamped to {cap} ({policy})", err=True)
+    Diagnostics().warning(f"--parallel {requested} clamped to {cap} ({policy})")
     return cap
 
 
@@ -887,7 +922,7 @@ def report_errors() -> Iterator[None]:
     reported in the run (:func:`~untaped.output.sink.failure_exit_code`). A
     declined confirmation (:class:`~untaped.errors.OperationCancelledError`)
     prints its message without the ``error:`` prefix. Under JSON diagnostics
-    the error is one JSON line (:func:`report_error`). Non-:class:`UntapedError`
+    the error is one JSON line (``Diagnostics.failure``). Non-:class:`UntapedError`
     exceptions are left to Cyclopts' default handling — those represent bugs
     we want to see.
     """
@@ -897,5 +932,5 @@ def report_errors() -> Iterator[None]:
         report_declined(exc)
         raise SystemExit(failure_exit_code(exc.exit_code)) from exc
     except UntapedError as exc:
-        report_error(exc)
+        Diagnostics().failure(exc)
         raise SystemExit(failure_exit_code(exc.exit_code)) from exc

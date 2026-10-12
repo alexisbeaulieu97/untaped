@@ -16,9 +16,8 @@ from cyclopts import App
 
 from test_management.support import GithubProfile, make_spec, write_config
 from untaped import bootstrap
-from untaped.sdk import FormatOption, PluginSpec, create_app, emit
+from untaped.sdk import Diagnostics, FormatOption, PluginSpec, create_app, emit
 from untaped.testing import CliInvoker, CliResult, plugin_candidate
-from untaped.ui import ui_context
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -152,7 +151,7 @@ def _warning_spec() -> PluginSpec:
         @app.command(name="list")
         def list_command(*, fmt: FormatOption = "table") -> None:
             """Warn, then list one row."""
-            ui_context().message("warning", "careful")
+            Diagnostics().warning("careful")
             emit([{"name": "row"}], fmt=fmt)
 
         return app
