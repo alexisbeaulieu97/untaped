@@ -35,9 +35,6 @@ from __future__ import annotations
 import base64
 import os
 import re
-import shlex
-import shutil
-import sys
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -65,17 +62,15 @@ from untaped_git.domain.namespace import (
 from untaped_git.domain.records import TreeEntry
 from untaped_git.domain.release import Released, Removed
 from untaped_git.domain.url import https_origin, url_host
+from untaped_git.infrastructure import store_release, worktree_config
 from untaped_git.infrastructure.lock import repo_lock
 from untaped_git.infrastructure.repo_files import (
-    WorktreeEntry,
     list_repos,
-    names_admin,
     private_file,
-    private_files,
     repo_origin,
-    tree_size,
     worktree_entries,
 )
+from untaped_git.infrastructure.store_release import RELEASE_MARK
 from untaped_git.infrastructure.version import below_floor, floor_text, git_version, version_text
 
 #: Explicit refs fetched per command: a dropped connection loses one batch.
@@ -123,13 +118,6 @@ _LAZY_HINT = (
     "if this is a file's content, read it through RepoStore.prefetched(): it was never prefetched"
 )
 _STALE_LEFTOVER_SECONDS = 3600.0
-#: The mark ``release()`` writes before deleting anything; ``ensure()`` finishes from it.
-RELEASE_MARK = "untaped.release"
-#: Where a repo nobody holds goes, atomically, before it is deleted.
-REMOVING_SUFFIX = ".removing"
-#: Refs that are some user's data: a repo holding any stays on release.
-_HELD_ROOTS = ("refs/untaped/", "refs/remotes/", "refs/heads/", "refs/tags/", "refs/stash")
-_PLAIN_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
 _HANDLE_REFUSED = ("fetch", "checkout", "worktree")
 
 
@@ -310,12 +298,12 @@ class RepoStore:
             return self._ensure()
 
     def _ensure(self) -> bool:
-        self._remove_removing()
+        store_release.remove_removing(self)
         marked = self._config_get(RELEASE_MARK) if self.exists() else None
         if marked is not None:
             # An interrupted release: finish it before anything else uses the repo.
-            self._finish_release(marked, ())
-            self._settle()
+            store_release.finish_release(self, marked, ())
+            store_release.settle(self)
         created = not self.exists()
         if created:
             try:
@@ -340,8 +328,8 @@ class RepoStore:
             # A 10.x workspace repo's shared refspec: each worktree carries its own now.
             self._git(["config", "--local", "--unset-all", "remote.origin.fetch"])
             if worktree_entries(self._path):
-                self._enable_worktree_config()
-                self._repair_worktrees(stripped=True)
+                worktree_config.enable_worktree_config(self)
+                worktree_config.repair_worktrees(self, stripped=True)
         return created
 
     # ── release ────────────────────────────────────────────────────────────
@@ -367,133 +355,7 @@ class RepoStore:
         is registered, checked under the repo lock (:class:`Released` then
         counts it), so a worktree another process just added is never deleted.
         """
-        refs = []
-        for name in branches:
-            reason = check_names([name])
-            if reason is None and is_glob(name):
-                reason = f"{name!r} is a glob; release takes exact branch names"
-            if reason is not None:
-                raise self._error(reason, category=ErrorCategory.INVALID)
-            refs.append(f"refs/heads/{name}")
-        with self._locked():
-            if not self.exists():
-                self._remove_removing()
-                return Removed()
-            if unless_in_use and any(
-                entry.owner == self._plugin and entry.path is not None and entry.path.is_dir()
-                for entry in worktree_entries(self._path)
-            ):
-                return self._holders() or Released()
-            checked_out = set(self._checked_out()) & set(refs)
-            if checked_out:
-                names = ", ".join(sorted(ref.removeprefix("refs/heads/") for ref in checked_out))
-                raise self._error(
-                    f"cannot release {self._path}: a worktree has {names} checked out",
-                    category=ErrorCategory.CONFLICT,
-                )
-            marked = self._config_get(RELEASE_MARK)
-            if marked is not None and marked != self._plugin:
-                # Another plugin's interrupted release: finish it before the mark is reused.
-                self._finish_release(marked, ())
-            self._git(["config", RELEASE_MARK, self._plugin])
-            self._finish_release(self._plugin, refs)
-            return self._settle()
-
-    def _finish_release(self, plugin: str, branches: Sequence[str]) -> None:
-        """Delete ``plugin``'s refs, private file and worktrees, and ``branches``."""
-        layout = layout_for(plugin)
-        refs = self._git(
-            ["for-each-ref", "--format=%(refname)", *layout.roots], capture=True
-        ).text.split()
-        if layout.heads == "refs/remotes/origin/":
-            refs.append(ORIGIN_HEAD)
-        self._delete(dict.fromkeys([*refs, *branches]))
-        private_file(self._path, plugin).unlink(missing_ok=True)
-        for entry in worktree_entries(self._path):
-            if entry.owner == plugin:
-                self._remove_worktree(entry)
-        self._git(["worktree", "prune"], check=False)
-
-    def _remove_worktree(self, entry: WorktreeEntry) -> None:
-        if entry.path is not None:
-            removed = self._git(
-                ["worktree", "remove", "--force", "--force", str(entry.path)], check=False
-            )
-            if removed.returncode == 0:
-                return
-            shutil.rmtree(entry.path, ignore_errors=True)
-        shutil.rmtree(entry.admin, ignore_errors=True)
-
-    def _settle(self) -> Released | Removed:
-        """Clear the mark when someone still holds the repo, else remove it."""
-        released = self._holders()
-        if released is not None:
-            self._git(["config", "--unset-all", RELEASE_MARK], check=False)
-            return released
-        freed = tree_size(self._path)
-        removing = self._removing_path()
-        self._remove_removing()
-        try:
-            self._path.rename(removing)
-        except OSError as exc:
-            raise self._error(
-                f"could not remove repo store directory {self._path}: {exc.strerror or exc}",
-                category=ErrorCategory.FAILED,
-                system="local",
-            ) from exc
-        shutil.rmtree(removing, ignore_errors=True)
-        return Removed(freed)
-
-    def _holders(self) -> Released | None:
-        """Who still holds the repo, or ``None`` when nobody does."""
-        refs = self._git(
-            ["for-each-ref", "--format=%(refname)", *_HELD_ROOTS], capture=True
-        ).text.split()
-        plugins: dict[str, int] = dict.fromkeys(private_files(self._path), 0)
-        branches, stash = [], False
-        for ref in refs:
-            if ref == ORIGIN_HEAD:
-                continue
-            if ref.startswith("refs/untaped/"):
-                plugins.setdefault(ref.split("/")[2], 0)
-            elif ref.startswith(("refs/remotes/", "refs/tags/")):
-                plugins.setdefault("workspace", 0)
-            elif ref.startswith("refs/heads/"):
-                branches.append(ref.removeprefix("refs/heads/"))
-            elif ref == "refs/stash":
-                stash = True
-        foreign = []
-        for entry in worktree_entries(self._path):
-            if entry.owner is None:
-                foreign.append(_shown_path(entry.path) if entry.path else str(entry.admin))
-            else:
-                plugins[entry.owner] = plugins.get(entry.owner, 0) + 1
-        if not plugins and not foreign and not branches and not stash:
-            return None
-        return Released(
-            plugins=dict(sorted(plugins.items())),
-            foreign_worktrees=tuple(foreign),
-            branches=tuple(branches),
-            stash=stash,
-        )
-
-    def _checked_out(self) -> list[str]:
-        """The branches registered worktrees have checked out (``worktree list``)."""
-        result = self._git(["worktree", "list", "--porcelain"], capture=True, check=False)
-        return [
-            line.removeprefix("branch ")
-            for line in result.text.splitlines()
-            if line.startswith("branch ")
-        ]
-
-    def _removing_path(self) -> Path:
-        return self._path.with_name(self._path.name + REMOVING_SUFFIX)
-
-    def _remove_removing(self) -> None:
-        """Delete what an interrupted removal left beside the repo."""
-        removing = self._removing_path()
-        if removing.is_dir() and not removing.is_symlink():
-            shutil.rmtree(removing, ignore_errors=True)
+        return store_release.release(self, branches=branches, unless_in_use=unless_in_use)
 
     # ── refs ───────────────────────────────────────────────────────────────
 
@@ -863,7 +725,7 @@ class RepoStore:
         with self._locked():
             self._ensure()
             self.prefetch(trees=[ref])
-            self._enable_worktree_config()
+            worktree_config.enable_worktree_config(self)
             local = ref.removeprefix("refs/heads/")
             if branch is not None:
                 argv = ["-b", branch, str(path), ref]
@@ -872,7 +734,7 @@ class RepoStore:
             else:
                 argv = ["--detach", str(path), ref]
             self._git(["worktree", "add", "--quiet", *argv], env=_NO_LAZY)
-            self._write_owner_config(path)
+            worktree_config.write_owner_config(self, path)
             if branch is not None and ref.startswith("refs/remotes/origin/") and self._plain:
                 # The refspec that makes origin/<x> a tracking ref exists only now.
                 self._git(["branch", "--quiet", f"--set-upstream-to={ref}"], cwd=path)
@@ -880,7 +742,7 @@ class RepoStore:
     def checkout(self, worktree: Path, ref: str) -> None:
         """Check ``ref`` out in one of this repo's worktrees, its blobs prefetched first."""
         with self._locked():
-            self._check_worktree(worktree)
+            worktree_config.check_worktree(self, worktree)
             self.prefetch(trees=[ref])
             self._git(["checkout", "--quiet", ref], cwd=worktree, env=_NO_LAZY)
 
@@ -893,103 +755,7 @@ class RepoStore:
         ``untaped git credential`` with ``profile`` after the user's own
         helpers (instead of them with ``git.untaped_helper_first``).
         """
-        with self._locked():
-            self._check_worktree(worktree)
-            self._enable_worktree_config()
-            self._write_owner_config(worktree)
-            label = repo_origin(self._path)
-            # Every rewrite onto the label goes, so an earlier URL spelling
-            # (https before ssh, say) never wins over this one.
-            for key in self._rewrites_onto(worktree, label) if label else ():
-                self._worktree_config(worktree, "--unset-all", key, check=False)
-            if label and label != self._url:
-                self._worktree_config(worktree, f"url.{self._url}.insteadOf", label)
-            origin = https_origin(self._url)
-            if origin is None:
-                return
-            helper = f"credential.{origin}.helper"
-            self._worktree_config(worktree, f"credential.{origin}.useHttpPath", "true")
-            self._worktree_config(worktree, "--unset-all", helper, check=False)
-            if self._helper_first:
-                self._worktree_config(worktree, "--add", helper, "")
-            self._worktree_config(worktree, "--add", helper, _helper_command(profile))
-
-    def _enable_worktree_config(self) -> None:
-        if self._config_get("extensions.worktreeConfig") == "true":
-            return
-        self._git(["config", "--file", str(self._path / "config.worktree"), "core.bare", "true"])
-        self._git(["config", "--local", "--unset-all", "core.bare"], check=False)
-        self._git(["config", "core.repositoryformatversion", "1"])
-        self._git(["config", "extensions.worktreeConfig", "true"])
-        self._repair_worktrees(stripped=False)
-
-    def _repair_worktrees(self, *, stripped: bool) -> None:
-        """Give each registered worktree its own fetch keys after a shared-config change.
-
-        A worktree workspace owns gets workspace's owner keys. With the shared
-        refspec just ``stripped``, a worktree nobody owns (a 10.x worktree, or
-        one added by hand) gets the refspec and filter it lost, never an
-        owner: release would then remove it.
-        """
-        if self._config_get("extensions.worktreeConfig") != "true":
-            return
-        for entry in worktree_entries(self._path):
-            if entry.path is None or not names_admin(entry.path / ".git", entry.admin):
-                continue
-            if entry.owner == "workspace":
-                self._write_owner_config(entry.path, owner="workspace")
-            elif entry.owner is None and stripped:
-                self._write_fetch_config(entry.path, plain=True)
-
-    def _write_owner_config(self, worktree: Path, *, owner: str | None = None) -> None:
-        owner = owner or self._plugin
-        self._worktree_config(worktree, "untaped.owner", owner)
-        # Stamps which worktree is owned: git copies this file into worktrees
-        # added from this one, which must stay a user's own.
-        self._worktree_config(worktree, "untaped.worktree", str(worktree.resolve()))
-        plain = layout_for(owner).heads == "refs/remotes/origin/"
-        self._write_fetch_config(worktree, plain=plain)
-
-    def _write_fetch_config(self, worktree: Path, *, plain: bool) -> None:
-        refspec = "remote.origin.fetch"
-        self._worktree_config(worktree, "--unset-all", refspec, check=False)
-        if plain:
-            self._worktree_config(worktree, refspec, _PLAIN_REFSPEC)
-        # A user's own fetch here brings the blobs of new commits.
-        self._worktree_config(worktree, "remote.origin.partialclonefilter", "")
-
-    def _check_worktree(self, worktree: Path) -> None:
-        """Refuse a path that is not one of this repo's worktrees (a user's own clone, say)."""
-        result = self._git(
-            ["rev-parse", "--git-common-dir"],
-            cwd=worktree,
-            capture=True,
-            check=False,
-        )
-        common = result.text.strip()
-        # Relative to the worktree when git prints it relative (``--path-format`` is 2.31+).
-        if result.returncode != 0 or (worktree / common).resolve() != self._path.resolve():
-            raise self._error(
-                f"{worktree} is not a worktree of repo store {self._path}",
-                category=ErrorCategory.INVALID,
-            )
-
-    def _rewrites_onto(self, worktree: Path, label: str) -> list[str]:
-        result = self._git(
-            ["config", "--worktree", "--null", "--get-regexp", r"^url\..*\.insteadof$"],
-            cwd=worktree,
-            capture=True,
-            check=False,
-        )
-        keys = []
-        for entry in result.text.split("\0"):
-            key, _, value = entry.partition("\n")
-            if key and value == label:
-                keys.append(key)
-        return keys
-
-    def _worktree_config(self, worktree: Path, *args: str, check: bool = True) -> None:
-        self._git(["config", "--worktree", *args], cwd=worktree, check=check)
+        worktree_config.write_worktree_config(self, worktree, profile=profile)
 
     # ── report data ────────────────────────────────────────────────────────
 
@@ -1068,7 +834,7 @@ class RepoStore:
         running outside untaped keeps its own; a ``<repo>.git.removing``
         always (only the store makes one, under the repo lock).
         """
-        self._remove_removing()
+        store_release.remove_removing(self)
         cutoff = time.time() - _STALE_LEFTOVER_SECONDS
         candidates = [self._path / "shallow.lock"]
         try:
@@ -1271,14 +1037,6 @@ def basic_header(username: str, password: object) -> str:
     return f"AUTHORIZATION: basic {token}"
 
 
-def _helper_command(profile: str | None) -> str:
-    executable = shutil.which("untaped") or str(Path(sys.argv[0]).resolve())
-    command = f"!{shlex.quote(executable)}"
-    if profile:
-        command += f" --profile {shlex.quote(profile)}"
-    return f"{command} git credential"
-
-
 def _warn(text: str) -> None:
     ui_context(strict=False).message("warning", text)
 
@@ -1288,9 +1046,3 @@ def _plugin_name(plugin: object) -> str:
     if not isinstance(name, str):
         raise TypeError("plugin= takes the caller's PluginSpec")
     return name
-
-
-def _shown_path(path: Path) -> str:
-    """``path`` with the home directory as ``~``."""
-    home = Path.home()
-    return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)
