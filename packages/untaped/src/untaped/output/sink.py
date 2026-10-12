@@ -68,14 +68,12 @@ from untaped.output.policy import (
     leave,
     unscoped_policy,
 )
-from untaped.progress import ProgressHandle, progress_reporter
+from untaped.output.progress import ProgressHandle
 from untaped.redaction import redact_url_password
 from untaped.render import render_styled, should_colorize, stream_is_tty
 
 if TYPE_CHECKING:
     from rich.text import Text
-
-    from untaped.progress import Backend
 
 type Rendered = Callable[[bool], str] | str
 """A line's text presentation: a string, or a callable given whether to colour."""
@@ -216,6 +214,155 @@ class _SpinnerHandle:
             with _WRITE_LOCK:
                 if _spinners and _spinners[-1] is self:
                     _raw(_framed(""))
+
+
+# --------------------------------------------------------------------------- #
+# The line backends
+# --------------------------------------------------------------------------- #
+
+_THROTTLE_INTERVAL = 2.0
+_PERCENT_STEP = 10
+
+
+class Backend(Protocol):
+    """What renders one progress block."""
+
+    def start(self) -> None: ...
+
+    def update(
+        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+    ) -> None: ...
+
+    def log(self, line: str) -> None: ...
+
+    def finish(self, *, failed: bool) -> None: ...
+
+
+class _SilentHandle:
+    """Progress for ``--quiet``: no progress output; logged lines still print."""
+
+    def __init__(self, *, write: Callable[[str], None]) -> None:
+        self._write = write
+
+    def log(self, line: str) -> None:
+        self._write(f"{line}\n")
+
+    def start(self) -> None:
+        return None
+
+    def update(
+        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+    ) -> None:
+        return None
+
+    def finish(self, *, failed: bool) -> None:
+        return None
+
+
+class _VerboseHandle:
+    """Announce the label, then let the wrapped tool's output stream through."""
+
+    def __init__(self, label: str, *, write: Callable[[str], None]) -> None:
+        self._label = label
+        self._write = write
+
+    def start(self) -> None:
+        self._write(f"{self._label}\n")
+
+    def log(self, line: str) -> None:
+        self._write(f"{line}\n")
+
+    def update(
+        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+    ) -> None:
+        self._write(f"{message}\n")
+
+    def finish(self, *, failed: bool) -> None:
+        return None
+
+
+class _ThrottledHandle:
+    """Newline-terminated, throttled progress for non-TTY/piped streams."""
+
+    def __init__(self, label: str, *, write: Callable[[str], None]) -> None:
+        self._label = label
+        self._write = write
+        self._last_emit: float | None = None
+        self._last_step = -1
+
+    def start(self) -> None:
+        self._emit(self._label)
+
+    def log(self, line: str) -> None:
+        self._write(f"{line}\n")
+
+    def update(
+        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+    ) -> None:
+        if new_phase:
+            self._last_emit = None
+            self._last_step = -1
+        step = self._last_step
+        if fraction is not None:
+            step = int(min(max(fraction, 0.0), 1.0) * 100) // _PERCENT_STEP
+        now = time.monotonic()
+        due = self._last_emit is None or now - self._last_emit >= _THROTTLE_INTERVAL
+        if not due and step <= self._last_step:
+            return
+        self._last_step = max(step, self._last_step)
+        self._emit(message)
+
+    def finish(self, *, failed: bool) -> None:
+        return None
+
+    def _emit(self, message: str) -> None:
+        self._last_emit = time.monotonic()
+        self._write(f"{message}\n")
+
+
+def _make_handle(
+    label: str,
+    *,
+    write: Callable[[str], None],
+    verbose: bool,
+    quiet: bool,
+    spinner: Callable[[], Backend] | None,
+) -> Backend:
+    if quiet:
+        return _SilentHandle(write=write)
+    if verbose:
+        return _VerboseHandle(label, write=write)
+    if spinner is not None:
+        return spinner()
+    return _ThrottledHandle(label, write=write)
+
+
+@contextmanager
+def progress_reporter(
+    label: str,
+    *,
+    write: Callable[[str], None],
+    verbose: bool,
+    quiet: bool = False,
+    spinner: Callable[[], Backend] | None = None,
+) -> Iterator[ProgressHandle]:
+    """Report progress for a blocking operation, writing lines through ``write``.
+
+    Yields a :class:`ProgressHandle`; the rendering mode is chosen from
+    ``quiet``/``verbose`` and ``spinner``, the terminal's spinner backend
+    (``quiet`` wins: it stays fully silent). The spinner line is cleared on
+    exit, success or failure, so any propagating error prints cleanly.
+    """
+    handle = _make_handle(label, write=write, verbose=verbose, quiet=quiet, spinner=spinner)
+    handle.start()
+    failed = False
+    try:
+        yield handle
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        handle.finish(failed=failed)
 
 
 # --------------------------------------------------------------------------- #
