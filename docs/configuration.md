@@ -359,8 +359,10 @@ once per run, `config set <section>.token` warns, `untaped doctor` warns with
 - `untaped.git`: each `git` command's arguments (URL credentials masked), its
   directory, exit status and time, and `[auth header]` when a token was
   passed (the header itself never appears);
-- `untaped.auth`: which token source was used (never the token).
-- `untaped.contracts`: the traceback of a provider error that is not an
-  untaped error, and why an answer was not cached.
+- `untaped.auth`: which token source was used (never the token);
+- `untaped.contracts`: the traceback when a plugin's provider or contract
+  raises an unexpected exception (its answer or doctor row shows only
+  `KeyError: …`; JSON Lines carry the message only), and why an answer was
+  not cached.
 
 `--verbose` is the only switch; there is no log-level setting.
