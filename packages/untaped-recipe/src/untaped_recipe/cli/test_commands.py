@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     Failure,
     FormatOption,
     UntapedError,
@@ -31,7 +32,6 @@ from untaped_recipe.application.resolution import (
     find_library_recipe,
     resolve_explicit_recipe,
 )
-from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
@@ -46,7 +46,7 @@ from untaped_recipe.infrastructure import HookExecutor, HookResolver
 from untaped_recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped_recipe.infrastructure.pack_store import PackLibrary
 
-MessageKind = Literal["success", "warning", "error", "info"]
+_diag = Diagnostics()
 
 
 @dataclass(frozen=True)
@@ -171,18 +171,17 @@ def _execute(root: Path, selection: _Selection, *, update: bool) -> list[CaseRes
     if not selection.cases:
         return results
     runner = update_case if update else run_case
-    ui = recipe_ui()
     with UvHookWorkerPool(
         max_workers_per_project=1,
         hook_timeout_seconds=hook_timeout_seconds(None),
         startup_timeout_seconds=settings().hook_startup_timeout_seconds,
-        startup_notice=hook_startup_notice(ui),
+        startup_notice=hook_startup_notice(),
     ) as workers:
         executor = HookExecutor(
             HookResolver(library_dir=root),
             workers=workers,
         )
-        with ui.progress("Running test cases") as progress:
+        with _diag.progress("Running test cases") as progress:
             total = len(selection.cases)
             for index, case in enumerate(selection.cases, start=1):
                 results.append(runner(case, executor=executor))
@@ -214,33 +213,30 @@ def _render_diffs(results: list[CaseResult]) -> None:
     for result in results:
         if not result.diffs:
             continue
-        echo(f"# {result.pack}/{result.recipe}/{result.case}", err=True)
+        _diag.info(f"# {result.pack}/{result.recipe}/{result.case}")
         for change in result.diffs:
             diff = unified_diff_text(
                 change.before, change.after, path=change.relative_path.as_posix()
             )
             if diff:
-                echo(diff, err=True, nl=False)
+                _diag.info(diff.removesuffix("\n"))
 
 
 def _render_summary(selection: _Selection, results: list[CaseResult], *, update: bool) -> None:
-    ui = recipe_ui()
     errors = sum(1 for result in results if result.status == "error")
     if update:
         updated = sum(1 for result in results if result.status == "updated")
         unchanged = sum(1 for result in results if result.status == "pass")
-        update_kind: MessageKind = "warning" if errors else "info"
-        ui.message(
-            update_kind,
+        (_diag.warning if errors else _diag.info)(
             f"Recipe test update: {updated} updated, {unchanged} unchanged, {errors} errored",
         )
         return
     passed = sum(1 for result in results if result.status == "pass")
     failed = sum(1 for result in results if result.status == "fail")
-    summary_kind: MessageKind = "warning" if failed or errors else "info"
-    ui.message(summary_kind, f"Recipe tests: {passed} passed, {failed} failed, {errors} errored")
+    (_diag.warning if failed or errors else _diag.info)(
+        f"Recipe tests: {passed} passed, {failed} failed, {errors} errored"
+    )
     if selection.packs_without_tests:
-        ui.message(
-            "info",
+        _diag.info(
             "packs without tests: " + ", ".join(selection.packs_without_tests),
         )
