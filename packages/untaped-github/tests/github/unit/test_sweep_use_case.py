@@ -9,7 +9,14 @@ from unittest.mock import ANY
 
 import pytest
 
-from untaped.sdk import ConfigError, HttpStatusError, UntapedError, UsageError
+from untaped.sdk import (
+    NO_PROGRESS,
+    ConfigError,
+    HttpStatusError,
+    ProgressHandle,
+    UntapedError,
+    UsageError,
+)
 from untaped_github.application import RepositoryInventoryScope, TeamScope
 from untaped_github.application.sweep import (
     CorpusSyncOptions,
@@ -169,7 +176,7 @@ def _sweep(
     query: SweepQuery = README,
     *,
     resolver: _Resolver | None = None,
-    progress: Any = None,
+    progress: ProgressHandle = NO_PROGRESS,
     **options: Any,
 ) -> SweepReport:
     defaults: dict[str, Any] = {
@@ -558,15 +565,17 @@ def test_piped_records_skip_the_per_repo_lookup() -> None:
 
 class _Progress:
     def __init__(self) -> None:
-        self.updates: list[tuple[str, float | None, bool]] = []
+        self.updates: list[tuple[str | None, str | None, int | None, int | None]] = []
 
     def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
     ) -> None:
-        self.updates.append((message, fraction, new_phase))
-
-    def log(self, line: str) -> None:
-        return None
+        self.updates.append((message, phase, done, total))
 
 
 def test_progress_reports_phases_and_per_repo_counts() -> None:
@@ -578,11 +587,11 @@ def test_progress_reports_phases_and_per_repo_counts() -> None:
         progress=progress,
     )
 
-    assert [message for message, _, phase in progress.updates if phase] == [
-        "Resolving repositories…",
-        "Sweeping 2 repos…",
+    assert progress.updates[:2] == [
+        (None, "resolving repositories", None, None),
+        (None, "sweeping", 0, 2),
     ]
-    assert progress.updates[-1] == ("Sweeping 2/2 repos (1 fetched, 1 failed)", 1.0, False)
+    assert progress.updates[-1] == ("1 fetched, 1 failed", "sweeping", 2, 2)
 
 
 def test_sync_corpus_reports_one_outcome_per_repo() -> None:

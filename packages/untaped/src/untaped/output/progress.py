@@ -2,33 +2,53 @@
 
 A command opens a task with ``ctx.diag.progress(label)`` and passes the
 handle it yields to the layer that does the work; the sink
-(``untaped.output.sink``) decides what becomes output. This module imports
-nothing from the sink.
+(``untaped.output.sink``) decides what becomes output. An inner layer takes
+``progress: ProgressHandle = NO_PROGRESS`` and never checks for ``None``.
+This module imports nothing from the sink.
 """
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Final, Protocol
 
 
 class ProgressHandle(Protocol):
     """What a wrapped operation calls to report progress."""
 
     def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
     ) -> None:
-        """Report progress.
+        """Report the current state of the task.
 
-        ``fraction`` is completion in ``[0, 1]`` when known. ``new_phase`` marks
-        the start of a distinct phase so non-TTY output emits its first line
-        immediately instead of waiting out the throttle window.
+        ``message`` is free text about this update (``"4 changed"``, the
+        current item); ``None`` clears the last one, so a count-only update
+        never shows stale text. ``phase`` names the current phase: a name
+        different from the current one starts a phase and resets ``done``
+        and ``total`` to what this call passes. ``done`` and ``total`` are
+        absolute counts, never a fraction. ``phase``, ``done`` and ``total``
+        keep their value when passed ``None``.
         """
         ...
 
-    def log(self, line: str) -> None:
-        """Print ``line`` (e.g. an ``error:`` line) on the progress stream.
 
-        A TTY spinner is cleared first and redrawn after, so the line is never
-        garbled by the in-place repaint. Prints even under ``--quiet``.
-        """
-        ...
+class _NoProgress:
+    """The handle that reports nothing; stateless, so one instance is shared."""
+
+    def update(
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        return None
+
+
+NO_PROGRESS: Final[ProgressHandle] = _NoProgress()
+"""The do-nothing handle: an inner layer's default, so it never branches on ``None``."""

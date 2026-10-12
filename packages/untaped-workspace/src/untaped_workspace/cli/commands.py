@@ -551,10 +551,10 @@ def _show_run_summary(rows: Sequence[RunOutcome]) -> None:
 
 
 def _progress_line(progress: ProgressHandle) -> Callable[[RepoOutcome, int, int], None]:
-    """``on_done`` for provisioning: ``<done>/<total> <repo>`` per finished checkout."""
+    """``on_done`` for provisioning: the count and the repo of each finished checkout."""
 
     def update(row: RepoOutcome, done: int, total: int) -> None:
-        progress.update(f"{done}/{total} {row.repo}", fraction=done / total)
+        progress.update(row.repo, done=done, total=total)
 
     return update
 

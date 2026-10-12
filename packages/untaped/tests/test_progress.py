@@ -10,7 +10,7 @@ from contextlib import contextmanager, redirect_stderr
 import pytest
 
 from untaped.output.progress import ProgressHandle
-from untaped.output.sink import current_sink
+from untaped.output.sink import Diagnostics, current_sink
 
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -33,8 +33,8 @@ def test_non_tty_progress_emits_label_and_phase_updates_as_lines() -> None:
     stream = io.StringIO()
 
     with _progress("Resolving deps", stream=stream, verbose=False) as p:
-        p.update("step one", new_phase=True)
-        p.update("step two", new_phase=True)
+        p.update(phase="step one")
+        p.update(phase="step two")
 
     output = stream.getvalue()
     assert "Resolving deps" in output
@@ -58,15 +58,15 @@ def test_non_tty_progress_throttles_unmarked_updates() -> None:
     assert stream.getvalue().count("tick") <= 1
 
 
-def test_non_tty_progress_emits_on_fraction_step_within_throttle_window() -> None:
+def test_non_tty_progress_emits_on_a_count_step_within_throttle_window() -> None:
     stream = io.StringIO()
 
-    # All updates happen within the throttle window, so only fraction-bucket
-    # advances (every 10%) should break through; same-bucket updates collapse.
+    # All updates happen within the throttle window, so only 10 % steps of
+    # done/total break through; same-step updates collapse.
     with _progress("Work", stream=stream, verbose=False) as p:
-        p.update("ten", fraction=0.10)
-        p.update("fifty", fraction=0.50)
-        p.update("fifty-five", fraction=0.55)
+        p.update("ten", done=10, total=100)
+        p.update("fifty", done=50, total=100)
+        p.update("fifty-five", done=55, total=100)
 
     output = stream.getvalue()
     assert "ten" in output
@@ -133,7 +133,7 @@ def test_progress_reporter_is_silent_when_quiet() -> None:
     """``--quiet`` mutes progress entirely, even on a TTY."""
     stream = TtyStringIO()
     with _progress("Working", stream=stream, verbose=False, quiet=True) as handle:
-        handle.update("step", fraction=0.5)
+        handle.update("step", done=1, total=2)
     assert stream.getvalue() == ""
 
 
@@ -154,25 +154,14 @@ def test_spinner_falls_back_to_ascii_frames_on_non_utf8_stream() -> None:
     assert not any(ch in out for ch in _SPINNER_FRAMES)
 
 
-def test_spinner_log_clears_the_line_then_redraws() -> None:
+def test_a_line_emitted_under_the_spinner_clears_it_then_redraws() -> None:
     stream = TtyStringIO()
-    with _progress("Working", stream=stream, verbose=False) as handle:
-        handle.log("error: x: failed")
-        after_log = stream.getvalue()
-    head, _, tail = after_log.partition("error: x: failed\n")
+    with _progress("Working", stream=stream, verbose=False):
+        Diagnostics().warning("x: slow")
+        after_line = stream.getvalue()
+    head, _, tail = after_line.partition("warning: x: slow\n")
     assert head.endswith("\r")  # the spinner line was cleared first
-    assert "Working" in tail  # and redrawn after the logged line
-
-
-@pytest.mark.parametrize(
-    ("verbose", "isatty", "quiet"),
-    [(False, False, False), (True, True, False), (False, True, True)],
-)
-def test_log_writes_a_plain_line_in_every_mode(verbose: bool, isatty: bool, quiet: bool) -> None:
-    stream = TtyStringIO() if isatty else io.StringIO()
-    with _progress("Working", stream=stream, verbose=verbose, quiet=quiet) as handle:
-        handle.log("error: x: failed")
-    assert "error: x: failed\n" in stream.getvalue()
+    assert "Working" in tail  # and redrawn after the line
 
 
 def test_spinner_line_is_truncated_to_terminal_width(monkeypatch: pytest.MonkeyPatch) -> None:

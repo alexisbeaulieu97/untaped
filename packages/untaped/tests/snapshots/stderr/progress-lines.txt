@@ -1,4 +1,4 @@
-Syncing repos
-1/2 acme/x
+Syncing repos (0s)
+Syncing repos 1/2 · acme/x (0s)
 error: acme/x: it broke
-2/2 acme/y
+Syncing repos 2/2 · acme/y (0s)
