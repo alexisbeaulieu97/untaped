@@ -1,4 +1,4 @@
-"""The stderr helpers ``ctx.diag`` replaces warn until 12.0, and untaped's own code never calls them."""
+"""The stderr helpers ``ctx.diag`` replaces warn until 12.0; untaped's own code never calls them."""
 
 from __future__ import annotations
 
@@ -52,8 +52,8 @@ def test_untaped_code_calling_an_old_helper_fails_the_suite() -> None:
     """``filterwarnings`` turns the warning into an error in an ``untaped`` module."""
     probe = {"__name__": "untaped.probe", "UiContext": UiContext}
     code = compile("UiContext().message('info', 'x')", "<untaped.probe>", "exec")
-    with redirect_stderr(io.StringIO()), pytest.raises(DeprecationWarning, match="ctx.diag"):
-        exec(code, probe)  # noqa: S102 - a module named untaped.probe, built here
+    with redirect_stderr(io.StringIO()), pytest.raises(DeprecationWarning, match=r"ctx\.diag"):
+        exec(code, probe)
 
 
 def test_a_row_failure_still_reports_through_the_old_helper() -> None:
