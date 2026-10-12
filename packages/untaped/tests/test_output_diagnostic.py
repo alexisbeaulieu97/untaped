@@ -88,6 +88,7 @@ def test_a_plain_failure_is_failed_and_untaped() -> None:
 
 def _stale(**overrides: object) -> StaleData:
     fields: dict[str, object] = {
+        "plugin": "hello",
         "subject": "shelf",
         "cache": "hello.shelf_books",
         "key": "hello:ab12",
