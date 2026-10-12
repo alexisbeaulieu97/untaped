@@ -84,7 +84,16 @@ from untaped.http import (
 )
 from untaped.messages import hint, not_found, plural, q, shown_path, size_text, summary
 from untaped.migrations import delete_migration, dir_bytes, old_dirs, unsafe_dir
-from untaped.output import Debug, Diagnostic, Diagnostics, Failure, Message, StaleData
+from untaped.output import (
+    Debug,
+    Diagnostic,
+    Diagnostics,
+    Failure,
+    Message,
+    Progress,
+    StaleData,
+)
+from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.plugins.registry import (
@@ -100,7 +109,6 @@ from untaped.plugins.registry import (
     SkillAsset,
     plugin_dir,
 )
-from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
 from untaped.records import (
     AbsolutePath,
@@ -243,6 +251,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "OutcomeRecord",
     "OutputFormat",
     "PipeEnvelope",
+    "Progress",
     "Record",
     "Source",
     "StaleData",
@@ -322,6 +331,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "same_origin",
     "yaml_mapping_indent",
     # prompts and ui
+    "NO_PROGRESS",
     "PickCatalog",
     "PickItem",
     "PickRequest",

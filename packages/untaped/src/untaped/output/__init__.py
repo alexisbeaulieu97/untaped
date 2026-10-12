@@ -14,9 +14,11 @@ from untaped.output.diagnostic import (
     Diagnostic,
     Failure,
     Message,
+    Progress,
     StaleData,
 )
 from untaped.output.policy import OutputPolicy
+from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.output.sink import (
     Diagnostics,
     current_sink,
@@ -25,12 +27,15 @@ from untaped.output.sink import (
 )
 
 __all__ = [
+    "NO_PROGRESS",
     "Debug",
     "Diagnostic",
     "Diagnostics",
     "Failure",
     "Message",
     "OutputPolicy",
+    "Progress",
+    "ProgressHandle",
     "StaleData",
     "current_sink",
     "diagnostics_scope",

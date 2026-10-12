@@ -44,6 +44,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "OutcomeRecord",
         "OutputFormat",
         "PipeEnvelope",
+        "Progress",
         "Record",
         "Source",
         "StaleData",
@@ -129,6 +130,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "yaml_mapping_indent",
     ),
     "prompts and ui": (
+        "NO_PROGRESS",
         "PickCatalog",
         "PickItem",
         "PickRequest",

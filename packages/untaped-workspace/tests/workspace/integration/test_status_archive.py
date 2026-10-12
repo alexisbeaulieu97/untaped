@@ -86,6 +86,41 @@ def test_fetch_still_reports_ok(env: Env) -> None:
     assert row.state == "ok"
 
 
+class _Recorder:
+    """A progress handle that keeps each update's phase and counts."""
+
+    def __init__(self) -> None:
+        self.updates: list[tuple[str | None, int | None, int | None]] = []
+
+    def update(
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        self.updates.append((phase, done, total))
+
+
+def test_fetching_one_repo_passes_the_handle_to_the_store(env: Env) -> None:
+    progress = _Recorder()
+    env.status(env.record, fetch=True, progress=progress)
+    assert {phase for phase, _, _ in progress.updates} > {"J-1"}
+    assert progress.updates[-1] == ("J-1", 1, 1)
+
+
+def test_fetching_two_repos_reports_only_the_count_of_repos(
+    env: Env, make_upstream: Callable[..., GitRemote]
+) -> None:
+    env.provision.add(env.record, [RepoArg(ident=make_upstream("web").url)])
+    record = StateWorkspaceStore().get("J-1")
+    assert record is not None
+    progress = _Recorder()
+    env.status(record, fetch=True, progress=progress)
+    assert progress.updates == [("J-1", 1, 2), ("J-1", 2, 2)]
+
+
 def test_hand_deleted_repo_is_missing(env: Env) -> None:
     shutil.rmtree(env.repo)
     [row] = env.status(env.record)

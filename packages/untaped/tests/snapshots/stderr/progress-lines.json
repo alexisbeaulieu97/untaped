@@ -1,0 +1,47 @@
+[
+  {
+    "level": "progress",
+    "kind": "untaped.progress",
+    "label": "Syncing repos",
+    "phase": null,
+    "done": 1,
+    "total": 2,
+    "elapsed": 2.0,
+    "state": "running",
+    "message": "Syncing repos 1/2 · acme/x (2s)"
+  },
+  {
+    "level": "error",
+    "kind": "untaped.failure",
+    "item": "acme/x",
+    "category": "failed",
+    "system": "untaped",
+    "retryable": false,
+    "message": "it broke",
+    "hint": null,
+    "exit_code": 1,
+    "details": {}
+  },
+  {
+    "level": "progress",
+    "kind": "untaped.progress",
+    "label": "Syncing repos",
+    "phase": null,
+    "done": 2,
+    "total": 2,
+    "elapsed": 2.0,
+    "state": "running",
+    "message": "Syncing repos 2/2 · acme/y (2s)"
+  },
+  {
+    "level": "progress",
+    "kind": "untaped.progress",
+    "label": "Syncing repos",
+    "phase": null,
+    "done": null,
+    "total": null,
+    "elapsed": 2.0,
+    "state": "done",
+    "message": "Syncing repos: done · acme/y (2s)"
+  }
+]

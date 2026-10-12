@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from untaped.sdk import (
+    NO_PROGRESS,
     ConfigError,
     Failure,
     ProgressHandle,
@@ -17,7 +18,6 @@ from untaped.sdk import (
     attribution,
     bounded_map,
     most_severe,
-    plural,
 )
 from untaped_github.application.inventory import RepositoryInventoryScope
 from untaped_github.application.ports import GitCorpus
@@ -138,16 +138,6 @@ class _ContentMatch:
     text: str
 
 
-class _NoProgress:
-    def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
-    ) -> None:
-        return None
-
-    def log(self, line: str) -> None:
-        return None
-
-
 class _TreeScanner:
     """Evaluate a query on each unique tree, dropping trees that can no longer match.
 
@@ -253,11 +243,10 @@ class Sweep(_CorpusUseCase):
     """Run a sweep query across repository inventory and local corpus refs."""
 
     def __call__(
-        self, options: SweepOptions, *, progress: ProgressHandle | None = None
+        self, options: SweepOptions, *, progress: ProgressHandle = NO_PROGRESS
     ) -> SweepReport:
         options.query.validate()
-        progress = progress or _NoProgress()
-        progress.update("Resolving repositories…", new_phase=True)
+        progress.update(phase="resolving repositories")
         repos, scope_failures = self._resolve_scope(options)
 
         ready: list[_ReadyRepo] = []
@@ -299,13 +288,14 @@ class Sweep(_CorpusUseCase):
                 scans.append(result)
             done = len(scans) + len(failures)
             progress.update(
-                f"Sweeping {done}/{plural(len(repos), 'repo')} "
-                f"({counts['fetched']} fetched, {counts['failed']} failed)",
-                fraction=done / len(repos),
+                f"{counts['fetched']} fetched, {counts['failed']} failed",
+                phase="sweeping",
+                done=done,
+                total=len(repos),
             )
 
         if repos:
-            progress.update(f"Sweeping {plural(len(repos), 'repo')}…", new_phase=True)
+            progress.update(phase="sweeping", done=0, total=len(repos))
         bounded_map(sweep_one, repos, concurrency=options.parallel, on_each=record)
         rows = tuple(
             sorted(
@@ -537,10 +527,9 @@ class SyncCorpus(_CorpusUseCase):
     """Fetch every repository in scope into the corpus so later sweeps start warm."""
 
     def __call__(
-        self, options: CorpusSyncOptions, *, progress: ProgressHandle | None = None
+        self, options: CorpusSyncOptions, *, progress: ProgressHandle = NO_PROGRESS
     ) -> tuple[CorpusSyncOutcome, ...]:
-        progress = progress or _NoProgress()
-        progress.update("Resolving repositories…", new_phase=True)
+        progress.update(phase="resolving repositories")
         repos, failures = _resolve_online_scope(
             self._inventory,
             scope=options.scope,
@@ -566,6 +555,8 @@ class SyncCorpus(_CorpusUseCase):
                 selector=options.refs,
                 sync="force" if options.refresh else "auto",
                 max_age_seconds=options.max_age_seconds,
+                # One repo: its fetch's phases are the line; many: the count is.
+                progress=progress if len(repos) == 1 else NO_PROGRESS,
             )
 
         def record(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> None:
@@ -574,12 +565,14 @@ class SyncCorpus(_CorpusUseCase):
             fetched = sum(outcome.action == "synced" for outcome in outcomes)
             failed = sum(outcome.failed for outcome in outcomes)
             progress.update(
-                f"Syncing {done}/{plural(len(repos), 'repo')} ({fetched} fetched, {failed} failed)",
-                fraction=done / len(repos),
+                f"{fetched} fetched, {failed} failed",
+                phase="syncing",
+                done=done,
+                total=len(repos),
             )
 
         if repos:
-            progress.update(f"Syncing {plural(len(repos), 'repo')}…", new_phase=True)
+            progress.update(phase="syncing", done=0, total=len(repos))
         bounded_map(sync_one, repos, concurrency=options.parallel, on_each=record)
         return tuple(sorted(outcomes, key=lambda outcome: outcome.repo))
 
@@ -611,6 +604,7 @@ def _prepare_repo(
     selector: RefSelector,
     sync: Literal["auto", "force", "off"],
     max_age_seconds: int,
+    progress: ProgressHandle = NO_PROGRESS,
 ) -> _ReadyRepo | CorpusFailure:
     """Bring one repo's cached copy up to date for ``selector``, fetching only when needed.
 
@@ -636,7 +630,7 @@ def _prepare_repo(
                 touched = freshness.fetched_at
             return _ReadyRepo(repo=repo, fetched_at=touched, refreshed=False, unchanged=True)
     try:
-        result = corpus.sync_repo(repo, selector=selector)
+        result = corpus.sync_repo(repo, selector=selector, progress=progress)
     except (GitCorpusError, OSError) as exc:
         if freshness is not None and covers(freshness, selector):
             return _ReadyRepo(

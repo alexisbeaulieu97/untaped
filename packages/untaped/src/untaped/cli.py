@@ -241,7 +241,6 @@ def report_error(
     exc: UntapedError | Failure,
     *,
     item: str | None = None,
-    write: Callable[[str], None] | None = None,
 ) -> None:
     """Print one failure on stderr and count it toward the run's exit code.
 
@@ -249,10 +248,8 @@ def report_error(
     failure, as :func:`~untaped.output.diagnostic.format_error` renders it);
     under JSON diagnostics it is one JSON line with the error's category,
     system and hint. A failed row's :class:`~untaped.output.diagnostic.Failure`
-    reports the same way. ``write`` is accepted and ignored: every stderr line
-    clears and redraws a progress spinner already.
+    reports the same way.
     """
-    del write
     Diagnostics().failure(exc, item=item)
 
 

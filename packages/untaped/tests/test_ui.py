@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from untaped.errors import ConfigError
+from untaped.testing import progress_clock
 from untaped.theme import BUILTIN_THEMES, ThemeSpec, UiSettings, resolve_theme
 from untaped.ui import UiContext, ui_context
 
@@ -252,12 +253,13 @@ def test_progress_reports_on_stderr_and_keeps_stdout_clean() -> None:
     stderr = io.StringIO()
     ui = UiContext(stdout=stdout)
 
-    with redirect_stderr(stderr), ui.progress("Resolving deps") as p:
-        p.update("installing", new_phase=True)
+    with progress_clock() as clock, redirect_stderr(stderr), ui.progress("Resolving deps") as p:
+        p.update("pinning", phase="installing")
+        clock.advance(2)
 
     assert stdout.getvalue() == ""
     assert "Resolving deps" in stderr.getvalue()
-    assert "installing" in stderr.getvalue()
+    assert "Resolving deps · installing · pinning (2s)" in stderr.getvalue()
 
 
 def test_progress_verbose_context_passes_through_without_animation() -> None:

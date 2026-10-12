@@ -186,7 +186,7 @@ def _execute(root: Path, selection: _Selection, *, update: bool) -> list[CaseRes
             total = len(selection.cases)
             for index, case in enumerate(selection.cases, start=1):
                 results.append(runner(case, executor=executor))
-                progress.update(f"{index}/{total}", fraction=index / total)
+                progress.update(f"{case.recipe_name}/{case.case_name}", done=index, total=total)
     return results
 
 

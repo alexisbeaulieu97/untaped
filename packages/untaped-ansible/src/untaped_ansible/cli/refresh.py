@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import time
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from typing import Literal
 
-from untaped.sdk import HttpSettings, ProgressHandle, UiContext, plural
+from untaped.sdk import NO_PROGRESS, HttpSettings, ProgressHandle, UiContext, plural
 from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     RefreshResult,
@@ -15,7 +15,6 @@ from untaped_ansible.application.refresh_git_index import (
 from untaped_ansible.domain.payloads import (
     GRAPHQL_RATE_LIMIT_FALLBACK,
     GRAPHQL_TRANSIENT_FALLBACK,
-    RefreshProgressEvent,
     SkippedDependencyFile,
 )
 from untaped_ansible.infrastructure import (
@@ -60,7 +59,7 @@ def run_source_refresh(
             http=http,
             concurrency=concurrency,
             backend=backend,
-            on_progress=progress_reporter(progress),
+            progress=progress,
         )
     ui.message(
         "info",
@@ -90,7 +89,7 @@ def refresh_source(
     http: HttpSettings,
     concurrency: int,
     backend: Literal["auto", "graphql", "git"] | None = None,
-    on_progress: Callable[[RefreshProgressEvent], None] | None = None,
+    progress: ProgressHandle = NO_PROGRESS,
 ) -> RefreshResult:
     """Run a git-backed source refresh with fully wired adapters."""
     # The forge decides how its URLs look; the git plugin's GitHost supplies its token.
@@ -114,24 +113,10 @@ def refresh_source(
             ref_scan_default=settings.ref_scan_default,
             repo_batch_size=settings.source_refresh_repo_batch_size,
             rate_limit_floor=settings.source_refresh_rate_limit_floor,
-            on_progress=on_progress,
+            progress=progress,
             github_host=github_web_host(github_settings.base_url),
         )(source, source_key=source_key)
     return result
-
-
-def progress_reporter(handle: ProgressHandle) -> Callable[[RefreshProgressEvent], None]:
-    """Adapt refresh progress events onto a core UiContext progress handle."""
-    last_phase: str | None = None
-
-    def report(event: RefreshProgressEvent) -> None:
-        nonlocal last_phase
-        new_phase = event.phase != last_phase
-        last_phase = event.phase
-        fraction = event.done / event.total if event.total else None
-        handle.update(_format_progress(event), fraction=fraction, new_phase=new_phase)
-
-    return report
 
 
 def refresh_summary(
@@ -226,13 +211,3 @@ def format_skipped_dependency_file(skipped: SkippedDependencyFile) -> str:
     """Render a skipped dependency file warning body."""
     ref = f"@{skipped.ref}" if skipped.ref is not None else ""
     return f"skipped {skipped.repo}{ref} {skipped.source_path}: {skipped.reason}"
-
-
-def _format_progress(event: RefreshProgressEvent) -> str:
-    if event.phase == "expanding":
-        return f"expanding source: {event.done}/{event.total} selectors"
-    noun = "probing refs" if event.phase == "probing" else "fetching changes"
-    message = f"{noun}: {event.done}/{event.total} repos"
-    if event.changed is not None:
-        message = f"{message}, {event.changed} changed"
-    return message

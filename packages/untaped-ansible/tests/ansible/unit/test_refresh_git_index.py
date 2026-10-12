@@ -28,7 +28,6 @@ from untaped_ansible.domain.payloads import (
     ProbeFailure,
     ProbeReport,
     ProbeTarget,
-    RefreshProgressEvent,
     RefScan,
     SkippedRef,
     SourceRepoMetadata,
@@ -510,19 +509,32 @@ def test_refresh_reports_progress_events_and_probe_rate_limit(h: Harness) -> Non
     h.set_refs("acme/a", ("main", "sha-a"))
     h.set_refs("acme/b", ("main", "sha-b"))
     h.probe.rate_limit_remaining = 2400
-    events: list[RefreshProgressEvent] = []
+    progress = _Progress()
 
-    result = h.run(_repos("acme/a", "acme/b"), on_progress=events.append)
+    result = h.run(_repos("acme/a", "acme/b"), progress=progress)
 
     assert result.rate_limit_remaining == 2400
-    expanding = [event for event in events if event.phase == "expanding"]
-    fetching = [event for event in events if event.phase == "fetching"]
-    assert expanding and expanding[-1].done == expanding[-1].total == 2
-    assert [event for event in events if event.phase == "probing"] == [
-        RefreshProgressEvent(phase="probing", done=2, total=2)
-    ]
-    assert [event.done for event in fetching] == [1, 2]
-    assert fetching[-1].changed == 2
+    phases = [(phase, done, total) for _, phase, done, total in progress.updates]
+    assert phases[0] == ("expanding source", 2, 2)
+    assert ("probing refs", 2, 2) in phases
+    fetching = [update for update in progress.updates if update[1] == "fetching changes"]
+    assert [done for _, _, done, _ in fetching] == [1, 2]
+    assert fetching[-1][0] == "2 changed"
+
+
+class _Progress:
+    def __init__(self) -> None:
+        self.updates: list[tuple[str | None, str | None, int | None, int | None]] = []
+
+    def update(
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        self.updates.append((message, phase, done, total))
 
 
 def test_refresh_pauses_on_low_graphql_budget_and_resumes_remaining_repos(h: Harness) -> None:

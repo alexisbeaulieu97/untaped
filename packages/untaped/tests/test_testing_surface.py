@@ -9,6 +9,7 @@ import pytest
 EXPECTED_ALL = [
     "CliInvoker",
     "CliResult",
+    "ProgressClock",
     "PromptBackend",
     "ScreenKeys",
     "ScreenRun",
@@ -23,6 +24,7 @@ EXPECTED_ALL = [
     "invoke_cli",
     "invoke_root",
     "plugin_candidate",
+    "progress_clock",
 ]
 
 

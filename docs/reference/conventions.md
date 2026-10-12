@@ -10,8 +10,7 @@ A plugin also follows these rules:
   and `untaped.testing` from `untaped`, and another plugin only through its
   `api` module, declared (see
   [Depending on another plugin](#depending-on-another-plugin)).
-- A plugin reads and writes only its own config section, state, skills
-  and doctor checks.
+- A plugin reads and writes only its own config section, state, skills and doctor checks.
 - Layering is `cli → application → domain`, with `infrastructure → domain`;
   `domain` imports nothing from the other layers.
 - Errors raise with a category and a system (see
@@ -109,6 +108,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |
 | Decline | `cancelled; no changes made` (exit 1) | `raise OperationCancelledError`, or `finish(outcome)` after `batch_apply` |
 | Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
+| Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: report counts, never a formatted fraction | `with diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
 | Styled line | A Rich `Text` line for streamed human output (live job events); not muted by `-q` | `ui.styled(text)`, or `ui.styled(text, err=True)` for stderr; see its docstring for `tail=` and `truncate=` |
 
 Do not call `echo()` for `error:`, `warning:` or `failed:` lines, `print()`,
