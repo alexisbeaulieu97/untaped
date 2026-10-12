@@ -30,6 +30,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion
 from pydantic import BaseModel, ConfigDict
 
+from untaped.cache import Cache
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
 from untaped.output.sink import Diagnostics
@@ -38,8 +39,8 @@ from untaped.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
     RESERVED_SECTIONS,
-    owner_settings_model,
     reserved_section_keys,
+    section_model,
     validate_disjoint_settings_sections,
 )
 from untaped.stability import Stability, check_stability, mark_errors
@@ -307,6 +308,7 @@ class PluginSpec:
         default_factory=lambda: MappingProxyType({}), hash=False
     )
     migrations: tuple[DirMigration, ...] = ()
+    caches: tuple[Cache, ...] = ()
 
     def __post_init__(self) -> None:
         check_plugin_name(self.name)
@@ -335,6 +337,10 @@ class PluginSpec:
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
         object.__setattr__(self, "migrations", tuple(self.migrations))
+        object.__setattr__(self, "caches", tuple(self.caches))
+        for cache in self.caches:
+            if not isinstance(cache, Cache):
+                raise ConfigError(f"plugin {self.name!r} caches holds {cache!r}, not a Cache")
         object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
 
 
@@ -350,11 +356,14 @@ def owns_contracts(spec: PluginSpec) -> bool:
 def section_settings(spec: PluginSpec) -> type[BaseModel] | None:
     """The model registered for ``spec``'s config section; ``None`` when it has none.
 
-    A contract owner's section always exists: it carries the injected
-    ``extensions`` key (:func:`untaped.settings.owner_settings_model`).
+    The section of a contract owner, or of a plugin that declares caches,
+    always exists: it carries the keys the SDK injects, ``extensions`` and
+    ``caches`` (:func:`untaped.settings.section_model`).
     """
-    if owns_contracts(spec):
-        return owner_settings_model(spec.settings or _NoSettings)
+    if owns_contracts(spec) or spec.caches:
+        return section_model(
+            spec.settings or _NoSettings, extensions=owns_contracts(spec), caches=spec.caches
+        )
     return spec.settings
 
 
@@ -423,6 +432,8 @@ VALID_REASONS = frozenset(
         "bad-metadata",
         "bad-settings-keys",
         "duplicate-kind",
+        "foreign-cache",
+        "duplicate-cache",
     }
 )
 
@@ -713,8 +724,12 @@ def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
 
 
 def _check_section_keys(spec: PluginSpec) -> None:
-    # Only an owner's settings section gets ``extensions`` injected.
-    injected = frozenset({"extensions"}) if owns_contracts(spec) else frozenset()
+    # Only an owner's settings section gets ``extensions``, and only one with caches ``caches``.
+    injected = frozenset(
+        key
+        for key, applies in (("extensions", owns_contracts(spec)), ("caches", bool(spec.caches)))
+        if applies
+    )
     for label, model, keys in (
         ("settings", spec.settings, injected),
         ("state", spec.state, frozenset[str]()),
@@ -811,10 +826,41 @@ def _check_key_mappings(spec: PluginSpec) -> None:
         raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {errors[0]}")
 
 
+def _check_caches(spec: PluginSpec) -> None:
+    seen: set[str] = set()
+    for cache in spec.caches:
+        if cache.plugin != spec.name:
+            raise _Quarantine(
+                "foreign-cache",
+                f"plugin {spec.name!r} declares the cache {cache.qualified!r} of another plugin",
+            )
+        if cache.name in seen:
+            raise _Quarantine(
+                "duplicate-cache", f"plugin {spec.name!r} declares the cache {cache.name!r} twice"
+            )
+        seen.add(cache.name)
+
+
+def _check_composed_mappings(spec: PluginSpec) -> None:
+    # A cache's renamed_from exists on the composed model only: check it there.
+    if not any(cache.renamed_from for cache in spec.caches):
+        return
+    try:
+        errors = mapping_errors(settings_model(spec))
+    except ConfigError as exc:
+        errors = [str(exc)]
+    if errors:
+        raise _Quarantine(
+            "bad-settings-keys", f"plugin {spec.name!r} caches renamed_from: {errors[0]}"
+        )
+
+
 def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_reserved_name(spec, state)
+    _check_caches(spec)
     _check_section_keys(spec)
     _check_key_mappings(spec)
+    _check_composed_mappings(spec)
     _check_state_model(spec)
     _check_skills(spec, state)
     _check_doctor_checks(spec, state)
