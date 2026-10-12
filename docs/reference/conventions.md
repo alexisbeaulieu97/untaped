@@ -111,10 +111,10 @@ the helpers do this for you, so never print a JSON line yourself.
 | Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: the label is a noun phrase without `…`; report counts, never a formatted fraction | `with ctx.diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
 | Styled line | A Rich `Text` line for streamed human output (live job events) | stdout: `ui.styled(text)` (see its `tail=` and `truncate=`); stderr: `ctx.diag.info(text, unmuted=True)`, or `ctx.diag.relay(text)` for another tool's output |
 
-`ctx.diag` replaces the stderr helpers, which warn until 12.0. `-q` mutes
-`info`, `success` and progress; `unmuted=True` is for a preview before a
-prompt, a stream the user asked to watch or output a flag asks for. Never
-`print()`, `warnings.warn()` (take a `warn` callback) or your own `Console`.
+`ctx.diag` replaces the stderr helpers, which warn until 12.0; never `echo()` an `error:`, `warning:`
+or `failed:` line. `-q` mutes `info`, `success` and progress; `unmuted=True` is for a preview before
+a prompt, a stream the user asked to watch or output a flag asks for. Never `print()`, `warnings.warn()`
+(take a `warn` callback; a `DeprecationWarning` for a Python API is the exception) or your own `Console`.
 
 **Typed diagnostics.** Each stderr line has a `kind`. To add one, subclass
 `Message` or `Failure` with `kind="<plugin>.<name>"` (add fields, never

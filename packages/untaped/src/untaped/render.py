@@ -21,7 +21,9 @@ from typing import Any, Literal, Protocol, TextIO
 import yaml
 from rich import box
 from rich.cells import cell_len
+from rich.color import ColorSystem
 from rich.console import Console
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
@@ -148,7 +150,13 @@ class RichTerminalRenderer:
         style = _role_style(theme, kind, colorize=colorize)
         if style is None:
             return rendered
-        return _render_text(Text(rendered, style=style), colorize=colorize)
+        # Each line styled as is: a message (a diff, a tab-joined preview) is never
+        # wrapped or tab-expanded.
+        ansi = Style.parse(style)
+        return "\n".join(
+            ansi.render(line, color_system=ColorSystem.STANDARD) if line else line
+            for line in rendered.split("\n")
+        )
 
 
 class _YamlDumper(yaml.SafeDumper):

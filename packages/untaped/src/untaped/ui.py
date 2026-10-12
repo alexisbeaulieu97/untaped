@@ -214,7 +214,8 @@ class UiContext:
         ``[label] ``). With ``truncate``, each line of ``text`` too wide for
         the terminal ends in an ellipsis instead of wrapping (aligned output
         such as trees). Under JSON diagnostics a stderr line is an ``info``
-        JSON line.
+        JSON line. ``err=True`` is deprecated until 12.0: write stderr through
+        ``ctx.diag.info(text, unmuted=True)``.
         """
         plain = text if isinstance(text, str) else text.plain
         # Rendering may drop trailing spaces: render without them, then restore.

@@ -280,7 +280,7 @@ def _set(
     _diag.success(
         f"stored the {section} token in {where}; {section}.token_command set in profile {profile}"
     )
-    _warn_env_override(ui, section)
+    _warn_env_override(section)
     emit(
         {"section": section, "profile": profile, "store": where, "action": "stored"},
         fmt=fmt,
@@ -303,7 +303,7 @@ def _prompt_token(ui: UiContext, section: str) -> str:
         return ui.secret(f"{section} token").strip()
 
 
-def _warn_env_override(ui: UiContext, section: str) -> None:
+def _warn_env_override(section: str) -> None:
     override = token_override_env(section)
     if override is not None:
         _diag.warning(
