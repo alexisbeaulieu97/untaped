@@ -384,12 +384,11 @@ def test_search_empty_table_hints_on_stderr_but_json_stays_clean(
     assert message not in as_json.stderr
 
 
-def test_search_repos_raw_prints_first_field_and_progress_goes_to_stderr() -> None:
+def test_search_repos_raw_prints_first_field_on_stdout() -> None:
     result, _ = _search(["repos", "--format", "raw"], items=[_repo("alpha")])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["me/ralpha"]
-    assert "Searching repositories" in result.stderr
 
 
 def test_search_issues_raw_repo_number_columns_are_actionable() -> None:

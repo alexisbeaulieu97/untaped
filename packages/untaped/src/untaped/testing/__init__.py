@@ -6,6 +6,13 @@ passed in directly instead of one discovered through entry points.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
 plugins. :func:`compose_with`, :func:`assert_fills` and
 :func:`assert_contract_schemas` test contracts (``untaped.testing.contracts``).
+
+Progress lines follow a clock, not the wall: :func:`invoke_cli` freezes the
+progress clock for the invocation, so ``CliResult.diagnostics`` carries no
+``untaped.progress`` line however slow the run (``--verbose`` still prints
+every update). A test that wants the cadence runs under
+:func:`progress_clock` and calls ``advance(seconds)`` from inside the
+command (a fake the command calls, say).
 """
 
 from __future__ import annotations
@@ -13,8 +20,8 @@ from __future__ import annotations
 import io
 import sys
 from collections import deque
-from collections.abc import Callable, Iterable, Sequence
-from contextlib import redirect_stderr, redirect_stdout
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO, cast
@@ -24,7 +31,7 @@ from rich.console import Console
 
 from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
-from untaped.output.sink import recording
+from untaped.output.sink import current_clock, installed_clock, recording, tick
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -47,6 +54,7 @@ if TYPE_CHECKING:
 __all__ = [
     "CliInvoker",
     "CliResult",
+    "ProgressClock",
     "PromptBackend",
     "ScreenKeys",
     "ScreenRun",
@@ -61,7 +69,31 @@ __all__ = [
     "invoke_cli",
     "invoke_root",
     "plugin_candidate",
+    "progress_clock",
 ]
+
+
+class ProgressClock:
+    """The progress clock of :func:`progress_clock`: time moves only when a test advances it."""
+
+    def __init__(self) -> None:
+        self._now = 0.0
+
+    def __call__(self) -> float:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        """Move the clock on, then run one progress tick, so a due line prints now."""
+        self._now += seconds
+        tick()
+
+
+@contextmanager
+def progress_clock() -> Iterator[ProgressClock]:
+    """Run the block on a progress clock the test advances (``invoke_cli`` keeps it)."""
+    clock = ProgressClock()
+    with installed_clock(clock):
+        yield clock
 
 
 @dataclass(frozen=True)
@@ -147,7 +179,13 @@ def invoke_cli(
     token = set_prompt_backend_override(prompt_backend) if prompt_backend is not None else None
     terminal_token = set_terminal_override(TtyStringIO if terminal else no_terminal)
     try:
-        with redirect_stdout(stdout), redirect_stderr(stderr), recording() as emitted:
+        frozen = nullcontext() if isinstance(current_clock(), ProgressClock) else progress_clock()
+        with (
+            frozen,
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+            recording() as emitted,
+        ):
             try:
                 _call_command(command, list(args or []), stdout=stdout, stderr=stderr)
             except SystemExit as exc:

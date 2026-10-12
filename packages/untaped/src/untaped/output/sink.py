@@ -1,4 +1,4 @@
-"""The one writer to stderr: the invocation's scope, its sink, and the spinner.
+"""The one writer to stderr: the invocation's scope, its sink, and progress.
 
 :func:`diagnostics_scope` scopes one invocation: its :class:`OutputPolicy`
 (inherited from an enclosing scope, so a nested scope starts with what argv
@@ -26,6 +26,15 @@ Rules the sink keeps:
   thread that already holds the lock writes without taking it.
 - **Screens.** While a screen owns the terminal (:meth:`Sink.hold`), text
   lines are held and printed after it exits; JSON lines are not held.
+  Progress is the exception: no spinner is drawn and text progress lines
+  are dropped, not held, while any live scope holds a screen.
+- **Progress.** Open ``progress(label)`` blocks are one process-wide task
+  stack, ordered by open time: the first task's line is the one shown, and
+  the last one opened owns its phase (a nested task is a phase of the outer
+  line). One ticker thread runs while the stack is not empty: it redraws
+  the spinner on a terminal and, elsewhere, prints the late start line and
+  the heartbeat. Every progress line is an ``untaped.progress`` event at one
+  cadence (:func:`_due`), read from a clock ``untaped.testing`` can freeze.
 
 A presentation (``rendered``) may accompany a diagnostic: the exact text the
 text renderer prints (a callable taking whether to colour, or a string). It
@@ -44,7 +53,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
 from dataclasses import replace
-from typing import TYPE_CHECKING, Protocol, TextIO
+from typing import TYPE_CHECKING, Literal, Protocol, TextIO
 
 from pydantic import BaseModel
 
@@ -54,6 +63,7 @@ from untaped.output.diagnostic import (
     Diagnostic,
     Failure,
     Message,
+    Progress,
     StaleData,
     format_error,
     kind_of,
@@ -87,10 +97,28 @@ _ECHO_LEVELS = (("warning: ", "warning"), (_HINT_PREFIX, "hint"))
 
 _WRITE_LOCK = threading.Lock()
 _thread = threading.local()
-#: Open spinners, innermost last; only the last one draws. Guarded by the lock.
-_spinners: list[_SpinnerHandle] = []
 #: The width of the spinner line on screen (0: none drawn). Guarded by the lock.
 _drawn = 0
+#: How many screens hold the terminal, across every live scope. Guarded by the lock.
+_holds = 0
+
+
+@contextmanager
+def _locked() -> Iterator[None]:
+    """Hold the write lock, marking this thread inside it; a no-op for a thread already inside.
+
+    A write made while it is held (a stream that logs, say) goes straight to
+    the stream instead of blocking on the lock this thread holds.
+    """
+    if getattr(_thread, "inside", False):
+        yield
+        return
+    with _WRITE_LOCK:
+        _thread.inside = True
+        try:
+            yield
+        finally:
+            _thread.inside = False
 
 
 def _write(text: str) -> None:
@@ -102,12 +130,8 @@ def _write(text: str) -> None:
     if getattr(_thread, "inside", False):
         _raw(text)
         return
-    with _WRITE_LOCK:
-        _thread.inside = True
-        try:
-            _raw(_framed(text))
-        finally:
-            _thread.inside = False
+    with _locked():
+        _raw(_framed(text))
 
 
 def _raw(text: str) -> None:
@@ -117,19 +141,21 @@ def _raw(text: str) -> None:
 
 
 def _framed(text: str) -> str:
-    """``text`` preceded by clearing the spinner line and followed by redrawing it."""
+    """``text`` preceded by clearing the spinner line and followed by redrawing it.
+
+    Nothing is drawn while a screen holds the terminal. Called under the lock.
+    """
     global _drawn
     out = f"\r{' ' * _drawn}\r" if _drawn else ""
     _drawn = 0
     out += text
-    if _spinners:
-        line = _spinners[-1].frame()
+    line = _spinner_line()
+    if line is not None:
         out += f"\r{line}"
         _drawn = len(line)
     return out
 
 
-_SPINNER_TICK = 0.1
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 _ASCII_SPINNER_FRAMES = "|/-\\"
 
@@ -160,36 +186,132 @@ def _fit(line: str) -> str:
     return line[: width - 1] + "…"
 
 
-class _TaskState:
-    """What one task last reported, and how its line reads (the update rules of the handle)."""
+# --------------------------------------------------------------------------- #
+# Progress: the task stack, its one ticker and the line cadence
+# --------------------------------------------------------------------------- #
 
-    def __init__(self, label: str) -> None:
+#: Nothing on a line renderer for a task's first seconds.
+_QUIET_PERIOD = 2.0
+#: A line on each step of this many percent of ``total``.
+_STEP_PERCENT = 10
+#: A line when this many seconds pass without one.
+_HEARTBEAT = 30.0
+#: How often the ticker redraws the spinner and checks the deadlines.
+_TICK = 0.1
+
+type _Mode = Literal["spinner", "lines", "silent"]
+
+#: Open tasks, by open time: the first is the line's, the last owns its phase. Guarded by the lock.
+_tasks: list[_Task] = []
+#: The thread driving the spinner and the deadlines while a task is open. Guarded by the lock.
+_ticker: _Ticker | None = None
+#: The spinner's frame counter. Guarded by the lock.
+_frame = 0
+#: The progress clock: ``time.monotonic`` unless a test installed its own.
+_clock: Callable[[], float] = time.monotonic
+
+
+def _now() -> float:
+    return _clock()
+
+
+@contextmanager
+def installed_clock(clock: Callable[[], float]) -> Iterator[None]:
+    """Read the progress cadence from ``clock`` inside the block (``untaped.testing``'s)."""
+    global _clock
+    previous, _clock = _clock, clock
+    try:
+        yield
+    finally:
+        _clock = previous
+
+
+def current_clock() -> Callable[[], float]:
+    """The clock the progress cadence reads now."""
+    return _clock
+
+
+class _Task:
+    """One open ``progress(label)`` block: its handle, its state and its line's cadence.
+
+    Every field is guarded by the write lock. The cadence fields (``started``,
+    ``last_line``, ``shown_phase``, ``shown_step``) matter while the task is
+    the first of the stack, the one whose line is printed.
+    """
+
+    def __init__(
+        self, label: str, *, sink: _ScopeSink, mode: _Mode, verbose: bool, frames: str
+    ) -> None:
         self.label = label
+        self.sink = sink
+        self.mode = mode
+        self.verbose = verbose
+        self.frames = frames
+        self.opened = _now()
         self.phase: str | None = None
         self.done: int | None = None
         self.total: int | None = None
         self.message: str | None = None
+        #: An update from a task between the first and the last, shown as the line's text.
+        self.aside: str | None = None
+        self.started = False
+        self.last_line = self.opened
+        self.shown_phase: str | None = None
+        self.shown_step: int | None = None
 
-    def apply(
-        self, message: str | None, phase: str | None, done: int | None, total: int | None
-    ) -> bool:
-        """Record one update; ``True`` when it starts a new phase.
+    def update(
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        with _locked():
+            if phase is not None and phase != self.phase:
+                self.phase, self.done, self.total = phase, None, None
+            if done is not None:
+                self.done = done
+            if total is not None:
+                self.total = total
+            self.message = message
+            if self not in _tasks:
+                return
+            first = _tasks[0]
+            first.aside = None if self in (first, _tasks[-1]) else _aside(self)
+            line = _due(first, opening=False)
+            if first.mode == "spinner":
+                _raw(_framed(""))
+        _print(line)
 
-        ``None`` keeps ``phase``, ``done`` and ``total``; a new phase resets
-        the counts to what this update passes; ``message`` is per update.
-        """
-        new_phase = phase is not None and phase != self.phase
-        if new_phase:
-            self.phase, self.done, self.total = phase, None, None
-        if done is not None:
-            self.done = done
-        if total is not None:
-            self.total = total
-        self.message = message
-        return new_phase
+
+def _aside(task: _Task) -> str:
+    """A concurrent inner task's update, as the line's text: ``<label>[ <counts>][ · <text>]``."""
+    text = task.label + _counts(task.done, task.total)
+    return text if not task.message else f"{text} · {task.message}"
+
+
+def _counts(done: int | None, total: int | None) -> str:
+    if done is None:
+        return ""
+    return f" {done}" if total is None else f" {done}/{total}"
+
+
+class _View:
+    """What the first task's line shows: the innermost task's phase and counts."""
+
+    def __init__(self, first: _Task) -> None:
+        last = _tasks[-1] if _tasks and first in _tasks else first
+        self.label = first.label
+        if last is first:
+            self.phase = first.phase
+        else:
+            self.phase = last.label if last.phase is None else f"{last.label} · {last.phase}"
+        self.done, self.total = last.done, last.total
+        self.text = first.aside or last.message
 
     def step(self) -> int | None:
-        """The 10 % step the counts reached, or ``None`` without a ``total``."""
+        """The ``_STEP_PERCENT`` step the counts reached, or ``None`` without a ``total``."""
         if self.done is None or not self.total:
             return None
         return min(max(self.done, 0), self.total) * 100 // self.total // _STEP_PERCENT
@@ -209,212 +331,188 @@ def _compose(
     tail = "" if not text else f" · {text}"
     if state != "running":
         return f"{label}: {state}{tail} ({int(elapsed)}s)"
-    line = label if phase is None else f"{label} · {phase}"
-    if done is not None:
-        line += f" {done}" if total is None else f" {done}/{total}"
-    return f"{line}{tail} ({int(elapsed)}s)"
+    head = label if phase is None else f"{label} · {phase}"
+    return f"{head}{_counts(done, total)}{tail} ({int(elapsed)}s)"
 
 
-class _SpinnerHandle:
-    """An animated spinner on a terminal: a ticker thread redraws it under the lock.
+#: One line to print, built under the lock and printed after it: the sink and the event.
+type _Line = tuple[_ScopeSink, Progress] | None
 
-    Every line written while it is up clears it and redraws it after
-    (:func:`_write`); only the innermost open spinner draws.
+
+def _snapshot(task: _Task, view: _View, now: float, state: str = "running") -> _Line:
+    """The line ``task`` prints now; records it as the task's last line. Called under the lock."""
+    task.last_line = now
+    elapsed = now - task.opened
+    running = state == "running"
+    progress = Progress(
+        message=_compose(
+            view.label,
+            phase=view.phase,
+            done=view.done,
+            total=view.total,
+            text=view.text if running else task.message,
+            elapsed=elapsed,
+            state=state,
+        ),
+        hint=None,
+        label=view.label,
+        phase=view.phase if running else None,
+        done=view.done if running else None,
+        total=view.total if running else None,
+        elapsed=round(elapsed, 1),
+        state=state,
+    )
+    return task.sink, progress
+
+
+def _due(first: _Task, *, opening: bool) -> _Line:
+    """The line ``first``'s cadence prints now, if any: start, phase, step or heartbeat.
+
+    Called under the lock, after an update, at an open, or from a tick. A
+    phase or step is recorded as shown even when nothing prints (inside
+    the quiet period, or under a screen), so the start line carries the
+    current state and no older step prints after it.
     """
+    if first.mode != "lines":
+        return None
+    now = _now()
+    view = _View(first)
+    step = view.step()
+    phase_changed = view.phase != first.shown_phase
+    stepped = step is not None and (first.shown_step is None or step > first.shown_step)
+    if phase_changed:
+        first.shown_phase, first.shown_step = view.phase, step
+    elif stepped:
+        first.shown_step = step
+    if _holds and first.sink.policy.diagnostics == "text":
+        return None  # dropped, not queued: a screen owns the terminal
+    if first.verbose:
+        first.started = True
+        return _snapshot(first, view, now)
+    if not first.started:
+        if now - first.opened < _QUIET_PERIOD:
+            return None
+        first.started = True
+        return _snapshot(first, view, now)
+    if opening:
+        return None
+    if phase_changed or stepped or now - first.last_line >= _HEARTBEAT:
+        return _snapshot(first, view, now)
+    return None
 
-    def __init__(self, label: str) -> None:
-        self._task = _TaskState(label)
-        self._frames = _spinner_frames(sys.stderr)
-        self._frame = 0
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="untaped-spinner", daemon=True)
-        self._started_at = time.monotonic()
 
-    def frame(self) -> str:
-        """The next frame of the spinner line (called under the lock)."""
-        glyph = self._frames[self._frame % len(self._frames)]
-        self._frame += 1
-        task = self._task
-        line = _compose(
-            task.label,
-            phase=task.phase,
-            done=task.done,
-            total=task.total,
-            text=task.message,
-            elapsed=time.monotonic() - self._started_at,
-        )
-        return _fit(f"{glyph} {line}")
+def _print(line: _Line) -> None:
+    """Print a progress line built under the lock (never called under it)."""
+    if line is not None:
+        sink, progress = line
+        sink.emit_progress(progress)
 
-    def start(self) -> None:
-        with _WRITE_LOCK:
-            _spinners.append(self)
-            _raw(_framed(""))
-        self._thread.start()
 
-    def update(
-        self,
-        message: str | None = None,
-        *,
-        phase: str | None = None,
-        done: int | None = None,
-        total: int | None = None,
-    ) -> None:
-        with _WRITE_LOCK:
-            self._task.apply(message, phase, done, total)
-            _raw(_framed(""))
+def _spinner_line() -> str | None:
+    """The spinner frame for the first task, or ``None``. Called under the lock."""
+    global _frame
+    if not _tasks or _holds or _tasks[0].mode != "spinner":
+        return None
+    first = _tasks[0]
+    view = _View(first)
+    glyph = first.frames[_frame % len(first.frames)]
+    _frame += 1
+    line = _compose(
+        view.label,
+        phase=view.phase,
+        done=view.done,
+        total=view.total,
+        text=view.text,
+        elapsed=_now() - first.opened,
+    )
+    return _fit(f"{glyph} {line}")
 
-    def finish(self, *, failed: bool) -> None:
-        del failed
-        self._stop.set()
-        self._thread.join()  # never under the lock: the ticker takes it
-        with _WRITE_LOCK:
-            if self in _spinners:
-                _spinners.remove(self)
-            _raw(_framed(""))
+
+class _Ticker:
+    """The one thread that redraws the spinner and fires the late start and the heartbeat."""
+
+    def __init__(self) -> None:
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, name="untaped-progress", daemon=True)
 
     def _run(self) -> None:
-        while not self._stop.wait(_SPINNER_TICK):
-            with _WRITE_LOCK:
-                if _spinners and _spinners[-1] is self:
-                    _raw(_framed(""))
+        while not self.stop.wait(_TICK):
+            tick()
 
 
-# --------------------------------------------------------------------------- #
-# The line backends
-# --------------------------------------------------------------------------- #
-
-_THROTTLE_INTERVAL = 2.0
-_STEP_PERCENT = 10
-
-
-class Backend(Protocol):
-    """What renders one progress block."""
-
-    def start(self) -> None: ...
-
-    def update(
-        self,
-        message: str | None = None,
-        *,
-        phase: str | None = None,
-        done: int | None = None,
-        total: int | None = None,
-    ) -> None: ...
-
-    def finish(self, *, failed: bool) -> None: ...
-
-
-class _SilentHandle:
-    """Progress for ``--quiet``: no progress output."""
-
-    def start(self) -> None:
-        return None
-
-    def update(
-        self,
-        message: str | None = None,
-        *,
-        phase: str | None = None,
-        done: int | None = None,
-        total: int | None = None,
-    ) -> None:
-        return None
-
-    def finish(self, *, failed: bool) -> None:
-        return None
-
-
-class _LineHandle:
-    """Newline-terminated progress lines; throttled unless ``verbose``."""
-
-    def __init__(self, label: str, *, write: Callable[[str], None], verbose: bool) -> None:
-        self._task = _TaskState(label)
-        self._write = write
-        self._verbose = verbose
-        self._started_at = time.monotonic()
-        self._last_emit: float | None = None
-        self._last_step = -1
-
-    def start(self) -> None:
-        self._emit()
-
-    def update(
-        self,
-        message: str | None = None,
-        *,
-        phase: str | None = None,
-        done: int | None = None,
-        total: int | None = None,
-    ) -> None:
-        if self._task.apply(message, phase, done, total):
-            self._last_emit = None
-            self._last_step = -1
-        step = self._task.step()
-        now = time.monotonic()
-        due = self._last_emit is None or now - self._last_emit >= _THROTTLE_INTERVAL
-        stepped = step is not None and step > self._last_step
-        if not (self._verbose or due or stepped):
+def tick() -> None:
+    """Redraw the spinner, or print the first task's late start line or heartbeat, if due."""
+    with _locked():
+        if not _tasks:
             return
-        if step is not None:
-            self._last_step = max(step, self._last_step)
-        self._emit()
-
-    def finish(self, *, failed: bool) -> None:
-        return None
-
-    def _emit(self) -> None:
-        self._last_emit = now = time.monotonic()
-        task = self._task
-        line = _compose(
-            task.label,
-            phase=task.phase,
-            done=task.done,
-            total=task.total,
-            text=task.message,
-            elapsed=now - self._started_at,
-        )
-        self._write(f"{line}\n")
-
-
-def _make_handle(
-    label: str,
-    *,
-    write: Callable[[str], None],
-    verbose: bool,
-    quiet: bool,
-    tty: bool,
-) -> Backend:
-    if quiet:
-        return _SilentHandle()
-    if tty and not verbose:
-        return _SpinnerHandle(label)
-    return _LineHandle(label, write=write, verbose=verbose)
+        first = _tasks[0]
+        if first.mode == "spinner":
+            if not _holds:
+                _raw(_framed(""))
+            return
+        line = _due(first, opening=False)
+    _print(line)
 
 
 @contextmanager
-def _progress_reporter(
-    label: str,
-    *,
-    write: Callable[[str], None],
-    verbose: bool,
-    quiet: bool,
-    tty: bool,
-) -> Iterator[ProgressHandle]:
-    """Report progress for a blocking operation, writing lines through ``write``.
-
-    The spinner line is cleared on exit, success or failure, so any
-    propagating error prints cleanly.
-    """
-    handle = _make_handle(label, write=write, verbose=verbose, quiet=quiet, tty=tty)
-    handle.start()
-    failed = False
+def _task(label: str, *, sink: _ScopeSink, mode: _Mode, verbose: bool) -> Iterator[ProgressHandle]:
+    """Open a task on the stack for the block; close it ``failed`` when the block raises."""
+    global _ticker
+    task = _Task(label, sink=sink, mode=mode, verbose=verbose, frames=_spinner_frames(sys.stderr))
+    starting: _Ticker | None = None
+    with _locked():
+        _tasks.append(task)
+        if _ticker is None:
+            _ticker = starting = _Ticker()
+        first = _tasks[0]
+        line = _due(first, opening=True) if first.verbose or first is task else None
+        if first.mode == "spinner":
+            _raw(_framed(""))
+    if starting is not None:
+        starting.thread.start()
+    _print(line)
+    state = "done"
     try:
-        yield handle
+        yield task
     except BaseException:
-        failed = True
+        state = "failed"
         raise
     finally:
-        handle.finish(failed=failed)
+        _close(task, state)
+
+
+def _close(task: _Task, state: str) -> None:
+    """Remove ``task`` wherever it sits, print its end line, join an idle ticker."""
+    global _ticker
+    stopping: _Ticker | None = None
+    line: _Line = None
+    with _locked():
+        first = _tasks[0] if _tasks else None
+        if task in _tasks:
+            _tasks.remove(task)
+        if task is first and task.mode == "lines" and task.started:
+            if not (_holds and task.sink.policy.diagnostics == "text"):
+                line = _snapshot(task, _View(task), _now(), state)
+        elif _tasks:
+            # The phase reverts to the next open task's: shown as is, not as a new phase.
+            head = _tasks[0]
+            head.aside = None
+            view = _View(head)
+            head.shown_phase, head.shown_step = view.phase, view.step()
+        if not _tasks and _ticker is not None:
+            stopping, _ticker = _ticker, None
+            stopping.stop.set()
+        if task.mode == "spinner" or _drawn:
+            _raw(_framed(""))
+    _print(line)
+    if stopping is not None and stopping.thread is not threading.current_thread():
+        stopping.thread.join()  # never under the lock: the ticker takes it
+
+
+def open_tasks() -> int:
+    """How many progress tasks are open in the process (a test's leak check)."""
+    with _locked():
+        return len(_tasks)
 
 
 # --------------------------------------------------------------------------- #
@@ -499,7 +597,11 @@ class Sink(Protocol):
     def progress(
         self, label: str, *, verbose: bool = False, quiet: bool = False
     ) -> AbstractContextManager[ProgressHandle]:
-        """Report progress for a blocking operation (``verbose``/``quiet`` add to the policy's)."""
+        """Open a task for a blocking operation (``verbose``/``quiet`` add to the policy's).
+
+        A spinner on a terminal; elsewhere ``untaped.progress`` lines, text or
+        JSON, at the line cadence; inside another task, a phase of its line.
+        """
         ...
 
     def hold(self) -> AbstractContextManager[None]:
@@ -578,7 +680,13 @@ class _ScopeSink:
             self._out(text + end)
 
     def _emit(
-        self, diagnostic: Diagnostic, rendered: Rendered | None, *, unmuted: bool, end: str
+        self,
+        diagnostic: Diagnostic,
+        rendered: Rendered | None,
+        *,
+        unmuted: bool,
+        end: str,
+        droppable: bool = False,
     ) -> None:
         if kind_of(type(diagnostic)) is None:
             raise TypeError(
@@ -604,7 +712,7 @@ class _ScopeSink:
             text = rendered(should_colorize(sys.stderr))
         else:
             text = rendered if rendered is not None else _text(diagnostic)
-        self._out(text + end)
+        self._out(text + end, droppable=droppable)
 
     def relay(self, text: str, *, end: str = "\n") -> None:
         if not text.strip():
@@ -621,21 +729,33 @@ class _ScopeSink:
         self, label: str, *, verbose: bool = False, quiet: bool = False
     ) -> AbstractContextManager[ProgressHandle]:
         policy = self.policy
-        return _progress_reporter(
-            label,
-            write=self._out,
-            verbose=verbose or policy.verbose,
-            quiet=quiet or policy.quiet or policy.diagnostics == "json",
-            tty=stream_is_tty(sys.stderr),
-        )
+        verbose = verbose or policy.verbose
+        mode: _Mode = "lines"
+        if quiet or policy.quiet:
+            mode = "silent"
+        elif policy.diagnostics == "text" and not verbose and stream_is_tty(sys.stderr):
+            mode = "spinner"
+        return _task(label, sink=self, mode=mode, verbose=verbose)
+
+    def emit_progress(self, progress: Progress) -> None:
+        """Print one progress line: muted by ``--quiet``, dropped (never held) under a screen."""
+        self._emit(progress, None, unmuted=False, end="\n", droppable=True)
 
     @contextmanager
     def hold(self) -> Iterator[None]:
+        global _drawn, _holds
         with self._state_lock:
             self._holding += 1
+        with _locked():
+            _holds += 1
+            if _drawn:  # the screen starts on a clean line
+                _raw(f"\r{' ' * _drawn}\r")
+                _drawn = 0
         try:
             yield
         finally:
+            with _locked():
+                _holds -= 1
             with self._state_lock:
                 self._holding -= 1
                 held = self._held if self._holding == 0 else []
@@ -653,11 +773,12 @@ class _ScopeSink:
         for text in held:
             _write(text)
 
-    def _out(self, text: str) -> None:
-        """Write text output, or keep it while a screen holds the terminal."""
+    def _out(self, text: str, *, droppable: bool = False) -> None:
+        """Write text, or hold it while a screen owns the terminal (``droppable``: drop it)."""
         with self._state_lock:
             if self._holding and not self._closed:
-                self._held.append(text)
+                if not droppable:
+                    self._held.append(text)
                 return
         _write(text)
 
@@ -846,5 +967,11 @@ class Diagnostics:
         current_sink().relay(text)
 
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
-        """Report progress for a blocking operation (a spinner on a terminal)."""
+        """Report progress for a blocking operation: a spinner on a terminal, else lines.
+
+        On a pipe and under JSON, ``untaped.progress`` lines start after 2 s,
+        then come per phase, per 10 % and every 30 s while a step waits, and
+        end with one ``done`` or ``failed`` line; ``--verbose`` prints every
+        update. Pass the handle on: an inner layer reports through it.
+        """
         return current_sink().progress(label)

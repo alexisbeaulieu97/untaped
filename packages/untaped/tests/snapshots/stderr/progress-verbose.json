@@ -1,7 +1,40 @@
 [
   {
+    "level": "progress",
+    "kind": "untaped.progress",
+    "label": "Syncing repos",
+    "phase": null,
+    "done": null,
+    "total": null,
+    "elapsed": 0.0,
+    "state": "running",
+    "message": "Syncing repos (0s)"
+  },
+  {
+    "level": "progress",
+    "kind": "untaped.progress",
+    "label": "Syncing repos",
+    "phase": null,
+    "done": 1,
+    "total": 2,
+    "elapsed": 0.0,
+    "state": "running",
+    "message": "Syncing repos 1/2 · acme/x (0s)"
+  },
+  {
     "level": "info",
     "kind": "untaped.message",
     "message": "a relayed line"
+  },
+  {
+    "level": "progress",
+    "kind": "untaped.progress",
+    "label": "Syncing repos",
+    "phase": null,
+    "done": null,
+    "total": null,
+    "elapsed": 0.0,
+    "state": "done",
+    "message": "Syncing repos: done · acme/x (0s)"
   }
 ]

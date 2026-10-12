@@ -88,7 +88,6 @@ def test_repos_list_combines_scopes_and_filters_into_sorted_rows(
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == expected
-    assert "Listing repositories" in result.stderr
 
 
 @pytest.mark.parametrize(
