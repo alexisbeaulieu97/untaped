@@ -105,7 +105,8 @@ _clear_for_tests  # test hook for the composed root
 core_violations  # repo lint of the core commands
 ScreenRun.commands_run  # read by tests that drive screens
 ProgressClock.advance  # untaped.testing: a test moves the progress clock
-open_tasks  # the root conftest's check that no test leaks a progress task
+open_tasks  # tests check that no progress task is left open
+drop_tasks  # the root conftest's cleanup of a leaked progress task
 
 # Wire fields read by stderr's JSON readers, never by untaped itself.
 StaleData.age_seconds

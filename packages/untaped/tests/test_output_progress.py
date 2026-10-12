@@ -20,6 +20,7 @@ from cyclopts import App
 
 from untaped.concurrency import bounded_map
 from untaped.errors import UntapedError
+from untaped.output import sink
 from untaped.output.diagnostic import Failure, Progress, StaleData
 from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.output.sink import (
@@ -154,7 +155,8 @@ def test_verbose_prints_every_update_from_the_first_and_keeps_the_heartbeat() ->
     with _session(stream) as clock, _progress("Syncing", verbose=True) as p:
         p.update("a", done=1, total=3)
         p.update("b", done=1, total=3)
-        clock.advance(30)
+        clock.advance(29.9)  # a tick is no update: nothing until the heartbeat
+        clock.advance(0.1)
     assert _lines(stream) == [
         "Syncing (0s)",
         "Syncing 1/3 · a (0s)",
@@ -223,7 +225,13 @@ def test_a_stale_line_inside_the_quiet_period_prints_alone() -> None:
 )
 def test_the_line_is_composed_one_way(parts: dict[str, object], line: str) -> None:
     kwargs: dict[str, object] = {"phase": None, "done": None, "total": None, "text": None}
-    assert _compose("L", **(kwargs | parts), elapsed=9.7) == line  # type: ignore[arg-type]
+    assert _compose("L", **(kwargs | parts), elapsed=9.4) == line  # type: ignore[arg-type]
+
+
+def test_the_seconds_round_half_up() -> None:
+    nothing: dict[str, None] = {"phase": None, "done": None, "total": None, "text": None}
+    assert _compose("L", **nothing, elapsed=46.8) == "L (47s)"
+    assert _compose("L", **nothing, elapsed=0.4) == "L (0s)"
 
 
 def test_none_keeps_a_field_a_new_phase_resets_the_counts_and_the_message_is_per_update() -> None:
@@ -279,6 +287,7 @@ def test_a_task_opened_on_a_worker_or_a_bare_thread_attaches() -> None:
         thread = threading.Thread(target=Context().run, args=(work, "bare"), name="bare")
         thread.start()
         thread.join(_JOIN)
+        assert not thread.is_alive()
         seen = _lines(stream)
     assert "Outer · worker 1/1 (0s)" in seen
     assert "Outer · bare 1/1 (0s)" in seen
@@ -358,6 +367,7 @@ def test_two_threads_crossing_one_step_print_it_once() -> None:
             thread.start()
         for thread in threads:
             thread.join(_JOIN)
+            assert not thread.is_alive()
     assert sum(" 40/100 " in line for line in _lines(stream)) == 1
 
 
@@ -416,6 +426,64 @@ def test_a_tick_whose_write_logs_does_not_deadlock() -> None:
     assert "warning: written while writing" in stream.getvalue()
 
 
+def test_a_task_opened_while_the_ticker_is_joined_gets_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ticking = threading.Event()
+    release = threading.Event()
+
+    def blocked_tick() -> None:
+        ticking.set()
+        assert release.wait(_JOIN)
+
+    monkeypatch.setattr(sink, "tick", blocked_tick)
+    stream = io.StringIO()
+    with _session(stream):
+        first = _progress("A")
+        first.__enter__()
+        assert ticking.wait(_JOIN)  # the ticker is inside a tick
+        closing = threading.Thread(target=first.__exit__, args=(None, None, None), name="close-A")
+        closing.start()  # stops the ticker, then joins it: blocked until the tick returns
+        with _progress("C"):
+            tickers = [t for t in threading.enumerate() if t.name == "untaped-progress"]
+            assert len(tickers) == 2  # C's own, beside the one A's close is joining
+            release.set()
+        closing.join(_JOIN)
+        assert not closing.is_alive()
+    _wait_for_no_ticker()
+
+
+def test_a_tick_that_raises_keeps_the_ticker(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def failing_tick() -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError("I/O operation on closed file")
+
+    monkeypatch.setattr(sink, "tick", failing_tick)
+    with _session(io.StringIO()), _progress("T"):
+        deadline = time.monotonic() + _JOIN
+        while len(calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert len(calls) >= 2
+
+
+def test_a_task_whose_open_line_fails_is_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Broken(io.StringIO):
+        def write(self, text: str) -> int:
+            raise BrokenPipeError
+
+    with (
+        pytest.raises(BrokenPipeError),
+        _session(Broken(), monkeypatch, json_lines=True),
+        _progress("T", verbose=True),  # the open line is written at once
+    ):
+        pass
+    assert open_tasks() == 0
+    _wait_for_no_ticker()
+
+
 # --------------------------------------------------------------------------- #
 # The hold
 # --------------------------------------------------------------------------- #
@@ -431,6 +499,21 @@ def test_progress_is_dropped_under_a_hold_on_a_pipe() -> None:
         assert stream.getvalue() == ""
         clock.advance(0.1)  # after the hold the late start line comes, with today's state
     assert _lines(stream) == ["T 5/10 (2s)", "T: done (2s)"]
+
+
+def test_the_end_line_of_a_started_task_is_held_not_dropped() -> None:
+    stream = io.StringIO()
+    with _session(stream) as clock:
+        with _progress("T"):
+            clock.advance(2)  # the start line prints
+            with current_sink().hold():
+                clock.advance(1)
+                assert _lines(stream) == ["T (2s)"]
+                hold = current_sink().hold()
+                hold.__enter__()
+        assert _lines(stream) == ["T (2s)"]  # the end line waits for the screen
+        hold.__exit__(None, None, None)
+    assert _lines(stream) == ["T (2s)", "T: done (3s)"]
 
 
 def test_the_spinner_is_cleared_and_not_drawn_under_a_hold() -> None:
