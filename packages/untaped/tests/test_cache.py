@@ -706,23 +706,36 @@ def test_a_url_key_and_keys_that_sanitize_alike_keep_their_own_sidecars(
 def test_a_long_key_and_keys_differing_in_case_keep_their_own_sidecars(
     clock: CacheClock,
 ) -> None:
-    keys = ["https://ghe.example/" + "x" * 300, "Abc", "abc"]
+    keys = ["https://ghe.example/" + "x" * 300, "日" * 90, "Abc", "abc"]
     for key in keys:
         UP.items[key] = [key]
     assert _show(*keys).exit_code == 0
     names = {TOY._paths(key).sidecar.name.lower() for key in keys}
-    assert len(names) == 3  # apart on a case-insensitive filesystem too
-    assert all(len(name) < 120 for name in names)
+    assert len(names) == 4  # apart on a case-insensitive filesystem too
+    assert all(len(name.encode()) < 120 for name in names)  # bytes: every filesystem's limit
     assert TOY._paths("abc").sidecar.name == "abc.json"
 
 
-def test_an_unreadable_error_keeps_the_rest_of_the_sidecar(clock: CacheClock) -> None:
+def test_profiles_that_sanitize_alike_keep_their_own_folders() -> None:
+    folders = {cache_module._segment(name).lower() for name in ("a/b", "a_b", "Prod", "prod")}
+    assert len(folders) == 4
+
+
+def test_an_unreadable_error_keeps_the_data_and_drops_the_attempt(clock: CacheClock) -> None:
+    """A newer untaped's error: the data stays, the attempt it describes cannot be told."""
     _refreshed(clock, "a", ago=timedelta(minutes=5))
     paths = TOY._paths("a")
     data = json.loads(paths.sidecar.read_text())
-    data["error"] = {"message": "x", "from_a_newer_untaped": True}
+    data.update(
+        error={"message": "x", "from_a_newer_untaped": True},
+        attempted_at="2026-10-12T08:58:00Z",
+        retry_at="2026-10-12T09:03:00Z",
+        partial=True,
+    )
     paths.sidecar.write_text(json.dumps(data))
     assert TOY.freshness("a") == Freshness(refreshed_at=START - timedelta(minutes=5))
+    result = _show("a")
+    assert (result.exit_code, result.diagnostics, UP.fills) == (0, (), [])
 
 
 def test_a_sidecar_for_another_key_reads_as_never_refreshed(clock: CacheClock) -> None:

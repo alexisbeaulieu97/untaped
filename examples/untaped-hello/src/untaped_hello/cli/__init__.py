@@ -67,9 +67,9 @@ def motd(*, refresh: Annotated[bool | None, refresh_option(MOTD)] = None) -> Non
                 hint="set it with `untaped config set hello.motd_path FILE`",
             )
         # the key is the file itself: each file, in any profile, keeps its own copy
-        source = source.expanduser().resolve()
+        shown, source = shown_path(source.expanduser()), source.expanduser().resolve()
         served = MOTD.serve(
-            {str(source): shown_path(source)},
+            {str(source): shown},
             refresh=refresh,
             fill=partial(_fill, source),
             read=lambda: _copy(source).read_text(encoding="utf-8"),

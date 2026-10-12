@@ -19,7 +19,7 @@ from untaped.concurrency import bounded_map
 from untaped.errors import HttpStatusError, HttpTransportError
 from untaped.git import GitCommandError, run_git
 from untaped.http import HttpClient, RetryPolicy
-from untaped.upstream import PROBE_TIMEOUT, capped, fail_fast, quick_probe
+from untaped.upstream import PROBE_TIMEOUT, capped, fail_fast, full_retries, quick_probe
 
 
 @pytest.fixture
@@ -151,6 +151,15 @@ def test_one_success_lifts_the_cap_for_every_worker(no_sleep: list[float]) -> No
 
             bounded_map(call, range(4), concurrency=4, on_each=lambda _i, _r: None)
     assert set(_timeouts(later)) == {30.0}
+
+
+def test_full_retries_steps_out_of_fail_fast_but_not_out_of_quick_probe() -> None:
+    with fail_fast():
+        with full_retries():
+            assert not capped()
+        assert capped()
+    with quick_probe(), full_retries():
+        assert capped()
 
 
 # ── git ────────────────────────────────────────────────────────────────────
