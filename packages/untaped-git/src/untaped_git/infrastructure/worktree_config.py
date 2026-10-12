@@ -2,7 +2,8 @@
 
 A store repo is bare and shared, so whatever a user's own ``git fetch`` or
 ``push`` in a worktree needs (owner, refspec, filter, URL rewrite and
-credential helper) lives in that worktree's config, never the repo's.
+credential helper) lives in that worktree's config, never the repo's. This module
+is the store's own: it uses :class:`RepoStore`'s internals.
 """
 
 from __future__ import annotations
@@ -33,19 +34,19 @@ def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | No
         label = repo_origin(store._path)
         # Every rewrite onto the label goes, so an earlier URL spelling
         # (https before ssh, say) never wins over this one.
-        for key in rewrites_onto(store, worktree, label) if label else ():
-            worktree_config(store, worktree, "--unset-all", key, check=False)
+        for key in _rewrites_onto(store, worktree, label) if label else ():
+            _worktree_config(store, worktree, "--unset-all", key, check=False)
         if label and label != store._url:
-            worktree_config(store, worktree, f"url.{store._url}.insteadOf", label)
+            _worktree_config(store, worktree, f"url.{store._url}.insteadOf", label)
         origin = https_origin(store._url)
         if origin is None:
             return
         helper = f"credential.{origin}.helper"
-        worktree_config(store, worktree, f"credential.{origin}.useHttpPath", "true")
-        worktree_config(store, worktree, "--unset-all", helper, check=False)
+        _worktree_config(store, worktree, f"credential.{origin}.useHttpPath", "true")
+        _worktree_config(store, worktree, "--unset-all", helper, check=False)
         if store._helper_first:
-            worktree_config(store, worktree, "--add", helper, "")
-        worktree_config(store, worktree, "--add", helper, _helper_command(profile))
+            _worktree_config(store, worktree, "--add", helper, "")
+        _worktree_config(store, worktree, "--add", helper, _helper_command(profile))
 
 
 def enable_worktree_config(store: RepoStore) -> None:
@@ -74,26 +75,26 @@ def repair_worktrees(store: RepoStore, *, stripped: bool) -> None:
         if entry.owner == "workspace":
             write_owner_config(store, entry.path, owner="workspace")
         elif entry.owner is None and stripped:
-            write_fetch_config(store, entry.path, plain=True)
+            _write_fetch_config(store, entry.path, plain=True)
 
 
 def write_owner_config(store: RepoStore, worktree: Path, *, owner: str | None = None) -> None:
     owner = owner or store._plugin
-    worktree_config(store, worktree, "untaped.owner", owner)
+    _worktree_config(store, worktree, "untaped.owner", owner)
     # Stamps which worktree is owned: git copies this file into worktrees
     # added from this one, which must stay a user's own.
-    worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+    _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
     plain = layout_for(owner).heads == "refs/remotes/origin/"
-    write_fetch_config(store, worktree, plain=plain)
+    _write_fetch_config(store, worktree, plain=plain)
 
 
-def write_fetch_config(store: RepoStore, worktree: Path, *, plain: bool) -> None:
+def _write_fetch_config(store: RepoStore, worktree: Path, *, plain: bool) -> None:
     refspec = "remote.origin.fetch"
-    worktree_config(store, worktree, "--unset-all", refspec, check=False)
+    _worktree_config(store, worktree, "--unset-all", refspec, check=False)
     if plain:
-        worktree_config(store, worktree, refspec, _PLAIN_REFSPEC)
+        _worktree_config(store, worktree, refspec, _PLAIN_REFSPEC)
     # A user's own fetch here brings the blobs of new commits.
-    worktree_config(store, worktree, "remote.origin.partialclonefilter", "")
+    _worktree_config(store, worktree, "remote.origin.partialclonefilter", "")
 
 
 def check_worktree(store: RepoStore, worktree: Path) -> None:
@@ -113,7 +114,7 @@ def check_worktree(store: RepoStore, worktree: Path) -> None:
         )
 
 
-def rewrites_onto(store: RepoStore, worktree: Path, label: str) -> list[str]:
+def _rewrites_onto(store: RepoStore, worktree: Path, label: str) -> list[str]:
     result = store._git(
         ["config", "--worktree", "--null", "--get-regexp", r"^url\..*\.insteadof$"],
         cwd=worktree,
@@ -128,11 +129,8 @@ def rewrites_onto(store: RepoStore, worktree: Path, label: str) -> list[str]:
     return keys
 
 
-def worktree_config(store: RepoStore, worktree: Path, *args: str, check: bool = True) -> None:
+def _worktree_config(store: RepoStore, worktree: Path, *args: str, check: bool = True) -> None:
     store._git(["config", "--worktree", *args], cwd=worktree, check=check)
-
-
-# ── report data ────────────────────────────────────────────────────────
 
 
 def _helper_command(profile: str | None) -> str:
