@@ -29,6 +29,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Failure,
     FormatOption,
     create_app,
     echo,
@@ -40,7 +41,6 @@ from untaped.sdk import (
     read_identifiers,
     render_rows,
     report_errors,
-    ui_context,
 )
 from untaped_awx.application import GetUnifiedTemplate
 from untaped_awx.cli.context import open_context
@@ -100,7 +100,7 @@ def list_command(
                 "pass --type or --filter type=…, not both — they collide on the same param",
             )
         filters["type"] = type_
-    with report_errors(), open_context() as ctx, ctx.progress_ui().progress("Loading templates…"):
+    with report_errors(), open_context() as ctx, ctx.diag.progress("Loading templates"):
         records = list(ctx.ujts.list(params=filters, limit=limit))
     rendered = render_rows(
         records,
@@ -154,9 +154,8 @@ def get_command(
         if not identifiers:
             return
         records, missing = GetUnifiedTemplate(ctx.ujts)(ids=identifiers)
-    ui = ui_context(strict=False)
     for raw in missing:
-        ui.message("error", f"{raw}: not found")
+        ctx.diag.failure(Failure.plain(f"{raw}: not found"))
     if records:
         emit(
             records,

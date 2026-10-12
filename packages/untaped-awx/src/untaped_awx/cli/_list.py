@@ -98,7 +98,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
         limit = limit or None
         with report_errors(), open_context() as ctx:
             with (
-                ctx.progress_ui().progress(f"Loading {spec.kind}…")
+                ctx.diag.progress(f"Loading {spec.kind}")
                 if not stdin and not names
                 else nullcontext()
             ):
@@ -126,7 +126,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                     records,
                     client=ctx.repo,
                     catalog=ctx.catalog,
-                    warn=lambda msg: ctx.progress_ui().message("warning", msg),
+                    warn=ctx.diag.warning,
                 )
         # Default columns shape the table and raw views; json/yaml/pipe keep full records.
         default_cols = (*spec.list_columns, *SCM_FIELDS) if with_scm else spec.list_columns

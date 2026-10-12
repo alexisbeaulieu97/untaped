@@ -20,7 +20,6 @@ from untaped.sdk import (
     emit,
     finish,
     parse_kv_pairs,
-    report_error,
     report_errors,
 )
 from untaped_awx.application import ListWorkflowNodes
@@ -128,7 +127,7 @@ def register_nodes_command(parent: App) -> None:
             use = ListWorkflowNodes(
                 ctx.workflow_nodes,
                 ctx.repo,
-                warn=lambda msg: ctx.progress_ui().message("warning", msg),
+                warn=ctx.diag.warning,
             )
             # ``resolve_each`` doesn't fit: its ``Callable[[str], R]``
             # interface maps each id to a single record, but ``nodes``
@@ -146,7 +145,7 @@ def register_nodes_command(parent: App) -> None:
                         )
                     )
                 except UntapedError as exc:
-                    report_error(exc, item=root)
+                    ctx.diag.failure(exc, item=root)
                     any_failed = True
         if type_ is not None:
             nodes = [n for n in nodes if n.type == type_]

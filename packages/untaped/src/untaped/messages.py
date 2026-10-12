@@ -95,14 +95,22 @@ def split_profile(argv: Sequence[str]) -> tuple[str | None, list[str]]:
     return None, list(argv)
 
 
-def hint(command: str) -> str:
-    """A follow-up hint line: ``hint: run `untaped <command>```.
+def run_hint(command: str) -> str:
+    """A hint's body naming a command to run: ``run `untaped <command>```.
 
-    ``command`` may include or omit the leading ``untaped``. Append it to an
-    error on its own line (``f"{message}\\n{hint(...)}"``) or print it as a
-    separate stderr line.
+    ``command`` may include or omit the leading ``untaped``. Print it with
+    ``ctx.diag.hint(run_hint(...))``, or pass it as a failure's ``hint=``.
     """
-    return f"hint: run `{command_line(command)}`"
+    return f"run `{command_line(command)}`"
+
+
+def hint(command: str) -> str:
+    """A follow-up hint line: ``hint: run `untaped <command>``` (:func:`run_hint`'s body).
+
+    Append it to an error's message on its own line
+    (``f"{message}\\n{hint(...)}"``).
+    """
+    return f"hint: {run_hint(command)}"
 
 
 def deprecated_message(old: str, new: str | None = None) -> str:

@@ -9,7 +9,6 @@ from cyclopts import App, Parameter
 from untaped.sdk import (
     ColumnsOption,
     FormatOption,
-    echo,
     emit,
     q,
     report_errors,
@@ -54,13 +53,13 @@ def _add_copy(app: App, spec: AwxResourceSpec) -> None:
             )
             copier = CopyResource(ctx.repo)
             plan = copier.plan(spec, selected, name)
-            echo(
+            ctx.diag.info(
                 f"Copy {spec.kind}/{selected.name} id={selected.id} "
                 f"scope={format_scope(selected.scope)} -> {q(name)}",
-                err=True,
+                unmuted=True,
             )
             for part in plan.not_carried:
-                ctx.progress_ui().message("warning", f"AWX will not copy {part}")
+                ctx.diag.warning(f"AWX will not copy {part}")
             outcome = CopyOutcome(
                 name=name,
                 source_id=selected.id,

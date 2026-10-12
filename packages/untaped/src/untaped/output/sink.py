@@ -87,10 +87,13 @@ from untaped.output.policy import (
 )
 from untaped.output.progress import ProgressHandle
 from untaped.redaction import redact_url_password
-from untaped.render import render_styled, should_colorize, stream_is_tty
+from untaped.render import RichTerminalRenderer, render_styled, should_colorize, stream_is_tty
+from untaped.theme import BUILTIN_THEMES
 
 if TYPE_CHECKING:
     from rich.text import Text
+
+    from untaped.theme import ThemeSpec
 
 type Rendered = Callable[[bool], str] | str
 """A line's text presentation: a string, or a callable given whether to colour."""
@@ -580,12 +583,25 @@ def _level(diagnostic: Diagnostic) -> str:
     return str(getattr(diagnostic, "level", "info"))
 
 
-def _text(diagnostic: Diagnostic) -> str:
-    """The text line of a diagnostic emitted without a presentation."""
+def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> str:
+    """The text line of a diagnostic emitted without a presentation.
+
+    An ``info``, ``success`` or ``warning`` message renders through the theme
+    (``theme``: the policy's, else the default), as ``ui.message`` does; its
+    ``hint:`` line, a failure, a debug line and a stale-data line do not.
+    """
     level = _level(diagnostic)
     if isinstance(diagnostic, Debug):
         return f"DEBUG {diagnostic.logger}: {diagnostic.message}"
     message = diagnostic.message
+    if isinstance(diagnostic, Message) and diagnostic.level != "hint":
+        line = RichTerminalRenderer().render_message(
+            diagnostic.level,
+            message,
+            theme=theme or BUILTIN_THEMES["default"],
+            colorize=color,
+        )
+        return line if diagnostic.hint is None else f"{line}\n{_HINT_PREFIX}{diagnostic.hint}"
     if isinstance(diagnostic, Failure) and diagnostic.item is not None:
         message = f"{diagnostic.item}: {message}"
     line = f"{level}: {message}" if level in ("error", "warning", "hint") else message
@@ -594,10 +610,26 @@ def _text(diagnostic: Diagnostic) -> str:
     return line
 
 
+def _blank(diagnostic: Diagnostic) -> bool:
+    """Whether ``diagnostic`` is a blank ``info`` line: a separator, not a message."""
+    return (
+        isinstance(diagnostic, Message)
+        and diagnostic.level == "info"
+        and not diagnostic.message.strip()
+        and diagnostic.hint is None
+    )
+
+
 def _json(diagnostic: Diagnostic) -> str:
-    """One JSON line: ``level`` and ``kind``, then the diagnostic's fields."""
+    """One JSON line: ``level`` and ``kind``, then the diagnostic's fields.
+
+    A message's ``message`` has its URL passwords masked.
+    """
     record = {"level": _level(diagnostic), "kind": kind_of(type(diagnostic))}
-    return json.dumps(record | diagnostic.model_dump(mode="json"), default=str)
+    fields = diagnostic.model_dump(mode="json")
+    if isinstance(diagnostic, Message):
+        fields["message"] = redact_url_password(diagnostic.message)
+    return json.dumps(record | fields, default=str)
 
 
 def echo_diagnostic(text: str) -> Diagnostic | None:
@@ -745,6 +777,11 @@ class _ScopeSink:
         droppable: bool = False,
         policy: OutputPolicy | None = None,
     ) -> None:
+        """Count, mute, record and write one line.
+
+        A blank ``info`` (no text, no hint) is a text separator: an empty
+        line in text, nothing under JSON, muted like any ``info``.
+        """
         if kind_of(type(diagnostic)) is None:
             raise TypeError(
                 f"{type(diagnostic).__qualname__} declares no kind, so it is not a line: "
@@ -760,15 +797,22 @@ class _ScopeSink:
             return
         if policy.quiet and not unmuted and level in ("info", "success", "progress"):
             return
+        if _blank(diagnostic) and rendered is None:
+            if policy.diagnostics == "text":
+                self._out(end, droppable=droppable)
+            return
         if self._recorder is not None:  # what was shown, as the stderr tee shows it
             self._recorder.append(diagnostic)
         if policy.diagnostics == "json":
             _write(_json(diagnostic) + "\n")
             return
+        color = should_colorize(sys.stderr)
         if callable(rendered):
-            text = rendered(should_colorize(sys.stderr))
+            text = rendered(color)
+        elif rendered is not None:
+            text = rendered
         else:
-            text = rendered if rendered is not None else _text(diagnostic)
+            text = _text(diagnostic, theme=policy.theme, color=color)
         self._out(text + end, droppable=droppable)
 
     def relay(self, text: str, *, end: str = "\n") -> None:
@@ -984,17 +1028,29 @@ class Diagnostics:
         """Emit any registered kind, core's or a plugin's own (``kind=`` declared)."""
         current_sink().emit(diagnostic)
 
-    def info(self, text: str | Text, *, hint: str | None = None) -> None:
-        """An ``info`` line; a Rich ``Text`` renders styled on a terminal, plain elsewhere."""
+    def info(self, text: str | Text, *, hint: str | None = None, unmuted: bool = False) -> None:
+        """An ``info`` line; a Rich ``Text`` renders styled on a terminal, plain elsewhere.
+
+        ``-q`` mutes commentary: lines the user did not ask for and need not
+        act on. A preview before a prompt, a stream the user asked to watch,
+        and output a flag exists to produce are not commentary and print
+        under ``-q``. Warnings, failures and hints always print.
+
+        Pass ``unmuted=True`` for a line that is not commentary. A blank
+        ``text`` prints an empty line in text (a separator) and nothing under
+        JSON.
+        """
         if isinstance(text, str):
-            current_sink().emit(Message(level="info", message=text, hint=hint))
+            current_sink().emit(Message(level="info", message=text, hint=hint), unmuted=unmuted)
             return
         tail = "" if hint is None else f"\n{_HINT_PREFIX}{hint}"
 
         def styled(color: bool) -> str:
             return render_styled(text, colorize=color) + tail
 
-        current_sink().emit(Message(level="info", message=text.plain, hint=hint), rendered=styled)
+        current_sink().emit(
+            Message(level="info", message=text.plain, hint=hint), rendered=styled, unmuted=unmuted
+        )
 
     def success(self, text: str) -> None:
         """A ``success`` line, muted by ``--quiet`` like ``info``."""

@@ -7,8 +7,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from untaped.sdk import (
+    Diagnostics,
     ErrorCategory,
-    UiContext,
     UntapedError,
     UsageError,
     get_config_section,
@@ -17,6 +17,8 @@ from untaped.sdk import (
 )
 from untaped_recipe.errors import RecipeError
 from untaped_recipe.settings import RecipeSettings
+
+_diag = Diagnostics()
 
 
 def settings() -> RecipeSettings:
@@ -52,11 +54,11 @@ def hook_timeout_seconds(override: float | None) -> float:
     return timeout
 
 
-def hook_startup_notice(ui: UiContext) -> Callable[[Path], None]:
+def hook_startup_notice() -> Callable[[Path], None]:
     """Quiet-gated notice shown while a hook worker's uv environment starts."""
 
     def notice(project_root: Path) -> None:
-        ui.message("info", f"preparing hook environment for {project_root}...")
+        _diag.info(f"preparing hook environment for {project_root}...")
 
     return notice
 

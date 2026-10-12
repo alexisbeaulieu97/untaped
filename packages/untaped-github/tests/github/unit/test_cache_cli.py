@@ -19,6 +19,7 @@ from untaped.testing import (
     CliInvoker,
     CliResult,
     assert_destructive_contract,
+    invoke_root,
     plugin_candidate,
 )
 from untaped_git import SPEC as GIT_SPEC
@@ -114,6 +115,18 @@ def test_cache_sync_warms_the_corpus_without_a_query(source_repo: SourceRepo) ->
     assert second["action"] == "skipped"
     assert forced["action"] == "synced"
     assert _cached() == ["acme/api"]
+
+
+def test_cache_sync_quiet_prints_no_summary(source_repo: SourceRepo) -> None:
+    """-q mutes the sync summary, a line nobody asked for and nobody acts on."""
+    listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listed))
+        result = invoke_root(["-q", "github", "cache", "sync", "--org", "acme", "-f", "json"])
+
+    assert _rows(result, "repo") == ["acme/api"]
+    assert "sync:" not in result.stderr
 
 
 def test_cache_sync_skips_fetch_when_github_reports_no_push(

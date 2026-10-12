@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     DryRunOption,
     Failure,
     FormatOption,
@@ -22,18 +23,16 @@ from untaped.sdk import (
     app_context,
     clamp_parallel,
     create_app,
-    echo,
     emit,
     finish,
     first_validation_error,
     get_config_section,
-    hint,
     most_severe,
     not_found,
     plural,
     q,
-    report_error,
     report_errors,
+    run_hint,
     size_text,
     writes,
 )
@@ -61,6 +60,7 @@ from untaped_github.api import github_settings, github_web_host
 
 _FINGERPRINT_HEX_CHARS = 16
 _OUTCOME_KIND = "ansible.source_outcome"
+_diag = Diagnostics()
 
 NameArgument = Annotated[str, Parameter(help="Source name.")]
 RefScanDefaultOption = Annotated[
@@ -349,9 +349,9 @@ def source_remove_command(
             columns=columns,
         )
         for repo, failure in failures:
-            report_error(failure, item=repo)
+            _diag.failure(failure, item=repo)
         if failures:
-            echo(hint(f"ansible source remove {shlex.quote(name)}"), err=True)
+            _diag.hint(run_hint(f"ansible source remove {shlex.quote(name)}"))
         finish(bool(failures))
 
 
@@ -430,15 +430,14 @@ def source_refresh_command(
             http=ctx.http,
             concurrency=git_parallel,
             backend=backend,
-            ui=ctx.ui(strict=False),
         )
         failures = [
             AnsibleError(failure.reason, category=failure.category) for failure in result.failures
         ]
         for failure, error in zip(result.failures, failures, strict=True):
-            report_error(error, item=failure.repo)
+            _diag.failure(error, item=failure.repo)
         if _has_transient_ref_probe_failure(result):
-            echo(_transient_ref_probe_rerun_hint(name), err=True)
+            _diag.hint(_transient_ref_probe_rerun_hint(name))
         if not result.completed:
             # Paused at the GitHub rate-limit floor: resuming later succeeds.
             raise AnsibleError(
@@ -475,7 +474,7 @@ def _has_transient_ref_probe_failure(result: RefreshResult) -> bool:
 
 def _transient_ref_probe_rerun_hint(name: str) -> str:
     return (
-        f"hint: rerun `untaped ansible source refresh {shlex.quote(name)}`; "
+        f"rerun `untaped ansible source refresh {shlex.quote(name)}`; "
         "unchanged repos skip Git fetch and dependency scan work"
     )
 

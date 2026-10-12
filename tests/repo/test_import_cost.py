@@ -148,6 +148,7 @@ _STARTUP_PROBE = (
 #: more: 126 against 124 on its base, measured 2026-10-11 in a container.
 #: Progress lines and JSON (#537) replace ``untaped.progress`` with
 #: ``untaped.output.progress``: 127 on A2a and on its base, 2026-10-12.
+#: Messages on ``ctx.diag`` with the user's theme (A2b): 127, unchanged.
 #: The freshness SDK (#537 B1) adds ``untaped.cache`` (the call state moved
 #: there from ``untaped.contracts``) and ``untaped.upstream`` (read by
 #: ``untaped.http``): 129, 2026-10-12. The budget was set six above 127 to

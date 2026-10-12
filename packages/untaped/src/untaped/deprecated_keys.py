@@ -610,9 +610,9 @@ def warn_once(message: str, *, key: str | None = None) -> None:
     if seen in _warned:
         return
     _warned.add(seen)
-    from untaped.ui import ui_context  # noqa: PLC0415 - keep settings imports light
+    from untaped.output.sink import Diagnostics  # noqa: PLC0415 - keeps rendering off this path
 
-    ui_context(strict=False).message("warning", message)
+    Diagnostics().warning(message)
 
 
 def reset_key_warnings() -> None:

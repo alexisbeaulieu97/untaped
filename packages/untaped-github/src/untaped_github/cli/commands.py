@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     FormatOption,
     create_app,
     emit,
@@ -14,6 +15,8 @@ from untaped_github.cli.cache_commands import app as cache_app
 from untaped_github.cli.repos_commands import app as repos_app
 from untaped_github.cli.search_commands import app as search_app
 from untaped_github.cli.sweep_commands import sweep_command
+
+_diag = Diagnostics()
 
 app = create_app(
     name="github",
@@ -30,8 +33,8 @@ def whoami_command(
     """Show the authenticated GitHub user (``GET /user``)."""
     from untaped_github.application import WhoAmI  # noqa: PLC0415
 
-    with report_errors(), open_client() as (client, ui):
-        with ui.progress("Fetching authenticated user…"):
+    with report_errors(), open_client() as (client, _):
+        with _diag.progress("Fetching authenticated user"):
             user = WhoAmI(client)()
         emit(user, fmt=fmt, columns=columns, kind="github.user")
 

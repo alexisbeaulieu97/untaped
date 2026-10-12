@@ -30,7 +30,9 @@ from untaped.cache import (
     Served,
     refresh_option,
 )
-from untaped.cli import (
+
+# report_error and report_row_errors are deprecated until 12.0; the SDK still exports them.
+from untaped.cli import (  # type: ignore[deprecated]
     ColumnsOption,
     DryRunOption,
     FormatOption,
@@ -91,7 +93,16 @@ from untaped.http import (
     resolve_verify,
     same_origin,
 )
-from untaped.messages import hint, not_found, plural, q, shown_path, size_text, summary
+from untaped.messages import (
+    hint,
+    not_found,
+    plural,
+    q,
+    run_hint,
+    shown_path,
+    size_text,
+    summary,
+)
 from untaped.migrations import delete_migration, dir_bytes, old_dirs, unsafe_dir
 from untaped.output import (
     Debug,
@@ -293,6 +304,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "report_error",
     "report_errors",
     "report_row_errors",
+    "run_hint",
     # input
     "AbsolutePath",
     "StdinInput",

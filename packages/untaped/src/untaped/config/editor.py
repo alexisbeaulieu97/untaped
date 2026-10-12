@@ -12,6 +12,7 @@ from untaped.config_file import read_config_text, replace_config_text
 from untaped.editor import run_editor
 from untaped.errors import ConfigError, attribution
 from untaped.fs import atomic_write
+from untaped.output.sink import Diagnostics
 from untaped.settings import (
     FORMAT_VERSION,
     NewerFormatError,
@@ -21,7 +22,6 @@ from untaped.settings import (
     resolve_state_path,
     validate_config_file,
 )
-from untaped.ui import ui_context
 
 
 def run_config_editor() -> None:
@@ -51,7 +51,7 @@ def run_config_editor() -> None:
                 edited = handle.read()
             if edited == (original or ""):
                 shutil.rmtree(workdir, ignore_errors=True)
-                ui_context(strict=False).message("info", f"no changes; config unchanged ({path})")
+                Diagnostics().info(f"no changes; config unchanged ({path})")
                 return
             try:
                 validate_config_file(draft)
@@ -86,7 +86,7 @@ def run_config_editor() -> None:
                 f"{detail}\nconfig left unchanged; your edits are in {draft}", **fields
             ) from exc
         shutil.rmtree(workdir, ignore_errors=True)
-        ui_context(strict=False).message("success", f"config saved and validated (config: {path})")
+        Diagnostics().success(f"config saved and validated (config: {path})")
 
 
 def _refuse_a_newer_format(check: Callable[[], object]) -> None:

@@ -12,6 +12,7 @@ from contextlib import redirect_stderr
 from typing import Any
 
 import pytest
+from rich.text import Text
 
 from untaped import verbose
 from untaped.cli import echo
@@ -332,6 +333,64 @@ def test_quiet_mutes_info_success_and_progress_only() -> None:
 
 
 @pytest.mark.parametrize("structured", [False, True])
+def test_quiet_never_mutes_an_unmuted_info(
+    structured: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if structured:
+        monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    stream = io.StringIO()
+    token = enable_quiet()
+    try:
+        with redirect_stderr(stream), diagnostics_scope():
+            diag = Diagnostics()
+            diag.info("a preview", unmuted=True)
+            diag.info(Text("a styled preview", style="bold"), unmuted=True)
+            diag.info("commentary")
+            diag.success("done")
+    finally:
+        reset_quiet(token)
+
+    if structured:
+        lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+        assert [line["message"] for line in lines] == ["a preview", "a styled preview"]
+    else:
+        assert stream.getvalue() == "a preview\na styled preview\n"
+
+
+@pytest.mark.parametrize("quiet", [False, True])
+def test_a_blank_info_is_a_text_separator(quiet: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+    text, structured = io.StringIO(), io.StringIO()
+    token = enable_quiet() if quiet else None
+    try:
+        with redirect_stderr(text), diagnostics_scope():
+            Diagnostics().info("")
+        monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+        with redirect_stderr(structured), diagnostics_scope():
+            Diagnostics().info("")
+    finally:
+        reset_quiet(token)
+
+    assert text.getvalue() == ("" if quiet else "\n")
+    assert structured.getvalue() == ""
+
+
+def test_a_message_masks_url_passwords_on_the_wire_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    text, structured = io.StringIO(), io.StringIO()
+    line = "  from https://u:secret@host/pack.git"
+    with redirect_stderr(text), diagnostics_scope():
+        Diagnostics().info(line)
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    with redirect_stderr(structured), diagnostics_scope():
+        Diagnostics().info(line)
+        Diagnostics().warning(line)
+
+    assert text.getvalue() == line + "\n"
+    messages = [json.loads(each)["message"] for each in structured.getvalue().splitlines()]
+    # Unlike ``echo``, the text is kept as the line shows it: leading spaces too.
+    assert messages == ["  from https://u:***@host/pack.git"] * 2
+
+
+@pytest.mark.parametrize("structured", [False, True])
 def test_debug_lines_appear_only_under_verbose(
     monkeypatch: pytest.MonkeyPatch, structured: bool
 ) -> None:
@@ -425,7 +484,11 @@ def test_the_fix_relay_writes_through_the_sink_around_the_spinner() -> None:
 
 
 def test_an_echoed_error_line_counts() -> None:
-    with redirect_stderr(io.StringIO()), diagnostics_scope():
+    with (
+        pytest.warns(DeprecationWarning, match="ctx.diag"),
+        redirect_stderr(io.StringIO()),
+        diagnostics_scope(),
+    ):
         echo("warning: y", err=True)
         exit_on_counted_failure()  # a warning counts nothing
         echo("error: x", err=True)

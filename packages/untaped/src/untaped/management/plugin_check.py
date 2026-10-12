@@ -33,10 +33,10 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ValidationError
 
-from untaped.cli import echo
 from untaped.errors import ExitCode, UsageError, first_validation_error
 from untaped.management._render import emit_check_list, emit_isolated
 from untaped.messages import not_found, summary
+from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
     CompositionResult,
     MigrationOptions,
@@ -52,6 +52,8 @@ from untaped.theme import OutputFormat
 
 if TYPE_CHECKING:
     from untaped.contracts._registry import Provider
+
+_diag = Diagnostics()
 
 
 class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
@@ -91,11 +93,11 @@ def report_check_rows(
     data: list[dict[str, object]] = [row.model_dump(mode="json") for row in rows]
     if fmt == "table" and columns is None:
         emit_check_list(data, run_line=" ".join)
-        echo(err=True)
+        _diag.info("")
     else:
         emit_isolated(data, fmt=fmt, columns=columns, kind=kind_of(PluginCheckRow))
     counts = {status: sum(row.status == status for row in rows) for status in _STATUSES}
-    echo(summary("plugin check", counts), err=True)
+    _diag.info(summary("plugin check", counts))
     if counts["fail"]:
         raise SystemExit(ExitCode.FAILURE)
 
