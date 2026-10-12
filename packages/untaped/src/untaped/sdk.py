@@ -46,7 +46,6 @@ from untaped.cli import (
 )
 from untaped.concurrency import bounded_map
 from untaped.deprecated_keys import Retired, retired_values
-from untaped.diagnostics import ErrorInfo, note_failure
 from untaped.diff import unified_diff_text
 from untaped.doctor_checks import connection_check, executable_check, online_check
 from untaped.editor import run_editor
@@ -85,6 +84,7 @@ from untaped.http import (
 )
 from untaped.messages import hint, not_found, plural, q, shown_path, size_text, summary
 from untaped.migrations import delete_migration, dir_bytes, old_dirs, unsafe_dir
+from untaped.output import Debug, Diagnostic, Diagnostics, Failure, Message, StaleData
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.plugins.registry import (
@@ -234,13 +234,18 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     # output and records
     "CheckRecord",
     "ColumnsOption",
+    "Debug",
+    "Diagnostic",
+    "Diagnostics",
     "FormatOption",
     "Issued",
+    "Message",
     "OutcomeRecord",
     "OutputFormat",
     "PipeEnvelope",
     "Record",
     "Source",
+    "StaleData",
     "TableGlyph",
     "TargetRecord",
     "UtcTimestamp",
@@ -256,7 +261,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     # errors
     "ConfigError",
     "ErrorCategory",
-    "ErrorInfo",
+    "Failure",
     "OperationCancelledError",
     "UntapedError",
     "UsageError",
@@ -265,7 +270,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "hint",
     "most_severe",
     "not_found",
-    "note_failure",
     "raise_usage",
     "rejected_token_error",
     "report_error",

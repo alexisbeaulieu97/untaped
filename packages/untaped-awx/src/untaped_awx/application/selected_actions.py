@@ -10,7 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from untaped.sdk import ErrorInfo, note_failure
+from untaped.sdk import Failure
 from untaped_awx.application.scheduling import Schedule, ScheduleInterruptedError
 from untaped_awx.application.selection import SelectedResource
 
@@ -23,7 +23,7 @@ class SelectedActionOutcome[T]:
     detail: str | None = None
     error: Exception | None = field(default=None, repr=False)
     """Typed evidence for the caller; never render the unsanitized exception."""
-    error_info: ErrorInfo | None = None
+    error_info: Failure | None = None
     """The failure's category, system and sanitized ``detail``: a row's ``error``."""
 
     def row_error(self) -> dict[str, Any]:
@@ -69,7 +69,7 @@ def run_selected_actions[T](
                 "failed",
                 detail=detail,
                 error=exc,
-                error_info=note_failure(exc, message=detail),
+                error_info=Failure.from_exception(exc, message=detail),
             )
 
     try:

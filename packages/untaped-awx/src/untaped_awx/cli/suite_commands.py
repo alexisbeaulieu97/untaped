@@ -18,8 +18,9 @@ from cyclopts.validators import Number
 from untaped.sdk import (
     ColumnsOption,
     ConfigError,
+    Diagnostics,
     DryRunOption,
-    ErrorInfo,
+    Failure,
     FormatOption,
     GitCommandError,
     OutputFormat,
@@ -36,7 +37,6 @@ from untaped.sdk import (
     finish,
     git_toplevel,
     hint,
-    note_failure,
     parse_envelope_line,
     parse_kv_pairs,
     plural,
@@ -484,7 +484,7 @@ def _report_results(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> bool:
-    """Emit the rows and the summary; count the failures that decide the exit code."""
+    """Emit the rows, the summary, and the failures that decide the exit code."""
     if show_logs:
         for result in outcome.results:
             if result.failure is not None:
@@ -499,10 +499,10 @@ def _report_results(
     )
     for line in _summary(outcome):
         echo(line, err=True)
-    counted = outcome.counted()
-    for failure in counted:
-        note_failure(failure)
-    return bool(counted)
+    deciding = outcome.deciding()
+    for item, failure in deciding:
+        Diagnostics().failure(failure, item=item)
+    return bool(deciding)
 
 
 def _refuse_scm_branch_with_source_ref(source_ref: str | None, scm_branch: str | None) -> None:
@@ -562,7 +562,7 @@ def _show_failure(result: CaseResult, failure: CaseFailure) -> None:
         detail = task.msg or task.stderr or ""
         echo(f"{task.status}: [{task.host or '?'}] {task.task or '?'}: {detail}", err=True)
     for line in tail or ():
-        echo(line, err=True)
+        Diagnostics().relay(line)  # the job's own log: an "error:" in it is not ours
 
 
 def _summary(outcome: SuiteRunOutcome) -> list[str]:
@@ -878,7 +878,7 @@ def prune_command(
     else:
         rows = [copy.outcome("deleted") for copy, _ in outcome.results]
         for copy, error in outcome.failures:
-            info = ErrorInfo.from_exception(error)
+            info = Failure.from_exception(error)
             rows.append(copy.outcome("failed", detail=info.message, error=info))
     emit(
         [row.model_dump() for row in rows],

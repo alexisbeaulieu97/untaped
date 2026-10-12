@@ -104,3 +104,6 @@ UiContext.confirm_action  # documented SDK
 _clear_for_tests  # test hook for the composed root
 core_violations  # repo lint of the core commands
 ScreenRun.commands_run  # read by tests that drive screens
+
+# Wire fields read by stderr's JSON readers, never by untaped itself.
+StaleData.age_seconds

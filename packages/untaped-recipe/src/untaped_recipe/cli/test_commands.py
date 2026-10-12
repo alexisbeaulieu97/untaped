@@ -10,12 +10,12 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Failure,
     FormatOption,
     UntapedError,
     UsageError,
     echo,
     finish,
-    note_failure,
     render_rows,
     unified_diff_text,
 )
@@ -204,7 +204,9 @@ def _row(result: CaseResult) -> dict[str, object]:
         failure = result.failure
         if not isinstance(failure, UntapedError):
             failure = RecipeError(result.detail)
-        row["error"] = note_failure(failure, message=result.detail).model_dump(mode="json")
+        row["error"] = Failure.from_exception(failure, message=result.detail).model_dump(
+            mode="json"
+        )
     return row
 
 

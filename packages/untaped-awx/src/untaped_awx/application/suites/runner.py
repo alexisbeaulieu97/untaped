@@ -51,10 +51,10 @@ from typing import Any
 
 from untaped.sdk import (
     ConfigError,
+    Diagnostics,
     ErrorCategory,
     UntapedError,
     bounded_map,
-    note_failure,
 )
 from untaped_awx.application.abandon_jobs import AbandonJobs
 from untaped_awx.application.ports import Canceller
@@ -265,7 +265,7 @@ class RunTestSuite:
         try:
             outcome = run(scm_branch=scm_branch)
         except Exception:
-            _note(before.counted())
+            _note(before.deciding())
             raise
         rows = [row.model_dump(mode="json") for row in before.results]
         carried = [failure for failure in before.counted() if outranks_failure(failure)]
@@ -301,7 +301,11 @@ class RunTestSuite:
             self._abandon.unfinished(self.known_executions())
             raise
         except Exception:
-            _note(row.failure for row in results.values() if row.failure is not None)
+            _note(
+                (f"{row.suite}/{row.case}", row.failure)
+                for row in results.values()
+                if row.failure is not None
+            )
             raise
         # Indexed by declaration order, so the report ignores completion order.
         return SuiteRunOutcome(results=[results[index] for index in range(len(checked))])
@@ -1062,10 +1066,15 @@ def _task_checks(
     return expect.check_failed_tasks(tasks)
 
 
-def _note(failures: Iterable[CaseFailure]) -> None:
-    """Count ``failures`` toward the exit code of a run that is aborting."""
-    for failure in failures:
-        note_failure(failure)
+def _note(failures: Iterable[tuple[str | None, CaseFailure]]) -> None:
+    """Report the failures of the cases that finished before the run aborted.
+
+    Each prints as an ``error:`` line naming its ``suite/case`` and counts
+    toward the exit code, which the aborting error then joins.
+    """
+    diag = Diagnostics()
+    for item, failure in failures:
+        diag.failure(failure, item=item)
 
 
 def _collect_ref_sentinels(

@@ -1,0 +1,5 @@
+[1;92ma success line[0m
+[1;94ma info line[0m
+[1;33mwarning: a warning line[0m
+[1;91merror: a error line[0m
+[1;92mdone[0m

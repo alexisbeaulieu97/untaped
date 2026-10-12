@@ -11,7 +11,7 @@ from rich.text import Text
 
 from untaped.sdk import (
     ColumnsOption,
-    ErrorInfo,
+    Failure,
     FormatOption,
     UiContext,
     UntapedError,
@@ -19,7 +19,6 @@ from untaped.sdk import (
     emit,
     finish,
     hint,
-    note_failure,
     raise_usage,
     report_error,
 )
@@ -148,7 +147,7 @@ def _report_rows(ctx: AwxContext, rows: list[dict[str, Any]]) -> None:
     """
     for row in rows:
         if row.get("error"):
-            report_error(ErrorInfo.model_validate(row["error"]), item=row["target_name"])
+            report_error(Failure.model_validate(row["error"]), item=row["target_name"])
         elif row.get("detail"):
             ctx.progress_ui().message("warning", f"{row['target_name']}: {row['detail']}")
 
@@ -239,7 +238,7 @@ def _watch(
     for label, exc in errors:
         index = row_of[label]
         detail = error_detail(exc, index)
-        rows[index]["error"] = note_failure(exc, message=detail).model_dump(mode="json")
+        rows[index]["error"] = Failure.from_exception(exc, message=detail).model_dump(mode="json")
         _fail_abandoned(rows[index], detail, jobs[label], abandon, fates)
     for label, job in unmonitored:
         row = rows[row_of[label]]

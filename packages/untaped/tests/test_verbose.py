@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import logging
 from collections.abc import Iterator
+from contextlib import redirect_stderr
 
 import pytest
 
@@ -55,16 +56,26 @@ def test_enable_accepts_a_handler_value_and_ignores_it() -> None:
     assert verbose.is_verbose() is True
 
 
-def test_configure_logging_routes_untaped_logger_to_stderr() -> None:
+def test_verbose_routes_the_untaped_logger_to_stderr_as_debug_lines() -> None:
+    stream = io.StringIO()
+    token = verbose.enable()
+    try:
+        with redirect_stderr(stream):
+            logging.getLogger("untaped.test").debug("hello debug")
+        assert logging.getLogger("untaped").level == logging.DEBUG
+    finally:
+        verbose.reset(token)
+
+    assert stream.getvalue() == "DEBUG untaped.test: hello debug\n"
+
+
+def test_a_debug_line_without_verbose_is_muted() -> None:
     stream = io.StringIO()
     verbose.configure_logging(logging.DEBUG)
-    logger = logging.getLogger("untaped")
-    # Point the configured handler at a capture stream to assert routing.
-    for handler in logger.handlers:
-        if isinstance(handler, logging.StreamHandler):
-            handler.setStream(stream)
+    try:
+        with redirect_stderr(stream):
+            logging.getLogger("untaped.test").debug("hello debug")
+    finally:
+        verbose.reset()
 
-    logging.getLogger("untaped.test").debug("hello debug")
-
-    assert "hello debug" in stream.getvalue()
-    assert logger.level == logging.DEBUG
+    assert stream.getvalue() == ""

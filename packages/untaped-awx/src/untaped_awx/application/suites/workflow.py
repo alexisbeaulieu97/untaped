@@ -23,7 +23,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from untaped.sdk import ErrorCategory, ErrorInfo, q
+from untaped.sdk import ErrorCategory, Failure, q
 from untaped_awx.application.suites.ports import (
     ApprovalDecider,
     HostReader,
@@ -192,7 +192,7 @@ class WorkflowRun:
                 if node.kind == APPROVAL and node.status == "pending"
             ]
         except Exception as exc:
-            if ErrorInfo.from_exception(exc).retryable:
+            if Failure.from_exception(exc).retryable:
                 return
             raise
         for path, node, execution in waiting:

@@ -324,6 +324,22 @@ def test_an_unreadable_placed_path_exits_1_and_counts_in_attention(
     assert (dotfiles_env / "attention").read_text() == "1\n"
 
 
+def test_a_dry_run_over_an_unreadable_placed_path_fails_like_the_run(
+    make_upstream: Upstream, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare, _ = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship"])
+    run(app, ["apply", "--yes"])
+    _unreadable(monkeypatch, home / ".config" / "starship.toml")
+
+    result = run(app, ["apply", "--dry-run", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = _rows(result)
+    assert row["action"] == "failed" and row["error"] is not None
+
+
 def test_an_unreadable_source_in_a_checkout_is_an_error_row(
     make_upstream: Upstream, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -647,6 +663,24 @@ def test_an_item_gone_from_the_manifest_is_reported_not_fatal(
     rows = {str(r["source"]): r for r in _rows(result)}
     assert set(rows) == {"fish/config.fish", "fish/conf.d/abbr.fish", "fish/conf.d/path.fish"}
     assert rows["fish/conf.d/abbr.fish"]["state"] == "orphan"
+
+
+@pytest.mark.parametrize("args", [["apply"], ["remove", "--all"]], ids=["apply", "remove"])
+def test_a_dry_run_fails_on_the_problem_the_real_run_fails_on(
+    make_upstream: Upstream, args: list[str]
+) -> None:
+    bare, author = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship", "fish"])
+    run(app, ["apply", "--yes"])
+    only_config = "files: [{source: fish/config.fish, target: ~/.config/fish/config.fish}]"
+    _bump(author, {"dotfiles.yml": f"items:\n  fish:\n    {only_config}\n"})
+    run(app, ["sync", "--format", "json"])
+
+    result = run(app, [*args, "--dry-run", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert "'starship' is no longer in the manifest" in result.stderr
 
 
 def test_status_of_an_unknown_enabled_item_hints_enable(make_upstream: Upstream) -> None:

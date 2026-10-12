@@ -1,0 +1,13 @@
+[
+  {
+    "level": "error",
+    "kind": "untaped.failure",
+    "category": "usage",
+    "system": "untaped",
+    "retryable": false,
+    "message": "--foo takes a number",
+    "hint": null,
+    "exit_code": 2,
+    "details": {}
+  }
+]

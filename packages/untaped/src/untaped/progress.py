@@ -1,47 +1,29 @@
-"""In-place stderr progress reporting for long-running operations.
+"""Progress reporting for long-running operations: the handle and its line backends.
 
 Three rendering modes share one ``update`` contract:
 
 * a TTY spinner animated by a background thread, so the line stays alive while
-  the main thread blocks in a subprocess, file lock, or network call;
+  the main thread blocks in a subprocess, file lock, or network call (the
+  sink's, ``untaped.output.sink``, since it shares the sink's lock);
 * throttled newline-terminated lines for non-TTY/piped output, so CI logs stay
   readable;
 * verbose passthrough that announces the label and otherwise stays out of the
   way, letting the wrapped tool's own output stream through.
 
-The public surface is :func:`progress_reporter` and the :class:`ProgressHandle`
-protocol it yields. Callers get the handle from ``UiContext.progress``; only the
+Every backend writes through the sink, so a line printed while progress is up
+never garbles it. Callers get the handle from ``UiContext.progress``; only the
 context manager drives the start/finish lifecycle.
 """
 
 from __future__ import annotations
 
-import shutil
-import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Protocol, TextIO
+from typing import Protocol
 
 _THROTTLE_INTERVAL = 2.0
 _PERCENT_STEP = 10
-_SPINNER_TICK = 0.1
-_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-_ASCII_SPINNER_FRAMES = "|/-\\"
-
-
-def _spinner_frames(stream: TextIO) -> str:
-    """Braille frames on a UTF-8 stream, ASCII frames otherwise.
-
-    An unknown encoding (e.g. a ``StringIO`` with no ``encoding`` attribute) is
-    assumed UTF-8; only a stream that *declares* a non-UTF encoding (a legacy
-    ``LANG=C`` terminal) falls back to ASCII so the spinner doesn't render as
-    replacement boxes.
-    """
-    encoding = (getattr(stream, "encoding", None) or "").lower()
-    if encoding and "utf" not in encoding:
-        return _ASCII_SPINNER_FRAMES
-    return _SPINNER_FRAMES
 
 
 class ProgressHandle(Protocol):
@@ -67,7 +49,9 @@ class ProgressHandle(Protocol):
         ...
 
 
-class _Backend(Protocol):
+class Backend(Protocol):
+    """What renders one progress block."""
+
     def start(self) -> None: ...
 
     def update(
@@ -79,19 +63,14 @@ class _Backend(Protocol):
     def finish(self, *, failed: bool) -> None: ...
 
 
-def _write_line(stream: TextIO, line: str) -> None:
-    stream.write(f"{line}\n")
-    stream.flush()
-
-
 class _SilentHandle:
     """Progress for ``--quiet``: no progress output; logged lines still print."""
 
-    def __init__(self, *, stream: TextIO) -> None:
-        self._stream = stream
+    def __init__(self, *, write: Callable[[str], None]) -> None:
+        self._write = write
 
     def log(self, line: str) -> None:
-        _write_line(self._stream, line)
+        self._write(f"{line}\n")
 
     def start(self) -> None:
         return None
@@ -108,22 +87,20 @@ class _SilentHandle:
 class _VerboseHandle:
     """Announce the label, then let the wrapped tool's output stream through."""
 
-    def __init__(self, label: str, *, stream: TextIO) -> None:
+    def __init__(self, label: str, *, write: Callable[[str], None]) -> None:
         self._label = label
-        self._stream = stream
+        self._write = write
 
     def start(self) -> None:
-        self._stream.write(f"{self._label}\n")
-        self._stream.flush()
+        self._write(f"{self._label}\n")
 
     def log(self, line: str) -> None:
-        _write_line(self._stream, line)
+        self._write(f"{line}\n")
 
     def update(
         self, message: str, *, fraction: float | None = None, new_phase: bool = False
     ) -> None:
-        self._stream.write(f"{message}\n")
-        self._stream.flush()
+        self._write(f"{message}\n")
 
     def finish(self, *, failed: bool) -> None:
         return None
@@ -132,9 +109,9 @@ class _VerboseHandle:
 class _ThrottledHandle:
     """Newline-terminated, throttled progress for non-TTY/piped streams."""
 
-    def __init__(self, label: str, *, stream: TextIO) -> None:
+    def __init__(self, label: str, *, write: Callable[[str], None]) -> None:
         self._label = label
-        self._stream = stream
+        self._write = write
         self._last_emit: float | None = None
         self._last_step = -1
 
@@ -142,7 +119,7 @@ class _ThrottledHandle:
         self._emit(self._label)
 
     def log(self, line: str) -> None:
-        _write_line(self._stream, line)
+        self._write(f"{line}\n")
 
     def update(
         self, message: str, *, fraction: float | None = None, new_phase: bool = False
@@ -165,104 +142,43 @@ class _ThrottledHandle:
 
     def _emit(self, message: str) -> None:
         self._last_emit = time.monotonic()
-        self._stream.write(f"{message}\n")
-        self._stream.flush()
-
-
-class _SpinnerHandle:
-    """In-place animated spinner for TTY stderr, driven by a background thread."""
-
-    def __init__(self, label: str, *, stream: TextIO) -> None:
-        self._label = label
-        self._stream = stream
-        self._frames = _spinner_frames(stream)
-        self._lock = threading.Lock()
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._frame = 0
-        self._line_width = 0
-        self._started_at = time.monotonic()
-
-    def start(self) -> None:
-        with self._lock:
-            self._draw()
-        self._thread.start()
-
-    def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
-    ) -> None:
-        with self._lock:
-            self._label = message
-            self._draw()
-
-    def log(self, line: str) -> None:
-        with self._lock:
-            self._clear()
-            self._stream.write(f"{line}\n")
-            self._draw()
-
-    def finish(self, *, failed: bool) -> None:
-        self._stop.set()
-        self._thread.join()
-        with self._lock:
-            self._clear()
-            self._stream.flush()
-
-    def _clear(self) -> None:
-        self._stream.write("\r" + " " * self._line_width + "\r")
-        self._line_width = 0
-
-    def _run(self) -> None:
-        while not self._stop.wait(_SPINNER_TICK):
-            with self._lock:
-                self._draw()
-
-    def _draw(self) -> None:
-        frame = self._frames[self._frame % len(self._frames)]
-        self._frame += 1
-        elapsed = int(time.monotonic() - self._started_at)
-        line = _fit(f"{frame} {self._label} ({elapsed}s)")
-        self._stream.write("\r" + line.ljust(self._line_width))
-        self._stream.flush()
-        self._line_width = len(line)
-
-
-def _fit(line: str) -> str:
-    """Truncate a spinner line to the terminal width so ``\r`` repaints in place.
-
-    A line wider than the terminal wraps, and ``\r`` then only returns to the
-    start of the *last* row, leaving stale fragments behind.
-    """
-    width = shutil.get_terminal_size(fallback=(80, 24)).columns - 1
-    if width <= 1 or len(line) <= width:
-        return line
-    return line[: width - 1] + "…"
+        self._write(f"{message}\n")
 
 
 def _make_handle(
-    label: str, *, stream: TextIO, verbose: bool, quiet: bool, isatty: bool
-) -> _Backend:
+    label: str,
+    *,
+    write: Callable[[str], None],
+    verbose: bool,
+    quiet: bool,
+    spinner: Callable[[], Backend] | None,
+) -> Backend:
     if quiet:
-        return _SilentHandle(stream=stream)
+        return _SilentHandle(write=write)
     if verbose:
-        return _VerboseHandle(label, stream=stream)
-    if isatty:
-        return _SpinnerHandle(label, stream=stream)
-    return _ThrottledHandle(label, stream=stream)
+        return _VerboseHandle(label, write=write)
+    if spinner is not None:
+        return spinner()
+    return _ThrottledHandle(label, write=write)
 
 
 @contextmanager
 def progress_reporter(
-    label: str, *, stream: TextIO, verbose: bool, isatty: bool, quiet: bool = False
+    label: str,
+    *,
+    write: Callable[[str], None],
+    verbose: bool,
+    quiet: bool = False,
+    spinner: Callable[[], Backend] | None = None,
 ) -> Iterator[ProgressHandle]:
-    """Report progress for a blocking operation on ``stream`` (typically stderr).
+    """Report progress for a blocking operation, writing lines through ``write``.
 
     Yields a :class:`ProgressHandle`; the rendering mode is chosen from
-    ``quiet``/``verbose``/``isatty`` (``quiet`` wins — it stays fully silent).
-    The spinner line (TTY) is cleared on exit — success or failure — so any
-    propagating error prints cleanly.
+    ``quiet``/``verbose`` and ``spinner``, the terminal's spinner backend
+    (``quiet`` wins: it stays fully silent). The spinner line is cleared on
+    exit, success or failure, so any propagating error prints cleanly.
     """
-    handle = _make_handle(label, stream=stream, verbose=verbose, quiet=quiet, isatty=isatty)
+    handle = _make_handle(label, write=write, verbose=verbose, quiet=quiet, spinner=spinner)
     handle.start()
     failed = False
     try:

@@ -79,18 +79,13 @@ lists the categories. A plugin's error classes declare them as class defaults
   rather than in the message; text output prints it as a `hint:` line.
 - When a new error replaces a caught one, pass `**attribution(exc)` so the
   category, system, hint and details survive.
-- A run exits with the most severe failure it saw (see
-  [precedence](./exit-codes.md#precedence)).
-  `report_errors()`, `resolve_each`, `batch_apply` and `report_error` note
-  each failure they print, and `finish(any_failed)` exits with the most
-  severe one. A failure that becomes a row instead is noted with
-  `note_failure(exc)`.
+- A run exits with the most severe failure it printed or emitted as a row
+  ([precedence](./exit-codes.md#precedence)), even when it returns normally.
 - A failed row carries the structured failure next to its `detail`:
-  `error=note_failure(exc, message=detail)` on `OutcomeRecord` and
-  `TargetRecord` rows (`.model_dump(mode="json")` for a dict row). It returns
-  the `ErrorInfo` and counts the failure; `ErrorInfo.from_exception` alone
-  builds one without counting it. Keep the exception until the row is built;
-  never flatten it into a string first.
+  `error=Failure.from_exception(exc, message=detail)` on `OutcomeRecord` and
+  `TargetRecord` rows (`.model_dump(mode="json")` for a dict row). Building
+  the `Failure` counts nothing; `emit` counts the row. Keep the exception
+  until the row is built; never flatten it into a string first.
 
 See [exit codes](./exit-codes.md) for the category table.
 
@@ -120,6 +115,11 @@ Do not call `echo()` for `error:`, `warning:` or `failed:` lines, `print()`,
 `warnings.warn()` (use `ui.message("warning", …)`, or have an inner layer take
 a `warn` callback), or build a `rich.console.Console` yourself. A
 `DeprecationWarning` for a Python API is the exception.
+
+**Typed diagnostics.** Each stderr line has a `kind`. To add one, subclass
+`Message` or `Failure` with `kind="<plugin>.<name>"` (add fields, never
+levels) and emit it with `app_context().diag.emit(...)`. Relay another tool's
+output (a hook's stderr, a job log) with `diag.relay(text)`: it never counts.
 
 ## Options
 
@@ -222,7 +222,7 @@ free, but a command that writes declares it with `@writes`, or
 - Base records about files or directories on `TargetRecord`, which requires an
   absolute `target_path`.
 - `error` is reserved: both bases give a failed row an optional `error`
-  (`ErrorInfo`, whose fields [Scripting](../scripting.md#failed-rows-the-error-field)
+  (`Failure`, whose fields [Scripting](../scripting.md#failed-rows-the-error-field)
   lists), left out of rows that did not fail and of tables. Put the human text in `detail`;
   never declare your own `error` field.
 - Base check results on `CheckRecord`, with `status` set to `pass`, `warn`,

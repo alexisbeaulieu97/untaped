@@ -1,0 +1,4 @@
+Syncing repos
+1/2 acme/x
+error: acme/x: it broke
+2/2 acme/y

@@ -4,12 +4,24 @@ from __future__ import annotations
 
 import io
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager, redirect_stderr
 
 import pytest
 
-from untaped.progress import progress_reporter
+from untaped.output.sink import current_sink
+from untaped.progress import ProgressHandle
 
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+@contextmanager
+def _progress(
+    label: str, *, stream: io.StringIO, verbose: bool, quiet: bool = False
+) -> Iterator[ProgressHandle]:
+    """Progress through the sink, onto ``stream`` (a terminal when it says it is one)."""
+    with redirect_stderr(stream), current_sink().progress(label, verbose=verbose, quiet=quiet) as p:
+        yield p
 
 
 class TtyStringIO(io.StringIO):
@@ -20,7 +32,7 @@ class TtyStringIO(io.StringIO):
 def test_non_tty_progress_emits_label_and_phase_updates_as_lines() -> None:
     stream = io.StringIO()
 
-    with progress_reporter("Resolving deps", stream=stream, verbose=False, isatty=False) as p:
+    with _progress("Resolving deps", stream=stream, verbose=False) as p:
         p.update("step one", new_phase=True)
         p.update("step two", new_phase=True)
 
@@ -35,7 +47,7 @@ def test_non_tty_progress_emits_label_and_phase_updates_as_lines() -> None:
 def test_non_tty_progress_throttles_unmarked_updates() -> None:
     stream = io.StringIO()
 
-    with progress_reporter("Working", stream=stream, verbose=False, isatty=False) as p:
+    with _progress("Working", stream=stream, verbose=False) as p:
         # Rapid updates with no phase change and no fraction step are throttled
         # so piped/CI logs stay readable.
         p.update("tick")
@@ -51,7 +63,7 @@ def test_non_tty_progress_emits_on_fraction_step_within_throttle_window() -> Non
 
     # All updates happen within the throttle window, so only fraction-bucket
     # advances (every 10%) should break through; same-bucket updates collapse.
-    with progress_reporter("Work", stream=stream, verbose=False, isatty=False) as p:
+    with _progress("Work", stream=stream, verbose=False) as p:
         p.update("ten", fraction=0.10)
         p.update("fifty", fraction=0.50)
         p.update("fifty-five", fraction=0.55)
@@ -68,7 +80,7 @@ def test_tty_spinner_animates_while_the_main_thread_blocks() -> None:
     def frames() -> set[str]:
         return {ch for ch in stream.getvalue() if ch in _SPINNER_FRAMES}
 
-    with progress_reporter("Work", stream=stream, verbose=False, isatty=True):
+    with _progress("Work", stream=stream, verbose=False):
         # No update() calls: only the background thread can advance the frame.
         deadline = time.monotonic() + 5
         while len(frames()) < 2 and time.monotonic() < deadline:
@@ -80,7 +92,7 @@ def test_tty_spinner_animates_while_the_main_thread_blocks() -> None:
 def test_tty_progress_animates_on_stderr_and_clears_line_on_exit() -> None:
     stream = TtyStringIO()
 
-    with progress_reporter("Installing", stream=stream, verbose=False, isatty=True) as p:
+    with _progress("Installing", stream=stream, verbose=False) as p:
         p.update("almost there")
 
     output = stream.getvalue()
@@ -94,7 +106,7 @@ def test_tty_progress_animates_on_stderr_and_clears_line_on_exit() -> None:
 def test_verbose_progress_passes_messages_through_without_animation() -> None:
     stream = io.StringIO()
 
-    with progress_reporter("Resolving deps", stream=stream, verbose=True, isatty=True) as p:
+    with _progress("Resolving deps", stream=stream, verbose=True) as p:
         p.update("downloading")
 
     output = stream.getvalue()
@@ -109,7 +121,7 @@ def test_progress_reraises_exception_from_block() -> None:
 
     with (
         pytest.raises(ValueError, match="boom"),
-        progress_reporter("Working", stream=stream, verbose=False, isatty=True),
+        _progress("Working", stream=stream, verbose=False),
     ):
         raise ValueError("boom")
 
@@ -120,9 +132,7 @@ def test_progress_reraises_exception_from_block() -> None:
 def test_progress_reporter_is_silent_when_quiet() -> None:
     """``--quiet`` mutes progress entirely, even on a TTY."""
     stream = TtyStringIO()
-    with progress_reporter(
-        "Working", stream=stream, verbose=False, quiet=True, isatty=True
-    ) as handle:
+    with _progress("Working", stream=stream, verbose=False, quiet=True) as handle:
         handle.update("step", fraction=0.5)
     assert stream.getvalue() == ""
 
@@ -137,7 +147,7 @@ class AsciiTty(io.StringIO):
 def test_spinner_falls_back_to_ascii_frames_on_non_utf8_stream() -> None:
     """A stream declaring a non-UTF encoding gets ASCII spinner frames, not braille."""
     stream = AsciiTty()
-    with progress_reporter("Working", stream=stream, verbose=False, isatty=True):
+    with _progress("Working", stream=stream, verbose=False):
         pass
     out = stream.getvalue()
     assert any(ch in out for ch in "|/-\\")
@@ -146,7 +156,7 @@ def test_spinner_falls_back_to_ascii_frames_on_non_utf8_stream() -> None:
 
 def test_spinner_log_clears_the_line_then_redraws() -> None:
     stream = TtyStringIO()
-    with progress_reporter("Working", stream=stream, verbose=False, isatty=True) as handle:
+    with _progress("Working", stream=stream, verbose=False) as handle:
         handle.log("error: x: failed")
         after_log = stream.getvalue()
     head, _, tail = after_log.partition("error: x: failed\n")
@@ -159,10 +169,8 @@ def test_spinner_log_clears_the_line_then_redraws() -> None:
     [(False, False, False), (True, True, False), (False, True, True)],
 )
 def test_log_writes_a_plain_line_in_every_mode(verbose: bool, isatty: bool, quiet: bool) -> None:
-    stream = io.StringIO()
-    with progress_reporter(
-        "Working", stream=stream, verbose=verbose, isatty=isatty, quiet=quiet
-    ) as handle:
+    stream = TtyStringIO() if isatty else io.StringIO()
+    with _progress("Working", stream=stream, verbose=verbose, quiet=quiet) as handle:
         handle.log("error: x: failed")
     assert "error: x: failed\n" in stream.getvalue()
 
@@ -170,7 +178,7 @@ def test_log_writes_a_plain_line_in_every_mode(verbose: bool, isatty: bool, quie
 def test_spinner_line_is_truncated_to_terminal_width(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COLUMNS", "30")
     stream = TtyStringIO()
-    with progress_reporter("x" * 200, stream=stream, verbose=False, isatty=True):
+    with _progress("x" * 200, stream=stream, verbose=False):
         pass
     drawn = [chunk for chunk in stream.getvalue().split("\r") if chunk.strip()]
     assert drawn
