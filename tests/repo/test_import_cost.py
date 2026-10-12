@@ -148,8 +148,10 @@ _STARTUP_PROBE = (
 #: more: 126 against 124 on its base, measured 2026-10-11 in a container.
 #: Progress lines and JSON (#537) replace ``untaped.progress`` with
 #: ``untaped.output.progress``: 127 on A2a and on its base, 2026-10-12.
-#: The budget sits six above that measurement, the same headroom the
-#: previous one had, to absorb dependency and patch-release drift; a new
+#: The freshness SDK (#537 B1) adds ``untaped.cache`` (the call state moved
+#: there from ``untaped.contracts``) and ``untaped.upstream`` (read by
+#: ``untaped.http``): 129, 2026-10-12. The budget was set six above 127 to
+#: absorb dependency and patch-release drift; a new
 #: built-in plugin adds a few ``untaped.*`` modules (its SPEC and settings).
 _TOTAL_BUDGET = 700
 _UNTAPED_BUDGET = 133

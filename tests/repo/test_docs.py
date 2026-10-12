@@ -428,6 +428,7 @@ def test_inline_command_detector(
 
 
 DOCS_PAGES = [
+    "caches.md",
     "composition.md",
     "configuration.md",
     "contracts.md",

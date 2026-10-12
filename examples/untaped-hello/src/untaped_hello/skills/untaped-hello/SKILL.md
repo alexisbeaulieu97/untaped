@@ -10,14 +10,16 @@ installed beside `untaped` appears in the CLI; it does no real work.
 
 ## Setup
 
-Settings live under `profiles.<name>.hello`. The only one is the greeting:
-`untaped config set hello.greeting "hello from acme"`.
+Settings live under `profiles.<name>.hello`: the greeting
+(`untaped config set hello.greeting "hello from acme"`) and the file the
+message of the day comes from (`untaped config set hello.motd_path FILE`).
 
 ## Commands
 
 | When you need to | Run |
 |---|---|
 | Print the configured greeting | `untaped hello greet` |
+| Print the message of the day from `hello.motd_path`, refreshed once an hour | `untaped hello motd` |
 
 ## Workflows
 
@@ -27,6 +29,8 @@ Settings live under `profiles.<name>.hello`. The only one is the greeting:
 ## Safety
 
 - `untaped hello greet` only reads settings and writes nothing.
+- `untaped hello motd` writes only its own copy of the file; `--cached`
+  reads the copy without checking the file.
 - Exit codes: 0 success, 1 failure, 2 usage, 4 fix the environment, 130
   interrupted.
 

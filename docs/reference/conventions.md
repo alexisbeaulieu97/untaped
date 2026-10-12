@@ -147,10 +147,6 @@ Rules for parameters:
 - Do not use `--empty-*` negative flags. Declare list options with `negative=""`.
 - Negative `--no-*` flags exist only for booleans that default to true.
   Declare other booleans with `negative=""`.
-- A cache's directive is `Annotated[bool | None, refresh_option(CACHE)] = None`,
-  passed to `CACHE.serve()`; never a hand-declared `--refresh` or `--cached`
-  (`tests/repo/test_refresh_option.py`). A stale warning is `serve()`'s,
-  never the command's.
 
 To rename a command, group or flag, keep the old spelling as a hidden,
 deprecated alias until the next major release:
