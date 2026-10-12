@@ -57,7 +57,9 @@ from untaped_git.infrastructure.repo_files import (
     repo_origin,
     worktree_entries,
 )
-from untaped_git.infrastructure.store import REMOVING_SUFFIX, TIMEOUT, RepoStore, _plugin_name
+from untaped_git.infrastructure.store import TIMEOUT, RepoStore, _plugin_name
+from untaped_git.infrastructure.store_release import REMOVING_SUFFIX, remove_worktree
+from untaped_git.infrastructure.worktree_config import enable_worktree_config, write_owner_config
 
 #: What a copied private file loses, so its owner's next sync fetches.
 _FRESHNESS_KEYS = ("fetched_at", "pushed_at")
@@ -152,9 +154,9 @@ def adopt(
             store._git(["config", "--local", "--unset-all", _OLD_LAYOUT_KEY], check=False)
             stamped = [path for path in owned if path.is_dir()]
             if stamped or worktree_entries(target):
-                store._enable_worktree_config()
+                enable_worktree_config(store)
             for path in stamped:
-                store._write_owner_config(path)
+                write_owner_config(store, path)
             store._ensure()
         finally:
             _discard(source)  # a copy's original, last: the repo is complete in the store
@@ -212,7 +214,7 @@ def _overlap(
         return "dropped"
     _copy_private_files(target, source)
     for entry in worktree_entries(target):
-        store._remove_worktree(entry)
+        remove_worktree(store, entry)
     removing = target.with_name(target.name + REMOVING_SUFFIX)
     shutil.rmtree(removing, ignore_errors=True)
     try:
