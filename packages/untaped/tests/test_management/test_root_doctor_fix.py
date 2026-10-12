@@ -313,6 +313,16 @@ def test_dry_run_plans_automatic_fixes_and_runs_nothing(monkeypatch: pytest.Monk
     assert RAN == []
 
 
+def test_a_dry_run_with_a_refused_fix_fails_like_the_real_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = _spec(("svc.loop", "doctor --online", {}))
+    result = _cli(spec, "--dry-run", "--format", "json", monkeypatch=monkeypatch)
+    assert result.exit_code == 1, result.output
+    assert [row["action"] for row in _rows(result)] == ["failed"]
+    assert RAN == []
+
+
 def test_a_declined_prompt_runs_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ScriptedPromptBackend(confirms=[False])
     spec = _spec(_MIGRATE, ("svc.token", "auth set svc", {"automatic": False}))

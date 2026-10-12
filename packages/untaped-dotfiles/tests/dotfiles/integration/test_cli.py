@@ -649,6 +649,24 @@ def test_an_item_gone_from_the_manifest_is_reported_not_fatal(
     assert rows["fish/conf.d/abbr.fish"]["state"] == "orphan"
 
 
+@pytest.mark.parametrize("args", [["apply"], ["remove", "--all"]], ids=["apply", "remove"])
+def test_a_dry_run_fails_on_the_problem_the_real_run_fails_on(
+    make_upstream: Upstream, args: list[str]
+) -> None:
+    bare, author = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship", "fish"])
+    run(app, ["apply", "--yes"])
+    only_config = "files: [{source: fish/config.fish, target: ~/.config/fish/config.fish}]"
+    _bump(author, {"dotfiles.yml": f"items:\n  fish:\n    {only_config}\n"})
+    run(app, ["sync", "--format", "json"])
+
+    result = run(app, [*args, "--dry-run", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert "'starship' is no longer in the manifest" in result.stderr
+
+
 def test_status_of_an_unknown_enabled_item_hints_enable(make_upstream: Upstream) -> None:
     bare, _ = make_upstream()
     _subscribe(bare)

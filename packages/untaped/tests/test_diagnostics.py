@@ -14,12 +14,14 @@ from typing import Any
 import pytest
 from cyclopts import App
 
+from untaped import cli
 from untaped.batch import finish
 from untaped.cli import (
     FormatOption,
     apply_default_format,
     echo,
     emit,
+    render_rows,
     report_declined,
     report_errors,
     report_row_errors,
@@ -36,6 +38,7 @@ from untaped.messages import hint
 from untaped.output.sink import Diagnostics
 from untaped.records import Failure, OutcomeRecord
 from untaped.testing import invoke_cli
+from untaped.theme import ThemeSpec
 from untaped.ui import UiContext
 
 
@@ -291,6 +294,20 @@ def test_an_emitted_failed_row_sets_exit_1(as_dict: bool) -> None:
     @app.default
     def run() -> None:
         emit(rows, fmt="json")
+
+    assert invoke_cli(app, []).exit_code == 1
+
+
+def test_a_failed_row_counts_in_a_table_list_view(monkeypatch: pytest.MonkeyPatch) -> None:
+    error = Failure.from_exception(UntapedError("broke"))
+    row = _Outcome(name="a", action="failed", error=error).model_dump(mode="json")
+    theme = ThemeSpec(collection_view="list")
+    monkeypatch.setattr(cli, "ui_context", lambda **_: UiContext(theme=theme))
+    app = App(name="demo")
+
+    @app.default
+    def run() -> None:
+        render_rows([row], fmt="table")
 
     assert invoke_cli(app, []).exit_code == 1
 
