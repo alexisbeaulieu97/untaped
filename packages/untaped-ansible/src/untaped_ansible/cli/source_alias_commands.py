@@ -8,9 +8,9 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     DryRunOption,
     FormatOption,
-    UiContext,
     UsageError,
     YesOption,
     app_context,
@@ -31,6 +31,7 @@ app = create_app(
 )
 
 _KIND = "ansible.source_alias_outcome"
+_diag = Diagnostics()
 
 
 @app.command(name="set")
@@ -59,7 +60,7 @@ def alias_set_command(
             kind=_KIND,
         )
         if action != "unchanged":
-            _warn_saved_sources_need_refresh(app_context().ui(strict=False))
+            _warn_saved_sources_need_refresh()
 
 
 @app.command(name="list")
@@ -100,9 +101,8 @@ def alias_remove_command(
             raise AnsibleError(
                 not_found("source alias", alias, known=sorted(entries)), category="not_found"
             )
-        ui = app_context().ui(strict=False)
         if not dry_run:
-            ui.confirm_or_cancel(
+            app_context().ui(strict=False).confirm_or_cancel(
                 f"Remove source alias {q(alias)} -> {repo}?",
                 assume_yes=yes,
                 refusal="source-alias remove requires --yes when not interactive",
@@ -117,17 +117,16 @@ def alias_remove_command(
             kind=_KIND,
         )
         if not dry_run:
-            _warn_saved_sources_need_refresh(ui)
+            _warn_saved_sources_need_refresh()
 
 
-def _warn_saved_sources_need_refresh(ui: UiContext) -> None:
+def _warn_saved_sources_need_refresh() -> None:
     """Aliases are baked into cached source snapshots at refresh time."""
     names = [source.name for source in SourceRepository().entries()]
     if not names:
         return
     commands = ", ".join(f"`untaped ansible source refresh {name}`" for name in names)
-    ui.message(
-        "warning",
+    _diag.warning(
         "cached source data resolves aliases at refresh time; "
         f"run {commands} for this change to affect cached graphs",
     )

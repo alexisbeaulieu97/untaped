@@ -41,6 +41,7 @@ from untaped.errors import ConfigError, UsageError, first_validation_error
 from untaped.management._render import emit_isolated
 from untaped.messages import command_line, not_found
 from untaped.output.diagnostic import WireModel
+from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
     CompositionResult,
     PluginCandidate,
@@ -51,10 +52,11 @@ from untaped.plugins.registry import (
 from untaped.records import Record, record_kinds, record_model
 from untaped.settings import ContractName, ExtensionSettings
 from untaped.theme import OutputFormat
-from untaped.ui import ui_context
 
 if TYPE_CHECKING:
     from untaped.contracts._declare import ContractInfo
+
+_diag = Diagnostics()
 
 _UNKNOWN = "unknown"
 
@@ -227,14 +229,12 @@ def _contract_rows() -> list[ContractRow]:
     rows: list[ContractRow] = []
     owned = owned_contracts()
     for owner in unreadable_owners():
-        ui_context(strict=False).message(
-            "warning", f"{owner}'s contracts couldn't be read; `{command_line('doctor')}` says why"
-        )
+        _diag.warning(f"{owner}'s contracts couldn't be read; `{command_line('doctor')}` says why")
     for owner, infos in sorted(owned.items()):
         try:
             extensions: Mapping[str, ExtensionSettings] = rankings(owner)
         except ConfigError as exc:
-            ui_context(strict=False).message("warning", f"rankings not shown: {exc}")
+            _diag.warning(f"rankings not shown: {exc}")
             extensions = {}
         for info in sorted(infos, key=lambda each: each.name):
             extension = extensions.get(info.name)
@@ -290,15 +290,14 @@ def _rank(
     key = f"{owner}.extensions"
     path = f"{key}.{name}.rank.{method}"
     profile = SettingsFileRepository().update_value(key, update, dry_run=dry_run)
-    ui = ui_context(strict=False)
     if not changed:
-        ui.message("info", f"{path} unchanged in profile {profile}")
+        _diag.info(f"{path} unchanged in profile {profile}")
         action = "unchanged"
     elif dry_run:
         action = "planned"
     else:
         done = f"ranked {' > '.join(plugins)}" if plugins else "removed the ranking"
-        ui.success(f"{done} for {owner}.{name} {method} (profile {profile})")
+        _diag.success(f"{done} for {owner}.{name} {method} (profile {profile})")
         action = "updated" if plugins else "deleted"
     return SettingOutcome(key=key, profile=profile, action=action)
 
@@ -356,8 +355,7 @@ def _check_rankable(owner: str, name: str, method: str, plugins: list[str]) -> N
     filling = set(method_providers(info, method, ()))
     for plugin in plugins:
         if plugin not in filling:
-            ui_context(strict=False).message(
-                "warning",
+            _diag.warning(
                 f"{plugin} doesn't fill {owner}.{name} {method} here; the ranking keeps it "
                 "for when it does",
             )
@@ -410,8 +408,7 @@ def _show(
         table_columns=["name", "status", "distribution", "version"],
     )
     if not rows:
-        # ``sdk.hint`` only renders ``hint: run `<command>```, so print the prefix directly.
-        echo(f"hint: {INSTALL_HINT}", err=True)
+        _diag.hint(INSTALL_HINT)
 
 
 def _rows(

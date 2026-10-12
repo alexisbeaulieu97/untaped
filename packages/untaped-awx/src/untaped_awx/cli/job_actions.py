@@ -18,13 +18,11 @@ from untaped.sdk import (
     Failure,
     FormatOption,
     UntapedError,
-    echo,
     emit,
     finish,
     plural,
     q,
     raise_usage,
-    report_error,
     report_errors,
     resolve_each,
     writes,
@@ -75,11 +73,11 @@ def register_job_actions(jobs_app: App) -> None:
             rows = [_cancel_plan(k, r) for k, r in _read_targets(ctx, ids, kinds, kind)]
             for row in rows:
                 if row.action == "planned":
-                    echo(f"cancel {_label(row.kind, row.id, row.name)} ({row.status})", err=True)
-                else:
-                    ctx.progress_ui().message(
-                        "warning", f"{_label(row.kind, row.id, row.name)}: skipped, {row.detail}"
+                    ctx.diag.info(
+                        f"cancel {_label(row.kind, row.id, row.name)} ({row.status})", unmuted=True
                     )
+                else:
+                    ctx.diag.warning(f"{_label(row.kind, row.id, row.name)}: skipped, {row.detail}")
             pending = [index for index, row in enumerate(rows) if row.action == "planned"]
             if pending and not dry_run:
                 _confirm(ctx, verb="cancel", count=len(pending), yes=yes)
@@ -137,10 +135,10 @@ def register_job_actions(jobs_app: App) -> None:
                     action="planned",
                 )
                 rows.append(row)
-                echo(
+                ctx.diag.info(
                     f"relaunch {_label(job_kind, row.target_id, row.name)} "
                     f"({record.get('status')}) hosts={hosts}",
-                    err=True,
+                    unmuted=True,
                 )
             if rows and not dry_run:
                 _confirm(ctx, verb="relaunch", count=len(rows), yes=yes)
@@ -203,7 +201,7 @@ def _cancel_one(ctx: AwxContext, row: JobCancelOutcome) -> JobCancelOutcome:
     try:
         ctx.jobs.cancel(kind=row.kind, job_id=row.id)
     except UntapedError as exc:
-        report_error(exc, item=_label(row.kind, row.id, row.name))
+        ctx.diag.failure(exc, item=_label(row.kind, row.id, row.name))
         return row.model_copy(update=_failure(exc))
     return row.model_copy(update={"action": "cancel_requested"})
 
@@ -233,7 +231,7 @@ def _relaunch_one(ctx: AwxContext, row: JobRelaunchOutcome) -> JobRelaunchOutcom
             hosts="failed" if row.hosts == "failed" else None,
         )
     except UntapedError as exc:
-        report_error(exc, item=_label(row.kind, row.target_id, row.name))
+        ctx.diag.failure(exc, item=_label(row.kind, row.target_id, row.name))
         return row.model_copy(update=_failure(exc))
     new_kind = created.get("type")
     return row.model_copy(

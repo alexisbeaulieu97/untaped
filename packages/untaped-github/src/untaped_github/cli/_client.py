@@ -34,8 +34,8 @@ def open_client() -> Iterator[tuple[GithubClient, UiContext]]:
 
     ctx = app_context()
     # strict=False: a misconfigured theme must not fail an otherwise-valid
-    # search/whoami. Progress is auxiliary feedback; it falls back to the
-    # default theme rather than raising on the data path (e.g. --format raw).
+    # search/whoami; the UI falls back to the default theme rather than
+    # raising on the data path (e.g. --format raw).
     ui = ctx.ui(strict=False)
     with (
         GithubClient(ctx.section("github", GithubSettings), http=ctx.http) as client,

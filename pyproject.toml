@@ -76,6 +76,8 @@ disallow_any_generics = true
 disallow_untyped_defs = true
 no_implicit_optional = true
 plugins = ["pydantic.mypy"]
+# Report first-party calls of SDK helpers marked ``warnings.deprecated``.
+enable_error_code = ["deprecated"]
 # Type-check every package's src/ and the scripts; tests are validated by running them.
 files = [
     "packages/untaped/src",
@@ -136,6 +138,8 @@ addopts = [
     "--strict-config",
     "--import-mode=importlib",
 ]
+# A deprecated helper called from untaped's own code fails the suite.
+filterwarnings = ["error::DeprecationWarning:untaped"]
 
 [tool.vulture]
 # Dead-code scan of shipped code (tests are left out: code only tests use is

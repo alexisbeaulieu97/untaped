@@ -33,7 +33,7 @@ def build_mutation_engine(
         catalog=ctx.catalog,
         fk=ctx.fk,
         strategies=ctx.strategies,
-        warn=lambda msg: ctx.progress_ui().message("warning", msg),
+        warn=ctx.diag.warning,
         allow_unverified=allow_unverified,
         nodes=ctx.workflow_nodes,
     )

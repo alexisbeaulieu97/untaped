@@ -9,12 +9,11 @@ from cyclopts import Parameter
 from untaped.contracts import Failed, Ok, Skipped, gather, select_one
 from untaped.sdk import (
     FormatOption,
+    app_context,
     create_app,
     emit,
     finish,
-    report_error,
     report_errors,
-    ui_context,
 )
 from untaped_shelf.api import Book, BookSource
 
@@ -26,14 +25,15 @@ def list_books(*, fmt: FormatOption = "table") -> None:
     """List every book every provider keeps; a provider that failed makes it exit non-zero."""
     with report_errors():
         answers = gather(BookSource.books)()
+    diag = app_context().diag
     books: list[Book] = []
     for answer in answers:
         if isinstance(answer, Ok):
             books.extend(answer.value)  # a stale one already said so on stderr
         elif isinstance(answer, Failed):
-            report_error(answer.error, item=answer.plugin)
+            diag.failure(answer.error, item=answer.plugin)
         elif isinstance(answer, Skipped) and answer.reason != "not-configured":
-            ui_context().message("warning", f"{answer.plugin} wasn't asked: {answer.detail}")
+            diag.warning(f"{answer.plugin} wasn't asked: {answer.detail}")
     emit(books, fmt=fmt)
     finish(any(isinstance(answer, Failed) for answer in answers))
 

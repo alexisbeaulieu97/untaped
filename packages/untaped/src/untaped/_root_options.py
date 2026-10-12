@@ -24,6 +24,7 @@ from untaped.errors import UntapedError
 from untaped.messages import deprecated_message
 from untaped.output.policy import enable_quiet as _enable_quiet
 from untaped.output.policy import reset_quiet as _reset_quiet
+from untaped.output.sink import Diagnostics
 from untaped.profile_resolver import profile_scope
 from untaped.settings import load_settings_section
 from untaped.stability import (
@@ -34,7 +35,6 @@ from untaped.stability import (
     replacement_text,
     reset_show_deprecated,
 )
-from untaped.ui import ui_context
 from untaped.verbose import enable as _enable_verbose
 from untaped.verbose import reset as _reset_verbose
 
@@ -426,7 +426,7 @@ def _consume_path_root_options(
 
 
 def _warn_deprecated(old: str, new: str) -> None:
-    ui_context(strict=False).message("warning", deprecated_message(f"`{old}`", f"`{new}`"))
+    Diagnostics().warning(deprecated_message(f"`{old}`", f"`{new}`"))
 
 
 def _loose_command_key(name: str) -> str:

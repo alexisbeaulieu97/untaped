@@ -16,6 +16,7 @@ import io
 import json
 import logging
 import os
+import re
 from collections.abc import Callable
 from contextlib import redirect_stderr
 from pathlib import Path
@@ -33,7 +34,8 @@ from untaped.cli import (
 )
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.messages import hint
-from untaped.output.sink import Diagnostics
+from untaped.output.policy import note_theme
+from untaped.output.sink import Diagnostics, diagnostics_scope
 from untaped.testing import progress_clock
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
 from untaped.ui import UiContext
@@ -54,28 +56,33 @@ def _ui(theme: ThemeSpec | None = None) -> UiContext:
 
 
 def _messages(theme: ThemeSpec | None = None) -> None:
-    ui = _ui(theme)
-    for level in ("success", "info", "warning", "error"):
-        ui.message(level, f"a {level} line")
-    ui.success("done")
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        ui = _ui(theme)
+        for level in ("success", "info", "warning", "error"):
+            ui.message(level, f"a {level} line")
+        ui.success("done")
 
 
 def _report_error_plain() -> None:
-    report_error(UntapedError("it broke"))
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        report_error(UntapedError("it broke"))
 
 
 def _report_error_item() -> None:
-    report_error(UntapedError("it broke"), item="acme/x")
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        report_error(UntapedError("it broke"), item="acme/x")
 
 
 def _report_error_hint() -> None:
-    report_error(ConfigError("no token", hint="run `untaped auth set`"))
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        report_error(ConfigError("no token", hint="run `untaped auth set`"))
 
 
 def _echo_lines() -> None:
-    echo("warning: something is off", err=True)
-    echo(hint("try again"), err=True)
-    echo("an info line", err=True)
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        echo("warning: something is off", err=True)
+        echo(hint("try again"), err=True)
+        echo("an info line", err=True)
 
 
 def _declined() -> None:
@@ -92,7 +99,8 @@ def _clamp() -> None:
 
 
 def _styled() -> None:
-    _ui().styled(Text("[job 42] ", style="bold"), err=True, tail="ok\tdone")
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        _ui().styled(Text("[job 42] ", style="bold"), err=True, tail="ok\tdone")
 
 
 def _empty_note() -> None:
@@ -108,7 +116,11 @@ def _debug_line() -> None:
 
 
 def _progress_lines() -> None:
-    with progress_clock() as clock, _ui().progress("Syncing repos") as handle:
+    with (
+        pytest.warns(DeprecationWarning, match="ctx.diag"),
+        progress_clock() as clock,
+        _ui().progress("Syncing repos") as handle,
+    ):
         handle.update("acme/x", done=1, total=2)
         clock.advance(2)
         Diagnostics().failure(UntapedError("it broke"), item="acme/x")
@@ -117,6 +129,7 @@ def _progress_lines() -> None:
 
 def _progress_verbose() -> None:
     with (
+        pytest.warns(DeprecationWarning, match="ctx.diag"),
         progress_clock(),
         UiContext(theme=_COLOURED, verbose=True).progress("Syncing repos") as handle,
     ):
@@ -202,3 +215,90 @@ def test_json_stderr_is_unchanged(case: str, monkeypatch: pytest.MonkeyPatch) ->
     actual = _json_lines(CASES[case])
     path = SNAPSHOTS / f"{case}.json"
     _compare(path.name, json.dumps(actual, indent=2, ensure_ascii=False) + "\n")
+
+
+@pytest.mark.parametrize(
+    ("snapshot", "theme", "color"),
+    [
+        ("messages.txt", _COLOURED, False),
+        ("messages-color.txt", _COLOURED, True),
+        ("messages-symbols.txt", _SYMBOLS, False),
+        ("messages-symbols-color.txt", _SYMBOLS, True),
+    ],
+)
+def test_diag_messages_print_what_ui_message_prints(
+    snapshot: str, theme: ThemeSpec, color: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the policy's theme, ``ctx.diag`` renders success, info and warning as ``ui.message``."""
+    if color:
+        monkeypatch.setenv("FORCE_COLOR", "1")
+
+    def case() -> None:
+        with diagnostics_scope():
+            note_theme(theme)
+            diag = Diagnostics()
+            diag.success("a success line")
+            diag.info("a info line")
+            diag.warning("a warning line")
+
+    expected = (SNAPSHOTS / snapshot).read_text(encoding="utf-8").splitlines(keepends=True)[:3]
+    assert _capture(case, _TtyStringIO() if color else None) == "".join(expected)
+
+
+def test_without_a_theme_diag_messages_print_plain(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default theme has no symbols and no message colours: today's plain lines."""
+    monkeypatch.setenv("FORCE_COLOR", "1")
+
+    def case() -> None:
+        with diagnostics_scope():
+            diag = Diagnostics()
+            diag.success("done")
+            diag.warning("careful", hint="look")
+            diag.hint("next")
+            diag.failure(UntapedError("it broke"))
+
+    assert _capture(case, _TtyStringIO()) == (
+        "done\nwarning: careful\nhint: look\nhint: next\nerror: it broke\n"
+    )
+
+
+def test_a_theme_leaves_hints_and_failures_plain() -> None:
+    def case() -> None:
+        with diagnostics_scope():
+            note_theme(_SYMBOLS)
+            Diagnostics().hint("next")
+            Diagnostics().failure(UntapedError("it broke"), item="acme/x")
+
+    assert _capture(case) == "hint: next\nerror: acme/x: it broke\n"
+
+
+def test_a_themed_info_block_is_never_wrapped_or_tab_expanded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A preview (a diff, a tab-joined table) prints as written, colour or not."""
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("COLUMNS", "80")
+    block = "name\tstate\n" + "x" * 300 + "\n\n\tindented"
+
+    def case() -> None:
+        with diagnostics_scope():
+            note_theme(_COLOURED)
+            Diagnostics().info(block)
+
+    coloured = _capture(case, _TtyStringIO())
+    assert "\x1b[" in coloured
+    assert re.sub(r"\x1b\[[0-9;]*m", "", coloured) == block + "\n"
+
+
+def test_a_role_rich_cannot_parse_styles_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    theme = _COLOURED.model_copy(
+        update={"color_roles": {**_COLOURED.color_roles, "info": "repr.number"}}
+    )
+
+    def case() -> None:
+        with diagnostics_scope():
+            note_theme(theme)
+            Diagnostics().info("plain")
+
+    assert _capture(case, _TtyStringIO()) == "plain\n"

@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Iterable
 from typing import Literal
 
-from untaped.sdk import NO_PROGRESS, HttpSettings, ProgressHandle, UiContext, plural
+from untaped.sdk import NO_PROGRESS, Diagnostics, HttpSettings, ProgressHandle, plural
 from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     RefreshResult,
@@ -30,6 +30,8 @@ from untaped_github.api import GithubClient, GithubSettings, github_web_host
 GIT_PARALLEL_CAP = 32
 """Upper bound for ``--parallel`` Git fetches (matches ``ansible.git_fetch_parallel``)."""
 
+_diag = Diagnostics()
+
 
 def run_source_refresh(
     source: SourceDefinition,
@@ -43,12 +45,11 @@ def run_source_refresh(
     github_settings: GithubSettings,
     http: HttpSettings,
     concurrency: int,
-    ui: UiContext,
     backend: Literal["auto", "graphql", "git"] | None = None,
 ) -> RefreshResult:
-    """Refresh one source with stderr progress, then echo summary and warnings."""
+    """Refresh one source with stderr progress, then print its summary and warnings."""
     started_at = time.perf_counter()
-    with ui.progress(f"Refreshing {label}") as progress:
+    with _diag.progress(f"Refreshing {label}") as progress:
         result = refresh_source(
             source,
             source_key=source_key,
@@ -61,8 +62,7 @@ def run_source_refresh(
             backend=backend,
             progress=progress,
         )
-    ui.message(
-        "info",
+    _diag.info(
         refresh_summary(
             action,
             label,
@@ -71,10 +71,10 @@ def run_source_refresh(
             elapsed=time.perf_counter() - started_at,
         ),
     )
-    warn_low_rate_limit(result, threshold=settings.source_refresh_rate_limit_floor, ui=ui)
-    warn_skipped_files(result, ui=ui)
-    warn_ignored_collections(result.ignored_collections, ui=ui)
-    warn_probe_fallbacks(result, ui=ui)
+    warn_low_rate_limit(result, threshold=settings.source_refresh_rate_limit_floor)
+    warn_skipped_files(result)
+    warn_ignored_collections(result.ignored_collections)
+    warn_probe_fallbacks(result)
     return result
 
 
@@ -136,48 +136,45 @@ def refresh_summary(
     return f"{message} (parallel {concurrency})"
 
 
-def warn_low_rate_limit(result: RefreshResult, *, threshold: int, ui: UiContext) -> None:
+def warn_low_rate_limit(result: RefreshResult, *, threshold: int) -> None:
     """Warn on stderr when the GraphQL rate limit budget is running out."""
     remaining = result.rate_limit_remaining
     if remaining is not None and remaining < threshold:
-        ui.message("warning", f"GitHub GraphQL rate limit is low: {remaining} points remaining")
+        _diag.warning(f"GitHub GraphQL rate limit is low: {remaining} points remaining")
 
 
-def warn_probe_fallbacks(result: RefreshResult, *, ui: UiContext) -> None:
+def warn_probe_fallbacks(result: RefreshResult) -> None:
     """Warn when GraphQL probing fell back to per-repo Git ls-remote calls."""
     if not result.probe_fallbacks:
         return
     counts = Counter(result.probe_fallbacks.values())
     rate_limited = counts.pop(GRAPHQL_RATE_LIMIT_FALLBACK, 0)
     if rate_limited:
-        ui.message(
-            "warning",
+        _diag.warning(
             f"{plural(rate_limited, 'repo')} fell back to git ls-remote after "
             "GitHub GraphQL rate limit exhaustion; large fallbacks can be much slower "
             "because Git probing runs one network subprocess per repo",
         )
     transient = counts.pop(GRAPHQL_TRANSIENT_FALLBACK, 0)
     if transient:
-        ui.message(
-            "warning",
+        _diag.warning(
             f"{plural(transient, 'repo')} fell back to git ls-remote after transient "
             "GitHub GraphQL probe failures",
         )
     unknown = sum(counts.values())
     if unknown:
         reasons = ", ".join(f"{reason} ({count})" for reason, count in sorted(counts.items()))
-        ui.message(
-            "warning",
+        _diag.warning(
             f"{plural(unknown, 'repo')} fell back to git ls-remote for "
             f"{plural(len(counts), 'unrecognized fallback reason')}: {reasons}",
         )
 
 
-def warn_ignored_collections(names: Iterable[str], *, ui: UiContext) -> None:
+def warn_ignored_collections(names: Iterable[str]) -> None:
     """Warn once that requirements-file collections are not graphed."""
     message = ignored_collections_warning(names)
     if message is not None:
-        ui.message("warning", message)
+        _diag.warning(message)
 
 
 def ignored_collections_warning(names: Iterable[str]) -> str | None:
@@ -198,13 +195,13 @@ def ignored_collections_warning(names: Iterable[str]) -> str | None:
 _MAX_LISTED_COLLECTIONS = 10
 
 
-def warn_skipped_files(result: RefreshResult, *, ui: UiContext) -> None:
+def warn_skipped_files(result: RefreshResult) -> None:
     """Warn about refs the store refused and dependency files skipped during parsing."""
     for ref in result.skipped_refs:
         noun = "branch" if ref.kind == "heads" else "tag"
-        ui.message("warning", f"skipped {noun} {ref.repo}@{ref.ref}: {ref.reason}")
+        _diag.warning(f"skipped {noun} {ref.repo}@{ref.ref}: {ref.reason}")
     for skipped in result.skipped_files:
-        ui.message("warning", format_skipped_dependency_file(skipped))
+        _diag.warning(format_skipped_dependency_file(skipped))
 
 
 def format_skipped_dependency_file(skipped: SkippedDependencyFile) -> str:

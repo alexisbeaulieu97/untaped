@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from untaped.sdk import (
     ColumnsOption,
     ConfigError,
+    Diagnostics,
     DryRunOption,
     Failure,
     FormatOption,
@@ -42,6 +43,8 @@ from untaped_recipe.infrastructure.backup import (
     prune_selection,
     read_metadata,
 )
+
+_diag = Diagnostics()
 
 
 class BackupPruneRecord(OutcomeRecord):
@@ -100,7 +103,7 @@ def _backup_row(bundle: BackupBundle) -> BackupListRecord:
     try:
         recipe = read_metadata(bundle).get("recipe")
     except ValueError as exc:
-        recipe_ui().message("warning", str(exc))
+        _diag.warning(str(exc))
         recipe = None
     return BackupListRecord(
         id=bundle.id,
@@ -165,9 +168,9 @@ def restore_command(
 
         def _preview(rows: object) -> None:
             del rows
-            echo(f"About to restore {plural(len(file_rows), 'file')}:", err=True)
+            _diag.info(f"About to restore {plural(len(file_rows), 'file')}:", unmuted=True)
             for row in file_rows:
-                echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
+                _diag.info("  - " + "\t".join(str(value) for value in row.values()), unmuted=True)
 
         def _restore(bundle_id: str) -> str:
             # One store.restore call: the bundle resolves once and all files
@@ -201,7 +204,7 @@ def restore_command(
             )
             emit(row, fmt=fmt, columns=columns, kind="recipe.restore_outcome")
         if not outcome.any_failed and outcome.results:
-            ui.message("success", f"restored {resolved_id}")
+            _diag.success(f"restored {resolved_id}")
         finish(outcome)
 
 
@@ -277,8 +280,7 @@ def prune_command(
         if rendered:
             echo(rendered)
         if dry_run:
-            ui.message(
-                "info",
+            _diag.info(
                 f"would prune {len(pruned)} of {plural(len(bundles), 'backup')}, "
                 f"keep {len(bundles) - len(pruned)}",
             )
@@ -286,8 +288,7 @@ def prune_command(
         if not outcome.any_failed and (outcome.results or not pruned):
             reclaimed = sum(sizes[bundle.id] for bundle, _ in outcome.results)
             kept = len(bundles) - len(outcome.results)
-            ui.message(
-                "success",
+            _diag.success(
                 f"pruned {len(outcome.results)} of {plural(len(bundles), 'backup')}, "
                 f"kept {kept}, reclaimed {reclaimed} bytes",
             )

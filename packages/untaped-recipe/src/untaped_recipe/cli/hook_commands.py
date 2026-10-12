@@ -46,6 +46,8 @@ from untaped_recipe.infrastructure.pack_files import read_hook_project
 
 HookRunFormat = Literal["json", "yaml", "table", "pipe"]
 
+_diag = Diagnostics()
+
 
 def run_command(
     name: Annotated[str, Parameter(help="Hook name or PACK/HOOK reference.")],
@@ -161,7 +163,7 @@ def run_command(
         with UvHookWorkerPool(
             hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
             startup_timeout_seconds=settings().hook_startup_timeout_seconds,
-            startup_notice=hook_startup_notice(recipe_ui()),
+            startup_notice=hook_startup_notice(),
         ) as workers:
             executor = HookExecutor(
                 resolver,
@@ -315,13 +317,12 @@ def _render_hook_run_context(
     inputs: dict[str, object],
     args: dict[str, object],
 ) -> None:
-    ui = recipe_ui()
-    ui.message("info", f"Hook run: {hook} ({kind})")
-    ui.message("info", f"target: {target}")
+    _diag.info(f"Hook run: {hook} ({kind})")
+    _diag.info(f"target: {target}")
     if file is not None:
-        ui.message("info", f"file: {file}")
-    ui.message("info", f"inputs: {_json_context(inputs)}")
-    ui.message("info", f"args: {_json_context(args)}")
+        _diag.info(f"file: {file}")
+    _diag.info(f"inputs: {_json_context(inputs)}")
+    _diag.info(f"args: {_json_context(args)}")
 
 
 def _validate_record(hook: str, *, target: Path, verdict: Verdict) -> dict[str, object]:
@@ -340,10 +341,9 @@ def _json_context(value: dict[str, object]) -> str:
 
 def _print_hook_diagnostics(diagnostics: str) -> None:
     if diagnostics:
-        Diagnostics().relay(diagnostics.rstrip())
+        _diag.relay(diagnostics.rstrip())
 
 
 def _print_hook_warnings(warnings: tuple[str, ...]) -> None:
-    ui = recipe_ui()
     for warning in warnings:
-        ui.message("warning", warning)
+        _diag.warning(warning)

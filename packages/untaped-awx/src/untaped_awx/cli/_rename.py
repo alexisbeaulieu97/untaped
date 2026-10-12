@@ -9,7 +9,6 @@ from cyclopts import App, Parameter
 from untaped.sdk import (
     ColumnsOption,
     FormatOption,
-    echo,
     emit,
     q,
     report_errors,
@@ -54,10 +53,10 @@ def _add_rename(app: App, spec: AwxResourceSpec) -> None:
             )
             renamer = RenameResource(ctx.repo)
             plan = renamer.plan(spec, selected, new_name)
-            echo(
+            ctx.diag.info(
                 f"Rename {spec.kind} id={selected.id} scope={format_scope(selected.scope)}: "
                 f"{q(selected.name or '')} -> {q(new_name)}",
-                err=True,
+                unmuted=True,
             )
             outcome = plan.outcome(spec, action="planned")
             if confirm_batch(ctx, count=1, verb="rename", yes=yes, dry_run=dry_run):

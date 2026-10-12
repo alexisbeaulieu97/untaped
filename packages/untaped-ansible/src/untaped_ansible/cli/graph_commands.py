@@ -21,6 +21,7 @@ from cyclopts import App, Group, Parameter, validators
 import untaped_ansible.cli.source_commands as source_commands
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     FormatOption,
     HttpSettings,
     ParallelOption,
@@ -83,6 +84,8 @@ from untaped_ansible.infrastructure import (
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 from untaped_github.api import GithubClient, GithubSettings, github_web_host
 from untaped_github.api import github_settings as load_github_settings
+
+_diag = Diagnostics()
 
 GraphDirection = Literal["deps", "impact", "both"]
 GraphCommand = Literal["graph", "deps", "impact", "find"]
@@ -406,7 +409,7 @@ def find_command(
             stack, options, command="find", depth=depth_limit, live=live, all_refs=all_refs
         )
         wanted = [_require_repo(env, repo) for repo in target]
-        ui = _report_warnings(_refresh_selected(env, options))
+        _report_warnings(_refresh_selected(env, options))
         # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
         graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
         matches: list[DependencyMatch] = []
@@ -425,7 +428,7 @@ def find_command(
                     extra_warnings=[],
                 ).graph
                 for warning in graph.warnings:
-                    ui.message("warning", f"{_root_label(root)}: {warning}")
+                    _diag.warning(f"{_root_label(root)}: {warning}")
                 _report_depth_stops(graph, depth_limit, root=_root_label(root))
             matches.extend(find_matches(graph, wanted, source=source))
         emit(
@@ -504,11 +507,17 @@ def graph_command(
             direction=_DIRECTIONS[direction],
             extra_warnings=_refresh_selected(env, options),
         )
-        ui = _report_warnings(built.graph.warnings)
+        _report_warnings(built.graph.warnings)
         _report_depth_stops(built.graph, depth_limit)
         depth_note = "unlimited depth" if depth_limit is None else f"depth {depth_limit}"
         header_note = f"{built.data_source} · {depth_note}"
-        _emit_graph(built.graph, fmt=fmt, output=output, ui=ui, header_note=header_note)
+        _emit_graph(
+            built.graph,
+            fmt=fmt,
+            output=output,
+            ui=app_context().ui(strict=False),
+            header_note=header_note,
+        )
 
 
 def _emit_reach(
@@ -570,12 +579,10 @@ def _check_all_refs(ref: str | None, *, all_refs: bool) -> None:
         raise_usage("--all-refs reads every ref; drop it or --ref")
 
 
-def _report_warnings(warnings: Iterable[str]) -> UiContext:
-    """Print warnings on stderr; return the UI context used."""
-    ui = app_context().ui(strict=False)
+def _report_warnings(warnings: Iterable[str]) -> None:
+    """Print warnings on stderr."""
     for warning in warnings:
-        ui.message("warning", warning)
-    return ui
+        _diag.warning(warning)
 
 
 _DIRECTIONS: dict[str, GraphDirection] = {"up": "impact", "down": "deps", "both": "both"}
@@ -594,10 +601,9 @@ def _report_depth_stops(graph: DependencyGraph, depth: int | None, *, root: str 
         return
     prefix = f"{root}: " if root else ""
     them = "it" if count == 1 else "them"
-    echo(
-        f"hint: {prefix}{plural(count, 'repo')} not read beyond --depth {depth}; "
-        f"pass --depth unlimited to read {them}",
-        err=True,
+    _diag.hint(
+        f"{prefix}{plural(count, 'repo')} not read beyond --depth {depth}; "
+        f"pass --depth unlimited to read {them}"
     )
 
 
@@ -685,7 +691,6 @@ def _refresh_selected(env: _GraphEnv, options: GraphSourceOptions) -> list[str]:
             policy="Git fetch limit",
         ),
         backend=options.backend,
-        ui=ctx.ui(strict=False),
     )
 
 
@@ -715,7 +720,6 @@ def _refresh_sources(
     http: HttpSettings,
     concurrency: int,
     backend: Literal["auto", "graphql", "git"] | None,
-    ui: UiContext,
 ) -> list[str]:
     """Refresh every selected source; return warnings for partial refreshes."""
     warnings: list[str] = []
@@ -732,7 +736,6 @@ def _refresh_sources(
             http=http,
             concurrency=concurrency,
             backend=backend,
-            ui=ui,
         )
         if not result.completed:
             # Paused at the GitHub rate-limit floor: resuming later succeeds.

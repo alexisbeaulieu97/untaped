@@ -4,12 +4,12 @@ An AST scan over a package's source flags:
 
 - ``echo-error`` / ``echo-warning`` — ``echo("error: …")`` or
   ``echo("warning: …")``: raise an ``UntapedError`` (``report_errors``
-  prints it) or use ``ui.message("warning", …)``;
-- ``echo-failed`` — ``echo("failed: …")``: ``report_error(exc, item=…)``
+  prints it) or use ``ctx.diag.warning(…)``;
+- ``echo-failed`` — ``echo("failed: …")``: ``ctx.diag.failure(exc, item=…)``
   reports a per-item failure (an error line, with its category under JSON
   diagnostics);
 - ``warnings-warn`` — ``warnings.warn(…)`` bypasses stderr diagnostics:
-  take a ``warn`` callback or use ``ui.message("warning", …)`` (a
+  take a ``warn`` callback or use ``ctx.diag.warning(…)`` (a
   ``DeprecationWarning`` for a Python API is fine);
 - ``capital-warning`` — a literal starting with ``Warning:``;
 - ``paren-s`` — ``(s)`` in a literal: use ``plural()``;
@@ -21,7 +21,8 @@ An AST scan over a package's source flags:
 - ``sys-stdin`` — direct ``sys.stdin`` access: use the core stdin helpers;
 - ``local-plural`` — a local pluralize helper: use ``plural()``;
 - ``print`` / ``rich-console`` — ``print(…)`` or a direct
-  ``rich.console.Console``: use ``echo`` / ``UiContext``.
+  ``rich.console.Console``: use ``echo`` / ``UiContext`` for stdout,
+  ``ctx.diag`` for stderr.
 
 Lines are ``<path>::<rule>::<message snippet>``; ``# untaped: allow <rule>``
 on the flagged line suppresses one.

@@ -36,16 +36,14 @@ from untaped.sdk import (
     experimental,
     finish,
     git_toplevel,
-    hint,
     parse_envelope_line,
     parse_kv_pairs,
     plural,
     q,
     raise_usage,
-    report_error,
     report_errors,
+    run_hint,
     summary,
-    ui_context,
     writes,
 )
 from untaped_awx.cli.context import AwxContext, open_context
@@ -83,6 +81,8 @@ app = create_app(
     help="Run declarative AWX-job test suites (parameterized launch matrices).",
     stability=experimental,
 )
+
+_diag = Diagnostics()
 
 
 # Heavy imports (jinja2, yaml, the loader/runner) are deferred to subcommand
@@ -379,10 +379,9 @@ def run_command(
     )
     case_filter = set(cases) if cases else None
     if dry_run:
-        ui_context(strict=False).message(
-            "warning",
+        _diag.warning(
             "`awx test run --dry-run` is deprecated and will be removed in the next major "
-            "release; use `awx test validate`",
+            "release; use `awx test validate`"
         )
         _validate(
             paths,
@@ -430,7 +429,7 @@ def run_command(
             resolver=ResolveCasePayload(
                 ctx.fk,
                 catalog=ctx.catalog,
-                warn=partial(ctx.progress_ui().message, "warning"),
+                warn=_diag.warning,
                 default_organization=ctx.default_organization,
             ),
             launcher=RunAction(ctx.repo),
@@ -470,7 +469,7 @@ def run_command(
                 failed = _report_results(outcome, show_logs=show_logs, fmt=fmt, columns=columns)
         except KeyboardInterrupt:
             report_interrupted(
-                ctx.progress_ui(),
+                _diag,
                 [(None, job) for job in runner.known_executions()],
                 cancelled=runner.cancelled,
             )
@@ -498,10 +497,10 @@ def _report_results(
         kind=_RESULT_KIND,
     )
     for line in _summary(outcome):
-        echo(line, err=True)
+        _diag.info(line)
     deciding = outcome.deciding()
     for item, failure in deciding:
-        Diagnostics().failure(failure, item=item)
+        _diag.failure(failure, item=item)
     return bool(deciding)
 
 
@@ -550,19 +549,23 @@ def _show_failure(result: CaseResult, failure: CaseFailure) -> None:
     """A case's failure, then its failed tasks and log tail, on stderr."""
     evidence = failure.evidence
     job = "" if result.job_id is None else f" job {result.job_id}"
-    echo(f"--- {result.suite}/{result.case}{job}: {failure.system}: {failure.message}", err=True)
+    _diag.info(
+        f"--- {result.suite}/{result.case}{job}: {failure.system}: {failure.message}", unmuted=True
+    )
     if result.job_id is None:
         return
     tail = evidence.log_tail
     shown = "log unavailable" if tail is None else f"last {plural(len(tail), 'log line')}"
     if evidence.related is not None:
         shown += f" of {evidence.related.kind} {evidence.related.id}"
-    echo(f"--- {shown}", err=True)
+    _diag.info(f"--- {shown}", unmuted=True)
     for task in evidence.failed_tasks or ():
         detail = task.msg or task.stderr or ""
-        echo(f"{task.status}: [{task.host or '?'}] {task.task or '?'}: {detail}", err=True)
+        _diag.info(
+            f"{task.status}: [{task.host or '?'}] {task.task or '?'}: {detail}", unmuted=True
+        )
     for line in tail or ():
-        Diagnostics().relay(line)  # the job's own log: an "error:" in it is not ours
+        _diag.relay(line)  # the job's own log: an "error:" in it is not ours
 
 
 def _summary(outcome: SuiteRunOutcome) -> list[str]:
@@ -765,12 +768,14 @@ def _validate(
             try:
                 sets.check(temp, refusals)
             except ConfigError as exc:
-                report_error(exc)
+                _diag.failure(exc)
                 any_errors = True
             scm_branch = source.sha
-        warn = partial(ctx.progress_ui().message, "warning")
         resolver = ResolveCasePayload(
-            ctx.fk, catalog=ctx.catalog, warn=warn, default_organization=ctx.default_organization
+            ctx.fk,
+            catalog=ctx.catalog,
+            warn=_diag.warning,
+            default_organization=ctx.default_organization,
         )
         for suite, case_name, case in selected:
             if suite.name in refused:
@@ -798,10 +803,10 @@ def _validate(
                             spec, name=binding.name, scope=binding.scope
                         )
             except (AwxApiError, ConfigError) as exc:
-                report_error(exc, item=f"{suite.name}/{case_name}")
+                _diag.failure(exc, item=f"{suite.name}/{case_name}")
                 any_errors = True
             for warning in suite.case_warnings(case_name, approval_nodes=gates):
-                warn(warning)
+                _diag.warning(warning)
 
     if temp is not None:
         emit(
@@ -813,7 +818,7 @@ def _validate(
             empty="No temporary copies planned.",
         )
     finish(any_errors)
-    ui_context(strict=False).success(f"{plural(len(selected), 'case')} validated")
+    _diag.success(f"{plural(len(selected), 'case')} validated")
 
 
 # ---- prune ---------------------------------------------------------------
@@ -942,7 +947,7 @@ def init_command(
         )
         write_new_text(path, text)
     echo(str(path))
-    echo(hint(f"awx test validate {shlex.quote(str(path))}"), err=True)
+    _diag.hint(run_hint(f"awx test validate {shlex.quote(str(path))}"))
 
 
 def case_row(path: Path, suite: Suite, case_name: str) -> dict[str, Any]:

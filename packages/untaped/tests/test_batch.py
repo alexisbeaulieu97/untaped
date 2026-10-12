@@ -12,6 +12,7 @@ import pytest
 
 from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.errors import HttpError, UntapedError, UsageError
+from untaped.output.policy import enable_quiet, reset_quiet
 from untaped.output.sink import diagnostics_scope
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.testing import ScriptedPromptBackend, TtyStringIO
@@ -390,3 +391,18 @@ def test_failure_lines_do_not_interleave_with_the_spinner() -> None:
     # The spinner is cleared before the error prints, so the error line holds
     # nothing but the error (after the line-clearing carriage return).
     assert error_line.rsplit("\r", 1)[-1] == "error: a: boom"
+
+
+def test_quiet_keeps_the_generic_preview_before_the_prompt(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    action, calls = _recorder()
+    token = enable_quiet()
+    try:
+        with diagnostics_scope():
+            _run(interactive=True, confirms=[True], items=["a"], action=action)
+    finally:
+        reset_quiet(token)
+
+    assert "About to delete 1 Widget:" in capsys.readouterr().err
+    assert calls == ["a"]
