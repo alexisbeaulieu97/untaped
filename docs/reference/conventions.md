@@ -98,23 +98,23 @@ the helpers do this for you, so never print a JSON line yourself.
 | Message | Shape | Helper |
 |---|---|---|
 | Error | `error: <msg>`: lowercase, no trailing period | Raise an `UntapedError`; `report_errors()` prints it. |
-| Per-item error | `error: <item>: <msg>` | `resolve_each`, `batch_apply`, `report_error(exc, item=…)`, `report_row_errors(rows, item=…)` for failed rows |
+| Per-item error | `error: <item>: <msg>` | `resolve_each`, `batch_apply`, `ctx.diag.failure(exc, item=…)` (a failed row: `row.error`) |
 | Not found | `<noun> not found: 'x'; known: a, b` | `not_found("profile", name, known=names)` |
 | Quoted name | `'name'` | `q(name)` |
 | Count | `3 repos`, never `repo(s)` | `plural(3, "repo")` |
-| Hint | ``hint: run `untaped …` `` (or a short instruction that is not a command, hand-built as `hint: …`, like the bare-install hint) | `hint("auth set awx")` |
-| Warning | `warning: …` | `ui.message("warning", text)` |
-| Success | Muted by `-q` | `ui.success(text)` |
+| Hint | ``hint: run `untaped …` `` (or a short instruction that is not a command, like the bare-install hint) | `ctx.diag.hint(run_hint("auth set awx"))`; `hint(…)` ends an error's message |
+| Warning | `warning: …` | `ctx.diag.warning(text)` |
+| Success | Muted by `-q` | `ctx.diag.success(text)` |
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |
 | Decline | `cancelled; no changes made` (exit 1) | `raise OperationCancelledError`, or `finish(outcome)` after `batch_apply` |
 | Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
-| Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: report counts, never a formatted fraction | `with diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
-| Styled line | A Rich `Text` line for streamed human output (live job events); not muted by `-q` | `ui.styled(text)`, or `ui.styled(text, err=True)` for stderr; see its docstring for `tail=` and `truncate=` |
+| Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: the label is a noun phrase without `…`; report counts, never a formatted fraction | `with ctx.diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
+| Styled line | A Rich `Text` line for streamed human output (live job events) | stdout: `ui.styled(text)` (see its `tail=` and `truncate=`); stderr: `ctx.diag.info(text, unmuted=True)`, or `ctx.diag.relay(text)` for another tool's output |
 
-Do not call `echo()` for `error:`, `warning:` or `failed:` lines, `print()`,
-`warnings.warn()` (use `ui.message("warning", …)`, or have an inner layer take
-a `warn` callback), or build a `rich.console.Console` yourself. A
-`DeprecationWarning` for a Python API is the exception.
+`ctx.diag` replaces the stderr helpers, which warn until 12.0. `-q` mutes
+`info`, `success` and progress; `unmuted=True` is for a preview before a
+prompt, a stream the user asked to watch or output a flag asks for. Never
+`print()`, `warnings.warn()` (take a `warn` callback) or your own `Console`.
 
 **Typed diagnostics.** Each stderr line has a `kind`. To add one, subclass
 `Message` or `Failure` with `kind="<plugin>.<name>"` (add fields, never
