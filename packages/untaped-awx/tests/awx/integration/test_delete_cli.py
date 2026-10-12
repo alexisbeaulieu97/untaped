@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 import pytest
 
+from untaped.bootstrap import build_root_app
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli import app
 
@@ -269,6 +270,21 @@ def test_delete_prompt_previews_then_asks_once(alpha_beta: Any, answer: bool) ->
     assert (10 in alpha_beta.store["job_templates"]) is not answer
     if not answer:
         assert "cancelled; no changes made" in result.stderr
+
+
+def test_delete_preview_prints_under_quiet(alpha_beta: Any) -> None:
+    """-q mutes commentary, not the preview the prompt asks about."""
+    backend = ScriptedPromptBackend(confirms=[True])
+    result = CliInvoker().invoke(
+        build_root_app().meta,
+        ["-q", "awx", "job-templates", "delete", "--by-id", "10", "--format", "raw"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+    assert result.exit_code == 0, result.output
+    assert backend.calls == [("confirm", "Delete 1 resource?")]
+    assert "Delete JobTemplate/alpha id=10" in result.stderr
+    assert 10 not in alpha_beta.store["job_templates"]
 
 
 def test_delete_failure_is_an_error_and_a_skipped_target_a_warning(

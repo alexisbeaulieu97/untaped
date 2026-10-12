@@ -98,7 +98,7 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
                     records,
                     client=ctx.repo,
                     catalog=ctx.catalog,
-                    warn=lambda msg: ctx.progress_ui().message("warning", msg),
+                    warn=ctx.diag.warning,
                 )
         if records:
             default_cols = (*spec.list_columns, *SCM_FIELDS) if with_scm else spec.list_columns

@@ -25,7 +25,6 @@ from untaped.sdk import (
     emit,
     finish,
     parse_kv_pairs,
-    report_error,
     report_errors,
 )
 from untaped_awx.application import ListTemplateUsage
@@ -120,7 +119,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
             use = ListTemplateUsage(
                 ctx.workflow_nodes,
                 ctx.repo,
-                warn=lambda msg: ctx.progress_ui().message("warning", msg),
+                warn=ctx.diag.warning,
             )
             for target, target_by_id in targets:
                 try:
@@ -135,7 +134,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                         )
                     )
                 except UntapedError as exc:
-                    report_error(exc, item=target)
+                    ctx.diag.failure(exc, item=target)
                     any_failed = True
         rows = [u.model_dump() for u in usages]
         emit(
