@@ -384,6 +384,8 @@ def _render(
         known = schema or _row_keys(rows) or table_columns or ()
         _print_available_columns(known, defaults=table_columns)
         return ""
+    # Before a table's list view trims each row to its shown keys, ``error`` included.
+    count_row_failures(rows)
     selection, named = _selected_columns(
         columns, rows, fmt=fmt, schema=schema, table_columns=table_columns
     )
