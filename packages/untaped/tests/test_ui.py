@@ -253,7 +253,7 @@ def test_progress_reports_on_stderr_and_keeps_stdout_clean() -> None:
     ui = UiContext(stdout=stdout)
 
     with redirect_stderr(stderr), ui.progress("Resolving deps") as p:
-        p.update("installing", new_phase=True)
+        p.update("installing", phase="installing")
 
     assert stdout.getvalue() == ""
     assert "Resolving deps" in stderr.getvalue()

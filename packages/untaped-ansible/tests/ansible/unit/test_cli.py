@@ -1818,8 +1818,8 @@ def test_source_refresh_progress_and_low_rate_limit_warning_on_stderr(
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
-    assert "probing refs: 1/1 repos" in result.stderr
-    assert "fetching changes: 1/1 repos, 0 changed" in result.stderr
+    assert " · probing refs 1/1 (" in result.stderr
+    assert " · fetching changes 1/1 · 0 changed (" in result.stderr
     low = "warning: GitHub GraphQL rate limit is low: 200 points remaining"
     assert (low in result.stderr) is warned
 

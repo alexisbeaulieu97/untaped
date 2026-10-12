@@ -1,3 +1,3 @@
-Syncing repos
-1/2 acme/x
+Syncing repos (0s)
+Syncing repos 1/2 · acme/x (0s)
 a relayed line

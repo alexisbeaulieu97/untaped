@@ -33,6 +33,7 @@ from untaped.cli import (
 )
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.messages import hint
+from untaped.output.sink import Diagnostics
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
 from untaped.ui import UiContext
 
@@ -107,15 +108,15 @@ def _debug_line() -> None:
 
 def _progress_lines() -> None:
     with _ui().progress("Syncing repos") as handle:
-        handle.update("1/2 acme/x", fraction=0.5)
-        handle.log("error: acme/x: it broke")
-        handle.update("2/2 acme/y", fraction=1.0)
+        handle.update("acme/x", done=1, total=2)
+        Diagnostics().failure(UntapedError("it broke"), item="acme/x")
+        handle.update("acme/y", done=2, total=2)
 
 
 def _progress_verbose() -> None:
     with UiContext(theme=_COLOURED, verbose=True).progress("Syncing repos") as handle:
-        handle.update("1/2 acme/x")
-        handle.log("a relayed line")
+        handle.update("acme/x", done=1, total=2)
+        Diagnostics().relay("a relayed line")
 
 
 CASES: dict[str, Callable[[], None]] = {
@@ -135,8 +136,6 @@ CASES: dict[str, Callable[[], None]] = {
 }
 #: Cases whose text a theme colours or decorates.
 THEMED = ("messages", "styled", "empty-note")
-#: Cases whose JSON-mode output is not JSON Lines today (progress logs raw text).
-TEXT_ONLY = ("progress-lines", "progress-verbose")
 
 
 class _TtyStringIO(io.StringIO):
@@ -192,15 +191,9 @@ def _json_lines(case: Callable[[], None]) -> list[dict[str, object]]:
     return [json.loads(line) for line in _capture(case).splitlines() if line]
 
 
-@pytest.mark.parametrize("case", sorted(set(CASES) - set(TEXT_ONLY)))
+@pytest.mark.parametrize("case", sorted(CASES))
 def test_json_stderr_is_unchanged(case: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     actual = _json_lines(CASES[case])
     path = SNAPSHOTS / f"{case}.json"
     _compare(path.name, json.dumps(actual, indent=2, ensure_ascii=False) + "\n")
-
-
-@pytest.mark.parametrize("case", TEXT_ONLY)
-def test_progress_under_json_is_unchanged(case: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    _compare(f"{case}-json.txt", _capture(CASES[case]))

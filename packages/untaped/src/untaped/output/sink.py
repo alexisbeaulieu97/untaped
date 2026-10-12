@@ -160,6 +160,61 @@ def _fit(line: str) -> str:
     return line[: width - 1] + "…"
 
 
+class _TaskState:
+    """What one task last reported, and how its line reads (the update rules of the handle)."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+        self.phase: str | None = None
+        self.done: int | None = None
+        self.total: int | None = None
+        self.message: str | None = None
+
+    def apply(
+        self, message: str | None, phase: str | None, done: int | None, total: int | None
+    ) -> bool:
+        """Record one update; ``True`` when it starts a new phase.
+
+        ``None`` keeps ``phase``, ``done`` and ``total``; a new phase resets
+        the counts to what this update passes; ``message`` is per update.
+        """
+        new_phase = phase is not None and phase != self.phase
+        if new_phase:
+            self.phase, self.done, self.total = phase, None, None
+        if done is not None:
+            self.done = done
+        if total is not None:
+            self.total = total
+        self.message = message
+        return new_phase
+
+    def step(self) -> int | None:
+        """The 10 % step the counts reached, or ``None`` without a ``total``."""
+        if self.done is None or not self.total:
+            return None
+        return min(max(self.done, 0), self.total) * 100 // self.total // _STEP_PERCENT
+
+
+def _compose(
+    label: str,
+    *,
+    phase: str | None,
+    done: int | None,
+    total: int | None,
+    text: str | None,
+    elapsed: float,
+    state: str = "running",
+) -> str:
+    """``<label>[ · <phase>][ <done>/<total>][ · <text>] (<N>s)``, or ``<label>: done …``."""
+    tail = "" if not text else f" · {text}"
+    if state != "running":
+        return f"{label}: {state}{tail} ({int(elapsed)}s)"
+    line = label if phase is None else f"{label} · {phase}"
+    if done is not None:
+        line += f" {done}" if total is None else f" {done}/{total}"
+    return f"{line}{tail} ({int(elapsed)}s)"
+
+
 class _SpinnerHandle:
     """An animated spinner on a terminal: a ticker thread redraws it under the lock.
 
@@ -167,9 +222,8 @@ class _SpinnerHandle:
     (:func:`_write`); only the innermost open spinner draws.
     """
 
-    def __init__(self, label: str, *, write: Callable[[str], None]) -> None:
-        self._label = label
-        self._write = write
+    def __init__(self, label: str) -> None:
+        self._task = _TaskState(label)
         self._frames = _spinner_frames(sys.stderr)
         self._frame = 0
         self._stop = threading.Event()
@@ -180,8 +234,16 @@ class _SpinnerHandle:
         """The next frame of the spinner line (called under the lock)."""
         glyph = self._frames[self._frame % len(self._frames)]
         self._frame += 1
-        elapsed = int(time.monotonic() - self._started_at)
-        return _fit(f"{glyph} {self._label} ({elapsed}s)")
+        task = self._task
+        line = _compose(
+            task.label,
+            phase=task.phase,
+            done=task.done,
+            total=task.total,
+            text=task.message,
+            elapsed=time.monotonic() - self._started_at,
+        )
+        return _fit(f"{glyph} {line}")
 
     def start(self) -> None:
         with _WRITE_LOCK:
@@ -190,15 +252,16 @@ class _SpinnerHandle:
         self._thread.start()
 
     def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
     ) -> None:
-        del fraction, new_phase
         with _WRITE_LOCK:
-            self._label = message
+            self._task.apply(message, phase, done, total)
             _raw(_framed(""))
-
-    def log(self, line: str) -> None:
-        self._write(f"{line}\n")
 
     def finish(self, *, failed: bool) -> None:
         del failed
@@ -221,7 +284,7 @@ class _SpinnerHandle:
 # --------------------------------------------------------------------------- #
 
 _THROTTLE_INTERVAL = 2.0
-_PERCENT_STEP = 10
+_STEP_PERCENT = 10
 
 
 class Backend(Protocol):
@@ -230,28 +293,30 @@ class Backend(Protocol):
     def start(self) -> None: ...
 
     def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
     ) -> None: ...
-
-    def log(self, line: str) -> None: ...
 
     def finish(self, *, failed: bool) -> None: ...
 
 
 class _SilentHandle:
-    """Progress for ``--quiet``: no progress output; logged lines still print."""
-
-    def __init__(self, *, write: Callable[[str], None]) -> None:
-        self._write = write
-
-    def log(self, line: str) -> None:
-        self._write(f"{line}\n")
+    """Progress for ``--quiet``: no progress output."""
 
     def start(self) -> None:
         return None
 
     def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
     ) -> None:
         return None
 
@@ -259,65 +324,56 @@ class _SilentHandle:
         return None
 
 
-class _VerboseHandle:
-    """Announce the label, then let the wrapped tool's output stream through."""
+class _LineHandle:
+    """Newline-terminated progress lines; throttled unless ``verbose``."""
 
-    def __init__(self, label: str, *, write: Callable[[str], None]) -> None:
-        self._label = label
+    def __init__(self, label: str, *, write: Callable[[str], None], verbose: bool) -> None:
+        self._task = _TaskState(label)
         self._write = write
-
-    def start(self) -> None:
-        self._write(f"{self._label}\n")
-
-    def log(self, line: str) -> None:
-        self._write(f"{line}\n")
-
-    def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
-    ) -> None:
-        self._write(f"{message}\n")
-
-    def finish(self, *, failed: bool) -> None:
-        return None
-
-
-class _ThrottledHandle:
-    """Newline-terminated, throttled progress for non-TTY/piped streams."""
-
-    def __init__(self, label: str, *, write: Callable[[str], None]) -> None:
-        self._label = label
-        self._write = write
+        self._verbose = verbose
+        self._started_at = time.monotonic()
         self._last_emit: float | None = None
         self._last_step = -1
 
     def start(self) -> None:
-        self._emit(self._label)
-
-    def log(self, line: str) -> None:
-        self._write(f"{line}\n")
+        self._emit()
 
     def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+        self,
+        message: str | None = None,
+        *,
+        phase: str | None = None,
+        done: int | None = None,
+        total: int | None = None,
     ) -> None:
-        if new_phase:
+        if self._task.apply(message, phase, done, total):
             self._last_emit = None
             self._last_step = -1
-        step = self._last_step
-        if fraction is not None:
-            step = int(min(max(fraction, 0.0), 1.0) * 100) // _PERCENT_STEP
+        step = self._task.step()
         now = time.monotonic()
         due = self._last_emit is None or now - self._last_emit >= _THROTTLE_INTERVAL
-        if not due and step <= self._last_step:
+        stepped = step is not None and step > self._last_step
+        if not (self._verbose or due or stepped):
             return
-        self._last_step = max(step, self._last_step)
-        self._emit(message)
+        if step is not None:
+            self._last_step = max(step, self._last_step)
+        self._emit()
 
     def finish(self, *, failed: bool) -> None:
         return None
 
-    def _emit(self, message: str) -> None:
-        self._last_emit = time.monotonic()
-        self._write(f"{message}\n")
+    def _emit(self) -> None:
+        self._last_emit = now = time.monotonic()
+        task = self._task
+        line = _compose(
+            task.label,
+            phase=task.phase,
+            done=task.done,
+            total=task.total,
+            text=task.message,
+            elapsed=now - self._started_at,
+        )
+        self._write(f"{line}\n")
 
 
 def _make_handle(
@@ -326,34 +382,30 @@ def _make_handle(
     write: Callable[[str], None],
     verbose: bool,
     quiet: bool,
-    spinner: Callable[[], Backend] | None,
+    tty: bool,
 ) -> Backend:
     if quiet:
-        return _SilentHandle(write=write)
-    if verbose:
-        return _VerboseHandle(label, write=write)
-    if spinner is not None:
-        return spinner()
-    return _ThrottledHandle(label, write=write)
+        return _SilentHandle()
+    if tty and not verbose:
+        return _SpinnerHandle(label)
+    return _LineHandle(label, write=write, verbose=verbose)
 
 
 @contextmanager
-def progress_reporter(
+def _progress_reporter(
     label: str,
     *,
     write: Callable[[str], None],
     verbose: bool,
-    quiet: bool = False,
-    spinner: Callable[[], Backend] | None = None,
+    quiet: bool,
+    tty: bool,
 ) -> Iterator[ProgressHandle]:
     """Report progress for a blocking operation, writing lines through ``write``.
 
-    Yields a :class:`ProgressHandle`; the rendering mode is chosen from
-    ``quiet``/``verbose`` and ``spinner``, the terminal's spinner backend
-    (``quiet`` wins: it stays fully silent). The spinner line is cleared on
-    exit, success or failure, so any propagating error prints cleanly.
+    The spinner line is cleared on exit, success or failure, so any
+    propagating error prints cleanly.
     """
-    handle = _make_handle(label, write=write, verbose=verbose, quiet=quiet, spinner=spinner)
+    handle = _make_handle(label, write=write, verbose=verbose, quiet=quiet, tty=tty)
     handle.start()
     failed = False
     try:
@@ -569,18 +621,12 @@ class _ScopeSink:
         self, label: str, *, verbose: bool = False, quiet: bool = False
     ) -> AbstractContextManager[ProgressHandle]:
         policy = self.policy
-        spinner: Callable[[], Backend] | None = None
-        if stream_is_tty(sys.stderr):
-
-            def spinner() -> Backend:
-                return _SpinnerHandle(label, write=self._out)
-
-        return progress_reporter(
+        return _progress_reporter(
             label,
             write=self._out,
             verbose=verbose or policy.verbose,
             quiet=quiet or policy.quiet or policy.diagnostics == "json",
-            spinner=spinner,
+            tty=stream_is_tty(sys.stderr),
         )
 
     @contextmanager

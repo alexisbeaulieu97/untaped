@@ -19,10 +19,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from untaped.cli import echo, report_declined, report_error
+from untaped.cli import echo, report_declined
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError
 from untaped.messages import plural
-from untaped.output.sink import failure_exit_code
+from untaped.output.sink import Diagnostics, failure_exit_code
 from untaped.ui import UiContext
 
 
@@ -119,9 +119,9 @@ def batch_apply[T, R](
     returns ``planned_rows`` without running ``action``.
 
     Per-item :class:`UntapedError` is caught, kept in ``failures``, and
-    reported as ``error: <label>: …`` on ``ui.stderr`` (:func:`report_error`:
+    reported as ``error: <label>: …`` on stderr (``Diagnostics.failure``:
     formatted like ``report_errors``, a JSON line under JSON diagnostics,
-    without garbling the progress spinner); anything else propagates. The
+    without garbling the progress line); anything else propagates. The
     helper never renders the summary or raises ``SystemExit`` — the caller
     owns stdout and the exit code.
     """
@@ -143,10 +143,10 @@ def batch_apply[T, R](
     failures: list[tuple[T, UntapedError]] = []
     with ui.progress(f"{verb.capitalize()} {plural(total, noun)}") as handle:
         for index, item in enumerate(items, 1):
-            handle.update(label(item), fraction=index / total)
+            handle.update(label(item), done=index, total=total)
             try:
                 results.append((item, action(item)))
             except UntapedError as exc:
-                report_error(exc, item=label(item), write=handle.log)
+                Diagnostics().failure(exc, item=label(item))
                 failures.append((item, exc))
     return BatchOutcome(results=results, planned_rows=planned_rows, failures=failures)

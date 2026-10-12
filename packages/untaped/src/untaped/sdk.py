@@ -93,7 +93,7 @@ from untaped.output import (
     Progress,
     StaleData,
 )
-from untaped.output.progress import ProgressHandle
+from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.plugins.registry import (
@@ -331,6 +331,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "same_origin",
     "yaml_mapping_indent",
     # prompts and ui
+    "NO_PROGRESS",
     "PickCatalog",
     "PickItem",
     "PickRequest",

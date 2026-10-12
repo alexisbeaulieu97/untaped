@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import UntapedError, bounded_map
+from untaped.sdk import NO_PROGRESS, ProgressHandle, UntapedError, bounded_map
 from untaped_ansible.application.ports import (
     GitCache,
     GitHubDependencyReader,
@@ -32,7 +32,6 @@ from untaped_ansible.domain.payloads import (
     ProbedRepo,
     ProbeReport,
     ProbeTarget,
-    RefreshProgressEvent,
     RefScan,
     RefScanMetadata,
     RefScanTouch,
@@ -50,7 +49,6 @@ from untaped_github.api import (
     normalize_team_scopes,
 )
 
-ProgressCallback = Callable[[RefreshProgressEvent], None]
 ProbeMode = Literal["all", "default_branch"]
 
 # Errors a fetch/parse worker may raise: GitCacheError from the repo store
@@ -132,7 +130,7 @@ class RefreshGitSourceIndex:
         concurrency: int = 8,
         repo_batch_size: int = 100,
         rate_limit_floor: int = 500,
-        on_progress: ProgressCallback | None = None,
+        progress: ProgressHandle = NO_PROGRESS,
         github_host: str | None = None,
     ) -> None:
         if clone_protocol not in {"https", "ssh"}:
@@ -154,7 +152,7 @@ class RefreshGitSourceIndex:
         self._concurrency = concurrency
         self._repo_batch_size = repo_batch_size
         self._rate_limit_floor = rate_limit_floor
-        self._on_progress = on_progress
+        self._progress = progress
         self._github_host = github_host
 
     def __call__(self, source: SourceDefinition, *, source_key: str) -> RefreshResult:
@@ -386,7 +384,9 @@ class RefreshGitSourceIndex:
             nonlocal done, changed
             done += 1
             changed += len(outcome.scans) if isinstance(outcome, _RepoRefreshResult) else 0
-            self._emit_progress("fetching", done=done, total=total, changed=changed)
+            self._progress.update(
+                f"{changed} changed", phase="fetching changes", done=done, total=total
+            )
             outcomes.append((task.repo.full_name, outcome))
 
         bounded_map(outcome_of, tasks, concurrency=self._concurrency, on_each=record)
@@ -574,25 +574,11 @@ class RefreshGitSourceIndex:
                 repos=tuple(source.repos),
             )
         )
-        self._emit_progress("expanding", done=selector_count, total=selector_count)
+        self._progress.update(phase="expanding source", done=selector_count, total=selector_count)
         return [repo_candidate(item.model_dump(), fallback=None) for item in inventory]
 
     def _probe_progress(self, done: int, total: int) -> None:
-        self._emit_progress("probing", done=done, total=total)
-
-    def _emit_progress(
-        self,
-        phase: Literal["expanding", "probing", "fetching"],
-        *,
-        done: int,
-        total: int,
-        changed: int | None = None,
-    ) -> None:
-        if self._on_progress is None:
-            return
-        self._on_progress(
-            RefreshProgressEvent(phase=phase, done=done, total=total, changed=changed)
-        )
+        self._progress.update(phase="probing refs", done=done, total=total)
 
     def _ref_scan_metadata(
         self,
