@@ -78,7 +78,7 @@ def test_no_command_declares_the_directive_by_hand() -> None:
     assert not stray, (
         f"{stray}: declare a cache's directive as "
         "`Annotated[bool | None, refresh_option(CACHE)] = None` (untaped.sdk), so its help "
-        "names the cache's setting and default; see docs/reference/conventions.md#options"
+        "names the cache's setting and default; see docs/caches.md"
     )
 
 
