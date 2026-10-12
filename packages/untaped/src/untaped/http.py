@@ -47,6 +47,7 @@ from untaped.settings import (
     load_settings_section,
     registered_profile_model,
 )
+from untaped.upstream import PROBE_TIMEOUT, capped, succeeded
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -108,24 +109,6 @@ class _Inherit:
 
 _INHERIT = _Inherit()
 _DEFAULT_RETRY = RetryPolicy()
-
-#: Longest request timeout (seconds) inside :func:`quick_probe`.
-PROBE_TIMEOUT = 10.0
-_QUICK_PROBE: ContextVar[bool] = ContextVar("untaped_http_quick_probe", default=False)
-
-
-@contextmanager
-def quick_probe() -> Iterator[None]:
-    """Fail fast inside the block: no retries, timeouts capped at :data:`PROBE_TIMEOUT`.
-
-    ``doctor --online`` wraps each service probe in it, so an unreachable
-    service costs one short attempt instead of several full-length ones.
-    """
-    token = _QUICK_PROBE.set(True)
-    try:
-        yield
-    finally:
-        _QUICK_PROBE.reset(token)
 
 
 def _parse_retry_after(value: str) -> float | None:
@@ -266,8 +249,6 @@ class HttpClient:
     ) -> None:
         import httpx  # noqa: PLC0415
 
-        if _QUICK_PROBE.get():
-            timeout = min(timeout, PROBE_TIMEOUT)
         self._client = httpx.Client(
             base_url=base_url,
             timeout=timeout,
@@ -297,12 +278,14 @@ class HttpClient:
         A final failure carries the client's ``system`` and the number of
         ``attempts`` in its ``details``. Inside :func:`request_deadline`, no
         attempt starts past the deadline and each one's timeout is capped at
-        the time left.
+        the time left. While the upstream budget is capped
+        (:mod:`untaped.upstream`), the request is tried once with its timeout
+        capped at ``PROBE_TIMEOUT``; a response lifts a ``fail_fast`` cap.
         """
         import httpx  # noqa: PLC0415
 
         policy = self._retry if isinstance(retry, _Inherit) else retry
-        if _QUICK_PROBE.get():
+        if capped():
             policy = None
         attempt = 0
         while True:
@@ -365,10 +348,15 @@ class HttpClient:
                     system=self.system,
                     details={"attempts": attempt},
                 )
+            succeeded()
             return response
 
     def _bounded(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """``kwargs`` with the timeout capped at the deadline's time left."""
+        """``kwargs`` with the timeout capped by the upstream budget and the deadline."""
+        limit = kwargs.get("timeout", self._timeout)
+        if capped():
+            limit = min(limit, PROBE_TIMEOUT) if isinstance(limit, int | float) else PROBE_TIMEOUT
+            kwargs = {**kwargs, "timeout": limit}
         left = _time_left()
         if left is None:
             return kwargs
@@ -377,9 +365,8 @@ class HttpClient:
                 "request deadline exceeded before the request started",
                 system=self.system,
             )
-        limit = kwargs.get("timeout", self._timeout)
-        capped = min(left, limit) if isinstance(limit, int | float) else left
-        return {**kwargs, "timeout": capped}
+        bounded = min(left, limit) if isinstance(limit, int | float) else left
+        return {**kwargs, "timeout": bounded}
 
     def get(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("GET", path, **kwargs)
