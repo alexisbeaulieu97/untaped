@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -25,7 +26,16 @@ from test_contracts.support import (
     shop_spec,
     write_config,
 )
-from untaped.contracts import Contract, Failed, Ok, Skipped, Source, gather, listing
+from untaped.contracts import (
+    Contract,
+    Failed,
+    NoProviderReady,
+    Ok,
+    Skipped,
+    Source,
+    gather,
+    listing,
+)
 from untaped.errors import ConfigError, ExitCode, HttpTransportError, UntapedError
 from untaped.output.diagnostic import StaleData
 from untaped.output.sink import diagnostics_scope, exit_on_counted_failure, recording
@@ -209,6 +219,43 @@ def test_a_failed_live_call_serves_the_cached_answer_marked_stale() -> None:
     assert stale.stale is not None
     assert stale.stale.error is Library.error
     assert stale.refreshed_at == fresh.refreshed_at
+
+
+def test_a_provider_bug_keeps_its_traceback_in_the_debug_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    compose(shelf_spec(), library_spec(), shop_spec())
+    write_config(LIBRARY_CONFIG)
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    Shop.error = KeyError("bug")
+    shop = gather(BookSource.books, refresh=True)()[1]
+    assert isinstance(shop, Failed)
+    [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
+    assert "shop" in record.getMessage()
+    assert record.exc_info is not None and record.exc_info[1] is Shop.error
+
+
+def test_an_untaped_failure_logs_no_traceback(caplog: pytest.LogCaptureFixture) -> None:
+    compose(shelf_spec(), library_spec(), shop_spec())
+    write_config(LIBRARY_CONFIG)
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    Shop.error = HttpTransportError("down", system="shop")
+    gather(BookSource.books, refresh=True)()
+    assert not [r for r in caplog.records if r.name == "untaped.contracts"]
+
+
+def test_a_stale_answer_keeps_a_provider_bug_traceback_in_the_debug_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    compose(shelf_spec(), library_spec())
+    write_config(LIBRARY_CONFIG)
+    gather(BookSource.books)()
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    Library.error = KeyError("bug")
+    [stale] = gather(BookSource.books, refresh=True)()
+    assert isinstance(stale, Ok) and stale.stale is not None
+    [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
+    assert record.exc_info is not None and record.exc_info[1] is Library.error
 
 
 def test_a_stale_answer_prints_one_stale_warning_and_counts_nothing() -> None:
@@ -395,6 +442,38 @@ def test_a_cache_that_cannot_be_written_keeps_the_live_answer(
     assert isinstance(library, Ok)
     assert [book.title for book in library.value] == ["Dune", "Emma"]
     assert _cache_files() == []
+
+
+def test_an_answer_that_cannot_be_dumped_is_served_and_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    compose(shelf_spec(), shop_spec())
+    write_config(LIBRARY_CONFIG)
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    Shop.rows = [Book(title="Dune"), object()]
+    [shop] = gather(BookSource.books)()
+    assert isinstance(shop, Ok)
+    assert shop.invalid == ("row 2: expected a Book, got object",)
+    assert _cache_files() == []
+    [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
+    assert record.exc_info is not None and isinstance(record.exc_info[1], ValueError)
+
+
+def test_a_provider_whose_ready_raises_logs_its_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    error = RuntimeError("boom")
+
+    class Broken(Shop):
+        def ready(self) -> None:
+            raise error
+
+    compose(shelf_spec(), PluginSpec(name="shop", provides={"shelf": lambda: (Broken(),)}))
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    with pytest.raises(NoProviderReady, match="ready\\(\\) raised RuntimeError: boom"):
+        gather(BookSource.books)()
+    [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
+    assert record.exc_info is not None and record.exc_info[1] is error
 
 
 def test_self_http_is_the_profiles_client_bounded_by_the_deadline() -> None:

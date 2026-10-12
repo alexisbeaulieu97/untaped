@@ -10,6 +10,7 @@ its ``source`` stamped.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -39,6 +40,8 @@ from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.http import request_deadline
 from untaped.messages import command_line
 from untaped.records import Issued, Source, kind_of
+
+_LOG = logging.getLogger("untaped.contracts")
 
 #: Providers asked at once by one ``gather``.
 _POOL = 8
@@ -245,8 +248,7 @@ def _ask[R](
         except UntapedError as exc:
             return Failed(plugin, exc, rank)
         except Exception as exc:
-            error = UntapedError(f"{type(exc).__name__}: {exc}", system=plugin)
-            return Failed(plugin, error, rank)
+            return Failed(plugin, _unexpected(plugin, method, exc), rank)
     try:
         checked, invalid = validate(provider.binding, method, value)
     except _Invalid as exc:
@@ -257,9 +259,17 @@ def _ask[R](
         if isinstance(cause, UntapedError):
             stale = Failed(plugin, cause, rank)
         else:
-            wrapped = UntapedError(f"{type(cause).__name__}: {cause}", system=plugin)
-            stale = Failed(plugin, wrapped, rank)
+            stale = Failed(plugin, _unexpected(plugin, method, cause), rank)
     return Ok(plugin, checked, rank, state.refreshed_at, stale, invalid)
+
+
+def _unexpected(plugin: str, method: Method, exc: BaseException) -> UntapedError:
+    """``exc``, a provider bug rather than an untaped error, as its answer's error.
+
+    The answer keeps the message only, so the traceback goes to the debug log.
+    """
+    _LOG.debug("%s's %s raised %s", plugin, method.name, type(exc).__name__, exc_info=exc)
+    return UntapedError(f"{type(exc).__name__}: {exc}", system=plugin)
 
 
 def validate(binding: Binding, method: Method, value: Any) -> tuple[Any, tuple[str, ...]]:

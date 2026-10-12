@@ -11,6 +11,7 @@ loses its own contracts only; doctor names it.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -48,6 +49,8 @@ from untaped.settings import (
     load_settings_section,
     registered_profile_model,
 )
+
+_LOG = logging.getLogger("untaped.contracts")
 
 #: Why a provider is quarantined (closed set, stable surface).
 PROVIDER_REASONS = frozenset(
@@ -132,7 +135,8 @@ def _owners(state: _State) -> dict[type[Contract], str]:
             try:
                 declared = _declared(spec)
             except Exception as exc:
-                state.broken[spec.name] = str(exc) or type(exc).__name__
+                _LOG.debug("%s's contracts raised %s", spec.name, type(exc).__name__, exc_info=exc)
+                state.broken[spec.name] = f"{type(exc).__name__}: {exc}"
                 continue
             owners.update(dict.fromkeys(declared, spec.name))
         state.owners = owners
@@ -224,7 +228,11 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[Provider | Quara
     except ContractError as exc:
         return whole(exc.reason, str(exc))
     except Exception as exc:
-        return whole("bad-provider", f"provides[{owner!r}] of {spec.name} raised: {exc}")
+        _LOG.debug(
+            "provides[%r] of %s raised %s", owner, spec.name, type(exc).__name__, exc_info=exc
+        )
+        detail = f"{type(exc).__name__}: {exc}"
+        return whole("bad-provider", f"provides[{owner!r}] of {spec.name} raised {detail}")
     owned = {cls for cls, name in _owners(state).items() if name == owner}
     entries: list[Provider | Quarantined] = []
     seen: dict[type[Contract], int] = {}
@@ -413,6 +421,7 @@ def ready_of(provider: Provider) -> NotReady | None:
     try:
         return provider.instance.ready()
     except Exception as exc:
+        _LOG.debug("%s's ready() raised %s", provider.plugin, type(exc).__name__, exc_info=exc)
         return NotReady(f"ready() raised {type(exc).__name__}: {exc}")
 
 
