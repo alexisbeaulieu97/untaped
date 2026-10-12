@@ -30,7 +30,7 @@ import json
 import logging
 import re
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import ExitStack, contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -49,7 +49,7 @@ from untaped.output.diagnostic import NOT_COUNTED, Failure, StaleData, format_ut
 from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.output.sink import current_sink
 from untaped.records import Record, UtcTimestamp
-from untaped.upstream import fail_fast
+from untaped.upstream import fail_fast, full_retries
 
 _LOG = logging.getLogger("untaped.cache")
 
@@ -60,6 +60,8 @@ _LOCK_TIMEOUT = 600.0
 _FORMAT = "1"
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 _WAITING = "waiting for another untaped process"
+#: Longest key segment kept in a sidecar's name, under any filesystem's limit.
+_SEGMENT = 100
 
 
 # --------------------------------------------------------------------------- #
@@ -192,7 +194,7 @@ class Filled(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     partial: Failure | None = None
-    retry_at: datetime | None = None
+    retry_at: UtcTimestamp | None = None
     summary: str | None = None
 
 
@@ -383,9 +385,11 @@ class Cache:
         """
         failure: BaseException | None = None
         try:
+            text = self._task_text(label, freshness, max_age)
             with (
-                self._task(label, freshness, max_age, progress) as task,
-                self._lock(paths, label, task),
+                self._task(text, progress) as task,
+                # back to the parent's phase after a wait; an own task has none
+                self._lock(paths, label, task, resume=None if progress is NO_PROGRESS else text),
             ):
                 current = freshness = self._load(paths, key)
                 if current.refreshed_at is not None and current.refreshed_at >= started:
@@ -395,7 +399,7 @@ class Cache:
                 try:
                     # the budget is a fallback too: a first fill keeps its full retries
                     budget = refresh is None and current.refreshed_at is not None
-                    with fail_fast() if budget else nullcontext():
+                    with fail_fast() if budget else full_retries():
                         result = fill(key, task)
                 except UntapedError as exc:
                     failure = exc
@@ -426,8 +430,11 @@ class Cache:
         except KeyboardInterrupt as exc:
             if exc is failure and freshness.error is not None:
                 # nothing else prints it: the CLI exits 130 bare
-                hint = "pass --cached to read the cached data without checking"
-                current_sink().emit(freshness.error.model_copy(update={"hint": hint}))
+                error = freshness.error
+                if freshness.refreshed_at is not None:  # else the next run fills again
+                    hint = "pass --cached to read the cached data without checking"
+                    error = error.model_copy(update={"hint": hint})
+                current_sink().emit(error)
             raise
 
     def _serve[T, F: Filled](
@@ -470,7 +477,13 @@ class Cache:
                 or state.attempted_at == started
             ):
                 line = self._stale(
-                    key, keys[key], state, now=now, started=started, cached=refresh is False
+                    key,
+                    keys[key],
+                    state,
+                    now=now,
+                    started=started,
+                    cached=refresh is False,
+                    max_age=max_age,
                 )
                 self._emit_stale(line)
         return Served(
@@ -511,7 +524,7 @@ class Cache:
             with self._held(paths, timeout=0.0, label=key):
                 if paths.sidecar.exists():
                     return False
-                return self._write(paths, key, Freshness(refreshed_at=refreshed_at))
+                return self._write(paths, key, Freshness(refreshed_at=_parsed(refreshed_at)))
         except _LockError as exc:
             if exc.busy:
                 return False  # another process is filling it: it will write the sidecar
@@ -540,8 +553,11 @@ class Cache:
     @staticmethod
     def _key_paths(folder: Path, key: str) -> _KeyPaths:
         segment = safe_path_segment(key)
-        if segment != key:  # sanitizing is lossy (a/b and a_b): keep the two apart
-            segment += "~" + hashlib.sha256(key.encode()).hexdigest()[:8]
+        # sanitizing is lossy (a/b and a_b), some filesystems ignore case (A and a)
+        # and limit a name's length: a hash keeps such keys apart
+        if segment != key or key != key.lower() or len(segment) > _SEGMENT:
+            digest = hashlib.sha256(key.encode()).hexdigest()[:8]
+            segment = f"{segment[:_SEGMENT]}~{digest}"
         return _KeyPaths(folder, folder / f"{segment}.json", folder / f"{segment}.lock")
 
     def _paths(self, key: str) -> _KeyPaths:
@@ -554,11 +570,10 @@ class Cache:
             raw = json.loads(paths.sidecar.read_text(encoding="utf-8"))
             if raw.get("untaped") != _FORMAT or raw.get("key") != key:
                 return Freshness()
-            error = raw.get("error")
             return Freshness(
                 refreshed_at=_parsed(raw.get("refreshed_at")),
                 attempted_at=_parsed(raw.get("attempted_at")),
-                error=None if error is None else Failure.model_validate(error),
+                error=_failure(raw.get("error")),
                 partial=raw.get("partial") is True,
                 retry_at=_parsed(raw.get("retry_at")),
             )
@@ -592,16 +607,8 @@ class Cache:
         return freshness
 
     @contextmanager
-    def _task(
-        self, label: str, freshness: Freshness, max_age: timedelta, parent: ProgressHandle
-    ) -> Iterator[ProgressHandle]:
-        """The refresh's task, worded from its age; a phase of ``parent`` when one is passed."""
-        if freshness.refreshed_at is None:
-            text = f"Refreshing {label} (first use)"
-        else:
-            age = duration_text((_utcnow() - freshness.refreshed_at).total_seconds())
-            limit = duration_text(max_age.total_seconds())
-            text = f"Refreshing {label} ({age} old, max age {limit})"
+    def _task(self, text: str, parent: ProgressHandle) -> Iterator[ProgressHandle]:
+        """The refresh's task; a phase of ``parent`` when one is passed."""
         if parent is not NO_PROGRESS:
             parent.update(phase=text)
             yield parent
@@ -609,17 +616,39 @@ class Cache:
         with current_sink().progress(text) as task:
             yield task
 
+    @staticmethod
+    def _task_text(label: str, freshness: Freshness, max_age: timedelta) -> str:
+        """The refresh's task, worded from the key's age."""
+        if freshness.refreshed_at is None:
+            return f"Refreshing {label} (first use)"
+        age = duration_text((_utcnow() - freshness.refreshed_at).total_seconds())
+        limit = duration_text(max_age.total_seconds())
+        return f"Refreshing {label} ({age} old, max age {limit})"
+
     @contextmanager
-    def _lock(self, paths: _KeyPaths, label: str, task: ProgressHandle) -> Iterator[None]:
-        """Hold ``paths``' lock: at once when free, else after a visible wait (at most 600 s)."""
+    def _lock(
+        self, paths: _KeyPaths, label: str, task: ProgressHandle, *, resume: str | None = None
+    ) -> Iterator[None]:
+        """Hold ``paths``' lock: at once when free, else after a visible wait (at most 600 s).
+
+        The wait shows as ``task``'s text, then is cleared; on a parent's
+        handle (``resume`` set) as its phase, then back to ``resume``.
+        """
         with ExitStack() as stack:
             try:
                 stack.enter_context(self._held(paths, timeout=0.0, label=label))
             except _LockError as exc:
                 if not exc.busy:
                     raise
-                task.update(phase=_WAITING)
+                if resume is None:
+                    task.update(_WAITING)
+                else:
+                    task.update(phase=_WAITING)
                 stack.enter_context(self._held(paths, timeout=_LOCK_TIMEOUT, label=label))
+                if resume is None:
+                    task.update()
+                else:
+                    task.update(phase=resume)
             yield
 
     @contextmanager
@@ -661,6 +690,7 @@ class Cache:
         started: datetime | None = None,
         cached: bool = False,
         plugin: str | None = None,
+        max_age: timedelta | None = None,
     ) -> StaleData:
         """The ``untaped.stale`` line for ``key`` served from ``freshness``."""
         assert freshness.refreshed_at is not None
@@ -676,7 +706,7 @@ class Cache:
             key=key,
             refreshed_at=freshness.refreshed_at,
             now=now,
-            max_age=self.max_age(),
+            max_age=self.max_age() if max_age is None else max_age,
             attempted_at=freshness.attempted_at,
             retry_at=freshness.retry_at,
             error=freshness.error,
@@ -741,6 +771,16 @@ def _interrupted(
         partial=False,
         retry_at=started + RETRY_AFTER,
     )
+
+
+def _failure(raw: object) -> Failure | None:
+    """A sidecar's ``error``; ``None`` when unreadable (a newer untaped's), keeping the rest."""
+    if raw is None:
+        return None
+    try:
+        return Failure.model_validate(raw)
+    except ValidationError:
+        return None
 
 
 def _parsed(value: object) -> datetime | None:

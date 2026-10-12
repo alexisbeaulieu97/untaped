@@ -40,6 +40,7 @@ from untaped.output.sink import (
     recording,
 )
 from untaped.testing import CacheClock, CliResult, cache_clock, invoke_cli, progress_clock
+from untaped.upstream import PROBE_TIMEOUT
 
 TOY = Cache("toy", "items", label="toy items", max_age=timedelta(hours=1))
 START = datetime(2026, 10, 12, 9, 0, tzinfo=UTC)
@@ -472,12 +473,61 @@ def test_only_an_auto_refill_runs_under_the_fail_fast_budget(clock: CacheClock) 
     assert seen == [False, True, False]
 
 
+def test_a_first_fill_retries_a_transient_failure(
+    clock: CacheClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+    import respx
+
+    from untaped.http import HttpClient, RetryPolicy
+
+    monkeypatch.setattr("untaped.http._sleep", lambda _seconds: None)
+
+    def fetch(_key: str, _task: ProgressHandle) -> Filled:
+        with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
+            client.get("/items")
+        return Filled()
+
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/items").mock(side_effect=[httpx.Response(503), httpx.Response(200)])
+        with diagnostics_scope():
+            TOY.serve({"a": "toy a"}, refresh=None, fill=fetch, read=lambda: ["x"])
+    assert route.call_count == 2
+
+
+@pytest.mark.parametrize("inner_refresh", [True, None])
+def test_a_nested_forced_or_first_fill_leaves_the_outer_budget(
+    clock: CacheClock, inner_refresh: bool | None
+) -> None:
+    """Under an outer automatic refresh, an inner --refresh or first fill keeps full retries."""
+    from untaped.upstream import capped
+
+    inner = Cache("toy", "inner", label="toy inner", max_age=_HOUR)
+    seen: list[bool] = []
+
+    def inner_fill(_key: str, _task: ProgressHandle) -> Filled:
+        seen.append(capped())
+        return Filled()
+
+    def outer_fill(key: str, task: ProgressHandle) -> Filled:
+        seen.append(capped())
+        inner.serve({"i": "toy i"}, refresh=inner_refresh, fill=inner_fill, read=lambda: [])
+        seen.append(capped())  # the outer budget is back
+        return UP.fill(key, task)
+
+    _refreshed(clock, "a", ago=timedelta(hours=2))
+    with diagnostics_scope():
+        TOY.serve({"a": "toy a"}, refresh=None, fill=outer_fill, read=lambda: UP.read(["a"]))
+    assert seen == [True, False, True]
+
+
 # ---- progress ------------------------------------------------------------------
 
 
 @dataclass
 class _Parent:
     phases: list[str | None] = field(default_factory=list)
+    messages: list[str | None] = field(default_factory=list)
 
     def update(
         self,
@@ -488,6 +538,7 @@ class _Parent:
         total: int | None = None,
     ) -> None:
         self.phases.append(phase)
+        self.messages.append(message)
 
 
 def test_under_a_parent_handle_the_refresh_is_a_phase_and_opens_no_task(
@@ -532,8 +583,21 @@ def test_a_refresh_waits_for_the_lock_and_says_so(clock: CacheClock) -> None:
         )
     holder.join(5)
     assert not holder.is_alive()
-    assert parent.phases == ["Refreshing toy a (first use)", "waiting for another untaped process"]
+    assert parent.phases == [
+        "Refreshing toy a (first use)",
+        "waiting for another untaped process",
+        "Refreshing toy a (first use)",  # back once the lock came
+    ]
     assert UP.fills == ["a"]
+
+
+def test_an_own_task_shows_the_wait_as_its_text_then_clears_it(clock: CacheClock) -> None:
+    task = _Parent()
+    holder = _hold("a", seconds=0.2)
+    with TOY._lock(TOY._paths("a"), "toy a", task):
+        assert task.messages == ["waiting for another untaped process", None]
+        assert task.phases == [None, None]  # an own task's label is not a phase
+    holder.join(5)
 
 
 def test_a_waiter_serves_what_the_other_process_refreshed(clock: CacheClock) -> None:
@@ -580,6 +644,20 @@ def test_a_fill_never_serves_its_own_cache(clock: CacheClock) -> None:
 # ---- Ctrl-C ------------------------------------------------------------------------
 
 
+def test_ctrl_c_on_a_first_fill_says_nothing_of_cached_data_and_the_rerun_fills(
+    clock: CacheClock,
+) -> None:
+    UP.error = KeyboardInterrupt()
+    result = _show("a")
+    assert result.exit_code == 130
+    assert result.stderr == "error: interrupted while refreshing toy a\n"
+
+    clock.advance(timedelta(minutes=1))  # inside the retry window: no data to fall back to
+    UP.error = None
+    rerun = _show("a")
+    assert (rerun.exit_code, rerun.diagnostics, UP.fills) == (0, (), ["a", "a"])
+
+
 def test_ctrl_c_is_remembered_said_once_and_exits_130(clock: CacheClock) -> None:
     _refreshed(clock, "a", ago=timedelta(hours=2))
     UP.error = KeyboardInterrupt()
@@ -623,6 +701,28 @@ def test_a_url_key_and_keys_that_sanitize_alike_keep_their_own_sidecars(
     assert all(path.exists() for path in sidecars)
     assert TOY._paths("a_b").sidecar.name == "a_b.json"
     assert TOY._paths("a/b").sidecar.name.startswith("a_b~")
+
+
+def test_a_long_key_and_keys_differing_in_case_keep_their_own_sidecars(
+    clock: CacheClock,
+) -> None:
+    keys = ["https://ghe.example/" + "x" * 300, "Abc", "abc"]
+    for key in keys:
+        UP.items[key] = [key]
+    assert _show(*keys).exit_code == 0
+    names = {TOY._paths(key).sidecar.name.lower() for key in keys}
+    assert len(names) == 3  # apart on a case-insensitive filesystem too
+    assert all(len(name) < 120 for name in names)
+    assert TOY._paths("abc").sidecar.name == "abc.json"
+
+
+def test_an_unreadable_error_keeps_the_rest_of_the_sidecar(clock: CacheClock) -> None:
+    _refreshed(clock, "a", ago=timedelta(minutes=5))
+    paths = TOY._paths("a")
+    data = json.loads(paths.sidecar.read_text())
+    data["error"] = {"message": "x", "from_a_newer_untaped": True}
+    paths.sidecar.write_text(json.dumps(data))
+    assert TOY.freshness("a") == Freshness(refreshed_at=START - timedelta(minutes=5))
 
 
 def test_a_sidecar_for_another_key_reads_as_never_refreshed(clock: CacheClock) -> None:
@@ -688,6 +788,12 @@ def test_cached_peeks_without_a_lock_a_line_or_a_raise(clock: CacheClock) -> Non
     assert emitted == []
 
 
+def test_naive_times_are_utc() -> None:
+    assert Filled(retry_at=datetime(2026, 10, 12, 9, 30)).retry_at == START + timedelta(minutes=30)
+    with cache_clock(datetime(2026, 10, 12, 9, 0)) as wall:
+        assert wall.now == START
+
+
 def test_seed_writes_only_what_the_cache_does_not_know(clock: CacheClock) -> None:
     assert TOY.freshness("a") == Freshness()
     assert TOY.seed("a", refreshed_at=START - timedelta(minutes=5)) is True
@@ -710,6 +816,8 @@ def test_forget_makes_the_next_read_refresh(clock: CacheClock) -> None:
     TOY.forget("a")
     assert TOY.freshness("a") == Freshness()
     TOY.forget("a")  # nothing to forget
+    assert _show("a", "--cached").exit_code == 1  # NeverRefreshed
+    assert UP.fills == []
     assert _show("a").exit_code == 0
     assert UP.fills == ["a"]
 
@@ -754,7 +862,11 @@ def test_never_refreshed_is_an_sdk_error() -> None:
 def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
     clock: CacheClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Eight parallel first probes, one down: the fill completes, holed, with its retry time."""
+    """An automatic refresh, the first probe down: the fill completes, holed, with its retry time.
+
+    The down probe fails once, capped, inside the budget; the next succeeds
+    and lifts the cap for the seven parallel ones.
+    """
     import httpx
     import respx
 
@@ -762,6 +874,7 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
     from untaped.http import HttpClient, RetryPolicy
 
     monkeypatch.setattr("untaped.http._sleep", lambda _seconds: None)
+    _refreshed(clock, "a", ago=timedelta(hours=2))
     reset = START + timedelta(minutes=30)
 
     def probe_all(_key: str, _task: ProgressHandle) -> Filled:
@@ -775,9 +888,10 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
                     return f"repo{repo}"
                 return None
 
+            failed.extend([name] if (name := probe(3)) else [])
             bounded_map(
                 probe,
-                range(8),
+                [0, 1, 2, 4, 5, 6, 7],
                 concurrency=8,
                 on_each=lambda _repo, name: failed.extend([name] if name else []),
             )
@@ -785,10 +899,13 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
         return Filled(partial=Failure.from_exception(error), retry_at=reset, summary="8 repos")
 
     with respx.mock(base_url="https://example.com") as mock:
-        mock.get("/repos/3").mock(side_effect=httpx.ConnectError("offline"))
+        down = mock.get("/repos/3").mock(side_effect=httpx.ConnectError("offline"))
         mock.get(url__regex=r"/repos/\d+").mock(return_value=httpx.Response(200))
         with diagnostics_scope():
             served = TOY.serve({"a": "toy a"}, refresh=None, fill=probe_all, read=lambda: ["x"])
+
+    assert down.call_count == 1  # capped and unretried: the budget was not yet lifted
+    assert down.calls[0].request.extensions["timeout"]["read"] == PROBE_TIMEOUT
 
     assert served.filled["a"].partial is not None
     assert served.filled["a"].partial.message == "1 of 8 repos failed to refresh (repo3)"

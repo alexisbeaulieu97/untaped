@@ -33,11 +33,14 @@ progress through `handle`; `read()` then computes the command's answer once,
 over every key. `serve()` opens the refresh's progress task, holds the key's
 lock while it fills (another process filling the same key is waited for,
 then served), and keeps what it knows about each key in a file under
-`plugin_dir(SPEC)/caches/`. A fill never serves its own cache.
+`plugin_dir(SPEC)/caches/`, per profile: keep your own store apart the same
+way (by key, and by profile when a setting can change what a key holds).
+A fill never serves its own cache; serving another one, it passes its
+`handle` as `serve(progress=)`, so the inner refresh shows as its phase.
 
-An automatic refresh of cached data fails fast: until one call reaches
-upstream, every HTTP request and `git fetch`/`ls-remote` inside the fill is
-tried once, with a short timeout, so an offline user gets the cached data in
+An automatic refresh of cached data fails fast: until one call succeeds,
+every HTTP request and networked `git` command (`clone`, `fetch`,
+`ls-remote`, `pull`) inside the fill is tried once, with a short timeout, so an offline user gets the cached data in
 seconds; `--refresh` and a key's first fill keep the full timeouts and
 retries. When a fill raises an `UntapedError`, `serve()` serves the cached
 data with one `untaped.stale` warning and does not try again for five

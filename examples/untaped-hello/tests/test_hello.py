@@ -129,8 +129,21 @@ def test_hello_motd_serves_its_copy_when_the_file_is_gone(tmp_path: Path) -> Non
     assert (result.exit_code, result.stdout) == (0, "ship it\n")
     [stale] = result.diagnostics
     assert isinstance(stale, StaleData)
-    assert (stale.plugin, stale.cache, stale.key) == ("hello", "hello.motd", "motd")
+    assert (stale.plugin, stale.cache, stale.key) == ("hello", "hello.motd", str(source.resolve()))
     assert "refresh failed (could not read" in stale.message
+
+
+def test_hello_motd_keeps_one_copy_per_file(tmp_path: Path) -> None:
+    """Pointing ``hello.motd_path`` elsewhere never serves the other file's copy."""
+    first = _motd(tmp_path)
+    other = tmp_path / "other.txt"
+    other.write_text("other\n", encoding="utf-8")
+    with cache_clock():
+        assert invoke_root(["hello", "motd"]).stdout == "ship it\n"
+        invoke_root(["config", "set", "hello.motd_path", str(other)])
+        assert invoke_root(["hello", "motd"]).stdout == "other\n"
+        invoke_root(["config", "set", "hello.motd_path", str(first)])
+        assert invoke_root(["hello", "motd"]).stdout == "ship it\n"
 
 
 def test_hello_motd_refuses_refresh_and_cached_together(tmp_path: Path) -> None:
