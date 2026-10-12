@@ -43,6 +43,7 @@ from typing import Self
 
 from untaped.sdk import (
     NO_PROGRESS,
+    Diagnostics,
     ErrorCategory,
     GitCommandError,
     GitResult,
@@ -50,7 +51,6 @@ from untaped.sdk import (
     UntapedError,
     attribution,
     run_git,
-    ui_context,
 )
 from untaped_git.domain.delta import RefDelta, diff_refs
 from untaped_git.domain.hosts import Credential, HostAuth
@@ -74,6 +74,8 @@ from untaped_git.infrastructure.repo_files import (
 )
 from untaped_git.infrastructure.store_release import RELEASE_MARK
 from untaped_git.infrastructure.version import below_floor, floor_text, git_version, version_text
+
+_diag = Diagnostics()
 
 #: Explicit refs fetched per command: a dropped connection loses one batch.
 DEFAULT_FETCH_BATCH_SIZE = 50
@@ -154,7 +156,7 @@ class RepoStore:
         self._map_error = map_error
         self._auth = auth
         self._resolved: tuple[HostAuth | None] | None = None
-        self._warn = warn or _warn
+        self._warn = warn or _diag.warning
         self._helper_first = helper_first
         self._sleep = sleep
 
@@ -1061,10 +1063,6 @@ def basic_header(username: str, password: object) -> str:
     secret = getattr(password, "get_secret_value", lambda: str(password))()
     token = base64.b64encode(f"{username}:{secret}".encode()).decode()
     return f"AUTHORIZATION: basic {token}"
-
-
-def _warn(text: str) -> None:
-    ui_context(strict=False).message("warning", text)
 
 
 def _plugin_name(plugin: object) -> str:

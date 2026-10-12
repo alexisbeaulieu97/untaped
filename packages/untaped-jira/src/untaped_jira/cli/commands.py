@@ -11,6 +11,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     DryRunOption,
     FormatOption,
     LimitOption,
@@ -19,7 +20,6 @@ from untaped.sdk import (
     YesOption,
     batch_apply,
     create_app,
-    echo,
     emit,
     existing_file,
     finish,
@@ -51,7 +51,7 @@ from untaped_jira.domain import (
 from untaped_jira.errors import JiraError
 
 if TYPE_CHECKING:
-    from untaped.sdk import OutputFormat, UiContext
+    from untaped.sdk import OutputFormat
     from untaped_jira.domain import IssueDetailResult
     from untaped_jira.infrastructure import JiraClient
 
@@ -148,6 +148,8 @@ SPRINT_TABLE_COLUMNS = ["id", "name", "state", "start_at", "end_at", "goal"]
 ISSUE_KINDS = frozenset({"jira.issue", "jira.issue_outcome"})
 OUTCOME_KIND = "jira.issue_outcome"
 
+_diag = Diagnostics()
+
 app = create_app(
     name="jira",
     help="Manage Jira Data Center issues from untaped.",
@@ -171,7 +173,7 @@ def whoami_command(
     from untaped_jira.application import WhoAmI  # noqa: PLC0415
 
     with report_errors():
-        with open_client() as (client, ui), ui.progress("Fetching authenticated user…"):
+        with open_client() as (client, _), _diag.progress("Fetching authenticated user"):
             row = WhoAmI(client)()
         emit(row, fmt=fmt, columns=columns, kind="jira.user")
 
@@ -201,7 +203,7 @@ def issue_get_command(
             )
         ]
         single = not stdin and len(resolved) == 1
-        with open_client() as (client, ui), ui.progress("Fetching issues…"):
+        with open_client() as (client, _), _diag.progress("Fetching issues"):
             get_issue = GetIssue(client, comments=comments)
             if single:
                 rows, any_failed = [get_issue(resolved[0])], False
@@ -260,7 +262,7 @@ def comment_list_command(
 
     with report_errors():
         key = validate_issue_key(key)
-        with open_client() as (client, ui), ui.progress("Fetching comments…"):
+        with open_client() as (client, _), _diag.progress("Fetching comments"):
             rows = ListComments(client)(key, limit=limit)
         emit(
             rows,
@@ -302,7 +304,7 @@ def issue_search_command(
             text=text,
             sprint=sprint,
         )
-        with open_client() as (client, ui), ui.progress("Querying Jira issues…"):
+        with open_client() as (client, _), _diag.progress("Querying Jira issues"):
             rows = SearchIssues(client)(filters, limit=limit)
         emit(
             rows,
@@ -343,7 +345,7 @@ def issue_assigned_command(
             text=text,
             sprint=sprint,
         )
-        with open_client() as (client, ui), ui.progress("Querying assigned issues…"):
+        with open_client() as (client, _), _diag.progress("Querying assigned issues"):
             rows = SearchIssues(client)(filters, limit=limit)
         emit(
             rows,
@@ -370,7 +372,7 @@ def _username(assignee: str) -> str:
         return assignee
     from untaped_jira.application import WhoAmI  # noqa: PLC0415
 
-    with open_client() as (client, ui), ui.progress("Fetching authenticated user…"):
+    with open_client() as (client, _), _diag.progress("Fetching authenticated user"):
         name = WhoAmI(client)().name
     if not name:
         raise JiraError("the authenticated Jira user has no username")
@@ -380,9 +382,9 @@ def _username(assignee: str) -> str:
 def _show(requests: Sequence[PreviewRequest]) -> None:
     """Print each request a write would send with its readable changes (stderr)."""
     for method, path, lines in requests:
-        echo(f"{method} {path}", err=True)
+        _diag.info(f"{method} {path}", unmuted=True)
         for line in lines:
-            echo(textwrap.indent(line, "  "), err=True)
+            _diag.info(textwrap.indent(line, "  "), unmuted=True)
 
 
 def _send(
@@ -404,18 +406,18 @@ def _send(
     when a preview is shown.
     """
 
-    def show(client: JiraClient, ui: UiContext) -> None:
+    def show(client: JiraClient) -> None:
         if not callable(preview):
             _show(preview)
             return
-        with ui.progress("Reading current values…"):
+        with _diag.progress("Reading current values"):
             requests = preview(client)
         _show(requests)
 
     if dry_run:
         if callable(preview):
-            with open_client() as (client, ui):
-                show(client, ui)
+            with open_client() as (client, _):
+                show(client)
         else:
             _show(preview)
         emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
@@ -427,9 +429,9 @@ def _send(
                 "Send this request to Jira?",
                 assume_yes=yes,
                 refusal=f"{verb} requires --yes when not interactive",
-                preview=lambda: show(client, ui),
+                preview=lambda: show(client),
             )
-        with ui.progress(progress):
+        with _diag.progress(progress):
             row = send(client)
     emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
 
@@ -479,7 +481,7 @@ def issue_create_command(
             lambda client: CreateIssue(client, base_url=settings.base_url)(payload),
             destructive=False,
             planned=IssueOutcome(action="planned"),
-            progress="Creating issue…",
+            progress="Creating issue",
             yes=yes,
             dry_run=dry_run,
             fmt=fmt,
@@ -563,7 +565,7 @@ def issue_patch_command(
             ),
             destructive=is_destructive_patch(edit, assigns=assign is not None),
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
-            progress="Updating issue…",
+            progress="Updating issue",
             yes=yes,
             dry_run=dry_run,
             fmt=fmt,
@@ -611,7 +613,7 @@ def issue_comment_command(
             lambda client: AddComment(client, base_url=settings.base_url)(key, resolved_body),
             destructive=False,
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
-            progress="Adding comment…",
+            progress="Adding comment",
             yes=yes,
             dry_run=dry_run,
             fmt=fmt,
@@ -633,7 +635,7 @@ def issue_transitions_command(
 
     with report_errors():
         key = validate_issue_key(key)
-        with open_client() as (client, ui), ui.progress("Fetching available transitions…"):
+        with open_client() as (client, _), _diag.progress("Fetching available transitions"):
             rows = ListTransitions(client)(key)
         emit(
             rows,
@@ -685,7 +687,7 @@ def issue_transition_command(
         single = not stdin and len(resolved) == 1
         with open_client() as (client, ui):
             transition = TransitionIssue(client, base_url=settings.base_url)
-            with ui.progress("Resolving transitions…"):
+            with _diag.progress("Resolving transitions"):
                 plans, resolve_failed = resolve_each(
                     resolved,
                     lambda key: (
@@ -696,7 +698,7 @@ def issue_transition_command(
 
             def preview(_rows: Sequence[dict[str, object]]) -> None:
                 describe = PreviewTransition(client)
-                with ui.progress("Reading current values…"):
+                with _diag.progress("Reading current values"):
                     requests: list[PreviewRequest] = [
                         (
                             "POST",
@@ -782,7 +784,7 @@ def link_create_command(
                 link_type=link_type,
                 linked_key=other,
             ),
-            progress="Linking issues…",
+            progress="Linking issues",
             yes=yes,
             dry_run=dry_run,
             fmt=fmt,
@@ -801,7 +803,7 @@ def project_list_command(
     from untaped_jira.application import ListProjects  # noqa: PLC0415
 
     with report_errors():
-        with open_client() as (client, ui), ui.progress("Listing projects…"):
+        with open_client() as (client, _), _diag.progress("Listing projects"):
             rows = ListProjects(client)()
         emit(
             rows,
@@ -827,7 +829,7 @@ def project_get_command(
 
     with report_errors():
         key = validate_project_key(key)
-        with open_client() as (client, ui), ui.progress("Fetching project…"):
+        with open_client() as (client, _), _diag.progress("Fetching project"):
             row = GetProject(client)(key)
         emit(row, fmt=fmt, columns=columns, kind="jira.project")
 
@@ -853,7 +855,7 @@ def board_list_command(
     from untaped_jira.application import ListBoards  # noqa: PLC0415
 
     with report_errors():
-        with open_client() as (client, ui), ui.progress("Listing boards…"):
+        with open_client() as (client, _), _diag.progress("Listing boards"):
             rows = ListBoards(client)(
                 project_key_or_id=project,
                 name=name,
@@ -888,7 +890,7 @@ def sprint_list_command(
 
     with report_errors():
         settings = current_jira_settings()
-        with open_client() as (client, ui), ui.progress("Listing sprints…"):
+        with open_client() as (client, _), _diag.progress("Listing sprints"):
             rows = ListSprints(client, default_board_id=settings.default_board_id)(
                 board_id=board_id,
                 state=state,

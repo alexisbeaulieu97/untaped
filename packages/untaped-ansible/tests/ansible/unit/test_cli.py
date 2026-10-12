@@ -17,7 +17,7 @@ import pytest
 import respx
 import yaml
 
-from untaped.sdk import Progress, ui_context
+from untaped.sdk import Progress
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, progress_clock
 from untaped_ansible.application.refresh_git_index import RefreshResult
@@ -1484,8 +1484,8 @@ def _capture_git_refresh(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
 
 def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monkeypatch) -> None:
-    # The progress UiContext is built strict=False: an invalid theme degrades
-    # the spinner instead of failing an otherwise-valid refresh.
+    # An invalid theme degrades the refresh's stderr lines instead of failing
+    # an otherwise-valid refresh.
     _use_config(
         tmp_path,
         monkeypatch,
@@ -1855,7 +1855,7 @@ def test_warn_probe_fallbacks_groups_known_and_unknown_reasons(
         },
     )
 
-    refresh.warn_probe_fallbacks(result, ui=ui_context())
+    refresh.warn_probe_fallbacks(result)
 
     stderr = capsys.readouterr().err
     assert "warning: 1 repo fell back to git ls-remote after GitHub GraphQL rate limit" in stderr

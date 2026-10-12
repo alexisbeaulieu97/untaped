@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 
 from untaped.sdk import (
     NO_PROGRESS,
+    Diagnostics,
     GitCommandError,
     GitResult,
     ProgressHandle,
@@ -42,7 +43,6 @@ from untaped.sdk import (
     plugin_dir,
     run_git,
     safe_path_segment,
-    ui_context,
 )
 from untaped_git.api import Removed, RepoStore, ls_remote, store_key
 from untaped_github import SPEC
@@ -66,6 +66,7 @@ _PLAIN_ROOTS = ("refs/heads/", "refs/tags/")
 _STORE_GLOB = re.compile(r"[\w.\-/]*\*?[\w.\-/]*")
 _WILDCARD = re.compile(r"[*?\[\\]")
 _OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+_diag = Diagnostics()
 
 type GitProtocol = Literal["https", "ssh"]
 
@@ -92,7 +93,7 @@ class GitCorpusCache:
         self._protocol = protocol
         self._git = git
         self._timeout = timeout
-        self._warn = warn or _ui_warning
+        self._warn = warn or _diag.warning
 
     def sync_repo(
         self,
@@ -513,10 +514,6 @@ def _resolve_ref(store: RepoStore, ref: str) -> str | None:
 def _https_host(url: str) -> str | None:
     parsed = urlparse(url)
     return parsed.hostname.lower() if parsed.scheme == "https" and parsed.hostname else None
-
-
-def _ui_warning(message: str) -> None:
-    ui_context(strict=False).message("warning", message)
 
 
 def _default_branch(repo: CorpusRepoTarget) -> str:
