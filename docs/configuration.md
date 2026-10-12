@@ -360,5 +360,7 @@ once per run, `config set <section>.token` warns, `untaped doctor` warns with
   directory, exit status and time, and `[auth header]` when a token was
   passed (the header itself never appears);
 - `untaped.auth`: which token source was used (never the token).
+- `untaped.contracts`: the traceback of a provider error that is not an
+  untaped error, and why an answer was not cached.
 
 `--verbose` is the only switch; there is no log-level setting.

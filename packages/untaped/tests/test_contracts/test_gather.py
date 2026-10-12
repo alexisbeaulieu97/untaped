@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, TypeAdapter
 
 from test_contracts.support import (
     LIBRARY_CONFIG,
@@ -209,6 +210,43 @@ def test_a_failed_live_call_serves_the_cached_answer_marked_stale() -> None:
     assert stale.refreshed_at == fresh.refreshed_at
 
 
+def test_a_provider_bug_keeps_its_traceback_in_the_debug_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    compose(shelf_spec(), library_spec(), shop_spec())
+    write_config(LIBRARY_CONFIG)
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    Shop.error = KeyError("bug")
+    shop = gather(BookSource.books, refresh=True)()[1]
+    assert isinstance(shop, Failed)
+    [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
+    assert "shop" in record.getMessage()
+    assert record.exc_info is not None and record.exc_info[1] is Shop.error
+
+
+def test_an_untaped_failure_logs_no_traceback(caplog: pytest.LogCaptureFixture) -> None:
+    compose(shelf_spec(), library_spec(), shop_spec())
+    write_config(LIBRARY_CONFIG)
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    Shop.error = HttpTransportError("down", system="shop")
+    gather(BookSource.books, refresh=True)()
+    assert not [r for r in caplog.records if r.name == "untaped.contracts"]
+
+
+def test_a_stale_answer_keeps_a_provider_bug_traceback_in_the_debug_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    compose(shelf_spec(), library_spec())
+    write_config(LIBRARY_CONFIG)
+    gather(BookSource.books)()
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    Library.error = KeyError("bug")
+    [stale] = gather(BookSource.books, refresh=True)()
+    assert isinstance(stale, Ok) and stale.stale is not None
+    [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
+    assert record.exc_info is not None and record.exc_info[1] is Library.error
+
+
 def test_a_failed_live_call_with_no_cached_answer_fails() -> None:
     compose(shelf_spec(), library_spec())
     write_config(LIBRARY_CONFIG)
@@ -360,6 +398,23 @@ def test_a_cache_that_cannot_be_written_keeps_the_live_answer(
     assert isinstance(library, Ok)
     assert [book.title for book in library.value] == ["Dune", "Emma"]
     assert _cache_files() == []
+
+
+def test_an_answer_that_cannot_be_dumped_is_served_and_logged(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def refuse(*_: object, **__: object) -> None:
+        raise TypeError("not serialisable")
+
+    monkeypatch.setattr(TypeAdapter, "dump_python", refuse)
+    compose(shelf_spec(), library_spec())
+    write_config(LIBRARY_CONFIG)
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    [library] = gather(BookSource.books)()
+    assert isinstance(library, Ok)
+    assert _cache_files() == []
+    [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
+    assert record.exc_info is not None and isinstance(record.exc_info[1], TypeError)
 
 
 def test_self_http_is_the_profiles_client_bounded_by_the_deadline() -> None:

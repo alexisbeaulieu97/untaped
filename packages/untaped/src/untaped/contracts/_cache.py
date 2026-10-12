@@ -156,6 +156,7 @@ def _write(
             value, mode="json", by_alias=True, round_trip=True, warnings=False
         )
     except Exception:
+        _LOG.debug("could not serialise the answer cache entry %s", path, exc_info=True)
         return
     text = json.dumps(
         {
