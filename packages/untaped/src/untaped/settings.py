@@ -229,9 +229,13 @@ def reserved_section_keys(
 
 
 class CacheSettings(BaseModel):
-    """One cache's settings under ``<plugin>.caches.<cache>``; each cache's model subclasses it."""
+    """One cache's settings under ``<plugin>.caches.<cache>``; each cache's model subclasses it.
 
-    model_config = ConfigDict(extra="forbid")
+    An unknown key here loads, as anywhere in a plugin's section: doctor's
+    unknown-keys row names it, and it never breaks the plugin's commands.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
 
 @cache
@@ -304,10 +308,10 @@ def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[st
     for name in ("renamed_keys", "retired_keys"):
         mapping = getattr(model, name, None)
         if isinstance(mapping, Mapping):
-            for old in sorted(mapping.keys() & claimed.keys()):
+            if clash := sorted(mapping.keys() & claimed.keys()):
                 raise ConfigError(
-                    f"old key {old!r} is in {model.__name__}.{name} and in the cache "
-                    f"{claimed[old].name!r}'s renamed_from"
+                    f"old key {clash[0]!r} is in {model.__name__}.{name} and in the cache "
+                    f"{claimed[clash[0]].name!r}'s renamed_from"
                 )
             if name == "renamed_keys":
                 own = dict(mapping)

@@ -293,6 +293,9 @@ class PluginSpec:
     returning this plugin's providers of that owner's contracts. Both are
     functions with a local import, so nothing under them is imported until a
     contract is first asked for (``untaped.contracts``).
+
+    ``caches`` are the :class:`~untaped.cache.Cache` objects the plugin
+    keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``.
     """
 
     name: str
@@ -353,17 +356,17 @@ def owns_contracts(spec: PluginSpec) -> bool:
     return spec.contracts is not _no_contracts
 
 
-def section_settings(spec: PluginSpec) -> type[BaseModel] | None:
+def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseModel] | None:
     """The model registered for ``spec``'s config section; ``None`` when it has none.
 
     The section of a contract owner, or of a plugin that declares caches,
     always exists: it carries the keys the SDK injects, ``extensions`` and
-    ``caches`` (:func:`untaped.settings.section_model`).
+    ``caches`` (:func:`untaped.settings.section_model`). ``extensions=False``
+    leaves ``extensions`` out (the config reference documents it elsewhere).
     """
-    if owns_contracts(spec) or spec.caches:
-        return section_model(
-            spec.settings or _NoSettings, extensions=owns_contracts(spec), caches=spec.caches
-        )
+    owner = extensions and owns_contracts(spec)
+    if owner or spec.caches:
+        return section_model(spec.settings or _NoSettings, extensions=owner, caches=spec.caches)
     return spec.settings
 
 
@@ -726,9 +729,7 @@ def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
 def _check_section_keys(spec: PluginSpec) -> None:
     # Only an owner's settings section gets ``extensions``, and only one with caches ``caches``.
     injected = frozenset(
-        key
-        for key, applies in (("extensions", owns_contracts(spec)), ("caches", bool(spec.caches)))
-        if applies
+        ({"extensions"} if owns_contracts(spec) else set()) | ({"caches"} if spec.caches else set())
     )
     for label, model, keys in (
         ("settings", spec.settings, injected),

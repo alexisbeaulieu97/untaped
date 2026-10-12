@@ -21,9 +21,8 @@ from untaped.bootstrap import build_root_app
 from untaped.cache import Cache, Filled, refresh_option
 from untaped.cli import create_app, echo, report_errors
 from untaped.config_file import read_config_dict
-from untaped.conventions.settings_names import settings_name_violations
+from untaped.conventions.settings_names import name_problem, settings_name_violations
 from untaped.deprecated_keys import Retired, key_mappings, mapping_errors
-from untaped.errors import ConfigError
 from untaped.output.diagnostic import Message
 from untaped.output.progress import ProgressHandle
 from untaped.plugins.registry import PluginSpec, settings_model
@@ -161,11 +160,15 @@ def test_a_negative_max_age_is_a_settings_error() -> None:
     assert "greater than or equal to 0" in refused.stderr
 
 
-def test_a_typo_under_a_cache_is_a_settings_error() -> None:
+def test_a_typo_under_a_cache_loads_and_doctor_names_it() -> None:
     _write(_hello("caches:\n  motd:\n    max_age: 5"))
-    _run("config", "get", "hello.greeting")
-    with pytest.raises(ConfigError, match="max_age"):
-        MOTD.max_age()
+    with cache_clock():
+        assert _run("hello", "show").exit_code == 0
+    assert MOTD.max_age() == timedelta(hours=1)
+    rows = json.loads(_run("doctor", "--format", "json").stdout)
+    (row,) = [row for row in rows if row["check"] == "unknown-keys"]
+    assert row["status"] == "warn"
+    assert "profiles.default.hello.caches.motd.max_age" in row["detail"]
 
 
 def test_the_refresh_option_names_a_setting_config_get_accepts() -> None:
@@ -183,9 +186,28 @@ def test_an_unknown_cache_loads_and_doctor_names_it() -> None:
     assert "profiles.default.hello.caches.typo" in row["detail"]
 
 
-def test_the_setting_follows_the_naming_conventions() -> None:
-    _run("config", "list")
-    assert settings_name_violations("hello", settings_model(SPEC), Path.cwd()) == []
+def test_the_generated_setting_follows_the_naming_conventions() -> None:
+    caches = settings_model(SPEC).model_fields["caches"].annotation
+    assert isinstance(caches, type) and issubclass(caches, BaseModel)
+    (motd,) = caches.model_fields.values()
+    assert isinstance(motd.annotation, type) and issubclass(motd.annotation, BaseModel)
+    assert list(motd.annotation.model_fields) == ["max_age_seconds"]
+    assert name_problem("max_age_seconds", int) is None
+
+
+class Badly(BaseModel):
+    timeout: int = 5
+
+
+def test_the_owner_s_fields_are_still_checked_once_caches_are_composed() -> None:
+    composed = settings_model(PluginSpec(name="hello", settings=Badly, caches=(MOTD,)))
+    assert composed is not Badly
+    violations = settings_name_violations("hello", composed, Path.cwd())
+    assert len(violations) == 1
+    assert violations[0].endswith(
+        "::settings-naming::hello.timeout: a duration ends in its unit "
+        "(_seconds, _minutes, _hours, _days, _ms)"
+    )
 
 
 # --- renamed_from -----------------------------------------------------------

@@ -341,11 +341,8 @@ class Cache:
         :class:`ConfigError`.
         """
         model = registered_profile_model(self.plugin)
-        held = None if model is None else model.model_fields.get("caches")
-        kept = None if held is None else held.annotation
-        if not (isinstance(kept, type) and issubclass(kept, BaseModel)) or (
-            self.name not in kept.model_fields
-        ):
+        caches = None if model is None else model.model_fields.get("caches")
+        if caches is None or self.name not in getattr(caches.annotation, "model_fields", {}):
             return self.default_max_age
         caches = load_settings_section(self.plugin).caches
         return timedelta(seconds=getattr(caches, self.name).max_age_seconds)
