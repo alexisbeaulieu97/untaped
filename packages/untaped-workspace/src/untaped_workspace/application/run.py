@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorInfo, note_failure
+from untaped.sdk import Failure
 from untaped_workspace.domain.models import CommandResult, RepoSpec
 from untaped_workspace.domain.records import RunAction, RunOutcome
 from untaped_workspace.errors import WorkspaceError
@@ -152,7 +152,7 @@ def _outcome(
     action: RunAction,
     result: CommandResult | None,
     detail: str = "",
-    error: ErrorInfo | None = None,
+    error: Failure | None = None,
 ) -> RunOutcome:
     result = result or _NOT_RUN
     return RunOutcome(
@@ -177,7 +177,7 @@ _NOT_RUN = CommandResult(returncode=None, stdout="", stderr="", duration_s=0.0, 
 def _failed(
     target: RunTarget, error: WorkspaceError, result: CommandResult | None, detail: str
 ) -> RunOutcome:
-    return _outcome(target, "failed", result, detail, note_failure(error))
+    return _outcome(target, "failed", result, detail, Failure.from_exception(error))
 
 
 def _skipped(target: RunTarget) -> RunOutcome:

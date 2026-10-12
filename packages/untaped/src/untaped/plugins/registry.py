@@ -32,6 +32,7 @@ from pydantic import BaseModel, ConfigDict
 
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
+from untaped.output.sink import Diagnostics
 from untaped.records import DuplicateKindError, OutcomeRecord
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
@@ -148,6 +149,11 @@ class PluginContext:
     """Frozen per-invocation snapshot handed to a doctor-check or migration body."""
 
     settings: BaseModel | None
+
+    @property
+    def diag(self) -> Diagnostics:
+        """The stderr handle, as on ``AppContext``: resolved at each call."""
+        return Diagnostics()
 
 
 class MigrationOptions(BaseModel):

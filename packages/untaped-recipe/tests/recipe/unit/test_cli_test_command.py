@@ -114,6 +114,8 @@ def test_test_recipe_scope_and_no_cases_failure(tmp_path: Path) -> None:
             "retryable": False,
             "message": "no test cases found",
             "hint": None,
+            "exit_code": 1,
+            "details": {},
         },
     }
 

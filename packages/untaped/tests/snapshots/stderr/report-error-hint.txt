@@ -1,0 +1,2 @@
+error: no token
+hint: run `untaped auth set`

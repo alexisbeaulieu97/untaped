@@ -22,9 +22,9 @@ from untaped.cli import note_requested_format, raise_usage
 from untaped.deprecated_keys import warn_once
 from untaped.errors import UntapedError
 from untaped.messages import deprecated_message
+from untaped.output.policy import enable_quiet as _enable_quiet
+from untaped.output.policy import reset_quiet as _reset_quiet
 from untaped.profile_resolver import profile_scope
-from untaped.quiet import enable as _enable_quiet
-from untaped.quiet import reset as _reset_quiet
 from untaped.settings import load_settings_section
 from untaped.stability import (
     Deprecated,

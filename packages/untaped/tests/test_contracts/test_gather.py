@@ -27,6 +27,8 @@ from test_contracts.support import (
 )
 from untaped.contracts import Contract, Failed, Ok, Skipped, Source, gather, listing
 from untaped.errors import ConfigError, ExitCode, HttpTransportError, UntapedError
+from untaped.output.diagnostic import StaleData
+from untaped.output.sink import diagnostics_scope, exit_on_counted_failure, recording
 from untaped.plugins.registry import PluginSpec
 
 
@@ -207,6 +209,39 @@ def test_a_failed_live_call_serves_the_cached_answer_marked_stale() -> None:
     assert stale.stale is not None
     assert stale.stale.error is Library.error
     assert stale.refreshed_at == fresh.refreshed_at
+
+
+def test_a_stale_answer_prints_one_stale_warning_and_counts_nothing() -> None:
+    compose(shelf_spec(), library_spec())
+    write_config(LIBRARY_CONFIG)
+    gather(BookSource.books)()
+    Library.error = HttpTransportError("HTTP 503", system="library")
+    with recording() as emitted, diagnostics_scope():
+        gather(BookSource.books, refresh=True)()
+        gather(BookSource.books, refresh=True)()  # the same entry again: no second line
+        exit_on_counted_failure()  # a stale answer is not a failure
+
+    [stale] = emitted
+    [path] = _cache_files()
+    assert isinstance(stale, StaleData)
+    assert (stale.cache, stale.key) == ("shelf.book_source_books", f"library:{path.stem}")
+    assert stale.error is not None and stale.error.category == "unavailable"
+    assert stale.message.startswith("library: refresh failed (HTTP 503)")
+
+
+def test_fresh_missing_and_cached_only_answers_print_no_stale_line() -> None:
+    compose(shelf_spec(), library_spec())
+    write_config(LIBRARY_CONFIG)
+    with recording() as emitted, diagnostics_scope():
+        gather(BookSource.books, refresh=False)()  # nothing stored: skipped
+        gather(BookSource.books)()  # a miss, filled live
+        gather(BookSource.books)()  # a fresh hit
+        Library.error = HttpTransportError("HTTP 503", system="library")
+        gather(BookSource.books, refresh=False)()  # cached only, by request
+        _cache_files()[0].unlink()
+        gather(BookSource.books)()  # a miss that fails
+
+    assert [each for each in emitted if isinstance(each, StaleData)] == []
 
 
 def test_a_failed_live_call_with_no_cached_answer_fails() -> None:

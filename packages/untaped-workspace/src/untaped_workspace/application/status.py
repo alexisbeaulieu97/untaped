@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorInfo, UntapedError, bounded_map, note_failure
+from untaped.sdk import Failure, UntapedError, bounded_map
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.records import StatusRow
 from untaped_workspace.domain.safety import NOT_STORED, UNREADABLE, archive_blockers
@@ -40,7 +40,7 @@ class WorkspaceStatus:
             spec = item[1]
             outcome = self._fetch(spec.url, root / spec.dir) if fetch else None
             row = self._row(record.name, root, spec)
-            if isinstance(outcome, ErrorInfo) and row.error is None:
+            if isinstance(outcome, Failure) and row.error is None:
                 row = row.model_copy(
                     update={"detail": f"fetch failed: {outcome.message}", "error": outcome}
                 )
@@ -59,12 +59,12 @@ class WorkspaceStatus:
         )
         return [rows[i] for i in sorted(rows)]
 
-    def _fetch(self, url: str, dest: Path) -> ErrorInfo | str | None:
+    def _fetch(self, url: str, dest: Path) -> Failure | str | None:
         """Why the fetch failed, else why its history backfill stopped, else ``None``."""
         try:
             return self._git.fetch(url, dest)
         except UntapedError as exc:
-            return note_failure(exc, message=str(exc))
+            return Failure.from_exception(exc, message=str(exc))
 
     def _row(self, workspace: str, root: Path, spec: RepoSpec) -> StatusRow:
         common = {
@@ -89,7 +89,7 @@ class WorkspaceStatus:
                 state="error",
                 blockers=(f"{UNREADABLE}: {reason}",),
                 detail=str(exc),
-                error=note_failure(exc, message=str(exc)),
+                error=Failure.from_exception(exc, message=str(exc)),
             )
         if status is None:
             return StatusRow(**common, branch=spec.branch, state="missing")

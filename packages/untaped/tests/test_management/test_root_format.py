@@ -18,6 +18,7 @@ from test_management.support import GithubProfile, make_spec, write_config
 from untaped import bootstrap
 from untaped.sdk import FormatOption, PluginSpec, create_app, emit
 from untaped.testing import CliInvoker, CliResult, plugin_candidate
+from untaped.ui import ui_context
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -142,3 +143,32 @@ def test_format_help_names_the_overrides_only_for_the_table_default() -> None:
     raw_help = help_text(["config", "get"])
     assert "[default: raw]" in raw_help
     assert "UNTAPED_FORMAT" not in raw_help
+
+
+def _warning_spec() -> PluginSpec:
+    def factory() -> App:
+        app = create_app(name="warns", help="Warning plugin.")
+
+        @app.command(name="list")
+        def list_command(*, fmt: FormatOption = "table") -> None:
+            """Warn, then list one row."""
+            ui_context().message("warning", "careful")
+            emit([{"name": "row"}], fmt=fmt)
+
+        return app
+
+    return PluginSpec(name="warns", app_factory=factory, settings=GithubProfile, help="Warns.")
+
+
+def test_ui_format_setting_makes_stderr_json_once_settings_load(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      format: json\n")
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(_warning_spec()),))
+
+    result = CliInvoker().invoke(root.meta, ["warns", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stderr) == {
+        "level": "warning",
+        "kind": "untaped.message",
+        "message": "careful",
+    }

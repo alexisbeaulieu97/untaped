@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
+from contextlib import redirect_stderr
 from pathlib import Path
 
 import pytest
@@ -204,9 +205,10 @@ def test_detail_uses_theme_view_preferences_for_terminal_rendering() -> None:
 
 def test_message_writes_semantic_status_to_stderr() -> None:
     stderr = io.StringIO()
-    ui = UiContext(stderr=stderr, theme=ThemeSpec(symbols={"warning": "!"}))
+    ui = UiContext(theme=ThemeSpec(symbols={"warning": "!"}))
 
-    ui.message("warning", "check this")
+    with redirect_stderr(stderr):
+        ui.message("warning", "check this")
 
     assert stderr.getvalue().splitlines() == ["! warning: check this"]
 
@@ -224,11 +226,12 @@ def test_message_color_roles_style_full_line_only_for_tty_stderr() -> None:
     tty_stderr = TtyStringIO()
     plain_stderr = io.StringIO()
 
-    tty_ui = UiContext(stderr=tty_stderr, theme=theme)
-    plain_ui = UiContext(stderr=plain_stderr, theme=theme)
+    ui = UiContext(theme=theme)
     for kind in ("success", "info", "warning", "error"):
-        tty_ui.message(kind, f"{kind} text")
-        plain_ui.message(kind, f"{kind} text")
+        with redirect_stderr(tty_stderr):
+            ui.message(kind, f"{kind} text")
+        with redirect_stderr(plain_stderr):
+            ui.message(kind, f"{kind} text")
 
     assert _has_ansi(tty_stderr.getvalue())
     assert "+ success text" in tty_stderr.getvalue()
@@ -238,9 +241,8 @@ def test_message_color_roles_style_full_line_only_for_tty_stderr() -> None:
 
 def test_success_message_preserves_plain_text_by_default() -> None:
     stderr = io.StringIO()
-    ui = UiContext(stderr=stderr)
-
-    ui.message("success", "created profile: dev")
+    with redirect_stderr(stderr):
+        UiContext().message("success", "created profile: dev")
 
     assert stderr.getvalue().splitlines() == ["created profile: dev"]
 
@@ -248,9 +250,9 @@ def test_success_message_preserves_plain_text_by_default() -> None:
 def test_progress_reports_on_stderr_and_keeps_stdout_clean() -> None:
     stdout = io.StringIO()
     stderr = io.StringIO()
-    ui = UiContext(stdout=stdout, stderr=stderr)
+    ui = UiContext(stdout=stdout)
 
-    with ui.progress("Resolving deps") as p:
+    with redirect_stderr(stderr), ui.progress("Resolving deps") as p:
         p.update("installing", new_phase=True)
 
     assert stdout.getvalue() == ""
@@ -260,9 +262,9 @@ def test_progress_reports_on_stderr_and_keeps_stdout_clean() -> None:
 
 def test_progress_verbose_context_passes_through_without_animation() -> None:
     stderr = io.StringIO()
-    ui = UiContext(stdout=io.StringIO(), stderr=stderr, verbose=True)
+    ui = UiContext(stdout=io.StringIO(), verbose=True)
 
-    with ui.progress("Resolving deps") as p:
+    with redirect_stderr(stderr), ui.progress("Resolving deps") as p:
         p.update("downloading")
 
     output = stderr.getvalue()
@@ -287,7 +289,8 @@ def test_empty_hint_goes_to_stderr_only_for_an_empty_table(
     rows: list[dict[str, str]], fmt: str, empty: str | None, rendered: str | None, hint: str
 ) -> None:
     stdout, stderr = io.StringIO(), io.StringIO()
-    out = UiContext(stdout=stdout, stderr=stderr).collection(rows, fmt=fmt, empty=empty)  # type: ignore[arg-type]
+    with redirect_stderr(stderr):
+        out = UiContext(stdout=stdout).collection(rows, fmt=fmt, empty=empty)  # type: ignore[arg-type]
     if rendered is not None:
         assert out == rendered
     assert stdout.getvalue() == ""
@@ -388,12 +391,14 @@ def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None
 )
 def test_quiet_suppresses_only_success_and_info(quiet: bool, level: str, shown: bool) -> None:
     buf = io.StringIO()
-    UiContext(quiet=quiet, stderr=buf).message(level, "the message")  # type: ignore[arg-type]
+    with redirect_stderr(buf):
+        UiContext(quiet=quiet).message(level, "the message")  # type: ignore[arg-type]
     assert ("the message" in buf.getvalue()) is shown
 
 
 def test_ui_context_factory_reads_quiet_flag(_isolated_config: Path) -> None:
-    from untaped.quiet import enable, reset
+    from untaped.output.policy import enable_quiet as enable
+    from untaped.output.policy import reset_quiet as reset
 
     try:
         enable()
@@ -444,7 +449,8 @@ def test_styled_writes_rich_text_to_stdout_with_color_only_on_a_tty() -> None:
 def test_styled_err_writes_to_stderr_and_ignores_quiet() -> None:
     stdout, stderr = io.StringIO(), io.StringIO()
 
-    UiContext(stdout=stdout, stderr=stderr, quiet=True).styled("PLAY [all]", err=True)
+    with redirect_stderr(stderr):
+        UiContext(stdout=stdout, quiet=True).styled("PLAY [all]", err=True)
 
     assert stdout.getvalue() == ""
     assert stderr.getvalue() == "PLAY [all]\n"

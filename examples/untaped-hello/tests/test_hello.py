@@ -59,3 +59,20 @@ def test_hello_moves_its_old_greetings_with_migrate_dirs() -> None:
     assert [r["action"] for r in json.loads(applied.stdout)] == ["moved"]
     moved = Path.home() / ".untaped" / "plugins" / "hello" / "greetings" / "fr.txt"
     assert moved.read_text(encoding="utf-8") == "bonjour"
+
+
+def test_hello_names_the_setting_while_the_greeting_is_the_default() -> None:
+    from untaped_hello.cli import DefaultGreeting
+
+    result = invoke_root(["hello", "greet"])
+    assert [type(each) for each in result.diagnostics] == [DefaultGreeting]
+    assert result.stderr.startswith("hint: this is the default greeting\n")
+
+    assert invoke_root(["config", "set", "hello.greeting", "hi"]).exit_code == 0
+    assert invoke_root(["hello", "greet"]).diagnostics == ()
+
+
+def test_hello_s_own_kind_has_a_schema() -> None:
+    result = invoke_root(["plugin", "schema", "hello.default_greeting"])
+    assert result.exit_code == 0, result.stderr
+    assert "setting" in json.loads(result.stdout)["properties"]
