@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from cyclopts import App
 from pydantic import BaseModel
@@ -88,16 +90,24 @@ def test_a_broken_provides_function_quarantines_that_offer_only() -> None:
     assert _reasons() == {"dup": "duplicate-kind", "library": "bad-provider"}
 
 
-def test_a_quarantined_ranked_provider_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_quarantined_ranked_provider_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    error = RuntimeError("boom")
+
     def broken() -> tuple[Contract, ...]:
-        raise RuntimeError("boom")
+        raise error
 
     compose(shelf_spec(), PluginSpec(name="library", provides={"shelf": broken}), shop_spec())
     monkeypatch.setattr("untaped.contracts._gather.ranking", lambda *_: ("library",))
+    caplog.set_level(logging.DEBUG, logger="untaped")
     library = gather(BookSource.books)()[0]
     assert isinstance(library, Failed)
     assert library.reason == "bad-provider"
     assert library.error.exit_code == ExitCode.ENVIRONMENT
+    assert "of library raised RuntimeError: boom" in str(library.error)
+    logged = [r for r in caplog.records if r.name == "untaped.contracts"]
+    assert [r.exc_info[1] for r in logged if r.exc_info] == [error]
 
 
 class _NoBridge(BookSource[Volume]):
@@ -229,17 +239,26 @@ def test_a_skipped_answer_names_why() -> None:
     assert "catalog" in library.detail
 
 
-def test_an_owner_whose_contracts_break_takes_only_its_own_contracts_down() -> None:
+def test_an_owner_whose_contracts_break_takes_only_its_own_contracts_down(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    error = ImportError("acme api broke")
+
     def broken() -> tuple[type[Contract], ...]:
-        raise ImportError("acme api broke")
+        raise error
 
     acme = PluginSpec(name="acme", contracts=broken)
     odd = PluginSpec(name="odd", contracts=lambda: (Book,))  # type: ignore[arg-type, return-value]
     compose(shelf_spec(), acme, odd, shop_spec())
+    caplog.set_level(logging.DEBUG, logger="untaped")
     [shop] = gather(BookSource.books)()
     assert isinstance(shop, Ok)
     rows = {(row.plugin, row.title): row.detail for row in doctor_rows()}
-    assert rows[("acme", "bad-contracts")] == "contracts couldn't be read: acme api broke"
+    assert rows[("acme", "bad-contracts")] == (
+        "contracts couldn't be read: ImportError: acme api broke"
+    )
+    logged = [r for r in caplog.records if r.name == "untaped.contracts" and r.exc_info]
+    assert error in [r.exc_info[1] for r in logged if r.exc_info]
     assert ("odd", "bad-contracts") in rows
 
     class Gadgets(Contract):
