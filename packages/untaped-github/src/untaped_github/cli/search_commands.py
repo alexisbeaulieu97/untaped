@@ -8,12 +8,13 @@ the use cases own the orchestration.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 
 from cyclopts import Parameter, validators
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     FormatOption,
     StdinOption,
     create_app,
@@ -33,8 +34,7 @@ from untaped_github.cli.scopes import (
     parse_team_scopes,
 )
 
-if TYPE_CHECKING:
-    from untaped.sdk import UiContext
+_diag = Diagnostics()
 
 # Shared across all four search subcommands. GitHub-specific (the
 # 1000-result cap belongs to GitHub, not untaped), so it lives
@@ -96,11 +96,10 @@ def _probe(limit: int) -> int:
     return limit + 1
 
 
-def _cap[T](rows: list[T], limit: int, ui: UiContext) -> list[T]:
+def _cap[T](rows: list[T], limit: int) -> list[T]:
     """Keep ``limit`` rows; note on stderr when the probe row shows more match."""
     if len(rows) > limit:
-        ui.message(
-            "info",
+        _diag.info(
             f"showing the first {plural(limit, 'result')}; more match, raise --limit to see them",
         )
     return rows[:limit]
@@ -159,17 +158,17 @@ def repos_command(
             sort=sort,
             limit=_probe(limit),
         )
-        with open_client() as (client, ui):
+        with open_client() as (client, _):
             use_case = SearchRepos(
                 client,
                 client,
-                warn=lambda text: ui.message("warning", text),
-                note=lambda text: ui.message("info", text),
+                warn=_diag.warning,
+                note=_diag.info,
             )
             team_scopes = parse_team_scopes(team, orgs=orgs)
-            with ui.progress("Searching repositories…"):
+            with _diag.progress("Searching repositories"):
                 rows = list(use_case(filters, team_scopes=team_scopes))
-            rows = _cap(rows, limit, ui)
+            rows = _cap(rows, limit)
         emit(
             rows,
             fmt=fmt,
@@ -230,17 +229,17 @@ def code_command(
             extension=extension,
             limit=_probe(limit),
         )
-        with open_client() as (client, ui):
+        with open_client() as (client, _):
             use_case = SearchCode(
                 client,
                 client,
-                warn=lambda text: ui.message("warning", text),
-                note=lambda text: ui.message("info", text),
+                warn=_diag.warning,
+                note=_diag.info,
             )
             team_scopes = parse_team_scopes(team, orgs=orgs)
-            with ui.progress("Searching code…"):
+            with _diag.progress("Searching code"):
                 rows = list(use_case(filters, team_scopes=team_scopes))
-            rows = _cap(rows, limit, ui)
+            rows = _cap(rows, limit)
         emit(
             rows,
             fmt=fmt,
@@ -312,17 +311,17 @@ def issues_command(
             sort=sort,
             limit=_probe(limit),
         )
-        with open_client() as (client, ui):
+        with open_client() as (client, _):
             use_case = SearchIssues(
                 client,
                 client,
-                warn=lambda text: ui.message("warning", text),
-                note=lambda text: ui.message("info", text),
+                warn=_diag.warning,
+                note=_diag.info,
             )
             team_scopes = parse_team_scopes(team, orgs=orgs)
-            with ui.progress("Searching issues and pull requests…"):
+            with _diag.progress("Searching issues and pull requests"):
                 rows = list(use_case(filters, team_scopes=team_scopes))
-            rows = _cap(rows, limit, ui)
+            rows = _cap(rows, limit)
         emit(
             rows,
             fmt=fmt,
@@ -367,9 +366,9 @@ def users_command(
             sort=sort,
             limit=_probe(limit),
         )
-        with open_client() as (client, ui), ui.progress("Searching users…"):
+        with open_client() as (client, _), _diag.progress("Searching users"):
             rows = list(SearchUsers(client)(filters))
-        rows = _cap(rows, limit, ui)
+        rows = _cap(rows, limit)
         emit(
             rows,
             fmt=fmt,

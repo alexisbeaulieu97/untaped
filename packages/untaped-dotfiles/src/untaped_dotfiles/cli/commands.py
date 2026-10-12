@@ -10,6 +10,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     DryRunOption,
     FormatOption,
     OutputFormat,
@@ -20,13 +21,11 @@ from untaped.sdk import (
     echo,
     emit,
     finish,
-    hint,
     plural,
     q,
     render_rows,
-    report_error,
     report_errors,
-    report_row_errors,
+    run_hint,
     ui_context,
     unified_diff_text,
     writes,
@@ -70,6 +69,8 @@ STATUS_SUMMARY = "dotfiles.status.summary"
 APPLY_OUTCOME = "dotfiles.apply_outcome"
 SYNC_OUTCOME = "dotfiles.sync_outcome"
 REMOVE_OUTCOME = "dotfiles.remove_outcome"
+
+_diag = Diagnostics()
 
 PolicyOption = Annotated[
     Policy | None,
@@ -120,10 +121,8 @@ def subscribe_command(
         record = subscribe(source, name=name, manifest=manifest, ref=ref)
         rows = svc.catalog.rows(record.name)
         emit(rows, fmt=fmt, columns=columns, kind=ITEM, empty="No items in the manifest.")
-        ui_context(strict=False).success(
-            f"subscribed {q(record.name)} ({plural(len(rows), 'item')})"
-        )
-        echo(hint("dotfiles enable ITEM"), err=True)
+        _diag.success(f"subscribed {q(record.name)} ({plural(len(rows), 'item')})")
+        _diag.hint(run_hint("dotfiles enable ITEM"))
 
 
 @writes(destructive=True)
@@ -158,15 +157,14 @@ def unsubscribe_command(
                 kind=REPO_OUTCOME,
             )
             return
-        ui = ui_context(strict=False)
-        ui.confirm_or_cancel(
+        ui_context(strict=False).confirm_or_cancel(
             f"{what.capitalize()}?",
             assume_yes=yes,
             refusal="unsubscribe requires --yes when not interactive",
         )
         row = unsubscribe(record, delete_clone=delete_clone)
         emit([row], fmt=fmt, columns=columns, kind=REPO_OUTCOME)
-        ui.success(f"unsubscribed {q(name)}")
+        _diag.success(f"unsubscribed {q(name)}")
 
 
 def repos_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
@@ -242,8 +240,8 @@ def enable_command(
             for row in rows
         ]
         emit(outcomes, fmt=fmt, columns=columns, kind=ITEM_OUTCOME)
-        ui_context(strict=False).success(f"enabled {plural(len(rows), 'item')}")
-        echo(hint("dotfiles apply"), err=True)
+        _diag.success(f"enabled {plural(len(rows), 'item')}")
+        _diag.hint(run_hint("dotfiles apply"))
 
 
 @writes
@@ -321,7 +319,9 @@ def status_command(
             emit(summary, fmt=fmt, columns=columns, kind=STATUS_SUMMARY)
         else:
             emit(rows, fmt=fmt, columns=columns, kind=STATUS, empty="No enabled items.")
-        report_row_errors(rows, item=lambda row: f"{row.item}/{row.source}")
+        for row in rows:
+            if row.error is not None:
+                _diag.failure(row.error, item=f"{row.item}/{row.source}")
         failed = bool(resolved.problems) or any(row.error is not None for row in rows)
     finish(failed, predicate_hit=check and summary.attention > 0)
 
@@ -354,7 +354,7 @@ def _diffs(svc: Services, placements: Sequence[Placement]) -> tuple[list[str], b
             continue
         found = svc.evaluator.evaluate(p)
         if found.error is not None:
-            report_error(found.error, item=f"{p.item}/{p.source}")
+            _diag.failure(found.error, item=f"{p.item}/{p.source}")
             failed = True
             continue
         if found.state not in ("pending", "foreign", "behind", "modified", "conflict"):
@@ -414,8 +414,9 @@ def apply_command(
             placements = resolved.placements
             pulled = _pull_repos(svc, placements)
             moved = _moving_with(svc, pulled, placements) if pulled else []
-            if any(row.error is not None for row in pulled.values()):
-                report_row_errors(list(pulled.values()), item=lambda row: row.name)
+            for pull in pulled.values():
+                if pull.error is not None:
+                    _diag.failure(pull.error, item=pull.name)
             steps = svc.applier.plan_apply(placements, force=force)
             planned = svc.applier.planned(steps) + moved
             if dry_run:
@@ -436,7 +437,9 @@ def apply_command(
             rows = svc.applier.execute(steps) + moved
             _refresh_status(svc)
         emit(rows, fmt=fmt, columns=columns, kind=APPLY_OUTCOME, empty="Nothing to apply.")
-        report_row_errors(rows, item=lambda row: f"{row.item}/{row.source}")
+        for row in rows:
+            if row.error is not None:
+                _diag.failure(row.error, item=f"{row.item}/{row.source}")
         failed = bool(resolved.problems) or any(
             row.action in ("failed", "conflict") for row in rows
         )
@@ -484,8 +487,12 @@ def sync_command(
                 attention = summary.attention
         emit(rows, fmt=fmt, columns=columns, kind=SYNC_OUTCOME, empty="Nothing enabled.")
         _note_repos(list(repo_rows.values()))
-        report_row_errors(list(repo_rows.values()), item=lambda row: row.name)
-        report_row_errors(rows, item=lambda row: f"{row.item}/{row.source}")
+        for repo_row in repo_rows.values():
+            if repo_row.error is not None:
+                _diag.failure(repo_row.error, item=repo_row.name)
+        for row in rows:
+            if row.error is not None:
+                _diag.failure(row.error, item=f"{row.item}/{row.source}")
         failed = (
             bool(resolved.problems)
             or any(row.action == "failed" for row in rows)
@@ -541,7 +548,9 @@ def remove_command(
                 svc.store.remove_item(choice.repo, choice.name)
             _refresh_status(svc)
         emit(rows, fmt=fmt, columns=columns, kind=REMOVE_OUTCOME, empty="Nothing to remove.")
-        report_row_errors(rows, item=lambda row: f"{row.item}/{row.source}")
+        for row in rows:
+            if row.error is not None:
+                _diag.failure(row.error, item=f"{row.item}/{row.source}")
         failed = bool(resolved.problems) or any(row.action == "failed" for row in rows)
     finish(failed)
 
@@ -558,7 +567,7 @@ def _refresh_status(svc: Services) -> None:
 
 def _report_problems(problems: Sequence[tuple[str, UntapedError]]) -> None:
     for item, exc in problems:
-        report_error(exc, item=item)
+        _diag.failure(exc, item=item)
 
 
 def _pull_repos(svc: Services, placements: Sequence[Placement]) -> dict[str, RepoOutcome]:
@@ -625,13 +634,13 @@ def _confirm(
     message: str,
     yes: bool,
 ) -> None:
-    ui = ui_context(strict=False)
-
     def preview() -> None:
         rows = [row.model_dump(mode="json") for row in planned]
-        echo(render_rows(rows, fmt=fmt, table_columns=PlaceOutcome.table_columns), err=True)
+        _diag.info(
+            render_rows(rows, fmt=fmt, table_columns=PlaceOutcome.table_columns), unmuted=True
+        )
 
-    ui.confirm_or_cancel(
+    ui_context(strict=False).confirm_or_cancel(
         message,
         assume_yes=yes,
         refusal=f"{verb} requires --yes when not interactive",
@@ -640,10 +649,9 @@ def _confirm(
 
 
 def _note_repos(rows: Sequence[RepoOutcome]) -> None:
-    ui = ui_context(strict=False)
     for row in rows:
         if row.action == "skipped":
-            ui.message("warning", f"{row.name}: {row.detail}")
+            _diag.warning(f"{row.name}: {row.detail}")
 
 
 def _planned_attention(steps: Sequence[Step]) -> int:
