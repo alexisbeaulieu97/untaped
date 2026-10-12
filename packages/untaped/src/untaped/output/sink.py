@@ -394,7 +394,7 @@ class _ScopeSink:
         level = _level(diagnostic)
         if isinstance(diagnostic, Debug) and not policy.verbose:
             return
-        if policy.quiet and not unmuted and level in ("info", "success"):
+        if policy.quiet and not unmuted and level in ("info", "success", "progress"):
             return
         if self._recorder is not None:  # what was shown, as the stderr tee shows it
             self._recorder.append(diagnostic)

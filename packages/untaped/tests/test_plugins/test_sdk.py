@@ -44,6 +44,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "OutcomeRecord",
         "OutputFormat",
         "PipeEnvelope",
+        "Progress",
         "Record",
         "Source",
         "StaleData",
