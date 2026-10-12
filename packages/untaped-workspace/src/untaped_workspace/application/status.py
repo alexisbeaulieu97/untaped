@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, UntapedError, bounded_map
+from untaped.sdk import NO_PROGRESS, Failure, ProgressHandle, UntapedError, bounded_map
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.records import StatusRow
 from untaped_workspace.domain.safety import NOT_STORED, UNREADABLE, archive_blockers
@@ -32,13 +32,25 @@ class WorkspaceStatus:
         self._workspaces_dir = workspaces_dir
         self._parallel = max(1, parallel)
 
-    def __call__(self, record: WorkspaceRecord, *, fetch: bool = False) -> list[StatusRow]:
+    def __call__(
+        self,
+        record: WorkspaceRecord,
+        *,
+        fetch: bool = False,
+        progress: ProgressHandle = NO_PROGRESS,
+    ) -> list[StatusRow]:
+        """The rows of ``record``; with ``fetch``, ``progress`` hears the repos fetched.
+
+        A workspace of one repo passes ``progress`` on to its fetch, whose
+        phases are then the line; with more, the count of repos is.
+        """
         root = workspace_root(self._workspaces_dir, record.name)
         rows: dict[int, StatusRow] = {}
+        inner = progress if len(record.repos) == 1 else NO_PROGRESS
 
         def _one(item: tuple[int, RepoSpec]) -> StatusRow:
             spec = item[1]
-            outcome = self._fetch(spec.url, root / spec.dir) if fetch else None
+            outcome = self._fetch(spec.url, root / spec.dir, inner) if fetch else None
             row = self._row(record.name, root, spec)
             if isinstance(outcome, Failure) and row.error is None:
                 row = row.model_copy(
@@ -53,16 +65,18 @@ class WorkspaceStatus:
 
         def _collect(item: tuple[int, RepoSpec], row: StatusRow) -> None:
             rows[item[0]] = row
+            if fetch:
+                progress.update(phase=record.name, done=len(rows), total=len(record.repos))
 
         bounded_map(
             _one, list(enumerate(record.repos)), concurrency=self._parallel, on_each=_collect
         )
         return [rows[i] for i in sorted(rows)]
 
-    def _fetch(self, url: str, dest: Path) -> Failure | str | None:
+    def _fetch(self, url: str, dest: Path, progress: ProgressHandle) -> Failure | str | None:
         """Why the fetch failed, else why its history backfill stopped, else ``None``."""
         try:
-            return self._git.fetch(url, dest)
+            return self._git.fetch(url, dest, progress=progress)
         except UntapedError as exc:
             return Failure.from_exception(exc, message=str(exc))
 

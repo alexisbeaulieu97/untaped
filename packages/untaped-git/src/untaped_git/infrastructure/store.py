@@ -42,9 +42,11 @@ from pathlib import Path
 from typing import Self
 
 from untaped.sdk import (
+    NO_PROGRESS,
     ErrorCategory,
     GitCommandError,
     GitResult,
+    ProgressHandle,
     UntapedError,
     attribution,
     run_git,
@@ -395,6 +397,7 @@ class RepoStore:
         branches: Sequence[str] = (),
         tags: Sequence[str] = (),
         prune: bool = False,
+        progress: ProgressHandle = NO_PROGRESS,
     ) -> RefDelta:
         """Fetch ``branches`` and ``tags`` (names or one-``*`` globs) into this plugin's refs.
 
@@ -406,6 +409,8 @@ class RepoStore:
         (never workspace's tags, never ``refs/remotes/origin/HEAD``). A call
         with no names does nothing, ``prune`` included: dropping a whole
         namespace is ``delete_refs``' job. Returns what changed in the namespace.
+        ``progress`` hears ``listing refs``, then ``fetching refs`` with the
+        refs fetched so far.
         """
         reason = check_names([*branches, *tags])
         if reason is not None:
@@ -417,9 +422,12 @@ class RepoStore:
             self._remove_stale_leftovers()
             before = self._namespace()
             if all(is_glob(name) for name in (*branches, *tags)):
+                progress.update(phase="fetching refs")  # one git call: no counts
                 stderr = self._fetch_globs(branches, tags, prune=prune)
             else:
-                stderr = self._fetch_listed(branches, tags, prune=prune, before=before)
+                stderr = self._fetch_listed(
+                    branches, tags, prune=prune, before=before, progress=progress
+                )
             if self._plain:
                 self._write_origin_head(branches, tags)
             after = self._namespace()
@@ -457,8 +465,10 @@ class RepoStore:
         *,
         prune: bool,
         before: Mapping[str, str],
+        progress: ProgressHandle,
     ) -> str:
         layout = self._layout
+        progress.update(phase="listing refs")
         remote = self._list_remote(heads=bool(branches), tags=bool(tags))
         wanted = [
             ref
@@ -466,6 +476,7 @@ class RepoStore:
             if covered(ref, branches, tags) and before.get(ref) != oid
         ]
         stderr: list[str] = []
+        progress.update(phase="fetching refs", done=0, total=len(wanted))
         for start in range(0, len(wanted), DEFAULT_FETCH_BATCH_SIZE):
             batch = wanted[start : start + DEFAULT_FETCH_BATCH_SIZE]
             specs = []
@@ -473,6 +484,7 @@ class RepoStore:
                 kind, _, name = ref.partition("/")
                 specs.extend(layout.refspecs(kind, [name]))
             stderr.append(self._fetch_refspecs(specs, prune=False))
+            progress.update(phase="fetching refs", done=start + len(batch), total=len(wanted))
         if prune:
             self._delete(
                 layout.absolute(ref)
@@ -569,14 +581,17 @@ class RepoStore:
         trees: Sequence[str] = (),
         paths: Sequence[str] = (),
         history: Sequence[str] = (),
+        progress: ProgressHandle = NO_PROGRESS,
     ) -> None:
         """Fetch, in one round trip per batch, every blob the reads will need.
 
         ``trees`` are peeled (``<x>^{tree}``: a commit lists its own tree's
         blobs only); ``history`` walks every commit the revisions reach (a
         ``*`` names a ref glob, ``a..b`` a range). ``paths`` limits both. When
-        nothing is missing no network call is made. A blob still missing
-        afterwards, or a host refusing the fetch, is ``unavailable`` (exit 5).
+        nothing is missing no network call is made and ``progress`` hears
+        nothing; otherwise it hears ``fetching blobs`` with the blobs fetched
+        so far. A blob still missing afterwards, or a host refusing the
+        fetch, is ``unavailable`` (exit 5).
         """
         revisions = [f"{tree}^{{tree}}" for tree in trees]
         for item in history:
@@ -590,8 +605,11 @@ class RepoStore:
             missing = self._missing(revisions, paths)
             if not missing:
                 return
+            progress.update(phase="fetching blobs", done=0, total=len(missing))
             for start in range(0, len(missing), PREFETCH_BATCH_SIZE):
-                self._prefetch_batch(missing[start : start + PREFETCH_BATCH_SIZE])
+                batch = missing[start : start + PREFETCH_BATCH_SIZE]
+                self._prefetch_batch(batch)
+                progress.update(phase="fetching blobs", done=start + len(batch), total=len(missing))
             left = self._missing(revisions, paths)
             if left:
                 host = url_host(self._url) or self._url
@@ -604,9 +622,15 @@ class RepoStore:
                 )
             self._maintain()
 
-    def prefetched(self, *, trees: Sequence[str], paths: Sequence[str] = ()) -> Prefetched:
+    def prefetched(
+        self,
+        *,
+        trees: Sequence[str],
+        paths: Sequence[str] = (),
+        progress: ProgressHandle = NO_PROGRESS,
+    ) -> Prefetched:
         """Prefetch ``trees`` (peeled) limited to ``paths``, then a handle that reads them."""
-        self.prefetch(trees=trees, paths=paths)
+        self.prefetch(trees=trees, paths=paths, progress=progress)
         return Prefetched(self, tuple(trees), tuple(paths))
 
     def _prefetch_batch(self, oids: Sequence[str]) -> None:

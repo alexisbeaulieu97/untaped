@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Protocol
 
+from untaped.sdk import NO_PROGRESS
+
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from untaped.sdk import ProgressHandle
     from untaped_github.domain import (
         CorpusFreshness,
         CorpusRepoResult,
@@ -79,7 +82,13 @@ class GitCorpus(Protocol):
     each repo is and how it is fetched, so no call takes a root or a depth.
     """
 
-    def sync_repo(self, repo: CorpusRepoTarget, *, selector: RefSelector) -> CorpusRepoResult: ...
+    def sync_repo(
+        self,
+        repo: CorpusRepoTarget,
+        *,
+        selector: RefSelector,
+        progress: ProgressHandle = NO_PROGRESS,
+    ) -> CorpusRepoResult: ...
 
     def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None: ...
 
