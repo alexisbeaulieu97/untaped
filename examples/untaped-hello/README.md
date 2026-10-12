@@ -1,7 +1,7 @@
 # untaped-hello
 
 A minimal, tested plugin for [untaped](https://github.com/alexisbeaulieu97/untaped):
-one command (`untaped hello greet`), one setting (`hello.greeting`), one
+a command (`untaped hello greet`) and its setting (`hello.greeting`), one
 packaged skill and one `untaped setup migrate-dirs` row (moving an older
 version's directory into the plugin's own). `untaped hello motd` serves a
 file through a cache (`MOTD` in `settings.py`, listed on the spec, so

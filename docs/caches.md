@@ -27,8 +27,7 @@ def motd(*, refresh: Annotated[bool | None, refresh_option(MOTD)] = None) -> Non
 List each cache on your spec, `PluginSpec(..., caches=(MOTD,))`: that
 gives it the setting `acme.caches.motd.max_age_seconds`, defaulting to the
 declared `max_age` (in whole seconds; `0` checks every time), listed with your
-other settings in `config list` and the config reference, and read by
-`serve()` on every call. A cache left off the spec always uses its declared
+other settings in `config list`, and read by `serve()` on every call. A cache left off the spec always uses its declared
 default. Composition quarantines a plugin that lists another plugin's cache
 (`foreign-cache`) or the same name twice (`duplicate-cache`).
 
@@ -72,7 +71,7 @@ own declarations never point at the generated setting. Composition
 quarantines an old key the model still has as a setting, or that two caches
 or your own declarations also name (`bad-settings-keys`).
 
-Two rules keep every cache alike. Declare the directive as
+Two more rules keep every cache alike. Declare the directive as
 `Annotated[bool | None, refresh_option(CACHE)] = None`, never a hand-made
 `--refresh` or `--cached`: its help names the cache's setting and default
 (`tests/repo/test_refresh_option.py` checks first-party code). And never

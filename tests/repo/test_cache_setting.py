@@ -3,8 +3,8 @@
 Declaring a ``Cache`` on ``PluginSpec.caches`` gives it
 ``<plugin>.caches.<cache>.max_age_seconds``, documented, typed and named the
 same way for every plugin, and the ``--refresh`` help names it. A settings
-field whose name says ``max_age`` or ``stale`` is a hand-made one and fails
-here. The exemptions are fields that are not a cache's max age, or not on a
+field whose name says ``max_age``, ``stale``, ``ttl`` or ``expir`` is a
+hand-made one and fails here. The exemptions are fields that are not a cache's max age, or not on a
 ``Cache`` yet (each names the PR that moves it);
 :func:`test_the_exemptions_are_still_needed` fails once one is gone.
 """
@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from untaped.config_schema import unwrap_optional
 from untaped.plugins.registry import PluginSpec
 
-WORDS = ("max_age", "stale")
+WORDS = ("max_age", "stale", "ttl", "expir")
 #: ``(plugin, field path)`` → why it stays.
 EXEMPT = {
     ("recipe", "backup_max_age_days"): "a retention policy for backups, not a cache",
@@ -69,6 +69,7 @@ class _Window(BaseModel):
 
 class _Bad(BaseModel):
     stale_after_seconds: int = 60
+    cache_ttl_seconds: int = 60
     window: _Window | None = Field(default_factory=_Window)
 
 
@@ -78,5 +79,9 @@ class _Good(BaseModel):
 
 
 def test_the_finder_flags_max_age_names_only() -> None:
-    assert list(hand_made(_Bad)) == ["stale_after_seconds", "window.max_age_minutes"]
+    assert list(hand_made(_Bad)) == [
+        "stale_after_seconds",
+        "cache_ttl_seconds",
+        "window.max_age_minutes",
+    ]
     assert list(hand_made(_Good)) == []

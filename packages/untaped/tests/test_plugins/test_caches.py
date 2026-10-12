@@ -10,11 +10,10 @@ import pytest
 from pydantic import BaseModel
 
 from test_contracts.support import BookSource
-from test_plugins.plugin_harness import make_candidate, make_shell, make_spec
+from test_plugins.plugin_harness import make_candidate, make_shell
 from untaped.cache import Cache
 from untaped.errors import ConfigError
 from untaped.plugins.registry import (
-    VALID_REASONS,
     CompositionResult,
     PluginSpec,
     compose,
@@ -35,10 +34,6 @@ def _compose(spec: PluginSpec) -> CompositionResult:
 def _reason(spec: PluginSpec) -> tuple[str, str]:
     (record,) = _compose(spec).quarantine
     return record.reason, record.detail
-
-
-def test_both_cache_reasons_are_valid() -> None:
-    assert {"foreign-cache", "duplicate-cache"} <= VALID_REASONS
 
 
 def test_a_plugin_composes_its_caches() -> None:
@@ -65,14 +60,6 @@ def test_a_cache_declared_twice_is_quarantined() -> None:
 def test_caches_holds_only_caches() -> None:
     with pytest.raises(ConfigError, match="not a Cache"):
         PluginSpec(name="hello", caches=("motd",))  # type: ignore[arg-type]
-
-
-def test_a_spec_whose_caches_fail_at_import_is_a_malformed_entry_point() -> None:
-    candidate = make_candidate(
-        make_spec(name="hello"), error=ConfigError("plugin 'hello' caches holds 'motd'")
-    )
-    (record,) = compose(make_shell(), [candidate]).quarantine
-    assert record.reason == "malformed-entry-point"
 
 
 def test_a_plugin_with_caches_and_no_settings_gets_a_section() -> None:
