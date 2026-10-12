@@ -34,6 +34,7 @@ from untaped.cli import (
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.messages import hint
 from untaped.output.sink import Diagnostics
+from untaped.testing import progress_clock
 from untaped.theme import BUILTIN_THEMES, ThemeSpec
 from untaped.ui import UiContext
 
@@ -107,14 +108,18 @@ def _debug_line() -> None:
 
 
 def _progress_lines() -> None:
-    with _ui().progress("Syncing repos") as handle:
+    with progress_clock() as clock, _ui().progress("Syncing repos") as handle:
         handle.update("acme/x", done=1, total=2)
+        clock.advance(2)
         Diagnostics().failure(UntapedError("it broke"), item="acme/x")
         handle.update("acme/y", done=2, total=2)
 
 
 def _progress_verbose() -> None:
-    with UiContext(theme=_COLOURED, verbose=True).progress("Syncing repos") as handle:
+    with (
+        progress_clock(),
+        UiContext(theme=_COLOURED, verbose=True).progress("Syncing repos") as handle,
+    ):
         handle.update("acme/x", done=1, total=2)
         Diagnostics().relay("a relayed line")
 

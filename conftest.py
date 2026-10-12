@@ -14,12 +14,20 @@ from packaging.utils import canonicalize_name
 from pydantic import BaseModel
 
 from untaped import bootstrap, cli
+from untaped.output.sink import open_tasks
 from untaped.plugins.registry import PluginCandidate, PluginSpec, discover_candidates
 from untaped.records import table_columns_of
 
 pytest_plugins = ["untaped.testing.plugin"]
 
 _REPO_ROOT = Path(__file__).resolve().parent
+
+
+@pytest.fixture(autouse=True)
+def _no_leaked_progress_task() -> Iterator[None]:
+    """Fail a test that leaves a progress task open: the next test's task would nest under it."""
+    yield
+    assert open_tasks() == 0, "a progress task was left open (a `progress()` block not exited)"
 
 
 def _first_party_distributions() -> frozenset[str]:

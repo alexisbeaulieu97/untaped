@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, progress_clock
 from untaped_awx.cli import app
 
 
@@ -217,8 +217,16 @@ def test_job_templates_list_rejects_command_local_profile_flag(
     assert aap_config.read_text() == original
 
 
-def test_list_reports_progress_on_stderr(catalog: Any) -> None:
-    result = _raw("job-templates", "list", *_DEPLOY)
+def test_list_reports_progress_on_stderr(catalog: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    real = catalog._json_body
+    with progress_clock() as clock:
+
+        def slow(request: Any) -> Any:
+            clock.advance(2)  # a slow server: every request passes the quiet period
+            return real(request)
+
+        monkeypatch.setattr(catalog, "_json_body", slow)
+        result = _raw("job-templates", "list", *_DEPLOY)
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "deploy"
     assert "Loading" in result.stderr
