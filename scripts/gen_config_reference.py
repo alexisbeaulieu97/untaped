@@ -30,6 +30,7 @@ from untaped.config_schema import walk_settings
 from untaped.theme import ROLE_NAMES, SYMBOL_NAMES
 
 if TYPE_CHECKING:
+    from untaped.plugins.registry import PluginSpec
     from untaped.stability import Stability
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -279,8 +280,9 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability 
         )
     for registered in result.plugins:
         spec = registered.spec
-        if spec.settings is not None:
-            sections.append((f"`{spec.name}`", spec.name, spec.settings, False, spec.stability))
+        settings = _with_caches(spec)
+        if settings is not None:
+            sections.append((f"`{spec.name}`", spec.name, settings, False, spec.stability))
         if spec.state is not None:
             sections.append(
                 (
@@ -292,6 +294,19 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability 
                 )
             )
     return sections
+
+
+class _NoSettings(BaseModel):
+    """The settings of a plugin that keeps caches and declares no settings of its own."""
+
+
+def _with_caches(spec: PluginSpec) -> type[BaseModel] | None:
+    """``spec``'s settings with its ``caches`` key and their renames; ``extensions`` stays out."""
+    from untaped.settings import section_model  # noqa: PLC0415
+
+    if not spec.caches:
+        return spec.settings
+    return section_model(spec.settings or _NoSettings, extensions=False, caches=spec.caches)
 
 
 def missing_descriptions() -> list[str]:

@@ -21,17 +21,20 @@ import re
 import shlex
 import tomllib
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 
 import gen_config_reference as generator
 import pytest
 import release
 from cyclopts import App
+from pydantic import BaseModel, Field
 
 from repo import quoted_commands
 from repo.support import FENCE, PACKAGES, REPO_ROOT, markdown_files
 from untaped._root_options import _root_options
 from untaped.bootstrap import build_root_app
+from untaped.cache import Cache
 from untaped.plugins import registry
 from untaped.plugins.registry import PluginCandidate, PluginSpec
 
@@ -128,6 +131,39 @@ def test_config_reference_refuses_a_quarantined_first_party_plugin(
     assert message.startswith("first-party plugins quarantined; fix them before generating")
     for name in ("awx", "jira"):
         assert f"{name!r} [malformed-entry-point]: could not resolve entry point" in message
+
+
+class _Motd(BaseModel):
+    greeting: str = Field(default="hi", description="What hello says.")
+
+
+_MOTD_CACHE = Cache(
+    "hello",
+    "motd",
+    label="the message of the day",
+    max_age=timedelta(hours=1),
+    renamed_from=("motd_seconds",),
+)
+
+
+@pytest.mark.parametrize("settings", [_Motd, None])
+def test_config_reference_lists_each_cache_setting_and_its_rename(
+    monkeypatch: pytest.MonkeyPatch, settings: type[BaseModel] | None
+) -> None:
+    spec = PluginSpec(name="hello", settings=settings, caches=(_MOTD_CACHE,), contracts=lambda: ())
+    candidate = PluginCandidate(distribution="untaped", name="hello", target=spec)
+    monkeypatch.setattr(registry, "discover_candidates", lambda: (candidate,))
+    page = generator.render()
+    assert (
+        "| `hello.caches.motd.max_age_seconds` | integer | `3600` | "
+        "`UNTAPED_HELLO__CACHES__MOTD__MAX_AGE_SECONDS` | Seconds the message of the day is "
+        "served before untaped checks upstream; 0 checks every time. |"
+    ) in page
+    assert (
+        "| `hello.motd_seconds` | `UNTAPED_HELLO__MOTD_SECONDS` | "
+        "`hello.caches.motd.max_age_seconds` | renamed |"
+    ) in page
+    assert "hello.extensions" not in page
 
 
 def _package_readmes() -> list[Path]:
