@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from untaped.errors import ErrorCategory, UntapedError
+from untaped.upstream import PROBE_TIMEOUT, capped, succeeded
 
 # Lowercased stderr fragments of transport failures that a later identical
 # fetch can plausibly survive (dropped TLS/TCP streams, proxy/5xx hiccups).
@@ -68,6 +69,8 @@ _REPO_REDIRECT_ENV = (
     "GIT_COMMON_DIR",
 )
 _BATCH_SSH_COMMAND = "ssh -o BatchMode=yes"
+# Subcommands that reach a remote: the ones the upstream budget caps (untaped.upstream).
+_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull"})
 _GIST_LIMIT = 300
 # Seconds a timed-out git gets, after SIGTERM, to remove its lock files.
 _TERM_GRACE_S = 2.0
@@ -347,10 +350,17 @@ def run_git(
     secret (a credential header): they go in a private include file, never
     argv or the environment, trace variables that could log them are dropped,
     and their values are redacted from stderr and the debug log. ``env`` adds
-    variables on top of the hardened environment.
+    variables on top of the hardened environment. While the upstream budget
+    is capped (:mod:`untaped.upstream`), a command that reaches a remote
+    (``clone``, ``fetch``, ``ls-remote``, ``pull``) runs once with its
+    ``timeout`` capped at ``PROBE_TIMEOUT``, and its success lifts a
+    ``fail_fast`` cap; a local command neither.
     """
     argv = list(args)
     label = f"git {argv[0]}" if argv else "git"
+    network = bool(argv) and argv[0] in _NETWORK_SUBCOMMANDS
+    if network and capped():
+        timeout, attempts = min(timeout, PROBE_TIMEOUT), 1
     git_path = shutil.which(git)
     if git_path is None:
         raise GitCommandError(f"`{git}` not found on PATH", category="config", system="local")
@@ -400,6 +410,8 @@ def run_git(
             )
             _log_run(argv, cwd, result.returncode, started, secrets)
             if result.returncode == 0:
+                if network:
+                    succeeded()
                 return result
             if retry_transient and attempt < attempts and is_transient_failure(result.stderr):
                 sleep(float(2 ** (attempt - 1)))
