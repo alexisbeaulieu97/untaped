@@ -34,7 +34,7 @@ from untaped_awx.settings import AwxSettings
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from untaped.sdk import UiContext
+    from untaped.sdk import Diagnostics, UiContext
 
 
 class AwxContext:
@@ -51,7 +51,7 @@ class AwxContext:
         self.fk = HttpFkResolver(
             self.repo,
             self.catalog,
-            warn=lambda msg: self.progress_ui().message("warning", msg),
+            warn=self._warn,
         )
         self.strategies = StaticStrategyResolver()
         # Set on Ctrl-C so polling workers stop instead of blocking the exit.
@@ -63,7 +63,7 @@ class AwxContext:
         self.default_organization = config.default_organization
 
     def _warn(self, message: str) -> None:
-        self.progress_ui().message("warning", message)
+        self.diag.warning(message)
 
     def pause(self, seconds: float) -> None:
         """Poll-interval sleep that ends early (raising) once :attr:`stop` is set."""
@@ -76,8 +76,13 @@ class AwxContext:
             return self.monitor
         return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout, warn=self._warn)
 
+    @property
+    def diag(self) -> Diagnostics:
+        """The stderr handle for messages, failures and progress."""
+        return self._context.diag
+
     def progress_ui(self) -> UiContext:
-        """Themed stderr UI; a bad ``ui.theme`` falls back instead of failing."""
+        """Themed UI for prompts and ``ui=`` callers; a bad ``ui.theme`` falls back."""
         return self._context.ui(strict=False)
 
     def close(self) -> None:

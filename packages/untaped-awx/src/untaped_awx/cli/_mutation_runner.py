@@ -12,11 +12,9 @@ from untaped.sdk import (
     OutputFormat,
     UsageError,
     clamp_parallel,
-    echo,
     emit,
     finish,
     plural,
-    report_error,
 )
 from untaped_awx.application.mutation_engine import BatchMutationEngine
 from untaped_awx.application.mutation_types import MutationPlan
@@ -135,18 +133,18 @@ def preview_and_execute(
     """Display redacted complete diffs, then execute exactly this prepared plan."""
     previews = [operation.preview for operation in plan.operations]
     if not previews:
-        echo("No matching resources; no changes.", err=True)
+        ctx.diag.info("No matching resources; no changes.")
     for outcome in previews:
-        echo(
+        ctx.diag.info(
             f"{outcome.kind}/{outcome.name} id={outcome.id} "
             f"scope={format_scope(outcome.scope)}: {outcome.action}",
-            err=True,
+            unmuted=True,
         )
         for change in outcome.changes:
-            echo(
+            ctx.diag.info(
                 f"  {change.field}: {format_value(change.before)} → {format_value(change.after)}"
                 + (f" ({change.note})" if change.note else ""),
-                err=True,
+                unmuted=True,
             )
     changed = sum(outcome.action != "unchanged" for outcome in previews)
     if not confirm_batch(
@@ -165,9 +163,9 @@ def _report_outcomes(ctx: AwxContext, outcomes: list[ApplyOutcome]) -> None:
     for outcome in outcomes:
         label = f"{outcome.kind}/{outcome.name}"
         if outcome.error is not None:
-            report_error(outcome.error, item=label)
+            ctx.diag.failure(outcome.error, item=label)
         elif outcome.detail and outcome.action in UNFINISHED_ACTIONS:
-            ctx.progress_ui().message("warning", f"{label}: {outcome.detail}")
+            ctx.diag.warning(f"{label}: {outcome.detail}")
 
 
 def run_mutation_plan(

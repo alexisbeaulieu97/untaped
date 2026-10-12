@@ -804,6 +804,34 @@ def test_show_logs_prints_failed_tasks_under_their_case(
     ]
 
 
+def test_show_logs_prints_the_failure_under_quiet(fake_aap: FakeAap, tmp_path: Path) -> None:
+    """--show-logs asks for the failure and its log, so -q keeps them and mutes the summary."""
+    _failing_job(fake_aap, {"event": "runner_on_failed", "event_data": {"res": {"msg": "no"}}})
+
+    result = invoke_root(["-q", "awx", "test", "run", str(_smoke(tmp_path)), "--show-logs"])
+
+    assert result.exit_code == 1, result.output
+    lines = result.stderr.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("--- s/c job "))
+    assert lines[start + 1 : start + 4] == [
+        "--- last 1 log line",
+        "failed: [web1] Migrate: no",
+        "boom",
+    ]
+    assert "1 case:" not in result.stderr
+
+
+def test_run_quiet_prints_no_summary(fake_aap: FakeAap, tmp_path: Path) -> None:
+    _seed_jt(fake_aap)
+
+    result = invoke_root(["-q", "awx", "test", "run", str(_smoke(tmp_path)), "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert row["result"] == "pass"
+    assert "1 case: 1 pass" not in result.stderr
+
+
 def _dependency_failed(fake: FakeAap, kind: str, update_id: int) -> None:
     """The next job ends in error because the named update failed first."""
     _seed_jt(fake)

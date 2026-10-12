@@ -313,7 +313,7 @@ def jobs_list(
         if field is None:
             raise_usage(f"--template does not apply to {kind} executions")
         filters[field if template.isdigit() else f"{field}__name"] = template
-    with report_errors(), open_context() as ctx, ctx.progress_ui().progress("Loading jobs…"):
+    with report_errors(), open_context() as ctx, ctx.diag.progress("Loading jobs"):
         records = list(ctx.jobs.list(kind=kind, params=filters, limit=limit or None))
     rendered = render_rows(
         records,
@@ -410,7 +410,7 @@ def jobs_events(
             record = ctx.jobs.get(kind=job_kind, job_id=job_id)
             job = Job.model_validate({**record, "kind": job_kind})
             if show_breadcrumb:
-                echo(f"[{job_id}]", err=True)
+                ctx.diag.info(f"[{job_id}]", unmuted=True)
             events = ctx.monitor.stream_events(
                 job, from_counter=from_counter, params=filters, follow=follow
             )
@@ -632,7 +632,7 @@ def jobs_logs(
             record = ctx.jobs.get(kind=job_kind, job_id=job_id)
             job = Job.model_validate({**record, "kind": job_kind})
             if show_breadcrumb:
-                echo(f"[{job_id}]", err=True)
+                ctx.diag.info(f"[{job_id}]", unmuted=True)
             lines = TailJobLogs(ctx.monitor)(
                 job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
             )
@@ -688,9 +688,7 @@ def jobs_wait(
     if records:
         emit(records, fmt=fmt, columns=columns, table_columns=_JOB_WAIT_COLUMNS, kind="awx.job")
     for job_id in timed_out:
-        ctx.progress_ui().message(
-            "warning", f"job {job_id}: timed out before reaching a terminal state"
-        )
+        ctx.diag.warning(f"job {job_id}: timed out before reaching a terminal state")
     finish(any_failed or bool(timed_out) or any(r["status"] != "successful" for r in records))
 
 

@@ -7,10 +7,8 @@ from cyclopts import App
 from untaped.sdk import (
     ColumnsOption,
     FormatOption,
-    echo,
     emit,
     finish,
-    report_error,
     report_errors,
     writes,
 )
@@ -69,10 +67,10 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                     for item in selected
                 ]
                 for item in selected:
-                    echo(
+                    ctx.diag.info(
                         f"Delete {item.kind}/{item.name} id={item.id} "
                         f"scope={format_scope(item.scope)}",
-                        err=True,
+                        unmuted=True,
                     )
                 failed = False
                 if confirm_batch(ctx, count=len(selected), verb="delete", yes=yes, dry_run=dry_run):
@@ -105,9 +103,9 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         row.update(outcome.row_error())
                         label = f"{outcome.target.kind}#{outcome.target.id}"
                         if outcome.error_info is not None:
-                            report_error(outcome.error_info, item=label)
+                            ctx.diag.failure(outcome.error_info, item=label)
                         elif outcome.detail:
-                            ctx.progress_ui().message("warning", f"{label}: {outcome.detail}")
+                            ctx.diag.warning(f"{label}: {outcome.detail}")
                     failed = any(outcome.action != "completed" for outcome in outcomes)
                 emit(
                     rows,
