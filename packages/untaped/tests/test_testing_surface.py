@@ -7,6 +7,7 @@ import importlib
 import pytest
 
 EXPECTED_ALL = [
+    "CacheClock",
     "CliInvoker",
     "CliResult",
     "ProgressClock",
@@ -18,6 +19,7 @@ EXPECTED_ALL = [
     "assert_contract_schemas",
     "assert_destructive_contract",
     "assert_fills",
+    "cache_clock",
     "check_conventions",
     "compose_with",
     "drive_screen",

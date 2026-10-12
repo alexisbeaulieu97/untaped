@@ -65,6 +65,7 @@ from pydantic import BaseModel
 
 from untaped.errors import ErrorCategory, ExitCode, UntapedError, combine_exit_codes
 from untaped.output.diagnostic import (
+    NOT_COUNTED,
     Debug,
     Diagnostic,
     Failure,
@@ -886,16 +887,19 @@ def count_row_failures(rows: Iterable[object]) -> None:
 
     A model row counts every top-level field holding a
     :class:`~untaped.output.diagnostic.Failure` (its ``error``, or a suite's
-    ``failure``); a mapping row counts its ``error`` mapping by its
-    ``exit_code`` or ``category``. A row marked failed with no error is not
-    counted.
+    ``failure``) except one marked
+    :data:`~untaped.output.diagnostic.NOT_COUNTED` (a remembered failure); a
+    mapping row counts its ``error`` mapping by its ``exit_code`` or
+    ``category``. A row marked failed with no error is not counted.
     """
     scope = _scope()
     if scope is None:
         return
     for row in rows:
         if isinstance(row, BaseModel):
-            for name in type(row).model_fields:
+            for name, info in type(row).model_fields.items():
+                if NOT_COUNTED in info.metadata:
+                    continue
                 value = getattr(row, name, None)
                 if isinstance(value, Failure):
                     scope.note(value.exit_code)

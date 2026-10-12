@@ -502,6 +502,32 @@ class Failure(Diagnostic, kind="untaped.failure"):
         """A plain ``error:`` line: category ``failed``, system ``untaped``."""
         return cls(category=ErrorCategory.FAILED, system="untaped", message=text, hint=hint)
 
+    def to_exception(self) -> UntapedError:
+        """This failure as an error to raise again: its message, category, system, hint, details."""
+        return UntapedError(
+            self.message,
+            category=self.category,
+            system=self.system,
+            hint=self.hint,
+            details=self.details,
+        )
+
+
+class _NotCounted:
+    """The marker type of :data:`NOT_COUNTED`."""
+
+    def __repr__(self) -> str:
+        return "NOT_COUNTED"
+
+
+NOT_COUNTED: Final = _NotCounted()
+"""``Annotated`` metadata on a row's ``Failure`` field: a remembered failure, never a failed row.
+
+A row counts toward the exit code through every top-level ``Failure`` it
+holds, except one marked with this (a cache's last refresh error on a
+status row).
+"""
+
 
 class Debug(Diagnostic, kind="untaped.debug"):
     """A log record under ``--verbose``: ``logger`` names who logged it."""
@@ -577,6 +603,7 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         error: Failure | None = None,
         partial: bool = False,
         hint: str | None = None,
+        cached: bool = False,
     ) -> StaleData:
         """A stale line about ``subject`` (``source prod``, a provider), worded for its case.
 
@@ -585,6 +612,8 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         partial fill (``partial``): the error's message; ``--cached`` (no
         ``error``): ``cached data from … (--cached)``. Each says when the
         data is from and how old; ``retry_at`` adds when auto checks again.
+        ``cached``: the reader passed ``--cached``, so a remembered ``error``
+        line ends ``(--cached)`` too and says no next check.
         """
         age = now - refreshed_at
         message = f"{subject}: {_stale_cause(error, attempted_at, now, partial=partial)}"
@@ -595,7 +624,9 @@ class StaleData(Diagnostic, kind="untaped.stale"):
             message += f"; using data from {_utc_minute(refreshed_at)} UTC"
             if not partial:
                 message += f", {duration_text(age.total_seconds())} old"
-        if retry_at is not None:
+            if cached:
+                message += " (--cached)"
+        if retry_at is not None and not cached:
             message += f"; next check after {_to_utc(retry_at):%H:%M} UTC"
         return cls(
             message=message,
@@ -742,6 +773,7 @@ def _plain(error: BaseException) -> str:
 
 __all__ = [
     "KIND_PATTERN",
+    "NOT_COUNTED",
     "Debug",
     "Diagnostic",
     "DuplicateKindError",
