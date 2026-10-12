@@ -149,3 +149,13 @@ def test_hello_motd_keeps_one_copy_per_file(tmp_path: Path) -> None:
 def test_hello_motd_refuses_refresh_and_cached_together(tmp_path: Path) -> None:
     _motd(tmp_path)
     assert invoke_root(["hello", "motd", "--refresh", "--cached"]).exit_code == 2
+
+
+def test_hello_motd_reads_the_file_every_time_at_max_age_zero(tmp_path: Path) -> None:
+    source = _motd(tmp_path)
+    assert invoke_root(["config", "set", "hello.caches.motd.max_age_seconds", "0"]).exit_code == 0
+    with cache_clock() as clock:
+        assert invoke_root(["hello", "motd"]).stdout == "ship it\n"
+        source.write_text("changed\n", encoding="utf-8")
+        clock.advance(timedelta(seconds=1))
+        assert invoke_root(["hello", "motd"]).stdout == "changed\n"

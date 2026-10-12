@@ -1,9 +1,11 @@
-"""The example ``hello`` plugin: one command, one setting, one skill, one migration.
+"""The example ``hello`` plugin: commands, settings, one skill, one migration, one cache.
 
 The ``untaped.plugins`` entry point names :data:`SPEC`. ``help`` is
 set, so the root mounts the app lazily and ``untaped --help`` never imports
 :mod:`untaped_hello.cli`. Its ``migrations`` row shows how a plugin moves a
-directory an older version of it left (``untaped setup migrate-dirs``).
+directory an older version of it left (``untaped setup migrate-dirs``), and
+its ``caches`` row gives :data:`~untaped_hello.settings.MOTD` the setting
+``hello.caches.motd.max_age_seconds``.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from untaped.sdk import (
     dir_bytes,
     plugin_dir,
 )
-from untaped_hello.settings import HelloSettings
+from untaped_hello.settings import MOTD, HelloSettings
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -90,4 +92,5 @@ SPEC = PluginSpec(
             apply=_greetings_apply,
         ),
     ),
+    caches=(MOTD,),
 )

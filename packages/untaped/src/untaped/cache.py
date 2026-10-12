@@ -29,7 +29,7 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -49,6 +49,7 @@ from untaped.output.diagnostic import NOT_COUNTED, Failure, StaleData, format_ut
 from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.output.sink import current_sink
 from untaped.records import Record, UtcTimestamp
+from untaped.settings import load_settings_section, registered_profile_model
 from untaped.upstream import fail_fast, full_retries
 
 _LOG = logging.getLogger("untaped.cache")
@@ -232,6 +233,25 @@ class NeverRefreshed(UntapedError):
 # --------------------------------------------------------------------------- #
 
 
+def _old_keys(cache: str, keys: Sequence[str]) -> tuple[str, ...]:
+    """``renamed_from`` as a tuple once its shape is checked; composition checks the rest."""
+    if isinstance(keys, str):
+        raise ConfigError(f"cache {cache}: renamed_from takes a sequence of keys, not one string")
+    old = tuple(keys)
+    for key in old:
+        if not isinstance(key, str) or not all(_NAME.fullmatch(part) for part in key.split(".")):
+            raise ConfigError(
+                f"cache {cache}: renamed_from key {key!r} must be dotted settings segments"
+            )
+        if key == "caches" or key.startswith("caches."):
+            raise ConfigError(
+                f"cache {cache}: renamed_from key {key!r} is under caches, which untaped writes"
+            )
+    if len(set(old)) != len(old):
+        raise ConfigError(f"cache {cache}: renamed_from names a key twice")
+    return old
+
+
 @dataclass(frozen=True)
 class _KeyPaths:
     """One key's files: its folder, its sidecar and its lock."""
@@ -250,13 +270,24 @@ class Cache:
 
     ``name`` is one settings segment (``[a-z][a-z0-9_]*``); ``label`` names
     the data for a human (``source data``). ``max_age`` is the declared
-    default (``0``: check every time). Two declarations with the same four
-    values are equal.
+    default, in whole seconds (``0``: check every time); list the cache on
+    ``PluginSpec.caches`` and its setting ``<plugin>.caches.<name>.max_age_seconds``
+    overrides it. ``renamed_from`` names old keys of the plugin's section
+    (dotted, relative to it) that are still read as that setting, with a
+    warning. Two declarations with the same values are equal.
     """
 
-    __slots__ = ("default_max_age", "label", "name", "plugin")
+    __slots__ = ("default_max_age", "label", "name", "plugin", "renamed_from")
 
-    def __init__(self, plugin: str, name: str, *, label: str, max_age: timedelta) -> None:
+    def __init__(
+        self,
+        plugin: str,
+        name: str,
+        *,
+        label: str,
+        max_age: timedelta,
+        renamed_from: Sequence[str] = (),
+    ) -> None:
         from untaped.plugins.registry import check_plugin_name  # noqa: PLC0415 - no cycle
 
         check_plugin_name(plugin)
@@ -264,15 +295,16 @@ class Cache:
             raise ConfigError(
                 f"cache name {name!r} must be one settings segment (pattern {_NAME.pattern})"
             )
-        if max_age < timedelta(0):
-            raise ConfigError(f"cache {plugin}.{name}: max_age must not be negative")
+        if max_age < timedelta(0) or max_age % timedelta(seconds=1):
+            raise ConfigError(f"cache {plugin}.{name}: max_age must be whole seconds, not negative")
         self.plugin = plugin
         self.name = name
         self.label = label
         self.default_max_age = max_age
+        self.renamed_from = _old_keys(f"{plugin}.{name}", renamed_from)
 
-    def _identity(self) -> tuple[str, str, str, timedelta]:
-        return (self.plugin, self.name, self.label, self.default_max_age)
+    def _identity(self) -> tuple[str, str, str, timedelta, tuple[str, ...]]:
+        return (self.plugin, self.name, self.label, self.default_max_age, self.renamed_from)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Cache):
@@ -301,8 +333,22 @@ class Cache:
         return duration_text(self.default_max_age.total_seconds())
 
     def max_age(self) -> timedelta:
-        """The max age in force now: the declared default."""
-        return self.default_max_age
+        """The max age in force now: the setting, read at call time, else the declared default.
+
+        The default holds when the plugin's composed section has no such
+        cache (the plugin is used uncomposed, or does not list the cache on
+        ``PluginSpec.caches``). An invalid setting raises the settings
+        :class:`ConfigError`.
+        """
+        model = registered_profile_model(self.plugin)
+        held = None if model is None else model.model_fields.get("caches")
+        kept = None if held is None else held.annotation
+        if not (isinstance(kept, type) and issubclass(kept, BaseModel)) or (
+            self.name not in kept.model_fields
+        ):
+            return self.default_max_age
+        caches = load_settings_section(self.plugin).caches
+        return timedelta(seconds=getattr(caches, self.name).max_age_seconds)
 
     # ---- reading and filling ------------------------------------------------
 

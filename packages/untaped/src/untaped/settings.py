@@ -15,7 +15,8 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from functools import cache, lru_cache
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, cast
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, cast
 
 import yaml
 from pydantic import (
@@ -42,6 +43,9 @@ from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_n
 from untaped.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.stability import Stability
 from untaped.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
+
+if TYPE_CHECKING:
+    from untaped.cache import Cache
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 STATE_FILE_NAME = "state.yml"
@@ -224,22 +228,123 @@ def reserved_section_keys(
     return sorted(taken)
 
 
-@cache
-def owner_settings_model(model: type[BaseModel]) -> type[BaseModel]:
-    """``model`` with the injected ``extensions`` key every contract owner's section has.
+class CacheSettings(BaseModel):
+    """One cache's settings under ``<plugin>.caches.<cache>``; each cache's model subclasses it."""
 
-    Typed structurally (contract name → :class:`ExtensionSettings`), so
-    reading settings never imports an owner's contracts: whether a contract
-    or method exists is for ``gather`` and doctor to say, never a load error.
+    model_config = ConfigDict(extra="forbid")
+
+
+@cache
+def section_model(
+    model: type[BaseModel], *, extensions: bool, caches: tuple[Cache, ...]
+) -> type[BaseModel]:
+    """``model`` with the keys the SDK injects into a plugin's section.
+
+    ``extensions`` (every contract owner's) is typed structurally (contract
+    name → :class:`ExtensionSettings`), so reading settings never imports an
+    owner's contracts: whether a contract or method exists is for ``gather``
+    and doctor to say, never a load error. ``caches`` holds one
+    ``max_age_seconds`` per declared cache, defaulting to its declared max
+    age; an unknown cache name loads (doctor names it), so a cache a plugin
+    drops never breaks a config. Each cache's ``renamed_from`` joins
+    ``model``'s ``renamed_keys`` here, on the composed class only: the
+    owner's own declarations never point at an injected key.
     """
-    extensions: Any = (
-        dict[ContractName, ExtensionSettings],
-        Field(default_factory=dict, description="Settings of the contracts this plugin owns."),
+    renamed = _cache_renames(model, caches)
+    if renamed:
+        model = cast(
+            "type[BaseModel]",
+            type(
+                model.__name__,
+                (model,),
+                {
+                    "__module__": model.__module__,
+                    "__qualname__": model.__qualname__,
+                    "__annotations__": {"renamed_keys": ClassVar[Mapping[str, str]]},
+                    "renamed_keys": MappingProxyType(renamed),
+                },
+            ),
+        )
+    injected: dict[str, Any] = {}
+    if extensions:
+        injected["extensions"] = (
+            dict[ContractName, ExtensionSettings],
+            Field(default_factory=dict, description="Settings of the contracts this plugin owns."),
+        )
+    if caches:
+        held = _caches_model(model, caches)
+        injected["caches"] = (
+            held,
+            Field(default_factory=held, description="Max ages of the caches this plugin keeps."),
+        )
+    return cast(
+        "type[BaseModel]",
+        create_model(model.__name__, __base__=model, __module__=model.__module__, **injected),
     )
+
+
+def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[str, str]:
+    """``model``'s ``renamed_keys`` plus each cache's ``renamed_from``; ``{}`` when none renames.
+
+    Raises :class:`ConfigError` for an old key two caches claim, or one the
+    owner already declares (renamed or retired).
+    """
+    claimed: dict[str, Cache] = {}
+    for declared in caches:
+        for old in declared.renamed_from:
+            if old in claimed:
+                raise ConfigError(
+                    f"old key {old!r} is renamed by both caches "
+                    f"{claimed[old].name!r} and {declared.name!r}"
+                )
+            claimed[old] = declared
+    if not claimed:
+        return {}
+    own: dict[str, Any] = {}
+    for name in ("renamed_keys", "retired_keys"):
+        mapping = getattr(model, name, None)
+        if isinstance(mapping, Mapping):
+            for old in sorted(mapping.keys() & claimed.keys()):
+                raise ConfigError(
+                    f"old key {old!r} is in {model.__name__}.{name} and in the cache "
+                    f"{claimed[old].name!r}'s renamed_from"
+                )
+            if name == "renamed_keys":
+                own = dict(mapping)
+    return own | {
+        old: f"caches.{declared.name}.max_age_seconds" for old, declared in claimed.items()
+    }
+
+
+def _caches_model(model: type[BaseModel], caches: tuple[Cache, ...]) -> type[BaseModel]:
+    """The ``caches`` key's model: one :class:`CacheSettings` field per cache."""
+    fields: dict[str, Any] = {}
+    for declared in caches:
+        seconds: Any = (
+            int,
+            Field(
+                default=int(declared.default_max_age.total_seconds()),
+                ge=0,
+                description=(
+                    f"Seconds {declared.label} is served before untaped checks upstream; "
+                    "0 checks every time."
+                ),
+            ),
+        )
+        held = create_model(
+            "".join(part.title() for part in declared.name.split("_")) + "CacheSettings",
+            __base__=CacheSettings,
+            __module__=model.__module__,
+            max_age_seconds=seconds,
+        )
+        fields[declared.name] = (held, Field(default_factory=held))
     return cast(
         "type[BaseModel]",
         create_model(
-            model.__name__, __base__=model, __module__=model.__module__, extensions=extensions
+            f"{model.__name__}Caches",
+            __config__=ConfigDict(extra="ignore"),
+            __module__=model.__module__,
+            **fields,
         ),
     )
 
