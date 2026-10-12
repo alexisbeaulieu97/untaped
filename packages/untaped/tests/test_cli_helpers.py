@@ -13,6 +13,8 @@ from cyclopts import App
 from pydantic import BaseModel
 
 from untaped.cli import run_cyclopts_app
+from untaped.output.policy import enable_quiet, reset_quiet
+from untaped.output.sink import diagnostics_scope
 from untaped.sdk import (
     HttpError,
     HttpTransportError,
@@ -809,3 +811,18 @@ def test_removing_a_column_keeps_the_records_own_fields_in_order(
 ) -> None:
     emit([_Outcome(name="a", action="created", detail="d")], fmt="json", columns=["-detail"])
     assert capsys.readouterr().out == '[{"name": "a", "action": "created"}]\n'
+
+
+def test_columns_question_mark_lists_columns_under_quiet(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The list is output ``--columns ?`` exists to produce: ``-q`` never mutes it."""
+    token = enable_quiet()
+    try:
+        with diagnostics_scope():
+            emit(_Widget(name="a", value=1), fmt="table", columns=["?"])
+    finally:
+        reset_quiet(token)
+    err = capsys.readouterr().err
+    assert "available columns" in err
+    assert "  name" in err

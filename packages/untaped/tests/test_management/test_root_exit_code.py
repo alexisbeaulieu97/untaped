@@ -44,7 +44,8 @@ def test_a_command_that_emits_a_failure_and_returns_exits_with_it() -> None:
 
 def test_a_plain_error_line_exits_1_and_a_warning_exits_0() -> None:
     assert _run(lambda: app_context().diag.warning("careful")).exit_code == 0
-    assert _run(lambda: app_context().ui().message("error", "broke")).exit_code == 1
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        assert _run(lambda: app_context().ui().message("error", "broke")).exit_code == 1
 
 
 @pytest.mark.parametrize("code", [1, 3])
@@ -63,4 +64,5 @@ def test_a_predicate_hit_exits_3_without_a_failure_and_1_with_one() -> None:
         app_context().ui().message("error", "x: unreadable")
         finish(False, predicate_hit=True)
 
-    assert _run(body).exit_code == 1
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        assert _run(body).exit_code == 1

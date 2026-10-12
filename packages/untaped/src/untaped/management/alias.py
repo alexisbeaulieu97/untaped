@@ -36,12 +36,15 @@ from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, UsageError, first_validation_error
 from untaped.messages import hint, not_found, q
+from untaped.output.sink import Diagnostics
 from untaped.profile_resolver import selected_profile
 from untaped.records import OutcomeRecord, Record
 from untaped.settings import load_settings_section
 from untaped.shell_settings import ShellProfileSettings, alias_name_error
 from untaped.stability import deprecated
 from untaped.ui import ui_context
+
+_diag = Diagnostics()
 
 _ALIASES_KEY = "shell.aliases"
 
@@ -114,9 +117,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
                 if dry_run:
                     action = "planned"
                 else:
-                    ui_context(strict=False).success(
-                        f"alias {name} = {shlex.join(argv)} (profile {profile})"
-                    )
+                    _diag.success(f"alias {name} = {shlex.join(argv)} (profile {profile})")
             emit(AliasOutcome(name=name, profile=profile, action=action), fmt=fmt, columns=columns)
 
     @app.command(name="list")
@@ -154,7 +155,7 @@ def build_root_alias_app(*, builtin_for: Callable[[str], str | None]) -> App:
                     refusal="alias remove requires --yes when not interactive",
                 )
                 SettingsFileRepository().update_value(_ALIASES_KEY, _without(name))
-                ui_context(strict=False).success(f"removed alias {name} (profile {profile})")
+                _diag.success(f"removed alias {name} (profile {profile})")
                 action = "deleted"
             emit(AliasOutcome(name=name, profile=profile, action=action), fmt=fmt, columns=columns)
 

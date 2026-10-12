@@ -22,6 +22,7 @@ from typing import Any
 from rich.text import Text
 
 from untaped.cli import emit_with
+from untaped.output.sink import Diagnostics
 from untaped.render import output_width, status_role_style
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
@@ -156,15 +157,14 @@ def emit_fix_plan(
 
     Not muted by ``--quiet``: it precedes a question.
     """
-    ui = ui_context(strict=False)
-    arrow = _glyphs(ui)["fix"]
+    arrow = _glyphs(ui_context(strict=False))["fix"]
     width = max((len(command) for command, _checks in (*runnable, *manual)), default=0)
     lines: list[str] = []
     for heading, fixes in (("Fixes to run", runnable), ("Needs you", manual)):
         if fixes:
             lines.append(f"{heading} ({len(fixes)}):")
             lines += [f"  {arrow} {cmd.ljust(width)}  {', '.join(checks)}" for cmd, checks in fixes]
-    ui.styled("\n".join(lines), err=True)
+    Diagnostics().info("\n".join(lines), unmuted=True)
 
 
 def emit_fix_list(rows: Sequence[dict[str, Any]], *, run_line: Callable[[list[str]], str]) -> None:

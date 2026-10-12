@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.sdk import ConfigError
+from untaped.sdk import ConfigError, Diagnostics
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.cli.save_runner import run_save_batch
 from untaped_awx.domain import ResourceSpec, ServerRecord
@@ -66,7 +66,13 @@ class _Fk:
 def _ctx(specs: list[ResourceSpec]) -> AwxContext:
     return cast(
         AwxContext,
-        SimpleNamespace(repo=_Repo(), fk=_Fk(), catalog=_Catalog(specs), workflow_nodes=None),
+        SimpleNamespace(
+            repo=_Repo(),
+            fk=_Fk(),
+            catalog=_Catalog(specs),
+            workflow_nodes=None,
+            diag=Diagnostics(),
+        ),
     )
 
 

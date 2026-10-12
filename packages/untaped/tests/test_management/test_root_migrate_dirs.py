@@ -445,3 +445,20 @@ def test_old_dirs_reads_the_environment_and_skips_relative_paths(
     ]
     monkeypatch.setenv("UNTAPED_ALPHA__CACHE_DIR", "relative/cache")
     assert old_dirs("~/a", "alpha", "cache_dir") == [Path("~/a").expanduser()]
+
+
+def test_quiet_keeps_the_preview_before_the_prompt() -> None:
+    _plant()
+    backend = ScriptedPromptBackend(confirms=[False])
+
+    result = _run(interactive=True, prompt_backend=backend, terminal=True)
+    quiet = invoke_cli(
+        bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in _specs()]).meta,
+        ["-q", "setup", "migrate-dirs"],
+        interactive=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        terminal=True,
+    )
+
+    assert "About to migrate:" in result.stderr
+    assert quiet.stderr.startswith("About to migrate:")

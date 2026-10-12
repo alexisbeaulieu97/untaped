@@ -10,7 +10,6 @@ from cyclopts import Parameter
 from untaped.sdk import (
     PipeEnvelope,
     UsageError,
-    echo,
     parse_kv_pairs,
     raise_usage,
     read_stdin_input,
@@ -155,5 +154,5 @@ def select_resources(
     # FK lookups reuse that instead of reading it again.
     ctx.fk.remember_summaries(item.record for item in selected)
     if not selected:
-        echo(f"No matching {spec.kind} found.", err=True)
+        ctx.diag.info(f"No matching {spec.kind} found.")
     return selected

@@ -23,6 +23,7 @@ versions left, from every plugin's ``migrations``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -48,10 +49,22 @@ from untaped.management.setup_plan import (
     plan_rows,
 )
 from untaped.management.setup_state import service_states, service_store, setup_services
+from untaped.output.diagnostic import Failure
+from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
+from untaped.render import MessageKind
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
+
+_diag = Diagnostics()
+#: How a screen's note prints, by its level.
+_NOTES: dict[MessageKind, Callable[[str], object]] = {
+    "success": _diag.success,
+    "info": _diag.info,
+    "warning": _diag.warning,
+    "error": lambda text: _diag.failure(Failure.plain(text)),
+}
 
 OnlyOption = Annotated[
     list[str] | None,
@@ -164,10 +177,10 @@ def _run(
     )
     outcome = ui.run(screen)
     for kind, text in outcome.notes:
-        ui.message(kind, text)
+        _NOTES[kind](text)
     profile = outcome.profile
     if not outcome.touched:
-        ui.message("info", "nothing saved; no changes made")
+        _diag.info("nothing saved; no changes made")
     else:
         rows = selected_check_rows(shell, result, profile, frozenset(outcome.touched))
         try:
@@ -177,7 +190,7 @@ def _run(
             if not outcome.interrupted:
                 raise
         else:
-            ui.success(_ready(profile, active))
+            _diag.success(_ready(profile, active))
     if outcome.interrupted:
         raise PromptInterruptedError("prompt cancelled")
 

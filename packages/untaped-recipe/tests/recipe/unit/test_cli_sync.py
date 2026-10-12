@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 
 import untaped_recipe.cli.library_commands as library_commands
-from untaped.testing import CliInvoker, ScriptedPromptBackend, invoke_cli
+from untaped import bootstrap
+from untaped.testing import CliInvoker, ScriptedPromptBackend, invoke_cli, plugin_candidate
+from untaped_recipe import SPEC
 from untaped_recipe.cli import app
 from untaped_recipe.cli.common import library_dir
 from untaped_recipe.infrastructure.pack_store import PackLibrary
@@ -96,6 +98,25 @@ def test_sync_dry_run_plans_and_changes_nothing(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["action"] == "planned"
     assert _installed_recipe("alpha").read_text() != _CHANGED
+
+
+def test_sync_quiet_still_previews_before_the_prompt(tmp_path: Path) -> None:
+    _write_pack(tmp_path / "alpha", name="alpha")
+    _add(tmp_path / "alpha")
+    (tmp_path / "alpha" / "recipes" / "seed.yml").write_text(_CHANGED)
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(SPEC),))
+    backend = ScriptedPromptBackend(confirms=[False])
+
+    result = invoke_cli(
+        root.meta,
+        ["-q", "recipe", "packs", "sync", "alpha"],
+        terminal=True,
+        prompt_backend=backend,
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "About to sync 1 pack:" in result.stderr
+    assert f"  - alpha from {tmp_path / 'alpha'}\n    hook code unchanged" in result.stderr
 
 
 def test_sync_decline_changes_nothing(tmp_path: Path) -> None:

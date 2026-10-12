@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped import bootstrap
+from untaped.testing import CliInvoker, plugin_candidate
+from untaped_recipe import SPEC
 from untaped_recipe.cli import app
 from untaped_recipe.cli.common import library_dir
 from untaped_recipe.infrastructure.pack_store import PackLibrary
@@ -91,6 +93,23 @@ def test_test_failure_renders_diff_on_stderr_and_exits_one(tmp_path: Path) -> No
     assert "# demo/emit/basic" in result.stderr
     assert "-different" in result.stderr
     assert "+payload" in result.stderr
+
+
+def test_test_quiet_prints_no_diffs(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="demo")
+    case_dir = _write_passing_case(source)
+    (case_dir / "expected" / "out.txt").write_text("different\n", encoding="utf-8")
+    _install(source)
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(SPEC),))
+
+    result = CliInvoker().invoke(root.meta, ["-q", "recipe", "test", "demo"])
+
+    assert result.exit_code == 1
+    assert "files differ: out.txt" in result.stdout
+    assert "# demo/emit/basic" not in result.stderr
+    assert "-different" not in result.stderr
+    assert "warning: Recipe tests: 0 passed, 1 failed, 0 errored" in result.stderr
 
 
 def test_test_recipe_scope_and_no_cases_failure(tmp_path: Path) -> None:

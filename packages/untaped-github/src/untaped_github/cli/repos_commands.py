@@ -9,6 +9,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     FormatOption,
     LimitOption,
     UsageError,
@@ -26,6 +27,8 @@ from untaped_github.cli.scopes import (
     org_scope,
     parse_team_scopes,
 )
+
+_diag = Diagnostics()
 
 PatternArgument = Annotated[
     str | None,
@@ -92,7 +95,7 @@ def list_command(
         team_scopes = parse_team_scopes(team, orgs=orgs)
         _validate_args(pattern, regex=regex, orgs=orgs, team_scopes=team_scopes)
         filters = RepoListFilters(pattern=pattern, regex=regex, archived=archived, fork=fork)
-        with open_client() as (client, ui), ui.progress("Listing repositories…"):
+        with open_client() as (client, _), _diag.progress("Listing repositories"):
             repos = list(ListRepos(client)(filters, orgs=orgs, team_scopes=team_scopes))
             rows = repos[:limit]
         emit(
@@ -104,4 +107,4 @@ def list_command(
         )
         if len(rows) < len(repos):
             total = plural(len(repos), "repository", "repositories")
-            ui.message("info", f"showing {len(rows)} of {total}; omit --limit to list all")
+            _diag.info(f"showing {len(rows)} of {total}; omit --limit to list all")

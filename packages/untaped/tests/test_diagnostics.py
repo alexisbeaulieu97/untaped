@@ -139,7 +139,8 @@ def test_warnings_hints_and_notes_are_json_lines_and_stdout_is_unchanged() -> No
         echo("sync: 2 cloned", err=True)
 
     plain = invoke_cli(_app(lambda: None), ["--format", "json"])
-    result = invoke_cli(_app(body), ["--format", "json"])
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        result = invoke_cli(_app(body), ["--format", "json"])
 
     assert result.exit_code == 0
     assert result.stdout == plain.stdout == '[{"id": 1}]\n'
@@ -182,7 +183,8 @@ def test_report_row_errors_reports_only_failed_rows_under_their_item_with_the_hi
     def body() -> None:
         report_row_errors(rows, item=lambda row: f"ws/{row.name}")
 
-    assert invoke_cli(_app(body), []).stderr == "error: ws/b: gone\nhint: re-clone it\n"
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        assert invoke_cli(_app(body), []).stderr == "error: ws/b: gone\nhint: re-clone it\n"
 
 
 def test_the_most_severe_failure_in_the_run_selects_the_exit_code() -> None:
@@ -331,10 +333,11 @@ def test_a_declined_run_exits_1_with_its_bare_line() -> None:
 
 @pytest.mark.parametrize("structured", [False, True])
 def test_a_plain_error_message_is_a_counted_failure(structured: bool) -> None:
-    result = invoke_cli(
-        _app(lambda: UiContext().message("error", "it broke")),
-        ["--format", "json"] if structured else [],
-    )
+    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+        result = invoke_cli(
+            _app(lambda: UiContext().message("error", "it broke")),
+            ["--format", "json"] if structured else [],
+        )
 
     assert result.exit_code == 1
     if structured:

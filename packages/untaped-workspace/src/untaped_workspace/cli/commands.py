@@ -16,7 +16,9 @@ from cyclopts.validators import Number
 from untaped.sdk import (
     NO_PROGRESS,
     ColumnsOption,
+    Diagnostics,
     DryRunOption,
+    Failure,
     FormatOption,
     OutputFormat,
     ParallelOption,
@@ -31,7 +33,6 @@ from untaped.sdk import (
     plural,
     q,
     report_errors,
-    report_row_errors,
     ui_context,
     writes,
 )
@@ -82,6 +83,8 @@ ARCHIVE_OUTCOME = "workspace.archive_outcome"
 REMOVE = "workspace.remove_outcome"
 RUN_OUTCOME = "workspace.run_outcome"
 RESOLVE_OUTCOME = "workspace.resolve_outcome"
+
+_diag = Diagnostics()
 
 repos_app = create_app(name="repos", help="Inspect and refresh a workspace's repos.")
 
@@ -141,7 +144,7 @@ def create_command(
         )
         warnings: list[str] = []
         provision = provisioner(settings, parallel, warn=warnings.append)
-        with ui.progress(f"Creating workspace {name}…") as progress:
+        with _diag.progress(f"Creating workspace {name}") as progress:
             rows = provision.create(name, args, on_done=_progress_line(progress))
         _show_provisioned(rows, settings, name, warnings, fmt=fmt, columns=columns)
 
@@ -182,7 +185,7 @@ def add_command(
         )
         warnings: list[str] = []
         provision = provisioner(settings, parallel, warn=warnings.append)
-        with ui.progress(f"Adding repos to {record.name}…") as progress:
+        with _diag.progress(f"Adding repos to {record.name}") as progress:
             rows = provision.add(record, args, on_done=_progress_line(progress))
         _show_provisioned(rows, settings, record.name, warnings, fmt=fmt, columns=columns)
 
@@ -232,17 +235,15 @@ def status_command(
         settings = workspace_settings()
         records = StateWorkspaceStore().active() if all_workspaces else [locate(settings, name)]
         status = status_reader(settings, git_worktrees())
-        task = (
-            ui_context(strict=False).progress("Fetching repos…")
-            if fetch
-            else nullcontext(NO_PROGRESS)
-        )
+        task = _diag.progress("Fetching repos") if fetch else nullcontext(NO_PROGRESS)
         with task as progress:
             rows = [
                 row for record in records for row in status(record, fetch=fetch, progress=progress)
             ]
         emit(rows, fmt=fmt, columns=columns, kind="workspace.status", empty="No repos found.")
-        report_row_errors(rows, item=lambda row: f"{row.workspace}/{row.dir}")
+        for row in rows:
+            if row.error is not None:
+                _diag.failure(row.error, item=f"{row.workspace}/{row.dir}")
     finish(
         any(row.error is not None for row in rows),
         predicate_hit=check and any(row.blockers for row in rows),
@@ -281,7 +282,9 @@ def resolve_command(
         )
         rows = resolve(record.name)
         emit(rows, fmt=fmt, columns=columns, kind=RESOLVE_OUTCOME, empty="No repos found.")
-        report_row_errors(rows, item=lambda row: f"{row.workspace}/{row.dir}")
+        for row in rows:
+            if row.error is not None:
+                _diag.failure(row.error, item=f"{row.workspace}/{row.dir}")
     finish(any(row.failed for row in rows))
 
 
@@ -332,10 +335,12 @@ def archive_command(
                 _confirm_discard(record.name, blocked, yes=yes)
             outcomes = archive(record, force=force)
         emit(outcomes, fmt=fmt, columns=columns, kind=ARCHIVE_OUTCOME)
-        report_row_errors(outcomes, item=lambda row: f"{row.workspace}/{row.repo}")
+        for row in outcomes:
+            if row.error is not None:
+                _diag.failure(row.error, item=f"{row.workspace}/{row.repo}")
         failed = any(row.failed for row in outcomes)
         if not failed:
-            ui_context(strict=False).success(f"archived workspace {q(record.name)}")
+            _diag.success(f"archived workspace {q(record.name)}")
     finish(failed)
 
 
@@ -391,10 +396,12 @@ def remove_command(
             _confirm_remove(plan, force=force, yes=yes)
             outcomes = remove(plan, force=force)
         emit(outcomes, fmt=fmt, columns=columns, kind=REMOVE)
-        report_row_errors(outcomes, item=lambda row: f"{row.workspace}/{row.repo}")
+        for row in outcomes:
+            if row.error is not None:
+                _diag.failure(row.error, item=f"{row.workspace}/{row.repo}")
         failed = any(row.failed for row in outcomes)
         if not failed:
-            ui_context(strict=False).success(f"removed workspace {q(plan.name)}")
+            _diag.success(f"removed workspace {q(plan.name)}")
     finish(failed)
 
 
@@ -488,9 +495,7 @@ def run_command(
         human = fmt == "table"
         rows: list[RunOutcome] = []
         if not targets:
-            ui_context(strict=False).message(
-                "warning", "no repos to run in (read-only repos need --include-read-only)"
-            )
+            _diag.warning("no repos to run in (read-only repos need --include-read-only)")
         else:
             with run_argv(command) as argv:
                 run = RunInRepos(
@@ -554,7 +559,11 @@ def _show_run_summary(rows: Sequence[RunOutcome]) -> None:
         parts.append(f"{len(failed)} failed ({', '.join(failed)})")
     if actions["skipped"]:
         parts.append(f"{actions['skipped']} skipped")
-    ui_context(strict=False).message("error" if failed else "success", " · ".join(parts))
+    text = " · ".join(parts)
+    if failed:
+        _diag.failure(Failure.plain(text))
+    else:
+        _diag.success(text)
 
 
 def _progress_line(progress: ProgressHandle) -> Callable[[RepoOutcome, int, int], None]:
@@ -584,16 +593,18 @@ def _show_provisioned(
     failed = any(row.failed for row in rows)
     ui = ui_context(strict=False)
     for warning in warnings:
-        ui.message("warning", warning)
+        _diag.warning(warning)
     if fmt != "table":
         emit(rows, fmt=fmt, columns=columns, kind=REPO_OUTCOME)
     else:
         if failed or not ui.quiet:
             emit(rows, fmt=fmt, columns=columns, kind=REPO_OUTCOME)
         ready = sum(1 for row in rows if not row.failed)
-        ui.success(f"workspace {q(name)}: {plural(ready, 'repo')} ready")
+        _diag.success(f"workspace {q(name)}: {plural(ready, 'repo')} ready")
         echo(str(workspace_dir(settings, name)))
-    report_row_errors(rows, item=lambda row: f"{name}/{row.dir}")
+    for row in rows:
+        if row.error is not None:
+            _diag.failure(row.error, item=f"{name}/{row.dir}")
     finish(failed)
 
 

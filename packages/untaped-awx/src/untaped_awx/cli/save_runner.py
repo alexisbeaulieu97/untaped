@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import stat
-from collections.abc import Callable
 from pathlib import Path
 
 from untaped.sdk import OutputFormat, UntapedError, atomic_write, echo, emit
@@ -26,11 +25,11 @@ def run_save_selection(
     comment: str | None = None,
 ) -> None:
     """Export selected records without resolving their names again."""
-    saver = SaveResource(ctx.repo, ctx.fk, nodes=ctx.workflow_nodes, warn=_warner(ctx))
+    saver = SaveResource(ctx.repo, ctx.fk, nodes=ctx.workflow_nodes, warn=ctx.diag.warning)
     resources = [saver.from_record(spec, item.record) for item in selected]
     fidelity_comment = spec.fidelity_note if spec.fidelity != "full" else None
     if fidelity_comment:
-        echo(f"{spec.fidelity} save: {fidelity_comment}", err=True)
+        ctx.diag.info(f"{spec.fidelity} save: {fidelity_comment}")
     text = "---\n".join(
         dump_resource(resource, header_comment=fidelity_comment, comment=comment)
         for resource in resources
@@ -63,7 +62,7 @@ def run_save_batch(
 ) -> None:
     """Bulk-save resources to disk and write the requested stdout shape."""
     outcomes = SaveResources(
-        ctx.repo, ctx.fk, ctx.catalog, nodes=ctx.workflow_nodes, warn=_warner(ctx)
+        ctx.repo, ctx.fk, ctx.catalog, nodes=ctx.workflow_nodes, warn=ctx.diag.warning
     )(
         all_kinds=all_kinds,
         kind=kind,
@@ -77,7 +76,7 @@ def run_save_batch(
         raise UntapedError(f"cannot create {out_dir}: {exc.strerror or exc}") from exc
     for outcome in outcomes:
         if outcome.action == "skipped":
-            ctx.progress_ui().message("warning", f"{outcome.kind}: skipped, {outcome.detail}")
+            ctx.diag.warning(f"{outcome.kind}: skipped, {outcome.detail}")
             continue
         if outcome.resource is None or outcome.filename is None:  # pragma: no cover
             raise AwxApiError(f"invalid save outcome for {outcome.kind}: missing resource")
@@ -92,10 +91,6 @@ def run_save_batch(
         else:
             echo("---")
             echo(text)
-
-
-def _warner(ctx: AwxContext) -> Callable[[str], None]:
-    return lambda message: ctx.progress_ui().message("warning", message)
 
 
 def write_output(path: Path, text: str) -> None:

@@ -39,7 +39,6 @@ from untaped.cli import (
     FormatOption,
     YesOption,
     create_app,
-    echo,
     report_errors,
     writes,
 )
@@ -50,7 +49,15 @@ from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_check_list, emit_isolated
 from untaped.management.skills import composed_skills
-from untaped.messages import command_argv, command_line, hint, plural, split_profile, summary
+from untaped.messages import (
+    command_argv,
+    command_line,
+    plural,
+    run_hint,
+    split_profile,
+    summary,
+)
+from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
     ApplicationSpec,
     CompositionResult,
@@ -87,6 +94,8 @@ from untaped.settings import (
 from untaped.skills import SkillState, outdated_skills, project_root
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
 from untaped.token_store import pass_problem
+
+_diag = Diagnostics()
 
 _PASS = "pass"
 _FAIL = "fail"
@@ -190,21 +199,21 @@ def report_check_rows(
     profile = selected_profile()
     if fmt == "table" and columns is None:
         emit_check_list(rows, run_line=lambda argv: run_line(argv, profile))
-        echo(err=True)
+        _diag.info("")
     else:
         shown = [_table_row(row, profile) for row in rows] if fmt == "table" else rows
         emit_isolated(shown, fmt=fmt, columns=columns, kind="untaped.doctor_check")
     counts = {status: sum(row["status"] == status for row in rows) for status in _STATUSES}
-    echo(summary(op, counts), err=True)
+    _diag.info(summary(op, counts))
     fix_hint = _fix_hint(rows, profile)
     if fix_hint:
-        echo(fix_hint, err=True)
+        _diag.hint(fix_hint)
     if counts[_FAIL]:
         raise SystemExit(ExitCode.FAILURE)
 
 
 def _fix_hint(rows: list[dict[str, object]], profile: str) -> str | None:
-    """``hint: run `untaped doctor fix` …`` when an automatic fix exists, else ``None``.
+    """``run `untaped doctor fix` …`` (a hint's body) when an automatic fix exists, else ``None``.
 
     Fixes are counted as ``doctor fix`` groups them; the command keeps the
     rows' profile.
@@ -215,7 +224,9 @@ def _fix_hint(rows: list[dict[str, object]], profile: str) -> str | None:
         return None
     target = split_profile(automatic[0])[0] or profile
     command = run_line(command_argv("doctor fix", profile=target), profile)
-    text = f"{hint(command)} to apply {plural(len(automatic), 'automatic fix', 'automatic fixes')}"
+    text = (
+        f"{run_hint(command)} to apply {plural(len(automatic), 'automatic fix', 'automatic fixes')}"
+    )
     manual = len(fixes) - len(automatic)
     if manual:
         text = f"{text}; {plural(manual, 'fix', 'fixes')} {'needs' if manual == 1 else 'need'} you"

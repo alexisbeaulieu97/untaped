@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from untaped.sdk import ui_context
+from untaped.sdk import Diagnostics
 from untaped_ansible.errors import DependencyIndexError
 
 # Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
@@ -13,6 +13,8 @@ from untaped_ansible.errors import DependencyIndexError
 # they can use the indexes (``collate nocase`` joins forced full scans). The
 # ``*_repo`` columns keep the display casing.
 SCHEMA_VERSION = 4
+
+_diag = Diagnostics()
 
 _SCHEMA_SQL = """
 create table if not exists source_runs (
@@ -122,8 +124,7 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
         )
     if version != 0 or _has_tables(db):
         _drop_tables(db)
-        ui_context(strict=False).message(
-            "warning",
+        _diag.warning(
             f"rebuilt the outdated dependency index at {path} (schema version "
             f"{version}, expected {SCHEMA_VERSION}); re-run "
             "'untaped ansible source refresh <name>' for each saved source",

@@ -25,6 +25,7 @@ from untaped.cli import (
 )
 from untaped.config_schema import redact_secrets, secret_field_paths
 from untaped.messages import q
+from untaped.output.sink import Diagnostics
 from untaped.profile.models import ProfileDeletePreview, ProfileOutcome, ProfileRow
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import (
@@ -38,6 +39,8 @@ from untaped.profile.use_cases import (
 )
 from untaped.settings import get_profile_settings_model, resolve_config_path
 from untaped.ui import ui_context
+
+_diag = Diagnostics()
 
 # `profile show` returns a single nested object — `raw`/`table` (which want
 # tabular rows) don't apply, so narrow the format type for this command and
@@ -133,7 +136,7 @@ def _show_command(
             header += " (active)"
         if not raw:
             header += " — effective view (default ⤥ named)"
-        echo(header, err=True)
+        _diag.info(header)
         data = (
             target_profile.data
             if show_secrets
@@ -161,7 +164,7 @@ def _use_command(
     with report_errors():
         UseProfile(ProfileFileRepository())(name)
         config_path = resolve_config_path()
-        ui_context(strict=False).success(f"active profile: {name} (config: {config_path})")
+        _diag.success(f"active profile: {name} (config: {config_path})")
 
 
 def _current_command() -> None:
@@ -175,7 +178,7 @@ def _current_command() -> None:
     with report_errors():
         result = CurrentProfile(ProfileFileRepository())()
         echo(result.name)
-        echo(f"(source: {result.source})", err=True)
+        _diag.info(f"(source: {result.source})")
 
 
 @writes
@@ -196,7 +199,7 @@ def _create_command(
         CreateProfile(ProfileFileRepository())(name, copy_from=copy_from, dry_run=dry_run)
         if not dry_run:
             suffix = f" (copied from {copy_from})" if copy_from else ""
-            ui_context(strict=False).success(f"created profile: {name}{suffix}")
+            _diag.success(f"created profile: {name}{suffix}")
         outcome = ProfileOutcome(
             name=name, copied_from=copy_from, action="planned" if dry_run else "created"
         )
@@ -228,7 +231,7 @@ def _delete_command(
                 preview=lambda: _show_delete_preview(preview),
             )
             delete_profile(name)
-            ui_context(strict=False).success(f"deleted profile: {name}")
+            _diag.success(f"deleted profile: {name}")
         outcome = ProfileOutcome(name=name, action="planned" if dry_run else "deleted")
         emit(outcome, fmt=fmt, columns=columns)
 
@@ -247,7 +250,7 @@ def _rename_command(
     with report_errors():
         RenameProfile(ProfileFileRepository())(old_name, new_name, dry_run=dry_run)
         if not dry_run:
-            ui_context(strict=False).success(f"renamed profile: {old_name} → {new_name}")
+            _diag.success(f"renamed profile: {old_name} → {new_name}")
         outcome = ProfileOutcome(
             name=new_name, previous_name=old_name, action="planned" if dry_run else "renamed"
         )
@@ -256,6 +259,6 @@ def _rename_command(
 
 def _show_delete_preview(preview: ProfileDeletePreview) -> None:
     top_level = ", ".join(preview.top_level_keys) or "(none)"
-    echo(f"config: {resolve_config_path()}", err=True)
-    echo(f"profile: {preview.name}", err=True)
-    echo(f"top-level keys: {top_level}", err=True)
+    _diag.info(f"config: {resolve_config_path()}", unmuted=True)
+    _diag.info(f"profile: {preview.name}", unmuted=True)
+    _diag.info(f"top-level keys: {top_level}", unmuted=True)

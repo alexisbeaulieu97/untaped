@@ -34,7 +34,6 @@ from untaped._root_options import (
 )
 from untaped.cli import (
     apply_default_format,
-    echo,
     note_requested_format,
     report_errors,
     run_cyclopts_app,
@@ -55,7 +54,12 @@ from untaped.management import (
 from untaped.management.plugins import INSTALL_HINT
 from untaped.management.skills import check_installed_skills, composed_skills
 from untaped.output.policy import reset_quiet as _reset_quiet
-from untaped.output.sink import derived_exit_code, diagnostics_scope, exit_on_counted_failure
+from untaped.output.sink import (
+    Diagnostics,
+    derived_exit_code,
+    diagnostics_scope,
+    exit_on_counted_failure,
+)
 from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
@@ -150,10 +154,9 @@ def _warn_quarantined(result: CompositionResult) -> None:
     if _QUIET_QUARANTINE.get():
         return
     for record in result.quarantine:
-        echo(
-            f"warning: plugin {record.name!r} from {record.distribution!r} quarantined "
-            f"[{record.reason}]: {record.detail}",
-            err=True,
+        Diagnostics().warning(
+            f"plugin {record.name!r} from {record.distribution!r} quarantined "
+            f"[{record.reason}]: {record.detail}"
         )
 
 

@@ -21,11 +21,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from untaped.cli import echo, emit, report_declined
+from untaped.cli import emit, report_declined
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.messages import plural, shown_path
 from untaped.migrations import overlapping
+from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
     CompositionResult,
     DirMigration,
@@ -39,6 +40,8 @@ from untaped.plugins.registry import (
 from untaped.settings import active_settings_layout, check_settings_field
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
+
+_diag = Diagnostics()
 
 #: The command a doctor row or hint names.
 MIGRATE_COMMAND = "setup migrate-dirs"
@@ -152,18 +155,18 @@ def _run(
     records = preview_records(planned)
     if options.dry_run or not records:
         if not records:
-            ui.message("info", "nothing to migrate")
+            _diag.info("nothing to migrate")
         _emit_preview(records, fmt=fmt, columns=columns)
         return any(item.error is not None for item in planned)
     if not any(item.changes or item.error for item in planned):
         _emit_preview(records, fmt=fmt, columns=columns)
-        ui.message("info", "nothing to move or delete")
+        _diag.info("nothing to move or delete")
         return False
     if not yes:
         with ui.terminal(refusal="setup migrate-dirs requires --yes when not interactive"):
-            echo("About to migrate:", err=True)
+            _diag.info("About to migrate:", unmuted=True)
             for line in _preview_lines(records):
-                echo(f"  {line}", err=True)
+                _diag.info(f"  {line}", unmuted=True)
             if not ui.confirm("Continue?"):
                 return _declined()
     outcomes = _apply(result, planned, options)
