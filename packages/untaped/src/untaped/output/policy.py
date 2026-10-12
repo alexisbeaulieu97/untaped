@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 import threading
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
@@ -44,14 +44,15 @@ class OutputPolicy:
     default), ``forced`` the ``UNTAPED_DIAGNOSTICS`` choice read when the
     policy was built (``None``: follow the format). ``theme`` is the
     ``ui.theme`` text messages render with, resolved once settings load
-    (``None``: the default theme).
+    (``None``: the default theme); it is left out of the hash, since a
+    ``ThemeSpec`` has none.
     """
 
     format: str | None = None
     forced: Literal["text", "json"] | None = None
     quiet: bool = False
     verbose: bool = False
-    theme: ThemeSpec | None = None
+    theme: ThemeSpec | None = field(default=None, hash=False)
 
     @property
     def diagnostics(self) -> Literal["text", "json"]:

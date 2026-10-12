@@ -16,6 +16,7 @@ import io
 import json
 import logging
 import os
+import re
 from collections.abc import Callable
 from contextlib import redirect_stderr
 from pathlib import Path
@@ -269,3 +270,20 @@ def test_a_theme_leaves_hints_and_failures_plain() -> None:
             Diagnostics().failure(UntapedError("it broke"), item="acme/x")
 
     assert _capture(case) == "hint: next\nerror: acme/x: it broke\n"
+
+
+def test_a_themed_info_block_is_never_wrapped_or_tab_expanded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A preview (a diff, a tab-joined table) prints as written, colour or not."""
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    block = "name\tstate\n" + "x" * 300 + "\n\n\tindented"
+
+    def case() -> None:
+        with diagnostics_scope():
+            note_theme(_COLOURED)
+            Diagnostics().info(block)
+
+    coloured = _capture(case, _TtyStringIO())
+    assert "\x1b[" in coloured
+    assert re.sub(r"\x1b\[[0-9;]*m", "", coloured) == block + "\n"

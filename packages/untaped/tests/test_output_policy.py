@@ -7,6 +7,7 @@ from collections.abc import Iterator
 import pytest
 
 from untaped.output.policy import (
+    OutputPolicy,
     current_policy,
     is_quiet,
     note_format,
@@ -82,3 +83,9 @@ def test_note_theme_records_on_the_scope_and_a_nested_scope_inherits_it() -> Non
 def test_note_theme_outside_every_scope_does_nothing() -> None:
     note_theme(BUILTIN_THEMES["high-contrast"])
     assert current_policy().theme is None
+
+
+def test_a_policy_with_a_theme_still_hashes() -> None:
+    theme = BUILTIN_THEMES["high-contrast"]
+    assert hash(OutputPolicy(theme=theme)) == hash(OutputPolicy())
+    assert OutputPolicy(theme=theme) != OutputPolicy()
