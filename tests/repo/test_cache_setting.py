@@ -3,9 +3,9 @@
 Declaring a ``Cache`` on ``PluginSpec.caches`` gives it
 ``<plugin>.caches.<cache>.max_age_seconds``, documented, typed and named the
 same way for every plugin, and the ``--refresh`` help names it. A settings
-field whose name says ``max_age``, ``stale``, ``ttl`` or ``expir`` is a
-hand-made one and fails here. The exemptions are fields that are not a cache's max age, or not on a
-``Cache`` yet (each names the PR that moves it);
+field whose name says ``max_age``, ``stale``, ``expir`` or ``ttl`` is a
+hand-made one and fails here. The exemptions are fields that are not a
+cache's max age, or not on a ``Cache`` yet (each names the PR that moves it);
 :func:`test_the_exemptions_are_still_needed` fails once one is gone.
 """
 
@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field
 from untaped.config_schema import unwrap_optional
 from untaped.plugins.registry import PluginSpec
 
-WORDS = ("max_age", "stale", "ttl", "expir")
+#: Parts of a field name that say a max age; ``ttl`` counts only as a whole word.
+WORDS = ("max_age", "stale", "expir")
 #: ``(plugin, field path)`` → why it stays.
 EXEMPT = {
     ("recipe", "backup_max_age_days"): "a retention policy for backups, not a cache",
@@ -33,7 +34,7 @@ def hand_made(model: type[BaseModel], prefix: str = "") -> Iterator[str]:
         annotation = unwrap_optional(info.annotation)
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             yield from hand_made(annotation, f"{prefix}{name}.")
-        elif any(word in name for word in WORDS):
+        elif any(word in name for word in WORDS) or "ttl" in name.split("_"):
             yield f"{prefix}{name}"
 
 
@@ -75,6 +76,7 @@ class _Bad(BaseModel):
 
 class _Good(BaseModel):
     timeout_seconds: float = 30.0
+    throttle_seconds: float = 1.0
     window_parallel: int = 4
 
 

@@ -27,9 +27,10 @@ def motd(*, refresh: Annotated[bool | None, refresh_option(MOTD)] = None) -> Non
 List each cache on your spec, `PluginSpec(..., caches=(MOTD,))`: that
 gives it the setting `acme.caches.motd.max_age_seconds`, defaulting to the
 declared `max_age` (in whole seconds; `0` checks every time), listed with your
-other settings in `config list`, and read by `serve()` on every call. A cache left off the spec always uses its declared
-default. Composition quarantines a plugin that lists another plugin's cache
-(`foreign-cache`) or the same name twice (`duplicate-cache`).
+other settings in `config list`, and read by `serve()` on every call. A cache
+left off the spec always uses its declared default. Composition quarantines a
+plugin that lists another plugin's cache (`foreign-cache`) or the same name
+twice (`duplicate-cache`).
 
 `serve(keys, refresh=, fill=, read=)` takes the keys the command reads,
 each with a label for a human (`{"prod": "source prod"}`). Per key, it
