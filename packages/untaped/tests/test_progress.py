@@ -9,8 +9,8 @@ from contextlib import contextmanager, redirect_stderr
 
 import pytest
 
+from untaped.output.progress import ProgressHandle
 from untaped.output.sink import current_sink
-from untaped.progress import ProgressHandle
 
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 

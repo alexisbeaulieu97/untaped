@@ -93,6 +93,7 @@ from untaped.output import (
     Progress,
     StaleData,
 )
+from untaped.output.progress import ProgressHandle
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.plugins.registry import (
@@ -108,7 +109,6 @@ from untaped.plugins.registry import (
     SkillAsset,
     plugin_dir,
 )
-from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
 from untaped.records import (
     AbsolutePath,

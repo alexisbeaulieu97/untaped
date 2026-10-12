@@ -16,8 +16,8 @@ from untaped.errors import (
 from untaped.messages import plural
 from untaped.output.diagnostic import Failure, Message
 from untaped.output.policy import is_quiet, is_verbose
+from untaped.output.progress import ProgressHandle
 from untaped.output.sink import count_row_failures, current_sink
-from untaped.progress import ProgressHandle
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
