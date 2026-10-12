@@ -539,14 +539,18 @@ class Progress(Diagnostic, kind="untaped.progress"):
 class StaleData(Diagnostic, kind="untaped.stale"):
     """Cached data served past its freshness, and why: a ``warning``, never counted.
 
-    ``cache`` names the cache (``<owner>.<contract>_<method>`` for the
-    answer cache), ``key`` the entry in it. ``error`` is why the refresh
+    ``plugin`` names whose data it is: the plugin that declared the cache
+    (``Cache.plugin``), or for the answer cache the provider whose answer
+    was served. ``cache`` names the cache (``<plugin>.<name>``;
+    ``<owner>.<contract>_<method>`` for the answer cache), ``key`` the entry
+    in it. ``error`` is why the refresh
     failed or what is missing (``None`` under ``--cached``); it never counts
     toward the exit code. :meth:`describe` builds one with its wording.
     """
 
     level: ClassVar[Level] = "warning"
 
+    plugin: str
     cache: str
     key: str
     refreshed_at: UtcTimestamp
@@ -561,6 +565,7 @@ class StaleData(Diagnostic, kind="untaped.stale"):
     def describe(
         cls,
         *,
+        plugin: str,
         subject: str,
         cache: str,
         key: str,
@@ -595,6 +600,7 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         return cls(
             message=message,
             hint=hint,
+            plugin=plugin,
             cache=cache,
             key=key,
             refreshed_at=refreshed_at,

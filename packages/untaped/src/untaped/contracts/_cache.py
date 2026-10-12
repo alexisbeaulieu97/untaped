@@ -126,6 +126,7 @@ def _report_stale(
     """
     current_sink().emit(
         StaleData.describe(
+            plugin=binding.plugin,
             subject=binding.plugin,
             cache=f"{binding.owner}.{binding.contract.name}_{name}",
             key=key,

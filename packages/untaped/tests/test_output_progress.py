@@ -192,6 +192,7 @@ def test_a_stale_line_inside_the_quiet_period_prints_alone() -> None:
     stream = io.StringIO()
     stale = StaleData(
         message="source prod: cached data",
+        plugin="ansible",
         cache="ansible.index",
         key="prod",
         refreshed_at="2026-10-09T10:00:00Z",
