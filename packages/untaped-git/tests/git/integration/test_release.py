@@ -14,7 +14,8 @@ from untaped.testing.git import GitRemote
 from untaped_git.domain.release import Released, Removed
 from untaped_git.errors import StoreError
 from untaped_git.infrastructure.repo_files import worktree_entries
-from untaped_git.infrastructure.store import RELEASE_MARK, RepoStore
+from untaped_git.infrastructure.store import RepoStore
+from untaped_git.infrastructure.store_release import RELEASE_MARK
 
 
 def _shared(store_for: StoreFor, tmp_path: Path) -> tuple[Path, Path]:

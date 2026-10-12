@@ -1,0 +1,141 @@
+"""The per-worktree config of store repos: ``config.worktree`` and each worktree's keys.
+
+A store repo is bare and shared, so whatever a user's own ``git fetch`` or
+``push`` in a worktree needs (owner, refspec, filter, URL rewrite and
+credential helper) lives in that worktree's config, never the repo's. This module
+is the store's own: it uses :class:`RepoStore`'s internals.
+"""
+
+from __future__ import annotations
+
+import shlex
+import shutil
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from untaped.sdk import ErrorCategory
+from untaped_git.domain.namespace import layout_for
+from untaped_git.domain.url import https_origin
+from untaped_git.infrastructure.repo_files import names_admin, repo_origin, worktree_entries
+
+if TYPE_CHECKING:
+    from untaped_git.infrastructure.store import RepoStore
+
+_PLAIN_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
+
+
+def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | None) -> None:
+    """Write a worktree's own config; :meth:`RepoStore.write_worktree_config` documents it."""
+    with store._locked():
+        check_worktree(store, worktree)
+        enable_worktree_config(store)
+        write_owner_config(store, worktree)
+        label = repo_origin(store._path)
+        # Every rewrite onto the label goes, so an earlier URL spelling
+        # (https before ssh, say) never wins over this one.
+        for key in _rewrites_onto(store, worktree, label) if label else ():
+            _worktree_config(store, worktree, "--unset-all", key, check=False)
+        if label and label != store._url:
+            _worktree_config(store, worktree, f"url.{store._url}.insteadOf", label)
+        origin = https_origin(store._url)
+        if origin is None:
+            return
+        helper = f"credential.{origin}.helper"
+        _worktree_config(store, worktree, f"credential.{origin}.useHttpPath", "true")
+        _worktree_config(store, worktree, "--unset-all", helper, check=False)
+        if store._helper_first:
+            _worktree_config(store, worktree, "--add", helper, "")
+        _worktree_config(store, worktree, "--add", helper, _helper_command(profile))
+
+
+def enable_worktree_config(store: RepoStore) -> None:
+    if store._config_get("extensions.worktreeConfig") == "true":
+        return
+    store._git(["config", "--file", str(store._path / "config.worktree"), "core.bare", "true"])
+    store._git(["config", "--local", "--unset-all", "core.bare"], check=False)
+    store._git(["config", "core.repositoryformatversion", "1"])
+    store._git(["config", "extensions.worktreeConfig", "true"])
+    repair_worktrees(store, stripped=False)
+
+
+def repair_worktrees(store: RepoStore, *, stripped: bool) -> None:
+    """Give each registered worktree its own fetch keys after a shared-config change.
+
+    A worktree workspace owns gets workspace's owner keys. With the shared
+    refspec just ``stripped``, a worktree nobody owns (a 10.x worktree, or
+    one added by hand) gets the refspec and filter it lost, never an
+    owner: release would then remove it.
+    """
+    if store._config_get("extensions.worktreeConfig") != "true":
+        return
+    for entry in worktree_entries(store._path):
+        if entry.path is None or not names_admin(entry.path / ".git", entry.admin):
+            continue
+        if entry.owner == "workspace":
+            write_owner_config(store, entry.path, owner="workspace")
+        elif entry.owner is None and stripped:
+            _write_fetch_config(store, entry.path, plain=True)
+
+
+def write_owner_config(store: RepoStore, worktree: Path, *, owner: str | None = None) -> None:
+    owner = owner or store._plugin
+    _worktree_config(store, worktree, "untaped.owner", owner)
+    # Stamps which worktree is owned: git copies this file into worktrees
+    # added from this one, which must stay a user's own.
+    _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+    plain = layout_for(owner).heads == "refs/remotes/origin/"
+    _write_fetch_config(store, worktree, plain=plain)
+
+
+def _write_fetch_config(store: RepoStore, worktree: Path, *, plain: bool) -> None:
+    refspec = "remote.origin.fetch"
+    _worktree_config(store, worktree, "--unset-all", refspec, check=False)
+    if plain:
+        _worktree_config(store, worktree, refspec, _PLAIN_REFSPEC)
+    # A user's own fetch here brings the blobs of new commits.
+    _worktree_config(store, worktree, "remote.origin.partialclonefilter", "")
+
+
+def check_worktree(store: RepoStore, worktree: Path) -> None:
+    """Refuse a path that is not one of this repo's worktrees (a user's own clone, say)."""
+    result = store._git(
+        ["rev-parse", "--git-common-dir"],
+        cwd=worktree,
+        capture=True,
+        check=False,
+    )
+    common = result.text.strip()
+    # Relative to the worktree when git prints it relative (``--path-format`` is 2.31+).
+    if result.returncode != 0 or (worktree / common).resolve() != store._path.resolve():
+        raise store._error(
+            f"{worktree} is not a worktree of repo store {store._path}",
+            category=ErrorCategory.INVALID,
+        )
+
+
+def _rewrites_onto(store: RepoStore, worktree: Path, label: str) -> list[str]:
+    result = store._git(
+        ["config", "--worktree", "--null", "--get-regexp", r"^url\..*\.insteadof$"],
+        cwd=worktree,
+        capture=True,
+        check=False,
+    )
+    keys = []
+    for entry in result.text.split("\0"):
+        key, _, value = entry.partition("\n")
+        if key and value == label:
+            keys.append(key)
+    return keys
+
+
+def _worktree_config(store: RepoStore, worktree: Path, *args: str, check: bool = True) -> None:
+    store._git(["config", "--worktree", *args], cwd=worktree, check=check)
+
+
+def _helper_command(profile: str | None) -> str:
+    executable = shutil.which("untaped") or str(Path(sys.argv[0]).resolve())
+    command = f"!{shlex.quote(executable)}"
+    if profile:
+        command += f" --profile {shlex.quote(profile)}"
+    return f"{command} git credential"
