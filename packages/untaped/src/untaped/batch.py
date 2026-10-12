@@ -19,10 +19,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from untaped.cli import echo, report_declined
+from untaped.cli import report_declined
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError
 from untaped.messages import plural
-from untaped.output.sink import Diagnostics, failure_exit_code
+from untaped.output.sink import Diagnostics, current_sink, failure_exit_code
 from untaped.ui import UiContext
 
 
@@ -134,14 +134,21 @@ def batch_apply[T, R](
             if preview is not None:
                 preview(planned_rows)
             elif render_generic_preview:
-                echo(f"About to {verb} {plural(total, noun)}:", err=True)
+                diag = Diagnostics()
+                diag.info(f"About to {verb} {plural(total, noun)}:", unmuted=True)
                 for row in planned_rows:
-                    echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
+                    diag.info(
+                        "  - " + "\t".join(str(value) for value in row.values()), unmuted=True
+                    )
             if not ui.confirm("Continue?"):
                 return BatchOutcome(results=[], planned_rows=planned_rows, cancelled=True)
     results: list[tuple[T, R]] = []
     failures: list[tuple[T, UntapedError]] = []
-    with ui.progress(f"{verb.capitalize()} {plural(total, noun)}") as handle:
+    # The sink, with the passed context's flags: a hand-built ``UiContext(quiet=True)`` stays quiet.
+    task = current_sink().progress(
+        f"{verb.capitalize()} {plural(total, noun)}", verbose=ui.verbose, quiet=ui.quiet
+    )
+    with task as handle:
         for index, item in enumerate(items, 1):
             handle.update(label(item), done=index, total=total)
             try:

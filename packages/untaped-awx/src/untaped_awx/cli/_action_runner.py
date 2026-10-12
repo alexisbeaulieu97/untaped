@@ -7,20 +7,16 @@ from collections import Counter
 from collections.abc import Callable, Collection, Sequence
 from typing import Any, NoReturn
 
-from rich.text import Text
-
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     Failure,
     FormatOption,
-    UiContext,
     UntapedError,
-    echo,
     emit,
     finish,
-    hint,
     raise_usage,
-    report_error,
+    run_hint,
 )
 from untaped_awx.application import RunAction
 from untaped_awx.application.abandon_jobs import AbandonJobs
@@ -107,7 +103,7 @@ def run_action_selection(
         continue_on_error=continue_on_error,
         error_detail=safe_error,
         abandon=abandon,
-        ui=ctx.progress_ui(),
+        diag=ctx.diag,
     )
     launched: list[tuple[str, Job]] = []
     for index, outcome in enumerate(outcomes):
@@ -133,7 +129,7 @@ def run_action_selection(
         )
     _report_rows(ctx, rows)
     for kind, ids in unfinished.items():
-        echo(hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"), err=True)
+        ctx.diag.hint(run_hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"))
     _emit_rows(rows, action=action, fmt=fmt, columns=columns)
     finish(any(row["action"] != "completed" for row in rows))
 
@@ -147,9 +143,9 @@ def _report_rows(ctx: AwxContext, rows: list[dict[str, Any]]) -> None:
     """
     for row in rows:
         if row.get("error"):
-            report_error(Failure.model_validate(row["error"]), item=row["target_name"])
+            ctx.diag.failure(Failure.model_validate(row["error"]), item=row["target_name"])
         elif row.get("detail"):
-            ctx.progress_ui().message("warning", f"{row['target_name']}: {row['detail']}")
+            ctx.diag.warning(f"{row['target_name']}: {row['detail']}")
 
 
 _TABLE_COLUMNS = ("target_name", "id", "status", "action", "detail", "payload")
@@ -216,7 +212,7 @@ def _watch(
         for _, job in unmonitored:
             abandon_now(job)
     except KeyboardInterrupt:
-        _interrupted(ctx.progress_ui(), [*launched, *unmonitored], abandon)
+        _interrupted(ctx.diag, [*launched, *unmonitored], abandon)
     finals, errors = (
         _monitor(
             ctx,
@@ -315,7 +311,7 @@ def _submit(
     continue_on_error: bool,
     error_detail: Callable[[Exception, SelectedResource], str],
     abandon: AbandonJobs,
-    ui: UiContext,
+    diag: Diagnostics,
 ) -> list[SelectedActionOutcome[Job]]:
     """Run the POST phase; Ctrl-C abandons and names the executions submitted so far."""
     try:
@@ -329,7 +325,7 @@ def _submit(
     except ActionsInterruptedError as interrupted:
         label_by_target = {id(item): label for item, label in zip(targets, labels, strict=True)}
         _interrupted(
-            ui,
+            diag,
             [
                 (label_by_target[id(outcome.target)], job)
                 for outcome in interrupted.outcomes
@@ -356,12 +352,12 @@ def _monitor(
     finished: dict[str, Job] = {}
     try:
         if follow:
-            ui = ctx.progress_ui()
+            diag = ctx.diag
             return drain_parallel(
                 ctx.job_monitor(timeout=timeout),
                 launched,
-                # Only the label is styled: log lines stay byte-for-byte.
-                lambda prefix, line: ui.styled(Text(prefix, style="dim cyan"), err=True, tail=line),
+                # Relayed as is: a log line is never wrapped or tab-expanded.
+                lambda prefix, line: diag.relay(prefix + line),
                 stop=ctx.stop,
                 finished=finished,
                 abandon=on_abandon,
@@ -377,14 +373,14 @@ def _monitor(
         )
     except KeyboardInterrupt:
         _interrupted(
-            ctx.progress_ui(),
+            ctx.diag,
             [(label, finished.get(label, job)) for label, job in launched] + unmonitored,
             abandon,
         )
 
 
 def _interrupted(
-    ui: UiContext, executions: Sequence[tuple[str, Job]], abandon: AbandonJobs
+    diag: Diagnostics, executions: Sequence[tuple[str, Job]], abandon: AbandonJobs
 ) -> NoReturn:
     """Abandon every execution not known to have ended, then name them; exit 130.
 
@@ -394,7 +390,7 @@ def _interrupted(
         abandon.unfinished(job for _, job in executions)
     finally:
         report_interrupted(
-            ui,
+            diag,
             [(label, abandon.latest(job)) for label, job in executions],
             cancelled=abandon.cancelled,
         )
@@ -404,7 +400,7 @@ _ACTIVE_STATUSES = frozenset({"new", "pending", "waiting", "running"})
 
 
 def report_interrupted(
-    ui: UiContext,
+    diag: Diagnostics,
     executions: Sequence[tuple[str | None, Job]],
     *,
     cancelled: Collection[tuple[str, int]] = (),
@@ -422,13 +418,13 @@ def report_interrupted(
             continue
         item = f"{label} ({job.kind} {job.id})" if label else f"{job.kind} {job.id}"
         if (job.kind, job.id) in cancelled:
-            ui.message("warning", f"{item}: interrupted, cancel requested")
+            diag.warning(f"{item}: interrupted, cancel requested")
             continue
         state = "keeps running" if job.status in _ACTIVE_STATUSES else "was launched"
-        ui.message("warning", f"{item}: interrupted, {state}")
+        diag.warning(f"{item}: interrupted, {state}")
         by_kind.setdefault(job.kind, []).append(str(job.id))
     for kind, ids in by_kind.items():
-        echo(hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"), err=True)
+        diag.hint(run_hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"))
     raise SystemExit(130)
 
 
@@ -459,9 +455,9 @@ def _confirm_targets(ctx: AwxContext, targets: Sequence[SelectedResource], *, ac
     A decline raises :class:`OperationCancelledError` (exit 1).
     """
     for item in targets:
-        echo(
+        ctx.diag.info(
             f"{action} {item.kind}/{item.name} id={item.id} scope={format_scope(item.scope)}",
-            err=True,
+            unmuted=True,
         )
     return confirm_batch(ctx, count=len(targets), verb=action, yes=False, dry_run=False)
 

@@ -28,10 +28,8 @@ from untaped.sdk import (
     Failure,
     FormatOption,
     create_app,
-    echo,
     emit,
     finish,
-    report_error,
     report_errors,
     writes,
 )
@@ -179,11 +177,11 @@ def _add_membership_verb(
                     "associate": list(plan.to_associate),
                     "disassociate": list(plan.to_disassociate),
                 }
-                echo(
+                ctx.diag.info(
                     f"{verb.capitalize()} {ref.field} on {spec.kind}/{selected_parent.name} "
                     f"id={selected_parent.id}: add={row['associate']} "
                     f"remove={row['disassociate']}",
-                    err=True,
+                    unmuted=True,
                 )
                 failed = False
                 if confirm_batch(
@@ -209,7 +207,7 @@ def _add_membership_verb(
                         row["detail"] = redact_error(exc, spec, selected_parent.record)
                         error = Failure.from_exception(exc, message=row["detail"])
                         row["error"] = error.model_dump(mode="json")
-                        report_error(error, item=f"{spec.kind}/{selected_parent.name}")
+                        ctx.diag.failure(error, item=f"{spec.kind}/{selected_parent.name}")
                         failed = True
                 emit(
                     [row],

@@ -15,7 +15,6 @@ from untaped.sdk import (
     UntapedError,
     UsageError,
     atomic_write,
-    echo,
     run_editor,
 )
 from untaped_awx.application.edit_resources import EditResources
@@ -95,11 +94,10 @@ def run_edit(
                         raise  # the controller or setup failed, not the edited YAML
                     # Engine errors can include user-supplied field values; do not
                     # echo them before the secret policy has prepared the batch.
-                    ui = ctx.progress_ui()
-                    ui.message(
-                        "warning",
-                        "invalid edited batch; no changes written; fix the YAML or field values",
+                    ctx.diag.warning(
+                        "invalid edited batch; no changes written; fix the YAML or field values"
                     )
+                    ui = ctx.progress_ui()
                     with ui.terminal(refusal="edit requires a terminal to reopen the editor"):
                         reopen = ui.confirm("Reopen editor?", default=False)
                     if reopen:
@@ -120,7 +118,7 @@ def run_edit(
             if clean:
                 shutil.rmtree(directory)
             else:
-                echo(f"Edited batch retained at {path}", err=True)
+                ctx.diag.warning(f"Edited batch retained at {path}")
     emit_outcomes(
         outcomes,
         fmt=controls.fmt,

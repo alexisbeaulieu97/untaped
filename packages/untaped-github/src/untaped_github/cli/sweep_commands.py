@@ -11,11 +11,9 @@ from untaped.sdk import (
     FormatOption,
     OutputFormat,
     StdinOption,
-    UiContext,
     UsageError,
     app_context,
     clamp_parallel,
-    echo,
     emit,
     finish,
     plural,
@@ -36,6 +34,7 @@ from untaped_github.cli.scopes import (
 from untaped_github.settings import GithubSettings
 
 if TYPE_CHECKING:
+    from untaped.sdk import Diagnostics
     from untaped_github.application import GitCorpus, SweepMatch, SweepReport
     from untaped_github.domain import RepoSweepOutcome, SweepQuery
 
@@ -215,12 +214,15 @@ def sweep_command(
         )
 
         if sync_mode == "off":
-            with ctx.ui(strict=False).progress("Sweeping cached repositories…") as progress:
+            with ctx.diag.progress("Sweeping cached repositories") as progress:
                 report = Sweep(inventory=lambda _scope: (), corpus=corpus)(
                     options, progress=progress
                 )
         else:
-            with open_client() as (client, ui), ui.progress("Sweeping repositories…") as progress:
+            with (
+                open_client() as (client, _),
+                ctx.diag.progress("Sweeping repositories") as progress,
+            ):
                 report = Sweep(inventory=ResolveRepositoryInventory(client), corpus=corpus)(
                     options, progress=progress
                 )
@@ -248,7 +250,7 @@ def sweep_command(
                 kind="github.sweep_repo",
                 empty="No matching repositories found.",
             )
-        _footer(report, ctx.ui(strict=False))
+        _footer(report, ctx.diag)
         finish(
             False,
             predicate_hit=(strict and bool(report.unscanned))
@@ -354,21 +356,17 @@ def _default_columns(*, query: SweepQuery, owners: bool, fmt: OutputFormat) -> l
     return columns
 
 
-def _footer(report: SweepReport, ui: UiContext) -> None:
+def _footer(report: SweepReport, diag: Diagnostics) -> None:
     oldest = report.oldest_fetched_at.isoformat() if report.oldest_fetched_at else "n/a"
-    echo(
-        (
-            f"Sweep: {len(report.rows)} matched of {report.scanned} scanned "
-            f"({report.refreshed} refreshed, {report.cached} cached), oldest fetch {oldest}"
-        ),
-        err=True,
+    diag.info(
+        f"Sweep: {len(report.rows)} matched of {report.scanned} scanned "
+        f"({report.refreshed} refreshed, {report.cached} cached), oldest fetch {oldest}"
     )
     if report.stale:
-        ui.message(
-            "warning",
+        diag.warning(
             f"refresh failed for {plural(len(report.stale), 'repo')}; scanned cached copies",
         )
         for failure in report.stale:
-            ui.message("warning", f"stale {failure.repo}: {failure.reason}")
+            diag.warning(f"stale {failure.repo}: {failure.reason}")
     for failure in report.unscanned:
-        ui.message("warning", f"unscanned {failure.repo}: {failure.reason}")
+        diag.warning(f"unscanned {failure.repo}: {failure.reason}")

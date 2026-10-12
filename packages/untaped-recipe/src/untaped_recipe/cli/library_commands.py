@@ -12,6 +12,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     DryRunOption,
     Failure,
     FormatOption,
@@ -31,7 +32,6 @@ from untaped.sdk import (
     q,
     read_identifiers,
     render_rows,
-    report_error,
     run_editor,
     writes,
 )
@@ -81,6 +81,8 @@ from untaped_recipe.infrastructure.pack_store import (
     pack_content_hash,
     validate_pack,
 )
+
+_diag = Diagnostics()
 
 _EMPTY_LIBRARY_HINT = (
     "no packs installed; scaffold one with `untaped recipe packs init NAME` "
@@ -247,7 +249,7 @@ def sync_command(
             try:
                 plans.append(fetch(pack))
             except UntapedError as exc:
-                report_error(exc, item=name)
+                _diag.failure(exc, item=name)
                 failed[name] = exc
         changed = [plan for plan in plans if plan.changed]
         if dry_run and changed:
@@ -318,7 +320,7 @@ def _install_for_sync(library: PackLibrary, plan: _SyncPlan, *, discard_edits: b
 
 def _sync_preview(plans: Sequence[_SyncPlan]) -> None:
     """List the packs about to sync: source, commit move, and changed hook code."""
-    echo(f"About to sync {plural(len(plans), 'pack')}:", err=True)
+    _diag.info(f"About to sync {plural(len(plans), 'pack')}:", unmuted=True)
     for plan in plans:
         pack = plan.pack
         at = f"@{pack.rev}" if pack.rev else ""
@@ -327,11 +329,11 @@ def _sync_preview(plans: Sequence[_SyncPlan]) -> None:
             if plan.commit
             else ""
         )
-        echo(f"  - {pack.name} from {pack.source}{at}{move}", err=True)
+        _diag.info(f"  - {pack.name} from {pack.source}{at}{move}", unmuted=True)
         if plan.hook_changes:
-            echo(f"    hook code changed: {', '.join(plan.hook_changes)}", err=True)
+            _diag.info(f"    hook code changed: {', '.join(plan.hook_changes)}", unmuted=True)
         else:
-            echo("    hook code unchanged", err=True)
+            _diag.info("    hook code unchanged", unmuted=True)
 
 
 def _short_commit(commit: str | None) -> str:
@@ -468,7 +470,7 @@ def _list_rows(
         library = PackLibrary(library_dir=library_dir())
         installed = library.packs()
         for name, error in library.load_errors().items():
-            recipe_ui().message("warning", f"skipping pack '{name}': {error}")
+            _diag.warning(f"skipping pack '{name}': {error}")
         rendered = render_rows(
             rows_of(installed), fmt=fmt, columns=columns, kind=kind, table_columns=table_columns
         )
@@ -476,7 +478,7 @@ def _list_rows(
             echo(rendered)
         # The hint is human guidance: structured formats stay machine-clean.
         if fmt == "table" and not installed and hint_when_empty:
-            recipe_ui().message("info", _EMPTY_LIBRARY_HINT)
+            _diag.info(_EMPTY_LIBRARY_HINT)
 
 
 def get_command(
@@ -573,10 +575,7 @@ def validate_command(
         if rendered:
             echo(rendered)
         if ref_text is None and not rows:
-            recipe_ui().message(
-                "info",
-                _EMPTY_LIBRARY_HINT,
-            )
+            _diag.info(_EMPTY_LIBRARY_HINT)
         finish(any(row.status == "fail" for row in rows))
 
 
@@ -612,13 +611,12 @@ def remove_command(
             return item
 
         def _preview(rows: Sequence[dict[str, object]]) -> None:
-            echo(f"About to remove {plural(len(rows), 'pack')}:", err=True)
+            _diag.info(f"About to remove {plural(len(rows), 'pack')}:", unmuted=True)
             for row in rows:
-                echo(f"  - {row['name']}", err=True)
+                _diag.info(f"  - {row['name']}", unmuted=True)
             for name in selected:
                 if library.local_edits(name):
-                    recipe_ui().message(
-                        "warning",
+                    _diag.warning(
                         f"pack {q(name)} has local edits in the library "
                         "(via an edit or init command); removing discards them",
                     )
@@ -797,11 +795,10 @@ def _render_pack_add_preview(
     *,
     local_edits: bool = False,
 ) -> None:
-    ui = recipe_ui()
     recipes = ", ".join(sorted(manifest.recipes)) or "(none)"
     hooks = ", ".join(sorted(manifest.hooks)) or "(none)"
-    ui.message("info", f"Pack: {installed_name}")
-    ui.message("info", f"Recipes: {recipes}")
-    ui.message("info", f"Hooks: {hooks}")
+    _diag.info(f"Pack: {installed_name}")
+    _diag.info(f"Recipes: {recipes}")
+    _diag.info(f"Hooks: {hooks}")
     if local_edits:
-        ui.message("warning", "library copy has local edits; --discard-edits will overwrite them")
+        _diag.warning("library copy has local edits; --discard-edits will overwrite them")

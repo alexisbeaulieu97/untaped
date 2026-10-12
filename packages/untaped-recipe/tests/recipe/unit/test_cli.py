@@ -629,7 +629,7 @@ def test_apply_preview_none_keeps_summary_and_stdout_format_independent(tmp_path
     assert "out.txt" not in result.stderr
 
 
-def test_apply_quiet_mutes_preview_summary_and_post_run_info(tmp_path: Path) -> None:
+def test_apply_quiet_keeps_preview_summary_and_mutes_post_run_info(tmp_path: Path) -> None:
     recipe, target = _out_recipe(tmp_path)
     root = bootstrap.build_root_app(candidates=(plugin_candidate(SPEC),))
 
@@ -639,7 +639,9 @@ def test_apply_quiet_mutes_preview_summary_and_post_run_info(tmp_path: Path) -> 
     )
 
     assert result.exit_code == 0, result.output
-    assert "Recipe preview:" not in result.stderr
+    # The preview, summary line included, is not commentary; the result summary is.
+    assert "Recipe preview:" in result.stderr
+    assert "out.txt" in result.stderr
     assert "Recipe dry run:" not in result.stderr
 
 

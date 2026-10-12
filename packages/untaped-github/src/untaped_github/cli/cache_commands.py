@@ -10,6 +10,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     DryRunOption,
     FormatOption,
     OutputFormat,
@@ -20,13 +21,11 @@ from untaped.sdk import (
     batch_apply,
     clamp_parallel,
     create_app,
-    echo,
     emit,
     finish,
     not_found,
     plural,
     report_errors,
-    report_row_errors,
     size_text,
     summary,
     writes,
@@ -46,6 +45,8 @@ from untaped_github.cli.scopes import (
 from untaped_github.domain import CorpusRepoResult, GithubRepo
 from untaped_github.errors import GithubError
 from untaped_github.settings import GithubSettings
+
+_diag = Diagnostics()
 
 AllOption = Annotated[
     bool,
@@ -157,7 +158,7 @@ def sync_command(
                 policy="Git corpus worker cap",
             ),
         )
-        with open_client() as (client, ui), ui.progress("Syncing repositories…") as progress:
+        with open_client() as (client, _), _diag.progress("Syncing repositories") as progress:
             outcomes = SyncCorpus(
                 inventory=ResolveRepositoryInventory(client),
                 corpus=open_corpus(settings),
@@ -169,8 +170,10 @@ def sync_command(
             kind="github.sync_outcome",
             empty="No repositories in scope.",
         )
-        report_row_errors(outcomes, item=lambda outcome: outcome.repo)
-        echo(summary("sync", Counter(outcome.action for outcome in outcomes)), err=True)
+        for outcome in outcomes:
+            if outcome.error is not None:
+                _diag.failure(outcome.error, item=outcome.repo)
+        _diag.info(summary("sync", Counter(outcome.action for outcome in outcomes)))
         finish(any(outcome.failed for outcome in outcomes))
 
 
@@ -256,7 +259,7 @@ def _select(
     settings = app_context().section("github", GithubSettings)
     cached = _in_orgs(open_corpus(settings).list_repos(), orgs=tuple(org or ()))
     if prune:
-        with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
+        with open_client() as (client, _), _diag.progress("Resolving repository inventory"):
             live = ResolveRepositoryInventory(client)(
                 RepositoryInventoryScope(orgs=tuple(org or ()))
             )
@@ -333,10 +336,8 @@ def worktree_command(
     from untaped_github.application import WorktreeCorpus  # noqa: PLC0415
 
     with report_errors():
-        ctx = app_context()
-        ui = ctx.ui()
-        settings = ctx.section("github", GithubSettings)
-        with ui.progress("Materializing worktree…"):
+        settings = app_context().section("github", GithubSettings)
+        with _diag.progress("Materializing worktree"):
             result = WorktreeCorpus(open_corpus(settings))(repo, ref=ref)
         emit(result, fmt=fmt, columns=columns, kind="github.worktree")
 
@@ -346,7 +347,7 @@ def _status_summary(rows: tuple[CorpusRepoResult, ...]) -> None:
     ages = sorted(age for row in rows if (age := _parse_time(row.fetched_at)) is not None)
     oldest = _relative_age(ages[0]) if ages else "n/a"
     newest = _relative_age(ages[-1]) if ages else "n/a"
-    echo(f"Cache: {plural(len(rows), 'repo')}, {total}, oldest {oldest}, newest {newest}", err=True)
+    _diag.info(f"Cache: {plural(len(rows), 'repo')}, {total}, oldest {oldest}, newest {newest}")
 
 
 def _status_display(records: list[dict[str, object]]) -> list[dict[str, object]]:

@@ -190,8 +190,9 @@ untaped config set ui.format json
 ```
 
 Only data goes to stdout. Progress, warnings and errors go to stderr, so a
-pipe carries only records. `-q`/`--quiet` mutes progress and success
-messages.
+pipe carries only records. `-q`/`--quiet` mutes progress and messages;
+warnings, errors, hints, a preview before a prompt, a stream you asked to
+watch and output a flag asks for (`--columns ?`) still print.
 
 ```bash
 # Check out every non-archived repo of a GitHub team into a workspace

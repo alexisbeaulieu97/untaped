@@ -34,6 +34,7 @@ from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, most_severe
 from untaped.messages import hint, plural
 from untaped.output.diagnostic import Failure
+from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import CompositionResult, settings_model
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
@@ -52,6 +53,8 @@ from untaped.token_store import (
     usable_stores,
 )
 from untaped.ui import UiContext, ui_context
+
+_diag = Diagnostics()
 
 StoreOption = Annotated[
     StoreName | None,
@@ -274,10 +277,10 @@ def _set(
     ui = ui_context(strict=False)
     token = _read_stdin_token() if stdin else _prompt_token(ui, section)
     where = save_token(SettingsFileRepository(), section, profile, token, chosen)
-    ui.success(
+    _diag.success(
         f"stored the {section} token in {where}; {section}.token_command set in profile {profile}"
     )
-    _warn_env_override(ui, section)
+    _warn_env_override(section)
     emit(
         {"section": section, "profile": profile, "store": where, "action": "stored"},
         fmt=fmt,
@@ -300,11 +303,10 @@ def _prompt_token(ui: UiContext, section: str) -> str:
         return ui.secret(f"{section} token").strip()
 
 
-def _warn_env_override(ui: UiContext, section: str) -> None:
+def _warn_env_override(section: str) -> None:
     override = token_override_env(section)
     if override is not None:
-        ui.message(
-            "warning",
+        _diag.warning(
             f"${override} is set and wins over the stored token until you unset it",
         )
 
@@ -330,13 +332,12 @@ def _unset(
         holder = provenance.get((section, "token_command"))
         if holder is not None and holder != profile:
             fix = hint(f"--profile {holder} auth unset {section}")
-            ui.message(
-                "info",
+            _diag.info(
                 f"{section}.token_command is inherited from profile {holder}; "
                 f"profile {profile} is unchanged\n{fix}",
             )
         else:
-            ui.message("info", f"{section}.token_command is not set in profile {profile}")
+            _diag.info(f"{section}.token_command is not set in profile {profile}")
         emit(row, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
         return
     preset = preset_entry(argv)
@@ -359,12 +360,12 @@ def _unset(
     deleted, _ = delete_stored_token(argv)
     SettingsFileRepository().unset_value(f"{section}.token_command", profile=profile)
     if deleted == "gone":
-        ui.success(
+        _diag.success(
             f"the {section} token was already gone from {where}; "
             f"unset {section}.token_command (profile {profile})"
         )
     else:
-        ui.success(f"deleted the {section} token from {where} (profile {profile})")
+        _diag.success(f"deleted the {section} token from {where} (profile {profile})")
     emit({**row, "action": deleted}, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
 
 
@@ -387,7 +388,7 @@ def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -
                 continue
             rows.append({"profile": profile, "section": spec.section, "source": source})
     stores = ", ".join(store.name for store in usable_stores()) or "none"
-    ui_context(strict=False).message("info", f"token stores usable here: {stores}")
+    _diag.info(f"token stores usable here: {stores}")
     emit(rows, fmt=fmt, columns=columns, kind="untaped.token_source")
 
 
@@ -427,9 +428,8 @@ def _migrate(
         for section in sections
         if (token := plaintext_token(layout.profile_data(raw, profile), section)) is not None
     ]
-    ui = ui_context(strict=False)
     if not pending:
-        ui.message("info", "no plaintext tokens in the config; nothing to move")
+        _diag.info("no plaintext tokens in the config; nothing to move")
         emit([], fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
         return
     chosen = pick_store(store)
@@ -451,7 +451,7 @@ def _migrate(
             hint=next((exc.hint for exc in failures if exc.hint), None),
         )
     if not dry_run:
-        ui.success(f"moved {plural(len(rows), 'token')} to {chosen.name}")
+        _diag.success(f"moved {plural(len(rows), 'token')} to {chosen.name}")
 
 
 def _move_all(

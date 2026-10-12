@@ -28,7 +28,6 @@ from typing import IO, Any
 from pydantic import ValidationError
 
 from untaped.batch import batch_apply, finish
-from untaped.cli import echo
 from untaped.errors import ErrorCategory, ExitCode, UntapedError
 from untaped.management._render import emit_fix_list, emit_fix_plan, emit_isolated
 from untaped.management.doctor import (
@@ -38,15 +37,17 @@ from untaped.management.doctor import (
     placeholders,
     run_line,
 )
-from untaped.messages import command_argv, hint, not_found, split_profile, summary
+from untaped.messages import command_argv, not_found, run_hint, split_profile, summary
 from untaped.output.diagnostic import Failure
 from untaped.output.policy import DIAGNOSTICS_ENV
-from untaped.output.sink import count_row_failures, current_sink
+from untaped.output.sink import Diagnostics, count_row_failures, current_sink
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 from untaped.verbose import is_verbose
+
+_diag = Diagnostics()
 
 KIND = "untaped.fix_outcome"
 _ACTIONS = ("fixed", "partial", "failed", "skipped", "planned")
@@ -93,7 +94,7 @@ def run_fixes(
     rows = collect_doctor_rows(shell, result, online=online)
     fixes = _select(rows)
     if not fixes:
-        ui.message("info", "nothing to fix")
+        _diag.info("nothing to fix")
         _emit([], fmt=fmt, columns=columns, profile=profile)
         _exit_unhealthy(rows, profile)
         return
@@ -129,7 +130,7 @@ def run_fixes(
     ]
     _emit(outcomes, fmt=fmt, columns=columns, profile=profile)
     counts = {action: sum(row["action"] == action for row in outcomes) for action in _ACTIONS}
-    echo(summary("doctor fix", counts), err=True)
+    _diag.info(summary("doctor fix", counts))
     if dry_run:
         return
     finish(counts["failed"] > 0 or counts["partial"] > 0)
@@ -337,7 +338,7 @@ def _emit(rows: list[Row], *, fmt: OutputFormat, columns: list[str] | None, prof
 def _exit_unhealthy(rows: list[dict[str, object]], profile: str) -> None:
     """Exit 1, pointing at ``doctor`` for ``profile``, when a check still fails."""
     if any(row["status"] == "fail" for row in rows):
-        echo(hint(run_line(command_argv("doctor", profile=profile), profile)), err=True)
+        _diag.hint(run_hint(run_line(command_argv("doctor", profile=profile), profile)))
         raise SystemExit(ExitCode.FAILURE)
 
 

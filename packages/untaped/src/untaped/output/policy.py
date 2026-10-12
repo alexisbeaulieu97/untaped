@@ -24,8 +24,11 @@ from __future__ import annotations
 import os
 import threading
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
-from typing import Literal, Protocol
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Literal, Protocol
+
+if TYPE_CHECKING:
+    from untaped.theme import ThemeSpec
 
 #: Environment variable choosing the stderr format: ``json`` or ``text``.
 DIAGNOSTICS_ENV = "UNTAPED_DIAGNOSTICS"
@@ -39,13 +42,17 @@ class OutputPolicy:
 
     ``format`` is the ``--format`` the user chose (``None``: the command's
     default), ``forced`` the ``UNTAPED_DIAGNOSTICS`` choice read when the
-    policy was built (``None``: follow the format).
+    policy was built (``None``: follow the format). ``theme`` is the
+    ``ui.theme`` text messages render with, resolved once settings load
+    (``None``: the default theme); it is left out of the hash, since a
+    ``ThemeSpec`` has none.
     """
 
     format: str | None = None
     forced: Literal["text", "json"] | None = None
     quiet: bool = False
     verbose: bool = False
+    theme: ThemeSpec | None = field(default=None, hash=False)
 
     @property
     def diagnostics(self) -> Literal["text", "json"]:
@@ -162,6 +169,18 @@ def note_format(fmt: str | None) -> None:
         holder.policy = with_format(holder.policy, fmt)
 
 
+def note_theme(theme: ThemeSpec | None) -> None:
+    """Record the theme text messages render with on the scope's policy.
+
+    Set once settings load (phase 2, beside :func:`note_format`; ``None``
+    under JSON diagnostics, which render no theme); a nested scope inherits
+    it. Outside a scope nothing happens.
+    """
+    holder = context_holder()
+    if holder is not None:
+        holder.policy = replace(holder.policy, theme=theme)
+
+
 def is_verbose() -> bool:
     """Whether ``--verbose`` is active for the current invocation."""
     return current_policy().verbose
@@ -202,9 +221,12 @@ def reset_flag(name: Literal["quiet", "verbose"], token: FlagToken | None) -> No
 def enable_quiet(_value: str = "") -> FlagToken:
     """Root-option handler for ``--quiet``/``-q``.
 
-    Mutes the progress spinner and ``success``/``info`` messages, leaving
-    warnings, failures, hints, prompts, stdout and confirmation previews.
-    Takes no value; the dispatcher passes a placeholder string that is ignored.
+    Mutes commentary: lines the user did not ask for and need not act on
+    (progress, ``success`` and ``info``). A preview before a prompt, a stream
+    the user asked to watch, and output a flag exists to produce are not
+    commentary and print (``info(…, unmuted=True)``). Warnings, failures and
+    hints always print, as do prompts and stdout. Takes no value; the
+    dispatcher passes a placeholder string that is ignored.
     """
     return set_flag("quiet", True)
 
@@ -223,6 +245,7 @@ __all__ = [
     "is_quiet",
     "is_verbose",
     "note_format",
+    "note_theme",
     "reset_quiet",
     "with_format",
 ]

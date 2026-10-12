@@ -252,3 +252,12 @@ def test_assert_fills_names_an_owner_whose_contracts_fail(contract_plugins_site:
         pytest.raises(LookupError, match="whose owner may be rack: its contracts function fails"),
     ):
         assert_fills(_bin(), samples=[box(id=3, label="pens")])
+
+
+def test_quiet_prints_the_checklist_without_its_footer(contract_plugins_site: Path) -> None:
+    _record(contract_plugins_site, _current_hash())
+    app = bootstrap.build_root_app(candidates=candidates()).meta
+    quiet = invoke_cli(app, ["-q", "plugin", "check", "bin"])
+    assert quiet.exit_code == 0, quiet.output
+    assert "rack.item_source.items" in quiet.stdout
+    assert quiet.stderr == ""

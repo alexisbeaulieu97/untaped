@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 from cyclopts import Parameter
 
@@ -13,6 +13,7 @@ from untaped.sdk import (
     AbsolutePath,
     BatchOutcome,
     ColumnsOption,
+    Diagnostics,
     DryRunOption,
     Failure,
     FormatOption,
@@ -63,7 +64,7 @@ from untaped_recipe.infrastructure.file_writer import ApplyWriteError, flush_cha
 from untaped_recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped_recipe.infrastructure.pack_store import PackLibrary
 
-MessageKind = Literal["success", "warning", "error", "info"]
+_diag = Diagnostics()
 
 
 class ApplyOutcomeRecord(OutcomeRecord, TargetRecord):
@@ -304,12 +305,11 @@ def _apply_context(
         loaded, targets, inputs=inputs, input_from=_input_sources(raw_input_from), prompt=prompt
     )
     workers = clamp_parallel(parallel, cap=32, policy="recipe planning cap")
-    ui = recipe_ui()
     with UvHookWorkerPool(
         max_workers_per_project=workers,
         hook_timeout_seconds=hook_timeout_seconds,
         startup_timeout_seconds=settings().hook_startup_timeout_seconds,
-        startup_notice=hook_startup_notice(ui),
+        startup_notice=hook_startup_notice(),
     ) as hook_workers:
         runner = RunBulkApply(
             ApplyRecipe(
@@ -319,7 +319,7 @@ def _apply_context(
                 )
             )
         )
-        with ui.progress("Planning targets") as progress:
+        with _diag.progress("Planning targets") as progress:
             plans = runner.plan_resolved(
                 recipe=loaded,
                 recipe_dir=recipe_path.parent,
@@ -378,7 +378,7 @@ def _execute_plans(
 
     def _confirm_preview(rows: Sequence[dict[str, object]]) -> None:
         del rows
-        recipe_ui().message("info", preview_summary(context.plans))
+        _diag.info(preview_summary(context.plans), unmuted=True)
 
     outcome = batch_apply(
         actionable,
@@ -487,19 +487,14 @@ def _render_result_summary(
     failed = counts.failed + len(execution.failed)
     changed, unchanged = counts.changing, counts.unchanged
     skipped_note = f", {counts.skipped} skipped" if counts.skipped else ""
-    ui = recipe_ui()
     if check:
-        kind: MessageKind = "warning" if failed or changed else "info"
-        ui.message(
-            kind,
+        (_diag.warning if failed or changed else _diag.info)(
             f"Recipe check: {changed} would change, {unchanged} unchanged"
             f"{skipped_note}, {failed} failed",
         )
         return
     if dry_run:
-        kind = "warning" if failed else "info"
-        ui.message(
-            kind,
+        (_diag.warning if failed else _diag.info)(
             f"Recipe dry run: {changed} would change, {unchanged} unchanged"
             f"{skipped_note}, {failed} failed",
         )
@@ -507,10 +502,8 @@ def _render_result_summary(
     if execution.cancelled:
         # finish() prints the standard decline line.
         return
-    kind = "warning" if failed else "info"
     backup = f", backup {execution.backup_id}" if execution.backup_id else ""
-    ui.message(
-        kind,
+    (_diag.warning if failed else _diag.info)(
         f"Recipe apply: {len(execution.applied)} applied, {unchanged} unchanged"
         f"{skipped_note}, {failed} failed{backup}",
     )

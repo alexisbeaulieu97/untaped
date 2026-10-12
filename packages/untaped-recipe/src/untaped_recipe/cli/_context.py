@@ -1,4 +1,4 @@
-"""The UI context recipe commands share for messages, progress, and confirms."""
+"""The UI context recipe commands share for prompts, stdin, and confirms."""
 
 from __future__ import annotations
 

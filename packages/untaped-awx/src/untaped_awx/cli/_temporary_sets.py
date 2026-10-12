@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from untaped.sdk import echo, hint, q
+from untaped.sdk import q, run_hint
 from untaped_awx.application import BatchMutationEngine
 from untaped_awx.application.mutation_types import MutationPlan
 from untaped_awx.application.prepared_body import UNVERIFIED_KEPT
@@ -84,15 +84,13 @@ def prepare(
         default_scope=default_scope,
         kinds=ctx.catalog.get,
     )
-    ui = ctx.progress_ui()
     for note in temp.notes:
-        ui.message("warning", note)
+        ctx.diag.warning(note)
     bindings = {suite.name: suite.binding(default_scope, temp.bindings) for suite, _, _ in selected}
     for suite, binding in bindings.items():
         if not binding.pinned:
-            ui.message(
-                "info",
-                f"{suite}: runs AWX's {binding.kind} {q(binding.name)} at {marker.sha} (no spec)",
+            ctx.diag.info(
+                f"{suite}: runs AWX's {binding.kind} {q(binding.name)} at {marker.sha} (no spec)"
             )
     refusals = unpinned_problems(
         preflight, ctx.catalog.get, bindings.items(), temp, ref=source.ref, sha=source.sha
@@ -103,11 +101,10 @@ def prepare(
 def temporary_sets(ctx: AwxContext) -> TemporarySets:
     """The use case, its engine keeping an unverified copy for :meth:`TemporarySets.provision`
     to refuse (without the apply-only ``--allow-unverified`` warning)."""
-    ui = ctx.progress_ui()
 
     def warn(message: str) -> None:
         if not message.endswith(UNVERIFIED_KEPT):
-            ui.message("warning", message)
+            ctx.diag.warning(message)
 
     engine = BatchMutationEngine(
         client=ctx.repo,
@@ -140,11 +137,9 @@ def provisioned(
 
 def report_copies(ctx: AwxContext, temp: TemporarySet) -> None:
     """One stderr line per copy the run created, with the prompts it enabled."""
-    ui = ctx.progress_ui()
     for template in temp.templates:
         prompts = ", ".join(template.prompts) or "none"
-        ui.message(
-            "info",
+        ctx.diag.info(
             f"created {template.kind} {q(template.name)} from {template.path} "
             f"(prompts enabled: {prompts})",
         )
@@ -152,16 +147,15 @@ def report_copies(ctx: AwxContext, temp: TemporarySet) -> None:
 
 def report_teardown(ctx: AwxContext, rows: Sequence[TemporaryCopyOutcome]) -> None:
     """Name each copy kept, deleted or left behind; a copy left behind is a warning."""
-    ui = ctx.progress_ui()
     left = None
     for row in rows:
         if row.action == "kept":
-            # Not an info line: --keep asks for these names, so -q must not mute them.
-            echo(f"kept {row.kind} {q(row.name)} (id {row.id})", err=True)
+            # --keep asks for these names, so -q must not mute them.
+            ctx.diag.info(f"kept {row.kind} {q(row.name)} (id {row.id})", unmuted=True)
         elif row.action == "deleted":
-            ui.message("info", f"deleted {row.kind} {q(row.name)}")
+            ctx.diag.info(f"deleted {row.kind} {q(row.name)}")
         else:
             left = row.run_id
-            ui.message("warning", f"{row.kind} {q(row.name)}: left behind, {row.detail}")
+            ctx.diag.warning(f"{row.kind} {q(row.name)}: left behind, {row.detail}")
     if left is not None:
-        echo(hint(f"awx test prune --run {left} --older-than 0"), err=True)
+        ctx.diag.hint(run_hint(f"awx test prune --run {left} --older-than 0"))
