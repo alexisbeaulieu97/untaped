@@ -3,7 +3,8 @@
 ``release`` writes the ``untaped.release`` mark, deletes the plugin's refs,
 private file and worktrees, then keeps the repo while anyone else holds it or
 renames it aside and deletes it. :meth:`RepoStore.ensure` finishes a release
-that was interrupted from the mark.
+that was interrupted from the mark. This module is the store's own: it uses
+:class:`RepoStore`'s internals.
 """
 
 from __future__ import annotations
@@ -55,8 +56,8 @@ def release(
             entry.owner == store._plugin and entry.path is not None and entry.path.is_dir()
             for entry in worktree_entries(store._path)
         ):
-            return holders(store) or Released()
-        busy = set(checked_out(store)) & set(refs)
+            return _holders(store) or Released()
+        busy = set(_checked_out(store)) & set(refs)
         if busy:
             names = ", ".join(sorted(ref.removeprefix("refs/heads/") for ref in busy))
             raise store._error(
@@ -101,12 +102,12 @@ def remove_worktree(store: RepoStore, entry: WorktreeEntry) -> None:
 
 def settle(store: RepoStore) -> Released | Removed:
     """Clear the mark when someone still holds the repo, else remove it."""
-    released = holders(store)
+    released = _holders(store)
     if released is not None:
         store._git(["config", "--unset-all", RELEASE_MARK], check=False)
         return released
     freed = tree_size(store._path)
-    removing = removing_path(store)
+    removing = _removing_path(store)
     remove_removing(store)
     try:
         store._path.rename(removing)
@@ -120,7 +121,7 @@ def settle(store: RepoStore) -> Released | Removed:
     return Removed(freed)
 
 
-def holders(store: RepoStore) -> Released | None:
+def _holders(store: RepoStore) -> Released | None:
     """Who still holds the repo, or ``None`` when nobody does."""
     refs = store._git(
         ["for-each-ref", "--format=%(refname)", *_HELD_ROOTS], capture=True
@@ -154,7 +155,7 @@ def holders(store: RepoStore) -> Released | None:
     )
 
 
-def checked_out(store: RepoStore) -> list[str]:
+def _checked_out(store: RepoStore) -> list[str]:
     """The branches registered worktrees have checked out (``worktree list``)."""
     result = store._git(["worktree", "list", "--porcelain"], capture=True, check=False)
     return [
@@ -164,13 +165,13 @@ def checked_out(store: RepoStore) -> list[str]:
     ]
 
 
-def removing_path(store: RepoStore) -> Path:
+def _removing_path(store: RepoStore) -> Path:
     return store._path.with_name(store._path.name + REMOVING_SUFFIX)
 
 
 def remove_removing(store: RepoStore) -> None:
     """Delete what an interrupted removal left beside the repo."""
-    removing = removing_path(store)
+    removing = _removing_path(store)
     if removing.is_dir() and not removing.is_symlink():
         shutil.rmtree(removing, ignore_errors=True)
 
