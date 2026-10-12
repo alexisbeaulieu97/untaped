@@ -6,6 +6,7 @@ A ``hello`` fixture plugin keeps the ``motd`` cache over a fake upstream; its
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 from collections.abc import Mapping, Sequence
@@ -195,21 +196,6 @@ def test_the_generated_setting_follows_the_naming_conventions() -> None:
     assert name_problem("max_age_seconds", int) is None
 
 
-class Badly(BaseModel):
-    timeout: int = 5
-
-
-def test_the_owner_s_fields_are_still_checked_once_caches_are_composed() -> None:
-    composed = settings_model(PluginSpec(name="hello", settings=Badly, caches=(MOTD,)))
-    assert composed is not Badly
-    violations = settings_name_violations("hello", composed, Path.cwd())
-    assert len(violations) == 1
-    assert violations[0].endswith(
-        "::settings-naming::hello.timeout: a duration ends in its unit "
-        "(_seconds, _minutes, _hours, _days, _ms)"
-    )
-
-
 # --- renamed_from -----------------------------------------------------------
 
 
@@ -341,3 +327,18 @@ def _section(spec: PluginSpec) -> Sequence[str]:
 def test_the_renamed_spec_composes_like_any_other() -> None:
     assert _section(RENAMED) == ["greeting", "caches"]
     assert _section(AFTER_C) == ["greeting", "caches"]
+
+
+class Badly(BaseModel):
+    timeout: int = 5
+
+
+@pytest.mark.parametrize("cache", [MOTD, MOTD_RENAMED], ids=["plain", "renamed_from"])
+def test_the_owner_s_fields_are_still_checked_once_caches_are_composed(cache: Cache) -> None:
+    composed = settings_model(PluginSpec(name="hello", settings=Badly, caches=(cache,)))
+    assert composed is not Badly
+    line = inspect.getsourcelines(Badly)[1] + 1
+    assert settings_name_violations("hello", composed, Path(__file__).parent) == [
+        f"{Path(__file__).name}:{line}::settings-naming::hello.timeout: a duration ends in its "
+        "unit (_seconds, _minutes, _hours, _days, _ms)"
+    ]

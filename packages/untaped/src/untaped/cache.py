@@ -341,11 +341,11 @@ class Cache:
         :class:`ConfigError`.
         """
         model = registered_profile_model(self.plugin)
-        caches = None if model is None else model.model_fields.get("caches")
-        if caches is None or self.name not in getattr(caches.annotation, "model_fields", {}):
+        declared = None if model is None else model.model_fields.get("caches")
+        if declared is None or self.name not in getattr(declared.annotation, "model_fields", {}):
             return self.default_max_age
-        caches = load_settings_section(self.plugin).caches
-        return timedelta(seconds=getattr(caches, self.name).max_age_seconds)
+        held = getattr(load_settings_section(self.plugin).caches, self.name)
+        return timedelta(seconds=held.max_age_seconds)
 
     # ---- reading and filling ------------------------------------------------
 
