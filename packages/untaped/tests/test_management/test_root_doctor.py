@@ -568,3 +568,18 @@ def test_invalid_ca_bundle_fails_http_row(
     code, rows = _rows(_doctor_app())
     assert code == 1
     assert str(bundle) in _failed(rows)["validate http"]
+
+
+def test_quiet_keeps_the_checklist_but_mutes_its_footer(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    github:\n      base_url: https://g\n"
+    )
+    root = bootstrap.build_root_app(
+        candidates=(plugin_candidate(make_spec("github", settings=GithubProfile)),)
+    )
+    loud = CliInvoker().invoke(root.meta, ["doctor"])
+    quiet = CliInvoker().invoke(root.meta, ["-q", "doctor"])
+    assert loud.exit_code == quiet.exit_code == 0, quiet.output
+    assert quiet.stdout == loud.stdout
+    assert "doctor:" in loud.stderr
+    assert quiet.stderr == ""

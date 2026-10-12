@@ -107,9 +107,9 @@ def test_shared_numeric_options_reject_values_below_one_as_usage(args: list[str]
 
 def test_success_lines_honour_quiet() -> None:
     loud, quiet = io.StringIO(), io.StringIO()
-    with redirect_stderr(loud):
+    with pytest.warns(DeprecationWarning, match="ctx.diag"), redirect_stderr(loud):
         UiContext().success("created profile: prod")
-    with redirect_stderr(quiet):
+    with pytest.warns(DeprecationWarning, match="ctx.diag"), redirect_stderr(quiet):
         UiContext(quiet=True).success("created profile: prod")
 
     assert "created profile: prod" in loud.getvalue()

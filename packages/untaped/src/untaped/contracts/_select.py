@@ -31,6 +31,7 @@ from untaped.contracts._declare import ContractInfo, method_contract
 from untaped.contracts._gather import Answers, Failed, Ok, Skipped, _Invalid, issue
 from untaped.contracts._registry import Provider, offers
 from untaped.errors import ConfigError, UsageError, first_validation_error
+from untaped.output.sink import Diagnostics
 from untaped.pipe import PipeEnvelope
 from untaped.records import kind_of, record_model
 
@@ -44,9 +45,7 @@ class Ambiguous(UsageError):
 
 
 def _warn(message: str) -> None:
-    from untaped.ui import ui_context  # noqa: PLC0415 - keep the import light
-
-    ui_context(strict=False).message("warning", message)
+    Diagnostics().warning(message)
 
 
 def _rank_key(rank: int | None) -> float:
