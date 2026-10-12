@@ -179,6 +179,7 @@ def test_structured_rows_keep_their_shape_and_the_footer_is_a_json_line(
     assert lines[-2]["message"].startswith("doctor: ")
     assert lines[-1] == {
         "level": "hint",
+        "kind": "untaped.message",
         "message": "run `untaped doctor fix` to apply 1 automatic fix; 1 fix needs you",
     }
 

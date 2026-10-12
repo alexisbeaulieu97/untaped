@@ -8,8 +8,8 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.diagnostics import diagnostics_scope, failure_exit_code
-from untaped.sdk import ConfigError, HttpTransportError, note_failure
+from untaped.output.sink import Diagnostics, diagnostics_scope, failure_exit_code
+from untaped.sdk import ConfigError, HttpTransportError
 from untaped_awx.application.suites.ports import (
     FkPrefetcher,
     LaunchCheck,
@@ -192,8 +192,8 @@ class StubWatcher:
 def _exit_code(outcome: SuiteRunOutcome) -> int:
     """The exit code ``awx test run`` gives ``outcome``: the most severe counted failure."""
     with diagnostics_scope():
-        for failure in outcome.counted():
-            note_failure(failure)
+        for item, failure in outcome.deciding():
+            Diagnostics().failure(failure, item=item)
         return failure_exit_code()
 
 

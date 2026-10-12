@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from untaped.cli import echo, report_declined, report_error
-from untaped.diagnostics import failure_exit_code
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError
 from untaped.messages import plural
+from untaped.output.sink import failure_exit_code
 from untaped.ui import UiContext
 
 
@@ -68,7 +68,7 @@ def finish(outcome: BatchOutcome[Any, Any] | bool, *, predicate_hit: bool = Fals
     (``--check`` drift, ``--fail-on-match``, ``--strict``) and nothing
     failed, and returns otherwise. A failed run exits with the most severe
     category of every failure seen in the run
-    (:func:`~untaped.diagnostics.failure_exit_code`: ``4`` when a token was
+    (:func:`~untaped.output.sink.failure_exit_code`: ``4`` when a token was
     rejected anywhere, ``5`` when a service was unavailable, else ``1``).
     Accepts a :class:`BatchOutcome` or a bare ``any_failed``-style bool so
     non-batch aggregate paths (``resolve_each`` callers, hand-rolled loops)

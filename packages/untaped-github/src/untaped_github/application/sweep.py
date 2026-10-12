@@ -10,14 +10,13 @@ from typing import Literal
 
 from untaped.sdk import (
     ConfigError,
-    ErrorInfo,
+    Failure,
     ProgressHandle,
     UntapedError,
     UsageError,
     attribution,
     bounded_map,
     most_severe,
-    note_failure,
     plural,
 )
 from untaped_github.application.inventory import RepositoryInventoryScope
@@ -529,9 +528,9 @@ def _failure(repo: CorpusRepoTarget, exc: Exception) -> CorpusFailure:
     return CorpusFailure(repo=repo.full_name, reason=str(exc) or type(exc).__name__, cause=exc)
 
 
-def _failure_error(failure: CorpusFailure) -> ErrorInfo:
+def _failure_error(failure: CorpusFailure) -> Failure:
     """The ``error`` of a failed sync row (counted toward the run's exit code)."""
-    return note_failure(failure.cause, message=failure.reason)
+    return Failure.from_exception(failure.cause, message=failure.reason)
 
 
 class SyncCorpus(_CorpusUseCase):

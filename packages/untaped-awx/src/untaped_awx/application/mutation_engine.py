@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any, Literal
 
-from untaped.sdk import ErrorCategory, ErrorInfo, UntapedError, note_failure
+from untaped.sdk import ErrorCategory, Failure, UntapedError
 from untaped_awx.application.apply_field_diff import FieldDiff
 from untaped_awx.application.apply_membership import (
     MembershipReconciler,
@@ -211,12 +211,10 @@ class BatchMutationEngine:
             return BatchResult(outcomes=[operation.preview for operation in plan.operations])
         return self.execute(plan, continue_on_error=continue_on_error, parallel=parallel)
 
-    def _preflight_conflicts(
-        self, plan: MutationPlan
-    ) -> tuple[dict[int, str], dict[int, ErrorInfo]]:
+    def _preflight_conflicts(self, plan: MutationPlan) -> tuple[dict[int, str], dict[int, Failure]]:
         """Each conflicting operation's detail, and the error of a failed re-read."""
         conflicts: dict[int, str] = {}
-        errors: dict[int, ErrorInfo] = {}
+        errors: dict[int, Failure] = {}
         for operation in plan.operations:
             try:
                 if operation.existing is None:
@@ -273,7 +271,9 @@ class BatchMutationEngine:
                     f"{operation.spec.kind} {operation.resource.metadata.name!r} "
                     f"was deleted or could not be re-read: {_safe_error(exc, operation)}"
                 )
-                errors[operation.index] = note_failure(exc, message=conflicts[operation.index])
+                errors[operation.index] = Failure.from_exception(
+                    exc, message=conflicts[operation.index]
+                )
         return conflicts, errors
 
     def _execute_bodies(
@@ -534,7 +534,7 @@ class BatchMutationEngine:
         *,
         action: Literal["conflict", "failed", "skipped"],
         detail: str,
-        error: ErrorInfo | None = None,
+        error: Failure | None = None,
     ) -> ApplyOutcome:
         return operation.preview.model_copy(
             update={
@@ -615,4 +615,4 @@ def _safe_error(exc: Exception, operation: PreparedMutation) -> str:
 def _failure(exc: Exception, operation: PreparedMutation, prefix: str = "") -> dict[str, Any]:
     """The ``detail`` and ``error`` of a row ``exc`` failed (secrets redacted from both)."""
     detail = prefix + _safe_error(exc, operation)
-    return {"detail": detail, "error": note_failure(exc, message=detail)}
+    return {"detail": detail, "error": Failure.from_exception(exc, message=detail)}

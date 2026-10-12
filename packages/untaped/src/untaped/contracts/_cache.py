@@ -11,7 +11,8 @@ written never costs the live answer.
 
 ``gather`` passes its ``refresh`` directive down through a context variable and reads back
 what the call served: the oldest ``refreshed_at`` and, when a live call failed and an entry
-stood in, the live error (the answer is then stale).
+stood in, the live error (the answer is then stale). A stale answer also prints one
+``untaped.stale`` warning, so every caller says it the same way.
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ from untaped.contracts._declare import Binding, Contract, binding_of
 from untaped.errors import ConfigError
 from untaped.fs import atomic_write, file_lock
 from untaped.git import safe_path_segment
+from untaped.output.diagnostic import Failure, StaleData
+from untaped.output.sink import current_sink
 from untaped.plugins.registry import plugin_dir
 
 _FORMAT = "1"
@@ -105,6 +108,34 @@ def _schema(binding: Binding, hint: Any) -> str:
     if binding.owns_item or binding.item is None:
         return schema
     return hashlib.sha256(f"{schema}:{_adapter(binding.item)[1]}".encode()).hexdigest()
+
+
+def _report_stale(
+    binding: Binding,
+    name: str,
+    key: str,
+    refreshed_at: datetime,
+    now: datetime,
+    max_age: timedelta,
+    error: Exception,
+) -> None:
+    """Say on stderr that ``key``'s cached answer stood in for a failed live call.
+
+    One ``untaped.stale`` warning per entry and invocation (the sink drops a
+    repeat); it never counts toward the exit code.
+    """
+    current_sink().emit(
+        StaleData.describe(
+            subject=binding.plugin,
+            cache=f"{binding.owner}.{binding.contract.name}_{name}",
+            key=key,
+            refreshed_at=refreshed_at,
+            now=now,
+            max_age=max_age,
+            attempted_at=now,
+            error=Failure.from_exception(error),
+        )
+    )
 
 
 def entry_key(binding: Binding, digest: str) -> str:
@@ -221,6 +252,7 @@ def call(
         if state is not None:
             state.served(entry.refreshed_at)
             state.stale = state.stale or exc
+        _report_stale(binding, name, key, entry.refreshed_at, now, max_age, exc)
         return entry.value
     _write(path, key, adapter, schema, value, now)
     if state is not None:

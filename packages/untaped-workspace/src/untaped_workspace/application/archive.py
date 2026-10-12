@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, note_failure
+from untaped.sdk import Failure, UntapedError
 from untaped_workspace.application.locate import active_workspace, workspace_root
 from untaped_workspace.domain.records import ArchiveOutcome
 
@@ -82,7 +82,7 @@ class ArchiveWorkspace:
                 action="failed",
                 detail=str(exc),
                 target_path=dest,
-                error=note_failure(exc, message=str(exc)),
+                error=Failure.from_exception(exc, message=str(exc)),
             )
         return ArchiveOutcome(
             workspace=workspace, repo=spec.name, action="removed", target_path=dest

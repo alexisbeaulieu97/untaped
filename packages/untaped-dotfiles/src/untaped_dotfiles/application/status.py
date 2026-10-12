@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorInfo, UntapedError, note_failure
+from untaped.sdk import Failure, UntapedError
 from untaped_dotfiles.domain.hashing import content_hash, value_hash
 from untaped_dotfiles.domain.models import AppliedRecord, RepoRecord
 from untaped_dotfiles.domain.records import RepoRow, StatusRow, StatusSummary
@@ -30,7 +30,7 @@ class Evaluation:
     record: AppliedRecord | None
     source_hash: str | None
     commit: str | None
-    error: ErrorInfo | None = None
+    error: Failure | None = None
 
 
 class Evaluator:
@@ -129,13 +129,18 @@ class Evaluator:
             )
         except UntapedError as exc:
             return Evaluation(
-                "error", str(exc), record, None, None, error=note_failure(exc, message=str(exc))
+                "error",
+                str(exc),
+                record,
+                None,
+                None,
+                error=Failure.from_exception(exc, message=str(exc)),
             )
         state, detail = file_state(placement.mode, record, source, target)
         error = None
         if state == "orphan" and record is None:
             failure = DotfilesError(f"{placement.source}: {detail}", category="not_found")
-            error = note_failure(failure, message=detail)
+            error = Failure.from_exception(failure, message=detail)
         if placement.mode != "link":
             commit = self.tree(placement.repo).commit
         elif placement.repo.managed:

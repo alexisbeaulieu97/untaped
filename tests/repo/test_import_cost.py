@@ -143,7 +143,9 @@ _STARTUP_PROBE = (
 #: Modules imported on top of interpreter startup (a coverage run preloads
 #: some, so it only lowers these). Measured 2026-10-10 on Python 3.14.6 with
 #: eight plugins: 127 ``untaped.*`` for ``--help`` and ``--version``
-#: (the git plugin adds two: its package and settings model).
+#: (the git plugin adds two: its package and settings model). The stderr
+#: sink (``untaped.output``: four modules for the two it replaced) adds two
+#: more: 126 against 124 on its base, measured 2026-10-11 in a container.
 #: The budget sits six above that measurement, the same headroom the
 #: previous one had, to absorb dependency and patch-release drift; a new
 #: built-in plugin adds a few ``untaped.*`` modules (its SPEC and settings).

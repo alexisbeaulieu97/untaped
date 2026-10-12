@@ -296,5 +296,6 @@ def test_delete_failure_is_an_error_and_a_skipped_target_a_warning(
     }
     assert warning == {
         "level": "warning",
+        "kind": "untaped.message",
         "message": "JobTemplate#11: skipped after a runtime failure",
     }

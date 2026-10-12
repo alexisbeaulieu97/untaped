@@ -24,6 +24,7 @@ from rich.console import Console
 
 from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
+from untaped.output.sink import recording
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -38,6 +39,7 @@ from untaped.testing.contracts import assert_contract_schemas, assert_fills, com
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
 
 if TYPE_CHECKING:
+    from untaped.output.diagnostic import Diagnostic
     from untaped.picker import PickRequest, PickResult
     from untaped.plugins.registry import PluginCandidate, PluginSpec
     from untaped.theme import ThemeSpec
@@ -64,12 +66,19 @@ __all__ = [
 
 @dataclass(frozen=True)
 class CliResult:
-    """Captured CLI invocation result."""
+    """Captured CLI invocation result.
+
+    ``diagnostics`` lists every stderr line the command emitted, as typed
+    diagnostics (``Message``, ``Failure``, a plugin's own kinds…), in order,
+    under text and JSON diagnostics alike: assert on kinds and fields
+    instead of on wording.
+    """
 
     exit_code: int
     stdout: str
     stderr: str
     exception: BaseException | None = None
+    diagnostics: tuple[Diagnostic, ...] = ()
 
     @property
     def output(self) -> str:
@@ -138,7 +147,7 @@ def invoke_cli(
     token = set_prompt_backend_override(prompt_backend) if prompt_backend is not None else None
     terminal_token = set_terminal_override(TtyStringIO if terminal else no_terminal)
     try:
-        with redirect_stdout(stdout), redirect_stderr(stderr):
+        with redirect_stdout(stdout), redirect_stderr(stderr), recording() as emitted:
             try:
                 _call_command(command, list(args or []), stdout=stdout, stderr=stderr)
             except SystemExit as exc:
@@ -147,6 +156,7 @@ def invoke_cli(
                     stdout=stdout.getvalue(),
                     stderr=stderr.getvalue(),
                     exception=exc,
+                    diagnostics=tuple(emitted),
                 )
             except BaseException as exc:
                 if not catch_exceptions:
@@ -156,13 +166,19 @@ def invoke_cli(
                     stdout=stdout.getvalue(),
                     stderr=stderr.getvalue(),
                     exception=exc,
+                    diagnostics=tuple(emitted),
                 )
     finally:
         sys.stdin = previous_stdin
         reset_terminal_override(terminal_token)
         if token is not None:
             reset_prompt_backend_override(token)
-    return CliResult(exit_code=0, stdout=stdout.getvalue(), stderr=stderr.getvalue())
+    return CliResult(
+        exit_code=0,
+        stdout=stdout.getvalue(),
+        stderr=stderr.getvalue(),
+        diagnostics=tuple(emitted),
+    )
 
 
 def invoke_root(argv: Sequence[str]) -> CliResult:

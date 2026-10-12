@@ -27,9 +27,9 @@ from untaped import bootstrap
 from untaped.app_context import app_context
 from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
+from untaped.output.policy import is_quiet
 from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.profile_resolver import profile_override, set_profile_override
-from untaped.quiet import is_quiet
 from untaped.settings import get_settings, reset_config_registry_for_tests
 from untaped.testing import CliInvoker, plugin_candidate
 from untaped.verbose import is_verbose

@@ -63,11 +63,11 @@ another plugin's domain fields.
 
 A failed row of an outcome record (`*_outcome` kinds such as
 `workspace.repo_outcome`, and per-repo records such as `workspace.status`)
-carries an `error` object next to its human `detail`. Rows that did not fail
-have no `error` key.
+carries an `error` object next to its human `detail`, and counts toward the
+exit code. Rows that did not fail have no `error` key.
 
 ```json
-{"name": "Deploy", "action": "failed", "detail": "HTTP 503 for https://aap/api/v2/job_templates/7/", "error": {"category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null}}
+{"name": "Deploy", "action": "failed", "detail": "HTTP 503 for https://aap/api/v2/job_templates/7/", "error": {"category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/"}}}
 ```
 
 | Field | Meaning |
@@ -77,6 +77,8 @@ have no `error` key.
 | `retryable` | `true` only for `unavailable` failures. |
 | `message` | The failure, as `detail` shows it. |
 | `hint` | A follow-up such as ``run `untaped auth set awx` ``, or `null`. |
+| `exit_code` | The exit code this failure alone selects. |
+| `details` | Machine context such as `status` and `url` (`{}` when there is none). |
 
 Tables leave `error` out (the `detail` column says the same); ask for it with
 `--columns error` or use `json`, `yaml` or `pipe`.
@@ -99,23 +101,37 @@ info message. Progress spinners are silent in this mode.
   on the command line or in `UNTAPED_FORMAT` switches them.
 
 ```json
-{"level": "error", "message": "AWX rejected the token (HTTP 401)", "category": "auth", "system": "awx", "retryable": false, "hint": "run `untaped auth set awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}
-{"level": "error", "item": "Deploy", "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "category": "unavailable", "system": "awx", "retryable": true, "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/", "attempts": 3}}
-{"level": "warning", "message": "--parallel 64 clamped to 16 (2 * os.cpu_count())"}
-{"level": "hint", "message": "run `untaped skills install`"}
-{"level": "info", "message": "sync: 2 cloned, 1 failed"}
+{"level": "error", "kind": "untaped.failure", "category": "auth", "system": "awx", "retryable": false, "message": "AWX rejected the token (HTTP 401)", "hint": "run `untaped auth set awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}
+{"level": "error", "kind": "untaped.failure", "item": "Deploy", "category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/", "attempts": 3}}
+{"level": "warning", "kind": "untaped.message", "message": "--parallel 64 clamped to 16 (2 * os.cpu_count())"}
+{"level": "warning", "kind": "untaped.stale", "cache": "shelf.book_source_books", "key": "library:3f2a…", "refreshed_at": "2026-10-09T10:00:00Z", "age_seconds": 93600.0, "max_age_seconds": 3600, "partial": false, "attempted_at": "2026-10-10T12:00:00Z", "retry_at": null, "error": {"category": "unavailable", "system": "library", "retryable": true, "message": "HTTP 503", "hint": null, "exit_code": 5, "details": {}}, "message": "library: refresh failed (HTTP 503); using data from 2026-10-09 10:00 UTC, 26 h old"}
+{"level": "hint", "kind": "untaped.message", "message": "run `untaped skills install`"}
+{"level": "info", "kind": "untaped.message", "message": "sync: 2 cloned, 1 failed"}
 ```
+
+Every line has a `level` and a `kind`; `untaped plugin schema <kind>` prints
+a kind's fields, and a plugin may add kinds of its own. Ignore a `level` or
+`kind` you do not know.
+
+| Kind | Level | What it is |
+|---|---|---|
+| `untaped.message` | `info`, `success`, `warning`, `hint` | A plain message |
+| `untaped.failure` | `error` | A failure; it counts toward the exit code |
+| `untaped.stale` | `warning` | Cached data served past its freshness, and why (never counted) |
+| `untaped.debug` | `debug` | A log line, with `--verbose` only |
 
 | Field | On | Meaning |
 |---|---|---|
 | `level` | every line | `error`, `warning`, `hint`, `info`, `success`, or `debug` (with `--verbose`) |
+| `kind` | every line | The line's type, as in the table above |
 | `message` | every line | The text the line would show, without its `error:`/`warning:`/`hint:` prefix |
 | `item` | per-item errors | The item that failed (a name, an ID) |
 | `category`, `system`, `retryable`, `hint`, `exit_code`, `details` | errors | As in the `error` field above; `exit_code` is the code this failure alone selects, and `details` holds machine context such as `status`, `url` and `attempts` |
 
-An `error` line that does not come from a raised failure (a plain
-`error: …` message) carries only `level`, `message` and `hint`; the exit code
-still follows the rules in [exit codes](./reference/exit-codes.md#precedence).
+A plain `error: …` line (one that does not come from a raised failure) is an
+`untaped.failure` too, with category `failed`, and it counts: a command that
+prints one exits non-zero even when it finishes. The exit code follows the
+rules in [exit codes](./reference/exit-codes.md#precedence).
 
 ## In CI
 
