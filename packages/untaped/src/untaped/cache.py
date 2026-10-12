@@ -162,11 +162,13 @@ class Freshness:
     def due(self, refresh: bool | None, *, max_age: timedelta, now: datetime) -> bool:
         """Whether ``refresh`` asks for a fill now: ``True`` always, ``False`` never.
 
-        Auto (``None``) fills a key past its max age, once ``retry_at`` passed.
+        Auto (``None``) fills a never-refreshed key always, and one past its
+        max age once ``retry_at`` passed: the retry window is a fallback, and
+        with nothing on disk there is nothing to fall back to.
         """
         if refresh is False:
             return False
-        if refresh:
+        if refresh or self.refreshed_at is None:
             return True
         return self.past_max_age(max_age, now=now) and (
             self.retry_at is None or now >= self.retry_at
@@ -391,7 +393,9 @@ class Cache:
                 if refresh is None and not current.due(None, max_age=max_age, now=_utcnow()):
                     return current  # auto: no longer due (another run failed meanwhile)
                 try:
-                    with fail_fast() if refresh is None else nullcontext():
+                    # the budget is a fallback too: a first fill keeps its full retries
+                    budget = refresh is None and current.refreshed_at is not None
+                    with fail_fast() if budget else nullcontext():
                         result = fill(key, task)
                 except UntapedError as exc:
                     failure = exc
@@ -439,10 +443,7 @@ class Cache:
         max_age: timedelta,
     ) -> Served[T, F]:
         for key, state in freshness.items():
-            if state.refreshed_at is None:
-                if refresh is not False and state.error is not None:
-                    # auto within retry_at of a failed first fill: that failure, not "--cached"
-                    raise self._raised(key, state, hint=self._next_check(state))
+            if state.refreshed_at is None:  # only under --cached: anything else filled it
                 raise NeverRefreshed(self, key, keys[key])
         value = read()  # once, over every key, outside any lock
         now = _utcnow()
@@ -516,20 +517,16 @@ class Cache:
                 return False  # another process is filling it: it will write the sidecar
             raise
 
-    def forget(self, key: str) -> bool:
+    def forget(self, key: str) -> None:
         """Forget what the cache knows about ``key``: its next read refreshes it.
 
         For an owner whose data under ``key`` changed or went away (a source
-        redefined or removed). Waits for a fill of the key in progress;
-        returns whether there was anything to forget.
+        redefined or removed). Waits for a fill of the key in progress; a key
+        the cache knows nothing of is left as it is.
         """
         paths = self._paths(key)
         with self._lock(paths, key, NO_PROGRESS):
-            try:
-                paths.sidecar.unlink()
-            except FileNotFoundError:
-                return False
-        return True
+            paths.sidecar.unlink(missing_ok=True)
 
     # ---- the seams ----------------------------------------------------------
 
@@ -708,13 +705,6 @@ class Cache:
         if error.hint is None:
             error.hint = hint
         return error
-
-    @staticmethod
-    def _next_check(freshness: Freshness) -> str | None:
-        if freshness.retry_at is None:
-            return None
-        at = freshness.retry_at.astimezone(UTC)
-        return f"next check after {at:%H:%M} UTC; pass --refresh to retry now"
 
 
 class _LockError(ConfigError):

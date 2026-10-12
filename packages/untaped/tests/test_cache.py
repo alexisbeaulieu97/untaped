@@ -143,7 +143,7 @@ _HOUR = timedelta(hours=1)
         (None, timedelta(hours=1), None, True),
         (None, timedelta(hours=2), timedelta(minutes=3), False),
         (None, timedelta(hours=2), timedelta(minutes=-1), True),
-        (None, None, timedelta(minutes=3), False),
+        (None, None, timedelta(minutes=3), True),  # never refreshed: nothing to fall back to
     ],
 )
 def test_due_is_the_directive_then_the_age_then_retry_at(
@@ -350,7 +350,8 @@ def test_never_refreshed_and_a_failed_fill_raises(clock: CacheClock) -> None:
     assert _sidecar("a")["attempted_at"] == "2026-10-12T09:00:00Z"
 
 
-def test_a_failed_first_fill_is_not_retried_inside_its_window(clock: CacheClock) -> None:
+def test_a_never_refreshed_key_fills_again_inside_its_retry_window(clock: CacheClock) -> None:
+    """The retry window is a fallback: with nothing on disk, auto fills every time."""
     UP.error = HttpTransportError("connection refused", system="toy")
     assert _show("a").exit_code == 5
     clock.advance(timedelta(minutes=1))
@@ -358,13 +359,12 @@ def test_a_failed_first_fill_is_not_retried_inside_its_window(clock: CacheClock)
     result = _show("a")
 
     assert result.exit_code == 5
-    assert UP.fills == ["a"]
-    assert "drop --cached" not in result.stderr
-    [failure] = result.diagnostics
-    assert isinstance(failure, Failure)
-    assert failure.hint == "next check after 09:05 UTC; pass --refresh to retry now"
-    assert _show("a", "--refresh").exit_code == 5
     assert UP.fills == ["a", "a"]
+    assert "connection refused" in result.stderr
+    assert "drop --cached" not in result.stderr
+    UP.error = None
+    assert _show("a").exit_code == 0
+    assert UP.fills == ["a", "a", "a"]
 
 
 def test_attempt_memory_skips_the_fill_until_retry_at(clock: CacheClock) -> None:
@@ -459,15 +459,17 @@ def test_refresh_none_reads_the_directive_gather_opened(clock: CacheClock) -> No
     assert refresh_scope() is None
 
 
-def test_auto_fills_under_the_fail_fast_budget_and_refresh_does_not(clock: CacheClock) -> None:
+def test_only_an_auto_refill_runs_under_the_fail_fast_budget(clock: CacheClock) -> None:
     from untaped.upstream import capped
 
     seen: list[bool] = []
     UP.during = lambda _key, _task: seen.append(capped())
+    _show("a")  # a first fill keeps its full retries: there is no data to fall back to
+    clock.advance(timedelta(hours=2))
     _show("a")
     clock.advance(timedelta(seconds=1))
     _show("a", "--refresh")
-    assert seen == [True, False]
+    assert seen == [False, True, False]
 
 
 # ---- progress ------------------------------------------------------------------
@@ -705,8 +707,9 @@ def test_seed_never_waits_for_a_fill(clock: CacheClock) -> None:
 
 def test_forget_makes_the_next_read_refresh(clock: CacheClock) -> None:
     _refreshed(clock, "a", ago=timedelta(minutes=5))
-    assert TOY.forget("a") is True
-    assert TOY.forget("a") is False
+    TOY.forget("a")
+    assert TOY.freshness("a") == Freshness()
+    TOY.forget("a")  # nothing to forget
     assert _show("a").exit_code == 0
     assert UP.fills == ["a"]
 
