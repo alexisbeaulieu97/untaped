@@ -262,6 +262,12 @@ your settings model, until `config migrate` deletes it. `untaped plugin
 check` runs each preview on an empty `HOME`, and the example plugin
 (`examples/untaped-hello`) has one row.
 
+## Caching what an upstream answers
+
+When a command reads data your plugin fetched from an upstream it can ask
+again, declare a `Cache` and serve every read through it: see
+[Caches](./caches.md).
+
 ## Filling another plugin's contract
 
 A plugin can answer another plugin's questions by filling a

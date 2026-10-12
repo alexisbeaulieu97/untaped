@@ -18,8 +18,9 @@ from typing import Any, Concatenate, get_args, get_origin, overload
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from untaped.cache import call_state
 from untaped.concurrency import bounded_map
-from untaped.contracts._cache import NoCache, call_state, return_type
+from untaped.contracts._cache import NoCache, return_type
 from untaped.contracts._declare import (
     Binding,
     Contract,

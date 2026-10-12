@@ -271,7 +271,11 @@ def test_a_stale_answer_prints_one_stale_warning_and_counts_nothing() -> None:
     [stale] = emitted
     [path] = _cache_files()
     assert isinstance(stale, StaleData)
-    assert (stale.cache, stale.key) == ("shelf.book_source_books", f"library:{path.stem}")
+    assert (stale.plugin, stale.cache, stale.key) == (
+        "library",
+        "shelf.book_source_books",
+        f"library:{path.stem}",
+    )
     assert stale.error is not None and stale.error.category == "unavailable"
     assert stale.message.startswith("library: refresh failed (HTTP 503)")
 

@@ -9,9 +9,9 @@ schema (with the provider's own record model's, which ``source.record`` carries)
 written for another shape of either model is a miss, never an error. A cache that can't be
 written never costs the live answer.
 
-``gather`` passes its ``refresh`` directive down through a context variable and reads back
-what the call served: the oldest ``refreshed_at`` and, when a live call failed and an entry
-stood in, the live error (the answer is then stale). A stale answer also prints one
+``gather`` passes its ``refresh`` directive down through ``untaped.cache.call_state`` and
+reads back what the call served: the oldest ``refreshed_at`` and, when a live call failed and
+an entry stood in, the live error (the answer is then stale). A stale answer also prints one
 ``untaped.stale`` warning, so every caller says it the same way.
 """
 
@@ -21,9 +21,7 @@ import hashlib
 import inspect
 import json
 import logging
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import cache
@@ -33,6 +31,7 @@ from typing import Any, TypeVar, get_args, get_origin
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 
+from untaped.cache import current_call
 from untaped.contracts._declare import Binding, Contract, binding_of
 from untaped.errors import ConfigError
 from untaped.fs import atomic_write, file_lock
@@ -48,33 +47,6 @@ _LOG = logging.getLogger("untaped.contracts")
 
 class NoCache(Exception):
     """``refresh=False`` asked for a cached answer and none is stored."""
-
-
-@dataclass
-class CallState:
-    """One provider call's cache directive and what the call served."""
-
-    refresh: bool | None
-    stale: BaseException | None = None
-    refreshed_at: datetime | None = None
-
-    def served(self, at: datetime) -> None:
-        if self.refreshed_at is None or at < self.refreshed_at:
-            self.refreshed_at = at
-
-
-_CALL: ContextVar[CallState | None] = ContextVar("untaped_contract_call", default=None)
-
-
-@contextmanager
-def call_state(refresh: bool | None) -> Iterator[CallState]:
-    """Run a provider call under ``refresh``; yields what the call served."""
-    state = CallState(refresh)
-    token = _CALL.set(state)
-    try:
-        yield state
-    finally:
-        _CALL.reset(token)
 
 
 def return_type(binding: Binding, name: str) -> Any:
@@ -126,6 +98,7 @@ def _report_stale(
     """
     current_sink().emit(
         StaleData.describe(
+            plugin=binding.plugin,
             subject=binding.plugin,
             cache=f"{binding.owner}.{binding.contract.name}_{name}",
             key=key,
@@ -229,7 +202,7 @@ def call(
     binding = binding_of(provider)
     if binding is None:
         return function(provider, *args, **kwargs)
-    state = _CALL.get()
+    state = current_call()
     refresh = None if state is None else state.refresh
     hint = return_type(binding, name)
     adapter, schema = _adapter(hint)[0], _schema(binding, hint)

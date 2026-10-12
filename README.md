@@ -71,7 +71,8 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 - [Building a plugin](./docs/plugins.md): add a plugin from
   your own package, with its [conventions](./docs/reference/conventions.md),
   [how composition works](./docs/composition.md),
-  [contracts](./docs/contracts.md) between plugins and
+  [contracts](./docs/contracts.md) between plugins,
+  [caches](./docs/caches.md) of what an upstream answered and
   [its agent skill](./docs/plugin-skills.md).
 - [Building a screen](./docs/screens.md): an interactive terminal UI on the
   SDK's runtime, with the keys, theme and tests it shares.
