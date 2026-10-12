@@ -420,6 +420,13 @@ def test_plugin_schema_prints_a_diagnostic_kinds_schema() -> None:
     assert "untaped.stale" in result.stderr
 
 
+def test_plugin_schema_prints_the_progress_kind() -> None:
+    result = _run(["plugin", "schema", "untaped.progress"], *_all())
+    schema = json.loads(result.stdout)
+    assert schema["$id"] == "untaped.progress"
+    assert {"label", "phase", "done", "total", "elapsed", "state"} <= set(schema["properties"])
+
+
 def test_plugin_schema_of_an_unknown_kind_exits_2() -> None:
     result = _run(["plugin", "schema", "nope.thing"], *_all())
     assert result.exit_code == 2

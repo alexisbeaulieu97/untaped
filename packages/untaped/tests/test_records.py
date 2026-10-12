@@ -25,7 +25,7 @@ from pydantic import (
 )
 
 from untaped.errors import ConfigError, HttpStatusError, HttpTransportError
-from untaped.output.diagnostic import Debug, Message, StaleData, WireModel
+from untaped.output.diagnostic import Debug, Message, Progress, StaleData, WireModel
 from untaped.output.sink import (
     Diagnostics,
     current_sink,
@@ -481,6 +481,15 @@ def _samples() -> dict[str, WireModel]:
         Message(level="warning", message="w", hint="h"),
         Failure.from_exception(ConfigError("x")),
         Debug(logger="untaped.http", message="GET"),
+        Progress(
+            message="Syncing · fetching refs 1/2 (3s)",
+            label="Syncing",
+            phase="fetching refs",
+            done=1,
+            total=2,
+            elapsed=3.0,
+            state="running",
+        ),
         StaleData.describe(
             subject="shelf",
             cache="hello.shelf_books",

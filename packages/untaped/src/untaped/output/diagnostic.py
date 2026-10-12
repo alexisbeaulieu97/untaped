@@ -380,7 +380,7 @@ _ORDERED: Final = WireModel.__pydantic_decorators__.model_serializers["_own_fiel
 # Diagnostics
 # --------------------------------------------------------------------------- #
 
-Level = Literal["error", "warning", "hint", "info", "success", "debug"]
+Level = Literal["error", "warning", "hint", "info", "success", "debug", "progress"]
 """A stderr line's ``level``: the filter key, written beside ``kind``."""
 
 #: An optional field left out of the dump when unset, so a line keeps today's shape.
@@ -509,6 +509,31 @@ class Debug(Diagnostic, kind="untaped.debug"):
     level: ClassVar[Level] = "debug"
 
     logger: str
+
+
+class Progress(Diagnostic, kind="untaped.progress"):
+    """A step of a long operation, at the sink's cadence: never counted, muted by ``--quiet``.
+
+    The sink builds every one from the task a ``progress(label)`` block
+    opened; a plugin reports through the handle and never constructs one.
+    ``message`` is the line a human reads, composed the same way for every
+    task: ``<label>[ · <phase>][ <done>/<total>][ · <text>] (<N>s)`` while
+    running, ``<label>: done[ · <text>] (<N>s)`` or ``<label>: failed[ ·
+    <text>] (<N>s)`` at the end, each bracket only when its part is set (a
+    ``done`` without a ``total`` prints alone). A task opened inside
+    another keeps the outer ``label`` and puts its own in ``phase``
+    (``<inner label>[ · <inner phase>]``). ``elapsed`` is seconds since
+    the task opened.
+    """
+
+    level: ClassVar[Level] = "progress"
+
+    label: str
+    phase: str | None
+    done: int | None
+    total: int | None
+    elapsed: float
+    state: Literal["running", "done", "failed"]
 
 
 class StaleData(Diagnostic, kind="untaped.stale"):

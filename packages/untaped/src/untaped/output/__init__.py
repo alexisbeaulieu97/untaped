@@ -14,6 +14,7 @@ from untaped.output.diagnostic import (
     Diagnostic,
     Failure,
     Message,
+    Progress,
     StaleData,
 )
 from untaped.output.policy import OutputPolicy
@@ -31,6 +32,7 @@ __all__ = [
     "Failure",
     "Message",
     "OutputPolicy",
+    "Progress",
     "StaleData",
     "current_sink",
     "diagnostics_scope",
