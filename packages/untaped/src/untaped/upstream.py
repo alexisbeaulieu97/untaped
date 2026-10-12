@@ -12,7 +12,8 @@ The budget is one shared cell, so the context a worker thread copies
 (``bounded_map``) sees the same flag: one success lifts the cap for every
 worker of the block. :class:`untaped.http.HttpClient` and
 :func:`untaped.git.run_git` read it (:func:`capped`) and report a success
-(:func:`succeeded`); nothing else does.
+(:func:`succeeded`); nothing else does. :func:`full_retries` steps out of
+an enclosing :func:`fail_fast` for a fill that must not be cut short.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ class _Budget:
     """A block's cap: lifted for good by the first success when ``until_success``."""
 
     def __init__(self, *, until_success: bool) -> None:
-        self._until_success = until_success
+        self.until_success = until_success
         # An Event, not a bool: the copies of a context share this object, not a value.
         self._lifted = threading.Event()
 
@@ -38,7 +39,7 @@ class _Budget:
         return not self._lifted.is_set()
 
     def succeeded(self) -> None:
-        if self._until_success:
+        if self.until_success:
             self._lifted.set()
 
 
@@ -79,12 +80,14 @@ def fail_fast() -> Iterator[None]:
 
 @contextmanager
 def full_retries() -> Iterator[None]:
-    """Give every call its full timeout and retries, whatever block encloses this one.
+    """Give every call its full timeout and retries, leaving an enclosing :func:`fail_fast`.
 
     A ``--refresh`` or a first fill nested in another cache's automatic
-    refresh: the outer budget is not this fill's.
+    refresh: the outer budget is not this fill's, and this fill's success
+    does not lift it. Inside :func:`quick_probe` every call stays capped.
     """
-    with _budget(None):
+    outer = _BUDGET.get()
+    with _budget(outer if outer is not None and not outer.until_success else None):
         yield
 
 

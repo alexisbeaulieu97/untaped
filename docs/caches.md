@@ -38,19 +38,19 @@ way (by key, and by profile when a setting can change what a key holds).
 A fill never serves its own cache; serving another one, it passes its
 `handle` as `serve(progress=)`, so the inner refresh shows as its phase.
 
-An automatic refresh of cached data fails fast: until one call succeeds,
-every HTTP request and networked `git` command (`clone`, `fetch`,
-`ls-remote`, `pull`) inside the fill is tried once, with a short timeout, so an offline user gets the cached data in
-seconds; `--refresh` and a key's first fill keep the full timeouts and
-retries. When a fill raises an `UntapedError`, `serve()` serves the cached
-data with one `untaped.stale` warning and does not try again for five
-minutes, or until the time the fill put in the error's `details["retry_at"]`
-(ISO 8601; a rate limit's reset). With nothing cached it raises the error,
-and the next run fills again. A fill that completed but left items out returns
-`Filled(partial=Failure(...))`: every read warns until a whole refresh. Pass
-`empty=` to say when an answer found nothing: a stale empty answer then fails
-with the refresh's error instead of passing for an absence. `--cached` on a
-key never filled raises `NeverRefreshed`.
+An automatic refresh of cached data fails fast: until one call succeeds, every
+HTTP request and networked `git` command (`clone`, `fetch`, `ls-remote`,
+`pull`) inside the fill is tried once, with a short timeout, so an offline
+user gets the cached data in seconds; `--refresh` and a key's first fill keep
+the full timeouts and retries. When a fill raises an `UntapedError`, `serve()`
+serves the cached data with one `untaped.stale` warning and does not try again
+for five minutes, or until the time the fill put in the error's
+`details["retry_at"]` (ISO 8601; a rate limit's reset). With nothing cached it
+raises the error, and the next run fills again. A fill that completed but left
+items out returns `Filled(partial=Failure(...))`: every read warns until a
+whole refresh. Pass `empty=` to say when an answer found nothing: a stale
+empty answer then fails with the refresh's error instead of passing for an
+absence. `--cached` on a key never filled raises `NeverRefreshed`.
 
 Two rules keep every cache alike. Declare the directive as
 `Annotated[bool | None, refresh_option(CACHE)] = None`, never a hand-made

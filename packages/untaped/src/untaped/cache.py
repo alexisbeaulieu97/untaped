@@ -547,17 +547,11 @@ class Cache:
         from untaped.plugins.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
         from untaped.profile_resolver import selected_profile  # noqa: PLC0415 - no cycle
 
-        profile = safe_path_segment(selected_profile())
-        return named_plugin_dir(self.plugin) / "caches" / self.name / profile
+        return named_plugin_dir(self.plugin) / "caches" / self.name / _segment(selected_profile())
 
     @staticmethod
     def _key_paths(folder: Path, key: str) -> _KeyPaths:
-        segment = safe_path_segment(key)
-        # sanitizing is lossy (a/b and a_b), some filesystems ignore case (A and a)
-        # and limit a name's length: a hash keeps such keys apart
-        if segment != key or key != key.lower() or len(segment) > _SEGMENT:
-            digest = hashlib.sha256(key.encode()).hexdigest()[:8]
-            segment = f"{segment[:_SEGMENT]}~{digest}"
+        segment = _segment(key)
         return _KeyPaths(folder, folder / f"{segment}.json", folder / f"{segment}.lock")
 
     def _paths(self, key: str) -> _KeyPaths:
@@ -570,10 +564,15 @@ class Cache:
             raw = json.loads(paths.sidecar.read_text(encoding="utf-8"))
             if raw.get("untaped") != _FORMAT or raw.get("key") != key:
                 return Freshness()
+            refreshed_at = _parsed(raw.get("refreshed_at"))
+            error = _failure(raw.get("error"))
+            if error is None and raw.get("error") is not None:
+                # a newer untaped's error: the attempt it describes cannot be told, the data can
+                return Freshness(refreshed_at=refreshed_at)
             return Freshness(
-                refreshed_at=_parsed(raw.get("refreshed_at")),
+                refreshed_at=refreshed_at,
                 attempted_at=_parsed(raw.get("attempted_at")),
-                error=_failure(raw.get("error")),
+                error=error,
                 partial=raw.get("partial") is True,
                 retry_at=_parsed(raw.get("retry_at")),
             )
@@ -773,8 +772,22 @@ def _interrupted(
     )
 
 
+def _segment(value: str) -> str:
+    """``value`` as one file name, apart from every other value's on any filesystem.
+
+    Sanitizing is lossy (``a/b`` and ``a_b``), some filesystems fold case
+    (``A`` and ``a``) or Unicode, and all limit a name's bytes: such a value
+    keeps an ASCII prefix of at most :data:`_SEGMENT` bytes and a hash.
+    """
+    segment = safe_path_segment(value)
+    if segment == value and value.isascii() and value == value.lower() and len(value) <= _SEGMENT:
+        return segment
+    prefix = segment.encode("ascii", "ignore").decode("ascii")[:_SEGMENT] or "_"
+    return f"{prefix}~{hashlib.sha256(value.encode()).hexdigest()[:8]}"
+
+
 def _failure(raw: object) -> Failure | None:
-    """A sidecar's ``error``; ``None`` when unreadable (a newer untaped's), keeping the rest."""
+    """A sidecar's ``error``; ``None`` when absent or unreadable (a newer untaped's)."""
     if raw is None:
         return None
     try:
