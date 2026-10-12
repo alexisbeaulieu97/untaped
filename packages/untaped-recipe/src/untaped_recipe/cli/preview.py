@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.sdk import echo, plural, render_rows, unified_diff_text
+from untaped.sdk import Diagnostics, plural, render_rows, unified_diff_text
 from untaped_recipe.application.inputs import has_sensitive_inputs
-from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.domain.plan import FileChange, TargetPlan, is_binary_content
 from untaped_recipe.domain.recipe import Recipe
 
 PreviewMode = Literal["table", "diff", "none"]
+
+_diag = Diagnostics()
 
 
 def render_preview(
@@ -24,7 +25,7 @@ def render_preview(
     preview_max_rows: int = 50,
 ) -> None:
     """Render the selected stderr preview for planned targets."""
-    recipe_ui().message("info", preview_summary(plans))
+    _diag.info(preview_summary(plans), unmuted=True)
     if preview == "none":
         return
     if preview == "diff":
@@ -84,8 +85,8 @@ def _render_diff_preview(recipe: Recipe, plans: list[TargetPlan]) -> None:
             else:
                 diff = unified_diff_text(change.before, change.after, path=path)
             if diff:
-                echo(f"# {target}", err=True)
-                echo(diff, err=True, nl=False)
+                _diag.info(f"# {target}", unmuted=True)
+                _diag.info(diff.removesuffix("\n"), unmuted=True)
     _render_stderr_table(suppressed_rows, columns=["target", "files_changed"])
     _render_stderr_table(error_rows, columns=["target", "error"])
 
@@ -117,11 +118,11 @@ def _render_table_preview(
             rendered_rows = target_rows[:preview_max_rows]
         _render_stderr_table(rendered_rows, columns=["target", "files", "changes"])
         if len(target_rows) > preview_max_rows:
-            echo(
+            _diag.info(
                 "showing first "
                 f"{preview_max_rows} of {len(target_rows)} targets "
                 "(use --preview diff for full detail)",
-                err=True,
+                unmuted=True,
             )
     _render_stderr_table(suppressed_rows, columns=["target", "files_changed"])
     _render_stderr_table(error_rows, columns=["target", "error"])
@@ -157,7 +158,7 @@ def _render_stderr_table(rows: list[dict[str, object]], *, columns: list[str]) -
         return
     rendered = render_rows(rows, fmt="table", columns=columns)
     if rendered:
-        echo(rendered, err=True)
+        _diag.info(rendered, unmuted=True)
 
 
 def _display_change_path(change: FileChange) -> Path:

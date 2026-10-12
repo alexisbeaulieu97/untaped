@@ -7,14 +7,15 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
-from untaped.sdk import echo, hint
-from untaped_recipe.cli._context import recipe_ui
+from untaped.sdk import Diagnostics, echo, hint
 from untaped_recipe.cli.common import library_dir, report_config_errors
 from untaped_recipe.domain.pack import parse_ref
 from untaped_recipe.domain.paths import is_path_ref, safe_library_name
 from untaped_recipe.errors import PackNotFoundError
 from untaped_recipe.infrastructure import pack_scaffold
 from untaped_recipe.infrastructure.pack_store import PackLibrary
+
+_diag = Diagnostics()
 
 _NO_LOCK_NOTE = "uv.lock was not created/refreshed for {path}; hooks need `uv lock` before running"
 
@@ -86,8 +87,7 @@ def init_hook_command(
         path = pack_scaffold.scaffold_hook(pack_dir, name, kind=kind, lock=lock, force=force)
         if not lock:
             _warn_no_lock(pack_dir)
-        recipe_ui().message(
-            "info",
+        _diag.info(
             f"scaffolded {kind} hook (choose with --kind transform|validate; "
             "replace an existing hook with --force)",
         )
@@ -95,7 +95,7 @@ def init_hook_command(
 
 
 def _warn_no_lock(project_root: Path) -> None:
-    recipe_ui().message("warning", _NO_LOCK_NOTE.format(path=project_root))
+    _diag.warning(_NO_LOCK_NOTE.format(path=project_root))
 
 
 def _new_pack_child(ref_text: str) -> tuple[Path, str]:
