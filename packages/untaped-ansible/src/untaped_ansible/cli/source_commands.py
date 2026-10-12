@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from untaped.sdk import (
     ColumnsOption,
     DryRunOption,
+    Failure,
     FormatOption,
     ParallelOption,
     UntapedError,
@@ -29,7 +30,6 @@ from untaped.sdk import (
     hint,
     most_severe,
     not_found,
-    note_failure,
     plural,
     q,
     report_error,
@@ -336,7 +336,7 @@ def source_remove_command(
             index.clear(_saved_source_key(name))
         action = "planned" if dry_run else "failed" if failures else "deleted"
         error = (
-            note_failure(
+            Failure.from_exception(
                 most_severe(failure for _, failure in failures),
                 message=f"{plural(len(failures), 'repo')} not released; source kept",
             )

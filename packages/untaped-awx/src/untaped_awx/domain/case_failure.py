@@ -1,6 +1,6 @@
 """Why an ``awx test`` case did not pass: the responsible system, what kind of failure, evidence.
 
-:class:`CaseFailure` is the core :class:`ErrorInfo` of the failed row (its
+:class:`CaseFailure` is the core :class:`Failure` of the failed row (its
 ``category`` selects the exit code and whether a retry can help, and its
 ``hint`` says what to do), extended with the :class:`FailureEvidence` an agent
 reads to fix the cause.
@@ -52,7 +52,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import ErrorCategory, ErrorInfo, UntapedError, q
+from untaped.sdk import ErrorCategory, Failure, UntapedError, q
 from untaped_awx.domain.job import HostSummary, Job, JobEvent
 from untaped_awx.domain.workflow_run import APPROVAL, RunNode
 
@@ -216,8 +216,8 @@ class FailureEvidence(BaseModel):
         )
 
 
-class CaseFailure(ErrorInfo):
-    """The ``failure`` of a case that did not pass: an :class:`ErrorInfo` plus evidence.
+class CaseFailure(Failure):
+    """The ``failure`` of a case that did not pass: an :class:`Failure` plus evidence.
 
     ``system`` is one of the ``awx.*`` systems above, or the error's own
     system when AWX is not responsible.
@@ -248,7 +248,7 @@ def failure_system(error: BaseException, *, launching: bool) -> str:
     scm's for an ``scm_branch`` the template does not prompt for); anything
     else is the controller's.
     """
-    info = ErrorInfo.from_exception(error)
+    info = Failure.from_exception(error)
     if info.system != "awx":
         return info.system
     if info.category in (ErrorCategory.AUTH, ErrorCategory.PERMISSION):
@@ -264,7 +264,7 @@ def request_failure(
     error: BaseException, *, launching: bool = False, message: str | None = None
 ) -> CaseFailure:
     """A launch, poll or read the run could not complete, keeping ``error``'s category and hint."""
-    info = ErrorInfo.from_exception(error)
+    info = Failure.from_exception(error)
     system = failure_system(error, launching=launching)
     return failure(system, info.category, message or info.message, hint=info.hint)
 

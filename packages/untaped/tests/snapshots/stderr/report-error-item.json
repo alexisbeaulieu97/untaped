@@ -1,0 +1,14 @@
+[
+  {
+    "level": "error",
+    "kind": "untaped.failure",
+    "item": "acme/x",
+    "category": "failed",
+    "system": "untaped",
+    "retryable": false,
+    "message": "it broke",
+    "hint": null,
+    "exit_code": 1,
+    "details": {}
+  }
+]

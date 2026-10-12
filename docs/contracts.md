@@ -111,7 +111,9 @@ repo name nobody could look up as not found, naming the setting to set).
 - With any provider failed, a match from one ranked above every failure
   wins, with a warning; otherwise the first failure's own error and exit
   code stand. With nothing ranked, any failure blocks.
-- A stale cached answer confirms a match, never an absence.
+- A stale cached answer confirms a match, never an absence. Serving one
+  prints an `untaped.stale` warning naming the failed refresh and the
+  answer's age.
 - A quarantined provider, or one that returned invalid items, is skipped
   with a warning when unranked and fails when ranked.
 - Otherwise no match exits 2 (not found), and several matches with nothing
@@ -146,7 +148,8 @@ installed or configured.
 `untaped plugin list --contracts` lists every contract method with its
 owner, stability, the providers that fill it in the order they are asked
 and the profile's ranking, including contracts nobody fills yet.
-`untaped plugin schema <kind>` prints a record kind's JSON Schema.
+`untaped plugin schema <kind>` prints a record or diagnostic kind's JSON
+Schema.
 
 `untaped doctor` has a `contract-provider` row per provider, titled with
 one of these reasons:

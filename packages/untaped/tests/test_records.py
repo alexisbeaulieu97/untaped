@@ -24,12 +24,18 @@ from pydantic import (
     model_serializer,
 )
 
-from untaped.diagnostics import diagnostics_scope, failure_exit_code, note_failure
-from untaped.errors import ConfigError, ErrorCategory, HttpStatusError, HttpTransportError
+from untaped.errors import ConfigError, HttpStatusError, HttpTransportError
+from untaped.output.diagnostic import Debug, Message, StaleData, WireModel
+from untaped.output.sink import (
+    Diagnostics,
+    current_sink,
+    diagnostics_scope,
+    failure_exit_code,
+)
 from untaped.records import (
     CheckRecord,
     DuplicateKindError,
-    ErrorInfo,
+    Failure,
     OutcomeRecord,
     Record,
     TargetRecord,
@@ -148,7 +154,7 @@ class _Named(OutcomeRecord):
 def test_action_placement_across_record_shapes(tmp_path: Path) -> None:
     reversed_row = _ReversedBases(action="cloned", target_path=tmp_path, repo="a/b")
     assert list(reversed_row.model_dump(mode="json")) == ["repo", "action", "target_path"]
-    bare = _Bare(action="failed", error=ErrorInfo.from_exception(ConfigError("x")))
+    bare = _Bare(action="failed", error=Failure.from_exception(ConfigError("x")))
     assert list(bare.model_dump(mode="json")) == ["action", "error"]
     named = _Named(id=1, name="n", action="created")
     assert list(named.model_dump(mode="json")) == ["id", "name", "action", "detail"]
@@ -164,7 +170,7 @@ def test_a_failed_row_carries_the_error_of_the_exception_that_failed_it(tmp_path
     cause = HttpStatusError("HTTP 503", status_code=503, url="https://h/x", system="awx")
 
     row = _CloneOutcome(
-        action="failed", target_path=tmp_path, repo="a/b", error=ErrorInfo.from_exception(cause)
+        action="failed", target_path=tmp_path, repo="a/b", error=Failure.from_exception(cause)
     )
 
     assert row.model_dump(mode="json")["error"] == {
@@ -173,6 +179,8 @@ def test_a_failed_row_carries_the_error_of_the_exception_that_failed_it(tmp_path
         "retryable": True,
         "message": "HTTP 503 for https://h/x",
         "hint": None,
+        "exit_code": 5,
+        "details": {"status": 503, "url": "https://h/x"},
     }
 
 
@@ -186,46 +194,43 @@ def test_rows_without_an_error_omit_the_field(tmp_path: Path) -> None:
 def test_error_info_splits_the_hint_off_an_overridden_message() -> None:
     cause = ConfigError("rejected\nhint: run `untaped config set awx.token --prompt`")
 
-    info = ErrorInfo.from_exception(cause, message="token <redacted> rejected")
+    info = Failure.from_exception(cause, message="token <redacted> rejected")
 
     assert (info.category, info.system, info.retryable) == ("config", "local", False)
     assert info.message == "token <redacted> rejected"
-    info = ErrorInfo.from_exception(cause)
+    info = Failure.from_exception(cause)
     assert info.message == "rejected"
     assert info.hint == "run `untaped config set awx.token --prompt`"
 
 
 def test_error_info_of_an_unexpected_exception_is_a_failed_untaped_error() -> None:
-    info = ErrorInfo.from_exception(KeyError("id"))
+    info = Failure.from_exception(KeyError("id"))
 
     assert (info.category, info.system, info.message) == ("failed", "untaped", "'id'")
 
 
-def test_error_info_is_pure_and_note_failure_counts_it() -> None:
+def test_building_a_failure_is_pure_and_emitting_it_counts() -> None:
     with diagnostics_scope():
-        ErrorInfo.from_exception(HttpTransportError("down", system="awx"))
-        assert failure_exit_code() == 1
-
-        info = note_failure(HttpTransportError("down", system="awx"), message="redacted")
+        info = Failure.from_exception(HttpTransportError("down", system="awx"), message="redacted")
 
         assert (info.category, info.system, info.message) == ("unavailable", "awx", "redacted")
+        assert failure_exit_code() == 1
+
+        Diagnostics().failure(info)
         assert failure_exit_code() == 5
 
 
-def test_note_failure_counts_an_error_info_or_a_category() -> None:
-    info = ErrorInfo.from_exception(ConfigError("rejected", category="auth"))
+def test_emitting_a_failure_counts_like_diag_failure() -> None:
+    info = Failure.from_exception(ConfigError("rejected", category="auth"))
     with diagnostics_scope():
-        assert note_failure(info) is info
+        current_sink().emit(info)
         assert failure_exit_code() == 4
-    with diagnostics_scope():
-        assert note_failure(ErrorCategory.UNAVAILABLE) is None
-        assert failure_exit_code() == 5
 
 
 def test_an_interrupt_is_interrupted_everywhere() -> None:
-    info = ErrorInfo.from_exception(KeyboardInterrupt())
+    info = Failure.from_exception(KeyboardInterrupt())
     with diagnostics_scope():
-        note_failure(KeyboardInterrupt())
+        Diagnostics().failure(info)
         assert (info.category, failure_exit_code()) == ("interrupted", 130)
 
 
@@ -386,7 +391,7 @@ class _RoundTrips(Record, kind="acme-tools.round_trips"):
     by_name: str = Field(default="", validation_alias="byName")
     at: UtcTimestamp
     where: Path
-    error: ErrorInfo | None = None
+    error: Failure | None = None
     tree: _Tree = _Tree()
 
 
@@ -404,7 +409,7 @@ def test_aliases_validation_accepts_are_allowed() -> None:
             byName="b",
             at=datetime(2026, 1, 2, 3, 4, 5, 6, tzinfo=UTC),
             where=Path("/tmp/x"),
-            error=ErrorInfo.from_exception(ConfigError("x")),
+            error=Failure.from_exception(ConfigError("x")),
             tree=_Tree(children=[_Tree()]),
         )
     )
@@ -463,7 +468,7 @@ def _import_every_shipped_module() -> None:
                 importlib.import_module(info.name)
 
 
-def _samples() -> dict[str, Record]:
+def _samples() -> dict[str, WireModel]:
     from untaped.config.models import SettingOutcome, SettingRow
     from untaped.management.alias import AliasOutcome, AliasRow
     from untaped.management.plugin_check import PluginCheckRow
@@ -472,7 +477,19 @@ def _samples() -> dict[str, Record]:
     from untaped.plugins.registry import MigrationOutcome
     from untaped.profile.models import ProfileOutcome, ProfileRow
 
-    rows: list[Record] = [
+    rows: list[WireModel] = [
+        Message(level="warning", message="w", hint="h"),
+        Failure.from_exception(ConfigError("x")),
+        Debug(logger="untaped.http", message="GET"),
+        StaleData.describe(
+            subject="shelf",
+            cache="hello.shelf_books",
+            key="k",
+            refreshed_at=datetime(2026, 10, 9, tzinfo=UTC),
+            now=datetime(2026, 10, 10, tzinfo=UTC),
+            max_age=timedelta(hours=1),
+            error=Failure.from_exception(ConfigError("x")),
+        ),
         SettingRow(key="k", value={"a": [1]}, default=None, source="default", profile=None),
         SettingOutcome(key="k", profile="default", action="updated"),
         AliasRow(name="ls", command="plugin list", argv=["plugin", "list"], profile="default"),
@@ -480,7 +497,7 @@ def _samples() -> dict[str, Record]:
             name="ls",
             profile="default",
             action="failed",
-            error=ErrorInfo.from_exception(ConfigError("x")),
+            error=Failure.from_exception(ConfigError("x")),
         ),
         ProfileRow(name="default", active=True, keys=3),
         ProfileOutcome(name="work", action="renamed", previous_name="old"),

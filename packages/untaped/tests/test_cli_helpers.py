@@ -542,7 +542,7 @@ def test_format_error_falls_back_to_raw_body(body: str) -> None:
 
 
 def test_format_error_keeps_raw_body_under_verbose(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("untaped.diagnostics.is_verbose", lambda: True)
+    monkeypatch.setattr("untaped.output.diagnostic.is_verbose", lambda: True)
     result = CliInvoker().invoke(_http_error_app('{"message":"Bad credentials"}'), [])
     output = result.output or result.stderr
     assert "— Bad credentials" in output

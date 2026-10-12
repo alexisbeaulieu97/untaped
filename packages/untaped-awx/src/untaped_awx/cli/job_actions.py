@@ -15,12 +15,12 @@ from cyclopts import App, Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Failure,
     FormatOption,
     UntapedError,
     echo,
     emit,
     finish,
-    note_failure,
     plural,
     q,
     raise_usage,
@@ -214,7 +214,7 @@ def _failure(exc: UntapedError) -> dict[str, Any]:
     return {
         "action": "failed",
         "detail": detail,
-        "error": note_failure(exc, message=detail),
+        "error": Failure.from_exception(exc, message=detail),
     }
 
 

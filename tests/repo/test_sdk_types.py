@@ -139,3 +139,11 @@ def test_the_parity_check_sees_a_missing_import() -> None:
     )
 
     assert _lazy_exports(tree) - _type_checking_imports(tree) == {("a.b", "Y")}
+
+
+def test_the_output_policy_stays_out_of_the_sdk() -> None:
+    """A plugin that could read the policy would branch on JSON around the sink."""
+    import untaped.sdk
+
+    assert "OutputPolicy" not in untaped.sdk.__all__
+    assert not hasattr(untaped.sdk, "OutputPolicy")

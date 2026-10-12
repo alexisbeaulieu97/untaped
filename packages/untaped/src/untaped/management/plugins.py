@@ -40,6 +40,7 @@ from untaped.config.repository import SettingsFileRepository
 from untaped.errors import ConfigError, UsageError, first_validation_error
 from untaped.management._render import emit_isolated
 from untaped.messages import command_line, not_found
+from untaped.output.diagnostic import WireModel
 from untaped.plugins.registry import (
     CompositionResult,
     PluginCandidate,
@@ -378,7 +379,7 @@ def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
     }
 
 
-def _load_kind(kind: str, result: CompositionResult) -> type[Record] | None:
+def _load_kind(kind: str, result: CompositionResult) -> type[WireModel] | None:
     """Import what declares record kinds lazily (contracts, then commands), then look again."""
     if any(owns_contracts(each.spec) or each.spec.provides for each in result.plugins):
         from untaped.contracts._registry import every_offer, owned_contracts  # noqa: PLC0415

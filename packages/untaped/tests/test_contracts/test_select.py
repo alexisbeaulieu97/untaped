@@ -178,6 +178,8 @@ def test_convert_refuses_kind_less_unknown_and_invalid_records() -> None:
         convert(BookSource.to_book, _envelope(None, {"title": "Dune"}))
     with pytest.raises(UsageError, match=r"no installed provider reads untaped\.profile"):
         convert(BookSource.to_book, _envelope("untaped.profile", {"name": "x"}))
+    with pytest.raises(UsageError, match=r"no installed provider reads untaped\.failure"):
+        convert(BookSource.to_book, _envelope("untaped.failure", {"message": "x"}))
     with pytest.raises(ConfigError, match=r"invalid library\.volume record") as err:
         convert(BookSource.to_book, _envelope("library.volume", {"id": "3", "name": "Dune"}))
     assert err.value.exit_code == ExitCode.FAILURE

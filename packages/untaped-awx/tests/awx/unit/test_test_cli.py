@@ -1653,3 +1653,19 @@ def test_list_table_leaves_out_an_unused_template_column(cli: CliInvoker, tmp_pa
 
     assert result.exit_code == 0, result.output
     assert _table_header(result.stdout) == ["suite", "case", "job_template"]
+
+
+def test_an_error_line_in_a_shown_log_tail_counts_nothing(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """The job's own ``error:`` line is relayed, not counted: a still-failing case exits 0."""
+    _seed_jt(fake_aap)
+    suite = _smoke(tmp_path)
+    saved = _baseline(cli, fake_aap, suite, tmp_path / "base.json", "failed")
+    fake_aap.next_action_stdout = "TASK [checkout]\nerror: pathspec 'main' did not match\n"
+
+    _outcomes(fake_aap, [{"status": "failed"}])
+    result = _run(cli, str(suite), "--compare", str(saved), "--show-logs")
+
+    assert result.exit_code == 0, result.output
+    assert "error: pathspec 'main' did not match" in result.stderr

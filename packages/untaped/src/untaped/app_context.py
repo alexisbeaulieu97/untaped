@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from untaped.auth import resolve_token
 from untaped.errors import ConfigError
+from untaped.output.sink import Diagnostics
 from untaped.settings import (
     HttpSettings,
     Settings,
@@ -80,6 +81,14 @@ class AppContext:
     def http(self) -> HttpSettings:
         """Cross-cutting HTTP settings for building clients."""
         return self.section("http", HttpSettings)
+
+    @property
+    def diag(self) -> Diagnostics:
+        """The stderr handle: ``info``, ``warning``, ``failure``, ``emit`` of any kind…
+
+        It writes to the current invocation's sink, resolved at each call.
+        """
+        return Diagnostics()
 
     def ui(self, *, strict: bool = True) -> UiContext:
         """The themed UI context for messages and prompts.

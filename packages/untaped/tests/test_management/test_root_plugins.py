@@ -173,7 +173,11 @@ def test_plugins_listing_install_hint_on_stderr(
     assert bool(_rows(result.stdout)) is not expect_hint
     if expect_hint:
         # JSON output turns stderr diagnostics into one JSON line, level taken from the prefix.
-        assert json.loads(result.stderr) == {"level": "hint", "message": INSTALL_HINT}
+        assert json.loads(result.stderr) == {
+            "level": "hint",
+            "kind": "untaped.message",
+            "message": INSTALL_HINT,
+        }
     else:
         assert "hint:" not in result.stderr
         assert INSTALL_HINT not in result.stderr

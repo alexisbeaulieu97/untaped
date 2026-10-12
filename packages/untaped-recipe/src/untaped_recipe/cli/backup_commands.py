@@ -12,7 +12,7 @@ from untaped.sdk import (
     ColumnsOption,
     ConfigError,
     DryRunOption,
-    ErrorInfo,
+    Failure,
     FormatOption,
     OutcomeRecord,
     UntapedError,
@@ -300,5 +300,5 @@ def _outcome_fields(failure: UntapedError | None, *, dry_run: bool, done: str) -
         return {"action": "planned"}
     if failure is None:
         return {"action": done}
-    error = ErrorInfo.from_exception(failure)
+    error = Failure.from_exception(failure)
     return {"action": "failed", "detail": error.message, "error": error}
