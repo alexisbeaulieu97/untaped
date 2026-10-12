@@ -35,14 +35,15 @@ lock while it fills (another process filling the same key is waited for,
 then served), and keeps what it knows about each key in a file under
 `plugin_dir(SPEC)/caches/`. A fill never serves its own cache.
 
-An automatic refresh fails fast: until one call reaches upstream, every HTTP
-request and `git fetch`/`ls-remote` inside the fill is tried once, with a
-short timeout, so an offline user gets the cached data in seconds; `--refresh`
-keeps the full timeouts and retries. When a fill raises an `UntapedError`,
-`serve()` serves the cached data with one `untaped.stale` warning, or raises
-the error when nothing is cached, and does not try again for five minutes,
-or until the time the fill put in the error's `details["retry_at"]` (ISO
-8601; a rate limit's reset). A fill that completed but left items out returns
+An automatic refresh of cached data fails fast: until one call reaches
+upstream, every HTTP request and `git fetch`/`ls-remote` inside the fill is
+tried once, with a short timeout, so an offline user gets the cached data in
+seconds; `--refresh` and a key's first fill keep the full timeouts and
+retries. When a fill raises an `UntapedError`, `serve()` serves the cached
+data with one `untaped.stale` warning and does not try again for five
+minutes, or until the time the fill put in the error's `details["retry_at"]`
+(ISO 8601; a rate limit's reset). With nothing cached it raises the error,
+and the next run fills again. A fill that completed but left items out returns
 `Filled(partial=Failure(...))`: every read warns until a whole refresh. Pass
 `empty=` to say when an answer found nothing: a stale empty answer then fails
 with the refresh's error instead of passing for an absence. `--cached` on a
