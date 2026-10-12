@@ -46,8 +46,8 @@ _BUDGET: ContextVar[_Budget | None] = ContextVar("untaped_upstream_budget", defa
 
 
 @contextmanager
-def _budget(*, until_success: bool) -> Iterator[None]:
-    token = _BUDGET.set(_Budget(until_success=until_success))
+def _budget(budget: _Budget | None) -> Iterator[None]:
+    token = _BUDGET.set(budget)
     try:
         yield
     finally:
@@ -61,7 +61,7 @@ def quick_probe() -> Iterator[None]:
     ``doctor --online`` wraps each service probe in it, so an unreachable
     service costs one short attempt instead of several full-length ones.
     """
-    with _budget(until_success=False):
+    with _budget(_Budget(until_success=False)):
         yield
 
 
@@ -73,7 +73,18 @@ def fail_fast() -> Iterator[None]:
     :data:`PROBE_TIMEOUT`; once upstream answered, a slow or flaky call gets
     its full timeout and retries.
     """
-    with _budget(until_success=True):
+    with _budget(_Budget(until_success=True)):
+        yield
+
+
+@contextmanager
+def full_retries() -> Iterator[None]:
+    """Give every call its full timeout and retries, whatever block encloses this one.
+
+    A ``--refresh`` or a first fill nested in another cache's automatic
+    refresh: the outer budget is not this fill's.
+    """
+    with _budget(None):
         yield
 
 

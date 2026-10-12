@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from functools import partial
 from pathlib import Path
 from typing import Annotated, Literal
@@ -65,17 +66,20 @@ def motd(*, refresh: Annotated[bool | None, refresh_option(MOTD)] = None) -> Non
                 category="config",
                 hint="set it with `untaped config set hello.motd_path FILE`",
             )
+        # the key is the file itself: each file, in any profile, keeps its own copy
+        source = source.expanduser().resolve()
         served = MOTD.serve(
-            {"motd": shown_path(source.expanduser())},
+            {str(source): shown_path(source)},
             refresh=refresh,
-            fill=partial(_fill, source.expanduser()),
-            read=lambda: _copy().read_text(encoding="utf-8"),
+            fill=partial(_fill, source),
+            read=lambda: _copy(source).read_text(encoding="utf-8"),
         )
     echo(served.value, nl=False)
 
 
-def _copy() -> Path:
-    return plugin_dir(SPEC) / "motd.txt"
+def _copy(source: Path) -> Path:
+    digest = hashlib.sha256(str(source).encode()).hexdigest()[:16]
+    return plugin_dir(SPEC) / "motd" / f"{digest}.txt"
 
 
 def _fill(source: Path, _key: str, _progress: ProgressHandle) -> Filled:
@@ -86,5 +90,5 @@ def _fill(source: Path, _key: str, _progress: ProgressHandle) -> Filled:
         raise HelloError(
             f"could not read {shown_path(source)}: {exc.strerror or exc}", category="unavailable"
         ) from exc
-    atomic_write(_copy(), text)
+    atomic_write(_copy(source), text)
     return Filled(summary=plural(len(text.splitlines()), "line"))

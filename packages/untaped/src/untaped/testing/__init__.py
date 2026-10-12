@@ -127,7 +127,11 @@ class CacheClock:
 @contextmanager
 def cache_clock(start: datetime | None = None) -> Iterator[CacheClock]:
     """Run the block with caches on a wall clock the test advances (``start``: now)."""
-    clock = CacheClock(start if start is not None else datetime.now(UTC).replace(microsecond=0))
+    if start is None:
+        start = datetime.now(UTC).replace(microsecond=0)
+    elif start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)  # naive is UTC, as everywhere in untaped
+    clock = CacheClock(start)
     with installed_utcnow(clock):
         yield clock
 
