@@ -32,7 +32,8 @@ Rules the sink keeps:
   Progress is the exception: no spinner is drawn and running text progress
   lines are dropped, not held, while any live scope holds a screen; a task's
   ``done`` or ``failed`` line is held like any other when its start line
-  printed.
+  printed (held by its own scope's sink: a screen another scope holds does
+  not hold it, as for any other line).
 - **Progress.** Open ``progress(label)`` blocks are one process-wide task
   stack, ordered by open time: the first task's line is the one shown, and
   the last one opened owns its phase (a nested task is a phase of the outer

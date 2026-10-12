@@ -444,6 +444,9 @@ def test_a_task_opened_while_the_ticker_is_joined_gets_its_own(
         assert ticking.wait(_JOIN)  # the ticker is inside a tick
         closing = threading.Thread(target=first.__exit__, args=(None, None, None), name="close-A")
         closing.start()  # stops the ticker, then joins it: blocked until the tick returns
+        deadline = time.monotonic() + _JOIN
+        while sink._ticker is not None and time.monotonic() < deadline:
+            time.sleep(0.001)  # A's close has stopped the ticker and is joining it
         with _progress("C"):
             tickers = [t for t in threading.enumerate() if t.name == "untaped-progress"]
             assert len(tickers) == 2  # C's own, beside the one A's close is joining

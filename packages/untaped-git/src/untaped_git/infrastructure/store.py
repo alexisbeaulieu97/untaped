@@ -591,8 +591,8 @@ class RepoStore:
         nothing is missing no network call is made. ``progress`` hears
         ``listing missing blobs`` (a walk of the trees or the history, which
         can take seconds), then, when some are missing, ``fetching blobs``
-        with the blobs fetched so far. A blob still missing afterwards, or a host refusing the
-        fetch, is ``unavailable`` (exit 5).
+        with the blobs fetched so far. A blob still missing afterwards, or a
+        host refusing the fetch, is ``unavailable`` (exit 5).
         """
         revisions = [f"{tree}^{{tree}}" for tree in trees]
         for item in history:
