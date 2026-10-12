@@ -1027,12 +1027,14 @@ class Diagnostics:
     def info(self, text: str | Text, *, hint: str | None = None, unmuted: bool = False) -> None:
         """An ``info`` line; a Rich ``Text`` renders styled on a terminal, plain elsewhere.
 
-        ``--quiet`` mutes commentary: lines the user did not ask for and need
-        not act on. A preview before a prompt, a stream the user asked to
-        watch, and output a flag exists to produce are not commentary: pass
-        ``unmuted=True`` and they print under ``-q``. Warnings, failures and
-        hints always print. A blank ``text`` prints an empty line in text (a
-        separator) and nothing under JSON.
+        ``-q`` mutes commentary: lines the user did not ask for and need not
+        act on. A preview before a prompt, a stream the user asked to watch,
+        and output a flag exists to produce are not commentary and print
+        under ``-q``. Warnings, failures and hints always print.
+
+        Pass ``unmuted=True`` for a line that is not commentary. A blank
+        ``text`` prints an empty line in text (a separator) and nothing under
+        JSON.
         """
         if isinstance(text, str):
             current_sink().emit(Message(level="info", message=text, hint=hint), unmuted=unmuted)

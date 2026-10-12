@@ -277,6 +277,7 @@ def test_a_themed_info_block_is_never_wrapped_or_tab_expanded(
 ) -> None:
     """A preview (a diff, a tab-joined table) prints as written, colour or not."""
     monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("COLUMNS", "80")
     block = "name\tstate\n" + "x" * 300 + "\n\n\tindented"
 
     def case() -> None:
@@ -287,3 +288,17 @@ def test_a_themed_info_block_is_never_wrapped_or_tab_expanded(
     coloured = _capture(case, _TtyStringIO())
     assert "\x1b[" in coloured
     assert re.sub(r"\x1b\[[0-9;]*m", "", coloured) == block + "\n"
+
+
+def test_a_role_rich_cannot_parse_styles_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    theme = _COLOURED.model_copy(
+        update={"color_roles": {**_COLOURED.color_roles, "info": "repr.number"}}
+    )
+
+    def case() -> None:
+        with diagnostics_scope():
+            note_theme(theme)
+            Diagnostics().info("plain")
+
+    assert _capture(case, _TtyStringIO()) == "plain\n"
