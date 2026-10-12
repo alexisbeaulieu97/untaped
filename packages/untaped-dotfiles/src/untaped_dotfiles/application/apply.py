@@ -190,8 +190,13 @@ class Applier:
     # -- executing -----------------------------------------------------------
 
     def planned(self, steps: Sequence[Step]) -> list[PlaceOutcome]:
-        """The dry-run rows: what each step would do."""
-        return [self._row(step, self._planned_action(step), step.detail) for step in steps]
+        """The dry-run rows: what each step would do; a step that cannot is failed, as in a run."""
+        rows: list[PlaceOutcome] = []
+        for step in steps:
+            action = self._planned_action(step)
+            error = step.found.error if action == "failed" else None
+            rows.append(self._row(step, action, step.detail, error=error))
+        return rows
 
     def execute(self, steps: Sequence[Step]) -> list[PlaceOutcome]:
         rows: list[PlaceOutcome] = []

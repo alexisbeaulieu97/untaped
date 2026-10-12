@@ -324,6 +324,22 @@ def test_an_unreadable_placed_path_exits_1_and_counts_in_attention(
     assert (dotfiles_env / "attention").read_text() == "1\n"
 
 
+def test_a_dry_run_over_an_unreadable_placed_path_fails_like_the_run(
+    make_upstream: Upstream, home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bare, _ = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship"])
+    run(app, ["apply", "--yes"])
+    _unreadable(monkeypatch, home / ".config" / "starship.toml")
+
+    result = run(app, ["apply", "--dry-run", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    [row] = _rows(result)
+    assert row["action"] == "failed" and row["error"] is not None
+
+
 def test_an_unreadable_source_in_a_checkout_is_an_error_row(
     make_upstream: Upstream, monkeypatch: pytest.MonkeyPatch
 ) -> None:
