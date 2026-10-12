@@ -103,5 +103,9 @@ def test_a_failed_refresh_serves_the_cached_books_with_one_stale_warning(
     assert [row["title"] for row in json.loads(result.stdout)] == ["Dune", "Emma"]
     [stale] = result.diagnostics
     assert isinstance(stale, StaleData)
-    assert (stale.cache, stale.key) == ("shelf.book_source_books", f"library:{entry.stem}")
+    assert (stale.plugin, stale.cache, stale.key) == (
+        "library",
+        "shelf.book_source_books",
+        f"library:{entry.stem}",
+    )
     assert stale.message.startswith("library: refresh failed (the catalogue is down)")

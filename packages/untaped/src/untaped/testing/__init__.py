@@ -13,6 +13,11 @@ progress clock for the invocation, so ``CliResult.diagnostics`` carries no
 every update). A test that wants the cadence runs under
 :func:`progress_clock` and calls ``advance(seconds)`` from inside the
 command (a fake the command calls, say).
+
+A cache (``untaped.sdk.Cache``) reads its ages from the wall clock; under
+:func:`cache_clock` it reads the test's instead, which moves only on
+``advance(timedelta)``, so "a rerun an hour later" is one call. The two
+clocks are independent.
 """
 
 from __future__ import annotations
@@ -23,12 +28,14 @@ from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO, cast
 
 from cyclopts import App
 from rich.console import Console
 
+from untaped.cache import installed_utcnow
 from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
 from untaped.output.sink import current_clock, installed_clock, recording, tick
@@ -52,6 +59,7 @@ if TYPE_CHECKING:
     from untaped.theme import ThemeSpec
 
 __all__ = [
+    "CacheClock",
     "CliInvoker",
     "CliResult",
     "ProgressClock",
@@ -63,6 +71,7 @@ __all__ = [
     "assert_contract_schemas",
     "assert_destructive_contract",
     "assert_fills",
+    "cache_clock",
     "check_conventions",
     "compose_with",
     "drive_screen",
@@ -93,6 +102,37 @@ def progress_clock() -> Iterator[ProgressClock]:
     """Run the block on a progress clock the test advances (``invoke_cli`` keeps it)."""
     clock = ProgressClock()
     with installed_clock(clock):
+        yield clock
+
+
+class CacheClock:
+    """The wall clock of :func:`cache_clock`: time moves only when a test advances it."""
+
+    def __init__(self, start: datetime) -> None:
+        self._now = start
+
+    def __call__(self) -> datetime:
+        return self._now
+
+    @property
+    def now(self) -> datetime:
+        """The time a cache reads now."""
+        return self._now
+
+    def advance(self, by: timedelta) -> None:
+        """Move the clock on by ``by``."""
+        self._now += by
+
+
+@contextmanager
+def cache_clock(start: datetime | None = None) -> Iterator[CacheClock]:
+    """Run the block with caches on a wall clock the test advances (``start``: now)."""
+    if start is None:
+        start = datetime.now(UTC).replace(microsecond=0)
+    elif start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)  # naive is UTC, as everywhere in untaped
+    clock = CacheClock(start)
+    with installed_utcnow(clock):
         yield clock
 
 

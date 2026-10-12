@@ -491,6 +491,7 @@ def _samples() -> dict[str, WireModel]:
             state="running",
         ),
         StaleData.describe(
+            plugin="hello",
             subject="shelf",
             cache="hello.shelf_books",
             key="k",

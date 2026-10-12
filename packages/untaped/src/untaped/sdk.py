@@ -3,8 +3,8 @@
 Every plugin — first-party or third-party — imports untaped helpers
 from this module only. It carries the composition set and the supported runtime helpers (output,
 errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, UI, batch,
-concurrency, shared options, message wording, record bases, token sources
-and doctor-check factories).
+concurrency, shared options, message wording, record bases, token sources,
+caches and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks are a major release.
 
 The screen names (``Screen``, ``Cmd``, ``Key``, the components such as ``TextInput``,
@@ -21,6 +21,15 @@ import typing as _typing
 from untaped.app_context import AppContext, app_context
 from untaped.auth import TokenCommand, TokenSources
 from untaped.batch import BatchOutcome, batch_apply, finish
+from untaped.cache import (
+    Cache,
+    Filled,
+    Freshness,
+    FreshnessRecord,
+    NeverRefreshed,
+    Served,
+    refresh_option,
+)
 
 # report_error and report_row_errors are deprecated until 12.0; the SDK still exports them.
 from untaped.cli import (  # type: ignore[deprecated]
@@ -342,6 +351,14 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "safe_path_segment",
     "same_origin",
     "yaml_mapping_indent",
+    # caches
+    "Cache",
+    "Filled",
+    "Freshness",
+    "FreshnessRecord",
+    "NeverRefreshed",
+    "Served",
+    "refresh_option",
     # prompts and ui
     "NO_PROGRESS",
     "PickCatalog",

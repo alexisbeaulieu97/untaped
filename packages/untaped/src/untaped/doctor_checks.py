@@ -142,7 +142,7 @@ def online_check(
     """Contact ``section``'s service through ``probe`` (``doctor --online`` only).
 
     ``probe`` is the plugin's own authenticated call (``whoami``-style),
-    run against the active profile inside :func:`untaped.http.quick_probe`
+    run against the active profile inside :func:`untaped.upstream.quick_probe`
     (no retries, a short timeout); it returns the pass detail and raises on
     failure. A section that is not :func:`service_configured` passes
     without probing. A failure keeps one line of its message and names the
@@ -162,7 +162,7 @@ def online_check(
             detail = f"{section}.base_url is not set"
             return DoctorResult(id=check_id, ok=False, detail=detail, fix=url_fix)
         has_token = describe_token_source(settings, section=section) is not None
-        from untaped.http import quick_probe  # noqa: PLC0415 - keep SPEC imports light
+        from untaped.upstream import quick_probe  # noqa: PLC0415 - keep SPEC imports light
 
         try:
             with quick_probe():

@@ -369,7 +369,12 @@ def plugin_dir(spec: PluginSpec) -> Path:
     It takes the spec rather than reading any ambient state, so it works
     from any thread. The directory is not created.
     """
-    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins" / spec.name
+    return named_plugin_dir(spec.name)
+
+
+def named_plugin_dir(name: str) -> Path:
+    """:func:`plugin_dir` by the plugin's name, for core code that holds a name, not a spec."""
+    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins" / name
 
 
 @dataclass(frozen=True)
