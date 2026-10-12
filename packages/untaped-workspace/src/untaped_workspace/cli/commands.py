@@ -14,6 +14,7 @@ from cyclopts import Parameter
 from cyclopts.validators import Number
 
 from untaped.sdk import (
+    NO_PROGRESS,
     ColumnsOption,
     DryRunOption,
     FormatOption,
@@ -231,9 +232,15 @@ def status_command(
         settings = workspace_settings()
         records = StateWorkspaceStore().active() if all_workspaces else [locate(settings, name)]
         status = status_reader(settings, git_worktrees())
-        progress = ui_context(strict=False).progress("Fetching repos…") if fetch else nullcontext()
-        with progress:
-            rows = [row for record in records for row in status(record, fetch=fetch)]
+        task = (
+            ui_context(strict=False).progress("Fetching repos…")
+            if fetch
+            else nullcontext(NO_PROGRESS)
+        )
+        with task as progress:
+            rows = [
+                row for record in records for row in status(record, fetch=fetch, progress=progress)
+            ]
         emit(rows, fmt=fmt, columns=columns, kind="workspace.status", empty="No repos found.")
         report_row_errors(rows, item=lambda row: f"{row.workspace}/{row.dir}")
     finish(

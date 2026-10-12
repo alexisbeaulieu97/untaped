@@ -555,6 +555,8 @@ class SyncCorpus(_CorpusUseCase):
                 selector=options.refs,
                 sync="force" if options.refresh else "auto",
                 max_age_seconds=options.max_age_seconds,
+                # One repo: its fetch's phases are the line; many: the count is.
+                progress=progress if len(repos) == 1 else NO_PROGRESS,
             )
 
         def record(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> None:
@@ -602,6 +604,7 @@ def _prepare_repo(
     selector: RefSelector,
     sync: Literal["auto", "force", "off"],
     max_age_seconds: int,
+    progress: ProgressHandle = NO_PROGRESS,
 ) -> _ReadyRepo | CorpusFailure:
     """Bring one repo's cached copy up to date for ``selector``, fetching only when needed.
 
@@ -627,7 +630,7 @@ def _prepare_repo(
                 touched = freshness.fetched_at
             return _ReadyRepo(repo=repo, fetched_at=touched, refreshed=False, unchanged=True)
     try:
-        result = corpus.sync_repo(repo, selector=selector)
+        result = corpus.sync_repo(repo, selector=selector, progress=progress)
     except (GitCorpusError, OSError) as exc:
         if freshness is not None and covers(freshness, selector):
             return _ReadyRepo(

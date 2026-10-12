@@ -5,11 +5,14 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
+from untaped.sdk import NO_PROGRESS
+
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
     from datetime import datetime
     from pathlib import Path
 
+    from untaped.sdk import ProgressHandle
     from untaped_workspace.domain.models import (
         ArchivedRecord,
         Checkout,
@@ -35,11 +38,11 @@ class GitWorktrees(Protocol):
         """Git state of the worktree at ``dest``; ``None`` when it is missing."""
         ...
 
-    def fetch(self, url: str, dest: Path) -> str | None:
+    def fetch(self, url: str, dest: Path, *, progress: ProgressHandle = NO_PROGRESS) -> str | None:
         """Fetch ``url``'s store repo and refresh ``dest``'s config (no-op when not stored).
 
         Returns why the history backfill stopped (a warning, not a failure),
-        else ``None``.
+        else ``None``. ``progress`` hears the store's phases.
         """
         ...
 
