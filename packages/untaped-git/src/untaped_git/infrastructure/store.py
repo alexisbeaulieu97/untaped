@@ -588,9 +588,10 @@ class RepoStore:
         ``trees`` are peeled (``<x>^{tree}``: a commit lists its own tree's
         blobs only); ``history`` walks every commit the revisions reach (a
         ``*`` names a ref glob, ``a..b`` a range). ``paths`` limits both. When
-        nothing is missing no network call is made and ``progress`` hears
-        nothing; otherwise it hears ``fetching blobs`` with the blobs fetched
-        so far. A blob still missing afterwards, or a host refusing the
+        nothing is missing no network call is made. ``progress`` hears
+        ``listing missing blobs`` (a walk of the trees or the history, which
+        can take seconds), then, when some are missing, ``fetching blobs``
+        with the blobs fetched so far. A blob still missing afterwards, or a host refusing the
         fetch, is ``unavailable`` (exit 5).
         """
         revisions = [f"{tree}^{{tree}}" for tree in trees]
@@ -602,6 +603,7 @@ class RepoStore:
             return
         with self._locked():
             self._ensure()
+            progress.update(phase="listing missing blobs")
             missing = self._missing(revisions, paths)
             if not missing:
                 return

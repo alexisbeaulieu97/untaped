@@ -52,7 +52,7 @@ def test_a_globs_only_fetch_is_one_phase_without_counts(
     assert progress.updates == [(None, "fetching refs", None, None)]
 
 
-def test_prefetch_counts_the_blobs_it_fetches_and_nothing_when_none_is_missing(
+def test_prefetch_lists_then_counts_the_blobs_it_fetches(
     remote: GitRemote, store_for: StoreFor
 ) -> None:
     remote.commit("a.txt", "a\n")
@@ -62,13 +62,14 @@ def test_prefetch_counts_the_blobs_it_fetches_and_nothing_when_none_is_missing(
     progress = _Recorder()
 
     store.prefetch(trees=["refs/untaped/github/heads/main"], progress=progress)
-    (_, phase, first, total), (_, _, last, _) = progress.updates
+    listing, (_, phase, first, total), (_, _, last, _) = progress.updates
+    assert listing == (None, "listing missing blobs", None, None)
     assert (phase, first, last) == ("fetching blobs", 0, total)
     assert total is not None and total >= 2  # a.txt and b.txt at least
 
     again = _Recorder()
     store.prefetch(trees=["refs/untaped/github/heads/main"], progress=again)
-    assert again.updates == []
+    assert again.updates == [listing]
 
 
 def test_prefetched_forwards_the_handle(remote: GitRemote, store_for: StoreFor) -> None:
@@ -79,4 +80,8 @@ def test_prefetched_forwards_the_handle(remote: GitRemote, store_for: StoreFor) 
 
     store.prefetched(trees=["refs/untaped/github/heads/main"], progress=progress)
 
-    assert [phase for _, phase, _, _ in progress.updates] == ["fetching blobs", "fetching blobs"]
+    assert [phase for _, phase, _, _ in progress.updates] == [
+        "listing missing blobs",
+        "fetching blobs",
+        "fetching blobs",
+    ]
