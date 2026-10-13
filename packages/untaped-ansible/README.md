@@ -44,13 +44,15 @@ GitHub instead.
 ## Find what depends on a role
 
 ```bash
-untaped ansible source status
-untaped ansible impact acme/base-role --refresh
-untaped ansible impact acme/base-role --org acme --refresh
+untaped ansible impact acme/base-role
+untaped ansible impact acme/base-role --org acme
+untaped ansible impact acme/base-role --cached
 ```
 
 `impact` lists the repos in the source that depend on the role, at any ref,
-from cached data, and marks where the walk stopped. Refresh first when the source is stale; inline selectors such as
+from cached data, and marks where the walk stopped. A source older than
+`ansible.caches.index.max_age_seconds` (one day) is refreshed first;
+`--cached` reads only what is cached. Inline selectors such as
 `--org` answer a one-off question without saving a source.
 
 ## Find which roots contain a repository

@@ -25,11 +25,11 @@ source's cache), how fresh that cache is, and where the walk stopped.
 | Question | Command | Use when |
 |---|---|---|
 | What does ROLE depend on? | `untaped ansible deps acme/base-role` | downstream; works live without a source |
-| What depends on ROLE? | `untaped ansible impact acme/base-role` | upstream, blast radius; needs a refreshed source |
+| What depends on ROLE? | `untaped ansible impact acme/base-role` | upstream, blast radius; needs a source |
 | Which roots reach REPO? | `untaped ansible find acme/base-role --root acme/site` | you have the roots (projects, job templates) and want the ones that contain REPO |
 | Show both directions | `untaped ansible graph acme/base-role` | a human-readable report; `--format mermaid` only when the user wants a diagram |
-| Is the cache fresh? | `untaped ansible source status` | before trusting an `impact` answer |
-| Save and index a source | `untaped ansible source set platform --org acme`, `untaped ansible source refresh platform` | first use, or a stale source |
+| How fresh is the cache? | `untaped ansible source status` | `state`, `refreshed_at`, `partial`, `retry_at` per saved source |
+| Save and index a source | `untaped ansible source set platform --org acme`, `untaped ansible source refresh platform` | first use, or to refresh now |
 
 `ROLE` is `owner/repo`, a GitHub URL, a source alias, or a local path. For a
 subdirectory of a checkout, such as `./roles/web`, add `--target-repo
@@ -42,9 +42,12 @@ OWNER/NAME`.
 | No source selected | live GitHub reads | unavailable: `impact` fails, `graph` omits it with a warning |
 | A source selected (`--source`, inline `--org`/`--team`/`--repo`, or the default) | the source's cache; a role outside it warns "not cached" and gives no rows | the source's cache |
 | `--live` with a source | live GitHub reads | the source's cache |
-| `--refresh` | refreshes the source first, then reads the cache | the same |
 
-`--refresh`, `--cached` and `--live` are mutually exclusive (exit 2).
+With a source selected, the cache is refreshed first when it is older than
+`ansible.caches.index.max_age_seconds` (1 day) or was never refreshed.
+`--refresh` refreshes it now; `--cached` reads only what is cached and never
+checks GitHub. `--refresh`, `--cached` and `--live` are mutually exclusive
+(exit 2).
 Repeated `--source` and inline selectors add up. Repeating the same inline
 selectors reuses their cached scan.
 
@@ -52,14 +55,17 @@ selectors reuses their cached scan.
 
 ### Answer "what depends on X"
 
-1. Run `untaped ansible source status`. Refresh when the source is `stale`
-   or `not_refreshed`: `untaped ansible source refresh platform`.
-2. Run `untaped ansible impact acme/base-role --format json`. Without
-   `--ref` it covers every ref a dependent pins; `root_ref` tells them apart.
+1. Run `untaped ansible impact acme/base-role --format json`; it refreshes a
+   stale source first. Without `--ref` it covers every ref a dependent pins;
+   `root_ref` tells them apart.
+2. Read any `untaped.stale` line on stderr: the rows came from older data.
+   `partial` means some repos failed to refresh (named in `error`), `error`
+   alone that the refresh failed. Exit 5 with no rows means the source could
+   not be refreshed and nothing cached answers; `--cached` reads what is.
 3. Check each row's `stopped`. `depth` or `not_cached` means the next level
    was not read, so more dependents may exist beyond that repo.
-4. Read the stderr warnings: skipped dependency files, ignored collections,
-   omitted unpinned dependents.
+4. Read the other stderr warnings: skipped dependency files, ignored
+   collections, omitted unpinned dependents.
 5. Report the dependents per ref, and name any stopped repos and warnings as
    gaps rather than dropping them.
 
