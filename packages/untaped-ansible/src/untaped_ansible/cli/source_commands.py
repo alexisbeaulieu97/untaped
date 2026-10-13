@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shlex
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from cyclopts import Parameter
@@ -16,6 +17,7 @@ from untaped.sdk import (
     DryRunOption,
     Failure,
     FormatOption,
+    FreshnessRecord,
     ParallelOption,
     UntapedError,
     UsageError,
@@ -37,9 +39,16 @@ from untaped.sdk import (
     writes,
 )
 from untaped_ansible.application.refresh_git_index import RefreshResult
-from untaped_ansible.cli.refresh import GIT_PARALLEL_CAP, run_source_refresh
+from untaped_ansible.cli.refresh import (
+    GIT_PARALLEL_CAP,
+    RefreshWiring,
+    SelectedSource,
+    repo_errors,
+    serve_sources,
+    sync_freshness,
+)
 from untaped_ansible.domain.identity import repo_key
-from untaped_ansible.domain.payloads import SourceOutcome
+from untaped_ansible.domain.payloads import SourceOutcome, SourceStatus
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
     AliasRepository,
@@ -51,6 +60,7 @@ from untaped_ansible.infrastructure.github_ref_probe import (
     is_transient_ref_probe_failure,
 )
 from untaped_ansible.settings import (
+    INDEX,
     AnsibleSettings,
     SourceDefinition,
     normalize_team_refs,
@@ -334,6 +344,7 @@ def source_remove_command(
         if not dry_run and not failures:
             source_repo.remove(name)
             index.clear(_saved_source_key(name))
+            INDEX.forget(_saved_source_key(name))
         action = "planned" if dry_run else "failed" if failures else "deleted"
         error = (
             Failure.from_exception(
@@ -375,12 +386,7 @@ def source_status_command(
             )
         names = [name] if name is not None else sorted(configured)
         rows = [
-            _source_status_row(
-                source_name,
-                index=index,
-                configured_sources=configured,
-                stale_after=settings.stale_after_seconds,
-            )
+            _source_status_row(source_name, index=index, configured_sources=configured)
             for source_name in names
         ]
         emit(
@@ -388,7 +394,7 @@ def source_status_command(
             fmt=fmt,
             columns=columns,
             kind="ansible.source_status",
-            table_columns=["source", "state", "scanned_at", "repos", "refs"],
+            table_columns=["source", "state", "refreshed_at", "repos", "refs"],
             empty="No sources scanned yet. Run `untaped ansible source refresh NAME`.",
         )
 
@@ -412,40 +418,51 @@ def source_refresh_command(
         if source is None:
             raise AnsibleError(_unknown_source(name, source_repo), category="not_found")
         settings = get_config_section("ansible", AnsibleSettings)
-        aliases = AliasRepository().entries()
-        git_parallel = clamp_parallel(
-            parallel or settings.git_fetch_parallel,
-            cap=GIT_PARALLEL_CAP,
-            policy="Git fetch limit",
-        )
-        result = run_source_refresh(
-            source,
-            source_key=_saved_source_key(name),
-            action="refreshed",
-            label=f"source {q(name)}",
+        key = _saved_source_key(name)
+        wiring = RefreshWiring(
             index=SqliteDependencyIndex(settings.index_path),
-            aliases=aliases,
+            aliases=AliasRepository().entries(),
             settings=settings,
             github_settings=github_settings(),
             http=ctx.http,
-            concurrency=git_parallel,
+            concurrency=clamp_parallel(
+                parallel or settings.git_fetch_parallel,
+                cap=GIT_PARALLEL_CAP,
+                policy="Git fetch limit",
+            ),
             backend=backend,
         )
-        failures = [
-            AnsibleError(failure.reason, category=failure.category) for failure in result.failures
-        ]
-        for failure, error in zip(result.failures, failures, strict=True):
-            _diag.failure(error, item=failure.repo)
-        if _has_transient_ref_probe_failure(result):
-            _diag.hint(_transient_ref_probe_rerun_hint(name))
-        if not result.completed:
-            # Paused at the GitHub rate-limit floor: resuming later succeeds.
-            raise AnsibleError(
-                _refresh_pause_message(result, name), category="unavailable", system="github"
+        selection = SelectedSource(definition=source, key=key, label=name, subject=f"source {name}")
+        results: dict[str, RefreshResult] = {}
+        try:
+            served = serve_sources(
+                [selection], refresh=True, read=lambda: None, wiring=wiring, results=results
             )
-        if failures:
-            worst = most_severe(failures)
+        except UntapedError:
+            _report_repo_failures(name, results.get(key))
+            raise
+        result = served.filled.get(key)
+        if result is None:
+            # It failed over cached data: serve() kept that data with a warning; the command fails.
+            _report_repo_failures(name, results.get(key))
+            error = served.freshness[key].error
+            assert error is not None
+            raise error.to_exception()
+        _diag.info(f"refreshed source {name}: {result.summary}")
+        _report_repo_failures(name, result)
+        if result.failures:
+            worst = most_severe(repo_errors(result))
             raise AnsibleError(_refresh_failure_message(result), category=worst.category)
+
+
+def _report_repo_failures(name: str, result: RefreshResult | None) -> None:
+    """One failure line per repo the refresh could not read, and the rerun hint when it helps."""
+    if result is None:
+        return
+    for failure, error in zip(result.failures, repo_errors(result), strict=True):
+        _diag.failure(error, item=failure.repo)
+    if _has_transient_ref_probe_failure(result):
+        _diag.hint(_transient_ref_probe_rerun_hint(name))
 
 
 def _unknown_source(name: str, source_repo: SourceRepository) -> str:
@@ -456,16 +473,11 @@ def _emit_outcome(outcome: SourceOutcome, *, fmt: FormatOption, columns: list[st
     emit(outcome.model_dump(mode="json"), fmt=fmt, columns=columns, kind=_OUTCOME_KIND)
 
 
-def _refresh_pause_message(result: RefreshResult, name: str) -> str:
-    reason = result.pause_reason or "source refresh paused before completion"
-    return f"{reason}; resume with `untaped ansible source refresh {name}`"
-
-
 def _refresh_failure_message(result: RefreshResult) -> str:
-    count = len(result.failures)
-    if count == result.repos:
-        return f"refresh failed for all {plural(count, 'repo')}; index left unchanged"
-    return f"refresh completed with {plural(count, 'repo failure')}; successes were saved"
+    return (
+        f"refresh completed with {plural(len(result.failures), 'repo failure')}; "
+        "successes were saved"
+    )
 
 
 def _has_transient_ref_probe_failure(result: RefreshResult) -> bool:
@@ -748,28 +760,25 @@ def _source_status_row(
     *,
     index: SqliteDependencyIndex,
     configured_sources: dict[str, SourceDefinition],
-    stale_after: int,
-) -> dict[str, object]:
+) -> SourceStatus:
     key = _saved_source_key(name)
+    sync_freshness(key, index)
+    freshness = FreshnessRecord.fields(
+        INDEX.freshness(key), max_age=INDEX.max_age(), now=datetime.now(UTC)
+    )
     status = index.status(key)
     configured = name in configured_sources
-    if status is None:
-        return {
-            "source": name,
-            "source_key": key,
-            "state": "not_refreshed" if configured else "missing_source",
-            "configured": configured,
-            "scanned_at": None,
-            "repos": 0,
-            "refs": 0,
-            "edges": 0,
-            "stale": None,
-        }
-    stale = index.is_stale(key, max_age_seconds=stale_after)
-    return {
-        "source": name,
-        **status.model_dump(mode="json"),
-        "state": "stale" if stale else "fresh",
-        "configured": configured,
-        "stale": stale,
-    }
+    if not configured:
+        state = "missing_source"
+    elif freshness["refreshed_at"] is None:
+        state = "not_refreshed"
+    else:
+        state = "stale" if freshness["stale"] else "fresh"
+    counts = (
+        {}
+        if status is None
+        else status.model_dump(include={"scanned_at", "repos", "refs", "edges"})
+    )
+    return SourceStatus(
+        source=name, source_key=key, state=state, configured=configured, **counts, **freshness
+    )

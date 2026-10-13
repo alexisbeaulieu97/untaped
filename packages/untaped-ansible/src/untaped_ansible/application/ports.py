@@ -65,8 +65,6 @@ class DependencyIndex(Protocol):
         source_key: str | None,
     ) -> dict[str, tuple[payloads.CachedRef, ...]]: ...
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool: ...
-
 
 class IncrementalDependencyIndexWriter(Protocol):
     """Write port for committing source repo/ref refreshes."""

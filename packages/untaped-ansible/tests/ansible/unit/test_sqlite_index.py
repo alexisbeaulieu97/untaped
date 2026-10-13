@@ -163,7 +163,7 @@ def test_source_ref_refresh_supports_dependency_and_reverse_lookup(tmp_path) -> 
     ]
 
 
-def test_status_staleness_and_clear_source(tmp_path) -> None:
+def test_status_and_clear_source(tmp_path) -> None:
     index = SqliteDependencyIndex(tmp_path / "index.sqlite3")
     scanned_at = datetime.now(UTC) - timedelta(days=2)
 
@@ -180,13 +180,25 @@ def test_status_staleness_and_clear_source(tmp_path) -> None:
     assert status.edges == 1
     assert status.repos == 1
     assert status.refs == 1
-    assert index.is_stale("source:prod", max_age_seconds=60)
+    assert status.scanned_at == scanned_at
 
     index.clear("source:prod")
 
     assert index.status("source:prod") is None
-    assert not index.is_stale("source:prod", max_age_seconds=60)
     assert index.dependencies("acme/site", "main", source_key="source:prod") == []
+
+
+def test_a_completed_refresh_with_no_refs_keeps_a_zero_row(tmp_path) -> None:
+    """An empty source exists in the index: its row says a refresh completed (the cache's guard)."""
+    index = SqliteDependencyIndex(tmp_path / "index.sqlite3")
+    scanned_at = datetime.now(UTC) - timedelta(hours=1)
+    _commit(index, scans=(_scan(),), scanned_at=scanned_at)
+
+    _commit(index, scanned_at=scanned_at)
+
+    status = index.status("source:prod")
+    assert status is not None
+    assert (status.repos, status.refs, status.edges, status.scanned_at) == (0, 0, 0, scanned_at)
 
 
 def test_empty_ref_scan_is_retained_and_pruned_by_selected_refs(tmp_path) -> None:

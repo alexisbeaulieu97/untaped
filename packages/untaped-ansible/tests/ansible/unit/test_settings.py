@@ -33,7 +33,6 @@ _SOURCE = {"name": "prod", "repos": ["acme/site"]}
         (AnsibleSettings, {"source_refresh_backend": "mercurial"}),
         (AnsibleSettings, {"source_refresh_repo_batch_size": 0}),
         (AnsibleSettings, {"source_refresh_rate_limit_floor": -1}),
-        (AnsibleSettings, {"stale_after_seconds": -1}),
     ],
 )
 def test_models_reject_out_of_range_values(model: type[BaseModel], values: dict[str, Any]) -> None:
@@ -63,7 +62,6 @@ def test_source_definition_is_frozen_and_normalized() -> None:
     [
         ({"git_fetch_concurrency": 3}, "git_fetch_concurrency", "git_fetch_parallel", 3),
         ({"probe_concurrency": 4}, "probe_concurrency", "probe_parallel", 4),
-        ({"stale_after": 60}, "stale_after", "stale_after_seconds", 60),
     ],
 )
 def test_a_retired_key_is_not_read(
@@ -85,11 +83,12 @@ _DELETED = {
     "git_fetch_depth": "deleted in 11.0; the repo store fetches full history",
     "git_blob_filter": "deleted in 11.0; the repo store is blobless",
     "git_clone_protocol": "deleted in 11.0; set github.git_protocol: ssh to keep ssh",
+    "stale_after": "deleted in 11.0; use ansible.caches.index.max_age_seconds",
 }
 
 
-def test_the_git_cache_settings_are_deleted() -> None:
-    """The repo store (``git.store_dir``) and ``github.git_protocol`` replaced them."""
+def test_the_deleted_settings_say_what_replaced_them() -> None:
+    """The repo store (``git.store_dir``), ``github.git_protocol`` and the index's cache setting."""
     deleted = key_mappings(AnsibleSettings).deleted
 
     assert {key: entry.reason() for key, entry in deleted.items()} == _DELETED

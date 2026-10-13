@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import PluginSpec, SkillAsset, delete_migration, old_dirs, shown_path
 from untaped_ansible.doctor import DOCTOR_CHECKS
-from untaped_ansible.settings import AnsibleSettings, AnsibleState
+from untaped_ansible.settings import INDEX, AnsibleSettings, AnsibleState
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -67,6 +67,7 @@ SPEC = PluginSpec(
         ),
     ),
     doctor_checks=DOCTOR_CHECKS,
+    caches=(INDEX,),
     migrations=(
         delete_migration(
             "ansible.cache",

@@ -24,7 +24,6 @@ WORDS = ("max_age", "stale", "expir")
 EXEMPT = {
     ("recipe", "backup_max_age_days"): "a retention policy for backups, not a cache",
     ("github", "sweep.max_age_seconds"): "until D (#582)",
-    ("ansible", "stale_after_seconds"): "until C (#537)",
 }
 
 
