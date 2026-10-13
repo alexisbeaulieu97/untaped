@@ -69,14 +69,15 @@ picker.
 Writable repos share one branch: `--branch`, else `workspace.branch_template`
 with `{name}` replaced by the workspace name (default `{name}`). Every repo,
 read-only ones included, is based on `--base`, else the repo's default
-branch. `--branch` applies to writable repos only. A base missing on origin
+branch. `--base` names a branch or a tag on origin; a branch wins when both
+exist. `--branch` applies to writable repos only. A base that is neither
 fails that repo as `not_found`.
 
 How a writable repo is checked out, with the row's `action` and `detail`:
 
 | Branch state in the repo store | Result |
 |---|---|
-| Exists nowhere | `created`, `from origin/BASE` |
+| Exists nowhere | `created`, `from origin/BASE` (`from tag BASE` for a tag) |
 | On origin only | `checked_out`, `tracking origin/BRANCH` |
 | Local only | `checked_out`, `resumed local branch` |
 | Local and origin, local behind or equal | `checked_out`, fast-forwarded, `tracking origin/BRANCH` |
@@ -89,8 +90,9 @@ checked out in another worktree is a `failed` row with category `conflict`.
 ## Read-only repos
 
 `--read-only` checks a repo out detached at `origin/BASE`, for reference code.
-The row is `checked_out` with `read-only at origin/BASE`. A commit made there
-is on no branch, so archiving counts it as unpushed and refuses.
+The row is `checked_out` with `read-only at origin/BASE` (`read-only at tag
+BASE` for a tag). A commit made there is on no branch, so archiving counts it
+as unpushed and refuses.
 
 ## Partial failure
 
@@ -119,8 +121,8 @@ first. A repo blocks archiving with any of:
 
 - uncommitted changes;
 - stash entries made on that repo's branch;
-- commits not pushed: commits on `HEAD` that no remote branch has, in
-  read-only repos too;
+- commits not pushed: commits on `HEAD` that no remote branch nor the base
+  tag has, in read-only repos too;
 - "submodules: archive cannot verify or remove them safely" (any initialised
   submodule);
 - "repo missing from the repo store; local work cannot be checked";

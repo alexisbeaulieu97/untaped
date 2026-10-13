@@ -39,7 +39,7 @@ keep the command's output open for a few more seconds.
 | `UNTAPED_WORKSPACE` | Workspace name. |
 | `UNTAPED_REPO` | Repo display name. |
 | `UNTAPED_BRANCH` | Task branch; empty for a read-only repo. |
-| `UNTAPED_BASE` | Base branch. |
+| `UNTAPED_BASE` | Base branch or tag. |
 | `UNTAPED_READ_ONLY` | `1` for a read-only repo, else `0`. |
 
 ## Choosing repos

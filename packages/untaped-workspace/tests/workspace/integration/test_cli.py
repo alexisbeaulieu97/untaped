@@ -234,9 +234,11 @@ def test_archive_reports_a_repo_that_changed_after_the_check_with_its_hint(
     run(app, ["create", "J-1", "--repo", make_upstream("api").url])
     remove = LocalGitWorktrees.remove
 
-    def edit_then_remove(self: LocalGitWorktrees, url: str, dest: Path, *, force: bool) -> None:
+    def edit_then_remove(
+        self: LocalGitWorktrees, url: str, dest: Path, *, base: str, force: bool
+    ) -> None:
         (dest / "scratch.txt").write_text("late work")  # lands after archive's status check
-        remove(self, url, dest, force=force)
+        remove(self, url, dest, base=base, force=force)
 
     monkeypatch.setattr(LocalGitWorktrees, "remove", edit_then_remove)
     result = run(app, ["archive", "J-1", "--format", "json"])

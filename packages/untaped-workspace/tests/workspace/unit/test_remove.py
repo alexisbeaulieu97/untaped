@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -48,16 +48,18 @@ class FakeGit:
         self.removed: list[tuple[str, bool]] = []
         self.released: list[tuple[str, tuple[str, ...]]] = []
         self.asked: list[str] = []
+        self.bases: list[set[str]] = []
         self.remove_error: Exception | None = None
         self.release_error: Exception | None = None
 
-    def remove(self, url: str, dest: Path, *, force: bool) -> None:
+    def remove(self, url: str, dest: Path, *, base: str, force: bool) -> None:
         if self.remove_error is not None:
             raise self.remove_error
         self.removed.append((url, force))
 
-    def store_use(self, url: str) -> StoreUse | None:
+    def store_use(self, url: str, *, bases: Collection[str]) -> StoreUse | None:
         self.asked.append(url)
+        self.bases.append(set(bases))
         return self.uses.get(url, StoreUse(branches=(), worktrees=0))
 
     def release(self, url: str, *, branches: Sequence[str]) -> RepoRelease:
@@ -200,6 +202,18 @@ def test_an_archived_branch_with_unpushed_commits_blocks(
 
     assert _remove(remover, "J-1", force=True)[0] == ("acme/api", "removed", "1.0 KiB freed")
     assert git.released == [(API, ("J-1", "other"))]
+
+
+def test_the_store_is_asked_with_every_base_the_workspace_used(
+    store: StateWorkspaceStore, tmp_path: Path
+) -> None:
+    _add(store, "J-1", _spec(API).model_copy(update={"base": "v1"}), archive=True)
+    _add(store, "J-1", _spec(API).model_copy(update={"base": "v2"}))
+    git = FakeGit()
+
+    _remove(_remover(store, git, tmp_path), "J-1")
+
+    assert git.bases == [{"v1", "v2"}, {"v1", "v2"}]  # the plan's look and the release's
 
 
 def test_a_repo_another_workspace_names_is_kept_without_asking_the_store(
