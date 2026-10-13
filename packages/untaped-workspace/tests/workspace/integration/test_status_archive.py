@@ -212,10 +212,10 @@ class _GatedGit:
     def __getattr__(self, name: str) -> object:
         return getattr(self.inner, name)
 
-    def remove(self, url: str, dest: Path, *, force: bool) -> None:
+    def remove(self, url: str, dest: Path, *, base: str, force: bool) -> None:
         self.removing.set()
         assert self.release.wait(10)
-        self.inner.remove(url, dest, force=force)
+        self.inner.remove(url, dest, base=base, force=force)
 
 
 def test_add_during_archive_waits_then_fails_without_a_worktree(

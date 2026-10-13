@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 from untaped.sdk import NO_PROGRESS
@@ -34,8 +34,11 @@ class GitWorktrees(Protocol):
         """Add a worktree at ``dest``: on ``branch``, or detached at the base when ``None``."""
         ...
 
-    def status(self, dest: Path, *, branch: str | None) -> WorktreeStatus | None:
-        """Git state of the worktree at ``dest``; ``None`` when it is missing."""
+    def status(self, dest: Path, *, branch: str | None, base: str) -> WorktreeStatus | None:
+        """Git state of the worktree at ``dest``; ``None`` when it is missing.
+
+        Commits the ``base`` tag reaches are not unpushed work.
+        """
         ...
 
     def fetch(self, url: str, dest: Path, *, progress: ProgressHandle = NO_PROGRESS) -> str | None:
@@ -62,12 +65,18 @@ class GitWorktrees(Protocol):
         """Every store repo workspace has used, sorted by :attr:`StoredRepo.ident`."""
         ...
 
-    def remove(self, url: str, dest: Path, *, force: bool) -> None:
-        """Remove the worktree at ``dest`` and prune stale worktree entries."""
+    def remove(self, url: str, dest: Path, *, base: str, force: bool) -> None:
+        """Remove the worktree at ``dest`` and prune stale worktree entries.
+
+        Unforced, it refuses on work made since the status check (as :meth:`status` counts it).
+        """
         ...
 
-    def store_use(self, url: str) -> StoreUse | None:
-        """Local branches and workspace worktrees of ``url``'s store repo; ``None``: not stored."""
+    def store_use(self, url: str, *, bases: Collection[str]) -> StoreUse | None:
+        """Local branches and workspace worktrees of ``url``'s store repo; ``None``: not stored.
+
+        Commits the tags among ``bases`` reach are not unpushed work.
+        """
         ...
 
     def release(self, url: str, *, branches: Sequence[str]) -> RepoRelease:

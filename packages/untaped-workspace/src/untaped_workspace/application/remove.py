@@ -28,7 +28,7 @@ instead (nothing is lost; running it again fetches the repo anew).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -71,6 +71,8 @@ class RepoPlan:
     stored: bool
     blockers: tuple[str, ...]
     """Work release would lose: the active worktree's blockers, unpushed branches."""
+    bases: frozenset[str]
+    """The workspace's bases for the repo: a tag among them reaches no unpushed work."""
     discards: tuple[str, ...] = ()
     """Other branches with work on them that only ``--force`` deletes (no record names them)."""
 
@@ -218,15 +220,15 @@ class RemoveWorkspace:
         for record in archived:
             for spec in record.repos:
                 specs.setdefault(repo_key(spec.url), spec)
-        branches: dict[Key, set[str]] = {}
-        for record in archived:  # an active branch's commits are in its status row already
-            for spec in record.repos:
-                if spec.branch is not None:
-                    branches.setdefault(repo_key(spec.url), set()).add(spec.branch)
+        records = (*([active] if active is not None else []), *archived)
+        bases = _per_repo(records, lambda spec: spec.base)
+        # an active branch's commits are in its status row already
+        branches = _per_repo(archived, lambda spec: spec.branch)
         repos = []
         for key, spec in specs.items():
             held_by = holders.get(key)
-            use = self._git.store_use(spec.url) if held_by is None else None
+            repo_bases = frozenset(bases.get(key, ()))
+            use = self._git.store_use(spec.url, bases=repo_bases) if held_by is None else None
             found = blockers.setdefault(key, [])
             discards = []
             for branch in use.branches if use is not None else ():
@@ -242,6 +244,7 @@ class RemoveWorkspace:
                     stored=held_by is not None or use is not None,
                     blockers=tuple(found),
                     discards=tuple(discards),
+                    bases=repo_bases,
                 )
             )
         return RemovalPlan(
@@ -270,7 +273,7 @@ class RemoveWorkspace:
         if holder is not None:
             return RemoveOutcome(**common, action="kept", detail=f"used by workspace {holder}")
         try:
-            use = self._git.store_use(spec.url)
+            use = self._git.store_use(spec.url, bases=repo.bases)
             if use is None:
                 return RemoveOutcome(**common, action="skipped", detail="not in the repo store")
             if use.worktrees:
@@ -294,6 +297,19 @@ class RemoveWorkspace:
             detail=released.detail,
             freed_bytes=released.freed_bytes,
         )
+
+
+def _per_repo(
+    records: Iterable[WorkspaceRecord | ArchivedRecord], value_of: Callable[[RepoSpec], str | None]
+) -> dict[Key, set[str]]:
+    """Each repo the records name → ``value_of`` its specs (``None`` left out)."""
+    found: dict[Key, set[str]] = {}
+    for record in records:
+        for spec in record.repos:
+            value = value_of(spec)
+            if value is not None:
+                found.setdefault(repo_key(spec.url), set()).add(value)
+    return found
 
 
 def refusal_hint(plan: RemovalPlan) -> str:
