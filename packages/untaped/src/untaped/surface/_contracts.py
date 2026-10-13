@@ -105,8 +105,10 @@ def method_mark(info: ContractInfo, name: str, plugin_mark: MarkName | None) -> 
 def model_lines(subject: str, model: type[BaseModel], mark: MarkName | None) -> list[Line]:
     """A payload model's owner line (its required fields) and one typed line per field."""
     schema = schema_of(model)
-    properties: Mapping[str, Any] = schema.get("properties", {})
-    required = sorted(schema.get("required", ()))
+    # A model that refers to itself is a reference to its own def.
+    body: Mapping[str, Any] = schema["$defs"][schema["$ref"]] if "$ref" in schema else schema
+    properties: Mapping[str, Any] = body.get("properties", {})
+    required = sorted(body.get("required", ()))
     lines = [Line(f"{subject}({', '.join(required)})", mark)]
     by_alias = {
         (info.validation_alias if isinstance(info.validation_alias, str) else None)

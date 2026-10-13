@@ -28,6 +28,7 @@ import re
 import types
 import typing
 from collections.abc import Mapping
+from contextvars import ContextVar
 from pathlib import Path, PurePath
 from typing import Any, Literal, get_args, get_origin
 
@@ -89,13 +90,24 @@ def type_token(annotation: object) -> TypeToken:
 
 #: The key under which a def carries our spelling of its parametrized generic.
 _NAME = "x-untaped-name"
+#: Set while spelling a generic's argument: the names then follow type arguments only,
+#: never a model's fields, so a model that refers to itself (``kids: list[Page[Node]]``)
+#: reads by its name instead of recursing.
+_ARGUMENT: ContextVar[bool] = ContextVar("_ARGUMENT", default=False)
 
 
 def generic_parts(annotation: object) -> tuple[type, tuple[object, ...]] | None:
-    """A parametrized generic class and its arguments (pydantic models included)."""
+    """A parametrized generic class and its arguments (pydantic models included).
+
+    An unparametrized generic model (``Page``, which pydantic also returns for
+    ``Page[T]`` with its own parameter) has its type variables as arguments.
+    """
     metadata = getattr(annotation, "__pydantic_generic_metadata__", None)
-    if isinstance(annotation, type) and metadata and metadata.get("origin") is not None:
-        return metadata["origin"], tuple(metadata["args"])
+    if isinstance(annotation, type) and metadata:
+        if metadata.get("origin") is not None:
+            return metadata["origin"], tuple(metadata["args"])
+        if metadata.get("parameters"):
+            return annotation, tuple(metadata["parameters"])
     origin, args = get_origin(annotation), get_args(annotation)
     if isinstance(origin, type) and args and not _is_builtin(origin):
         return origin, args
@@ -106,7 +118,9 @@ def generic_name(annotation: object) -> str | None:
     """``Name[arg,…]`` for a parametrized generic, each argument as its type token.
 
     Our spelling, never pydantic's def name (``PromptChoice_object_``), which a
-    pydantic upgrade may respell. A type variable's argument is ``object``.
+    pydantic upgrade may respell. A type variable's argument is its bound, else
+    ``object``; a Literal's values follow its token (``string(choice=a|b)``),
+    since they have no ``choice=`` line of their own there.
     """
     parts = generic_parts(annotation)
     if parts is None:
@@ -116,12 +130,26 @@ def generic_name(annotation: object) -> str | None:
 
 
 def _argument(arg: object) -> str:
-    return "object" if arg is object else type_token(arg).token
+    arg = bounded(arg)
+    if arg is object:
+        return "object"
+    reset = _ARGUMENT.set(True)
+    try:
+        token = type_token(arg)
+    finally:
+        _ARGUMENT.reset(reset)
+    if not token.choices:
+        return token.token
+    return f"{token.token}(choice={'|'.join(sorted(choice_text(v) for v in token.choices))})"
 
 
 def generic_names(defs: Mapping[str, Any], annotation: object) -> Mapping[str, Any]:
     """``defs`` with each parametrized generic reached from ``annotation`` named by
-    :func:`generic_name`, found by the def pydantic gives it (never by its name)."""
+    :func:`generic_name`, found by the def pydantic gives it (never by its name).
+
+    The walk goes through type arguments and model fields; while an argument is
+    being spelled, through type arguments only.
+    """
     found = dict(defs)
     seen: set[int] = set()
     pending = [annotation]
@@ -138,7 +166,7 @@ def generic_names(defs: Mapping[str, Any], annotation: object) -> Mapping[str, A
             pending.extend(parts[1])
         else:
             pending.extend(arg for arg in get_args(current) if not isinstance(arg, list))
-        if isinstance(current, type) and issubclass(current, BaseModel):
+        if not _ARGUMENT.get() and isinstance(current, type) and issubclass(current, BaseModel):
             pending.extend(info.annotation for info in current.model_fields.values())
     return found
 
