@@ -9,28 +9,35 @@ failed and paused refreshes, the cache.
 
 ## Selecting a source
 
-- Commands read a source's cache and touch GitHub only with `--refresh` or
-  `source refresh`. With no completed refresh yet, they fail with the exact
-  refresh command rather than show partial upstream data.
+- `deps`, `impact`, `find` and `graph` refresh a selected source first when
+  it was never refreshed or is older than
+  `ansible.caches.index.max_age_seconds` (default 86400, one day).
+  `--refresh` refreshes it now; `--cached` reads only what is cached and
+  fails (exit 1, "no cached source data") for a source never refreshed.
+- A refresh that fails over cached data serves that data with one
+  `untaped.stale` warning (`error` says why, `retry_at` when the next
+  automatic check runs; failures within five minutes are not retried). With
+  nothing cached, or when the cached data answers nothing, the command fails
+  with the refresh's error. A partial refresh (`partial: true`) warns on every
+  read until `--refresh` or `source refresh` completes a whole one.
 - `ansible.default_source` applies when neither `--source` nor an inline
   selector is given. An unknown name fails naming the setting.
 - Repeated `--source` and inline selectors (`--org`, `--team`, `--repo`,
   `--path`, `--ref-kind`, `--ref-pattern`, `--ref-scan-default`) add up.
   Repeating the same inline selectors reuses their cached scan.
-- `--refresh` needs a boundary: `--source`, `--org`, `--team`, `--repo` or
-  `ansible.default_source`. `--path` and the ref selectors do not count on
-  their own.
-- `--live` works before the source's first refresh; `graph --direction both`
-  then omits upstream with a warning.
-- `graph --cached` states the default explicitly.
+- `--refresh`, `--cached` and `--backend` need a boundary: `--source`,
+  `--org`, `--team`, `--repo` or `ansible.default_source`. `--path` and the
+  ref selectors do not count on their own.
+- `deps --live` never reads or refreshes the source; `graph --live
+  --direction both` refreshes it for the upstream half.
 
 ## Managing sources and aliases
 
 - `source set NAME` creates or replaces a source. `source patch NAME` edits
   it with `--add-*`, `--remove-*` and `--clear-*`.
-- A changed `set` or `patch` drops the source's cached data at once:
-  `deps`, `impact`, `find` and `graph` on it fail with "no cached source data
-  found" until the next `source refresh NAME`.
+- A changed `set` or `patch` drops the source's cached data at once: the
+  next `deps`, `impact`, `find` or `graph` refreshes it (with `--cached`,
+  fails with "no cached source data").
 - `source-alias set NAME OWNER/REPO` maps a Galaxy or role name in
   requirements files to its repo. Aliases apply at refresh, so run
   `source refresh NAME` after changing one.
@@ -46,16 +53,19 @@ failed and paused refreshes, the cache.
   saved source's last refresh in this profile selected it); with
   `--dry-run`, `would release`. When a release fails the source stays
   (`action` `failed`, with an `error`), so rerunning the remove retries it.
-- `source status` reports `state` (`fresh`, `stale` or `not_refreshed`) and
-  `scanned_at` in UTC.
+- `source status` reports `state` (`fresh`, `stale` or `not_refreshed`),
+  `refreshed_at`, `max_age_seconds`, `partial`, `attempted_at`, `retry_at`
+  and `refresh_error` (the last refresh's failure), with `scanned_at` and the
+  counts of what the index holds; times in UTC. An empty source that
+  refreshed is `fresh` with zero counts.
 
 ## Refreshing
 
 - `source refresh` expands orgs, teams and repos with the `github` settings.
   Progress goes to stderr; stdout stays machine-readable.
 - Ref probing uses `ansible.source_refresh_backend` (default `auto`).
-  `--backend auto|graphql|git` overrides it for one run, on `source refresh`
-  or with `--refresh`; `--backend` alone is a usage error.
+  `--backend auto|graphql|git` overrides it for the refresh a command runs;
+  with `--cached` it is a usage error.
 - The `git` backend replaces only the ref probe transport: private sources
   still need GitHub credentials.
 - In `auto`, an exhausted primary GraphQL rate limit falls back to
@@ -79,16 +89,18 @@ failed and paused refreshes, the cache.
   N repos; index left unchanged`, with the same exit codes.
 - In `auto`, transient GraphQL failures for a repo retry over
   `git ls-remote` first; only unrecovered repos count as failures.
-- `--refresh` on `deps`, `impact`, `find` and `graph` warns about failed
-  repos instead, exits 0 and uses possibly stale data for them.
+- `deps`, `impact`, `find` and `graph` warn about failed repos instead (an
+  `untaped.stale` line with `partial: true` naming them) and exit 0, unless
+  the answer is empty.
 - When the GraphQL budget drops below the rate-limit floor with repos left,
-  finished batches are kept, the source is not marked refreshed, and the run
-  exits 5 with a resume hint. Rerun the same command: it skips the repos
-  that succeeded and retries the rest.
+  finished batches are kept, the source is not marked refreshed, and
+  `source refresh` exits 5 with a resume hint; the graph commands serve the
+  cached data with a warning whose `retry_at` is GitHub's reset time. Rerun
+  the same command: it skips the repos that succeeded and retries the rest.
 
 ## The cache
 
 - The SQLite index is a cache. An index in an older format is rebuilt empty
-  with a warning; refresh every saved source afterwards.
+  with a warning; each source is refreshed on its next read.
 - An index written by a newer untaped is rejected with an error naming the
   file, so it is never destroyed by an older release.
