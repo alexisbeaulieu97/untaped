@@ -31,6 +31,7 @@ from untaped.surface._types import (
     choice_text,
     default_text,
     factory_default,
+    generic_names,
     node_token,
     schema_of,
     type_token,
@@ -113,8 +114,9 @@ def model_lines(subject: str, model: type[BaseModel], mark: MarkName | None) -> 
         or name: info
         for name, info in model.model_fields.items()
     }
+    defs = generic_names(schema.get("$defs", {}), model)
     for key in sorted(properties):
-        token = node_token(properties[key], schema.get("$defs", {}))
+        token = node_token(properties[key], defs)
         text = f"{subject}.{key} {token.token}"
         if key not in required:
             info = by_alias.get(key)

@@ -31,7 +31,7 @@ from collections.abc import Mapping
 from pathlib import Path, PurePath
 from typing import Any, Literal, get_args, get_origin
 
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 from pydantic.errors import PydanticSchemaGenerationError, PydanticUserError
 
 COMPUTED = "<computed>"
@@ -80,29 +80,66 @@ def type_token(annotation: object) -> TypeToken:
     """
     annotation = bounded(annotation)
     schema = schema_of(annotation)
-    defs = _generic_titles(schema.get("$defs", {}), annotation)
+    defs = generic_names(schema.get("$defs", {}), annotation)
+    name = generic_name(annotation)
+    if name is not None and "$ref" not in schema:
+        schema = {**schema, _NAME: name}
     return TypeToken(_token(schema, defs, top=True), tuple(_choices(schema, defs)))
 
 
-def _generic_titles(defs: Mapping[str, Any], annotation: object) -> Mapping[str, Any]:
-    """``defs`` with each parametrized generic titled ``Name[Arg]`` from ``annotation``.
+#: The key under which a def carries our spelling of its parametrized generic.
+_NAME = "x-untaped-name"
 
-    pydantic names such a def after its own spelling (``PromptChoice_object_``),
-    which a pydantic upgrade may respell; the annotation's spelling is ours.
+
+def generic_parts(annotation: object) -> tuple[type, tuple[object, ...]] | None:
+    """A parametrized generic class and its arguments (pydantic models included)."""
+    metadata = getattr(annotation, "__pydantic_generic_metadata__", None)
+    if isinstance(annotation, type) and metadata and metadata.get("origin") is not None:
+        return metadata["origin"], tuple(metadata["args"])
+    origin, args = get_origin(annotation), get_args(annotation)
+    if isinstance(origin, type) and args and not _is_builtin(origin):
+        return origin, args
+    return None
+
+
+def generic_name(annotation: object) -> str | None:
+    """``Name[arg,…]`` for a parametrized generic, each argument as its type token.
+
+    Our spelling, never pydantic's def name (``PromptChoice_object_``), which a
+    pydantic upgrade may respell. A type variable's argument is ``object``.
     """
-    spellings: dict[str, set[str]] = {}
+    parts = generic_parts(annotation)
+    if parts is None:
+        return None
+    origin, args = parts
+    return f"{origin.__name__}[{','.join(_argument(arg) for arg in args)}]"
+
+
+def _argument(arg: object) -> str:
+    return "object" if arg is object else type_token(arg).token
+
+
+def generic_names(defs: Mapping[str, Any], annotation: object) -> Mapping[str, Any]:
+    """``defs`` with each parametrized generic reached from ``annotation`` named by
+    :func:`generic_name`, found by the def pydantic gives it (never by its name)."""
+    found = dict(defs)
+    seen: set[int] = set()
     pending = [annotation]
     while pending:
         current = pending.pop()
-        origin, args = get_origin(current), get_args(current)
-        if isinstance(origin, type) and args and not _is_builtin(origin):
-            spellings.setdefault(origin.__name__, set()).add(annotation_text(current))
-        pending.extend(arg for arg in args if not isinstance(arg, list))
-    found = dict(defs)
-    for key, value in defs.items():
-        for name, texts in spellings.items():
-            if key.startswith(f"{name}_") and len(texts) == 1 and isinstance(value, Mapping):
-                found[key] = {**value, "title": next(iter(texts))}
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        parts = generic_parts(current)
+        if parts is not None:
+            ref = schema_of(list[current])["items"].get("$ref")  # type: ignore[valid-type]
+            if isinstance(ref, str) and isinstance(found.get(ref), Mapping):
+                found[ref] = {**found[ref], _NAME: generic_name(current)}
+            pending.extend(parts[1])
+        else:
+            pending.extend(arg for arg in get_args(current) if not isinstance(arg, list))
+        if isinstance(current, type) and issubclass(current, BaseModel):
+            pending.extend(info.annotation for info in current.model_fields.values())
     return found
 
 
@@ -119,6 +156,13 @@ def bounded(annotation: object) -> object:
     if isinstance(annotation, typing.TypeVar):
         bound = annotation.__bound__
         return object if bound is None else bounded(bound)
+    parts = generic_parts(annotation)
+    if parts is not None and get_origin(annotation) is None:  # a pydantic generic model
+        model, model_args = parts
+        bound_args = tuple(bounded(arg) for arg in model_args)
+        if bound_args == model_args:
+            return annotation
+        return model[bound_args[0] if len(bound_args) == 1 else bound_args]  # type: ignore[index]
     origin = get_origin(annotation)
     args = get_args(annotation)
     if origin is None or not args or origin is Literal or origin is collections.abc.Callable:
@@ -199,6 +243,8 @@ def _token(schema: Mapping[str, Any], defs: Mapping[str, Any], *, top: bool = Fa
     ref = schema.get("$ref")
     if isinstance(ref, str):
         return _ref_name(ref, defs)
+    if top and isinstance(schema.get(_NAME), str):
+        return str(schema[_NAME])
     if top and schema.get("type") == "object" and "properties" in schema and "title" in schema:
         return str(schema["title"])
     for key in ("anyOf", "oneOf"):
@@ -221,11 +267,9 @@ def _token(schema: Mapping[str, Any], defs: Mapping[str, Any], *, top: bool = Fa
 
 
 def _ref_name(ref: str, defs: Mapping[str, Any]) -> str:
-    """A model's name: its class name, ``M[int]`` for a generic one (not ``M_int_``)."""
-    title = defs.get(ref, {}).get("title")
-    if isinstance(title, str) and title != ref and ref.startswith(title.partition("[")[0] + "_"):
-        return title
-    return ref
+    """A model's name: its class name, or ``Name[arg]`` for a parametrized generic."""
+    name = defs.get(ref, {}).get(_NAME)
+    return name if isinstance(name, str) else ref
 
 
 def _union(members: list[Mapping[str, Any]], defs: Mapping[str, Any]) -> str:
