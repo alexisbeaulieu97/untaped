@@ -113,12 +113,20 @@ def _class_location(model: type[BaseModel], root: Path) -> str:
 def _class_source(model: type) -> tuple[Path, int, list[str], ast.ClassDef] | None:
     """Where ``model`` is defined: file, line offset, the class's lines and node.
 
-    ``None`` for a class without source, such as one made by ``create_model``.
+    A class without source, such as one ``create_model`` made to inject the
+    SDK's keys into a plugin's section, is read from the first base class in
+    its MRO that has one; ``None`` when no model class does.
     """
-    try:
-        path = Path(inspect.getsourcefile(model) or "")
-        lines, start = inspect.getsourcelines(model)
-    except OSError, TypeError:
+    for cls in model.__mro__:
+        if cls is BaseModel or not issubclass(cls, BaseModel):
+            return None
+        try:
+            path = Path(inspect.getsourcefile(cls) or "")
+            lines, start = inspect.getsourcelines(cls)
+        except OSError, TypeError:
+            continue
+        break
+    else:
         return None
     node = ast.parse(dedent("".join(lines))).body[0]
     assert isinstance(node, ast.ClassDef)

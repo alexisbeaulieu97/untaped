@@ -254,7 +254,11 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability 
     plugin rather than drop its section.
     """
     from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
-    from untaped.plugins.registry import compose, discover_candidates  # noqa: PLC0415
+    from untaped.plugins.registry import (  # noqa: PLC0415
+        compose,
+        discover_candidates,
+        section_settings,
+    )
     from untaped.settings import Settings  # noqa: PLC0415
 
     sections: list[tuple[str, str, type[BaseModel], bool, Stability | None]] = [
@@ -279,8 +283,9 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability 
         )
     for registered in result.plugins:
         spec = registered.spec
-        if spec.settings is not None:
-            sections.append((f"`{spec.name}`", spec.name, spec.settings, False, spec.stability))
+        settings = section_settings(spec, extensions=False)
+        if settings is not None:
+            sections.append((f"`{spec.name}`", spec.name, settings, False, spec.stability))
         if spec.state is not None:
             sections.append(
                 (
