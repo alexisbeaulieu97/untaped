@@ -5705,10 +5705,10 @@ sdk untaped.testing.ProgressClock()
 sdk untaped.testing.ProgressClock.advance(seconds)
 sdk untaped.testing.PromptBackend implement=confirm,multiselect,pick_many,secret,select,text
 sdk untaped.testing.PromptBackend.confirm(message: string, *, default: boolean) -> boolean
-sdk untaped.testing.PromptBackend.multiselect(message: string, choices: PromptChoice[], *, defaults: array) -> array
+sdk untaped.testing.PromptBackend.multiselect(message: string, choices: PromptChoice[object][], *, defaults: array) -> array
 sdk untaped.testing.PromptBackend.pick_many(request: PickRequest) -> PickResult?
 sdk untaped.testing.PromptBackend.secret(message: string, *, confirmation: boolean) -> string
-sdk untaped.testing.PromptBackend.select(message: string, choices: PromptChoice[], *, default: any?, search: boolean) -> any
+sdk untaped.testing.PromptBackend.select(message: string, choices: PromptChoice[object][], *, default: any?, search: boolean) -> any
 sdk untaped.testing.PromptBackend.text(message: string, *, default: string?) -> string
 sdk untaped.testing.ScreenKeys()  [experimental]
 sdk untaped.testing.ScreenKeys(*keys)  [experimental]

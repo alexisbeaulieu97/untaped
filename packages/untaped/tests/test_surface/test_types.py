@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal, TypeVar
 
@@ -62,6 +63,21 @@ def test_a_type_variable_reads_as_its_bound_or_object() -> None:
     assert type_token(list[_Free] | None).token == "array?"
     assert annotation_text(dict[str, _Bounded]) == "dict[str, int]"
     assert annotation_text(_Free) == "object"
+
+
+@dataclass
+class Choice[T]:
+    value: T
+
+
+class Page[T](BaseModel):
+    items: list[T]
+
+
+def test_a_generic_reads_as_name_and_bound_arguments() -> None:
+    assert type_token(list[Choice[_Free]]).token == "Choice[object][]"
+    assert type_token(list[Choice[_Bounded]] | None).token == "Choice[int][]?"
+    assert type_token(Page[str]).token == "Page[str]"
 
 
 def test_literal_values_are_choices_not_part_of_the_token() -> None:
