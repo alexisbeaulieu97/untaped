@@ -24,6 +24,14 @@ def motd(*, refresh: Annotated[bool | None, refresh_option(MOTD)] = None) -> Non
     echo(served.value)
 ```
 
+List each cache on your spec, `PluginSpec(..., caches=(MOTD,))`: that
+gives it the setting `acme.caches.motd.max_age_seconds`, defaulting to the
+declared `max_age` (in whole seconds; `0` checks every time), listed with your
+other settings in `config list`, and read by `serve()` on every call. A cache
+left off the spec always uses its declared default. Composition quarantines a
+plugin that lists another plugin's cache (`foreign-cache`) or the same name
+twice (`duplicate-cache`).
+
 `serve(keys, refresh=, fill=, read=)` takes the keys the command reads,
 each with a label for a human (`{"prod": "source prod"}`). Per key, it
 refreshes when the directive asks: `None` (the default) when the key is older
@@ -52,7 +60,19 @@ whole refresh. Pass `empty=` to say when an answer found nothing: a stale
 empty answer then fails with the refresh's error instead of passing for an
 absence. `--cached` on a key never filled raises `NeverRefreshed`.
 
-Two rules keep every cache alike. Declare the directive as
+A cache's max age is never a settings field of your own
+(`tests/repo/test_cache_setting.py` checks first-party plugins). To move one
+into the generated setting, name its old keys in
+`Cache(..., renamed_from=("stale_after_seconds",))` (dotted paths relative to
+your section, never under `caches`): each is still read, with a warning, and
+`config migrate` moves it, as with `renamed_keys`. Delete the field from your
+model in the same change. An older key of yours that renamed to it becomes
+`Retired(note="use acme.caches.motd.max_age_seconds")` in `retired_keys`: your
+own declarations never point at the generated setting. Composition
+quarantines an old key the model still has as a setting, or that two caches
+or your own declarations also name (`bad-settings-keys`).
+
+Two more rules keep every cache alike. Declare the directive as
 `Annotated[bool | None, refresh_option(CACHE)] = None`, never a hand-made
 `--refresh` or `--cached`: its help names the cache's setting and default
 (`tests/repo/test_refresh_option.py` checks first-party code). And never

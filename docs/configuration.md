@@ -176,6 +176,11 @@ untaped config set ui.symbols '{"success": "✓", "error": "✗"}'
 untaped config edit
 ```
 
+Each cache a plugin keeps has a setting
+`<plugin>.caches.<cache>.max_age_seconds`: how long its data is used before
+untaped checks upstream again (`0` checks every time). The
+[config reference](./reference/config.md) lists them.
+
 `config list` prints stable settings first, then experimental ones under an
 `Experimental` heading. A deprecated setting appears under `Deprecated` once
 it is set, as does any setting set under an old name; `untaped --deprecated
