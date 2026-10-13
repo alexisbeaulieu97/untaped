@@ -33,12 +33,10 @@ class StubIndex:
         *,
         refs_by_source: dict[tuple[str, str], set[str]] | None = None,
         metadata_by_source: dict[tuple[str, str], tuple[CachedRef, ...]] | None = None,
-        stale_sources: set[str] | None = None,
     ) -> None:
         self.edges_by_source = edges_by_source
         self.refs_by_source = refs_by_source or {}
         self.metadata_by_source = metadata_by_source or {}
-        self.stale_sources = stale_sources or set()
 
     def dependencies(
         self, repo: str, ref: str | None, *, source_key: str | None
@@ -79,9 +77,6 @@ class StubIndex:
     ) -> dict[str, tuple[CachedRef, ...]]:
         return {repo: self.cached_ref_metadata(repo, source_key=source_key) for repo in repos}
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        return source_key in self.stale_sources
-
 
 def test_dependency_reads_union_sources_and_dedupe_edges() -> None:
     shared = _edge("acme/site", "acme/base")
@@ -101,7 +96,7 @@ def test_dependency_reads_union_sources_and_dedupe_edges() -> None:
     assert batch == {("acme/site", "main"): union, ("acme/other", None): []}
 
 
-def test_dependents_cached_refs_and_staleness_union_sources_in_key_order() -> None:
+def test_dependents_and_cached_refs_union_sources_in_key_order() -> None:
     platform_edge = _edge("acme/site", "acme/base", version="v1")
     ops_edge = _edge("acme/deploy", "acme/base", ref="release", version="v1")
     index = MultiSourceDependencyIndex(
@@ -111,7 +106,6 @@ def test_dependents_cached_refs_and_staleness_union_sources_in_key_order() -> No
                 ("source:platform", "acme/site"): {"main"},
                 ("source:ops", "acme/site"): {"release"},
             },
-            stale_sources={"source:ops"},
         ),
         _KEYS,
     )
@@ -121,7 +115,6 @@ def test_dependents_cached_refs_and_staleness_union_sources_in_key_order() -> No
     assert index.dependents("acme/base", "v1", source_key=_UNION) == [platform_edge, ops_edge]
     assert batch == {("acme/base", "v1"): [platform_edge, ops_edge], ("acme/base", "v2"): []}
     assert index.cached_refs("acme/site", source_key=_UNION) == {"main", "release"}
-    assert index.is_stale(_UNION, max_age_seconds=60)
 
 
 def test_cached_ref_metadata_unions_sources_with_the_first_default_branch() -> None:

@@ -304,15 +304,6 @@ class SqliteDependencyIndex:
             edges=int(row["edges"]),
         )
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        if source_key is None:
-            return False
-        status = self.status(source_key)
-        if status is None:
-            return False
-        age = datetime.now(UTC) - status.scanned_at
-        return age.total_seconds() > max_age_seconds
-
     def source_repos(self, source_key: str) -> dict[str, tuple[str, ...]]:
         """The repos ``source_key``'s last refresh selected, ``OWNER/NAME`` → clone URLs it used.
 
@@ -726,10 +717,8 @@ def _refresh_source_run_from_ref_scans(
         """,
         (source_key,),
     ).fetchone()
+    # A completed refresh keeps its row even with no refs: the source exists, empty.
     refs = int(row["refs"] or 0)
-    if refs == 0:
-        db.execute("delete from source_runs where source_key = ?", (source_key,))
-        return
     edge_row = db.execute(
         """
         select count(*) as edges

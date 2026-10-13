@@ -85,9 +85,6 @@ class StubIndex:
     ) -> dict[str, tuple[CachedRef, ...]]:
         return {repo: self.cached_ref_metadata(repo, source_key=source_key) for repo in repos}
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        return False
-
 
 def test_local_edges_win_for_authoritative_pairs_and_the_rest_delegates() -> None:
     local = _edge("acme/site", "main", "acme/local-base")
@@ -127,4 +124,3 @@ def test_cached_ref_reads_overlay_authoritative_refs_onto_wrapped_metadata() -> 
         "acme/site": (cached, CachedRef(name="main")),
         "acme/other": (),
     }
-    assert not index.is_stale(None, max_age_seconds=60)

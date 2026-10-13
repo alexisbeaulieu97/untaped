@@ -27,9 +27,8 @@ class GraphRequest(BaseModel):
     source_key: str | None = None
     direction: GraphDirection = "both"
     depth: int | None = 3
-    stale_after: int = 86_400
     refresh_hint: str | None = None
-    """Caller-composed fix instruction appended to stale/missing-ref warnings.
+    """Caller-composed fix instruction appended to missing-ref warnings.
 
     The application layer stays free of CLI strings; the CLI passes the exact
     refresh command (or flag guidance) to surface in actionable warnings.
@@ -138,17 +137,7 @@ class _GraphBuilder:
             )
             if self._request.ref is not None:
                 self._warn_unplaced_unpinned_dependents(self._request.repo, self._request.ref)
-        warnings: list[str] = []
-        if self._request.direction in {"impact", "both"} and self._index.is_stale(
-            self._request.source_key,
-            max_age_seconds=self._request.stale_after,
-        ):
-            warnings.append(
-                self._with_refresh_hint(
-                    "source data is stale; refresh it before relying on upstream impact"
-                )
-            )
-        warnings.extend(self._warnings)
+        warnings = list(self._warnings)
         cycles, cycle_warnings = detect_cycles(self._edges)
         warnings.extend(cycle_warnings)
         return DependencyGraph(

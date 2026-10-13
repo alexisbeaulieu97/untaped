@@ -10,9 +10,10 @@ source-data flags of :class:`GraphSourceOptions` and fall back to
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import shlex
+from collections.abc import Callable, Iterable
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal, NamedTuple
 
@@ -24,6 +25,7 @@ from untaped.sdk import (
     Diagnostics,
     FormatOption,
     HttpSettings,
+    NeverRefreshed,
     ParallelOption,
     UiContext,
     UsageError,
@@ -37,17 +39,20 @@ from untaped.sdk import (
     q,
     raise_usage,
     read_stdin_input,
+    refresh_option,
     report_errors,
 )
 from untaped_ansible.application.graph import BuildGraph, GraphRequest
 from untaped_ansible.application.ports import DependencyIndex
-from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli.graph_tree import print_tree, tree_glyphs
 from untaped_ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
+    Backend,
+    RefreshWiring,
+    SelectedSource,
     format_skipped_dependency_file,
     ignored_collections_warning,
-    run_source_refresh,
+    serve_sources,
 )
 from untaped_ansible.domain.containment import DependencyMatch, find_matches
 from untaped_ansible.domain.graph import DependencyGraph, EdgeRelation
@@ -81,7 +86,7 @@ from untaped_ansible.infrastructure import (
     SqliteDependencyIndex,
     local_remote_url,
 )
-from untaped_ansible.settings import AnsibleSettings, SourceDefinition
+from untaped_ansible.settings import INDEX, AnsibleSettings, SourceDefinition
 from untaped_github.api import GithubClient, GithubSettings, github_web_host
 from untaped_github.api import github_settings as load_github_settings
 
@@ -90,10 +95,10 @@ _diag = Diagnostics()
 GraphDirection = Literal["deps", "impact", "both"]
 GraphCommand = Literal["graph", "deps", "impact", "find"]
 BackendOption = Annotated[
-    Literal["auto", "graphql", "git"] | None,
+    Backend | None,
     Parameter(
         name="--backend",
-        help="Ref probe backend for source refresh: auto, graphql, or git.",
+        help="Ref probe backend for a refresh this command runs: auto, graphql, or git.",
     ),
 ]
 RefOption = Annotated[
@@ -158,15 +163,9 @@ class GraphSourceOptions:
             negative="",
         ),
     ] = None
-    refresh: Annotated[
-        bool,
-        Parameter(
-            name="--refresh",
-            negative="",
-            group=_SOURCE_DATA_GROUP,
-            help="Refresh source data before reading it.",
-        ),
-    ] = False
+    refresh: Annotated[bool | None, refresh_option(INDEX), Parameter(group=_SOURCE_DATA_GROUP)] = (
+        None
+    )
     parallel: ParallelOption | None = None
     backend: BackendOption = None
     orgs: Annotated[
@@ -279,8 +278,9 @@ def deps_command(
 ) -> None:
     """Show what ROLE depends on (downstream), one row per repository per ROLE ref.
 
-    Reads cached data when a source is selected (--source, inline selectors,
-    or ansible.default_source) and GitHub live otherwise (or with --live).
+    Reads a source's data when one is selected (--source, inline selectors,
+    or ansible.default_source), refreshed first when older than its max age,
+    and GitHub live otherwise (or with --live).
     Each row carries the ref as declared, the shortest path from ROLE and
     the ROLE ref it was reached from.
 
@@ -322,8 +322,9 @@ def impact_command(
 ) -> None:
     """Show what depends on ROLE (upstream), one row per repository per root ref.
 
-    Reads cached source data (--source, inline selectors, or
-    ansible.default_source). Each row carries the ref it declares, its
+    Reads a source's data (--source, inline selectors, or
+    ansible.default_source), refreshed first when older than its max age.
+    Each row carries the ref it declares, its
     shortest path to ROLE and the ROLE ref it was reached from.
 
     For example:
@@ -409,30 +410,31 @@ def find_command(
             stack, options, command="find", depth=depth_limit, live=live, all_refs=all_refs
         )
         wanted = [_require_repo(env, repo) for repo in target]
-        _report_warnings(_refresh_selected(env, options))
-        # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
-        graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
-        matches: list[DependencyMatch] = []
-        for root, source in inputs:
-            repo = _require_repo(env, root.target)
-            local = root.target if Path(root.target).expanduser().exists() else None
-            key = (repo_key(repo), root.ref, local)
-            graph = graphs.get(key)
-            if graph is None:
-                graph = graphs[key] = _target_graph(
-                    env,
-                    target=root.target,
-                    ref=root.ref,
-                    target_repo=repo,
-                    direction="deps",
-                    extra_warnings=[],
-                ).graph
-                for warning in graph.warnings:
-                    _diag.warning(f"{_root_label(root)}: {warning}")
-                _report_depth_stops(graph, depth_limit, root=_root_label(root))
-            matches.extend(find_matches(graph, wanted, source=source))
+        resolved = [(root, source, _require_repo(env, root.target)) for root, source in inputs]
+
+        def read() -> _Found:
+            # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
+            graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
+            found = _Found()
+            for root, source, repo in resolved:
+                local = root.target if Path(root.target).expanduser().exists() else None
+                key = (repo_key(repo), root.ref, local)
+                graph = graphs.get(key)
+                if graph is None:
+                    graph = graphs[key] = _target_graph(
+                        env, target=root.target, ref=root.ref, target_repo=repo, direction="deps"
+                    ).graph
+                    found.graphs.append((_root_label(root), graph))
+                found.matches.extend(find_matches(graph, wanted, source=source))
+            return found
+
+        found = _answer(env, options, "deps", read, empty=lambda found: not found.matches)
+        for label, graph in found.graphs:
+            for warning in graph.warnings:
+                _diag.warning(f"{label}: {warning}")
+            _report_depth_stops(graph, depth_limit, root=label)
         emit(
-            _table_paths(matches, fmt),
+            _table_paths(found.matches, fmt),
             fmt=fmt,
             columns=columns,
             kind="ansible.dependency_match",
@@ -454,18 +456,6 @@ def graph_command(
         ),
     ] = "both",
     all_refs: AllRefsOption = False,
-    cached: Annotated[
-        bool,
-        Parameter(
-            name="--cached",
-            negative="",
-            group=_SOURCE_DATA_GROUP,
-            help=(
-                "Read cached source data only, without checking remote refs. This is the "
-                "default; the flag only makes it explicit."
-            ),
-        ),
-    ] = False,
     depth: DepthOption = None,
     target_repo: TargetRepoOption = None,
     live: LiveOption = False,
@@ -499,13 +489,15 @@ def graph_command(
         env = _graph_env(
             stack, options, command="graph", depth=depth_limit, live=live, all_refs=all_refs
         )
-        built = _target_graph(
+        repo = _require_repo(env, target, target_repo=target_repo)
+        built = _answer(
             env,
-            target=target,
-            ref=ref,
-            target_repo=target_repo,
-            direction=_DIRECTIONS[direction],
-            extra_warnings=_refresh_selected(env, options),
+            options,
+            _DIRECTIONS[direction],
+            lambda: _target_graph(
+                env, target=target, ref=ref, target_repo=repo, direction=_DIRECTIONS[direction]
+            ),
+            empty=lambda built: not built.graph.edges,
         )
         _report_warnings(built.graph.warnings)
         _report_depth_stops(built.graph, depth_limit)
@@ -541,18 +533,19 @@ def _emit_reach(
         env = _graph_env(
             stack, options, command=command, depth=depth_limit, live=live, all_refs=all_refs
         )
-        graph = _target_graph(
-            env,
-            target=target,
-            ref=ref,
-            target_repo=target_repo,
-            direction=command,
-            extra_warnings=_refresh_selected(env, options),
-        ).graph
+        repo = _require_repo(env, target, target_repo=target_repo)
+
+        def read() -> _Reached:
+            graph = _target_graph(
+                env, target=target, ref=ref, target_repo=repo, direction=command
+            ).graph
+            return _Reached(graph, [hit.node for hit in reach(graph, relation)])
+
+        graph, rows = _answer(env, options, command, read, empty=lambda reached: not reached.rows)
         _report_warnings(graph.warnings)
         _report_depth_stops(graph, depth_limit)
         emit(
-            _table_paths([hit.node for hit in reach(graph, relation)], fmt),
+            _table_paths(rows, fmt),
             fmt=fmt,
             columns=columns,
             kind=kind,
@@ -622,19 +615,30 @@ def _graph_env(
 ) -> _GraphEnv:
     """Resolve settings and the selected source into what every root's build shares.
 
-    Nothing is refreshed yet (see :func:`_refresh_selected`), so arguments can
-    be checked against it first.
+    Nothing is refreshed yet (see :func:`_answer`), so arguments can be
+    checked against it first.
     """
     ctx = app_context()
     settings = get_config_section("ansible", AnsibleSettings)
-    if options.backend is not None and not options.refresh:
-        raise UsageError("--backend requires --refresh")
-    if options.refresh and not (
+    has_source = bool(
         options.source or options.orgs or options.teams or options.repos or settings.default_source
-    ):
-        raise UsageError(
-            "--refresh requires --source or inline source selectors (or ansible.default_source)"
+    )
+    flags = [
+        flag
+        for flag, given in (
+            ("--refresh", options.refresh is True),
+            ("--cached", options.refresh is False),
+            ("--backend", options.backend is not None),
         )
+        if given
+    ]
+    if flags and not has_source:
+        raise UsageError(
+            f"{flags[0]} needs a source; select one with --source NAME or inline selectors "
+            "(or set ansible.default_source)"
+        )
+    if options.backend is not None and options.refresh is False:
+        raise UsageError("--backend needs a refresh; drop --cached")
     aliases = AliasRepository().entries()
     github_settings = load_github_settings()
     github_host = github_web_host(github_settings.base_url)
@@ -673,18 +677,27 @@ def _graph_env(
     )
 
 
-def _refresh_selected(env: _GraphEnv, options: GraphSourceOptions) -> list[str]:
-    """Refresh the selected sources when ``--refresh`` asks; return partial-refresh warnings."""
-    if not options.refresh:
-        return []
-    ctx = app_context()
-    return _refresh_sources(
-        env.graph_source,
+def _answer[T](
+    env: _GraphEnv,
+    options: GraphSourceOptions,
+    direction: GraphDirection,
+    read: Callable[[], T],
+    *,
+    empty: Callable[[T], bool],
+) -> T:
+    """``read()``, over the selected sources refreshed first when ``--refresh`` or their age asks.
+
+    A command that reads no source's data (none selected, or ``--live``
+    reading downstream only) just reads.
+    """
+    if not _reads_source(env, direction):
+        return read()
+    wiring = RefreshWiring(
         index=env.sqlite_index,
         aliases=env.aliases,
         settings=env.settings,
         github_settings=env.github_settings,
-        http=ctx.http,
+        http=app_context().http,
         concurrency=clamp_parallel(
             options.parallel or env.settings.git_fetch_parallel,
             cap=GIT_PARALLEL_CAP,
@@ -692,6 +705,32 @@ def _refresh_selected(env: _GraphEnv, options: GraphSourceOptions) -> list[str]:
         ),
         backend=options.backend,
     )
+    try:
+        served = serve_sources(
+            env.graph_source.selections,
+            refresh=options.refresh,
+            read=read,
+            empty=empty,
+            wiring=wiring,
+        )
+    except NeverRefreshed as exc:
+        if direction == "deps":
+            exc.hint = (
+                "or pass --live to read downstream dependencies from GitHub without cached data"
+            )
+        raise
+    return served.value
+
+
+def _reads_source(env: _GraphEnv, direction: GraphDirection) -> bool:
+    """Whether a build in ``direction`` reads the selected sources' data.
+
+    Only ``deps --live`` reads nothing of them: ``graph --live`` still reads
+    its upstream half (``impact``) from the index.
+    """
+    if not env.graph_source.selections:
+        return False
+    return not (env.live and direction == "deps")
 
 
 def _require_repo(env: _GraphEnv, target: str, *, target_repo: str | None = None) -> str:
@@ -708,47 +747,6 @@ def _require_repo(env: _GraphEnv, target: str, *, target_repo: str | None = None
         if env.command != "find":
             message = f"{message}. Pass --target-repo OWNER/NAME"
     raise AnsibleError(message, category="not_found")
-
-
-def _refresh_sources(
-    graph_source: _GraphSource,
-    *,
-    index: SqliteDependencyIndex,
-    aliases: dict[str, str],
-    settings: AnsibleSettings,
-    github_settings: GithubSettings,
-    http: HttpSettings,
-    concurrency: int,
-    backend: Literal["auto", "graphql", "git"] | None,
-) -> list[str]:
-    """Refresh every selected source; return warnings for partial refreshes."""
-    warnings: list[str] = []
-    for selection in graph_source.selections:
-        result = run_source_refresh(
-            selection.definition,
-            source_key=selection.key,
-            action="refreshed",
-            label=selection.label,
-            index=index,
-            aliases=aliases,
-            settings=settings,
-            github_settings=github_settings,
-            http=http,
-            concurrency=concurrency,
-            backend=backend,
-        )
-        if not result.completed:
-            # Paused at the GitHub rate-limit floor: resuming later succeeds.
-            raise AnsibleError(
-                _refresh_pause_message(result, selection), category="unavailable", system="github"
-            )
-        if result.failures:
-            warnings.append(
-                f"refresh of {selection.label} had "
-                f"{plural(len(result.failures), 'failure')}; "
-                "data for those repos may be stale"
-            )
-    return warnings
 
 
 @dataclass(frozen=True)
@@ -817,19 +815,11 @@ def _target_graph(
     ref: str | None,
     target_repo: str | None,
     direction: GraphDirection,
-    extra_warnings: list[str],
 ) -> _BuiltGraph:
     """Build one root's graph, with its warnings attached, and say what it read."""
     target_repo_name = _require_repo(env, target, target_repo=target_repo)
     graph_source = env.graph_source
-    direction, graph_warnings = _effective_direction(
-        command=env.command,
-        target=target,
-        source_state=graph_source,
-        index=env.sqlite_index,
-        direction=direction,
-        live=env.live,
-    )
+    direction, graph_warnings = _effective_direction(source_state=graph_source, direction=direction)
     refresh_hint = _refresh_hint(graph_source)
     parse_warnings: list[str] = []
 
@@ -856,7 +846,6 @@ def _target_graph(
             depth=env.depth,
             # A local checkout is one state of its repo, overlaid at the ref-less node.
             all_refs=env.all_refs or local_dependencies is not None,
-            stale_after=env.settings.stale_after_seconds,
             refresh_hint=refresh_hint,
         ),
         local=local_dependencies,
@@ -873,7 +862,6 @@ def _target_graph(
     graph = _with_graph_warnings(
         graph,
         [
-            *extra_warnings,
             *graph_warnings,
             *parse_warnings,
             *_empty_graph_warnings(
@@ -896,6 +884,21 @@ class _BuiltGraph(NamedTuple):
     graph: DependencyGraph
     data_source: str
     """What the build read, for the tree header: ``source prod, downstream live``."""
+
+
+class _Reached(NamedTuple):
+    """What ``deps`` or ``impact`` read: the graph, and the rows it reached."""
+
+    graph: DependencyGraph
+    rows: list[ReachedNode]
+
+
+@dataclass
+class _Found:
+    """What ``find`` read: each root's graph by its label, and the matches."""
+
+    graphs: list[tuple[str, DependencyGraph]] = field(default_factory=list)
+    matches: list[DependencyMatch] = field(default_factory=list)
 
 
 class _Reads(NamedTuple):
@@ -931,15 +934,8 @@ def _root_label(root: GraphRoot) -> str:
 
 
 @dataclass(frozen=True)
-class _GraphSourceSelection:
-    definition: SourceDefinition
-    key: str
-    label: str
-
-
-@dataclass(frozen=True)
 class _GraphSource:
-    selections: tuple[_GraphSourceSelection, ...]
+    selections: tuple[SelectedSource, ...]
     key: str | None
     label: str | None
     saved: bool
@@ -972,7 +968,7 @@ def _graph_source(options: GraphSourceOptions, *, default_source: str | None) ->
         selected_source_names, from_default = [default_source], True
     if selected_source_names:
         source_repository = SourceRepository()
-        selections: list[_GraphSourceSelection] = []
+        selections: list[SelectedSource] = []
         for source_name in selected_source_names:
             source = source_repository.get(source_name)
             if source is None:
@@ -987,10 +983,11 @@ def _graph_source(options: GraphSourceOptions, *, default_source: str | None) ->
                     system="local",
                 )
             selections.append(
-                _GraphSourceSelection(
+                SelectedSource(
                     definition=source,
                     key=source_commands._saved_source_key(source_name),
                     label=source_name,
+                    subject=f"source {source_name}",
                 )
             )
         return _GraphSource(
@@ -1011,33 +1008,45 @@ def _graph_source(options: GraphSourceOptions, *, default_source: str | None) ->
             ref_scan_default=options.ref_scan_default,
         )
         key = source_commands._inline_source_key(source)
+        label = _inline_label(source)
         return _GraphSource(
-            selections=(
-                _GraphSourceSelection(
-                    definition=source,
-                    key=key,
-                    label=f"inline source {key.removeprefix('inline:')}",
-                ),
-            ),
+            selections=(SelectedSource(definition=source, key=key, label=label, subject=label),),
             key=key,
-            label=f"inline source {key.removeprefix('inline:')}",
+            label=label,
             saved=False,
         )
     return _GraphSource(selections=(), key=None, label=None, saved=False)
+
+
+def _inline_label(source: SourceDefinition) -> str:
+    """``inline source --org acme --repo acme/x``: the selector flags, in help order."""
+    flags: list[str] = []
+    for flag, values in (
+        ("--org", source.orgs),
+        ("--team", source.teams),
+        ("--repo", source.repos),
+        ("--path", source.dependency_paths),
+        ("--ref-kind", source.ref_kinds),
+        ("--ref-pattern", source.ref_patterns),
+        ("--ref-scan-default", [source.ref_scan_default] if source.ref_scan_default else []),
+    ):
+        for value in values:
+            flags += [flag, value]
+    return f"inline source {shlex.join(flags)}"
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
-def _graph_source_key(selections: list[_GraphSourceSelection]) -> str:
+def _graph_source_key(selections: list[SelectedSource]) -> str:
     if len(selections) == 1:
         return selections[0].key
     names = ",".join(selection.key.removeprefix("source:") for selection in selections)
     return f"sources:{names}"
 
 
-def _graph_source_label(selections: list[_GraphSourceSelection]) -> str:
+def _graph_source_label(selections: list[SelectedSource]) -> str:
     if len(selections) == 1:
         return selections[0].label
     return f"sources {', '.join(selection.label for selection in selections)}"
@@ -1056,106 +1065,21 @@ def _dependency_index_for_graph_source(
 
 
 def _effective_direction(
-    *,
-    command: GraphCommand,
-    target: str,
-    source_state: _GraphSource,
-    index: SqliteDependencyIndex,
-    direction: GraphDirection,
-    live: bool,
+    *, source_state: _GraphSource, direction: GraphDirection
 ) -> tuple[GraphDirection, list[str]]:
-    if not source_state.selections:
-        if direction == "deps":
-            return direction, []
-        message = (
-            "upstream requires --source NAME, inline selectors like --org, --team, or --repo, "
-            "or ansible.default_source"
-        )
-        if direction == "impact":
-            raise UsageError(message)
-        return "deps", [
-            "only showing downstream; upstream omitted because no source is configured. "
-            "Pass --source NAME or inline selectors, or set ansible.default_source."
-        ]
-    missing = tuple(
-        selection for selection in source_state.selections if index.status(selection.key) is None
+    """``direction``, downstream only (with a warning) when no source can answer upstream."""
+    if source_state.selections or direction == "deps":
+        return direction, []
+    message = (
+        "upstream requires --source NAME, inline selectors like --org, --team, or --repo, "
+        "or ansible.default_source"
     )
-    if missing and live and direction != "impact":
-        # --live reads downstream from GitHub, so it never needs the cache;
-        # only the upstream half of --direction both does.
-        if direction == "deps":
-            return direction, []
-        labels = ", ".join(selection.label for selection in missing)
-        return "deps", [
-            f"only showing downstream; upstream omitted because {labels} has no cached "
-            f"source data. Run {_source_refresh_commands(missing)} first."
-            if source_state.saved
-            else "only showing downstream; upstream omitted because the inline source has "
-            "no cached source data. Re-run with `--refresh` first."
-        ]
-    if missing:
-        raise AnsibleError(
-            _missing_source_index_message(
-                command, target, source_state, missing, direction=direction
-            )
-        )
-    return direction, []
-
-
-def _missing_source_index_message(
-    command: GraphCommand,
-    target: str,
-    source_state: _GraphSource,
-    missing: tuple[_GraphSourceSelection, ...],
-    *,
-    direction: GraphDirection,
-) -> str:
-    live_hint = (
-        " Or pass `--live` to read downstream dependencies from GitHub without cached data."
-        if direction == "deps"
-        else ""
-    )
-    if source_state.saved:
-        refresh_commands = _source_refresh_commands(missing)
-        source_flags = " ".join(
-            f"--source {selection.label}" for selection in source_state.selections
-        )
-        rerun = _rerun_with_refresh(command, target, source_flags, direction=direction)
-        if len(missing) > 1:
-            labels = ", ".join(repr(selection.label) for selection in missing)
-            return (
-                f"no cached source data found for sources {labels}. Run: {refresh_commands}. "
-                f"Or {rerun}.{live_hint}"
-            )
-        label = missing[0].label
-        return (
-            f"no cached source data found for source {label!r}. Run: {refresh_commands}. "
-            f"Or {rerun}.{live_hint}"
-        )
-    return (
-        "no cached source data found for inline source. Re-run this command with "
-        f"`--refresh` to scan GitHub and cache the result.{live_hint}"
-    )
-
-
-def _rerun_with_refresh(
-    command: GraphCommand, target: str, source_flags: str, *, direction: GraphDirection
-) -> str:
-    """The exact re-run-with-``--refresh`` instruction for ``command``."""
-    if command == "find":
-        return "re-run this command with `--refresh`"
-    direction_flag = _DIRECTION_FLAGS[direction] if command == "graph" else ""
-    return (
-        f"re-run with: `untaped ansible {command} {target} {source_flags}{direction_flag} "
-        "--refresh`"
-    )
-
-
-_DIRECTION_FLAGS: dict[GraphDirection, str] = {
-    "impact": " --direction up",
-    "deps": " --direction down",
-    "both": "",
-}
+    if direction == "impact":
+        raise UsageError(message)
+    return "deps", [
+        "only showing downstream; upstream omitted because no source is configured. "
+        "Pass --source NAME or inline selectors, or set ansible.default_source."
+    ]
 
 
 def _resolve_target_repo(
@@ -1279,7 +1203,7 @@ def _graph_for_target(
 
 
 def _refresh_hint(source_state: _GraphSource) -> str | None:
-    """Compose the exact fix command surfaced in stale/missing-ref warnings."""
+    """Compose the exact fix command surfaced in missing-ref warnings."""
     if not source_state.selections:
         return None
     if source_state.saved:
@@ -1288,18 +1212,11 @@ def _refresh_hint(source_state: _GraphSource) -> str | None:
     return "Re-run this command with `--refresh` to update it."
 
 
-def _source_refresh_commands(selections: tuple[_GraphSourceSelection, ...]) -> str:
+def _source_refresh_commands(selections: tuple[SelectedSource, ...]) -> str:
     """Join the exact `untaped ansible source refresh NAME` commands for selections."""
     return " and ".join(
         f"`untaped ansible source refresh {selection.label}`" for selection in selections
     )
-
-
-def _refresh_pause_message(result: RefreshResult, selection: _GraphSourceSelection) -> str:
-    reason = result.pause_reason or "source refresh paused before completion"
-    if selection.key.startswith("source:"):
-        return f"{reason}; resume with `untaped ansible source refresh {selection.label}`"
-    return f"{reason}; re-run this command with `--refresh` to resume"
 
 
 def _with_graph_warnings(graph: DependencyGraph, warnings: list[str]) -> DependencyGraph:

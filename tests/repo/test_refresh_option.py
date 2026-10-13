@@ -20,8 +20,6 @@ from repo.support import PACKAGES, REPO_ROOT
 FLAGS = frozenset({"--refresh", "--cached"})
 #: ``(module, flag)`` → when it moves onto ``refresh_option``.
 EXEMPT = {
-    ("untaped_ansible/cli/graph_commands.py", "--refresh"): "until C (#537)",
-    ("untaped_ansible/cli/graph_commands.py", "--cached"): "until C (#537)",
     ("untaped_github/cli/sweep_commands.py", "--refresh"): "until D (#582)",
     ("untaped_github/cli/sweep_commands.py", "--cached"): "until D (#582)",
     ("untaped_github/cli/cache_commands.py", "--refresh"): "until D (#582)",

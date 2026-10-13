@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
-from untaped.sdk import NO_PROGRESS, ProgressHandle, UntapedError, bounded_map
+from untaped.sdk import NO_PROGRESS, Filled, ProgressHandle, UntapedError, bounded_map
 from untaped_ansible.application.ports import (
     GitCache,
     GitHubDependencyReader,
@@ -65,8 +65,13 @@ _REPO_FAILURE_ERRORS = (GitCacheError, UntapedError)
 PARSER_VERSION = 1
 
 
-class RefreshResult(BaseModel):
-    """Summary of an index refresh."""
+class RefreshResult(Filled):
+    """Summary of an index refresh.
+
+    What it inherits from :class:`~untaped.sdk.Filled` (``partial``,
+    ``retry_at``, ``summary``) stays unset here: the CLI's adapter fills it
+    in, so this use case words nothing for a human.
+    """
 
     model_config = ConfigDict(frozen=True)
 
