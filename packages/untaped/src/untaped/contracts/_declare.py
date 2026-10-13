@@ -20,7 +20,6 @@ import types
 from abc import ABC
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
 from pydantic import (
@@ -33,6 +32,7 @@ from pydantic import (
 )
 from pydantic_core import PydanticSerializationError, to_json
 
+from untaped.cache import Cache
 from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.records import Issued, Record, Source, kind_of
 
@@ -76,7 +76,8 @@ class Method:
     #: The resolved annotations, ``T`` left as the contract's type parameter.
     hints: Mapping[str, Any]
     bridge: bool
-    max_age: timedelta | None
+    #: The answer cache of a ``@cached`` method.
+    cache: Cache | None
     #: Declared ``@listing``: an invalid row is dropped and the rest kept.
     #: Any other method's invalid item fails the answer.
     listing: bool
@@ -154,24 +155,30 @@ def listing[F: Callable[..., Any]](fn: F, /) -> F:
     return fn
 
 
-def cached[F: Callable[..., Any]](*, max_age: timedelta) -> Callable[[F], F]:
-    """Declare that a method's answers are kept for ``max_age`` (the answer cache).
+def cached[F: Callable[..., Any]](cache: Cache, /) -> Callable[[F], F]:
+    """Declare that a method's answers are kept in ``cache`` (the answer cache).
 
-    The owner declares it; the SDK keeps one entry per provider, method,
-    profile and arguments under ``~/.untaped/plugins/<provider>/cache/``. A
-    live call that fails while an entry exists serves the entry, marked stale.
+    The owner declares ``cache`` in its settings module, named
+    ``<contract>_<method>`` (``Cache("shelf", "book_source_books", label=…,
+    max_age=…)``), and lists it on ``PluginSpec.caches``; its max age is the
+    setting ``<owner>.caches.<name>.max_age_seconds``. The SDK keeps one
+    entry per provider, method, profile and arguments. A live call that fails
+    while an entry exists serves the entry, marked stale.
     """
-    if max_age <= timedelta(0):
-        raise TypeError("cached(max_age=...) needs a positive timedelta")
+    if not isinstance(cache, Cache):
+        raise TypeError(
+            "@cached takes a Cache: declare X = Cache(owner, '<contract>_<method>', "
+            "label=..., max_age=...) in your settings module and write @cached(X)"
+        )
 
     def mark(fn: F) -> F:
-        return _served(fn, max_age, fn.__name__)
+        return _served(fn, cache, fn.__name__)
 
     return mark
 
 
-def _served[F: Callable[..., Any]](fn: F, max_age: timedelta, name: str) -> F:
-    """``fn`` served through the answer cache as contract method ``name``."""
+def _served[F: Callable[..., Any]](fn: F, cache: Cache, name: str) -> F:
+    """``fn`` served through ``cache`` as contract method ``name``."""
     if getattr(fn, _CACHED, None) is not None:
         return fn
 
@@ -179,9 +186,9 @@ def _served[F: Callable[..., Any]](fn: F, max_age: timedelta, name: str) -> F:
     def served(self: Contract, /, *args: Any, **kwargs: Any) -> Any:
         from untaped.contracts._cache import call  # noqa: PLC0415 - cache needs settings
 
-        return call(self, name, fn, max_age, args, kwargs)
+        return call(self, name, fn, cache, args, kwargs)
 
-    setattr(served, _CACHED, max_age)
+    setattr(served, _CACHED, cache)
     return served  # type: ignore[return-value]  # same signature as fn
 
 
@@ -487,8 +494,8 @@ def _rewrap(cls: type[Contract]) -> None:
         wrapped = value
         if method.bridge:
             wrapped = bridge(wrapped)
-        if method.max_age is not None:
-            wrapped = _served(wrapped, method.max_age, name)
+        if method.cache is not None:
+            wrapped = _served(wrapped, method.cache, name)
         if wrapped is not value:
             setattr(cls, name, wrapped)
 
@@ -513,12 +520,9 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
                 f"{'SDK machinery' if name in SDK_NAMES else 'a builtin'} (pick another name)"
             )
         hints = _signature_hints(where, name, value, params)
-        max_age = getattr(value, _CACHED, None)
-        if max_age is not None and _carries_secret(hints["return"]):
-            raise TypeError(
-                f"{where}.{name}: @cached would write a secret to disk; "
-                "a method returning one is never cached"
-            )
+        cache = getattr(value, _CACHED, None)
+        if cache is not None:
+            _check_cache(where, cls.__name__, name, cache, hints["return"])
         rows = getattr(value, _LISTING, False)
         if rows and get_origin(hints["return"]) is not list:
             raise TypeError(f"{where}.{name}: a @listing method returns a list")
@@ -527,7 +531,7 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
             function=value,
             hints=types.MappingProxyType(hints),
             bridge=getattr(value, _BRIDGE, None) is not None,
-            max_age=max_age,
+            cache=cache,
             listing=rows,
         )
         setattr(value, _CONTRACT_OF, cls)
@@ -539,6 +543,21 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
         item_param=item_param,
         methods=types.MappingProxyType(methods),
     )
+
+
+def _check_cache(where: str, contract: str, name: str, cache: Cache, returns: object) -> None:
+    """A ``@cached`` method's cache is named ``<contract>_<method>`` and never keeps a secret."""
+    expected = f"{snake_case(contract)}_{name}"
+    if cache.name != expected:
+        raise TypeError(
+            f"{where}.{name}: @cached takes the cache named {expected!r}, not {cache.name!r} "
+            f"(Cache({cache.plugin!r}, {expected!r}, ...))"
+        )
+    if _carries_secret(returns):
+        raise TypeError(
+            f"{where}.{name}: @cached would write a secret to disk; "
+            "a method returning one is never cached"
+        )
 
 
 def _item_default(where: str, param: TypeVar | None) -> type[Issued] | None:

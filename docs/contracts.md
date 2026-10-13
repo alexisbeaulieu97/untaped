@@ -7,6 +7,9 @@ knowing whether GitHub, GitLab or both supply them. Everything lives in
 imports it, so a command that asks no contract pays nothing.
 
 ```python
+# the owner, in its settings module
+BOOKS = Cache("shelf", "book_source_books", label="books", max_age=timedelta(hours=1))
+
 # the owner, in its api module
 class Book(Issued, kind="shelf.book"):
     title: str
@@ -19,12 +22,12 @@ class BookSource[T: Record = Book](Contract):
         raise NotImplementedError
 
     @listing
-    @cached(max_age=timedelta(hours=1))
+    @cached(BOOKS)
     @abstractmethod
     def books(self) -> list[Book]: ...
 
 
-SPEC = PluginSpec(name="shelf", contracts=lambda: (BookSource,))
+SPEC = PluginSpec(name="shelf", contracts=lambda: (BookSource,), caches=(BOOKS,))
 
 # the owner, asking
 book = select_one(gather(BookSource.books)(), lambda b: b.title == "Dune")
@@ -51,9 +54,12 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   `settings`, `http`), and every parameter and return type must have a JSON
   schema, with no `*args`, positional-only parameters or non-JSON defaults:
   the class definition raises `TypeError` (`unserialisable-signature`)
-  otherwise. `shell=` is reserved for shell plugins. `@cached(max_age=)`
-  keeps answers per provider, profile and arguments, and is refused on a
-  method that returns a secret. `@listing` declares a method whose rows
+  otherwise. `shell=` is reserved for shell plugins. `@cached(CACHE)`
+  keeps answers per provider, profile and arguments in a
+  [`Cache`](caches.md) the owner declares, names `<contract>_<method>` and
+  lists in its `caches` (its user setting is
+  `<owner>.caches.<name>.max_age_seconds`); it is refused on a method that
+  returns a secret. `@listing` declares a method whose rows
   stand alone: an invalid row is dropped and the rest kept, where any other
   method's invalid item fails the provider's whole answer.
 - **The owner's model** is the item type parameter's default, an `Issued`

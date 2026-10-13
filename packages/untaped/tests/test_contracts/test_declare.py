@@ -10,6 +10,7 @@ import pytest
 from pydantic import BaseModel, SecretStr
 
 from test_contracts.support import (
+    BOOKS,
     LIBRARY_CONFIG,
     Book,
     BookSource,
@@ -21,10 +22,15 @@ from test_contracts.support import (
     shelf_spec,
     write_config,
 )
+from untaped.cache import Cache
 from untaped.contracts import Contract, Ok, Record, bridge, cached, gather
 from untaped.contracts._declare import ContractError, contract_of, item_type
 from untaped.plugins.registry import PluginSpec
 from untaped.stability import Experimental, deprecated, function_mark
+
+
+def _cache(name: str) -> Cache:
+    return Cache("shelf", name, label="rows", max_age=timedelta(minutes=5))
 
 
 def test_a_contract_is_declared_with_its_name_methods_and_owner_model() -> None:
@@ -34,7 +40,7 @@ def test_a_contract_is_declared_with_its_name_methods_and_owner_model() -> None:
     assert info.item is Book
     assert set(info.methods) == {"to_book", "books", "lookup", "by_author", "first", "count"}
     assert info.methods["to_book"].bridge
-    assert info.methods["books"].max_age == timedelta(hours=1)
+    assert info.methods["books"].cache is BOOKS
     assert info.methods["books"].listing
     assert not info.methods["lookup"].listing
     assert not info.methods["by_author"].listing
@@ -100,7 +106,7 @@ def test_cached_is_refused_on_a_method_returning_a_secret() -> None:
     with pytest.raises(TypeError, match="never cached"):
 
         class Host(Contract):
-            @cached(max_age=timedelta(minutes=5))
+            @cached(_cache("host_credential"))
             def credential(self, url: str) -> _Credential:
                 raise NotImplementedError
 
@@ -130,8 +136,8 @@ def test_shell_is_a_reserved_contract_keyword() -> None:
 
 def test_a_provider_override_is_rewrapped_with_the_owner_decorators() -> None:
     assert getattr(Library.to_book, "__untaped_bridge__", None) is not None
-    assert getattr(Library.books, "__untaped_cached__", None) == timedelta(hours=1)
-    assert getattr(Shop.books, "__untaped_cached__", None) == timedelta(hours=1)
+    assert getattr(Library.books, "__untaped_cached__", None) is BOOKS
+    assert getattr(Shop.books, "__untaped_cached__", None) is BOOKS
 
 
 def test_the_bridge_stamps_source_even_inside_the_provider() -> None:
@@ -197,7 +203,7 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
         def make(self, item: Volume) -> Book:
             raise NotImplementedError
 
-        @cached(max_age=timedelta(seconds=1))
+        @cached(_cache("direct_listing"))
         @abstractmethod
         def listing(self) -> list[Book]: ...
 
@@ -205,22 +211,31 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
 
     assert list(inspect.signature(Direct.make).parameters) == ["self", "item"]
     assert getattr(Direct.listing, "__isabstractmethod__", False)
-    with pytest.raises(TypeError, match="positive"):
-        cached(max_age=timedelta(0))
+
+
+def test_cached_takes_a_cache_named_after_the_contract_and_method() -> None:
+    with pytest.raises(TypeError, match=r"@cached takes a Cache: declare X = Cache"):
+        cached(timedelta(hours=1))  # type: ignore[arg-type]  # 1c's shape
+    with pytest.raises(TypeError, match=r"Rows\.rows: @cached takes the cache named 'rows_rows'"):
+
+        class Rows(Contract):
+            @cached(_cache("rows"))
+            def rows(self) -> list[Book]:
+                raise NotImplementedError
 
 
 def test_only_the_contract_decides_what_is_cached() -> None:
     with pytest.raises(TypeError, match="only the contract decides what is @cached"):
 
         class Eager(Shop):
-            @cached(max_age=timedelta(minutes=1))
+            @cached(BOOKS)
             def _load(self) -> list[Book]:
                 return []
 
     with pytest.raises(TypeError, match=r"Hasty\.books: only the contract decides"):
 
         class Hasty(Shop):
-            @cached(max_age=timedelta(seconds=1))
+            @cached(BOOKS)
             def books(self) -> list[Book]:
                 return []
 
@@ -265,10 +280,10 @@ def test_a_method_filled_by_a_plain_mixin_is_rewrapped_too() -> None:
     class Mixed(Shared, Shop):
         pass
 
-    assert getattr(Mixed.books, "__untaped_cached__", None) == timedelta(hours=1)
+    assert getattr(Mixed.books, "__untaped_cached__", None) is BOOKS
 
     class Cached:
-        @cached(max_age=timedelta(days=30))
+        @cached(BOOKS)
         def books(self) -> list[Book]:
             return []
 
@@ -286,14 +301,14 @@ def test_a_provider_filling_a_method_with_a_base_helper_is_rewrapped() -> None:
     class Aliased(Base):
         books = Base._fetch
 
-    assert getattr(Aliased.books, "__untaped_cached__", None) == timedelta(hours=1)
+    assert getattr(Aliased.books, "__untaped_cached__", None) is BOOKS
     with pytest.raises(TypeError, match=r"Twice\.count: only the contract decides"):
 
         class Twice(Shop):
             count = Shop.books  # type: ignore[assignment]  # a cached method in another slot
 
     class Popular:
-        @cached(max_age=timedelta(days=1))
+        @cached(BOOKS)
         def popular(self) -> list[Book]:
             return []
 
@@ -306,7 +321,7 @@ def test_a_provider_filling_a_method_with_a_base_helper_is_rewrapped() -> None:
 
         class Static(Shop):
             @staticmethod
-            @cached(max_age=timedelta(days=1))
+            @cached(BOOKS)
             def books() -> list[Book]:  # type: ignore[override]
                 return []
 
@@ -338,7 +353,7 @@ def test_a_listing_is_the_contracts_call_and_composes_with_cached() -> None:
     from untaped.contracts import listing
 
     class Rows(Contract):
-        @cached(max_age=timedelta(minutes=5))
+        @cached(_cache("rows_rows"))
         @listing
         def rows(self) -> list[Book]:
             raise NotImplementedError
@@ -346,7 +361,7 @@ def test_a_listing_is_the_contracts_call_and_composes_with_cached() -> None:
     info = contract_of(Rows)
     assert info is not None
     assert info.methods["rows"].listing
-    assert info.methods["rows"].max_age == timedelta(minutes=5)
+    assert info.methods["rows"].cache == _cache("rows_rows")
     with pytest.raises(TypeError, match=r"Eager\.lookup: only the contract decides"):
 
         class Eager(Shop):
