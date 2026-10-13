@@ -6,6 +6,7 @@ Defaults are pinned by the generated ``docs/reference/config.md`` (see
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -14,8 +15,13 @@ import pytest
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from untaped.deprecated_keys import key_mappings
+from untaped.bootstrap import build_root_app
+from untaped.config_file import read_config_dict
+from untaped.deprecated_keys import key_mappings, mapping_errors
+from untaped.plugins.registry import settings_model
 from untaped.sdk import get_config_section
+from untaped.testing import CliInvoker
+from untaped_ansible import SPEC
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 
 _SOURCE = {"name": "prod", "repos": ["acme/site"]}
@@ -93,3 +99,32 @@ def test_the_deleted_settings_say_what_replaced_them() -> None:
 
     assert {key: entry.reason() for key, entry in deleted.items()} == _DELETED
     assert not set(_DELETED) & set(AnsibleSettings.model_fields)
+
+
+def test_the_raw_and_composed_settings_map_their_old_keys_cleanly() -> None:
+    assert mapping_errors(AnsibleSettings) == []
+    assert mapping_errors(settings_model(SPEC)) == []
+
+
+@pytest.mark.parametrize(
+    ("old", "action", "kept"),
+    [
+        # 10.x: moved under the index cache's setting
+        ("stale_after_seconds", "renamed", {"caches": {"index": {"max_age_seconds": 3600}}}),
+        # 9.x: no longer carried over (decision 6a)
+        ("stale_after", "deleted", {}),
+    ],
+)
+def test_config_migrate_moves_or_deletes_the_old_stale_setting(
+    old: str, action: str, kept: dict[str, object]
+) -> None:
+    config = Path(os.environ["UNTAPED_CONFIG"])
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": {old: 3600}}}}))
+
+    result = CliInvoker().invoke(build_root_app().meta, ["config", "migrate", "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["from"], row["action"]) == (f"ansible.{old}", action)
+    assert read_config_dict(config)["profiles"]["default"].get("ansible", {}) == kept

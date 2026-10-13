@@ -41,11 +41,15 @@ from untaped.sdk import (
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
+    Backend,
+    RefreshRecord,
     RefreshWiring,
     SelectedSource,
+    fill_summary,
     repo_errors,
     serve_sources,
     sync_freshness,
+    warn_refresh,
 )
 from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.domain.payloads import SourceOutcome, SourceStatus
@@ -81,7 +85,7 @@ RefScanDefaultOption = Annotated[
     ),
 ]
 BackendOption = Annotated[
-    Literal["auto", "graphql", "git"] | None,
+    Backend | None,
     Parameter(
         name="--backend",
         help="Ref probe backend for this refresh: auto, graphql, or git.",
@@ -433,32 +437,51 @@ def source_refresh_command(
             backend=backend,
         )
         selection = SelectedSource(definition=source, key=key, label=name, subject=f"source {name}")
-        results: dict[str, RefreshResult] = {}
+        record = RefreshRecord()
         try:
             served = serve_sources(
-                [selection], refresh=True, read=lambda: None, wiring=wiring, results=results
+                [selection],
+                refresh=True,
+                read=lambda: None,
+                wiring=wiring,
+                # any failure raises before serve()'s stale line: this command serves no data
+                empty=lambda _: True,
+                record=record,
+                warn=False,
             )
         except UntapedError:
-            _report_repo_failures(name, results.get(key))
-            raise
-        result = served.filled.get(key)
-        if result is None:
-            # It failed over cached data: serve() kept that data with a warning; the command fails.
-            _report_repo_failures(name, results.get(key))
-            error = served.freshness[key].error
-            assert error is not None
-            raise error.to_exception()
-        _diag.info(f"refreshed source {name}: {result.summary}")
-        _report_repo_failures(name, result)
-        if result.failures:
-            worst = most_severe(repo_errors(result))
-            raise AnsibleError(_refresh_failure_message(result), category=worst.category)
+            result, error = record.results.get(key), record.errors.get(key)
+            if result is not None and error is None:
+                # partial: serve() raised its failure over the saved successes
+                _report_refresh(name, result, settings)
+                raise _partial_refresh_error(result) from None
+            if result is not None:  # paused, or every repo failed
+                _report_repo_failures(name, result)
+                warn_refresh(result, settings)
+            if error is not None:
+                raise error from None  # the fill's own, without serve()'s hint to --cached
+            raise  # no fill ran here: the lock never came, or a run it waited on left an error
+        if key not in served.filled:
+            # the lock's last holder refreshed it while this run waited: serve() kept that
+            _diag.info(f"source {name} was refreshed by another run while this one waited")
+            return
+        _report_refresh(name, record.results[key], settings)
 
 
-def _report_repo_failures(name: str, result: RefreshResult | None) -> None:
+def _report_refresh(name: str, result: RefreshResult, settings: AnsibleSettings) -> None:
+    """The summary, then each repo that failed, then the refresh's warning groups."""
+    _diag.info(f"refreshed source {name}: {fill_summary(result)}")
+    _report_repo_failures(name, result)
+    warn_refresh(result, settings)
+
+
+def _partial_refresh_error(result: RefreshResult) -> AnsibleError:
+    worst = most_severe(repo_errors(result))
+    return AnsibleError(_refresh_failure_message(result), category=worst.category)
+
+
+def _report_repo_failures(name: str, result: RefreshResult) -> None:
     """One failure line per repo the refresh could not read, and the rerun hint when it helps."""
-    if result is None:
-        return
     for failure, error in zip(result.failures, repo_errors(result), strict=True):
         _diag.failure(error, item=failure.repo)
     if _has_transient_ref_probe_failure(result):

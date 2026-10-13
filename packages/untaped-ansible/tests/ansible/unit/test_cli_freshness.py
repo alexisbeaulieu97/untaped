@@ -26,7 +26,12 @@ from untaped.sdk import ErrorCategory, Failure, Message, Progress, StaleData
 from untaped.testing import CliInvoker, CliResult, cache_clock, progress_clock
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli import app, refresh
-from untaped_ansible.domain.payloads import IndexedDependency, RepoFailure
+from untaped_ansible.domain.payloads import (
+    GRAPHQL_TRANSIENT_FALLBACK,
+    IndexedDependency,
+    RepoFailure,
+    SkippedDependencyFile,
+)
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex
 from untaped_ansible.infrastructure.sqlite_schema import SCHEMA_VERSION
@@ -198,6 +203,48 @@ def test_cached_with_an_empty_answer_is_an_answer(
     # The failed attempt is remembered, not raised again.
     assert stale.error is not None and stale.attempted_at is not None
     assert fill.keys == ["source:prod"]
+
+
+def test_cached_with_an_empty_answer_and_no_attempt_is_an_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
+) -> None:
+    _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=26))
+    _use_config(tmp_path, monkeypatch, _PROD)
+
+    result = _run("impact", "acme/nobody-uses-me", "--source", "prod", "-f", "json", "--cached")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == []
+    [stale] = _stale(result)
+    assert stale.error is None
+    assert fill.keys == []
+
+
+@pytest.mark.parametrize(
+    ("args", "exit_code"),
+    [
+        (("graph", "acme/base", "--direction", "up"), 0),
+        (("graph", "acme/nobody-uses-me", "--direction", "up"), 5),
+        (("find", "acme/base", "--root", "acme/site@main"), 0),
+        (("find", "acme/nobody-uses-me", "--root", "acme/site@main"), 5),
+    ],
+)
+def test_graph_and_find_fail_offline_only_on_an_empty_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fill: Fill,
+    args: tuple[str, ...],
+    exit_code: int,
+) -> None:
+    """``graph`` is empty with no edges, ``find`` with no matches."""
+    _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=26))
+    _use_config(tmp_path, monkeypatch, _PROD)
+    fill.error = _OFFLINE
+
+    result = _run(*args, "--source", "prod")
+
+    assert result.exit_code == exit_code, result.output
+    assert len(_stale(result)) == (exit_code == 0)
 
 
 def test_upgrade_day_reads_freshness_from_the_last_source_refresh(
@@ -437,6 +484,53 @@ def test_deps_live_never_refreshes_the_source(
     assert (fill.keys, _stale(result)) == ([], [])
 
 
+@pytest.mark.parametrize("ago", [timedelta(hours=30), None], ids=["stale", "never"])
+def test_graph_live_refreshes_the_source_for_its_upstream_half(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill, ago: timedelta | None
+) -> None:
+    if ago is not None:
+        _seed(tmp_path, "source:prod", _edge(), ago=ago)
+    _use_config(tmp_path, monkeypatch, _PROD, token=True)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/base", content="")
+        result = _run("graph", "acme/base", "--source", "prod", "--live", "--depth", "1")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("acme/base  source prod, downstream live · depth 1\n")
+    assert "acme/site" in result.stdout  # the upstream half, read from the refreshed source
+    assert fill.keys == ["source:prod"]
+    assert _stale(result) == []
+
+
+def test_the_failed_task_precedes_the_stale_line_and_the_roots_warnings_follow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
+) -> None:
+    _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=26))
+    _use_config(tmp_path, monkeypatch, _PROD)
+    fill.error = _OFFLINE
+
+    with progress_clock() as clock:
+        fill.during = lambda: clock.advance(3)  # past the quiet period: the task shows
+        result = _run(
+            "find", "acme/base", "--root", "acme/site@main", "--root", "acme/site@gone",
+            "--source", "prod",
+        )  # fmt: skip
+
+    assert result.exit_code == 0, result.output
+    diagnostics = list(result.diagnostics)
+    failed = next(
+        i for i, d in enumerate(diagnostics) if isinstance(d, Progress) and d.state == "failed"
+    )
+    stale = next(i for i, d in enumerate(diagnostics) if isinstance(d, StaleData))
+    root = next(
+        i
+        for i, d in enumerate(diagnostics)
+        if isinstance(d, Message) and d.level == "warning" and "acme/site@gone" in d.message
+    )
+    assert failed < stale < root
+
+
 # --- the guard: the sidecar follows the index ---------------------------------
 
 
@@ -521,8 +615,9 @@ def test_profiles_with_their_own_index_refresh_their_own(
 # --- source refresh and source status -----------------------------------------
 
 
-def test_source_refresh_prints_its_summary_and_warnings_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
+@pytest.mark.parametrize("slow", [False, True], ids=["fast", "past-2s"])
+def test_source_refresh_prints_its_summary_then_each_warning_group_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill, slow: bool
 ) -> None:
     _use_config(tmp_path, monkeypatch, _PROD)
     fill.result = RefreshResult(
@@ -533,18 +628,99 @@ def test_source_refresh_prints_its_summary_and_warnings_once(
         changed_refs=1,
         rate_limit_remaining=10,
         ignored_collections=("community.general",),
+        skipped_files=(
+            SkippedDependencyFile(
+                repo="acme/site", ref="main", source_path="roles/x.yml", reason="bad yaml"
+            ),
+        ),
+        probe_fallbacks={"acme/site": GRAPHQL_TRANSIENT_FALLBACK},
     )
+
+    with progress_clock() as clock:
+        if slow:
+            fill.during = lambda: clock.advance(3)
+        result = _run("source", "refresh", "prod")
+
+    assert result.exit_code == 0, result.output
+    summary = "refreshed source prod: 1 repo, 1 ref, 1 edge, 1 changed, 0 unchanged"
+    messages = [d for d in result.diagnostics if isinstance(d, Message)]
+    assert [d.message for d in messages if d.level == "info"] == [summary]
+    warnings = [d.message for d in messages if d.level == "warning"]
+    for group in ("rate limit is low", "skipped acme/site@main", "collection", "ls-remote"):
+        assert sum(group in w for w in warnings) == 1, group
+    assert messages[0].message == summary  # the warnings follow it
+    tasks = [d for d in result.diagnostics if isinstance(d, Progress)]
+    if slow:  # the info line and the done line, two kinds (decided 1a)
+        assert tasks[-1].state == "done"
+        assert "1 repo, 1 ref, 1 edge" in tasks[-1].message
+    else:
+        assert tasks == []
+
+
+def _no_flag_hints(result: CliResult) -> None:
+    """``source refresh`` has no ``--refresh`` or ``--cached`` to suggest."""
+    for diagnostic in result.diagnostics:
+        hint = getattr(diagnostic, "hint", None) or ""
+        assert "--refresh" not in hint and "--cached" not in hint, hint
+
+
+def test_source_refresh_that_partly_fails_names_each_repo_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
+) -> None:
+    _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=2))
+    _use_config(tmp_path, monkeypatch, _PROD)
+    fill.result = _partial(n=2, repos=3)
+
+    result = _run("source", "refresh", "prod")
+
+    assert result.exit_code == 1
+    assert _stale(result) == []
+    *items, last = _failures(result)
+    assert [f.item for f in items] == ["acme/r0", "acme/r1"]
+    assert last.message == "refresh completed with 2 repo failures; successes were saved"
+    assert "refreshed source prod: 3 repos" in result.stderr
+    _no_flag_hints(result)
+    assert INDEX.freshness("source:prod").partial
+
+
+@pytest.mark.parametrize("paused", [False, True], ids=["offline", "paused"])
+def test_source_refresh_that_fails_over_cached_data_fails_without_a_stale_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill, paused: bool
+) -> None:
+    _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=2))
+    _use_config(tmp_path, monkeypatch, _PROD)
+    if paused:
+        fill.result = RefreshResult(
+            source_key="", completed=False, pause_reason="rate limit is low", repos=2, refs=0,
+            edges=0,
+        )  # fmt: skip
+    else:
+        fill.error = _OFFLINE
+
+    result = _run("source", "refresh", "prod")
+
+    assert result.exit_code == 5
+    assert _stale(result) == []
+    [failure] = _failures(result)
+    assert failure.hint == ("rerun to resume; finished repos are skipped" if paused else None)
+    _no_flag_hints(result)
+
+
+def test_source_refresh_after_another_run_refreshed_it_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
+) -> None:
+    """The lock's last holder refreshed the source while this run waited for it."""
+    _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=2))
+    _use_config(tmp_path, monkeypatch, _PROD)
+    # what the waiting run finds once it holds the lock: a refresh newer than its own start
+    INDEX.seed("source:prod", refreshed_at=datetime.now(UTC) + timedelta(minutes=1))
 
     result = _run("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
-    infos = [d for d in result.diagnostics if isinstance(d, Message) and d.level == "info"]
-    assert [d.message for d in infos] == [
-        "refreshed source prod: 1 repo, 1 ref, 1 edge, 1 changed, 0 unchanged"
-    ]
-    warnings = [d.message for d in result.diagnostics if isinstance(d, Message)]
-    assert sum("rate limit is low" in w for w in warnings) == 1
-    assert sum("collection" in w for w in warnings) == 1
+    assert fill.keys == []
+    infos = [d.message for d in result.diagnostics if isinstance(d, Message)]
+    assert infos == ["source prod was refreshed by another run while this one waited"]
 
 
 def test_source_refresh_that_fails_for_all_repos_keeps_the_last_refresh(
@@ -575,10 +751,11 @@ def test_source_status_reports_the_cache_freshness(
     }
     _seed(tmp_path, "source:fresh", _edge(), ago=timedelta(hours=1))
     _seed(tmp_path, "source:old", _edge(), ago=timedelta(hours=30))
-    _seed(tmp_path, "source:failed", _edge(), ago=timedelta(hours=30))
+    # an hour old: stale from the failed --refresh it remembers, not from its age
+    _seed(tmp_path, "source:failed", _edge(), ago=timedelta(hours=1))
     _use_config(tmp_path, monkeypatch, sources)
     fill.error = _OFFLINE
-    _run("impact", "acme/base", "--source", "failed")
+    _run("impact", "acme/base", "--source", "failed", "--refresh")
 
     result = _run("source", "status", "-f", "json")
 
