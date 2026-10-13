@@ -70,10 +70,8 @@ class StubIndex:
         *,
         cached_refs: dict[str, set[str]] | None = None,
         cached_ref_metadata: dict[str, tuple[CachedRef, ...]] | None = None,
-        stale: bool = False,
     ) -> None:
         self.edges = edges
-        self.stale = stale
         self.metadata = cached_ref_metadata or {}
         if cached_refs is None:
             cached_refs = {}
@@ -107,9 +105,6 @@ class StubIndex:
         self.point_reads += 1
         return self.dependent_edges(repo, ref)
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        return self.stale
-
     def cached_refs(self, repo: str, *, source_key: str | None) -> set[str]:
         return set() if source_key is None else set(self.refs.get(repo, set()))
 
@@ -142,7 +137,7 @@ def _edges(graph: DependencyGraph) -> list[tuple[str, str, str]]:
     return [(edge.source_id, edge.target_id, edge.relation) for edge in graph.edges]
 
 
-def test_build_graph_includes_dependencies_impact_unresolved_and_stale_warning() -> None:
+def test_build_graph_includes_dependencies_impact_and_unresolved() -> None:
     index = StubIndex(
         [
             _dep("acme/base", "acme/users", ref="v1"),
@@ -156,7 +151,6 @@ def test_build_graph_includes_dependencies_impact_unresolved_and_stale_warning()
             ),
             _dep("acme/site", "acme/base", ref="release/1", version="v1"),
         ],
-        stale=True,
     )
 
     graph = _build(index, "acme/base", "v1", source_key="source:prod", direction="both", depth=1)
@@ -172,10 +166,7 @@ def test_build_graph_includes_dependencies_impact_unresolved_and_stale_warning()
         ("acme/base@v1", "unresolved:common", "requires"),
         ("acme/site@release/1", "acme/base@v1", "impacts"),
     ]
-    assert graph.warnings == (
-        "source data is stale; refresh it before relying on upstream impact",
-        "unresolved dependency common from acme/base@v1 in meta/main.yml",
-    )
+    assert graph.warnings == ("unresolved dependency common from acme/base@v1 in meta/main.yml",)
 
 
 @pytest.mark.parametrize(
@@ -374,7 +365,6 @@ def test_uncached_transitive_ref_warns_and_stops_with_optional_refresh_hint(
     index = StubIndex(
         [_dep("acme/a", "acme/b", version="v1"), _dep("acme/b", "acme/c")],
         cached_refs={"acme/a": {"main"}, "acme/b": {"main"}},
-        stale=True,
     )
 
     graph = _build(
@@ -392,8 +382,6 @@ def test_uncached_transitive_ref_warns_and_stops_with_optional_refresh_hint(
         ("acme/a@main", "acme/b@v1")
     ]
     assert graph.warnings == (
-        f"source data is stale; refresh it before relying on upstream impact{'.' if hint else ''}"
-        f"{suffix}",
         "not expanding acme/b@v1 from cached source data: ref is not cached "
         f"(available refs: main). Scan the matching ref/tag or use --live for downstream.{suffix}",
     )

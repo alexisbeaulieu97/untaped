@@ -169,9 +169,6 @@ class GithubDependencyIndex:
         wrapped = self._wrapped.cached_ref_metadata_batch(repos, source_key=source_key)
         return {repo: self._with_live_refs(repo, metadata) for repo, metadata in wrapped.items()}
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        return self._wrapped.is_stale(source_key, max_age_seconds=max_age_seconds)
-
     def _with_live_refs(
         self,
         repo: str,

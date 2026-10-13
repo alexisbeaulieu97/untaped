@@ -111,13 +111,11 @@ DESCRIPTIONS: dict[str, str] = {
     "unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it.",
     "awx.test_parallel": "Default `test run --parallel`.",
     "ansible.index_path": "SQLite cache of refreshed source data.",
-    "ansible.stale_after_seconds": "Seconds after which `source status` reports a source as "
-    "`stale`.",
     "ansible.default_source": "Saved source `deps`, `impact`, `find` and `graph` use when "
     "no `--source` or inline selector is given.",
     "ansible.ref_scan_default": "Refs a source scans: `all` refs or each repo's default branch.",
     "ansible.source_refresh_backend": "Ref probe backend for source refresh.",
-    "ansible.git_fetch_parallel": "Default `--parallel` for `source refresh` and `--refresh`.",
+    "ansible.git_fetch_parallel": "Default `--parallel` of a source refresh.",
     "ansible.probe_parallel": "Concurrent ref probes during source refresh.",
     "ansible.source_refresh_repo_batch_size": "Repos committed per source refresh batch.",
     "ansible.source_refresh_rate_limit_floor": "Stop a refresh (resumable) when the GraphQL "

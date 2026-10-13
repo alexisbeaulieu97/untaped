@@ -58,9 +58,9 @@ list their fields with `--columns '?'`. What the fields do not say:
 - A live read that fails for one repo (deleted repo or tag, lost access)
   becomes a warning and leaves that node unexpanded. A rejected token and
   rate limits abort the command instead.
-- Collections in requirements files are not followed. `source refresh`,
-  `--refresh` and local targets print one warning listing them; live GitHub
-  reads do not.
+- Collections in requirements files are not followed. Any source refresh
+  (`source refresh`, or one a graph command runs) and local targets print one
+  warning listing them; live GitHub reads do not.
 - Cycles are found only inside the graph that was walked; use `--depth
   unlimited` (the default) when looking for long loops.
 

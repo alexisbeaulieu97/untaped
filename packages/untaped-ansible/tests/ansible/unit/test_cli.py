@@ -17,7 +17,7 @@ import pytest
 import respx
 import yaml
 
-from untaped.sdk import Progress
+from untaped.sdk import Failure, Progress, StaleData
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, progress_clock
 from untaped_ansible.application.refresh_git_index import RefreshResult
@@ -65,7 +65,6 @@ def _use_config(
     profile: dict[str, object] = {
         "ansible": {
             "index_path": str(tmp_path / "index.sqlite3"),
-            "stale_after_seconds": 86400,
             **(ansible or {}),
         }
     }
@@ -225,6 +224,12 @@ def _fake_refresh(
         seeded = edges(source) if callable(edges) else edges
         if seeded:
             _seed_index(index, source_key, seeded)
+        elif result is None or (result.completed and len(result.failures) < result.repos):
+            # A completed refresh always leaves the source's row, as the real one does.
+            repos = frozenset(index.source_repos(source_key))
+            index.complete_source_ref_refresh(
+                source_key, source_repos=repos, scanned_at=datetime.now(UTC)
+            )
         if result is not None:
             return result.model_copy(update={"source_key": source_key})
         return RefreshResult(
@@ -654,7 +659,6 @@ def test_source_status_classifies_sources_with_utc_timestamps(tmp_path: Path, mo
                 {"name": "stale", "repos": ["acme/base"]},
             ]
         },
-        ansible={"stale_after_seconds": 60},
     )
 
     result = _run("source", "status", "--format", "json")
@@ -665,6 +669,9 @@ def test_source_status_classifies_sources_with_utc_timestamps(tmp_path: Path, mo
     assert rows["unindexed"]["state"] == "not_refreshed"
     assert rows["stale"]["state"] == "stale"
     assert rows["stale"]["scanned_at"] == "2026-01-02T03:04:05.000678Z"
+    # Seeded from the index on first read: the last refresh's time.
+    assert rows["stale"]["refreshed_at"] == "2026-01-02T03:04:05.000678Z"
+    assert (rows["stale"]["stale"], rows["unindexed"]["refreshed_at"]) == (True, None)
     assert missing.exit_code == 1
     assert "source not found: 'missing'" in missing.output
 
@@ -675,23 +682,25 @@ def test_source_status_classifies_sources_with_utc_timestamps(tmp_path: Path, mo
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["--source", "platform", "--refresh", "--cached"], "Mutually exclusive arguments"),
+        (["--source", "platform", "--refresh", "--cached"], "--cached specified multiple times"),
         (["--source", "platform", "--cached", "--live"], "Mutually exclusive arguments"),
         (["--source", "platform", "--refresh", "--live"], "Mutually exclusive arguments"),
-        (["--refresh"], "--refresh requires --source or inline source selectors"),
-        (["--refresh", "--path", _REQS], "--refresh requires --source or inline source"),
-        (["--refresh", "--ref-kind", "heads"], "--refresh requires --source or inline source"),
-        (["--refresh", "--ref-pattern", "v*"], "--refresh requires --source or inline source"),
-        (
-            ["--refresh", "--ref-scan-default", "default_branch"],
-            "--refresh requires --source or inline source",
-        ),
+        (["--refresh"], "--refresh needs a source; select one with --source NAME"),
+        (["--cached"], "--cached needs a source; select one with --source NAME"),
+        (["--backend", "git"], "--backend needs a source; select one with --source NAME"),
+        (["--refresh", "--path", _REQS], "--refresh needs a source"),
+        (["--refresh", "--ref-kind", "heads"], "--refresh needs a source"),
+        (["--refresh", "--ref-pattern", "v*"], "--refresh needs a source"),
+        (["--refresh", "--ref-scan-default", "default_branch"], "--refresh needs a source"),
         (["--source", "platform", "--org", "acme"], "--source cannot be combined with --org"),
         (
             ["--source", "platform", "--ref-scan-default", "default_branch"],
             "--ref-scan-default",
         ),
-        (["--source", "platform", "--backend", "git"], "--backend requires --refresh"),
+        (
+            ["--source", "platform", "--cached", "--backend", "git"],
+            "--backend needs a refresh; drop --cached",
+        ),
         (["--source", "platform", "--refresh", "--depth", "abc"], "--depth"),
         (["--source", "platform", "--refresh", "--depth=-1"], "--depth must be >= 0"),
     ],
@@ -806,7 +815,7 @@ def test_graph_tree_follows_ascii_theme_and_keeps_warnings_on_stderr(
     _seed(tmp_path, "source:platform", _edge(dependency_repo="acme/cached"), scanned_at=old)
     _use_config(tmp_path, monkeypatch, _PLATFORM, ui={"theme": "plain"})
 
-    result = _run("graph", "acme/site", "--source", "platform")
+    result = _run("graph", "acme/site", "--source", "platform", "--cached")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines()[:5] == [
@@ -818,7 +827,7 @@ def test_graph_tree_follows_ascii_theme_and_keeps_warnings_on_stderr(
         "    `-- acme/cached ...  roles/requirements.yml · unpinned · not read: ref not cached",
     ]
     assert "warning" not in result.stdout
-    assert "warning: source data is stale" in result.stderr
+    assert "warning: source platform: cached data from 2026-01-01" in result.stderr
 
 
 def test_graph_tree_out_file_is_plain_text(tmp_path: Path, monkeypatch) -> None:
@@ -874,8 +883,10 @@ def test_graph_downstream_with_source_live_flag_reads_remote_dependencies(
     [
         (True, "--direction=up", "acme/site  source platform · depth 1"),
         (True, "--direction=both", "acme/site  source platform, downstream live · depth 1"),
-        # Uncached source: upstream is omitted, so only live reads remain.
-        (False, "--direction=both", "acme/site  live reads · depth 1"),
+        # Never refreshed: the upstream half refreshes the source first.
+        (False, "--direction=both", "acme/site  source platform, downstream live · depth 1"),
+        # Downstream only: the source is never read, so only live reads remain.
+        (False, "--direction=down", "acme/site  live reads · depth 1"),
     ],
 )
 def test_graph_header_names_what_the_build_read(
@@ -884,6 +895,7 @@ def test_graph_header_names_what_the_build_read(
     if cached:
         _seed(tmp_path, "source:platform", _edge("acme/app", "acme/site"))
     _use_config(tmp_path, monkeypatch, _PLATFORM, token=True)
+    refreshed = _fake_refresh(monkeypatch)
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
@@ -893,6 +905,7 @@ def test_graph_header_names_what_the_build_read(
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines()[0] == header
+    assert len(refreshed) == (not cached and direction == "--direction=both")
 
 
 def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monkeypatch) -> None:
@@ -911,46 +924,30 @@ def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monk
 
 
 @pytest.mark.parametrize(
-    ("args", "expected", "absent"),
+    ("args", "live_hint"),
     [
-        (
-            ["acme/base", "--source", "platform", "--direction=up", "--cached"],
-            [
-                "untaped ansible source refresh platform",
-                "untaped ansible graph acme/base --source platform --direction up --refresh",
-            ],
-            [],
-        ),
-        (
-            ["acme/base", "--source", "platform", "--direction=down"],
-            ["--source platform --direction down --refresh", "--live"],
-            ["--direction=up"],
-        ),
-        (
-            ["acme/base", "--source", "platform", "--direction=both"],
-            ["untaped ansible source refresh platform"],
-            [],
-        ),
-        (["acme/base", "--source", "platform", "--source", "ops", "--direction=up"], [], []),
-        (["acme/deploy", "--source", "platform", "--source", "ops", "--direction=down"], [], []),
-        (["acme/base", "--source", "platform", "--source", "ops", "--cached"], [], []),
+        (["acme/base", "--source", "platform", "--direction=up"], False),
+        (["acme/base", "--source", "platform", "--direction=down"], True),
+        (["acme/base", "--source", "platform", "--direction=both"], False),
+        (["acme/base", "--source", "ops", "--source", "platform", "--direction=up"], False),
     ],
 )
-def test_graph_missing_source_cache_fails_naming_the_source(
-    tmp_path: Path, monkeypatch, args: list[str], expected: list[str], absent: list[str]
+def test_graph_cached_on_a_never_refreshed_source_fails_naming_it(
+    tmp_path: Path, monkeypatch, args: list[str], live_hint: bool
 ) -> None:
     _seed(tmp_path, "source:ops", _edge("acme/deploy"))
     _use_config(tmp_path, monkeypatch, _TWO_SOURCES)
+    calls = _fake_refresh(monkeypatch)
 
-    result = _run("graph", *args)
+    result = _run("graph", *args, "--cached")
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "no cached source data found for source 'platform'" in result.stderr
-    for text in expected:
-        assert text in result.stderr
-    for text in absent:
-        assert text not in result.stderr
+    assert calls == []
+    [failure] = [d for d in result.diagnostics if isinstance(d, Failure)]
+    assert failure.details == {"cache": "ansible.index", "key": "source:platform"}
+    assert "no cached source data for source platform" in failure.message
+    assert ("--live" in (failure.hint or "")) is live_hint
 
 
 @pytest.mark.parametrize(
@@ -959,10 +956,13 @@ def test_graph_missing_source_cache_fails_naming_the_source(
         (["--direction=up"], "upstream requires --source NAME, inline selectors"),
         (["--source", "nope"], "source not found: 'nope'; known: ops, platform"),
         (
-            ["--source", "platform", "--source", "ops"],
-            "no cached source data found for sources 'platform', 'ops'. Run: ",
+            ["--source", "platform", "--source", "ops", "--cached"],
+            "no cached source data for source platform; drop --cached to refresh it",
         ),
-        (["--org", "acme", "--direction=up"], "no cached source data found for inline source"),
+        (
+            ["--org", "acme", "--direction=up", "--cached"],
+            "no cached source data for inline source --org acme",
+        ),
     ],
 )
 def test_graph_unusable_source_selection_fails(
@@ -978,7 +978,7 @@ def test_graph_unusable_source_selection_fails(
 
 
 @pytest.mark.parametrize("age", [timedelta(0), timedelta(hours=3), timedelta(days=400)])
-def test_graph_with_sources_uses_cache_without_refreshing(
+def test_graph_cached_reads_sources_without_refreshing(
     tmp_path: Path, monkeypatch, age: timedelta
 ) -> None:
     _seed(tmp_path, "source:platform", _edge(), scanned_at=datetime.now(UTC) - age)
@@ -989,28 +989,32 @@ def test_graph_with_sources_uses_cache_without_refreshing(
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         result = _run(
             "graph", "acme/base", "--source", "platform", "--source", "ops", "--direction=up",
-            "--parallel", "4",
+            "--parallel", "4", "--cached",
         )  # fmt: skip
         assert len(mock.calls) == 0
 
     assert result.exit_code == 0, result.output
     assert calls == []
     assert _tree(result.stdout) == ["acme/deploy@main", "acme/site@main"]
-    # Nothing refreshed: stderr carries only the stale-data warning (ops is old).
-    assert result.stderr.startswith("warning: source data is stale")
-    assert len(result.stderr.splitlines()) == 1
+    # Nothing refreshed: stderr carries only a stale line per source past its max age.
+    stale = {d.key for d in result.diagnostics if isinstance(d, StaleData)}
+    old = {"source:ops", *(["source:platform"] if age > timedelta(days=1) else [])}
+    assert stale == old
+    assert len(result.diagnostics) == len(old)
 
 
-def test_graph_stale_warning_includes_exact_refresh_command(tmp_path: Path, monkeypatch) -> None:
+def test_graph_cached_on_stale_data_emits_one_stale_line(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path, "source:platform", _edge(), scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
-    _use_config(tmp_path, monkeypatch, _PLATFORM, ansible={"stale_after_seconds": 60})
+    _use_config(tmp_path, monkeypatch, _PLATFORM)
 
     result = _run("graph", "acme/base", "--source", "platform", "--direction=up", "--cached")
 
     assert result.exit_code == 0, result.output
     assert _tree(result.stdout) == ["acme/site@main"]
-    assert "source data is stale" in result.stderr
-    assert "Run `untaped ansible source refresh platform` to update it." in result.stderr
+    [stale] = result.diagnostics
+    assert isinstance(stale, StaleData)
+    assert (stale.plugin, stale.cache, stale.key) == ("ansible", "ansible.index", "source:platform")
+    assert stale.error is None
 
 
 def test_graph_cached_missing_ref_lists_available_refs_in_display_order(
@@ -1210,7 +1214,7 @@ def test_inline_source_cache_key_is_order_insensitive(tmp_path: Path, monkeypatc
     assert len(calls) == 1
 
 
-def test_graph_refresh_with_partial_failures_warns_and_proceeds(
+def test_graph_refresh_with_partial_failures_warns_with_a_stale_line(
     tmp_path: Path, monkeypatch
 ) -> None:
     _use_config(tmp_path, monkeypatch, _PLATFORM)
@@ -1224,18 +1228,21 @@ def test_graph_refresh_with_partial_failures_warns_and_proceeds(
     result = _run("graph", "acme/base", "--source", "platform", "--direction=up", "--refresh")
 
     assert result.exit_code == 0, result.output
-    assert (
-        "warning: refresh of platform had 1 failure; data for those repos may be stale"
-        in result.stderr
-    )
+    [stale] = [d for d in result.diagnostics if isinstance(d, StaleData)]
+    assert (stale.plugin, stale.key, stale.partial) == ("ansible", "source:platform", True)
+    assert stale.error is not None
+    assert stale.error.details == {"repos": ["acme/gone"]}
     assert _tree(result.stdout) == ["acme/site@main"]
 
 
-def test_graph_refresh_budget_pause_exits_without_rendering_stale_graph(
-    tmp_path: Path, monkeypatch
+@pytest.mark.parametrize("cached", [True, False])
+def test_graph_refresh_budget_pause_serves_cached_data_or_exits(
+    tmp_path: Path, monkeypatch, cached: bool
 ) -> None:
-    _seed(tmp_path, "source:platform", _edge(), scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
+    if cached:
+        _seed(tmp_path, "source:platform", _edge(), scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
     _use_config(tmp_path, monkeypatch, _PLATFORM)
+    reset = datetime(2030, 1, 1, tzinfo=UTC)
     _fake_refresh(
         monkeypatch,
         result=RefreshResult(
@@ -1245,17 +1252,27 @@ def test_graph_refresh_budget_pause_exits_without_rendering_stale_graph(
             repos=2,
             refs=1,
             edges=1,
+            rate_limit_reset_at=reset,
         ),
     )
 
     result = _run("graph", "acme/base", "--source", "platform", "--direction=up", "--refresh")
 
-    assert result.exit_code == 5  # paused at the rate-limit floor: retry later
-    assert result.stdout == ""
-    assert "GitHub GraphQL rate limit is low: 200 points remaining" in result.stderr
+    if cached:
+        # Paused at the rate-limit floor over cached data: served with a warning.
+        assert result.exit_code == 0, result.output
+        assert _tree(result.stdout) == ["acme/site@main"]
+        [stale] = [d for d in result.diagnostics if isinstance(d, StaleData)]
+        assert stale.error is not None
+        assert stale.error.category == "unavailable"
+        assert stale.retry_at == reset
+    else:
+        assert result.exit_code == 5  # nothing cached to serve: retry later
+        assert result.stdout == ""
+        assert "GitHub GraphQL rate limit is low: 200 points remaining" in result.stderr
 
 
-def test_graph_refresh_global_graphql_error_exits_without_rendering_stale_graph(
+def test_graph_refresh_global_graphql_error_serves_cached_data_with_a_warning(
     tmp_path: Path, monkeypatch
 ) -> None:
     _seed(tmp_path, "source:platform", _edge(), scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
@@ -1269,10 +1286,12 @@ def test_graph_refresh_global_graphql_error_exits_without_rendering_stale_graph(
             "--backend", "graphql",
         )  # fmt: skip
 
-    assert result.exit_code == 5  # rate limited: retry later
-    assert result.stdout == ""
+    assert result.exit_code == 0, result.output
+    assert _tree(result.stdout) == ["acme/site@main"]
+    [stale] = [d for d in result.diagnostics if isinstance(d, StaleData)]
+    assert stale.error is not None
+    assert stale.error.category == "unavailable"
     assert result.stderr.count("github graphql rate limit exceeded") == 1
-    assert "API rate limit exceeded" in result.stderr
 
 
 # --- graph: local targets ---------------------------------------------------
@@ -1498,7 +1517,7 @@ def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monk
     result = _run("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
-    assert "refreshed source 'prod': 1 repo, 1 ref, 0 edges" in result.stderr
+    assert "refreshed source prod: 1 repo, 1 ref, 0 edges" in result.stderr
     assert captured["clone_protocol"] == "https"
     assert captured["aliases"] == {"common": "acme/common"}
     assert captured["concurrency"] == 8
@@ -1510,7 +1529,7 @@ def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monk
     [
         (["source", "refresh", "prod", "--parallel", "5"], "concurrency", 5, 0),
         (["source", "refresh", "prod", "--backend", "git"], "backend", "git", 0),
-        # The fake refresh stores nothing, so the graph then misses the cache.
+        # The fake refresh stores nothing: the graph reads an empty source.
         (
             [
                 "graph",
@@ -1524,8 +1543,10 @@ def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monk
             ],
             "backend",
             "git",
-            1,
+            0,
         ),
+        # --backend applies to the refresh auto runs too (a never-refreshed source).
+        (["impact", "acme/base", "--source", "prod", "--backend", "git"], "backend", "git", 0),
     ],
 )
 def test_refresh_overrides_reach_the_git_refresh(
@@ -1540,7 +1561,6 @@ def test_refresh_overrides_reach_the_git_refresh(
     assert captured[key] == value
     if "--parallel" in args:
         assert "1 changed, 0 unchanged" in result.stderr
-        assert "parallel 5" in result.stderr
 
 
 def test_source_refresh_git_backend_skips_unchanged_fetch_and_graphql(
@@ -1555,7 +1575,7 @@ def test_source_refresh_git_backend_skips_unchanged_fetch_and_graphql(
         result = _run("source", "refresh", "prod", "--backend", "git")
 
     assert result.exit_code == 0, result.output
-    assert "refreshed source 'prod': 1 repo, 1 ref" in result.stderr
+    assert "refreshed source prod: 1 repo, 1 ref" in result.stderr
 
 
 def test_source_refresh_partial_failure_exits_nonzero_and_saves_successes(
@@ -1570,7 +1590,7 @@ def test_source_refresh_partial_failure_exits_nonzero_and_saves_successes(
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "refreshed source 'prod':" in result.stderr
+    assert "refreshed source prod:" in result.stderr
     assert "error: acme/gone: " in result.stderr
     assert "refresh completed with 1 repo failure; successes were saved" in result.output
     assert _index(tmp_path).ref_scans("source:prod", "acme/ok", [("heads", "main")])
@@ -1783,7 +1803,7 @@ def test_source_refresh_budget_pause_exits_nonzero_without_repo_failures(
     assert result.stdout == ""
     assert "failed acme/" not in result.stderr
     assert "GitHub GraphQL rate limit is low: 200 points remaining" in result.stderr
-    assert "resume with `untaped ansible source refresh prod`" in result.stderr
+    assert "rerun to resume; finished repos are skipped" in result.stderr
 
 
 def test_source_refresh_global_graphql_error_exits_once_without_per_repo_failures(
@@ -2179,14 +2199,13 @@ def test_find_resolves_targets_before_refreshing(tmp_path: Path, monkeypatch) ->
     assert calls == []
 
 
-def test_find_without_cached_source_data_hints_refresh(tmp_path: Path, monkeypatch) -> None:
+def test_find_cached_without_source_data_says_to_drop_cached(tmp_path: Path, monkeypatch) -> None:
     _use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
 
-    result = _run("find", "acme/target", "--root", "acme/site", "--source", "platform")
+    result = _run("find", "acme/target", "--root", "acme/site", "--source", "platform", "--cached")
 
     assert result.exit_code == 1
-    assert "no cached source data found for source 'platform'" in result.stderr
-    assert "re-run this command with `--refresh`" in result.stderr
+    assert "no cached source data for source platform; drop --cached" in result.stderr
 
 
 def test_find_rejects_records_without_a_repository(tmp_path: Path, monkeypatch) -> None:
@@ -2428,20 +2447,21 @@ def test_default_source_stands_in_for_source(tmp_path: Path, monkeypatch) -> Non
     assert "upstream omitted" not in graph.stderr
 
 
-def test_default_source_without_cache_fails_deps_until_live(tmp_path: Path, monkeypatch) -> None:
+def test_default_source_without_cache_fails_deps_cached_until_live(
+    tmp_path: Path, monkeypatch
+) -> None:
     _use_config(
         tmp_path, monkeypatch, _PLATFORM, token=True, ansible={"default_source": "platform"}
     )
 
-    cached = _run("deps", "acme/site")
+    cached = _run("deps", "acme/site", "--cached")
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site")
         _mock_dependency_file(mock, "acme/base", content="")
         live = _run("deps", "acme/site", "--live", "-f", "json")
 
     assert cached.exit_code == 1
-    assert "no cached source data found for source 'platform'" in cached.stderr
-    assert "untaped ansible deps acme/site --source platform --refresh" in cached.stderr
+    assert "no cached source data for source platform; drop --cached" in cached.stderr
     assert "--live" in cached.stderr
     assert [row[:2] for row in _rows(live)] == [("acme/base", "main")]
 
@@ -2735,4 +2755,4 @@ def test_source_status_table_shows_its_default_columns(tmp_path: Path, monkeypat
 
     header, _ = _table(_run("source", "status"))
 
-    assert header == ["source", "state", "scanned_at", "repos", "refs"]
+    assert header == ["source", "state", "refreshed_at", "repos", "refs"]

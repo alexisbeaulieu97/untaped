@@ -82,9 +82,6 @@ class EmptyIndex:
     ) -> dict[str, tuple[CachedRef, ...]]:
         return {repo: () for repo in repos}
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        return False
-
 
 def _index(github: Any, **kwargs: Any) -> GithubDependencyIndex:
     return GithubDependencyIndex(

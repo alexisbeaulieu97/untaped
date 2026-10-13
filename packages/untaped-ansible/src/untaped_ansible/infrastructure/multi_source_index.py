@@ -124,13 +124,6 @@ class MultiSourceDependencyIndex:
             repo: _merge_ref_metadata(loaded[repo] for loaded in per_source) for repo in requested
         }
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        del source_key
-        return any(
-            self._wrapped.is_stale(selected_key, max_age_seconds=max_age_seconds)
-            for selected_key in self._source_keys
-        )
-
 
 def _merge_ref_metadata(per_source: Iterable[tuple[CachedRef, ...]]) -> tuple[CachedRef, ...]:
     """Union cached ref metadata across sources with first-default-branch wins."""
