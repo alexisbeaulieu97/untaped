@@ -147,7 +147,7 @@ def _owned(
     exports = collect_exports(everything)
     lines: list[Line] = []
     for path, mark in sorted(modules.items()):
-        lines.extend(module_lines(path, mark, exports))
+        lines.extend(module_lines(path, mark, exports, plugin=path not in SDK_MODULES))
     for plugin in result.plugins:
         name = plugin.spec.name
         infos = owned_contracts(plugin.spec)

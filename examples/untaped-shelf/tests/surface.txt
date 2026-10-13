@@ -30,18 +30,15 @@ contract shelf.Source.record object default={}
 contract shelf.book_source abstract=books  [experimental]
 contract shelf.book_source.books() -> Book[]  [experimental]
 contract shelf.book_source.to_book(item: Book) -> Book  [experimental]
+sdk untaped_shelf.api.Book base=untaped.contracts.Issued
+sdk untaped_shelf.api.Book base=untaped.contracts.Record
 sdk untaped_shelf.api.Book(*, title)
 sdk untaped_shelf.api.Book(pages=) default=0
 sdk untaped_shelf.api.Book(source=) default=None
-sdk untaped_shelf.api.Book.__init_subclass__(kind=) default=None
 sdk untaped_shelf.api.Book.pages
-sdk untaped_shelf.api.Book.source
-sdk untaped_shelf.api.Book.table_columns class
 sdk untaped_shelf.api.Book.title
-sdk untaped_shelf.api.BookSource implement=books,ready  [experimental]
+sdk untaped_shelf.api.BookSource base=untaped.contracts.Contract  [experimental]
+sdk untaped_shelf.api.BookSource implement=books  [experimental]
 sdk untaped_shelf.api.BookSource.books() -> Book[]  [experimental]
-sdk untaped_shelf.api.BookSource.http  [experimental]
-sdk untaped_shelf.api.BookSource.own(item)  [experimental]
-sdk untaped_shelf.api.BookSource.ready() -> NotReady?  [experimental]
 sdk untaped_shelf.api.BookSource.to_book(item)  [experimental]
 sdk untaped_shelf.testing.conformance(provider)

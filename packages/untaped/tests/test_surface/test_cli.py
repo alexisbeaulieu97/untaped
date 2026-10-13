@@ -8,8 +8,9 @@ from typing import Annotated, Literal
 import pytest
 from cyclopts import App, Parameter
 
+from untaped.bootstrap import build_root_app, kept_composition
 from untaped.stability import apply_marks, deprecated_alias, experimental
-from untaped.surface._cli import subtree_lines
+from untaped.surface._cli import cli_lines, subtree_lines
 
 
 @Parameter(name="*")
@@ -128,3 +129,16 @@ def test_marks_aliases_and_hidden_commands(lines: set[str]) -> None:
 def test_a_plugin_mark_reaches_every_line() -> None:
     lines = subtree_lines(_root(), "demo", "experimental")
     assert {line.mark for line in lines} == {"experimental", "deprecated"}
+
+
+def test_the_root_lists_its_options_and_cyclopts_built_ins() -> None:
+    with kept_composition(quiet=True):
+        lines = {str(line) for line in cli_lines(build_root_app(candidates=[]), {})}
+    assert {
+        "cli untaped --help switch",
+        "cli untaped --help alias=-h",
+        "cli untaped --version switch",
+        "cli untaped --install-completion",
+        "cli untaped --install-completion --output alias=-o",
+        "cli untaped --profile VALUE default=unset",
+    } <= lines

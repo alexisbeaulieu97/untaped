@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, Protocol
 
 from pydantic import BaseModel
 
+from untaped.sdk import UntapedError
 from untaped.stability import experimental
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ __all__ = [
     "Name",
     "Point",
     "Record",
+    "Refused",
     "Settings",
     "Shout",
     "Teller",
@@ -166,3 +168,16 @@ class Widget:
     @experimental
     def grow(self) -> None:
         self.size += 1
+
+
+class Refused(UntapedError):
+    """A plugin's error: only what it adds is its own."""
+
+    category = "refused"
+
+    def __init__(self, message: str, *, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+    def why(self) -> str:
+        return self.reason

@@ -53,10 +53,21 @@ def subtree_lines(root: App, name: str, mark: MarkName | None) -> list[Line]:
 
 
 def _root_options(root: App) -> Iterator[Line]:
+    """The root's own options, then cyclopts' built-ins: help, version, completion."""
     for argument in root.meta.assemble_argument_collection(parse_docstring=False):
         if not argument.show or argument.field_info.kind is inspect.Parameter.VAR_POSITIONAL:
             continue
         yield from _option(f"cli {ROOT}", argument, None)
+    flags: set[str] = set()
+    for spellings in (root.help_flags, root.version_flags):
+        names = _long_first([spellings] if isinstance(spellings, str) else list(spellings))
+        flags.update(names)
+        if names:
+            yield Line(f"cli {ROOT} {names[0]} switch")
+            yield from (Line(f"cli {ROOT} {names[0]} alias={alias}") for alias in names[1:])
+    for name in sorted(root):
+        if name.startswith("-") and name not in flags:
+            yield from _command(root[name], (ROOT, name), None)
 
 
 def _walk(
@@ -140,7 +151,12 @@ def _positional_name(argument: Any) -> str:
 
 def _positive_names(argument: Any) -> list[str]:
     negatives = set(argument.negatives)
-    return [name for name in argument.names if name not in negatives]
+    return _long_first([name for name in argument.names if name not in negatives])
+
+
+def _long_first(names: list[str]) -> list[str]:
+    """``names`` with the long spellings first, so ``-o``/``--output`` is under ``--output``."""
+    return sorted(names, key=lambda name: not name.startswith("--"))
 
 
 def _many(argument: Any) -> bool:

@@ -19,8 +19,11 @@ its exported name, and anything else as ``<computed>``.
 
 from __future__ import annotations
 
+import collections.abc
 import enum
+import functools
 import json
+import operator
 import re
 import types
 import typing
@@ -75,9 +78,32 @@ def type_token(annotation: object) -> TypeToken:
     Raises pydantic's schema errors for a type with no JSON schema; a caller
     that can name such a type another way catches them (:func:`named_token`).
     """
-    schema = schema_of(annotation)
+    schema = schema_of(bounded(annotation))
     defs = schema.get("$defs", {})
     return TypeToken(_token(schema, defs, top=True), tuple(_choices(schema, defs)))
+
+
+def bounded(annotation: object) -> object:
+    """``annotation`` with each type variable replaced by its bound, or ``object``.
+
+    A type variable promises only its bound, so ``PromptChoice[T]`` reads as
+    ``PromptChoice[object]`` whatever the variable is named.
+    """
+    if isinstance(annotation, typing.TypeVar):
+        bound = annotation.__bound__
+        return object if bound is None else bounded(bound)
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is None or not args or origin is Literal or origin is collections.abc.Callable:
+        return annotation
+    if origin is typing.Annotated:
+        return typing.Annotated[bounded(args[0]), *annotation.__metadata__]  # type: ignore[attr-defined]
+    new = tuple(bounded(arg) for arg in args)
+    if new == args:
+        return annotation
+    if origin in (types.UnionType, typing.Union):
+        return functools.reduce(operator.or_, new)
+    return origin[new[0] if len(new) == 1 else new]
 
 
 def node_token(schema: Mapping[str, Any], defs: Mapping[str, Any]) -> TypeToken:
@@ -101,7 +127,10 @@ def annotation_text(annotation: object) -> str:
     """A stable spelling of a Python annotation: ``Screen``, ``Sequence[str]``, ``A | None``."""
     if annotation is None or annotation is type(None):
         return "None"
-    if isinstance(annotation, typing.TypeVar | typing.ParamSpec):
+    if isinstance(annotation, typing.TypeVar):
+        bound = annotation.__bound__
+        return "object" if bound is None else annotation_text(bound)
+    if isinstance(annotation, typing.ParamSpec):
         return annotation.__name__
     origin = get_origin(annotation)
     args = get_args(annotation)
@@ -142,7 +171,7 @@ def _token(schema: Mapping[str, Any], defs: Mapping[str, Any], *, top: bool = Fa
         return _token(target, defs)
     ref = schema.get("$ref")
     if isinstance(ref, str):
-        return ref
+        return _ref_name(ref, defs)
     if top and schema.get("type") == "object" and "properties" in schema and "title" in schema:
         return str(schema["title"])
     for key in ("anyOf", "oneOf"):
@@ -162,6 +191,14 @@ def _token(schema: Mapping[str, Any], defs: Mapping[str, Any], *, top: bool = Fa
         if isinstance(items, Mapping) and items:
             return f"{_token(items, defs)}[]{_constraints(schema)}"
     return f"{kind}{_constraints(schema)}"
+
+
+def _ref_name(ref: str, defs: Mapping[str, Any]) -> str:
+    """A model's name: its class name, ``M[int]`` for a generic one (not ``M_int_``)."""
+    title = defs.get(ref, {}).get("title")
+    if isinstance(title, str) and title != ref and ref.startswith(title.partition("[")[0] + "_"):
+        return title
+    return ref
 
 
 def _union(members: list[Mapping[str, Any]], defs: Mapping[str, Any]) -> str:

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import enum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypeVar
 
 import pytest
 from pydantic import BaseModel, Field
 
 from untaped.surface._types import (
     COMPUTED,
+    annotation_text,
     choice_text,
     default_text,
     factory_default,
@@ -21,6 +22,10 @@ from untaped.surface._types import (
 
 class Repo(BaseModel):
     name: str
+
+
+_Bounded = TypeVar("_Bounded", bound=int)
+_Free = TypeVar("_Free")
 
 
 class Color(enum.Enum):
@@ -50,6 +55,13 @@ class Color(enum.Enum):
 )
 def test_type_tokens(annotation: object, token: str) -> None:
     assert type_token(annotation).token == token
+
+
+def test_a_type_variable_reads_as_its_bound_or_object() -> None:
+    assert type_token(list[_Bounded]).token == "integer[]"
+    assert type_token(list[_Free] | None).token == "array?"
+    assert annotation_text(dict[str, _Bounded]) == "dict[str, int]"
+    assert annotation_text(_Free) == "object"
 
 
 def test_literal_values_are_choices_not_part_of_the_token() -> None:

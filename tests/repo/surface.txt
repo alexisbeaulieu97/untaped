@@ -107,11 +107,21 @@ cfg workspace.extensions.repo_source.rank.to_repo string[] default=[]  [experime
 cfg workspace.parallel integer(minimum=1)? default=unset  [experimental]
 cfg workspace.workspaces_dir string(format=path) default=~/.untaped/workspaces  [experimental]
 cli untaped --deprecated switch
+cli untaped --help alias=-h
+cli untaped --help switch
+cli untaped --install-completion
+cli untaped --install-completion --output VALUE default=unset
+cli untaped --install-completion --output alias=-o
+cli untaped --install-completion --shell VALUE default=unset
+cli untaped --install-completion --shell choice=bash
+cli untaped --install-completion --shell choice=fish
+cli untaped --install-completion --shell choice=zsh
 cli untaped --profile VALUE default=unset
 cli untaped --quiet alias=-q
 cli untaped --quiet switch
 cli untaped --verbose alias=-v
 cli untaped --verbose switch
+cli untaped --version switch
 cli untaped alias  [deprecated]
 cli untaped alias list  [deprecated]
 cli untaped alias list --columns VALUE... default=unset  [deprecated]
@@ -4312,7 +4322,7 @@ sdk untaped.contracts.Answers.rank_command(plugins@1=) default=None
 sdk untaped.contracts.Answers.take_stale()
 sdk untaped.contracts.Configured()
 sdk untaped.contracts.Configured.settings
-sdk untaped.contracts.Contract implement=ready
+sdk untaped.contracts.Contract implement=
 sdk untaped.contracts.Contract.__init_subclass__(shell=) default=None
 sdk untaped.contracts.Contract.http
 sdk untaped.contracts.Contract.own(item)
@@ -5695,10 +5705,10 @@ sdk untaped.testing.ProgressClock()
 sdk untaped.testing.ProgressClock.advance(seconds)
 sdk untaped.testing.PromptBackend implement=confirm,multiselect,pick_many,secret,select,text
 sdk untaped.testing.PromptBackend.confirm(message: string, *, default: boolean) -> boolean
-sdk untaped.testing.PromptBackend.multiselect(message: string, choices: PromptChoice_TypeVar_[], *, defaults: array) -> array
+sdk untaped.testing.PromptBackend.multiselect(message: string, choices: PromptChoice[], *, defaults: array) -> array
 sdk untaped.testing.PromptBackend.pick_many(request: PickRequest) -> PickResult?
 sdk untaped.testing.PromptBackend.secret(message: string, *, confirmation: boolean) -> string
-sdk untaped.testing.PromptBackend.select(message: string, choices: PromptChoice_TypeVar_[], *, default: any?, search: boolean) -> any
+sdk untaped.testing.PromptBackend.select(message: string, choices: PromptChoice[], *, default: any?, search: boolean) -> any
 sdk untaped.testing.PromptBackend.text(message: string, *, default: string?) -> string
 sdk untaped.testing.ScreenKeys()  [experimental]
 sdk untaped.testing.ScreenKeys(*keys)  [experimental]
@@ -5800,15 +5810,12 @@ sdk untaped_git.api.Adopted.repo
 sdk untaped_git.api.Credential(*, username, password)
 sdk untaped_git.api.Credential.password
 sdk untaped_git.api.Credential.username
-sdk untaped_git.api.GitHost implement=credential,home,ready  [experimental]
-sdk untaped_git.api.GitHost.__init_subclass__(shell=) default=None  [experimental]
+sdk untaped_git.api.GitHost base=untaped.contracts.Contract  [experimental]
+sdk untaped_git.api.GitHost implement=credential,home  [experimental]
 sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
 sdk untaped_git.api.GitHost.for_url(url)  [experimental]
 sdk untaped_git.api.GitHost.home() -> string?  [experimental]
-sdk untaped_git.api.GitHost.http  [experimental]
-sdk untaped_git.api.GitHost.own(item)  [experimental]
 sdk untaped_git.api.GitHost.proxy(url)  [experimental]
-sdk untaped_git.api.GitHost.ready() -> NotReady?  [experimental]
 sdk untaped_git.api.GitUrl
 sdk untaped_git.api.HostAuth(plugin, credential, proxy)
 sdk untaped_git.api.HostAuth.credential
@@ -5895,8 +5902,8 @@ sdk untaped_git.api.RepoStore.worktree_add(branch=) default=None
 sdk untaped_git.api.RepoStore.worktree_add(path, ref)
 sdk untaped_git.api.RepoStore.worktree_owners()
 sdk untaped_git.api.RepoStore.write_worktree_config(worktree, *, profile)
+sdk untaped_git.api.TreeEntry base=untaped.contracts.Record
 sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)
-sdk untaped_git.api.TreeEntry.__init_subclass__(kind=) default=None
 sdk untaped_git.api.TreeEntry.mode
 sdk untaped_git.api.TreeEntry.oid
 sdk untaped_git.api.TreeEntry.path
@@ -5969,17 +5976,13 @@ sdk untaped_github.api.GithubClient.search_repositories(sort=) default=None
 sdk untaped_github.api.GithubClient.search_users(limit=) default=None
 sdk untaped_github.api.GithubClient.search_users(q)
 sdk untaped_github.api.GithubClient.search_users(sort=) default=None
+sdk untaped_github.api.GithubGraphqlError base=untaped.sdk.UntapedError
 sdk untaped_github.api.GithubGraphqlError(body=) default=None
 sdk untaped_github.api.GithubGraphqlError(category=) default=None
 sdk untaped_github.api.GithubGraphqlError(details=) default=None
 sdk untaped_github.api.GithubGraphqlError(message, *, kind)
 sdk untaped_github.api.GithubGraphqlError(status_code=) default=None
 sdk untaped_github.api.GithubGraphqlError(url=) default=None
-sdk untaped_github.api.GithubGraphqlError.category class
-sdk untaped_github.api.GithubGraphqlError.details class
-sdk untaped_github.api.GithubGraphqlError.exit_code
-sdk untaped_github.api.GithubGraphqlError.hint class
-sdk untaped_github.api.GithubGraphqlError.retryable
 sdk untaped_github.api.GithubGraphqlError.system class
 sdk untaped_github.api.GithubGraphqlErrorKind choice=auth
 sdk untaped_github.api.GithubGraphqlErrorKind choice=forbidden
@@ -6029,24 +6032,21 @@ sdk untaped_github.api.github_web_host(base_url)
 sdk untaped_github.api.is_global_github_failure(exc)
 sdk untaped_github.api.normalize_team_scopes(orgs=) default=[]
 sdk untaped_github.api.normalize_team_scopes(values)
+sdk untaped_workspace.api.Repo base=untaped.contracts.Issued  [experimental]
+sdk untaped_workspace.api.Repo base=untaped.contracts.Record  [experimental]
 sdk untaped_workspace.api.Repo(*, name, url)  [experimental]
 sdk untaped_workspace.api.Repo(archived=) default=false  [experimental]
 sdk untaped_workspace.api.Repo(default_branch=) default=None  [experimental]
 sdk untaped_workspace.api.Repo(description=) default=None  [experimental]
 sdk untaped_workspace.api.Repo(source=) default=None  [experimental]
-sdk untaped_workspace.api.Repo.__init_subclass__(kind=) default=None  [experimental]
 sdk untaped_workspace.api.Repo.archived  [experimental]
 sdk untaped_workspace.api.Repo.default_branch  [experimental]
 sdk untaped_workspace.api.Repo.description  [experimental]
 sdk untaped_workspace.api.Repo.name  [experimental]
-sdk untaped_workspace.api.Repo.source  [experimental]
-sdk untaped_workspace.api.Repo.table_columns class  [experimental]
 sdk untaped_workspace.api.Repo.url  [experimental]
 sdk untaped_workspace.api.RepoName  [experimental]
-sdk untaped_workspace.api.RepoSource implement=ready,repos  [experimental]
-sdk untaped_workspace.api.RepoSource.http  [experimental]
-sdk untaped_workspace.api.RepoSource.own(item)  [experimental]
-sdk untaped_workspace.api.RepoSource.ready() -> NotReady?  [experimental]
+sdk untaped_workspace.api.RepoSource base=untaped.contracts.Contract  [experimental]
+sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
 sdk untaped_workspace.api.RepoSource.repos() -> Repo[]  [experimental]
 sdk untaped_workspace.api.RepoSource.to_repo(item)  [experimental]
 sdk untaped_workspace.testing.conformance(provider)  [experimental]
