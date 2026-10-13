@@ -38,6 +38,11 @@ CASES = {
         "[experimental]",
         False,
     ),
+    "a required option comes back as a switch": (
+        "cli untaped x get --opt VALUE",
+        "cli untaped x get\ncli untaped x get --opt switch",
+        False,
+    ),
     "a repeatable required option comes back single": (
         "cli untaped x get --tag VALUE...",
         "cli untaped x get\ncli untaped x get --tag VALUE default=unset",
@@ -232,6 +237,16 @@ CASES = {
     "a required keyword becomes optional": (
         "sdk m.f(a, *, b)",
         "sdk m.f(a)\nsdk m.f(b=) default=None",
+        True,
+    ),
+    "a required parameter becomes optional but positional-only": (
+        "sdk m.f(a)",
+        "sdk m.f()\nsdk m.f(a@1/=) default=None",
+        False,
+    ),
+    "a positional-only parameter becomes optional": (
+        "sdk m.f(a, /)",
+        "sdk m.f()\nsdk m.f(a@1/=) default=None",
         True,
     ),
     "a parameter becomes positional-only": (

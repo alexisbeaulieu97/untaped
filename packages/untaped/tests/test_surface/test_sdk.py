@@ -102,6 +102,13 @@ def test_required_keywords_follow_a_star(lines: set[str]) -> None:
     ]
 
 
+def test_a_bare_callable_and_an_optional_positional_only_parameter(lines: set[str]) -> None:
+    assert _of(lines, "hook") == [
+        f"sdk {_NAME}.hook(name, run, /) callback(run, *)",
+        f"sdk {_NAME}.hook(size@3/=) default=0",
+    ]
+
+
 def test_marks(lines: set[str]) -> None:
     assert _of(lines, "preview") == [
         f"sdk {_NAME}.preview()  [experimental]",

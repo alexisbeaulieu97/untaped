@@ -31,9 +31,9 @@ cfg dotfiles.os string? default=unset  [experimental]
 cfg dotfiles.repos_dir string(format=path) default=~/.untaped/dotfiles/repos  [experimental]
 cfg dotfiles.state_dir string(format=path) default=~/.untaped/dotfiles  [experimental]
 cfg dotfiles.tags string[] default=[]  [experimental]
-cfg git.extensions.git_host.rank.credential string[] default=[]
-cfg git.extensions.git_host.rank.home string[] default=[]
-cfg git.extensions.git_host.rank.proxy string[] default=[]
+cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
+cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
+cfg git.extensions.git_host.rank.proxy string[] default=[]  [experimental]
 cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
 cfg git.untaped_helper_first boolean default=false
 cfg github.base_url string default=https://api.github.com
@@ -5679,7 +5679,7 @@ sdk untaped.sdk.unified_diff_text(before, after, *, path)
 sdk untaped.sdk.unsafe_dir(path)
 sdk untaped.sdk.writes()
 sdk untaped.sdk.writes(destructive=) default=false
-sdk untaped.sdk.writes(func@1=) default=None
+sdk untaped.sdk.writes(func@1/=) default=None
 sdk untaped.sdk.yaml_mapping_indent(text)
 sdk untaped.testing.CacheClock(start)
 sdk untaped.testing.CacheClock.advance(by)

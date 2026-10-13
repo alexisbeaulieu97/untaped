@@ -33,6 +33,7 @@ __all__ = [
     "fill",
     "fill_later",
     "gather",
+    "hook",
     "legacy",
     "listing",
     "place",
@@ -83,6 +84,10 @@ def listing(rows: dict[str, Callable[..., object]], *, color: Color = Color.RED)
 
 def place(where: str, at: int = 0, *, near: str, flags: list[str] | None = None) -> None:
     """Required keyword-only after an optional positional."""
+
+
+def hook(name: str, run: Callable, size: int = 0, /) -> None:  # type: ignore[type-arg]
+    """A bare Callable, and an optional positional-only parameter."""
 
 
 @experimental

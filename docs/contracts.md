@@ -206,12 +206,14 @@ def test_shelf_keeps_its_surface() -> None:
   its commands, flags and settings, each contract with its methods'
   parameter and return types, and every model they reach with its fields.
   It fails on an incompatible change, listing the lines that went: a
-  removed or retyped field, a new required field or parameter, a changed
-  constraint, a dropped Literal value, a changed default, or a removed
-  stable method or command. A new method, command, optional parameter or
-  field, Literal value, and anything removed while experimental are
-  compatible and rewrite the file. To accept a breaking change in a major
-  release, delete the file. Commit it.
+  removed or retyped field, a new required field, a changed constraint, a
+  dropped Literal value, a changed default, a removed stable command or
+  method, a new abstract method, or any change to a contract method's
+  signature, since every provider must match it exactly. A new optional
+  method, optional payload field or Literal value, a new command or
+  optional flag, and anything removed while experimental are compatible
+  and rewrite the file. To accept a breaking change in a major release,
+  delete the file. Commit it.
 - An owner may ship checks every provider must pass as a
   `conformance(provider)` function in its `testing` module
   (`untaped_shelf.testing`); `untaped plugin check` runs it on each ready
