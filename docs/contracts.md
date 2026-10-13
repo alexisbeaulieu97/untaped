@@ -124,10 +124,10 @@ repo name nobody could look up as not found, naming the setting to set).
   prints when the answer is used: `select_one` prints it for the match it
   returns, and any other reading of the answers prints it the first time;
   a stale absence fails with the provider's error alone, or, when a match
-  ranked above it wins, warns with that error and keeps the line until the
-  provider's answer is used. A consumer that
-  reports staleness itself takes the lines first with
-  `Answers.take_stale()` and prints, drops or raises them.
+  ranked above it wins, warns with that error and keeps the line for the
+  next reading of the answers. A consumer that reports staleness itself
+  takes the lines first with `Answers.take_stale()` and prints, drops or
+  raises them.
 - A quarantined provider, or one that returned invalid items, is skipped
   with a warning when unranked and fails when ranked.
 - Otherwise no match exits 2 (not found), and several matches with nothing
