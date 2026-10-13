@@ -206,10 +206,11 @@ def test_shelf_keeps_its_surface() -> None:
   its commands, flags and settings, each contract with its methods'
   parameter and return types, and every model they reach with its fields.
   It fails on an incompatible change, listing the lines that went: a
-  removed or retyped field, a new required field, a changed constraint, a
-  dropped Literal value, a changed default, a removed stable command or
-  method, a new abstract method, or any change to a contract method's
-  signature, since every provider must match it exactly. A new optional
+  removed or retyped field, a new required field, flag or parameter, a
+  changed constraint, a dropped Literal value, a changed default, a
+  removed stable command or method, a new abstract method, or any change
+  to a contract method's signature, since every provider must match it
+  exactly. A new optional
   method, optional payload field or Literal value, a new command or
   optional flag, and anything removed while experimental are compatible
   and rewrite the file. To accept a breaking change in a major release,

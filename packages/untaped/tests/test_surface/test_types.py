@@ -10,6 +10,7 @@ from typing import Annotated, Literal, TypeVar
 import pytest
 from pydantic import BaseModel, Field
 
+from untaped.surface._contracts import model_lines
 from untaped.surface._types import (
     COMPUTED,
     annotation_text,
@@ -76,8 +77,17 @@ class Page[T](BaseModel):
 
 def test_a_generic_reads_as_name_and_bound_arguments() -> None:
     assert type_token(list[Choice[_Free]]).token == "Choice[object][]"
-    assert type_token(list[Choice[_Bounded]] | None).token == "Choice[int][]?"
-    assert type_token(Page[str]).token == "Page[str]"
+    assert type_token(list[Choice[_Bounded]] | None).token == "Choice[integer][]?"
+    assert type_token(Choice[int]).token == "Choice[integer]"
+    assert type_token(list[Choice[int] | Choice[str]]).token == "Choice[integer]|Choice[string][]"
+    assert type_token(Choice[Literal["a", "b"]]).token == "Choice[string]"
+    assert type_token(Choice[str | None]).token == "Choice[string?]"
+
+
+def test_a_generic_pydantic_model_reads_the_same_way() -> None:
+    assert type_token(Page[str]).token == "Page[string]"
+    assert type_token(Page[_Bounded]).token == "Page[integer]"
+    assert type_token(list[Page[_Free]]).token == "Page[object][]"
 
 
 def test_literal_values_are_choices_not_part_of_the_token() -> None:
@@ -130,3 +140,12 @@ def test_choice_spellings() -> None:
     assert choice_text("json") == "json"
     assert choice_text("two words") == '"two words"'
     assert choice_text(3) == "3"
+
+
+def test_a_payload_field_spells_a_generic_like_a_parameter() -> None:
+    class Holder(BaseModel):
+        choices: list[Choice[int]]
+
+    assert "contract o.Holder.choices Choice[integer][]" in {
+        line.text for line in model_lines("contract o.Holder", Holder, None)
+    }
