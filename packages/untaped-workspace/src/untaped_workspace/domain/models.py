@@ -79,7 +79,7 @@ class Checkout(BaseModel):
 
 
 class WorktreeStatus(BaseModel):
-    """Git state of one worktree; ``unpushed`` counts commits no remote branch has.
+    """Git state of one worktree; ``unpushed`` counts commits no remote branch nor base tag has.
 
     ``upstream`` is ``None`` until the branch exists on origin; ``submodules``
     is whether any submodule is initialised in the worktree.
