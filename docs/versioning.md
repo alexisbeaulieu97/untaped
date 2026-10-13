@@ -27,6 +27,9 @@ them. For two installs that disagree about a renamed setting, see
 - The `untaped.sdk`, `untaped.contracts` and `untaped.testing` surface, for
   [plugin authors](./plugins.md), except the
   [experimental](#experimental) objects listed below.
+- Spellings `untaped` writes outside its own process, such as the Git
+  credential helper (`untaped git credential`, with `--profile` before it)
+  in the worktrees it creates, even if hidden.
 
 The pipe envelope is versioned on its own (`"untaped": "1"`) and outlives
 application majors.
@@ -45,6 +48,8 @@ These may change in any release:
   add one, so a plugin's convention test can start failing. Mark a line with
   `# untaped: allow <rule>` to waive that rule there, where the rule
   [allows it](./reference/conventions.md#enforcement).
+- `untaped_recipe.hook_api`, which is versioned on its own by
+  `HOOK_API_VERSION`.
 - Anything not documented, including internal modules, except the record
   fields covered above.
 
@@ -68,6 +73,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   credentials for a Git host.
 - The fixtures in `untaped.testing.git`, for testing a plugin against the
   repo store.
+- `untaped.testing.assert_surface` and the line format of the
+  `surface.txt` it writes.
 - Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,
   `Footer` and the message classes `Key`, `Paste`, `Resize`, `CmdError`,
   `Quit`, `Cancel`, `Back`, `Interrupt`, `NextField`, `PrevField`, `Activate`,
@@ -98,3 +105,6 @@ command) is marked with `@experimental` in the code and listed here, not in a
   record kind or record field.
 - Breaking changes are collected into the next major release, whose changelog
   opens with an upgrade section listing them.
+
+`tests/repo/surface.txt` lists what this page promises, one line per
+promise, and its test fails a minor release that removes a stable line.

@@ -339,13 +339,17 @@ class _Scaffold:
         return (
             f'"""``{self.name}`` follows the conventions and fills {self._contract()}."""\n'
             "\nfrom __future__ import annotations\n\n"
-            "from untaped.testing import assert_fills, check_conventions\n\n"
+            "from pathlib import Path\n\n"
+            "from untaped.testing import assert_fills, assert_surface, check_conventions\n\n"
+            f"from {self.package} import SPEC\n"
             f"from {module} import {self.provider}\n\n"
             f"{samples}"
             f"def test_{short}_follows_the_conventions() -> None:\n"
             f'    check_conventions("{self.name}")\n\n\n'
             f"def test_{short}_fills_{self.info.name}() -> None:\n"
-            f"    {call}\n"
+            f"    {call}\n\n\n"
+            f"def test_{short}_keeps_its_surface() -> None:\n"
+            f'    assert_surface(SPEC, Path(__file__).parent / "surface.txt")\n'
         )
 
 

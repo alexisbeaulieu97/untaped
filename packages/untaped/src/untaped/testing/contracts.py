@@ -1,18 +1,16 @@
-"""Testing contracts: compose fakes, prove a provider fills its contract, snapshot schemas.
+"""Testing contracts: compose fakes and prove a provider fills its contract.
 
-Owners compose a fake provider with :func:`compose_with` and snapshot each
-contract's schemas with :func:`assert_contract_schemas`; providers prove they
-fill a contract with :func:`assert_fills`. Nothing here imports
+Owners compose a fake provider with :func:`compose_with`; providers prove they
+fill a contract with :func:`assert_fills`. An owner guards its contracts'
+schemas with :func:`untaped.testing.assert_surface`. Nothing here imports
 ``untaped.contracts`` until it is called.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -210,43 +208,3 @@ def _resolve(target: object) -> object:
 
     module, _, attribute = target.partition(":")
     return getattr(import_module(module), attribute, None)
-
-
-def assert_contract_schemas(*contracts: type[Contract], snapshots: Path) -> None:
-    """Fail when a contract's schemas changed incompatibly since ``snapshots`` recorded them.
-
-    Writes ``<contract>.json`` (each method's parameter and return schemas,
-    and its stability) under ``snapshots`` when it is missing, and rewrites it
-    after a compatible change: a new method, a new optional parameter or
-    field, a removed experimental method. A removed or retyped field, a new
-    required field or parameter, a changed constraint or a removed stable
-    method fails, listing each change; to accept one deliberately (a major
-    release), delete the snapshot and run again.
-    """
-    from untaped.contracts._declare import contract_of  # noqa: PLC0415
-    from untaped.contracts._schema import contract_schema, schema_changes  # noqa: PLC0415
-
-    failures: list[str] = []
-    for contract in contracts:
-        info = contract_of(contract)
-        if info is None or info.cls is not contract:
-            raise TypeError(f"{contract!r} is not a contract declaration")
-        path = snapshots / f"{info.name}.json"
-        current = contract_schema(info)
-        try:
-            recorded = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            recorded = None
-        if recorded is not None:
-            changes = schema_changes(recorded, current)
-            if changes:
-                failures += [f"  {info.name}.{change}" for change in changes]
-                continue
-            if recorded == current:
-                continue
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    assert not failures, (
-        "incompatible contract changes (delete the snapshot to accept them in a major release):\n"
-        + "\n".join(failures)
-    )
