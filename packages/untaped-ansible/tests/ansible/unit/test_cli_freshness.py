@@ -786,6 +786,28 @@ def test_source_status_reports_the_cache_freshness(
     }
 
 
+def test_source_refresh_after_another_run_left_a_partial_refresh_fails_with_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
+) -> None:
+    _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=2))
+    _use_config(tmp_path, monkeypatch, _PROD)
+    fill.result = _partial(n=1, repos=2)
+    # the run this one waits on: it started later and finished partial
+    with cache_clock(datetime.now(UTC) + timedelta(minutes=1)):
+        assert _impact("--refresh").exit_code == 0
+    fill.result = None
+
+    result = _run("source", "refresh", "prod")
+
+    assert result.exit_code == 1
+    assert fill.keys == ["source:prod"]  # only the other run's fill
+    infos = [d.message for d in result.diagnostics if isinstance(d, Message)]
+    assert infos == ["source prod was refreshed by another run while this one waited"]
+    [failure] = _failures(result)
+    assert failure.hint == "rerun `untaped ansible source refresh prod` to retry"
+    _no_flag_hints(result)
+
+
 # --- the setting --------------------------------------------------------------
 
 

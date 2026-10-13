@@ -449,7 +449,7 @@ def source_refresh_command(
                 record=record,
                 warn=False,
             )
-        except UntapedError:
+        except UntapedError as exc:
             result, error = record.results.get(key), record.errors.get(key)
             if result is not None and error is None:
                 # partial: serve() raised its failure over the saved successes
@@ -460,12 +460,20 @@ def source_refresh_command(
                 warn_refresh(result, settings)
             if error is not None:
                 raise error from None  # the fill's own, without serve()'s hint to --cached
-            raise  # no fill ran here: the lock never came, or a run it waited on left an error
+            if exc.details.get("key") == key:
+                # serve() raised what the run this one waited on left (partial, failed)
+                _diag.info(_refreshed_meanwhile(name))
+                exc.hint = f"rerun `untaped ansible source refresh {shlex.quote(name)}` to retry"
+            raise  # else no fill ran: the lock never came
         if key not in served.filled:
             # the lock's last holder refreshed it while this run waited: serve() kept that
-            _diag.info(f"source {name} was refreshed by another run while this one waited")
+            _diag.info(_refreshed_meanwhile(name))
             return
         _report_refresh(name, record.results[key], settings)
+
+
+def _refreshed_meanwhile(name: str) -> str:
+    return f"source {name} was refreshed by another run while this one waited"
 
 
 def _report_refresh(name: str, result: RefreshResult, settings: AnsibleSettings) -> None:
