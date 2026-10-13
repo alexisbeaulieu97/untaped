@@ -94,7 +94,7 @@ class WorkspaceStatus:
                 **common, branch=spec.branch, state="cache_missing", blockers=(NOT_STORED,)
             )
         try:
-            status = self._git.status(root / spec.dir, branch=spec.branch)
+            status = self._git.status(root / spec.dir, branch=spec.branch, base=spec.base)
         except UntapedError as exc:
             reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
             return StatusRow(
