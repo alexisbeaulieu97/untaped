@@ -6,8 +6,9 @@ import json
 import os
 import threading
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -26,11 +27,12 @@ from test_contracts.support import (
 from test_contracts.support import write_config as configure
 from untaped.cache import RETRY_AFTER
 from untaped.contracts import Failed, Ok, Skipped, gather, select_one
+from untaped.contracts._cache import _Call
 from untaped.contracts._declare import contract_of
 from untaped.contracts._gather import Answers
 from untaped.contracts._registry import Provider, offers
 from untaped.errors import HttpTransportError, UntapedError
-from untaped.output.diagnostic import Diagnostic, Message, Progress, StaleData
+from untaped.output.diagnostic import Diagnostic, Failure, Message, Progress, StaleData
 from untaped.output.sink import diagnostics_scope, recording
 from untaped.testing import CacheClock, ProgressClock, cache_clock, progress_clock
 
@@ -117,6 +119,22 @@ def test_a_match_ranked_above_a_stale_absence_warns_without_a_stale_line(
     assert warning.message == "library failed (HTTP 503); using a match ranked above it"
 
 
+def test_a_stale_line_a_warning_left_is_said_when_the_same_answers_use_its_match(
+    clock: CacheClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stale_library(clock)
+    Shop.rows = [Book(title="Ulysses")]
+    monkeypatch.setattr("untaped.contracts._gather.ranking", lambda *_: ("shop", "library"))
+    with recording() as emitted, diagnostics_scope():
+        answers = gather(BookSource.books)()  # one ask for two names, as `--repo a --repo b`
+        select_one(answers, _titled("Ulysses"))  # type: ignore[arg-type]
+        assert _stale(emitted) == []
+        found = select_one(answers, _titled("Dune"))  # type: ignore[arg-type]
+    assert found.title == "Dune"
+    [line] = _stale(emitted)
+    assert line.plugin == "library"
+
+
 def test_a_stale_listing_says_its_line_on_first_iteration_or_index_and_never_twice(
     clock: CacheClock,
 ) -> None:
@@ -182,6 +200,41 @@ def test_a_provider_called_outside_gather_says_its_line_at_the_call(clock: Cache
     assert (line.plugin, line.cache) == ("library", "shelf.book_source_books")
 
 
+def test_a_provider_exception_reaches_the_caller_with_its_own_cause() -> None:
+    compose(shelf_spec(), library_spec())
+    configure(LIBRARY_CONFIG)
+    root = KeyError("root")
+    try:
+        raise RuntimeError("boom") from root
+    except RuntimeError as exc:
+        Library.error = exc
+    with pytest.raises(RuntimeError) as caught:
+        _library_provider().instance.books()  # type: ignore[attr-defined]
+    assert caught.value is Library.error
+    assert caught.value.__cause__ is root
+
+
+def test_an_interrupted_refresh_suggests_no_cached_option(clock: CacheClock) -> None:
+    class Halting(Library):
+        halt: ClassVar[bool] = False
+
+        def books(self) -> list[Book]:
+            if type(self).halt:
+                raise KeyboardInterrupt
+            return super().books()
+
+    compose(shelf_spec(), library_spec(Halting()))
+    configure(LIBRARY_CONFIG)
+    gather(BookSource.books)()
+    clock.advance(timedelta(hours=2))
+    Halting.halt = True
+    with recording() as emitted, diagnostics_scope(), pytest.raises(KeyboardInterrupt):
+        _library_provider().instance.books()  # type: ignore[attr-defined]
+    [error] = [each for each in emitted if isinstance(each, Failure)]
+    assert error.message == "interrupted while refreshing library"
+    assert error.hint is None  # workspace has no --cached to suggest
+
+
 # --------------------------------------------------------------------------- #
 # The entry and serve() (F9)
 # --------------------------------------------------------------------------- #
@@ -234,6 +287,28 @@ def test_a_changed_schema_refills_under_auto_and_is_no_cache_under_cached() -> N
     [library] = gather(BookSource.books)()
     assert isinstance(library, Ok)
     assert Library.calls == 2
+
+
+def test_an_entry_another_process_replaced_unreadably_fails_the_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compose(shelf_spec(), library_spec())
+    configure(LIBRARY_CONFIG)
+    gather(BookSource.books)()
+    [entry] = _entries()
+    load = _Call.load
+
+    def load_then_replaced(self: _Call) -> None:
+        load(self)
+        sidecar = json.loads(_sidecar(entry).read_text())
+        later = datetime.fromisoformat(sidecar["refreshed_at"]) + timedelta(seconds=1)
+        _sidecar(entry).write_text(json.dumps({**sidecar, "refreshed_at": later.isoformat()}))
+        entry.write_text(json.dumps({**json.loads(entry.read_text()), "schema": "0" * 64}))
+
+    monkeypatch.setattr(_Call, "load", load_then_replaced)
+    with pytest.raises(UntapedError, match="library's cached answer changed while it was read"):
+        _library_provider().instance.books()  # type: ignore[attr-defined]
+    assert Library.calls == 1
 
 
 def test_two_threads_asking_one_stale_answer_make_one_live_call(clock: CacheClock) -> None:

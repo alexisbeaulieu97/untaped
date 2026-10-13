@@ -6,7 +6,8 @@ and reads it through :meth:`Cache.serve`, which decides per key whether to
 refresh (the *directive*), runs the plugin's ``fill`` when it must, reads the
 command's answer once over every key, and says on stderr when that answer
 comes from stale data (one ``untaped.stale`` warning per key), so no caller
-words or forgets it.
+words or forgets it. Inside a provider call ``gather`` made, the warning
+waits for whoever uses the provider's answer (docs/contracts.md).
 
 The directive is ``refresh``: ``None`` (*auto*) refreshes a key past its max
 age, failing fast when upstream is unreachable (:func:`untaped.upstream.fail_fast`);
@@ -76,16 +77,11 @@ class CallState:
 
     ``stale_lines`` are the stale lines the call's caches served: under a
     call state :meth:`Cache.serve` defers them to whoever reads the answer.
-    While the answer cache serves the call, ``answering`` is its cache and
-    ``provider`` the plugin answering; that cache's lines name ``provider``
-    and suggest no option.
     """
 
     refresh: bool | None
     stale: BaseException | None = None
     refreshed_at: datetime | None = None
-    provider: str | None = None
-    answering: Cache | None = None
     stale_lines: list[StaleData] = field(default_factory=list)
 
     def served(self, at: datetime) -> None:
@@ -116,6 +112,29 @@ def refresh_scope() -> bool | None:
     """The directive an enclosing ``gather`` opened, else ``None`` (refresh when stale)."""
     state = _CALL.get()
     return None if state is None else state.refresh
+
+
+_ANSWERING: ContextVar[tuple[Cache, str] | None] = ContextVar("untaped_answering", default=None)
+
+
+@contextmanager
+def answering(cache: Cache, provider: str) -> Iterator[None]:
+    """Serve ``cache`` as the answer cache, answering for ``provider``.
+
+    Its lines name ``provider`` and suggest no option: whoever reads an
+    answer has no ``--refresh``/``--cached`` of the answer cache's own.
+    """
+    token = _ANSWERING.set((cache, provider))
+    try:
+        yield
+    finally:
+        _ANSWERING.reset(token)
+
+
+def _answering_for(cache: Cache) -> str | None:
+    """The provider ``cache`` answers for as the answer cache, else ``None``."""
+    scope = _ANSWERING.get()
+    return scope[1] if scope is not None and scope[0] is cache else None
 
 
 # --------------------------------------------------------------------------- #
@@ -484,7 +503,8 @@ class Cache:
             if exc is failure and freshness.error is not None:
                 # nothing else prints it: the CLI exits 130 bare
                 error = freshness.error
-                if freshness.refreshed_at is not None:  # else the next run fills again
+                # else the next run fills again; the answer cache's reader has no --cached
+                if freshness.refreshed_at is not None and _answering_for(self) is None:
                     hint = "pass --cached to read the cached data without checking"
                     error = error.model_copy(update={"hint": hint})
                 current_sink().emit(error)
@@ -521,8 +541,7 @@ class Cache:
                 else "retry later, or pass --cached to read the cached data"
             )
             raise self._raised(key, state, hint=hint)
-        call = _CALL.get()
-        answer = call if call is not None and call.answering is self else None
+        provider = _answering_for(self)
         for key, state in freshness.items():
             if key in filled and not state.partial:
                 continue  # whole and fresh from this run
@@ -538,9 +557,9 @@ class Cache:
                     now=now,
                     started=started,
                     cached=refresh is False,
-                    plugin=None if answer is None else answer.provider,
+                    plugin=provider,
                     max_age=max_age,
-                    options=answer is None,
+                    options=provider is None,
                 )
                 self._emit_stale(line)
         return Served(

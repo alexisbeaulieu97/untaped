@@ -38,7 +38,15 @@ from typing import Any, TypeVar, get_args, get_origin
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 
-from untaped.cache import Cache, CallState, Filled, Freshness, call_state, current_call
+from untaped.cache import (
+    Cache,
+    CallState,
+    Filled,
+    Freshness,
+    answering,
+    call_state,
+    current_call,
+)
 from untaped.contracts._declare import Binding, Contract, binding_of
 from untaped.errors import UntapedError
 from untaped.fs import atomic_write
@@ -156,18 +164,14 @@ def _answering(provider: str, cache: Cache) -> Iterator[CallState]:
     stale lines are said when the call returns.
     """
     outer = current_call()
-    if outer is None:
-        with call_state(None) as state, _answering(provider, cache) as same:
-            yield same
-        for line in state.stale_lines:
-            current_sink().emit(line)
+    if outer is not None:
+        with answering(cache, provider):
+            yield outer
         return
-    previous = outer.provider, outer.answering
-    outer.provider, outer.answering = provider, cache
-    try:
-        yield outer
-    finally:
-        outer.provider, outer.answering = previous
+    with call_state(None) as state, answering(cache, provider):
+        yield state
+    for line in state.stale_lines:
+        current_sink().emit(line)
 
 
 @dataclass
@@ -219,7 +223,7 @@ class _Call:
         entry = _read(self.path, self.adapter, self.schema)  # refreshed by another process
         if entry is None:
             raise UntapedError(
-                f"{self.plugin}'s cached answer went missing while it was read; run it again",
+                f"{self.plugin}'s cached answer changed while it was read; run it again",
                 system=self.plugin,
                 details={"cache": self.cache.qualified, "key": self.key},
             )
@@ -271,6 +275,8 @@ def call(
                 {key: binding.plugin}, refresh=None, fill=answer.fill, read=answer.read
             )
         except _ProviderBug as exc:
-            raise exc.bug from None
-        answer.record(state, served.freshness[key])
-        return served.value
+            bug = exc.bug
+        else:
+            answer.record(state, served.freshness[key])
+            return served.value
+    raise bug  # outside the except: the provider's exception keeps its own cause and context

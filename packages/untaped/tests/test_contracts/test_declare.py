@@ -215,7 +215,7 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
 
 def test_cached_takes_a_cache_named_after_the_contract_and_method() -> None:
     with pytest.raises(TypeError, match=r"@cached takes a Cache: declare X = Cache"):
-        cached(timedelta(hours=1))  # type: ignore[arg-type]  # 1c's shape
+        cached(lambda self: [])  # type: ignore[arg-type]  # written bare, without its cache
     with pytest.raises(TypeError, match=r"Rows\.rows: @cached takes the cache named 'rows_rows'"):
 
         class Rows(Contract):
