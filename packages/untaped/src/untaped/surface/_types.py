@@ -78,9 +78,36 @@ def type_token(annotation: object) -> TypeToken:
     Raises pydantic's schema errors for a type with no JSON schema; a caller
     that can name such a type another way catches them (:func:`named_token`).
     """
-    schema = schema_of(bounded(annotation))
-    defs = schema.get("$defs", {})
+    annotation = bounded(annotation)
+    schema = schema_of(annotation)
+    defs = _generic_titles(schema.get("$defs", {}), annotation)
     return TypeToken(_token(schema, defs, top=True), tuple(_choices(schema, defs)))
+
+
+def _generic_titles(defs: Mapping[str, Any], annotation: object) -> Mapping[str, Any]:
+    """``defs`` with each parametrized generic titled ``Name[Arg]`` from ``annotation``.
+
+    pydantic names such a def after its own spelling (``PromptChoice_object_``),
+    which a pydantic upgrade may respell; the annotation's spelling is ours.
+    """
+    spellings: dict[str, set[str]] = {}
+    pending = [annotation]
+    while pending:
+        current = pending.pop()
+        origin, args = get_origin(current), get_args(current)
+        if isinstance(origin, type) and args and not _is_builtin(origin):
+            spellings.setdefault(origin.__name__, set()).add(annotation_text(current))
+        pending.extend(arg for arg in args if not isinstance(arg, list))
+    found = dict(defs)
+    for key, value in defs.items():
+        for name, texts in spellings.items():
+            if key.startswith(f"{name}_") and len(texts) == 1 and isinstance(value, Mapping):
+                found[key] = {**value, "title": next(iter(texts))}
+    return found
+
+
+def _is_builtin(origin: type) -> bool:
+    return origin.__module__ in ("builtins", "collections.abc", "typing")
 
 
 def bounded(annotation: object) -> object:
