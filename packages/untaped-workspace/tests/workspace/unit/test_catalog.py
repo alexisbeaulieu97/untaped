@@ -13,6 +13,8 @@ from datetime import timedelta
 import pytest
 
 from untaped.contracts import Ambiguous, Contract, NotReady, Source, gather
+from untaped.output.diagnostic import StaleData
+from untaped.output.sink import diagnostics_scope, recording
 from untaped.sdk import ErrorCategory, UntapedError, UsageError
 from untaped.testing import compose_with
 from untaped_git import SPEC as GIT
@@ -122,20 +124,22 @@ def test_a_match_ranked_above_the_failed_provider_wins_with_a_warning(
     )
 
 
-def test_a_stale_listing_that_has_the_repo_answers_without_an_error(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """S4: github down, but its stored answer has acme/api: github's, no error shown."""
+def test_a_stale_listing_that_has_the_repo_answers_with_one_stale_line() -> None:
+    """S4: github down, but its stored answer has acme/api: github's, said once, no error."""
     rank("github", "gitlab")
     github = Listing(repo("acme/api"))
     with providers(github=[github], gitlab=[Listing(repo("acme/api", GITLAB))]):
         gather(RepoSource.repos)()
         age_answers(timedelta(hours=7))
         github.error = HTTP_503
-        found = _resolve("acme/api")
+        with recording() as emitted, diagnostics_scope():
+            found = _resolve("acme/api")
     assert found.url == "https://github.com/acme/api.git"
     assert github.calls == 2  # the second call failed; the stored answer stood in
-    assert capsys.readouterr().err == ""
+    [stale] = emitted
+    assert isinstance(stale, StaleData)
+    assert (stale.plugin, stale.cache) == ("github", "workspace.repo_source_repos")
+    assert stale.hint is None  # workspace has no --cached to suggest
 
 
 def test_an_expired_token_blocks_with_its_own_category_never_not_found() -> None:
