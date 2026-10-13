@@ -81,10 +81,12 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   `HttpClient`; another library's client is not bounded). Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as
   `unused-method`.
-- **Asking.** `gather(method, refresh=, needs=, deadline=, plugins=)(*args)`
-  returns one `Ok`, `Failed` or `Skipped` per provider (only those `plugins`
-  when given, for an owner that already chose by a cheaper method), in rank
-  order, each item validated once as the owner's model.
+- **Asking.** `gather(method, refresh=, needs=, deadline=, plugins=,
+  progress=)(*args)` returns one `Ok`, `Failed` or `Skipped` per provider
+  (only those `plugins` when given, for an owner that already chose by a
+  cheaper method), in rank order, each item validated once as the owner's
+  model. `progress` counts the providers on the caller's task as they
+  answer; a provider never gets the handle.
   `select_one(answers, matches)` picks one item and raises the deciding
   provider's error, `NotFound` or `Ambiguous`;
   `convert(Contract.bridge_method, envelope)` reads a piped record.

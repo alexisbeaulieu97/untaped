@@ -15,7 +15,7 @@ import difflib
 from collections.abc import Sequence
 
 from untaped.contracts import Answers, NoProviderReady, NotFound, Ok, Skipped, gather, select_one
-from untaped.sdk import UsageError, not_found, q
+from untaped.sdk import NO_PROGRESS, ProgressHandle, UsageError, not_found, q
 from untaped_git.api import GitHost, repo_url_parts
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.naming import looks_like_url, typed_repo, workspace_match
@@ -30,16 +30,17 @@ class RepoSources:
         self._answers: Answers[list[Repo]] | None = None
         self._live: dict[str, Answers[list[Repo]] | None] = {}
 
-    def resolve(self, ident: str) -> Repo:
+    def resolve(self, ident: str, *, progress: ProgressHandle = NO_PROGRESS) -> Repo:
         """The repo ``ident`` names; ``UsageError`` (exit 2) when it is unknown or ambiguous.
 
         A provider's own failure that could hide the match raises with its
         own category and exit code (an expired token is never "not found").
+        ``progress`` counts the providers as they answer, the first time.
         """
         if looks_like_url(ident):
             return self.admit(typed_repo(ident))
         try:
-            answers = self._ask()
+            answers = self._ask(progress)
         except NoProviderReady as exc:
             raise UsageError(not_found("repo", ident), hint=_unasked_hint(exc)) from None
         try:
@@ -101,9 +102,9 @@ class RepoSources:
                 self._live[plugin] = None
         return self._live[plugin]
 
-    def _ask(self) -> Answers[list[Repo]]:
+    def _ask(self, progress: ProgressHandle) -> Answers[list[Repo]]:
         if self._answers is None:
-            self._answers = gather(RepoSource.repos)()
+            self._answers = gather(RepoSource.repos, progress=progress)()
         return self._answers
 
 
