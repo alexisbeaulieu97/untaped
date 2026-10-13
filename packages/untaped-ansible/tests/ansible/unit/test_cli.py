@@ -883,6 +883,8 @@ def test_graph_downstream_with_source_live_flag_reads_remote_dependencies(
     [
         (True, "--direction=up", "acme/site  source platform · depth 1"),
         (True, "--direction=both", "acme/site  source platform, downstream live · depth 1"),
+        # Never refreshed: the upstream half refreshes the source first.
+        (False, "--direction=both", "acme/site  source platform, downstream live · depth 1"),
         # Downstream only: the source is never read, so only live reads remain.
         (False, "--direction=down", "acme/site  live reads · depth 1"),
     ],
@@ -893,6 +895,7 @@ def test_graph_header_names_what_the_build_read(
     if cached:
         _seed(tmp_path, "source:platform", _edge("acme/app", "acme/site"))
     _use_config(tmp_path, monkeypatch, _PLATFORM, token=True)
+    refreshed = _fake_refresh(monkeypatch)
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
@@ -902,6 +905,7 @@ def test_graph_header_names_what_the_build_read(
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines()[0] == header
+    assert len(refreshed) == (not cached and direction == "--direction=both")
 
 
 def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monkeypatch) -> None:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
@@ -22,6 +22,7 @@ from untaped.sdk import (
     HttpSettings,
     ProgressHandle,
     Served,
+    UntapedError,
     most_severe,
     plural,
 )
@@ -85,6 +86,14 @@ class RefreshWiring:
     backend: Backend | None = None
 
 
+@dataclass
+class RefreshRecord:
+    """What each refresh a command ran returned or raised, by key."""
+
+    results: dict[str, RefreshResult] = field(default_factory=dict)
+    errors: dict[str, UntapedError] = field(default_factory=dict)
+
+
 def serve_sources[T](
     selections: Sequence[SelectedSource],
     *,
@@ -92,31 +101,34 @@ def serve_sources[T](
     read: Callable[[], T],
     wiring: RefreshWiring,
     empty: Callable[[T], bool] | None = None,
-    results: dict[str, RefreshResult] | None = None,
+    record: RefreshRecord | None = None,
+    warn: bool = True,
 ) -> Served[T, RefreshResult]:
     """Refresh what ``refresh`` asks for of ``selections``, then answer ``read()``.
 
     Each key's freshness is first brought in line with the index
     (:func:`sync_freshness`). The refresh's warnings (rate limit, skipped
     refs and files, ignored collections, probe fallbacks) print once per
-    refresh, failed ones included; ``results`` collects what each refresh
-    returned, by key, for a caller that reports more.
+    refresh, failed ones included, unless ``warn`` is false; ``record``
+    collects what each refresh returned or raised, for a caller that reports
+    more (and prints the warnings itself, with :func:`warn_refresh`).
     """
     for selection in selections:
         sync_freshness(selection.key, wiring.index)
-    results = {} if results is None else results
+    record = RefreshRecord() if record is None else record
     by_key = {selection.key: selection for selection in selections}
     try:
         return INDEX.serve(
             {selection.key: selection.subject for selection in selections},
             refresh=refresh,
-            fill=_filler(by_key, wiring, results),
+            fill=_filler(by_key, wiring, record),
             read=read,
             empty=empty,
         )
     finally:
-        for result in results.values():
-            _warn_refresh(result, wiring.settings)
+        if warn:
+            for result in record.results.values():
+                warn_refresh(result, wiring.settings)
 
 
 def sync_freshness(key: str, index: SqliteDependencyIndex) -> None:
@@ -140,12 +152,19 @@ def sync_freshness(key: str, index: SqliteDependencyIndex) -> None:
 def _filler(
     selections: Mapping[str, SelectedSource],
     wiring: RefreshWiring,
-    results: dict[str, RefreshResult],
+    record: RefreshRecord,
 ) -> Callable[[str, ProgressHandle], RefreshResult]:
     """The ``fill`` that refreshes one selected source into the index."""
 
     def fill(key: str, progress: ProgressHandle) -> RefreshResult:
-        result = results[key] = refresh_source(
+        try:
+            return _fill(key, progress)
+        except UntapedError as exc:
+            record.errors[key] = exc
+            raise
+
+    def _fill(key: str, progress: ProgressHandle) -> RefreshResult:
+        result = record.results[key] = refresh_source(
             selections[key].definition,
             source_key=key,
             index=wiring.index,
@@ -157,10 +176,9 @@ def _filler(
             backend=wiring.backend,
             progress=progress,
         )
-        if not result.completed:
-            raise _pause_error(result)
-        if result.repos and len(result.failures) == result.repos:
-            raise _all_failed_error(result)
+        error = _fill_error(result)
+        if error is not None:
+            raise error
         return result.model_copy(
             update={
                 "partial": _partial_failure(result),
@@ -170,6 +188,15 @@ def _filler(
         )
 
     return fill
+
+
+def _fill_error(result: RefreshResult) -> AnsibleError | None:
+    """Why ``result`` saved nothing new (a pause, every repo failed), else ``None``."""
+    if not result.completed:
+        return _pause_error(result)
+    if result.repos and len(result.failures) == result.repos:
+        return _all_failed_error(result)
+    return None
 
 
 def _pause_error(result: RefreshResult) -> AnsibleError:
@@ -235,7 +262,8 @@ def fill_summary(result: RefreshResult) -> str:
     )
 
 
-def _warn_refresh(result: RefreshResult, settings: AnsibleSettings) -> None:
+def warn_refresh(result: RefreshResult, settings: AnsibleSettings) -> None:
+    """The refresh's warning groups: rate limit, skipped refs and files, collections, probes."""
     warn_low_rate_limit(result, threshold=settings.source_refresh_rate_limit_floor)
     warn_skipped_files(result)
     warn_ignored_collections(result.ignored_collections)

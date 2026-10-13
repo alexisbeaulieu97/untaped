@@ -47,6 +47,7 @@ from untaped_ansible.application.ports import DependencyIndex
 from untaped_ansible.cli.graph_tree import print_tree, tree_glyphs
 from untaped_ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
+    Backend,
     RefreshWiring,
     SelectedSource,
     format_skipped_dependency_file,
@@ -94,7 +95,7 @@ _diag = Diagnostics()
 GraphDirection = Literal["deps", "impact", "both"]
 GraphCommand = Literal["graph", "deps", "impact", "find"]
 BackendOption = Annotated[
-    Literal["auto", "graphql", "git"] | None,
+    Backend | None,
     Parameter(
         name="--backend",
         help="Ref probe backend for a refresh this command runs: auto, graphql, or git.",
@@ -722,12 +723,14 @@ def _answer[T](
 
 
 def _reads_source(env: _GraphEnv, direction: GraphDirection) -> bool:
-    """Whether a build in ``direction`` reads the selected sources' data."""
+    """Whether a build in ``direction`` reads the selected sources' data.
+
+    Only ``deps --live`` reads nothing of them: ``graph --live`` still reads
+    its upstream half (``impact``) from the index.
+    """
     if not env.graph_source.selections:
         return False
-    return not _should_use_live_dependencies(
-        direction=direction, source_key=env.graph_source.key, live=env.live
-    )
+    return not (env.live and direction == "deps")
 
 
 def _require_repo(env: _GraphEnv, target: str, *, target_repo: str | None = None) -> str:
@@ -1200,7 +1203,7 @@ def _graph_for_target(
 
 
 def _refresh_hint(source_state: _GraphSource) -> str | None:
-    """Compose the exact fix command surfaced in stale/missing-ref warnings."""
+    """Compose the exact fix command surfaced in missing-ref warnings."""
     if not source_state.selections:
         return None
     if source_state.saved:
