@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections.abc import Sequence
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from untaped.sdk import (
     NO_PROGRESS,
@@ -94,20 +94,26 @@ class LocalGitWorktrees:
         history = self._history(store)
         picked = base if base is not None else self._default_branch(store, url)
         refs = self._refs(store, branch, picked)
-        start, label = _base_ref(picked, refs, url)
+        start = _base_ref(picked, refs, url)
         store.run(["worktree", "prune"])
         if branch is None:
-            store.worktree_add(target, start)
-            checkout = Checkout(action="checked_out", base=picked, detail=f"read-only at {label}")
+            store.worktree_add(target, start.ref)
+            checkout = Checkout(
+                action="checked_out", base=picked, detail=f"read-only at {start.label}"
+            )
         else:
-            checkout = self._add_writable(store, target, branch, picked, refs, start, label)
+            checkout = self._add_writable(store, target, branch, start, refs)
             self._set_upstream(store, branch)
         store.write_worktree_config(target, profile=self._profile)
         failure = self._backfill(store, delta, history)
         return checkout.model_copy(update={"backfill_error": failure})
 
-    def status(self, dest: Path, *, branch: str | None) -> WorktreeStatus | None:
-        """Git state of the worktree at ``dest``; ``None`` when it is missing."""
+    def status(self, dest: Path, *, branch: str | None, base: str) -> WorktreeStatus | None:
+        """Git state of the worktree at ``dest``; ``None`` when it is missing.
+
+        Commits the ``base`` tag reaches are not unpushed work, though no
+        branch on origin may have them.
+        """
         if not dest.exists():
             return None
         common = self._check_registered(dest)
@@ -123,7 +129,7 @@ class LocalGitWorktrees:
             modified=modified,
             untracked=untracked,
             stashed=self._stashed(dest, branch, common=common),
-            unpushed=self._unpushed(dest),
+            unpushed=self._unpushed(dest, base),
             submodules=(dest / ".gitmodules").exists() and self._has_submodules(dest),
         )
 
@@ -192,8 +198,12 @@ class LocalGitWorktrees:
                 found.append(StoredRepo(key=key, origin=store.url))
         return sorted(found, key=lambda repo: repo.ident)
 
-    def remove(self, url: str, dest: Path, *, force: bool) -> None:
-        """Remove the worktree at ``dest`` and prune stale worktree entries."""
+    def remove(self, url: str, dest: Path, *, base: str, force: bool) -> None:
+        """Remove the worktree at ``dest`` and prune stale worktree entries.
+
+        Unforced, it refuses when work appeared since the status check (the
+        ``base`` tag's commits are not work).
+        """
         store = self._store(url)
         if not store.exists():
             if not force:
@@ -206,12 +216,15 @@ class LocalGitWorktrees:
             return
         if dest.exists():
             if not force:
-                self._recheck(store, dest)
+                self._recheck(store, dest, base)
             self._remove_worktree(store, dest, force=force)
         store.run(["worktree", "prune"])
 
-    def store_use(self, url: str) -> StoreUse | None:
-        """Local branches and workspace worktrees of ``url``'s store repo; ``None``: not stored."""
+    def store_use(self, url: str, *, bases: Collection[str]) -> StoreUse | None:
+        """Local branches and workspace worktrees of ``url``'s store repo; ``None``: not stored.
+
+        Commits the tags among ``bases`` reach are not unpushed work.
+        """
         store = self._store(url)
         if not store.exists():
             return None
@@ -235,11 +248,12 @@ class LocalGitWorktrees:
         names = store.run(
             ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads/"], capture=True
         ).text.split()
+        tags = _base_tags(lambda args: store.run(args, capture=True).text, bases)
         branches = tuple(
             LocalBranch(
                 name=name,
                 checked_out=name in checked_out,
-                unpushed=self._unpushed_on(store, name),
+                unpushed=self._unpushed_on(store, name, tags),
                 stashed=name in stashed,
             )
             for name in names
@@ -271,7 +285,7 @@ class LocalGitWorktrees:
 
     # -- removal -----------------------------------------------------------
 
-    def _recheck(self, store: RepoStore, dest: Path) -> None:
+    def _recheck(self, store: RepoStore, dest: Path, base: str) -> None:
         """Refuse (``conflict``) when work appeared in ``dest`` since the caller's status check.
 
         Run right before ``worktree remove``: changes, stashes on the
@@ -287,7 +301,7 @@ class LocalGitWorktrees:
             modified=modified,
             untracked=untracked,
             stashed=self._stashed(dest, head, common=store.path),
-            unpushed=self._unpushed(dest),
+            unpushed=self._unpushed(dest, base),
         )
         blockers = archive_blockers(status)
         if blockers:
@@ -327,10 +341,10 @@ class LocalGitWorktrees:
                     branches.add(subject.removeprefix(prefix).partition(":")[0])
         return branches
 
-    def _unpushed_on(self, store: RepoStore, branch: str) -> int:
-        """Commits on ``refs/heads/<branch>`` that no ``refs/remotes/origin/*`` has."""
+    def _unpushed_on(self, store: RepoStore, branch: str, tags: Sequence[str]) -> int:
+        """Commits on ``refs/heads/<branch>`` that no ``refs/remotes/origin/*`` nor ``tags`` has."""
         tip = f"refs/heads/{branch}"
-        args = ["rev-list", "--count", tip, "--not", "--glob=refs/remotes/origin/*"]
+        args = ["rev-list", "--count", tip, "--not", "--glob=refs/remotes/origin/*", *tags]
         return int(store.run(args, capture=True).text.strip() or 0)
 
     # -- checkout steps ----------------------------------------------------
@@ -370,15 +384,9 @@ class LocalGitWorktrees:
         return {ref: oid for ref, _, oid in pairs if ref in names}
 
     def _add_writable(
-        self,
-        store: RepoStore,
-        target: Path,
-        branch: str,
-        base: str,
-        refs: dict[str, str],
-        start: str,
-        label: str,
+        self, store: RepoStore, target: Path, branch: str, start: _Base, refs: dict[str, str]
     ) -> Checkout:
+        base = start.name
         local = refs.get(f"refs/heads/{branch}")
         remote = refs.get(f"refs/remotes/origin/{branch}")
         tracking = f"origin/{branch}"
@@ -398,8 +406,8 @@ class LocalGitWorktrees:
         if local:
             store.worktree_add(target, f"refs/heads/{branch}")
             return Checkout(action="checked_out", base=base, detail="resumed local branch")
-        store.worktree_add(target, start, branch=branch)
-        return Checkout(action="created", base=base, detail=f"from {label}")
+        store.worktree_add(target, start.ref, branch=branch)
+        return Checkout(action="created", base=base, detail=f"from {start.label}")
 
     def _reconcile(self, store: RepoStore, branch: str, *, same: bool) -> str:
         """Fast-forward a local branch behind its remote; describe how the two relate."""
@@ -488,9 +496,10 @@ class LocalGitWorktrees:
         prefixes = (f"WIP on {label}:", f"On {label}:")
         return sum(1 for line in out.splitlines() if line.startswith(prefixes))
 
-    def _unpushed(self, wt: Path) -> int:
-        """Commits on ``HEAD`` that no remote-tracking branch has (detached or not)."""
-        args = ["rev-list", "--count", "HEAD", "--not", "--remotes"]
+    def _unpushed(self, wt: Path, base: str) -> int:
+        """Commits on ``HEAD`` that no remote-tracking branch nor the ``base`` tag has."""
+        tags = _base_tags(lambda args: self._in(wt, args, capture=True).text, [base])
+        args = ["rev-list", "--count", "HEAD", "--not", "--remotes", *tags]
         out = self._in(wt, args, capture=True).text
         return int(out.strip() or 0)
 
@@ -620,12 +629,29 @@ def _parse_status(out: str) -> tuple[str | None, str | None, int, int, int, int]
     return branch, upstream, ahead, behind, modified, untracked
 
 
-def _base_ref(base: str, refs: dict[str, str], url: str) -> tuple[str, str]:
-    """The ref a checkout starts from and how to name it: origin's branch, else the tag."""
+class _Base(NamedTuple):
+    """The base a checkout starts from: its name, its ref and how a row names it."""
+
+    name: str
+    ref: str
+    label: str
+
+
+def _base_ref(base: str, refs: dict[str, str], url: str) -> _Base:
+    """Origin's branch named ``base``, else the tag; ``not_found`` when neither exists."""
     if f"refs/remotes/origin/{base}" in refs:
-        return f"refs/remotes/origin/{base}", f"origin/{base}"
+        return _Base(base, f"refs/remotes/origin/{base}", f"origin/{base}")
     if f"refs/tags/{base}" in refs:
-        return f"refs/tags/{base}", f"tag {base}"
+        return _Base(base, f"refs/tags/{base}", f"tag {base}")
     raise GitError(
         f"base '{base}' is neither a branch nor a tag on origin of {url}", category="not_found"
     )
+
+
+def _base_tags(git: Callable[[list[str]], str], bases: Collection[str]) -> list[str]:
+    """The ``refs/tags/<base>`` refs that exist, read with ``git``; no git run without bases."""
+    wanted = [f"refs/tags/{base}" for base in bases if base]
+    if not wanted:
+        return []
+    found = set(git(["for-each-ref", "--format=%(refname)", *wanted]).split())
+    return [ref for ref in wanted if ref in found]  # for-each-ref also lists refs under each
