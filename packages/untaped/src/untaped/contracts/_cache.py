@@ -1,52 +1,64 @@
-"""The answer cache behind ``@cached``: one JSON file per provider, method, profile and arguments.
+"""The answer cache behind ``@cached``: providers' answers kept in the owner's :class:`Cache`.
 
-Path: ``~/.untaped/plugins/<provider>/cache/<owner>.<contract>.<method>/<profile>/<hash>.json``,
-holding ``{"untaped": "1", "key": …, "schema": …, "refreshed_at": …, "value": …}``. ``<hash>`` is
-the sha256 of the arguments' canonical JSON; the entry's ``key`` is ``<provider>:<hash>``, since
-the cache is the owner's and the entry one provider's, so whatever reports an entry (a stale
-line) names whose it is. ``schema`` is the sha256 of the return type's JSON
-schema (with the provider's own record model's, which ``source.record`` carries), so an entry
-written for another shape of either model is a miss, never an error. A cache that can't be
-written never costs the live answer.
+One entry per provider, method, profile and arguments, keyed ``<provider>:<hash>``
+(``<hash>`` is the sha256 of the arguments' canonical JSON): the cache is the
+owner's and the entry one provider's, so whatever reports an entry (a stale
+line) names whose it is. The entry, ``<segment>.answer.json`` beside the key's
+sidecar under the owner's ``caches/<contract>_<method>/<profile>/``, holds
+``{"untaped": "2", "schema": …, "value": …}``; how fresh it is lives in the
+sidecar. ``schema`` is the sha256 of the return type's JSON schema (with the
+provider's own record model's, which ``source.record`` carries), so an entry
+written for another shape of either model is a miss, never an error. A cache
+that can't be written never costs the live answer.
 
-``gather`` passes its ``refresh`` directive down through ``untaped.cache.call_state`` and
-reads back what the call served: the oldest ``refreshed_at`` and, when a live call failed and
-an entry stood in, the live error (the answer is then stale). A stale answer also prints one
-``untaped.stale`` warning, so every caller says it the same way.
+:meth:`Cache.serve` decides when to call the provider, from the ``refresh``
+directive ``gather`` opens (``untaped.cache.call_state``), and holds the key's
+lock across the call. ``gather`` reads back what the call served: the oldest
+``refreshed_at`` and, for a stale answer, why (the live call's error, or the
+one an earlier attempt left). The ``untaped.stale`` line waits on the call
+state for whoever reads the answer; a provider called outside ``gather`` says
+it at the call.
 """
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import inspect
 import json
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from functools import cache
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar, get_args, get_origin
 
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 
-from untaped.cache import current_call
+from untaped.cache import (
+    Cache,
+    CallState,
+    Filled,
+    Freshness,
+    answering,
+    call_state,
+    current_call,
+)
 from untaped.contracts._declare import Binding, Contract, binding_of
-from untaped.errors import ConfigError
-from untaped.fs import atomic_write, file_lock
-from untaped.git import safe_path_segment
-from untaped.output.diagnostic import Failure, StaleData
+from untaped.errors import UntapedError
+from untaped.fs import atomic_write
+from untaped.output.progress import ProgressHandle
 from untaped.output.sink import current_sink
-from untaped.plugins.registry import plugin_dir
 
-_FORMAT = "1"
-_LOCK_TIMEOUT = 10.0
+_FORMAT = "2"
 _LOG = logging.getLogger("untaped.contracts")
-
-
-class NoCache(Exception):
-    """``refresh=False`` asked for a cached answer and none is stored."""
+#: The entries this context is filling, as ``(cache, key)``.
+_FILLING: ContextVar[frozenset[tuple[str, str]]] = ContextVar(
+    "untaped_answer_filling", default=frozenset()
+)
 
 
 def return_type(binding: Binding, name: str) -> Any:
@@ -67,7 +79,7 @@ def substitute(hint: Any, param: TypeVar | None, item: type | None) -> Any:
     return hint
 
 
-@cache
+@functools.cache
 def _adapter(hint: Any) -> tuple[TypeAdapter[Any], str]:
     adapter: TypeAdapter[Any] = TypeAdapter(hint)
     schema = json.dumps(adapter.json_schema(), sort_keys=True, separators=(",", ":"))
@@ -82,45 +94,15 @@ def _schema(binding: Binding, hint: Any) -> str:
     return hashlib.sha256(f"{schema}:{_adapter(binding.item)[1]}".encode()).hexdigest()
 
 
-def _report_stale(
-    binding: Binding,
-    name: str,
-    key: str,
-    refreshed_at: datetime,
-    now: datetime,
-    max_age: timedelta,
-    error: Exception,
-) -> None:
-    """Say on stderr that ``key``'s cached answer stood in for a failed live call.
-
-    One ``untaped.stale`` warning per entry and invocation (the sink drops a
-    repeat); it never counts toward the exit code.
-    """
-    current_sink().emit(
-        StaleData.describe(
-            plugin=binding.plugin,
-            subject=binding.plugin,
-            cache=f"{binding.owner}.{binding.contract.name}_{name}",
-            key=key,
-            refreshed_at=refreshed_at,
-            now=now,
-            max_age=max_age,
-            attempted_at=now,
-            error=Failure.from_exception(error),
-        )
-    )
-
-
 def entry_key(binding: Binding, digest: str) -> str:
     """The entry's key in the owner's cache: ``<provider>:<arguments hash>``."""
     return f"{binding.plugin}:{digest}"
 
 
-def entry_path(binding: Binding, name: str, digest: str) -> Path:
-    """Where ``name``'s answer for the arguments hashing to ``digest`` lives in the profile."""
-    folder = f"{binding.owner}.{binding.contract.name}.{name}"
-    profile = safe_path_segment(binding.profile)
-    return plugin_dir(binding.spec) / "cache" / folder / profile / f"{digest}.json"
+def entry_path(cache: Cache, key: str) -> Path:
+    """Where ``key``'s answer lives in the active profile: beside its sidecar."""
+    sidecar = cache._paths(key).sidecar
+    return sidecar.with_name(f"{sidecar.stem}.answer.json")
 
 
 def argument_key(function: Callable[..., Any], provider: object, args: Any, kwargs: Any) -> str:
@@ -136,7 +118,6 @@ def argument_key(function: Callable[..., Any], provider: object, args: Any, kwar
 
 @dataclass(frozen=True)
 class _Entry:
-    refreshed_at: datetime
     value: Any
 
 
@@ -145,16 +126,14 @@ def _read(path: Path, adapter: TypeAdapter[Any], schema: str) -> _Entry | None:
         raw = json.loads(path.read_text(encoding="utf-8"))
         if raw.get("untaped") != _FORMAT or raw.get("schema") != schema:
             return None
-        at = datetime.fromisoformat(raw["refreshed_at"])
         value = adapter.validate_json(json.dumps(raw["value"]), strict=True)
     except OSError, ValueError, KeyError, TypeError, AttributeError, ValidationError:
         return None
-    return _Entry(at if at.tzinfo else at.replace(tzinfo=UTC), value)
+    return _Entry(value)
 
 
-def _write(
-    path: Path, key: str, adapter: TypeAdapter[Any], schema: str, value: Any, at: datetime
-) -> None:
+def _write(path: Path, adapter: TypeAdapter[Any], schema: str, value: Any) -> None:
+    """Write ``value`` as the entry; the caller holds the key's lock (inside ``fill``)."""
     try:
         dumped = adapter.dump_python(
             value, mode="json", by_alias=True, round_trip=True, warnings=False
@@ -162,35 +141,109 @@ def _write(
     except Exception:
         _LOG.debug("could not serialise the answer cache entry %s", path, exc_info=True)
         return
-    text = json.dumps(
-        {
-            "untaped": _FORMAT,
-            "key": key,
-            "schema": schema,
-            "refreshed_at": at.isoformat(),
-            "value": dumped,
-        },
-        ensure_ascii=False,
-    )
+    text = json.dumps({"untaped": _FORMAT, "schema": schema, "value": dumped}, ensure_ascii=False)
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with file_lock(
-            path.with_name(f"{path.name}.lock"),
-            timeout=_LOCK_TIMEOUT,
-            error=ConfigError,
-            busy=f"another untaped process is writing {path}",
-            failed=f"could not lock {path}",
-        ):
-            atomic_write(path, text)
-    except OSError, ConfigError:
+        atomic_write(path, text)
+    except OSError:
         _LOG.debug("could not write the answer cache entry %s", path, exc_info=True)
+
+
+class _ProviderBug(UntapedError):
+    """A provider's own exception, carried through ``serve()`` (which falls back on these)."""
+
+    def __init__(self, bug: Exception, plugin: str) -> None:
+        super().__init__(str(bug) or type(bug).__name__, system=plugin)
+        self.bug = bug
+
+
+@contextmanager
+def _answering(provider: str, cache: Cache) -> Iterator[CallState]:
+    """The call state ``serve()`` defers to while answering for ``provider`` from ``cache``.
+
+    ``gather``'s when it opened one; otherwise one of this call's own, whose
+    stale lines are said when the call returns.
+    """
+    outer = current_call()
+    if outer is not None:
+        with answering(cache, provider):
+            yield outer
+        return
+    with call_state(None) as state, answering(cache, provider):
+        yield state
+    for line in state.stale_lines:
+        current_sink().emit(line)
+
+
+@dataclass
+class _Call:
+    """One provider call through the answer cache: what ``serve()`` fills and reads."""
+
+    live_call: Callable[[], Any]
+    cache: Cache
+    key: str
+    plugin: str
+    path: Path
+    adapter: TypeAdapter[Any]
+    schema: str
+    stored: _Entry | None = None
+    known: datetime | None = None
+    live: list[Any] = field(default_factory=list)
+    failure: BaseException | None = None
+
+    def load(self) -> None:
+        """Read the stored entry; a miss the sidecar calls refreshed is forgotten, so it fills."""
+        self.stored = _read(self.path, self.adapter, self.schema)
+        self.known = self.cache.freshness(self.key).refreshed_at
+        if self.stored is None and self.known is not None:
+            # a schema change, an older format or a lost entry: what the sidecar says is wrong
+            self.cache.forget(self.key)
+            self.known = None
+
+    def fill(self, _key: str, _task: ProgressHandle) -> Filled:
+        token = _FILLING.set(_FILLING.get() | {(self.cache.qualified, self.key)})
+        try:
+            value = self.live_call()
+        except UntapedError as exc:
+            self.failure = exc
+            raise
+        except Exception as exc:
+            self.failure = exc
+            raise _ProviderBug(exc, self.plugin) from exc
+        finally:
+            _FILLING.reset(token)
+        self.live.append(value)  # served as is: never re-read, so never validated twice
+        _write(self.path, self.adapter, self.schema, value)
+        return Filled()
+
+    def read(self) -> Any:
+        if self.live:
+            return self.live[0]
+        if self.stored is not None and self.cache.freshness(self.key).refreshed_at == self.known:
+            return self.stored.value
+        entry = _read(self.path, self.adapter, self.schema)  # refreshed by another process
+        if entry is None:
+            raise UntapedError(
+                f"{self.plugin}'s cached answer changed while it was read; run it again",
+                system=self.plugin,
+                details={"cache": self.cache.qualified, "key": self.key},
+            )
+        return entry.value
+
+    def record(self, state: CallState, freshness: Freshness) -> None:
+        """Tell ``gather`` how old the answer is and, when it is stale, why."""
+        if freshness.refreshed_at is not None:
+            state.served(freshness.refreshed_at)
+        if self.failure is not None:  # the live call failed and the entry stood in
+            state.stale = state.stale or self.failure
+        elif freshness.error is not None:  # an earlier attempt's, inside its retry window
+            state.stale = state.stale or freshness.error.to_exception()
 
 
 def call(
     provider: Contract,
     name: str,
     function: Callable[..., Any],
-    max_age: timedelta,
+    cache: Cache,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> Any:
@@ -202,33 +255,28 @@ def call(
     binding = binding_of(provider)
     if binding is None:
         return function(provider, *args, **kwargs)
-    state = current_call()
-    refresh = None if state is None else state.refresh
+    key = entry_key(binding, argument_key(function, provider, args, kwargs))
+    if (cache.qualified, key) in _FILLING.get():
+        return function(provider, *args, **kwargs)  # an override's super(): the outer call keeps it
     hint = return_type(binding, name)
-    adapter, schema = _adapter(hint)[0], _schema(binding, hint)
-    digest = argument_key(function, provider, args, kwargs)
-    key, path = entry_key(binding, digest), entry_path(binding, name, digest)
-    entry = _read(path, adapter, schema)
-    now = datetime.now(UTC)
-    if entry is not None and (
-        refresh is False or (refresh is None and now - entry.refreshed_at < max_age)
-    ):
-        if state is not None:
-            state.served(entry.refreshed_at)
-        return entry.value
-    if refresh is False:
-        raise NoCache
-    try:
-        value = function(provider, *args, **kwargs)
-    except Exception as exc:
-        if entry is None:
-            raise
-        if state is not None:
-            state.served(entry.refreshed_at)
-            state.stale = state.stale or exc
-        _report_stale(binding, name, key, entry.refreshed_at, now, max_age, exc)
-        return entry.value
-    _write(path, key, adapter, schema, value, now)
-    if state is not None:
-        state.served(now)
-    return value
+    answer = _Call(
+        functools.partial(function, provider, *args, **kwargs),
+        cache,
+        key,
+        binding.plugin,
+        entry_path(cache, key),
+        _adapter(hint)[0],
+        _schema(binding, hint),
+    )
+    answer.load()
+    with _answering(binding.plugin, cache) as state:
+        try:
+            served = cache.serve(
+                {key: binding.plugin}, refresh=None, fill=answer.fill, read=answer.read
+            )
+        except _ProviderBug as exc:
+            bug = exc.bug
+        else:
+            answer.record(state, served.freshness[key])
+            return served.value
+        raise bug  # outside the except: it keeps its own cause; inside the with: lines dropped

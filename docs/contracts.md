@@ -7,6 +7,9 @@ knowing whether GitHub, GitLab or both supply them. Everything lives in
 imports it, so a command that asks no contract pays nothing.
 
 ```python
+# the owner, in its settings module
+BOOKS = Cache("shelf", "book_source_books", label="books", max_age=timedelta(hours=1))
+
 # the owner, in its api module
 class Book(Issued, kind="shelf.book"):
     title: str
@@ -19,12 +22,12 @@ class BookSource[T: Record = Book](Contract):
         raise NotImplementedError
 
     @listing
-    @cached(max_age=timedelta(hours=1))
+    @cached(BOOKS)
     @abstractmethod
     def books(self) -> list[Book]: ...
 
 
-SPEC = PluginSpec(name="shelf", contracts=lambda: (BookSource,))
+SPEC = PluginSpec(name="shelf", contracts=lambda: (BookSource,), caches=(BOOKS,))
 
 # the owner, asking
 book = select_one(gather(BookSource.books)(), lambda b: b.title == "Dune")
@@ -51,9 +54,12 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   `settings`, `http`), and every parameter and return type must have a JSON
   schema, with no `*args`, positional-only parameters or non-JSON defaults:
   the class definition raises `TypeError` (`unserialisable-signature`)
-  otherwise. `shell=` is reserved for shell plugins. `@cached(max_age=)`
-  keeps answers per provider, profile and arguments, and is refused on a
-  method that returns a secret. `@listing` declares a method whose rows
+  otherwise. `shell=` is reserved for shell plugins. `@cached(CACHE)`
+  keeps answers per provider, profile and arguments in a
+  [`Cache`](caches.md) the owner declares, names `<contract>_<method>` and
+  lists in its `caches` (its user setting is
+  `<owner>.caches.<name>.max_age_seconds`); it is refused on a method that
+  returns a secret. `@listing` declares a method whose rows
   stand alone: an invalid row is dropped and the rest kept, where any other
   method's invalid item fails the provider's whole answer.
 - **The owner's model** is the item type parameter's default, an `Issued`
@@ -75,10 +81,12 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   `HttpClient`; another library's client is not bounded). Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as
   `unused-method`.
-- **Asking.** `gather(method, refresh=, needs=, deadline=, plugins=)(*args)`
-  returns one `Ok`, `Failed` or `Skipped` per provider (only those `plugins`
-  when given, for an owner that already chose by a cheaper method), in rank
-  order, each item validated once as the owner's model.
+- **Asking.** `gather(method, refresh=, needs=, deadline=, plugins=,
+  progress=)(*args)` returns one `Ok`, `Failed` or `Skipped` per provider
+  (only those `plugins` when given, for an owner that already chose by a
+  cheaper method), in rank order, each item validated once as the owner's
+  model. `progress` counts the providers on the caller's task as they
+  answer; a provider never gets the handle.
   `select_one(answers, matches)` picks one item and raises the deciding
   provider's error, `NotFound` or `Ambiguous`;
   `convert(Contract.bridge_method, envelope)` reads a piped record.
@@ -111,9 +119,15 @@ repo name nobody could look up as not found, naming the setting to set).
 - With any provider failed, a match from one ranked above every failure
   wins, with a warning; otherwise the first failure's own error and exit
   code stand. With nothing ranked, any failure blocks.
-- A stale cached answer confirms a match, never an absence. Serving one
-  prints an `untaped.stale` warning naming the failed refresh and the
-  answer's age.
+- A stale cached answer confirms a match, never an absence. Its
+  `untaped.stale` warning, naming the failed refresh and the answer's age,
+  prints when the answer is used: `select_one` prints it for the match it
+  returns, and any other reading of the answers prints it the first time;
+  a stale absence fails with the provider's error alone, or, when a match
+  ranked above it wins, warns with that error and keeps the line for the
+  next reading of the answers. A consumer that reports staleness itself
+  takes the lines first with `Answers.take_stale()` and prints, drops or
+  raises them.
 - A quarantined provider, or one that returned invalid items, is skipped
   with a warning when unranked and fails when ranked.
 - Otherwise no match exits 2 (not found), and several matches with nothing

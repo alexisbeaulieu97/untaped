@@ -5,7 +5,10 @@ rules, in order (design §3):
 
 1. The candidates are the items of each :class:`Ok` that ``matches`` accepts.
 2. A stale answer with no match counts as its failure: a stale listing
-   confirms a match, never an absence. An answer that dropped invalid rows
+   confirms a match, never an absence. The stale answer's ``untaped.stale``
+   line is said when its match is the one returned; a stale absence fails
+   with the provider's error alone, or warns with it and leaves the line for
+   a later use of the same answers. An answer that dropped invalid rows
    counts as ``invalid-item``: skipped when unranked, failed when ranked (the
    bad row could be the one meant).
 3. "Ranked above" means an explicit rank only; unranked providers are below
@@ -66,17 +69,19 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
         lowest = min(_rank_key(each.rank) for each in failed)
         above = [(ok, hits) for ok, hits in found if _rank_key(ok.rank) < lowest]
         if not above:
+            for each in failed:
+                answers._take(each.plugin)  # the raise says it
             raise failed[0].error
         for each in failed:
             _warn(f"{each.plugin} failed ({each.error}); using a match ranked above it")
-        return _one(min(above, key=lambda pair: _rank_key(pair[0].rank)), answers)
+        return _use(min(above, key=lambda pair: _rank_key(pair[0].rank)), answers)
     if not found:
         unasked = [f"{skip.plugin} ({skip.reason})" for skip in skipped]
         tail = f"; not asked: {', '.join(unasked)}" if unasked else ""
         raise NotFound(f"no provider of {answers.owner}.{answers.contract} matched{tail}")
     ranked = [pair for pair in found if pair[0].rank is not None]
     if ranked:
-        return _one(min(ranked, key=lambda pair: _rank_key(pair[0].rank)), answers)
+        return _use(min(ranked, key=lambda pair: _rank_key(pair[0].rank)), answers)
     if len(found) > 1:
         matched = [ok.plugin for ok, _ in found]
         raise Ambiguous(
@@ -84,7 +89,7 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
             hint=f"run `{answers.rank_command(matched)}`",
             details={"providers": [ok.plugin for ok, _ in found]},
         )
-    return _one(found[0], answers)
+    return _use(found[0], answers)
 
 
 def _sorted[I](
@@ -94,7 +99,7 @@ def _sorted[I](
     failed: list[Failed] = []
     skipped: list[Skipped] = []
     found: list[tuple[Ok[list[I]], list[I]]] = []
-    for answer in answers:
+    for answer in answers._unsaid():
         if isinstance(answer, Failed):
             failed.append(answer)
         elif isinstance(answer, Skipped):
@@ -115,6 +120,14 @@ def _sorted[I](
         elif answer.stale is not None:
             failed.append(answer.stale)
     return failed, skipped, found
+
+
+def _use[I](pair: tuple[Ok[list[I]], list[I]], answers: Answers[list[I]]) -> I:
+    """The one item of ``pair``, its answer's stale line said now that it is used."""
+    item = _one(pair, answers)
+    for line in answers._take(pair[0].plugin):
+        Diagnostics().emit(line)
+    return item
 
 
 def _one[I](pair: tuple[Ok[list[I]], list[I]], answers: Answers[list[I]]) -> I:

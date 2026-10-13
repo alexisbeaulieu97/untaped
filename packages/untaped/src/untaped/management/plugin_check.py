@@ -352,6 +352,7 @@ def _call(
         answers = gather(getattr(binding.contract.cls, name), refresh=True)()
     except Exception as exc:
         return row("live", title, "fail", _message(exc))
+    answers.take_stale()  # a stale answer is this row's failure, not a warning
     answer = next((each for each in answers if each.plugin == binding.plugin), None)
     if isinstance(answer, Failed):
         return row("live", title, "fail", _message(answer.error))

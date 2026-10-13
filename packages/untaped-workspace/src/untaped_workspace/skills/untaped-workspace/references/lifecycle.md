@@ -24,7 +24,9 @@ archiving, removing, the repo store.
 - `OWNER/NAME`, or a bare `NAME` that is unique, both looked up in the repos
   every installed repo provider lists (GitHub's are its `github.inventory`
   orgs and teams, else `github.default_org`; listing them needs the token).
-  Lists are cached for 6 hours;
+  Lists are cached for 6 hours
+  (`workspace.caches.repo_source_repos.max_age_seconds`); `ctrl-r` in the
+  picker refreshes them;
 - a clone URL: `https://…`, `ssh://…` or `user@host:path`. It skips the
   lookup and its repo is named by its path (`acme/api`). Local paths and
   `file://` URLs are refused. A URL on a host a plugin claims (GitHub's)

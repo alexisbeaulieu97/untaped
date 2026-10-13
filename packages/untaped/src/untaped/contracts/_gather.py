@@ -4,13 +4,16 @@
 provider that fills the method, in rank order (ranked plugins first, then the
 rest by name): :class:`Ok`, :class:`Failed` or :class:`Skipped`. Every issued
 item is validated once, strictly, as the owner's model after the call, with
-its ``source`` stamped.
+its ``source`` stamped. A stale answer's ``untaped.stale`` line is said when
+the answer is used, never when it is fetched: :class:`Answers` says it the
+first time it is iterated or indexed, ``select_one`` for the match it returns.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import threading
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -18,9 +21,9 @@ from typing import Any, Concatenate, get_args, get_origin, overload
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from untaped.cache import call_state
+from untaped.cache import CallState, NeverRefreshed, call_state
 from untaped.concurrency import bounded_map
-from untaped.contracts._cache import NoCache, return_type
+from untaped.contracts._cache import return_type
 from untaped.contracts._declare import (
     Binding,
     Contract,
@@ -40,6 +43,9 @@ from untaped.contracts._registry import (
 from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.http import request_deadline
 from untaped.messages import command_line
+from untaped.output.diagnostic import StaleData
+from untaped.output.progress import NO_PROGRESS, ProgressHandle
+from untaped.output.sink import Diagnostics
 from untaped.records import Issued, Source, kind_of
 
 _LOG = logging.getLogger("untaped.contracts")
@@ -106,28 +112,66 @@ class NoProviderReady(ConfigError):
 
 
 class Answers[R](Sequence[Answer[R]]):
-    """Every provider's answer to one method call, in rank order."""
+    """Every provider's answer to one method call, in rank order.
+
+    ``pending`` holds, by plugin, the ``untaped.stale`` lines of the answers
+    served stale; they are said once, the first time the answers are
+    iterated or indexed (``len`` and :meth:`rank_command` say nothing).
+    """
 
     def __init__(
-        self, items: Sequence[Answer[R]], *, owner: str, contract: str, method: str
+        self,
+        items: Sequence[Answer[R]],
+        *,
+        owner: str,
+        contract: str,
+        method: str,
+        pending: Mapping[str, Sequence[StaleData]] | None = None,
     ) -> None:
         self._items = tuple(items)
         self.owner = owner
         self.contract = contract
         self.method = method
+        self._pending = {plugin: tuple(lines) for plugin, lines in (pending or {}).items() if lines}
+        self._lock = threading.Lock()
 
     @overload
     def __getitem__(self, index: int) -> Answer[R]: ...
     @overload
     def __getitem__(self, index: slice) -> Sequence[Answer[R]]: ...
     def __getitem__(self, index: int | slice) -> Answer[R] | Sequence[Answer[R]]:
+        self._say()
         return self._items[index]
 
     def __len__(self) -> int:
         return len(self._items)
 
     def __iter__(self) -> Iterator[Answer[R]]:
+        self._say()
         return iter(self._items)
+
+    def take_stale(self) -> tuple[StaleData, ...]:
+        """The stale lines not yet said, which nothing says afterwards.
+
+        For a consumer that reports staleness itself: it prints, drops or
+        raises them. Iterating the answers then says nothing.
+        """
+        with self._lock:
+            pending, self._pending = self._pending, {}
+        return tuple(line for lines in pending.values() for line in lines)
+
+    def _say(self) -> None:
+        for line in self.take_stale():
+            Diagnostics().emit(line)
+
+    def _unsaid(self) -> tuple[Answer[R], ...]:
+        """The answers, their stale lines left pending (``select_one`` says them per answer)."""
+        return self._items
+
+    def _take(self, plugin: str) -> tuple[StaleData, ...]:
+        """``plugin``'s pending stale lines, which nothing says afterwards."""
+        with self._lock:
+            return self._pending.pop(plugin, ())
 
     def __repr__(self) -> str:
         return f"Answers({self.owner}.{self.contract}.{self.method}, {list(self._items)!r})"
@@ -153,18 +197,24 @@ def gather[C: Contract, **P, R](
     needs: Sequence[Callable[..., Any]] = (),
     deadline: float | timedelta | None = None,
     plugins: Collection[str] | None = None,
+    progress: ProgressHandle = NO_PROGRESS,
 ) -> Callable[P, Answers[R]]:
     """Ask every ready provider of ``method``; call the result with the method's arguments.
 
     ``refresh`` directs ``@cached`` methods: ``False`` serves cached answers
-    only (none stored: ``Skipped(no-cache)``), ``None`` serves within its max age
-    and calls otherwise, ``True`` always calls. ``needs`` names further
+    only (none stored: ``Skipped(no-cache)``), ``None`` serves within the
+    cache's max age (its ``<owner>.caches.<name>.max_age_seconds`` setting)
+    and calls otherwise, ``True`` always calls. A call refreshing an answer
+    holds that answer's lock, so a second process asking the same provider
+    waits for it (``deadline`` does not bound that wait). ``needs`` names further
     methods a provider must fill to be asked. ``deadline`` (seconds) bounds
     every request a provider makes through ``self.http``. ``plugins`` asks
     only the providers of those plugins (an owner that already chose one by a
     cheaper method, say); the others are left out of the answers. With no ready
     provider at all it raises :class:`ConfigError` (exit 4) naming why each
-    one isn't (:class:`NoProviderReady`).
+    one isn't (:class:`NoProviderReady`). ``progress`` counts the providers
+    as they answer, each named as it does; a provider's method never gets
+    the handle.
     """
     info, wanted = method_contract(method)
     needed = [wanted.name]
@@ -206,19 +256,28 @@ def gather[C: Contract, **P, R](
             detail = "; ".join(reasons) if reasons else "no installed plugin fills it"
             raise NoProviderReady(f"no provider of {what} is ready: {detail}", not_ready=not_ready)
 
-        def ask(job: tuple[Provider, int | None]) -> Answer[R]:
+        stale: dict[str, list[StaleData]] = {}
+
+        def ask(job: tuple[Provider, int | None]) -> tuple[Answer[R], list[StaleData]]:
             provider, rank = job
             return _ask(provider, wanted, rank, refresh, seconds, args, kwargs)
 
-        def keep(job: tuple[Provider, int | None], answer: Answer[R]) -> None:
-            answers[job[0].plugin] = answer
+        def keep(
+            job: tuple[Provider, int | None], asked: tuple[Answer[R], list[StaleData]]
+        ) -> None:
+            answers[job[0].plugin], stale[job[0].plugin] = asked
+            progress.update(job[0].plugin, done=len(stale), total=len(runnable))
 
+        progress.update(done=0, total=len(runnable))
         bounded_map(ask, runnable, concurrency=min(_POOL, len(runnable)), on_each=keep)
         ordered = sorted(
             answers.values(),
             key=lambda answer: (answer.rank is None, answer.rank or 0, answer.plugin),
         )
-        return Answers(ordered, owner=owner, contract=info.name, method=wanted.name)
+        pending = {answer.plugin: stale.get(answer.plugin, []) for answer in ordered}
+        return Answers(
+            ordered, owner=owner, contract=info.name, method=wanted.name, pending=pending
+        )
 
     return call
 
@@ -239,17 +298,24 @@ def _ask[R](
     deadline: float | None,
     args: Any,
     kwargs: Any,
+) -> tuple[Answer[R], list[StaleData]]:
+    """``provider``'s answer, and the stale lines its caches left for whoever reads it."""
+    with call_state(refresh) as state, request_deadline(deadline):
+        return _answer(provider, method, rank, state, args, kwargs), state.stale_lines
+
+
+def _answer[R](
+    provider: Provider, method: Method, rank: int | None, state: CallState, args: Any, kwargs: Any
 ) -> Answer[R]:
     plugin = provider.plugin
-    with call_state(refresh) as state, request_deadline(deadline):
-        try:
-            value = getattr(provider.instance, method.name)(*args, **kwargs)
-        except NoCache:
-            return Skipped(plugin, "no-cache", "no cached answer is stored", rank)
-        except UntapedError as exc:
-            return Failed(plugin, exc, rank)
-        except Exception as exc:
-            return Failed(plugin, _unexpected(plugin, method, exc), rank)
+    try:
+        value = getattr(provider.instance, method.name)(*args, **kwargs)
+    except NeverRefreshed:
+        return Skipped(plugin, "no-cache", "no cached answer is stored", rank)
+    except UntapedError as exc:
+        return Failed(plugin, exc, rank)
+    except Exception as exc:
+        return Failed(plugin, _unexpected(plugin, method, exc), rank)
     try:
         checked, invalid = validate(provider.binding, method, value)
     except _Invalid as exc:

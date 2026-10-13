@@ -151,8 +151,9 @@ _STARTUP_PROBE = (
 #: Messages on ``ctx.diag`` with the user's theme (A2b): 127, unchanged.
 #: The freshness SDK (#537 B1) adds ``untaped.cache`` (the call state moved
 #: there from ``untaped.contracts``) and ``untaped.upstream`` (read by
-#: ``untaped.http``): 129, 2026-10-12. The budget was set six above 127 to
-#: absorb dependency and patch-release drift; a new
+#: ``untaped.http``): 129, 2026-10-12. The answer cache on ``Cache.serve()``
+#: (#537 B3) adds none: 129 on it and on its base, 2026-10-13. The budget
+#: was set six above 127 to absorb dependency and patch-release drift; a new
 #: built-in plugin adds a few ``untaped.*`` modules (its SPEC and settings).
 _TOTAL_BUDGET = 700
 _UNTAPED_BUDGET = 133

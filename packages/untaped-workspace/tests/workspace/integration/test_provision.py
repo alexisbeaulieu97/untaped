@@ -192,7 +192,7 @@ class _ChosenOnly:
     def __init__(self) -> None:
         self.admitted: list[Repo] = []
 
-    def resolve(self, ident: str) -> Repo:
+    def resolve(self, ident: str, *, progress: object = None) -> Repo:
         raise AssertionError(f"{ident!r} was looked up again")
 
     def admit(self, repo: Repo) -> Repo:

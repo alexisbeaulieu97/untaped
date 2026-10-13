@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from datetime import timedelta
 
 from untaped.contracts import Contract, Issued, Record, bridge, cached, listing
 from untaped.sdk import experimental
+from untaped_shelf.settings import BOOKS
 
 __all__ = ["Book", "BookSource"]
 
@@ -28,7 +28,7 @@ class BookSource[T: Record = Book](Contract):
         raise NotImplementedError
 
     @listing
-    @cached(max_age=timedelta(hours=1))
+    @cached(BOOKS)
     @abstractmethod
     def books(self) -> list[Book]:
         """Every book the provider keeps."""

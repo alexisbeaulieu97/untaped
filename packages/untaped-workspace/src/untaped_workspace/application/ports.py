@@ -112,8 +112,11 @@ class WorkspaceStore(Protocol):
 class RepoCatalog(Protocol):
     """Resolve what the user typed to a repo, and vet a repo chosen elsewhere."""
 
-    def resolve(self, ident: str) -> Repo:
-        """Raise ``UsageError`` when ``ident`` is unknown or ambiguous."""
+    def resolve(self, ident: str, *, progress: ProgressHandle = NO_PROGRESS) -> Repo:
+        """Raise ``UsageError`` when ``ident`` is unknown or ambiguous.
+
+        ``progress`` counts the repo sources as they answer.
+        """
         ...
 
     def admit(self, repo: Repo) -> Repo:

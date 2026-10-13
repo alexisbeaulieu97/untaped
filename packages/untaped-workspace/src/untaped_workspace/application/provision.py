@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, UntapedError, UsageError, bounded_map, q
+from untaped.sdk import NO_PROGRESS, Failure, UntapedError, UsageError, bounded_map, q
 from untaped_workspace.application.locate import active_workspace, workspace_root
 from untaped_workspace.domain.models import (
     Checkout,
@@ -34,6 +34,7 @@ from untaped_workspace.domain.repo import Repo
 from untaped_workspace.errors import WorkspaceError
 
 if TYPE_CHECKING:
+    from untaped.sdk import ProgressHandle
     from untaped_workspace.application.ports import (
         GitWorktrees,
         RepoCatalog,
@@ -86,15 +87,17 @@ class ProvisionRepos:
         repos: Sequence[RepoArg],
         *,
         on_done: Callable[[RepoOutcome, int, int], None] | None = None,
+        progress: ProgressHandle = NO_PROGRESS,
     ) -> list[RepoOutcome]:
         """Create workspace ``name`` and check out ``repos`` into it (none: an empty workspace).
 
         ``on_done(row, done, total)`` runs (on the calling thread) as each
         checkout finishes; ``total`` counts the checkouts started (repos
-        already present or requested twice are not).
+        already present or requested twice are not). ``progress`` counts the
+        repo sources asked while names are resolved.
         """
         validate_workspace_name(name)
-        resolved = self._resolve(repos)
+        resolved = self._resolve(repos, progress)
         with self._store.locked(name):
             refuse_occupied(self._store, self._workspaces_dir, name)
             record = WorkspaceRecord(name=name, created_at=self._now())
@@ -108,29 +111,30 @@ class ProvisionRepos:
         repos: Sequence[RepoArg],
         *,
         on_done: Callable[[RepoOutcome, int, int], None] | None = None,
+        progress: ProgressHandle = NO_PROGRESS,
     ) -> list[RepoOutcome]:
         """Check out ``repos`` into the existing workspace ``record``.
 
         The record is read again under the workspace lock: an ``archive`` that
         ran meanwhile makes this fail as not found instead of adding worktrees.
-        ``on_done`` is as for :meth:`create`.
+        ``on_done`` and ``progress`` are as for :meth:`create`.
         """
         if not repos:
             raise UsageError(
                 "no repos given", hint=f"run `untaped workspace add {record.name} --repo REPO`"
             )
-        resolved = self._resolve(repos)
+        resolved = self._resolve(repos, progress)
         with self._store.locked(record.name):
             current = active_workspace(self._store, record.name)
             workspace_root(self._workspaces_dir, current.name).mkdir(parents=True, exist_ok=True)
             return self._provision(current, repos, resolved, on_done)
 
-    def _resolve(self, repos: Sequence[RepoArg]) -> list[Repo]:
+    def _resolve(self, repos: Sequence[RepoArg], progress: ProgressHandle) -> list[Repo]:
         """Each argument's repo: the one already chosen (picked, piped), else ``ident`` resolved."""
         return [
             self._catalog.admit(arg.repo)
             if arg.repo is not None
-            else self._catalog.resolve(arg.ident)
+            else self._catalog.resolve(arg.ident, progress=progress)
             for arg in repos
         ]
 

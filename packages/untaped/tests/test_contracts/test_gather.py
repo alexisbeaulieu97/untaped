@@ -53,10 +53,16 @@ def rank(monkeypatch: pytest.MonkeyPatch) -> object:
 
 
 def _cache_files() -> list[Path]:
+    """Every stored answer (the entries, not their sidecars)."""
     import os
 
     root = Path(os.environ["HOME"]) / ".untaped" / "plugins"
-    return sorted(path for path in root.rglob("*.json"))
+    return sorted(root.rglob("*.answer.json"))
+
+
+def _sidecar(entry: Path) -> Path:
+    """The freshness sidecar beside ``entry``."""
+    return entry.with_name(entry.name.removesuffix(".answer.json") + ".json")
 
 
 def test_answers_come_in_rank_order_then_by_name(rank) -> None:  # type: ignore[no-untyped-def]
@@ -192,11 +198,14 @@ def test_the_answer_cache_serves_within_its_max_age_and_refresh_directs_it() -> 
     assert Library.calls == 2
     assert isinstance(cached_only, Ok)
     [path] = _cache_files()
-    assert path.parts[-4:-1] == ("cache", "shelf.book_source.books", "default")
+    assert path.parts[-6:-1] == ("plugins", "shelf", "caches", "book_source_books", "default")
     stored = json.loads(path.read_text())
-    assert stored["untaped"] == "1"
-    assert stored["key"] == f"library:{path.stem}"
+    assert set(stored) == {"untaped", "schema", "value"}
+    assert stored["untaped"] == "2"
     assert [row["title"] for row in stored["value"]] == ["Dune", "Emma"]
+    sidecar = json.loads(_sidecar(path).read_text())
+    assert sidecar["key"].startswith("library:")
+    assert sidecar["refreshed_at"] is not None
 
 
 def test_refresh_false_without_a_cached_answer_is_skipped_no_cache() -> None:
@@ -258,14 +267,14 @@ def test_a_stale_answer_keeps_a_provider_bug_traceback_in_the_debug_log(
     assert record.exc_info is not None and record.exc_info[1] is Library.error
 
 
-def test_a_stale_answer_prints_one_stale_warning_and_counts_nothing() -> None:
+def test_a_stale_answer_prints_one_stale_warning_when_used_and_counts_nothing() -> None:
     compose(shelf_spec(), library_spec())
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     Library.error = HttpTransportError("HTTP 503", system="library")
     with recording() as emitted, diagnostics_scope():
-        gather(BookSource.books, refresh=True)()
-        gather(BookSource.books, refresh=True)()  # the same entry again: no second line
+        list(gather(BookSource.books, refresh=True)())
+        list(gather(BookSource.books, refresh=True)())  # the same entry again: no second line
         exit_on_counted_failure()  # a stale answer is not a failure
 
     [stale] = emitted
@@ -274,23 +283,24 @@ def test_a_stale_answer_prints_one_stale_warning_and_counts_nothing() -> None:
     assert (stale.plugin, stale.cache, stale.key) == (
         "library",
         "shelf.book_source_books",
-        f"library:{path.stem}",
+        json.loads(_sidecar(path).read_text())["key"],
     )
     assert stale.error is not None and stale.error.category == "unavailable"
     assert stale.message.startswith("library: refresh failed (HTTP 503)")
+    assert stale.hint is None  # the answer cache's reader has no option to suggest
 
 
 def test_fresh_missing_and_cached_only_answers_print_no_stale_line() -> None:
     compose(shelf_spec(), library_spec())
     write_config(LIBRARY_CONFIG)
     with recording() as emitted, diagnostics_scope():
-        gather(BookSource.books, refresh=False)()  # nothing stored: skipped
-        gather(BookSource.books)()  # a miss, filled live
-        gather(BookSource.books)()  # a fresh hit
+        list(gather(BookSource.books, refresh=False)())  # nothing stored: skipped
+        list(gather(BookSource.books)())  # a miss, filled live
+        list(gather(BookSource.books)())  # a fresh hit
         Library.error = HttpTransportError("HTTP 503", system="library")
-        gather(BookSource.books, refresh=False)()  # cached only, by request
+        list(gather(BookSource.books, refresh=False)())  # cached only, by request
         _cache_files()[0].unlink()
-        gather(BookSource.books)()  # a miss that fails
+        list(gather(BookSource.books)())  # a miss that fails
 
     assert [each for each in emitted if isinstance(each, StaleData)] == []
 
@@ -328,9 +338,10 @@ def test_an_expired_entry_is_refreshed() -> None:
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [path] = _cache_files()
-    stored = json.loads(path.read_text())
+    sidecar = _sidecar(path)
+    stored = json.loads(sidecar.read_text())
     stored["refreshed_at"] = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
-    path.write_text(json.dumps(stored))
+    sidecar.write_text(json.dumps(stored))
     gather(BookSource.books)()
     assert Library.calls == 2
 
@@ -610,3 +621,32 @@ def test_plugins_asks_only_those_providers() -> None:
 
     assert [answer.plugin for answer in answers] == ["shop"]
     assert Library.calls == 0
+
+
+def test_progress_counts_the_providers_as_they_answer_on_the_calling_thread() -> None:
+    import inspect
+    import threading
+
+    updates: list[tuple[str | None, int | None, int | None]] = []
+    threads: set[int] = set()
+
+    class Recorder:
+        def update(
+            self,
+            message: str | None = None,
+            *,
+            phase: str | None = None,
+            done: int | None = None,
+            total: int | None = None,
+        ) -> None:
+            updates.append((message, done, total))
+            threads.add(threading.get_ident())
+
+    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    write_config(LIBRARY_CONFIG)
+    gather(BookSource.books, progress=Recorder())()
+    assert updates[0] == (None, 0, 3)
+    assert {message for message, _, _ in updates[1:]} == {"kiosk", "library", "shop"}
+    assert [(done, total) for _, done, total in updates] == [(0, 3), (1, 3), (2, 3), (3, 3)]
+    assert threads == {threading.get_ident()}
+    assert "progress" not in inspect.signature(Library.books).parameters

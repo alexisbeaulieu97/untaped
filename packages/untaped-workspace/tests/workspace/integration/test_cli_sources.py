@@ -456,3 +456,29 @@ def test_a_picked_repo_keeps_its_listed_project(
     source = record.repos[0].source
     assert source is not None and (source.plugin, source.kind) == ("forge", "forge.project")
     assert source.record == {"path": "acme/api", "clone_url": api.url}
+
+
+def test_create_counts_the_repo_sources_under_its_own_task(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
+    from untaped.output.diagnostic import Progress
+    from untaped.testing import progress_clock
+
+    api = make_upstream("api")
+    with progress_clock() as ticks:
+
+        class Slow(Listing):
+            def repos(self) -> list[Repo]:
+                ticks.advance(3)  # past the 2 s a progress line waits for
+                return super().repos()
+
+        with providers(github=[Slow(_listed(api))]):
+            created = run(app, ["create", "J-1", "--repo", "acme/api"])
+    assert created.exit_code == 0, created.output
+    lines = [each for each in created.diagnostics if isinstance(each, Progress)]
+    assert any(
+        each.label == "Creating workspace J-1"
+        and (each.done, each.total) == (1, 1)
+        and "github" in each.message
+        for each in lines
+    ), [each.message for each in lines]

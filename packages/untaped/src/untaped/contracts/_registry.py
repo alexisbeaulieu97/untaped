@@ -149,6 +149,14 @@ def _declared(spec: PluginSpec) -> tuple[type[Contract], ...]:
         info = contract_of(each)
         if info is None or info.cls is not each:
             raise TypeError(f"it lists {each!r}, which is not a Contract declaration")
+        for method in info.methods.values():
+            cache = method.cache
+            # a listed cache is the plugin's own (composition quarantines a foreign one)
+            if cache is not None and cache not in spec.caches:
+                raise TypeError(
+                    f"{info.cls.__qualname__}.{method.name} is cached in {cache.qualified}, "
+                    f"which is not one of {spec.name}'s caches (list it on PluginSpec.caches)"
+                )
     return declared
 
 
