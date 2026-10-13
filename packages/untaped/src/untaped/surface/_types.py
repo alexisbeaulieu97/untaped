@@ -2,13 +2,14 @@
 
 A type token is what a JSON reader sees, read from pydantic's JSON schema:
 ``string``, ``integer``, ``number``, ``boolean``, ``object``, ``array``, a
-model's class name, ``T[]`` for an array of known items, ``?`` for nullable,
-and a sorted ``a|b`` for any other union. Validation keywords follow in
-parentheses (``string(minLength=1)``), since tightening one breaks a writer
-and loosening one breaks a reader. A Literal's values are not in the token:
-each becomes a ``choice=`` line, so adding one adds a line and dropping one
-removes it. SDK parameters carry no type at all; only contract methods,
-payload models, settings and implementer-shaped methods do.
+model's class name, ``T[]`` for an array of known items (``(a|b)[]`` for an
+array of a union), ``?`` for nullable, and a sorted ``a|b`` for any other
+union. Validation keywords follow in parentheses (``string(minLength=1)``),
+since tightening one breaks a writer and loosening one breaks a reader. A
+Literal's values are not in the token: each becomes a ``choice=`` line, so
+adding one adds a line and dropping one removes it. SDK parameters carry no
+type at all; only contract methods, payload models, settings and
+implementer-shaped methods do.
 
 Defaults are spelled as declared, the same on every machine: ``None`` (or
 ``unset`` in ``cli``/``cfg``), ``true``/``false``, numbers as is, strings bare
@@ -350,8 +351,22 @@ def _token(
     if kind == "array":
         items = schema.get("items")
         if isinstance(items, Mapping) and items:
-            return f"{_token(items, defs, seen=seen)}[]{_constraints(schema)}"
+            return f"{_grouped(_token(items, defs, seen=seen))}[]{_constraints(schema)}"
     return f"{kind}{_constraints(schema)}"
+
+
+def _grouped(token: str) -> str:
+    """``token`` in parentheses when it is a union, so ``(integer|string)[]`` (an array of
+    either) never reads like ``integer|string[]`` (an integer or an array of strings)."""
+    depth = 0
+    for char in token:
+        if char in "[(":
+            depth += 1
+        elif char in "])":
+            depth -= 1
+        elif char == "|" and depth == 0:
+            return f"({token})"
+    return token
 
 
 def _ref_name(ref: str, defs: Mapping[str, Any]) -> str:
