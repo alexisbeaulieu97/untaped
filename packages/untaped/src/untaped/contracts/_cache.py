@@ -279,4 +279,4 @@ def call(
         else:
             answer.record(state, served.freshness[key])
             return served.value
-    raise bug  # outside the except: the provider's exception keeps its own cause and context
+        raise bug  # outside the except: it keeps its own cause; inside the with: lines dropped

@@ -25,7 +25,7 @@ from test_contracts.support import (
     shop_spec,
 )
 from test_contracts.support import write_config as configure
-from untaped.cache import RETRY_AFTER
+from untaped.cache import RETRY_AFTER, Cache, Filled
 from untaped.contracts import Failed, Ok, Skipped, gather, select_one
 from untaped.contracts._cache import _Call
 from untaped.contracts._declare import contract_of
@@ -214,6 +214,36 @@ def test_a_provider_exception_reaches_the_caller_with_its_own_cause() -> None:
     assert caught.value.__cause__ is root
 
 
+@pytest.mark.parametrize("failure", [RuntimeError("boom"), DOWN])
+def test_a_provider_that_raises_drops_the_stale_lines_of_its_own_caches(
+    clock: CacheClock, failure: Exception
+) -> None:
+    extra = Cache("library", "extra", label="extra", max_age=timedelta(hours=1))
+    filled: list[bool] = []
+
+    def fill(_key: str, _task: object) -> Filled:
+        if filled:
+            raise DOWN
+        filled.append(True)
+        return Filled()
+
+    class Layered(Library):
+        def books(self) -> list[Book]:
+            extra.serve({"k": "k"}, refresh=None, fill=fill, read=lambda: None)
+            if filled and Library.error is not None:
+                raise Library.error
+            return super().books()
+
+    compose(shelf_spec(), library_spec(Layered()))
+    configure(LIBRARY_CONFIG)
+    extra.serve({"k": "k"}, refresh=None, fill=fill, read=lambda: None)
+    clock.advance(timedelta(hours=2))
+    Library.error = failure
+    with recording() as emitted, diagnostics_scope(), pytest.raises(type(failure)):
+        _library_provider().instance.books()  # type: ignore[attr-defined]
+    assert _stale(emitted) == []  # the raise says it
+
+
 def test_an_interrupted_refresh_suggests_no_cached_option(clock: CacheClock) -> None:
     class Halting(Library):
         halt: ClassVar[bool] = False
@@ -232,7 +262,7 @@ def test_an_interrupted_refresh_suggests_no_cached_option(clock: CacheClock) -> 
         _library_provider().instance.books()  # type: ignore[attr-defined]
     [error] = [each for each in emitted if isinstance(each, Failure)]
     assert error.message == "interrupted while refreshing library"
-    assert error.hint is None  # workspace has no --cached to suggest
+    assert error.hint is None  # the answer cache's reader has no --cached to suggest
 
 
 # --------------------------------------------------------------------------- #
