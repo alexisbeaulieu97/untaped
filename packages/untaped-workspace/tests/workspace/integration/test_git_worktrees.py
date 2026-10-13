@@ -71,6 +71,47 @@ def test_read_only_is_detached_at_the_base(
     assert git(dest, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"
 
 
+@pytest.mark.parametrize("message", [None, "release 1"], ids=["lightweight", "annotated"])
+def test_new_branch_from_a_tag_base(
+    worktrees: LocalGitWorktrees,
+    make_upstream: Callable[..., GitRemote],
+    tmp_path: Path,
+    message: str | None,
+) -> None:
+    upstream = make_upstream("api")
+    tagged = upstream.tag("v1", message=message)
+    upstream.commit("later.txt", "later")
+    dest = tmp_path / "ws" / "api"
+    checkout = worktrees.checkout(upstream.url, dest, branch="hotfix", base="v1")
+    assert (checkout.action, checkout.base, checkout.detail) == ("created", "v1", "from tag v1")
+    assert git(dest, "rev-parse", "HEAD") == tagged
+    assert git(dest, "config", "branch.hotfix.merge") == "refs/heads/hotfix"
+
+
+def test_read_only_is_detached_at_a_tag_base(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
+) -> None:
+    upstream = make_upstream("api")
+    tagged = upstream.tag("v1", message="release 1")
+    upstream.commit("later.txt", "later")
+    dest = tmp_path / "ws" / "api"
+    checkout = worktrees.checkout(upstream.url, dest, branch=None, base="v1")
+    assert (checkout.base, checkout.detail) == ("v1", "read-only at tag v1")
+    assert git(dest, "rev-parse", "HEAD") == tagged
+
+
+def test_a_branch_base_wins_over_a_tag_of_the_same_name(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
+) -> None:
+    upstream = make_upstream("api", branches=("dev",))
+    upstream.tag("dev")
+    upstream.commit("dev.txt", "dev", branch="dev")
+    dest = tmp_path / "ws" / "api"
+    checkout = worktrees.checkout(upstream.url, dest, branch="b", base="dev")
+    assert checkout.detail == "from origin/dev"
+    assert git(dest, "rev-parse", "HEAD") == upstream.oid("refs/heads/dev")
+
+
 def test_missing_base_is_not_found(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:

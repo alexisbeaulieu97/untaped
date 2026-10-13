@@ -57,7 +57,7 @@ ReadOnlyOption = Annotated[
         name="--read-only",
         negative="",
         consume_multiple=False,
-        help="Repo to check out read-only, detached at its base branch (repeatable).",
+        help="Repo to check out read-only, detached at its base (repeatable).",
     ),
 ]
 BranchOption = Annotated[
@@ -71,7 +71,10 @@ BaseOption = Annotated[
     str | None,
     Parameter(
         name="--base",
-        help="Base branch for every repo, read-only ones too. Default: each repo's default branch.",
+        help=(
+            "Base branch or tag for every repo, read-only ones too. "
+            "Default: each repo's default branch."
+        ),
     ),
 ]
 WorkspaceParallelOption = Annotated[

@@ -94,18 +94,13 @@ class LocalGitWorktrees:
         history = self._history(store)
         picked = base if base is not None else self._default_branch(store, url)
         refs = self._refs(store, branch, picked)
-        if f"refs/remotes/origin/{picked}" not in refs:
-            raise GitError(
-                f"base branch '{picked}' not found on origin of {url}", category="not_found"
-            )
+        start, label = _base_ref(picked, refs, url)
         store.run(["worktree", "prune"])
         if branch is None:
-            store.worktree_add(target, f"refs/remotes/origin/{picked}")
-            checkout = Checkout(
-                action="checked_out", base=picked, detail=f"read-only at origin/{picked}"
-            )
+            store.worktree_add(target, start)
+            checkout = Checkout(action="checked_out", base=picked, detail=f"read-only at {label}")
         else:
-            checkout = self._add_writable(store, target, branch, picked, refs)
+            checkout = self._add_writable(store, target, branch, picked, refs, start, label)
             self._set_upstream(store, branch)
         store.write_worktree_config(target, profile=self._profile)
         failure = self._backfill(store, delta, history)
@@ -362,8 +357,11 @@ class LocalGitWorktrees:
         return {line.removeprefix("branch ") for line in lines if line.startswith("branch ")}
 
     def _refs(self, store: RepoStore, branch: str | None, base: str) -> dict[str, str]:
-        """Object ids of whichever of the branch (local and origin) and base refs exist."""
-        names = [f"refs/remotes/origin/{base}"]
+        """Object ids of whichever of the branch (local and origin) and base refs exist.
+
+        The base is looked up as an origin branch and as a tag.
+        """
+        names = [f"refs/remotes/origin/{base}", f"refs/tags/{base}"]
         if branch is not None:
             names += [f"refs/heads/{branch}", f"refs/remotes/origin/{branch}"]
         args = ["for-each-ref", "--format=%(refname) %(objectname)", *names]
@@ -372,7 +370,14 @@ class LocalGitWorktrees:
         return {ref: oid for ref, _, oid in pairs if ref in names}
 
     def _add_writable(
-        self, store: RepoStore, target: Path, branch: str, base: str, refs: dict[str, str]
+        self,
+        store: RepoStore,
+        target: Path,
+        branch: str,
+        base: str,
+        refs: dict[str, str],
+        start: str,
+        label: str,
     ) -> Checkout:
         local = refs.get(f"refs/heads/{branch}")
         remote = refs.get(f"refs/remotes/origin/{branch}")
@@ -393,8 +398,8 @@ class LocalGitWorktrees:
         if local:
             store.worktree_add(target, f"refs/heads/{branch}")
             return Checkout(action="checked_out", base=base, detail="resumed local branch")
-        store.worktree_add(target, f"refs/remotes/origin/{base}", branch=branch)
-        return Checkout(action="created", base=base, detail=f"from origin/{base}")
+        store.worktree_add(target, start, branch=branch)
+        return Checkout(action="created", base=base, detail=f"from {label}")
 
     def _reconcile(self, store: RepoStore, branch: str, *, same: bool) -> str:
         """Fast-forward a local branch behind its remote; describe how the two relate."""
@@ -613,3 +618,14 @@ def _parse_status(out: str) -> tuple[str | None, str | None, int, int, int, int]
         elif line.startswith(("1 ", "2 ", "u ")):
             modified += 1
     return branch, upstream, ahead, behind, modified, untracked
+
+
+def _base_ref(base: str, refs: dict[str, str], url: str) -> tuple[str, str]:
+    """The ref a checkout starts from and how to name it: origin's branch, else the tag."""
+    if f"refs/remotes/origin/{base}" in refs:
+        return f"refs/remotes/origin/{base}", f"origin/{base}"
+    if f"refs/tags/{base}" in refs:
+        return f"refs/tags/{base}", f"tag {base}"
+    raise GitError(
+        f"base '{base}' is neither a branch nor a tag on origin of {url}", category="not_found"
+    )
