@@ -80,7 +80,7 @@ def test_a_generic_reads_as_name_and_bound_arguments() -> None:
     assert type_token(list[Choice[_Bounded]] | None).token == "Choice[integer][]?"
     assert type_token(Choice[int]).token == "Choice[integer]"
     assert type_token(list[Choice[int] | Choice[str]]).token == "Choice[integer]|Choice[string][]"
-    assert type_token(Choice[Literal["a", "b"]]).token == "Choice[string]"
+    assert type_token(Choice[Literal["b", "a"]]).token == "Choice[string(choice=a|b)]"
     assert type_token(Choice[str | None]).token == "Choice[string?]"
 
 
@@ -88,6 +88,53 @@ def test_a_generic_pydantic_model_reads_the_same_way() -> None:
     assert type_token(Page[str]).token == "Page[string]"
     assert type_token(Page[_Bounded]).token == "Page[integer]"
     assert type_token(list[Page[_Free]]).token == "Page[object][]"
+    assert type_token(Page).token == "Page[object]"
+
+
+class Node(BaseModel):
+    kids: list[Page[Node]]
+
+
+class Leaf(BaseModel):
+    page: Page[list[Leaf]] | None = None
+
+
+class Tree(BaseModel):
+    name: str
+    children: list[Tree] = []
+
+
+class Holds[T](BaseModel):
+    choices: list[Choice[T]]
+    page: Page[T] | None = None
+
+
+def test_a_model_that_refers_to_itself_reads_by_its_name() -> None:
+    assert type_token(Node).token == "Node"
+    assert type_token(Leaf).token == "Leaf"
+    assert type_token(Page[Page[str]]).token == "Page[Page[string]]"
+    assert {line.text for line in model_lines("contract o.Node", Node, None)} == {
+        "contract o.Node(kids)",
+        "contract o.Node.kids Page[Node][]",
+    }
+    assert "contract o.Leaf.page Page[Leaf[]]? default=None" in {
+        line.text for line in model_lines("contract o.Leaf", Leaf, None)
+    }
+
+
+def test_a_self_referential_payload_model_keeps_its_fields() -> None:
+    assert [line.text for line in model_lines("contract o.Tree", Tree, None)] == [
+        "contract o.Tree(name)",
+        "contract o.Tree.children Tree[] default=[]",
+        "contract o.Tree.name string",
+    ]
+
+
+def test_a_generic_payload_model_reads_its_own_parameters_as_object() -> None:
+    assert {line.text for line in model_lines("contract o.Holds", Holds, None)} >= {
+        "contract o.Holds.choices Choice[object][]",
+        "contract o.Holds.page Page[object]? default=None",
+    }
 
 
 def test_literal_values_are_choices_not_part_of_the_token() -> None:
