@@ -117,9 +117,13 @@ repo name nobody could look up as not found, naming the setting to set).
 - With any provider failed, a match from one ranked above every failure
   wins, with a warning; otherwise the first failure's own error and exit
   code stand. With nothing ranked, any failure blocks.
-- A stale cached answer confirms a match, never an absence. Serving one
-  prints an `untaped.stale` warning naming the failed refresh and the
-  answer's age.
+- A stale cached answer confirms a match, never an absence. Its
+  `untaped.stale` warning, naming the failed refresh and the answer's age,
+  prints when the answer is used: `select_one` prints it for the match it
+  returns, and any other reading of the answers prints it the first time;
+  a stale absence fails with the provider's error alone. A consumer that
+  reports staleness itself takes the lines first with
+  `Answers.take_stale()` and prints, drops or raises them.
 - A quarantined provider, or one that returned invalid items, is skipped
   with a warning when unranked and fails when ranked.
 - Otherwise no match exits 2 (not found), and several matches with nothing

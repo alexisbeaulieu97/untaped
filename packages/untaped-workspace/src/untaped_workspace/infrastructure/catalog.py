@@ -86,6 +86,7 @@ class RepoSources:
         answers = self._reask(source.plugin)
         if answers is None:
             return None
+        answers.take_stale()  # a stale answer is refused below with its own error
         for answer in answers:
             if isinstance(answer, Ok) and answer.stale is not None:
                 raise answer.stale.error

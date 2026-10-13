@@ -77,9 +77,9 @@ def test_the_owner_finds_one_book_and_reports_none() -> None:
 def test_the_answer_is_cached_per_profile() -> None:
     assert invoke_root(["shelf", "list"]).exit_code == 0
     home = Path(os.environ["HOME"])
-    [entry] = (home / ".untaped" / "plugins" / "library" / "cache").rglob("*.json")
+    [entry] = (home / ".untaped" / "plugins" / "shelf" / "caches").rglob("*.answer.json")
     assert entry.parent.name == "default"
-    assert entry.parent.parent.name == "shelf.book_source.books"
+    assert entry.parent.parent.name == "book_source_books"
 
 
 @pytest.mark.usefixtures("configured")
@@ -88,10 +88,11 @@ def test_a_failed_refresh_serves_the_cached_books_with_one_stale_warning(
 ) -> None:
     assert invoke_root(["shelf", "list"]).exit_code == 0
     home = Path(os.environ["HOME"])
-    [entry] = (home / ".untaped" / "plugins" / "library" / "cache").rglob("*.json")
-    stored = json.loads(entry.read_text(encoding="utf-8"))
+    [entry] = (home / ".untaped" / "plugins" / "shelf" / "caches").rglob("*.answer.json")
+    sidecar = entry.with_name(entry.name.removesuffix(".answer.json") + ".json")
+    stored = json.loads(sidecar.read_text(encoding="utf-8"))
     stored["refreshed_at"] = "2020-01-01T00:00:00Z"  # long expired: the next call is live
-    entry.write_text(json.dumps(stored), encoding="utf-8")
+    sidecar.write_text(json.dumps(stored), encoding="utf-8")
 
     def down(*_args: object, **_kwargs: object) -> Volume:
         raise RuntimeError("the catalogue is down")
@@ -106,6 +107,6 @@ def test_a_failed_refresh_serves_the_cached_books_with_one_stale_warning(
     assert (stale.plugin, stale.cache, stale.key) == (
         "library",
         "shelf.book_source_books",
-        f"library:{entry.stem}",
+        stored["key"],
     )
     assert stale.message.startswith("library: refresh failed (the catalogue is down)")

@@ -43,11 +43,9 @@ def test_a_provider_listing_one_name_twice_does_not_conform() -> None:
 
 
 def test_repos_is_cached_in_the_cache_workspace_declares_and_lists() -> None:
-    from untaped.contracts._declare import contract_of
     from untaped_workspace.settings import REPOS
 
-    info = contract_of(RepoSource)
-    assert info is not None and info.methods["repos"].cache is REPOS
+    assert getattr(RepoSource.repos, "__untaped_cached__", None) is REPOS
     assert [cache for cache in WORKSPACE.caches if cache is REPOS] == [REPOS]
 
 
