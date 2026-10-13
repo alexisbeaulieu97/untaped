@@ -72,11 +72,21 @@ _SEGMENT = 100
 
 @dataclass
 class CallState:
-    """One provider call's cache directive and what the call served."""
+    """One provider call's cache directive and what the call served.
+
+    ``stale_lines`` are the stale lines the call's caches served: under a
+    call state :meth:`Cache.serve` defers them to whoever reads the answer.
+    While the answer cache serves the call, ``answering`` is its cache and
+    ``provider`` the plugin answering; that cache's lines name ``provider``
+    and suggest no option.
+    """
 
     refresh: bool | None
     stale: BaseException | None = None
     refreshed_at: datetime | None = None
+    provider: str | None = None
+    answering: Cache | None = None
+    stale_lines: list[StaleData] = field(default_factory=list)
 
     def served(self, at: datetime) -> None:
         if self.refreshed_at is None or at < self.refreshed_at:
@@ -511,6 +521,8 @@ class Cache:
                 else "retry later, or pass --cached to read the cached data"
             )
             raise self._raised(key, state, hint=hint)
+        call = _CALL.get()
+        answer = call if call is not None and call.answering is self else None
         for key, state in freshness.items():
             if key in filled and not state.partial:
                 continue  # whole and fresh from this run
@@ -526,7 +538,9 @@ class Cache:
                     now=now,
                     started=started,
                     cached=refresh is False,
+                    plugin=None if answer is None else answer.provider,
                     max_age=max_age,
+                    options=answer is None,
                 )
                 self._emit_stale(line)
         return Served(
@@ -733,13 +747,18 @@ class Cache:
         cached: bool = False,
         plugin: str | None = None,
         max_age: timedelta | None = None,
+        options: bool = True,
     ) -> StaleData:
-        """The ``untaped.stale`` line for ``key`` served from ``freshness``."""
+        """The ``untaped.stale`` line for ``key`` served from ``freshness``.
+
+        ``options``: the reader has ``--refresh``/``--cached`` to suggest (an
+        answer cache's reader has none).
+        """
         assert freshness.refreshed_at is not None
         hint = None
-        if freshness.partial:
+        if options and freshness.partial:
             hint = "pass --refresh to retry them"
-        elif freshness.error is not None and freshness.attempted_at == started:
+        elif options and freshness.error is not None and freshness.attempted_at == started:
             hint = "retry later, or pass --cached to read it without checking"
         line = StaleData.describe(
             plugin=self.plugin if plugin is None else plugin,
@@ -757,14 +776,23 @@ class Cache:
             cached=cached,
         )
         remembered = freshness.error is not None and freshness.attempted_at != started
-        if remembered and not cached and not freshness.partial and freshness.retry_at:
+        if options and remembered and not cached and not freshness.partial and freshness.retry_at:
             # an earlier run's failed attempt, inside its retry window
             line = line.model_copy(update={"message": f"{line.message}, or pass --refresh"})
         return line
 
     def _emit_stale(self, line: StaleData) -> None:
-        """The one place a stale line leaves :meth:`serve`."""
-        current_sink().emit(line)
+        """The one place a stale line leaves :meth:`serve`: deferred under a call state.
+
+        Inside a provider call the line waits on the call state for whoever
+        reads the answer (``gather``'s ``Answers``, ``select_one``);
+        elsewhere it is said now.
+        """
+        call = _CALL.get()
+        if call is None:
+            current_sink().emit(line)
+        else:
+            call.stale_lines.append(line)
 
     def _raised(self, key: str, freshness: Freshness, *, hint: str | None) -> UntapedError:
         """``freshness.error`` as the error to raise, naming the cache and the key."""

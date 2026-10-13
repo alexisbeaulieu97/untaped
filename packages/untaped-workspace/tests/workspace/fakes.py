@@ -113,8 +113,10 @@ def rank(*plugins: str) -> None:
 
 
 def age_answers(by: timedelta) -> None:
-    """Make every stored contract answer ``by`` older (past its max age, say)."""
-    for entry in (Path.home() / ".untaped" / "plugins").glob("*/cache/**/*.json"):
-        data = json.loads(entry.read_text(encoding="utf-8"))
+    """Make every stored contract answer ``by`` older (past its max age, say): its sidecar's."""
+    for sidecar in (Path.home() / ".untaped" / "plugins").glob("*/caches/**/*.json"):
+        if sidecar.name.endswith(".answer.json"):
+            continue
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
         data["refreshed_at"] = (datetime.fromisoformat(data["refreshed_at"]) - by).isoformat()
-        entry.write_text(json.dumps(data), encoding="utf-8")
+        sidecar.write_text(json.dumps(data), encoding="utf-8")
