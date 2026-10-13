@@ -31,7 +31,7 @@ from typing import Any, TypeVar, get_args, get_origin
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 
-from untaped.cache import current_call
+from untaped.cache import Cache, current_call
 from untaped.contracts._declare import Binding, Contract, binding_of
 from untaped.errors import ConfigError
 from untaped.fs import atomic_write, file_lock
@@ -190,7 +190,7 @@ def call(
     provider: Contract,
     name: str,
     function: Callable[..., Any],
-    max_age: timedelta,
+    cache: Cache,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> Any:
@@ -209,7 +209,7 @@ def call(
     digest = argument_key(function, provider, args, kwargs)
     key, path = entry_key(binding, digest), entry_path(binding, name, digest)
     entry = _read(path, adapter, schema)
-    now = datetime.now(UTC)
+    now, max_age = datetime.now(UTC), cache.max_age()
     if entry is not None and (
         refresh is False or (refresh is None and now - entry.refreshed_at < max_age)
     ):

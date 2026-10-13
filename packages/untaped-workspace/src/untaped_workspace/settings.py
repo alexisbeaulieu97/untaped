@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Retired
+from untaped.sdk import Cache, Retired
 from untaped_workspace.domain.models import ArchivedRecord, WorkspaceRecord
+
+#: The repos each ``RepoSource`` provider lists (``RepoSource.repos``'s answer cache);
+#: its setting is ``workspace.caches.repo_source_repos.max_age_seconds``.
+REPOS = Cache("workspace", "repo_source_repos", label="repos", max_age=timedelta(hours=6))
 
 
 class WorkspaceSettings(BaseModel):

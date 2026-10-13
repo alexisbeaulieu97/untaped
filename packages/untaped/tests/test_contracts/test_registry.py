@@ -9,6 +9,7 @@ from cyclopts import App
 from pydantic import BaseModel
 
 from test_contracts.support import (
+    BY_AUTHOR,
     LIBRARY_CONFIG,
     Book,
     BookSource,
@@ -267,6 +268,20 @@ def test_an_owner_whose_contracts_break_takes_only_its_own_contracts_down(
 
     with pytest.raises(ConfigError, match="acme's contracts couldn't be read"):
         gather(Gadgets.gadgets)()
+
+
+def test_an_owner_that_does_not_list_a_cached_methods_cache_is_unreadable() -> None:
+    from untaped.contracts._registry import unreadable_owners
+
+    unlisted = PluginSpec(name="shelf", contracts=lambda: (BookSource,), caches=(BY_AUTHOR,))
+    compose(unlisted, shop_spec())
+    assert unreadable_owners() == ["shelf"]
+    rows = {(row.plugin, row.title): row.detail for row in doctor_rows()}
+    assert rows[("shelf", "bad-contracts")] == (
+        "contracts couldn't be read: TypeError: BookSource.books is cached in "
+        "shelf.book_source_books, which is not one of shelf's caches (list it on "
+        "PluginSpec.caches)"
+    )
 
 
 def test_an_offer_waiting_for_its_owner_is_a_pass_in_doctor() -> None:

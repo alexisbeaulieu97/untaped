@@ -146,6 +146,7 @@ overridden for one process with the environment variable shown.
 | `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). Experimental: may change in a minor release. |
 | `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. Experimental: may change in a minor release. |
 | `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. Experimental: may change in a minor release. |
+| `workspace.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. Experimental: may change in a minor release. |
 
 ## `workspace` state
 
@@ -173,8 +174,8 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
 | `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
-| `github.inventory.max_age_seconds` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | none | deleted in 11.0; workspace keeps the repos github lists for 6 hours (ctrl-r in its picker refreshes them) |
-| `github.inventory.path` | `UNTAPED_GITHUB__INVENTORY__PATH` | none | deleted in 11.0; workspace keeps the repos github lists for 6 hours (ctrl-r in its picker refreshes them) |
+| `github.inventory.max_age_seconds` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
+| `github.inventory.path` | `UNTAPED_GITHUB__INVENTORY__PATH` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
 | `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `workspace.protocol` | `UNTAPED_WORKSPACE__PROTOCOL` | none | deleted in 11.0; set github.git_protocol |

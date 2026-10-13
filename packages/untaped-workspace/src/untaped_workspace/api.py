@@ -10,11 +10,11 @@ provider imports.
 from __future__ import annotations
 
 from abc import abstractmethod
-from datetime import timedelta
 
 from untaped.contracts import Contract, Record, bridge, cached, listing
 from untaped.sdk import experimental
 from untaped_workspace.domain.repo import Repo, RepoName
+from untaped_workspace.settings import REPOS
 
 __all__ = ["Repo", "RepoName", "RepoSource"]
 
@@ -29,7 +29,7 @@ class RepoSource[T: Record = Repo](Contract):
         raise NotImplementedError
 
     @listing
-    @cached(max_age=timedelta(hours=6))
+    @cached(REPOS)
     @abstractmethod
     def repos(self) -> list[Repo]:
         """Every repo the provider can list in the active profile."""
