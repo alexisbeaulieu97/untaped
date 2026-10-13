@@ -59,6 +59,13 @@ def test_type_tokens(annotation: object, token: str) -> None:
     assert type_token(annotation).token == token
 
 
+def test_an_array_of_a_union_reads_apart_from_a_union_holding_an_array() -> None:
+    assert type_token(list[int | str]).token == "(integer|string)[]"
+    assert type_token(int | list[str]).token == "integer|string[]"
+    assert type_token(list[int | None]).token == "integer?[]"
+    assert type_token(list[list[Choice[int | str]]]).token == "Choice[integer|string][][]"
+
+
 def test_a_type_variable_reads_as_its_bound_or_object() -> None:
     assert type_token(list[_Bounded]).token == "integer[]"
     assert type_token(list[_Free] | None).token == "array?"
@@ -79,7 +86,7 @@ def test_a_generic_reads_as_name_and_bound_arguments() -> None:
     assert type_token(list[Choice[_Free]]).token == "Choice[object][]"
     assert type_token(list[Choice[_Bounded]] | None).token == "Choice[integer][]?"
     assert type_token(Choice[int]).token == "Choice[integer]"
-    assert type_token(list[Choice[int] | Choice[str]]).token == "Choice[integer]|Choice[string][]"
+    assert type_token(list[Choice[int] | Choice[str]]).token == "(Choice[integer]|Choice[string])[]"
     assert type_token(Choice[Literal["b", "a"]]).token == "Choice[string(choice=a|b)]"
     assert type_token(Choice[Literal["a", "c|d"]]).token == 'Choice[string(choice="c|d"|a)]'
     assert type_token(Choice[str | None]).token == "Choice[string?]"
@@ -115,7 +122,7 @@ class Aliased(BaseModel):
 def test_a_generic_inside_a_type_alias_reads_the_same_way() -> None:
     assert type_token(Choices).token == "Choice[integer][]"
     assert type_token(Pair[int]).token == "Choice[integer][]"
-    assert type_token(Swapped[int, str]).token == "Box[integer]|Choice[string][]"
+    assert type_token(Swapped[int, str]).token == "(Box[integer]|Choice[string])[]"
     assert type_token(Unused[int, str]).token == "Choice[string][]"
     assert {line.text for line in model_lines("contract o.Aliased", Aliased, None)} >= {
         "contract o.Aliased.plain Choice[integer][]",
