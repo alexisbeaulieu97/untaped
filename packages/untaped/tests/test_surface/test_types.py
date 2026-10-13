@@ -96,6 +96,17 @@ type Choices = list[Choice[int]]
 type Pair[X] = list[Choice[X]]
 
 
+@dataclass
+class Box[T]:
+    value: T
+
+
+type Swapped[K, V] = list[Choice[V] | Box[K]]
+type Unused[K, V] = list[Choice[V]]
+type Recursive = list[Recursive] | Choice[int]
+type RecursiveOf[X] = list[RecursiveOf[X]] | Choice[X]
+
+
 class Aliased(BaseModel):
     plain: Choices
     paired: Pair[str]
@@ -104,10 +115,17 @@ class Aliased(BaseModel):
 def test_a_generic_inside_a_type_alias_reads_the_same_way() -> None:
     assert type_token(Choices).token == "Choice[integer][]"
     assert type_token(Pair[int]).token == "Choice[integer][]"
+    assert type_token(Swapped[int, str]).token == "Box[integer]|Choice[string][]"
+    assert type_token(Unused[int, str]).token == "Choice[string][]"
     assert {line.text for line in model_lines("contract o.Aliased", Aliased, None)} >= {
         "contract o.Aliased.plain Choice[integer][]",
         "contract o.Aliased.paired Choice[string][]",
     }
+
+
+def test_a_recursive_alias_reads_by_its_name_where_it_comes_back() -> None:
+    assert type_token(Recursive).token == "Choice[integer]|Recursive[]"
+    assert type_token(RecursiveOf[int]).token == "Choice[integer]|RecursiveOf[integer][]"
 
 
 class Node(BaseModel):

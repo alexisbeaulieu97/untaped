@@ -160,13 +160,14 @@ def generic_names(defs: Mapping[str, Any], annotation: object) -> Mapping[str, A
     being spelled, through type arguments only.
     """
     found = dict(defs)
-    seen: set[int] = set()
+    seen: set[object] = set()
     pending = [annotation]
     while pending:
         current = pending.pop()
-        if id(current) in seen:
+        key = _key(current)
+        if key in seen:
             continue
-        seen.add(id(current))
+        seen.add(key)
         parts = generic_parts(current)
         if parts is not None:
             ref = schema_of(list[current])["items"].get("$ref")  # type: ignore[valid-type]
@@ -178,9 +179,31 @@ def generic_names(defs: Mapping[str, Any], annotation: object) -> Mapping[str, A
             value = _alias_value(current)
             if value is not None:
                 pending.append(value)
+                _name_alias(found, current)
         if not _ARGUMENT.get() and isinstance(current, type) and issubclass(current, BaseModel):
             pending.extend(info.annotation for info in current.model_fields.values())
     return found
+
+
+def _name_alias(defs: dict[str, Any], annotation: object) -> None:
+    """Name a parametrized alias's def ``Name[arg,…]``, as a recursive one reads where it
+    comes back (never pydantic's ``Name_arg_``)."""
+    origin = get_origin(annotation)
+    if not isinstance(origin, typing.TypeAliasType):
+        return
+    ref = schema_of(list[annotation])["items"].get("$ref")  # type: ignore[valid-type]
+    if isinstance(ref, str) and isinstance(defs.get(ref), Mapping):
+        arguments = ",".join(_argument(arg) for arg in get_args(annotation))
+        defs[ref] = {**defs[ref], _NAME: f"{origin.__name__}[{arguments}]"}
+
+
+def _key(annotation: object) -> object:
+    """``annotation`` itself when hashable (``Rec[int]`` is made anew each time), else its id."""
+    try:
+        hash(annotation)
+    except TypeError:
+        return id(annotation)
+    return annotation
 
 
 def _alias_value(annotation: object) -> object | None:
@@ -191,10 +214,14 @@ def _alias_value(annotation: object) -> object | None:
     if not isinstance(origin, typing.TypeAliasType):
         return None
     value: object = origin.__value__
-    args = get_args(annotation)
+    by_name = dict(zip(origin.__type_params__, get_args(annotation), strict=False))
+    parameters = getattr(value, "__parameters__", ())
+    if not parameters:
+        return value
     try:
-        return typing.cast("object", value[args[0] if len(args) == 1 else args])  # type: ignore[index]
-    except TypeError:
+        filled = tuple(by_name[parameter] for parameter in parameters)
+        return typing.cast("object", value[filled[0] if len(filled) == 1 else filled])  # type: ignore[index]
+    except TypeError, KeyError:
         return value
 
 
@@ -291,13 +318,19 @@ def _target(schema: Mapping[str, Any], defs: Mapping[str, Any]) -> Mapping[str, 
     return target
 
 
-def _token(schema: Mapping[str, Any], defs: Mapping[str, Any], *, top: bool = False) -> str:
-    target = _target(schema, defs)
-    if target is not None:
-        return _token(target, defs)
+def _token(
+    schema: Mapping[str, Any],
+    defs: Mapping[str, Any],
+    *,
+    top: bool = False,
+    seen: frozenset[str] = frozenset(),
+) -> str:
     ref = schema.get("$ref")
+    target = _target(schema, defs)
+    if target is not None and isinstance(ref, str) and ref not in seen:
+        return _token(target, defs, seen=seen | {ref})
     if isinstance(ref, str):
-        return _ref_name(ref, defs)
+        return _ref_name(ref, defs)  # a model, or a recursive alias where it comes back
     if top and isinstance(schema.get(_NAME), str):
         return str(schema[_NAME])
     if top and schema.get("type") == "object" and "properties" in schema and "title" in schema:
@@ -305,10 +338,10 @@ def _token(schema: Mapping[str, Any], defs: Mapping[str, Any], *, top: bool = Fa
     for key in ("anyOf", "oneOf"):
         members = schema.get(key)
         if isinstance(members, list):
-            return _union(members, defs)
+            return _union(members, defs, seen)
     kind = schema.get("type")
     if isinstance(kind, list):
-        return _union([{"type": each} for each in kind], defs)
+        return _union([{"type": each} for each in kind], defs, seen)
     if "enum" in schema or "const" in schema:
         values = schema.get("enum", [schema.get("const")])
         kind = kind or _json_type(values)
@@ -317,7 +350,7 @@ def _token(schema: Mapping[str, Any], defs: Mapping[str, Any], *, top: bool = Fa
     if kind == "array":
         items = schema.get("items")
         if isinstance(items, Mapping) and items:
-            return f"{_token(items, defs)}[]{_constraints(schema)}"
+            return f"{_token(items, defs, seen=seen)}[]{_constraints(schema)}"
     return f"{kind}{_constraints(schema)}"
 
 
@@ -327,9 +360,11 @@ def _ref_name(ref: str, defs: Mapping[str, Any]) -> str:
     return name if isinstance(name, str) else ref
 
 
-def _union(members: list[Mapping[str, Any]], defs: Mapping[str, Any]) -> str:
+def _union(members: list[Mapping[str, Any]], defs: Mapping[str, Any], seen: frozenset[str]) -> str:
     nullable = any(member.get("type") == "null" for member in members)
-    tokens = sorted({_token(member, defs) for member in members if member.get("type") != "null"})
+    tokens = sorted(
+        {_token(member, defs, seen=seen) for member in members if member.get("type") != "null"}
+    )
     joined = "|".join(tokens) or "null"
     return f"{joined}?" if nullable and tokens else joined
 
@@ -366,10 +401,13 @@ def _scalar(value: object) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
 
 
-def _choices(schema: Mapping[str, Any], defs: Mapping[str, Any]) -> list[object]:
+def _choices(
+    schema: Mapping[str, Any], defs: Mapping[str, Any], seen: frozenset[str] = frozenset()
+) -> list[object]:
+    ref = schema.get("$ref")
     target = _target(schema, defs)
-    if target is not None:
-        return _choices(target, defs)
+    if target is not None and isinstance(ref, str):
+        return [] if ref in seen else _choices(target, defs, seen | {ref})
     if "enum" in schema:
         return list(schema["enum"])
     if "const" in schema:
@@ -377,7 +415,7 @@ def _choices(schema: Mapping[str, Any], defs: Mapping[str, Any]) -> list[object]
     found: list[object] = []
     for key in ("anyOf", "oneOf"):
         for member in schema.get(key, ()):
-            found.extend(value for value in _choices(member, defs) if value not in found)
+            found.extend(value for value in _choices(member, defs, seen) if value not in found)
     return found
 
 
