@@ -71,10 +71,10 @@ class RepoPlan:
     stored: bool
     blockers: tuple[str, ...]
     """Work release would lose: the active worktree's blockers, unpushed branches."""
+    bases: frozenset[str]
+    """The workspace's bases for the repo: a tag among them reaches no unpushed work."""
     discards: tuple[str, ...] = ()
     """Other branches with work on them that only ``--force`` deletes (no record names them)."""
-    bases: frozenset[str] = frozenset()
-    """The workspace's bases for the repo: a tag among them reaches no unpushed work."""
 
 
 @dataclass(frozen=True)

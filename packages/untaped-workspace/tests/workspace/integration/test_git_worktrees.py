@@ -115,6 +115,7 @@ def test_a_tag_no_branch_has_is_not_unpushed_work(
         status = worktrees.status(dest, branch=branch, base="v1")
         assert status is not None and status.unpushed == 0
     commit_in(writable)
+    git(writable, "tag", "local")  # only the base tag's commits are excused
     status = worktrees.status(writable, branch="hotfix", base="v1")
     assert status is not None and status.unpushed == 1
     with pytest.raises(GitError):
