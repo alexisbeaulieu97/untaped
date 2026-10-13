@@ -34,7 +34,7 @@ _SDK_OWNER = re.compile(
 )
 _SDK_CALLBACK = re.compile(r"callback\((?P<name>\w+), (?P<arity>[\w*]+)\)")
 _SDK_OPTIONAL = re.compile(
-    r"^sdk (?P<subject>[\w.]+)\((?P<name>\w+)(?:@(?P<at>\d+))?=\) default=.*?"
+    r"^sdk (?P<subject>[\w.]+)\((?P<name>\w+)(?:@(?P<at>\d+)(?P<only>/)?)?=\) default=.*?"
     r"(?: callback\((?P<arity>[\w*]+)\))?$"
 )
 _SDK_IMPLEMENTER = re.compile(r"^sdk (?P<subject>[\w.]+) implement=")
@@ -131,8 +131,9 @@ def _dropped_reappear(current: _Owner, old: _Owner, optional: list[_Optional]) -
     """Condition 2: every dropped item is an optional line at its position or under its name."""
     start = len(current.positionals)
     for index, positional in enumerate(old.positionals[start:]):
+        at = start + index + 1
         if not _reappears(
-            optional, positional.name, start + index + 1, positional.many, old.callbacks
+            optional, positional.name, at, positional.many, old.callbacks, only=positional.only
         ):
             return False
     return all(
@@ -158,6 +159,8 @@ class _Optional:
     at: int | None
     many: bool
     arity: str | None
+    only: bool = False
+    """Positional-only (``sdk`` ``name@k/=``): a keyword caller can't use it."""
 
 
 def _optional_lines(texts: Iterable[str], subject: str, *, cli: bool) -> list[_Optional]:
@@ -172,21 +175,29 @@ def _optional_lines(texts: Iterable[str], subject: str, *, cli: bool) -> list[_O
             match = _CLI_OPTIONAL_POSITIONAL.match(item)
             if match:
                 found.append(_Optional(match["name"], int(match["at"]), bool(match["many"]), None))
-            elif item.startswith("--") and rest and rest[0] in ("VALUE", "VALUE...", "switch"):
+            elif item.startswith("--") and rest and rest[0] in ("VALUE", "VALUE..."):
+                # A required option comes back valued: as a switch, ``--opt x`` breaks.
                 found.append(_Optional(item, None, rest[0] == "VALUE...", None))
         else:
             match = _SDK_OPTIONAL.match(text)
             if match and match["subject"] == subject:
                 at = int(match["at"]) if match["at"] else None
-                found.append(_Optional(match["name"], at, False, match["arity"]))
+                only = bool(match["only"])
+                found.append(_Optional(match["name"], at, False, match["arity"], only))
     return found
 
 
 def _reappears(
-    optional: list[_Optional], name: str, at: int | None, many: bool, callbacks: dict[str, str]
+    optional: list[_Optional],
+    name: str,
+    at: int | None,
+    many: bool,
+    callbacks: dict[str, str],
+    *,
+    only: bool = False,
 ) -> bool:
     for each in optional:
-        if each.name != name or (many and not each.many):
+        if each.name != name or (many and not each.many) or (each.only and not only):
             continue
         if at is not None and each.at != at:
             continue

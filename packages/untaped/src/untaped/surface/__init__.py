@@ -137,7 +137,11 @@ def _owned(
     core: bool = True,
 ) -> list[Line]:
     """The ``sdk`` lines of ``modules``, then each plugin's contracts and ``extensions`` keys."""
-    from untaped.surface._contracts import contract_lines, owned_contracts  # noqa: PLC0415
+    from untaped.surface._contracts import (  # noqa: PLC0415
+        contract_lines,
+        method_mark,
+        owned_contracts,
+    )
     from untaped.surface._sdk import collect_exports, module_lines  # noqa: PLC0415
     from untaped.surface._settings import extension_lines  # noqa: PLC0415
 
@@ -151,7 +155,8 @@ def _owned(
     for plugin in result.plugins:
         name = plugin.spec.name
         infos = owned_contracts(plugin.spec)
-        lines.extend(extension_lines(name, {i.name: sorted(i.methods) for i in infos}, marks[name]))
+        ranked = {i.name: {m: method_mark(i, m, marks[name]) for m in i.methods} for i in infos}
+        lines.extend(extension_lines(name, ranked))
         lines.extend(contract_lines(name, infos, marks[name], exports.stable_classes))
     return lines
 

@@ -17,6 +17,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 import gen_surface as generator  # scripts/gen_surface.py
 import pytest
@@ -96,12 +97,17 @@ def removal_message(tag: str, gone: list[Line]) -> str:
     )
 
 
+def no_baseline() -> NoReturn:
+    """No release tag to compare with: a CI checkout without tags fails; a local one skips."""
+    if os.environ.get("CI"):
+        pytest.fail("no release tag reachable from HEAD: CI must check out with tags")
+    pytest.skip("no release tag reachable from HEAD (fetch tags to run this check)")
+
+
 def test_no_stable_surface_removed(generated: str) -> None:
     tag = baseline_tag(_git("tag", "--list", "v*", "--merged", "HEAD").split())
     if tag is None:
-        if os.environ.get("CI"):
-            pytest.fail("no release tag reachable from HEAD: CI must check out with tags")
-        pytest.skip("no release tag reachable from HEAD (fetch tags to run this check)")
+        no_baseline()
     try:
         recorded = _git("show", f"{tag}:{FILE}")
     except GitCommandError:
@@ -138,6 +144,17 @@ def test_a_major_in_preparation_may_remove(
     version: str, fragments: list[str], exempt: bool
 ) -> None:
     assert removal_exempt(version, "v11.1.0", fragments) is exempt
+
+
+def test_a_clone_without_tags_fails_under_ci_and_skips_locally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CI", "true")
+    with pytest.raises(pytest.fail.Exception, match="CI must check out with tags"):
+        no_baseline()
+    monkeypatch.delenv("CI")
+    with pytest.raises(pytest.skip.Exception, match="fetch tags"):
+        no_baseline()
 
 
 def test_the_removal_message_names_the_way_out() -> None:

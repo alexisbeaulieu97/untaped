@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 import pytest
 from pydantic import BaseModel, Field
 
+from untaped import bootstrap
 from untaped.contracts import Contract
+from untaped.deprecated_keys import key_mappings
 from untaped.plugins.registry import PluginSpec
+from untaped.settings import SkillsSettings
 from untaped.stability import experimental
 from untaped.surface import Line, plugin_lines
+from untaped.surface._settings import settings_lines
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -104,3 +109,31 @@ def test_lines_do_not_depend_on_home(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("HOME", str(tmp_path))
     assert plugin_lines(spec) == before
     assert Line("cfg bins.timeout number? default=unset") in before
+
+
+@pytest.fixture
+def renamed_skills_key(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """``skills.updates`` as if it had been renamed from ``skills.auto_update``."""
+    monkeypatch.setattr(SkillsSettings, "renamed_keys", {"auto_update": "updates"}, raising=False)
+    key_mappings.cache_clear()
+    yield
+    key_mappings.cache_clear()
+
+
+@pytest.mark.usefixtures("renamed_skills_key")
+def test_a_root_section_keeps_its_renamed_key() -> None:
+    lines = settings_lines(bootstrap.compose_root(candidates=[]))
+    assert Line("cfg skills.auto_update -> skills.updates", "deprecated") in lines
+
+
+def test_extension_rank_keys_take_their_methods_marks() -> None:
+    @experimental
+    class CrateSource(Contract):
+        @abstractmethod
+        def crates(self) -> list[Bin]: ...
+
+    lines = plugin_lines(PluginSpec(name="bins", contracts=lambda: (CrateSource,)))
+    assert (
+        Line("cfg bins.extensions.crate_source.rank.crates string[] default=[]", "experimental")
+        in lines
+    )

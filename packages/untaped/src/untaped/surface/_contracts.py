@@ -64,8 +64,6 @@ def contract_lines(
     stable_classes: set[type],
 ) -> list[Line]:
     """The ``contract`` lines of ``owner``'s contracts and their payload models."""
-    from untaped.contracts._schema import method_stability  # noqa: PLC0415
-
     lines: list[Line] = []
     reached: dict[type[BaseModel], set[MarkName | None]] = {}
     for info in infos:
@@ -74,8 +72,7 @@ def contract_lines(
         abstract = ",".join(sorted(getattr(info.cls, "__abstractmethods__", ())))
         lines.append(Line(f"{subject} abstract={abstract}", contract_mark))
         for name, method in sorted(info.methods.items()):
-            stability = method_stability(info, name)
-            mark = (None if stability == "stable" else stability) or plugin_mark
+            mark = method_mark(info, name, plugin_mark)
             hints = {key: _substitute(hint, info) for key, hint in method.hints.items()}
             lines.append(Line(f"{subject}.{name}{_signature(method.function, hints)}", mark))
             for hint in hints.values():
@@ -94,6 +91,14 @@ def contract_lines(
         model_mark = _model_mark(marks, model in stable_classes)
         lines.extend(model_lines(f"contract {owner}.{model.__name__}", model, model_mark))
     return lines
+
+
+def method_mark(info: ContractInfo, name: str, plugin_mark: MarkName | None) -> MarkName | None:
+    """A contract method's mark: its own, else its contract's, else its plugin's."""
+    from untaped.contracts._schema import method_stability  # noqa: PLC0415
+
+    stability = method_stability(info, name)
+    return (None if stability == "stable" else stability) or plugin_mark
 
 
 def model_lines(subject: str, model: type[BaseModel], mark: MarkName | None) -> list[Line]:

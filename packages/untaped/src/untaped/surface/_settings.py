@@ -153,19 +153,20 @@ def settings_lines(result: CompositionResult, *, root: bool = True) -> list[Line
         for leaf in setting_leaves(section):
             mark = plugin_mark if section.is_state else _mark(leaf.mark, Deprecated, Experimental)
             lines.extend(_leaf_lines(area, leaf, mark, schema, section.prefix))
-        if not section.is_state and section.prefix:
+        if not section.is_state:
             lines.extend(_renamed(section))
     return lines
 
 
 def extension_lines(
-    owner: str, contracts: Mapping[str, list[str]], mark: MarkName | None
+    owner: str, contracts: Mapping[str, Mapping[str, MarkName | None]]
 ) -> list[Line]:
-    """``cfg <owner>.extensions.<contract>.rank.<method>``: one per owned contract method."""
+    """``cfg <owner>.extensions.<contract>.rank.<method>``: one per owned contract method,
+    marked like that method's ``contract`` line."""
     return [
         Line(f"cfg {owner}.extensions.{contract}.rank.{method} string[] default=[]", mark)
         for contract, methods in sorted(contracts.items())
-        for method in sorted(methods)
+        for method, mark in sorted(methods.items())
     ]
 
 
@@ -212,10 +213,20 @@ def _model_node(node: Mapping[str, Any], defs: Mapping[str, Any]) -> Mapping[str
 
 
 def _renamed(section: Section) -> list[Line]:
-    from untaped.deprecated_keys import key_mappings  # noqa: PLC0415
+    """``cfg <old> -> <new>  [deprecated]`` for each renamed key still read.
 
-    mappings = key_mappings(section.model)
+    The root's sections (``http``, ``ui``, ``skills``) declare their own.
+    """
+    from untaped.deprecated_keys import key_mappings  # noqa: PLC0415
+    from untaped.settings import model_sections  # noqa: PLC0415
+
+    if section.prefix:
+        models = {section.prefix: section.model}
+    else:
+        found = model_sections(section.model)
+        models = {name: found[name] for name in sorted(_ROOT_SECTIONS & set(found))}
     return [
-        Line(f"cfg {section.prefix}.{old} -> {section.prefix}.{new}", "deprecated")
-        for old, new in sorted(mappings.readable.items())
+        Line(f"cfg {prefix}.{old} -> {prefix}.{new}", "deprecated")
+        for prefix, model in models.items()
+        for old, new in sorted(key_mappings(model).readable.items())
     ]

@@ -397,7 +397,9 @@ class _Walker:
             name = parameter.name
             if parameter.kind is not parameter.KEYWORD_ONLY:
                 position += 1
-                name = f"{name}@{position}"
+                # ``name@k/=``: positional-only, so a keyword caller can't pass it.
+                only = "/" if parameter.kind is parameter.POSITIONAL_ONLY else ""
+                name = f"{name}@{position}{only}"
             if parameter.default is not parameter.empty:
                 lines.append(self.optional(subject, name, parameter, arity, mark, factories))
                 continue
@@ -601,6 +603,8 @@ def _arity(annotation: object, module: types.ModuleType, scope: Mapping[str, obj
     args = get_args(annotation)
     if origin is typing.Literal:
         return None
+    if annotation is collections.abc.Callable or annotation is typing.Callable:
+        return "*"
     if origin is collections.abc.Callable:
         params = args[0] if args else Ellipsis
         if params is Ellipsis:

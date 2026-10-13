@@ -1,7 +1,7 @@
 # untaped surface 1
 cfg shelf.caches.book_source_books.max_age_seconds integer(minimum=0) default=3600
-cfg shelf.extensions.book_source.rank.books string[] default=[]
-cfg shelf.extensions.book_source.rank.to_book string[] default=[]
+cfg shelf.extensions.book_source.rank.books string[] default=[]  [experimental]
+cfg shelf.extensions.book_source.rank.to_book string[] default=[]  [experimental]
 cli untaped shelf
 cli untaped shelf find --format VALUE default=table
 cli untaped shelf find --format alias=-f
