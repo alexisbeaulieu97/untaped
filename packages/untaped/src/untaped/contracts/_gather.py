@@ -44,6 +44,7 @@ from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.http import request_deadline
 from untaped.messages import command_line
 from untaped.output.diagnostic import StaleData
+from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.output.sink import Diagnostics
 from untaped.records import Issued, Source, kind_of
 
@@ -196,18 +197,24 @@ def gather[C: Contract, **P, R](
     needs: Sequence[Callable[..., Any]] = (),
     deadline: float | timedelta | None = None,
     plugins: Collection[str] | None = None,
+    progress: ProgressHandle = NO_PROGRESS,
 ) -> Callable[P, Answers[R]]:
     """Ask every ready provider of ``method``; call the result with the method's arguments.
 
     ``refresh`` directs ``@cached`` methods: ``False`` serves cached answers
-    only (none stored: ``Skipped(no-cache)``), ``None`` serves within its max age
-    and calls otherwise, ``True`` always calls. ``needs`` names further
+    only (none stored: ``Skipped(no-cache)``), ``None`` serves within the
+    cache's max age (its ``<owner>.caches.<name>.max_age_seconds`` setting)
+    and calls otherwise, ``True`` always calls. A call refreshing an answer
+    holds that answer's lock, so a second process asking the same provider
+    waits for it (``deadline`` does not bound that wait). ``needs`` names further
     methods a provider must fill to be asked. ``deadline`` (seconds) bounds
     every request a provider makes through ``self.http``. ``plugins`` asks
     only the providers of those plugins (an owner that already chose one by a
     cheaper method, say); the others are left out of the answers. With no ready
     provider at all it raises :class:`ConfigError` (exit 4) naming why each
-    one isn't (:class:`NoProviderReady`).
+    one isn't (:class:`NoProviderReady`). ``progress`` counts the providers
+    as they answer, each named as it does; a provider's method never gets
+    the handle.
     """
     info, wanted = method_contract(method)
     needed = [wanted.name]
@@ -259,7 +266,9 @@ def gather[C: Contract, **P, R](
             job: tuple[Provider, int | None], asked: tuple[Answer[R], list[StaleData]]
         ) -> None:
             answers[job[0].plugin], stale[job[0].plugin] = asked
+            progress.update(job[0].plugin, done=len(stale), total=len(runnable))
 
+        progress.update(done=0, total=len(runnable))
         bounded_map(ask, runnable, concurrency=min(_POOL, len(runnable)), on_each=keep)
         ordered = sorted(
             answers.values(),

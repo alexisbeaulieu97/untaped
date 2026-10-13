@@ -621,3 +621,32 @@ def test_plugins_asks_only_those_providers() -> None:
 
     assert [answer.plugin for answer in answers] == ["shop"]
     assert Library.calls == 0
+
+
+def test_progress_counts_the_providers_as_they_answer_on_the_calling_thread() -> None:
+    import inspect
+    import threading
+
+    updates: list[tuple[str | None, int | None, int | None]] = []
+    threads: set[int] = set()
+
+    class Recorder:
+        def update(
+            self,
+            message: str | None = None,
+            *,
+            phase: str | None = None,
+            done: int | None = None,
+            total: int | None = None,
+        ) -> None:
+            updates.append((message, done, total))
+            threads.add(threading.get_ident())
+
+    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    write_config(LIBRARY_CONFIG)
+    gather(BookSource.books, progress=Recorder())()
+    assert updates[0] == (None, 0, 3)
+    assert {message for message, _, _ in updates[1:]} == {"kiosk", "library", "shop"}
+    assert [(done, total) for _, done, total in updates] == [(0, 3), (1, 3), (2, 3), (3, 3)]
+    assert threads == {threading.get_ident()}
+    assert "progress" not in inspect.signature(Library.books).parameters
