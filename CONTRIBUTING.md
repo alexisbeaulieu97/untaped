@@ -145,6 +145,11 @@ in this repository it may also live in core. Declare a
 - **Config reference.** After changing a settings model, run
   `uv run python scripts/gen_config_reference.py`; a test fails while the
   reference is stale.
+- **Public surface.** After changing a command, setting, SDK export or
+  contract, run `uv run python scripts/gen_surface.py` and commit
+  `tests/repo/surface.txt`. A test fails while it is stale, and in a minor
+  release when it loses a stable line of the last release; the rules behind
+  the lines are in `untaped/surface/__init__.py`.
 
 ## Before you open a PR
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
 import sys
 import tomllib
@@ -18,7 +19,7 @@ from untaped.conventions import plugin_violations
 from untaped.errors import UsageError
 from untaped.management.plugin_new import BUILD_SYSTEM, ScaffoldOutcome, scaffold
 from untaped.plugins.registry import PluginCandidate
-from untaped.testing import assert_fills, compose_with, invoke_cli
+from untaped.testing import compose_with, invoke_cli
 
 pytestmark = pytest.mark.usefixtures(
     "fresh_composition", "_isolated_config", "contract_plugins_site"
@@ -87,10 +88,25 @@ def test_the_scaffold_composes_follows_the_conventions_and_fills_its_contract(
         requires_dist=_requires(pyproject),
     )
     assert plugin_violations("gitlab", candidates=[_RACK, gitlab]) == []
-    provider = importlib.import_module("untaped_gitlab.providers.rack").GitlabItemSource
+    # Its own tests pass; check_conventions runs above with the candidates it can't discover.
+    tests = _load(root / "tests" / "test_gitlab.py")
     with compose_with(_RACK, gitlab):
-        assert_fills(provider)
+        tests.test_gitlab_fills_item_source()
     assert (root / "src" / "untaped_gitlab" / "fills.json").exists()
+    tests.test_gitlab_keeps_its_surface()
+    # No commands, settings or modules yet: the first run writes an empty surface.
+    surface = (root / "tests" / "surface.txt").read_text(encoding="utf-8")
+    assert surface == "# untaped surface 1\n"
+    tests.test_gitlab_keeps_its_surface()
+
+
+def _load(path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(f"scaffold_{path.stem}", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_the_provider_carries_each_method_and_docstring(tmp_path: Path) -> None:
