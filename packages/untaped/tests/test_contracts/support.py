@@ -11,12 +11,16 @@ from typing import ClassVar
 from pydantic import BaseModel
 
 from untaped import bootstrap
+from untaped.cache import Cache
 from untaped.contracts import Configured, Contract, Issued, Record, bridge, cached, listing
 from untaped.contracts._registry import reset
 from untaped.plugins.registry import CompositionResult, PluginSpec
 from untaped.sdk import experimental
 from untaped.settings import get_settings
 from untaped.testing import plugin_candidate
+
+BOOKS = Cache("shelf", "book_source_books", label="books", max_age=timedelta(hours=1))
+BY_AUTHOR = Cache("shelf", "book_source_by_author", label="books", max_age=timedelta(hours=1))
 
 
 class Book(Issued, kind="shelf.book"):
@@ -33,14 +37,14 @@ class BookSource[T: Record = Book](Contract):
         raise NotImplementedError
 
     @listing
-    @cached(max_age=timedelta(hours=1))
+    @cached(BOOKS)
     @abstractmethod
     def books(self) -> list[Book]: ...
 
     def lookup(self, title: str) -> list[Book]:
         raise NotImplementedError
 
-    @cached(max_age=timedelta(hours=1))
+    @cached(BY_AUTHOR)
     def by_author(self, author: str, limit: int = 10) -> list[Book]:
         raise NotImplementedError
 
@@ -112,7 +116,7 @@ class Kiosk(BookSource):
 
 
 def shelf_spec() -> PluginSpec:
-    return PluginSpec(name="shelf", contracts=lambda: (BookSource,))
+    return PluginSpec(name="shelf", contracts=lambda: (BookSource,), caches=(BOOKS, BY_AUTHOR))
 
 
 def library_spec(*providers: Contract) -> PluginSpec:

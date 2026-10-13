@@ -369,7 +369,8 @@ is a set of repositories a user adds (`ansible source add`); and
 `RepoSource` is a contract.
 
 **Answer cache**: the SDK's store of a cached contract answer, per
-provider, method, profile and arguments.
+provider, method, profile and arguments, kept under the owner's
+`caches/<contract>_<method>/` beside its freshness.
 
 **Repo store**: the git plugin's shared bare repositories under
 `plugins/git/store/`, which every consumer's refs and worktrees depend on.

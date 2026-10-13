@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -39,3 +40,35 @@ def test_a_provider_listing_one_name_twice_does_not_conform() -> None:
         pytest.raises(AssertionError, match="repos share a name: acme/api"),
     ):
         conformance(github)
+
+
+def test_repos_is_cached_in_the_cache_workspace_declares_and_lists() -> None:
+    from untaped_workspace.settings import REPOS
+
+    assert getattr(RepoSource.repos, "__untaped_cached__", None) is REPOS
+    assert [cache for cache in WORKSPACE.caches if cache is REPOS] == [REPOS]
+
+
+@pytest.mark.parametrize("by", ["config", "env"])
+def test_a_max_age_of_zero_asks_the_providers_every_time(
+    by: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.contracts import gather
+    from untaped.settings import get_settings
+
+    if by == "env":
+        monkeypatch.setenv("UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS", "0")
+    else:
+        path = Path(os.environ["UNTAPED_CONFIG"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "profiles:\n  default:\n    workspace:\n      caches:\n"
+            "        repo_source_repos: {max_age_seconds: 0}\n",
+            encoding="utf-8",
+        )
+    get_settings.cache_clear()
+    github = Listing(repo("acme/api"))
+    with compose_with(GIT, WORKSPACE, provides={"github": [github]}):
+        gather(RepoSource.repos)()
+        gather(RepoSource.repos)()
+    assert github.calls == 2

@@ -29,7 +29,8 @@ class InventorySettings(BaseModel):
 
 
 _INVENTORY_NOTE = (
-    "deleted in 11.0; workspace keeps the repos github lists for 6 hours "
+    "deleted in 11.0; workspace keeps the repos github lists for "
+    "workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default "
     "(ctrl-r in its picker refreshes them)"
 )
 

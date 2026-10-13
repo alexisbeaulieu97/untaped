@@ -8,6 +8,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from untaped.contracts import Answers, Failed, NoProviderReady, NotReady, Ok, Skipped, Source
+from untaped.output.diagnostic import StaleData
+from untaped.output.sink import diagnostics_scope, recording
 from untaped.sdk import UntapedError
 from untaped.testing import compose_with
 from untaped_git import SPEC as GIT
@@ -301,3 +303,21 @@ def test_the_real_providers_first_pass_serves_stored_answers_then_the_refresh_as
         picked = source.pick_arg(RepoArg(ident="infra/web"))
         assert picked.repo is not None and picked.repo.source is not None
         assert picked.repo.source.plugin == "gitlab"
+
+
+def test_the_first_pass_drops_its_stale_line_and_a_failed_refresh_says_its_own() -> None:
+    """The footer says a listing is old; the line after the picker is the refresh's."""
+    github = Listing(API)
+    with compose_with(GIT, WORKSPACE, provides={"github": [github]}):
+        source = RepoPickSource(git=FakeGit())  # type: ignore[arg-type]
+        source.catalog(refresh=True)
+        age_answers(timedelta(hours=7))
+        github.error = UntapedError("HTTP 503", category="unavailable")
+        with recording() as emitted, diagnostics_scope():
+            first = source.catalog(refresh=False)
+            assert [each for each in emitted if isinstance(each, StaleData)] == []
+            refreshed = source.catalog(refresh=None)
+    assert first.note == "github: 1 repo, refreshed 7h ago"
+    assert refreshed.note == "github: cached repos only: HTTP 503"
+    [line] = [each for each in emitted if isinstance(each, StaleData)]
+    assert line.plugin == "github" and line.error is not None

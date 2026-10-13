@@ -76,7 +76,10 @@ Two more rules keep every cache alike. Declare the directive as
 `Annotated[bool | None, refresh_option(CACHE)] = None`, never a hand-made
 `--refresh` or `--cached`: its help names the cache's setting and default
 (`tests/repo/test_refresh_option.py` checks first-party code). And never
-print a stale warning yourself: `serve()` says it once per key.
+print a stale warning yourself: `serve()` says it once per key. Inside a
+provider method that `gather` asked, the warning waits until the answer is
+used, and is never said if it isn't
+([contracts](./contracts.md#how-providers-are-loaded-and-chosen)).
 
 For a command that reports a cache's state, subclass `FreshnessRecord` and
 fill it with `FreshnessRecord.fields(MY_CACHE.freshness(key), max_age=…,

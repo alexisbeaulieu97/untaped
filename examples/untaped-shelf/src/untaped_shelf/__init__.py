@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from untaped.sdk import PluginSpec
+from untaped_shelf.settings import BOOKS
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -37,4 +38,5 @@ SPEC = PluginSpec(
     app_factory=build_app,
     help="Find books (an example contract owner).",
     contracts=_contracts,
+    caches=(BOOKS,),
 )

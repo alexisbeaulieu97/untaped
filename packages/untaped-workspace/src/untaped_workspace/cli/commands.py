@@ -145,7 +145,7 @@ def create_command(
         warnings: list[str] = []
         provision = provisioner(settings, parallel, warn=warnings.append)
         with _diag.progress(f"Creating workspace {name}") as progress:
-            rows = provision.create(name, args, on_done=_progress_line(progress))
+            rows = provision.create(name, args, on_done=_progress_line(progress), progress=progress)
         _show_provisioned(rows, settings, name, warnings, fmt=fmt, columns=columns)
 
 
@@ -186,7 +186,7 @@ def add_command(
         warnings: list[str] = []
         provision = provisioner(settings, parallel, warn=warnings.append)
         with _diag.progress(f"Adding repos to {record.name}") as progress:
-            rows = provision.add(record, args, on_done=_progress_line(progress))
+            rows = provision.add(record, args, on_done=_progress_line(progress), progress=progress)
         _show_provisioned(rows, settings, record.name, warnings, fmt=fmt, columns=columns)
 
 

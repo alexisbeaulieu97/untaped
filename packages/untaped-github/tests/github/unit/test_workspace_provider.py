@@ -311,6 +311,35 @@ def test_after_a_failed_refresh_only_the_answer_cache_is_served_stale() -> None:
     assert stale.stale.error.category == "unavailable"
 
 
+def test_an_auto_refresh_over_a_stored_list_fails_fast_and_a_first_one_retries() -> None:
+    from datetime import timedelta
+
+    from untaped.testing import cache_clock
+    from untaped.upstream import PROBE_TIMEOUT
+
+    configure(default_org="acme")
+    with cache_clock() as clock, respx.mock(base_url=API) as mock:
+        route = mock.get("/orgs/acme/repos")
+        route.side_effect = [httpx.Response(503), httpx.Response(200, json=ACME)]
+        [first] = gather(RepoSource.repos)()  # nothing stored: full retries
+        assert isinstance(first, Ok) and first.stale is None
+        assert route.call_count == 2
+
+        clock.advance(timedelta(hours=7))
+        route.reset()
+        route.side_effect = None
+        route.return_value = httpx.Response(503)
+        [auto] = gather(RepoSource.repos)()
+        assert isinstance(auto, Ok) and auto.stale is not None  # the stored list stood in
+        assert route.call_count == 1  # capped and unretried
+        assert route.calls[0].request.extensions["timeout"]["read"] == PROBE_TIMEOUT
+
+        route.reset()
+        [forced] = gather(RepoSource.repos, refresh=True)()
+        assert isinstance(forced, Ok) and forced.stale is not None
+        assert route.call_count > 1  # --refresh keeps its retries
+
+
 @pytest.mark.parametrize(
     ("response", "category", "hint"),
     [

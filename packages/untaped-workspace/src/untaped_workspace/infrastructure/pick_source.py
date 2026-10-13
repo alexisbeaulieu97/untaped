@@ -3,9 +3,11 @@
 The first pass asks with ``refresh=False`` (cached answers only, no network),
 then the picker refreshes. Repos workspace has used that only the repo store
 holds (:meth:`GitWorktrees.stored_repos`) are added, so the picker also works
-offline or with no provider configured. The footer says, per provider, how
-many repos it listed and how fresh they are. Branch completion reads the
-store only, never the network.
+offline or with no provider configured. A stale listing shows in two places:
+the footer, which says per provider how many repos it listed and how fresh
+they are, and the refresh's ``untaped.stale`` line after the picker closes
+(the first pass's is dropped: the refresh follows it). Branch completion reads
+the store only, never the network.
 """
 
 from __future__ import annotations
@@ -78,6 +80,8 @@ class RepoPickSource:
         except NoProviderReady as exc:
             answers, notes = None, [f"stored repos only — {exc}"]
         else:
+            if refresh is False:
+                answers.take_stale()  # the footer says it, and the refresh follows
             notes = [note for answer in answers if (note := _note(answer))]
         listed, known = self._listed(answers)
         stored = self._stored(known, taken={item.id for item, _ in listed})
