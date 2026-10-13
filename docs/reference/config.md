@@ -44,15 +44,15 @@ overridden for one process with the environment variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `ansible.index_path` | path | `~/.untaped/ansible-index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
-| `ansible.stale_after_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | Seconds after which `source status` reports a source as `stale`. |
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
-| `ansible.git_fetch_parallel` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_PARALLEL` | Default `--parallel` for `source refresh` and `--refresh`. |
+| `ansible.git_fetch_parallel` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_PARALLEL` | Default `--parallel` of a source refresh. |
 | `ansible.probe_parallel` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_PARALLEL` | Concurrent ref probes during source refresh. |
 | `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. |
 | `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. |
 | `ansible.dependency_paths` | list | `roles/requirements.yml`; `roles/requirements.yaml`; `requirements.yml`; `requirements.yaml`; `meta/requirements.yml`; `meta/requirements.yaml`; `meta/main.yml`; `meta/main.yaml` | `UNTAPED_ANSIBLE__DEPENDENCY_PATHS` | Dependency files scanned in each repo. |
+| `ansible.caches.index.max_age_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__CACHES__INDEX__MAX_AGE_SECONDS` | Seconds source data is served before untaped checks upstream; 0 checks every time. |
 
 ## `ansible` state
 
@@ -163,12 +163,13 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `http.timeout` | `UNTAPED_HTTP__TIMEOUT` | `http.timeout_seconds` | retired |
 | `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | retired |
 | `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | retired |
-| `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | `ansible.stale_after_seconds` | retired |
+| `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | `ansible.caches.index.max_age_seconds` | renamed |
 | `ansible.cache_dir` | `UNTAPED_ANSIBLE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `ansible.git_blob_filter` | `UNTAPED_ANSIBLE__GIT_BLOB_FILTER` | none | deleted in 11.0; the repo store is blobless |
 | `ansible.git_clone_protocol` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | none | deleted in 11.0; set github.git_protocol: ssh to keep ssh |
 | `ansible.git_fetch_depth` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | none | deleted in 11.0; the repo store fetches full history |
 | `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
+| `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | none | deleted in 11.0; use ansible.caches.index.max_age_seconds |
 | `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
 | `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |

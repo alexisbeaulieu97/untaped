@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from untaped.sdk import Retired
+from untaped.sdk import Cache, Retired
 from untaped_github.api import normalize_team_scopes
 
 DEFAULT_DEPENDENCY_PATHS = (
@@ -65,7 +66,7 @@ class AnsibleSettings(BaseModel):
     """User-tunable profile settings."""
 
     retired_keys: ClassVar[Mapping[str, str | Retired]] = {
-        "stale_after": "stale_after_seconds",
+        "stale_after": Retired(note="deleted in 11.0; use ansible.caches.index.max_age_seconds"),
         "repo_cache_path": "cache_dir",
         "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
         "git_fetch_depth": Retired(note="deleted in 11.0; the repo store fetches full history"),
@@ -80,7 +81,6 @@ class AnsibleSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     index_path: Path = Path("~/.untaped/ansible-index.sqlite3")
-    stale_after_seconds: int = Field(default=86_400, ge=0)
     default_source: str | None = None
     ref_scan_default: Literal["all", "default_branch"] = "all"
     source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"
@@ -98,6 +98,16 @@ class AnsibleState(BaseModel):
 
     sources: list[SourceDefinition] = Field(default_factory=list)
     aliases: dict[str, str] = Field(default_factory=dict)
+
+
+#: The dependency index: each source's refs and edges, refreshed past a day.
+INDEX = Cache(
+    "ansible",
+    "index",
+    label="source data",
+    max_age=timedelta(days=1),
+    renamed_from=("stale_after_seconds",),
+)
 
 
 def normalize_team_refs(teams: list[str], orgs: list[str]) -> list[str]:

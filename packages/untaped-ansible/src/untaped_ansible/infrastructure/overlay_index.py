@@ -103,9 +103,6 @@ class OverlayDependencyIndex:
             repo: self._overlay_ref_metadata(repo, metadata) for repo, metadata in wrapped.items()
         }
 
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        return self._wrapped.is_stale(source_key, max_age_seconds=max_age_seconds)
-
     def _local_dependencies(self, repo: str, ref: str | None) -> list[IndexedDependency]:
         return [
             edge
@@ -177,6 +174,3 @@ class NullDependencyIndex:
         source_key: str | None,
     ) -> dict[str, tuple[CachedRef, ...]]:
         return {repo: () for repo in repos}
-
-    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
-        return False

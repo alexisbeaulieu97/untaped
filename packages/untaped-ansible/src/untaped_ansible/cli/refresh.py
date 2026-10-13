@@ -1,13 +1,30 @@
-"""Shared source-refresh wiring for the source and graph CLI commands."""
+"""Shared source-refresh wiring: the source and graph commands read the index through it.
+
+:func:`serve_sources` serves the selected sources through :data:`INDEX`, so a
+source past its max age is refreshed before the command reads it, and a
+refresh that fails leaves the cached data served with one ``untaped.stale``
+line. The use case knows nothing of the cache: :func:`_filler` turns its
+result into a :class:`~untaped.sdk.Filled` (or an error) here.
+"""
 
 from __future__ import annotations
 
-import time
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
-from untaped.sdk import NO_PROGRESS, Diagnostics, HttpSettings, ProgressHandle, plural
+from untaped.sdk import (
+    NO_PROGRESS,
+    Diagnostics,
+    Failure,
+    HttpSettings,
+    ProgressHandle,
+    Served,
+    most_severe,
+    plural,
+)
 from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     RefreshResult,
@@ -17,6 +34,7 @@ from untaped_ansible.domain.payloads import (
     GRAPHQL_TRANSIENT_FALLBACK,
     SkippedDependencyFile,
 )
+from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
     AutoRefProbe,
     GithubRefProbe,
@@ -24,58 +42,204 @@ from untaped_ansible.infrastructure import (
     GitSourceStore,
     SqliteDependencyIndex,
 )
-from untaped_ansible.settings import AnsibleSettings, SourceDefinition
+from untaped_ansible.settings import INDEX, AnsibleSettings, SourceDefinition
 from untaped_github.api import GithubClient, GithubSettings, github_web_host
 
 GIT_PARALLEL_CAP = 32
 """Upper bound for ``--parallel`` Git fetches (matches ``ansible.git_fetch_parallel``)."""
 
+#: Failed repos a partial refresh names before ``and N more``.
+_MAX_LISTED_REPOS = 10
+
 _diag = Diagnostics()
 
+Backend = Literal["auto", "graphql", "git"]
 
-def run_source_refresh(
-    source: SourceDefinition,
+
+@dataclass(frozen=True)
+class SelectedSource:
+    """One source a command reads: its definition, its index key and how a human names it.
+
+    ``key`` is the index's own (``source:prod``, ``inline:<hash>``);
+    ``label`` names it in a tree header and warnings (``prod``); ``subject``
+    in the refresh task and the stale line (``source prod``). An inline
+    source's label and subject are both its selector flags.
+    """
+
+    definition: SourceDefinition
+    key: str
+    label: str
+    subject: str
+
+
+@dataclass(frozen=True)
+class RefreshWiring:
+    """What a refresh of any selected source needs, resolved once per command."""
+
+    index: SqliteDependencyIndex
+    aliases: dict[str, str]
+    settings: AnsibleSettings
+    github_settings: GithubSettings
+    http: HttpSettings
+    concurrency: int
+    backend: Backend | None = None
+
+
+def serve_sources[T](
+    selections: Sequence[SelectedSource],
     *,
-    source_key: str,
-    action: str,
-    label: str,
-    index: SqliteDependencyIndex,
-    aliases: dict[str, str],
-    settings: AnsibleSettings,
-    github_settings: GithubSettings,
-    http: HttpSettings,
-    concurrency: int,
-    backend: Literal["auto", "graphql", "git"] | None = None,
-) -> RefreshResult:
-    """Refresh one source with stderr progress, then print its summary and warnings."""
-    started_at = time.perf_counter()
-    with _diag.progress(f"Refreshing {label}") as progress:
-        result = refresh_source(
-            source,
-            source_key=source_key,
-            index=index,
-            aliases=aliases,
-            settings=settings,
-            github_settings=github_settings,
-            http=http,
-            concurrency=concurrency,
-            backend=backend,
+    refresh: bool | None,
+    read: Callable[[], T],
+    wiring: RefreshWiring,
+    empty: Callable[[T], bool] | None = None,
+    results: dict[str, RefreshResult] | None = None,
+) -> Served[T, RefreshResult]:
+    """Refresh what ``refresh`` asks for of ``selections``, then answer ``read()``.
+
+    Each key's freshness is first brought in line with the index
+    (:func:`sync_freshness`). The refresh's warnings (rate limit, skipped
+    refs and files, ignored collections, probe fallbacks) print once per
+    refresh, failed ones included; ``results`` collects what each refresh
+    returned, by key, for a caller that reports more.
+    """
+    for selection in selections:
+        sync_freshness(selection.key, wiring.index)
+    results = {} if results is None else results
+    by_key = {selection.key: selection for selection in selections}
+    try:
+        return INDEX.serve(
+            {selection.key: selection.subject for selection in selections},
+            refresh=refresh,
+            fill=_filler(by_key, wiring, results),
+            read=read,
+            empty=empty,
+        )
+    finally:
+        for result in results.values():
+            _warn_refresh(result, wiring.settings)
+
+
+def sync_freshness(key: str, index: SqliteDependencyIndex) -> None:
+    """Bring what :data:`INDEX` knows of ``key`` in line with the index's own rows.
+
+    The index's row says only whether a completed refresh left data for
+    ``key``, never how fresh it is: a row with nothing known of it is the
+    data of a ``source refresh`` from before the cache (seeded with its
+    ``scanned_at``), and a key known as refreshed with no row lost its data
+    (a redefined or removed source, a rebuilt or moved index), so its next
+    read refreshes it.
+    """
+    row = index.status(key)
+    if row is not None:
+        if INDEX.freshness(key).refreshed_at is None:
+            INDEX.seed(key, refreshed_at=row.scanned_at)
+    elif INDEX.freshness(key).refreshed_at is not None:
+        INDEX.forget(key)
+
+
+def _filler(
+    selections: Mapping[str, SelectedSource],
+    wiring: RefreshWiring,
+    results: dict[str, RefreshResult],
+) -> Callable[[str, ProgressHandle], RefreshResult]:
+    """The ``fill`` that refreshes one selected source into the index."""
+
+    def fill(key: str, progress: ProgressHandle) -> RefreshResult:
+        result = results[key] = refresh_source(
+            selections[key].definition,
+            source_key=key,
+            index=wiring.index,
+            aliases=wiring.aliases,
+            settings=wiring.settings,
+            github_settings=wiring.github_settings,
+            http=wiring.http,
+            concurrency=wiring.concurrency,
+            backend=wiring.backend,
             progress=progress,
         )
-    _diag.info(
-        refresh_summary(
-            action,
-            label,
-            result,
-            concurrency=concurrency,
-            elapsed=time.perf_counter() - started_at,
-        ),
+        if not result.completed:
+            raise _pause_error(result)
+        if result.repos and len(result.failures) == result.repos:
+            raise _all_failed_error(result)
+        return result.model_copy(
+            update={
+                "partial": _partial_failure(result),
+                "retry_at": _retry_at(result, wiring.settings),
+                "summary": fill_summary(result),
+            }
+        )
+
+    return fill
+
+
+def _pause_error(result: RefreshResult) -> AnsibleError:
+    """A refresh paused at the GraphQL rate-limit floor; resuming skips the finished repos."""
+    reset = result.rate_limit_reset_at
+    return AnsibleError(
+        result.pause_reason or "source refresh paused before completion",
+        category="unavailable",
+        system="github",
+        hint="rerun to resume; finished repos are skipped",
+        details={} if reset is None else {"retry_at": reset.isoformat()},
     )
+
+
+def repo_errors(result: RefreshResult) -> list[AnsibleError]:
+    """Each repo the refresh failed on, as the error its category exits with."""
+    return [AnsibleError(failure.reason, category=failure.category) for failure in result.failures]
+
+
+def _all_failed_error(result: RefreshResult) -> AnsibleError:
+    """Every repo of the source failed: the index was left as it was."""
+    return AnsibleError(
+        f"refresh failed for all {plural(result.repos, 'repo')}; index left unchanged",
+        category=most_severe(repo_errors(result)).category,
+        details={"repos": [failure.repo for failure in result.failures]},
+    )
+
+
+def _partial_failure(result: RefreshResult) -> Failure | None:
+    """What a completed refresh left out, as one failure naming the repos; ``None`` if nothing."""
+    if not result.failures:
+        return None
+    repos = [failure.repo for failure in result.failures]
+    shown = ", ".join(repos[:_MAX_LISTED_REPOS])
+    more = len(repos) - _MAX_LISTED_REPOS
+    names = f"{shown}, and {more} more" if more > 0 else shown
+    error = AnsibleError(
+        f"{len(repos)} of {plural(result.repos, 'repo')} failed to refresh ({names})",
+        category=most_severe(repo_errors(result)).category,
+        details={"repos": repos},
+    )
+    return Failure.from_exception(error)
+
+
+def _retry_at(result: RefreshResult, settings: AnsibleSettings) -> datetime | None:
+    """GitHub's reset time when the refresh spent the budget below the floor, else ``None``.
+
+    Every GraphQL answer carries a reset time; only a spent budget makes it
+    the time to come back.
+    """
+    remaining = result.rate_limit_remaining
+    if remaining is None or remaining >= settings.source_refresh_rate_limit_floor:
+        return None
+    return result.rate_limit_reset_at
+
+
+def fill_summary(result: RefreshResult) -> str:
+    """What a completed refresh did: ``780 repos, 2141 refs, 9804 edges, 12 changed, …``."""
+    return (
+        f"{plural(result.repos, 'repo')}, {plural(result.refs, 'ref')}, "
+        f"{plural(result.edges, 'edge')}, "
+        f"{result.changed_refs} changed, {result.unchanged_refs} unchanged"
+    )
+
+
+def _warn_refresh(result: RefreshResult, settings: AnsibleSettings) -> None:
     warn_low_rate_limit(result, threshold=settings.source_refresh_rate_limit_floor)
     warn_skipped_files(result)
     warn_ignored_collections(result.ignored_collections)
     warn_probe_fallbacks(result)
-    return result
 
 
 def refresh_source(
@@ -88,7 +252,7 @@ def refresh_source(
     github_settings: GithubSettings,
     http: HttpSettings,
     concurrency: int,
-    backend: Literal["auto", "graphql", "git"] | None = None,
+    backend: Backend | None = None,
     progress: ProgressHandle = NO_PROGRESS,
 ) -> RefreshResult:
     """Run a git-backed source refresh with fully wired adapters."""
@@ -117,23 +281,6 @@ def refresh_source(
             github_host=github_web_host(github_settings.base_url),
         )(source, source_key=source_key)
     return result
-
-
-def refresh_summary(
-    action: str,
-    label: str,
-    result: RefreshResult,
-    *,
-    concurrency: int,
-    elapsed: float,
-) -> str:
-    """One-line stderr summary for a completed source refresh."""
-    message = (
-        f"{action} {label}: {plural(result.repos, 'repo')}, {plural(result.refs, 'ref')}, "
-        f"{plural(result.edges, 'edge')}, "
-        f"{result.changed_refs} changed, {result.unchanged_refs} unchanged in {elapsed:.2f}s"
-    )
-    return f"{message} (parallel {concurrency})"
 
 
 def warn_low_rate_limit(result: RefreshResult, *, threshold: int) -> None:
