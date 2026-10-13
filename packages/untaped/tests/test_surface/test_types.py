@@ -81,6 +81,7 @@ def test_a_generic_reads_as_name_and_bound_arguments() -> None:
     assert type_token(Choice[int]).token == "Choice[integer]"
     assert type_token(list[Choice[int] | Choice[str]]).token == "Choice[integer]|Choice[string][]"
     assert type_token(Choice[Literal["b", "a"]]).token == "Choice[string(choice=a|b)]"
+    assert type_token(Choice[Literal["a", "c|d"]]).token == 'Choice[string(choice="c|d"|a)]'
     assert type_token(Choice[str | None]).token == "Choice[string?]"
 
 
@@ -89,6 +90,24 @@ def test_a_generic_pydantic_model_reads_the_same_way() -> None:
     assert type_token(Page[_Bounded]).token == "Page[integer]"
     assert type_token(list[Page[_Free]]).token == "Page[object][]"
     assert type_token(Page).token == "Page[object]"
+
+
+type Choices = list[Choice[int]]
+type Pair[X] = list[Choice[X]]
+
+
+class Aliased(BaseModel):
+    plain: Choices
+    paired: Pair[str]
+
+
+def test_a_generic_inside_a_type_alias_reads_the_same_way() -> None:
+    assert type_token(Choices).token == "Choice[integer][]"
+    assert type_token(Pair[int]).token == "Choice[integer][]"
+    assert {line.text for line in model_lines("contract o.Aliased", Aliased, None)} >= {
+        "contract o.Aliased.plain Choice[integer][]",
+        "contract o.Aliased.paired Choice[string][]",
+    }
 
 
 class Node(BaseModel):

@@ -140,7 +140,16 @@ def _argument(arg: object) -> str:
         _ARGUMENT.reset(reset)
     if not token.choices:
         return token.token
-    return f"{token.token}(choice={'|'.join(sorted(choice_text(v) for v in token.choices))})"
+    return f"{token.token}(choice={'|'.join(sorted(_choice(v) for v in token.choices))})"
+
+
+def _choice(value: object) -> str:
+    """A Literal value inside an argument, quoted when it holds the spelling's own marks."""
+    text = choice_text(value)
+    return json.dumps(text) if _ARGUMENT_MARKS.search(text) and text[:1] != '"' else text
+
+
+_ARGUMENT_MARKS = re.compile(r"[|()\[\],]")
 
 
 def generic_names(defs: Mapping[str, Any], annotation: object) -> Mapping[str, Any]:
@@ -166,9 +175,27 @@ def generic_names(defs: Mapping[str, Any], annotation: object) -> Mapping[str, A
             pending.extend(parts[1])
         else:
             pending.extend(arg for arg in get_args(current) if not isinstance(arg, list))
+            value = _alias_value(current)
+            if value is not None:
+                pending.append(value)
         if not _ARGUMENT.get() and isinstance(current, type) and issubclass(current, BaseModel):
             pending.extend(info.annotation for info in current.model_fields.values())
     return found
+
+
+def _alias_value(annotation: object) -> object | None:
+    """What a ``type`` alias stands for, its arguments filled in (``Pair[int]``); else None."""
+    if isinstance(annotation, typing.TypeAliasType):
+        return typing.cast("object", annotation.__value__)
+    origin = get_origin(annotation)
+    if not isinstance(origin, typing.TypeAliasType):
+        return None
+    value: object = origin.__value__
+    args = get_args(annotation)
+    try:
+        return typing.cast("object", value[args[0] if len(args) == 1 else args])  # type: ignore[index]
+    except TypeError:
+        return value
 
 
 def _is_builtin(origin: type) -> bool:
