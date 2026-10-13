@@ -74,7 +74,7 @@ class ArchiveWorkspace:
     def _remove(self, workspace: str, root: Path, spec: RepoSpec, *, force: bool) -> ArchiveOutcome:
         dest = root / spec.dir
         try:
-            self._git.remove(spec.url, dest, force=force)
+            self._git.remove(spec.url, dest, base=spec.base, force=force)
         except UntapedError as exc:
             return ArchiveOutcome(
                 workspace=workspace,

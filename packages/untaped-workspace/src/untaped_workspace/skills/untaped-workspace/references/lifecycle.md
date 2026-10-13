@@ -91,8 +91,8 @@ checked out in another worktree is a `failed` row with category `conflict`.
 
 `--read-only` checks a repo out detached at `origin/BASE`, for reference code.
 The row is `checked_out` with `read-only at origin/BASE` (`read-only at tag
-BASE` for a tag). A commit made there
-is on no branch, so archiving counts it as unpushed and refuses.
+BASE` for a tag). A commit made there is on no branch, so archiving counts it
+as unpushed and refuses.
 
 ## Partial failure
 
@@ -121,8 +121,8 @@ first. A repo blocks archiving with any of:
 
 - uncommitted changes;
 - stash entries made on that repo's branch;
-- commits not pushed: commits on `HEAD` that no remote branch has, in
-  read-only repos too;
+- commits not pushed: commits on `HEAD` that no remote branch nor the base
+  tag has, in read-only repos too;
 - "submodules: archive cannot verify or remove them safely" (any initialised
   submodule);
 - "repo missing from the repo store; local work cannot be checked";

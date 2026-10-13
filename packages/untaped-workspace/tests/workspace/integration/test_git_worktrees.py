@@ -100,6 +100,34 @@ def test_read_only_is_detached_at_a_tag_base(
     assert git(dest, "rev-parse", "HEAD") == tagged
 
 
+def test_a_tag_no_branch_has_is_not_unpushed_work(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
+) -> None:
+    upstream = make_upstream("api")
+    upstream.commit("release.txt", "1.0", branch="release")
+    upstream.tag("v1", at="release", message="release 1")
+    git(upstream.path, "branch", "-D", "release")
+    url = upstream.url
+    writable, read_only = tmp_path / "w" / "api", tmp_path / "r" / "api"
+    worktrees.checkout(url, writable, branch="hotfix", base="v1")
+    worktrees.checkout(url, read_only, branch=None, base="v1")
+    for dest, branch in ((writable, "hotfix"), (read_only, None)):
+        status = worktrees.status(dest, branch=branch, base="v1")
+        assert status is not None and status.unpushed == 0
+    commit_in(writable)
+    status = worktrees.status(writable, branch="hotfix", base="v1")
+    assert status is not None and status.unpushed == 1
+    with pytest.raises(GitError):
+        worktrees.remove(url, writable, base="v1", force=False)
+    worktrees.remove(url, read_only, base="v1", force=False)
+    git(writable, "reset", "-q", "--hard", "HEAD~1")
+    worktrees.remove(url, writable, base="v1", force=False)
+    assert worktrees.store_use(url, bases=["v1"]) == StoreUse(
+        branches=(LocalBranch(name="hotfix", checked_out=False, unpushed=0, stashed=False),),
+        worktrees=0,
+    )
+
+
 def test_a_branch_base_wins_over_a_tag_of_the_same_name(
     worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
 ) -> None:
@@ -139,7 +167,7 @@ def test_resume_after_removal_keeps_local_commits(
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="feature/x", base=None)
     commit_in(first)
-    worktrees.remove(url, first, force=True)
+    worktrees.remove(url, first, base="main", force=True)
     second = tmp_path / "b" / "api"
     checkout = worktrees.checkout(url, second, branch="feature/x", base=None)
     assert checkout.detail == "resumed local branch"
@@ -154,13 +182,13 @@ def test_status_counts_and_unpushed(
     worktrees.checkout(url, dest, branch="feature/x", base=None)
     commit_in(dest)
     (dest / "new.txt").write_text("y")
-    status = worktrees.status(dest, branch="feature/x")
+    status = worktrees.status(dest, branch="feature/x", base="main")
     assert status is not None
     assert (status.branch, status.untracked, status.unpushed) == ("feature/x", 1, 1)
 
 
 def test_status_of_a_missing_worktree_is_none(worktrees: LocalGitWorktrees, tmp_path: Path) -> None:
-    assert worktrees.status(tmp_path / "gone", branch="b") is None
+    assert worktrees.status(tmp_path / "gone", branch="b", base="main") is None
 
 
 def test_sibling_workspace_stashes_are_not_counted(
@@ -171,9 +199,9 @@ def test_sibling_workspace_stashes_are_not_counted(
     worktrees.checkout(url, mine, branch="mine", base=None)
     worktrees.checkout(url, sibling, branch="theirs", base=None)
     _stash_a_change(sibling)
-    status = worktrees.status(mine, branch="mine")
+    status = worktrees.status(mine, branch="mine", base="main")
     assert status is not None and status.stashed == 0
-    theirs = worktrees.status(sibling, branch="theirs")
+    theirs = worktrees.status(sibling, branch="theirs", base="main")
     assert theirs is not None and theirs.stashed == 1
 
 
@@ -205,7 +233,7 @@ def test_remove_prunes_a_hand_deleted_worktree(
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     shutil.rmtree(dest)
-    worktrees.remove(url, dest, force=False)
+    worktrees.remove(url, dest, base="main", force=False)
     worktrees.checkout(url, tmp_path / "ws2" / "api", branch="b", base=None)  # branch is free again
 
 
@@ -216,9 +244,9 @@ def test_remove_without_a_store_repo_needs_force(
     dest = tmp_path / "ws" / "api"
     dest.mkdir(parents=True)
     with pytest.raises(GitError) as caught:
-        worktrees.remove(url, dest, force=False)
+        worktrees.remove(url, dest, base="main", force=False)
     assert caught.value.hint == "pass --force to delete the directory"
-    worktrees.remove(url, dest, force=True)
+    worktrees.remove(url, dest, base="main", force=True)
     assert not dest.exists()
 
 
@@ -259,13 +287,13 @@ def test_resume_fast_forwards_a_branch_behind_origin(
     worktrees.checkout(url, first, branch="b", base=None)
     commit_in(first)
     git(first, "push", "-q")
-    worktrees.remove(url, first, force=False)
+    worktrees.remove(url, first, base="main", force=False)
     _advance_origin(url, "b", tmp_path / "other")
     second = tmp_path / "b" / "api"
     checkout = worktrees.checkout(url, second, branch="b", base=None)
     assert checkout.detail == "tracking origin/b"
     assert (second / "upstream.txt").exists()
-    status = worktrees.status(second, branch="b")
+    status = worktrees.status(second, branch="b", base="main")
     assert status is not None and status.unpushed == 0
 
 
@@ -276,12 +304,12 @@ def test_resume_a_branch_ahead_of_origin(
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="b", base=None)
     commit_in(first)
-    worktrees.remove(url, first, force=True)  # unpushed: the branch keeps it
+    worktrees.remove(url, first, base="main", force=True)  # unpushed: the branch keeps it
     second = tmp_path / "b" / "api"
     checkout = worktrees.checkout(url, second, branch="b", base=None)
     assert checkout.detail == "resumed; ahead of origin/b"
     assert (second / "change.txt").exists()
-    status = worktrees.status(second, branch="b")
+    status = worktrees.status(second, branch="b", base="main")
     assert status is not None and status.unpushed == 1
 
 
@@ -292,7 +320,7 @@ def test_resume_a_branch_diverged_from_origin(
     first = tmp_path / "a" / "api"
     worktrees.checkout(url, first, branch="b", base=None)
     commit_in(first)
-    worktrees.remove(url, first, force=True)  # unpushed: the branch keeps it
+    worktrees.remove(url, first, base="main", force=True)  # unpushed: the branch keeps it
     _advance_origin(url, "b", tmp_path / "other")
     second = tmp_path / "b" / "api"
     checkout = worktrees.checkout(url, second, branch="b", base=None)
@@ -333,7 +361,7 @@ def test_read_only_commits_count_as_unpushed(
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch=None, base=None)
     commit_in(dest)
-    status = worktrees.status(dest, branch=None)
+    status = worktrees.status(dest, branch=None, base="main")
     assert status is not None and status.unpushed == 1
 
 
@@ -347,7 +375,7 @@ def test_unpushed_is_counted_when_the_base_is_gone_from_origin(
     commit_in(dest)
     git(upstream.path, "branch", "-D", "dev")
     assert worktrees.fetch(url, dest) is None
-    status = worktrees.status(dest, branch="b")
+    status = worktrees.status(dest, branch="b", base="dev")
     assert status is not None and status.unpushed == 1
 
 
@@ -365,10 +393,10 @@ def test_never_pushed_branch_has_no_upstream(
     url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
-    status = worktrees.status(dest, branch="b")
+    status = worktrees.status(dest, branch="b", base="main")
     assert status is not None and status.upstream is None
     git(dest, "push", "-q", "origin", "b")
-    pushed = worktrees.status(dest, branch="b")
+    pushed = worktrees.status(dest, branch="b", base="main")
     assert pushed is not None and pushed.upstream == "origin/b"
 
 
@@ -380,12 +408,12 @@ def test_initialised_submodules_are_reported_and_force_removed(
     url = upstream.url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
-    before = worktrees.status(dest, branch="b")
+    before = worktrees.status(dest, branch="b", base="main")
     assert before is not None and before.submodules is False  # not initialised yet
     init_submodules(dest)
-    status = worktrees.status(dest, branch="b")
+    status = worktrees.status(dest, branch="b", base="main")
     assert status is not None and status.submodules is True
-    worktrees.remove(url, dest, force=True)
+    worktrees.remove(url, dest, base="main", force=True)
     assert not dest.exists()
 
 
@@ -405,13 +433,13 @@ def test_status_of_an_unregistered_worktree_raises_git_error(
     repo.rename(repo.with_name("moved.git"))
     worktrees.checkout(url, tmp_path / "b" / other, branch="b", base=None)  # a fresh store repo
     with pytest.raises(GitError) as caught:
-        worktrees.status(dest, branch="a")
+        worktrees.status(dest, branch="a", base="main")
     if other == "api":  # aliased: the admin dir exists but points at another worktree
         assert caught.value.hint is not None and "git worktree repair" in caught.value.hint
     with pytest.raises(GitError):
-        worktrees.remove(url, dest, force=False)
+        worktrees.remove(url, dest, base="main", force=False)
     assert dest.exists()
-    worktrees.remove(url, dest, force=True)
+    worktrees.remove(url, dest, base="main", force=True)
     assert not dest.exists()
 
 
@@ -428,7 +456,7 @@ def test_status_accepts_a_relative_admin_gitdir(
     admin = Path(git(dest, "rev-parse", "--absolute-git-dir"))
     (admin / "gitdir").write_text(os.path.relpath(dest / ".git", admin) + "\n")
     monkeypatch.chdir(tmp_path)
-    status = worktrees.status(dest, branch="b")
+    status = worktrees.status(dest, branch="b", base="main")
     assert status is not None and status.branch == "b"
 
 
@@ -449,7 +477,7 @@ def test_force_remove_reports_a_directory_it_cannot_delete(
 
     monkeypatch.setattr(shutil, "rmtree", refuse)
     with pytest.raises(WorkspaceError) as caught:
-        worktrees.remove(url, dest, force=True)
+        worktrees.remove(url, dest, base="main", force=True)
     assert (caught.value.category, caught.value.system) == ("failed", "local")
     assert str(dest) in str(caught.value)
 
@@ -500,10 +528,10 @@ def test_remove_rechecks_for_work_made_after_the_status_check(
     url = make_upstream("api").url
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
-    assert archive_blockers(worktrees.status(dest, branch="b")) == ()
+    assert archive_blockers(worktrees.status(dest, branch="b", base="main")) == ()
     change(dest)  # after the check, before the removal
     with pytest.raises(GitError) as caught:
-        worktrees.remove(url, dest, force=False)
+        worktrees.remove(url, dest, base="main", force=False)
     assert (caught.value.category, caught.value.system) == ("conflict", "git")
     assert caught.value.hint == "the repo changed since the check; run status and archive again"
     assert (dest / "README.md").exists()
@@ -580,7 +608,7 @@ def test_store_use_names_branches_worktrees_unpushed_work_and_stashes(
     tmp_path: Path,
 ) -> None:
     url = make_upstream("api").url
-    assert worktrees.store_use(url) is None
+    assert worktrees.store_use(url, bases=["main"]) is None
     live, pushed, ahead, stashed = (tmp_path / name / "api" for name in ("w", "x", "y", "z"))
     worktrees.checkout(url, live, branch="live", base=None)
     worktrees.checkout(url, pushed, branch="pushed", base=None)
@@ -590,11 +618,11 @@ def test_store_use_names_branches_worktrees_unpushed_work_and_stashes(
     worktrees.checkout(url, stashed, branch="stashed", base=None)
     _stash_a_change(stashed)
     for dest in (pushed, ahead, stashed):
-        worktrees.remove(url, dest, force=True)
+        worktrees.remove(url, dest, base="main", force=True)
     hand = tmp_path / "hand"
     git(store_repo(store_root, url), "worktree", "add", "-q", "--detach", str(hand), "origin/main")
 
-    assert worktrees.store_use(url) == StoreUse(
+    assert worktrees.store_use(url, bases=["main"]) == StoreUse(
         branches=(
             LocalBranch(name="ahead", checked_out=False, unpushed=1, stashed=False),
             LocalBranch(name="live", checked_out=True, unpushed=0, stashed=False),
@@ -620,7 +648,7 @@ def test_release_reports_who_kept_the_repo_or_what_it_freed(
     assert (used.action, used.detail) == ("kept", "used by 1 workspace worktree")
     assert dest.is_dir()
 
-    worktrees.remove(url, dest, force=False)
+    worktrees.remove(url, dest, base="main", force=False)
     kept = worktrees.release(url, branches=())
     assert (kept.action, kept.detail) == ("released", "kept: branch b")
 

@@ -289,7 +289,7 @@ def test_a_stored_only_pick_uses_its_stored_url(
     worktrees = LocalGitWorktrees()
     scratch = workspace_env.parent / "scratch"
     worktrees.checkout(origin, scratch, branch=None, base=None)
-    worktrees.remove(origin, scratch, force=True)
+    worktrees.remove(origin, scratch, base="main", force=True)
     settings = {"mode": "write", "base": "", "branch": ""}
     item = PickItem(id="gitlab.example/acme/api", label="gitlab.example/acme/api")
     backend = _Capture(
