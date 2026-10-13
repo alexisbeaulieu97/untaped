@@ -9,14 +9,18 @@ appears once per module. What a name gives depends on what it is:
   each public method as a function, each public field, property or attribute,
   each class attribute (``class``) and its ``__init_subclass__`` keywords;
 - a class plugins implement (``Contract`` subclasses, :data:`IMPLEMENTERS`):
-  an ``implement=`` line naming its abstract methods and hooks, each with its
-  full typed signature, plus caller lines for the rest of its members;
+  an ``implement=`` line naming its abstract methods, a line with the full
+  typed signature of each of them and of each hook the class defines, plus
+  caller lines for the rest of its members;
 - an enum: a line per member with its value;
 - a ``Literal`` alias: a ``choice=`` line per value;
 - any other alias or constant: its name.
 
 Members are those defined on untaped classes: the walk stops at the first
 base from another library, and a name such a base defines is never a line.
+A plugin module's class stops earlier, at its first exported untaped base,
+and names each such base in a ``base=`` line instead: what it inherits is
+that base's lines.
 Annotations are read in ``annotationlib``'s FORWARDREF format and resolved
 against the module and its ``TYPE_CHECKING`` imports, because only a callback's
 arity is a promise; an annotation that can't be resolved far enough to tell is
@@ -99,10 +103,16 @@ def collect_exports(modules: Mapping[str, MarkName | None]) -> Exports:
     return exports
 
 
-def module_lines(path: str, plugin_mark: MarkName | None, exports: Exports) -> list[Line]:
-    """Every ``sdk`` line of module ``path``; ``plugin_mark`` is its plugin's mark."""
+def module_lines(
+    path: str, plugin_mark: MarkName | None, exports: Exports, *, plugin: bool = False
+) -> list[Line]:
+    """Every ``sdk`` line of module ``path``; ``plugin_mark`` is its plugin's mark.
+
+    A ``plugin`` module's class lists only its own members, and a ``base=``
+    line per exported untaped base: what it inherits is that base's lines.
+    """
     module = importlib.import_module(path)
-    walker = _Walker(module, exports)
+    walker = _Walker(module, exports, plugin=plugin)
     lines: list[Line] = []
     for name in _exported(module):
         obj = getattr(module, name)
@@ -147,9 +157,24 @@ def hooks_of(cls: type, exports: Exports) -> list[str]:
 
 
 class _Walker:
-    def __init__(self, module: types.ModuleType, exports: Exports) -> None:
+    def __init__(self, module: types.ModuleType, exports: Exports, *, plugin: bool) -> None:
         self.module = module
         self.exports = exports
+        self.plugin = plugin
+        self.stop = frozenset(exports.classes.values()) if plugin else frozenset[type]()
+
+    def bases(self, subject: str, cls: type, mark: MarkName | None) -> list[Line]:
+        """A plugin class's ``base=`` lines: each exported untaped class it subclasses."""
+        if not self.plugin:
+            return []
+        paths: dict[type, list[str]] = {}
+        for path, klass in self.exports.classes.items():
+            paths.setdefault(klass, []).append(path)
+        return [
+            Line(f"sdk {subject} base={min(paths[base])}", mark)
+            for base in cls.__mro__[1:]
+            if base in paths and not foreign(base)
+        ]
 
     def export(self, subject: str, obj: object, mark: MarkName | None) -> list[Line]:
         if isinstance(obj, type) and issubclass(obj, enum.Enum):
@@ -177,16 +202,19 @@ class _Walker:
         return lines
 
     def cls(self, subject: str, cls: type, mark: MarkName | None) -> list[Line]:
+        lines = self.bases(subject, cls, mark)
         if implementer_shaped(cls, self.exports):
-            return self.implementer(subject, cls, mark)
+            return [*lines, *self.implementer(subject, cls, mark)]
         if _is_protocol(cls):
             # A protocol is never constructed: what it promises is its members.
-            return [Line(f"sdk {subject}", mark), *self.members(subject, cls, mark)]
-        lines = self.function(subject, cls, mark, module=_module_of(cls, self.module))
+            return [*lines, Line(f"sdk {subject}", mark), *self.members(subject, cls, mark)]
+        lines.extend(self.function(subject, cls, mark, module=_module_of(cls, self.module)))
         lines.extend(self.members(subject, cls, mark))
         return lines
 
     def implementer(self, subject: str, cls: type, mark: MarkName | None) -> list[Line]:
+        """``implement=`` names the abstract members; each of those, and each hook the
+        class defines itself, gets one line with its full typed signature."""
         abstract = sorted(getattr(cls, "__abstractmethods__", ()))
         if _is_protocol(cls):
             abstract = sorted(
@@ -194,13 +222,18 @@ class _Walker:
                 for name in typing.get_protocol_members(cls)
                 if callable(inspect.getattr_static(cls, name, None))
             )
-        implement = sorted({*abstract, *hooks_of(cls, self.exports)})
-        lines = [Line(f"sdk {subject} implement={','.join(implement)}", mark)]
-        for name in implement:
+        lines = [Line(f"sdk {subject} implement={','.join(abstract)}", mark)]
+        own, _outside = _split_mro(cls, stop=self.stop)
+        typed = sorted(
+            name
+            for name in {*abstract, *hooks_of(cls, self.exports)}
+            if any(name in vars(klass) for klass in own)
+        )
+        for name in typed:
             member = inspect.getattr_static(cls, name)
             member_mark = own_mark(member) or mark
             lines.append(Line(f"sdk {subject}.{name}{self.typed(cls, name, member)}", member_mark))
-        lines.extend(self.members(subject, cls, mark, skip=set(implement)))
+        lines.extend(self.members(subject, cls, mark, skip={*abstract, *typed}))
         return lines
 
     def typed(self, cls: type, name: str, member: object) -> str:
@@ -245,7 +278,7 @@ class _Walker:
         skip = set(skip or ())
         lines: list[Line] = []
         seen: set[str] = set(skip)
-        own, outside = _split_mro(cls)
+        own, outside = _split_mro(cls, stop=self.stop)
         fields = _field_names(cls)
         for klass in own:
             annotations = annotationlib.get_annotations(
@@ -488,19 +521,23 @@ def _module_of(obj: object, fallback: types.ModuleType) -> types.ModuleType:
     return found if found is not None else fallback
 
 
-def _split_mro(cls: type) -> tuple[list[type], set[str]]:
-    """The untaped classes of ``cls``'s MRO up to the first foreign one, and the names past it."""
+def _split_mro(cls: type, *, stop: frozenset[type] = frozenset()) -> tuple[list[type], set[str]]:
+    """The untaped classes of ``cls``'s MRO before the first foreign one or one in ``stop``,
+    and the names the foreign classes define (never lines: another library's API)."""
     own: list[type] = []
     outside: set[str] = set()
     stopped = False
     for klass in cls.__mro__:
         if klass is object:
             continue
-        if stopped or foreign(klass) or klass is typing.Generic or _is_protocol_base(klass):
+        if foreign(klass) or klass is typing.Generic or _is_protocol_base(klass):
             stopped = True
             outside.update(vars(klass))
             continue
-        own.append(klass)
+        if klass is not cls and klass in stop:
+            stopped = True
+        if not stopped:
+            own.append(klass)
     return own, outside
 
 

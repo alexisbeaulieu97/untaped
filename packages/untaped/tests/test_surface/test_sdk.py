@@ -201,10 +201,22 @@ def test_a_plugin_mark_reaches_every_line_without_its_own() -> None:
 def test_an_implementer_lists_what_plugins_implement_with_full_signatures() -> None:
     exports = collect_exports(dict.fromkeys(SDK_MODULES))
     lines = {line.text for line in module_lines("untaped.contracts", None, exports)}
-    assert "sdk untaped.contracts.Contract implement=ready" in lines
+    assert "sdk untaped.contracts.Contract implement=" in lines
     assert "sdk untaped.contracts.Contract.ready() -> NotReady?" in lines
     testing = {line.text for line in module_lines("untaped.testing", None, exports)}
     assert (
         "sdk untaped.testing.PromptBackend.secret(message: string, *, confirmation: boolean) "
         "-> string"
     ) in testing
+
+
+def test_a_plugin_class_lists_its_own_members_and_its_exported_bases() -> None:
+    with _sample(lambda _: ["Refused"]):
+        exports = collect_exports({**dict.fromkeys(SDK_MODULES), _NAME: None})
+        lines = {line.text for line in module_lines(_NAME, None, exports, plugin=True)}
+    assert lines == {
+        f"sdk {_NAME}.Refused base=untaped.sdk.UntapedError",
+        f"sdk {_NAME}.Refused(message, *, reason)",
+        f"sdk {_NAME}.Refused.category class",
+        f"sdk {_NAME}.Refused.why()",
+    }
