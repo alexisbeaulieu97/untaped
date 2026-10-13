@@ -7,7 +7,8 @@ rules, in order (design §3):
 2. A stale answer with no match counts as its failure: a stale listing
    confirms a match, never an absence. The stale answer's ``untaped.stale``
    line is said when its match is the one returned; a stale absence fails
-   (or warns) with the provider's error alone. An answer that dropped invalid rows
+   with the provider's error alone, or warns with it and leaves the line for
+   a later use of the same answers. An answer that dropped invalid rows
    counts as ``invalid-item``: skipped when unranked, failed when ranked (the
    bad row could be the one meant).
 3. "Ranked above" means an explicit rank only; unranked providers are below
@@ -61,8 +62,6 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
     the match, :class:`NotFound` or :class:`Ambiguous` (exit 2) otherwise.
     """
     failed, skipped, found = _sorted(answers, matches)
-    for each in failed:
-        answers._take(each.plugin)  # the failure, raised or warned about, says it
     for skip in skipped:
         if skip.reason != "not-configured":
             _warn(f"{skip.plugin} wasn't asked ({skip.reason}): {skip.detail}")
@@ -70,6 +69,8 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
         lowest = min(_rank_key(each.rank) for each in failed)
         above = [(ok, hits) for ok, hits in found if _rank_key(ok.rank) < lowest]
         if not above:
+            for each in failed:
+                answers._take(each.plugin)  # the raise says it
             raise failed[0].error
         for each in failed:
             _warn(f"{each.plugin} failed ({each.error}); using a match ranked above it")
