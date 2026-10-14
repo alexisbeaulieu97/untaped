@@ -1,4 +1,7 @@
-"""Workspace's ``RepoSource`` contract: its schemas, and the checks it runs on any provider."""
+"""Workspace's ``RepoSource`` contract: the checks it runs on any provider.
+
+Its schemas are guarded by ``tests/repo/surface.txt`` (``contract workspace.*`` lines).
+"""
 
 from __future__ import annotations
 
@@ -7,22 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import assert_contract_schemas, compose_with
+from untaped.testing import compose_with
 from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import RepoSource
 from untaped_workspace.testing import conformance
 from workspace.fakes import Listing, repo
-
-SNAPSHOTS = Path(__file__).resolve().parent / "snapshots"
-
-
-def test_the_repo_source_schemas_change_only_compatibly() -> None:
-    """A provider built against this workspace keeps working with the next minor."""
-    assert_contract_schemas(RepoSource, snapshots=SNAPSHOTS)
-    text = (SNAPSHOTS / "repo_source.json").read_text(encoding="utf-8")
-    for name in ('"repos"', '"to_repo"', '"default_branch"', '"archived"'):
-        assert name in text
 
 
 def test_a_provider_listing_distinct_names_conforms() -> None:

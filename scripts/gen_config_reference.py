@@ -18,7 +18,7 @@ stale or a setting has no description.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
@@ -26,11 +26,11 @@ from packaging.utils import canonicalize_name
 from pydantic import BaseModel, SecretStr
 from release import packages
 
-from untaped.config_schema import walk_settings
 from untaped.theme import ROLE_NAMES, SYMBOL_NAMES
 
 if TYPE_CHECKING:
     from untaped.stability import Stability
+    from untaped.surface._settings import Section
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
@@ -188,20 +188,6 @@ class Row:
     """The setting's own mark, else its plugin's."""
 
 
-def _leaf_rows(model: type[BaseModel], prefix: tuple[str, ...]) -> list[Row]:
-    """One :class:`Row` per leaf field (collections included), recursing into nested models."""
-    return [
-        Row(
-            d.key,
-            d.annotation,
-            d.default,
-            d.description or DESCRIPTIONS.get(d.key),
-            optional=d.optional,
-        )
-        for d in walk_settings(model, prefix, include_collections=True)
-    ]
-
-
 def _type_name(row: Row) -> str:
     inner, optional = row.annotation, row.optional
     origin = get_origin(inner)
@@ -244,7 +230,7 @@ def _env_name(key: str) -> str:
     return env_var_name(key.split("."))
 
 
-def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability | None]]:
+def collect_sections() -> list[Section]:
     """``(title, prefix, model, is_state, stability)``: the shell and each first-party plugin.
 
     ``stability`` is the owning plugin's mark. Plugins follow in name
@@ -252,49 +238,14 @@ def collect_sections() -> list[tuple[str, str, type[BaseModel], bool, Stability 
     plugin rather than drop its section.
     """
     from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
-    from untaped.plugins.registry import (  # noqa: PLC0415
-        compose,
-        discover_candidates,
-        section_settings,
-    )
-    from untaped.settings import Settings  # noqa: PLC0415
+    from untaped.plugins.registry import compose, discover_candidates  # noqa: PLC0415
+    from untaped.surface._settings import check_quarantine, sections  # noqa: PLC0415
 
-    sections: list[tuple[str, str, type[BaseModel], bool, Stability | None]] = [
-        ("Root", "", Settings, False, None),
-        (
-            f"`{SHELL_SPEC.section}`",
-            SHELL_SPEC.section,
-            SHELL_SPEC.settings,
-            False,
-            None,
-        ),
-    ]
     own = packages(REPO_ROOT)
     first_party = [c for c in discover_candidates() if canonicalize_name(c.distribution) in own]
     result = compose(SHELL_SPEC, first_party)
-    if result.quarantine:
-        reasons = "; ".join(
-            f"{record.name!r} [{record.reason}]: {record.detail}" for record in result.quarantine
-        )
-        raise RuntimeError(
-            f"first-party plugins quarantined; fix them before generating: {reasons}"
-        )
-    for registered in result.plugins:
-        spec = registered.spec
-        settings = section_settings(spec, extensions=False)
-        if settings is not None:
-            sections.append((f"`{spec.name}`", spec.name, settings, False, spec.stability))
-        if spec.state is not None:
-            sections.append(
-                (
-                    f"`{spec.name}` state",
-                    spec.name,
-                    spec.state,
-                    True,
-                    None,
-                )
-            )
-    return sections
+    check_quarantine(result)
+    return sections(result, extensions=False)
 
 
 def missing_descriptions() -> list[str]:
@@ -310,32 +261,24 @@ def unknown_descriptions() -> list[str]:
 
 def _all_rows() -> list[Row]:
     rows: list[Row] = []
-    for _, prefix, model, _, stability in collect_sections():
-        rows.extend(_section_rows(prefix, model, stability))
+    for section in collect_sections():
+        rows.extend(_section_rows(section))
     return rows
 
 
-def _section_rows(
-    prefix: str, model: type[BaseModel], stability: Stability | None = None
-) -> list[Row]:
-    from untaped.settings import model_sections  # noqa: PLC0415
-    from untaped.stability import setting_mark  # noqa: PLC0415
+def _section_rows(section: Section) -> list[Row]:
+    from untaped.surface._settings import setting_leaves  # noqa: PLC0415
 
-    rows = _leaf_rows(model, (prefix,) if prefix else ())
-    if not prefix:
-        # Root model: keep the shell's own settings, not the pydantic-settings base.
-        rows = [row for row in rows if row.key.split(".")[0] in {"http", "ui", "skills"}]
-    sections = {prefix: model} if prefix else model_sections(model)
     return [
-        replace(
-            row,
-            mark=setting_mark(
-                row.key,
-                sections=sections,
-                section_stability={name: stability for name in sections},
-            ),
+        Row(
+            leaf.key,
+            leaf.annotation,
+            leaf.default,
+            leaf.description or DESCRIPTIONS.get(leaf.key),
+            optional=leaf.optional,
+            mark=leaf.mark,
         )
-        for row in rows
+        for leaf in setting_leaves(section)
     ]
 
 
@@ -390,12 +333,12 @@ def _renamed_table() -> list[str]:
 def render() -> str:
     """Return the full Markdown page."""
     parts = [_HEADER]
-    for title, prefix, model, is_state, stability in collect_sections():
-        rows = _section_rows(prefix, model, stability)
+    for section in collect_sections():
+        rows = _section_rows(section)
         if not rows:
             continue
-        parts.append(f"## {title}\n")
-        if is_state:
+        parts.append(f"## {section.title}\n")
+        if section.is_state:
             parts.append("| Key | Type | Description |\n|---|---|---|")
             for row in rows:
                 parts.append(f"| `{row.key}` | {_type_name(row)} | {_description(row)} |")

@@ -285,9 +285,9 @@ elsewhere, `--dry-run` to list the files first): the package with its
 (`providers/workspace.py`) with every method of the contract and its
 docstring (the required ones as stubs, the optional ones and the bridge
 commented out, since a stub would count as filling them), a test running
-`check_conventions` and `assert_fills` with a list of samples to fill in,
-and a `pyproject.toml` with the ranges and extra below. It never writes into
-an existing directory.
+`check_conventions`, `assert_fills` with a list of samples to fill in and
+`assert_surface`, and a `pyproject.toml` with the ranges and extra below. It
+never writes into an existing directory.
 
 A plugin that fills a contract declares, besides its `untaped` range, the
 owner under an extra named like the owner, with a range of the owner's
@@ -378,7 +378,9 @@ uv run ruff check
 Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests,
-and `untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
+`untaped.testing.assert_surface(SPEC, path)` to keep its commands, settings
+and contracts from losing a line by accident (experimental), and
+`untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
 hello` in-process against the installed plugins; it returns the exit code,
 the captured output and `diagnostics`, the typed stderr lines the command
 emitted (progress lines only under `--verbose`, or when the test advances

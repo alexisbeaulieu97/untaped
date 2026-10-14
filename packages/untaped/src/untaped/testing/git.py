@@ -34,6 +34,15 @@ import pytest
 
 from untaped.stability import experimental
 
+__all__ = [
+    "GitRemote",
+    "git_remote",
+    "git_shim",
+    "global_config",
+    "hostile_git_home",
+    "trace2_events",
+]
+
 _AUTHOR = {
     "GIT_AUTHOR_NAME": "Test",
     "GIT_AUTHOR_EMAIL": "test@example.invalid",

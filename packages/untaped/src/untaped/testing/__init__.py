@@ -4,8 +4,9 @@
 ``docs/reference/conventions.md``; its ``candidates`` argument composes a plugin
 passed in directly instead of one discovered through entry points.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
-plugins. :func:`compose_with`, :func:`assert_fills` and
-:func:`assert_contract_schemas` test contracts (``untaped.testing.contracts``).
+plugins. :func:`compose_with` and :func:`assert_fills` test contracts
+(``untaped.testing.contracts``); :func:`assert_surface` guards a plugin's
+public surface (``untaped.testing.surface``).
 
 Progress lines follow a clock, not the wall: :func:`invoke_cli` freezes the
 progress clock for the invocation, so ``CliResult.diagnostics`` carries no
@@ -49,8 +50,9 @@ from untaped.prompts import (
 )
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.stability import apply_marks
-from untaped.testing.contracts import assert_contract_schemas, assert_fills, compose_with
+from untaped.testing.contracts import assert_fills, compose_with
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
+from untaped.testing.surface import assert_surface
 
 if TYPE_CHECKING:
     from untaped.output.diagnostic import Diagnostic
@@ -68,9 +70,9 @@ __all__ = [
     "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
-    "assert_contract_schemas",
     "assert_destructive_contract",
     "assert_fills",
+    "assert_surface",
     "cache_clock",
     "check_conventions",
     "compose_with",

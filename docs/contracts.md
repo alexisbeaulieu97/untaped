@@ -187,27 +187,34 @@ variable sets it).
 runs.
 
 An owner tests its questions against providers it controls, and keeps its
-contracts' schemas from changing by accident:
+contracts from changing by accident:
 
 ```python
 with compose_with("shelf", provides={"fake": [FakeBooks()]}):
     [answer] = gather(BookSource.books, refresh=True)()
 
-def test_the_contract_keeps_its_schemas() -> None:
-    assert_contract_schemas(BookSource, snapshots=Path(__file__).parent / "snapshots")
+def test_shelf_keeps_its_surface() -> None:
+    assert_surface(SPEC, Path(__file__).parent / "surface.txt")
 ```
 
 - `compose_with(*plugins, provides={"fake": [...]})` composes the named
   installed plugins (or `PluginSpec`s) plus a plugin named `fake` offering
   each instance to the owner of its contract, and restores the composition
   after the block.
-- `assert_contract_schemas` writes `<contract>.json` (each method's
-  parameter and return schemas and its stability) the first time, and fails
-  on an incompatible change: a removed or retyped field, a new required
-  field or parameter, a changed constraint, or a removed stable method. A
-  new method, a new optional parameter or field, and a removed experimental
-  method are compatible and rewrite the snapshot. To accept a breaking
-  change in a major release, delete the snapshot. Commit the snapshots.
+- `assert_surface(SPEC, path)` (experimental, with the file's line format)
+  writes `surface.txt` the first time: one line per promise of the plugin,
+  its commands, flags and settings, each contract with its methods'
+  parameter and return types, and every model they reach with its fields.
+  It fails on an incompatible change, listing the lines that went: a
+  removed or retyped field, a new required field, flag or parameter, a
+  changed constraint, a dropped Literal value, a changed default, a
+  removed stable command or method, a new abstract method, or any change
+  to a contract method's signature, since every provider must match it
+  exactly. A new optional
+  method, optional payload field or Literal value, a new command or
+  optional flag, and anything removed while experimental are compatible
+  and rewrite the file. To accept a breaking change in a major release,
+  delete the file. Commit it.
 - An owner may ship checks every provider must pass as a
   `conformance(provider)` function in its `testing` module
   (`untaped_shelf.testing`); `untaped plugin check` runs it on each ready
