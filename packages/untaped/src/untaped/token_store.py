@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -38,9 +39,9 @@ from untaped.auth import (
     gpg_hint,
     locked_store_error,
     locked_without_terminal,
-    no_pinentry_options,
+    pass_gpg_env,
+    pass_gpg_options,
     run_command,
-    unlock_prompts_allowed,
 )
 from untaped.errors import ConfigError
 
@@ -212,11 +213,7 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
 def _gpg(*args: str) -> list[str]:
     """A gpg command line built the way ``pass`` builds its own (see its ``GPG_OPTS``)."""
     program = "gpg2" if shutil.which("gpg2") else "gpg"
-    # As pass does; with nobody to answer a passphrase prompt, as run_command tells pass.
-    if unlock_prompts_allowed():
-        options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()
-    else:
-        options = no_pinentry_options()
+    options = pass_gpg_options()  # as pass gets them
     fixed = [
         "--quiet",
         "--yes",
@@ -239,7 +236,12 @@ def _gpg_round_trip() -> None:
     for step, argv in steps:
         try:
             completed = subprocess.run(
-                argv, input=data, capture_output=True, timeout=_ROUND_TRIP_SECONDS, check=False
+                argv,
+                input=data,
+                capture_output=True,
+                timeout=_ROUND_TRIP_SECONDS,
+                check=False,
+                env=pass_gpg_env(),
             )
         except subprocess.TimeoutExpired:
             raise ConfigError(
@@ -253,8 +255,9 @@ def _gpg_round_trip() -> None:
             raise ConfigError(message, category="unavailable") from None
         if completed.returncode != 0:
             stderr = completed.stderr.decode(errors="replace")
-            if locked_without_terminal(stderr):
-                unlock = " ".join(["echo test | gpg -e", *recipients, "| gpg -d > /dev/null"])
+            # Only decrypting needs the passphrase.
+            if step == "decrypt" and locked_without_terminal(stderr):
+                unlock = f"echo test | gpg -e {shlex.join(recipients)} | gpg -d > /dev/null"
                 raise locked_store_error(f"gpg {step} for the pass store", unlock=unlock)
             quote = first_stderr_line(stderr)
             raise ConfigError(

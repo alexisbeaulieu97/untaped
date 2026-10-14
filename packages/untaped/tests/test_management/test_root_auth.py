@@ -7,6 +7,7 @@ any output, error or argv.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any, ClassVar
@@ -387,7 +388,7 @@ def test_migrate_stops_before_moving_anything_when_gpg_cannot_decrypt(
 def test_set_without_a_terminal_stops_on_a_locked_gpg_key_without_prompting(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Tests run with no terminal on stdin, as an agent does: gpg is told not to ask.
+    # The harness gives no terminal on stdin or stderr, as an agent does: gpg is told not to ask.
     monkeypatch.setenv("STUB_MODE", "locked-key")
     result = _auth("set", "svc", "--stdin", input=SENTINEL)
     assert result.exit_code == 5
@@ -404,6 +405,9 @@ def test_reading_a_locked_pass_token_without_a_terminal_names_the_unlock_command
     assert _auth("set", "svc", "--store", "pass", "--stdin", input=SENTINEL).exit_code == 0
     clear_token_cache()
     monkeypatch.setenv("STUB_MODE", "locked-key")
+    # Read outside the CLI harness: no terminal on stdin or stderr, whatever runs pytest.
+    monkeypatch.setattr("sys.stdin", io.StringIO())
+    monkeypatch.setattr("sys.stderr", io.StringIO())
     token = auth.CommandToken(["pass", "show", "untaped/default/svc"], section="svc")
     with pytest.raises(ConfigError) as caught:
         token.get_secret_value()
