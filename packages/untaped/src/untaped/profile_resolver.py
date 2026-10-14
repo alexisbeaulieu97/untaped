@@ -25,7 +25,7 @@ caller's responsibility.
 from __future__ import annotations
 
 import os
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Literal
@@ -118,38 +118,6 @@ def selected_profile(data: dict[str, Any] | None = None) -> str:
         except ConfigError:
             data = {}
     return effective_active_profile_name(data) or DEFAULT_PROFILE
-
-
-def profiles_setting(
-    config_data: dict[str, Any],
-    section: str,
-    needs: Sequence[Collection[str]],
-    *,
-    exclude: str | None = None,
-) -> list[str]:
-    """The profiles whose own entries set every one of ``needs`` under ``section``.
-
-    Each need is satisfied by any one of its field names holding a non-blank
-    value in that profile's mapping (what the profile itself writes, without
-    ``default`` beneath it). ``exclude`` (usually the selected profile) is
-    skipped. Names keep the file's order; a malformed ``profiles`` counts as
-    none.
-    """
-    profiles = config_data.get("profiles")
-    if not isinstance(profiles, dict):
-        return []
-    found: list[str] = []
-    for name, profile in profiles.items():
-        values = profile.get(section) if isinstance(profile, dict) else None
-        if name == exclude or not isinstance(values, dict):
-            continue
-        if all(any(_is_set(values.get(field)) for field in need) for need in needs):
-            found.append(str(name))
-    return found
-
-
-def _is_set(value: Any) -> bool:
-    return value is not None and not (isinstance(value, str) and not value.strip())
 
 
 def resolve_profiles(

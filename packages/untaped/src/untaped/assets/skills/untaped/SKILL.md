@@ -111,10 +111,10 @@ borrows from `~/.untaped/repositories`.
   Pass on what the user would want to know about, with any hint, whatever
   its `level`: a deprecated setting or flag, a skipped or partial result, a
   clamped option. Leave out progress and routine lines.
-- A command that exits 4 with `KEY is not configured in profile 'NAME'`
-  lists in its hint (and `details.profiles`) the profiles that set it. Rerun
-  with `--profile` one of those when it fits the task instead of asking the
-  user for the value; ask which one only when several fit.
+- A command that exits 4 because a setting `is not configured in profile
+  'NAME'` lists in its hint (and `details.profiles`) the other profiles that
+  set it. When one fits the task, rerun with `--profile NAME` instead of
+  asking the user for the value; ask which one only when several fit.
 - Every `run` but `profile create` starts with `--profile NAME`. Keep it:
   dropping it acts on the active profile instead.
 - Without a terminal, `untaped setup` exits 2; that is expected. Use
