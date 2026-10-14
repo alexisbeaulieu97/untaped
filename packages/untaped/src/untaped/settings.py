@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import json
 import os
 import re
 from collections.abc import Iterable, Iterator, Mapping
@@ -577,6 +578,27 @@ def _env_name(section: str, key: str) -> str:
 
 def _env_is_set(name: str) -> bool:
     return any(key.upper() == name for key in os.environ)
+
+
+def env_sets_key(section: str, key: str) -> bool:
+    """Whether the environment sets ``<section>.<key>``, blank or not.
+
+    Its ``UNTAPED_<SECTION>__<KEY>`` variable, or the key inside an
+    ``UNTAPED_<SECTION>`` JSON object; a blob that isn't a JSON object
+    counts, since it cannot be told apart. Names match case-insensitively,
+    as the settings source reads them.
+    """
+    if _env_is_set(_env_name(section, key)):
+        return True
+    blob_name = env_var_name([section])
+    blob = next((value for name, value in os.environ.items() if name.upper() == blob_name), None)
+    if blob is None:
+        return False
+    try:
+        data = json.loads(blob)
+    except ValueError:
+        return True
+    return not isinstance(data, dict) or key in data
 
 
 def _env_spelling(section: str, key: str) -> str:
