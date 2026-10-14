@@ -137,3 +137,119 @@ def test_history_refuses_an_option(store_for: StoreFor) -> None:
     with pytest.raises(StoreError) as caught:
         store_for("github").prefetch(history=["--all"])
     assert caught.value.category == ErrorCategory.INVALID
+
+
+def _missing_paths(store_path: Path, tree: str) -> set[str]:
+    listed = git(store_path, "rev-list", "--objects", "--missing=print", tree)
+    missing = {line[1:] for line in listed.splitlines() if line.startswith("?")}
+    entries = git(store_path, "ls-tree", "-r", tree).splitlines()
+    return {entry.split("\t", 1)[1] for entry in entries if entry.split()[2] in missing}
+
+
+def test_blobs_by_id_fetch_only_those_then_nothing(
+    seeded: GitRemote,
+    store_for: StoreFor,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = store_for("ansible")
+    store.fetch(branches=["main"])
+    main = "refs/untaped/ansible/heads/main"
+    blob = git(store.path, "rev-parse", f"{main}:src/a.py").strip()
+    trace = tmp_path / "trace.json"
+    monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
+
+    handle = store.prefetched(blobs=[blob, blob])
+
+    assert len(_fetch_starts(trace)) == 1
+    assert handle.blobs == (blob, blob)
+    assert handle.run(["cat-file", "-p", blob]).text == "needle = 1\n"
+    assert _missing_paths(store.path, main) == {"README.md", "src/b.py", "docs/c.md"}
+    trace.unlink()
+    store.prefetch(blobs=[blob])
+    assert _fetch_starts(trace) == []
+
+
+def test_blobs_and_trees_prefetch_together(seeded: GitRemote, store_for: StoreFor) -> None:
+    store = store_for("ansible")
+    store.fetch(branches=["main"])
+    main = "refs/untaped/ansible/heads/main"
+    blob = git(store.path, "rev-parse", f"{main}:docs/c.md").strip()
+
+    store.prefetch(trees=[main], paths=["src/a.py"], blobs=[blob])
+
+    assert _missing_paths(store.path, main) == {"README.md", "src/b.py"}
+
+
+def test_thousands_of_blob_ids_travel_on_stdin(
+    remote: GitRemote, store_for: StoreFor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = remote.work / "many"
+    folder.mkdir()
+    for index in range(2999):
+        (folder / f"f{index}.yml").write_text(f"n: {index}\n", encoding="utf-8")
+    subprocess.run(["git", "add", "many"], cwd=remote.work, check=True)
+    remote.commit("many/last.yml", "n: last\n")  # commits what is staged with it
+    store = store_for("ansible")
+    store.fetch(branches=["main"])
+    main = "refs/untaped/ansible/heads/main"
+    blobs = [entry.oid for entry in store.ls_tree(main, ["many"])]
+    assert len(blobs) == 3000
+    trace = tmp_path / "trace.json"
+    monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
+
+    store.prefetch(blobs=blobs)
+
+    assert len(_fetch_starts(trace)) == 1
+    assert _missing_paths(store.path, main) == {"README.md"}
+
+
+def test_a_host_refusing_blobs_by_id_is_unavailable(seeded: GitRemote, store_for: StoreFor) -> None:
+    store = store_for("ansible")
+    store.fetch(branches=["main"])
+    blob = git(store.path, "rev-parse", "refs/untaped/ansible/heads/main:src/a.py").strip()
+    seeded.refuse_by_oid()
+
+    with pytest.raises(StoreError) as caught:
+        store.prefetch(blobs=[blob])
+
+    assert caught.value.category == ErrorCategory.UNAVAILABLE
+    assert "refused to send blobs by object id" in str(caught.value)
+
+
+@pytest.mark.parametrize("oid", ["main", "A" * 40])
+def test_blobs_refuses_what_is_not_an_object_id(store_for: StoreFor, oid: str) -> None:
+    store = store_for("ansible")
+    with pytest.raises(StoreError) as caught:
+        store.prefetch(blobs=[oid])
+    assert caught.value.category == ErrorCategory.INVALID
+    assert not store.path.exists()  # refused before the repo is made
+
+
+def test_blobs_refuses_an_id_of_the_other_object_format(
+    seeded: GitRemote, store_for: StoreFor
+) -> None:
+    with pytest.raises(StoreError) as caught:
+        store_for("ansible").prefetch(blobs=["a" * 64])
+    assert caught.value.category == ErrorCategory.INVALID
+
+
+def test_a_missing_blob_is_listed_without_a_lazy_fetch(
+    seeded: GitRemote, store_for: StoreFor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = store_for("ansible")
+    store.fetch(branches=["main"])
+    blob = git(store.path, "rev-parse", "refs/untaped/ansible/heads/main:src/a.py").strip()
+    trace = tmp_path / "trace.json"
+    monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
+
+    # only gits older than 2.38 would fetch here (mktree did): a guard against regressions
+    assert store._missing_blobs([blob]) == [blob]
+
+    starts = [e["argv"] for e in trace2_events(trace) if e.get("event") == "start"]
+    assert len(starts) == 1  # rev-list alone: no lazy fetch child
+
+
+def test_prefetched_needs_something_to_read(store_for: StoreFor) -> None:
+    with pytest.raises(ValueError, match="reads nothing"):
+        store_for("ansible").prefetched()
