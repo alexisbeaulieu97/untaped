@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import email.utils
 import logging
+import os
+import shlex
 import ssl
 import time
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
@@ -40,11 +42,12 @@ from untaped.errors import (
     HttpTransportError,
     UntapedError,
 )
-from untaped.messages import command_line
-from untaped.profile_resolver import ACTIVE_PROFILE_ENV, profiles_setting, selected_profile
+from untaped.messages import command_line, q, run_hint
+from untaped.profile_resolver import ACTIVE_PROFILE_ENV, classify_active_profile, selected_profile
 from untaped.redaction import redact_url_password
 from untaped.settings import (
     HttpSettings,
+    active_settings_layout,
     env_var_name,
     load_settings_section,
     registered_profile_model,
@@ -530,7 +533,7 @@ def missing_setting_error(
     tail = tail if token_sources else ""
     fields = (field, *more_fields)
     keys = [f"{section}.{name}" for name in fields]
-    where = f" in profile {profile!r}" if profile else ""
+    where = f" in profile {q(profile)}" if profile else ""
     lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
     details = {"profiles": list(set_in)} if set_in else None
     commands = [
@@ -561,15 +564,15 @@ def _other_profiles_hint(profiles: Sequence[str], *, plural: bool) -> str:
         return ""
     it = "them" if plural else "it"
     if len(profiles) == 1:
-        name = profiles[0]
+        name = shlex.quote(profiles[0])
         return (
-            f"profile {name!r} sets {it}: run `{command_line(f'--profile {name} <command>')}` "
+            f"profile {q(profiles[0])} sets {it}: {run_hint(f'--profile {name} …')} "
             f"or set {ACTIVE_PROFILE_ENV}={name}; or "
         )
-    names = ", ".join(repr(name) for name in profiles[:-1]) + f" and {profiles[-1]!r}"
+    names = ", ".join(q(name) for name in profiles[:-1]) + f" and {q(profiles[-1])}"
     return (
-        f"profiles {names} set {it}: run `{command_line('--profile <name> <command>')}` "
-        f"or set {ACTIVE_PROFILE_ENV}=<name>; or "
+        f"profiles {names} set {it}: {run_hint('--profile NAME …')} "
+        f"or set {ACTIVE_PROFILE_ENV}=NAME; or "
     )
 
 
@@ -671,21 +674,45 @@ def connected_client(
 def _profiles_for(
     section: str, missing: Sequence[str], *, token_command: bool
 ) -> tuple[str | None, list[str]]:
-    """The selected profile and the other profiles that set every ``missing`` field.
+    """The selected profile and the other profiles that resolve every ``missing`` field.
 
-    A ``token_command`` counts for a missing ``token`` when the model takes
-    one. An unreadable config file names no profile.
+    Each profile is resolved as it would be selected (``default`` beneath
+    it, old key names renamed). A ``token_command`` counts for a missing
+    ``token`` when the model takes one. An environment override of a
+    missing field applies to every profile, so it names none; an unreadable
+    config file names only a profile chosen by ``--profile`` or
+    ``UNTAPED_PROFILE``.
     """
+    names = [env_var_name([section]), *(env_var_name([section, name]) for name in missing)]
+    if any(name in os.environ for name in names):
+        return None, []
     try:
         data = read_config_dict()
     except ConfigError:
-        return None, []
+        return classify_active_profile({})[0], []
     profile = selected_profile(data)
     needs = [
         (name, "token_command") if name == "token" and token_command else (name,)
         for name in missing
     ]
-    return profile, profiles_setting(data, section, needs, exclude=profile)
+    layout = active_settings_layout()
+    found: list[str] = []
+    for name in layout.profile_names(data):
+        if name == profile:
+            continue
+        try:
+            values = layout.effective(data, profile=name).get(section)
+        except ConfigError:
+            continue
+        if isinstance(values, dict) and all(
+            any(_is_set(values.get(field)) for field in need) for need in needs
+        ):
+            found.append(name)
+    return profile, found
+
+
+def _is_set(value: Any) -> bool:
+    return value is not None and not (isinstance(value, str) and not value.strip())
 
 
 def paginate_pages(
