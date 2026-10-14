@@ -11,7 +11,9 @@ them, so each gets an owner line with its required fields (a new required
 field fails), then one typed line per field, constraints included, with a
 ``choice=`` line per Literal value. A model is stable when a stable contract
 or a stable SDK export reaches it, and takes the mark of what reaches it
-otherwise.
+otherwise. A model marked ``@experimental`` itself that a stable contract
+method reaches is a :class:`SurfaceError`: stabilising the contract would
+promise the model by accident, so either is changed on purpose.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from typing import TYPE_CHECKING, Any, get_args
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from untaped.stability import function_mark
+from untaped.stability import Experimental, class_mark, function_mark
 from untaped.surface._lines import Line, MarkName
 from untaped.surface._sdk import SurfaceError, mark_name
 from untaped.surface._types import (
@@ -67,6 +69,7 @@ def contract_lines(
     """The ``contract`` lines of ``owner``'s contracts and their payload models."""
     lines: list[Line] = []
     reached: dict[type[BaseModel], set[MarkName | None]] = {}
+    stable_methods: dict[type[BaseModel], set[str]] = {}
     for info in infos:
         contract_mark = mark_name(function_mark(info.cls)) or plugin_mark
         subject = f"contract {owner}.{info.name}"
@@ -79,6 +82,8 @@ def contract_lines(
             for hint in hints.values():
                 for model in _models(hint):
                     reached.setdefault(model, set()).add(mark)
+                    if mark is None:
+                        stable_methods.setdefault(model, set()).add(f"{info.name}.{name}")
     names: dict[str, type[BaseModel]] = {}
     for model in _closure(reached):
         clash = names.setdefault(model.__name__, model)
@@ -89,6 +94,17 @@ def contract_lines(
             )
     for model in sorted(names.values(), key=lambda m: m.__name__):
         marks = _reaching(model, reached)
+        if None in marks and isinstance(class_mark(model), Experimental):
+            methods = sorted(
+                method
+                for root, found in stable_methods.items()
+                if model in _closure({root: set()})
+                for method in found
+            )
+            raise SurfaceError(
+                f"{owner}: the stable {', '.join(methods)} reaches {model.__name__}, which is "
+                "@experimental; mark the method experimental, or stabilise the model on purpose"
+            )
         model_mark = _model_mark(marks, model in stable_classes)
         lines.extend(model_lines(f"contract {owner}.{model.__name__}", model, model_mark))
     return lines

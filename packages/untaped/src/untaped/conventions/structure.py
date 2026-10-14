@@ -150,7 +150,18 @@ def _private(name: str) -> bool:
     return name.startswith("_") and not name.startswith("__")
 
 
-def structure_violations(
+def structure_class_violations(spec: PluginSpec, package: str, source_dir: Path) -> list[str]:
+    """The checks that import the package or read its models: they need the installed code."""
+    return [
+        *_runtime_violations(package),
+        *_settings_violations(spec),
+        *settings_name_violations(
+            spec.name, settings_model(spec), source_dir.parent, state=spec.state
+        ),
+    ]
+
+
+def structure_source_violations(
     spec: PluginSpec,
     package: str,
     source_dir: Path,
@@ -158,20 +169,8 @@ def structure_violations(
     *,
     tests_dir: Path | None = None,
 ) -> list[str]:
-    """Violations of the plugin ``spec`` whose code is ``package`` in ``source_dir``.
-
-    ``files`` are the parsed sources under ``source_dir``.
-    ``tests_dir``, when given, is scanned for private imports of ``untaped``
-    or ``package``.
-    """
-    found = [
-        *_runtime_violations(package),
-        *_source_violations(source_dir, files, spec.name),
-        *_settings_violations(spec),
-        *settings_name_violations(
-            spec.name, settings_model(spec), source_dir.parent, state=spec.state
-        ),
-    ]
+    """The checks that read only the plugin's files (and, with ``tests_dir``, its tests)."""
+    found = list(_source_violations(source_dir, files, spec.name))
     if tests_dir is not None:
         found.extend(_private_import_violations(tests_dir, package))
     return found

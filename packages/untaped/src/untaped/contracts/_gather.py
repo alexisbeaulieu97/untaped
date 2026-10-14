@@ -61,7 +61,8 @@ class Failed:
     plugin: str
     error: UntapedError
     rank: int | None = None
-    #: A stable reason when the SDK failed it (``invalid-item``, a quarantine reason).
+    #: A stable reason: ``raised`` when the provider raised, else why the SDK failed it
+    #: (``invalid-item``, a quarantine reason).
     reason: str | None = None
 
 
@@ -101,14 +102,24 @@ type Answer[R] = Ok[R] | Failed | Skipped
 class NoProviderReady(ConfigError):
     """No provider of the method could be asked (exit 4); ``not_ready`` says why, per plugin.
 
-    ``not_ready`` holds each installed provider that isn't ready in the
-    profile; a quarantined one is named in the message only. An owner may
-    turn this into its own error (a name nobody could look up is not found).
+    ``not_ready`` holds each composed provider that isn't ready in the
+    profile, ``quarantined`` each provider offer the registry refused and its
+    reason; both empty means no composed plugin fills the method. A plugin
+    quarantined at composition offers nothing, so it is in neither: it is in
+    ``composition().quarantine``. An owner may turn this into its own error
+    (a name nobody could look up is not found).
     """
 
-    def __init__(self, message: str, *, not_ready: Mapping[str, NotReady]) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        not_ready: Mapping[str, NotReady],
+        quarantined: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.not_ready = dict(not_ready)
+        self.quarantined = dict(quarantined or {})
 
 
 class Answers[R](Sequence[Answer[R]]):
@@ -232,6 +243,7 @@ def gather[C: Contract, **P, R](
         runnable: list[tuple[Provider, int | None]] = []
         reasons: list[str] = []
         not_ready: dict[str, NotReady] = {}
+        quarantined: dict[str, str] = {}
         for entry in offers(info):
             if plugins is not None and entry.plugin not in plugins:
                 continue
@@ -239,6 +251,7 @@ def gather[C: Contract, **P, R](
             if isinstance(entry, Quarantined):
                 answers[entry.plugin] = _excluded(entry.plugin, entry.reason, entry.detail, rank)
                 reasons.append(f"{entry.plugin}: quarantined ({entry.reason}): {entry.detail}")
+                quarantined[entry.plugin] = entry.reason
                 continue
             provider_class = type(entry.instance)
             if not all(fills(provider_class, info, name) for name in needed):
@@ -254,7 +267,11 @@ def gather[C: Contract, **P, R](
         if not runnable:
             what = f"{owner}.{info.name}.{wanted.name}"
             detail = "; ".join(reasons) if reasons else "no installed plugin fills it"
-            raise NoProviderReady(f"no provider of {what} is ready: {detail}", not_ready=not_ready)
+            raise NoProviderReady(
+                f"no provider of {what} is ready: {detail}",
+                not_ready=not_ready,
+                quarantined=quarantined,
+            )
 
         stale: dict[str, list[StaleData]] = {}
 
@@ -300,7 +317,8 @@ def _ask[R](
     kwargs: Any,
 ) -> tuple[Answer[R], list[StaleData]]:
     """``provider``'s answer, and the stale lines its caches left for whoever reads it."""
-    with call_state(refresh) as state, request_deadline(deadline):
+    caller = f"{provider.plugin}'s {provider.binding.contract.cls.__name__}.{method.name}"
+    with call_state(refresh, caller=caller) as state, request_deadline(deadline):
         return _answer(provider, method, rank, state, args, kwargs), state.stale_lines
 
 
@@ -313,9 +331,9 @@ def _answer[R](
     except NeverRefreshed:
         return Skipped(plugin, "no-cache", "no cached answer is stored", rank)
     except UntapedError as exc:
-        return Failed(plugin, exc, rank)
+        return Failed(plugin, exc, rank, "raised")
     except Exception as exc:
-        return Failed(plugin, _unexpected(plugin, method, exc), rank)
+        return Failed(plugin, _unexpected(plugin, method, exc), rank, "raised")
     try:
         checked, invalid = validate(provider.binding, method, value)
     except _Invalid as exc:
@@ -324,9 +342,9 @@ def _answer[R](
     if state.stale is not None:
         cause = state.stale
         if isinstance(cause, UntapedError):
-            stale = Failed(plugin, cause, rank)
+            stale = Failed(plugin, cause, rank, "raised")
         else:
-            stale = Failed(plugin, _unexpected(plugin, method, cause), rank)
+            stale = Failed(plugin, _unexpected(plugin, method, cause), rank, "raised")
     return Ok(plugin, checked, rank, state.refreshed_at, stale, invalid)
 
 

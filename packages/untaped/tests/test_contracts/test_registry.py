@@ -211,6 +211,25 @@ def test_s10_a_removed_method_is_never_called_and_doctor_notes_it() -> None:
     assert "_helper" not in row.detail
 
 
+def _rule_like(function):  # type: ignore[no-untyped-def]
+    function.__untaped_provider_helper__ = True
+    return function
+
+
+class _WithHelpers(BookSource):
+    def books(self) -> list[Book]:
+        return []
+
+    @_rule_like
+    def docs_page_length(self) -> None: ...
+
+
+def test_a_method_marked_as_a_provider_helper_is_not_unused() -> None:
+    """A provider base's own methods (lint's ``@rule``) are no removed contract method."""
+    compose(shelf_spec(), PluginSpec(name="gitlab", provides={"shelf": lambda: (_WithHelpers(),)}))
+    assert _rows() == [("gitlab", "contract-provider", "pass", "active")]
+
+
 def test_doctor_has_a_row_per_provider_and_an_inactive_one_passes() -> None:
     write_config(LIBRARY_CONFIG)
     compose(shelf_spec(), library_spec(), shop_spec())

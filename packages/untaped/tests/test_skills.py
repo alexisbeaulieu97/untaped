@@ -9,7 +9,7 @@ import pytest
 import untaped.skills as skills_module
 from untaped.errors import ConfigError, UsageError
 from untaped.git import run_git
-from untaped.sdk import SkillAsset
+from untaped.sdk import SkillAsset, project_root
 from untaped.skills import SkillInstallScope, SkillInstallTarget
 
 
@@ -325,3 +325,14 @@ def test_local_install_without_git_on_path_is_a_config_error(
             project_dir=None,
             target_dir=None,
         )
+
+
+def test_project_root_is_the_git_ancestor_or_the_start(tmp_path: Path) -> None:
+    """S4: the walk the lint repo file shares with ``--scope local``, exported from the SDK."""
+    (tmp_path / "repo" / ".git").mkdir(parents=True)
+    nested = tmp_path / "repo" / "a" / "b"
+    nested.mkdir(parents=True)
+    assert project_root(nested) == (tmp_path / "repo").resolve()
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert project_root(plain) == plain.resolve()

@@ -3,6 +3,8 @@
 :func:`check_conventions` checks one installed plugin against
 ``docs/reference/conventions.md``; its ``candidates`` argument composes a plugin
 passed in directly instead of one discovered through entry points.
+:func:`check_plugin` returns the rows of the checks only the composed root can
+answer, for a linter to judge.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
 plugins. :func:`compose_with` and :func:`assert_fills` test contracts
 (``untaped.testing.contracts``); :func:`assert_surface` guards a plugin's
@@ -39,6 +41,7 @@ from rich.console import Console
 from untaped.cache import installed_utcnow
 from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
+from untaped.management.plugin_check import PluginCheckRow
 from untaped.output.sink import current_clock, installed_clock, recording, tick
 from untaped.prompts import (
     PromptBackend,
@@ -64,6 +67,7 @@ __all__ = [
     "CacheClock",
     "CliInvoker",
     "CliResult",
+    "PluginCheckRow",
     "ProgressClock",
     "PromptBackend",
     "ScreenKeys",
@@ -75,6 +79,7 @@ __all__ = [
     "assert_surface",
     "cache_clock",
     "check_conventions",
+    "check_plugin",
     "compose_with",
     "drive_screen",
     "invoke_cli",
@@ -349,6 +354,34 @@ def plugin_candidate(
         target=spec,
         requires_dist=tuple(requires_dist),
     )
+
+
+def check_plugin(
+    name: str, *, candidates: Sequence[PluginCandidate] | None = None
+) -> list[PluginCheckRow]:
+    """The rows of the checks only an installed, composed plugin can answer.
+
+    Composes ``name`` hermetically, as ``untaped plugin check`` does, and
+    returns one :class:`PluginCheckRow` per check: the conventions that read
+    the composed root (names, provides requirements, the help tree, stability
+    marks, structure's class checks, the import boundary), then ``contracts``,
+    ``registration``, ``conformance``, ``live``, ``fills``, ``schema`` and
+    ``migrations``, each where the plugin has something for it to read. Rows
+    carry a check name and a ``status``, never a severity: a linter decides
+    what each means. The conventions that read only the plugin's files are
+    not run.
+    ``candidates`` replaces entry-point discovery, so an uninstalled spec can
+    be checked (:func:`plugin_candidate`). An unknown name is a
+    :class:`~untaped.errors.UsageError`. Composing, it can't run inside a
+    contract call.
+    """
+    from untaped import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
+    from untaped.management.plugin_check import check_plugins  # noqa: PLC0415
+    from untaped.plugins.registry import discover_candidates  # noqa: PLC0415
+
+    found = list(discover_candidates()) if candidates is None else list(candidates)
+    with bootstrap.composed_with(found, quiet=True) as result:
+        return check_plugins(result, found, name, core_only=True)
 
 
 def check_conventions(

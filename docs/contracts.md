@@ -80,7 +80,13 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   timeout, and `gather(deadline=...)` bounds it (as it does any untaped
   `HttpClient`; another library's client is not bounded). Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as
-  `unused-method`.
+  `unused-method`, unless its function carries
+  `__untaped_provider_helper__ = True` (a provider base's own decorator sets
+  it). A contract method never changes process-global
+  state: `gather` runs providers side by side in threads, so a change would
+  reach the providers beside it. Composing the root is the guarded case:
+  `compose_root`, `build_root_app` or `compose_with` inside a provider call
+  raises, and the provider's answer is `Failed`.
 - **Asking.** `gather(method, refresh=, needs=, deadline=, plugins=,
   progress=)(*args)` returns one `Ok`, `Failed` or `Skipped` per provider
   (only those `plugins` when given, for an owner that already chose by a
@@ -110,8 +116,11 @@ the contract no longer has (`unused-method`) is simply never called.
 Each ask goes to every provider that fills the method. One not configured in
 the profile is skipped silently; with none ready `gather` raises
 `NoProviderReady` (exit 4), whose `not_ready` maps each plugin to why it
-isn't ready, so an owner can turn it into its own error (workspace reports a
-repo name nobody could look up as not found, naming the setting to set).
+isn't ready and `quarantined` each refused offer to its reason (both empty:
+no composed plugin fills it; a plugin quarantined at composition offers
+nothing and is only in `composition().quarantine`), so an owner can turn it
+into its own error (workspace reports a repo name nobody could look up as not found, naming the
+setting to set). A provider that raises is `Failed` with `reason="raised"`.
 `select_one` then decides:
 
 - A ranked provider is above every unranked one; unranked ones are never
@@ -200,7 +209,13 @@ def test_shelf_keeps_its_surface() -> None:
 - `compose_with(*plugins, provides={"fake": [...]})` composes the named
   installed plugins (or `PluginSpec`s) plus a plugin named `fake` offering
   each instance to the owner of its contract, and restores the composition
-  after the block.
+  after the block. Outside tests, `untaped.contracts.providing(owner,
+  {"house": [...]})` does the same for an owner that loads providers from
+  elsewhere (a repository's rule modules): the installed plugins plus a
+  plugin `house` offering each instance to `owner`. A key that is not a
+  plugin name, is reserved (`untaped`, `sdk`, a core section or command
+  group) or is an installed plugin's name is refused before anything is
+  composed, and one the composition quarantines raises `ConfigError`.
 - `assert_surface(SPEC, path)` (experimental, with the file's line format)
   writes `surface.txt` the first time: one line per promise of the plugin,
   its commands, flags and settings, each contract with its methods'
@@ -214,7 +229,9 @@ def test_shelf_keeps_its_surface() -> None:
   method, optional payload field or Literal value, a new command or
   optional flag, and anything removed while experimental are compatible
   and rewrite the file. To accept a breaking change in a major release,
-  delete the file. Commit it.
+  delete the file. Commit it. A stable contract method that reaches a model
+  marked `@experimental` fails here, so a contract is never stabilised with
+  a model nobody meant to promise.
 - An owner may ship checks every provider must pass as a
   `conformance(provider)` function in its `testing` module
   (`untaped_shelf.testing`); `untaped plugin check` runs it on each ready
@@ -242,6 +259,8 @@ def test_the_library_fills_the_shelf_contract() -> None:
   against the installed owner's. A provider that isn't ready skips the live
   checks. A different hash is `owner-schema-drift`, which warns (here and in
   `doctor`) and never fails: rerun the provider's tests against that owner.
-  It exits 1 when a check fails.
+  It exits 1 when a check fails. `untaped.testing.check_plugin(NAME)`
+  returns the rows of these checks, without the conventions that read only
+  the plugin's files, for a linter to judge.
 - [Filling another plugin's contract](./plugins.md#filling-another-plugins-contract)
   covers starting a provider with `untaped plugin new`.

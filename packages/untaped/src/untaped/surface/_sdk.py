@@ -46,7 +46,7 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel
 
-from untaped.stability import Deprecated, Experimental, Stability, function_mark
+from untaped.stability import Deprecated, Experimental, Stability, class_mark, function_mark
 from untaped.surface._lines import Line, MarkName
 from untaped.surface._lists import HOOKS, IMPLEMENTERS
 from untaped.surface._types import default_text, factory_default, literal_values, named_token
@@ -81,8 +81,13 @@ def own_mark(obj: object) -> MarkName | None:
     """The mark declared on ``obj``: untaped's marker, else ``warnings.deprecated``."""
     target = obj.fget if isinstance(obj, property) else obj
     target = getattr(target, "__func__", target)
-    found = mark_name(function_mark(target))
-    if found is None and getattr(target, "__deprecated__", None) is not None:
+    # A class's mark is its own: a subclass of an experimental class is stable.
+    found = mark_name(class_mark(target) if isinstance(target, type) else function_mark(target))
+    if isinstance(target, type):
+        deprecated = vars(target).get("__deprecated__")
+    else:
+        deprecated = getattr(target, "__deprecated__", None)
+    if found is None and deprecated is not None:
         return "deprecated"
     return found
 

@@ -70,19 +70,35 @@ class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
     detail: str = ""
 
 
+type _Violations = Callable[..., list[str]]
+
+
 def check_plugins(
-    result: CompositionResult, candidates: Sequence[PluginCandidate], name: str | None
+    result: CompositionResult,
+    candidates: Sequence[PluginCandidate],
+    name: str | None,
+    *,
+    core_only: bool = False,
 ) -> list[PluginCheckRow]:
-    """Every finding for plugin ``name``, or for every installed plugin when it is ``None``."""
+    """Every finding for plugin ``name``, or for every installed plugin when it is ``None``.
+
+    ``core_only`` leaves out the conventions that read only the plugin's
+    files (``untaped.testing.check_plugin``'s rows).
+    """
     from untaped.bootstrap import kept_composition  # noqa: PLC0415 - bootstrap is the root
+    from untaped.conventions import (  # noqa: PLC0415 - imports the root
+        core_plugin_violations,
+        plugin_violations,
+    )
 
     installed = sorted({candidate.name for candidate in candidates})
     if name is not None and name not in installed:
         raise UsageError(not_found("plugin", name, known=installed))
+    violations = core_plugin_violations if core_only else plugin_violations
     rows: list[PluginCheckRow] = []
     with kept_composition(quiet=True):
         for each in [name] if name is not None else installed:
-            rows += _check(each, result, candidates)
+            rows += _check(each, result, candidates, violations)
     return rows
 
 
@@ -106,7 +122,10 @@ _STATUSES = ("pass", "warn", "fail")
 
 
 def _check(
-    name: str, result: CompositionResult, candidates: Sequence[PluginCandidate]
+    name: str,
+    result: CompositionResult,
+    candidates: Sequence[PluginCandidate],
+    violations: _Violations,
 ) -> list[PluginCheckRow]:
     def row(check: str, title: str, status: str, detail: str = "") -> PluginCheckRow:
         return PluginCheckRow(plugin=name, check=check, title=title, status=status, detail=detail)
@@ -114,7 +133,7 @@ def _check(
     quarantined = next((record for record in result.quarantine if record.name == name), None)
     if quarantined is not None:
         return [row("registration", quarantined.reason, "fail", quarantined.detail)]
-    rows = _conventions(name, candidates, row)
+    rows = _conventions(name, candidates, row, violations)
     spec = next(plugin.spec for plugin in result.plugins if plugin.spec.name == name)
     if owns_contracts(spec):
         rows += _contracts(name, candidates, row)
@@ -129,12 +148,10 @@ type _Row = Callable[..., PluginCheckRow]
 
 
 def _conventions(
-    name: str, candidates: Sequence[PluginCandidate], row: _Row
+    name: str, candidates: Sequence[PluginCandidate], row: _Row, violations: _Violations
 ) -> list[PluginCheckRow]:
-    from untaped.conventions import plugin_violations  # noqa: PLC0415 - imports the root
-
     try:
-        found = plugin_violations(name, candidates=candidates)
+        found = violations(name, candidates=candidates)
     except LookupError as exc:
         return [row("conventions", "plugin-name", "fail", str(exc))]
     if not found:

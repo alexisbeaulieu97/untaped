@@ -40,6 +40,11 @@ if TYPE_CHECKING:
     from untaped.http import HttpClient
     from untaped.plugins.registry import PluginSpec
 
+#: Set to ``True`` on a function a provider base defines for its own role (a rule
+#: decorator, say), so doctor's unused-method check doesn't report it as a removed
+#: contract method.
+PROVIDER_HELPER = "__untaped_provider_helper__"
+
 #: Names a contract method may not take: the provider machinery's own.
 SDK_NAMES = frozenset({"providers", "gather", "convert", "on", "own", "ready", "settings", "http"})
 
@@ -460,6 +465,7 @@ def unused_methods(provider: type[Contract], contract: ContractInfo) -> list[str
                 and inspect.isfunction(value)
                 and name not in contract.methods
                 and name not in SDK_NAMES
+                and not getattr(value, PROVIDER_HELPER, False)
                 and name not in unused
             ):
                 unused.append(name)
