@@ -57,7 +57,7 @@ the glob `*` stops at `/` and `**` crosses it. `--select` reports only the
 rules named; PATHS report only findings in files matching their globs.
 Selection narrows what is reported, never what is read. It never drops
 `lint.plugin-not-installed` or `lint.quarantined`, which say no rule ran,
-or `lint.unreadable-file`, which says the file rules didn't. An id no
+or `lint.unreadable-file`, which says the convention rules didn't. An id no
 installed rule declares is a warning; `untaped doctor` checks `lint.ignore`
 (`lint.ignore-ids`).
 
