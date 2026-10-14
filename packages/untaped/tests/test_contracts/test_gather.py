@@ -674,9 +674,10 @@ def test_progress_counts_the_providers_as_they_answer_on_the_calling_thread() ->
 
 
 class _Composer(BookSource):
-    """A provider that composes the root from inside its call, three ways."""
+    """A provider that composes the root from inside its call, one of three ways."""
 
-    how = "compose_root"
+    def __init__(self, how: str) -> None:
+        self.how = how
 
     def books(self) -> list[Book]:
         if self.how == "compose_root":
@@ -689,17 +690,26 @@ class _Composer(BookSource):
         return []
 
 
+@pytest.mark.parametrize("beside", [True, False], ids=["beside-another", "alone"])
 @pytest.mark.parametrize("how", ["compose_root", "composed_with", "build_root_app"])
-def test_composing_inside_a_contract_call_fails_that_provider(how: str) -> None:
-    """S5: the composition is process-global, so a provider never swaps it under its neighbours."""
-    _Composer.how = how
-    composer = PluginSpec(name="composer", provides={"shelf": lambda: (_Composer(),)})
-    composed = compose(shelf_spec(), composer, shop_spec())
-    [failed, shop] = gather(BookSource.books, refresh=True)()
+def test_composing_inside_a_contract_call_fails_that_provider(
+    how: str, beside: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S5: the composition is process-global, so a provider never swaps it under its neighbours.
+
+    Alone, ``bounded_map`` calls the provider inline; beside another, in a thread.
+    """
+    composer = PluginSpec(name="composer", provides={"shelf": lambda: (_Composer(how),)})
+    composed = compose(shelf_spec(), composer, *([shop_spec()] if beside else []))
+    reregistered: list[None] = []
+    monkeypatch.setattr(bootstrap, "_reregister", lambda: reregistered.append(None))
+    [failed, *others] = gather(BookSource.books, refresh=True)()
+    monkeypatch.undo()
     assert isinstance(failed, Failed) and failed.reason == "raised"
     assert "composer's BookSource.books composed the root inside a contract call" in str(
         failed.error
     )
-    assert isinstance(shop, Ok)
+    assert all(isinstance(other, Ok) for other in others) and len(others) == int(beside)
+    assert reregistered == []  # nothing re-registered the settings under the neighbours
     assert bootstrap.composition() is composed
     bootstrap.compose_root(candidates=[])  # outside any contract call it works as before

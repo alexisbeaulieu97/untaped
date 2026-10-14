@@ -167,3 +167,16 @@ def test_a_stable_contract_reaching_an_experimental_model_is_refused() -> None:
 
     lines = plugin_lines(PluginSpec(name="bins", contracts=lambda: (CrateDraft,)))
     assert Line("contract bins.Crate(label)", "experimental") in lines
+
+
+class StableCrate(Crate):
+    """Unmarked: a base class's mark is not the model's own."""
+
+
+def test_a_model_does_not_inherit_its_base_class_mark() -> None:
+    class StableCrateSource(Contract):
+        @abstractmethod
+        def crates(self) -> list[StableCrate]: ...
+
+    lines = plugin_lines(PluginSpec(name="bins", contracts=lambda: (StableCrateSource,)))
+    assert any(line.text.startswith("contract bins.StableCrate(") for line in lines)

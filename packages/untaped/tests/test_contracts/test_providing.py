@@ -8,6 +8,7 @@ from test_contracts.support import Book, BookSource, compose, shelf_spec, shop_s
 from untaped import bootstrap
 from untaped.contracts import Ok, gather, providing
 from untaped.errors import ConfigError
+from untaped.plugins.registry import PluginCandidate
 from untaped.testing import plugin_candidate
 
 
@@ -16,7 +17,7 @@ class _House(BookSource):
         return [Book(title="Dune")]
 
 
-def _installed() -> list:  # type: ignore[type-arg]
+def _installed() -> list[PluginCandidate]:
     return [plugin_candidate(shelf_spec()), plugin_candidate(shop_spec())]
 
 
@@ -35,7 +36,9 @@ def test_the_instances_answer_as_the_named_plugin_and_the_composition_comes_back
 @pytest.mark.parametrize(
     ("key", "message"),
     [
-        ("untaped", "reserved for untaped itself"),
+        ("untaped", "reserved plugin name"),
+        ("sdk", "reserved plugin name"),
+        ("doctor", "reserved"),
         ("shop", "the name of an installed plugin"),
         ("Bad Key", "must be lowercase words"),
     ],

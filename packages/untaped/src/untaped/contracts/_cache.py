@@ -157,7 +157,7 @@ class _ProviderBug(UntapedError):
 
 
 @contextmanager
-def _answering(provider: str, cache: Cache) -> Iterator[CallState]:
+def _answering(provider: str, cache: Cache, caller: str) -> Iterator[CallState]:
     """The call state ``serve()`` defers to while answering for ``provider`` from ``cache``.
 
     ``gather``'s when it opened one; otherwise one of this call's own, whose
@@ -168,7 +168,7 @@ def _answering(provider: str, cache: Cache) -> Iterator[CallState]:
         with answering(cache, provider):
             yield outer
         return
-    with call_state(None, caller=provider) as state, answering(cache, provider):
+    with call_state(None, caller=caller) as state, answering(cache, provider):
         yield state
     for line in state.stale_lines:
         current_sink().emit(line)
@@ -269,7 +269,8 @@ def call(
         _schema(binding, hint),
     )
     answer.load()
-    with _answering(binding.plugin, cache) as state:
+    caller = f"{binding.plugin}'s {binding.contract.cls.__name__}.{name}"
+    with _answering(binding.plugin, cache, caller) as state:
         try:
             served = cache.serve(
                 {key: binding.plugin}, refresh=None, fill=answer.fill, read=answer.read

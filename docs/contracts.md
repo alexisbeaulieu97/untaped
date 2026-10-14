@@ -81,8 +81,8 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   `HttpClient`; another library's client is not bounded). Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as
   `unused-method`, unless its function carries
-  `__untaped_provider_helper__ = True` (a provider base's own decorator, such
-  as lint's `@rule`, sets it). A contract method never changes process-global
+  `__untaped_provider_helper__ = True` (a provider base's own decorator sets
+  it). A contract method never changes process-global
   state: `gather` runs providers side by side in threads, so a change would
   reach the providers beside it. Composing the root is the guarded case:
   `compose_root`, `build_root_app` or `compose_with` inside a provider call
@@ -116,8 +116,9 @@ the contract no longer has (`unused-method`) is simply never called.
 Each ask goes to every provider that fills the method. One not configured in
 the profile is skipped silently; with none ready `gather` raises
 `NoProviderReady` (exit 4), whose `not_ready` maps each plugin to why it
-isn't ready and `quarantined` each quarantined one to its reason (both empty:
-nothing installed fills it), so an owner can turn it into its own error
+isn't ready and `quarantined` each refused offer to its reason (both empty:
+no composed plugin fills it; a plugin quarantined at composition offers
+nothing and is only in `untaped plugin list`), so an owner can turn it into its own error
 (workspace reports a repo name nobody could look up as not found, naming the
 setting to set). A provider that raises is `Failed` with `reason="raised"`.
 `select_one` then decides:

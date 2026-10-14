@@ -364,11 +364,12 @@ def check_plugin(
     Composes ``name`` hermetically, as ``untaped plugin check`` does, and
     returns one :class:`PluginCheckRow` per check: the conventions that read
     the composed root (names, provides requirements, the help tree, stability
-    marks, structure's class checks, the import boundary), then
-    ``registration``, ``conformance``, ``live``, ``fills``, ``schema``,
-    ``contracts`` and ``migrations``. Rows carry a check name and a
-    ``status``, never a severity: a linter decides what each means. The
-    conventions that read only the plugin's files are not run.
+    marks, structure's class checks, the import boundary), then ``contracts``,
+    ``registration``, ``conformance``, ``live``, ``fills``, ``schema`` and
+    ``migrations``, each where the plugin has something for it to read. Rows
+    carry a check name and a ``status``, never a severity: a linter decides
+    what each means. The conventions that read only the plugin's files are
+    not run.
     ``candidates`` replaces entry-point discovery, so an uninstalled spec can
     be checked (:func:`plugin_candidate`). An unknown name is a
     :class:`~untaped.errors.UsageError`. Composing, it can't run inside a
@@ -379,8 +380,7 @@ def check_plugin(
     from untaped.plugins.registry import discover_candidates  # noqa: PLC0415
 
     found = list(discover_candidates()) if candidates is None else list(candidates)
-    with bootstrap.kept_composition(quiet=True):
-        result = bootstrap.compose_root(candidates=found)
+    with bootstrap.composed_with(found, quiet=True) as result:
         return check_plugins(result, found, name, core_only=True)
 
 

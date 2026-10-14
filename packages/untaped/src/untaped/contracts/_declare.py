@@ -40,11 +40,12 @@ if TYPE_CHECKING:
     from untaped.http import HttpClient
     from untaped.plugins.registry import PluginSpec
 
-#: Names a contract method may not take: the provider machinery's own.
-#: Set to ``True`` on a function a provider base defines for its own role (lint's ``@rule``),
-#: so doctor's unused-method check doesn't report it as a removed contract method.
+#: Set to ``True`` on a function a provider base defines for its own role (a rule
+#: decorator, say), so doctor's unused-method check doesn't report it as a removed
+#: contract method.
 PROVIDER_HELPER = "__untaped_provider_helper__"
 
+#: Names a contract method may not take: the provider machinery's own.
 SDK_NAMES = frozenset({"providers", "gather", "convert", "on", "own", "ready", "settings", "http"})
 
 _BRIDGE = "__untaped_bridge__"
