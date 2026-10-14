@@ -26,9 +26,9 @@ from typing import TYPE_CHECKING, Any, get_args
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from untaped.stability import function_mark
+from untaped.stability import Experimental, class_mark, function_mark
 from untaped.surface._lines import Line, MarkName
-from untaped.surface._sdk import SurfaceError, mark_name, own_mark
+from untaped.surface._sdk import SurfaceError, mark_name
 from untaped.surface._types import (
     choice_text,
     default_text,
@@ -94,7 +94,7 @@ def contract_lines(
             )
     for model in sorted(names.values(), key=lambda m: m.__name__):
         marks = _reaching(model, reached)
-        if None in marks and own_mark(model) == "experimental":
+        if None in marks and isinstance(class_mark(model), Experimental):
             methods = sorted(
                 method
                 for root, found in stable_methods.items()

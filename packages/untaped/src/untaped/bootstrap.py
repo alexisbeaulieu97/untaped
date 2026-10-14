@@ -32,6 +32,7 @@ from untaped._root_options import (
     expand_alias,
     resolve_command,
 )
+from untaped.cache import current_call
 from untaped.cli import (
     apply_default_format,
     note_requested_format,
@@ -185,8 +186,7 @@ def compose_root(
 
 
 def _refuse_inside_a_contract_call() -> None:
-    cache = sys.modules.get("untaped.cache")  # no call is open before it is imported
-    call = None if cache is None else cache.current_call()
+    call = current_call()
     if call is not None:
         raise RuntimeError(
             f"{call.caller} composed the root inside a contract call; a contract method "
@@ -201,9 +201,11 @@ def kept_composition(*, quiet: bool = False) -> Iterator[None]:
     The profile, verbose and quiet overrides are left as they are
     (``untaped plugin check`` runs under the user's ``--profile``). With
     ``quiet``, compositions inside the block don't warn about quarantined
-    plugins again.
+    plugins again. Raises ``RuntimeError`` inside a contract call, as
+    :func:`compose_root` does, since leaving the block re-registers the settings.
     """
     global _COMPOSED_RESULT
+    _refuse_inside_a_contract_call()
     previous = _COMPOSED_RESULT
     token = _QUIET_QUARANTINE.set(quiet or _QUIET_QUARANTINE.get())
     try:

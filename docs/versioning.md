@@ -44,8 +44,9 @@ These may change in any release:
 - `--format raw` without `--columns`: it prints the first default column,
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
-- The rules `untaped.testing.check_conventions` applies: a minor release may
-  add one, so a plugin's convention test can start failing. Mark a line with
+- The rules `untaped.testing.check_conventions` applies, and the checks and
+  rows `untaped.testing.check_plugin` returns: a minor release may add or
+  move one, so a plugin's convention test can start failing. Mark a line with
   `# untaped: allow <rule>` to waive that rule there, where the rule
   [allows it](./reference/conventions.md#enforcement).
 - `untaped_recipe.hook_api`, which is versioned on its own by

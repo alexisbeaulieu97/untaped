@@ -37,9 +37,10 @@ def compose_with(
     ``Configured`` settings). Yields the composition.
     """
     from untaped import bootstrap  # noqa: PLC0415 - the root is heavy; tests pay only on use
+    from untaped.contracts._providing import offering_candidates  # noqa: PLC0415
 
     base = _candidates(plugins)
-    fakes = [_fake(name, list(offered), base) for name, offered in (provides or {}).items()]
+    fakes = offering_candidates(provides or {}, base)
     with bootstrap.composed_with([*base, *fakes]) as result:
         token = _ACTIVE.set(result)
         try:
@@ -72,13 +73,6 @@ def _candidates(plugins: Sequence[str | PluginSpec | PluginCandidate]) -> list[P
                 raise LookupError(f"no installed plugin named {each!r}")
             found.append(installed[each])
     return found
-
-
-def _fake(name: str, offered: list[Contract], base: Sequence[PluginCandidate]) -> PluginCandidate:
-    """A candidate for plugin ``name`` offering ``offered`` to their contracts' owners."""
-    from untaped.contracts._providing import offering_candidate  # noqa: PLC0415
-
-    return offering_candidate(name, offered, base)
 
 
 def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[object] = ()) -> None:

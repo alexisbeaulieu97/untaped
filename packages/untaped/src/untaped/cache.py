@@ -105,7 +105,7 @@ _CALL: ContextVar[CallState | None] = ContextVar("untaped_contract_call", defaul
 
 
 @contextmanager
-def call_state(refresh: bool | None, *, caller: str = "a provider") -> Iterator[CallState]:
+def call_state(refresh: bool | None, *, caller: str = CallState.caller) -> Iterator[CallState]:
     """Run a provider call under ``refresh``; yields what the call served."""
     state = CallState(refresh, caller=caller)
     token = _CALL.set(state)

@@ -102,10 +102,12 @@ type Answer[R] = Ok[R] | Failed | Skipped
 class NoProviderReady(ConfigError):
     """No provider of the method could be asked (exit 4); ``not_ready`` says why, per plugin.
 
-    ``not_ready`` holds each installed provider that isn't ready in the
-    profile, ``quarantined`` each quarantined one and its reason; both empty
-    means no installed plugin fills the method. An owner may turn this into
-    its own error (a name nobody could look up is not found).
+    ``not_ready`` holds each composed provider that isn't ready in the
+    profile, ``quarantined`` each provider offer the registry refused and its
+    reason; both empty means no composed plugin fills the method. A plugin
+    quarantined at composition offers nothing, so it is in neither: it is in
+    ``composition().quarantine``. An owner may turn this into its own error
+    (a name nobody could look up is not found).
     """
 
     def __init__(
