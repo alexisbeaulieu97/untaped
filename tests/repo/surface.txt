@@ -4459,6 +4459,7 @@ sdk untaped.sdk.Buttons.view(width=) default=None  [experimental]
 sdk untaped.sdk.Buttons.with_error(text)  [experimental]
 sdk untaped.sdk.Cache(plugin, name, *, label, max_age)
 sdk untaped.sdk.Cache(renamed_from=) default=[]
+sdk untaped.sdk.Cache(version=) default=None callback(0)
 sdk untaped.sdk.Cache.cached(key, read) callback(read, 0)
 sdk untaped.sdk.Cache.default_max_age
 sdk untaped.sdk.Cache.default_max_age_text
@@ -4475,6 +4476,7 @@ sdk untaped.sdk.Cache.serve(empty=) default=None callback(1)
 sdk untaped.sdk.Cache.serve(keys, *, refresh, fill, read) callback(fill, 2) callback(read, 0)
 sdk untaped.sdk.Cache.serve(progress=) default=NO_PROGRESS
 sdk untaped.sdk.Cache.setting
+sdk untaped.sdk.Cache.version
 sdk untaped.sdk.Cancel()  [experimental]
 sdk untaped.sdk.Cancel(interrupted@1=) default=false  [experimental]
 sdk untaped.sdk.Cancel.interrupted  [experimental]
@@ -4682,18 +4684,23 @@ sdk untaped.sdk.Frame.width  [experimental]
 sdk untaped.sdk.Freshness()
 sdk untaped.sdk.Freshness(attempted_at@2=) default=None
 sdk untaped.sdk.Freshness(error@3=) default=None
+sdk untaped.sdk.Freshness(outdated@7=) default=false
 sdk untaped.sdk.Freshness(partial@4=) default=false
 sdk untaped.sdk.Freshness(refreshed_at@1=) default=None
 sdk untaped.sdk.Freshness(retry_at@5=) default=None
+sdk untaped.sdk.Freshness(version@6=) default=None
 sdk untaped.sdk.Freshness.attempted_at
 sdk untaped.sdk.Freshness.due(refresh, *, max_age, now)
 sdk untaped.sdk.Freshness.error
+sdk untaped.sdk.Freshness.outdated
 sdk untaped.sdk.Freshness.partial
 sdk untaped.sdk.Freshness.past_max_age(max_age, *, now)
 sdk untaped.sdk.Freshness.refreshed_at
 sdk untaped.sdk.Freshness.retry_at
+sdk untaped.sdk.Freshness.version
 sdk untaped.sdk.FreshnessRecord(*, refreshed_at, stale, max_age_seconds)
 sdk untaped.sdk.FreshnessRecord(attempted_at=) default=None
+sdk untaped.sdk.FreshnessRecord(outdated=) default=false
 sdk untaped.sdk.FreshnessRecord(partial=) default=false
 sdk untaped.sdk.FreshnessRecord(refresh_error=) default=None
 sdk untaped.sdk.FreshnessRecord(retry_at=) default=None
@@ -4701,6 +4708,7 @@ sdk untaped.sdk.FreshnessRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.FreshnessRecord.attempted_at
 sdk untaped.sdk.FreshnessRecord.fields(freshness, *, max_age, now)
 sdk untaped.sdk.FreshnessRecord.max_age_seconds
+sdk untaped.sdk.FreshnessRecord.outdated
 sdk untaped.sdk.FreshnessRecord.partial
 sdk untaped.sdk.FreshnessRecord.refresh_error
 sdk untaped.sdk.FreshnessRecord.refreshed_at
@@ -5271,6 +5279,7 @@ sdk untaped.sdk.StaleData(*, message, plugin, cache, key, refreshed_at, age_seco
 sdk untaped.sdk.StaleData(attempted_at=) default=None
 sdk untaped.sdk.StaleData(error=) default=None
 sdk untaped.sdk.StaleData(hint=) default=None
+sdk untaped.sdk.StaleData(outdated=) default=false
 sdk untaped.sdk.StaleData(partial=) default=false
 sdk untaped.sdk.StaleData(retry_at=) default=None
 sdk untaped.sdk.StaleData.__init_subclass__(kind=) default=None
@@ -5282,6 +5291,7 @@ sdk untaped.sdk.StaleData.describe(attempted_at=) default=None
 sdk untaped.sdk.StaleData.describe(cached=) default=false
 sdk untaped.sdk.StaleData.describe(error=) default=None
 sdk untaped.sdk.StaleData.describe(hint=) default=None
+sdk untaped.sdk.StaleData.describe(outdated=) default=false
 sdk untaped.sdk.StaleData.describe(partial=) default=false
 sdk untaped.sdk.StaleData.describe(retry_at=) default=None
 sdk untaped.sdk.StaleData.error
@@ -5290,6 +5300,7 @@ sdk untaped.sdk.StaleData.key
 sdk untaped.sdk.StaleData.level class
 sdk untaped.sdk.StaleData.max_age_seconds
 sdk untaped.sdk.StaleData.message
+sdk untaped.sdk.StaleData.outdated
 sdk untaped.sdk.StaleData.partial
 sdk untaped.sdk.StaleData.plugin
 sdk untaped.sdk.StaleData.refreshed_at
@@ -5540,6 +5551,9 @@ sdk untaped.sdk.bounded_map(fn, items, *, concurrency, on_each) callback(fn, 1) 
 sdk untaped.sdk.bounded_map(on_abort=) default=None callback(0)
 sdk untaped.sdk.bounded_map(while_running=) default=None callback(0)
 sdk untaped.sdk.clamp_parallel(requested, *, cap, policy)
+sdk untaped.sdk.code_version(distributions=) default=[]
+sdk untaped.sdk.code_version(extra=) default=[]
+sdk untaped.sdk.code_version(module)
 sdk untaped.sdk.connected_client(base_url_field=) default=base_url
 sdk untaped.sdk.connected_client(bearer_token_field=) default=token
 sdk untaped.sdk.connected_client(config, *, section)
@@ -5821,6 +5835,7 @@ sdk untaped_git.api.HostAuth(plugin, credential, proxy)
 sdk untaped_git.api.HostAuth.credential
 sdk untaped_git.api.HostAuth.plugin
 sdk untaped_git.api.HostAuth.proxy
+sdk untaped_git.api.Prefetched(blobs@4=) default=[]
 sdk untaped_git.api.Prefetched(store, trees, paths)
 sdk untaped_git.api.Prefetched.run(argv)
 sdk untaped_git.api.Prefetched.run(capture=) default=true
@@ -5876,13 +5891,16 @@ sdk untaped_git.api.RepoStore.owned_by(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore.owned_by(plugin, *, error)
 sdk untaped_git.api.RepoStore.path
 sdk untaped_git.api.RepoStore.prefetch()
+sdk untaped_git.api.RepoStore.prefetch(blobs=) default=[]
 sdk untaped_git.api.RepoStore.prefetch(history=) default=[]
 sdk untaped_git.api.RepoStore.prefetch(paths=) default=[]
 sdk untaped_git.api.RepoStore.prefetch(progress=) default=NO_PROGRESS
 sdk untaped_git.api.RepoStore.prefetch(trees=) default=[]
-sdk untaped_git.api.RepoStore.prefetched(*, trees)
+sdk untaped_git.api.RepoStore.prefetched()
+sdk untaped_git.api.RepoStore.prefetched(blobs=) default=[]
 sdk untaped_git.api.RepoStore.prefetched(paths=) default=[]
 sdk untaped_git.api.RepoStore.prefetched(progress=) default=NO_PROGRESS
+sdk untaped_git.api.RepoStore.prefetched(trees=) default=[]
 sdk untaped_git.api.RepoStore.private_file
 sdk untaped_git.api.RepoStore.ref(name)
 sdk untaped_git.api.RepoStore.refs()
