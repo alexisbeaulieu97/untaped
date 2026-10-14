@@ -46,9 +46,9 @@ These may change in any release:
 - Commands and file formats marked experimental (below).
 - The rules `untaped.testing.check_conventions` applies, and the checks and
   rows `untaped.testing.check_plugin` returns: a minor release may add or
-  move one, so a plugin's convention test can start failing.
-- Mark a source line with `# untaped: allow <rule>` to waive a convention
-  rule there, where the rule [allows it](./reference/conventions.md#enforcement).
+  move one, so a plugin's convention test can start failing. Mark a source
+  line with `# untaped: allow <rule>` to waive a convention rule there, where
+  the rule [allows it](./reference/conventions.md#enforcement).
 - `untaped_recipe.hook_api`, which is versioned on its own by
   `HOOK_API_VERSION`.
 - Anything not documented, including internal modules, except the record

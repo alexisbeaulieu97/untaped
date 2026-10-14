@@ -83,7 +83,11 @@ def own_mark(obj: object) -> MarkName | None:
     target = getattr(target, "__func__", target)
     # A class's mark is its own: a subclass of an experimental class is stable.
     found = mark_name(class_mark(target) if isinstance(target, type) else function_mark(target))
-    if found is None and getattr(target, "__deprecated__", None) is not None:
+    if isinstance(target, type):
+        deprecated = vars(target).get("__deprecated__")
+    else:
+        deprecated = getattr(target, "__deprecated__", None)
+    if found is None and deprecated is not None:
         return "deprecated"
     return found
 

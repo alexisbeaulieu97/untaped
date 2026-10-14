@@ -119,8 +119,7 @@ the profile is skipped silently; with none ready `gather` raises
 isn't ready and `quarantined` each refused offer to its reason (both empty:
 no composed plugin fills it; a plugin quarantined at composition offers
 nothing and is only in `composition().quarantine`), so an owner can turn it
-into its own error
-(workspace reports a repo name nobody could look up as not found, naming the
+into its own error (workspace reports a repo name nobody could look up as not found, naming the
 setting to set). A provider that raises is `Failed` with `reason="raised"`.
 `select_one` then decides:
 
