@@ -64,6 +64,10 @@ def test_an_array_of_a_union_reads_apart_from_a_union_holding_an_array() -> None
     assert type_token(int | list[str]).token == "integer|string[]"
     assert type_token(list[int | None]).token == "integer?[]"
     assert type_token(list[list[Choice[int | str]]]).token == "Choice[integer|string][][]"
+    assert type_token(list[Choice[Literal["(("]] | int]).token == (
+        '(Choice[string(choice="((")]|integer)[]'
+    )
+    assert type_token(list[Choice[Literal['q"(']]]).token == 'Choice[string(choice="q\\"(")][]'
 
 
 def test_a_type_variable_reads_as_its_bound_or_object() -> None:

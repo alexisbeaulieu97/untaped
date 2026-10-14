@@ -359,8 +359,14 @@ def _grouped(token: str) -> str:
     """``token`` in parentheses when it is a union, so ``(integer|string)[]`` (an array of
     either) never reads like ``integer|string[]`` (an integer or an array of strings)."""
     depth = 0
+    quoted = escaped = False
     for char in token:
-        if char in "[(":
+        if quoted:  # a JSON-quoted choice: its brackets are text
+            quoted = escaped or char != '"'
+            escaped = not escaped and char == "\\"
+        elif char == '"':
+            quoted = True
+        elif char in "[(":
             depth += 1
         elif char in "])":
             depth -= 1
