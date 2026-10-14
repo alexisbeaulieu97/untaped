@@ -1,4 +1,4 @@
-"""``compose_with``, ``assert_fills`` and ``assert_contract_schemas`` from ``untaped.testing``."""
+"""``compose_with``, ``assert_fills`` and ``assert_surface`` from ``untaped.testing``."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from untaped.contracts._declare import contract_of
 from untaped.contracts._schema import schema_hash
 from untaped.plugins.registry import PluginSpec
 from untaped.sdk import experimental
-from untaped.testing import assert_contract_schemas, assert_fills, compose_with
+from untaped.testing import assert_fills, assert_surface, compose_with
 
 
 @pytest.fixture
@@ -170,11 +170,10 @@ class Item(Issued, kind="shelf.item"):
     size: int = 0
 
 
-def _contract(variant: str) -> type[Contract]:
+def _contract(variant: str, *, mark: bool = False) -> type[Contract]:
     """``ItemSource`` as it reads in each test's version of the owner."""
     if variant == "v1":
 
-        @experimental
         class ItemSource[T: Record = Item](Contract):
             @bridge
             def to_item(self, item: T) -> Item:
@@ -183,100 +182,81 @@ def _contract(variant: str) -> type[Contract]:
             @abstractmethod
             def items(self, prefix: str = "") -> list[Item]: ...
 
-            def count(self) -> int:
-                raise NotImplementedError
+        found: type[Contract] = ItemSource
+    elif variant == "added":
 
-        return ItemSource
-    if variant == "compatible":
-
-        @experimental
         class ItemSource[T: Record = Item](Contract):  # type: ignore[no-redef]
-            """Now documented; a new optional parameter and method, ``count`` removed."""
+            """Now documented, with a new optional method."""
 
             @bridge
             def to_item(self, item: T) -> Item:
                 raise NotImplementedError
 
             @abstractmethod
-            def items(self, prefix: str = "", limit: int = 10) -> list[Item]: ...
+            def items(self, prefix: str = "") -> list[Item]: ...
 
             def first(self) -> Item:
                 raise NotImplementedError
 
-        return ItemSource
+        found = ItemSource
+    else:
 
-    class ItemSource[T: Record = Item](Contract):  # type: ignore[no-redef]  # now stable
-        @bridge
-        def to_item(self, item: T) -> Item:
-            raise NotImplementedError
+        class ItemSource[T: Record = Item](Contract):  # type: ignore[no-redef]
+            @bridge
+            def to_item(self, item: T) -> Item:
+                raise NotImplementedError
 
-        @abstractmethod
-        def items(self, prefix: int, wanted: str) -> list[Item]: ...
+            @abstractmethod
+            def items(self, prefix: int, wanted: str) -> list[Item]: ...
 
-    return ItemSource
-
-
-def test_a_contract_snapshot_is_written_then_kept_through_compatible_changes(
-    tmp_path: Path,
-) -> None:
-    assert_contract_schemas(_contract("v1"), snapshots=tmp_path)
-    snapshot = json.loads((tmp_path / "item_source.json").read_text(encoding="utf-8"))
-    assert snapshot["contract"] == "item_source"
-    assert set(snapshot["methods"]) == {"to_item", "items", "count"}
-    assert snapshot["methods"]["items"]["stability"] == "experimental"
-    assert snapshot["methods"]["items"]["params"]["required"] == []
-    assert_contract_schemas(_contract("compatible"), snapshots=tmp_path)
-    rewritten = json.loads((tmp_path / "item_source.json").read_text(encoding="utf-8"))
-    assert set(rewritten["methods"]) == {"to_item", "items", "first"}
+        found = ItemSource
+    return experimental(found) if mark else found
 
 
-def test_an_incompatible_contract_change_fails_until_the_snapshot_is_deleted(
-    tmp_path: Path,
-) -> None:
-    assert_contract_schemas(_contract("v1"), snapshots=tmp_path)
+def _owner(contract: type[Contract]) -> PluginSpec:
+    return PluginSpec(name="items", contracts=lambda: (contract,))
+
+
+def test_assert_surface_writes_the_file_then_keeps_it(tmp_path: Path) -> None:
+    path = tmp_path / "surface.txt"
+    assert_surface(_owner(_contract("v1")), path)
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("# untaped surface 1\n")
+    for line in (
+        "contract items.item_source abstract=items",
+        'contract items.item_source.items(prefix: string = "") -> Item[]',
+        "contract items.item_source.to_item(item: Item) -> Item",
+        "contract items.Item(name)",
+        "contract items.Item.size integer default=0",
+        "cfg items.extensions.item_source.rank.items string[] default=[]",
+    ):
+        assert f"\n{line}\n" in text
+    assert_surface(_owner(_contract("v1")), path)
+    assert path.read_text(encoding="utf-8") == text
+
+
+def test_assert_surface_rewrites_the_file_after_an_addition(tmp_path: Path) -> None:
+    path = tmp_path / "surface.txt"
+    assert_surface(_owner(_contract("v1")), path)
+    assert_surface(_owner(_contract("added")), path)
+    assert "contract items.item_source.first() -> Item\n" in path.read_text(encoding="utf-8")
+
+
+def test_a_removed_line_fails_until_the_file_is_deleted(tmp_path: Path) -> None:
+    path = tmp_path / "surface.txt"
+    assert_surface(_owner(_contract("v1")), path)
     with pytest.raises(AssertionError) as failed:
-        assert_contract_schemas(_contract("breaking"), snapshots=tmp_path)
+        assert_surface(_owner(_contract("breaking")), path)
     message = str(failed.value)
-    assert "item_source.items().prefix: type " in message
-    assert "item_source.items().wanted was added as a required parameter" in message
-    assert "item_source.items().prefix became required" in message
-    (tmp_path / "item_source.json").unlink()
-    assert_contract_schemas(_contract("breaking"), snapshots=tmp_path)
+    assert "delete the file and run again to accept these in a major release" in message
+    assert '  contract items.item_source.items(prefix: string = "") -> Item[]' in message
+    path.unlink()
+    assert_surface(_owner(_contract("breaking")), path)
+    assert "items(prefix: integer, wanted: string)" in path.read_text(encoding="utf-8")
 
 
-def test_removing_a_field_or_a_stable_method_is_incompatible(tmp_path: Path) -> None:
-    from untaped.contracts._schema import schema_changes
-
-    old = {
-        "methods": {
-            "gone": {"stability": "stable", "params": {}, "return": {}},
-            "kept": {
-                "stability": "stable",
-                "params": {"type": "object", "properties": {}, "required": []},
-                "return": {"properties": {"a": {"type": "string"}, "b": {"type": "integer"}}},
-            },
-        }
-    }
-    new = {
-        "methods": {
-            "kept": {
-                "stability": "stable",
-                "params": {"type": "object", "properties": {}, "required": []},
-                "return": {
-                    "properties": {"a": {"type": "string", "maxLength": 3}, "c": {}},
-                    "required": ["c"],
-                },
-            }
-        }
-    }
-    assert schema_changes(old, new) == [
-        "gone: a stable method was removed",
-        "kept returns.a: maxLength absent became 3",
-        "kept returns.b was removed",
-        "kept returns.c was added as a required field",
-    ]
-
-
-def test_assert_contract_schemas_refuses_a_provider(tmp_path: Path) -> None:
-    with pytest.raises(TypeError, match="is not a contract declaration"):
-        assert_contract_schemas(Library, snapshots=tmp_path)
+def test_removing_experimental_lines_passes(tmp_path: Path) -> None:
+    path = tmp_path / "surface.txt"
+    assert_surface(_owner(_contract("v1", mark=True)), path)
+    assert "abstract=items  [experimental]" in path.read_text(encoding="utf-8")
+    assert_surface(_owner(_contract("breaking", mark=True)), path)

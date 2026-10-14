@@ -1,0 +1,44 @@
+# untaped surface 1
+cfg shelf.caches.book_source_books.max_age_seconds integer(minimum=0) default=3600
+cfg shelf.extensions.book_source.rank.books string[] default=[]  [experimental]
+cfg shelf.extensions.book_source.rank.to_book string[] default=[]  [experimental]
+cli untaped shelf
+cli untaped shelf find --format VALUE default=table
+cli untaped shelf find --format alias=-f
+cli untaped shelf find --format choice=json
+cli untaped shelf find --format choice=pipe
+cli untaped shelf find --format choice=raw
+cli untaped shelf find --format choice=table
+cli untaped shelf find --format choice=yaml
+cli untaped shelf find TITLE
+cli untaped shelf list
+cli untaped shelf list --format VALUE default=table
+cli untaped shelf list --format alias=-f
+cli untaped shelf list --format choice=json
+cli untaped shelf list --format choice=pipe
+cli untaped shelf list --format choice=raw
+cli untaped shelf list --format choice=table
+cli untaped shelf list --format choice=yaml
+contract shelf.Book(title)
+contract shelf.Book.pages integer default=0
+contract shelf.Book.source Source? default=None
+contract shelf.Book.title string
+contract shelf.Source(kind, plugin)
+contract shelf.Source.kind string
+contract shelf.Source.plugin string
+contract shelf.Source.record object default={}
+contract shelf.book_source abstract=books  [experimental]
+contract shelf.book_source.books() -> Book[]  [experimental]
+contract shelf.book_source.to_book(item: Book) -> Book  [experimental]
+sdk untaped_shelf.api.Book base=untaped.contracts.Issued
+sdk untaped_shelf.api.Book base=untaped.contracts.Record
+sdk untaped_shelf.api.Book(*, title)
+sdk untaped_shelf.api.Book(pages=) default=0
+sdk untaped_shelf.api.Book(source=) default=None
+sdk untaped_shelf.api.Book.pages
+sdk untaped_shelf.api.Book.title
+sdk untaped_shelf.api.BookSource base=untaped.contracts.Contract  [experimental]
+sdk untaped_shelf.api.BookSource implement=books  [experimental]
+sdk untaped_shelf.api.BookSource.books() -> Book[]  [experimental]
+sdk untaped_shelf.api.BookSource.to_book(item)  [experimental]
+sdk untaped_shelf.testing.conformance(provider)

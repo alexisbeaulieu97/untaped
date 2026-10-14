@@ -8,11 +8,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from untaped_shelf import SPEC
 from untaped_shelf.api import Book, BookSource
 from untaped_shelf.testing import conformance
 
 from untaped.contracts import Ok, gather
-from untaped.testing import assert_contract_schemas, check_conventions, compose_with
+from untaped.testing import assert_surface, check_conventions, compose_with
 
 
 class FakeBooks(BookSource):
@@ -31,8 +32,8 @@ def test_shelf_follows_the_conventions() -> None:
     check_conventions("shelf")
 
 
-def test_the_contract_keeps_its_schemas() -> None:
-    assert_contract_schemas(BookSource, snapshots=Path(__file__).parent / "snapshots")
+def test_shelf_keeps_its_surface() -> None:
+    assert_surface(SPEC, Path(__file__).parent / "surface.txt")
 
 
 def test_a_fake_provider_answers_the_owners_question() -> None:
