@@ -36,8 +36,9 @@ def providing(
     not a valid plugin name, is reserved (``untaped``, ``sdk``, a core config
     section or command group) or is already a candidate's name raises
     :class:`ConfigError` before anything is composed, so a composed plugin
-    can never shadow an installed one or vanish into the quarantine. Composing
-    is refused inside a contract call, as every composition is.
+    can never shadow an installed one; a key the composition quarantines
+    anyway raises :class:`ConfigError` too, once the composition is restored.
+    Composing is refused inside a contract call, as every composition is.
     """
     from untaped import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
     from untaped.plugins.registry import (  # noqa: PLC0415

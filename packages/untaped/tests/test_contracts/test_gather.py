@@ -702,9 +702,9 @@ def test_composing_inside_a_contract_call_fails_that_provider(
     composer = PluginSpec(name="composer", provides={"shelf": lambda: (_Composer(how),)})
     composed = compose(shelf_spec(), composer, *([shop_spec()] if beside else []))
     reregistered: list[None] = []
-    monkeypatch.setattr(bootstrap, "_reregister", lambda: reregistered.append(None))
-    [failed, *others] = gather(BookSource.books, refresh=True)()
-    monkeypatch.undo()
+    with monkeypatch.context() as patch:
+        patch.setattr(bootstrap, "_reregister", lambda: reregistered.append(None))
+        [failed, *others] = gather(BookSource.books, refresh=True)()
     assert isinstance(failed, Failed) and failed.reason == "raised"
     assert "composer's BookSource.books composed the root inside a contract call" in str(
         failed.error
