@@ -10,6 +10,7 @@ failure, never as a finding.
 
 from __future__ import annotations
 
+import inspect
 from abc import abstractmethod
 from collections.abc import Callable, Iterable, Iterator
 from typing import ClassVar, cast
@@ -128,6 +129,7 @@ class Rules(Linter):
 
     def _functions(self) -> Iterator[RuleFunction]:
         """``RULES``, then the ``@rule`` methods (a subclass's override wins), bound."""
+        listed: tuple[object, ...] = type(self).RULES
         yield from type(self).RULES
         seen: set[str] = set()
         for klass in type(self).__mro__:
@@ -135,7 +137,13 @@ class Rules(Linter):
                 if name in seen:
                     continue
                 seen.add(name)
-                if isinstance(getattr(value, "rule", None), Rule):
+                # Only a function defined here is a method; an alias of a listed
+                # rule, or of a module, is not bound a second time.
+                if (
+                    inspect.isfunction(value)
+                    and value not in listed
+                    and isinstance(getattr(value, "rule", None), Rule)
+                ):
                     yield cast("RuleFunction", getattr(self, name))
 
 

@@ -13,8 +13,12 @@ from lint.fakes import (
     Raising,
     Sprocket,
     Widget,
+    tall,
+    wide,
 )
+from untaped.sdk import Plugin
 from untaped.testing import compose_with
+from untaped_lint.records import Subject
 from untaped_lint.testing import run, subject
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -98,3 +102,43 @@ def test_suppressions_and_selections_add_up() -> None:
         )
     assert [(each.rule, each.target) for each in report.findings] == [("acme.wide", "b")]
     assert report.warnings == ["`nope`: no installed rule; is its plugin installed?"]
+
+
+class _Twice(Acme):
+    """``wide`` listed and aliased, and two rules sharing an id."""
+
+    alias = wide
+
+
+def test_an_alias_of_a_listed_rule_runs_once() -> None:
+    with compose_with("lint", provides={"acme": [_Twice()]}):
+        report = run([subject(Widget(name="w"))])
+    assert sorted(each.rule for each in report.findings) == ["acme.tall", "acme.wide"]
+    assert not report.failures
+
+
+class _SameId(Acme):
+    RULES = (wide, tall, wide)
+
+
+def test_a_provider_with_two_rules_of_one_id_is_not_loaded() -> None:
+    with compose_with("lint", provides={"acme": [_SameId()]}):
+        report = run([subject(Widget(name="w"))])
+    (failure,) = report.failures
+    assert (failure.item, failure.details["reason"]) == ("acme", "duplicate-id")
+    assert not report.findings
+
+
+def test_an_invalid_plugin_record_is_a_failure_row_not_a_crash() -> None:
+    with compose_with("lint"):
+        report = run([Subject(kind="untaped.plugin", record={"name": "git"})])
+    (failure,) = report.failures
+    assert (failure.item, failure.details["reason"]) == ("git", "invalid-record")
+    assert failure.category == "invalid"
+
+
+def test_a_narrowed_run_still_reports_a_plugin_nothing_checked() -> None:
+    plugin = Plugin(name="ghost", status="ready", distribution="untaped-ghost", version="1")
+    with compose_with("lint"):
+        report = run([subject(plugin)], select=["lint.error-case"], candidates=[])
+    assert [each.rule for each in report.findings] == ["lint.plugin-not-installed"]

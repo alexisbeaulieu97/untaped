@@ -17,7 +17,8 @@ _MARKER = re.compile(rf"#\s*untaped:\s*allow\s+({_NAME}(?:\s*,\s*{_NAME})*)")
 def allowed(source_lines: list[str], lineno: int, rule: str) -> bool:
     """Whether line ``lineno`` (1-based) of ``source_lines`` allows ``rule``.
 
-    ``rule`` is the bare id; the marker may name it bare or as ``<key>.<rule>``.
+    ``rule`` is the bare id of one of lint's conventions; the marker may name
+    it bare or as ``lint.<rule>``.
     """
     if not 1 <= lineno <= len(source_lines):
         return False
@@ -25,4 +26,4 @@ def allowed(source_lines: list[str], lineno: int, rule: str) -> bool:
     if match is None:
         return False
     names = {name.strip() for name in match.group(1).split(",")}
-    return rule in names or any(name.partition(".")[2] == rule for name in names)
+    return rule in names or f"lint.{rule}" in names

@@ -94,6 +94,8 @@ class Selection:
     """Target globs: report a finding only when its target matches one."""
     exact: frozenset[str] = frozenset()
     """Literal targets, compared exactly, never as globs."""
+    unchecked: frozenset[str] = frozenset()
+    """Rules saying nothing else ran on a target: ``select`` and PATHS never drop them."""
 
     @classmethod
     def build(
@@ -105,6 +107,7 @@ class Selection:
         paths: Iterable[str] = (),
         only: Iterable[str] = (),
         exact: Iterable[str] = (),
+        unchecked: Iterable[str] = (),
     ) -> Selection:
         chosen = [resolver.resolve(each) for each in select]
         return cls(
@@ -113,6 +116,7 @@ class Selection:
             paths=tuple(paths),
             only=tuple(only),
             exact=frozenset(exact),
+            unchecked=frozenset(unchecked),
         )
 
     def rule_selected(self, rule: str) -> bool:
@@ -120,12 +124,13 @@ class Selection:
 
     def keeps(self, finding: Finding) -> bool:
         """Whether ``finding`` (its rule id public) is reported."""
-        if not self.rule_selected(finding.rule):
+        narrowed = finding.rule not in self.unchecked
+        if narrowed and not self.rule_selected(finding.rule):
             return False
         for rules, target in self.ignore:
             if finding.rule in rules and (target is None or matches(target, finding.target)):
                 return False
-        if self.paths:
+        if self.paths and narrowed:
             path = getattr(finding.location, "path", None)
             if path is None or not any(matches(pattern, path) for pattern in self.paths):
                 return False

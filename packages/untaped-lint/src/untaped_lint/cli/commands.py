@@ -53,9 +53,14 @@ def lint_command(
         stdin_subjects,
     )
     from untaped_lint.config import LintConfig  # noqa: PLC0415
+    from untaped_lint.domain.selection import parse_rule, parse_suppression  # noqa: PLC0415
 
     with report_errors():
         settings = get_config_section("lint", LintSettings)
+        for each in select or ():  # a usage mistake is one wherever it runs
+            parse_rule(each, option="--select")
+        for each in ignore or ():
+            parse_suppression(each, option="--ignore")
         if stdin:
             if paths:
                 raise UsageError("--stdin reads records, so it takes no PATHS")

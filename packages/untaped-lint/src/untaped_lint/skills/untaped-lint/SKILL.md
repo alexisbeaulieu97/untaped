@@ -28,7 +28,7 @@ plugins add rules of their own; their ids start with the plugin's name.
 | Check the plugin repository you are in | `untaped lint` |
 | Check only some files' findings | `untaped lint 'src/**/cli/*.py'` |
 | Run one rule | `untaped lint --select lint.error-case` |
-| Leave a rule out for one run | `untaped lint --ignore lint.print:untaped_acme/cli/**` |
+| Leave a rule out for one plugin, for one run | `untaped lint --ignore lint.print:acme` |
 | Fail on warnings too | `untaped lint --strict` |
 | See every rule and what it reads | `untaped lint rules` |
 
@@ -58,8 +58,9 @@ plugins add rules of their own; their ids start with the plugin's name.
 
 - Exit 3 is "a rule found an error", exit 1 "a rule could not run",
   exit 2 a usage mistake, exit 4 a configuration problem.
-- `--ignore` and `lint.ignore` match the target with a glob where `*`
-  stops at `/` and `**` crosses it.
+- `--ignore` and `lint.ignore` match a finding's target, which for a
+  plugin's findings is the plugin's name, never a file; to narrow by file,
+  pass PATHS, as in `untaped lint 'src/**/cli/*.py'`.
 - An id nobody declares is a warning, not an error: check the plugin that
   owns it is installed.
 

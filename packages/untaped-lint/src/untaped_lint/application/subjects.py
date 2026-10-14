@@ -14,7 +14,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from untaped.contracts import Source
 from untaped.sdk import PipeEnvelope, Plugin, UsageError, kind_of, project_root
+from untaped_lint.providers import conventions
 from untaped_lint.records import Finding, Subject
 
 PLUGIN_KIND = kind_of(Plugin) or "untaped.plugin"
@@ -69,12 +71,13 @@ def repository_subjects(names: Iterable[str], installed: Sequence[Plugin]) -> Fo
 
 
 def not_installed(name: str) -> Finding:
-    return Finding(
-        rule="lint.plugin-not-installed",
-        severity="error",
-        target=name,
-        message=f"{name} is declared in pyproject.toml but not installed",
-        hint="install the project in this environment, as in `uv pip install -e .`",
+    """Conventions' finding for plugin ``name``, with its public id."""
+    finding = conventions.not_installed(name)
+    return finding.model_copy(
+        update={
+            "rule": f"{conventions.KEY}.{finding.rule}",
+            "source": Source(plugin=conventions.KEY, kind="lint.finding"),
+        }
     )
 
 

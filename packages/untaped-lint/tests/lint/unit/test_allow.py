@@ -7,6 +7,7 @@ from textwrap import dedent
 
 import pytest
 
+from untaped.testing import allows
 from untaped_lint.infrastructure.files import source_files
 from untaped_lint.providers.conventions.layering import layering_violations
 from untaped_lint.providers.conventions.structure import structure_source_violations
@@ -67,3 +68,7 @@ def test_a_keyed_marker_suppresses_the_rule(tmp_path: Path) -> None:
     model.parent.mkdir(parents=True)
     model.write_text("from allowdemo.cli import a  # untaped: allow lint.layer\n", encoding="utf-8")
     assert layering_violations("allowdemo", source_dir, list(source_files(source_dir))) == []
+
+
+def test_a_marker_naming_another_key_allows_nothing() -> None:
+    assert not allows(["print('x')  # untaped: allow house.print"], 1, "print")

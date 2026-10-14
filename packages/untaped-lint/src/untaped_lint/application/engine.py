@@ -13,14 +13,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from untaped.contracts import Failed, NoProviderReady, Ok, Skipped, gather
+from pydantic import ValidationError
+
+from untaped.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather
 from untaped.sdk import ErrorCategory, Failure, Plugin
 from untaped.testing import PluginCandidate
 from untaped_lint.application.rules import Linter
 from untaped_lint.application.subjects import PLUGIN_KIND
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import Resolver, Selection, Suppression
-from untaped_lint.providers.conventions import KEY, Conventions
+from untaped_lint.providers.conventions import KEY, UNCHECKED, Conventions
 from untaped_lint.records import Finding, Rule, Subject
 
 _RULES_HINT = "untaped lint rules"
@@ -69,7 +71,11 @@ def run(
     raw = list(findings)
     for subject in subjects:
         if subject.kind == PLUGIN_KIND:
-            plugin = Plugin.model_validate(subject.record)
+            try:
+                plugin = Plugin.model_validate(subject.record)
+            except ValidationError as exc:
+                report.failures.append(_invalid_plugin(subject, exc))
+                continue
             raw.extend(
                 _public(KEY, each) for each in Conventions().findings(plugin, candidates=candidates)
             )
@@ -92,6 +98,7 @@ def run(
         paths=options.paths,
         only=options.only,
         exact=options.exact,
+        unchecked=UNCHECKED,
     )
     report.warnings.extend(resolver.warnings)
     report.findings.extend(each for each in raw if selection.keeps(each))
@@ -99,7 +106,13 @@ def run(
 
 
 def _load(report: Report) -> _Providers:
-    providers = _Providers(rules={f"{KEY}.{rule.id}": rule for rule in Conventions().rules()})
+    own = Source(plugin=KEY, kind="lint.rule")
+    providers = _Providers(
+        rules={
+            f"{KEY}.{rule.id}": rule.model_copy(update={"source": own})
+            for rule in Conventions().rules()
+        }
+    )
     try:
         answers = gather(Linter.rules)()
     except NoProviderReady as exc:
@@ -121,6 +134,11 @@ def _declare(plugin: str, rules: list[Rule], providers: _Providers, report: Repo
     if plugin == KEY:
         report.failures.append(
             _failure(plugin, "reserved-key", f"{KEY} is lint's own key; its rules were not loaded")
+        )
+        return
+    if len(ids) < len(rules):
+        report.failures.append(
+            _failure(plugin, "duplicate-id", "two of its rules share an id", ErrorCategory.INVALID)
         )
         return
     providers.declared[plugin] = ids
@@ -208,5 +226,20 @@ def _failure(
     )
 
 
+def _invalid_plugin(subject: Subject, error: ValidationError) -> Failure:
+    name = str(subject.record.get("name") or PLUGIN_KIND)
+    return Failure(
+        category=ErrorCategory.INVALID,
+        system=KEY,
+        item=name,
+        message=f"{name} was not checked: its {PLUGIN_KIND} record is invalid: "
+        f"{error.error_count()} field errors",
+        hint="pipe `untaped plugin list --format pipe` output",
+        details={"reason": "invalid-record"},
+    )
+
+
 def _public(key: str, finding: Finding) -> Finding:
-    return finding.model_copy(update={"rule": f"{key}.{finding.rule}"})
+    """``finding`` with its public id, and lint as its source when no provider issued it."""
+    source = finding.source or Source(plugin=key, kind="lint.finding")
+    return finding.model_copy(update={"rule": f"{key}.{finding.rule}", "source": source})

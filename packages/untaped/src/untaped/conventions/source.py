@@ -17,11 +17,29 @@ class SourceFile:
     tree: ast.Module
 
 
+class UnreadableSource(Exception):
+    """A ``*.py`` file the checks can't read: not UTF-8, or not valid Python."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(f"{path}: {reason}")
+        self.path = path
+        self.reason = reason
+
+
 def source_files(directory: Path) -> Iterator[SourceFile]:
-    """Every ``*.py`` file under ``directory``, sorted, parsed once."""
+    """Every ``*.py`` file under ``directory``, sorted, parsed once.
+
+    Raises :class:`UnreadableSource` for a file that isn't UTF-8 or valid Python.
+    """
     for path in sorted(directory.rglob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        yield SourceFile(path, text.splitlines(), ast.parse(text))
+        try:
+            text = path.read_text(encoding="utf-8")
+            tree = ast.parse(text, filename=str(path))
+        except UnicodeDecodeError:
+            raise UnreadableSource(path, "is not UTF-8") from None
+        except SyntaxError as exc:
+            raise UnreadableSource(path, f"is not valid Python (line {exc.lineno})") from None
+        yield SourceFile(path, text.splitlines(), tree)
 
 
 def import_targets(node: ast.Import | ast.ImportFrom, package: str) -> list[str]:

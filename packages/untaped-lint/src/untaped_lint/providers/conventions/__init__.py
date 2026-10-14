@@ -107,6 +107,10 @@ _FILE_WHERE = re.compile(r"^(?P<path>[^\s:]+\.py)(?::(?P<line>\d+))?$")
 _DRIFT = "owner-schema-drift: "
 
 
+UNCHECKED = frozenset({f"{KEY}.plugin-not-installed", f"{KEY}.quarantined"})
+"""Findings meaning no other rule ran on the plugin, so a narrowed run still reports them."""
+
+
 class Conventions:
     """The rules over an ``untaped.plugin`` subject; the engine's own code, never a provider."""
 
@@ -120,14 +124,17 @@ class Conventions:
         try:
             rows = check_plugin(plugin.name, candidates=candidates)
         except UsageError:
-            return [_not_installed(plugin.name)]
+            return [not_installed(plugin.name)]
         source_dir = None if plugin.source_dir is None else Path(plugin.source_dir)
         tests_dir = None if plugin.tests_dir is None else Path(plugin.tests_dir)
         code = None if source_dir is None else source_dir.parent
+        if plugin.status == "quarantined":  # its one row says why; nothing else ran
+            rows = [row.model_copy(update={"check": "quarantined"}) for row in rows]
         found = [
             finding for row in rows if (finding := _from_row(plugin.name, row, code)) is not None
         ]
-        if plugin.package is not None and source_dir is not None:
+        unreadable = any(finding.rule == "unreadable-file" for finding in found)
+        if plugin.package is not None and source_dir is not None and not unreadable:
             lines = file_lines(plugin.package, source_dir, plugin=plugin.name, tests_dir=tests_dir)
             for line in lines:
                 tests = line.split("::")[1] == "private-test-import"
@@ -214,11 +221,12 @@ def _shown(path: str, base: Path | None) -> str:
         return absolute.as_posix()
 
 
-def _not_installed(name: str) -> Finding:
+def not_installed(name: str) -> Finding:
+    """The finding for plugin ``name``, which nothing in this environment installs."""
     return Finding(
         rule="plugin-not-installed",
         severity="error",
         target=name,
-        message=f"{name} is declared but not installed",
-        hint="install it in this environment: uv pip install -e .",
+        message=f"{name} is not installed in this environment",
+        hint="install the project here, as in `uv pip install -e .`",
     )

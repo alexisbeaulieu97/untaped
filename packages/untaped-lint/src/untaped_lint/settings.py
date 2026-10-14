@@ -16,7 +16,7 @@ class LintSettings(BaseModel):
         default_factory=list,
         description=(
             "Findings to leave out of every run, each <rule>[:<target-glob>], as "
-            "lint.error-case or lint.print:untaped_acme/cli/**."
+            "lint.error-case or lint.print:acme (a plugin's findings target its name)."
         ),
     )
 

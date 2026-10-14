@@ -443,7 +443,7 @@ def check_conventions(
     )
 
     if not file_rules_installed():
-        warnings.warn(FILE_RULES_MISSING, UserWarning, stacklevel=2)
+        warnings.warn(FILE_RULES_MISSING, UserWarning, stacklevel=3)  # past the deprecated wrapper
 
     found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)
     assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)

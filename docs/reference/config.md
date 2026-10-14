@@ -132,7 +132,7 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `lint.ignore` | list | empty | `UNTAPED_LINT__IGNORE` | Findings to leave out of every run, each <rule>[:<target-glob>], as lint.error-case or lint.print:untaped_acme/cli/**. Experimental: may change in a minor release. |
+| `lint.ignore` | list | empty | `UNTAPED_LINT__IGNORE` | Findings to leave out of every run, each <rule>[:<target-glob>], as lint.error-case or lint.print:acme (a plugin's findings target its name). Experimental: may change in a minor release. |
 
 ## `recipe`
 

@@ -183,6 +183,15 @@ def test_nothing_to_lint_warns_and_exits_0(tmp_path: Path, monkeypatch: pytest.M
     ]
 
 
+def test_a_malformed_ignore_is_a_usage_error_even_with_nothing_to_lint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    with compose_with("lint"):
+        result = invoke_cli(app, ["--ignore", "Bad..x"])
+    assert result.exit_code == 2
+
+
 def test_piped_plugin_list_checks_each_plugin() -> None:
     """``untaped plugin list -f pipe | untaped lint --stdin``, the list cut to two plugins."""
     listed = invoke_root(["plugin", "list", "-f", "pipe"]).stdout.splitlines()

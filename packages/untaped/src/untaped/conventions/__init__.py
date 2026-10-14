@@ -25,7 +25,7 @@ from untaped.bootstrap import SHELL_SPEC, build_root_app, composition
 from untaped.conventions.help_tree import help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.settings_names import settings_name_violations
-from untaped.conventions.source import SourceFile, source_files
+from untaped.conventions.source import SourceFile, UnreadableSource, source_files
 from untaped.conventions.stability import stability_violations
 from untaped.conventions.structure import structure_class_violations
 from untaped.plugins.registry import (
@@ -109,7 +109,12 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
         return [f"{name}::quarantined::{record.reason}: {record.detail}"]
     own = next((candidate for candidate in candidates if candidate.name == name), None)
     package, source_dir = package_of(spec, None if own is None else own.target)
-    files = list(source_files(source_dir))
+    try:
+        files = list(source_files(source_dir))
+    except UnreadableSource as exc:
+        # The rules that parse the plugin can't run; the file is its one violation.
+        where = exc.path.relative_to(source_dir.parent).as_posix()
+        return [f"{where}::unreadable-file::{exc.reason}"]
     return _Checked(name, root, spec, own, candidates, package, source_dir, files)
 
 
