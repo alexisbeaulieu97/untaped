@@ -615,9 +615,11 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         (<cause>)``, or ``refresh interrupted`` for an interrupted one; a
         partial fill (``partial``): the error's message; ``--cached`` (no
         ``error``): ``cached data from … (--cached)``, or ``made by another
-        version of the <plugin> plugin; using data from … (--cached)`` when
-        ``outdated``. Each says when the data is from and how old;
-        ``retry_at`` adds when auto checks again.
+        version of the <plugin> plugin; using data from …`` when
+        ``outdated``, ending ``(--cached)`` only when ``cached`` (auto meets
+        outdated data when another version filled it during a lock wait).
+        Each says when the data is from and how old; ``retry_at`` adds when
+        auto checks again.
         ``cached``: the reader passed ``--cached``, so a remembered ``error``
         line ends ``(--cached)`` too and says no next check.
         """

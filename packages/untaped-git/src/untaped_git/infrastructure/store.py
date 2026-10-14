@@ -122,7 +122,7 @@ _LAZY_HINT = (
     "if this is a file's content, read it through RepoStore.prefetched(): it was never prefetched"
 )
 _STALE_LEFTOVER_SECONDS = 3600.0
-_OBJECT_ID = re.compile(r"[0-9a-f]+")
+_OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 #: An object id's length in each object format.
 _ID_LENGTH = {"sha1": 40, "sha256": 64}
 _HANDLE_REFUSED = ("fetch", "checkout", "worktree")
@@ -608,6 +608,9 @@ class RepoStore:
             if item.startswith("-"):
                 raise self._error(f"{item!r} is not a revision", category=ErrorCategory.INVALID)
             revisions.append(f"--glob={item}" if "*" in item else item)
+        for oid in blobs:
+            if not _OBJECT_ID.fullmatch(oid):
+                raise self._error(f"{oid!r} is not a blob id", category=ErrorCategory.INVALID)
         wanted = list(dict.fromkeys(blobs))
         if not revisions and not wanted:
             return
@@ -643,19 +646,23 @@ class RepoStore:
         blobs: Sequence[str] = (),
         progress: ProgressHandle = NO_PROGRESS,
     ) -> Prefetched:
-        """Prefetch ``trees`` (peeled) limited to ``paths``, and ``blobs``; then a handle."""
+        """Prefetch ``trees`` (peeled) limited to ``paths``, and ``blobs``; then a handle.
+
+        Calling it with neither ``trees`` nor ``blobs`` is a programming
+        error (``ValueError``): the handle would read nothing.
+        """
         if not trees and not blobs:
             raise ValueError("prefetched() reads nothing: pass trees, blobs or both")
         self.prefetch(trees=trees, paths=paths, blobs=blobs, progress=progress)
         return Prefetched(self, tuple(trees), tuple(paths), tuple(blobs))
 
     def _check_ids(self, blobs: Sequence[str]) -> None:
-        """Refuse what is not an object id in this repo's object format (``invalid``)."""
+        """Refuse an id of the other object format than this repo's (``invalid``)."""
         if not blobs:
             return
         length = _ID_LENGTH.get(self._config_get("extensions.objectformat") or "sha1", 40)
         for oid in blobs:
-            if len(oid) != length or not _OBJECT_ID.fullmatch(oid):
+            if len(oid) != length:
                 raise self._error(f"{oid!r} is not a blob id", category=ErrorCategory.INVALID)
 
     def _missing_blobs(self, blobs: Sequence[str]) -> list[str]:
@@ -665,7 +672,8 @@ class RepoStore:
         skips a missing tip: what it prints is present. ``cat-file`` and
         ``mktree`` would fetch each missing blob lazily on a git that does
         not honour ``GIT_NO_LAZY_FETCH``, and ``cat-file`` dies at the first
-        on one that does.
+        on one that does. Before git 2.38 rev-list also hashes each present
+        blob it is given (local reads only).
         """
         if not blobs:
             return []

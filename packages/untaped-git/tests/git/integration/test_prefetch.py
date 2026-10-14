@@ -217,12 +217,20 @@ def test_a_host_refusing_blobs_by_id_is_unavailable(seeded: GitRemote, store_for
     assert "refused to send blobs by object id" in str(caught.value)
 
 
-@pytest.mark.parametrize("oid", ["main", "a" * 64, "A" * 40])
-def test_blobs_refuses_what_is_not_an_object_id(
-    seeded: GitRemote, store_for: StoreFor, oid: str
+@pytest.mark.parametrize("oid", ["main", "A" * 40])
+def test_blobs_refuses_what_is_not_an_object_id(store_for: StoreFor, oid: str) -> None:
+    store = store_for("ansible")
+    with pytest.raises(StoreError) as caught:
+        store.prefetch(blobs=[oid])
+    assert caught.value.category == ErrorCategory.INVALID
+    assert not store.path.exists()  # refused before the repo is made
+
+
+def test_blobs_refuses_an_id_of_the_other_object_format(
+    seeded: GitRemote, store_for: StoreFor
 ) -> None:
     with pytest.raises(StoreError) as caught:
-        store_for("ansible").prefetch(blobs=[oid])
+        store_for("ansible").prefetch(blobs=["a" * 64])
     assert caught.value.category == ErrorCategory.INVALID
 
 
@@ -235,6 +243,7 @@ def test_a_missing_blob_is_listed_without_a_lazy_fetch(
     trace = tmp_path / "trace.json"
     monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
 
+    # only gits older than 2.38 would fetch here (mktree did): a guard against regressions
     assert store._missing_blobs([blob]) == [blob]
 
     starts = [e["argv"] for e in trace2_events(trace) if e.get("event") == "start"]
