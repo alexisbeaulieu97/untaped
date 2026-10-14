@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from test_conventions.support import Install
 from untaped.conventions import plugin_violations
 from untaped.plugins.registry import PluginCandidate, PluginSpec
-from untaped.testing import check_conventions, plugin_candidate
+from untaped.testing import PluginCheckRow, check_conventions, check_plugin, plugin_candidate
 
 # A plugin package outside src/untaped, one file per convention family:
 # an undeclared write (help tree), a print (messages, one allowed), a
@@ -283,3 +283,23 @@ def test_a_hyphenated_plugin_is_named_with_underscores_to_import(install: Instal
     assert plugin_violations("acme-tools", candidates=[candidate]) == [
         "acme-tools::plugin-name::import package 'acme_tools' is not 'untaped_acme_tools'"
     ]
+
+
+def test_check_plugin_returns_typed_rows_of_the_composed_checks_only(
+    demo: list[PluginCandidate],
+) -> None:
+    """S13's core half: check names and a status, no file conventions, no severity."""
+    rows = check_plugin("demo", candidates=demo)
+    assert all(isinstance(row, PluginCheckRow) for row in rows)
+    assert {(row.check, row.title, row.status) for row in rows} == {
+        ("conventions", "undeclared-write", "fail"),
+        ("conventions", "plugin-name", "fail"),
+        ("conventions", "protocol-location", "fail"),
+    }
+    assert "severity" not in PluginCheckRow.model_fields
+
+
+def test_check_plugin_checks_an_uninstalled_spec_through_candidates() -> None:
+    spec = PluginSpec(name="bad", app_factory=App, settings=_BrokenRenames)
+    [row] = check_plugin("bad", candidates=[plugin_candidate(spec)])
+    assert (row.check, row.title, row.status) == ("registration", "bad-settings-keys", "fail")

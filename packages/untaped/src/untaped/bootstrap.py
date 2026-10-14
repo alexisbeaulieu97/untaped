@@ -169,14 +169,29 @@ def compose_root(
     Discovery (entry-point candidates, or ``candidates`` when given) runs BEFORE any
     settings registration or resolution; registration happens only after every
     surviving plugin validates. Remembers the composition for :func:`reset`.
+
+    Raises ``RuntimeError`` inside a contract call: the composition is
+    process-global, so a provider composing would swap it under the providers
+    ``gather`` runs beside it (``docs/contracts.md``).
     """
     global _COMPOSED_RESULT
+    _refuse_inside_a_contract_call()
     candidates = discover_candidates() if candidates is None else candidates
     result = compose(SHELL_SPEC, candidates)
     _register_shell_and_plugins(result)
     _COMPOSED_RESULT = result
     _warn_quarantined(result)
     return result
+
+
+def _refuse_inside_a_contract_call() -> None:
+    cache = sys.modules.get("untaped.cache")  # no call is open before it is imported
+    call = None if cache is None else cache.current_call()
+    if call is not None:
+        raise RuntimeError(
+            f"{call.caller} composed the root inside a contract call; a contract method "
+            "must not change process-global state such as the composition"
+        )
 
 
 @contextmanager

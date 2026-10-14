@@ -26,6 +26,7 @@ from test_contracts.support import (
     shop_spec,
     write_config,
 )
+from untaped import bootstrap
 from untaped.contracts import (
     Contract,
     Failed,
@@ -114,11 +115,30 @@ def test_a_provider_that_raises_fails_its_own_answer_only() -> None:
     assert isinstance(library, Ok)
     assert isinstance(shop, Failed)
     assert shop.error.exit_code == ExitCode.UNAVAILABLE
+    assert shop.reason == "raised"
     Shop.error = KeyError("bug")
     shop = gather(BookSource.books, refresh=True)()[1]
     assert isinstance(shop, Failed)
     assert isinstance(shop.error, UntapedError)
     assert shop.error.system == "shop"
+    assert shop.reason == "raised"
+
+
+def test_none_ready_names_the_quarantined_and_the_unconfigured_apart() -> None:
+    """An owner tells "nobody fills it" from "every provider is broken" without the message."""
+
+    def broken() -> tuple[Contract, ...]:
+        raise RuntimeError("boom")
+
+    compose(shelf_spec(), library_spec(), PluginSpec(name="shop", provides={"shelf": broken}))
+    with pytest.raises(NoProviderReady) as err:
+        gather(BookSource.books)()
+    assert err.value.quarantined == {"shop": "bad-provider"}
+    assert set(err.value.not_ready) == {"library"}
+    compose(shelf_spec())
+    with pytest.raises(NoProviderReady) as none:
+        gather(BookSource.books)()
+    assert (none.value.quarantined, none.value.not_ready) == ({}, {})
 
 
 def test_a_listing_drops_an_invalid_row_and_keeps_the_rest() -> None:
@@ -227,6 +247,7 @@ def test_a_failed_live_call_serves_the_cached_answer_marked_stale() -> None:
     assert stale.value == fresh.value
     assert stale.stale is not None
     assert stale.stale.error is Library.error
+    assert stale.stale.reason == "raised"
     assert stale.refreshed_at == fresh.refreshed_at
 
 
@@ -650,3 +671,35 @@ def test_progress_counts_the_providers_as_they_answer_on_the_calling_thread() ->
     assert [(done, total) for _, done, total in updates] == [(0, 3), (1, 3), (2, 3), (3, 3)]
     assert threads == {threading.get_ident()}
     assert "progress" not in inspect.signature(Library.books).parameters
+
+
+class _Composer(BookSource):
+    """A provider that composes the root from inside its call, three ways."""
+
+    how = "compose_root"
+
+    def books(self) -> list[Book]:
+        if self.how == "compose_root":
+            bootstrap.compose_root(candidates=[])
+        elif self.how == "composed_with":
+            with bootstrap.composed_with([]):
+                pass
+        else:
+            bootstrap.build_root_app(candidates=[])
+        return []
+
+
+@pytest.mark.parametrize("how", ["compose_root", "composed_with", "build_root_app"])
+def test_composing_inside_a_contract_call_fails_that_provider(how: str) -> None:
+    """S5: the composition is process-global, so a provider never swaps it under its neighbours."""
+    _Composer.how = how
+    composer = PluginSpec(name="composer", provides={"shelf": lambda: (_Composer(),)})
+    composed = compose(shelf_spec(), composer, shop_spec())
+    [failed, shop] = gather(BookSource.books, refresh=True)()
+    assert isinstance(failed, Failed) and failed.reason == "raised"
+    assert "composer's BookSource.books composed the root inside a contract call" in str(
+        failed.error
+    )
+    assert isinstance(shop, Ok)
+    assert bootstrap.composition() is composed
+    bootstrap.compose_root(candidates=[])  # outside any contract call it works as before

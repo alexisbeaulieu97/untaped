@@ -29,6 +29,7 @@ from untaped.contracts._gather import (
     Skipped,
     gather,
 )
+from untaped.contracts._providing import providing
 from untaped.contracts._select import Ambiguous, NotFound, convert, select_one
 from untaped.records import Issued, Record, Source
 
@@ -52,5 +53,6 @@ __all__ = [
     "convert",
     "gather",
     "listing",
+    "providing",
     "select_one",
 ]

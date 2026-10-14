@@ -168,7 +168,7 @@ def _answering(provider: str, cache: Cache) -> Iterator[CallState]:
         with answering(cache, provider):
             yield outer
         return
-    with call_state(None) as state, answering(cache, provider):
+    with call_state(None, caller=provider) as state, answering(cache, provider):
         yield state
     for line in state.stale_lines:
         current_sink().emit(line)

@@ -8,9 +8,8 @@ from textwrap import dedent
 import pytest
 from cyclopts import App
 
-from test_conventions.support import Install
+from test_conventions.support import Install, structure_violations
 from untaped.conventions.source import source_files
-from untaped.conventions.structure import structure_violations
 from untaped.plugins.registry import PluginSpec
 
 _ERRORS = dedent('''
