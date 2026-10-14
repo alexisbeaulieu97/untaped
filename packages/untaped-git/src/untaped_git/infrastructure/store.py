@@ -122,6 +122,7 @@ _LAZY_HINT = (
     "if this is a file's content, read it through RepoStore.prefetched(): it was never prefetched"
 )
 _STALE_LEFTOVER_SECONDS = 3600.0
+_OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _HANDLE_REFUSED = ("fetch", "checkout", "worktree")
 
 
@@ -583,14 +584,18 @@ class RepoStore:
         trees: Sequence[str] = (),
         paths: Sequence[str] = (),
         history: Sequence[str] = (),
+        blobs: Sequence[str] = (),
         progress: ProgressHandle = NO_PROGRESS,
     ) -> None:
         """Fetch, in one round trip per batch, every blob the reads will need.
 
         ``trees`` are peeled (``<x>^{tree}``: a commit lists its own tree's
         blobs only); ``history`` walks every commit the revisions reach (a
-        ``*`` names a ref glob, ``a..b`` a range). ``paths`` limits both. When
-        nothing is missing no network call is made. ``progress`` hears
+        ``*`` names a ref glob, ``a..b`` a range). ``paths`` limits both.
+        ``blobs`` are blob ids fetched as they are, whatever tree holds them
+        (a reader that listed the files it needs with :meth:`ls_tree`); they
+        travel on stdin, so any number fits. When nothing is missing no
+        network call is made. ``progress`` hears
         ``listing missing blobs`` (a walk of the trees or the history, which
         can take seconds), then, when some are missing, ``fetching blobs``
         with the blobs fetched so far. A blob still missing afterwards, or a
@@ -601,12 +606,17 @@ class RepoStore:
             if item.startswith("-"):
                 raise self._error(f"{item!r} is not a revision", category=ErrorCategory.INVALID)
             revisions.append(f"--glob={item}" if "*" in item else item)
-        if not revisions:
+        for oid in blobs:
+            if not _OBJECT_ID.fullmatch(oid):
+                raise self._error(f"{oid!r} is not a blob id", category=ErrorCategory.INVALID)
+        wanted = list(dict.fromkeys(blobs))
+        if not revisions and not wanted:
             return
         with self._locked():
             self._ensure()
             progress.update(phase="listing missing blobs")
-            missing = self._missing(revisions, paths)
+            holder = self._blob_holder(wanted)
+            missing = self._missing_in(revisions, paths, holder)
             if not missing:
                 return
             progress.update(phase="fetching blobs", done=0, total=len(missing))
@@ -614,7 +624,7 @@ class RepoStore:
                 batch = missing[start : start + PREFETCH_BATCH_SIZE]
                 self._prefetch_batch(batch)
                 progress.update(phase="fetching blobs", done=start + len(batch), total=len(missing))
-            left = self._missing(revisions, paths)
+            left = self._missing_in(revisions, paths, holder)
             if left:
                 host = url_host(self._url) or self._url
                 raise self._fail(
@@ -629,13 +639,37 @@ class RepoStore:
     def prefetched(
         self,
         *,
-        trees: Sequence[str],
+        trees: Sequence[str] = (),
         paths: Sequence[str] = (),
+        blobs: Sequence[str] = (),
         progress: ProgressHandle = NO_PROGRESS,
     ) -> Prefetched:
-        """Prefetch ``trees`` (peeled) limited to ``paths``, then a handle that reads them."""
-        self.prefetch(trees=trees, paths=paths, progress=progress)
-        return Prefetched(self, tuple(trees), tuple(paths))
+        """Prefetch ``trees`` (peeled) limited to ``paths``, and ``blobs``; then a handle."""
+        self.prefetch(trees=trees, paths=paths, blobs=blobs, progress=progress)
+        return Prefetched(self, tuple(trees), tuple(paths), tuple(blobs))
+
+    def _blob_holder(self, blobs: Sequence[str]) -> str | None:
+        """A tree naming ``blobs``, written without reading them; ``None`` for no blobs.
+
+        ``rev-list --missing=print`` over it lists the missing ones without
+        fetching them, where ``cat-file`` would fetch each one lazily or, under
+        ``GIT_NO_LAZY_FETCH``, die at the first. Nothing refers to the tree, so
+        gc prunes it.
+        """
+        if not blobs:
+            return None
+        listing = "".join(f"100644 blob {oid}\t{index}\n" for index, oid in enumerate(blobs))
+        result = self._git(["mktree", "--missing"], stdin=listing, capture=True, env=_NO_LAZY)
+        return result.text.strip()
+
+    def _missing_in(
+        self, revisions: Sequence[str], paths: Sequence[str], holder: str | None
+    ) -> list[str]:
+        """The blobs missing from ``revisions`` (limited to ``paths``) and from ``holder``."""
+        missing = self._missing(revisions, paths) if revisions else []
+        if holder is not None:
+            missing.extend(self._missing([holder]))
+        return list(dict.fromkeys(missing))
 
     def _prefetch_batch(self, oids: Sequence[str]) -> None:
         argv = [
@@ -986,7 +1020,7 @@ class RepoStore:
 
 
 class Prefetched:
-    """A store repo whose blobs for ``trees`` (and ``paths``) are present: read them here.
+    """A store repo whose blobs for ``trees`` (and ``paths``) and ``blobs`` are present.
 
     :meth:`run` is the only call through which a consumer runs ``grep``,
     ``cat-file``, ``show`` or ``archive`` on a store repo; it exists only
@@ -994,10 +1028,17 @@ class Prefetched:
     outside the prefetched trees and paths fails instead of fetching.
     """
 
-    def __init__(self, store: RepoStore, trees: tuple[str, ...], paths: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        store: RepoStore,
+        trees: tuple[str, ...],
+        paths: tuple[str, ...],
+        blobs: tuple[str, ...] = (),
+    ) -> None:
         self._store = store
         self.trees = trees
         self.paths = paths
+        self.blobs = blobs
 
     def run(
         self,

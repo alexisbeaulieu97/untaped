@@ -22,11 +22,20 @@ atomically; ``<segment>.lock`` beside it is held while the key is filled, and
 only then. Readers never take it. The lock is not re-entrant: a fill never
 serves its own cache. Nested caches lock outer, then inner; the repo store's
 own lock is always the innermost.
+
+When the code that fills a cache changes what it would store, ``version=``
+names that code's version (:func:`code_version` hashes a module and the
+distributions it relies on): the sidecar keeps the version each key was
+filled at, and a key filled at another one is *outdated*, due and stale the
+way a key past its max age is.
 """
 
 from __future__ import annotations
 
+import functools
 import hashlib
+import importlib.metadata
+import importlib.util
 import json
 import logging
 import re
@@ -178,7 +187,10 @@ class Freshness:
     interrupted), and ``error`` why. After a completed fill that left items
     out, ``partial`` is set and ``error`` names them. ``retry_at`` is when
     auto may try again: upstream's own time, else ``attempted_at`` plus
-    :data:`RETRY_AFTER`.
+    :data:`RETRY_AFTER`. ``version`` is the cache's version at the last
+    completed fill (``None``: unversioned, seeded, or never filled);
+    ``outdated``: the cache has a version and the key was filled at another
+    one, so it is due and stale whatever its age.
     """
 
     refreshed_at: datetime | None = None
@@ -186,6 +198,8 @@ class Freshness:
     error: Failure | None = None
     partial: bool = False
     retry_at: datetime | None = None
+    version: str | None = None
+    outdated: bool = False
 
     def past_max_age(self, max_age: timedelta, *, now: datetime) -> bool:
         """Never refreshed, or refreshed ``max_age`` or longer ago."""
@@ -195,21 +209,25 @@ class Freshness:
         """Whether ``refresh`` asks for a fill now: ``True`` always, ``False`` never.
 
         Auto (``None``) fills a never-refreshed key always, and one past its
-        max age once ``retry_at`` passed: the retry window is a fallback, and
-        with nothing on disk there is nothing to fall back to.
+        max age or outdated once ``retry_at`` passed: the retry window is a
+        fallback, and with nothing on disk there is nothing to fall back to.
         """
         if refresh is False:
             return False
         if refresh or self.refreshed_at is None:
             return True
-        return self.past_max_age(max_age, now=now) and (
+        return (self.outdated or self.past_max_age(max_age, now=now)) and (
             self.retry_at is None or now >= self.retry_at
         )
 
 
 def _is_stale(freshness: Freshness, max_age: timedelta, now: datetime) -> bool:
-    """Past its max age, or with a remembered error (a failed refresh, a partial fill)."""
-    return freshness.past_max_age(max_age, now=now) or freshness.error is not None
+    """Past its max age, outdated, or with a remembered error (a failed refresh, a partial fill)."""
+    return (
+        freshness.past_max_age(max_age, now=now)
+        or freshness.outdated
+        or freshness.error is not None
+    )
 
 
 class Filled(BaseModel):
@@ -303,10 +321,14 @@ class Cache:
     ``PluginSpec.caches`` and its setting ``<plugin>.caches.<name>.max_age_seconds``
     overrides it. ``renamed_from`` names old keys of the plugin's section
     (dotted, relative to it) that are still read as that setting, with a
-    warning. Two declarations with the same values are equal.
+    warning. ``version`` returns the version of the code that fills the
+    cache (usually :func:`code_version`); it is called once per
+    :meth:`serve`, never at import, and a key filled at another version is
+    refreshed like an expired one. Two declarations with the same values
+    (the same ``version`` callable) are equal.
     """
 
-    __slots__ = ("default_max_age", "label", "name", "plugin", "renamed_from")
+    __slots__ = ("default_max_age", "label", "name", "plugin", "renamed_from", "version")
 
     def __init__(
         self,
@@ -316,6 +338,7 @@ class Cache:
         label: str,
         max_age: timedelta,
         renamed_from: Sequence[str] = (),
+        version: Callable[[], str] | None = None,
     ) -> None:
         from untaped.plugins.registry import check_plugin_name  # noqa: PLC0415 - no cycle
 
@@ -331,9 +354,19 @@ class Cache:
         self.label = label
         self.default_max_age = max_age
         self.renamed_from = _old_keys(f"{plugin}.{name}", renamed_from)
+        self.version = version
 
-    def _identity(self) -> tuple[str, str, str, timedelta, tuple[str, ...]]:
-        return (self.plugin, self.name, self.label, self.default_max_age, self.renamed_from)
+    def _identity(
+        self,
+    ) -> tuple[str, str, str, timedelta, tuple[str, ...], Callable[[], str] | None]:
+        return (
+            self.plugin,
+            self.name,
+            self.label,
+            self.default_max_age,
+            self.renamed_from,
+            self.version,
+        )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Cache):
@@ -376,6 +409,10 @@ class Cache:
         held = getattr(load_settings_section(self.plugin).caches, self.name)
         return timedelta(seconds=held.max_age_seconds)
 
+    def _version_now(self) -> str | None:
+        """The version of the code that fills the cache now; ``None`` when unversioned."""
+        return None if self.version is None else self.version()
+
     # ---- reading and filling ------------------------------------------------
 
     def serve[T, F: Filled](
@@ -404,12 +441,12 @@ class Cache:
         :class:`NeverRefreshed`. A Ctrl-C during a fill is remembered like a
         failed attempt and said as one ``error:`` line before it propagates.
         """
-        max_age, started = self.max_age(), _utcnow()
+        max_age, started, version = self.max_age(), _utcnow(), self._version_now()
         if refresh is None:
             refresh = refresh_scope()
         folder = self._folder()
         paths = {key: self._key_paths(folder, key) for key in keys}
-        freshness = {key: self._load(paths[key], key) for key in keys}
+        freshness = {key: self._load(paths[key], key, version) for key in keys}
         filled: dict[str, F] = {}
         for key, label in keys.items():
             if freshness[key].due(refresh, max_age=max_age, now=started):
@@ -423,6 +460,7 @@ class Cache:
                     refresh=refresh,
                     started=started,
                     max_age=max_age,
+                    version=version,
                     progress=progress,
                 )
         return self._serve(
@@ -448,6 +486,7 @@ class Cache:
         refresh: bool | None,
         started: datetime,
         max_age: timedelta,
+        version: str | None,
         progress: ProgressHandle,
     ) -> Freshness:
         """Fill ``key`` under its task and lock; what the cache knows of it afterwards.
@@ -463,7 +502,7 @@ class Cache:
                 # back to the parent's phase after a wait; an own task has none
                 self._lock(paths, label, task, resume=None if progress is NO_PROGRESS else text),
             ):
-                current = freshness = self._load(paths, key)
+                current = freshness = self._load(paths, key, version)
                 if current.refreshed_at is not None and current.refreshed_at >= started:
                     return current  # refreshed while this run waited: serve it, under --refresh too
                 if refresh is None and not current.due(None, max_age=max_age, now=_utcnow()):
@@ -492,6 +531,7 @@ class Cache:
                         error=result.partial,
                         partial=result.partial is not None,
                         retry_at=result.retry_at,
+                        version=version,
                     ),
                 )
         except UntapedError as exc:
@@ -547,6 +587,7 @@ class Cache:
                 continue  # whole and fresh from this run
             if (
                 state.past_max_age(max_age, now=now)
+                or state.outdated
                 or state.partial
                 or state.attempted_at == started
             ):
@@ -584,14 +625,15 @@ class Cache:
 
     def freshness(self, key: str) -> Freshness:
         """What the cache knows about ``key`` now, without a lock (a status row)."""
-        return self._load(self._paths(key), key)
+        return self._load(self._paths(key), key, self._version_now())
 
     def seed(self, key: str, *, refreshed_at: datetime) -> bool:
         """Record ``key`` as refreshed at ``refreshed_at`` if the cache knows nothing of it.
 
         For an owner whose data predates the cache (upgrade day). Writes only
         when no sidecar exists and no other process is filling the key;
-        returns whether it wrote.
+        returns whether it wrote. The seeded key has no version: under a
+        versioned cache it is outdated, so its first read refreshes it.
         """
         paths = self._paths(key)
         if paths.sidecar.exists():
@@ -634,23 +676,32 @@ class Cache:
         """``key``'s folder, sidecar and lock in the active profile."""
         return self._key_paths(self._folder(), key)
 
-    def _load(self, paths: _KeyPaths, key: str) -> Freshness:
-        """The sidecar's freshness: never refreshed when missing, unreadable or another key's."""
+    def _load(self, paths: _KeyPaths, key: str, version: str | None) -> Freshness:
+        """The sidecar's freshness: never refreshed when missing, unreadable or another key's.
+
+        ``version`` is the cache's version now: a key filled at another one
+        is ``outdated``.
+        """
         try:
             raw = json.loads(paths.sidecar.read_text(encoding="utf-8"))
             if raw.get("untaped") != _FORMAT or raw.get("key") != key:
                 return Freshness()
             refreshed_at = _parsed(raw.get("refreshed_at"))
+            filled_at = raw.get("version")
+            filled_at = filled_at if isinstance(filled_at, str) else None
+            outdated = version is not None and filled_at != version
             error = _failure(raw.get("error"))
             if error is None and raw.get("error") is not None:
                 # a newer untaped's error: the attempt it describes cannot be told, the data can
-                return Freshness(refreshed_at=refreshed_at)
+                return Freshness(refreshed_at=refreshed_at, version=filled_at, outdated=outdated)
             return Freshness(
                 refreshed_at=refreshed_at,
                 attempted_at=_parsed(raw.get("attempted_at")),
                 error=error,
                 partial=raw.get("partial") is True,
                 retry_at=_parsed(raw.get("retry_at")),
+                version=filled_at,
+                outdated=outdated,
             )
         except OSError, ValueError, AttributeError, TypeError, ValidationError:
             return Freshness()
@@ -666,6 +717,7 @@ class Cache:
                 "error": None if error is None else error.model_dump(mode="json"),
                 "partial": freshness.partial,
                 "retry_at": _iso(freshness.retry_at),
+                "version": freshness.version,
             },
             ensure_ascii=False,
         )
@@ -696,6 +748,8 @@ class Cache:
         """The refresh's task, worded from the key's age."""
         if freshness.refreshed_at is None:
             return f"Refreshing {label} (first use)"
+        if freshness.outdated:
+            return f"Refreshing {label} (made by another version)"
         age = duration_text((_utcnow() - freshness.refreshed_at).total_seconds())
         limit = duration_text(max_age.total_seconds())
         return f"Refreshing {label} ({age} old, max age {limit})"
@@ -791,6 +845,7 @@ class Cache:
             retry_at=freshness.retry_at,
             error=freshness.error,
             partial=freshness.partial,
+            outdated=freshness.outdated,
             hint=hint,
             cached=cached,
         )
@@ -905,6 +960,50 @@ def _iso(value: datetime | None) -> str | None:
 
 
 # --------------------------------------------------------------------------- #
+# The version of the code that fills a cache
+# --------------------------------------------------------------------------- #
+
+
+def code_version(
+    module: str, *, distributions: Sequence[str] = (), extra: Sequence[str] = ()
+) -> str:
+    """A version for ``Cache(version=)``: sha256 over a module, distributions and ``extra``.
+
+    It hashes the bytes of ``module``'s file, the installed version of each
+    of ``distributions`` (``"absent"`` when one is not installed) and each
+    ``extra`` string, so editing the module or upgrading a library it relies
+    on changes it. The module is found without being imported (its parent
+    packages are); only that one file is read, so code it imports from
+    elsewhere is a distribution to name. Computed once per process.
+    """
+    for name, value in (("distributions", distributions), ("extra", extra)):
+        if isinstance(value, str):
+            raise TypeError(f"code_version: {name} takes a sequence of strings, not one string")
+    return _code_version(module, tuple(distributions), tuple(extra))
+
+
+@functools.cache
+def _code_version(module: str, distributions: tuple[str, ...], extra: tuple[str, ...]) -> str:
+    spec = importlib.util.find_spec(module)
+    origin = None if spec is None else spec.origin
+    if origin is None or not Path(origin).is_file():
+        raise ConfigError(f"code_version: module {module!r} has no source file to hash")
+    digest = hashlib.sha256()
+    parts = [b"module:" + Path(origin).read_bytes()]
+    for distribution in distributions:
+        try:
+            installed = importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            installed = "absent"
+        parts.append(f"distribution:{distribution}=={installed}".encode())
+    parts.extend(f"extra:{item}".encode() for item in extra)
+    for part in parts:  # length-prefixed: no two lists of parts hash alike
+        digest.update(len(part).to_bytes(8, "big"))
+        digest.update(part)
+    return digest.hexdigest()
+
+
+# --------------------------------------------------------------------------- #
 # The option and the status row
 # --------------------------------------------------------------------------- #
 
@@ -929,7 +1028,8 @@ def refresh_option(cache: Cache) -> Parameter:
 class FreshnessRecord(Record):
     """The freshness fields of a cache's status row: subclass it, add the row's own.
 
-    ``stale``: past its max age or with a remembered error.
+    ``stale``: past its max age, outdated, or with a remembered error;
+    ``outdated``: filled by another version of the code that fills it.
     ``refresh_error`` is the last refresh's failure, or what a partial one
     left out; reporting it never fails the row (``error`` stays a failed
     row's).
@@ -939,6 +1039,7 @@ class FreshnessRecord(Record):
     stale: bool
     max_age_seconds: int
     partial: bool = False
+    outdated: bool = False
     attempted_at: UtcTimestamp | None = None
     retry_at: UtcTimestamp | None = None
     refresh_error: Annotated[Failure | None, NOT_COUNTED] = None
@@ -951,6 +1052,7 @@ class FreshnessRecord(Record):
             "stale": _is_stale(freshness, max_age, now),
             "max_age_seconds": int(max_age.total_seconds()),
             "partial": freshness.partial,
+            "outdated": freshness.outdated,
             "attempted_at": freshness.attempted_at,
             "retry_at": freshness.retry_at,
             "refresh_error": freshness.error,
@@ -967,6 +1069,7 @@ __all__ = [
     "NeverRefreshed",
     "Served",
     "call_state",
+    "code_version",
     "current_call",
     "installed_utcnow",
     "refresh_option",

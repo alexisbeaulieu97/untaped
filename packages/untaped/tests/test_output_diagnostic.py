@@ -119,8 +119,21 @@ def _stale(**overrides: object) -> StaleData:
             "shelf: 2 of 5 pages failed; using data from 2026-10-09 10:00 UTC",
         ),
         ({}, "shelf: cached data from 2026-10-09 10:00 UTC, 26 h old (--cached)"),
+        (
+            {"outdated": True},
+            "shelf: made by another version of the hello plugin; "
+            "using data from 2026-10-09 10:00 UTC, 26 h old (--cached)",
+        ),
+        (
+            {
+                "error": Failure.from_exception(ConfigError("token rejected", category="auth")),
+                "outdated": True,
+            },
+            "shelf: refresh failed (token rejected); "
+            "using data from 2026-10-09 10:00 UTC, 26 h old",
+        ),
     ],
-    ids=["failed", "interrupted", "partial", "cached"],
+    ids=["failed", "interrupted", "partial", "cached", "outdated", "outdated-failed"],
 )
 def test_stale_data_wording(overrides: dict[str, object], text: str) -> None:
     stream = io.StringIO()
@@ -153,3 +166,14 @@ def test_stale_data_is_a_json_warning_and_counts_nothing(
         "2026-10-10T12:00:00Z",
     )
     assert line["error"]["category"] == "auth"
+    assert line["outdated"] is False
+
+
+def test_an_outdated_stale_line_says_so_in_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    stream = io.StringIO()
+    with redirect_stderr(stream), diagnostics_scope():
+        Diagnostics().emit(_stale(outdated=True))
+
+    line = json.loads(stream.getvalue())
+    assert (line["outdated"], line["error"], line["plugin"]) == (True, None, "hello")
