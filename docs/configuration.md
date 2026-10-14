@@ -311,7 +311,8 @@ When stdin is not a terminal (an agent running `untaped`, a pipe, cron),
 error names the command that unlocks it from your terminal (such as
 `pass show untaped/default/awx > /dev/null`). gpg-agent then remembers the
 passphrase for its `default-cache-ttl`, so agents can read the token until it
-expires.
+expires. If an earlier run left a passphrase prompt open on another screen,
+`gpgconf --kill gpg-agent` closes it; gpg starts a fresh agent on next use.
 
 What this protects: the token is no longer in a file read casually. It does
 not stop a program running as you, which can run `untaped` or the store's own
