@@ -581,12 +581,13 @@ def _env_is_set(name: str) -> bool:
 
 
 def env_sets_key(section: str, key: str) -> bool:
-    """Whether the environment sets ``<section>.<key>``, blank or not.
+    """Whether the environment sets top-level field ``key`` of ``section``, blank or not.
 
     Its ``UNTAPED_<SECTION>__<KEY>`` variable, or the key inside an
     ``UNTAPED_<SECTION>`` JSON object; a blob that isn't a JSON object
     counts, since it cannot be told apart. Names match case-insensitively,
-    as the settings source reads them.
+    as the settings source reads them. ``key`` is the current name; an old
+    name from ``renamed_keys`` is not checked.
     """
     if _env_is_set(_env_name(section, key)):
         return True
