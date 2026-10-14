@@ -255,6 +255,16 @@ def test_a_hung_store_times_out_with_the_likely_cause(
     assert not _isolated_config.exists()
 
 
+def test_a_hung_pass_names_how_to_close_the_prompt_it_left_open(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "hang")
+    monkeypatch.setattr(auth, "_TIMEOUT_SECONDS", 0.5)
+    result = _auth("set", "svc", "--store", "pass", "--stdin", input="tok")
+    assert result.exit_code == 5
+    assert "`gpgconf --kill gpg-agent` closes a passphrase prompt left open" in result.stderr
+
+
 def test_read_back_bypasses_the_token_cache(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:

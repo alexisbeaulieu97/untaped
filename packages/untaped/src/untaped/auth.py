@@ -224,10 +224,13 @@ def run_command(
     except FileNotFoundError:
         raise ConfigError(f"{label} not found on PATH") from None
     except subprocess.TimeoutExpired:
+        # Stopping pass leaves gpg-agent's pinentry open, holding the agent for every later read.
+        stuck = "`gpgconf --kill gpg-agent` closes a passphrase prompt left open; "
         raise ConfigError(
             f"{label} timed out after {_TIMEOUT_SECONDS:g}s; it may be waiting on an "
             "unlock prompt on a screen nobody sees (over SSH, unlock the store first)",
             category="unavailable",
+            hint=f"{stuck}then retry" if Path(argv[0]).name == "pass" else None,
         ) from None
     except OSError as exc:
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
