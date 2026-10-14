@@ -7,11 +7,14 @@ moves the progress clock from inside the fill.
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
+import sys
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
@@ -25,6 +28,7 @@ from untaped.cache import (
     FreshnessRecord,
     NeverRefreshed,
     call_state,
+    code_version,
     refresh_option,
     refresh_scope,
 )
@@ -222,6 +226,7 @@ def test_the_sidecar_holds_the_freshness_under_the_profile(clock: CacheClock) ->
         "error": None,
         "partial": False,
         "retry_at": None,
+        "version": None,
     }
 
 
@@ -835,6 +840,267 @@ def test_forget_makes_the_next_read_refresh(clock: CacheClock) -> None:
     assert UP.fills == ["a"]
 
 
+# ---- version= --------------------------------------------------------------------
+
+#: The version of the code that fills ``VERSIONED``; a test sets it.
+CODE = {"version": "1"}
+VERSIONED = Cache(
+    "toy", "versioned", label="toy items", max_age=_HOUR, version=lambda: CODE["version"]
+)
+
+
+@app.command(name="versioned")
+def versioned(
+    keys: list[str], *, refresh: Annotated[bool | None, refresh_option(VERSIONED)] = None
+) -> None:
+    """Print the items of KEYS, served through the versioned toy cache."""
+    with report_errors():
+        served = VERSIONED.serve(
+            {key: f"toy {key}" for key in keys},
+            refresh=refresh,
+            fill=UP.fill,
+            read=lambda: UP.read(keys),
+        )
+    echo(json.dumps(served.value))
+
+
+@pytest.fixture
+def code() -> Iterator[dict[str, str]]:
+    CODE["version"] = "1"
+    yield CODE
+    CODE["version"] = "1"
+
+
+def _versioned(*args: str) -> CliResult:
+    return invoke_cli(app, ["versioned", *args])
+
+
+def test_a_key_filled_at_another_version_is_due_and_keeps_its_data(
+    clock: CacheClock, code: dict[str, str]
+) -> None:
+    assert _versioned("a").exit_code == 0
+    assert json.loads(VERSIONED._paths("a").sidecar.read_text())["version"] == "1"
+    clock.advance(timedelta(minutes=5))
+    assert _versioned("a").exit_code == 0
+    assert UP.fills == ["a"]  # young and the same version: no fill
+
+    code["version"] = "2"
+    UP.items["a"] = ["a2"]
+    with progress_clock() as ticks:
+        UP.during = lambda _key, _task: ticks.advance(3)
+        result = _versioned("a")
+
+    assert (result.exit_code, json.loads(result.stdout), UP.fills) == (0, ["a2"], ["a", "a"])
+    labels = {each.label for each in result.diagnostics if isinstance(each, Progress)}
+    assert labels == {"Refreshing toy a (made by another version)"}
+    assert _stale(result) == []
+    assert VERSIONED.freshness("a") == Freshness(
+        refreshed_at=START + timedelta(minutes=5), version="2"
+    )
+
+
+def test_a_failed_refresh_of_an_outdated_key_serves_it_and_waits_for_retry_at(
+    clock: CacheClock, code: dict[str, str]
+) -> None:
+    assert _versioned("a").exit_code == 0
+    clock.advance(timedelta(minutes=1))
+    code["version"] = "2"
+    UP.error = HttpTransportError("connection refused", system="toy")
+
+    result = _versioned("a")
+
+    assert (result.exit_code, json.loads(result.stdout)) == (0, ["a1"])
+    [line] = _stale(result)
+    assert line.message.startswith("toy a: refresh failed (connection refused)")
+    assert line.outdated is True
+    state = VERSIONED.freshness("a")
+    assert (state.version, state.outdated) == ("1", True)
+    assert state.retry_at == clock.now + RETRY_AFTER
+
+    clock.advance(timedelta(minutes=2))
+    _versioned("a")
+    assert UP.fills == ["a", "a"]  # inside the retry window
+    clock.advance(timedelta(minutes=4))
+    UP.error = None
+    _versioned("a")
+    assert UP.fills == ["a", "a", "a"]
+    assert VERSIONED.freshness("a").outdated is False
+
+
+def test_cached_serves_an_outdated_key_with_one_stale_line(
+    clock: CacheClock, code: dict[str, str]
+) -> None:
+    assert _versioned("a").exit_code == 0
+    clock.advance(timedelta(minutes=10))
+    code["version"] = "2"
+
+    result = _versioned("a", "--cached")
+
+    assert (result.exit_code, json.loads(result.stdout), UP.fills) == (0, ["a1"], ["a"])
+    [line] = _stale(result)
+    assert line.message == (
+        "toy a: made by another version of the toy plugin; "
+        "using data from 2026-10-12 09:00 UTC, 10 min old (--cached)"
+    )
+    assert (line.outdated, line.error) == (True, None)
+    served = VERSIONED.cached("a", lambda: UP.read(["a"]))
+    assert served is not None and served.stale is True
+
+
+def test_a_seeded_key_is_outdated_under_a_versioned_cache(
+    clock: CacheClock, code: dict[str, str]
+) -> None:
+    assert VERSIONED.seed("a", refreshed_at=START - timedelta(minutes=1)) is True
+    seeded = VERSIONED.freshness("a")
+    assert (seeded.version, seeded.outdated) == (None, True)
+
+    assert _versioned("a").exit_code == 0
+    assert UP.fills == ["a"]
+
+
+def test_an_unversioned_cache_ignores_a_sidecar_version(clock: CacheClock) -> None:
+    assert _show("a").exit_code == 0
+    sidecar = TOY._paths("a").sidecar
+    sidecar.write_text(json.dumps({**_sidecar("a"), "version": "9"}), encoding="utf-8")
+
+    assert TOY.freshness("a") == Freshness(refreshed_at=START, version="9")
+    assert _show("a").exit_code == 0
+    assert UP.fills == ["a"]
+
+
+def test_a_sidecar_without_a_version_reads_as_none(clock: CacheClock, code: dict[str, str]) -> None:
+    assert _versioned("a").exit_code == 0
+    sidecar = VERSIONED._paths("a").sidecar
+    raw = json.loads(sidecar.read_text(encoding="utf-8"))
+    del raw["version"]
+    sidecar.write_text(json.dumps(raw), encoding="utf-8")
+
+    assert VERSIONED.freshness("a") == Freshness(refreshed_at=START, outdated=True)
+
+
+def test_a_never_refreshed_key_is_not_outdated(clock: CacheClock, code: dict[str, str]) -> None:
+    UP.error = HttpTransportError("connection refused", system="toy")
+    assert _versioned("a").exit_code == 5  # the failed first fill leaves a sidecar
+
+    state = VERSIONED.freshness("a")
+    assert (state.refreshed_at, state.outdated) == (None, False)
+
+
+def test_a_waiter_served_another_version_s_fill_says_so_without_cached(
+    clock: CacheClock, code: dict[str, str]
+) -> None:
+    """Another install at another version filled the key while this run waited."""
+    assert _versioned("a").exit_code == 0
+    clock.advance(timedelta(minutes=1))
+    code["version"] = "2"
+
+    real_load = Cache._load
+    loads: list[int] = []
+
+    def load(self: Cache, paths: Any, key: str, version: str | None) -> Freshness:
+        loads.append(1)
+        if len(loads) == 2:  # the reload under the lock: the other install just filled it
+            self._write(paths, key, Freshness(refreshed_at=clock.now, version="1"))
+        return real_load(self, paths, key, version)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Cache, "_load", load)
+        result = _versioned("a")
+
+    assert (result.exit_code, UP.fills) == (0, ["a"])  # served the other fill, no fill of its own
+    [line] = _stale(result)
+    assert line.outdated is True
+    assert line.message == (
+        "toy a: made by another version of the toy plugin; "
+        "using data from 2026-10-12 09:01 UTC, 0 s old"
+    )
+
+
+def test_the_version_is_read_once_per_serve(clock: CacheClock) -> None:
+    calls: list[int] = []
+
+    def version() -> str:
+        calls.append(1)
+        return "1"
+
+    cache = Cache("toy", "counted", label="toy items", max_age=_HOUR, version=version)
+    cache.serve({"a": "toy a", "b": "toy b"}, refresh=None, fill=UP.fill, read=lambda: None)
+
+    assert (len(calls), UP.fills) == (1, ["a", "b"])
+    assert cache == Cache("toy", "counted", label="toy items", max_age=_HOUR, version=version)
+    assert cache != Cache("toy", "counted", label="toy items", max_age=_HOUR)
+
+
+def test_an_outdated_key_s_status_row_is_stale() -> None:
+    state = Freshness(refreshed_at=START, version="1", outdated=True)
+    fields = FreshnessRecord.fields(state, max_age=_HOUR, now=START)
+    assert (fields["stale"], fields["outdated"]) == (True, True)
+    assert state.due(None, max_age=_HOUR, now=START)
+    assert not state.due(False, max_age=_HOUR, now=START)
+
+
+# ---- code_version ----------------------------------------------------------------
+
+
+@pytest.fixture
+def module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    package = tmp_path / "toy_code_version"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    source = package / "parser.py"
+    source.write_text("RULES = 1\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    cache_module._code_version.cache_clear()
+    yield source
+    cache_module._code_version.cache_clear()
+    sys.modules.pop("toy_code_version", None)
+
+
+def test_code_version_follows_the_module_s_bytes(module: Path) -> None:
+    first = code_version("toy_code_version.parser")
+    assert code_version("toy_code_version.parser") == first
+    assert "toy_code_version.parser" not in sys.modules  # found, never imported
+
+    module.write_text("RULES = 2\n")
+    cache_module._code_version.cache_clear()
+    assert code_version("toy_code_version.parser") != first
+
+
+def test_code_version_follows_distributions_and_extra(
+    module: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installed = {"PyYAML": "6.0.2"}
+
+    def version(name: str) -> str:
+        if name not in installed:
+            raise importlib.metadata.PackageNotFoundError(name)
+        return installed[name]
+
+    monkeypatch.setattr(importlib.metadata, "version", version)
+    base = code_version("toy_code_version.parser", distributions=("PyYAML",))
+    cache_module._code_version.cache_clear()
+    assert code_version("toy_code_version.parser", distributions=("PyYAML",)) == base
+
+    installed["PyYAML"] = "6.0.3"
+    cache_module._code_version.cache_clear()
+    upgraded = code_version("toy_code_version.parser", distributions=("PyYAML",))
+    assert upgraded != base
+
+    absent = code_version("toy_code_version.parser", distributions=("nope",))
+    plain = code_version("toy_code_version.parser")
+    assert len({upgraded, absent, plain}) == 3
+    assert code_version("toy_code_version.parser", extra=("libyaml",)) != plain
+
+
+def test_code_version_refuses_a_module_without_a_file_and_a_bare_string(module: Path) -> None:
+    with pytest.raises(ConfigError, match="no source file"):
+        code_version("toy_code_version.missing")
+    with pytest.raises(ConfigError, match="no source file"):
+        code_version("no_such_package_here.parser")
+    with pytest.raises(TypeError, match="not one string"):
+        code_version("toy_code_version.parser", distributions="PyYAML")
+
+
 # ---- the status row ------------------------------------------------------------
 
 
@@ -858,6 +1124,7 @@ def test_a_status_row_reports_a_remembered_error_without_failing(clock: CacheClo
         "stale": True,
         "max_age_seconds": 3600,
         "partial": False,
+        "outdated": False,
         "attempted_at": "2026-10-12T09:00:00Z",
         "retry_at": "2026-10-12T09:05:00Z",
         "refresh_error": error.model_dump(mode="json"),

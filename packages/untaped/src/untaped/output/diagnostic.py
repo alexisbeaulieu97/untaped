@@ -571,7 +571,9 @@ class StaleData(Diagnostic, kind="untaped.stale"):
     ``<owner>.<contract>_<method>`` for the answer cache), ``key`` the entry
     in it. ``error`` is why the refresh
     failed or what is missing (``None`` under ``--cached``); it never counts
-    toward the exit code. :meth:`describe` builds one with its wording.
+    toward the exit code. ``outdated``: the data was made by another version
+    of the code that fills the cache (``Cache(version=)``), whatever its age.
+    :meth:`describe` builds one with its wording.
     """
 
     level: ClassVar[Level] = "warning"
@@ -583,6 +585,7 @@ class StaleData(Diagnostic, kind="untaped.stale"):
     age_seconds: float
     max_age_seconds: int
     partial: bool = False
+    outdated: bool = False
     attempted_at: UtcTimestamp | None = None
     retry_at: UtcTimestamp | None = None
     error: Failure | None = None
@@ -602,6 +605,7 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         retry_at: datetime | None = None,
         error: Failure | None = None,
         partial: bool = False,
+        outdated: bool = False,
         hint: str | None = None,
         cached: bool = False,
     ) -> StaleData:
@@ -610,16 +614,23 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         A failed refresh (``error``, not ``partial``): ``refresh failed
         (<cause>)``, or ``refresh interrupted`` for an interrupted one; a
         partial fill (``partial``): the error's message; ``--cached`` (no
-        ``error``): ``cached data from … (--cached)``. Each says when the
-        data is from and how old; ``retry_at`` adds when auto checks again.
+        ``error``): ``cached data from … (--cached)``, or ``made by another
+        version of the <plugin> plugin; using data from …`` when
+        ``outdated``, ending ``(--cached)`` only when ``cached`` (auto meets
+        outdated data when another version filled it during a lock wait).
+        Each says when the data is from and how old; ``retry_at`` adds when
+        auto checks again.
         ``cached``: the reader passed ``--cached``, so a remembered ``error``
         line ends ``(--cached)`` too and says no next check.
         """
         age = now - refreshed_at
-        message = f"{subject}: {_stale_cause(error, attempted_at, now, partial=partial)}"
+        outdated_by = plugin if outdated else None
+        cause = _stale_cause(error, attempted_at, now, partial=partial, outdated_by=outdated_by)
+        message = f"{subject}: {cause}"
         if error is None:
             message += f"{_utc_minute(refreshed_at)} UTC, {duration_text(age.total_seconds())} old"
-            message += " (--cached)"
+            if cached or not outdated:  # outdated data reaches auto when another version filled it
+                message += " (--cached)"
         else:
             message += f"; using data from {_utc_minute(refreshed_at)} UTC"
             if not partial:
@@ -638,6 +649,7 @@ class StaleData(Diagnostic, kind="untaped.stale"):
             age_seconds=age.total_seconds(),
             max_age_seconds=int(max_age.total_seconds()),
             partial=partial,
+            outdated=outdated,
             attempted_at=attempted_at,
             retry_at=retry_at,
             error=error,
@@ -649,9 +661,19 @@ def _utc_minute(value: datetime) -> str:
 
 
 def _stale_cause(
-    error: Failure | None, attempted_at: datetime | None, now: datetime, *, partial: bool
+    error: Failure | None,
+    attempted_at: datetime | None,
+    now: datetime,
+    *,
+    partial: bool,
+    outdated_by: str | None,
 ) -> str:
-    """What happened to the refresh, as the start of a stale line."""
+    """What happened to the refresh, as the start of a stale line.
+
+    ``outdated_by``: the plugin whose other version made the data, when it did.
+    """
+    if error is None and outdated_by is not None:
+        return f"made by another version of the {outdated_by} plugin; using data from "
     if error is None:
         return "cached data from "
     ago = (
