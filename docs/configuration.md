@@ -315,7 +315,7 @@ yourself, in `PASSWORD_STORE_GPG_OPTS` or `gpg.conf`, is left alone: loopback
 with a passphrase file for cron, or `--pinentry-mode=ask` to let an agent's
 command open a desktop pinentry you can answer. If an earlier run left a
 passphrase prompt open on another screen, `gpgconf --kill gpg-agent` closes it
-(it also forgets cached passphrases); gpg starts a fresh agent on next use.
+(it also forgets cached passphrases, SSH key unlocks included); gpg starts a fresh agent on next use.
 
 What this protects: the token is no longer in a file read casually. It does
 not stop a program running as you, which can run `untaped` or the store's own

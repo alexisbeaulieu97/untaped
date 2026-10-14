@@ -210,7 +210,7 @@ def run_command(
     A non-zero exit is returned, not raised. With nobody to answer a prompt,
     ``pass`` (also inside a wrapper) runs with :func:`pass_gpg_env`.
     """
-    env = pass_gpg_env()
+    env = pass_gpg_env(english=Path(argv[0]).name == "pass")
     try:
         return subprocess.run(
             list(argv),
@@ -228,7 +228,7 @@ def run_command(
         # Stopping pass leaves gpg-agent's pinentry open, holding the agent for every later read.
         stuck = (
             "`gpgconf --kill gpg-agent` closes a passphrase prompt left open (it also "
-            "forgets cached passphrases, and SSH keys if gpg-agent serves them); "
+            "forgets cached passphrases, SSH key unlocks included); "
         )
         raise ConfigError(
             f"{label} timed out after {_TIMEOUT_SECONDS:g}s; it may be waiting on an "
@@ -250,16 +250,18 @@ def pass_gpg_options() -> list[str]:
     return [*options, _NO_PINENTRY] if _suppressing_prompts() else options
 
 
-def pass_gpg_env() -> dict[str, str] | None:
+def pass_gpg_env(*, english: bool = True) -> dict[str, str] | None:
     """The environment for a ``pass`` or gpg run, or ``None`` to inherit it unchanged.
 
-    While prompts are suppressed: :func:`pass_gpg_options` for ``pass``, and
-    gpg's messages in English, so its "No pinentry" reads the same everywhere.
+    While prompts are suppressed: :func:`pass_gpg_options` for ``pass``, and,
+    with ``english`` (a run whose stderr untaped reads: ``pass`` itself, or
+    gpg), gpg's messages in English so its "No pinentry" reads the same
+    everywhere. Any other command keeps the user's locale.
     """
     if not _suppressing_prompts():
         return None
-    options = " ".join(pass_gpg_options())
-    return {**os.environ, "PASSWORD_STORE_GPG_OPTS": options, "LC_ALL": "C", "LANGUAGE": "C"}
+    env = {**os.environ, "PASSWORD_STORE_GPG_OPTS": " ".join(pass_gpg_options())}
+    return {**env, "LC_ALL": "C", "LANGUAGE": "C"} if english else env
 
 
 def _suppressing_prompts() -> bool:
@@ -276,10 +278,11 @@ def _suppressing_prompts() -> bool:
 def _someone_can_answer() -> bool:
     """Whether stdin or stderr is a terminal.
 
-    A person in a pipeline keeps stderr on their terminal, where pinentry
-    draws; an agent captures both streams, even when its commands keep the
-    user's terminal as their controlling terminal (and inherit ``GPG_TTY``),
-    so ``/dev/tty``, which a confirmation may reach, is no sign here.
+    A person in a pipeline keeps stderr on their terminal, so someone is there
+    to answer pinentry (which draws on ``GPG_TTY``). An agent captures both
+    streams, even when its commands keep the user's terminal as their
+    controlling terminal (and inherit ``GPG_TTY``), so ``/dev/tty``, which a
+    confirmation may reach, is no sign here.
     """
     from untaped.render import stream_is_tty  # noqa: PLC0415 - keep auth imports light
 
@@ -292,10 +295,10 @@ def _user_pinentry_mode() -> bool:
         return True
     home = os.environ.get("GNUPGHOME") or Path.home() / ".gnupg"
     try:
-        lines = (Path(home) / "gpg.conf").read_text(encoding="utf-8").splitlines()
-    except OSError, UnicodeDecodeError:
+        text = (Path(home) / "gpg.conf").read_text(encoding="utf-8", errors="replace")
+    except OSError:
         return False
-    return any(line.strip().startswith("pinentry-mode") for line in lines)
+    return any(line.strip().startswith("pinentry-mode") for line in text.splitlines())
 
 
 def command_failure(

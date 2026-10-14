@@ -226,6 +226,7 @@ def _locked_pass(tmp_path: Path, *args: str) -> list[str]:
         "import os, sys\n"
         "opts = os.environ.get('PASSWORD_STORE_GPG_OPTS', '')\n"
         f"open({str(log)!r}, 'a').write(opts + '\\n')\n"
+        f"open({str(tmp_path / 'locale.log')!r}, 'a').write(os.environ.get('LC_ALL', '') + '\\n')\n"
         "if '--pinentry-mode=error' in opts.split():\n"
         "    print('gpg: public key decryption failed: No pinentry', file=sys.stderr)\n"
         "    print('gpg: decryption failed: No pinentry', file=sys.stderr)\n"
@@ -265,6 +266,17 @@ def test_a_locked_pass_store_fails_fast_when_nobody_is_at_a_terminal(
     assert error.hint is not None
     assert "pass show untaped/default/demo > /dev/null" in error.hint
     assert (tmp_path / "gpg-opts.log").read_text() == "--armor --pinentry-mode=error\n"
+    assert (tmp_path / "locale.log").read_text() == "C\n", "gpg's 'No pinentry' read in English"
+
+
+@pytest.mark.usefixtures("_no_gpg_conf")
+def test_another_token_command_keeps_the_users_locale_without_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _terminal(monkeypatch, stdin=False, stderr=False)
+    monkeypatch.setenv("LC_ALL", "fr_CA.UTF-8")
+    script = "import os; print(os.environ['LC_ALL'], os.environ['PASSWORD_STORE_GPG_OPTS'])"
+    assert _read([sys.executable, "-c", script]) == "fr_CA.UTF-8 --pinentry-mode=error"
 
 
 @pytest.mark.usefixtures("_no_gpg_conf")
@@ -288,7 +300,7 @@ def test_a_pinentry_mode_the_user_chose_is_kept(
     assert _read(_locked_pass(tmp_path)) == "unlocked-token"
     gpg_conf = tmp_path / "gnupg" / "gpg.conf"
     gpg_conf.parent.mkdir()
-    gpg_conf.write_text("# headless\npinentry-mode loopback\n")
+    gpg_conf.write_bytes(b"# headless \xff\npinentry-mode loopback\n")
     monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS")
     clear_token_cache()
     assert _read(_locked_pass(tmp_path)) == "unlocked-token"
