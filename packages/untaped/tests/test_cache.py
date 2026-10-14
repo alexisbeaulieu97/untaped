@@ -978,6 +978,44 @@ def test_a_sidecar_without_a_version_reads_as_none(clock: CacheClock, code: dict
     assert VERSIONED.freshness("a") == Freshness(refreshed_at=START, outdated=True)
 
 
+def test_a_never_refreshed_key_is_not_outdated(clock: CacheClock, code: dict[str, str]) -> None:
+    UP.error = HttpTransportError("connection refused", system="toy")
+    assert _versioned("a").exit_code == 5  # the failed first fill leaves a sidecar
+
+    state = VERSIONED.freshness("a")
+    assert (state.refreshed_at, state.outdated) == (None, False)
+
+
+def test_a_waiter_served_another_version_s_fill_says_so_without_cached(
+    clock: CacheClock, code: dict[str, str]
+) -> None:
+    """Another install at another version filled the key while this run waited."""
+    assert _versioned("a").exit_code == 0
+    clock.advance(timedelta(minutes=1))
+    code["version"] = "2"
+
+    real_load = Cache._load
+    loads: list[int] = []
+
+    def load(self: Cache, paths: Any, key: str, version: str | None) -> Freshness:
+        loads.append(1)
+        if len(loads) == 2:  # the reload under the lock: the other install just filled it
+            self._write(paths, key, Freshness(refreshed_at=clock.now, version="1"))
+        return real_load(self, paths, key, version)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Cache, "_load", load)
+        result = _versioned("a")
+
+    assert (result.exit_code, UP.fills) == (0, ["a"])  # served the other fill, no fill of its own
+    [line] = _stale(result)
+    assert line.outdated is True
+    assert line.message == (
+        "toy a: made by another version of the toy plugin; "
+        "using data from 2026-10-12 09:01 UTC, 0 s old"
+    )
+
+
 def test_the_version_is_read_once_per_serve(clock: CacheClock) -> None:
     calls: list[int] = []
 
@@ -1057,6 +1095,8 @@ def test_code_version_follows_distributions_and_extra(
 def test_code_version_refuses_a_module_without_a_file_and_a_bare_string(module: Path) -> None:
     with pytest.raises(ConfigError, match="no source file"):
         code_version("toy_code_version.missing")
+    with pytest.raises(ConfigError, match="no source file"):
+        code_version("no_such_package_here.parser")
     with pytest.raises(TypeError, match="not one string"):
         code_version("toy_code_version.parser", distributions="PyYAML")
 

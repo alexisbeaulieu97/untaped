@@ -122,7 +122,9 @@ _LAZY_HINT = (
     "if this is a file's content, read it through RepoStore.prefetched(): it was never prefetched"
 )
 _STALE_LEFTOVER_SECONDS = 3600.0
-_OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+_OBJECT_ID = re.compile(r"[0-9a-f]+")
+#: An object id's length in each object format.
+_ID_LENGTH = {"sha1": 40, "sha256": 64}
 _HANDLE_REFUSED = ("fetch", "checkout", "worktree")
 
 
@@ -606,17 +608,14 @@ class RepoStore:
             if item.startswith("-"):
                 raise self._error(f"{item!r} is not a revision", category=ErrorCategory.INVALID)
             revisions.append(f"--glob={item}" if "*" in item else item)
-        for oid in blobs:
-            if not _OBJECT_ID.fullmatch(oid):
-                raise self._error(f"{oid!r} is not a blob id", category=ErrorCategory.INVALID)
         wanted = list(dict.fromkeys(blobs))
         if not revisions and not wanted:
             return
         with self._locked():
             self._ensure()
+            self._check_ids(wanted)
             progress.update(phase="listing missing blobs")
-            holder = self._blob_holder(wanted)
-            missing = self._missing_in(revisions, paths, holder)
+            missing = self._missing_in(revisions, paths, wanted)
             if not missing:
                 return
             progress.update(phase="fetching blobs", done=0, total=len(missing))
@@ -624,7 +623,7 @@ class RepoStore:
                 batch = missing[start : start + PREFETCH_BATCH_SIZE]
                 self._prefetch_batch(batch)
                 progress.update(phase="fetching blobs", done=start + len(batch), total=len(missing))
-            left = self._missing_in(revisions, paths, holder)
+            left = self._missing_in(revisions, paths, wanted)
             if left:
                 host = url_host(self._url) or self._url
                 raise self._fail(
@@ -645,31 +644,54 @@ class RepoStore:
         progress: ProgressHandle = NO_PROGRESS,
     ) -> Prefetched:
         """Prefetch ``trees`` (peeled) limited to ``paths``, and ``blobs``; then a handle."""
+        if not trees and not blobs:
+            raise ValueError("prefetched() reads nothing: pass trees, blobs or both")
         self.prefetch(trees=trees, paths=paths, blobs=blobs, progress=progress)
         return Prefetched(self, tuple(trees), tuple(paths), tuple(blobs))
 
-    def _blob_holder(self, blobs: Sequence[str]) -> str | None:
-        """A tree naming ``blobs``, written without reading them; ``None`` for no blobs.
+    def _check_ids(self, blobs: Sequence[str]) -> None:
+        """Refuse what is not an object id in this repo's object format (``invalid``)."""
+        if not blobs:
+            return
+        length = _ID_LENGTH.get(self._config_get("extensions.objectformat") or "sha1", 40)
+        for oid in blobs:
+            if len(oid) != length or not _OBJECT_ID.fullmatch(oid):
+                raise self._error(f"{oid!r} is not a blob id", category=ErrorCategory.INVALID)
 
-        ``rev-list --missing=print`` over it lists the missing ones without
-        fetching them, where ``cat-file`` would fetch each one lazily or, under
-        ``GIT_NO_LAZY_FETCH``, die at the first. Nothing refers to the tree, so
-        gc prunes it.
+    def _missing_blobs(self, blobs: Sequence[str]) -> list[str]:
+        """The ids among ``blobs`` the repo does not hold, read from stdin without fetching.
+
+        ``rev-list --missing=print`` never fetches, and ``--ignore-missing``
+        skips a missing tip: what it prints is present. ``cat-file`` and
+        ``mktree`` would fetch each missing blob lazily on a git that does
+        not honour ``GIT_NO_LAZY_FETCH``, and ``cat-file`` dies at the first
+        on one that does.
         """
         if not blobs:
-            return None
-        listing = "".join(f"100644 blob {oid}\t{index}\n" for index, oid in enumerate(blobs))
-        result = self._git(["mktree", "--missing"], stdin=listing, capture=True, env=_NO_LAZY)
-        return result.text.strip()
+            return []
+        result = self._git(
+            [
+                "rev-list",
+                "--objects",
+                "--no-object-names",
+                "--missing=print",
+                "--ignore-missing",
+                "--stdin",
+            ],
+            stdin="".join(f"{oid}\n" for oid in blobs),
+            capture=True,
+            timeout=SLOW_TIMEOUT,
+            env=_NO_LAZY,
+        )
+        present = {line for line in result.text.splitlines() if not line.startswith("?")}
+        return [oid for oid in blobs if oid not in present]
 
     def _missing_in(
-        self, revisions: Sequence[str], paths: Sequence[str], holder: str | None
+        self, revisions: Sequence[str], paths: Sequence[str], blobs: Sequence[str]
     ) -> list[str]:
-        """The blobs missing from ``revisions`` (limited to ``paths``) and from ``holder``."""
+        """The blobs missing from ``revisions`` (limited to ``paths``), then from ``blobs``."""
         missing = self._missing(revisions, paths) if revisions else []
-        if holder is not None:
-            missing.extend(self._missing([holder]))
-        return list(dict.fromkeys(missing))
+        return list(dict.fromkeys([*missing, *self._missing_blobs(blobs)]))
 
     def _prefetch_batch(self, oids: Sequence[str]) -> None:
         argv = [

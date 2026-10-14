@@ -120,9 +120,14 @@ def _stale(**overrides: object) -> StaleData:
         ),
         ({}, "shelf: cached data from 2026-10-09 10:00 UTC, 26 h old (--cached)"),
         (
-            {"outdated": True},
+            {"outdated": True, "cached": True},
             "shelf: made by another version of the hello plugin; "
             "using data from 2026-10-09 10:00 UTC, 26 h old (--cached)",
+        ),
+        (
+            {"outdated": True},
+            "shelf: made by another version of the hello plugin; "
+            "using data from 2026-10-09 10:00 UTC, 26 h old",
         ),
         (
             {
@@ -133,7 +138,15 @@ def _stale(**overrides: object) -> StaleData:
             "using data from 2026-10-09 10:00 UTC, 26 h old",
         ),
     ],
-    ids=["failed", "interrupted", "partial", "cached", "outdated", "outdated-failed"],
+    ids=[
+        "failed",
+        "interrupted",
+        "partial",
+        "cached",
+        "outdated",
+        "outdated-auto",
+        "outdated-failed",
+    ],
 )
 def test_stale_data_wording(overrides: dict[str, object], text: str) -> None:
     stream = io.StringIO()
