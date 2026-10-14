@@ -405,9 +405,7 @@ def _pass_unlock(argv: Sequence[str]) -> str | None:
     Only that shape is repeated: its one argument is an entry name, never a
     secret, while any other command's arguments are never shown.
     """
-    if not isinstance(argv, list | tuple) or len(argv) != 3:
-        return None
-    if Path(argv[0]).name != "pass" or argv[1] != "show":
+    if len(argv) != 3 or Path(argv[0]).name != "pass" or argv[1] != "show":
         return None
     return f"pass show {argv[2]} > /dev/null"
 

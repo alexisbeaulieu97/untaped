@@ -192,14 +192,17 @@ def test_section_accessors_apply_token_fallbacks(
 
 
 class _Stdin:
-    def __init__(self, *, tty: bool) -> None:
+    def __init__(self, *, tty: bool, closed: bool = False) -> None:
         self._tty = tty
+        self._closed = closed
 
     def isatty(self) -> bool:
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
         return self._tty
 
 
-def _locked_pass(tmp_path: Path) -> list[str]:
+def _locked_pass(tmp_path: Path, *args: str) -> list[str]:
     """Argv for a ``pass show`` whose gpg key is locked: it asks for the passphrase.
 
     Asked with ``--pinentry-mode=error`` (in ``PASSWORD_STORE_GPG_OPTS``, as
@@ -220,7 +223,7 @@ def _locked_pass(tmp_path: Path) -> list[str]:
         "print('unlocked-token')\n"
     )
     program.chmod(0o755)
-    return [str(program), "show", "untaped/default/demo"]
+    return [str(program), *(args or ("show", "untaped/default/demo"))]
 
 
 def test_a_locked_pass_store_fails_fast_when_stdin_is_not_a_terminal(
@@ -252,3 +255,18 @@ def test_a_locked_pass_store_still_prompts_from_a_terminal(
     assert settings.token is not None
     assert settings.token.get_secret_value() == "unlocked-token"
     assert (tmp_path / "gpg-opts.log").read_text() == "\n"
+
+
+def test_a_locked_custom_pass_command_names_no_arguments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A closed stdin is no terminal either.
+    monkeypatch.setattr(sys, "stdin", _Stdin(tty=True, closed=True))
+    argv = _locked_pass(tmp_path, "show", "--clip", "work/s3cr3t-name")
+    settings = resolve_token(DemoSettings(token_command=argv), section="demo")
+    assert settings.token is not None
+    with pytest.raises(ConfigError) as caught:
+        settings.token.get_secret_value()
+    assert caught.value.hint is not None
+    assert "by running the same command" in caught.value.hint
+    assert "s3cr3t-name" not in f"{caught.value} {caught.value.hint}"
