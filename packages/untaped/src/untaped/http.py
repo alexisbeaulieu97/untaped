@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import email.utils
 import logging
-import os
 import shlex
 import ssl
 import time
@@ -48,6 +47,7 @@ from untaped.redaction import redact_url_password
 from untaped.settings import (
     HttpSettings,
     active_settings_layout,
+    env_sets_key,
     env_var_name,
     load_settings_section,
     registered_profile_model,
@@ -683,8 +683,7 @@ def _profiles_for(
     config file names only a profile chosen by ``--profile`` or
     ``UNTAPED_PROFILE``.
     """
-    names = [env_var_name([section]), *(env_var_name([section, name]) for name in missing)]
-    if any(name in os.environ for name in names):
+    if any(env_sets_key(section, name) for name in missing):
         return None, []
     try:
         data = read_config_dict()

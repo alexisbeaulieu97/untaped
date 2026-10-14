@@ -263,7 +263,12 @@ def test_a_profile_name_with_a_space_is_quoted_in_the_command() -> None:
 
 @pytest.mark.parametrize(
     ("name", "value"),
-    [("UNTAPED_DEMO__BASE_URL", ""), ("UNTAPED_DEMO", '{"base_url": ""}')],
+    [
+        ("UNTAPED_DEMO__BASE_URL", ""),
+        ("untaped_demo__base_url", ""),
+        ("UNTAPED_DEMO", '{"base_url": ""}'),
+        ("UNTAPED_DEMO", "not json"),
+    ],
 )
 def test_an_environment_override_names_no_profile(
     monkeypatch: pytest.MonkeyPatch, name: str, value: str
@@ -276,6 +281,17 @@ def test_an_environment_override_names_no_profile(
 
     assert str(caught.value) == "demo.base_url is not configured"
     assert "--profile" not in (caught.value.hint or "")
+
+
+def test_an_environment_blob_without_the_key_still_names_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config("profiles:\n  default: {}\n  work:\n    demo: {base_url: https://x}\n")
+    monkeypatch.setenv("UNTAPED_DEMO", '{"token": "t"}')
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert caught.value.details["profiles"] == ["work"]
 
 
 def test_an_unreadable_config_names_only_a_profile_chosen_outside_it(
