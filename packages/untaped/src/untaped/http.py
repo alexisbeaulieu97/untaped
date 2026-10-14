@@ -19,7 +19,7 @@ import email.utils
 import logging
 import ssl
 import time
-from collections.abc import Callable, Collection, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, SecretStr
 
 from untaped.auth import takes_token_command, token_alternatives
+from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
 from untaped.errors import (
     ConfigError,
@@ -40,6 +41,7 @@ from untaped.errors import (
     UntapedError,
 )
 from untaped.messages import command_line
+from untaped.profile_resolver import ACTIVE_PROFILE_ENV, profiles_setting, selected_profile
 from untaped.redaction import redact_url_password
 from untaped.settings import (
     HttpSettings,
@@ -507,6 +509,8 @@ def missing_setting_error(
     secret: Collection[str] = (),
     token_sources: str = "",
     auth_set: bool = False,
+    profile: str | None = None,
+    set_in: Sequence[str] = (),
 ) -> ConfigError:
     """Return the standard error for missing plugin settings.
 
@@ -516,11 +520,19 @@ def missing_setting_error(
     :func:`untaped.auth.token_alternatives`) names the sources that keep a
     missing token out of the config file. ``auth_set`` (the section's model
     has ``token_command``) makes the token's command ``auth set <section>``.
+    ``profile`` names the selected profile in the message. ``set_in`` names
+    the other profiles that set the fields: the hint leads with how to run
+    the command under one (``--profile`` or ``UNTAPED_PROFILE``), and
+    ``details["profiles"]`` lists them, so a caller can recover without
+    asking anyone for the value. Nothing switches profile on its own.
     """
     tail = f"; to keep the token out of the config file, use {token_sources}"
     tail = tail if token_sources else ""
     fields = (field, *more_fields)
     keys = [f"{section}.{name}" for name in fields]
+    where = f" in profile {profile!r}" if profile else ""
+    lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
+    details = {"profiles": list(set_in)} if set_in else None
     commands = [
         f"`{command_line(f'auth set {section}')}`"
         if name == "token" and auth_set
@@ -532,12 +544,32 @@ def missing_setting_error(
     env_vars = [env_var_name([section, name]) for name in fields]
     if len(fields) == 1:
         return ConfigError(
-            f"{keys[0]} is not configured",
-            hint=f"set it via {commands[0]} or {env_vars[0]}{tail}",
+            f"{keys[0]} is not configured{where}",
+            hint=f"{lead}set it via {commands[0]} or {env_vars[0]}{tail}",
+            details=details,
         )
     return ConfigError(
-        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured",
-        hint=f"set them via {' and '.join(commands)}, or {' / '.join(env_vars)}{tail}",
+        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured{where}",
+        hint=f"{lead}set them via {' and '.join(commands)}, or {' / '.join(env_vars)}{tail}",
+        details=details,
+    )
+
+
+def _other_profiles_hint(profiles: Sequence[str], *, plural: bool) -> str:
+    """The hint's lead naming the other profiles that set the missing fields."""
+    if not profiles:
+        return ""
+    it = "them" if plural else "it"
+    if len(profiles) == 1:
+        name = profiles[0]
+        return (
+            f"profile {name!r} sets {it}: run `{command_line(f'--profile {name} <command>')}` "
+            f"or set {ACTIVE_PROFILE_ENV}={name}; or "
+        )
+    names = ", ".join(repr(name) for name in profiles[:-1]) + f" and {profiles[-1]!r}"
+    return (
+        f"profiles {names} set {it}: run `{command_line('--profile <name> <command>')}` "
+        f"or set {ACTIVE_PROFILE_ENV}=<name>; or "
     )
 
 
@@ -606,12 +638,16 @@ def connected_client(
     if missing:
         secret = [d.path[0] for d in walk_settings(type(config)) if d.is_secret]
         sources = token_alternatives(config, section=section) if "token" in missing else ""
+        auth_set = takes_token_command(type(config))
+        profile, set_in = _profiles_for(section, missing, token_command=auth_set)
         raise missing_setting_error(
             section,
             *missing,
             secret=secret,
             token_sources=sources,
-            auth_set=takes_token_command(type(config)),
+            auth_set=auth_set,
+            profile=profile,
+            set_in=set_in,
         )
 
     request_headers = dict(headers or {})
@@ -630,6 +666,26 @@ def connected_client(
         retry=retry,
         system=section,
     )
+
+
+def _profiles_for(
+    section: str, missing: Sequence[str], *, token_command: bool
+) -> tuple[str | None, list[str]]:
+    """The selected profile and the other profiles that set every ``missing`` field.
+
+    A ``token_command`` counts for a missing ``token`` when the model takes
+    one. An unreadable config file names no profile.
+    """
+    try:
+        data = read_config_dict()
+    except ConfigError:
+        return None, []
+    profile = selected_profile(data)
+    needs = [
+        (name, "token_command") if name == "token" and token_command else (name,)
+        for name in missing
+    ]
+    return profile, profiles_setting(data, section, needs, exclude=profile)
 
 
 def paginate_pages(
