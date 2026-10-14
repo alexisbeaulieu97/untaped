@@ -36,7 +36,11 @@ from untaped.auth import (
     command_failure,
     first_stderr_line,
     gpg_hint,
+    locked_store_error,
+    locked_without_terminal,
+    no_pinentry_options,
     run_command,
+    unlock_prompts_allowed,
 )
 from untaped.errors import ConfigError
 
@@ -208,7 +212,11 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
 def _gpg(*args: str) -> list[str]:
     """A gpg command line built the way ``pass`` builds its own (see its ``GPG_OPTS``)."""
     program = "gpg2" if shutil.which("gpg2") else "gpg"
-    options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()  # as pass does
+    # As pass does; with nobody to answer a passphrase prompt, as run_command tells pass.
+    if unlock_prompts_allowed():
+        options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()
+    else:
+        options = no_pinentry_options()
     fixed = [
         "--quiet",
         "--yes",
@@ -245,6 +253,9 @@ def _gpg_round_trip() -> None:
             raise ConfigError(message, category="unavailable") from None
         if completed.returncode != 0:
             stderr = completed.stderr.decode(errors="replace")
+            if locked_without_terminal(stderr):
+                unlock = " ".join(["echo test | gpg -e", *recipients, "| gpg -d > /dev/null"])
+                raise locked_store_error(f"gpg {step} for the pass store", unlock=unlock)
             quote = first_stderr_line(stderr)
             raise ConfigError(
                 f"gpg {step} failed for the pass store{f': {quote}' if quote else ''}",

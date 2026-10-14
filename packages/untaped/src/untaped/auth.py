@@ -17,6 +17,13 @@ Token values never reach logs or error messages: a failing command is
 reported by program name and exit status only, never by its arguments or
 stdout. Its stderr goes straight to the terminal, uncaptured.
 
+A store may need unlocking first. From a terminal its own prompt asks; when
+stdin is not a terminal (an agent, a pipe, cron), nobody is there to answer,
+yet gpg-agent would still draw its pinentry on the inherited ``GPG_TTY``,
+under whatever owns that screen. So :func:`run_command` then tells ``pass``
+to fail instead (``--pinentry-mode=error``), and the error says how to
+unlock the store from a terminal.
+
 A token stored in plain text in the config file is deprecated: using one
 warns once per section per process and points at ``untaped auth migrate``.
 """
@@ -27,6 +34,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +48,7 @@ from untaped.settings import env_var_name
 _LOG = logging.getLogger("untaped.auth")
 _TIMEOUT_SECONDS = 60.0
 _MASK = "**********"
+_NO_PINENTRY = "--pinentry-mode=error"
 _cache: dict[tuple[str, ...], str] = {}
 
 
@@ -194,8 +203,13 @@ def run_command(
 
     ``label`` starts every error, which never repeats the command's output or
     arguments. stderr goes straight to the terminal unless ``capture_stderr``.
-    A non-zero exit is returned, not raised.
+    A non-zero exit is returned, not raised. Without :func:`unlock_prompts_allowed`,
+    ``pass`` (also inside a wrapper) is told to fail rather than ask for gpg's
+    passphrase.
     """
+    env = None
+    if not unlock_prompts_allowed():
+        env = {**os.environ, "PASSWORD_STORE_GPG_OPTS": " ".join(no_pinentry_options())}
     try:
         return subprocess.run(
             list(argv),
@@ -205,6 +219,7 @@ def run_command(
             text=True,
             timeout=_TIMEOUT_SECONDS,
             check=False,
+            env=env,
         )
     except FileNotFoundError:
         raise ConfigError(f"{label} not found on PATH") from None
@@ -218,20 +233,65 @@ def run_command(
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
 
 
+def unlock_prompts_allowed() -> bool:
+    """Whether a store may ask to be unlocked: only when stdin is a terminal.
+
+    Stricter than a confirmation, which also reaches ``/dev/tty``: an agent's
+    commands often keep the user's terminal as their controlling terminal (and
+    inherit ``GPG_TTY``), so only stdin tells that someone can answer.
+    """
+    isatty = getattr(sys.stdin, "isatty", None)
+    try:
+        return callable(isatty) and bool(isatty())
+    except OSError, ValueError:  # ValueError: a closed stream
+        return False
+
+
+def no_pinentry_options() -> list[str]:
+    """``PASSWORD_STORE_GPG_OPTS``, split, plus the option that makes gpg fail, not prompt."""
+    options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()
+    return options if _NO_PINENTRY in options else [*options, _NO_PINENTRY]
+
+
 def command_failure(
     label: str, completed: subprocess.CompletedProcess[str], *, is_pass: bool
 ) -> ConfigError:
     """The error for a command that exited non-zero, starting with ``label``.
 
     For ``pass``, whose stderr was captured: gpg repeats one error per call,
-    so its first non-empty line is quoted, with gpg's fix as the hint.
+    so its first non-empty line is quoted, with gpg's fix as the hint. A store
+    left locked because nobody can answer its prompt says so instead.
     """
     message = f"{label} exited with status {completed.returncode}"
     if not is_pass:
         return ConfigError(message)
+    if locked_without_terminal(completed.stderr):
+        return locked_store_error(label, unlock=_pass_unlock(completed.args))
     if quote := first_stderr_line(completed.stderr):
         message += f": {quote}"
     return ConfigError(message, hint=gpg_hint(completed.stderr))
+
+
+def locked_without_terminal(stderr: str) -> bool:
+    """Whether gpg failed only because it was told not to ask for the passphrase."""
+    return "No pinentry" in stderr and not unlock_prompts_allowed()
+
+
+def locked_store_error(label: str, *, unlock: str | None = None) -> ConfigError:
+    """The error for a gpg key left locked because stdin is not a terminal.
+
+    ``unlock`` is a command that unlocks it from a terminal, when one can be named.
+    """
+    how = f"`{unlock}`" if unlock else "the same command"
+    return ConfigError(
+        f"{label}: the password store is locked, and untaped does not ask for its "
+        "passphrase when stdin is not a terminal (as when an agent runs it)",
+        category="unavailable",
+        hint=(
+            f"unlock it from your own terminal by running {how}, then retry; "
+            "gpg-agent then remembers the passphrase for a while (its default-cache-ttl)"
+        ),
+    )
 
 
 def forget_token_command(argv: list[str]) -> None:
@@ -336,6 +396,19 @@ def _run_token_command(argv: tuple[str, ...], *, section: str) -> str:
     return token
 
 
+def _pass_unlock(argv: Sequence[str]) -> str | None:
+    """``pass show <entry> > /dev/null`` for a plain ``pass show <entry>``, else ``None``.
+
+    Only that shape is repeated: its one argument is an entry name, never a
+    secret, while any other command's arguments are never shown.
+    """
+    if not isinstance(argv, list | tuple) or len(argv) != 3:
+        return None
+    if Path(argv[0]).name != "pass" or argv[1] != "show":
+        return None
+    return f"pass show {argv[2]} > /dev/null"
+
+
 __all__ = [
     "PASS_GPG_HINT",
     "TRUST_HINT",
@@ -348,6 +421,9 @@ __all__ = [
     "first_stderr_line",
     "forget_token_command",
     "gpg_hint",
+    "locked_store_error",
+    "locked_without_terminal",
+    "no_pinentry_options",
     "resolve_token",
     "run_command",
     "takes_token_command",
@@ -356,4 +432,5 @@ __all__ = [
     "token_instead",
     "token_override_env",
     "token_override_name",
+    "unlock_prompts_allowed",
 ]

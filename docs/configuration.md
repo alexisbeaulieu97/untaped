@@ -306,6 +306,12 @@ comes from, and `unset` removes a stored one.
 
 A store over SSH can fail on an unlock prompt nobody sees: unlock it first
 (`security unlock-keychain` on macOS). Store commands time out after 60s.
+When stdin is not a terminal (an agent running `untaped`, a pipe, cron),
+`pass` is never asked for gpg's passphrase: a locked key fails at once and the
+error names the command that unlocks it from your terminal (such as
+`pass show untaped/default/awx > /dev/null`). gpg-agent then remembers the
+passphrase for its `default-cache-ttl`, so agents can read the token until it
+expires.
 
 What this protects: the token is no longer in a file read casually. It does
 not stop a program running as you, which can run `untaped` or the store's own

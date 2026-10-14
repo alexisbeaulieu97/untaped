@@ -189,3 +189,66 @@ def test_section_accessors_apply_token_fallbacks(
     for settings in (via_context, via_helper):
         assert settings.token is not None
         assert settings.token.get_secret_value() == "env-token"
+
+
+class _Stdin:
+    def __init__(self, *, tty: bool) -> None:
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def _locked_pass(tmp_path: Path) -> list[str]:
+    """Argv for a ``pass show`` whose gpg key is locked: it asks for the passphrase.
+
+    Asked with ``--pinentry-mode=error`` (in ``PASSWORD_STORE_GPG_OPTS``, as
+    ``pass`` hands it to gpg), it fails as gpg does; asked otherwise, the
+    prompt "is answered" and the token prints. The options it saw go to a log.
+    """
+    program = tmp_path / "pass"
+    log = tmp_path / "gpg-opts.log"
+    program.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        "opts = os.environ.get('PASSWORD_STORE_GPG_OPTS', '')\n"
+        f"open({str(log)!r}, 'a').write(opts + '\\n')\n"
+        "if '--pinentry-mode=error' in opts.split():\n"
+        "    print('gpg: public key decryption failed: No pinentry', file=sys.stderr)\n"
+        "    print('gpg: decryption failed: No pinentry', file=sys.stderr)\n"
+        "    raise SystemExit(2)\n"
+        "print('unlocked-token')\n"
+    )
+    program.chmod(0o755)
+    return [str(program), "show", "untaped/default/demo"]
+
+
+def test_a_locked_pass_store_fails_fast_when_stdin_is_not_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An agent's stdin is no terminal, yet gpg-agent would draw its pinentry on
+    # the GPG_TTY the agent inherited: the user's own screen, under the agent.
+    monkeypatch.setattr(sys, "stdin", _Stdin(tty=False))
+    monkeypatch.setenv("PASSWORD_STORE_GPG_OPTS", "--armor")
+    settings = resolve_token(DemoSettings(token_command=_locked_pass(tmp_path)), section="demo")
+    assert settings.token is not None
+    with pytest.raises(ConfigError) as caught:
+        settings.token.get_secret_value()
+    error = caught.value
+    assert error.category == "unavailable"
+    assert "locked" in str(error)
+    assert "not a terminal" in str(error)
+    assert error.hint is not None
+    assert "pass show untaped/default/demo > /dev/null" in error.hint
+    assert (tmp_path / "gpg-opts.log").read_text() == "--armor --pinentry-mode=error\n"
+
+
+def test_a_locked_pass_store_still_prompts_from_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(sys, "stdin", _Stdin(tty=True))
+    monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS", raising=False)
+    settings = resolve_token(DemoSettings(token_command=_locked_pass(tmp_path)), section="demo")
+    assert settings.token is not None
+    assert settings.token.get_secret_value() == "unlocked-token"
+    assert (tmp_path / "gpg-opts.log").read_text() == "\n"
