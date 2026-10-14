@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -176,6 +177,135 @@ class NoUrlSettings(BaseModel):
 def test_connected_client_rejects_missing_settings(config: BaseModel, message: str) -> None:
     with pytest.raises(ConfigError, match=message):
         connected_client(config, section="demo")
+
+
+def _write_config(text: str) -> None:
+    path = Path(os.environ["UNTAPED_CONFIG"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_a_missing_setting_names_the_profiles_that_set_it() -> None:
+    """An agent can switch profile from the error alone instead of asking for the value."""
+    _write_config(
+        "active: home\n"
+        "profiles:\n"
+        "  home: {}\n"
+        "  work:\n"
+        "    demo: {base_url: https://work.example.com}\n"
+        "  lab:\n"
+        "    demo: {base_url: '  '}\n"
+    )
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    error = caught.value
+    assert str(error) == "demo.base_url is not configured in profile 'home'"
+    assert error.hint is not None
+    assert "profile 'work' sets it: run `untaped --profile work …`" in error.hint
+    assert "UNTAPED_PROFILE=work" in error.hint
+    assert "lab" not in error.hint
+    assert error.details["profiles"] == ["work"]
+
+
+def test_a_missing_token_counts_a_profile_with_a_token_command() -> None:
+    _write_config(
+        "profiles:\n"
+        "  default: {}\n"
+        "  a:\n"
+        "    demo: {token_command: [pass, show, demo]}\n"
+        "  b:\n"
+        "    demo: {token: sekret}\n"
+    )
+    with pytest.raises(ConfigError) as caught:
+        connected_client(SourcedSettings(), section="demo")
+
+    assert "profiles 'a' and 'b' set it" in (caught.value.hint or "")
+    assert "`untaped --profile NAME …`" in (caught.value.hint or "")
+
+
+def test_a_missing_setting_no_other_profile_sets_names_only_the_profile() -> None:
+    _write_config("profiles:\n  default: {}\n  work: {}\n")
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert str(caught.value) == "demo.base_url is not configured in profile 'default'"
+    assert "--profile" not in (caught.value.hint or "")
+    assert "profiles" not in caught.value.details
+
+
+def test_a_profile_inheriting_the_setting_from_default_counts() -> None:
+    """The active profile blanks a key ``default`` sets; ``work`` still inherits it."""
+    _write_config(
+        "active: home\n"
+        "profiles:\n"
+        "  default:\n"
+        "    demo: {base_url: https://example.com}\n"
+        "  home:\n"
+        "    demo: {base_url: null}\n"
+        "  my work: {}\n"
+    )
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert caught.value.details["profiles"] == ["default", "my work"]
+
+
+def test_a_profile_name_with_a_space_is_quoted_in_the_command() -> None:
+    _write_config("profiles:\n  default: {}\n  my work:\n    demo: {base_url: https://x}\n")
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    hint = caught.value.hint or ""
+    assert "`untaped --profile 'my work' …`" in hint
+    assert "UNTAPED_PROFILE='my work'" in hint
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("UNTAPED_DEMO__BASE_URL", ""),
+        ("untaped_demo__base_url", ""),
+        ("UNTAPED_DEMO", '{"base_url": ""}'),
+        ("UNTAPED_DEMO", "not json"),
+    ],
+)
+def test_an_environment_override_names_no_profile(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    """An override applies to every profile, so switching profile would not help."""
+    _write_config("profiles:\n  default: {}\n  work:\n    demo: {base_url: https://x}\n")
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert str(caught.value) == "demo.base_url is not configured"
+    assert "--profile" not in (caught.value.hint or "")
+
+
+def test_an_environment_blob_without_the_key_still_names_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config("profiles:\n  default: {}\n  work:\n    demo: {base_url: https://x}\n")
+    monkeypatch.setenv("UNTAPED_DEMO", '{"token": "t"}')
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert caught.value.details["profiles"] == ["work"]
+
+
+def test_an_unreadable_config_names_only_a_profile_chosen_outside_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unreadable(path: Path | None = None) -> dict[str, Any]:
+        raise ConfigError("unreadable")
+
+    monkeypatch.setattr("untaped.http.read_config_dict", unreadable)
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert str(caught.value) == "demo.base_url is not configured in profile 'work'"
 
 
 @respx.mock

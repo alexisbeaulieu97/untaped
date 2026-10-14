@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import email.utils
 import logging
+import shlex
 import ssl
 import time
-from collections.abc import Callable, Collection, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, SecretStr
 
 from untaped.auth import takes_token_command, token_alternatives
+from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
 from untaped.errors import (
     ConfigError,
@@ -39,10 +41,13 @@ from untaped.errors import (
     HttpTransportError,
     UntapedError,
 )
-from untaped.messages import command_line
+from untaped.messages import command_line, q, run_hint
+from untaped.profile_resolver import ACTIVE_PROFILE_ENV, classify_active_profile, selected_profile
 from untaped.redaction import redact_url_password
 from untaped.settings import (
     HttpSettings,
+    active_settings_layout,
+    env_sets_key,
     env_var_name,
     load_settings_section,
     registered_profile_model,
@@ -507,6 +512,8 @@ def missing_setting_error(
     secret: Collection[str] = (),
     token_sources: str = "",
     auth_set: bool = False,
+    profile: str | None = None,
+    set_in: Sequence[str] = (),
 ) -> ConfigError:
     """Return the standard error for missing plugin settings.
 
@@ -516,11 +523,19 @@ def missing_setting_error(
     :func:`untaped.auth.token_alternatives`) names the sources that keep a
     missing token out of the config file. ``auth_set`` (the section's model
     has ``token_command``) makes the token's command ``auth set <section>``.
+    ``profile`` names the selected profile in the message. ``set_in`` names
+    the other profiles that set the fields: the hint leads with how to run
+    the command under one (``--profile`` or ``UNTAPED_PROFILE``), and
+    ``details["profiles"]`` lists them, so a caller can recover without
+    asking anyone for the value. Nothing switches profile on its own.
     """
     tail = f"; to keep the token out of the config file, use {token_sources}"
     tail = tail if token_sources else ""
     fields = (field, *more_fields)
     keys = [f"{section}.{name}" for name in fields]
+    where = f" in profile {q(profile)}" if profile else ""
+    lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
+    details = {"profiles": list(set_in)} if set_in else None
     commands = [
         f"`{command_line(f'auth set {section}')}`"
         if name == "token" and auth_set
@@ -532,12 +547,32 @@ def missing_setting_error(
     env_vars = [env_var_name([section, name]) for name in fields]
     if len(fields) == 1:
         return ConfigError(
-            f"{keys[0]} is not configured",
-            hint=f"set it via {commands[0]} or {env_vars[0]}{tail}",
+            f"{keys[0]} is not configured{where}",
+            hint=f"{lead}set it via {commands[0]} or {env_vars[0]}{tail}",
+            details=details,
         )
     return ConfigError(
-        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured",
-        hint=f"set them via {' and '.join(commands)}, or {' / '.join(env_vars)}{tail}",
+        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured{where}",
+        hint=f"{lead}set them via {' and '.join(commands)}, or {' / '.join(env_vars)}{tail}",
+        details=details,
+    )
+
+
+def _other_profiles_hint(profiles: Sequence[str], *, plural: bool) -> str:
+    """The hint's lead naming the other profiles that set the missing fields."""
+    if not profiles:
+        return ""
+    it = "them" if plural else "it"
+    if len(profiles) == 1:
+        name = shlex.quote(profiles[0])
+        return (
+            f"profile {q(profiles[0])} sets {it}: {run_hint(f'--profile {name} …')} "
+            f"or set {ACTIVE_PROFILE_ENV}={name}; or "
+        )
+    names = ", ".join(q(name) for name in profiles[:-1]) + f" and {q(profiles[-1])}"
+    return (
+        f"profiles {names} set {it}: {run_hint('--profile NAME …')} "
+        f"or set {ACTIVE_PROFILE_ENV}=NAME; or "
     )
 
 
@@ -606,12 +641,16 @@ def connected_client(
     if missing:
         secret = [d.path[0] for d in walk_settings(type(config)) if d.is_secret]
         sources = token_alternatives(config, section=section) if "token" in missing else ""
+        auth_set = takes_token_command(type(config))
+        profile, set_in = _profiles_for(section, missing, token_command=auth_set)
         raise missing_setting_error(
             section,
             *missing,
             secret=secret,
             token_sources=sources,
-            auth_set=takes_token_command(type(config)),
+            auth_set=auth_set,
+            profile=profile,
+            set_in=set_in,
         )
 
     request_headers = dict(headers or {})
@@ -630,6 +669,49 @@ def connected_client(
         retry=retry,
         system=section,
     )
+
+
+def _profiles_for(
+    section: str, missing: Sequence[str], *, token_command: bool
+) -> tuple[str | None, list[str]]:
+    """The selected profile and the other profiles that resolve every ``missing`` field.
+
+    Each profile is resolved as it would be selected (``default`` beneath
+    it, old key names renamed). A ``token_command`` counts for a missing
+    ``token`` when the model takes one. An environment override of a
+    missing field applies to every profile, so it names none; an unreadable
+    config file names only a profile chosen by ``--profile`` or
+    ``UNTAPED_PROFILE``.
+    """
+    if any(env_sets_key(section, name) for name in missing):
+        return None, []
+    try:
+        data = read_config_dict()
+    except ConfigError:
+        return classify_active_profile({})[0], []
+    profile = selected_profile(data)
+    needs = [
+        (name, "token_command") if name == "token" and token_command else (name,)
+        for name in missing
+    ]
+    layout = active_settings_layout()
+    found: list[str] = []
+    for name in layout.profile_names(data):
+        if name == profile:
+            continue
+        try:
+            values = layout.effective(data, profile=name).get(section)
+        except ConfigError:
+            continue
+        if isinstance(values, dict) and all(
+            any(_is_set(values.get(field)) for field in need) for need in needs
+        ):
+            found.append(name)
+    return profile, found
+
+
+def _is_set(value: Any) -> bool:
+    return value is not None and not (isinstance(value, str) and not value.strip())
 
 
 def paginate_pages(
