@@ -15,7 +15,10 @@ sleeps past the probe timeout), ``hang-roundtrip`` (gpg's encrypt sleeps),
 ``not-in-store`` (``pass show`` finds no entry), ``protected`` (``pass rm``
 refuses),
 ``no-clear`` (``secret-tool clear`` fails), ``gpg-roundtrip`` (gpg lists its
-key but cannot decrypt, as with no pinentry). The fake ``gpg`` knows only ``test@example.com``.
+key but cannot decrypt, as with no pinentry), ``locked-key`` (decrypting needs
+the passphrase: told ``--pinentry-mode=error``, ``pass show`` and ``gpg -d`` fail
+as gpg does, else they succeed as if it were typed). The fake ``gpg`` knows only
+``test@example.com``.
 """
 
 from __future__ import annotations
@@ -83,6 +86,13 @@ def after(flag):
     return args[args.index(flag) + 1]
 
 
+def refuse_locked(options):
+    if mode == "locked-key" and "--pinentry-mode=error" in options:
+        print("gpg: public key decryption failed: No pinentry", file=sys.stderr)
+        print("gpg: decryption failed: No pinentry", file=sys.stderr)
+        sys.exit(2)
+
+
 if name == "pass":
     if args[0] == "insert":
         save(args[-1], stdin.rstrip("\n"), replace="--force" in args)
@@ -96,6 +106,7 @@ if name == "pass":
                 print("gpg: public key decryption failed: " + err, file=sys.stderr)
                 print("gpg: decryption failed: " + err, file=sys.stderr)
             sys.exit(2)
+        refuse_locked(os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split())
         show(args[-1])
     elif args[0] == "rm":
         if mode == "protected":
@@ -117,6 +128,8 @@ elif name == "gpg":
             print("gpg: public key decryption failed: No such file or directory", file=sys.stderr)
             print("gpg: decryption failed: No such file or directory", file=sys.stderr)
             sys.exit(2)
+        if "-d" in args:
+            refuse_locked(args)
         sys.stdout.write(stdin)
         sys.exit(0)
     if mode == "no-secret-key" or args[-1] != "test@example.com":
@@ -189,6 +202,9 @@ def install_fake_stores(
     stores = FakeStores(state=tmp_path / "fake-store.json", log=tmp_path / "fake-store.log")
     monkeypatch.setenv("PATH", str(bin_dir))
     monkeypatch.setenv("PASSWORD_STORE_DIR", str(password_store))
+    # Away from a developer's gpg.conf, whose pinentry-mode untaped would respect.
+    monkeypatch.setenv("GNUPGHOME", str(tmp_path / "gnupg"))
+    monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS", raising=False)
     monkeypatch.setenv("STUB_STATE", str(stores.state))
     monkeypatch.setenv("STUB_LOG", str(stores.log))
     monkeypatch.setattr(token_store, "_is_macos", lambda: macos)

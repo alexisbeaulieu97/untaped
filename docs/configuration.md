@@ -306,6 +306,16 @@ comes from, and `unset` removes a stored one.
 
 A store over SSH can fail on an unlock prompt nobody sees: unlock it first
 (`security unlock-keychain` on macOS). Store commands time out after 60s.
+When neither stdin nor stderr is a terminal (an agent running `untaped`,
+cron), `pass` is never asked for gpg's passphrase: a locked key fails at once.
+For a plain `pass show <entry>`, the error names the command that unlocks it
+from your terminal (such as `pass show untaped/default/awx > /dev/null`);
+gpg-agent then keeps the passphrase cached for a while. A pinentry mode you set
+yourself, in `PASSWORD_STORE_GPG_OPTS` or `gpg.conf`, is left alone: loopback
+with a passphrase file for cron, or `--pinentry-mode=ask` to let an agent's
+command open a desktop pinentry you can answer. If an earlier run left a
+passphrase prompt open on another screen, `gpgconf --kill gpg-agent` closes it
+(it also forgets cached passphrases, SSH key unlocks included); gpg starts a fresh agent on next use.
 
 What this protects: the token is no longer in a file read casually. It does
 not stop a program running as you, which can run `untaped` or the store's own

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -36,6 +37,10 @@ from untaped.auth import (
     command_failure,
     first_stderr_line,
     gpg_hint,
+    locked_store_error,
+    locked_without_terminal,
+    pass_gpg_env,
+    pass_gpg_options,
     run_command,
 )
 from untaped.errors import ConfigError
@@ -208,7 +213,7 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
 def _gpg(*args: str) -> list[str]:
     """A gpg command line built the way ``pass`` builds its own (see its ``GPG_OPTS``)."""
     program = "gpg2" if shutil.which("gpg2") else "gpg"
-    options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()  # as pass does
+    options = pass_gpg_options()  # as pass gets them
     fixed = [
         "--quiet",
         "--yes",
@@ -231,7 +236,12 @@ def _gpg_round_trip() -> None:
     for step, argv in steps:
         try:
             completed = subprocess.run(
-                argv, input=data, capture_output=True, timeout=_ROUND_TRIP_SECONDS, check=False
+                argv,
+                input=data,
+                capture_output=True,
+                timeout=_ROUND_TRIP_SECONDS,
+                check=False,
+                env=pass_gpg_env(),
             )
         except subprocess.TimeoutExpired:
             raise ConfigError(
@@ -245,6 +255,10 @@ def _gpg_round_trip() -> None:
             raise ConfigError(message, category="unavailable") from None
         if completed.returncode != 0:
             stderr = completed.stderr.decode(errors="replace")
+            # Only decrypting needs the passphrase.
+            if step == "decrypt" and locked_without_terminal(stderr):
+                unlock = f"echo test | gpg -e {shlex.join(recipients)} | gpg -d > /dev/null"
+                raise locked_store_error(f"gpg {step} for the pass store", unlock=unlock)
             quote = first_stderr_line(stderr)
             raise ConfigError(
                 f"gpg {step} failed for the pass store{f': {quote}' if quote else ''}",
