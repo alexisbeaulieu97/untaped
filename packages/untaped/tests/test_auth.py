@@ -12,7 +12,12 @@ import respx
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from untaped.app_context import app_context
-from untaped.auth import describe_token_source, forget_token_command, resolve_token
+from untaped.auth import (
+    clear_token_cache,
+    describe_token_source,
+    forget_token_command,
+    resolve_token,
+)
 from untaped.errors import ConfigError
 from untaped.sdk import TokenCommand, TokenSources, connected_client
 from untaped.settings import (
@@ -189,3 +194,141 @@ def test_section_accessors_apply_token_fallbacks(
     for settings in (via_context, via_helper):
         assert settings.token is not None
         assert settings.token.get_secret_value() == "env-token"
+
+
+class _Stream:
+    def __init__(self, *, tty: bool, closed: bool = False) -> None:
+        self._tty = tty
+        self._closed = closed
+
+    def isatty(self) -> bool:
+        if self._closed:
+            raise ValueError("I/O operation on closed file")
+        return self._tty
+
+
+def _terminal(monkeypatch: pytest.MonkeyPatch, *, stdin: bool, stderr: bool) -> None:
+    monkeypatch.setattr(sys, "stdin", _Stream(tty=stdin))
+    monkeypatch.setattr(sys, "stderr", _Stream(tty=stderr))
+
+
+def _locked_pass(tmp_path: Path, *args: str) -> list[str]:
+    """Argv for a ``pass show`` whose gpg key is locked: it asks for the passphrase.
+
+    Asked with ``--pinentry-mode=error`` (in ``PASSWORD_STORE_GPG_OPTS``, as
+    ``pass`` hands it to gpg), it fails as gpg does; asked otherwise, the
+    prompt "is answered" and the token prints. The options it saw go to a log.
+    """
+    program = tmp_path / "pass"
+    log = tmp_path / "gpg-opts.log"
+    program.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys\n"
+        "opts = os.environ.get('PASSWORD_STORE_GPG_OPTS', '')\n"
+        f"open({str(log)!r}, 'a').write(opts + '\\n')\n"
+        f"open({str(tmp_path / 'locale.log')!r}, 'a').write(os.environ.get('LC_ALL', '') + '\\n')\n"
+        "if '--pinentry-mode=error' in opts.split():\n"
+        "    print('gpg: public key decryption failed: No pinentry', file=sys.stderr)\n"
+        "    print('gpg: decryption failed: No pinentry', file=sys.stderr)\n"
+        "    raise SystemExit(2)\n"
+        "print('unlocked-token')\n"
+    )
+    program.chmod(0o755)
+    return [str(program), *(args or ("show", "untaped/default/demo"))]
+
+
+@pytest.fixture
+def _no_gpg_conf(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("GNUPGHOME", str(tmp_path / "gnupg"))
+    monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS", raising=False)
+
+
+def _read(argv: list[str]) -> str:
+    settings = resolve_token(DemoSettings(token_command=argv), section="demo")
+    assert settings.token is not None
+    return settings.token.get_secret_value()
+
+
+@pytest.mark.usefixtures("_no_gpg_conf")
+def test_a_locked_pass_store_fails_fast_when_nobody_is_at_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An agent captures stdin and stderr, yet gpg-agent would draw its pinentry
+    # on the GPG_TTY the agent inherited: the user's own screen, under the agent.
+    _terminal(monkeypatch, stdin=False, stderr=False)
+    monkeypatch.setenv("PASSWORD_STORE_GPG_OPTS", "--armor")
+    with pytest.raises(ConfigError) as caught:
+        _read(_locked_pass(tmp_path))
+    error = caught.value
+    assert error.category == "unavailable"
+    assert "locked" in str(error)
+    assert "without a terminal" in str(error)
+    assert error.hint is not None
+    assert "pass show untaped/default/demo > /dev/null" in error.hint
+    assert (tmp_path / "gpg-opts.log").read_text() == "--armor --pinentry-mode=error\n"
+    assert (tmp_path / "locale.log").read_text() == "C\n", "gpg's 'No pinentry' read in English"
+
+
+@pytest.mark.usefixtures("_no_gpg_conf")
+def test_another_token_command_keeps_the_users_locale_without_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _terminal(monkeypatch, stdin=False, stderr=False)
+    monkeypatch.setenv("LC_ALL", "fr_CA.UTF-8")
+    script = "import os; print(os.environ['LC_ALL'], os.environ['PASSWORD_STORE_GPG_OPTS'])"
+    assert _read([sys.executable, "-c", script]) == "fr_CA.UTF-8 --pinentry-mode=error"
+
+
+@pytest.mark.usefixtures("_no_gpg_conf")
+@pytest.mark.parametrize(("stdin", "stderr"), [(True, True), (False, True), (True, False)])
+def test_a_locked_pass_store_still_prompts_with_someone_at_a_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stdin: bool, stderr: bool
+) -> None:
+    # Piped stdin with stderr on the terminal is a person's pipeline.
+    _terminal(monkeypatch, stdin=stdin, stderr=stderr)
+    assert _read(_locked_pass(tmp_path)) == "unlocked-token"
+    assert (tmp_path / "gpg-opts.log").read_text() == "\n"
+
+
+@pytest.mark.usefixtures("_no_gpg_conf")
+def test_a_pinentry_mode_the_user_chose_is_kept(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # cron with a passphrase file: untaped must not override it.
+    _terminal(monkeypatch, stdin=False, stderr=False)
+    monkeypatch.setenv("PASSWORD_STORE_GPG_OPTS", "--pinentry-mode=loopback --passphrase-file=f")
+    assert _read(_locked_pass(tmp_path)) == "unlocked-token"
+    gpg_conf = tmp_path / "gnupg" / "gpg.conf"
+    gpg_conf.parent.mkdir()
+    gpg_conf.write_bytes(b"# headless \xff\npinentry-mode loopback\n")
+    monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS")
+    clear_token_cache()
+    assert _read(_locked_pass(tmp_path)) == "unlocked-token"
+    assert (tmp_path / "gpg-opts.log").read_text() == (
+        "--pinentry-mode=loopback --passphrase-file=f\n\n"
+    )
+
+
+@pytest.mark.usefixtures("_no_gpg_conf")
+def test_a_locked_custom_pass_command_names_no_arguments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A closed stdin is no terminal either.
+    monkeypatch.setattr(sys, "stdin", _Stream(tty=True, closed=True))
+    monkeypatch.setattr(sys, "stderr", _Stream(tty=False))
+    with pytest.raises(ConfigError) as caught:
+        _read(_locked_pass(tmp_path, "show", "--clip", "work/s3cr3t-name"))
+    assert caught.value.hint is not None
+    assert "by running the same command" in caught.value.hint
+    assert "s3cr3t-name" not in f"{caught.value} {caught.value.hint}"
+
+
+@pytest.mark.usefixtures("_no_gpg_conf")
+def test_the_unlock_command_quotes_an_entry_name_for_the_shell(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _terminal(monkeypatch, stdin=False, stderr=False)
+    with pytest.raises(ConfigError) as caught:
+        _read(_locked_pass(tmp_path, "show", "work/my token"))
+    assert caught.value.hint is not None
+    assert "`pass show 'work/my token' > /dev/null`" in caught.value.hint

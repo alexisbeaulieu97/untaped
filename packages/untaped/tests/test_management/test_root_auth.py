@@ -7,6 +7,7 @@ any output, error or argv.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any, ClassVar
@@ -255,6 +256,16 @@ def test_a_hung_store_times_out_with_the_likely_cause(
     assert not _isolated_config.exists()
 
 
+def test_a_hung_pass_names_how_to_close_the_prompt_it_left_open(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUB_MODE", "hang")
+    monkeypatch.setattr(auth, "_TIMEOUT_SECONDS", 0.5)
+    result = _auth("set", "svc", "--store", "pass", "--stdin", input="tok")
+    assert result.exit_code == 5
+    assert "`gpgconf --kill gpg-agent` closes a passphrase prompt left open" in result.stderr
+
+
 def test_read_back_bypasses_the_token_cache(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -372,6 +383,37 @@ def test_migrate_stops_before_moving_anything_when_gpg_cannot_decrypt(
     assert _isolated_config.read_text() == before
     assert stores.entries() == {}
     assert _auth("migrate", "--dry-run").exit_code == 0, "a plan needs no preflight"
+
+
+def test_set_without_a_terminal_stops_on_a_locked_gpg_key_without_prompting(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The harness gives no terminal on stdin or stderr, as an agent does: gpg is told not to ask.
+    monkeypatch.setenv("STUB_MODE", "locked-key")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "gpg decrypt for the pass store: the password store is locked" in result.stderr
+    assert "echo test | gpg -e -r test@example.com | gpg -d > /dev/null" in result.stderr
+    assert not [c for c in stores.calls() if c["argv"][0] == "pass"], "pass never ran"
+    assert not _isolated_config.exists()
+    _no_leak(result, stores)
+
+
+def test_reading_a_locked_pass_token_without_a_terminal_names_the_unlock_command(
+    stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _auth("set", "svc", "--store", "pass", "--stdin", input=SENTINEL).exit_code == 0
+    clear_token_cache()
+    monkeypatch.setenv("STUB_MODE", "locked-key")
+    # Read outside the CLI harness: no terminal on stdin or stderr, whatever runs pytest.
+    monkeypatch.setattr("sys.stdin", io.StringIO())
+    monkeypatch.setattr("sys.stderr", io.StringIO())
+    token = auth.CommandToken(["pass", "show", "untaped/default/svc"], section="svc")
+    with pytest.raises(ConfigError) as caught:
+        token.get_secret_value()
+    assert caught.value.exit_code == 5
+    assert caught.value.hint is not None
+    assert "`pass show untaped/default/svc > /dev/null`" in caught.value.hint
 
 
 def test_reading_a_pass_token_summarises_gpg_and_hints_once(
