@@ -15,13 +15,16 @@ Precedence, first match wins:
 
 Token values never reach logs or error messages: a failing command is
 reported by program name and exit status only, never by its arguments or
-stdout. Its stderr goes straight to the terminal, uncaptured.
+stdout. Its stderr goes straight to the terminal, uncaptured. One exception:
+a locked ``pass show <entry>`` names its entry (a name, never a secret) in
+the command that unlocks it.
 
-A store may need unlocking first. From a terminal its own prompt asks; when
-stdin is not a terminal (an agent, a pipe, cron), nobody is there to answer,
-yet gpg-agent would still draw its pinentry on the inherited ``GPG_TTY``,
-under whatever owns that screen. So :func:`run_command` then tells ``pass``
-to fail instead (``--pinentry-mode=error``), and the error says how to
+A store may need unlocking first. From a terminal its own prompt asks; with
+neither stdin nor stderr on a terminal (an agent, cron), nobody is there to
+answer, yet gpg-agent would still draw its pinentry on the inherited
+``GPG_TTY``, under whatever owns that screen. So ``pass`` is then told to
+fail instead (``--pinentry-mode=error``, see :func:`pass_gpg_options`),
+unless the user chose a pinentry mode themselves, and the error says how to
 unlock the store from a terminal.
 
 A token stored in plain text in the config file is deprecated: using one
@@ -33,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shlex
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -203,13 +207,10 @@ def run_command(
 
     ``label`` starts every error, which never repeats the command's output or
     arguments. stderr goes straight to the terminal unless ``capture_stderr``.
-    A non-zero exit is returned, not raised. Without :func:`unlock_prompts_allowed`,
-    ``pass`` (also inside a wrapper) is told to fail rather than ask for gpg's
-    passphrase.
+    A non-zero exit is returned, not raised. With nobody to answer a prompt,
+    ``pass`` (also inside a wrapper) runs with :func:`pass_gpg_env`.
     """
-    env = None
-    if not unlock_prompts_allowed():
-        env = {**os.environ, "PASSWORD_STORE_GPG_OPTS": " ".join(no_pinentry_options())}
+    env = pass_gpg_env()
     try:
         return subprocess.run(
             list(argv),
@@ -225,7 +226,10 @@ def run_command(
         raise ConfigError(f"{label} not found on PATH") from None
     except subprocess.TimeoutExpired:
         # Stopping pass leaves gpg-agent's pinentry open, holding the agent for every later read.
-        stuck = "`gpgconf --kill gpg-agent` closes a passphrase prompt left open; "
+        stuck = (
+            "`gpgconf --kill gpg-agent` closes a passphrase prompt left open (it also "
+            "forgets cached passphrases, and SSH keys if gpg-agent serves them); "
+        )
         raise ConfigError(
             f"{label} timed out after {_TIMEOUT_SECONDS:g}s; it may be waiting on an "
             "unlock prompt on a screen nobody sees (over SSH, unlock the store first)",
@@ -236,24 +240,62 @@ def run_command(
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
 
 
-def unlock_prompts_allowed() -> bool:
-    """Whether a store may ask to be unlocked: only when stdin is a terminal.
+def pass_gpg_options() -> list[str]:
+    """The gpg options ``pass`` runs with: ``PASSWORD_STORE_GPG_OPTS``, split.
 
-    Stricter than a confirmation, which also reaches ``/dev/tty``: an agent's
-    commands often keep the user's terminal as their controlling terminal (and
-    inherit ``GPG_TTY``), so only stdin tells that someone can answer.
+    Plus ``--pinentry-mode=error`` while :func:`_suppressing_prompts`, so a
+    locked key fails at once instead of drawing a prompt nobody can answer.
     """
-    isatty = getattr(sys.stdin, "isatty", None)
-    try:
-        return callable(isatty) and bool(isatty())
-    except OSError, ValueError:  # ValueError: a closed stream
-        return False
-
-
-def no_pinentry_options() -> list[str]:
-    """``PASSWORD_STORE_GPG_OPTS``, split, plus the option that makes gpg fail, not prompt."""
     options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()
-    return options if _NO_PINENTRY in options else [*options, _NO_PINENTRY]
+    return [*options, _NO_PINENTRY] if _suppressing_prompts() else options
+
+
+def pass_gpg_env() -> dict[str, str] | None:
+    """The environment for a ``pass`` or gpg run, or ``None`` to inherit it unchanged.
+
+    While prompts are suppressed: :func:`pass_gpg_options` for ``pass``, and
+    gpg's messages in English, so its "No pinentry" reads the same everywhere.
+    """
+    if not _suppressing_prompts():
+        return None
+    options = " ".join(pass_gpg_options())
+    return {**os.environ, "PASSWORD_STORE_GPG_OPTS": options, "LC_ALL": "C", "LANGUAGE": "C"}
+
+
+def _suppressing_prompts() -> bool:
+    """Whether untaped tells gpg not to ask for a passphrase in this process.
+
+    Only when nobody can answer, and the user chose no pinentry mode (in
+    ``PASSWORD_STORE_GPG_OPTS`` or ``gpg.conf``): a loopback mode with a
+    passphrase file, or ``--pinentry-mode=ask`` for a desktop dialog, is
+    theirs to keep.
+    """
+    return not _someone_can_answer() and not _user_pinentry_mode()
+
+
+def _someone_can_answer() -> bool:
+    """Whether stdin or stderr is a terminal.
+
+    A person in a pipeline keeps stderr on their terminal, where pinentry
+    draws; an agent captures both streams, even when its commands keep the
+    user's terminal as their controlling terminal (and inherit ``GPG_TTY``),
+    so ``/dev/tty``, which a confirmation may reach, is no sign here.
+    """
+    from untaped.render import stream_is_tty  # noqa: PLC0415 - keep auth imports light
+
+    return stream_is_tty(sys.stdin) or stream_is_tty(sys.stderr)
+
+
+def _user_pinentry_mode() -> bool:
+    options = os.environ.get("PASSWORD_STORE_GPG_OPTS", "").split()
+    if any(opt == "--pinentry-mode" or opt.startswith("--pinentry-mode=") for opt in options):
+        return True
+    home = os.environ.get("GNUPGHOME") or Path.home() / ".gnupg"
+    try:
+        lines = (Path(home) / "gpg.conf").read_text(encoding="utf-8").splitlines()
+    except OSError, UnicodeDecodeError:
+        return False
+    return any(line.strip().startswith("pinentry-mode") for line in lines)
 
 
 def command_failure(
@@ -276,24 +318,21 @@ def command_failure(
 
 
 def locked_without_terminal(stderr: str) -> bool:
-    """Whether gpg failed only because it was told not to ask for the passphrase."""
-    return "No pinentry" in stderr and not unlock_prompts_allowed()
+    """Whether gpg failed only because untaped told it not to ask for the passphrase."""
+    return "No pinentry" in stderr and _suppressing_prompts()
 
 
 def locked_store_error(label: str, *, unlock: str | None = None) -> ConfigError:
-    """The error for a gpg key left locked because stdin is not a terminal.
+    """The error for a gpg key left locked because nobody at a terminal could unlock it.
 
     ``unlock`` is a command that unlocks it from a terminal, when one can be named.
     """
     how = f"`{unlock}`" if unlock else "the same command"
     return ConfigError(
         f"{label}: the password store is locked, and untaped does not ask for its "
-        "passphrase when stdin is not a terminal (as when an agent runs it)",
+        "passphrase without a terminal (as when an agent runs it)",
         category="unavailable",
-        hint=(
-            f"unlock it from your own terminal by running {how}, then retry; "
-            "gpg-agent then remembers the passphrase for a while (its default-cache-ttl)"
-        ),
+        hint=f"unlock it from your own terminal by running {how}, then retry",
     )
 
 
@@ -407,7 +446,7 @@ def _pass_unlock(argv: Sequence[str]) -> str | None:
     """
     if len(argv) != 3 or Path(argv[0]).name != "pass" or argv[1] != "show":
         return None
-    return f"pass show {argv[2]} > /dev/null"
+    return f"pass show {shlex.quote(argv[2])} > /dev/null"
 
 
 __all__ = [
@@ -424,7 +463,8 @@ __all__ = [
     "gpg_hint",
     "locked_store_error",
     "locked_without_terminal",
-    "no_pinentry_options",
+    "pass_gpg_env",
+    "pass_gpg_options",
     "resolve_token",
     "run_command",
     "takes_token_command",
@@ -433,5 +473,4 @@ __all__ = [
     "token_instead",
     "token_override_env",
     "token_override_name",
-    "unlock_prompts_allowed",
 ]

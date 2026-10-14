@@ -202,6 +202,9 @@ def install_fake_stores(
     stores = FakeStores(state=tmp_path / "fake-store.json", log=tmp_path / "fake-store.log")
     monkeypatch.setenv("PATH", str(bin_dir))
     monkeypatch.setenv("PASSWORD_STORE_DIR", str(password_store))
+    # Away from a developer's gpg.conf, whose pinentry-mode untaped would respect.
+    monkeypatch.setenv("GNUPGHOME", str(tmp_path / "gnupg"))
+    monkeypatch.delenv("PASSWORD_STORE_GPG_OPTS", raising=False)
     monkeypatch.setenv("STUB_STATE", str(stores.state))
     monkeypatch.setenv("STUB_LOG", str(stores.log))
     monkeypatch.setattr(token_store, "_is_macos", lambda: macos)

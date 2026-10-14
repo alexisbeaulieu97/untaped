@@ -76,7 +76,9 @@ Run `untaped doctor fix --dry-run --format json` to see the plan, then
 `untaped doctor fix --yes --format json`. `--yes` is safe: no token passes
 through you (`auth migrate` moves tokens inside its own process and prints
 none). Tell the user a keychain unlock prompt may appear on their screen.
-Pass on each `failed` or `partial` row's `detail` to the user. The
+A locked `pass` store never prompts you: it exits 5 with a hint naming the
+unlock command; give that command to the user and wait for them, without
+retrying. Pass on each `failed` or `partial` row's `detail` to the user. The
 `skipped` rows are what remains to run: each `fix` is the argv to run after
 `untaped`; ask the user for each `<NAME>` value and run it, except a fix
 that asks for or reveals a token (`auth set`, `config set ….token
@@ -100,7 +102,8 @@ borrows from `~/.untaped/repositories`.
   asks for or reveals a secret.
 - You may run `untaped auth migrate`: it moves plaintext tokens into the
   password store inside its own process and prints none. Tell the user a
-  keychain unlock prompt may appear on their screen.
+  keychain unlock prompt may appear on their screen; a locked `pass` store
+  exits 5 instead, with an unlock command for the user to run.
 
 ## Pitfalls
 
