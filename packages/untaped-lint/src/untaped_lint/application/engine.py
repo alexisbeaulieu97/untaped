@@ -16,16 +16,17 @@ from dataclasses import dataclass, field
 from pydantic import ValidationError
 
 from untaped.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather
-from untaped.sdk import ErrorCategory, Failure, Plugin
+from untaped.sdk import ErrorCategory, Failure, Plugin, kind_of, plural
 from untaped.testing import PluginCandidate
 from untaped_lint.application.rules import Linter
 from untaped_lint.application.subjects import PLUGIN_KIND
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import Resolver, Selection, Suppression
 from untaped_lint.providers.conventions import KEY, UNCHECKED, Conventions
-from untaped_lint.records import Finding, Rule, Subject
+from untaped_lint.records import Finding, Rule, Subject, public
 
 _RULES_HINT = "untaped lint rules"
+_RULE_KIND = kind_of(Rule) or "lint.rule"
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,7 @@ def run(
                 report.failures.append(_invalid_plugin(subject, exc))
                 continue
             raw.extend(
-                _public(KEY, each) for each in Conventions().findings(plugin, candidates=candidates)
+                public(KEY, each) for each in Conventions().findings(plugin, candidates=candidates)
             )
     providers = _load(report)
     unread: set[str] = set()
@@ -106,7 +107,7 @@ def run(
 
 
 def _load(report: Report) -> _Providers:
-    own = Source(plugin=KEY, kind="lint.rule")
+    own = Source(plugin=KEY, kind=_RULE_KIND)
     providers = _Providers(
         rules={
             f"{KEY}.{rule.id}": rule.model_copy(update={"source": own})
@@ -163,7 +164,7 @@ def _ask(
                 _failure(answer.plugin, "invalid-item", row, details={"rules": 1})
             )
         for each in answer.value:
-            public = f"{answer.plugin}.{each.rule}"
+            public_id = f"{answer.plugin}.{each.rule}"
             if each.rule not in declared:
                 report.failures.append(
                     _failure(
@@ -176,14 +177,14 @@ def _ask(
                 report.failures.append(
                     each.error.model_copy(
                         update={
-                            "item": public,
-                            "hint": f"untaped lint --select {public}",
+                            "item": public_id,
+                            "hint": f"untaped lint --select {public_id}",
                             "details": {**each.error.details, "reason": "raised", "rules": 1},
                         }
                     )
                 )
             else:
-                found.append(_public(answer.plugin, each))
+                found.append(public(answer.plugin, each))
     return found
 
 
@@ -233,13 +234,7 @@ def _invalid_plugin(subject: Subject, error: ValidationError) -> Failure:
         system=KEY,
         item=name,
         message=f"{name} was not checked: its {PLUGIN_KIND} record is invalid: "
-        f"{error.error_count()} field errors",
+        f"{plural(error.error_count(), 'field error')}",
         hint="pipe `untaped plugin list --format pipe` output",
         details={"reason": "invalid-record"},
     )
-
-
-def _public(key: str, finding: Finding) -> Finding:
-    """``finding`` with its public id, and lint as its source when no provider issued it."""
-    source = finding.source or Source(plugin=key, kind="lint.finding")
-    return finding.model_copy(update={"rule": f"{key}.{finding.rule}", "source": source})

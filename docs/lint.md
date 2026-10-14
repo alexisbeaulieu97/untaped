@@ -56,9 +56,8 @@ The lists add up. The target of a plugin's finding is the plugin's name. In
 the glob `*` stops at `/` and `**` crosses it. `--select` reports only the
 rules named; PATHS report only findings in files matching their globs.
 Selection narrows what is reported, never what is read, and never drops
-`lint.plugin-not-installed` or `lint.quarantined`, which say nothing else
-ran. An id no installed
-rule declares is a warning; `untaped doctor` checks `lint.ignore`
+`lint.plugin-not-installed`, `lint.quarantined` or `lint.unreadable-file`,
+which say no other rule ran. An id no installed rule declares is a warning; `untaped doctor` checks `lint.ignore`
 (`lint.ignore-ids`).
 
 ## Exit codes

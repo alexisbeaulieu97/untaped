@@ -144,6 +144,7 @@ class Rules(Linter):
                     and value not in listed
                     and isinstance(getattr(value, "rule", None), Rule)
                 ):
+                    listed = (*listed, value)  # a second name for it binds nothing new
                     yield cast("RuleFunction", getattr(self, name))
 
 

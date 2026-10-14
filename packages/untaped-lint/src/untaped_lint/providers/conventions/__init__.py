@@ -107,7 +107,9 @@ _FILE_WHERE = re.compile(r"^(?P<path>[^\s:]+\.py)(?::(?P<line>\d+))?$")
 _DRIFT = "owner-schema-drift: "
 
 
-UNCHECKED = frozenset({f"{KEY}.plugin-not-installed", f"{KEY}.quarantined"})
+UNCHECKED = frozenset(
+    {f"{KEY}.plugin-not-installed", f"{KEY}.quarantined", f"{KEY}.unreadable-file"}
+)
 """Findings meaning no other rule ran on the plugin, so a narrowed run still reports them."""
 
 
@@ -128,7 +130,9 @@ class Conventions:
         source_dir = None if plugin.source_dir is None else Path(plugin.source_dir)
         tests_dir = None if plugin.tests_dir is None else Path(plugin.tests_dir)
         code = None if source_dir is None else source_dir.parent
-        if plugin.status == "quarantined":  # its one row says why; nothing else ran
+        if rows and all(row.check == "registration" for row in rows):
+            # Composition refused the plugin (a composed one always has its
+            # conventions row): its one row says why; nothing else ran.
             rows = [row.model_copy(update={"check": "quarantined"}) for row in rows]
         found = [
             finding for row in rows if (finding := _from_row(plugin.name, row, code)) is not None

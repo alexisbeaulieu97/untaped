@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 
 from lint.fakes import (
@@ -18,6 +20,7 @@ from lint.fakes import (
 )
 from untaped.sdk import Plugin
 from untaped.testing import compose_with
+from untaped_lint.api import Finding, Rules, finding, rule
 from untaped_lint.records import Subject
 from untaped_lint.testing import run, subject
 
@@ -142,3 +145,18 @@ def test_a_narrowed_run_still_reports_a_plugin_nothing_checked() -> None:
     with compose_with("lint"):
         report = run([subject(plugin)], select=["lint.error-case"], candidates=[])
     assert [each.rule for each in report.findings] == ["lint.plugin-not-installed"]
+
+
+class _MethodAlias(Rules):
+    @rule("wide", reads=Widget, severity="error", summary="A widget is narrow.")
+    def wide(self, widget: Widget) -> Iterator[Finding]:
+        yield finding(self.wide, widget.name, "too wide")
+
+    alias = wide
+
+
+def test_an_alias_of_a_rule_method_runs_once() -> None:
+    with compose_with("lint", provides={"acme": [_MethodAlias()]}):
+        report = run([subject(Widget(name="w"))])
+    assert [each.rule for each in report.findings] == ["acme.wide"]
+    assert not report.failures

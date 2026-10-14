@@ -13,7 +13,8 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from untaped.sdk import Failure, Issued, Record
+from untaped.contracts import Source
+from untaped.sdk import Failure, Issued, Record, kind_of
 
 type Severity = Literal["error", "warning"]
 """The diagnostic level words: an error fails the run (exit 3), a warning doesn't."""
@@ -103,3 +104,9 @@ def location_text(location: Location | None) -> str:
             return identifier
         case None:
             return ""
+
+
+def public(key: str, finding: Finding) -> Finding:
+    """``finding`` under its public id ``<key>.<id>``, issued by ``key`` unless a provider was."""
+    source = finding.source or Source(plugin=key, kind=kind_of(Finding) or "lint.finding")
+    return finding.model_copy(update={"rule": f"{key}.{finding.rule}", "source": source})

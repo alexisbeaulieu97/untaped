@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
 from lint.support import Install
 from untaped.sdk import Plugin
-from untaped.testing import PluginCandidate, PluginCheckRow
+from untaped.testing import PluginCandidate, PluginCheckRow, compose_with
 from untaped_lint.providers import conventions
 from untaped_lint.providers.conventions import Conventions, file_lines
 from untaped_lint.records import FileLocation
+from untaped_lint.testing import run, subject
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -148,15 +150,26 @@ def test_an_unreadable_file_is_one_finding_from_the_whole_run(
     assert finding.location == FileLocation(path="demo_plugin/broken.py")
 
 
-def test_a_quarantined_plugin_is_the_quarantined_finding(install: Install) -> None:
-    site = install(_PLUGIN)
+@pytest.mark.parametrize("status", ["ready", "quarantined"])
+def test_a_plugin_composition_refuses_is_the_quarantined_finding(
+    install: Install, status: Literal["ready", "quarantined"]
+) -> None:
+    """Read from what the check found now, whatever the (maybe stale) record says."""
+    install(_PLUGIN)
     broken = PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:NOPE")
-    quarantined = Plugin(
-        name="demo", status="quarantined", distribution="demo-plugin", version="0.1.0"
-    )
-    [finding] = Conventions().findings(quarantined, candidates=[broken])
+    record = Plugin(name="demo", status=status, distribution="demo-plugin", version="0.1.0")
+    [finding] = Conventions().findings(record, candidates=[broken])
     assert (finding.rule, finding.severity) == ("quarantined", "error")
-    assert site.exists()
+
+
+def test_a_stale_quarantined_record_of_a_plugin_that_composes_keeps_its_rules(
+    install: Install,
+) -> None:
+    site = install(_PLUGIN)
+    record = _plugin(site).model_copy(update={"status": "quarantined"})
+    rules = {finding.rule for finding in Conventions().findings(record, candidates=_DEMO)}
+    assert "quarantined" not in rules
+    assert {"plugin-name", "undeclared-write"} <= rules
 
 
 def _row(check: str, title: str, status: str, detail: str) -> PluginCheckRow:
@@ -165,6 +178,7 @@ def _row(check: str, title: str, status: str, detail: str) -> PluginCheckRow:
 
 def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [
+        _row("conventions", "conventions", "pass", "no violations"),
         _row("live", "rack.item_source.items", "pass", "1 item"),
         _row("live", "rack.item_source.items", "fail", "NotImplementedError"),
         _row("schema", "rack.item_source", "warn", "no recorded owner schema hash"),
@@ -176,3 +190,11 @@ def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> 
         ("live", "error", "rack.item_source.items: NotImplementedError"),
         ("schema", "warning", "rack.item_source: no recorded owner schema hash"),
     ]
+
+
+def test_a_narrowed_run_still_reports_an_unreadable_file(install: Install) -> None:
+    site = install(_PLUGIN)
+    (site / "demo_plugin" / "broken.py").write_bytes(b"\xff\xfe not utf-8")
+    with compose_with("lint"):
+        report = run([subject(_plugin(site))], select=["lint.print"], candidates=_DEMO)
+    assert [each.rule for each in report.findings] == ["lint.unreadable-file"]

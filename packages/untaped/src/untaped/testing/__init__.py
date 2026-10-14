@@ -392,7 +392,7 @@ def allows(source_lines: list[str], lineno: int, rule: str) -> bool:
     """Whether line ``lineno`` (1-based) carries ``# untaped: allow`` for bare id ``rule``.
 
     The one reading of the marker every source rule shares: it names rules
-    bare (``print``) or with their key (``lint.print``), comma-separated.
+    bare (``print``) or as ``lint.print``, comma-separated.
     """
     from untaped.conventions.allow import allowed  # noqa: PLC0415
 
