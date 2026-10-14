@@ -107,7 +107,7 @@ line printed; `--verbose` prints every update and `--quiet` none.
 {"level": "error", "kind": "untaped.failure", "category": "auth", "system": "awx", "retryable": false, "message": "AWX rejected the token (HTTP 401)", "hint": "run `untaped auth set awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}
 {"level": "error", "kind": "untaped.failure", "item": "Deploy", "category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/", "attempts": 3}}
 {"level": "warning", "kind": "untaped.message", "message": "--parallel 64 clamped to 16 (2 * os.cpu_count())"}
-{"level": "warning", "kind": "untaped.stale", "plugin": "library", "cache": "shelf.book_source_books", "key": "library:3f2a…", "refreshed_at": "2026-10-09T10:00:00Z", "age_seconds": 93600.0, "max_age_seconds": 3600, "partial": false, "attempted_at": "2026-10-10T12:00:00Z", "retry_at": "2026-10-10T12:05:00Z", "error": {"category": "unavailable", "system": "library", "retryable": true, "message": "HTTP 503", "hint": null, "exit_code": 5, "details": {}}, "message": "library: refresh failed (HTTP 503); using data from 2026-10-09 10:00 UTC, 26 h old; next check after 12:05 UTC"}
+{"level": "warning", "kind": "untaped.stale", "plugin": "library", "cache": "shelf.book_source_books", "key": "library:3f2a…", "refreshed_at": "2026-10-09T10:00:00Z", "age_seconds": 93600.0, "max_age_seconds": 3600, "partial": false, "outdated": false, "attempted_at": "2026-10-10T12:00:00Z", "retry_at": "2026-10-10T12:05:00Z", "error": {"category": "unavailable", "system": "library", "retryable": true, "message": "HTTP 503", "hint": null, "exit_code": 5, "details": {}}, "message": "library: refresh failed (HTTP 503); using data from 2026-10-09 10:00 UTC, 26 h old; next check after 12:05 UTC"}
 {"level": "progress", "kind": "untaped.progress", "label": "Refreshing source 'prod'", "phase": "probing refs", "done": 312, "total": 780, "elapsed": 9.0, "state": "running", "message": "Refreshing source 'prod' \u00b7 probing refs 312/780 (9s)"}
 {"level": "hint", "kind": "untaped.message", "message": "run `untaped skills install`"}
 {"level": "info", "kind": "untaped.message", "message": "sync: 2 cloned, 1 failed"}
@@ -133,6 +133,7 @@ a kind's fields, and a plugin may add kinds of its own. Ignore a `level` or
 | `item` | per-item errors | The item that failed (a name, an ID) |
 | `label`, `phase`, `done`, `total`, `elapsed`, `state` | progress | The operation, its current phase, its counts (`null` when unknown), seconds since it began, and `running`, `done` or `failed` |
 | `category`, `system`, `retryable`, `hint`, `exit_code`, `details` | errors | As in the `error` field above; `exit_code` is the code this failure alone selects, and `details` holds machine context such as `status`, `url` and `attempts` |
+| `outdated` | stale | `true` when the data was made by another version of the plugin that keeps it (refreshed on the next read that may check) |
 
 A plain `error: …` line (one that does not come from a raised failure) is an
 `untaped.failure` too, with category `failed`, and it counts: a command that

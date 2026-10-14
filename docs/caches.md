@@ -81,9 +81,50 @@ provider method that `gather` asked, the warning waits until the answer is
 used, and is never said if it isn't
 ([contracts](./contracts.md#how-providers-are-loaded-and-chosen)).
 
+## When the code that fills a cache changes
+
+A cache's data can go out of date without upstream changing: a new release of
+your plugin parses files differently, or a library it relies on does. Name the
+version of the code that fills the cache with `version=`, a function
+called each time the cache is read (never at import):
+
+```python
+from untaped.sdk import Cache, code_version
+
+INDEX = Cache(
+    "acme",
+    "index",
+    label="source data",
+    max_age=timedelta(days=1),
+    version=lambda: code_version("acme.domain.parser", distributions=("PyYAML",)),
+)
+```
+
+`code_version(module, distributions=, extra=)` hashes the bytes of the
+module's file (found without importing it), the installed version of each
+distribution, and each `extra` string, once per process: editing the parser
+or upgrading PyYAML changes it, and nothing needs bumping by hand. It reads
+that one file, so name the libraries it relies on, and keep first-party code
+that shapes the data in that module or hash its modules too
+(`extra=(code_version("acme.domain.identity"),)`). A `version` that raises
+fails every read of the cache, `--cached` included.
+
+The sidecar keeps the version each key was filled at. A key filled at
+another version is *outdated*: due the way a key past its max age is (auto
+refreshes it, its data is kept, and after a failed refresh the retry window
+holds), and stale: `--cached` serves it with one `untaped.stale` warning whose
+`outdated` is true (`source prod: made by another version of the acme plugin;
+using data from …`). `seed()` writes no version, so data seeded from an older
+release is refreshed on its first read. Two installs at different versions
+that share a profile (a release and a development checkout) refill each
+other's keys on every read. Without `version=` nothing changes.
+
+## Status rows and tests
+
 For a command that reports a cache's state, subclass `FreshnessRecord` and
 fill it with `FreshnessRecord.fields(MY_CACHE.freshness(key), max_age=…,
-now=…)`; its `refresh_error` never fails the row. `cached(key, read)` peeks
+now=…)`; its `refresh_error` never fails the row, and `outdated` says the
+key was filled by another version. `cached(key, read)` peeks
 at what is cached with no refresh, lock or warning, for in-process readers
 such as a screen; `seed()` and `forget()` record what an owner already holds
 or forget a key whose data changed. In tests, `untaped.testing.cache_clock()`

@@ -54,7 +54,8 @@ failed and paused refreshes, the cache.
   `--dry-run`, `would release`. When a release fails the source stays
   (`action` `failed`, with an `error`), so rerunning the remove retries it.
 - `source status` reports `state` (`fresh`, `stale` or `not_refreshed`),
-  `refreshed_at`, `max_age_seconds`, `partial`, `attempted_at`, `retry_at`
+  `refreshed_at`, `max_age_seconds`, `partial`, `outdated` (made by another
+  untaped version, so the next read refreshes it), `attempted_at`, `retry_at`
   and `refresh_error` (the last refresh's failure), with `scanned_at` and the
   counts of what the index holds; times in UTC. An empty source that
   refreshed is `fresh` with zero counts.
