@@ -627,7 +627,8 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         message = f"{subject}: {cause}"
         if error is None:
             message += f"{_utc_minute(refreshed_at)} UTC, {duration_text(age.total_seconds())} old"
-            message += " (--cached)"
+            if cached or not outdated:  # outdated data reaches auto when another version filled it
+                message += " (--cached)"
         else:
             message += f"; using data from {_utc_minute(refreshed_at)} UTC"
             if not partial:

@@ -322,9 +322,9 @@ class Cache:
     overrides it. ``renamed_from`` names old keys of the plugin's section
     (dotted, relative to it) that are still read as that setting, with a
     warning. ``version`` returns the version of the code that fills the
-    cache (usually :func:`code_version`); it is called once per
-    :meth:`serve`, never at import, and a key filled at another version is
-    refreshed like an expired one. Two declarations with the same values
+    cache (usually :func:`code_version`); it is called each time the cache
+    is read (once per :meth:`serve`), never at import, and a key filled at
+    another version is refreshed like an expired one. Two declarations with the same values
     (the same ``version`` callable) are equal.
     """
 
@@ -689,7 +689,7 @@ class Cache:
             refreshed_at = _parsed(raw.get("refreshed_at"))
             filled_at = raw.get("version")
             filled_at = filled_at if isinstance(filled_at, str) else None
-            outdated = version is not None and filled_at != version
+            outdated = version is not None and refreshed_at is not None and filled_at != version
             error = _failure(raw.get("error"))
             if error is None and raw.get("error") is not None:
                 # a newer untaped's error: the attempt it describes cannot be told, the data can
@@ -984,7 +984,10 @@ def code_version(
 
 @functools.cache
 def _code_version(module: str, distributions: tuple[str, ...], extra: tuple[str, ...]) -> str:
-    spec = importlib.util.find_spec(module)
+    try:
+        spec = importlib.util.find_spec(module)
+    except ModuleNotFoundError:  # a parent package is missing
+        spec = None
     origin = None if spec is None else spec.origin
     if origin is None or not Path(origin).is_file():
         raise ConfigError(f"code_version: module {module!r} has no source file to hash")
