@@ -41,6 +41,10 @@ if TYPE_CHECKING:
     from untaped.plugins.registry import PluginSpec
 
 #: Names a contract method may not take: the provider machinery's own.
+#: Set to ``True`` on a function a provider base defines for its own role (lint's ``@rule``),
+#: so doctor's unused-method check doesn't report it as a removed contract method.
+PROVIDER_HELPER = "__untaped_provider_helper__"
+
 SDK_NAMES = frozenset({"providers", "gather", "convert", "on", "own", "ready", "settings", "http"})
 
 _BRIDGE = "__untaped_bridge__"
@@ -460,6 +464,7 @@ def unused_methods(provider: type[Contract], contract: ContractInfo) -> list[str
                 and inspect.isfunction(value)
                 and name not in contract.methods
                 and name not in SDK_NAMES
+                and not getattr(value, PROVIDER_HELPER, False)
                 and name not in unused
             ):
                 unused.append(name)

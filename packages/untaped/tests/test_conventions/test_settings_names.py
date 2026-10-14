@@ -10,10 +10,9 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel, create_model
 
-from test_conventions.support import Install
+from test_conventions.support import Install, structure_violations
 from untaped.conventions.settings_names import name_problem, settings_name_violations
 from untaped.conventions.source import source_files
-from untaped.conventions.structure import structure_violations
 from untaped.plugins.registry import PluginSpec
 
 _ERRORS = dedent('''

@@ -16,7 +16,7 @@ from untaped.deprecated_keys import key_mappings
 from untaped.plugins.registry import PluginSpec
 from untaped.settings import SkillsSettings
 from untaped.stability import experimental
-from untaped.surface import Line, plugin_lines
+from untaped.surface import Line, SurfaceError, plugin_lines
 from untaped.surface._settings import settings_lines
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -137,3 +137,33 @@ def test_extension_rank_keys_take_their_methods_marks() -> None:
         Line("cfg bins.extensions.crate_source.rank.crates string[] default=[]", "experimental")
         in lines
     )
+
+
+@experimental
+class Crate(BaseModel):
+    """A payload model still experimental itself."""
+
+    label: str
+
+
+class Wrapper(BaseModel):
+    crate: Crate
+
+
+def test_a_stable_contract_reaching_an_experimental_model_is_refused() -> None:
+    """S2: stabilising a contract never promises an experimental model by accident."""
+
+    class CrateSource(Contract):
+        @abstractmethod
+        def crates(self) -> list[Wrapper]: ...
+
+    with pytest.raises(SurfaceError, match=r"the stable crate_source\.crates reaches Crate"):
+        plugin_lines(PluginSpec(name="bins", contracts=lambda: (CrateSource,)))
+
+    @experimental
+    class CrateDraft(Contract):
+        @abstractmethod
+        def crates(self) -> list[Wrapper]: ...
+
+    lines = plugin_lines(PluginSpec(name="bins", contracts=lambda: (CrateDraft,)))
+    assert Line("contract bins.Crate(label)", "experimental") in lines
