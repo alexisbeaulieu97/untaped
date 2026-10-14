@@ -13,8 +13,7 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from untaped.contracts import Source
-from untaped.sdk import Failure, Issued, Record, kind_of
+from untaped.sdk import Failure, Issued, Record, Source, kind_of
 
 type Severity = Literal["error", "warning"]
 """The diagnostic level words: an error fails the run (exit 3), a warning doesn't."""

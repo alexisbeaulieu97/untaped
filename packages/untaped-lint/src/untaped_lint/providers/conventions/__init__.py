@@ -110,7 +110,7 @@ _DRIFT = "owner-schema-drift: "
 UNCHECKED = frozenset(
     {f"{KEY}.plugin-not-installed", f"{KEY}.quarantined", f"{KEY}.unreadable-file"}
 )
-"""Findings meaning no other rule ran on the plugin, so a narrowed run still reports them."""
+"""Findings meaning rules did not run on the plugin, so a narrowed run still reports them."""
 
 
 class Conventions:
