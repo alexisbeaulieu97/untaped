@@ -71,10 +71,10 @@ def test_a_key_the_composition_quarantines_is_refused_and_the_composition_comes_
     before = compose(shelf_spec(), shop_spec())
     checked = registry._check_reserved_name
 
-    def refuse_house(spec: PluginSpec, state: object) -> None:
+    def refuse_house(spec: PluginSpec, state: registry._CompositionState) -> None:
         if spec.name == "house":
             raise registry._Quarantine("reserved-name", "refused for the test: 'house'")
-        checked(spec, state)  # type: ignore[arg-type]
+        checked(spec, state)
 
     monkeypatch.setattr(registry, "_check_reserved_name", refuse_house)
     with (

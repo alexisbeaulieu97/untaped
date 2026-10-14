@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from abc import abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
@@ -186,3 +187,17 @@ def test_a_model_does_not_inherit_its_base_class_mark() -> None:
 def test_an_exported_subclass_does_not_inherit_its_base_class_mark() -> None:
     assert own_mark(StableCrate) is None
     assert own_mark(Crate) == "experimental"
+
+
+def test_a_subclass_does_not_inherit_warnings_deprecated() -> None:
+    @warnings.deprecated("old")
+    class Old:
+        pass
+
+    with pytest.warns(DeprecationWarning):
+
+        class New(Old):
+            pass
+
+    assert own_mark(Old) == "deprecated"
+    assert own_mark(New) is None
