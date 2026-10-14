@@ -28,6 +28,7 @@ from untaped.cache import (
     FreshnessRecord,
     NeverRefreshed,
     Served,
+    code_version,
     refresh_option,
 )
 
@@ -358,6 +359,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "FreshnessRecord",
     "NeverRefreshed",
     "Served",
+    "code_version",
     "refresh_option",
     # prompts and ui
     "NO_PROGRESS",
