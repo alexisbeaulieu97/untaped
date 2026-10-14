@@ -374,6 +374,34 @@ def test_migrate_stops_before_moving_anything_when_gpg_cannot_decrypt(
     assert _auth("migrate", "--dry-run").exit_code == 0, "a plan needs no preflight"
 
 
+def test_set_without_a_terminal_stops_on_a_locked_gpg_key_without_prompting(
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Tests run with no terminal on stdin, as an agent does: gpg is told not to ask.
+    monkeypatch.setenv("STUB_MODE", "locked-key")
+    result = _auth("set", "svc", "--stdin", input=SENTINEL)
+    assert result.exit_code == 5
+    assert "gpg decrypt for the pass store: the password store is locked" in result.stderr
+    assert "echo test | gpg -e -r test@example.com | gpg -d > /dev/null" in result.stderr
+    assert not [c for c in stores.calls() if c["argv"][0] == "pass"], "pass never ran"
+    assert not _isolated_config.exists()
+    _no_leak(result, stores)
+
+
+def test_reading_a_locked_pass_token_without_a_terminal_names_the_unlock_command(
+    stores: FakeStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _auth("set", "svc", "--store", "pass", "--stdin", input=SENTINEL).exit_code == 0
+    clear_token_cache()
+    monkeypatch.setenv("STUB_MODE", "locked-key")
+    token = auth.CommandToken(["pass", "show", "untaped/default/svc"], section="svc")
+    with pytest.raises(ConfigError) as caught:
+        token.get_secret_value()
+    assert caught.value.exit_code == 5
+    assert caught.value.hint is not None
+    assert "`pass show untaped/default/svc > /dev/null`" in caught.value.hint
+
+
 def test_reading_a_pass_token_summarises_gpg_and_hints_once(
     stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
