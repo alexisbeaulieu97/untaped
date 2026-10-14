@@ -118,7 +118,8 @@ the profile is skipped silently; with none ready `gather` raises
 `NoProviderReady` (exit 4), whose `not_ready` maps each plugin to why it
 isn't ready and `quarantined` each refused offer to its reason (both empty:
 no composed plugin fills it; a plugin quarantined at composition offers
-nothing and is only in `untaped plugin list`), so an owner can turn it into its own error
+nothing and is only in `composition().quarantine`), so an owner can turn it
+into its own error
 (workspace reports a repo name nobody could look up as not found, naming the
 setting to set). A provider that raises is `Failed` with `reason="raised"`.
 `select_one` then decides:
@@ -212,9 +213,10 @@ def test_shelf_keeps_its_surface() -> None:
   after the block. Outside tests, `untaped.contracts.providing(owner,
   {"house": [...]})` does the same for an owner that loads providers from
   elsewhere (a repository's rule modules): the installed plugins plus a
-  plugin `house` offering each instance to `owner`. A key that is `untaped`,
-  not a plugin name, or an installed plugin's name is refused before
-  anything is composed.
+  plugin `house` offering each instance to `owner`. A key that is not a
+  plugin name, is reserved (`untaped`, `sdk`, a core section or command
+  group) or is an installed plugin's name is refused before anything is
+  composed, and one the composition quarantines raises `ConfigError`.
 - `assert_surface(SPEC, path)` (experimental, with the file's line format)
   writes `surface.txt` the first time: one line per promise of the plugin,
   its commands, flags and settings, each contract with its methods'

@@ -8,7 +8,8 @@ from test_contracts.support import Book, BookSource, compose, shelf_spec, shop_s
 from untaped import bootstrap
 from untaped.contracts import Ok, gather, providing
 from untaped.errors import ConfigError
-from untaped.plugins.registry import PluginCandidate
+from untaped.plugins import registry
+from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.testing import plugin_candidate
 
 
@@ -62,3 +63,23 @@ def test_an_instance_of_another_owners_contract_is_refused() -> None:
         providing("lint", {"house": [_House()]}, candidates=_installed()),
     ):
         pass
+
+
+def test_a_key_the_composition_quarantines_is_refused_and_the_composition_comes_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = compose(shelf_spec(), shop_spec())
+    checked = registry._check_reserved_name
+
+    def refuse_house(spec: PluginSpec, state: object) -> None:
+        if spec.name == "house":
+            raise registry._Quarantine("reserved-name", "refused for the test: 'house'")
+        checked(spec, state)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(registry, "_check_reserved_name", refuse_house)
+    with (
+        pytest.raises(ConfigError, match="house: reserved-name: refused for the test"),
+        providing("shelf", {"house": [_House()]}, candidates=_installed()),
+    ):
+        pass
+    assert bootstrap.composition() is before

@@ -298,6 +298,7 @@ def test_check_plugin_returns_typed_rows_of_the_composed_checks_only(
         ("conventions", "protocol-location", "fail"),
     }
     assert kind_of(PluginCheckRow) == "untaped.plugin_check"
+    assert "severity" not in PluginCheckRow.model_fields
 
 
 def test_check_plugin_checks_an_uninstalled_spec_through_candidates() -> None:

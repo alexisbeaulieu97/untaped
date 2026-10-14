@@ -17,6 +17,7 @@ from untaped.plugins.registry import PluginSpec
 from untaped.settings import SkillsSettings
 from untaped.stability import experimental
 from untaped.surface import Line, SurfaceError, plugin_lines
+from untaped.surface._sdk import own_mark
 from untaped.surface._settings import settings_lines
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -180,3 +181,8 @@ def test_a_model_does_not_inherit_its_base_class_mark() -> None:
 
     lines = plugin_lines(PluginSpec(name="bins", contracts=lambda: (StableCrateSource,)))
     assert any(line.text.startswith("contract bins.StableCrate(") for line in lines)
+
+
+def test_an_exported_subclass_does_not_inherit_its_base_class_mark() -> None:
+    assert own_mark(StableCrate) is None
+    assert own_mark(Crate) == "experimental"
