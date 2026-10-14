@@ -11,10 +11,10 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel, ConfigDict
 
+from test_conventions.support import structure_violations
 from untaped.conventions.allow import allowed
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.source import source_files
-from untaped.conventions.structure import structure_violations
 from untaped.plugins.registry import PluginSpec
 
 LINES = [

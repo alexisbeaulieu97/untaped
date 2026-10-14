@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
 
+from cyclopts import App
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
@@ -25,9 +27,12 @@ from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.messages import message_violations
 from untaped.conventions.settings_names import settings_name_violations
-from untaped.conventions.source import source_files
+from untaped.conventions.source import SourceFile, source_files
 from untaped.conventions.stability import stability_violations
-from untaped.conventions.structure import structure_violations
+from untaped.conventions.structure import (
+    structure_class_violations,
+    structure_source_violations,
+)
 from untaped.conventions.terminal_boundary import terminal_boundary_violations
 from untaped.plugins.registry import (
     ROOT_MANAGEMENT_COMMANDS,
@@ -56,6 +61,45 @@ def plugin_violations(
     that is not installed. Lines are ``<where>::<rule>::<detail>``, sorted. A
     quarantined plugin's one violation is the reason composition refused it.
     """
+    found = _checked(name, candidates)
+    if isinstance(found, list):
+        return found
+    return sorted([*_core_lines(found), *_file_lines(found, tests_dir)])
+
+
+def core_plugin_violations(
+    name: str, *, candidates: Sequence[PluginCandidate] | None = None
+) -> list[str]:
+    """The violations only the composed root can tell: what ``check_plugin`` reports.
+
+    Plugin and distribution names, provides requirements, the help tree,
+    stability marks, structure's class checks (exceptions, ports, frozen
+    settings, setting names) and the import boundary. The rules that read
+    only the plugin's files are not run here. Lines and a quarantined
+    plugin's one violation are as :func:`plugin_violations` gives them.
+    """
+    found = _checked(name, candidates)
+    if isinstance(found, list):
+        return found
+    return sorted(_core_lines(found))
+
+
+@dataclass(frozen=True)
+class _Checked:
+    """One composed plugin, located: what each family of checks reads."""
+
+    name: str
+    root: App
+    spec: PluginSpec
+    own: PluginCandidate | None
+    candidates: Sequence[PluginCandidate]
+    package: str
+    source_dir: Path
+    files: list[SourceFile]
+
+
+def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checked | list[str]:
+    """The composed plugin ``name``, or a quarantined plugin's one violation."""
     candidates = list(discover_candidates()) if candidates is None else candidates
     root = build_root_app(candidates=candidates)
     spec = next(
@@ -72,28 +116,38 @@ def plugin_violations(
     own = next((candidate for candidate in candidates if candidate.name == name), None)
     package, source_dir = package_of(spec, None if own is None else own.target)
     files = list(source_files(source_dir))
-    plugin_packages, declared = _boundary(name, candidates, frozenset(spec.provides))
+    return _Checked(name, root, spec, own, candidates, package, source_dir, files)
+
+
+def _core_lines(checked: _Checked) -> list[str]:
+    spec, name = checked.spec, checked.name
+    plugin_packages, declared = _boundary(name, checked.candidates, frozenset(spec.provides))
     commands = [] if spec.app_factory is None else [name]  # its mounted subtree
-    return sorted(
-        [
-            *_name_violations(name, package, own),
-            *_provides_violations(spec, own, candidates),
-            *help_tree_violations(root, commands),
-            *stability_violations(root, composition(), commands, spec=spec),
-            *message_violations(source_dir, files),
-            *structure_violations(spec, package, source_dir, files, tests_dir=tests_dir),
-            *layering_violations(package, source_dir, files),
-            *terminal_boundary_violations(source_dir, files),
-            *blob_reader_violations(package, source_dir, files),
-            *import_boundary_violations(
-                package,
-                source_dir,
-                files,
-                plugin_packages=plugin_packages,
-                declared=declared,
-            ),
-        ]
-    )
+    return [
+        *_name_violations(name, checked.package, checked.own),
+        *_provides_violations(spec, checked.own, checked.candidates),
+        *help_tree_violations(checked.root, commands),
+        *stability_violations(checked.root, composition(), commands, spec=spec),
+        *structure_class_violations(spec, checked.package, checked.source_dir),
+        *import_boundary_violations(
+            checked.package,
+            checked.source_dir,
+            checked.files,
+            plugin_packages=plugin_packages,
+            declared=declared,
+        ),
+    ]
+
+
+def _file_lines(checked: _Checked, tests_dir: Path | None) -> list[str]:
+    package, source_dir, files = checked.package, checked.source_dir, checked.files
+    return [
+        *message_violations(source_dir, files),
+        *structure_source_violations(checked.spec, package, source_dir, files, tests_dir=tests_dir),
+        *layering_violations(package, source_dir, files),
+        *terminal_boundary_violations(source_dir, files),
+        *blob_reader_violations(package, source_dir, files),
+    ]
 
 
 def _name_violations(name: str, package: str, candidate: PluginCandidate | None) -> list[str]:

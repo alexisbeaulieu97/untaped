@@ -141,8 +141,11 @@ from untaped.records import (
     TableGlyph,
     TargetRecord,
     UtcTimestamp,
+    kind_of,
+    record_model,
 )
 from untaped.settings import HttpSettings, get_config_section
+from untaped.skills import project_root
 from untaped.stability import deprecated, deprecated_alias, experimental
 from untaped.state import StateCollection, StateMap
 from untaped.stdin import (
@@ -283,8 +286,10 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "emit",
     "finish",
     "is_envelope_line",
+    "kind_of",
     "parse_envelope_line",
     "read_records",
+    "record_model",
     "render_rows",
     "summary",
     "unified_diff_text",
@@ -348,6 +353,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "atomic_write",
     "file_lock",
     "git_toplevel",
+    "project_root",
     "run_git",
     "safe_path_segment",
     "same_origin",

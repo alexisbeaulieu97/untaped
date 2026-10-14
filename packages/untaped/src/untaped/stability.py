@@ -124,6 +124,12 @@ def function_mark(func: object) -> Stability | None:
     return mark if isinstance(mark, Experimental | Deprecated) else None
 
 
+def class_mark(cls: type) -> Stability | None:
+    """The marker put on ``cls`` itself; one a base class carries is not inherited."""
+    mark = vars(cls).get(_FUNCTION_ATTR)
+    return mark if isinstance(mark, Experimental | Deprecated) else None
+
+
 # --- panels and the --deprecated flag ----------------------------------------
 
 _SHOW_DEPRECATED: ContextVar[bool] = ContextVar("untaped_show_deprecated", default=False)

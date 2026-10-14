@@ -86,9 +86,12 @@ class CallState:
 
     ``stale_lines`` are the stale lines the call's caches served: under a
     call state :meth:`Cache.serve` defers them to whoever reads the answer.
+    ``caller`` names the provider call (``library's BookSource.books``) for an
+    error raised from inside it.
     """
 
     refresh: bool | None
+    caller: str = "a provider"
     stale: BaseException | None = None
     refreshed_at: datetime | None = None
     stale_lines: list[StaleData] = field(default_factory=list)
@@ -102,9 +105,9 @@ _CALL: ContextVar[CallState | None] = ContextVar("untaped_contract_call", defaul
 
 
 @contextmanager
-def call_state(refresh: bool | None) -> Iterator[CallState]:
+def call_state(refresh: bool | None, *, caller: str = CallState.caller) -> Iterator[CallState]:
     """Run a provider call under ``refresh``; yields what the call served."""
-    state = CallState(refresh)
+    state = CallState(refresh, caller=caller)
     token = _CALL.set(state)
     try:
         yield state

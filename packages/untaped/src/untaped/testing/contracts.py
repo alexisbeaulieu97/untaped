@@ -8,7 +8,7 @@ schemas with :func:`untaped.testing.assert_surface`. Nothing here imports
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
@@ -37,9 +37,10 @@ def compose_with(
     ``Configured`` settings). Yields the composition.
     """
     from untaped import bootstrap  # noqa: PLC0415 - the root is heavy; tests pay only on use
+    from untaped.contracts._providing import offering_candidates  # noqa: PLC0415
 
     base = _candidates(plugins)
-    fakes = [_fake(name, list(offered), base) for name, offered in (provides or {}).items()]
+    fakes = offering_candidates(provides or {}, base)
     with bootstrap.composed_with([*base, *fakes]) as result:
         token = _ACTIVE.set(result)
         try:
@@ -72,36 +73,6 @@ def _candidates(plugins: Sequence[str | PluginSpec | PluginCandidate]) -> list[P
                 raise LookupError(f"no installed plugin named {each!r}")
             found.append(installed[each])
     return found
-
-
-def _fake(name: str, offered: list[Contract], base: Sequence[PluginCandidate]) -> PluginCandidate:
-    """A candidate for plugin ``name`` offering ``offered`` to their contracts' owners."""
-    from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
-    from untaped.contracts._declare import contract_of  # noqa: PLC0415
-    from untaped.plugins.registry import PluginSpec, compose, owns_contracts  # noqa: PLC0415
-    from untaped.testing import plugin_candidate  # noqa: PLC0415
-
-    owners: dict[type, str] = {}
-    for plugin in compose(SHELL_SPEC, base).plugins:
-        if owns_contracts(plugin.spec):
-            owners.update(dict.fromkeys(plugin.spec.contracts(), plugin.spec.name))
-    grouped: dict[str, list[Contract]] = {}
-    for instance in offered:
-        info = contract_of(type(instance))
-        if info is None or info.cls is type(instance):
-            raise TypeError(f"{instance!r} is not a provider (an instance of a contract subclass)")
-        if info.cls not in owners:
-            raise LookupError(f"no composed plugin declares {info.cls.__qualname__}")
-        grouped.setdefault(owners[info.cls], []).append(instance)
-    provides = {owner: _offer(tuple(group)) for owner, group in grouped.items()}
-    return plugin_candidate(PluginSpec(name=name, provides=provides))
-
-
-def _offer(instances: tuple[Contract, ...]) -> Callable[[], Sequence[Contract]]:
-    def offer() -> tuple[Contract, ...]:
-        return instances
-
-    return offer
 
 
 def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[object] = ()) -> None:

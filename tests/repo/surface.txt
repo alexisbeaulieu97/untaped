@@ -4340,6 +4340,7 @@ sdk untaped.contracts.Issued.__init_subclass__(kind=) default=None
 sdk untaped.contracts.Issued.source
 sdk untaped.contracts.Issued.table_columns class
 sdk untaped.contracts.NoProviderReady(message, *, not_ready)
+sdk untaped.contracts.NoProviderReady(quarantined=) default=None
 sdk untaped.contracts.NoProviderReady.category class
 sdk untaped.contracts.NoProviderReady.details class
 sdk untaped.contracts.NoProviderReady.exit_code
@@ -4397,6 +4398,8 @@ sdk untaped.contracts.gather(plugins=) default=None
 sdk untaped.contracts.gather(progress=) default=NO_PROGRESS
 sdk untaped.contracts.gather(refresh=) default=None
 sdk untaped.contracts.listing(fn, /)
+sdk untaped.contracts.providing(candidates=) default=None
+sdk untaped.contracts.providing(owner, offered)
 sdk untaped.contracts.select_one(answers, matches) callback(matches, 1)
 sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Activate()  [experimental]
@@ -5594,6 +5597,7 @@ sdk untaped.sdk.git_toplevel(path)
 sdk untaped.sdk.git_toplevel(timeout=) default=30.0
 sdk untaped.sdk.hint(command)
 sdk untaped.sdk.is_envelope_line(obj)
+sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.most_severe(errors)
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
@@ -5625,6 +5629,7 @@ sdk untaped.sdk.parse_kv_pairs(values, *, flag)
 sdk untaped.sdk.plugin_dir(spec)
 sdk untaped.sdk.plural(count, singular)
 sdk untaped.sdk.plural(plural_form@3=) default=None
+sdk untaped.sdk.project_root(start)
 sdk untaped.sdk.q(value)
 sdk untaped.sdk.raise_usage(message)
 sdk untaped.sdk.read_identifiers(accept_kinds=) default=None
@@ -5639,6 +5644,7 @@ sdk untaped.sdk.read_stdin_input(allow_empty=) default=false
 sdk untaped.sdk.read_stdin_input(what=) default=identifiers
 sdk untaped.sdk.read_structured_file(flag=) default=None
 sdk untaped.sdk.read_structured_file(path)
+sdk untaped.sdk.record_model(kind)
 sdk untaped.sdk.refresh_option(cache)
 sdk untaped.sdk.rejected_token_error(cause=) default=None
 sdk untaped.sdk.rejected_token_error(section, message)
@@ -5715,6 +5721,15 @@ sdk untaped.testing.CliResult.exit_code
 sdk untaped.testing.CliResult.output
 sdk untaped.testing.CliResult.stderr
 sdk untaped.testing.CliResult.stdout
+sdk untaped.testing.PluginCheckRow(*, status, plugin, check, title)
+sdk untaped.testing.PluginCheckRow(detail=) default=""
+sdk untaped.testing.PluginCheckRow.__init_subclass__(kind=) default=None
+sdk untaped.testing.PluginCheckRow.check
+sdk untaped.testing.PluginCheckRow.detail
+sdk untaped.testing.PluginCheckRow.plugin
+sdk untaped.testing.PluginCheckRow.status
+sdk untaped.testing.PluginCheckRow.table_columns class
+sdk untaped.testing.PluginCheckRow.title
 sdk untaped.testing.ProgressClock()
 sdk untaped.testing.ProgressClock.advance(seconds)
 sdk untaped.testing.PromptBackend implement=confirm,multiselect,pick_many,secret,select,text
@@ -5763,6 +5778,8 @@ sdk untaped.testing.cache_clock(start@1=) default=None
 sdk untaped.testing.check_conventions(candidates=) default=None
 sdk untaped.testing.check_conventions(plugin)
 sdk untaped.testing.check_conventions(tests_dir=) default=None
+sdk untaped.testing.check_plugin(candidates=) default=None
+sdk untaped.testing.check_plugin(name)
 sdk untaped.testing.compose_with()
 sdk untaped.testing.compose_with(*plugins)
 sdk untaped.testing.compose_with(provides=) default=None
