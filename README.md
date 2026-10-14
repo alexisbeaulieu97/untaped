@@ -1,7 +1,7 @@
 # untaped
 
 **untaped** is a batteries-included CLI for DevOps workflows. `untaped[all]`
-gives you eight plugins that share one config file, the same profiles, and
+gives you nine plugins that share one config file, the same profiles, and
 the same output and piping rules:
 
 - **`workspace`**: task workspaces: one directory of git worktrees across
@@ -16,6 +16,8 @@ the same output and piping rules:
   item per machine (experimental).
 - **`git`**: credentials for Git hosts, and the repo store the other plugins
   keep repositories in.
+- **`lint`**: rules over plugins and records, one id and ignore spelling for
+  all; checks a plugin against the house conventions (experimental).
 
 Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
 `skills`, `doctor` and `plugin`.
@@ -73,7 +75,8 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
   [how composition works](./docs/composition.md),
   [contracts](./docs/contracts.md) between plugins,
   [caches](./docs/caches.md) of what an upstream answered and
-  [its agent skill](./docs/plugin-skills.md).
+  [its agent skill](./docs/plugin-skills.md), checked with
+  [`untaped lint`](./docs/lint.md).
 - [Building a screen](./docs/screens.md): an interactive terminal UI on the
   SDK's runtime, with the keys, theme and tests it shares.
 
@@ -81,8 +84,9 @@ Each plugin's guide: [workspace](./packages/untaped-workspace/README.md),
 [github](./packages/untaped-github/README.md), [jira](./packages/untaped-jira/README.md),
 [awx](./packages/untaped-awx/README.md), [ansible](./packages/untaped-ansible/README.md),
 [recipe](./packages/untaped-recipe/README.md),
-[dotfiles](./packages/untaped-dotfiles/README.md) and
-[git](./packages/untaped-git/README.md).
+[dotfiles](./packages/untaped-dotfiles/README.md),
+[git](./packages/untaped-git/README.md) and
+[lint](./packages/untaped-lint/README.md).
 
 ## Versioning
 

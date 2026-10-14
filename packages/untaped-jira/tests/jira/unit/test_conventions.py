@@ -1,4 +1,4 @@
-"""The jira plugin follows the command, message and structure conventions."""
+"""The jira plugin passes `untaped lint`: the command, message and structure rules."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import check_conventions
+from untaped_lint.testing import assert_clean
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
-def test_jira_follows_the_conventions() -> None:
-    check_conventions("jira", tests_dir=Path(__file__).resolve().parents[1])
+def test_jira_passes_lint() -> None:
+    assert_clean("jira", tests_dir=Path(__file__).resolve().parents[1])

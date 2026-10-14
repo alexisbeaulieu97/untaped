@@ -22,8 +22,8 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.conventions.allow import allowed
-from untaped.conventions.source import SourceFile, import_targets
+from untaped.testing import allows, import_targets
+from untaped_lint.infrastructure.files import SourceFile
 
 FORBIDDEN = {
     "domain": ("application", "infrastructure", "cli"),
@@ -82,6 +82,6 @@ def layering_violations(package: str, source_dir: Path, files: Sequence[SourceFi
         module_package = ".".join([package, *parts[:-1]])
         for node in runtime_imports(source.tree):
             for rule, detail in _import_violations(node, layer, package, module_package):
-                if not allowed(source.lines, node.lineno, rule):
+                if not allows(source.lines, node.lineno, rule):
                     found.append(f"{rel}::{rule}::{detail}")
     return found

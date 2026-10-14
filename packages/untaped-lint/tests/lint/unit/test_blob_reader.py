@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from untaped.conventions.blob_reader import RULE, blob_reader_violations
-from untaped.conventions.source import source_files
+from untaped_lint.infrastructure.files import source_files
+from untaped_lint.providers.conventions.blob_reader import RULE, blob_reader_violations
 
 HANDLE = "reads blobs outside a Prefetched handle; use store.prefetched(trees=, paths=).run(...)"
 STORE_VERB = "reads blobs outside a Prefetched handle; use store.checkout/worktree_add"

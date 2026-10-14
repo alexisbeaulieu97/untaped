@@ -13,7 +13,7 @@ shelf = ["untaped-shelf>=0.1,<0.2"]
 library = "untaped_library:SPEC"
 
 [dependency-groups]
-dev = ["pytest>=9"]
+dev = ["pytest>=9", "untaped[lint]>=10,<11"]
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

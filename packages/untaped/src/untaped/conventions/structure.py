@@ -2,7 +2,6 @@
 
 For one plugin package this flags:
 
-- ``errors-module`` — no ``errors.py`` with the plugin's error classes;
 - ``exception-base`` — an ``Exception`` subclass that is not an
   ``UntapedError`` (``report_errors`` would show a traceback); ``Warning``
   categories are exempt;
@@ -12,35 +11,28 @@ For one plugin package this flags:
 - ``protocol-location`` — a ``Protocol`` defined outside an
   ``application/**/ports.py`` module;
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
-- ``foreign-section`` — code reads another plugin's config section;
 - ``settings-not-frozen`` — the settings or state model is mutable;
 - ``settings-naming`` and ``settings-renames`` — see
-  :mod:`untaped.conventions.settings_names`;
-- ``private-test-import`` — a test imports an ``_``-prefixed module or name
-  of ``untaped`` or of the plugin package.
+  :mod:`untaped.conventions.settings_names`.
 
-The class checks import the package and report ``<module>.<class>::<rule>``;
-they have no source line, so no inline marker can suppress them. The source
-checks report ``<path>::<rule>::<detail>`` and honour ``# untaped: allow``.
+These checks import the package and report ``<module>.<class>::<rule>``;
+they have no source line, so no inline marker can suppress them. The checks
+that read only the plugin's files (``errors-module``, ``foreign-section``,
+``private-test-import``) are the lint plugin's.
 """
 
 from __future__ import annotations
 
-import ast
 import importlib
 import inspect
 import pkgutil
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from untaped.conventions.allow import allowed
 from untaped.conventions.settings_names import settings_name_violations
-from untaped.conventions.source import SourceFile, callee, source_files
 from untaped.errors import UntapedError
 from untaped.plugins.registry import PluginSpec, settings_model
-
-SECTION_READERS = frozenset({"get_config_section", "section"})
 
 
 def _modules(package: str) -> Iterator[Any]:
@@ -96,58 +88,10 @@ def _unattributed_base(cls: type, package: str) -> bool:
     return not own_parents and "system" not in vars(cls)
 
 
-def _source_violations(
-    source_dir: Path, files: Sequence[SourceFile], section: str
-) -> Iterator[str]:
-    if not (source_dir / "errors.py").is_file():
-        yield f"{source_dir.name}/errors.py::errors-module"
-    for source in files:
-        rel = source.path.relative_to(source_dir.parent).as_posix()
-        for node in ast.walk(source.tree):
-            if not (isinstance(node, ast.Call) and node.args):
-                continue
-            first = node.args[0]
-            if (
-                callee(node) in SECTION_READERS
-                and isinstance(first, ast.Constant)
-                and isinstance(first.value, str)
-                and first.value != section
-                and not allowed(source.lines, node.lineno, "foreign-section")
-            ):
-                yield f"{rel}::foreign-section::{first.value}"
-
-
 def _settings_violations(spec: PluginSpec) -> Iterator[str]:
     for label, model in (("settings", spec.settings), ("state", spec.state)):
         if model is not None and not model.model_config.get("frozen", False):
             yield f"{model.__module__}.{model.__qualname__}::settings-not-frozen::{label}"
-
-
-def _private_import_violations(tests_dir: Path, package: str) -> Iterator[str]:
-    checked = ("untaped", package)
-    for source in source_files(tests_dir):
-        rel = source.path.relative_to(tests_dir.parent).as_posix()
-        for node in ast.walk(source.tree):
-            if not isinstance(node, ast.Import | ast.ImportFrom) or allowed(
-                source.lines, node.lineno, "private-test-import"
-            ):
-                continue
-            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(checked):
-                module = node.module or ""
-                private = [part for part in module.split(".") if _private(part)]
-                private += [alias.name for alias in node.names if _private(alias.name)]
-                for item in private:
-                    yield f"{rel}::private-test-import::{module}:{item}"
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name.startswith(checked) and any(
-                        _private(part) for part in alias.name.split(".")
-                    ):
-                        yield f"{rel}::private-test-import::{alias.name}"
-
-
-def _private(name: str) -> bool:
-    return name.startswith("_") and not name.startswith("__")
 
 
 def structure_class_violations(spec: PluginSpec, package: str, source_dir: Path) -> list[str]:
@@ -159,18 +103,3 @@ def structure_class_violations(spec: PluginSpec, package: str, source_dir: Path)
             spec.name, settings_model(spec), source_dir.parent, state=spec.state
         ),
     ]
-
-
-def structure_source_violations(
-    spec: PluginSpec,
-    package: str,
-    source_dir: Path,
-    files: Sequence[SourceFile],
-    *,
-    tests_dir: Path | None = None,
-) -> list[str]:
-    """The checks that read only the plugin's files (and, with ``tests_dir``, its tests)."""
-    found = list(_source_violations(source_dir, files, spec.name))
-    if tests_dir is not None:
-        found.extend(_private_import_violations(tests_dir, package))
-    return found

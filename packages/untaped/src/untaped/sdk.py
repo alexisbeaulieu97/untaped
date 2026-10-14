@@ -117,6 +117,7 @@ from untaped.output import (
 from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
+from untaped.plugin_records import Plugin, installed_plugins
 from untaped.plugins.registry import (
     ApplicationSpec,
     DirMigration,
@@ -244,6 +245,8 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "ApplicationSpec",
     "PluginContext",
     "PluginSpec",
+    "Plugin",
+    "installed_plugins",
     "DoctorCheck",
     "DoctorResult",
     "DirMigration",

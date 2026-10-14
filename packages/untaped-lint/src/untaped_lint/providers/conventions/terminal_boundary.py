@@ -16,8 +16,8 @@ import ast
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.conventions.allow import allowed
-from untaped.conventions.source import SourceFile, import_targets
+from untaped.testing import allows, import_targets
+from untaped_lint.infrastructure.files import SourceFile
 
 RULE = "terminal-boundary"
 _LIBRARY = "prompt_toolkit"
@@ -36,7 +36,7 @@ def terminal_boundary_violations(source_dir: Path, files: Sequence[SourceFile]) 
                 for target in import_targets(node, "")
             ):
                 continue
-            if not allowed(source.lines, node.lineno, RULE):
+            if not allows(source.lines, node.lineno, RULE):
                 found.append(
                     f"{rel}:{node.lineno}::{RULE}::imports {_LIBRARY}; "
                     "build screens with untaped.sdk"

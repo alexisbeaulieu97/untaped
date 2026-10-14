@@ -45,11 +45,22 @@ def _listing(candidates: list[PluginCandidate]) -> list[dict[str, object]]:
     return _rows(invoked.stdout)
 
 
+_LOCATED = ("package", "source_dir", "tests_dir")
+
+
 def test_lists_a_ready_provider_with_its_distribution_version() -> None:
     rows = _listing([make_candidate(make_spec("acme"), "acme-dist", distribution_version="1.2.3")])
-    assert rows == [
+    assert [{key: row[key] for key in row if key not in _LOCATED} for row in rows] == [
         {"name": "acme", "status": "ready", "distribution": "acme-dist", "version": "1.2.3"}
     ]
+
+
+def test_a_ready_plugin_says_where_its_code_is() -> None:
+    """``untaped.plugin`` records carry what lint's plugin subject reads."""
+    [row] = _listing([make_candidate(make_spec("acme"), "acme-dist")])
+    assert row["package"] == "test_management"
+    assert row["source_dir"] == str(Path(__file__).parent)
+    assert row["tests_dir"] is None  # no pyproject.toml declaring acme above it
 
 
 def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> None:
@@ -57,7 +68,15 @@ def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> N
         make_spec("acme"), "  ", distribution_version="1.2.3", error=RuntimeError("x")
     )
     assert _listing([broken]) == [
-        {"name": "acme", "status": "quarantined", "distribution": "unknown", "version": "1.2.3"}
+        {
+            "name": "acme",
+            "status": "quarantined",
+            "distribution": "unknown",
+            "version": "1.2.3",
+            "package": None,
+            "source_dir": None,
+            "tests_dir": None,
+        }
     ]
 
 
@@ -101,6 +120,9 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
             "status": "quarantined",
             "distribution": "example-dist",
             "version": "0.1.0",
+            "package": None,
+            "source_dir": None,
+            "tests_dir": None,
         }
     ]
 

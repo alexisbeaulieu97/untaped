@@ -23,6 +23,7 @@ EXPECTED_MEMBERS = [
     "untaped-git",
     "untaped-github",
     "untaped-jira",
+    "untaped-lint",
     "untaped-recipe",
     "untaped-workspace",
 ]

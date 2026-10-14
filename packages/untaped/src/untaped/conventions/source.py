@@ -24,16 +24,6 @@ def source_files(directory: Path) -> Iterator[SourceFile]:
         yield SourceFile(path, text.splitlines(), ast.parse(text))
 
 
-def callee(node: ast.Call) -> str:
-    """The called name: ``f`` for ``f(...)`` and ``obj.f(...)``, else ``""``."""
-    func = node.func
-    if isinstance(func, ast.Name):
-        return func.id
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return ""
-
-
 def import_targets(node: ast.Import | ast.ImportFrom, package: str) -> list[str]:
     """The absolute modules ``node`` imports, resolving a relative import against ``package``.
 

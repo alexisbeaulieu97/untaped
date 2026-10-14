@@ -9,6 +9,7 @@ untaped-dotfiles = { workspace = true }
 untaped-git = { workspace = true }
 untaped-github = { workspace = true }
 untaped-jira = { workspace = true }
+untaped-lint = { workspace = true }
 untaped-recipe = { workspace = true }
 untaped-workspace = { workspace = true }
 
@@ -87,6 +88,7 @@ files = [
     "packages/untaped-git/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
+    "packages/untaped-lint/src",
     "packages/untaped-recipe/src",
     "packages/untaped-workspace/src",
     "scripts/changelog.py",
@@ -102,6 +104,7 @@ mypy_path = [
     "packages/untaped-git/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
+    "packages/untaped-lint/src",
     "packages/untaped-recipe/src",
     "packages/untaped-workspace/src",
 ]
@@ -116,6 +119,7 @@ testpaths = [
     "packages/untaped-git/tests",
     "packages/untaped-github/tests",
     "packages/untaped-jira/tests",
+    "packages/untaped-lint/tests",
     "packages/untaped-recipe/tests",
     "packages/untaped-workspace/tests",
     "tests",
@@ -129,6 +133,7 @@ pythonpath = [
     "packages/untaped-git/tests",
     "packages/untaped-github/tests",
     "packages/untaped-jira/tests",
+    "packages/untaped-lint/tests",
     "packages/untaped-recipe/tests",
     "packages/untaped-workspace/tests",
 ]
@@ -152,6 +157,7 @@ paths = [
     "packages/untaped-git/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
+    "packages/untaped-lint/src",
     "packages/untaped-recipe/src",
     "packages/untaped-workspace/src",
     "scripts/vulture_allowlist.py",
@@ -202,6 +208,7 @@ source = [
     "packages/untaped-git/src",
     "packages/untaped-github/src",
     "packages/untaped-jira/src",
+    "packages/untaped-lint/src",
     "packages/untaped-recipe/src",
     "packages/untaped-workspace/src",
 ]

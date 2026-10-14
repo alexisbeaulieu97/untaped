@@ -11,7 +11,8 @@ from untaped_library.providers.shelf import LibraryBooks
 from untaped_library.records import Volume
 
 from untaped.sdk import StaleData
-from untaped.testing import assert_fills, check_conventions, invoke_root
+from untaped.testing import assert_fills, invoke_root
+from untaped_lint.testing import assert_clean
 
 _CONFIG = """\
 profiles:
@@ -30,8 +31,8 @@ def configured() -> None:
     path.write_text(_CONFIG, encoding="utf-8")
 
 
-def test_library_follows_the_conventions() -> None:
-    check_conventions("library")
+def test_library_passes_lint() -> None:
+    assert_clean("library")
 
 
 def test_the_library_fills_the_shelf_contract() -> None:

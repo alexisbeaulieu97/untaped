@@ -9,23 +9,25 @@ file through a cache (`MOTD` in `settings.py`, listed on the spec, so
 upstream answered. Copy this directory to start a plugin of your own.
 
 It is not published. In a virtualenv in a copy of this directory,
-`uv pip install untaped . pytest` installs `untaped` from PyPI. To test
-against an unreleased core, build its wheel from the repository root and
-install it by path (the copy outside the repository keeps uv from treating
+`uv pip install 'untaped[lint]' . pytest` installs `untaped` and its `lint`
+plugin from PyPI. To test against an unreleased core, build the wheels from
+the repository root and install them by path (the copy outside the repository keeps uv from treating
 it as part of the workspace):
 
 ```bash
 uv build --package untaped --no-sources --out-dir dist
+uv build --package untaped-lint --no-sources --out-dir dist
 cp -r examples/untaped-hello /tmp/untaped-hello
 uv venv /tmp/untaped-hello/.venv
 uv pip install --python /tmp/untaped-hello/.venv/bin/python \
-  dist/untaped-*-py3-none-any.whl /tmp/untaped-hello pytest
+  dist/untaped-*-py3-none-any.whl dist/untaped_lint-*-py3-none-any.whl \
+  /tmp/untaped-hello pytest
 cd /tmp/untaped-hello
 .venv/bin/untaped hello greet
 .venv/bin/python -m pytest tests
 ```
 
-The tests use only `untaped.testing`: `tests/conftest.py` enables the
-hermetic plugin, `check_conventions("hello")` runs untaped's convention
-checks, and `invoke_root` runs `untaped ...` in-process. The building guide
+The tests use `untaped.testing` and `untaped_lint.testing`: `tests/conftest.py`
+enables the hermetic plugin, `assert_clean("hello")` fails where `untaped lint`
+would, and `invoke_root` runs `untaped ...` in-process. The building guide
 is [`docs/plugins.md`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md).

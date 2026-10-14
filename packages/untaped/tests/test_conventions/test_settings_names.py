@@ -10,9 +10,9 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel, create_model
 
-from test_conventions.support import Install, structure_violations
+from test_conventions.support import Install
 from untaped.conventions.settings_names import name_problem, settings_name_violations
-from untaped.conventions.source import source_files
+from untaped.conventions.structure import structure_class_violations
 from untaped.plugins.registry import PluginSpec
 
 _ERRORS = dedent('''
@@ -73,7 +73,7 @@ def _violations(install: Install, body: str) -> list[str]:
         state=settings.AcmeState,
     )
     source_dir = site / "acme"
-    return structure_violations(spec, "acme", source_dir, list(source_files(source_dir)))
+    return structure_class_violations(spec, "acme", source_dir)
 
 
 PATH = "a path setting ends in _dir or _path"

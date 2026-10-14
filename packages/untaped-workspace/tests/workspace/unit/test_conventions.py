@@ -1,4 +1,4 @@
-"""The workspace plugin follows the command, message and structure conventions."""
+"""The workspace plugin passes `untaped lint`: the command, message and structure rules."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import check_conventions
+from untaped_lint.testing import assert_clean
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
-def test_workspace_follows_the_conventions() -> None:
-    check_conventions("workspace", tests_dir=Path(__file__).resolve().parents[1])
+def test_workspace_passes_lint() -> None:
+    assert_clean("workspace", tests_dir=Path(__file__).resolve().parents[1])

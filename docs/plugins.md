@@ -285,8 +285,9 @@ elsewhere, `--dry-run` to list the files first): the package with its
 (`providers/workspace.py`) with every method of the contract and its
 docstring (the required ones as stubs, the optional ones and the bridge
 commented out, since a stub would count as filling them), a test running
-`check_conventions`, `assert_fills` with a list of samples to fill in and
-`assert_surface`, and a `pyproject.toml` with the ranges and extra below. It
+lint's `assert_clean`, `assert_fills` with a list of samples to fill in and
+`assert_surface`, and a `pyproject.toml` with the ranges and extra below
+(`untaped[lint]` in its `dev` group). It
 never writes into an existing directory.
 
 A plugin that fills a contract declares, besides its `untaped` range, the
@@ -301,14 +302,15 @@ dependencies = ["untaped>=10,<11", "pydantic>=2.13.3,<3"]
 workspace = ["untaped-workspace>=10,<11"]
 ```
 
-`check_conventions` fails a plugin with no `untaped` range, or with a
+`untaped lint` fails a plugin with no `untaped` range, or with a
 `provides` key no such extra matches. An installed owner outside the
 extra's range quarantines that offer alone (`owner-out-of-range`). The
 provider imports only `untaped.sdk`, `untaped.contracts`, `untaped.testing`
 and the owner's `api` module.
 
-Fill the stubs, add samples, then run the plugin's tests and
-`untaped plugin check gitlab` against the installed package.
+Fill the stubs, add samples, drop the scaffold's `lint.live` ignore once
+the methods return, then run the plugin's tests and `untaped lint` in its
+directory against the installed package.
 [Testing contracts](./contracts.md#testing-contracts) says what each check
 does, and how an owner tests its own contracts.
 
@@ -335,7 +337,7 @@ def put_command() -> None: ...
   `"untaped acme set"`, a setting key or prose) when it is in another
   plugin or on a spec. Text must resolve.
 - A deprecated command shows with `untaped --deprecated --help` and warns once
-  per run. `check_conventions` rejects a hand-typed `Experimental:` or
+  per run. `untaped lint` rejects a hand-typed `Experimental:` or
   `Deprecated:`, a misplaced or redundant mark and a stale replacement.
 - Mark a setting on its field, as `Annotated[int, experimental]`; it
   inherits its plugin's mark, and `config list` lists it apart.
@@ -369,7 +371,7 @@ uv run untaped --help
 uv run untaped acme --help
 uv run untaped plugin list
 uv run untaped doctor
-uv run untaped plugin check acme
+uv run untaped lint
 uv run pytest
 uv run mypy
 uv run ruff check
@@ -377,7 +379,8 @@ uv run ruff check
 
 Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
-Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests,
+Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
+[Lint](./lint.md)) from the plugin's own tests,
 `untaped.testing.assert_surface(SPEC, path)` to keep its commands, settings
 and contracts from losing a line by accident (experimental), and
 `untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme

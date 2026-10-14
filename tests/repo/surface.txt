@@ -65,6 +65,9 @@ cfg jira.default_project string? default=unset
 cfg jira.page_size integer(exclusiveMinimum=0) default=50
 cfg jira.token string(format=password)? default=unset
 cfg jira.token_command string[]? default=unset
+cfg lint.extensions.linter.rank.findings string[] default=[]  [experimental]
+cfg lint.extensions.linter.rank.rules string[] default=[]  [experimental]
+cfg lint.ignore string[] default=[]  [experimental]
 cfg recipe.backup_keep integer(minimum=1)? default=unset
 cfg recipe.backup_max_age_days integer(minimum=1)? default=unset
 cfg recipe.hook_startup_timeout_seconds number(minimum=0) default=300
@@ -3677,18 +3680,43 @@ cli untaped jira whoami --format choice=pipe
 cli untaped jira whoami --format choice=raw
 cli untaped jira whoami --format choice=table
 cli untaped jira whoami --format choice=yaml
+cli untaped lint  [experimental]
+cli untaped lint --columns VALUE... default=unset  [experimental]
+cli untaped lint --columns alias=-c  [experimental]
+cli untaped lint --format VALUE default=table  [experimental]
+cli untaped lint --format alias=-f  [experimental]
+cli untaped lint --format choice=json  [experimental]
+cli untaped lint --format choice=pipe  [experimental]
+cli untaped lint --format choice=raw  [experimental]
+cli untaped lint --format choice=table  [experimental]
+cli untaped lint --format choice=yaml  [experimental]
+cli untaped lint --ignore VALUE... default=unset  [experimental]
+cli untaped lint --select VALUE... default=unset  [experimental]
+cli untaped lint --stdin switch  [experimental]
+cli untaped lint --strict switch  [experimental]
+cli untaped lint [PATHS...]@1 default=unset  [experimental]
+cli untaped lint rules  [experimental]
+cli untaped lint rules --columns VALUE... default=unset  [experimental]
+cli untaped lint rules --columns alias=-c  [experimental]
+cli untaped lint rules --format VALUE default=table  [experimental]
+cli untaped lint rules --format alias=-f  [experimental]
+cli untaped lint rules --format choice=json  [experimental]
+cli untaped lint rules --format choice=pipe  [experimental]
+cli untaped lint rules --format choice=raw  [experimental]
+cli untaped lint rules --format choice=table  [experimental]
+cli untaped lint rules --format choice=yaml  [experimental]
 cli untaped plugin
-cli untaped plugin check
-cli untaped plugin check --columns VALUE... default=unset
-cli untaped plugin check --columns alias=-c
-cli untaped plugin check --format VALUE default=table
-cli untaped plugin check --format alias=-f
-cli untaped plugin check --format choice=json
-cli untaped plugin check --format choice=pipe
-cli untaped plugin check --format choice=raw
-cli untaped plugin check --format choice=table
-cli untaped plugin check --format choice=yaml
-cli untaped plugin check [NAME]@1 default=unset
+cli untaped plugin check  [deprecated]
+cli untaped plugin check --columns VALUE... default=unset  [deprecated]
+cli untaped plugin check --columns alias=-c  [deprecated]
+cli untaped plugin check --format VALUE default=table  [deprecated]
+cli untaped plugin check --format alias=-f  [deprecated]
+cli untaped plugin check --format choice=json  [deprecated]
+cli untaped plugin check --format choice=pipe  [deprecated]
+cli untaped plugin check --format choice=raw  [deprecated]
+cli untaped plugin check --format choice=table  [deprecated]
+cli untaped plugin check --format choice=yaml  [deprecated]
+cli untaped plugin check [NAME]@1 default=unset  [deprecated]
 cli untaped plugin list
 cli untaped plugin list --columns VALUE... default=unset
 cli untaped plugin list --columns alias=-c
@@ -4281,6 +4309,56 @@ contract git.git_host abstract=credential,home  [experimental]
 contract git.git_host.credential(url: string) -> Credential?  [experimental]
 contract git.git_host.home() -> string?  [experimental]
 contract git.git_host.proxy(url: string) -> string?  [experimental]
+contract lint.Failure(category, message, system)
+contract lint.Failure.category choice=auth
+contract lint.Failure.category choice=config
+contract lint.Failure.category choice=conflict
+contract lint.Failure.category choice=failed
+contract lint.Failure.category choice=interrupted
+contract lint.Failure.category choice=invalid
+contract lint.Failure.category choice=not_found
+contract lint.Failure.category choice=permission
+contract lint.Failure.category choice=unavailable
+contract lint.Failure.category choice=usage
+contract lint.Failure.category string
+contract lint.Failure.details object default={}
+contract lint.Failure.exit_code integer default=1
+contract lint.Failure.hint string? default=None
+contract lint.Failure.item string? default=None
+contract lint.Failure.message string
+contract lint.Failure.retryable boolean default=false
+contract lint.Failure.system string
+contract lint.Finding(message, rule, severity, target)  [experimental]
+contract lint.Finding.error Failure? default=None  [experimental]
+contract lint.Finding.fix string[]? default=None  [experimental]
+contract lint.Finding.hint string? default=None  [experimental]
+contract lint.Finding.location DocumentLocation|FileLocation|ResourceLocation? default=None  [experimental]
+contract lint.Finding.message string  [experimental]
+contract lint.Finding.rule string  [experimental]
+contract lint.Finding.severity choice=error  [experimental]
+contract lint.Finding.severity choice=warning  [experimental]
+contract lint.Finding.severity string  [experimental]
+contract lint.Finding.source Source? default=None  [experimental]
+contract lint.Finding.target string  [experimental]
+contract lint.Rule(id, reads, severity, summary)  [experimental]
+contract lint.Rule.id string(pattern=^[a-z][a-z0-9]*(-[a-z0-9]+)*$)  [experimental]
+contract lint.Rule.reads string  [experimental]
+contract lint.Rule.renamed_from string[] default=[]  [experimental]
+contract lint.Rule.severity choice=error  [experimental]
+contract lint.Rule.severity choice=warning  [experimental]
+contract lint.Rule.severity string  [experimental]
+contract lint.Rule.source Source? default=None  [experimental]
+contract lint.Rule.summary string  [experimental]
+contract lint.Source(kind, plugin)
+contract lint.Source.kind string
+contract lint.Source.plugin string
+contract lint.Source.record object default={}
+contract lint.Subject(kind, record)  [experimental]
+contract lint.Subject.kind string  [experimental]
+contract lint.Subject.record object  [experimental]
+contract lint.linter abstract=findings,rules  [experimental]
+contract lint.linter.findings(subject: Subject) -> Finding[]  [experimental]
+contract lint.linter.rules() -> Rule[]  [experimental]
 contract workspace.Repo(name, url)  [experimental]
 contract workspace.Repo.archived boolean default=false  [experimental]
 contract workspace.Repo.default_branch string? default=None  [experimental]
@@ -5069,6 +5147,19 @@ sdk untaped.sdk.PipeEnvelope(kind, record, lineno)
 sdk untaped.sdk.PipeEnvelope.kind
 sdk untaped.sdk.PipeEnvelope.lineno
 sdk untaped.sdk.PipeEnvelope.record
+sdk untaped.sdk.Plugin(*, name, status, distribution, version)
+sdk untaped.sdk.Plugin(package=) default=None
+sdk untaped.sdk.Plugin(source_dir=) default=None
+sdk untaped.sdk.Plugin(tests_dir=) default=None
+sdk untaped.sdk.Plugin.__init_subclass__(kind=) default=None
+sdk untaped.sdk.Plugin.distribution
+sdk untaped.sdk.Plugin.name
+sdk untaped.sdk.Plugin.package
+sdk untaped.sdk.Plugin.source_dir
+sdk untaped.sdk.Plugin.status
+sdk untaped.sdk.Plugin.table_columns class
+sdk untaped.sdk.Plugin.tests_dir
+sdk untaped.sdk.Plugin.version
 sdk untaped.sdk.PluginContext(settings)
 sdk untaped.sdk.PluginContext.diag
 sdk untaped.sdk.PluginContext.settings
@@ -5596,6 +5687,7 @@ sdk untaped.sdk.git_toplevel(git=) default=git
 sdk untaped.sdk.git_toplevel(path)
 sdk untaped.sdk.git_toplevel(timeout=) default=30.0
 sdk untaped.sdk.hint(command)
+sdk untaped.sdk.installed_plugins()
 sdk untaped.sdk.is_envelope_line(obj)
 sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.most_severe(errors)
@@ -5721,6 +5813,16 @@ sdk untaped.testing.CliResult.exit_code
 sdk untaped.testing.CliResult.output
 sdk untaped.testing.CliResult.stderr
 sdk untaped.testing.CliResult.stdout
+sdk untaped.testing.PluginCandidate(distribution, name, target)
+sdk untaped.testing.PluginCandidate(distribution_version@4=) default=""
+sdk untaped.testing.PluginCandidate(entry_point_group@5=) default=untaped.plugins
+sdk untaped.testing.PluginCandidate(requires_dist@6=) default=[]
+sdk untaped.testing.PluginCandidate.distribution
+sdk untaped.testing.PluginCandidate.distribution_version
+sdk untaped.testing.PluginCandidate.entry_point_group
+sdk untaped.testing.PluginCandidate.name
+sdk untaped.testing.PluginCandidate.requires_dist
+sdk untaped.testing.PluginCandidate.target
 sdk untaped.testing.PluginCheckRow(*, status, plugin, check, title)
 sdk untaped.testing.PluginCheckRow(detail=) default=""
 sdk untaped.testing.PluginCheckRow.__init_subclass__(kind=) default=None
@@ -5768,6 +5870,7 @@ sdk untaped.testing.ScriptedPromptBackend.text(message, *, default)
 sdk untaped.testing.TtyStringIO()
 sdk untaped.testing.TtyStringIO(initial_value@1=) default=""
 sdk untaped.testing.TtyStringIO(newline@2=) default="\n"
+sdk untaped.testing.allows(source_lines, lineno, rule)
 sdk untaped.testing.assert_destructive_contract(assert_unchanged=) default=None callback(0)
 sdk untaped.testing.assert_destructive_contract(command, args) callback(command, *)
 sdk untaped.testing.assert_fills(provider)
@@ -5775,9 +5878,9 @@ sdk untaped.testing.assert_fills(samples=) default=[]
 sdk untaped.testing.assert_surface(spec, path)  [experimental]
 sdk untaped.testing.cache_clock()
 sdk untaped.testing.cache_clock(start@1=) default=None
-sdk untaped.testing.check_conventions(candidates=) default=None
-sdk untaped.testing.check_conventions(plugin)
-sdk untaped.testing.check_conventions(tests_dir=) default=None
+sdk untaped.testing.check_conventions(candidates=) default=None  [deprecated]
+sdk untaped.testing.check_conventions(plugin)  [deprecated]
+sdk untaped.testing.check_conventions(tests_dir=) default=None  [deprecated]
 sdk untaped.testing.check_plugin(candidates=) default=None
 sdk untaped.testing.check_plugin(name)
 sdk untaped.testing.compose_with()
@@ -5823,6 +5926,7 @@ sdk untaped.testing.git.global_config(add=) default=false  [experimental]
 sdk untaped.testing.git.global_config(key, value)  [experimental]
 sdk untaped.testing.git.hostile_git_home()  [experimental]
 sdk untaped.testing.git.trace2_events(path)  [experimental]
+sdk untaped.testing.import_targets(node, package)
 sdk untaped.testing.invoke_cli(args@2=) default=None
 sdk untaped.testing.invoke_cli(catch_exceptions=) default=true
 sdk untaped.testing.invoke_cli(command) callback(command, *)
@@ -6067,6 +6171,102 @@ sdk untaped_github.api.github_web_host(base_url)
 sdk untaped_github.api.is_global_github_failure(exc)
 sdk untaped_github.api.normalize_team_scopes(orgs=) default=[]
 sdk untaped_github.api.normalize_team_scopes(values)
+sdk untaped_lint.api.DocumentLocation(*, path, index)  [experimental]
+sdk untaped_lint.api.DocumentLocation.index  [experimental]
+sdk untaped_lint.api.DocumentLocation.path  [experimental]
+sdk untaped_lint.api.FileLocation(*, path)  [experimental]
+sdk untaped_lint.api.FileLocation(column=) default=None  [experimental]
+sdk untaped_lint.api.FileLocation(line=) default=None  [experimental]
+sdk untaped_lint.api.FileLocation.column  [experimental]
+sdk untaped_lint.api.FileLocation.line  [experimental]
+sdk untaped_lint.api.FileLocation.path  [experimental]
+sdk untaped_lint.api.Finding base=untaped.contracts.Issued  [experimental]
+sdk untaped_lint.api.Finding base=untaped.contracts.Record  [experimental]
+sdk untaped_lint.api.Finding(*, rule, severity, target, message)  [experimental]
+sdk untaped_lint.api.Finding(error=) default=None  [experimental]
+sdk untaped_lint.api.Finding(fix=) default=None  [experimental]
+sdk untaped_lint.api.Finding(hint=) default=None  [experimental]
+sdk untaped_lint.api.Finding(location=) default=None  [experimental]
+sdk untaped_lint.api.Finding(source=) default=None  [experimental]
+sdk untaped_lint.api.Finding.error  [experimental]
+sdk untaped_lint.api.Finding.fix  [experimental]
+sdk untaped_lint.api.Finding.hint  [experimental]
+sdk untaped_lint.api.Finding.location  [experimental]
+sdk untaped_lint.api.Finding.message  [experimental]
+sdk untaped_lint.api.Finding.rule  [experimental]
+sdk untaped_lint.api.Finding.severity  [experimental]
+sdk untaped_lint.api.Finding.table_columns class  [experimental]
+sdk untaped_lint.api.Finding.target  [experimental]
+sdk untaped_lint.api.IgnoreOption  [experimental]
+sdk untaped_lint.api.LintConfig()  [experimental]
+sdk untaped_lint.api.LintConfig(ignore@1=) default=[]  [experimental]
+sdk untaped_lint.api.LintConfig.ignore  [experimental]
+sdk untaped_lint.api.Linter base=untaped.contracts.Contract  [experimental]
+sdk untaped_lint.api.Linter implement=findings,rules  [experimental]
+sdk untaped_lint.api.Linter.findings(subject: Subject) -> Finding[]  [experimental]
+sdk untaped_lint.api.Linter.rules() -> Rule[]  [experimental]
+sdk untaped_lint.api.Location  [experimental]
+sdk untaped_lint.api.ResourceLocation(*, id)  [experimental]
+sdk untaped_lint.api.ResourceLocation(url=) default=None  [experimental]
+sdk untaped_lint.api.ResourceLocation.id  [experimental]
+sdk untaped_lint.api.ResourceLocation.url  [experimental]
+sdk untaped_lint.api.Rule base=untaped.contracts.Issued  [experimental]
+sdk untaped_lint.api.Rule base=untaped.contracts.Record  [experimental]
+sdk untaped_lint.api.Rule(*, id, reads, severity, summary)  [experimental]
+sdk untaped_lint.api.Rule(renamed_from=) default=[]  [experimental]
+sdk untaped_lint.api.Rule(source=) default=None  [experimental]
+sdk untaped_lint.api.Rule.id  [experimental]
+sdk untaped_lint.api.Rule.reads  [experimental]
+sdk untaped_lint.api.Rule.renamed_from  [experimental]
+sdk untaped_lint.api.Rule.severity  [experimental]
+sdk untaped_lint.api.Rule.summary  [experimental]
+sdk untaped_lint.api.Rule.table_columns class  [experimental]
+sdk untaped_lint.api.RuleFunction  [experimental]
+sdk untaped_lint.api.RuleFunction.model  [experimental]
+sdk untaped_lint.api.RuleFunction.rule  [experimental]
+sdk untaped_lint.api.Rules base=untaped.contracts.Contract  [experimental]
+sdk untaped_lint.api.Rules base=untaped_lint.api.Linter  [experimental]
+sdk untaped_lint.api.Rules implement=  [experimental]
+sdk untaped_lint.api.Rules.RULES class  [experimental]
+sdk untaped_lint.api.Rules.findings(subject)  [experimental]
+sdk untaped_lint.api.Rules.rules()  [experimental]
+sdk untaped_lint.api.SelectOption  [experimental]
+sdk untaped_lint.api.Severity choice=error  [experimental]
+sdk untaped_lint.api.Severity choice=warning  [experimental]
+sdk untaped_lint.api.StrictOption  [experimental]
+sdk untaped_lint.api.Subject base=untaped.contracts.Record  [experimental]
+sdk untaped_lint.api.Subject(*, kind, record)  [experimental]
+sdk untaped_lint.api.Subject.kind  [experimental]
+sdk untaped_lint.api.Subject.record  [experimental]
+sdk untaped_lint.api.finding(fix=) default=None  [experimental]
+sdk untaped_lint.api.finding(hint=) default=None  [experimental]
+sdk untaped_lint.api.finding(location=) default=None  [experimental]
+sdk untaped_lint.api.finding(rule, target, message) callback(rule, *)  [experimental]
+sdk untaped_lint.api.lint(candidates=) default=None  [experimental]
+sdk untaped_lint.api.lint(columns=) default=None  [experimental]
+sdk untaped_lint.api.lint(config=) default=<computed>  [experimental]
+sdk untaped_lint.api.lint(exact=) default=[]  [experimental]
+sdk untaped_lint.api.lint(findings=) default=[]  [experimental]
+sdk untaped_lint.api.lint(fmt=) default=table  [experimental]
+sdk untaped_lint.api.lint(ignore=) default=[]  [experimental]
+sdk untaped_lint.api.lint(only=) default=[]  [experimental]
+sdk untaped_lint.api.lint(paths=) default=[]  [experimental]
+sdk untaped_lint.api.lint(select=) default=[]  [experimental]
+sdk untaped_lint.api.lint(strict=) default=false  [experimental]
+sdk untaped_lint.api.lint(subjects)  [experimental]
+sdk untaped_lint.api.rule(id, *, reads, severity, summary)  [experimental]
+sdk untaped_lint.api.rule(renamed_from=) default=[]  [experimental]
+sdk untaped_lint.testing.assert_clean(candidates=) default=None  [experimental]
+sdk untaped_lint.testing.assert_clean(ignore=) default=[]  [experimental]
+sdk untaped_lint.testing.assert_clean(name)  [experimental]
+sdk untaped_lint.testing.assert_clean(strict=) default=false  [experimental]
+sdk untaped_lint.testing.assert_clean(tests_dir=) default=None  [experimental]
+sdk untaped_lint.testing.conformance(provider)  [experimental]
+sdk untaped_lint.testing.run(candidates=) default=None  [experimental]
+sdk untaped_lint.testing.run(ignore=) default=[]  [experimental]
+sdk untaped_lint.testing.run(select=) default=[]  [experimental]
+sdk untaped_lint.testing.run(subjects)  [experimental]
+sdk untaped_lint.testing.subject(record)  [experimental]
 sdk untaped_workspace.api.Repo base=untaped.contracts.Issued  [experimental]
 sdk untaped_workspace.api.Repo base=untaped.contracts.Record  [experimental]
 sdk untaped_workspace.api.Repo(*, name, url)  [experimental]

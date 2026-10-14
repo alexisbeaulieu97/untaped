@@ -25,8 +25,8 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.conventions.allow import allowed
-from untaped.conventions.source import SourceFile, callee, import_targets
+from untaped.testing import allows, import_targets
+from untaped_lint.infrastructure.files import SourceFile, callee
 
 RULE = "blob-reader"
 _STORE = "untaped_git"
@@ -50,7 +50,7 @@ def blob_reader_violations(
         rel = source.path.relative_to(source_dir.parent).as_posix()
         for scope in _scopes(source.tree):
             for call, message in _flagged(scope):
-                if not allowed(source.lines, call.lineno, RULE):
+                if not allows(source.lines, call.lineno, RULE):
                     found.append(f"{rel}:{call.lineno}::{RULE}::{message}")
     return sorted(set(found), key=lambda line: (line.split("::")[0], line))
 

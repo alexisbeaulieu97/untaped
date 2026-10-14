@@ -42,15 +42,16 @@ from untaped.management._render import emit_isolated
 from untaped.messages import command_line, not_found
 from untaped.output.diagnostic import WireModel
 from untaped.output.sink import Diagnostics
+from untaped.plugin_records import Plugin
 from untaped.plugins.registry import (
     CompositionResult,
     PluginCandidate,
-    candidate_distribution,
     owns_contracts,
     run_deferred_factory,
 )
-from untaped.records import Record, record_kinds, record_model
+from untaped.records import Record, kind_of, record_kinds, record_model
 from untaped.settings import ContractName, ExtensionSettings
+from untaped.stability import deprecated
 from untaped.theme import OutputFormat
 
 if TYPE_CHECKING:
@@ -58,7 +59,6 @@ if TYPE_CHECKING:
 
 _diag = Diagnostics()
 
-_UNKNOWN = "unknown"
 
 #: Shown by root ``--help`` and an empty ``plugin list`` when a bare
 #: ``untaped`` install has no plugins.
@@ -159,6 +159,7 @@ def build_root_plugin_app(
             emit(outcomes, fmt=fmt, columns=columns)
 
     @app.command(name="check")
+    @deprecated(replacement="untaped lint, from untaped[lint]")
     def check_command(
         name: Annotated[
             str | None, Parameter(help="The plugin to check; every installed one when left out.")
@@ -171,14 +172,21 @@ def build_root_plugin_app(
         """Check an installed plugin: conventions, and each contract it fills, live.
 
         The contract checks compose only the plugin and its owners. Exits 1
-        when a check fails; owner-schema-drift only warns.
+        when a check fails; owner-schema-drift only warns. The file conventions
+        run only when untaped[lint], which now owns them, is installed.
         """
+        from untaped.conventions import (  # noqa: PLC0415 - imports the root
+            FILE_RULES_MISSING,
+            file_rules_installed,
+        )
         from untaped.management.plugin_check import (  # noqa: PLC0415 - imports contracts
             check_plugins,
             report_check_rows,
         )
 
         with report_errors():
+            if not file_rules_installed():
+                _diag.warning(FILE_RULES_MISSING, hint="install untaped[lint] and run untaped lint")
             rows = check_plugins(result, candidates, name)
             report_check_rows(rows, fmt=fmt, columns=columns)
 
@@ -401,11 +409,11 @@ def _show(
 ) -> None:
     rows = _rows(result, candidates)
     emit_isolated(
-        rows,
+        [row.model_dump(mode="json") for row in rows],
         fmt=fmt,
         columns=columns,
-        kind="untaped.plugin",
-        table_columns=["name", "status", "distribution", "version"],
+        kind=kind_of(Plugin),
+        table_columns=list(Plugin.table_columns),
     )
     if not rows:
         _diag.hint(INSTALL_HINT)
@@ -414,33 +422,10 @@ def _show(
 def _rows(
     result: CompositionResult,
     candidates: Sequence[PluginCandidate],
-) -> list[dict[str, object]]:
-    # A distribution declares each entry-point name once, and a plugin whose
-    # spec name differs from it is quarantined, so the reported (distribution,
-    # name) finds the candidate of every row, an entry point that never resolved
-    # and a blank distribution (reported as ``unknown``) included.
-    versions = {
-        (candidate_distribution(item), item.name): item.distribution_version or _UNKNOWN
-        for item in candidates
-    }
-    ready = [
-        (registered.spec.name, "ready", registered.plugin_ref.distribution)
-        for registered in result.plugins
-    ]
-    quarantined = [
-        (record.name, "quarantined", record.distribution) for record in result.quarantine
-    ]
-    return [
-        {
-            "name": name,
-            "status": status,
-            "distribution": distribution,
-            "version": versions.get((distribution, name), _UNKNOWN),
-        }
-        for name, status, distribution in sorted(
-            ready + quarantined, key=lambda row: (row[0], row[2])
-        )
-    ]
+) -> list[Plugin]:
+    from untaped.plugin_records import plugin_records  # noqa: PLC0415 - locates packages
+
+    return plugin_records(result, candidates)
 
 
 __all__ = ["INSTALL_HINT", "build_root_plugin_app"]

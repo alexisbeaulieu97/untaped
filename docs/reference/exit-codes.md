@@ -64,6 +64,7 @@ pipe keeps its own exit code.
 | `untaped awx apply --check` | Any document would change the controller. |
 | `untaped recipe apply --check` | Any target would change. |
 | `untaped dotfiles sync`, `untaped dotfiles status --check` | A row needs the user (for example a local edit or a conflict). |
+| `untaped lint` | A rule found an error, or found anything under `--strict` ([Lint](../lint.md#exit-codes)). A rule that could not run exits 1 instead. |
 | `untaped skills status --check` | An installed skill is outdated or no longer shipped. |
 | `untaped workspace status --check` | Any repo would block `workspace archive` (uncommitted changes, stashes on its branch, unpushed commits, initialised submodules, or a repo missing from the repo store). A repo whose git state cannot be read exits 1 instead. |
 

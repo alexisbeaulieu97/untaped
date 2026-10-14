@@ -1,0 +1,1 @@
+[{"plugin": "shelf", "check": "conventions", "title": "conventions", "detail": "no violations", "status": "pass"}, {"plugin": "shelf", "check": "contracts", "title": "shelf", "detail": "declares book_source", "status": "pass"}]

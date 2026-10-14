@@ -128,6 +128,12 @@ overridden for one process with the environment variable shown.
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. |
 | `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
 
+## `lint`
+
+| Key | Type | Default | Environment | Description |
+|---|---|---|---|---|
+| `lint.ignore` | list | empty | `UNTAPED_LINT__IGNORE` | Findings to leave out of every run, each <rule>[:<target-glob>], as lint.error-case or lint.print:untaped_acme/cli/**. Experimental: may change in a minor release. |
+
 ## `recipe`
 
 | Key | Type | Default | Environment | Description |

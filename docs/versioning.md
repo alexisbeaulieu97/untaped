@@ -44,9 +44,10 @@ These may change in any release:
 - `--format raw` without `--columns`: it prints the first default column,
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
-- The rules `untaped.testing.check_conventions` applies, and the checks and
-  rows `untaped.testing.check_plugin` returns: a minor release may add or
-  move one, so a plugin's convention test can start failing. Mark a source
+- The rules `untaped lint` and the deprecated
+  `untaped.testing.check_conventions` apply, and the checks and rows
+  `untaped.testing.check_plugin` returns: a minor release may add or move
+  one, so a plugin's lint test can start failing. Mark a source
   line with `# untaped: allow <rule>` to waive a convention rule there, where
   the rule [allows it](./reference/conventions.md#enforcement).
 - `untaped_recipe.hook_api`, which is versioned on its own by
@@ -70,6 +71,10 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `UNTAPED_*` variables `workspace run` sets.
 - `dotfiles`: its commands, the `dotfiles.yml` manifest, its record kinds,
   the `status.json` and `attention` files, and the `dotfiles.*` settings.
+- `lint`: its commands, the `lint.rule` and `lint.finding` records, the
+  `lint.ignore` setting, `untaped_lint.api` (the `Linter` contract, `Rules`,
+  `rule` and `finding`), `untaped_lint.testing`, and the rule ids lint
+  declares. See [Lint](./lint.md).
 - `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
   credentials for a Git host.
 - The fixtures in `untaped.testing.git`, for testing a plugin against the

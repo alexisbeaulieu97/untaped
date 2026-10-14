@@ -54,7 +54,7 @@ def _requires(pyproject: dict[str, object]) -> tuple[str, ...]:
     return tuple(found)
 
 
-def test_the_scaffold_composes_follows_the_conventions_and_fills_its_contract(
+def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     outcomes = _new(tmp_path)
@@ -87,8 +87,15 @@ def test_the_scaffold_composes_follows_the_conventions_and_fills_its_contract(
         distribution_version="0.1.0",
         requires_dist=_requires(pyproject),
     )
+    assert pyproject["dependency-groups"] == {"dev": ["pytest>=9", "untaped[lint]>=10,<11"]}
     assert plugin_violations("gitlab", candidates=[_RACK, gitlab]) == []
-    # Its own tests pass; check_conventions runs above with the candidates it can't discover.
+    # Its own tests import untaped[lint]; core's own run (no plugin installed) stops here.
+    lint = pytest.importorskip("untaped_lint.testing")
+    # Its lint test, with the candidates it can't discover; then its other tests.
+    lint.assert_clean("gitlab", ignore=["lint.live"], candidates=[_RACK, gitlab])
+    assert 'assert_clean("gitlab", ignore=["lint.live"])' in (
+        root / "tests" / "test_gitlab.py"
+    ).read_text(encoding="utf-8")
     tests = _load(root / "tests" / "test_gitlab.py")
     with compose_with(_RACK, gitlab):
         tests.test_gitlab_fills_item_source()
