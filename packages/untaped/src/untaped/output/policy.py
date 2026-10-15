@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import os
 import threading
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal, Protocol
 
@@ -108,16 +108,16 @@ _live: list[Holder] = []
 _live_lock = threading.Lock()
 
 
-def enter(holder: Holder) -> object:
+def enter(holder: Holder) -> Token[Holder | None]:
     """Make ``holder`` the current scope; returns the token :func:`leave` takes."""
     with _live_lock:
         _live.append(holder)
     return _current.set(holder)
 
 
-def leave(holder: Holder, token: object) -> None:
+def leave(holder: Holder, token: Token[Holder | None]) -> None:
     """Remove ``holder`` from the live scopes, by identity, wherever it sits."""
-    _current.reset(token)  # type: ignore[arg-type]
+    _current.reset(token)
     with _live_lock:
         for index in range(len(_live) - 1, -1, -1):
             if _live[index] is holder:
