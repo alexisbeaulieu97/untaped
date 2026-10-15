@@ -322,7 +322,8 @@ def test_drops_only_the_sections_it_empties(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
         "profiles:\n"
-        "  default:\n    del:\n      protocol: ssh\n    keep: {}\n"
+        "  default:\n    del:\n      protocol: ssh\n"
+        "  other:\n    del: {}\n"
         "  work:\n    del:\n      protocol: ssh\n      parallel: 3\n",
     )
 
@@ -330,5 +331,5 @@ def test_drops_only_the_sections_it_empties(_isolated_config: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert _isolated_config.read_text() == (
-        "profiles:\n  default:\n    keep: {}\n  work:\n    del:\n      parallel: 3\n"
+        "profiles:\n  default: {}\n  other:\n    del: {}\n  work:\n    del:\n      parallel: 3\n"
     )
