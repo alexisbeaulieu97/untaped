@@ -1,6 +1,7 @@
 """Fixed launch/sync selection, execution identities and terminal outcomes."""
 
 import json
+import threading
 from typing import Any
 
 import httpx
@@ -263,14 +264,13 @@ def test_launch_runtime_failure_retains_success_and_skips_without_retry(
     assert route.call_count == 1
 
 
-def test_parallel_launch_stops_new_submissions_but_retains_inflight(fake_aap: Any) -> None:
-    import threading
-
+def test_parallel_launch_stops_new_submissions_but_retains_inflight(
+    fake_aap: Any, schedule_stopped: threading.Event
+) -> None:
     seed(fake_aap)
     for id_, name in [(51, "bad"), (52, "last")]:
         fake_aap.seed("job_templates", id=id_, name=name, organization=1)
     barrier = threading.Barrier(2, timeout=5)
-    failure_returned = threading.Event()
     calls: list[int] = []
 
     def launch(request: httpx.Request) -> httpx.Response:
@@ -278,14 +278,10 @@ def test_parallel_launch_stops_new_submissions_but_retains_inflight(fake_aap: An
         calls.append(target)
         barrier.wait()
         if target == 51:
-            failure_returned.set()
             return httpx.Response(400, json={"detail": "rejected"})
-        failure_returned.wait(5)
-        # Hold the other in-flight POST until the first error has reached the
+        # Hold the other in-flight POST until the first error has stopped the
         # scheduler, making the expected skipped third target deterministic.
-        import time
-
-        time.sleep(0.05)
+        assert schedule_stopped.wait(5)
         return httpx.Response(202, json={"id": 100, "type": "job", "status": "pending"})
 
     fake_aap.router.routes.clear()
@@ -649,7 +645,7 @@ def test_ctrl_c_while_waiting_stops_promptly_and_lists_only_running_executions(
     fake_aap.seed("job_templates", id=51, name="other", organization=1)
     fake_aap.next_action_status = "running"  # first launch only; the second finishes
     timer = threading.Timer(
-        3.0, lambda: [job.update(status="successful") for job in fake_aap.list_records("jobs")]
+        30.0, lambda: [job.update(status="successful") for job in fake_aap.list_records("jobs")]
     )
     timer.start()
 
@@ -665,8 +661,8 @@ def test_ctrl_c_while_waiting_stops_promptly_and_lists_only_running_executions(
     finally:
         timer.cancel()
 
-    # the 3s safety timer would end the job: finishing sooner proves the interrupt
-    assert time.monotonic() - started < 2.5
+    # the 30 s safety timer would end the job: finishing well before proves the interrupt
+    assert time.monotonic() - started < 10
     assert result.exit_code == 130, result.output
     running, finished = (job["id"] for job in fake_aap.list_records("jobs"))
     assert f"job {running}): interrupted, keeps running" in result.stderr

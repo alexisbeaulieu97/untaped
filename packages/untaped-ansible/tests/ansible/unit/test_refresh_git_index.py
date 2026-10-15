@@ -185,9 +185,9 @@ class FakeGitCache:
 class InstrumentedIndex(SqliteDependencyIndex):
     """SQLite index that records (and can hold back) per-repo ref-scan reads."""
 
-    def __init__(self, path: Path, *, overlap: int = 1) -> None:
+    def __init__(self, path: Path, *, ref_scan_overlap: int = 1) -> None:
         super().__init__(path)
-        self.overlap = overlap
+        self.ref_scan_overlap = ref_scan_overlap
         self.ref_scans_calls: list[tuple[str, str, tuple[tuple[str, str], ...]]] = []
         self.active_ref_scans = 0
         self.max_active_ref_scans = 0
@@ -199,7 +199,9 @@ class InstrumentedIndex(SqliteDependencyIndex):
             self.ref_scans_calls.append((source_key, source_repo, refs_tuple))
             self.active_ref_scans += 1
             self.max_active_ref_scans = max(self.max_active_ref_scans, self.active_ref_scans)
-            _hold_until_overlap(self._in_flight, lambda: self.max_active_ref_scans >= self.overlap)
+            _hold_until_overlap(
+                self._in_flight, lambda: self.max_active_ref_scans >= self.ref_scan_overlap
+            )
         try:
             return super().ref_scans(source_key, source_repo, refs_tuple)
         finally:
@@ -712,7 +714,7 @@ def test_git_refresh_processes_repositories_concurrently_and_reports_change_coun
 def test_git_refresh_reads_sqlite_metadata_safely_while_fetching_concurrently(
     tmp_path: Path,
 ) -> None:
-    h = Harness(tmp_path, index=InstrumentedIndex(tmp_path / "index.sqlite3", overlap=2))
+    h = Harness(tmp_path, index=InstrumentedIndex(tmp_path / "index.sqlite3", ref_scan_overlap=2))
     h.git.fetch_overlap = 2
     h.set_refs("acme/a", ("main", "sha-a"))
     h.set_refs("acme/b", ("main", "sha-b"))

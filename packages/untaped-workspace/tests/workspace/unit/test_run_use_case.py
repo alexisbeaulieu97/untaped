@@ -6,10 +6,13 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from untaped_workspace.application import run as run_module
 from untaped_workspace.application.run import RunInRepos, RunTarget
 from untaped_workspace.domain import CommandResult, RepoSpec
 from untaped_workspace.domain.records import RunOutcome
@@ -154,15 +157,22 @@ def test_on_done_streams_each_row(tmp_path: Path) -> None:
 
 
 class SlowRunner:
-    """Counts concurrent calls; ``slow`` names sleep longer."""
+    """Counts concurrent calls; ``slow`` names sleep longer.
 
-    def __init__(self, codes: Mapping[str, int | None] | None = None, slow: str = "") -> None:
+    The first calls wait until ``overlap`` of them run at once (5 s at most),
+    so a test of concurrent runs does not depend on how fast workers start.
+    """
+
+    def __init__(
+        self, codes: Mapping[str, int | None] | None = None, slow: str = "", overlap: int = 1
+    ) -> None:
         self.codes = codes or {}
         self.slow = slow
+        self.overlap = overlap
         self.active = 0
         self.max_active = 0
         self.started: list[str] = []
-        self.lock = threading.Lock()
+        self.lock = threading.Condition()
         self.cancelled = False
 
     def cancel(self) -> None:
@@ -175,6 +185,8 @@ class SlowRunner:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
             self.started.append(cwd.name)
+            self.lock.notify_all()
+            self.lock.wait_for(lambda: self.max_active >= self.overlap, timeout=5)
         time.sleep(0.3 if cwd.name == self.slow else 0.05)
         with self.lock:
             self.active -= 1
@@ -188,7 +200,7 @@ class SlowRunner:
 
 
 def test_parallelism_is_bounded(tmp_path: Path) -> None:
-    runner = SlowRunner()
+    runner = SlowRunner(overlap=2)
     RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
         _targets(tmp_path, "a", "b", "c", "d", "e"), ["x"]
     )
@@ -196,7 +208,7 @@ def test_parallelism_is_bounded(tmp_path: Path) -> None:
 
 
 def test_fail_fast_with_parallel_lets_running_jobs_finish(tmp_path: Path) -> None:
-    runner = SlowRunner({"a": 1}, slow="b")
+    runner = SlowRunner({"a": 1}, slow="b", overlap=2)
     rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=True)(
         _targets(tmp_path, "a", "b", "c", "d"), ["x"]
     )
@@ -259,7 +271,6 @@ class OrderedRunner(FakeRunner):
         super().__init__({"b": 1})
         self.b_started = threading.Event()
         self.a_reported = threading.Event()
-        self.b_returned = threading.Event()
 
     def run(
         self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
@@ -269,21 +280,28 @@ class OrderedRunner(FakeRunner):
         if cwd.name == "b":
             self.b_started.set()
             assert self.a_reported.wait(10)
-            try:
-                return super().run(argv, cwd=cwd, env=env, timeout=timeout)
-            finally:
-                self.b_returned.set()
         return super().run(argv, cwd=cwd, env=env, timeout=timeout)
 
 
-def test_fail_fast_reports_finished_failures_before_starting_more(tmp_path: Path) -> None:
+def test_fail_fast_reports_finished_failures_before_starting_more(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     runner = OrderedRunner()
+    futures: dict[str, Future[CommandResult]] = {}
+
+    class RecordingPool(ThreadPoolExecutor):
+        def submit(self, fn: Any, /, *args: Any, **kwargs: Any) -> Any:
+            future = super().submit(fn, *args, **kwargs)
+            futures[args[0].path.name] = future
+            return future
+
+    monkeypatch.setattr(run_module, "ThreadPoolExecutor", RecordingPool)
 
     def on_done(row: RunOutcome) -> None:
         if row.dir == "a":
             runner.a_reported.set()
-            assert runner.b_returned.wait(10)
-            time.sleep(0.5)  # b's future completes right after its run() returns
+            # b's future, not just its run(), is done before a's report returns
+            assert not wait([futures["b"]], timeout=10).not_done
 
     rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=True, on_done=on_done)(
         _targets(tmp_path, "a", "b", "c"), ["x"]

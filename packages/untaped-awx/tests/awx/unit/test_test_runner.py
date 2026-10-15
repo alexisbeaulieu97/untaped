@@ -251,24 +251,25 @@ def _make_runner(
 
 def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
     """Ctrl-C sets the stop event, skips queued launches, and keeps launched jobs."""
-    import os
     import signal
 
     from untaped_awx.errors import WaitCancelledError
 
     stop = threading.Event()
-    watching: list[Job] = []
+    main_thread = threading.get_ident()
+    watchers = 0
     lock = threading.Lock()
 
     class BlockingWatcher:
         """Sends Ctrl-C once both parallel watchers run, so it lands mid-run."""
 
         def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
+            nonlocal watchers
             with lock:
-                watching.append(job)
-                both_running = len(watching) == 2
+                watchers += 1
+                both_running = watchers == 2
             if both_running:
-                os.kill(os.getpid(), signal.SIGINT)
+                signal.pthread_kill(main_thread, signal.SIGINT)
             if stop.wait(30):
                 raise WaitCancelledError("wait interrupted")
             return job

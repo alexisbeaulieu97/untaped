@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import threading
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
@@ -1498,3 +1499,23 @@ def awx_config() -> AwxSettings:
         token="secret",  # type: ignore[arg-type]
         api_prefix="/api/v2/",
     )
+
+
+@pytest.fixture
+def schedule_stopped(monkeypatch: pytest.MonkeyPatch) -> threading.Event:
+    """An event set once any batch :class:`Schedule` stops on a failure.
+
+    A test that holds an in-flight item until the failure reached the
+    scheduler waits on this instead of sleeping.
+    """
+    from untaped_awx.application.scheduling import Schedule
+
+    stopped = threading.Event()
+    stop = Schedule.stop
+
+    def stop_and_signal(self: Schedule) -> None:
+        stop(self)
+        stopped.set()
+
+    monkeypatch.setattr(Schedule, "stop", stop_and_signal)
+    return stopped
