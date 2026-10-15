@@ -75,8 +75,27 @@ def test_import_targets_resolve_relative_imports(statement: str, targets: list[s
             "from untaped.sdk import app_context\nfrom acme.infrastructure import x",
             [],
         ),
+        (
+            "infrastructure/http.py",
+            "if TYPE_CHECKING:\n    from acme.application.ports import Port",
+            [],
+        ),
+        (
+            "application/ports.py",
+            "if TYPE_CHECKING:\n    from acme.infrastructure.http import Ref",
+            ["acme/application/ports.py::layer::application -> acme.infrastructure.http"],
+        ),
     ],
-    ids=["layer-domain", "layer-application", "layer-infrastructure", "settings", "allowed", "cli"],
+    ids=[
+        "layer-domain",
+        "layer-application",
+        "layer-infrastructure",
+        "settings",
+        "allowed",
+        "cli",
+        "port-for-typing",
+        "typing-import-against-the-layers",
+    ],
 )
 def test_layer_and_settings_rules(
     tmp_path: Path, module: str, source: str, violations: list[str]
