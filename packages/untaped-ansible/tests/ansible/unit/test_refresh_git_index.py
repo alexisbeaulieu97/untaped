@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-import time
 from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,6 +36,7 @@ from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.settings import SourceDefinition
 
 _REQS = "roles/requirements.yml"
+_OVERLAP_TIMEOUT = 5.0
 
 
 def _base(version: str | None = None, repo: str = "acme/base") -> str:
@@ -120,6 +120,17 @@ def _repo_name(url: str) -> str:
     return url.removesuffix(".git").rsplit("/", maxsplit=1)[-1].rsplit(":", maxsplit=1)[-1]
 
 
+def _hold_until_overlap(in_flight: threading.Condition, overlapped: Callable[[], bool]) -> None:
+    """Hold a caller (``in_flight`` held) until enough calls have been in flight at once.
+
+    Concurrency tests assert that calls overlapped; waiting for the overlap instead
+    of sleeping makes it certain on a busy runner. Code that runs the calls one at a
+    time never overlaps, so the wait gives up and the test's assertion fails.
+    """
+    in_flight.notify_all()
+    in_flight.wait_for(overlapped, timeout=_OVERLAP_TIMEOUT)
+
+
 class FakeGitCache:
     """The repo store as ansible sees it: fetches and reads keyed by the repo's name."""
 
@@ -132,22 +143,24 @@ class FakeGitCache:
         self.fail_fetches: set[str] = set()
         self.active_fetches = 0
         self.max_active_fetches = 0
-        self.fetch_delay = 0.0
-        self._lock = threading.Lock()
+        self.fetch_overlap = 1
+        self._in_flight = threading.Condition()
 
     def fetch(self, url: str, refs: Sequence[GitRef]) -> None:
         name = _repo_name(url)
-        with self._lock:
+        with self._in_flight:
             self.urls.append(url)
             self.active_fetches += 1
             self.max_active_fetches = max(self.max_active_fetches, self.active_fetches)
+            _hold_until_overlap(
+                self._in_flight, lambda: self.max_active_fetches >= self.fetch_overlap
+            )
         try:
-            time.sleep(self.fetch_delay)
             if name in self.fail_fetches:
                 raise GitCacheError(f"git fetch failed for {name}")
             self.fetches.append((name, tuple(f"{ref.kind}/{ref.name}" for ref in refs)))
         finally:
-            with self._lock:
+            with self._in_flight:
                 self.active_fetches -= 1
 
     def refusal(self, ref: GitRef) -> str | None:
@@ -170,27 +183,29 @@ class FakeGitCache:
 
 
 class InstrumentedIndex(SqliteDependencyIndex):
-    """SQLite index that records (and can slow down) per-repo ref-scan reads."""
+    """SQLite index that records (and can hold back) per-repo ref-scan reads."""
 
-    def __init__(self, path: Path, *, delay: float = 0.0) -> None:
+    def __init__(self, path: Path, *, ref_scan_overlap: int = 1) -> None:
         super().__init__(path)
-        self.delay = delay
+        self.ref_scan_overlap = ref_scan_overlap
         self.ref_scans_calls: list[tuple[str, str, tuple[tuple[str, str], ...]]] = []
         self.active_ref_scans = 0
         self.max_active_ref_scans = 0
-        self._lock = threading.Lock()
+        self._in_flight = threading.Condition()
 
     def ref_scans(self, source_key: str, source_repo: str, refs: Iterable[tuple[str, str]]) -> Any:
         refs_tuple = tuple(refs)
-        with self._lock:
+        with self._in_flight:
             self.ref_scans_calls.append((source_key, source_repo, refs_tuple))
             self.active_ref_scans += 1
             self.max_active_ref_scans = max(self.max_active_ref_scans, self.active_ref_scans)
+            _hold_until_overlap(
+                self._in_flight, lambda: self.max_active_ref_scans >= self.ref_scan_overlap
+            )
         try:
-            time.sleep(self.delay)
             return super().ref_scans(source_key, source_repo, refs_tuple)
         finally:
-            with self._lock:
+            with self._in_flight:
                 self.active_ref_scans -= 1
 
 
@@ -678,7 +693,7 @@ def test_partial_refresh_prunes_removed_repos_only_after_completion(h: Harness) 
 def test_git_refresh_processes_repositories_concurrently_and_reports_change_counts(
     h: Harness,
 ) -> None:
-    h.git.fetch_delay = 0.05
+    h.git.fetch_overlap = 2
     h.set_refs("acme/a", ("main", "sha-a", _base(repo="acme/base-a")))
     h.set_refs("acme/b", ("main", "sha-b", _base(repo="acme/base-b")))
     h.configure(concurrency=2)
@@ -699,8 +714,8 @@ def test_git_refresh_processes_repositories_concurrently_and_reports_change_coun
 def test_git_refresh_reads_sqlite_metadata_safely_while_fetching_concurrently(
     tmp_path: Path,
 ) -> None:
-    h = Harness(tmp_path, index=InstrumentedIndex(tmp_path / "index.sqlite3", delay=0.05))
-    h.git.fetch_delay = 0.05
+    h = Harness(tmp_path, index=InstrumentedIndex(tmp_path / "index.sqlite3", ref_scan_overlap=2))
+    h.git.fetch_overlap = 2
     h.set_refs("acme/a", ("main", "sha-a"))
     h.set_refs("acme/b", ("main", "sha-b"))
 

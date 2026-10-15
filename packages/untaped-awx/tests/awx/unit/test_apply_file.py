@@ -94,28 +94,23 @@ def test_serial_stops_scheduling_unless_requested(tmp_path: Path, continue_on_er
     assert len(client.writes) == (2 if continue_on_error else 0)
 
 
-def test_parallel_collects_inflight_and_never_submits_entire_queue(tmp_path: Path) -> None:
+def test_parallel_collects_inflight_and_never_submits_entire_queue(
+    tmp_path: Path, schedule_stopped: threading.Event
+) -> None:
     second_started = threading.Event()
-    release_second = threading.Event()
 
     class Failing(_Client):
         def create(self, spec: ResourceSpec, payload: Any) -> Any:
             if payload.name == "0":
-                assert second_started.wait(2)
+                assert second_started.wait(5)
                 raise BadRequestError("write failed")
             second_started.set()
-            assert release_second.wait(2)
+            # Held in flight until the first failure has stopped the scheduler.
+            assert schedule_stopped.wait(5)
             return super().create(spec, payload)
 
     client = Failing([])
-    # The timer merely releases the known in-flight request, after the first
-    # failure has reached the scheduler. It does not determine the batch result.
-    timer = threading.Timer(0.1, release_second.set)
-    timer.start()
-    try:
-        result = _file(client, _docs(6), parallel=2)(tmp_path, write=True)
-    finally:
-        timer.cancel()
+    result = _file(client, _docs(6), parallel=2)(tmp_path, write=True)
     assert [item.action for item in result] == ["failed", "created", *(["skipped"] * 4)]
     assert len(client.writes) == 1
 
