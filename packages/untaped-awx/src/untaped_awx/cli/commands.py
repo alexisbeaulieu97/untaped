@@ -17,6 +17,7 @@ from cyclopts import Parameter
 from untaped.sdk import (
     ColumnsOption,
     FormatOption,
+    LimitOption,
     OutputFormat,
     UiContext,
     create_app,
@@ -284,10 +285,7 @@ def jobs_list(
             negative="",
         ),
     ] = None,
-    limit: Annotated[
-        int,
-        Parameter(name="--limit", help="Newest N jobs (default 20; 0 lists every job)."),
-    ] = 20,
+    limit: LimitOption = 20,
     kind: JobKindOption = "job",
     template: Annotated[
         str | None,
@@ -303,8 +301,6 @@ def jobs_list(
     columns: ColumnsOption = None,
 ) -> None:
     """List recent AWX jobs (newest first)."""
-    if limit < 0:
-        raise_usage("--limit must be non-negative")
     filters = parse_kv_pairs(filter_, flag="--filter")
     if status:
         filters["status"] = status
@@ -314,7 +310,7 @@ def jobs_list(
             raise_usage(f"--template does not apply to {kind} executions")
         filters[field if template.isdigit() else f"{field}__name"] = template
     with report_errors(), open_context() as ctx, ctx.diag.progress("Loading jobs"):
-        records = list(ctx.jobs.list(kind=kind, params=filters, limit=limit or None))
+        records = list(ctx.jobs.list(kind=kind, params=filters, limit=limit))
     rendered = render_rows(
         records,
         fmt=fmt,

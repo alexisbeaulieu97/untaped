@@ -161,9 +161,10 @@ nothing afterwards.
 The preview, `--dry-run`, `--yes` and exit-code rules are in the skill's
 "Destructive operations" section. Beyond them:
 
-- Writes run one at a time; `--parallel N` allows up to ten. A failure stops
-  scheduling new writes unless `--continue-on-error`; writes already running
-  finish.
+- Writes run one at a time; `--parallel N` allows up to ten. A failure fails
+  its row and the rest still run; `--fail-fast` stops scheduling new writes
+  after the first failure (writes already running finish, the rest are
+  skipped).
 - There is no transaction or rollback; result rows keep the ids they reached.
 - Each write re-reads what it changes to detect a conflicting change.
   `delete` re-reads after an interactive prompt; with `--yes` the read just

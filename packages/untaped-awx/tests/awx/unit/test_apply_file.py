@@ -35,11 +35,11 @@ def _file(client: _Client, docs: list[Resource], *, parallel: int = 1) -> Any:
         cast(RawHttpResourceClient, client), catalog, fk, cast(StrategyResolver, _Strategies())
     )
 
-    def run(path: Path, *, write: bool = False, continue_on_error: bool = False) -> Any:
+    def run(path: Path, *, write: bool = False, fail_fast: bool = False) -> Any:
         plan = prepare_apply_file(engine, lambda _path: docs, [path], catalog=catalog, fk=fk)
         if not write:
             return [operation.preview for operation in plan.operations]
-        return engine.execute(plan, parallel=parallel, continue_on_error=continue_on_error).outcomes
+        return engine.execute(plan, parallel=parallel, fail_fast=fail_fast).outcomes
 
     return run
 
@@ -77,8 +77,8 @@ def test_file_returns_every_outcome_in_stable_order(tmp_path: Path, parallel: in
     assert len(client.writes) == 3
 
 
-@pytest.mark.parametrize("continue_on_error", [False, True])
-def test_serial_stops_scheduling_unless_requested(tmp_path: Path, continue_on_error: bool) -> None:
+@pytest.mark.parametrize("fail_fast", [False, True])
+def test_serial_stops_scheduling_only_when_fail_fast(tmp_path: Path, fail_fast: bool) -> None:
     class Failing(_Client):
         def create(self, spec: ResourceSpec, payload: Any) -> Any:
             if payload.name == "0":
@@ -86,12 +86,12 @@ def test_serial_stops_scheduling_unless_requested(tmp_path: Path, continue_on_er
             return super().create(spec, payload)
 
     client = Failing([])
-    result = _file(client, _docs())(tmp_path, write=True, continue_on_error=continue_on_error)
+    result = _file(client, _docs())(tmp_path, write=True, fail_fast=fail_fast)
     assert [item.action for item in result] == [
         "failed",
-        *(["created"] * 2 if continue_on_error else ["skipped"] * 2),
+        *(["skipped"] * 2 if fail_fast else ["created"] * 2),
     ]
-    assert len(client.writes) == (2 if continue_on_error else 0)
+    assert len(client.writes) == (0 if fail_fast else 2)
 
 
 def test_parallel_collects_inflight_and_never_submits_entire_queue(tmp_path: Path) -> None:
@@ -113,7 +113,7 @@ def test_parallel_collects_inflight_and_never_submits_entire_queue(tmp_path: Pat
     timer = threading.Timer(0.1, release_second.set)
     timer.start()
     try:
-        result = _file(client, _docs(6), parallel=2)(tmp_path, write=True)
+        result = _file(client, _docs(6), parallel=2)(tmp_path, write=True, fail_fast=True)
     finally:
         timer.cancel()
     assert [item.action for item in result] == ["failed", "created", *(["skipped"] * 4)]

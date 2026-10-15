@@ -63,7 +63,8 @@ untaped awx inventories sync Production --follow
 
 `inventories sync` updates every source of the inventory. Smart or
 source-less inventories and manual or invalid sources fail the preflight
-before any POST; `--continue-on-error` covers only failures after it.
+before any POST, so nothing starts; a failure after it fails only its row
+unless `--fail-fast`.
 Results are `awx.sync_outcome` rows.
 
 ## Wait, follow, time out, cancel

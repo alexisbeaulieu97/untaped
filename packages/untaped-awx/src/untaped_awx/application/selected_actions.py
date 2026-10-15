@@ -46,10 +46,10 @@ def run_selected_actions[T](
     worker: Callable[[SelectedResource], T],
     *,
     parallel: int = 1,
-    continue_on_error: bool = False,
+    fail_fast: bool = False,
     error_detail: Callable[[Exception, SelectedResource], str] = lambda exc, _: str(exc),
 ) -> list[SelectedActionOutcome[T]]:
-    """Stop new submissions on failure; retain in-flight results in target order.
+    """Run every target unless ``fail_fast`` stops new submissions; keep target order.
 
     Ctrl-C stops new submissions, lets in-flight submissions finish, and
     raises :class:`ActionsInterruptedError` with every outcome gathered so far.
@@ -61,7 +61,7 @@ def run_selected_actions[T](
         try:
             return SelectedActionOutcome(target, "completed", worker(target))
         except Exception as exc:
-            if not continue_on_error:
+            if fail_fast:
                 schedule.stop()
             detail = error_detail(exc, target)
             return SelectedActionOutcome(

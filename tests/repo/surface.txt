@@ -487,8 +487,8 @@ cli untaped awx apply --allow-unverified switch
 cli untaped awx apply --check switch
 cli untaped awx apply --columns VALUE... default=unset
 cli untaped awx apply --columns alias=-c
-cli untaped awx apply --continue-on-error switch
 cli untaped awx apply --dry-run switch
+cli untaped awx apply --fail-fast switch
 cli untaped awx apply --format VALUE default=table
 cli untaped awx apply --format alias=-f
 cli untaped awx apply --format choice=json
@@ -663,8 +663,8 @@ cli untaped awx groups delete --all switch
 cli untaped awx groups delete --by-id switch
 cli untaped awx groups delete --columns VALUE... default=unset
 cli untaped awx groups delete --columns alias=-c
-cli untaped awx groups delete --continue-on-error switch
 cli untaped awx groups delete --dry-run switch
+cli untaped awx groups delete --fail-fast switch
 cli untaped awx groups delete --filter VALUE... default=unset
 cli untaped awx groups delete --format VALUE default=table
 cli untaped awx groups delete --format alias=-f
@@ -692,8 +692,8 @@ cli untaped awx groups edit --allow-unverified switch
 cli untaped awx groups edit --by-id switch
 cli untaped awx groups edit --columns VALUE... default=unset
 cli untaped awx groups edit --columns alias=-c
-cli untaped awx groups edit --continue-on-error switch
 cli untaped awx groups edit --dry-run switch
+cli untaped awx groups edit --fail-fast switch
 cli untaped awx groups edit --field VALUE... default=unset
 cli untaped awx groups edit --filter VALUE... default=unset
 cli untaped awx groups edit --format VALUE default=table
@@ -846,8 +846,8 @@ cli untaped awx groups patch --allow-unverified switch
 cli untaped awx groups patch --by-id switch
 cli untaped awx groups patch --columns VALUE... default=unset
 cli untaped awx groups patch --columns alias=-c
-cli untaped awx groups patch --continue-on-error switch
 cli untaped awx groups patch --dry-run switch
+cli untaped awx groups patch --fail-fast switch
 cli untaped awx groups patch --filter VALUE... default=unset
 cli untaped awx groups patch --format VALUE default=table
 cli untaped awx groups patch --format alias=-f
@@ -877,8 +877,8 @@ cli untaped awx hosts delete --all switch
 cli untaped awx hosts delete --by-id switch
 cli untaped awx hosts delete --columns VALUE... default=unset
 cli untaped awx hosts delete --columns alias=-c
-cli untaped awx hosts delete --continue-on-error switch
 cli untaped awx hosts delete --dry-run switch
+cli untaped awx hosts delete --fail-fast switch
 cli untaped awx hosts delete --filter VALUE... default=unset
 cli untaped awx hosts delete --format VALUE default=table
 cli untaped awx hosts delete --format alias=-f
@@ -906,8 +906,8 @@ cli untaped awx hosts edit --allow-unverified switch
 cli untaped awx hosts edit --by-id switch
 cli untaped awx hosts edit --columns VALUE... default=unset
 cli untaped awx hosts edit --columns alias=-c
-cli untaped awx hosts edit --continue-on-error switch
 cli untaped awx hosts edit --dry-run switch
+cli untaped awx hosts edit --fail-fast switch
 cli untaped awx hosts edit --field VALUE... default=unset
 cli untaped awx hosts edit --filter VALUE... default=unset
 cli untaped awx hosts edit --format VALUE default=table
@@ -1009,8 +1009,8 @@ cli untaped awx hosts patch --allow-unverified switch
 cli untaped awx hosts patch --by-id switch
 cli untaped awx hosts patch --columns VALUE... default=unset
 cli untaped awx hosts patch --columns alias=-c
-cli untaped awx hosts patch --continue-on-error switch
 cli untaped awx hosts patch --dry-run switch
+cli untaped awx hosts patch --fail-fast switch
 cli untaped awx hosts patch --filter VALUE... default=unset
 cli untaped awx hosts patch --format VALUE default=table
 cli untaped awx hosts patch --format alias=-f
@@ -1040,8 +1040,8 @@ cli untaped awx inventories delete --all switch
 cli untaped awx inventories delete --by-id switch
 cli untaped awx inventories delete --columns VALUE... default=unset
 cli untaped awx inventories delete --columns alias=-c
-cli untaped awx inventories delete --continue-on-error switch
 cli untaped awx inventories delete --dry-run switch
+cli untaped awx inventories delete --fail-fast switch
 cli untaped awx inventories delete --filter VALUE... default=unset
 cli untaped awx inventories delete --format VALUE default=table
 cli untaped awx inventories delete --format alias=-f
@@ -1069,8 +1069,8 @@ cli untaped awx inventories edit --allow-unverified switch
 cli untaped awx inventories edit --by-id switch
 cli untaped awx inventories edit --columns VALUE... default=unset
 cli untaped awx inventories edit --columns alias=-c
-cli untaped awx inventories edit --continue-on-error switch
 cli untaped awx inventories edit --dry-run switch
+cli untaped awx inventories edit --fail-fast switch
 cli untaped awx inventories edit --field VALUE... default=unset
 cli untaped awx inventories edit --filter VALUE... default=unset
 cli untaped awx inventories edit --format VALUE default=table
@@ -1274,8 +1274,8 @@ cli untaped awx inventories patch --allow-unverified switch
 cli untaped awx inventories patch --by-id switch
 cli untaped awx inventories patch --columns VALUE... default=unset
 cli untaped awx inventories patch --columns alias=-c
-cli untaped awx inventories patch --continue-on-error switch
 cli untaped awx inventories patch --dry-run switch
+cli untaped awx inventories patch --fail-fast switch
 cli untaped awx inventories patch --filter VALUE... default=unset
 cli untaped awx inventories patch --format VALUE default=table
 cli untaped awx inventories patch --format alias=-f
@@ -1305,8 +1305,8 @@ cli untaped awx inventories sync --by-id switch
 cli untaped awx inventories sync --cancel switch
 cli untaped awx inventories sync --columns VALUE... default=unset
 cli untaped awx inventories sync --columns alias=-c
-cli untaped awx inventories sync --continue-on-error switch
 cli untaped awx inventories sync --dry-run switch
+cli untaped awx inventories sync --fail-fast switch
 cli untaped awx inventories sync --filter VALUE... default=unset
 cli untaped awx inventories sync --follow switch
 cli untaped awx inventories sync --format VALUE default=table
@@ -1337,8 +1337,8 @@ cli untaped awx inventory-sources delete --all switch
 cli untaped awx inventory-sources delete --by-id switch
 cli untaped awx inventory-sources delete --columns VALUE... default=unset
 cli untaped awx inventory-sources delete --columns alias=-c
-cli untaped awx inventory-sources delete --continue-on-error switch
 cli untaped awx inventory-sources delete --dry-run switch
+cli untaped awx inventory-sources delete --fail-fast switch
 cli untaped awx inventory-sources delete --filter VALUE... default=unset
 cli untaped awx inventory-sources delete --format VALUE default=table
 cli untaped awx inventory-sources delete --format alias=-f
@@ -1366,8 +1366,8 @@ cli untaped awx inventory-sources edit --allow-unverified switch
 cli untaped awx inventory-sources edit --by-id switch
 cli untaped awx inventory-sources edit --columns VALUE... default=unset
 cli untaped awx inventory-sources edit --columns alias=-c
-cli untaped awx inventory-sources edit --continue-on-error switch
 cli untaped awx inventory-sources edit --dry-run switch
+cli untaped awx inventory-sources edit --fail-fast switch
 cli untaped awx inventory-sources edit --field VALUE... default=unset
 cli untaped awx inventory-sources edit --filter VALUE... default=unset
 cli untaped awx inventory-sources edit --format VALUE default=table
@@ -1469,8 +1469,8 @@ cli untaped awx inventory-sources patch --allow-unverified switch
 cli untaped awx inventory-sources patch --by-id switch
 cli untaped awx inventory-sources patch --columns VALUE... default=unset
 cli untaped awx inventory-sources patch --columns alias=-c
-cli untaped awx inventory-sources patch --continue-on-error switch
 cli untaped awx inventory-sources patch --dry-run switch
+cli untaped awx inventory-sources patch --fail-fast switch
 cli untaped awx inventory-sources patch --filter VALUE... default=unset
 cli untaped awx inventory-sources patch --format VALUE default=table
 cli untaped awx inventory-sources patch --format alias=-f
@@ -1500,8 +1500,8 @@ cli untaped awx inventory-sources sync --by-id switch
 cli untaped awx inventory-sources sync --cancel switch
 cli untaped awx inventory-sources sync --columns VALUE... default=unset
 cli untaped awx inventory-sources sync --columns alias=-c
-cli untaped awx inventory-sources sync --continue-on-error switch
 cli untaped awx inventory-sources sync --dry-run switch
+cli untaped awx inventory-sources sync --fail-fast switch
 cli untaped awx inventory-sources sync --filter VALUE... default=unset
 cli untaped awx inventory-sources sync --follow switch
 cli untaped awx inventory-sources sync --format VALUE default=table
@@ -1599,8 +1599,8 @@ cli untaped awx job-templates delete --all switch
 cli untaped awx job-templates delete --by-id switch
 cli untaped awx job-templates delete --columns VALUE... default=unset
 cli untaped awx job-templates delete --columns alias=-c
-cli untaped awx job-templates delete --continue-on-error switch
 cli untaped awx job-templates delete --dry-run switch
+cli untaped awx job-templates delete --fail-fast switch
 cli untaped awx job-templates delete --filter VALUE... default=unset
 cli untaped awx job-templates delete --format VALUE default=table
 cli untaped awx job-templates delete --format alias=-f
@@ -1628,8 +1628,8 @@ cli untaped awx job-templates edit --allow-unverified switch
 cli untaped awx job-templates edit --by-id switch
 cli untaped awx job-templates edit --columns VALUE... default=unset
 cli untaped awx job-templates edit --columns alias=-c
-cli untaped awx job-templates edit --continue-on-error switch
 cli untaped awx job-templates edit --dry-run switch
+cli untaped awx job-templates edit --fail-fast switch
 cli untaped awx job-templates edit --field VALUE... default=unset
 cli untaped awx job-templates edit --filter VALUE... default=unset
 cli untaped awx job-templates edit --format VALUE default=table
@@ -1809,12 +1809,12 @@ cli untaped awx job-templates launch --by-id switch
 cli untaped awx job-templates launch --cancel switch
 cli untaped awx job-templates launch --columns VALUE... default=unset
 cli untaped awx job-templates launch --columns alias=-c
-cli untaped awx job-templates launch --continue-on-error switch
 cli untaped awx job-templates launch --credential VALUE... default=unset
 cli untaped awx job-templates launch --diff-mode negative=--no-diff-mode
 cli untaped awx job-templates launch --diff-mode switch default=unset
 cli untaped awx job-templates launch --dry-run switch
 cli untaped awx job-templates launch --extra-vars VALUE... default=unset
+cli untaped awx job-templates launch --fail-fast switch
 cli untaped awx job-templates launch --filter VALUE... default=unset
 cli untaped awx job-templates launch --follow switch
 cli untaped awx job-templates launch --format VALUE default=table
@@ -1874,8 +1874,8 @@ cli untaped awx job-templates patch --allow-unverified switch
 cli untaped awx job-templates patch --by-id switch
 cli untaped awx job-templates patch --columns VALUE... default=unset
 cli untaped awx job-templates patch --columns alias=-c
-cli untaped awx job-templates patch --continue-on-error switch
 cli untaped awx job-templates patch --dry-run switch
+cli untaped awx job-templates patch --fail-fast switch
 cli untaped awx job-templates patch --filter VALUE... default=unset
 cli untaped awx job-templates patch --format VALUE default=table
 cli untaped awx job-templates patch --format alias=-f
@@ -2142,8 +2142,8 @@ cli untaped awx projects delete --all switch
 cli untaped awx projects delete --by-id switch
 cli untaped awx projects delete --columns VALUE... default=unset
 cli untaped awx projects delete --columns alias=-c
-cli untaped awx projects delete --continue-on-error switch
 cli untaped awx projects delete --dry-run switch
+cli untaped awx projects delete --fail-fast switch
 cli untaped awx projects delete --filter VALUE... default=unset
 cli untaped awx projects delete --format VALUE default=table
 cli untaped awx projects delete --format alias=-f
@@ -2171,8 +2171,8 @@ cli untaped awx projects edit --allow-unverified switch
 cli untaped awx projects edit --by-id switch
 cli untaped awx projects edit --columns VALUE... default=unset
 cli untaped awx projects edit --columns alias=-c
-cli untaped awx projects edit --continue-on-error switch
 cli untaped awx projects edit --dry-run switch
+cli untaped awx projects edit --fail-fast switch
 cli untaped awx projects edit --field VALUE... default=unset
 cli untaped awx projects edit --filter VALUE... default=unset
 cli untaped awx projects edit --format VALUE default=table
@@ -2274,8 +2274,8 @@ cli untaped awx projects patch --allow-unverified switch
 cli untaped awx projects patch --by-id switch
 cli untaped awx projects patch --columns VALUE... default=unset
 cli untaped awx projects patch --columns alias=-c
-cli untaped awx projects patch --continue-on-error switch
 cli untaped awx projects patch --dry-run switch
+cli untaped awx projects patch --fail-fast switch
 cli untaped awx projects patch --filter VALUE... default=unset
 cli untaped awx projects patch --format VALUE default=table
 cli untaped awx projects patch --format alias=-f
@@ -2305,8 +2305,8 @@ cli untaped awx projects sync --by-id switch
 cli untaped awx projects sync --cancel switch
 cli untaped awx projects sync --columns VALUE... default=unset
 cli untaped awx projects sync --columns alias=-c
-cli untaped awx projects sync --continue-on-error switch
 cli untaped awx projects sync --dry-run switch
+cli untaped awx projects sync --fail-fast switch
 cli untaped awx projects sync --filter VALUE... default=unset
 cli untaped awx projects sync --follow switch
 cli untaped awx projects sync --format VALUE default=table
@@ -2337,8 +2337,8 @@ cli untaped awx schedules delete --all switch
 cli untaped awx schedules delete --by-id switch
 cli untaped awx schedules delete --columns VALUE... default=unset
 cli untaped awx schedules delete --columns alias=-c
-cli untaped awx schedules delete --continue-on-error switch
 cli untaped awx schedules delete --dry-run switch
+cli untaped awx schedules delete --fail-fast switch
 cli untaped awx schedules delete --filter VALUE... default=unset
 cli untaped awx schedules delete --format VALUE default=table
 cli untaped awx schedules delete --format alias=-f
@@ -2366,8 +2366,8 @@ cli untaped awx schedules edit --allow-unverified switch
 cli untaped awx schedules edit --by-id switch
 cli untaped awx schedules edit --columns VALUE... default=unset
 cli untaped awx schedules edit --columns alias=-c
-cli untaped awx schedules edit --continue-on-error switch
 cli untaped awx schedules edit --dry-run switch
+cli untaped awx schedules edit --fail-fast switch
 cli untaped awx schedules edit --field VALUE... default=unset
 cli untaped awx schedules edit --filter VALUE... default=unset
 cli untaped awx schedules edit --format VALUE default=table
@@ -2469,8 +2469,8 @@ cli untaped awx schedules patch --allow-unverified switch
 cli untaped awx schedules patch --by-id switch
 cli untaped awx schedules patch --columns VALUE... default=unset
 cli untaped awx schedules patch --columns alias=-c
-cli untaped awx schedules patch --continue-on-error switch
 cli untaped awx schedules patch --dry-run switch
+cli untaped awx schedules patch --fail-fast switch
 cli untaped awx schedules patch --filter VALUE... default=unset
 cli untaped awx schedules patch --format VALUE default=table
 cli untaped awx schedules patch --format alias=-f
@@ -2627,8 +2627,8 @@ cli untaped awx workflow-templates delete --all switch
 cli untaped awx workflow-templates delete --by-id switch
 cli untaped awx workflow-templates delete --columns VALUE... default=unset
 cli untaped awx workflow-templates delete --columns alias=-c
-cli untaped awx workflow-templates delete --continue-on-error switch
 cli untaped awx workflow-templates delete --dry-run switch
+cli untaped awx workflow-templates delete --fail-fast switch
 cli untaped awx workflow-templates delete --filter VALUE... default=unset
 cli untaped awx workflow-templates delete --format VALUE default=table
 cli untaped awx workflow-templates delete --format alias=-f
@@ -2656,8 +2656,8 @@ cli untaped awx workflow-templates edit --allow-unverified switch
 cli untaped awx workflow-templates edit --by-id switch
 cli untaped awx workflow-templates edit --columns VALUE... default=unset
 cli untaped awx workflow-templates edit --columns alias=-c
-cli untaped awx workflow-templates edit --continue-on-error switch
 cli untaped awx workflow-templates edit --dry-run switch
+cli untaped awx workflow-templates edit --fail-fast switch
 cli untaped awx workflow-templates edit --field VALUE... default=unset
 cli untaped awx workflow-templates edit --filter VALUE... default=unset
 cli untaped awx workflow-templates edit --format VALUE default=table
@@ -2785,9 +2785,9 @@ cli untaped awx workflow-templates launch --by-id switch
 cli untaped awx workflow-templates launch --cancel switch
 cli untaped awx workflow-templates launch --columns VALUE... default=unset
 cli untaped awx workflow-templates launch --columns alias=-c
-cli untaped awx workflow-templates launch --continue-on-error switch
 cli untaped awx workflow-templates launch --dry-run switch
 cli untaped awx workflow-templates launch --extra-vars VALUE... default=unset
+cli untaped awx workflow-templates launch --fail-fast switch
 cli untaped awx workflow-templates launch --filter VALUE... default=unset
 cli untaped awx workflow-templates launch --follow switch
 cli untaped awx workflow-templates launch --format VALUE default=table
@@ -2867,8 +2867,8 @@ cli untaped awx workflow-templates patch --allow-unverified switch
 cli untaped awx workflow-templates patch --by-id switch
 cli untaped awx workflow-templates patch --columns VALUE... default=unset
 cli untaped awx workflow-templates patch --columns alias=-c
-cli untaped awx workflow-templates patch --continue-on-error switch
 cli untaped awx workflow-templates patch --dry-run switch
+cli untaped awx workflow-templates patch --fail-fast switch
 cli untaped awx workflow-templates patch --filter VALUE... default=unset
 cli untaped awx workflow-templates patch --format VALUE default=table
 cli untaped awx workflow-templates patch --format alias=-f

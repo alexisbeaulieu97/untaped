@@ -16,8 +16,8 @@ from untaped_awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
 from untaped_awx.cli.context import open_context
 from untaped_awx.cli.options import (
     CancelOption,
-    ContinueOption,
     DryRunOption,
+    FailFastOption,
     FollowOption,
     NamesArgument,
     ParallelOption,
@@ -37,7 +37,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         selection: SelectionOptions = SELECTION_DEFAULTS,
         dry_run: DryRunOption = False,
         yes: YesOption = False,
-        continue_on_error: ContinueOption = False,
+        fail_fast: FailFastOption = False,
         parallel: ParallelOption = 1,
         wait: Annotated[
             bool, Parameter(negative="", help="Wait for success; fail on unsuccessful execution.")
@@ -64,7 +64,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
                     # Mass or multi-target selections preview and confirm first.
                     confirm=len(selected) > 1 or selection.mass,
                     parallel=parallel,
-                    continue_on_error=continue_on_error,
+                    fail_fast=fail_fast,
                     wait=wait,
                     follow=follow,
                     timeout=timeout,

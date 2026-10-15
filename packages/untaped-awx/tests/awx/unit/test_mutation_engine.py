@@ -473,7 +473,7 @@ def test_failed_creation_skips_only_its_dependents_when_continuing() -> None:
         Resource(kind="Item", metadata=Metadata(name="child"), spec={"parent": "parent"}),
         Resource(kind="Item", metadata=Metadata(name="independent"), spec={}),
     ]
-    result = engine.run(docs, write=True, continue_on_error=True)
+    result = engine.run(docs, write=True)
     assert [row.action for row in result.outcomes] == ["failed", "skipped", "created"]
 
 
@@ -500,9 +500,7 @@ def test_unexpected_worker_exception_becomes_a_failed_row() -> None:
                 raise KeyError("strategy bug")
             return super().create(spec, payload)
 
-    result = _item_engine(Exploding([])).run(
-        _items("first", "bad", "last"), write=True, continue_on_error=True
-    )
+    result = _item_engine(Exploding([])).run(_items("first", "bad", "last"), write=True)
     assert [row.action for row in result.outcomes] == ["created", "failed", "created"]
     assert "strategy bug" in (result.outcomes[1].detail or "")
 
@@ -516,9 +514,7 @@ def test_auth_failure_aborts_remaining_items_but_keeps_completed_rows() -> None:
                 raise ConfigError("AWX rejected the token (HTTP 401)")
             return super().create(spec, payload)
 
-    result = _item_engine(Unauthorized([])).run(
-        _items("first", "second", "third"), write=True, continue_on_error=True
-    )
+    result = _item_engine(Unauthorized([])).run(_items("first", "second", "third"), write=True)
     assert [row.action for row in result.outcomes] == ["created", "failed", "skipped"]
     assert "401" in (result.outcomes[1].detail or "")
 
@@ -533,9 +529,7 @@ def test_an_environment_failure_of_any_class_aborts_the_batch(category: str) -> 
                 raise AwxApiError("refused", category=category)
             return super().create(spec, payload)
 
-    result = _item_engine(Refused([])).run(
-        _items("first", "second", "third"), write=True, continue_on_error=True
-    )
+    result = _item_engine(Refused([])).run(_items("first", "second", "third"), write=True)
     assert [row.action for row in result.outcomes] == ["created", "failed", "skipped"]
 
 
@@ -555,9 +549,7 @@ def test_failed_rows_carry_the_attributed_error() -> None:
                 raise KeyError("strategy bug")
             return super().create(spec, payload)
 
-    result = _item_engine(Failing([])).run(
-        _items("bad", "first", "second", "third"), write=True, continue_on_error=True
-    )
+    result = _item_engine(Failing([])).run(_items("bad", "first", "second", "third"), write=True)
     bug, created, rejected, _skipped = result.outcomes
     assert bug.error is not None
     assert (bug.error.category, bug.error.system) == ("failed", "untaped")

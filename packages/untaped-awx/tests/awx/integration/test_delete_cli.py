@@ -300,7 +300,9 @@ def test_delete_failure_is_an_error_and_a_skipped_target_a_warning(
         return original(api_path, id_)
 
     monkeypatch.setattr(alpha_beta, "_delete", conflict_on_10)
-    result = CliInvoker().invoke(app, ["job-templates", "delete", "--by-id", "10", "11", "--yes"])
+    result = CliInvoker().invoke(
+        app, ["job-templates", "delete", "--by-id", "10", "11", "--yes", "--fail-fast"]
+    )
 
     assert result.exit_code == 1
     *_previews, error, warning = [json.loads(line) for line in result.stderr.splitlines()]

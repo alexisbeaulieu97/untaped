@@ -204,7 +204,7 @@ def test_membership_noop_never_prompts_or_posts(fake_aap: Any) -> None:
     "extra",
     [
         ["--allow-unverified"],
-        ["--fail-fast"],
+        ["--continue-on-error"],
         ["--inventory", "prod"],
         ["--parallel", "0"],
     ],
@@ -404,9 +404,9 @@ def test_numeric_names_and_ids_remain_distinct(fake_aap: Any) -> None:
     assert fake_aap.get_record("projects", 10)["description"] == "old"
 
 
-@pytest.mark.parametrize("continue_", [False, True])
+@pytest.mark.parametrize("fail_fast", [False, True])
 def test_patch_runtime_failure_stops_scheduling(
-    fake_aap: Any, continue_: bool, monkeypatch: pytest.MonkeyPatch
+    fake_aap: Any, fail_fast: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import httpx
 
@@ -435,15 +435,15 @@ def test_patch_runtime_failure_stops_scheduling(
             "--yes",
             "--format",
             "json",
-            *(["--continue-on-error"] if continue_ else []),
+            *(["--fail-fast"] if fail_fast else []),
         ],
     )
     assert result.exit_code != 0
     assert [row["action"] for row in json.loads(result.stdout)] == [
         "failed",
-        "updated" if continue_ else "skipped",
+        "skipped" if fail_fast else "updated",
     ]
-    assert fake_aap.get_record("projects", 11)["description"] == ("new" if continue_ else "old")
+    assert fake_aap.get_record("projects", 11)["description"] == ("old" if fail_fast else "new")
 
 
 def test_patch_failure_is_an_attributed_error_and_the_skip_a_warning(
@@ -464,7 +464,17 @@ def test_patch_failure_is_an_attributed_error_and_the_skip_a_warning(
             else original(path, id_, body)
         ),
     )
-    args = ["projects", "patch", "10", "11", "--by-id", "--set", "description=new", "--yes"]
+    args = [
+        "projects",
+        "patch",
+        "10",
+        "11",
+        "--by-id",
+        "--set",
+        "description=new",
+        "--yes",
+        "--fail-fast",
+    ]
 
     result = CliInvoker().invoke(app, args)
 
@@ -476,9 +486,9 @@ def test_patch_failure_is_an_attributed_error_and_the_skip_a_warning(
     assert warning["message"] == "Project/second: skipped after a runtime failure"
 
 
-@pytest.mark.parametrize("continue_", [False, True])
+@pytest.mark.parametrize("fail_fast", [False, True])
 def test_delete_runtime_failure_stops_scheduling(
-    fake_aap: Any, continue_: bool, monkeypatch: pytest.MonkeyPatch
+    fake_aap: Any, fail_fast: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import httpx
 
@@ -503,15 +513,15 @@ def test_delete_runtime_failure_stops_scheduling(
             "--yes",
             "--format",
             "json",
-            *(["--continue-on-error"] if continue_ else []),
+            *(["--fail-fast"] if fail_fast else []),
         ],
     )
     assert result.exit_code != 0
     assert [row["action"] for row in json.loads(result.stdout)] == [
         "failed",
-        "deleted" if continue_ else "skipped",
+        "skipped" if fail_fast else "deleted",
     ]
-    assert (11 in fake_aap.store["projects"]) is not continue_
+    assert (11 in fake_aap.store["projects"]) is fail_fast
 
 
 def test_yes_with_dry_run_previews_without_writing(fake_aap: Any) -> None:

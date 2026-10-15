@@ -145,7 +145,7 @@ class BatchMutationEngine:
         self,
         plan: MutationPlan,
         *,
-        continue_on_error: bool = False,
+        fail_fast: bool = False,
         parallel: int = 1,
     ) -> BatchResult:
         """Recheck and execute a prepared plan.
@@ -181,16 +181,12 @@ class BatchMutationEngine:
 
         outcomes, aborted = self._execute_bodies(
             plan,
-            continue_on_error=continue_on_error,
+            fail_fast=fail_fast,
             parallel=parallel,
             bindings=bindings,
         )
-        self._execute_memberships(
-            plan, outcomes, bindings, continue_on_error=continue_on_error and not aborted
-        )
-        self._execute_graphs(
-            plan, outcomes, bindings, continue_on_error=continue_on_error and not aborted
-        )
+        self._execute_memberships(plan, outcomes, bindings, fail_fast=fail_fast or aborted)
+        self._execute_graphs(plan, outcomes, bindings, fail_fast=fail_fast or aborted)
         partial = any(
             outcome.action in {"failed", "partial"} or outcome.partial for outcome in outcomes
         )
@@ -202,14 +198,14 @@ class BatchMutationEngine:
         *,
         mode: MutationMode = "apply",
         write: bool = False,
-        continue_on_error: bool = False,
+        fail_fast: bool = False,
         parallel: int = 1,
     ) -> BatchResult:
         """Convenience wrapper retaining preview-by-default behaviour."""
         plan = self.prepare(resources, mode=mode)
         if not write:
             return BatchResult(outcomes=[operation.preview for operation in plan.operations])
-        return self.execute(plan, continue_on_error=continue_on_error, parallel=parallel)
+        return self.execute(plan, fail_fast=fail_fast, parallel=parallel)
 
     def _preflight_conflicts(self, plan: MutationPlan) -> tuple[dict[int, str], dict[int, Failure]]:
         """Each conflicting operation's detail, and the error of a failed re-read."""
@@ -280,7 +276,7 @@ class BatchMutationEngine:
         self,
         plan: MutationPlan,
         *,
-        continue_on_error: bool,
+        fail_fast: bool,
         parallel: int,
         bindings: dict[str, int],
     ) -> tuple[list[ApplyOutcome], bool]:
@@ -305,7 +301,7 @@ class BatchMutationEngine:
                 )
             if outcome.id is not None and operation.create and outcome.action == "created":
                 bindings[f"planned:{index}"] = outcome.id
-            if outcome.action in {"failed", "partial"} and not continue_on_error:
+            if outcome.action in {"failed", "partial"} and fail_fast:
                 schedule.stop()
             return outcome
 
@@ -413,11 +409,9 @@ class BatchMutationEngine:
         outcomes: list[ApplyOutcome],
         bindings: Mapping[str, int],
         *,
-        continue_on_error: bool,
+        fail_fast: bool,
     ) -> None:
-        stopped = not continue_on_error and any(
-            outcome.action in {"failed", "partial"} for outcome in outcomes
-        )
+        stopped = fail_fast and any(outcome.action in {"failed", "partial"} for outcome in outcomes)
         for operation, outcome in zip(plan.operations, outcomes, strict=True):
             if outcome.action in {"failed", "skipped", "conflict", "partial"}:
                 continue
@@ -468,7 +462,7 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = not continue_on_error or _dooms_batch(exc)
+                stopped = fail_fast or _dooms_batch(exc)
                 continue
             if (
                 any(item.field_change is not None for item in plans)
@@ -482,12 +476,10 @@ class BatchMutationEngine:
         outcomes: list[ApplyOutcome],
         bindings: Mapping[str, int],
         *,
-        continue_on_error: bool,
+        fail_fast: bool,
     ) -> None:
         """Reconcile node graphs once every body and membership has been written."""
-        stopped = not continue_on_error and any(
-            outcome.action in {"failed", "partial"} for outcome in outcomes
-        )
+        stopped = fail_fast and any(outcome.action in {"failed", "partial"} for outcome in outcomes)
         for operation, outcome in zip(plan.operations, outcomes, strict=True):
             graph_plan = operation.graph_plan
             if graph_plan is None or not graph_plan.changed or self._graph is None:
@@ -523,7 +515,7 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = not continue_on_error or _dooms_batch(exc)
+                stopped = fail_fast or _dooms_batch(exc)
                 continue
             if outcome.action == "unchanged":
                 outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
