@@ -952,7 +952,8 @@ def test_the_plaintext_token_warning_carries_its_hint(
     [line] = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
     assert line["level"] == "warning"
     assert line["message"] == (
-        "svc.token is stored in plain text in the config file, which is discouraged"
+        "svc.token is stored in plain text in the config file,"
+        " which is deprecated and will be removed in 12.0"
     )
     assert line["hint"] == "run `untaped auth migrate`"
 
@@ -983,21 +984,27 @@ def test_only_an_env_token_silences_the_warning(
     assert ("plain text" in capsys.readouterr().err) is warns
 
 
-def test_config_set_of_a_token_is_discouraged(_isolated_config: Path) -> None:
+def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
     root = bootstrap.build_root_app(
         candidates=(plugin_candidate(make_spec("svc", settings=SvcProfile)),)
     )
     result = invoke_cli(root.meta, ["config", "set", "svc.token", "tok"])
     assert result.exit_code == 0, result.output
-    assert "storing svc.token in plain text in config.yml is discouraged" in result.stderr
+    assert (
+        "storing svc.token in plain text in config.yml is deprecated and will be removed in 12.0"
+        in result.stderr
+    )
     assert "untaped auth set svc" in result.stderr
     as_json = invoke_cli(root.meta, ["config", "set", "svc.token", "tok", "--format", "json"])
     lines = [json.loads(line) for line in as_json.stderr.splitlines()]
     [line] = [line for line in lines if line["level"] == "warning"]
-    assert line["message"] == "storing svc.token in plain text in config.yml is discouraged"
+    assert (
+        line["message"]
+        == "storing svc.token in plain text in config.yml is deprecated and will be removed in 12.0"
+    )
     assert line["hint"] == "run `untaped auth set svc`"
     quiet = invoke_cli(root.meta, ["config", "set", "svc.base_url", "https://svc"])
-    assert "discouraged" not in quiet.stderr
+    assert "deprecated" not in quiet.stderr
 
 
 def test_a_malformed_section_override_is_not_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
