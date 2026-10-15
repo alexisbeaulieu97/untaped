@@ -1,4 +1,5 @@
-"""scripts/release.py: package discovery, version/pin, artifact, index, notes, smoke and release."""
+"""scripts/release.py: discovery, versions and pins, routing, artifacts, index, notes, smoke,
+tag and GitHub release."""
 
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import urllib.error
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 import release
@@ -139,20 +140,6 @@ def test_a_trailing_newline_is_not_a_release_version(tmp_path: Path) -> None:
         "version 10.0.0\n is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN",
         "untaped is at 10.0.0, not 10.0.0\n",
     ]
-
-
-@pytest.mark.parametrize("version", ["10.0.0", "10.0.0rc1"])
-def test_a_tag_naming_the_version_is_accepted(tmp_path: Path, version: str) -> None:
-    _project(tmp_path, "untaped", version)
-    assert release.tagged_version(tmp_path, f"v{version}") == version
-
-
-@pytest.mark.parametrize("tag", ["v10.0.1", "10.0.0", "v10.0.0rc1", "v10.0.0\n"])
-def test_a_tag_that_is_not_v_and_the_version_is_refused(tmp_path: Path, tag: str) -> None:
-    _project(tmp_path, "untaped", "10.0.0")
-    with pytest.raises(release.ReleaseError) as caught:
-        release.tagged_version(tmp_path, tag)
-    assert str(caught.value) == f"tag {tag} does not match the package version 10.0.0"
 
 
 def test_a_tag_that_differs_names_every_package_and_pin(tmp_path: Path) -> None:
@@ -1119,6 +1106,164 @@ def test_a_failed_release_list_is_refused(tmp_path: Path, stderr: str) -> None:
     assert gh.writes == []
 
 
+# --- tag --------------------------------------------------------------------
+
+HEAD = "c" * 40
+OTHER = "d" * 40
+MATCHING = ["api", "--paginate", "--jq", ".[]", f"repos/{REPO}/git/matching-refs/tags/{TAG}"]
+TAG_FIELDS = [
+    *("-f", f"tag={TAG}", "-f", "message=untaped 10.0.0", "-f", f"object={HEAD}"),
+    *("-f", "type=commit", "-f", "tagger[name]=github-actions[bot]"),
+    *("-f", "tagger[email]=41898282+github-actions[bot]@users.noreply.github.com"),
+]
+POST_TAG = ["api", "--method", "POST", *TAG_FIELDS, f"repos/{REPO}/git/tags"]
+POST_REF = [
+    *("api", "--method", "POST", "-f", f"ref=refs/tags/{TAG}", "-f", "sha=t-new"),
+    f"repos/{REPO}/git/refs",
+]
+
+
+class FakeTagGh:
+    """A fake ``gh api`` over a repository's tag refs.
+
+    ``refs`` maps a tag name to ``(object type, sha)``; ``objects`` maps an
+    annotated tag object's sha to the commit it names. ``race`` is a
+    ``(type, sha)`` another run plants just before this one's ref POST,
+    which then fails as GitHub's does. ``list_error`` fails the listing, and
+    ``fail`` maps the last path segment of a POST (``tags``, ``refs``) to the
+    stderr it fails with instead.
+    """
+
+    def __init__(
+        self,
+        refs: dict[str, tuple[str, str]] | None = None,
+        *,
+        race: tuple[str, str] | None = None,
+        list_error: str = "",
+        fail: dict[str, str] | None = None,
+    ) -> None:
+        self.refs = refs or {}
+        self.objects = {"t-old": OTHER, "t-head": HEAD}
+        self.race = race
+        self.list_error = list_error
+        self.fail = fail or {}
+        self.calls: list[list[str]] = []
+
+    def __call__(self, *argv: str) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        self.calls.append(args)
+        path = args[-1]
+        if args == MATCHING:
+            if self.list_error:
+                return subprocess.CompletedProcess(args, 1, "", self.list_error)
+            prefix = path.rsplit("/", 1)[1]
+            rows = [
+                {"ref": f"refs/tags/{name}", "object": {"type": kind, "sha": sha}}
+                for name, (kind, sha) in self.refs.items()
+                if name.startswith(prefix)
+            ]
+            return self._ok(args, "".join(json.dumps(row) + "\n" for row in rows))
+        if "POST" in args and path.rsplit("/", 1)[1] in self.fail:
+            return subprocess.CompletedProcess(args, 1, "", self.fail[path.rsplit("/", 1)[1]])
+        if path.endswith("/git/tags"):
+            self.objects["t-new"] = HEAD
+            return self._ok(args, json.dumps({"sha": "t-new"}))
+        if path.endswith("/git/refs"):
+            if self.race is not None:
+                self.refs[TAG] = self.race
+            if TAG in self.refs:
+                body = json.dumps({"message": "Reference already exists"})
+                return subprocess.CompletedProcess(args, 1, body, "gh: Reference already exists")
+            self.refs[TAG] = ("tag", "t-new")
+            return self._ok(args, "{}")
+        sha = path.rsplit("/", 1)[1]
+        return self._ok(args, json.dumps({"object": {"type": "commit", "sha": self.objects[sha]}}))
+
+    @staticmethod
+    def _ok(args: list[str], out: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+
+def _tag(gh: FakeTagGh) -> str:
+    return release.create_tag(TAG, REPO, HEAD, gh=gh)
+
+
+def test_an_absent_tag_is_created_on_the_built_commit() -> None:
+    gh = FakeTagGh({"v10.0.0rc1": ("tag", "t-old")})
+    assert _tag(gh) == f"tagged {TAG} at {HEAD}"
+    assert gh.calls == [MATCHING, POST_TAG, POST_REF]
+    assert gh.refs[TAG] == ("tag", "t-new")
+
+
+@pytest.mark.parametrize(
+    ("ref", "reads"),
+    [(("tag", "t-head"), [f"repos/{REPO}/git/tags/t-head"]), (("commit", HEAD), [])],
+    ids=["annotated", "lightweight"],
+)
+def test_a_tag_already_on_the_built_commit_is_kept(ref: tuple[str, str], reads: list[str]) -> None:
+    gh = FakeTagGh({TAG: ref})
+    assert _tag(gh) == f"{TAG} already at {HEAD}"
+    assert gh.calls == [MATCHING, *(["api", path] for path in reads)]
+
+
+@pytest.mark.parametrize("ref", [("tag", "t-old"), ("commit", OTHER)], ids=["annotated", "light"])
+def test_a_tag_on_another_commit_is_refused(ref: tuple[str, str]) -> None:
+    gh = FakeTagGh({TAG: ref})
+    with pytest.raises(release.ReleaseError) as caught:
+        _tag(gh)
+    assert str(caught.value) == (
+        f"{TAG} points at {OTHER}, not the built commit {HEAD}; v* tags cannot move: "
+        "release a patch version, or delete the wrong tag with the ruleset relaxed and re-run"
+    )
+    assert not any("POST" in call for call in gh.calls)
+
+
+def test_losing_the_race_to_the_same_commit_is_fine() -> None:
+    gh = FakeTagGh(race=("tag", "t-head"))
+    assert _tag(gh) == f"{TAG} already at {HEAD}"
+    peel = ["api", f"repos/{REPO}/git/tags/t-head"]
+    assert gh.calls == [MATCHING, POST_TAG, POST_REF, MATCHING, peel]
+
+
+def test_losing_the_race_to_another_commit_is_refused() -> None:
+    gh = FakeTagGh(race=("commit", OTHER))
+    with pytest.raises(release.ReleaseError, match=rf"^{TAG} points at {OTHER}, not the built"):
+        _tag(gh)
+    assert gh.calls == [MATCHING, POST_TAG, POST_REF, MATCHING]
+
+
+@pytest.mark.parametrize(
+    ("fail", "error"),
+    [
+        ({"tags": "gh: Server Error (HTTP 500)"}, f"gh api repos/{REPO}/git/tags failed: "),
+        ({"refs": "gh: Server Error (HTTP 500)"}, f"gh api repos/{REPO}/git/refs failed: "),
+        ({"refs": "gh: Reference already exists"}, f"could not create {TAG}: "),
+    ],
+    ids=["tag-object", "ref", "ref-exists-but-absent"],
+)
+def test_a_failed_creation_is_refused(fail: dict[str, str], error: str) -> None:
+    gh = FakeTagGh(fail=fail)
+    with pytest.raises(release.ReleaseError) as caught:
+        _tag(gh)
+    assert str(caught.value) == error + next(iter(fail.values()))
+
+
+def test_a_failed_tag_listing_is_refused() -> None:
+    gh = FakeTagGh(list_error="gh: Server Error (HTTP 500)\n")
+    with pytest.raises(release.ReleaseError) as caught:
+        _tag(gh)
+    assert str(caught.value) == "could not list tags: gh: Server Error (HTTP 500)"
+    assert gh.calls == [MATCHING]
+
+
+@pytest.mark.parametrize("tag", ["10.0.0", "v10.0", "vX"])
+def test_a_tag_that_is_not_v_and_a_version_is_refused(tag: str) -> None:
+    gh = FakeTagGh()
+    with pytest.raises(release.ReleaseError, match="is not v followed by a release version"):
+        release.create_tag(tag, REPO, HEAD, gh=gh)
+    assert gh.calls == []
+
+
 # --- CLI --------------------------------------------------------------------
 
 
@@ -1210,22 +1355,11 @@ def test_the_readmes_command_refuses_a_malformed_version(
     )
 
 
-@pytest.mark.parametrize(
-    ("args", "expected"),
-    [
-        ([], (0, "10.0.0\n", "")),
-        (["--tag", "v10.0.1"], (1, "", "tag v10.0.1 does not match the package version 10.0.0\n")),
-    ],
-    ids=["no-tag", "other-tag"],
-)
-def test_the_version_command_checks_a_tag(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    args: list[str],
-    expected: tuple[int, str, str],
+def test_the_version_command_prints_the_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _project(tmp_path, "untaped", "10.0.0")
-    assert _main(capsys, "--root", str(tmp_path), "version", *args) == expected
+    assert _main(capsys, "--root", str(tmp_path), "version") == (0, "10.0.0\n", "")
 
 
 @pytest.mark.parametrize(
@@ -1267,43 +1401,312 @@ def _git(cwd: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+def _commit(repo: Path, version: str | None = None, message: str = "change") -> str:
+    """Commit in ``repo`` (at ``version`` when given, else an empty commit); its SHA."""
+    if version is not None:
+        _project(repo, "untaped", version)
+        _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", message)
+    return _git(repo, "rev-parse", "HEAD")
+
+
 def _clone_of_main(tmp_path: Path) -> Path:
     """A clone of an origin whose ``main`` holds an untaped 10.0.0 project."""
     origin = tmp_path / "origin"
-    _project(origin, "untaped", "10.0.0")
+    origin.mkdir()
     _git(origin, "init", "-q", "--initial-branch=main")
-    _git(origin, "add", ".")
-    _git(origin, "commit", "-q", "-m", "release")
+    _commit(origin, "10.0.0", "release")
     _git(tmp_path, "clone", "-q", str(origin), "work")
     return tmp_path / "work"
 
 
-def test_a_tag_on_main_passes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    work = _clone_of_main(tmp_path)
-    assert _main(capsys, "--root", str(work), "version", "--tag", "v10.0.0") == (0, "10.0.0\n", "")
+def _route(
+    capsys: pytest.CaptureFixture[str],
+    root: Path,
+    *,
+    event: str = "push",
+    ref_type: str = "branch",
+    ref_name: str = "main",
+    repository: str = release.PUBLISHING_REPOSITORY,
+    before: str | None = None,
+) -> tuple[int, str, str]:
+    argv = ["--root", str(root), "route", "--event", event, "--ref-type", ref_type]
+    argv += ["--ref-name", ref_name, "--repository", repository]
+    return _main(capsys, *argv, *(["--before", before] if before is not None else []))
 
 
-def test_a_tag_on_a_commit_off_main_is_refused(
+def _routed(version: str, index: str, tag: str, reason: str) -> tuple[int, str, str]:
+    return 0, f"version={version}\nindex={index}\ntag={tag}\nreason={reason}\n", ""
+
+
+class _Bumped(NamedTuple):
+    """A clone of ``main`` whose last commit (HEAD) moved untaped 10.0.0 to 10.1.0."""
+
+    origin: Path
+    work: Path
+    before: str
+    head: str
+
+
+def _bumped(tmp_path: Path) -> _Bumped:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "--initial-branch=main")
+    before = _commit(origin, "10.0.0", "10.0.0")
+    head = _commit(origin, "10.1.0", "release 10.1.0")
+    _git(tmp_path, "clone", "-q", str(origin), "work")
+    return _Bumped(origin, tmp_path / "work", before, head)
+
+
+def test_a_fork_publishes_nothing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _project(tmp_path, "untaped", "10.0.0")
+    reason = "someone/untaped is not the publishing repository: nothing to publish"
+    assert _route(capsys, tmp_path, repository="someone/untaped") == _routed(
+        "10.0.0", "none", "", reason
+    )
+
+
+@pytest.mark.parametrize(("ref_type", "ref_name"), [("branch", "claude/x"), ("tag", "v10.0.0")])
+def test_a_dispatch_on_any_ref_is_a_rehearsal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], ref_type: str, ref_name: str
+) -> None:
+    _project(tmp_path, "untaped", "10.0.0rc1")
+    routed = _route(
+        capsys, tmp_path, event="workflow_dispatch", ref_type=ref_type, ref_name=ref_name, before=""
+    )
+    assert routed == _routed("10.0.0rc1", "testpypi", "", "rehearsal: TestPyPI only")
+
+
+@pytest.mark.parametrize("repository", [release.PUBLISHING_REPOSITORY, "someone/untaped"])
+def test_a_malformed_version_is_refused_on_every_route(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], repository: str
+) -> None:
+    _project(tmp_path, "untaped", "10.0")
+    assert _route(capsys, tmp_path, event="workflow_dispatch", repository=repository) == (
+        1,
+        "",
+        "version 10.0 is not X.Y.Z, X.Y.ZaN, X.Y.ZbN or X.Y.ZrcN\n",
+    )
+
+
+def test_a_pushed_tag_on_main_is_a_release(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     work = _clone_of_main(tmp_path)
-    _git(work, "commit", "-q", "--allow-empty", "-m", "not on main")
-    head = _git(work, "rev-parse", "HEAD")
-    assert _main(capsys, "--root", str(work), "version", "--tag", "v10.0.0") == (
+    assert _route(capsys, work, ref_type="tag", ref_name="v10.0.0", before="") == _routed(
+        "10.0.0", "pypi", "v10.0.0", "v10.0.0 is on main: releasing 10.0.0"
+    )
+
+
+@pytest.mark.parametrize("tag", ["v10.0.1", "10.0.0", "v10.0.0rc1", "v10.0.0\n"])
+def test_a_pushed_tag_that_is_not_v_and_the_version_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], tag: str
+) -> None:
+    _project(tmp_path, "untaped", "10.0.0")
+    assert _route(capsys, tmp_path, ref_type="tag", ref_name=tag) == (
+        1,
+        "",
+        f"tag {tag} does not match the package version 10.0.0\n",
+    )
+
+
+def test_a_pushed_tag_off_main_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = _clone_of_main(tmp_path)
+    head = _commit(work, message="not on main")
+    assert _route(capsys, work, ref_type="tag", ref_name="v10.0.0") == (
         1,
         "",
         f"commit {head} is not on main\n",
     )
 
 
-def test_a_tag_outside_a_git_checkout_is_refused(
+def test_a_pushed_tag_outside_a_git_checkout_is_refused(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _project(tmp_path, "untaped", "10.0.0")
-    assert _main(capsys, "--root", str(tmp_path), "version", "--tag", "v10.0.0") == (
+    assert _route(capsys, tmp_path, ref_type="tag", ref_name="v10.0.0") == (
         1,
         "",
-        f"{tmp_path} is not a git checkout\n",
+        f"{tmp_path.resolve()} is not a git checkout\n",
+    )
+
+
+def test_a_push_to_main_that_changes_the_version_releases_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bumped = _bumped(tmp_path)
+    reason = f"10.1.0 replaces 10.0.0 at {bumped.before[:7]} and has no tag yet: releasing it"
+    assert _route(capsys, bumped.work, before=bumped.before) == _routed(
+        "10.1.0", "pypi", "v10.1.0", reason
+    )
+
+
+@pytest.mark.parametrize("annotated", [True, False], ids=["annotated", "lightweight"])
+def test_a_push_to_main_whose_tag_is_already_at_head_releases(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], annotated: bool
+) -> None:
+    """A re-run after the tag step, or a hand tag on this commit: every step is idempotent."""
+    bumped = _bumped(tmp_path)
+    _git(bumped.origin, "tag", *(["-a", "-m", "untaped 10.1.0"] if annotated else []), "v10.1.0")
+    # The before commit is not even read: the tag at HEAD decides.
+    reason = "v10.1.0 is already at this commit (a re-run or a hand tag): releasing 10.1.0"
+    assert _route(capsys, bumped.work, before="0" * 39 + "1") == _routed(
+        "10.1.0", "pypi", "v10.1.0", reason
+    )
+
+
+@pytest.mark.parametrize("annotated", [True, False], ids=["annotated", "lightweight"])
+def test_a_push_to_main_whose_tag_is_elsewhere_publishes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], annotated: bool
+) -> None:
+    bumped = _bumped(tmp_path)
+    tag = [*(["-a", "-m", "untaped 10.1.0"] if annotated else []), "v10.1.0", bumped.before]
+    _git(bumped.origin, "tag", *tag)
+    reason = f"v10.1.0 already points at {bumped.before[:7]}, not this commit: nothing to publish"
+    assert _route(capsys, bumped.work, before=bumped.before) == _routed(
+        "10.1.0", "none", "", reason
+    )
+
+
+@pytest.mark.parametrize(
+    ("tagged", "reason"),
+    [
+        (False, "10.1.0 is unchanged by this push and not released yet: nothing to publish"),
+        (True, "10.1.0 is unchanged by this push: nothing to publish"),
+    ],
+    ids=["untagged", "tagged"],
+)
+def test_a_push_to_main_that_keeps_the_version_publishes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], tagged: bool, reason: str
+) -> None:
+    """A dependency bump after a release, or after a rejected one: no approval mail."""
+    bumped = _bumped(tmp_path)
+    if tagged:
+        _git(bumped.origin, "tag", "v10.1.0")
+    _commit(bumped.origin, "10.1.0", "bump a dependency")
+    _git(bumped.work, "pull", "-q")
+    assert _route(capsys, bumped.work, before=bumped.head) == _routed("10.1.0", "none", "", reason)
+
+
+def test_a_first_push_counts_as_a_changed_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bumped = _bumped(tmp_path)
+    reason = "10.1.0 is new and has no tag yet: releasing it"
+    assert _route(capsys, bumped.work, before="0" * 40) == _routed(
+        "10.1.0", "pypi", "v10.1.0", reason
+    )
+
+
+def test_a_malformed_pyproject_at_before_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "--initial-branch=main")
+    _write(origin / "pyproject.toml", "[project\n")
+    _git(origin, "add", ".")
+    before = _commit(origin, message="broken")
+    _commit(origin, "10.1.0", "fixed")
+    _git(tmp_path, "clone", "-q", str(origin), "work")
+    code, out, err = _route(capsys, tmp_path / "work", before=before)
+    assert (code, out) == (1, "")
+    assert err.startswith(f"pyproject.toml at {before} is not valid TOML: ")
+
+
+def test_a_package_absent_at_before_counts_as_a_changed_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "--initial-branch=main")
+    before = _commit(origin, message="empty")
+    _commit(origin, "10.1.0", "add the package")
+    _git(tmp_path, "clone", "-q", str(origin), "work")
+    assert _route(capsys, tmp_path / "work", before=before) == _routed(
+        "10.1.0", "pypi", "v10.1.0", "10.1.0 is new and has no tag yet: releasing it"
+    )
+
+
+@pytest.mark.parametrize(
+    ("before", "error"),
+    [
+        (None, "a push to main needs --before"),
+        ("1" * 40, f"commit {'1' * 40} is not in this checkout"),
+    ],
+    ids=["missing", "unreadable"],
+)
+def test_a_push_to_main_needs_a_readable_before_commit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], before: str | None, error: str
+) -> None:
+    bumped = _bumped(tmp_path)
+    assert _route(capsys, bumped.work, before=before) == (1, "", f"{error}\n")
+
+
+def test_a_failed_tag_lookup_fails_the_route(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bumped = _bumped(tmp_path)
+    _git(bumped.work, "remote", "set-url", "origin", str(tmp_path / "gone"))
+    code, out, err = _route(capsys, bumped.work, before=bumped.before)
+    assert (code, out) == (1, "")
+    assert err.startswith("git ls-remote failed")
+
+
+@pytest.mark.parametrize(
+    ("event", "ref_type", "ref_name", "error"),
+    [
+        ("push", "branch", "claude/x", "nothing releases from a push of branch claude/x"),
+        ("pull_request", "branch", "main", "nothing releases from a pull_request of branch main"),
+    ],
+)
+def test_any_other_event_or_branch_is_refused(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    event: str,
+    ref_type: str,
+    ref_name: str,
+    error: str,
+) -> None:
+    _project(tmp_path, "untaped", "10.0.0")
+    assert _route(capsys, tmp_path, event=event, ref_type=ref_type, ref_name=ref_name) == (
+        1,
+        "",
+        f"{error}\n",
+    )
+
+
+@pytest.mark.parametrize("tagged", [False, True], ids=["absent", "present"])
+def test_the_tag_command_tags_the_checked_out_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tagged: bool,
+) -> None:
+    work = _clone_of_main(tmp_path)
+    head = _git(work, "rev-parse", "HEAD")
+    gh = FakeTagGh({TAG: ("commit", head)} if tagged else {})
+    monkeypatch.setattr(release, "_run", lambda exe, *args: gh(*args))
+    printed = f"{TAG} already at {head}" if tagged else f"tagged {TAG} at {head}"
+    assert _main(capsys, "--root", str(work), "tag", TAG, "--repo", REPO) == (
+        0,
+        printed + "\n",
+        "",
+    )
+    if not tagged:
+        expected = [arg.replace(HEAD, head) for arg in POST_TAG]
+        assert gh.calls[1] == expected
+
+
+def test_the_tag_command_needs_a_checkout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _main(capsys, "--root", str(tmp_path), "tag", TAG, "--repo", REPO) == (
+        1,
+        "",
+        f"{tmp_path.resolve()} is not a git checkout\n",
     )
 
 

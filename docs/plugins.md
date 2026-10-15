@@ -9,10 +9,10 @@ profile command. See the [Glossary](../CONTRIBUTING.md#glossary).
 
 A plugin imports from `untaped.sdk` and nothing else in `untaped`, except
 `untaped.contracts` and `untaped.testing` for [contracts](./contracts.md);
-see [SDK stability](./reference/conventions.md#sdk-stability). First-party
-plugins also use each other's declared `api.py` modules (see
-[Depending on another plugin](./reference/conventions.md#depending-on-another-plugin));
-those are internal to `untaped` and not part of the plugin API.
+see [SDK stability](./reference/conventions.md#sdk-stability). Any plugin,
+first-party or not, may also import another plugin's declared `api` module,
+under the rules in
+[Depending on another plugin](./reference/conventions.md#depending-on-another-plugin).
 
 [`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
 complete, tested plugin with commands; copy it to start one. To fill another
