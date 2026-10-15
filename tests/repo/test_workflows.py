@@ -201,13 +201,14 @@ def test_only_the_route_step_reads_the_event() -> None:
     workflow = _workflow("release.yml")
     jobs = workflow["jobs"]
     expressions = list(_expressions(workflow))
+    # Context names are case-insensitive in expressions, so GITHUB.ref_type counts too.
     contexts = Counter(
-        context
+        context.lower()
         for expression in expressions
-        for context in re.findall(r"\bgithub\.[\w.]+", expression)
+        for context in re.findall(r"\bgithub\.[\w.]+", expression, re.IGNORECASE)
     )
-    # Every use of the github context is one of those: no github['x'] or toJSON(github).
-    assert sum(len(re.findall(r"\bgithub\b", e)) for e in expressions) == contexts.total()
+    uses = sum(len(re.findall(r"\bgithub\b", e, re.IGNORECASE)) for e in expressions)
+    assert uses == contexts.total(), "github is used other than as github.<name>, e.g. github['x']"
     assert contexts == {
         **dict.fromkeys(EVENT_CONTEXTS.values(), 1),
         "github.ref": 1,
