@@ -234,7 +234,7 @@ def find_installed_skills(
     """Return every untaped-installed skill under ``roots`` with its state.
 
     Only directories carrying the untaped install marker count; hand-made
-    skills are never reported. A marked skill this version no longer ships is
+    skills are never reported. A marked skill no composed plugin ships is
     ``orphaned``; one whose files differ from the packaged copy is ``outdated``.
     """
     found: list[InstalledSkill] = []

@@ -601,7 +601,10 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     if any(item.state is SkillState.outdated for item in stale):
         fix = command_argv("skills update", profile=selected_profile())
     if any(item.state is SkillState.orphaned for item in stale):
-        parts.append("remove unshipped skills with `untaped skills remove NAME`")
+        parts.append(
+            "orphaned skills are shipped by no plugin installed here: install the plugin"
+            " that ships one, or remove it with `untaped skills remove NAME`"
+        )
     detail = "; ".join(parts)
     return _row("skills", shell.name, _WARN, title, detail, fix, automatic=True)
 

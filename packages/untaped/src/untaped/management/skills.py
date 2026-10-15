@@ -249,8 +249,9 @@ def check_installed_skills(
     ``warn`` (default) prints a warning, ``auto`` updates outdated skills in
     place, ``off`` does nothing. Without ``allow_updates`` (after a failed or
     ``--dry-run`` command) ``auto`` only warns, so nothing is written. Skills
-    this version no longer ships are only ever reported: removing them is left
-    to ``untaped skills remove``.
+    no composed plugin ships are left to ``untaped doctor``: a run without the
+    plugin that ships one (``uvx untaped`` with no extras) cannot tell it apart
+    from a skill no version ships any more.
     """
     mode = _updates_mode()
     if mode == "auto" and not allow_updates:
@@ -258,8 +259,6 @@ def check_installed_skills(
     if mode == "off":
         return
     stale = outdated_skills(skills, project_dir=project_root(Path.cwd()))
-    if not stale:
-        return
     outdated = [item for item in stale if item.state is SkillState.outdated]
     if mode == "auto" and outdated:
         failed: list[InstalledSkill] = []
@@ -277,11 +276,6 @@ def check_installed_skills(
         _diag.hint(
             f"{run_hint('skills update')} (set skills.updates to auto or off to change this)"
         )
-    orphaned = [item for item in stale if item.state is SkillState.orphaned]
-    if orphaned:
-        names = _names(orphaned)
-        _diag.warning(f"installed skills are no longer shipped: {names}")
-        _diag.hint(run_hint(f"skills remove {names.replace(',', '')}"))
 
 
 def _updates_mode() -> str:
