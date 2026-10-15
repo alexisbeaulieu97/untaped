@@ -327,15 +327,14 @@ class SettingsFileRepository:
         renames: list[KeyRename] = []
 
         def _apply(data: dict[str, Any]) -> None:
-            emptied: list[tuple[str, str]] = []
+            emptied: list[tuple[str, dict[str, Any]]] = []
             for name, section, model, section_data in profile_sections(
                 data, self._section_models()
             ):
+                had_keys = bool(section_data)
                 for move in migration_moves(model, section_data):
                     if not apply_move(section_data, move):
                         continue
-                    if not section_data:
-                        emptied.append((name, section))
                     deleted = move.action == "deleted"
                     rows.append(
                         {
@@ -351,8 +350,13 @@ class SettingsFileRepository:
                         renames.append(
                             ((*base, *move.old.split(".")), (*base, *move.to.split(".")))
                         )
-            for name, section in emptied:
-                data["profiles"][name].pop(section, None)
+                if had_keys and not section_data:
+                    emptied.append((section, section_data))
+            # By identity: a profile's YAML key need not be the string ``name``.
+            for profile in data["profiles"].values() if emptied else ():
+                for section, section_data in emptied:
+                    if isinstance(profile, dict) and profile.get(section) is section_data:
+                        del profile[section]
 
         if dry_run:
             _apply(read_config_dict())

@@ -315,4 +315,20 @@ def test_deletes_the_removed_command_aliases(_isolated_config: Path) -> None:
     assert row["from"] == "shell.aliases"
     assert row["action"] == "deleted"
     assert row["detail"].endswith("deleted in 11.0; use a shell alias or function")
-    assert "shell" not in _isolated_config.read_text()
+    assert _isolated_config.read_text() == "profiles:\n  default: {}\n"
+
+
+def test_drops_only_the_sections_it_empties(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n"
+        "  default:\n    del:\n      protocol: ssh\n    keep: {}\n"
+        "  work:\n    del:\n      protocol: ssh\n      parallel: 3\n",
+    )
+
+    result = _migrate_deleting("--format", "json")
+
+    assert result.exit_code == 0, result.output
+    assert _isolated_config.read_text() == (
+        "profiles:\n  default:\n    keep: {}\n  work:\n    del:\n      parallel: 3\n"
+    )

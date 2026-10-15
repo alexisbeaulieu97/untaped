@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Annotated
 
 import pytest
@@ -35,8 +34,9 @@ def _root() -> App:
         """Old."""
 
     spec = make_spec(name="svc", factory=lambda: app)
-    sunset = replace(
-        make_spec(name="sunset", factory=lambda: create_app(name="sunset", help="Sunset.")),
+    sunset = make_spec(
+        name="sunset",
+        factory=lambda: create_app(name="sunset", help="Sunset."),
         stability=deprecated(),
     )
     return bootstrap.build_root_app(candidates=[plugin_candidate(spec), plugin_candidate(sunset)])

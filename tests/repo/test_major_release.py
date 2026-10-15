@@ -14,7 +14,6 @@ import functools
 import re
 import warnings
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import replace
 from typing import Annotated, Any, ClassVar
 
 import pytest
@@ -186,7 +185,7 @@ def test_mark_leftovers_report_a_deprecated_plugin_group_and_command() -> None:
 
         return app
 
-    spec = replace(make_spec(name="svc", factory=factory), stability=deprecated())
+    spec = make_spec(name="svc", factory=factory, stability=deprecated())
     root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
 
     found = mark_leftovers(root, bootstrap.composition())

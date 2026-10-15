@@ -91,6 +91,8 @@ def test_alias_must_not_mix_commands_and_options() -> None:
 
 #: Spellings removed in a major release, with no deprecated alias left behind.
 REMOVED_SPELLINGS = [
+    ["alias", "list"],
+    ["failed", "--limit", "5"],
     ["ansible", "alias", "list"],
     ["ansible", "source-alias", "add", "common", "acme/common"],
     ["ansible", "source", "save", "prod", "--repo", "acme/site"],
@@ -116,6 +118,7 @@ REMOVED_SPELLINGS = [
     ["awx", "job-templates", "apply", "deploy.yml"],
     ["awx", "projects", "sync", "playbooks", "-t"],
     ["awx", "projects", "update", "playbooks"],
+    ["awx", "test", "run", "t.yml", "--dry-run"],
     ["github", "search", "code", "TODO", "--repo-stdin"],
     ["github", "search", "repos", "--no-archived"],
     ["github", "repos", "list", "--org", "acme", "--no-archived"],

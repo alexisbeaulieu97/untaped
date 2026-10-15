@@ -231,8 +231,12 @@ def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visib
 
 def _sunset() -> PluginCandidate:
     """A deprecated plugin beside the first-party ones (none of which is deprecated)."""
-    spec = make_spec(name="sunset", factory=lambda: create_app(name="sunset", help="Sunset."))
-    return plugin_candidate(replace(spec, stability=deprecated()))
+    spec = make_spec(
+        name="sunset",
+        factory=lambda: create_app(name="sunset", help="Sunset."),
+        stability=deprecated(),
+    )
+    return plugin_candidate(spec)
 
 
 def test_awx_test_sits_in_awxs_experimental_panel(
