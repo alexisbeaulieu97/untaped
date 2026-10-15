@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 
+from untaped.sdk import Diagnostics
 from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.domain.payloads import (
     CachedRef,
@@ -28,12 +29,16 @@ from untaped_ansible.infrastructure.sqlite_rows import (
 )
 from untaped_ansible.infrastructure.sqlite_schema import ensure_schema
 
+_diag = Diagnostics()
+
 
 class SqliteDependencyIndex:
     """SQLite adapter satisfying the graph read port."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, warn: Callable[[str], None] | None = None) -> None:
+        """``warn`` hears that an outdated index was rebuilt empty."""
         self._path = path.expanduser()
+        self._warn = warn or _diag.warning
         self._schema_lock = Lock()
         self._schema_ready = False
         self._parent_ready = False
@@ -434,7 +439,7 @@ class SqliteDependencyIndex:
             return
         with self._schema_lock:
             if not self._schema_ready:
-                ensure_schema(db, self._path)
+                ensure_schema(db, self._path, warn=self._warn)
                 self._schema_ready = True
 
     @contextmanager

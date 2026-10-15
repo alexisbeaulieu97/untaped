@@ -16,7 +16,7 @@ from untaped.sdk import (
     read_stdin,
     report_errors,
 )
-from untaped_git.settings import git_settings
+from untaped_git.settings import git_settings, store_root
 
 app = create_app(
     name="git",
@@ -71,10 +71,13 @@ def hosts_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
     from untaped_git.infrastructure.helpers import missing_helper, user_helpers  # noqa: PLC0415
 
     with report_errors():
-        root = git_settings().store_dir.expanduser()
+        root = store_root()
         cwd = root if root.is_dir() else Path(root.anchor)
         rows = list_hosts(
-            helpers_for=lambda host: user_helpers(host, cwd=cwd),
+            # With untaped's helper only, its worktrees reset the user's helpers away.
+            helpers_for=lambda host: (
+                [] if git_settings().untaped_helper_only else user_helpers(host, cwd=cwd)
+            ),
             missing_helper=missing_helper(root),
         )
         emit(rows, fmt=fmt, columns=columns, kind=HOST)
@@ -97,7 +100,7 @@ def store_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
     with report_errors():
         version = git_version()
         report = store_report(
-            git_settings().store_dir.expanduser(),
+            store_root(),
             version=None if version is None else version_text(version),
         )
         if fmt == "table" and columns is None:

@@ -17,7 +17,7 @@ def list_hosts(
 
     A host two providers name lists both (the rank decides between them);
     ``credential`` says whether any of them has one for the host's root URL.
-    ``helpers_for`` names the user's own credential helpers for a host.
+    ``helpers_for`` names the user's own credential helpers git asks first for a host.
     """
     try:
         homes = gather(GitHost.home)()

@@ -1,10 +1,10 @@
 """State-file repositories for Ansible aliases and sources.
 
-Aliases and sources are the tool-managed ``ansible`` *state*: the ``aliases``
+Aliases and sources are the plugin-managed ``ansible`` *state*: the ``aliases``
 map and ``sources`` list live under the ``ansible`` section of ``state.yml``.
 Writes go through the SDK's strict state wrappers rather than reaching into
 file internals: the shared state file is co-owned by every untaped
-tool, so a write must only touch this tool's section and never clobber
+plugin, so a write must only touch this plugin's section and never clobber
 another's.
 """
 

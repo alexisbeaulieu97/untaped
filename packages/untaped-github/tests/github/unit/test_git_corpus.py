@@ -101,7 +101,7 @@ def test_metadata_without_a_profile_reads_as_the_default_profile(
     corpus: Callable[..., _Corpus],
 ) -> None:
     env = corpus({"README.md": "hello\n"})
-    env.store.ensure()
+    env.store.fetch(branches=["main"])
     env.store.private_file.write_text(
         json.dumps(
             {

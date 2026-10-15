@@ -7,10 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from git.conftest import StoreFor, all_refs, git
+from git.conftest import StoreError, StoreFor, all_refs, ensure, git
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote, global_config
-from untaped_git.errors import StoreError
 
 
 def test_a_new_url_spelling_replaces_the_old_rewrite(
@@ -50,7 +49,7 @@ def test_a_foreign_path_is_refused(remote: GitRemote, store_for: StoreFor, tmp_p
 
 def test_an_interrupted_creation_heals(remote: GitRemote, store_for: StoreFor) -> None:
     store = store_for("github")
-    store.ensure()
+    ensure(store)
     git(store.path, "config", "--unset", "remote.origin.url")
 
     store.fetch(branches=["main"])
@@ -85,7 +84,7 @@ def test_delete_refs_guards_the_symref(store_for: StoreFor) -> None:
 )
 def test_run_refuses_what_reaches_the_remote(store_for: StoreFor, argv: list[str]) -> None:
     store = store_for("github")
-    store.ensure()
+    ensure(store)
     with pytest.raises(ValueError, match="local git subcommand"):
         store.run(argv)
 
@@ -110,7 +109,7 @@ def test_stripping_a_shared_refspec_repairs_every_sibling_worktree(
     git(workspace.path, "worktree", "add", "--quiet", "-b", "old", str(old), "origin/main")
     git(old, "branch", "--quiet", "--set-upstream-to=origin/main", bare=False)
 
-    store_for("github").ensure()
+    ensure(store_for("github"))
 
     assert "remote.origin.fetch" not in git(workspace.path, "config", "--local", "--list")
     for tree in (owned, old):

@@ -107,18 +107,6 @@ def _same(stamp: str | None, path: Path | None) -> bool:
     return os.path.realpath(stamp) == os.path.realpath(path)
 
 
-def tree_size(path: Path) -> int:
-    """Bytes of every file under ``path`` (symlinks not followed)."""
-    total = 0
-    for directory, _dirs, files in os.walk(path):
-        for name in files:
-            try:
-                total += os.lstat(os.path.join(directory, name)).st_size
-            except OSError:
-                continue
-    return total
-
-
 def config_value(
     file: Path, section: str, key: str, *, subsection: str | None = None
 ) -> str | None:

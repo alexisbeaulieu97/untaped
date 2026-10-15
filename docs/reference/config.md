@@ -91,7 +91,7 @@ overridden for one process with the environment variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `git.store_dir` | path | `~/.untaped/plugins/git/store` | `UNTAPED_GIT__STORE_DIR` | Root of the repo store: one shared bare repository per remote, under `<store_dir>/<host>/<path>.git`. |
-| `git.untaped_helper_first` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_FIRST` | In untaped's worktrees, ask only untaped for a host's credentials, instead of your own Git credential helpers first. |
+| `git.untaped_helper_only` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_ONLY` | In untaped's worktrees, ask only untaped for a host's credentials, instead of your own Git credential helpers first. |
 
 ## `github`
 

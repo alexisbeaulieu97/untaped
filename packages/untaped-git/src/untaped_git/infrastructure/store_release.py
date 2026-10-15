@@ -2,7 +2,7 @@
 
 ``release`` writes the ``untaped.release`` mark, deletes the plugin's refs,
 private file and worktrees, then keeps the repo while anyone else holds it or
-renames it aside and deletes it. :meth:`RepoStore.ensure` finishes a release
+renames it aside and deletes it. The next fetch or prefetch finishes a release
 that was interrupted from the mark. This module is the store's own: it uses
 :class:`RepoStore`'s internals.
 """
@@ -14,21 +14,20 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorCategory
+from untaped.sdk import ErrorCategory, dir_bytes, shown_path
 from untaped_git.domain.namespace import ORIGIN_HEAD, check_names, is_glob, layout_for
 from untaped_git.domain.release import Released, Removed
 from untaped_git.infrastructure.repo_files import (
     WorktreeEntry,
     private_file,
     private_files,
-    tree_size,
     worktree_entries,
 )
 
 if TYPE_CHECKING:
     from untaped_git.infrastructure.store import RepoStore
 
-#: The mark ``release()`` writes before deleting anything; ``ensure()`` finishes from it.
+#: The mark ``release()`` writes before deleting anything; ``_ensure()`` finishes from it.
 RELEASE_MARK = "untaped.release"
 #: Where a repo nobody holds goes, atomically, before it is deleted.
 REMOVING_SUFFIX = ".removing"
@@ -106,7 +105,7 @@ def settle(store: RepoStore) -> Released | Removed:
     if released is not None:
         store._git(["config", "--unset-all", RELEASE_MARK], check=False)
         return released
-    freed = tree_size(store._path)
+    freed = dir_bytes(store._path)
     removing = _removing_path(store)
     remove_removing(store)
     try:
@@ -142,7 +141,7 @@ def _holders(store: RepoStore) -> Released | None:
     foreign = []
     for entry in worktree_entries(store._path):
         if entry.owner is None:
-            foreign.append(_shown_path(entry.path) if entry.path else str(entry.admin))
+            foreign.append(shown_path(entry.path) if entry.path else str(entry.admin))
         else:
             plugins[entry.owner] = plugins.get(entry.owner, 0) + 1
     if not plugins and not foreign and not branches and not stash:
@@ -174,9 +173,3 @@ def remove_removing(store: RepoStore) -> None:
     removing = _removing_path(store)
     if removing.is_dir() and not removing.is_symlink():
         shutil.rmtree(removing, ignore_errors=True)
-
-
-def _shown_path(path: Path) -> str:
-    """``path`` with the home directory as ``~``."""
-    home = Path.home()
-    return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)

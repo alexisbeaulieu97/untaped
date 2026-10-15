@@ -208,9 +208,9 @@ def _overlap(
     keep_source = source_work or (not target_work and _shallow(target) and not _shallow(source))
     if not keep_source:
         _copy_private_files(source, target)
-        for old in moves:
+        for old in moves:  # first: while the source stays, a run cut short redoes this
             shutil.rmtree(old, ignore_errors=True)
-        shutil.rmtree(source, ignore_errors=True)
+        _discard(source)
         return "dropped"
     _copy_private_files(target, source)
     for entry in worktree_entries(target):
@@ -335,7 +335,7 @@ def _move(source: Path, target: Path, staged: Path | None, *, error: type[Untape
 
 
 def _discard(source: Path) -> None:
-    """Delete what a copy left at ``source``, under a name no later run adopts.
+    """Delete the old repository at ``source``, under a name no later run adopts.
 
     Renamed first, so a removal cut short leaves ``<repo>.git.removing``,
     which :func:`remove_if_emptied` finishes, never a broken repository.

@@ -13,15 +13,14 @@ from typing import Any
 
 import pytest
 
-from git.conftest import all_refs, git, objects
+from git.conftest import StoreError, all_refs, ensure, git, objects
 from untaped.testing.git import GitRemote, git_remote, hostile_git_home
-from untaped_git.errors import StoreError
 from untaped_git.infrastructure import store as store_module
 from untaped_git.infrastructure.store import RepoStore
 
 
 def _store(base: Path, remote: GitRemote, plugin: str = "workspace") -> RepoStore:
-    return RepoStore(
+    return RepoStore._open(
         base / "store" / "git.example" / "app.git",
         url=remote.url,
         plugin=plugin,
@@ -51,7 +50,7 @@ def _exercise(base: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, li
     monkeypatch.setattr(store_module, "run_git", spy)
     tree = base / "trees" / "work"
     steps: list[tuple[str, Any]] = [
-        ("ensure", store.ensure),
+        ("ensure", lambda: ensure(store)),
         ("fetch", lambda: store.fetch(branches=["*"], tags=["*"], prune=True)),
         ("tag", lambda: git(store.path, "tag", "wip-local", "refs/remotes/origin/main")),
         ("worktree_add", lambda: store.worktree_add(tree, "refs/remotes/origin/main", branch="w")),

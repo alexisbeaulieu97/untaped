@@ -4,7 +4,7 @@ Every error the plugin raises on purpose derives from :class:`AnsibleError`
 (itself an :class:`~untaped.sdk.UntapedError`) so ``report_errors`` turns it
 into a clean ``error: ...`` message instead of a traceback. Failures are
 attributed to ``local`` (sources, the dependency index, files), except
-:class:`GitCacheError` (``git``, ``unavailable`` when git timed out or lost
+:class:`RepoStoreError` (``git``, ``unavailable`` when git timed out or lost
 the network).
 """
 
@@ -19,8 +19,8 @@ class AnsibleError(UntapedError):
     system = "local"
 
 
-class GitCacheError(AnsibleError):
-    """Raised when local Git cache operations fail."""
+class RepoStoreError(AnsibleError):
+    """Raised when a source's repo store operation (fetch, ``ls-remote``, blob read) fails."""
 
     system = "git"
 

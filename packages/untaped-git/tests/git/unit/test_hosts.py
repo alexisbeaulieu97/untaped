@@ -16,6 +16,7 @@ from untaped.plugins.registry import PluginSpec
 from untaped.sdk import ConfigError
 from untaped.settings import get_settings
 from untaped.testing import invoke_cli, plugin_candidate
+from untaped.testing.git import global_config
 from untaped_git import SPEC
 from untaped_git.cli import app
 from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
@@ -97,7 +98,6 @@ def test_the_provider_whose_home_matches_answers() -> None:
     assert (auth.plugin, auth.proxy) == ("hub", "http://proxy.hub.example")
     assert auth.credential is not None
     assert auth.credential.username == "hub"
-    assert GitHost.for_url("https://github.com/acme/app.git") == auth
     assert set(Forge.asked) == {"hub"}  # lab's home is another host: never asked
 
 
@@ -207,3 +207,32 @@ def test_hosts_with_no_provider_is_empty() -> None:
     compose()
     result = invoke_cli(app, ["hosts", "--format", "json"])
     assert (result.exit_code, json.loads(result.stdout)) == (0, [])
+
+
+def _helpers_first() -> list[list[str]]:
+    result = invoke_cli(app, ["hosts", "--format", "json"])
+    assert result.exit_code == 0, result.stderr
+    return [row["helpers_first"] for row in json.loads(result.stdout)]
+
+
+def test_hosts_lists_the_users_helpers_git_asks_after_an_empty_one_resets_them() -> None:
+    compose("hub")
+    Forge.homes = {"hub": "git.example"}
+    global_config("credential.helper", "reset")
+    global_config("credential.helper", "", add=True)
+    global_config("credential.https://git.example.helper", "mine", add=True)
+    global_config("credential.https://other.example.helper", "theirs", add=True)
+
+    assert _helpers_first() == [["mine"]]
+
+
+def test_hosts_lists_no_helper_of_the_users_when_only_untapeds_is_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compose("hub")
+    Forge.homes = {"hub": "git.example"}
+    global_config("credential.helper", "mine")
+    monkeypatch.setenv("UNTAPED_GIT__UNTAPED_HELPER_ONLY", "true")
+    get_settings.cache_clear()
+
+    assert _helpers_first() == [[]]

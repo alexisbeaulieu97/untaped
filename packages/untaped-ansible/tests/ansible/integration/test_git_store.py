@@ -28,8 +28,8 @@ from untaped_ansible import SPEC as ANSIBLE
 from untaped_ansible.application.refresh_git_index import RefreshGitSourceIndex, RefreshResult
 from untaped_ansible.cli import app
 from untaped_ansible.domain.payloads import GitRef
+from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure import GitRemoteRefProbe, GitSourceStore, SqliteDependencyIndex
-from untaped_ansible.infrastructure.git_store import GitCacheError
 from untaped_ansible.settings import SourceDefinition
 from untaped_git import SPEC as GIT
 from untaped_git.api import Released, RepoStore, store_key
@@ -221,7 +221,7 @@ def test_a_repo_shared_with_workspace_keeps_workspaces_refs_and_worktree(
     tmp_path: Path, store_root: Path
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    workspace = RepoStore.for_url(site.url, plugin="workspace", error=GitCacheError)
+    workspace = RepoStore.for_url(site.url, plugin="workspace", error=RepoStoreError)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     worktree = tmp_path / "ws" / "site"
     workspace.worktree_add(worktree, "refs/remotes/origin/main", branch="fix")
@@ -244,7 +244,7 @@ def test_a_release_by_github_keeps_a_repo_ansibles_refresh_uses(
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
     _refresh(tmp_path, "site")
-    github = RepoStore.for_url(site.url, plugin=GITHUB, error=GitCacheError)
+    github = RepoStore.for_url(site.url, plugin=GITHUB, error=RepoStoreError)
     github.fetch(branches=["main"])
     github.private_file.write_text("{}\n")
 
@@ -278,9 +278,9 @@ def test_dependency_files_read_under_any_locale(
 def test_a_failed_ls_remote_keeps_the_git_errors_attribution(
     tmp_path: Path, store_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A missing git binary is ``config``/``local``, unlike GitCacheError's own defaults.
+    # A missing git binary is ``config``/``local``, unlike RepoStoreError's own defaults.
     monkeypatch.setenv("PATH", str(tmp_path / "no-bin"))
-    with pytest.raises(GitCacheError) as caught:
+    with pytest.raises(RepoStoreError) as caught:
         GitSourceStore().ls_remote("https://github.com/acme/site.git", patterns=["HEAD"])
 
     assert (caught.value.system, caught.value.category) == ("local", ErrorCategory.CONFIG)
@@ -308,7 +308,7 @@ def test_a_failed_default_branch_lookup_keeps_the_git_errors_attribution(
     tmp_path: Path, store_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "no-bin"))
-    with pytest.raises(GitCacheError) as caught:
+    with pytest.raises(RepoStoreError) as caught:
         GitSourceStore().default_branch("https://github.com/acme/site.git")
 
     assert (caught.value.system, caught.value.category) == ("local", ErrorCategory.CONFIG)
@@ -397,7 +397,7 @@ def test_removing_a_source_releases_a_repo_workspace_holds(
     tmp_path: Path, store_root: Path
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    workspace = RepoStore.for_url(site.url, plugin="workspace", error=GitCacheError)
+    workspace = RepoStore.for_url(site.url, plugin="workspace", error=RepoStoreError)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     worktree = tmp_path / "ws" / "site"
     workspace.worktree_add(worktree, "refs/remotes/origin/main", branch="fix")
@@ -419,7 +419,7 @@ def test_removing_a_source_releases_a_repo_workspace_holds(
 def test_removing_a_source_leaves_a_repo_it_never_fetched(tmp_path: Path, store_root: Path) -> None:
     """The source selects the repo, but no ref matched: ansible has no part in it to release."""
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    workspace = RepoStore.for_url(site.url, plugin="workspace", error=GitCacheError)
+    workspace = RepoStore.for_url(site.url, plugin="workspace", error=RepoStoreError)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
     _save_sources("a")
@@ -461,7 +461,7 @@ def test_removing_a_source_while_another_sources_refresh_holds_the_repo_keeps_it
     _save_sources("a", "b")
     _refresh(index_dir, "site", source_key="source:a")
     _refresh(index_dir, "site", source_key="source:b")
-    store = RepoStore.for_url(site.url, plugin=ANSIBLE, error=GitCacheError)
+    store = RepoStore.for_url(site.url, plugin=ANSIBLE, error=RepoStoreError)
     held = threading.Event()
     done = threading.Event()
 

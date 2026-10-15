@@ -8,14 +8,14 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr
 
-from git.conftest import StoreFor, git
+from git.conftest import StoreError, StoreFor, ensure, git
 from untaped import bootstrap
 from untaped.sdk import PluginSpec
 from untaped.testing import plugin_candidate
 from untaped.testing.git import GitRemote, global_config, trace2_events
 from untaped_git import SPEC, api
 from untaped_git.domain.hosts import Credential, HostAuth
-from untaped_git.errors import GitError, StoreError
+from untaped_git.errors import GitError
 from untaped_git.infrastructure.helpers import missing_helper, user_helpers
 from untaped_git.infrastructure.remote import default_branch, ls_remote
 from untaped_git.infrastructure.store import RepoStore
@@ -121,7 +121,7 @@ def test_default_branch_is_recorded_and_heals_after_a_rename(
 ) -> None:
     store = store_for("workspace")
     root = tmp_path / "store"
-    store.ensure()
+    ensure(store)
     assert default_branch(remote.url, root=root, auth=lambda _: None) == "main"
     assert git(store.path, "config", "untaped.defaultBranch").strip() == "main"
 

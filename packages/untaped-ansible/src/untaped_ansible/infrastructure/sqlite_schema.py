@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 
-from untaped.sdk import Diagnostics
 from untaped_ansible.errors import DependencyIndexError
 
 # Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
@@ -23,8 +23,6 @@ SCHEMA_VERSION = 4
 #: off and an older writer deletes and replaces rows in the tables it knows,
 #: so a table a newer version adds must tolerate rows whose parent is gone.
 ADDITIVE_SINCE = 4
-
-_diag = Diagnostics()
 
 _SCHEMA_SQL = """
 create table if not exists source_runs (
@@ -113,13 +111,13 @@ create index if not exists idx_source_refresh_progress_source
 """
 
 
-def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
+def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], None]) -> None:
     """Create dependency index tables on a fresh database.
 
     Databases stamped with the current ``SCHEMA_VERSION`` pass through
     (one from before ``schema_meta`` gets its stamp). An older (or
     unstamped) database is a stale cache: its tables are dropped and
-    recreated empty, with a warning to refresh saved sources. A database
+    recreated empty, with a ``warn`` to refresh saved sources. A database
     written by a newer untaped release opens when its ``additive_since`` is
     at most this release's ``SCHEMA_VERSION`` (it only added tables or
     columns this release never reads); otherwise it is rejected, so a
@@ -142,7 +140,7 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
         )
     if version != 0 or _has_tables(db):
         _drop_tables(db)
-        _diag.warning(
+        warn(
             f"rebuilt the outdated dependency index at {path} (schema version "
             f"{version}, expected {SCHEMA_VERSION}); re-run "
             "'untaped ansible source refresh <name>' for each saved source",

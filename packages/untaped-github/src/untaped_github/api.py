@@ -47,7 +47,7 @@ __all__ = [
 
 
 def github_settings() -> GithubSettings:
-    """Return the active profile's ``github`` settings (token, base URL, corpus).
+    """Return the active profile's ``github`` settings (token, base URL, sweep, inventory).
 
     Ansible calls this instead of reading the ``github`` config section itself,
     so the GitHub plugin stays the only reader of its section.
