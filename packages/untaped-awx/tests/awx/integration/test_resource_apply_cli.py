@@ -660,9 +660,7 @@ def test_rejected_token_during_survey_write_still_stops_the_batch(
         "spec: { playbook: deploy.yml, project: playbooks, inventory: prod }\n"
     )
 
-    result = CliInvoker().invoke(
-        app, ["apply", str(docs), "--yes", "--continue-on-error", "--format", "json"]
-    )
+    result = CliInvoker().invoke(app, ["apply", str(docs), "--yes", "--format", "json"])
 
     rows = {row["name"]: row for row in json.loads(result.stdout)}
     assert result.exit_code != 0

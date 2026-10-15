@@ -446,7 +446,7 @@ def test_new_and_existing_secret_values_are_redacted_from_runtime_errors() -> No
     assert "new-secret" not in repr(result)
 
 
-def test_failed_creation_skips_only_its_dependents_when_continuing() -> None:
+def test_failed_creation_skips_only_its_dependents() -> None:
     from untaped_awx.errors import BadRequestError
 
     class Failing(_Client):
@@ -473,7 +473,7 @@ def test_failed_creation_skips_only_its_dependents_when_continuing() -> None:
         Resource(kind="Item", metadata=Metadata(name="child"), spec={"parent": "parent"}),
         Resource(kind="Item", metadata=Metadata(name="independent"), spec={}),
     ]
-    result = engine.run(docs, write=True, continue_on_error=True)
+    result = engine.run(docs, write=True)
     assert [row.action for row in result.outcomes] == ["failed", "skipped", "created"]
 
 
@@ -500,9 +500,7 @@ def test_unexpected_worker_exception_becomes_a_failed_row() -> None:
                 raise KeyError("strategy bug")
             return super().create(spec, payload)
 
-    result = _item_engine(Exploding([])).run(
-        _items("first", "bad", "last"), write=True, continue_on_error=True
-    )
+    result = _item_engine(Exploding([])).run(_items("first", "bad", "last"), write=True)
     assert [row.action for row in result.outcomes] == ["created", "failed", "created"]
     assert "strategy bug" in (result.outcomes[1].detail or "")
 
@@ -516,9 +514,7 @@ def test_auth_failure_aborts_remaining_items_but_keeps_completed_rows() -> None:
                 raise ConfigError("AWX rejected the token (HTTP 401)")
             return super().create(spec, payload)
 
-    result = _item_engine(Unauthorized([])).run(
-        _items("first", "second", "third"), write=True, continue_on_error=True
-    )
+    result = _item_engine(Unauthorized([])).run(_items("first", "second", "third"), write=True)
     assert [row.action for row in result.outcomes] == ["created", "failed", "skipped"]
     assert "401" in (result.outcomes[1].detail or "")
 
@@ -533,9 +529,7 @@ def test_an_environment_failure_of_any_class_aborts_the_batch(category: str) -> 
                 raise AwxApiError("refused", category=category)
             return super().create(spec, payload)
 
-    result = _item_engine(Refused([])).run(
-        _items("first", "second", "third"), write=True, continue_on_error=True
-    )
+    result = _item_engine(Refused([])).run(_items("first", "second", "third"), write=True)
     assert [row.action for row in result.outcomes] == ["created", "failed", "skipped"]
 
 
@@ -555,9 +549,7 @@ def test_failed_rows_carry_the_attributed_error() -> None:
                 raise KeyError("strategy bug")
             return super().create(spec, payload)
 
-    result = _item_engine(Failing([])).run(
-        _items("bad", "first", "second", "third"), write=True, continue_on_error=True
-    )
+    result = _item_engine(Failing([])).run(_items("bad", "first", "second", "third"), write=True)
     bug, created, rejected, _skipped = result.outcomes
     assert bug.error is not None
     assert (bug.error.category, bug.error.system) == ("failed", "untaped")
@@ -586,6 +578,39 @@ def test_a_membership_failure_row_carries_its_error() -> None:
     assert partial.error is not None
     assert partial.error.category == "unavailable"
     assert partial.error.retryable
+
+
+@pytest.mark.parametrize(("fail_fast", "doomed"), [(False, False), (True, False), (False, True)])
+def test_a_membership_failure_skips_later_memberships_only_when_stopping(
+    fail_fast: bool, doomed: bool
+) -> None:
+    from untaped.sdk import ConfigError
+    from untaped_awx.errors import BadRequestError
+
+    class RefusingFirst(_MembershipClient):
+        def sub_endpoint_request(
+            self, spec: ResourceSpec, record_id: int, sub_endpoint: str, method: str, **kw: Any
+        ) -> dict[str, Any]:
+            if record_id == 1:
+                if doomed:
+                    raise ConfigError("AWX rejected the token (HTTP 401)")
+                raise BadRequestError("refused", status=503)
+            return super().sub_endpoint_request(spec, record_id, sub_endpoint, method, **kw)
+
+    client = RefusingFirst([])
+    plan = _group_engine(client).prepare([_group("first", ["second"]), _group("second", ["first"])])
+    result = _group_engine(client).execute(plan, fail_fast=fail_fast)
+    first, second = result.outcomes
+    assert first.action == "partial"
+    if fail_fast or doomed:
+        assert (second.action, second.detail) == (
+            "partial",
+            "membership skipped after runtime failure",
+        )
+        assert (2, "children") not in client.members
+    else:
+        assert second.action == "created"
+        assert client.members[(2, "children")] == [1]
 
 
 def test_a_preflight_reread_failure_row_carries_its_error() -> None:

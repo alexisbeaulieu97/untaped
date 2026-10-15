@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 
@@ -145,21 +147,18 @@ def test_list_limit_caps_results(fake_aap: Any) -> None:
     assert len(lines) == 2
 
 
-def test_list_limit_zero_means_no_limit(fake_aap: Any) -> None:
-    _seed_all_kinds(fake_aap)
-    capped = CliInvoker().invoke(
-        app, ["unified-templates", "list", "--format", "raw", "--columns", "id"]
-    )
-    result = CliInvoker().invoke(
-        app,
-        ["unified-templates", "list", "--limit", "0", "--format", "raw", "--columns", "id"],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.split() == capped.stdout.split()
-    assert len(result.stdout.split()) > 2
-
-    negative = CliInvoker().invoke(app, ["unified-templates", "list", "--limit", "-1"])
-    assert negative.exit_code == 2
+@pytest.mark.parametrize(
+    "command", [("unified-templates", "list"), ("projects", "list"), ("jobs", "list")]
+)
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_list_limit_below_one_is_a_usage_error(
+    fake_aap: Any, command: tuple[str, ...], value: str
+) -> None:
+    """The SDK ``LimitOption``: no ``--limit 0`` escape hatch, as in github and jira."""
+    result = CliInvoker().invoke(app, [*command, "--limit", value])
+    assert result.exit_code == 2, result.output
+    assert "--limit" in result.stderr
+    assert not fake_aap.router.calls
 
 
 def test_get_multi_id_returns_full_records(fake_aap: Any) -> None:

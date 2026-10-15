@@ -31,6 +31,7 @@ from untaped.sdk import (
     ColumnsOption,
     Failure,
     FormatOption,
+    LimitOption,
     create_app,
     echo,
     emit,
@@ -82,17 +83,11 @@ def list_command(
             negative="",
         ),
     ] = None,
-    limit: Annotated[
-        int | None, Parameter(name="--limit", help="Cap result count (0 = no limit).")
-    ] = None,
+    limit: LimitOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """List Unified Job Templates (alphabetical by name)."""
-    if limit is not None and limit < 0:
-        raise_usage("--limit must be non-negative")
-    # ``--limit 0`` means "no limit", as it does for every awx list.
-    limit = limit or None
     filters = parse_kv_pairs(filter_, flag="--filter")
     if type_ is not None:
         if "type" in filters:

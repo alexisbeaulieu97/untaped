@@ -18,10 +18,25 @@ import heapq
 import threading
 from collections.abc import Callable, Sequence
 
-from untaped.sdk import UsageError, bounded_map
+from untaped.sdk import ErrorCategory, UntapedError, UsageError, bounded_map
 
 MAX_PARALLEL = 10
 """Upper bound on concurrent AWX requests for any batch."""
+
+#: Failures that doom every remaining request of a batch alike.
+_BATCH_DOOMING = frozenset({ErrorCategory.AUTH, ErrorCategory.CONFIG})
+
+
+def dooms_batch(exc: BaseException) -> bool:
+    """Whether ``exc`` (or its cause) is a rejected token or broken setup.
+
+    Every batch stops on one, with or without ``--fail-fast``: the remaining
+    requests would fail the same way.
+    """
+    return any(
+        isinstance(error, UntapedError) and error.category in _BATCH_DOOMING
+        for error in (exc, exc.__cause__)
+    )
 
 
 class ScheduleInterruptedError(KeyboardInterrupt):

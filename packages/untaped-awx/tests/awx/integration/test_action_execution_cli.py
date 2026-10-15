@@ -60,11 +60,11 @@ def test_sliced_launch_wait_keeps_mixed_execution_kinds(
         {"id": 101, "type": "workflow_job"},
     ],
 )
-@pytest.mark.parametrize("continue_", [False, True])
+@pytest.mark.parametrize("fail_fast", [False, True])
 def test_invalid_response_keeps_execution_id_without_retry_or_monitoring(
     fake_aap: Any,
     response: dict[str, Any],
-    continue_: bool,
+    fail_fast: bool,
 ) -> None:
     seed_templates(fake_aap)
     fake_aap.router.routes.clear()
@@ -82,15 +82,15 @@ def test_invalid_response_keeps_execution_id_without_retry_or_monitoring(
         "--format",
         "json",
     ]
-    if continue_:
-        args.append("--continue-on-error")
+    if fail_fast:
+        args.append("--fail-fast")
     result = CliInvoker().invoke(app, args)
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
     assert rows[0]["id"] == 101
     assert rows[0]["target_id"] == 50
     assert rows[0]["kind"] == ("workflow_job" if response.get("type") == "workflow_job" else None)
-    assert [row["action"] for row in rows] == ["failed", "completed" if continue_ else "skipped"]
+    assert [row["action"] for row in rows] == ["failed", "skipped" if fail_fast else "completed"]
     assert route.call_count == 1
     assert not any(
         "/101/" in call.request.url.path

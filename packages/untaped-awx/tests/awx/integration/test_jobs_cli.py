@@ -714,15 +714,20 @@ def test_jobs_stdin_rejects_records_of_another_kind(fake_aap: Any, command: str)
     assert not fake_aap.router.calls
 
 
-@pytest.mark.parametrize(("args", "expected"), [([], 20), (["--limit", "0"], 25)])
-def test_jobs_list_defaults_to_twenty_and_zero_means_all(
-    fake_aap: Any, args: list[str], expected: int
-) -> None:
+@pytest.mark.parametrize(("args", "expected"), [([], 20), (["--limit", "25"], 25)])
+def test_jobs_list_defaults_to_twenty(fake_aap: Any, args: list[str], expected: int) -> None:
     for index in range(25):
         fake_aap.seed("jobs", id=100 + index, name=f"run{index}", status="successful")
     result = CliInvoker().invoke(app, ["jobs", "list", *args, "--format", "raw", "--columns", "id"])
     assert result.exit_code == 0, result.output
     assert len(result.stdout.split()) == expected
+
+
+def test_jobs_logs_rejects_a_negative_tail(fake_aap: Any) -> None:
+    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--tail", "-1"])
+    assert result.exit_code == 2, result.output
+    assert "--tail" in result.stderr
+    assert not fake_aap.router.calls
 
 
 def test_jobs_kind_rejects_unknown_values(fake_aap: Any) -> None:

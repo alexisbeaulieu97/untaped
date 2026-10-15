@@ -232,9 +232,9 @@ def test_inventory_sync_names_the_inventory_without_sources(fake_aap: Any) -> No
     assert fake_aap.actions_called == []
 
 
-@pytest.mark.parametrize("continue_", [False, True])
-def test_launch_runtime_failure_retains_success_and_skips_without_retry(
-    fake_aap: Any, continue_: bool
+@pytest.mark.parametrize("fail_fast", [False, True])
+def test_launch_runtime_failure_continues_unless_fail_fast_and_never_retries(
+    fake_aap: Any, fail_fast: bool
 ) -> None:
     seed(fake_aap)
     fake_aap.seed("job_templates", id=51, name="bad", organization=1)
@@ -245,8 +245,8 @@ def test_launch_runtime_failure_retains_success_and_skips_without_retry(
     )
     fake_aap.install(fake_aap.router)
     args = ["job-templates", "launch", "--yes", "deploy", "bad", "last", "--format", "json"]
-    if continue_:
-        args.append("--continue-on-error")
+    if fail_fast:
+        args.append("--fail-fast")
     result = CliInvoker().invoke(app, args)
     # A timed-out request is a temporary failure: exit 5.
     assert result.exit_code == 5, result.output
@@ -254,7 +254,7 @@ def test_launch_runtime_failure_retains_success_and_skips_without_retry(
     assert [r["action"] for r in rows] == [
         "completed",
         "failed",
-        "completed" if continue_ else "skipped",
+        "skipped" if fail_fast else "completed",
     ]
     assert rows[0]["id"] is not None
     assert "error" not in rows[0]
@@ -298,6 +298,7 @@ def test_parallel_launch_stops_new_submissions_but_retains_inflight(
             "last",
             "--parallel",
             "2",
+            "--fail-fast",
             "--format",
             "json",
         ],
@@ -350,7 +351,7 @@ def test_action_invalid_name_in_selection_prevents_all_posts(
     fake_aap: Any, command: str, action: str, name: str, path: str, target: int, kind: str
 ) -> None:
     seed(fake_aap)
-    result = CliInvoker().invoke(app, [command, action, name, "ghost", "--continue-on-error"])
+    result = CliInvoker().invoke(app, [command, action, name, "ghost"])
     assert result.exit_code != 0
     assert fake_aap.actions_called == []
 
@@ -408,7 +409,7 @@ def test_sync_known_invalid_batch_never_starts_valid_target(fake_aap: Any, inval
             kind="smart" if invalid == "smart-inventory" else "",
         )
         command = "inventories"
-    result = CliInvoker().invoke(app, [command, "sync", "--yes", "--all", "--continue-on-error"])
+    result = CliInvoker().invoke(app, [command, "sync", "--yes", "--all"])
     assert result.exit_code != 0
     assert "invalid" in result.output
     assert fake_aap.actions_called == []
@@ -937,7 +938,7 @@ def test_cancel_cancels_an_abandoned_execution_while_others_still_run(
         for template in (50, 51):
             fake_aap.get_record("job_templates", template)["ask_limit_on_launch"] = True
         fake_aap.next_action_ignored_fields = {"limit": "web1"}  # deploy's launch only
-        args += ["--host-pattern", "web1", "--continue-on-error"]
+        args += ["--host-pattern", "web1"]
     cancelled = threading.Event()
     real_cancel = JobRecordRepository.cancel
 
