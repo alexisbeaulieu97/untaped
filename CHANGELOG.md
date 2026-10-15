@@ -470,12 +470,6 @@
   warnings and after `auth unset` of an inherited token command are the line's
   `hint` field instead of part of its `message`, and `-q` keeps the latter.
   ([#665](https://github.com/alexisbeaulieu97/untaped/pull/665))
-- The warnings for a token stored in plain text in `config.yml`
-  (`<section>.token`) now say it will be removed in 12.0; it works until then.
-  `UNTAPED_<SECTION>__TOKEN` or a token command (`untaped auth migrate`)
-  keeps it out of the file.
-  ([#666](https://github.com/alexisbeaulieu97/untaped/pull/666),
-  [#667](https://github.com/alexisbeaulieu97/untaped/pull/667))
 
 ### Deprecated
 
@@ -488,6 +482,11 @@
   deprecated in favour of `ansible.caches.index.max_age_seconds` and still
   read, with a warning, until 12.0.
   ([#628](https://github.com/alexisbeaulieu97/untaped/pull/628))
+- A token stored in plain text in `config.yml` (`<section>.token`) is removed
+  in 12.0 and still read, with a warning, until then;
+  `UNTAPED_<SECTION>__TOKEN` or a token command (`untaped auth migrate`)
+  keeps it out of the file.
+  ([#667](https://github.com/alexisbeaulieu97/untaped/pull/667))
 
 ### Removed
 

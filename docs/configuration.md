@@ -326,11 +326,10 @@ call, so the error quotes its first line and, for gpg's, names the usual fix.
 `untaped` does not run `gh auth token` on its own. To reuse the GitHub CLI's
 login, set `github.token_command` as above.
 
-A token in `<section>.token` is stored in plain text in `config.yml`. That is
-deprecated and will be removed in 12.0, but still read until then (a token
-file in a container or CI job is a fair use; `UNTAPED_<SECTION>__TOKEN` avoids
-the file altogether): loading one warns once per run,
-`config set <section>.token` warns, `untaped doctor` warns with
+A token in `<section>.token` is stored in plain text in `config.yml`. Keeping
+it there is deprecated and will be removed in 12.0, but it is still read until
+then; `UNTAPED_<SECTION>__TOKEN` avoids the file altogether. Loading one warns
+once per run, `config set <section>.token` warns, `untaped doctor` warns with
 `untaped auth migrate` as the fix, and `untaped setup` no longer offers it.
 
 ## Debug logs
