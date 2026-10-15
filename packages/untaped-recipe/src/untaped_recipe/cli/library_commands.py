@@ -272,8 +272,8 @@ def sync_command(
         if outcome.cancelled:
             finish(outcome)
         if not dry_run:
-            # An unchanged pack still moved to the fetched commit (older
-            # installs recorded none; a commit may touch only ignored files).
+            # An unchanged pack still moved to the fetched commit: a commit
+            # may touch only files the install ignores.
             for plan in plans:
                 if not plan.changed and plan.commit and plan.commit != plan.pack.commit:
                     library.record_commit(plan.pack.name, plan.commit)

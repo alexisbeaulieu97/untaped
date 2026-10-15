@@ -163,24 +163,6 @@ def _check_kinds(records: Sequence[PipeEnvelope], accept_kinds: Collection[str])
             )
 
 
-def read_records(*, accept_kinds: Collection[str] | None = None) -> list[PipeEnvelope]:
-    """Read an untaped ``--format pipe`` stream from stdin into envelopes.
-
-    The dual of :func:`read_identifiers` for consumers that want the full
-    record, not just an identifier. There is no alternate source, so (unlike
-    :func:`read_identifiers`) it takes no flag. Raises :class:`ConfigError` on an
-    empty stream or any malformed line (line-precise), and :class:`UsageError`
-    for a kind outside ``accept_kinds`` (see :func:`read_stdin_input`).
-    """
-    pairs = _read_raw_lines()
-    if not pairs:
-        raise ConfigError("no records received on stdin", category="invalid")
-    records = [parse_envelope_line(lineno, text) for lineno, text in pairs]
-    if accept_kinds is not None:
-        _check_kinds(records, accept_kinds)
-    return records
-
-
 def read_identifiers(
     positional: list[str],
     *,

@@ -2,7 +2,7 @@
 
 :func:`batch_apply` is the shared front-end a tool uses to act on a *set* of
 already-resolved items (typically read from a ``--format pipe`` stream via
-:func:`untaped.stdin.read_identifiers` / :func:`untaped.stdin.read_records`). It
+:func:`untaped.stdin.read_identifiers` / :func:`untaped.stdin.read_stdin_input`). It
 previews the targets, gates a destructive verb behind a confirmation (or
 ``--yes``), runs the per-item ``action`` under a progress indicator, and reports
 per-item failures — leaving the caller to render the outcome rows and choose the
