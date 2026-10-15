@@ -280,6 +280,15 @@ def test_update_keeps_a_failure_s_category_on_its_row(
     assert "error: untaped-one: could not update it" in result.stderr
 
 
+def test_update_named_unshipped_skill_says_no_installed_plugin_ships_it(tmp_path: Path) -> None:
+    _install(_skills_app(tmp_path, "untaped-gone"), "gone")
+    app = _skills_app(tmp_path, "untaped-one")
+    result = CliInvoker().invoke(app, ["update", "untaped-gone", "--format", "json"])  # type: ignore[arg-type]
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "failed"
+    assert "no plugin installed here ships this skill" in result.stderr
+
+
 def test_update_unknown_installed_name_fails(tmp_path: Path) -> None:
     app = _skills_app(tmp_path, "untaped-one")
     _install(app, "one")
