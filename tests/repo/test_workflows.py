@@ -194,17 +194,20 @@ def test_only_the_route_step_reads_the_event() -> None:
 
     Nothing else reads the event: no other ``github`` context (beyond the
     concurrency group's ``github.ref`` and the release job's token), no step
-    ``if`` beyond the two publish routes, and no ``$GITHUB_REF*`` or
-    ``$GITHUB_EVENT*`` variable in a script. A step that re-derived "only a
+    ``if`` beyond the two publish routes, and no ``$GITHUB_*`` variable in a
+    script beyond the four that carry no event fact. A step that re-derived "only a
     tag is production" would skip part of a release from ``main``.
     """
     workflow = _workflow("release.yml")
     jobs = workflow["jobs"]
+    expressions = list(_expressions(workflow))
     contexts = Counter(
         context
-        for expression in _expressions(workflow)
+        for expression in expressions
         for context in re.findall(r"\bgithub\.[\w.]+", expression)
     )
+    # Every use of the github context is one of those: no github['x'] or toJSON(github).
+    assert sum(len(re.findall(r"\bgithub\b", e)) for e in expressions) == contexts.total()
     assert contexts == {
         **dict.fromkeys(EVENT_CONTEXTS.values(), 1),
         "github.ref": 1,
@@ -221,7 +224,12 @@ def test_only_the_route_step_reads_the_event() -> None:
         ("publish", "Publish to TestPyPI"): "needs.route.outputs.index != 'pypi'",
     }
     scripts = "\n".join(str(step.get("run", "")) for step in _all_steps("release.yml"))
-    assert not re.search(r"\bGITHUB_(REF|EVENT|HEAD_REF|BASE_REF|SHA)", scripts)
+    assert set(re.findall(r"\bGITHUB_\w+", scripts)) == {
+        "GITHUB_ENV",
+        "GITHUB_OUTPUT",
+        "GITHUB_REPOSITORY",
+        "GITHUB_STEP_SUMMARY",
+    }
     route = _steps("release.yml", "route")[_find(_steps("release.yml", "route"), id="route")]
     assert route["env"] == {
         name: f"${{{{ {context} }}}}" for name, context in EVENT_CONTEXTS.items()
