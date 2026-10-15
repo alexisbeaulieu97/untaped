@@ -922,7 +922,7 @@ def test_migrate_without_a_store_changes_nothing(
     assert "w-other" in _isolated_config.read_text()
 
 
-# --- deprecations ---------------------------------------------------------------
+# --- plaintext tokens -----------------------------------------------------------
 
 
 def test_loading_a_plaintext_token_warns_once(

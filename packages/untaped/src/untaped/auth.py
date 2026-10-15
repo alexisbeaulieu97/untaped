@@ -27,8 +27,8 @@ fail instead (``--pinentry-mode=error``, see :func:`pass_gpg_options`),
 unless the user chose a pinentry mode themselves, and the error says how to
 unlock the store from a terminal.
 
-A token stored in plain text in the config file is discouraged, not
-deprecated: it keeps working, and using one warns once per section per
+A token stored in plain text in the config file is discouraged but
+supported, with no removal planned: using one warns once per section per
 process and points at ``untaped auth migrate``.
 """
 

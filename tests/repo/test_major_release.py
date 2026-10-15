@@ -10,9 +10,8 @@ The previous major's spellings are the lines its newest release (never the
 major's own tag) marks ``[deprecated]`` in ``tests/repo/surface.txt``: what
 that release warned about. A spelling deprecated while the major was being
 prepared reached no release yet, so it stays, with its warning, until the next
-major. Retired keys
-never count: they have no surface line, and are what a major leaves behind for
-``config migrate``.
+major. Retired keys never count: they have no surface line, and are what a
+major leaves behind for ``config migrate``.
 """
 
 from __future__ import annotations
