@@ -159,6 +159,8 @@ def test_a_thing_s_lines_share_one_fact() -> None:
             Line("cli untaped plugin check [NAME]@1 default=unset", mark),
             Line("sdk untaped.sdk.report_error(exc)", DeprecatedMark(major)),
             Line("sdk untaped.sdk.report_error(item=) default=None", DeprecatedMark(major)),
+            Line("sdk untaped.sdk.AppContext implement=", DeprecatedMark(major)),
+            Line("sdk untaped.sdk.AppContext.diag", DeprecatedMark(major)),
             # Raised further on its own: its own fact.
             Line("cli untaped plugin check --columns VALUE", DeprecatedMark(major + 1)),
         ]
@@ -168,6 +170,7 @@ def test_a_thing_s_lines_share_one_fact() -> None:
     assert [fact.name for fact in facts] == [
         "plugin check",
         "plugin check --columns",
+        "AppContext",
         "report_error",
     ]
     assert facts[1].text.endswith("removed in 14.0 instead of 13.0.")
