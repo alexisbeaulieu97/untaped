@@ -4,5 +4,5 @@ removed in 12.0. Both still print or fail on the same rows, but run the rules
 that read a plugin's files only when `untaped[lint]` is installed, and warn
 when it is not. A plugin's convention test calls `assert_clean(NAME)` with
 `untaped[lint]>=11.1` in its `dev` dependencies, and its CI runs
-`untaped lint` in the plugin's directory instead of `untaped plugin check
-NAME`, which exits 3 on an error finding where `plugin check` exited 1.
+`untaped lint` in the plugin's directory, which exits 3 on an error finding
+where `untaped plugin check NAME` exited 1.
