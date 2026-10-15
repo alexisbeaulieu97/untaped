@@ -29,7 +29,6 @@ from untaped.prompts import (
 )
 from untaped.render import (
     MessageKind,
-    Renderer,
     RichTerminalRenderer,
     Row,
     render_styled,
@@ -64,7 +63,6 @@ class UiContext:
         self,
         *,
         theme: ThemeSpec | None = None,
-        renderer: Renderer | None = None,
         prompt_backend: PromptBackend | None = None,
         stdin: TextIO | None = None,
         stdout: TextIO | None = None,
@@ -73,7 +71,7 @@ class UiContext:
         quiet: bool = False,
     ) -> None:
         self.theme = theme or BUILTIN_THEMES["default"]
-        self.renderer = renderer or RichTerminalRenderer()
+        self._renderer = RichTerminalRenderer()
         self.verbose = verbose
         self.quiet = quiet
         self.stdin = stdin or sys.stdin
@@ -135,7 +133,7 @@ class UiContext:
         kind: str | None = None,
     ) -> str:
         count_row_failures(rows)
-        rendered = self.renderer.render_collection(
+        rendered = self._renderer.render_collection(
             rows,
             fmt=fmt,
             columns=columns,
@@ -156,7 +154,7 @@ class UiContext:
         kind: str | None = None,
     ) -> str:
         count_row_failures([record])
-        return self.renderer.render_detail(
+        return self._renderer.render_detail(
             record,
             fmt=fmt,
             columns=columns,
@@ -189,7 +187,7 @@ class UiContext:
         diagnostic = Failure.plain(text) if kind == "error" else Message(level=kind, message=text)
 
         def rendered(color: bool) -> str:
-            return self.renderer.render_message(kind, text, theme=self.theme, colorize=color)
+            return self._renderer.render_message(kind, text, theme=self.theme, colorize=color)
 
         current_sink().emit(diagnostic, rendered=rendered)
 

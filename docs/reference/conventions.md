@@ -185,7 +185,7 @@ free, but a command that writes declares it with `@writes`, or
   prompt_backend=...)` simulates that terminal; without `terminal=True` there
   is none.
 - Read stdin only through the helpers in [Piping](#piping)
-  (`read_identifiers`, `read_stdin_input`, `read_records`), never
+  (`read_identifiers`, `read_stdin_input`), never
   `sys.stdin` directly; that section also covers empty pipes.
 - Before prompting, check `ui.can_prompt` on the `UiContext` that will prompt;
   without a terminal, fail with a hint naming the flag that supplies the value.
@@ -313,8 +313,7 @@ identifiers = read_identifiers([], stdin=True, id_field="full_name", accept_kind
 ```
 
 For whole records, `read_stdin_input(accept_kinds=...)` returns the bare
-values or the parsed envelopes (a `StdinInput`); `read_records(accept_kinds=...)`
-returns only envelopes. All raise on empty stdin.
+values or the parsed envelopes (a `StdinInput`). Both raise on empty stdin.
 When an empty pipe (a filter that matched nothing) should do nothing, pass
 `read_stdin_input(allow_empty=True)`: it returns no values, which the command
 must treat as "nothing to do", never as "everything". A terminal stdin with

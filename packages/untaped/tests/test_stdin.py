@@ -10,7 +10,6 @@ from untaped.pipe import PIPE_MARKER_KEY
 from untaped.stdin import (
     StdinInput,
     read_identifiers,
-    read_records,
     read_stdin,
     read_stdin_input,
     read_stdin_text,
@@ -39,28 +38,21 @@ def test_read_stdin_strips_and_skips_blank_lines() -> None:
         assert read_stdin() == ["alpha", "beta", "gamma"]
 
 
-# ---- read_records ----------------------------------------------------------
+# ---- pipe streams ----------------------------------------------------------
 
 
-def test_read_records_parses_envelopes() -> None:
+def test_read_stdin_input_parses_envelopes() -> None:
     payload = _env({"full_name": "a/b"}) + "\n" + _env({"full_name": "c/d"}) + "\n"
     with _feed(payload):
-        envs = read_records()
-    assert [e.record["full_name"] for e in envs] == ["a/b", "c/d"]
-    assert [e.kind for e in envs] == ["github.repo", "github.repo"]
+        records = read_stdin_input().records
+    assert records is not None
+    assert [e.record["full_name"] for e in records] == ["a/b", "c/d"]
+    assert [e.kind for e in records] == ["github.repo", "github.repo"]
 
 
-@pytest.mark.parametrize(
-    ("payload", "error"),
-    [
-        ("", "no records received on stdin"),
-        (_env({"x": 1}) + "\nnot json\n", "line 2: invalid JSON"),
-        ('{"foo": 1}\n', "line 1: not an untaped pipe record"),
-    ],
-)
-def test_read_records_errors(payload: str, error: str) -> None:
-    with _feed(payload), pytest.raises(ConfigError, match=error):
-        read_records()
+def test_read_stdin_input_names_the_malformed_envelope_line() -> None:
+    with _feed(_env({"x": 1}) + "\nnot json\n"), pytest.raises(ConfigError, match="line 2: "):
+        read_stdin_input()
 
 
 # ---- read_identifiers ------------------------------------------------------
@@ -129,9 +121,9 @@ def test_read_identifiers_rejects_other_kinds_as_usage_error() -> None:
         read_identifiers([], stdin=True, id_field="id", accept_kinds={"awx.job"})
 
 
-def test_read_records_checks_accepted_kinds() -> None:
+def test_read_stdin_input_checks_accepted_kinds() -> None:
     with _feed(_env({"id": 1}, kind="github.repo") + "\n"), pytest.raises(UsageError):
-        read_records(accept_kinds={"workspace.repo"})
+        read_stdin_input(accept_kinds={"workspace.repo"})
 
 
 def test_read_stdin_input_returns_bare_values_or_records() -> None:
@@ -162,12 +154,6 @@ def test_allow_empty_still_refuses_a_terminal_with_nothing_piped(
     monkeypatch.setattr("sys.stdin", TtyStringIO("never read"))
     with pytest.raises(ConfigError, match="no identifiers received on stdin"):
         read_stdin_input(allow_empty=True)
-
-
-def test_read_records_refuses_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin", TtyStringIO("never read"))
-    with pytest.raises(ConfigError, match="no records received on stdin"):
-        read_records()
 
 
 # ---- raw text input --------------------------------------------------------

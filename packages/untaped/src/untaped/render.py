@@ -1,9 +1,9 @@
 """Format rendering: structured/raw/pipe encoders and the Rich terminal renderer.
 
-Split from ``ui.py``: this module owns *what output looks like* (the
-``Renderer`` boundary and its default implementation plus the pure format
-helpers); ``ui.py`` owns *interaction* (``UiContext`` — prompts, messages,
-progress). The two halves share only ``ThemeSpec``.
+Split from ``ui.py``: this module owns *what output looks like* (the Rich
+renderer plus the pure format helpers); ``ui.py`` owns *interaction*
+(``UiContext`` — prompts, messages, progress). The two halves share only
+``ThemeSpec``.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import shutil
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, Protocol, TextIO
+from typing import Any, Literal, TextIO
 
 import yaml
 from rich import box
@@ -34,41 +34,6 @@ from untaped.theme import DEFAULT_SYMBOLS, BorderStyle, OutputFormat, ThemeSpec
 MessageKind = Literal["success", "warning", "error", "info"]
 
 Row = dict[str, object]
-
-
-class Renderer(Protocol):
-    """Renderer boundary for semantic UI primitives."""
-
-    def render_collection(
-        self,
-        rows: Sequence[Row],
-        *,
-        fmt: OutputFormat,
-        columns: list[str] | None,
-        theme: ThemeSpec,
-        colorize: bool,
-        kind: str | None = None,
-    ) -> str: ...
-
-    def render_detail(
-        self,
-        record: Row,
-        *,
-        fmt: OutputFormat,
-        columns: list[str] | None,
-        theme: ThemeSpec,
-        colorize: bool,
-        kind: str | None = None,
-    ) -> str: ...
-
-    def render_message(
-        self,
-        kind: MessageKind,
-        text: str,
-        *,
-        theme: ThemeSpec,
-        colorize: bool,
-    ) -> str: ...
 
 
 class RichTerminalRenderer:
