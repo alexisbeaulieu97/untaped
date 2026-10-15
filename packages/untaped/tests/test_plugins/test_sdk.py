@@ -20,6 +20,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "create_app",
         "delete_migration",
         "dir_bytes",
+        "move_migration",
         "old_dirs",
         "plugin_dir",
         "unsafe_dir",

@@ -80,7 +80,7 @@ class AnsibleSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    index_path: Path = Path("~/.untaped/ansible-index.sqlite3")
+    index_path: Path = Path("~/.untaped/plugins/ansible/index.sqlite3")
     default_source: str | None = None
     ref_scan_default: Literal["all", "default_branch"] = "all"
     source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"

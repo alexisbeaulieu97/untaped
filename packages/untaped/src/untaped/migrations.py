@@ -1,7 +1,10 @@
 """Building blocks for ``PluginSpec.migrations`` rows (``untaped setup migrate-dirs``).
 
 :func:`delete_migration` is the whole migration for the commonest case: an
-old directory nothing reads any more, deleted with a preview. :func:`old_dirs`
+old directory nothing reads any more, deleted with a preview;
+:func:`move_migration` is the whole migration for data that only changes
+place (into ``plugin_dir``), never merged into or over what is already
+there. :func:`old_dirs`
 finds an older version's directory, custom ones included, and
 :func:`dir_bytes` measures what a row moves or frees. :func:`unsafe_dir` says
 why a directory must never be moved or deleted whole (it holds home,
@@ -49,11 +52,12 @@ def old_dirs(default: str, section: str, key: str) -> list[Path]:
 
     ``<section>.<key>`` is the deleted setting that could move it, read from
     config.yml with :func:`~untaped.deprecated_keys.retired_values` (every
-    profile) and from its ``UNTAPED_<SECTION>__<KEY>`` environment variable.
+    profile) and from its ``UNTAPED_<SECTION>__<KEY>`` environment variable
+    (a dotted key nests: ``inventory.path`` is ``…__INVENTORY__PATH``).
     Paths are expanded (``~``) and listed once; a relative one is skipped (it
     would name a different directory wherever the command runs).
     """
-    env = os.environ.get(f"UNTAPED_{section.upper()}__{key.upper()}")
+    env = os.environ.get(f"UNTAPED_{section.upper()}__{key.upper().replace('.', '__')}")
     found: list[Path] = []
     for value in (default, *retired_values(section, key), env):
         if not isinstance(value, str) or not value.strip():
@@ -144,6 +148,99 @@ def delete_migration(
         return [MigrationOutcome(id=id, action="deleted", detail=text)]
 
     return DirMigration(id=id, title=title, preview=preview, apply=apply)
+
+
+def move_migration(
+    id: str,
+    title: str,
+    moves: Callable[[PluginContext], Sequence[tuple[Path, Path]]],
+    *,
+    detail: str = "",
+) -> DirMigration:
+    """A migration that moves each ``(source, destination)`` of ``moves(ctx)`` whose source exists.
+
+    The preview has one ``move`` row per existing source, with its size and
+    ``detail``; applying renames it into place (creating the destination's
+    parent, copying across filesystems) and reports ``moved``, or
+    ``unchanged`` when nothing is left to move (``partial`` when a later pair
+    fails after an earlier one moved). Pairs move in the order
+    given, so a file's sidecars listed first travel before it. A source that
+    is a symlink or that :func:`unsafe_dir` refuses, or whose destination
+    already exists (nothing is ever merged or replaced; an empty directory
+    doesn't count), is a ``keep`` row
+    with that reason instead, and stays. ``moves`` runs at preview and at
+    apply time and may return no pairs (say, when a setting still names the
+    old place).
+    """
+
+    def pending(ctx: PluginContext) -> list[tuple[Path, Path]]:
+        return [(source, dest) for source, dest in dict.fromkeys(moves(ctx)) if _there(source)]
+
+    def preview(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
+        rows = []
+        for source, destination in pending(ctx):
+            reason = _move_refused(source, destination)
+            if reason is not None:
+                rows.append(
+                    MigrationRow(action="keep", source=str(source), detail=f"kept: {reason}")
+                )
+                continue
+            size = dir_bytes(source) if options.measure else 0
+            rows.append(
+                MigrationRow(
+                    action="move",
+                    source=str(source),
+                    destination=str(destination),
+                    detail=detail,
+                    bytes=size,
+                )
+            )
+        return rows
+
+    def apply(ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
+        todo = [pair for pair in pending(ctx) if _move_refused(*pair) is None]
+        if not todo:
+            return [MigrationOutcome(id=id, action="unchanged", detail="nothing left to move")]
+        done: list[str] = []
+        for source, destination in todo:
+            try:
+                if _empty_dir(destination):
+                    destination.rmdir()
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(source, destination)
+            except OSError as exc:
+                text = f"could not move {shown_path(source)}: {exc.strerror or exc}"
+                if not done:
+                    return [MigrationOutcome(id=id, action="failed", detail=text)]
+                text = f"moved {', '.join(done)}; {text}"
+                return [MigrationOutcome(id=id, action="partial", detail=text)]
+            done.append(f"{shown_path(source)} to {shown_path(destination)}")
+        return [MigrationOutcome(id=id, action="moved", detail=f"moved {', '.join(done)}")]
+
+    return DirMigration(id=id, title=title, preview=preview, apply=apply)
+
+
+def _move_refused(source: Path, destination: Path) -> str | None:
+    """Why ``source`` must stay where it is, or ``None``."""
+    if source.is_symlink():
+        target = shown_path(os.path.realpath(source))
+        return f"a symlink to {target}: move what it points to, or point the setting at it"
+    if _there(destination) and not _empty_dir(destination):
+        return f"{shown_path(destination)} already exists; keep one of them"
+    return unsafe_dir(source) if source.is_dir() else None
+
+
+def _empty_dir(path: Path) -> bool:
+    """Whether ``path`` is a directory (not a symlink) with nothing in it."""
+    try:
+        return not path.is_symlink() and path.is_dir() and not any(path.iterdir())
+    except OSError:
+        return False
+
+
+def _there(path: Path) -> bool:
+    """Whether anything is at ``path``, a dangling symlink included."""
+    return path.exists() or path.is_symlink()
 
 
 def _existing(paths: Sequence[Path]) -> list[Path]:

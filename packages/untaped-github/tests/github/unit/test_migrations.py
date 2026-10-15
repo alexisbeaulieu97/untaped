@@ -5,8 +5,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from untaped.sdk import MigrationOptions
+import pytest
+
+from untaped.sdk import MigrationOptions, PluginContext
 from untaped.testing.git import git_remote
+from untaped_github import SPEC
 from untaped_github.infrastructure.migrations import apply_cache, preview_cache
 
 
@@ -108,3 +111,33 @@ def test_a_removal_an_interrupted_run_left_is_finished() -> None:
 
     assert outcome.action == "moved"
     assert not _root().exists()
+
+
+def test_the_10x_inventory_file_is_deleted_a_custom_one_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    default = Path.home() / ".untaped" / "github-inventory.json"
+    default.parent.mkdir(parents=True)
+    default.write_text("{}", encoding="utf-8")
+    custom = tmp_path / "inventory.json"
+    custom.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("UNTAPED_GITHUB__INVENTORY__PATH", str(custom))
+    (row,) = [m for m in SPEC.migrations if m.id == "github.inventory"]
+    ctx = PluginContext(settings=None)
+
+    assert [(r.action, r.source) for r in row.preview(ctx, MigrationOptions())] == [
+        ("delete", str(default)),
+        ("delete", str(custom)),
+    ]
+    assert [o.action for o in row.apply(ctx, MigrationOptions())] == ["deleted"]
+    assert not default.exists() and not custom.exists()
+
+
+def test_a_directory_the_old_setting_names_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_GITHUB__INVENTORY__PATH", str(tmp_path))
+    (row,) = [m for m in SPEC.migrations if m.id == "github.inventory"]
+
+    (kept,) = row.preview(PluginContext(settings=None), MigrationOptions())
+    assert kept.action == "keep" and "not a file" in kept.detail

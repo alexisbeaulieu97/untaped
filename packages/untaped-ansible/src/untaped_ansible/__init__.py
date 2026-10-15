@@ -11,7 +11,16 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import PluginSpec, SkillAsset, delete_migration, old_dirs, shown_path
+from untaped.sdk import (
+    PluginContext,
+    PluginSpec,
+    SkillAsset,
+    delete_migration,
+    move_migration,
+    old_dirs,
+    plugin_dir,
+    shown_path,
+)
 from untaped_ansible.doctor import DOCTOR_CHECKS
 from untaped_ansible.settings import INDEX, AnsibleSettings, AnsibleState
 
@@ -26,6 +35,27 @@ def build_app() -> App:
     from untaped_ansible.cli import app  # noqa: PLC0415
 
     return app
+
+
+#: 10.x's index, and the SQLite files beside it that travel with it (journal first).
+_INDEX_10X = Path("~/.untaped/ansible-index.sqlite3")
+_SIDECARS = ("-journal", "-wal", "-shm")
+
+
+def _index_moves(ctx: PluginContext) -> Sequence[tuple[Path, Path]]:
+    """10.x's index into ``plugin_dir`` while ``ansible.index_path`` keeps its default.
+
+    A profile pointing ``index_path`` anywhere else (the old file included)
+    keeps what it names; settings that don't validate move nothing.
+    """
+    settings = ctx.settings
+    if not isinstance(settings, AnsibleSettings):
+        return []
+    if settings.index_path != AnsibleSettings.model_fields["index_path"].default:
+        return []
+    old, new = _INDEX_10X.expanduser(), plugin_dir(SPEC) / "index.sqlite3"
+    pairs = [(old.with_name(old.name + end), new.with_name(new.name + end)) for end in _SIDECARS]
+    return [*pairs, (old, new)]
 
 
 def _git_cache_10x() -> Sequence[Path]:
@@ -69,6 +99,12 @@ SPEC = PluginSpec(
     doctor_checks=DOCTOR_CHECKS,
     caches=(INDEX,),
     migrations=(
+        move_migration(
+            "ansible.index",
+            "10.x dependency index",
+            _index_moves,
+            detail="saved sources keep their refreshed data",
+        ),
         delete_migration(
             "ansible.cache",
             "10.x git cache",

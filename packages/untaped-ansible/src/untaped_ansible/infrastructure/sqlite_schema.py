@@ -13,6 +13,13 @@ from untaped_ansible.errors import DependencyIndexError
 # they can use the indexes (``collate nocase`` joins forced full scans). The
 # ``*_repo`` columns keep the display casing.
 SCHEMA_VERSION = 4
+#: The oldest schema version this one only adds to (new tables or columns,
+#: never a change to an existing one). Stamped in ``schema_meta`` beside
+#: ``user_version``: a reader whose ``SCHEMA_VERSION`` is at least a newer
+#: index's ``additive_since`` opens it and reads its own tables by name, so
+#: 11.x releases sharing one ``~/.untaped`` share the index. A change to an
+#: existing table raises it to the new ``SCHEMA_VERSION``.
+ADDITIVE_SINCE = 4
 
 _diag = Diagnostics()
 
@@ -107,15 +114,23 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
     """Create dependency index tables on a fresh database.
 
     Databases stamped with the current ``SCHEMA_VERSION`` pass through
-    untouched. An older (or unstamped) database is a stale cache: its tables
-    are dropped and recreated empty, with a warning to refresh saved sources.
-    A database written by a newer untaped release is rejected instead, so a
+    (one from before ``schema_meta`` gets its stamp). An older (or
+    unstamped) database is a stale cache: its tables are dropped and
+    recreated empty, with a warning to refresh saved sources. A database
+    written by a newer untaped release opens when its ``additive_since`` is
+    at most this release's ``SCHEMA_VERSION`` (it only added tables or
+    columns this release never reads); otherwise it is rejected, so a
     downgrade never destroys data a newer install still reads.
     """
     version = int(db.execute("pragma user_version").fetchone()[0])
     if version == SCHEMA_VERSION:
+        if _additive_since(db) is None:
+            db.executescript(f"begin;\n{_STAMP_SQL}\ncommit;")
         return
     if version > SCHEMA_VERSION:
+        additive_since = _additive_since(db)
+        if additive_since is not None and additive_since <= SCHEMA_VERSION:
+            return
         raise DependencyIndexError(
             f"index schema version {version} was written by a newer untaped release "
             f"(this release reads version {SCHEMA_VERSION}); upgrade untaped, or delete "
@@ -134,7 +149,27 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
     # which the check above rejects as outdated. ``user_version`` is
     # transactional in SQLite, so wrapping the script in begin/commit makes
     # the whole bootstrap all-or-nothing.
-    db.executescript(f"begin;\n{_SCHEMA_SQL}\npragma user_version = {SCHEMA_VERSION};\ncommit;")
+    db.executescript(
+        f"begin;\n{_SCHEMA_SQL}\n{_STAMP_SQL}\npragma user_version = {SCHEMA_VERSION};\ncommit;"
+    )
+
+
+_STAMP_SQL = f"""
+create table if not exists schema_meta (
+    id integer primary key check (id = 1),
+    additive_since integer not null
+);
+insert or replace into schema_meta (id, additive_since) values (1, {ADDITIVE_SINCE});
+"""
+
+
+def _additive_since(db: sqlite3.Connection) -> int | None:
+    """The index's ``schema_meta.additive_since``; ``None`` when it has no stamp."""
+    try:
+        row = db.execute("select additive_since from schema_meta where id = 1").fetchone()
+    except sqlite3.OperationalError:  # no schema_meta table: written before the stamp
+        return None
+    return None if row is None else int(row[0])
 
 
 def _drop_tables(db: sqlite3.Connection) -> None:

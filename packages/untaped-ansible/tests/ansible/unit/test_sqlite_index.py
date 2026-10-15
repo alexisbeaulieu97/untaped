@@ -20,7 +20,7 @@ from untaped_ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
-from untaped_ansible.infrastructure.sqlite_schema import SCHEMA_VERSION
+from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE, SCHEMA_VERSION
 
 
 def _edge(
@@ -628,6 +628,63 @@ def test_newer_schema_version_is_not_reported_as_outdated(tmp_path) -> None:
     assert "outdated" not in message
     assert "newer" in message
     assert str(db_path) in message
+
+
+def _newer(db_path: Path, *, additive_since: int) -> None:
+    """Turn a refreshed index into one a newer release wrote: a new table, its stamp."""
+    with closing(sqlite3.connect(db_path)) as db:
+        db.execute("create table newer_facts (source_repo text not null, fact text not null)")
+        db.execute("insert into newer_facts values ('acme/site', 'kept')")
+        db.execute("update schema_meta set additive_since = ?", (additive_since,))
+        db.execute(f"pragma user_version = {SCHEMA_VERSION + 1}")
+        db.commit()
+
+
+def test_fresh_index_stamps_what_it_is_additive_since(tmp_path) -> None:
+    db_path = tmp_path / "index.sqlite3"
+
+    SqliteDependencyIndex(db_path).status("source:prod")
+    assert _count(db_path, "select additive_since from schema_meta") == ADDITIVE_SINCE
+
+
+def test_a_current_index_from_before_the_stamp_gets_it_and_keeps_its_rows(tmp_path) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    _commit(SqliteDependencyIndex(db_path), scans=(_scan(),))
+    with closing(sqlite3.connect(db_path)) as db:
+        db.execute("drop table schema_meta")
+        db.commit()
+
+    index = SqliteDependencyIndex(db_path)
+    assert index.dependencies("acme/site", "main", source_key="source:prod")
+    assert _count(db_path, "select additive_since from schema_meta") == ADDITIVE_SINCE
+
+
+def test_a_newer_index_that_only_added_is_read_and_refreshed_in_place(tmp_path) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    _commit(SqliteDependencyIndex(db_path), scans=(_scan(),))
+    _newer(db_path, additive_since=SCHEMA_VERSION)
+
+    index = SqliteDependencyIndex(db_path)
+    assert [
+        edge.dependency_name
+        for edge in index.dependencies("acme/site", "main", source_key="source:prod")
+    ] == ["base"]
+    _commit(index, scans=(_scan(source_ref="develop"),))
+
+    assert _count(db_path, "pragma user_version") == SCHEMA_VERSION + 1
+    assert _count(db_path, "select additive_since from schema_meta") == SCHEMA_VERSION
+    assert _rows(db_path, "newer_facts") == 1
+    assert index.dependencies("acme/site", "develop", source_key="source:prod")
+
+
+def test_a_newer_index_that_changed_a_table_is_refused(tmp_path) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    _commit(SqliteDependencyIndex(db_path), scans=(_scan(),))
+    _newer(db_path, additive_since=SCHEMA_VERSION + 1)
+
+    with pytest.raises(UntapedError, match="written by a newer untaped release"):
+        SqliteDependencyIndex(db_path).status("source:prod")
+    assert _rows(db_path, "newer_facts") == 1
 
 
 def test_repo_lookups_are_case_insensitive_and_keep_display_casing(tmp_path) -> None:

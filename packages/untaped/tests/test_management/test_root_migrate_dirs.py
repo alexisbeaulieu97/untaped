@@ -26,7 +26,7 @@ from untaped.plugins.registry import (
     PluginContext,
     PluginSpec,
 )
-from untaped.sdk import delete_migration, old_dirs, plugin_dir, retired_values
+from untaped.sdk import delete_migration, move_migration, old_dirs, plugin_dir, retired_values
 from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -462,3 +462,64 @@ def test_quiet_keeps_the_preview_before_the_prompt() -> None:
 
     assert "About to migrate:" in result.stderr
     assert quiet.stderr.startswith("About to migrate:")
+
+
+def test_move_migration_moves_in_order_then_has_nothing_left(tmp_path: Path) -> None:
+    _plant()
+    data = plugin_dir(make_spec("alpha")) / "deep" / "data"
+    data.mkdir(parents=True)  # created empty by a command run before the migration
+    sidecar = tmp_path / "index-journal"
+    sidecar.write_text("j", encoding="utf-8")
+    pairs = [(sidecar, data.parent / "index-journal"), (_old("alpha"), data)]
+    row = move_migration("alpha.data", "data", lambda _ctx: pairs, detail="kept as it is")
+    ctx, options = PluginContext(settings=None), MigrationOptions()
+
+    rows = row.preview(ctx, options)
+    assert [(r.action, r.source, r.destination) for r in rows] == [
+        ("move", str(source), str(destination)) for source, destination in pairs
+    ]
+    assert rows[1].bytes == 3 and rows[1].detail == "kept as it is"
+    (outcome,) = row.apply(ctx, options)
+    assert outcome.action == "moved"
+    assert (data / "file").read_text(encoding="utf-8") == "abc" and not _old("alpha").exists()
+    assert (data.parent / "index-journal").is_file()
+    assert row.preview(ctx, options) == []
+    assert [o.action for o in row.apply(ctx, options)] == ["unchanged"]
+
+
+def test_move_migration_never_merges_into_or_moves_what_it_must_keep(tmp_path: Path) -> None:
+    _plant()
+    taken = tmp_path / "taken"
+    taken.mkdir()
+    (taken / "newer").write_text("x", encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(_old("beta"))
+    untaped = Path.home() / ".untaped"
+    pairs = [(_old("alpha"), taken), (link, tmp_path / "moved"), (untaped, tmp_path / "all")]
+    row = move_migration("alpha.data", "data", lambda _ctx: pairs)
+    ctx, options = PluginContext(settings=None), MigrationOptions()
+
+    rows = row.preview(ctx, options)
+    assert [r.action for r in rows] == ["keep"] * 3
+    assert "already exists" in rows[0].detail and "a symlink" in rows[1].detail
+    assert [o.action for o in row.apply(ctx, options)] == ["unchanged"]
+    assert _old("alpha").is_dir() and link.is_symlink()
+    assert [p.name for p in taken.iterdir()] == ["newer"]
+
+
+def test_move_migration_reports_what_it_moved_before_a_failure(tmp_path: Path) -> None:
+    _plant()
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    pairs = [(_old("alpha"), tmp_path / "a"), (_old("beta"), blocked / "sub" / "b")]
+    row = move_migration("alpha.data", "data", lambda _ctx: pairs)
+    blocked.chmod(0o500)
+    try:
+        (outcome,) = row.apply(PluginContext(settings=None), MigrationOptions())
+    finally:
+        blocked.chmod(0o700)
+
+    if outcome.action == "moved":
+        pytest.skip("running as root: a read-only parent doesn't stop the move")
+    assert outcome.action == "partial"
+    assert outcome.detail.startswith("moved ") and "could not move" in outcome.detail

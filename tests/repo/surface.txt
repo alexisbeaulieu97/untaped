@@ -3,7 +3,7 @@ cfg ansible.caches.index.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
 cfg ansible.git_fetch_parallel integer(maximum=32,minimum=1) default=8
-cfg ansible.index_path string(format=path) default=~/.untaped/ansible-index.sqlite3
+cfg ansible.index_path string(format=path) default=~/.untaped/plugins/ansible/index.sqlite3
 cfg ansible.probe_parallel integer(maximum=32,minimum=1) default=8
 cfg ansible.ref_scan_default choice=all
 cfg ansible.ref_scan_default choice=default_branch
@@ -23,13 +23,13 @@ cfg awx.test_parallel integer(exclusiveMinimum=0) default=4  [experimental]
 cfg awx.test_timeout_seconds number(exclusiveMinimum=0) default=1800  [experimental]
 cfg awx.token string(format=password)? default=unset
 cfg awx.token_command string[]? default=unset
-cfg dotfiles.kept_dir string(format=path) default=~/.untaped/dotfiles/kept  [experimental]
+cfg dotfiles.kept_dir string(format=path) default=~/.untaped/plugins/dotfiles/kept  [experimental]
 cfg dotfiles.os choice=linux  [experimental]
 cfg dotfiles.os choice=macos  [experimental]
 cfg dotfiles.os choice=windows  [experimental]
 cfg dotfiles.os string? default=unset  [experimental]
-cfg dotfiles.repos_dir string(format=path) default=~/.untaped/dotfiles/repos  [experimental]
-cfg dotfiles.state_dir string(format=path) default=~/.untaped/dotfiles  [experimental]
+cfg dotfiles.repos_dir string(format=path) default=~/.untaped/plugins/dotfiles/repos  [experimental]
+cfg dotfiles.state_dir string(format=path) default=~/.untaped/plugins/dotfiles  [experimental]
 cfg dotfiles.tags string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
@@ -69,7 +69,7 @@ cfg recipe.backup_keep integer(minimum=1)? default=unset
 cfg recipe.backup_max_age_days integer(minimum=1)? default=unset
 cfg recipe.hook_startup_timeout_seconds number(minimum=0) default=300
 cfg recipe.hook_timeout_seconds number(minimum=0) default=60
-cfg recipe.library_dir string(format=path) default=~/.untaped/untaped-recipes
+cfg recipe.library_dir string(format=path) default=~/.untaped/plugins/recipe/library
 cfg recipe.preview_max_rows integer(minimum=0) default=50
 cfg skills.updates choice=auto
 cfg skills.updates choice=off
@@ -5550,6 +5550,8 @@ sdk untaped.sdk.hint(command)
 sdk untaped.sdk.is_envelope_line(obj)
 sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.most_severe(errors)
+sdk untaped.sdk.move_migration(detail=) default=""
+sdk untaped.sdk.move_migration(id, title, moves) callback(moves, 1)
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.old_dirs(default, section, key)

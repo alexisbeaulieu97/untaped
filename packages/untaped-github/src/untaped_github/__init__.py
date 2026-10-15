@@ -23,6 +23,7 @@ from untaped.sdk import (
     connection_check,
     delete_migration,
     executable_check,
+    old_dirs,
     online_check,
 )
 from untaped_github.settings import GithubSettings
@@ -80,6 +81,15 @@ def _corpus_9x() -> Sequence[Path]:
     return [Path("~/.untaped/github-corpus").expanduser()]
 
 
+def _inventory_10x() -> Sequence[Path]:
+    """10.x's repository inventory file, with any custom path config.yml still names."""
+    return old_dirs("~/.untaped/github-inventory.json", "github", "inventory.path")
+
+
+def _a_file(path: Path) -> str | None:
+    return None if path.is_file() else "not a file, so not the inventory"
+
+
 SPEC = PluginSpec(
     name="github",
     app_factory=build_app,
@@ -116,6 +126,13 @@ SPEC = PluginSpec(
             "9.x sweep corpus",
             _corpus_9x,
             detail="9.x layout, its worktrees inside it",
+        ),
+        delete_migration(
+            "github.inventory",
+            "10.x repository inventory",
+            _inventory_10x,
+            detail="workspace caches the repos it lists itself",
+            guard=_a_file,
         ),
     ),
 )

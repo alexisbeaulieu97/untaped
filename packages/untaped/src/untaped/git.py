@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import hashlib
 import logging
 import os
 import re
@@ -25,6 +26,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import unicodedata
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -209,10 +211,29 @@ def _failure_category(stderr: str) -> ErrorCategory | None:
     return ErrorCategory.UNAVAILABLE if is_transient_failure(stderr) else None
 
 
+#: The most bytes :func:`safe_path_segment` returns: room for a suffix
+#: (``.git``, ``-<ref>``) under every filesystem's 255-byte name limit.
+_SEGMENT_MAX_BYTES = 128
+
+
 def safe_path_segment(value: str) -> str:
-    """Map ``value`` to one filesystem-safe path segment (never ``.``/``..``)."""
-    safe = _sanitize(value)
-    return "_" if safe in {"", ".", ".."} else safe
+    """Map ``value`` to one filesystem-safe path segment (never ``.``/``..``).
+
+    NFC-normalised first, so the composed and decomposed spellings of a name
+    (macOS file names are often decomposed) are one directory; every
+    character but letters, digits and ``._-`` becomes ``_``. A segment over
+    128 bytes keeps a prefix and a hash of the whole value, so two long
+    names stay apart.
+    """
+    normal = unicodedata.normalize("NFC", value)
+    safe = _sanitize(normal)
+    if safe in {"", ".", ".."}:
+        return "_"
+    if len(safe.encode()) <= _SEGMENT_MAX_BYTES:
+        return safe
+    digest = hashlib.sha256(normal.encode()).hexdigest()[:12]
+    prefix = safe.encode()[: _SEGMENT_MAX_BYTES - len(digest) - 1].decode("utf-8", "ignore")
+    return f"{prefix}-{digest}"
 
 
 @contextmanager

@@ -104,7 +104,7 @@ from untaped.messages import (
     size_text,
     summary,
 )
-from untaped.migrations import delete_migration, dir_bytes, old_dirs, unsafe_dir
+from untaped.migrations import delete_migration, dir_bytes, move_migration, old_dirs, unsafe_dir
 from untaped.output import (
     Debug,
     Diagnostic,
@@ -251,6 +251,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "create_app",
     "delete_migration",
     "dir_bytes",
+    "move_migration",
     "old_dirs",
     "plugin_dir",
     "unsafe_dir",
