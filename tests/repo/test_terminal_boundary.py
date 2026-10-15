@@ -1,8 +1,8 @@
 """Only the terminal adapter imports prompt_toolkit.
 
 A screen's models, updates and views never touch the terminal library, so the
-adapter can be replaced without changing a screen. This test applies core's
-``terminal-boundary`` rule (which ``check_conventions`` applies to one
+adapter can be replaced without changing a screen. This test applies lint's
+``terminal-boundary`` rule (which ``untaped lint`` applies to one
 plugin) to every package's source, core's included, the example plugin and
 ``scripts``, and allows only the adapter. The rule's inline waiver
 (``# untaped: allow terminal-boundary`` on the import line) applies here too.
@@ -13,8 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from repo.support import PACKAGES, REPO_ROOT
-from untaped.conventions.source import source_files
-from untaped.conventions.terminal_boundary import terminal_boundary_violations
+from untaped_lint.infrastructure.files import source_files
+from untaped_lint.providers.conventions.terminal_boundary import terminal_boundary_violations
 
 #: The adapter, as a violation names it (relative to its package's ``src``).
 ADAPTER = "untaped/screen/terminal.py"

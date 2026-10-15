@@ -11,6 +11,7 @@ import pytest
 from test_management.contract_plugins import CORE_RANGE, candidates
 from untaped import bootstrap
 from untaped.contracts._registry import doctor_rows
+from untaped.conventions import file_rules_installed
 from untaped.management.plugin_check import PluginCheckRow, check_plugins, report_check_rows
 from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.testing import assert_fills, compose_with, invoke_cli, plugin_candidate
@@ -260,4 +261,10 @@ def test_quiet_prints_the_checklist_without_its_footer(contract_plugins_site: Pa
     quiet = invoke_cli(app, ["-q", "plugin", "check", "bin"])
     assert quiet.exit_code == 0, quiet.output
     assert "rack.item_source.items" in quiet.stdout
-    assert quiet.stderr == ""
+    # Only the deprecation warning (and, without untaped[lint], the skipped
+    # file rules), which -q never mutes: no footer.
+    assert quiet.stderr.splitlines()[0] == (
+        "warning: `untaped plugin check` is deprecated and will be removed in the next major "
+        "release; use untaped lint, from untaped[lint]"
+    )
+    assert len(quiet.stderr.splitlines()) == (1 if file_rules_installed() else 3)

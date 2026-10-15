@@ -10,6 +10,8 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     "composition": (
         "PluginContext",
         "PluginSpec",
+        "Plugin",
+        "installed_plugins",
         "DoctorCheck",
         "DoctorResult",
         "DirMigration",

@@ -22,13 +22,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-all = ["untaped-ansible==11.0.0", "untaped-awx==11.0.0", "untaped-dotfiles==11.0.0", "untaped-git==11.0.0", "untaped-github==11.0.0", "untaped-jira==11.0.0", "untaped-recipe==11.0.0", "untaped-workspace==11.0.0"]
+all = ["untaped-ansible==11.0.0", "untaped-awx==11.0.0", "untaped-dotfiles==11.0.0", "untaped-git==11.0.0", "untaped-github==11.0.0", "untaped-jira==11.0.0", "untaped-lint==11.0.0", "untaped-recipe==11.0.0", "untaped-workspace==11.0.0"]
 ansible = ["untaped-ansible==11.0.0"]
 awx = ["untaped-awx==11.0.0"]
 dotfiles = ["untaped-dotfiles==11.0.0"]
 git = ["untaped-git==11.0.0"]
 github = ["untaped-github==11.0.0"]
 jira = ["untaped-jira==11.0.0"]
+lint = ["untaped-lint==11.0.0"]
 recipe = ["untaped-recipe==11.0.0"]
 workspace = ["untaped-workspace==11.0.0"]
 

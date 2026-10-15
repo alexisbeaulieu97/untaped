@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from textwrap import dedent
 
 import pytest
 
-from test_conventions.support import Install
+from lint.support import Install
 from untaped.conventions import plugin_violations
-from untaped.conventions.source import source_files
-from untaped.conventions.terminal_boundary import RULE, terminal_boundary_violations
+from untaped.sdk import PluginSpec
 from untaped.testing import plugin_candidate
+from untaped_lint.infrastructure.files import source_files
+from untaped_lint.providers.conventions.terminal_boundary import RULE, terminal_boundary_violations
+
+pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 MESSAGE = "imports prompt_toolkit; build screens with untaped.sdk"
 
@@ -109,7 +113,7 @@ def test_check_conventions_reports_it_for_a_plugin(install: Install) -> None:
     assert f"demo/tool.py:1::terminal-boundary::{MESSAGE}" in found
 
 
-def _spec() -> object:
-    import importlib
-
-    return importlib.import_module("demo").SPEC
+def _spec() -> PluginSpec:
+    spec = importlib.import_module("demo").SPEC
+    assert isinstance(spec, PluginSpec)
+    return spec

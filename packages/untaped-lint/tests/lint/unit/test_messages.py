@@ -1,10 +1,13 @@
-"""Message-lint rules on a synthetic module."""
+"""Message-lint rules on a synthetic module and on core's management commands."""
 
 from __future__ import annotations
 
 import ast
+import importlib.util
+from pathlib import Path
 
-from untaped.conventions.messages import tree_violations
+from untaped_lint.infrastructure.files import source_files
+from untaped_lint.providers.conventions.messages import message_violations, tree_violations
 
 
 def test_lint_rules_catch_each_banned_shape() -> None:
@@ -41,3 +44,13 @@ warnings.warn("soon", category=PendingDeprecationWarning)
         (14, "warnings-warn"),
         (15, "warnings-warn"),
     ]
+
+
+def test_core_management_commands_pass_the_message_rules() -> None:
+    """Core's own management commands follow the stderr wording lint enforces on plugins."""
+    spec = importlib.util.find_spec("untaped.management")
+    assert spec is not None and spec.submodule_search_locations is not None
+    source_dir = Path(next(iter(spec.submodule_search_locations)))
+    files = list(source_files(source_dir))
+    assert files
+    assert message_violations(source_dir, files) == []

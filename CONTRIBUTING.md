@@ -21,7 +21,7 @@ each package directory instead (one line, so it pastes unchanged in bash and
 PowerShell):
 
 ```
-uv tool install --force "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-ansible" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-awx" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-dotfiles" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-git" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-github" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-jira" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-recipe" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-workspace"
+uv tool install --force "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-ansible" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-awx" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-dotfiles" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-git" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-github" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-jira" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-lint" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-recipe" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-workspace"
 ```
 
 To pick a ref, put `@<branch-or-sha>` before `#subdirectory=` in each URL.
@@ -102,9 +102,9 @@ packages/untaped-<name>/src/untaped_<name>/
    vulture `paths` and `[tool.uv.sources]`.
 5. Add it to `EXPECTED_MEMBERS` in `tests/repo/test_workspace.py` and to
    `FIRST_PARTY` in `tests/repo/support.py`. The tests catch omissions.
-6. Call `untaped.testing.check_conventions` from its tests. The default
+6. Call `untaped_lint.testing.assert_clean` from its tests. The default
    table columns rule is enforced by this repository's own test suite, not by
-   `check_conventions`, and `# untaped: allow` does not apply to it.
+   `untaped lint`, and `# untaped: allow` does not apply to it.
 7. Start its skill from the [skill template](docs/plugin-skills.md);
    tests hold it to the template's section order, `SKILL.md` at most 500
    lines and each reference at most 300. Start its package `README.md` from a
@@ -446,6 +446,16 @@ _Avoid_: sync mode, force/off.
 **Sink**: the one writer to stderr.
 
 **Policy**: one invocation's output choices.
+
+**Rule**: one check `untaped lint` runs, with a public id `<plugin>.<id>`
+(`lint.error-case`), a severity and the record kind it reads.
+
+**Finding**: what a rule reports about one target; an error finding fails the
+run.
+
+**Subject**: a record a run lints, by its kind (`untaped.plugin`).
+
+**Linter**: the contract a plugin fills to add rules to `untaped lint`.
 
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.

@@ -23,11 +23,11 @@ command runs and needs at least one row, so use it on a read command or add
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
 | `setup migrate-dirs` | `untaped.migration` (`id` of the plugin's migration, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`, and `error` on a failed row); with `--dry-run`, or when no row would move or delete anything, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep`, `then` or `failed`, `source`, `destination`, `detail`, `bytes`, and `error` on a failed row) |
-| `plugin list` | `untaped.plugin` |
+| `plugin list` | `untaped.plugin` (`name`, `status`, `distribution`, `version`; a ready plugin's `package`, `source_dir` and, from a checkout, `tests_dir`) |
 | `plugin list --contracts` | `untaped.contract` |
 | `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |
 | `plugin new` | `untaped.scaffold_outcome` (one per file, its `target_path`) |
-| `plugin check` | `untaped.plugin_check` (`plugin`, `check`, `title`, `status`, `detail`) |
+| `plugin check` (deprecated) | `untaped.plugin_check` (`plugin`, `check`, `title`, `status`, `detail`) |
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
 skill names, one per line. With `--dry-run`, `config set/unset/migrate`,
@@ -228,3 +228,18 @@ the user), for prompt segments.
 
 `git credential` speaks Git's credential-helper protocol on stdout, not
 records.
+
+## lint
+
+| Command | Writes |
+|---|---|
+| `lint` | `lint.finding` (`rule`, `severity` `error` or `warning`, `target`, `message`, `location`, `hint`, `fix`) |
+| `lint rules` | `lint.rule` (`id`, `reads`, `severity`, `summary`, `renamed_from`) |
+
+A finding's `location` is `{path, line, column}` in a file,
+`{path, index}` for one document of a multi-document file, or `{id, url}`
+for a resource with no file; the table shows `src/a.py:12`, `a.yml#2` or
+the id. A rule that could not run is an `untaped.failure` on stderr, never
+a finding. `lint --stdin` reads `--format pipe` records of any kind: each is
+checked by the rules that read its kind (`untaped.plugin` from
+`plugin list`).

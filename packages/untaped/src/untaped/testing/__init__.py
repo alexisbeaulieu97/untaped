@@ -25,8 +25,10 @@ clocks are independent.
 
 from __future__ import annotations
 
+import ast
 import io
 import sys
+import warnings
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
@@ -43,6 +45,7 @@ from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
 from untaped.management.plugin_check import PluginCheckRow
 from untaped.output.sink import current_clock, installed_clock, recording, tick
+from untaped.plugins.registry import PluginCandidate
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -60,13 +63,14 @@ from untaped.testing.surface import assert_surface
 if TYPE_CHECKING:
     from untaped.output.diagnostic import Diagnostic
     from untaped.picker import PickRequest, PickResult
-    from untaped.plugins.registry import PluginCandidate, PluginSpec
+    from untaped.plugins.registry import PluginSpec
     from untaped.theme import ThemeSpec
 
 __all__ = [
     "CacheClock",
     "CliInvoker",
     "CliResult",
+    "PluginCandidate",
     "PluginCheckRow",
     "ProgressClock",
     "PromptBackend",
@@ -74,6 +78,7 @@ __all__ = [
     "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
+    "allows",
     "assert_destructive_contract",
     "assert_fills",
     "assert_surface",
@@ -82,6 +87,7 @@ __all__ = [
     "check_plugin",
     "compose_with",
     "drive_screen",
+    "import_targets",
     "invoke_cli",
     "invoke_root",
     "plugin_candidate",
@@ -346,8 +352,6 @@ def plugin_candidate(
     Pass the result to ``check_conventions(..., candidates=[...])`` or
     ``untaped.bootstrap.build_root_app(candidates=[...])``.
     """
-    from untaped.plugins.registry import PluginCandidate  # noqa: PLC0415
-
     return PluginCandidate(
         distribution=distribution or f"untaped-{spec.name}",
         name=spec.name,
@@ -384,6 +388,34 @@ def check_plugin(
         return check_plugins(result, found, name, core_only=True)
 
 
+def allows(source_lines: list[str], lineno: int, rule: str) -> bool:
+    """Whether line ``lineno`` (1-based) carries ``# untaped: allow`` for bare id ``rule``.
+
+    The one reading of the marker every source rule shares: it names rules
+    bare (``print``) or as ``lint.print``, comma-separated.
+    """
+    from untaped.conventions.allow import allowed  # noqa: PLC0415
+
+    return allowed(source_lines, lineno, rule)
+
+
+def import_targets(node: ast.Import | ast.ImportFrom, package: str) -> list[str]:
+    """The absolute modules an import statement imports, from a module of ``package``.
+
+    ``from . import x`` binds the submodule; a relative import reaching above
+    the top-level package resolves to nothing. The one import resolver every
+    source rule shares.
+    """
+    from untaped.conventions.source import import_targets as resolve  # noqa: PLC0415
+
+    return resolve(node, package)
+
+
+# A literal message, so mypy reports the calls (``deprecated_message``'s wording).
+@warnings.deprecated(
+    "check_conventions is deprecated and will be removed in the next major release; "
+    "use untaped_lint.testing.assert_clean from untaped[lint]"
+)
 def check_conventions(
     plugin: str,
     *,
@@ -401,11 +433,20 @@ def check_conventions(
     provider that is not installed. ``# untaped: allow <rule>`` on the flagged
     node's first line allows that one violation. A quarantined plugin
     fails with the reason it was refused, such as a broken rename declaration.
+    The rules that read only the plugin's files run only when ``untaped[lint]``
+    is installed, which now owns them; without it a warning says so.
     Composing, it brings back the composition it started with (and warns
     about no quarantined plugin), and can't run inside a contract call.
     """
     from untaped import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
-    from untaped.conventions import plugin_violations  # noqa: PLC0415
+    from untaped.conventions import (  # noqa: PLC0415
+        FILE_RULES_MISSING,
+        file_rules_installed,
+        plugin_violations,
+    )
+
+    if not file_rules_installed():
+        warnings.warn(FILE_RULES_MISSING, UserWarning, stacklevel=3)  # past the deprecated wrapper
 
     with bootstrap.kept_composition(quiet=True):
         found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)

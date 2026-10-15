@@ -1,6 +1,6 @@
 """``untaped plugin new NAME --fills OWNER.CONTRACT``: scaffold a plugin that fills a contract.
 
-The package it writes composes and passes ``check_conventions`` as written:
+The package it writes composes and passes ``untaped lint`` as written:
 
 - ``pyproject.toml``: ``untaped`` in this major's range, the owner as an
   extra named like it (in the installed owner's compatible range), and the entry point
@@ -10,8 +10,8 @@ The package it writes composes and passes ``check_conventions`` as written:
   an empty ``settings.py`` and ``providers/<owner>.py``. The provider there has every
   method of the contract with its docstring: required ones as stubs, the
   others written commented out, since a stub would count as filling them;
-- ``tests/``: ``check_conventions`` and ``assert_fills`` with a list of
-  samples to fill in.
+- ``tests/``: lint's ``assert_clean`` and ``assert_fills`` with a list of
+  samples to fill in (``untaped[lint]`` in the ``dev`` group).
 
 The provider's own record type ``T`` starts as the owner's model, so no
 bridge is needed until the plugin issues records of its own.
@@ -185,7 +185,7 @@ class _Scaffold:
                 {_toml_key(self.name)} = "{self.package}:SPEC"
 
                 [dependency-groups]
-                dev = ["pytest>=9"]
+                dev = ["pytest>=9", "untaped[lint]{core.lint}"]
 
                 [build-system]
                 """
@@ -214,7 +214,7 @@ class _Scaffold:
 
             Fill the methods in `src/{self.package}/providers/{self.owner_module}.py`, add
             samples to `tests/test_{self.package.removeprefix("untaped_")}.py`, then run
-            `pytest` and `untaped plugin check {self.name}`.
+            `pytest` and `untaped lint`.
             """
         )
 
@@ -345,15 +345,17 @@ class _Scaffold:
             )
             call = f"assert_fills({self.provider}, samples=SAMPLES)"
         return (
-            f'"""``{self.name}`` follows the conventions and fills {self._contract()}."""\n'
+            f'"""``{self.name}`` passes ``untaped lint`` and fills {self._contract()}."""\n'
             "\nfrom __future__ import annotations\n\n"
             "from pathlib import Path\n\n"
-            "from untaped.testing import assert_fills, assert_surface, check_conventions\n\n"
+            "from untaped.testing import assert_fills, assert_surface\n"
+            "from untaped_lint.testing import assert_clean\n\n"
             f"from {self.package} import SPEC\n"
             f"from {module} import {self.provider}\n\n"
             f"{samples}"
-            f"def test_{short}_follows_the_conventions() -> None:\n"
-            f'    check_conventions("{self.name}")\n\n\n'
+            f"def test_{short}_passes_lint() -> None:\n"
+            "    # lint.live calls each method: drop the ignore once they return.\n"
+            f'    assert_clean("{self.name}", ignore=["lint.live"])\n\n\n'
             f"def test_{short}_fills_{self.info.name}() -> None:\n"
             f"    {call}\n\n\n"
             f"def test_{short}_keeps_its_surface() -> None:\n"
@@ -540,8 +542,9 @@ def _home(name: str, value: object) -> str | None:
 
 
 class _Core:
-    def __init__(self, untaped: str, python: str, pydantic: str) -> None:
+    def __init__(self, untaped: str, lint: str, python: str, pydantic: str) -> None:
         self.untaped = untaped
+        self.lint = lint
         self.python = python
         self.pydantic = pydantic
 
@@ -554,15 +557,17 @@ def _core_metadata() -> _Core:
         (f"pydantic{range_text(r)}" for r in requirements if r.name == "pydantic" and not r.marker),
         "pydantic>=2,<3",
     )
-    return _Core(_range(found["Version"]), found["Requires-Python"], pydantic)
+    version = found["Version"]
+    return _Core(_range(version), _range(version, minor=True), found["Requires-Python"], pydantic)
 
 
-def _range(version: str) -> str:
+def _range(version: str, *, minor: bool = False) -> str:
     """The installed version's compatible range; ``""`` when the version is unknown.
 
     ``>=M,<M+1``, or ``>=0.m,<0.m+1`` before 1.0, where a minor may break; a
     pre-release is its own lower bound (``>=11.0.0a1,<12``), since ``>=11``
-    leaves it out.
+    leaves it out. ``minor`` floors it at this minor (``>=11.1,<12``), for an
+    extra an earlier minor didn't have.
     """
     try:
         parsed = Version(version)
@@ -572,6 +577,8 @@ def _range(version: str) -> str:
         low, high = f"0.{parsed.minor}", f"0.{parsed.minor + 1}"
     else:
         low, high = str(parsed.major), str(parsed.major + 1)
+        if minor:
+            low = f"{parsed.major}.{parsed.minor}"
     return f">={parsed.public if parsed.is_prerelease else low},<{high}"
 
 

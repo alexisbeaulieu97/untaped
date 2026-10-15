@@ -15,6 +15,7 @@ members = [
     "untaped-git",
     "untaped-github",
     "untaped-jira",
+    "untaped-lint",
     "untaped-recipe",
     "untaped-workspace",
 ]
@@ -813,6 +814,7 @@ all = [
     { name = "untaped-git" },
     { name = "untaped-github" },
     { name = "untaped-jira" },
+    { name = "untaped-lint" },
     { name = "untaped-recipe" },
     { name = "untaped-workspace" },
 ]
@@ -833,6 +835,9 @@ github = [
 ]
 jira = [
     { name = "untaped-jira" },
+]
+lint = [
+    { name = "untaped-lint" },
 ]
 recipe = [
     { name = "untaped-recipe" },
@@ -866,12 +871,14 @@ requires-dist = [
     { name = "untaped-github", marker = "extra == 'github'", editable = "packages/untaped-github" },
     { name = "untaped-jira", marker = "extra == 'all'", editable = "packages/untaped-jira" },
     { name = "untaped-jira", marker = "extra == 'jira'", editable = "packages/untaped-jira" },
+    { name = "untaped-lint", marker = "extra == 'all'", editable = "packages/untaped-lint" },
+    { name = "untaped-lint", marker = "extra == 'lint'", editable = "packages/untaped-lint" },
     { name = "untaped-recipe", marker = "extra == 'all'", editable = "packages/untaped-recipe" },
     { name = "untaped-recipe", marker = "extra == 'recipe'", editable = "packages/untaped-recipe" },
     { name = "untaped-workspace", marker = "extra == 'all'", editable = "packages/untaped-workspace" },
     { name = "untaped-workspace", marker = "extra == 'workspace'", editable = "packages/untaped-workspace" },
 ]
-provides-extras = ["all", "ansible", "awx", "dotfiles", "git", "github", "jira", "recipe", "workspace"]
+provides-extras = ["all", "ansible", "awx", "dotfiles", "git", "github", "jira", "lint", "recipe", "workspace"]
 
 [[package]]
 name = "untaped-ansible"
@@ -957,6 +964,17 @@ provides-extras = ["git", "workspace"]
 name = "untaped-jira"
 version = "11.0.0"
 source = { editable = "packages/untaped-jira" }
+dependencies = [
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+
+[[package]]
+name = "untaped-lint"
+version = "11.0.0"
+source = { editable = "packages/untaped-lint" }
 dependencies = [
     { name = "untaped" },
 ]

@@ -1,0 +1,1 @@
+[{"plugin": "hello", "check": "conventions", "title": "conventions", "detail": "no violations", "status": "pass"}, {"plugin": "hello", "check": "migrations", "title": "hello.greetings", "detail": "preview runs on an empty HOME", "status": "pass"}]

@@ -234,7 +234,7 @@ def test_shelf_keeps_its_surface() -> None:
   a model nobody meant to promise.
 - An owner may ship checks every provider must pass as a
   `conformance(provider)` function in its `testing` module
-  (`untaped_shelf.testing`); `untaped plugin check` runs it on each ready
+  (`untaped_shelf.testing`); `untaped lint` runs it on each ready
   provider.
 
 A provider proves it fills its contract:
@@ -250,8 +250,8 @@ def test_the_library_fills_the_shelf_contract() -> None:
   `samples=` is required when `T` is not the owner's model. Run from a
   checkout or an editable install, it records the owner's schema hash in
   the plugin package's `fills.json`; commit it.
-- `untaped plugin check [NAME]` checks an installed plugin (every one
-  without a name), a developer's editable install included: the
+- `untaped lint`, in a plugin's directory, checks the installed plugin, a
+  developer's editable install included ([Lint](./lint.md)): the
   conventions and the import lint, then, composing only the plugin and the
   owners it provides for, the owner's `conformance`, one live call of each
   filled method that takes no required argument (each item round-tripped),
@@ -259,8 +259,9 @@ def test_the_library_fills_the_shelf_contract() -> None:
   against the installed owner's. A provider that isn't ready skips the live
   checks. A different hash is `owner-schema-drift`, which warns (here and in
   `doctor`) and never fails: rerun the provider's tests against that owner.
-  It exits 1 when a check fails. `untaped.testing.check_plugin(NAME)`
+  It exits 3 when a check fails. `untaped.testing.check_plugin(NAME)`
   returns the rows of these checks, without the conventions that read only
-  the plugin's files, for a linter to judge.
+  the plugin's files, for a linter to judge; the deprecated
+  `untaped plugin check [NAME]` prints them.
 - [Filling another plugin's contract](./plugins.md#filling-another-plugins-contract)
   covers starting a provider with `untaped plugin new`.

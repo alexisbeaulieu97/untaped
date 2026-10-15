@@ -1,4 +1,7 @@
-"""Structure rules on a tmp plugin package, one rule broken at a time."""
+"""Structure rules that import a tmp plugin package, one rule broken at a time.
+
+The structure rules that only read its files are lint's, tested in ``untaped-lint``.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +11,8 @@ from textwrap import dedent
 import pytest
 from cyclopts import App
 
-from test_conventions.support import Install, structure_violations
-from untaped.conventions.source import source_files
+from test_conventions.support import Install
+from untaped.conventions.structure import structure_class_violations
 from untaped.plugins.registry import PluginSpec
 
 _ERRORS = dedent('''
@@ -57,7 +60,7 @@ _CLEAN = {
 
 
 def _violations(install: Install, files: dict[str, str]) -> list[str]:
-    """Structure violations of the package ``acme`` written from ``files``."""
+    """Structure class violations of the package ``acme`` written from ``files``."""
     site = install(files)
     settings = importlib.import_module("acme.settings")
     spec = PluginSpec(
@@ -66,20 +69,11 @@ def _violations(install: Install, files: dict[str, str]) -> list[str]:
         settings=settings.AcmeSettings,
         state=settings.AcmeState,
     )
-    source_dir = site / "acme"
-    files_found = list(source_files(source_dir))
-    return structure_violations(
-        spec, "acme", source_dir, files_found, tests_dir=site / "acme_tests"
-    )
+    return structure_class_violations(spec, "acme", site / "acme")
 
 
 def test_a_clean_package_has_no_violations(install: Install) -> None:
     assert _violations(install, _CLEAN) == []
-
-
-def test_a_package_without_errors_module_is_flagged(install: Install) -> None:
-    files = {name: body for name, body in _CLEAN.items() if name != "acme/errors.py"}
-    assert _violations(install, files) == ["acme/errors.py::errors-module"]
 
 
 @pytest.mark.parametrize(
@@ -139,34 +133,9 @@ def test_a_port_and_an_adapter_sharing_a_name_are_flagged(install: Install) -> N
     assert _violations(install, files) == ["acme.application.ports.Store::port-adapter-clash"]
 
 
-def test_reading_another_plugin_section_is_flagged(install: Install) -> None:
-    cli = _CLEAN["acme/cli.py"].replace('"acme"', '"github"')
-    assert _violations(install, {**_CLEAN, "acme/cli.py": cli}) == [
-        "acme/cli.py::foreign-section::github"
-    ]
-
-
 def test_mutable_settings_models_are_flagged(install: Install) -> None:
     mutable = _SETTINGS.replace("model_config = ConfigDict(frozen=True)", "pass")
     assert _violations(install, {**_CLEAN, "acme/settings.py": mutable}) == [
         "acme.settings.AcmeSettings::settings-not-frozen::settings",
         "acme.settings.AcmeState::settings-not-frozen::state",
-    ]
-
-
-def test_tests_importing_private_names_are_flagged(install: Install) -> None:
-    tests = {
-        "acme_tests/test_acme.py": """
-            import untaped._internal.tool
-            from acme._parse import parse
-            from untaped.sdk import _hidden
-            from acme.cli import _helper  # untaped: allow private-test-import
-            from other._private import thing
-            from acme import __version__
-            """,
-    }
-    assert _violations(install, {**_CLEAN, **tests}) == [
-        "acme_tests/test_acme.py::private-test-import::untaped._internal.tool",
-        "acme_tests/test_acme.py::private-test-import::acme._parse:_parse",
-        "acme_tests/test_acme.py::private-test-import::untaped.sdk:_hidden",
     ]

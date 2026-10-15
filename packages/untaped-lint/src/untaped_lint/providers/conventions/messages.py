@@ -34,8 +34,8 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.conventions.allow import allowed
-from untaped.conventions.source import SourceFile, callee
+from untaped.testing import allows
+from untaped_lint.infrastructure.files import SourceFile, callee
 
 USAGE_PHRASES = ("mutually exclusive", "must be >=", "not both", "cannot be combined")
 USAGE_RAISERS = frozenset({"UsageError", "raise_usage"})
@@ -114,9 +114,9 @@ def tree_violations(tree: ast.Module) -> Iterator[tuple[int, str, str]]:
             and isinstance(node.value, str)
             and id(node) not in docstrings
         ):
-            if node.value.lstrip().startswith("Warning:"):
+            if node.value.lstrip().startswith("Warning:"):  # untaped: allow capital-warning
                 yield node.lineno, "capital-warning", _snippet(node.value)
-            if "(s)" in node.value:
+            if "(s)" in node.value:  # untaped: allow paren-s
                 yield node.lineno, "paren-s", _snippet(node.value)
 
 
@@ -179,6 +179,6 @@ def message_violations(source_dir: Path, files: Sequence[SourceFile]) -> list[st
     for source in files:
         rel = source.path.relative_to(source_dir.parent).as_posix()
         for lineno, rule, detail in tree_violations(source.tree):
-            if not allowed(source.lines, lineno, rule):
+            if not allows(source.lines, lineno, rule):
                 found.append(f"{rel}::{rule}::{detail}")
     return found

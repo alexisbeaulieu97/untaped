@@ -9,11 +9,12 @@ from datetime import timedelta
 from pathlib import Path
 
 from untaped.sdk import Progress, StaleData
-from untaped.testing import cache_clock, check_conventions, invoke_root
+from untaped.testing import cache_clock, invoke_root
+from untaped_lint.testing import assert_clean
 
 
-def test_hello_follows_the_conventions() -> None:
-    check_conventions("hello")
+def test_hello_passes_lint() -> None:
+    assert_clean("hello")
 
 
 def test_hello_loads_lazily() -> None:
@@ -29,7 +30,7 @@ def test_hello_loads_lazily() -> None:
 
 def test_hello_is_listed_ready() -> None:
     rows = json.loads(invoke_root(["plugin", "list", "--format", "json"]).stdout)
-    assert [(r["name"], r["status"]) for r in rows] == [("hello", "ready")]
+    assert {r["name"]: r["status"] for r in rows}["hello"] == "ready"
 
 
 def test_hello_greets_with_its_setting() -> None:

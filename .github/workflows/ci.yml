@@ -149,13 +149,13 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/all/bin/python" --find-links dist "untaped[all] @ file://$PWD/$CORE"
           uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/all/bin/untaped" "$VERSION" --skills
 
-      - name: Bare untaped plus the example plugin, tested outside the repo
+      - name: untaped[lint] plus the example plugin, tested outside the repo
         run: |
           set -euo pipefail
           cp -r examples/untaped-hello "$RUNNER_TEMP/hello-src"
           uv venv -q --python 3.14 "$RUNNER_TEMP/hello"
-          uv pip install --python "$RUNNER_TEMP/hello/bin/python" "$CORE" "$RUNNER_TEMP/hello-src" pytest
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/hello/bin/untaped" "$VERSION" --expect hello --skills
+          uv pip install --python "$RUNNER_TEMP/hello/bin/python" --find-links dist "untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/hello-src" pytest
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/hello/bin/untaped" "$VERSION" --expect hello,lint --skills
           (cd "$RUNNER_TEMP/hello-src" && "$RUNNER_TEMP/hello/bin/python" -m pytest -q tests)
 
       - name: The example contract owner and provider, tested outside the repo
@@ -164,14 +164,13 @@ jobs:
           cp -r examples/untaped-shelf "$RUNNER_TEMP/shelf-src"
           cp -r examples/untaped-library "$RUNNER_TEMP/library-src"
           uv venv -q --python 3.14 "$RUNNER_TEMP/contracts"
-          uv pip install --python "$RUNNER_TEMP/contracts/bin/python" "$CORE" "$RUNNER_TEMP/shelf-src" "$RUNNER_TEMP/library-src" pytest
+          uv pip install --python "$RUNNER_TEMP/contracts/bin/python" --find-links dist "untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/shelf-src" "$RUNNER_TEMP/library-src" pytest
           (cd "$RUNNER_TEMP/shelf-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
           (cd "$RUNNER_TEMP/library-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
           printf 'profiles:\n  default:\n    library:\n      volumes:\n        - {shelf_mark: A1, name: Dune}\n' > "$RUNNER_TEMP/contracts.yml"
-          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check shelf
-          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check library
-          # owner-schema-drift only warns; the committed fills.json must match shelf here.
-          UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" plugin check library --format json | jq -e 'all(.[]; .status == "pass")'
+          # --strict: owner-schema-drift only warns, but the committed fills.json must match shelf here.
+          (cd "$RUNNER_TEMP/shelf-src" && UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
+          (cd "$RUNNER_TEMP/library-src" && UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
 
       - name: A broken example plugin is quarantined
         run: |

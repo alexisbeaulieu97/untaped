@@ -262,7 +262,7 @@ symlink or saved path points into needs its own `DirMigration`.
 and `old_dirs(default, section, key)` finds an old directory a deleted setting
 may have moved: `retired_values` reads that setting from config.yml even after
 its key left your settings model, until `config migrate` deletes it.
-`untaped plugin check` runs each preview on an empty `HOME`; the example
+`untaped lint` runs each preview on an empty `HOME`; the example
 plugin (`examples/untaped-hello`) has one row.
 
 ## Caching what an upstream answers
@@ -283,13 +283,13 @@ untaped plugin new gitlab --fills workspace.repo_source
 ```
 
 `plugin new` writes `untaped-gitlab/` in the current directory (`--path`
-elsewhere, `--dry-run` to list the files first): the package with its
-`SPEC` offering the provider to the owner, the provider
-(`providers/workspace.py`) with every method of the contract and its
-docstring (the required ones as stubs, the optional ones and the bridge
-commented out, since a stub would count as filling them), a test running
-`check_conventions`, `assert_fills` with a list of samples to fill in and
-`assert_surface`, and a `pyproject.toml` with the ranges and extra below. It
+elsewhere, `--dry-run` to list the files first): the package with its `SPEC`
+offering the provider to the owner, the provider (`providers/workspace.py`)
+with every method of the contract and its docstring (the required ones as
+stubs, the optional ones and the bridge commented out, since a stub would
+count as filling them), a test running lint's `assert_clean`, `assert_fills`
+with a list of samples to fill in and `assert_surface`, and a `pyproject.toml`
+with the ranges and extra below (`untaped[lint]` in its `dev` group). It
 never writes into an existing directory.
 
 A plugin that fills a contract declares, besides its `untaped` range, the
@@ -304,16 +304,15 @@ dependencies = ["untaped>=11,<12", "pydantic>=2.13.3,<3"]
 workspace = ["untaped-workspace>=11,<12"]
 ```
 
-`check_conventions` fails a plugin with no `untaped` range, or with a
+`untaped lint` fails a plugin with no `untaped` range, or with a
 `provides` key no such extra matches. An installed owner outside the
 extra's range quarantines that offer alone (`owner-out-of-range`). The
 provider imports only `untaped.sdk`, `untaped.contracts`, `untaped.testing`
 and the owner's `api` module.
 
-Fill the stubs, add samples, then run the plugin's tests and
-`untaped plugin check gitlab` against the installed package.
-[Testing contracts](./contracts.md#testing-contracts) says what each check
-does, and how an owner tests its own contracts.
+Fill the stubs, add samples, drop the scaffold's `lint.live` ignore once the
+methods return, then run the plugin's tests and `untaped lint` in its directory.
+[Testing contracts](./contracts.md#testing-contracts) says what each check does.
 
 ## Experimental and deprecated commands
 
@@ -338,7 +337,7 @@ def put_command() -> None: ...
   `"untaped acme set"`, a setting key or prose) when it is in another
   plugin or on a spec. Text must resolve.
 - A deprecated command shows with `untaped --deprecated --help` and warns once
-  per run. `check_conventions` rejects a hand-typed `Experimental:` or
+  per run. `untaped lint` rejects a hand-typed `Experimental:` or
   `Deprecated:`, a misplaced or redundant mark and a stale replacement.
 - Mark a setting on its field, as `Annotated[int, experimental]`; it
   inherits its plugin's mark, and `config list` lists it apart.
@@ -372,7 +371,7 @@ uv run untaped --help
 uv run untaped acme --help
 uv run untaped plugin list
 uv run untaped doctor
-uv run untaped plugin check acme
+uv run untaped lint
 uv run pytest
 uv run mypy
 uv run ruff check
@@ -380,14 +379,15 @@ uv run ruff check
 
 Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
-Call `untaped.testing.check_conventions(NAME)` from the plugin's own tests,
+Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
+[Lint](./lint.md)) from the plugin's own tests,
 `untaped.testing.assert_surface(SPEC, path)` to keep its commands, settings
 and contracts from losing a line by accident (experimental), and
-`untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
-hello` in-process against the installed plugins; it returns the exit code,
-the captured output and `diagnostics`, the typed stderr lines the command
-emitted (progress lines only under `--verbose`, or when the test advances
-the clock with `untaped.testing.progress_clock()`).
+`untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme hello`
+in-process against the installed plugins; it returns the exit code, the
+captured output and `diagnostics`, the typed stderr lines the command emitted
+(progress lines only under `--verbose`, or when the test advances the clock
+with `untaped.testing.progress_clock()`).
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

@@ -152,11 +152,13 @@ _STARTUP_PROBE = (
 #: The freshness SDK (#537 B1) adds ``untaped.cache`` (the call state moved
 #: there from ``untaped.contracts``) and ``untaped.upstream`` (read by
 #: ``untaped.http``): 129, 2026-10-12. The answer cache on ``Cache.serve()``
-#: (#537 B3) adds none: 129 on it and on its base, 2026-10-13. The budget
-#: was set six above 127 to absorb dependency and patch-release drift; a new
-#: built-in plugin adds a few ``untaped.*`` modules (its SPEC and settings).
+#: (#537 B3) adds none: 129 on it and on its base, 2026-10-13. The lint
+#: plugin (#640) adds three (its package, settings and doctor row) and the SDK's
+#: ``untaped.plugin_records`` one: 133, 2026-10-14. The budget stays six above
+#: the measure to absorb dependency and patch-release drift; a new built-in
+#: plugin adds a few ``untaped.*`` modules (its SPEC and settings).
 _TOTAL_BUDGET = 700
-_UNTAPED_BUDGET = 133
+_UNTAPED_BUDGET = 139
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])

@@ -407,7 +407,10 @@ WHEEL_MATRIX = {
     "bare": ('"$CORE"', '--expect ""'),
     "awx": ('--find-links dist "untaped[awx] @ file://$PWD/$CORE"', "--expect awx --skills"),
     "all": ('--find-links dist "untaped[all] @ file://$PWD/$CORE"', "--skills"),
-    "hello": ('"$CORE" "$RUNNER_TEMP/hello-src" pytest', "--expect hello --skills"),
+    "hello": (
+        '--find-links dist "untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/hello-src" pytest',
+        "--expect hello,lint --skills",
+    ),
     "broken": ('"$CORE" "$RUNNER_TEMP/hello-broken"', '--expect "" --quarantined hello'),
 }
 
@@ -455,16 +458,18 @@ def test_ci_wheel_matrix_smokes_each_install_shape_from_the_built_wheels() -> No
             '"$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)'
         )
         assert _find(steps, run=tests) == pair
+        # Each example is linted from its own checkout, warnings included.
         check = (
-            'UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" '
-            f'"$RUNNER_TEMP/contracts/bin/untaped" plugin check {example}'
+            f'(cd "$RUNNER_TEMP/{example}-src" && UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" '
+            '"$RUNNER_TEMP/contracts/bin/untaped" lint --strict)'
         )
         assert _find(steps, run=check) == pair
-    strict = (
-        'UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" '
-        "plugin check library --format json | jq -e 'all(.[]; .status == \"pass\")'"
+    install = (
+        'uv pip install --python "$RUNNER_TEMP/contracts/bin/python" --find-links dist '
+        '"untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/shelf-src" "$RUNNER_TEMP/library-src" '
+        "pytest"
     )
-    assert _find(steps, run=strict) == pair
+    assert _find(steps, run=install) == pair
     broken = _find(steps, run='cp -r examples/untaped-hello "$RUNNER_TEMP/hello-broken"')
     breaks = (
         "sed -i 's/untaped_hello:SPEC/untaped_hello:missing/'"

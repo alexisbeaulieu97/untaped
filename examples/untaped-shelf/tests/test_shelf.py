@@ -13,7 +13,8 @@ from untaped_shelf.api import Book, BookSource
 from untaped_shelf.testing import conformance
 
 from untaped.contracts import Ok, gather
-from untaped.testing import assert_surface, check_conventions, compose_with
+from untaped.testing import assert_surface, compose_with
+from untaped_lint.testing import assert_clean
 
 
 class FakeBooks(BookSource):
@@ -28,8 +29,8 @@ class Twins(FakeBooks):
         return [Book(title="Dune"), Book(title="Dune")]
 
 
-def test_shelf_follows_the_conventions() -> None:
-    check_conventions("shelf")
+def test_shelf_passes_lint() -> None:
+    assert_clean("shelf")
 
 
 def test_shelf_keeps_its_surface() -> None:

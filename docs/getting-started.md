@@ -132,7 +132,8 @@ Each plugin's guide shows its main workflows and links its full reference:
 [workspace](../packages/untaped-workspace/README.md), [github](../packages/untaped-github/README.md),
 [jira](../packages/untaped-jira/README.md), [awx](../packages/untaped-awx/README.md),
 [ansible](../packages/untaped-ansible/README.md), [recipe](../packages/untaped-recipe/README.md),
-[dotfiles](../packages/untaped-dotfiles/README.md) and [git](../packages/untaped-git/README.md).
+[dotfiles](../packages/untaped-dotfiles/README.md), [git](../packages/untaped-git/README.md) and
+[lint](../packages/untaped-lint/README.md).
 
 ```bash
 # workspace: a task directory of git worktrees on a shared branch

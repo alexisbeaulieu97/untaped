@@ -473,6 +473,7 @@ def _samples() -> dict[str, WireModel]:
     from untaped.management.plugin_check import PluginCheckRow
     from untaped.management.plugin_new import ScaffoldOutcome
     from untaped.management.plugins import ContractRow
+    from untaped.plugin_records import Plugin
     from untaped.plugins.registry import MigrationOutcome
     from untaped.profile.models import ProfileOutcome, ProfileRow
 
@@ -516,6 +517,15 @@ def _samples() -> dict[str, WireModel]:
         ),
         ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),
         MigrationOutcome(id="github.cache", action="moved", detail="3 repos"),
+        Plugin(
+            name="acme",
+            status="ready",
+            distribution="untaped-acme",
+            version="1.0.0",
+            package="untaped_acme",
+            source_dir=Path("/src/untaped_acme"),
+            tests_dir=Path("/tests"),
+        ),
     ]
     if "untaped_git" in _SHIPPED:  # the core-only job installs no plugin
         from untaped_git.domain.records import GitHostRecord, StoreReport, TreeEntry
@@ -543,6 +553,21 @@ def _samples() -> dict[str, WireModel]:
             GithubRepo(full_name="acme/api", private=False, pushed_at="2026-10-10T00:00:00Z"),
             CorpusRepoResult(full_name="acme/api", ref="main", path="/s/acme/api.git"),
             RepoSweepOutcome(full_name="acme/api", hits={"a.yml": 2}, owners=("@acme/team",)),
+        ]
+    if "untaped_lint" in _SHIPPED:
+        from untaped_lint.records import FileLocation, Finding, Rule, Subject
+
+        rows += [
+            Rule(id="no-print", reads="untaped.plugin", severity="error", summary="No print."),
+            Finding(
+                rule="lint.print",
+                severity="error",
+                target="acme",
+                message="print()",
+                location=FileLocation(path="src/a.py", line=3),
+                error=Failure.from_exception(ConfigError("x")),
+            ),
+            Subject(kind="untaped.plugin", record={"name": "acme", "tags": [1, None]}),
         ]
     return {str(kind_of(type(row))): row for row in rows}
 
