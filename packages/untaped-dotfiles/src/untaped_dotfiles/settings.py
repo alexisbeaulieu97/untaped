@@ -14,9 +14,9 @@ class DotfilesSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    repos_dir: Path = Field(default=Path("~/.untaped/dotfiles/repos"))
-    kept_dir: Path = Field(default=Path("~/.untaped/dotfiles/kept"))
-    state_dir: Path = Field(default=Path("~/.untaped/dotfiles"))
+    repos_dir: Path = Field(default=Path("~/.untaped/plugins/dotfiles/repos"))
+    kept_dir: Path = Field(default=Path("~/.untaped/plugins/dotfiles/kept"))
+    state_dir: Path = Field(default=Path("~/.untaped/plugins/dotfiles"))
     tags: list[str] = Field(default_factory=list)
     os: OsName | None = None
 

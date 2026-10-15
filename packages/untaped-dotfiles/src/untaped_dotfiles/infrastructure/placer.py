@@ -9,6 +9,7 @@ deleted by the tool.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 from collections.abc import Callable, MutableMapping
@@ -81,8 +82,9 @@ class FilesystemPlacer:
     def link(self, destination: Path, target: Path) -> str:
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.is_symlink():
-            target.unlink()
-        os.symlink(destination, target)
+            replace_symlink(destination, target)
+        else:
+            os.symlink(destination, target)
         return str(destination)  # what the ``link`` record stores as target_hash
 
     def copy(self, data: bytes, target: Path, *, executable: bool) -> str:
@@ -144,3 +146,13 @@ def _umask() -> int:
     current = os.umask(0o022)
     os.umask(current)
     return current
+
+
+def replace_symlink(destination: Path, target: Path) -> None:
+    """Point the symlink ``target`` at ``destination`` in one step (never missing meanwhile)."""
+    # A short name: the target's own may already be near the filesystem's limit.
+    digest = hashlib.sha256(os.fsencode(target.name)).hexdigest()[:12]
+    temporary = target.with_name(f".untaped-relink-{digest}")
+    temporary.unlink(missing_ok=True)
+    os.symlink(destination, temporary)
+    os.replace(temporary, target)

@@ -105,3 +105,12 @@ def test_render_reads_text_and_marks_binary(placer: FilesystemPlacer, tmp_path: 
     assert placer.render(target) == "hi\n"
     target.write_bytes(b"\xff\xfe\x00")
     assert placer.render(target) == "<binary>\n"
+
+
+def test_relinking_a_name_near_the_length_limit(placer: FilesystemPlacer, tmp_path: Path) -> None:
+    source = tmp_path / "a"
+    source.write_text("content")
+    target = tmp_path / ("n" * 250)
+    placer.link(source, target)
+    placer.link(source, target)  # the temporary link's name stays short
+    assert os.readlink(target) == str(source)

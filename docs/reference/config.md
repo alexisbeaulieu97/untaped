@@ -37,7 +37,7 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `ansible.index_path` | path | `~/.untaped/ansible-index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
+| `ansible.index_path` | path | `~/.untaped/plugins/ansible/index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
@@ -72,9 +72,9 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `dotfiles.repos_dir` | path | `~/.untaped/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). Experimental: may change in a minor release. |
-| `dotfiles.kept_dir` | path | `~/.untaped/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. Experimental: may change in a minor release. |
-| `dotfiles.state_dir` | path | `~/.untaped/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json`, `attention` and the advisory lock. Experimental: may change in a minor release. |
+| `dotfiles.repos_dir` | path | `~/.untaped/plugins/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). Experimental: may change in a minor release. |
+| `dotfiles.kept_dir` | path | `~/.untaped/plugins/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. Experimental: may change in a minor release. |
+| `dotfiles.state_dir` | path | `~/.untaped/plugins/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json`, `attention` and the advisory lock. Experimental: may change in a minor release. |
 | `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in manifests. Experimental: may change in a minor release. |
 | `dotfiles.os` | `macos` \| `linux` \| `windows` (optional) | unset | `UNTAPED_DOTFILES__OS` | This machine's OS for `os` filters; detected when unset. Experimental: may change in a minor release. |
 
@@ -126,7 +126,7 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `recipe.library_dir` | path | `~/.untaped/untaped-recipes` | `UNTAPED_RECIPE__LIBRARY_DIR` | Directory holding installed recipe packs. |
+| `recipe.library_dir` | path | `~/.untaped/plugins/recipe/library` | `UNTAPED_RECIPE__LIBRARY_DIR` | Directory holding installed recipe packs. |
 | `recipe.hook_timeout_seconds` | number | `60` | `UNTAPED_RECIPE__HOOK_TIMEOUT_SECONDS` | Per-hook request timeout; `0` disables it. |
 | `recipe.hook_startup_timeout_seconds` | number | `300` | `UNTAPED_RECIPE__HOOK_STARTUP_TIMEOUT_SECONDS` | Timeout for preparing a hook environment. |
 | `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backups prune` keeps this many newest bundles by default. |

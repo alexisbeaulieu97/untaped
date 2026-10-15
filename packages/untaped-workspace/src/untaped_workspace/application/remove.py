@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk import Failure, UntapedError, not_found, plural
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.locate import workspace_root
-from untaped_workspace.domain.naming import repo_key
+from untaped_workspace.domain.naming import repo_key, workspace_key
 from untaped_workspace.domain.records import RemoveOutcome
 from untaped_workspace.domain.safety import (
     archive_hint,
@@ -117,6 +117,7 @@ class RemoveWorkspace:
 
         Not found when no record, active or archived, has the name.
         """
+        name = workspace_key(name)  # the spelling ``create`` stored, so the plan compares it
         with self._store.locked(name):
             yield self._plan(name)
 

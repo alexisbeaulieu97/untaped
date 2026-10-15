@@ -26,7 +26,14 @@ from untaped.plugins.registry import (
     PluginContext,
     PluginSpec,
 )
-from untaped.sdk import delete_migration, old_dirs, plugin_dir, retired_values
+from untaped.sdk import (
+    delete_migration,
+    move_migration,
+    old_dirs,
+    plugin_dir,
+    retired_values,
+    setting_guard,
+)
 from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -462,3 +469,135 @@ def test_quiet_keeps_the_preview_before_the_prompt() -> None:
 
     assert "About to migrate:" in result.stderr
     assert quiet.stderr.startswith("About to migrate:")
+
+
+def test_move_migration_moves_in_order_then_has_nothing_left(tmp_path: Path) -> None:
+    _plant()
+    data = plugin_dir(make_spec("alpha")) / "deep" / "data"
+    data.mkdir(parents=True)  # created empty by a command run before the migration
+    sidecar = tmp_path / "index-journal"
+    sidecar.write_text("j", encoding="utf-8")
+    pairs = [(sidecar, data.parent / "index-journal"), (_old("alpha"), data)]
+    row = move_migration("alpha.data", "data", lambda: pairs, detail="kept as it is")
+    ctx, options = PluginContext(settings=None), MigrationOptions()
+
+    rows = row.preview(ctx, options)
+    assert [(r.action, r.source, r.destination) for r in rows] == [
+        ("move", str(source), str(destination)) for source, destination in pairs
+    ]
+    assert rows[1].bytes == 3 and rows[1].detail == "kept as it is"
+    (outcome,) = row.apply(ctx, options)
+    assert outcome.action == "moved"
+    assert (data / "file").read_text(encoding="utf-8") == "abc" and not _old("alpha").exists()
+    assert (data.parent / "index-journal").is_file()
+    assert row.preview(ctx, options) == []
+    assert [o.action for o in row.apply(ctx, options)] == ["unchanged"]
+
+
+def test_move_migration_never_merges_into_or_moves_what_it_must_keep(tmp_path: Path) -> None:
+    _plant()
+    taken = tmp_path / "taken"
+    taken.mkdir()
+    (taken / "newer").write_text("x", encoding="utf-8")
+    link = tmp_path / "link"
+    link.symlink_to(_old("beta"))
+    untaped = Path.home() / ".untaped"
+    pairs = [(_old("alpha"), taken), (link, tmp_path / "moved"), (untaped, tmp_path / "all")]
+    row = move_migration("alpha.data", "data", lambda: pairs)
+    ctx, options = PluginContext(settings=None), MigrationOptions()
+
+    rows = row.preview(ctx, options)
+    assert [r.action for r in rows] == ["keep"] * 3
+    assert "already exists" in rows[0].detail and "a symlink" in rows[1].detail
+    assert [o.action for o in row.apply(ctx, options)] == ["unchanged"]
+    assert _old("alpha").is_dir() and link.is_symlink()
+    assert [p.name for p in taken.iterdir()] == ["newer"]
+
+
+def test_move_migration_reports_what_it_moved_before_a_failure(tmp_path: Path) -> None:
+    _plant()
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    pairs = [(_old("alpha"), tmp_path / "a"), (_old("beta"), blocked / "sub" / "b")]
+    row = move_migration("alpha.data", "data", lambda: pairs)
+    blocked.chmod(0o500)
+    try:
+        (outcome,) = row.apply(PluginContext(settings=None), MigrationOptions())
+    finally:
+        blocked.chmod(0o700)
+
+    if outcome.action == "moved":
+        pytest.skip("running as root: a read-only parent doesn't stop the move")
+    assert outcome.action == "partial"
+    assert outcome.detail.startswith("moved ") and "could not move" in outcome.detail
+
+
+def _index(tmp_path: Path, name: str, data: str) -> Path:
+    path = tmp_path / name
+    path.write_text(data, encoding="utf-8")
+    Path(f"{path}-journal").write_text(f"{data}-journal", encoding="utf-8")
+    return path
+
+
+def test_sidecars_travel_with_their_file_and_replace_what_a_command_left(tmp_path: Path) -> None:
+    old = _index(tmp_path, "old.db", "saved")
+    (tmp_path / "plugins").mkdir()
+    new = _index(tmp_path / "plugins", "new.db", "empty")
+    row = move_migration(
+        "alpha.index",
+        "index",
+        lambda: [(old, new)],
+        sidecars=("-journal",),
+        replaceable=lambda path: path.read_text(encoding="utf-8") == "empty",
+    )
+    ctx, options = PluginContext(settings=None), MigrationOptions()
+
+    (preview,) = row.preview(ctx, options)
+    assert preview.action == "move" and "a command made before the move" in preview.detail
+    assert [o.action for o in row.apply(ctx, options)] == ["moved"]
+    assert new.read_text(encoding="utf-8") == "saved"
+    assert Path(f"{new}-journal").read_text(encoding="utf-8") == "saved-journal"
+    assert not old.exists() and not Path(f"{old}-journal").exists()
+
+
+def test_a_kept_file_keeps_its_sidecars(tmp_path: Path) -> None:
+    old = _index(tmp_path, "old.db", "saved")
+    (tmp_path / "plugins").mkdir()
+    new = tmp_path / "plugins" / "new.db"
+    new.write_text("real data", encoding="utf-8")
+    row = move_migration(
+        "alpha.index", "index", lambda: [(old, new)], sidecars=("-journal",),
+        replaceable=lambda path: False,
+    )  # fmt: skip
+
+    ctx, options = PluginContext(settings=None), MigrationOptions()
+    assert [r.action for r in row.preview(ctx, options)] == ["keep"]
+    row.apply(ctx, options)
+    assert Path(f"{old}-journal").is_file() and not Path(f"{new}-journal").exists()
+
+
+def test_a_crash_after_the_sidecars_moved_is_finished_by_the_next_run(tmp_path: Path) -> None:
+    old = _index(tmp_path, "old.db", "saved")
+    (tmp_path / "plugins").mkdir()
+    new = tmp_path / "plugins" / "new.db"
+    Path(f"{old}-journal").rename(f"{new}-journal")
+    row = move_migration("alpha.index", "index", lambda: [(old, new)], sidecars=("-journal",))
+
+    assert [o.action for o in row.apply(PluginContext(settings=None), MigrationOptions())] == [
+        "moved"
+    ]
+    assert new.read_text(encoding="utf-8") == "saved"
+    assert Path(f"{new}-journal").read_text(encoding="utf-8") == "saved-journal"
+
+
+def test_setting_guard_keeps_a_place_any_profile_still_names(_isolated_config: Path) -> None:
+    old = _old("alpha")
+    old.mkdir(parents=True)
+    write_config(
+        _isolated_config,
+        f"profiles:\n  default: {{}}\n  work:\n    alpha:\n      data_dir: {old / 'sub'}\n",
+    )
+    guard = setting_guard("alpha", "other_dir", "data_dir")
+
+    assert guard(old) == "config.yml or the environment still sets alpha.data_dir there"
+    assert guard(_old("beta")) is None
