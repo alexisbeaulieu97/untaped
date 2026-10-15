@@ -595,6 +595,10 @@
   nothing is piped, instead of waiting silently on the terminal; piped content
   loses one trailing newline, as other stdin inputs do.
   ([#665](https://github.com/alexisbeaulieu97/untaped/pull/665))
+- `untaped.testing.check_conventions` (and `untaped plugin check`) flags a
+  `TYPE_CHECKING` import that goes against the layers, as it does a runtime one;
+  only infrastructure may still name an application port there.
+  ([#686](https://github.com/alexisbeaulieu97/untaped/pull/686))
 
 ## Older releases
 
