@@ -11,17 +11,23 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from importlib import import_module, metadata
 from pathlib import Path
 
 EXAMPLES = Path(__file__).resolve().parents[5] / "examples"
 NAMES = ("hello", "shelf", "library")
-#: Each example's ``Requires-Dist``, as its pyproject.toml declares it.
-REQUIRES = {
-    "hello": ("untaped>=11,<12",),
-    "shelf": ("untaped>=11,<12",),
-    "library": ("untaped>=11,<12", 'untaped-shelf>=0.1,<0.2; extra == "shelf"'),
-}
+
+
+def _requires(name: str) -> tuple[str, ...]:
+    """The example's ``Requires-Dist``, read from its pyproject.toml."""
+    path = EXAMPLES / f"untaped-{name}" / "pyproject.toml"
+    project = tomllib.loads(path.read_text(encoding="utf-8"))["project"]
+    extras = project.get("optional-dependencies", {})
+    return (
+        *project["dependencies"],
+        *(f'{line}; extra == "{extra}"' for extra, lines in extras.items() for line in lines),
+    )
 
 
 def main() -> None:
@@ -34,7 +40,7 @@ def main() -> None:
     from untaped_lint.testing import run
 
     candidates = [
-        plugin_candidate(import_module(f"untaped_{name}").SPEC, requires_dist=REQUIRES[name])
+        plugin_candidate(import_module(f"untaped_{name}").SPEC, requires_dist=_requires(name))
         for name in NAMES
     ]
     candidates.append(

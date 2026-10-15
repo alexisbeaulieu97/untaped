@@ -185,7 +185,7 @@ class _Scaffold:
                 {_toml_key(self.name)} = "{self.package}:SPEC"
 
                 [dependency-groups]
-                dev = ["pytest>=9", "untaped[lint]{core.untaped}"]
+                dev = ["pytest>=9", "untaped[lint]{core.lint}"]
 
                 [build-system]
                 """
@@ -542,8 +542,9 @@ def _home(name: str, value: object) -> str | None:
 
 
 class _Core:
-    def __init__(self, untaped: str, python: str, pydantic: str) -> None:
+    def __init__(self, untaped: str, lint: str, python: str, pydantic: str) -> None:
         self.untaped = untaped
+        self.lint = lint
         self.python = python
         self.pydantic = pydantic
 
@@ -556,15 +557,17 @@ def _core_metadata() -> _Core:
         (f"pydantic{range_text(r)}" for r in requirements if r.name == "pydantic" and not r.marker),
         "pydantic>=2,<3",
     )
-    return _Core(_range(found["Version"]), found["Requires-Python"], pydantic)
+    version = found["Version"]
+    return _Core(_range(version), _range(version, minor=True), found["Requires-Python"], pydantic)
 
 
-def _range(version: str) -> str:
+def _range(version: str, *, minor: bool = False) -> str:
     """The installed version's compatible range; ``""`` when the version is unknown.
 
     ``>=M,<M+1``, or ``>=0.m,<0.m+1`` before 1.0, where a minor may break; a
     pre-release is its own lower bound (``>=11.0.0a1,<12``), since ``>=11``
-    leaves it out.
+    leaves it out. ``minor`` floors it at this minor (``>=11.1,<12``), for an
+    extra an earlier minor didn't have.
     """
     try:
         parsed = Version(version)
@@ -574,6 +577,8 @@ def _range(version: str) -> str:
         low, high = f"0.{parsed.minor}", f"0.{parsed.minor + 1}"
     else:
         low, high = str(parsed.major), str(parsed.major + 1)
+        if minor:
+            low = f"{parsed.major}.{parsed.minor}"
     return f">={parsed.public if parsed.is_prerelease else low},<{high}"
 
 

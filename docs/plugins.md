@@ -262,7 +262,7 @@ symlink or saved path points into needs its own `DirMigration`.
 and `old_dirs(default, section, key)` finds an old directory a deleted setting
 may have moved: `retired_values` reads that setting from config.yml even after
 its key left your settings model, until `config migrate` deletes it.
-`untaped plugin check` runs each preview on an empty `HOME`; the example
+`untaped lint` runs each preview on an empty `HOME`; the example
 plugin (`examples/untaped-hello`) has one row.
 
 ## Caching what an upstream answers

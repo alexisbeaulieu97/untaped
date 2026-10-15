@@ -1,4 +1,4 @@
-"""shelf's checks on any provider of its contract: ``untaped plugin check`` runs them.
+"""shelf's checks on any provider of its contract: ``untaped lint`` runs them.
 
 A provider's own tests may call :func:`conformance` too, on a provider
 composed with ``untaped.testing.compose_with``.

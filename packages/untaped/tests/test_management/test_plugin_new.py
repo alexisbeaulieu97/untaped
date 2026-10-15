@@ -8,6 +8,7 @@ import json
 import sys
 import tomllib
 from collections.abc import Iterator
+from importlib import metadata
 from pathlib import Path
 from types import ModuleType
 
@@ -17,7 +18,7 @@ from test_management.contract_plugins import CORE_RANGE, candidates
 from untaped import bootstrap
 from untaped.conventions import plugin_violations
 from untaped.errors import ConfigError, UntapedError, UsageError
-from untaped.management.plugin_new import BUILD_SYSTEM, ScaffoldOutcome, scaffold
+from untaped.management.plugin_new import BUILD_SYSTEM, ScaffoldOutcome, _range, scaffold
 from untaped.plugins.registry import PluginCandidate
 from untaped.testing import compose_with, invoke_cli
 
@@ -87,7 +88,8 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
         distribution_version="0.1.0",
         requires_dist=_requires(pyproject),
     )
-    assert pyproject["dependency-groups"] == {"dev": ["pytest>=9", "untaped[lint]>=11,<12"]}
+    lint_range = _range(metadata.version("untaped"), minor=True)  # lint came in a minor
+    assert pyproject["dependency-groups"] == {"dev": ["pytest>=9", f"untaped[lint]{lint_range}"]}
     assert plugin_violations("gitlab", candidates=[_RACK, gitlab]) == []
     # Its own tests import untaped[lint]; core's own run (no plugin installed) stops here.
     lint = pytest.importorskip("untaped_lint.testing")
@@ -212,6 +214,16 @@ def test_an_owner_range_covers_its_installed_major(version: str, expected: str) 
     from untaped.management.plugin_new import _range
 
     assert _range(version) == expected
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [("11.1.0", ">=11.1,<12"), ("0.3.1", ">=0.3,<0.4"), ("11.1.0a1", ">=11.1.0a1,<12")],
+)
+def test_a_minor_range_floors_at_the_installed_minor(version: str, expected: str) -> None:
+    from untaped.management.plugin_new import _range
+
+    assert _range(version, minor=True) == expected
 
 
 def test_an_owner_without_its_contract_in_api_is_refused(
