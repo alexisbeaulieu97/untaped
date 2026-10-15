@@ -71,8 +71,9 @@ uv lock --check                                 # lock file is current
 
 A first-party plugin is treated like any third-party plugin: it uses only the
 public plugin API (`untaped.sdk`, `untaped.contracts`, `untaped.testing` and
-other plugins' `api` modules) and gets no special treatment from core or from
-the other plugins, because any of them may move to its own repository. It
+other plugins' declared `api` modules) and gets no special treatment in how it
+is loaded or what it may use, because any of them may move to its own
+repository. It
 follows the [plugin rules](docs/reference/conventions.md) and uses this layout:
 
 ```
