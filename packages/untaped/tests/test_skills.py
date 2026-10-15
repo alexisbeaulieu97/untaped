@@ -336,3 +336,15 @@ def test_project_root_is_the_git_ancestor_or_the_start(tmp_path: Path) -> None:
     plain = tmp_path / "plain"
     plain.mkdir()
     assert project_root(plain) == plain.resolve()
+
+
+def test_updating_a_skill_no_plugin_ships_names_the_plugin_as_missing(tmp_path: Path) -> None:
+    installed = skills_module.InstalledSkill(
+        name="untaped-gone",
+        target="codex",
+        scope=SkillInstallScope.global_,
+        path=tmp_path / "untaped-gone",
+        state=skills_module.SkillState.orphaned,
+    )
+    with pytest.raises(ConfigError, match="no plugin installed here ships this skill"):
+        skills_module.update_installed_skill({}, installed)

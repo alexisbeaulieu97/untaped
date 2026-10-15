@@ -1,7 +1,7 @@
 """The per-run installed-skills check wired into the root app.
 
-After every root command, installed skills that no longer match this version
-are reported on stderr; ``skills.updates`` switches the check to updating
+After every root command, installed skills that are out of date are
+reported on stderr; ``skills.updates`` switches the check to updating
 them in place (``auto``) or silences it (``off``).
 """
 
@@ -111,14 +111,19 @@ def test_env_var_selects_the_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert "warning" not in _run(root, "demo", "--help")[1]
 
 
-def test_unshipped_skill_warns_but_is_never_removed(_isolated_config: Path, tmp_path: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    skills: {updates: auto}\n")
+@pytest.mark.parametrize("mode", ["warn", "auto"])
+def test_unshipped_skill_is_left_to_doctor(
+    _isolated_config: Path, tmp_path: Path, mode: str
+) -> None:
+    # Another environment (``uvx untaped`` without plugins) may lack the plugin
+    # that ships it, so the per-run check cannot tell it is gone for good.
+    write_config(_isolated_config, f"profiles:\n  default:\n    skills: {{updates: {mode}}}\n")
     old_root, _ = _root(tmp_path, "untaped-gone")
     assert _run(old_root, "skills", "install", "gone")[0] == 0
     root, _ = _root(tmp_path, "untaped-demo")
     output = _run(root, "demo", "--help")[1]
-    assert "warning: installed skills are no longer shipped: untaped-gone" in output
-    assert "hint: run `untaped skills remove untaped-gone`" in output
+    assert "untaped-gone" not in output
+    assert "warning" not in output
     assert _installed("untaped-gone").is_file()
 
 

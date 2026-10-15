@@ -85,8 +85,11 @@ untaped skills remove awx --target claude --scope local
 ```
 
 `status` reports each install's `state`: `current`, `outdated` (its files
-differ from this version's copy), or `orphaned` (this version no longer ships
-it). `auto` never removes an orphaned skill; run `untaped skills remove`.
+differ from this version's copy), or `orphaned` (no plugin installed here
+ships it: either it was dropped, or the plugin that ships it is missing, as
+with `uvx untaped` without extras). The per-run check never reports orphaned
+skills; `untaped doctor` and `skills status` do. Install the plugin, or run
+`untaped skills remove`.
 `update` rewrites an install where it is, keeping its target and scope; it
 never installs anywhere new. `remove` previews the directories and asks
 before deleting; pass `--yes` when not interactive. `status`, `update` and
