@@ -1,9 +1,9 @@
-"""Format rendering: structured/raw/pipe encoders and the Rich terminal renderer.
+"""Format rendering: structured/raw/pipe encoders and Rich terminal output.
 
-Split from ``ui.py``: this module owns *what output looks like* (the
-``Renderer`` boundary and its default implementation plus the pure format
-helpers); ``ui.py`` owns *interaction* (``UiContext`` — prompts, messages,
-progress). The two halves share only ``ThemeSpec``.
+Split from ``ui.py``: this module owns *what output looks like* (the format
+renderers plus the pure format helpers); ``ui.py`` owns *interaction*
+(``UiContext`` — prompts, messages, progress). The two halves share only
+``ThemeSpec``.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import shutil
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, Protocol, TextIO
+from typing import Any, Literal, TextIO
 
 import yaml
 from rich import box
@@ -36,131 +36,94 @@ MessageKind = Literal["success", "warning", "error", "info"]
 Row = dict[str, object]
 
 
-class Renderer(Protocol):
-    """Renderer boundary for semantic UI primitives."""
+def render_collection(
+    rows: Sequence[Row],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+    theme: ThemeSpec,
+    colorize: bool,
+    kind: str | None = None,
+) -> str:
+    """Render ``rows`` in ``fmt``: a table or list for humans, else a structured encoding."""
+    parsed = _parse_columns(columns)
+    if fmt == "raw":
+        return _format_raw(rows, parsed)
+    if fmt == "pipe":
+        return _format_pipe(rows, kind)
 
-    def render_collection(
-        self,
-        rows: Sequence[Row],
-        *,
-        fmt: OutputFormat,
-        columns: list[str] | None,
-        theme: ThemeSpec,
-        colorize: bool,
-        kind: str | None = None,
-    ) -> str: ...
+    selected = _select_rows(rows, parsed)
+    if fmt == "json":
+        return json.dumps(selected, default=_json_default)
+    if fmt == "yaml":
+        return _dump_yaml(selected)
+    if fmt == "table":
+        if theme.collection_view == "list":
+            return _format_records_as_lines(selected, theme=theme, colorize=colorize)
+        return _format_table(selected, theme, colorize=colorize)
 
-    def render_detail(
-        self,
-        record: Row,
-        *,
-        fmt: OutputFormat,
-        columns: list[str] | None,
-        theme: ThemeSpec,
-        colorize: bool,
-        kind: str | None = None,
-    ) -> str: ...
-
-    def render_message(
-        self,
-        kind: MessageKind,
-        text: str,
-        *,
-        theme: ThemeSpec,
-        colorize: bool,
-    ) -> str: ...
+    raise ValueError(f"unknown format: {fmt!r}")
 
 
-class RichTerminalRenderer:
-    """Default renderer for human terminal output and structured formats."""
+def render_detail(
+    record: Row,
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+    theme: ThemeSpec,
+    colorize: bool,
+    kind: str | None = None,
+) -> str:
+    """Render one ``record`` in ``fmt``; ``raw`` prints its first selected field."""
+    parsed = _parse_columns(columns)
+    if fmt == "pipe":
+        return _format_pipe([record], kind)
+    selected = _select_record(record, parsed)
+    if fmt == "raw":
+        if not selected:
+            return ""
+        first_key = next(iter(selected))
+        return _render_cell(selected.get(first_key, ""))
+    if fmt == "json":
+        return json.dumps(selected, default=_json_default)
+    if fmt == "yaml":
+        return _dump_yaml(selected)
+    if fmt == "table":
+        if theme.detail_view == "table":
+            rows: list[Row] = [
+                {"field": key, "value": _table_cell(key, value)} for key, value in selected.items()
+            ]
+            return _format_table(rows, theme, colorize=colorize, field_rows=True)
+        return _format_record_as_lines(selected, theme=theme, colorize=colorize)
 
-    def render_collection(
-        self,
-        rows: Sequence[Row],
-        *,
-        fmt: OutputFormat,
-        columns: list[str] | None,
-        theme: ThemeSpec,
-        colorize: bool,
-        kind: str | None = None,
-    ) -> str:
-        parsed = _parse_columns(columns)
-        if fmt == "raw":
-            return _format_raw(rows, parsed)
-        if fmt == "pipe":
-            return _format_pipe(rows, kind)
+    raise ValueError(f"unknown format: {fmt!r}")
 
-        selected = _select_rows(rows, parsed)
-        if fmt == "json":
-            return json.dumps(selected, default=_json_default)
-        if fmt == "yaml":
-            return _dump_yaml(selected)
-        if fmt == "table":
-            if theme.collection_view == "list":
-                return _format_records_as_lines(selected, theme=theme, colorize=colorize)
-            return _format_table(selected, theme, colorize=colorize)
 
-        raise ValueError(f"unknown format: {fmt!r}")
-
-    def render_detail(
-        self,
-        record: Row,
-        *,
-        fmt: OutputFormat,
-        columns: list[str] | None,
-        theme: ThemeSpec,
-        colorize: bool,
-        kind: str | None = None,
-    ) -> str:
-        parsed = _parse_columns(columns)
-        if fmt == "pipe":
-            return _format_pipe([record], kind)
-        selected = _select_record(record, parsed)
-        if fmt == "raw":
-            if not selected:
-                return ""
-            first_key = next(iter(selected))
-            return _render_cell(selected.get(first_key, ""))
-        if fmt == "json":
-            return json.dumps(selected, default=_json_default)
-        if fmt == "yaml":
-            return _dump_yaml(selected)
-        if fmt == "table":
-            if theme.detail_view == "table":
-                rows: list[Row] = [
-                    {"field": key, "value": _table_cell(key, value)}
-                    for key, value in selected.items()
-                ]
-                return _format_table(rows, theme, colorize=colorize, field_rows=True)
-            return _format_record_as_lines(selected, theme=theme, colorize=colorize)
-
-        raise ValueError(f"unknown format: {fmt!r}")
-
-    def render_message(
-        self,
-        kind: MessageKind,
-        text: str,
-        *,
-        theme: ThemeSpec,
-        colorize: bool,
-    ) -> str:
-        symbol = theme.symbols.get(kind, DEFAULT_SYMBOLS[kind])
-        prefix = f"{symbol} " if symbol else ""
-        label = f"{kind}: " if kind in {"warning", "error"} else ""
-        rendered = f"{prefix}{label}{text}"
-        style = _role_style(theme, kind, colorize=colorize)
-        if style is None:
-            return rendered
-        # Each line styled as is: a message (a diff, a tab-joined preview) is never
-        # wrapped or tab-expanded. A role Rich cannot parse styles nothing.
-        try:
-            ansi = Style.parse(style)
-        except StyleSyntaxError:
-            return rendered
-        return "\n".join(
-            ansi.render(line, color_system=ColorSystem.STANDARD) if line else line
-            for line in rendered.split("\n")
-        )
+def render_message(
+    kind: MessageKind,
+    text: str,
+    *,
+    theme: ThemeSpec,
+    colorize: bool,
+) -> str:
+    """A ``kind`` message line: the theme's symbol, a ``warning:``/``error:`` label, ``text``."""
+    symbol = theme.symbols.get(kind, DEFAULT_SYMBOLS[kind])
+    prefix = f"{symbol} " if symbol else ""
+    label = f"{kind}: " if kind in {"warning", "error"} else ""
+    rendered = f"{prefix}{label}{text}"
+    style = _role_style(theme, kind, colorize=colorize)
+    if style is None:
+        return rendered
+    # Each line styled as is: a message (a diff, a tab-joined preview) is never
+    # wrapped or tab-expanded. A role Rich cannot parse styles nothing.
+    try:
+        ansi = Style.parse(style)
+    except StyleSyntaxError:
+        return rendered
+    return "\n".join(
+        ansi.render(line, color_system=ColorSystem.STANDARD) if line else line
+        for line in rendered.split("\n")
+    )
 
 
 class _YamlDumper(yaml.SafeDumper):
