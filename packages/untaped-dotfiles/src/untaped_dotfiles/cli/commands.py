@@ -425,7 +425,6 @@ def apply_command(
             todo = [s for s in steps if s.action in ("apply", "remove")]
             if todo or moved:
                 _confirm(
-                    svc,
                     planned,
                     fmt=fmt,
                     verb="apply",
@@ -535,7 +534,6 @@ def remove_command(
                 return
             recorded = [s for s in steps if s.found.record is not None]
             _confirm(
-                svc,
                 planned,
                 fmt=fmt,
                 verb="remove",
@@ -626,7 +624,6 @@ def _moving_with(
 
 
 def _confirm(
-    svc: Services,
     planned: Sequence[PlaceOutcome],
     *,
     fmt: OutputFormat,
