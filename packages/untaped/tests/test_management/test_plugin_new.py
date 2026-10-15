@@ -13,7 +13,7 @@ from types import ModuleType
 
 import pytest
 
-from test_management.contract_plugins import candidates
+from test_management.contract_plugins import CORE_RANGE, candidates
 from untaped import bootstrap
 from untaped.conventions import plugin_violations
 from untaped.errors import ConfigError, UntapedError, UsageError
@@ -74,7 +74,7 @@ def test_the_scaffold_composes_follows_the_conventions_and_fills_its_contract(
     ]
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     project = pyproject["project"]
-    assert project["dependencies"][0] == "untaped>=10,<11"
+    assert project["dependencies"][0] == CORE_RANGE
     assert project["optional-dependencies"] == {"rack": ["untaped-rack>=1,<2"]}
     assert project["entry-points"]["untaped.plugins"] == {"gitlab": "untaped_gitlab:SPEC"}
 
