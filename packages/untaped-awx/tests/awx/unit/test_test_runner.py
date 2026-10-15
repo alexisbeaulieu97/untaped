@@ -251,16 +251,26 @@ def _make_runner(
 
 def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
     """Ctrl-C sets the stop event, skips queued launches, and keeps launched jobs."""
-    import os
     import signal
 
     from untaped_awx.errors import WaitCancelledError
 
     stop = threading.Event()
+    main_thread = threading.get_ident()
+    watchers = 0
+    lock = threading.Lock()
 
     class BlockingWatcher:
+        """Sends Ctrl-C once both parallel watchers run, so it lands mid-run."""
+
         def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
-            if stop.wait(5):
+            nonlocal watchers
+            with lock:
+                watchers += 1
+                both_running = watchers == 2
+            if both_running:
+                signal.pthread_kill(main_thread, signal.SIGINT)
+            if stop.wait(30):
                 raise WaitCancelledError("wait interrupted")
             return job
 
@@ -283,11 +293,11 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
         stop=stop,
     )
     suite = _suite("s", {f"c{i}": {"extra_vars": {"case_name": f"c{i}"}} for i in range(6)})
-    threading.Timer(0.2, os.kill, (os.getpid(), signal.SIGINT)).start()
     started = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
         runner([suite], parallel=2)
-    assert time.monotonic() - started < 2
+    # well under the watchers' 30 s wait: the interrupt released them
+    assert time.monotonic() - started < 10
     assert stop.is_set()
     assert len(launcher.calls) == 2
     assert [job.id for job in runner.launched] == [7, 7]
