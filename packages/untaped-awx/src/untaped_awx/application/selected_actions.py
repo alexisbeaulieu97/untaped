@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from untaped.sdk import Failure
-from untaped_awx.application.scheduling import Schedule, ScheduleInterruptedError
+from untaped_awx.application.scheduling import Schedule, ScheduleInterruptedError, dooms_batch
 from untaped_awx.application.selection import SelectedResource
 
 
@@ -46,10 +46,13 @@ def run_selected_actions[T](
     worker: Callable[[SelectedResource], T],
     *,
     parallel: int = 1,
-    continue_on_error: bool = False,
+    fail_fast: bool = False,
     error_detail: Callable[[Exception, SelectedResource], str] = lambda exc, _: str(exc),
 ) -> list[SelectedActionOutcome[T]]:
-    """Stop new submissions on failure; retain in-flight results in target order.
+    """Run every target unless a failure stops new submissions; keep target order.
+
+    A failure stops them under ``fail_fast``, and a rejected token or broken
+    setup (:func:`dooms_batch`) always does.
 
     Ctrl-C stops new submissions, lets in-flight submissions finish, and
     raises :class:`ActionsInterruptedError` with every outcome gathered so far.
@@ -61,7 +64,7 @@ def run_selected_actions[T](
         try:
             return SelectedActionOutcome(target, "completed", worker(target))
         except Exception as exc:
-            if not continue_on_error:
+            if fail_fast or dooms_batch(exc):
                 schedule.stop()
             detail = error_detail(exc, target)
             return SelectedActionOutcome(

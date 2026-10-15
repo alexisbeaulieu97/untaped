@@ -26,8 +26,8 @@ from untaped_awx.cli.format import (
     outcome_rows,
 )
 from untaped_awx.cli.options import (
-    ContinueOption,
     DryRunOption,
+    FailFastOption,
     ParallelOption,
     UnverifiedOption,
     YesOption,
@@ -55,7 +55,7 @@ class WriteControls:
 
     yes: YesOption = False
     dry_run: DryRunOption = False
-    continue_on_error: ContinueOption = False
+    fail_fast: FailFastOption = False
     parallel: ParallelOption = 1
     allow_unverified: UnverifiedOption = False
     fmt: FormatOption = "table"
@@ -152,7 +152,7 @@ def preview_and_execute(
     ):
         return previews
     outcomes = engine.execute(
-        plan, continue_on_error=controls.continue_on_error, parallel=controls.parallel
+        plan, fail_fast=controls.fail_fast, parallel=controls.parallel
     ).outcomes
     _report_outcomes(ctx, outcomes)
     return outcomes
