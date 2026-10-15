@@ -31,6 +31,7 @@ from untaped.sdk import (
     parse_kv_pairs,
     read_stdin,
     render_rows,
+    ui_context,
     writes,
 )
 from untaped_recipe.application import RunBulkApply
@@ -40,7 +41,6 @@ from untaped_recipe.application.ports import PromptFunc
 from untaped_recipe.application.resolution import resolve_apply_recipe
 from untaped_recipe.application.run_bulk import resolve_targets
 from untaped_recipe.application.targets import Target, resolve_target_lines
-from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
@@ -206,7 +206,9 @@ def apply_command(
         if stdin and not (yes or dry_run or check):
             # Refuse before any hook runs when the confirmation could never be
             # answered: stdin carries the targets and there is no terminal.
-            with recipe_ui().terminal(refusal="apply requires --yes when not interactive"):
+            with ui_context(strict=False).terminal(
+                refusal="apply requires --yes when not interactive"
+            ):
                 pass
         # --check is the CI mode: it asks nothing, like --non-interactive.
         prompt = None if non_interactive or check else _terminal_prompt()
@@ -387,7 +389,7 @@ def _execute_plans(
         noun="target",
         label=lambda plan: str(plan.target),
         describe=_describe,
-        ui=recipe_ui(),
+        ui=ui_context(strict=False),
         destructive=True,
         assume_yes=yes,
         preview_only=dry_run,
@@ -466,7 +468,7 @@ def _terminal_prompt() -> PromptFunc | None:
     Like ``awx test`` variables: never prompt without a TTY (piped ``--stdin``
     targets included); the missing input then fails with a ``--var`` hint.
     """
-    ui = recipe_ui()
+    ui = ui_context(strict=False)
     if not ui.can_prompt:
         return None
 

@@ -11,8 +11,8 @@ A plugin also follows these rules:
   `api` module, declared (see
   [Depending on another plugin](#depending-on-another-plugin)).
 - A plugin reads and writes only its own config section, state, skills and doctor checks.
-- Layering is `cli → application → domain`, with `infrastructure → domain`;
-  `domain` imports nothing from the other layers.
+- Layering is `cli → application → domain`, with `infrastructure → domain`
+  (and, for typing only, the ports it implements); `domain` imports no layer.
 - Errors raise with a category and a system (see
   [Raise with a category](#raise-with-a-category-or-inherit-one)).
 - Commands that write declare it with `@writes`, and a destructive one takes

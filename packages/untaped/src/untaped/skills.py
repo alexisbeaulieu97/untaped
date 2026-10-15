@@ -199,7 +199,7 @@ def project_root(start: Path) -> Path:
     """Return the nearest ancestor of ``start`` holding ``.git``, else ``start``.
 
     The project a command acts on: where ``skills install --scope local`` puts
-    skills and where a tool looks for its repo file. Unlike
+    skills and where a plugin looks for its repo file. Unlike
     :func:`~untaped.git.git_toplevel` it runs no git (the per-run skills check
     stays cheap) and never fails: outside a checkout, or with no git
     installed, the project is ``start`` itself.

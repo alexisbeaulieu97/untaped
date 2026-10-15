@@ -8,10 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from git.conftest import StoreFor, git
+from git.conftest import StoreError, StoreFor, git
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote, git_shim, trace2_events
-from untaped_git.errors import StoreError
 
 #: The sweep's pinned grep flags (github's git_corpus), spelled out here.
 SWEEP_GREP = ["grep", "-n", "-I", "--fixed-strings", "-e", "needle"]
@@ -162,7 +161,6 @@ def test_blobs_by_id_fetch_only_those_then_nothing(
     handle = store.prefetched(blobs=[blob, blob])
 
     assert len(_fetch_starts(trace)) == 1
-    assert handle.blobs == (blob, blob)
     assert handle.run(["cat-file", "-p", blob]).text == "needle = 1\n"
     assert _missing_paths(store.path, main) == {"README.md", "src/b.py", "docs/c.md"}
     trace.unlink()

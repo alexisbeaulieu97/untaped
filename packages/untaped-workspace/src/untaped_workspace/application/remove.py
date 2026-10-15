@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk import Failure, UntapedError, not_found, plural
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.locate import workspace_root
-from untaped_workspace.domain.naming import repo_key
+from untaped_workspace.domain.naming import repo_key, workspace_key
 from untaped_workspace.domain.records import RemoveOutcome
 from untaped_workspace.domain.safety import (
     archive_hint,
@@ -83,7 +83,6 @@ class RemovalPlan:
 
     name: str
     active: WorkspaceRecord | None
-    archived: tuple[ArchivedRecord, ...]
     repos: tuple[RepoPlan, ...]
     status: tuple[StatusRow, ...]
     """The active workspace's status rows (archive's check); empty when it is archived."""
@@ -117,6 +116,7 @@ class RemoveWorkspace:
 
         Not found when no record, active or archived, has the name.
         """
+        name = workspace_key(name)  # the spelling ``create`` stored, so the plan compares it
         with self._store.locked(name):
             yield self._plan(name)
 
@@ -247,9 +247,7 @@ class RemoveWorkspace:
                     bases=repo_bases,
                 )
             )
-        return RemovalPlan(
-            name=name, active=active, archived=archived, repos=tuple(repos), status=status
-        )
+        return RemovalPlan(name=name, active=active, repos=tuple(repos), status=status)
 
     def _holders(self, excluding: str | None = None) -> dict[Key, str]:
         """Each repo a remaining record names → the first workspace naming it."""

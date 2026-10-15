@@ -32,7 +32,7 @@ from pydantic import ValidationError
 
 from untaped.contracts._declare import ContractInfo, method_contract
 from untaped.contracts._gather import Answers, Failed, Ok, Skipped, _Invalid, issue
-from untaped.contracts._registry import Provider, offers
+from untaped.contracts._registry import Provider, offers, upgrade_hint
 from untaped.errors import ConfigError, UsageError, first_validation_error
 from untaped.output.sink import Diagnostics
 from untaped.pipe import PipeEnvelope
@@ -112,7 +112,7 @@ def _sorted[I](
                 error = ConfigError(
                     f"{answer.plugin} returned {detail}",
                     system=answer.plugin,
-                    hint=f"upgrade untaped-{answer.plugin}",
+                    hint=upgrade_hint(answer.plugin),
                 )
                 failed.append(Failed(answer.plugin, error, answer.rank, "invalid-item"))
         elif hits := [item for item in answer.value if matches(item)]:
@@ -173,13 +173,13 @@ def convert[R](bridge: Callable[..., R], envelope: PipeEnvelope) -> R:
         result = getattr(provider.instance, method.name)(item)
         return issue(provider.binding, model, result)  # type: ignore[no-any-return]  # R
     except _Invalid as exc:
-        raise ConfigError(str(exc), system=plugin, hint=f"upgrade untaped-{plugin}") from None
+        raise ConfigError(str(exc), system=plugin, hint=upgrade_hint(plugin)) from None
     except ValueError as exc:
         message = first_validation_error(exc) if isinstance(exc, ValidationError) else str(exc)
         raise ConfigError(
             f"{plugin} turned a {kind} record into an invalid {owner_kind}: {message}",
             system=plugin,
-            hint=f"upgrade untaped-{plugin}",
+            hint=upgrade_hint(plugin),
         ) from None
 
 

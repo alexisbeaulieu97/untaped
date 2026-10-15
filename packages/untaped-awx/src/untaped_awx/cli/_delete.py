@@ -24,8 +24,8 @@ from untaped_awx.cli._selection import (
 from untaped_awx.cli.context import open_context
 from untaped_awx.cli.format import format_scope
 from untaped_awx.cli.options import (
-    ContinueOption,
     DryRunOption,
+    FailFastOption,
     NamesArgument,
     ParallelOption,
     YesOption,
@@ -43,7 +43,7 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
         selection: SelectionOptions = SELECTION_DEFAULTS,
         yes: YesOption = False,
         dry_run: DryRunOption = False,
-        continue_on_error: ContinueOption = False,
+        fail_fast: FailFastOption = False,
         parallel: ParallelOption = 1,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
@@ -90,7 +90,7 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         selected,
                         lambda item: deleter(spec, item.id),
                         parallel=parallel,
-                        continue_on_error=continue_on_error,
+                        fail_fast=fail_fast,
                         error_detail=lambda exc, item: redact_error(exc, spec, item.record),
                     )
                     for row, outcome in zip(rows, outcomes, strict=True):
@@ -102,8 +102,8 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         row["detail"] = outcome.detail
                         row.update(outcome.row_error())
                         label = f"{outcome.target.kind}#{outcome.target.id}"
-                        if outcome.error_info is not None:
-                            ctx.diag.failure(outcome.error_info, item=label)
+                        if outcome.failure is not None:
+                            ctx.diag.failure(outcome.failure, item=label)
                         elif outcome.detail:
                             ctx.diag.warning(f"{label}: {outcome.detail}")
                     failed = any(outcome.action != "completed" for outcome in outcomes)

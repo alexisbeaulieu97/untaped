@@ -1,11 +1,13 @@
 """S30: ``untaped setup migrate-dirs`` on a 10.x layout, every first-party row composed.
 
-The fixture is the six directories a 10.x user has: a workspace cache whose
-repo has two workspace worktrees and a hand-added one, a sweep cache holding a
-shallow copy of the same repo (with a sweep worktree) and a second repo, the
-9.x sweep corpus and ansible cache, ansible's 10.x cache, and the 9.x
-``repositories`` a pre-7.0 clone borrows from. The overlap in the other order
-(workspace's row first) is ``untaped-git``'s ``test_adopt``.
+The fixture is what a 10.x user has: a workspace cache whose repo has two
+workspace worktrees and a hand-added one, a sweep cache holding a shallow
+copy of the same repo (with a sweep worktree) and a second repo, the 9.x
+sweep corpus and ansible cache, ansible's 10.x cache, the 9.x
+``repositories`` a pre-7.0 clone borrows from, and each plugin's own data
+(ansible's index, the recipe library, dotfiles' directory, github's
+inventory file). The overlap in the other order (workspace's row first) is
+``untaped-git``'s ``test_adopt``.
 """
 
 from __future__ import annotations
@@ -86,6 +88,12 @@ def _plant(app: GitRemote, lib: GitRemote, tmp_path: Path) -> dict[str, Path]:
     for name in ("github-corpus", "ansible-repositories", "ansible-cache"):
         (home / name / "x").mkdir(parents=True)
         (home / name / "x" / "file").write_text("old", encoding="utf-8")
+    # Each plugin's own 10.x data: the index, the recipe library, dotfiles, the inventory.
+    (home / "ansible-index.sqlite3").write_bytes(b"index")
+    (home / "untaped-recipes" / "packs").mkdir(parents=True)
+    (home / "untaped-recipes" / "packs.toml").write_text("", encoding="utf-8")
+    (home / "dotfiles" / "repos").mkdir(parents=True)
+    (home / "github-inventory.json").write_text("{}", encoding="utf-8")
     lender = home / "repositories" / "git.example" / "lib.git"
     lender.parent.mkdir(parents=True)
     git(tmp_path, "clone", "-q", "--bare", lib.url, str(lender))
@@ -122,12 +130,17 @@ def test_a_10x_layout_moves_into_the_store(
     assert preview.exit_code == 0, preview.stderr
     rows = json.loads(preview.stdout)
     assert [(row["id"], row["action"]) for row in rows] == [
+        ("ansible.index", "move"),
         ("ansible.cache", "delete"),
         ("ansible.repositories", "delete"),
+        ("dotfiles.data", "move"),
+        ("dotfiles.data", "then"),
         ("github.cache", "move"),
         ("github.cache", "move"),
         ("github.cache", "then"),
         ("github.corpus", "delete"),
+        ("github.inventory", "delete"),
+        ("recipe.library", "move"),
         ("workspace.cache", "move"),
         ("workspace.repositories", "keep"),
     ]
@@ -140,16 +153,25 @@ def test_a_10x_layout_moves_into_the_store(
     assert applied.exit_code == 0, applied.stderr
     outcomes = {row["id"]: row["action"] for row in json.loads(applied.stdout)}
     assert outcomes == {
+        "ansible.index": "moved",
         "ansible.cache": "deleted",
         "ansible.repositories": "deleted",
+        "dotfiles.data": "moved",
         "github.cache": "moved",
         "github.corpus": "deleted",
+        "github.inventory": "deleted",
+        "recipe.library": "moved",
         "workspace.cache": "moved",
         "workspace.repositories": "unchanged",
     }
     for name in ("workspace-cache", "github-cache", "github-corpus", "ansible-cache",
-                 "ansible-repositories"):  # fmt: skip
+                 "ansible-repositories", "ansible-index.sqlite3", "untaped-recipes", "dotfiles",
+                 "github-inventory.json"):  # fmt: skip
         assert not (home / name).exists(), name
+    plugins = home / "plugins"
+    assert (plugins / "ansible" / "index.sqlite3").read_bytes() == b"index"
+    assert (plugins / "recipe" / "library" / "packs.toml").is_file()
+    assert (plugins / "dotfiles" / "repos").is_dir()
 
     # app: workspace's full copy won; github's file copied in without its timestamps.
     repo = _store("app")

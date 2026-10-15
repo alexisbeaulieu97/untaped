@@ -3,7 +3,7 @@ cfg ansible.caches.index.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
 cfg ansible.git_fetch_parallel integer(maximum=32,minimum=1) default=8
-cfg ansible.index_path string(format=path) default=~/.untaped/ansible-index.sqlite3
+cfg ansible.index_path string(format=path) default=~/.untaped/plugins/ansible/index.sqlite3
 cfg ansible.probe_parallel integer(maximum=32,minimum=1) default=8
 cfg ansible.ref_scan_default choice=all
 cfg ansible.ref_scan_default choice=default_branch
@@ -23,19 +23,19 @@ cfg awx.test_parallel integer(exclusiveMinimum=0) default=4  [experimental]
 cfg awx.test_timeout_seconds number(exclusiveMinimum=0) default=1800  [experimental]
 cfg awx.token string(format=password)? default=unset
 cfg awx.token_command string[]? default=unset
-cfg dotfiles.kept_dir string(format=path) default=~/.untaped/dotfiles/kept  [experimental]
+cfg dotfiles.kept_dir string(format=path) default=~/.untaped/plugins/dotfiles/kept  [experimental]
 cfg dotfiles.os choice=linux  [experimental]
 cfg dotfiles.os choice=macos  [experimental]
 cfg dotfiles.os choice=windows  [experimental]
 cfg dotfiles.os string? default=unset  [experimental]
-cfg dotfiles.repos_dir string(format=path) default=~/.untaped/dotfiles/repos  [experimental]
-cfg dotfiles.state_dir string(format=path) default=~/.untaped/dotfiles  [experimental]
+cfg dotfiles.repos_dir string(format=path) default=~/.untaped/plugins/dotfiles/repos  [experimental]
+cfg dotfiles.state_dir string(format=path) default=~/.untaped/plugins/dotfiles  [experimental]
 cfg dotfiles.tags string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.proxy string[] default=[]  [experimental]
 cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
-cfg git.untaped_helper_first boolean default=false
+cfg git.untaped_helper_only boolean default=false
 cfg github.base_url string default=https://api.github.com
 cfg github.default_org string? default=unset
 cfg github.git_protocol choice=https
@@ -72,9 +72,8 @@ cfg recipe.backup_keep integer(minimum=1)? default=unset
 cfg recipe.backup_max_age_days integer(minimum=1)? default=unset
 cfg recipe.hook_startup_timeout_seconds number(minimum=0) default=300
 cfg recipe.hook_timeout_seconds number(minimum=0) default=60
-cfg recipe.library_dir string(format=path) default=~/.untaped/untaped-recipes
+cfg recipe.library_dir string(format=path) default=~/.untaped/plugins/recipe/library
 cfg recipe.preview_max_rows integer(minimum=0) default=50
-cfg shell.aliases object default={}  [deprecated]
 cfg skills.updates choice=auto
 cfg skills.updates choice=off
 cfg skills.updates choice=warn
@@ -125,42 +124,6 @@ cli untaped --quiet switch
 cli untaped --verbose alias=-v
 cli untaped --verbose switch
 cli untaped --version switch
-cli untaped alias  [deprecated]
-cli untaped alias list  [deprecated]
-cli untaped alias list --columns VALUE... default=unset  [deprecated]
-cli untaped alias list --columns alias=-c  [deprecated]
-cli untaped alias list --format VALUE default=table  [deprecated]
-cli untaped alias list --format alias=-f  [deprecated]
-cli untaped alias list --format choice=json  [deprecated]
-cli untaped alias list --format choice=pipe  [deprecated]
-cli untaped alias list --format choice=raw  [deprecated]
-cli untaped alias list --format choice=table  [deprecated]
-cli untaped alias list --format choice=yaml  [deprecated]
-cli untaped alias remove --columns VALUE... default=unset  [deprecated]
-cli untaped alias remove --columns alias=-c  [deprecated]
-cli untaped alias remove --dry-run switch  [deprecated]
-cli untaped alias remove --format VALUE default=table  [deprecated]
-cli untaped alias remove --format alias=-f  [deprecated]
-cli untaped alias remove --format choice=json  [deprecated]
-cli untaped alias remove --format choice=pipe  [deprecated]
-cli untaped alias remove --format choice=raw  [deprecated]
-cli untaped alias remove --format choice=table  [deprecated]
-cli untaped alias remove --format choice=yaml  [deprecated]
-cli untaped alias remove --yes alias=-y  [deprecated]
-cli untaped alias remove --yes switch  [deprecated]
-cli untaped alias remove NAME  [deprecated]
-cli untaped alias set --columns VALUE... default=unset  [deprecated]
-cli untaped alias set --columns alias=-c  [deprecated]
-cli untaped alias set --dry-run switch  [deprecated]
-cli untaped alias set --format VALUE default=table  [deprecated]
-cli untaped alias set --format alias=-f  [deprecated]
-cli untaped alias set --format choice=json  [deprecated]
-cli untaped alias set --format choice=pipe  [deprecated]
-cli untaped alias set --format choice=raw  [deprecated]
-cli untaped alias set --format choice=table  [deprecated]
-cli untaped alias set --format choice=yaml  [deprecated]
-cli untaped alias set NAME  [deprecated]
-cli untaped alias set [COMMAND...]@2 default=unset  [deprecated]
 cli untaped ansible
 cli untaped ansible deps --all-refs switch
 cli untaped ansible deps --backend VALUE default=unset
@@ -490,8 +453,8 @@ cli untaped awx apply --allow-unverified switch
 cli untaped awx apply --check switch
 cli untaped awx apply --columns VALUE... default=unset
 cli untaped awx apply --columns alias=-c
-cli untaped awx apply --continue-on-error switch
 cli untaped awx apply --dry-run switch
+cli untaped awx apply --fail-fast switch
 cli untaped awx apply --format VALUE default=table
 cli untaped awx apply --format alias=-f
 cli untaped awx apply --format choice=json
@@ -666,8 +629,8 @@ cli untaped awx groups delete --all switch
 cli untaped awx groups delete --by-id switch
 cli untaped awx groups delete --columns VALUE... default=unset
 cli untaped awx groups delete --columns alias=-c
-cli untaped awx groups delete --continue-on-error switch
 cli untaped awx groups delete --dry-run switch
+cli untaped awx groups delete --fail-fast switch
 cli untaped awx groups delete --filter VALUE... default=unset
 cli untaped awx groups delete --format VALUE default=table
 cli untaped awx groups delete --format alias=-f
@@ -695,8 +658,8 @@ cli untaped awx groups edit --allow-unverified switch
 cli untaped awx groups edit --by-id switch
 cli untaped awx groups edit --columns VALUE... default=unset
 cli untaped awx groups edit --columns alias=-c
-cli untaped awx groups edit --continue-on-error switch
 cli untaped awx groups edit --dry-run switch
+cli untaped awx groups edit --fail-fast switch
 cli untaped awx groups edit --field VALUE... default=unset
 cli untaped awx groups edit --filter VALUE... default=unset
 cli untaped awx groups edit --format VALUE default=table
@@ -849,8 +812,8 @@ cli untaped awx groups patch --allow-unverified switch
 cli untaped awx groups patch --by-id switch
 cli untaped awx groups patch --columns VALUE... default=unset
 cli untaped awx groups patch --columns alias=-c
-cli untaped awx groups patch --continue-on-error switch
 cli untaped awx groups patch --dry-run switch
+cli untaped awx groups patch --fail-fast switch
 cli untaped awx groups patch --filter VALUE... default=unset
 cli untaped awx groups patch --format VALUE default=table
 cli untaped awx groups patch --format alias=-f
@@ -880,8 +843,8 @@ cli untaped awx hosts delete --all switch
 cli untaped awx hosts delete --by-id switch
 cli untaped awx hosts delete --columns VALUE... default=unset
 cli untaped awx hosts delete --columns alias=-c
-cli untaped awx hosts delete --continue-on-error switch
 cli untaped awx hosts delete --dry-run switch
+cli untaped awx hosts delete --fail-fast switch
 cli untaped awx hosts delete --filter VALUE... default=unset
 cli untaped awx hosts delete --format VALUE default=table
 cli untaped awx hosts delete --format alias=-f
@@ -909,8 +872,8 @@ cli untaped awx hosts edit --allow-unverified switch
 cli untaped awx hosts edit --by-id switch
 cli untaped awx hosts edit --columns VALUE... default=unset
 cli untaped awx hosts edit --columns alias=-c
-cli untaped awx hosts edit --continue-on-error switch
 cli untaped awx hosts edit --dry-run switch
+cli untaped awx hosts edit --fail-fast switch
 cli untaped awx hosts edit --field VALUE... default=unset
 cli untaped awx hosts edit --filter VALUE... default=unset
 cli untaped awx hosts edit --format VALUE default=table
@@ -1012,8 +975,8 @@ cli untaped awx hosts patch --allow-unverified switch
 cli untaped awx hosts patch --by-id switch
 cli untaped awx hosts patch --columns VALUE... default=unset
 cli untaped awx hosts patch --columns alias=-c
-cli untaped awx hosts patch --continue-on-error switch
 cli untaped awx hosts patch --dry-run switch
+cli untaped awx hosts patch --fail-fast switch
 cli untaped awx hosts patch --filter VALUE... default=unset
 cli untaped awx hosts patch --format VALUE default=table
 cli untaped awx hosts patch --format alias=-f
@@ -1043,8 +1006,8 @@ cli untaped awx inventories delete --all switch
 cli untaped awx inventories delete --by-id switch
 cli untaped awx inventories delete --columns VALUE... default=unset
 cli untaped awx inventories delete --columns alias=-c
-cli untaped awx inventories delete --continue-on-error switch
 cli untaped awx inventories delete --dry-run switch
+cli untaped awx inventories delete --fail-fast switch
 cli untaped awx inventories delete --filter VALUE... default=unset
 cli untaped awx inventories delete --format VALUE default=table
 cli untaped awx inventories delete --format alias=-f
@@ -1072,8 +1035,8 @@ cli untaped awx inventories edit --allow-unverified switch
 cli untaped awx inventories edit --by-id switch
 cli untaped awx inventories edit --columns VALUE... default=unset
 cli untaped awx inventories edit --columns alias=-c
-cli untaped awx inventories edit --continue-on-error switch
 cli untaped awx inventories edit --dry-run switch
+cli untaped awx inventories edit --fail-fast switch
 cli untaped awx inventories edit --field VALUE... default=unset
 cli untaped awx inventories edit --filter VALUE... default=unset
 cli untaped awx inventories edit --format VALUE default=table
@@ -1277,8 +1240,8 @@ cli untaped awx inventories patch --allow-unverified switch
 cli untaped awx inventories patch --by-id switch
 cli untaped awx inventories patch --columns VALUE... default=unset
 cli untaped awx inventories patch --columns alias=-c
-cli untaped awx inventories patch --continue-on-error switch
 cli untaped awx inventories patch --dry-run switch
+cli untaped awx inventories patch --fail-fast switch
 cli untaped awx inventories patch --filter VALUE... default=unset
 cli untaped awx inventories patch --format VALUE default=table
 cli untaped awx inventories patch --format alias=-f
@@ -1308,8 +1271,8 @@ cli untaped awx inventories sync --by-id switch
 cli untaped awx inventories sync --cancel switch
 cli untaped awx inventories sync --columns VALUE... default=unset
 cli untaped awx inventories sync --columns alias=-c
-cli untaped awx inventories sync --continue-on-error switch
 cli untaped awx inventories sync --dry-run switch
+cli untaped awx inventories sync --fail-fast switch
 cli untaped awx inventories sync --filter VALUE... default=unset
 cli untaped awx inventories sync --follow switch
 cli untaped awx inventories sync --format VALUE default=table
@@ -1340,8 +1303,8 @@ cli untaped awx inventory-sources delete --all switch
 cli untaped awx inventory-sources delete --by-id switch
 cli untaped awx inventory-sources delete --columns VALUE... default=unset
 cli untaped awx inventory-sources delete --columns alias=-c
-cli untaped awx inventory-sources delete --continue-on-error switch
 cli untaped awx inventory-sources delete --dry-run switch
+cli untaped awx inventory-sources delete --fail-fast switch
 cli untaped awx inventory-sources delete --filter VALUE... default=unset
 cli untaped awx inventory-sources delete --format VALUE default=table
 cli untaped awx inventory-sources delete --format alias=-f
@@ -1369,8 +1332,8 @@ cli untaped awx inventory-sources edit --allow-unverified switch
 cli untaped awx inventory-sources edit --by-id switch
 cli untaped awx inventory-sources edit --columns VALUE... default=unset
 cli untaped awx inventory-sources edit --columns alias=-c
-cli untaped awx inventory-sources edit --continue-on-error switch
 cli untaped awx inventory-sources edit --dry-run switch
+cli untaped awx inventory-sources edit --fail-fast switch
 cli untaped awx inventory-sources edit --field VALUE... default=unset
 cli untaped awx inventory-sources edit --filter VALUE... default=unset
 cli untaped awx inventory-sources edit --format VALUE default=table
@@ -1472,8 +1435,8 @@ cli untaped awx inventory-sources patch --allow-unverified switch
 cli untaped awx inventory-sources patch --by-id switch
 cli untaped awx inventory-sources patch --columns VALUE... default=unset
 cli untaped awx inventory-sources patch --columns alias=-c
-cli untaped awx inventory-sources patch --continue-on-error switch
 cli untaped awx inventory-sources patch --dry-run switch
+cli untaped awx inventory-sources patch --fail-fast switch
 cli untaped awx inventory-sources patch --filter VALUE... default=unset
 cli untaped awx inventory-sources patch --format VALUE default=table
 cli untaped awx inventory-sources patch --format alias=-f
@@ -1503,8 +1466,8 @@ cli untaped awx inventory-sources sync --by-id switch
 cli untaped awx inventory-sources sync --cancel switch
 cli untaped awx inventory-sources sync --columns VALUE... default=unset
 cli untaped awx inventory-sources sync --columns alias=-c
-cli untaped awx inventory-sources sync --continue-on-error switch
 cli untaped awx inventory-sources sync --dry-run switch
+cli untaped awx inventory-sources sync --fail-fast switch
 cli untaped awx inventory-sources sync --filter VALUE... default=unset
 cli untaped awx inventory-sources sync --follow switch
 cli untaped awx inventory-sources sync --format VALUE default=table
@@ -1602,8 +1565,8 @@ cli untaped awx job-templates delete --all switch
 cli untaped awx job-templates delete --by-id switch
 cli untaped awx job-templates delete --columns VALUE... default=unset
 cli untaped awx job-templates delete --columns alias=-c
-cli untaped awx job-templates delete --continue-on-error switch
 cli untaped awx job-templates delete --dry-run switch
+cli untaped awx job-templates delete --fail-fast switch
 cli untaped awx job-templates delete --filter VALUE... default=unset
 cli untaped awx job-templates delete --format VALUE default=table
 cli untaped awx job-templates delete --format alias=-f
@@ -1631,8 +1594,8 @@ cli untaped awx job-templates edit --allow-unverified switch
 cli untaped awx job-templates edit --by-id switch
 cli untaped awx job-templates edit --columns VALUE... default=unset
 cli untaped awx job-templates edit --columns alias=-c
-cli untaped awx job-templates edit --continue-on-error switch
 cli untaped awx job-templates edit --dry-run switch
+cli untaped awx job-templates edit --fail-fast switch
 cli untaped awx job-templates edit --field VALUE... default=unset
 cli untaped awx job-templates edit --filter VALUE... default=unset
 cli untaped awx job-templates edit --format VALUE default=table
@@ -1812,12 +1775,12 @@ cli untaped awx job-templates launch --by-id switch
 cli untaped awx job-templates launch --cancel switch
 cli untaped awx job-templates launch --columns VALUE... default=unset
 cli untaped awx job-templates launch --columns alias=-c
-cli untaped awx job-templates launch --continue-on-error switch
 cli untaped awx job-templates launch --credential VALUE... default=unset
 cli untaped awx job-templates launch --diff-mode negative=--no-diff-mode
 cli untaped awx job-templates launch --diff-mode switch default=unset
 cli untaped awx job-templates launch --dry-run switch
 cli untaped awx job-templates launch --extra-vars VALUE... default=unset
+cli untaped awx job-templates launch --fail-fast switch
 cli untaped awx job-templates launch --filter VALUE... default=unset
 cli untaped awx job-templates launch --follow switch
 cli untaped awx job-templates launch --format VALUE default=table
@@ -1877,8 +1840,8 @@ cli untaped awx job-templates patch --allow-unverified switch
 cli untaped awx job-templates patch --by-id switch
 cli untaped awx job-templates patch --columns VALUE... default=unset
 cli untaped awx job-templates patch --columns alias=-c
-cli untaped awx job-templates patch --continue-on-error switch
 cli untaped awx job-templates patch --dry-run switch
+cli untaped awx job-templates patch --fail-fast switch
 cli untaped awx job-templates patch --filter VALUE... default=unset
 cli untaped awx job-templates patch --format VALUE default=table
 cli untaped awx job-templates patch --format alias=-f
@@ -2145,8 +2108,8 @@ cli untaped awx projects delete --all switch
 cli untaped awx projects delete --by-id switch
 cli untaped awx projects delete --columns VALUE... default=unset
 cli untaped awx projects delete --columns alias=-c
-cli untaped awx projects delete --continue-on-error switch
 cli untaped awx projects delete --dry-run switch
+cli untaped awx projects delete --fail-fast switch
 cli untaped awx projects delete --filter VALUE... default=unset
 cli untaped awx projects delete --format VALUE default=table
 cli untaped awx projects delete --format alias=-f
@@ -2174,8 +2137,8 @@ cli untaped awx projects edit --allow-unverified switch
 cli untaped awx projects edit --by-id switch
 cli untaped awx projects edit --columns VALUE... default=unset
 cli untaped awx projects edit --columns alias=-c
-cli untaped awx projects edit --continue-on-error switch
 cli untaped awx projects edit --dry-run switch
+cli untaped awx projects edit --fail-fast switch
 cli untaped awx projects edit --field VALUE... default=unset
 cli untaped awx projects edit --filter VALUE... default=unset
 cli untaped awx projects edit --format VALUE default=table
@@ -2277,8 +2240,8 @@ cli untaped awx projects patch --allow-unverified switch
 cli untaped awx projects patch --by-id switch
 cli untaped awx projects patch --columns VALUE... default=unset
 cli untaped awx projects patch --columns alias=-c
-cli untaped awx projects patch --continue-on-error switch
 cli untaped awx projects patch --dry-run switch
+cli untaped awx projects patch --fail-fast switch
 cli untaped awx projects patch --filter VALUE... default=unset
 cli untaped awx projects patch --format VALUE default=table
 cli untaped awx projects patch --format alias=-f
@@ -2308,8 +2271,8 @@ cli untaped awx projects sync --by-id switch
 cli untaped awx projects sync --cancel switch
 cli untaped awx projects sync --columns VALUE... default=unset
 cli untaped awx projects sync --columns alias=-c
-cli untaped awx projects sync --continue-on-error switch
 cli untaped awx projects sync --dry-run switch
+cli untaped awx projects sync --fail-fast switch
 cli untaped awx projects sync --filter VALUE... default=unset
 cli untaped awx projects sync --follow switch
 cli untaped awx projects sync --format VALUE default=table
@@ -2340,8 +2303,8 @@ cli untaped awx schedules delete --all switch
 cli untaped awx schedules delete --by-id switch
 cli untaped awx schedules delete --columns VALUE... default=unset
 cli untaped awx schedules delete --columns alias=-c
-cli untaped awx schedules delete --continue-on-error switch
 cli untaped awx schedules delete --dry-run switch
+cli untaped awx schedules delete --fail-fast switch
 cli untaped awx schedules delete --filter VALUE... default=unset
 cli untaped awx schedules delete --format VALUE default=table
 cli untaped awx schedules delete --format alias=-f
@@ -2369,8 +2332,8 @@ cli untaped awx schedules edit --allow-unverified switch
 cli untaped awx schedules edit --by-id switch
 cli untaped awx schedules edit --columns VALUE... default=unset
 cli untaped awx schedules edit --columns alias=-c
-cli untaped awx schedules edit --continue-on-error switch
 cli untaped awx schedules edit --dry-run switch
+cli untaped awx schedules edit --fail-fast switch
 cli untaped awx schedules edit --field VALUE... default=unset
 cli untaped awx schedules edit --filter VALUE... default=unset
 cli untaped awx schedules edit --format VALUE default=table
@@ -2472,8 +2435,8 @@ cli untaped awx schedules patch --allow-unverified switch
 cli untaped awx schedules patch --by-id switch
 cli untaped awx schedules patch --columns VALUE... default=unset
 cli untaped awx schedules patch --columns alias=-c
-cli untaped awx schedules patch --continue-on-error switch
 cli untaped awx schedules patch --dry-run switch
+cli untaped awx schedules patch --fail-fast switch
 cli untaped awx schedules patch --filter VALUE... default=unset
 cli untaped awx schedules patch --format VALUE default=table
 cli untaped awx schedules patch --format alias=-f
@@ -2630,8 +2593,8 @@ cli untaped awx workflow-templates delete --all switch
 cli untaped awx workflow-templates delete --by-id switch
 cli untaped awx workflow-templates delete --columns VALUE... default=unset
 cli untaped awx workflow-templates delete --columns alias=-c
-cli untaped awx workflow-templates delete --continue-on-error switch
 cli untaped awx workflow-templates delete --dry-run switch
+cli untaped awx workflow-templates delete --fail-fast switch
 cli untaped awx workflow-templates delete --filter VALUE... default=unset
 cli untaped awx workflow-templates delete --format VALUE default=table
 cli untaped awx workflow-templates delete --format alias=-f
@@ -2659,8 +2622,8 @@ cli untaped awx workflow-templates edit --allow-unverified switch
 cli untaped awx workflow-templates edit --by-id switch
 cli untaped awx workflow-templates edit --columns VALUE... default=unset
 cli untaped awx workflow-templates edit --columns alias=-c
-cli untaped awx workflow-templates edit --continue-on-error switch
 cli untaped awx workflow-templates edit --dry-run switch
+cli untaped awx workflow-templates edit --fail-fast switch
 cli untaped awx workflow-templates edit --field VALUE... default=unset
 cli untaped awx workflow-templates edit --filter VALUE... default=unset
 cli untaped awx workflow-templates edit --format VALUE default=table
@@ -2788,9 +2751,9 @@ cli untaped awx workflow-templates launch --by-id switch
 cli untaped awx workflow-templates launch --cancel switch
 cli untaped awx workflow-templates launch --columns VALUE... default=unset
 cli untaped awx workflow-templates launch --columns alias=-c
-cli untaped awx workflow-templates launch --continue-on-error switch
 cli untaped awx workflow-templates launch --dry-run switch
 cli untaped awx workflow-templates launch --extra-vars VALUE... default=unset
+cli untaped awx workflow-templates launch --fail-fast switch
 cli untaped awx workflow-templates launch --filter VALUE... default=unset
 cli untaped awx workflow-templates launch --follow switch
 cli untaped awx workflow-templates launch --format VALUE default=table
@@ -2870,8 +2833,8 @@ cli untaped awx workflow-templates patch --allow-unverified switch
 cli untaped awx workflow-templates patch --by-id switch
 cli untaped awx workflow-templates patch --columns VALUE... default=unset
 cli untaped awx workflow-templates patch --columns alias=-c
-cli untaped awx workflow-templates patch --continue-on-error switch
 cli untaped awx workflow-templates patch --dry-run switch
+cli untaped awx workflow-templates patch --fail-fast switch
 cli untaped awx workflow-templates patch --filter VALUE... default=unset
 cli untaped awx workflow-templates patch --format VALUE default=table
 cli untaped awx workflow-templates patch --format alias=-f
@@ -5679,6 +5642,11 @@ sdk untaped.sdk.installed_plugins()
 sdk untaped.sdk.is_envelope_line(obj)
 sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.most_severe(errors)
+sdk untaped.sdk.move_migration(detail=) default=""
+sdk untaped.sdk.move_migration(guard=) default=None callback(1)
+sdk untaped.sdk.move_migration(id, title, moves) callback(moves, 0)
+sdk untaped.sdk.move_migration(replaceable=) default=None callback(1)
+sdk untaped.sdk.move_migration(sidecars=) default=[]
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.old_dirs(default, section, key)
@@ -5764,6 +5732,8 @@ sdk untaped.sdk.run_git(stdin=) default=None
 sdk untaped.sdk.run_hint(command)
 sdk untaped.sdk.safe_path_segment(value)
 sdk untaped.sdk.same_origin(url, base)
+sdk untaped.sdk.setting_guard(*keys)
+sdk untaped.sdk.setting_guard(section)
 sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
 sdk untaped.sdk.summary(operation, counts)
@@ -5934,7 +5904,6 @@ sdk untaped_git.api.Credential.username
 sdk untaped_git.api.GitHost base=untaped.contracts.Contract  [experimental]
 sdk untaped_git.api.GitHost implement=credential,home  [experimental]
 sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
-sdk untaped_git.api.GitHost.for_url(url)  [experimental]
 sdk untaped_git.api.GitHost.home() -> string?  [experimental]
 sdk untaped_git.api.GitHost.proxy(url)  [experimental]
 sdk untaped_git.api.GitUrl
@@ -5942,8 +5911,7 @@ sdk untaped_git.api.HostAuth(plugin, credential, proxy)
 sdk untaped_git.api.HostAuth.credential
 sdk untaped_git.api.HostAuth.plugin
 sdk untaped_git.api.HostAuth.proxy
-sdk untaped_git.api.Prefetched(blobs@4=) default=[]
-sdk untaped_git.api.Prefetched(store, trees, paths)
+sdk untaped_git.api.Prefetched(store)
 sdk untaped_git.api.Prefetched.run(argv)
 sdk untaped_git.api.Prefetched.run(capture=) default=true
 sdk untaped_git.api.Prefetched.run(check=) default=true
@@ -5973,22 +5941,16 @@ sdk untaped_git.api.Released.stash
 sdk untaped_git.api.Removed()
 sdk untaped_git.api.Removed(freed_bytes@1=) default=0
 sdk untaped_git.api.Removed.freed_bytes
-sdk untaped_git.api.RepoStore(auth=) default=None callback(1)
-sdk untaped_git.api.RepoStore(helper_first=) default=false
 sdk untaped_git.api.RepoStore(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore(path, *, url, plugin, error)
-sdk untaped_git.api.RepoStore(sleep=) default=<computed> callback(1)
-sdk untaped_git.api.RepoStore(warn=) default=None callback(1)
 sdk untaped_git.api.RepoStore.checkout(worktree, ref)
 sdk untaped_git.api.RepoStore.delete_refs(names)
-sdk untaped_git.api.RepoStore.ensure()
 sdk untaped_git.api.RepoStore.exists()
 sdk untaped_git.api.RepoStore.fetch()
 sdk untaped_git.api.RepoStore.fetch(branches=) default=[]
 sdk untaped_git.api.RepoStore.fetch(progress=) default=NO_PROGRESS
 sdk untaped_git.api.RepoStore.fetch(prune=) default=false
 sdk untaped_git.api.RepoStore.fetch(tags=) default=[]
-sdk untaped_git.api.RepoStore.filter_state()
 sdk untaped_git.api.RepoStore.for_url(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore.for_url(url, *, plugin, error)
 sdk untaped_git.api.RepoStore.has_part()

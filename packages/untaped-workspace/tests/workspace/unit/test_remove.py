@@ -10,17 +10,19 @@ from typing import Any
 import pytest
 
 from untaped_workspace.application.remove import RemoveWorkspace, refusal_hint
-from untaped_workspace.domain import (
+from untaped_workspace.domain.models import (
     LocalBranch,
     RepoRelease,
     RepoSpec,
     StoreUse,
     WorkspaceRecord,
+)
+from untaped_workspace.domain.records import RemoveOutcome, StatusRow
+from untaped_workspace.domain.safety import (
     branch_work,
     releasable_branches,
     unpushed_branch_blocker,
 )
-from untaped_workspace.domain.records import RemoveOutcome, StatusRow
 from untaped_workspace.errors import GitError, WorkspaceNotFoundError
 from untaped_workspace.infrastructure import StateWorkspaceStore
 

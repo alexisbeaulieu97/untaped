@@ -585,3 +585,23 @@ def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
         run_git(args, cwd=cwd, timeout=_GIT_CLONE_TIMEOUT)
     except GitCommandError as exc:
         raise PackFetchError(str(exc), **attribution(exc)) from exc
+
+
+def holds_nothing(library_dir: Path) -> bool:
+    """Whether ``library_dir`` has no installed pack, no backup and no other file of its own.
+
+    An empty ``packs.toml`` and empty directories are what a command leaves
+    in a library it only created; ``setup migrate-dirs`` replaces such a
+    library with the 10.x one. Anything unreadable counts as data.
+    """
+    try:
+        for directory, _dirs, names in library_dir.walk():
+            for name in names:
+                path = directory / name
+                if path != library_dir / "packs.toml":
+                    return False
+                if tomllib.loads(path.read_text(encoding="utf-8")):
+                    return False
+    except OSError, ValueError:
+        return False
+    return library_dir.is_dir()

@@ -13,10 +13,12 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from cyclopts import Parameter
+from cyclopts.validators import Number
 
 from untaped.sdk import (
     ColumnsOption,
     FormatOption,
+    LimitOption,
     OutputFormat,
     UiContext,
     create_app,
@@ -226,10 +228,11 @@ def export_top_command(
 
     ``export --all-kinds --out-dir DIR`` writes one file per resource
     using the full identity in the filename so same-named records
-    across organizations don't collide:
-    ``<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml``.
-    Kinds with read-only fidelity (Credential) are skipped with a
-    one-line note.
+    across organizations don't collide: ``<Kind>[__<org>]__<name>.yml``,
+    or, for a resource with a parent (such as a Host or Schedule),
+    ``<Kind>__<parent_kind>__[<parent_org>__]<parent_name>__<name>.yml``.
+    Read-only kinds (such as Credential and Organization) are skipped
+    with a one-line note.
 
     Default stdout shape is a multi-doc YAML stream of the same
     envelopes the files contain, so the dump pipes straight into
@@ -284,10 +287,7 @@ def jobs_list(
             negative="",
         ),
     ] = None,
-    limit: Annotated[
-        int,
-        Parameter(name="--limit", help="Newest N jobs (default 20; 0 lists every job)."),
-    ] = 20,
+    limit: LimitOption = 20,
     kind: JobKindOption = "job",
     template: Annotated[
         str | None,
@@ -303,8 +303,6 @@ def jobs_list(
     columns: ColumnsOption = None,
 ) -> None:
     """List recent AWX jobs (newest first)."""
-    if limit < 0:
-        raise_usage("--limit must be non-negative")
     filters = parse_kv_pairs(filter_, flag="--filter")
     if status:
         filters["status"] = status
@@ -314,7 +312,7 @@ def jobs_list(
             raise_usage(f"--template does not apply to {kind} executions")
         filters[field if template.isdigit() else f"{field}__name"] = template
     with report_errors(), open_context() as ctx, ctx.diag.progress("Loading jobs"):
-        records = list(ctx.jobs.list(kind=kind, params=filters, limit=limit or None))
+        records = list(ctx.jobs.list(kind=kind, params=filters, limit=limit))
     rendered = render_rows(
         records,
         fmt=fmt,
@@ -423,7 +421,7 @@ def jobs_events(
                 fmt=fmt,
                 cols=cols,
                 follow=follow,
-                ui=ctx.progress_ui(),
+                ui=ctx.ui(),
                 pad=pad,
             )
 
@@ -585,7 +583,11 @@ def jobs_logs(
     ] = False,
     tail: Annotated[
         int | None,
-        Parameter(name="--tail", help="Show only the last N historical lines before following."),
+        Parameter(
+            name="--tail",
+            help="Show only the last N historical lines before following.",
+            validator=Number(gte=0),
+        ),
     ] = None,
     grep: Annotated[
         str | None,

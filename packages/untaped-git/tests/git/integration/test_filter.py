@@ -30,7 +30,7 @@ def test_a_server_that_ignores_the_filter(
 
     store.fetch(branches=["main"])
 
-    assert store.filter_state() == "ignored"
+    assert git(store.path, "config", "untaped.filter").strip() == "ignored"
     assert _missing(store.path) == []
     trace = tmp_path / "trace.json"
     monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
@@ -44,7 +44,7 @@ def test_a_server_that_ignores_the_filter(
     remote.commit("src/b.py", "b\n")
     store.fetch(branches=["main"])
 
-    assert store.filter_state() == "honoured"
+    assert git(store.path, "config", "untaped.filter").strip() == "honoured"
     assert _missing(store.path)
     store.prefetch(trees=[MAIN])
     assert _missing(store.path) == []

@@ -345,7 +345,7 @@ def test_checking_a_plugin_never_imports_a_lazy_sibling() -> None:
     assert built == []
 
 
-@pytest.mark.parametrize("name", ["config", "alias"])
+@pytest.mark.parametrize("name", ["config", "profile"])
 def test_the_root_commands_pass(name: str) -> None:
     root = bootstrap.build_root_app(candidates=[])
 
@@ -426,7 +426,6 @@ def test_marks_lists_a_settings_mark_with_its_key_and_replacement() -> None:
     found = [m for m in marks(root, bootstrap.composition()) if m.target == "setting"]
 
     assert [(m.where, type(m.stability).__name__, m.replacement) for m in found] == [
-        ("shell.aliases", "Deprecated", "a shell alias or function"),
         ("svc.trial", "Experimental", None),
         ("svc.old", "Deprecated", "`svc.plain`"),
         ("svc.gone", "Deprecated", "a shell alias"),

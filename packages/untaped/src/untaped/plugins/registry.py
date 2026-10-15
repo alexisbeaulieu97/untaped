@@ -79,7 +79,6 @@ ROOT_MANAGEMENT_COMMANDS = (
     "doctor",
     "setup",
     "auth",
-    "alias",
     "plugin",
 )
 
@@ -523,7 +522,7 @@ class _Quarantine(Exception):
         )
 
 
-def _parse_requirement(requirement: object) -> Requirement | None:
+def parse_requirement(requirement: object) -> Requirement | None:
     """Parse one PEP 508 Requires-Dist string; ``None`` when malformed."""
     if not isinstance(requirement, str):
         return None
@@ -562,7 +561,7 @@ def owner_requirement(
     """
     wanted = canonicalize_name(distribution or f"untaped-{owner}")
     for line in requires_dist:
-        parsed = _parse_requirement(line)
+        parsed = parse_requirement(line)
         if parsed is None or parsed.marker is None or canonicalize_name(parsed.name) != wanted:
             continue
         # The environment fills every other variable, so ``extra`` decides; a marker
@@ -615,7 +614,7 @@ def _check_entry_point_group(candidate: PluginCandidate) -> None:
 def _check_requires_dist(candidate: PluginCandidate, state: _CompositionState) -> None:
     untaped_requirements: list[tuple[str, Requirement]] = []
     for requirement in candidate.requires_dist:
-        parsed = _parse_requirement(requirement)
+        parsed = parse_requirement(requirement)
         if parsed is None:
             raise _Quarantine(
                 "bad-metadata",
@@ -926,7 +925,8 @@ def _commit(
     return registered
 
 
-def _resolve_target(target: object) -> object:
+def resolve_target(target: object) -> object:
+    """The object an entry point's ``module:attr`` target names (a non-string passes through)."""
     if not isinstance(target, str):
         return target
     module_name, sep, attr_path = target.partition(":")
@@ -1055,7 +1055,7 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
     _check_entry_point_group(candidate)
     _check_requires_dist(candidate, state)
     try:
-        spec = _resolve_target(candidate.target)
+        spec = resolve_target(candidate.target)
     except DuplicateKindError as exc:
         raise _Quarantine("duplicate-kind", str(exc), entry_point="") from None
     except Exception as exc:

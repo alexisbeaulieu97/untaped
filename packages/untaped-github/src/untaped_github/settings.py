@@ -1,4 +1,4 @@
-"""Settings for the GitHub tool."""
+"""Settings for the GitHub plugin."""
 
 from __future__ import annotations
 

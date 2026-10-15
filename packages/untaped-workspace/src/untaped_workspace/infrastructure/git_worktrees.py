@@ -342,9 +342,8 @@ class LocalGitWorktrees:
         return branches
 
     def _unpushed_on(self, store: RepoStore, branch: str, tags: Sequence[str]) -> int:
-        """Commits on ``refs/heads/<branch>`` that no ``refs/remotes/origin/*`` nor ``tags`` has."""
-        tip = f"refs/heads/{branch}"
-        args = ["rev-list", "--count", tip, "--not", "--glob=refs/remotes/origin/*", *tags]
+        """Commits on ``refs/heads/<branch>`` that are not pushed (see :func:`_count_unpushed`)."""
+        args = _count_unpushed(f"refs/heads/{branch}", tags)
         return int(store.run(args, capture=True).text.strip() or 0)
 
     # -- checkout steps ----------------------------------------------------
@@ -497,9 +496,9 @@ class LocalGitWorktrees:
         return sum(1 for line in out.splitlines() if line.startswith(prefixes))
 
     def _unpushed(self, wt: Path, base: str) -> int:
-        """Commits on ``HEAD`` that no remote-tracking branch nor the ``base`` tag has."""
+        """Commits on ``HEAD`` that are not pushed (see :func:`_count_unpushed`)."""
         tags = _base_tags(lambda args: self._in(wt, args, capture=True).text, [base])
-        args = ["rev-list", "--count", "HEAD", "--not", "--remotes", *tags]
+        args = _count_unpushed("HEAD", tags)
         out = self._in(wt, args, capture=True).text
         return int(out.strip() or 0)
 
@@ -586,16 +585,23 @@ def _delete_tree(path: Path) -> None:
         ) from exc
 
 
+def _count_unpushed(tip: str, tags: Sequence[str]) -> list[str]:
+    """``git rev-list`` counting ``tip``'s commits that no remote-tracking branch nor ``tags`` has.
+
+    The one rule for pushed work, shared by archive's status and remove's
+    branch check: a commit any remote has is pushed, not only ``origin``'s.
+    """
+    return ["rev-list", "--count", tip, "--not", "--remotes", *tags]
+
+
 def _git_error(exc: GitCommandError) -> GitError:
     """Map a failed git run; a branch or directory already in use is a conflict."""
     stderr = exc.stderr.lower()
     if any(marker in stderr for marker in _BRANCH_IN_USE):
-        return GitError(
-            str(exc), returncode=exc.returncode, category="conflict", hint=_BRANCH_IN_USE_HINT
-        )
+        return GitError(str(exc), category="conflict", hint=_BRANCH_IN_USE_HINT)
     if "already exists" in stderr:
-        return GitError(str(exc), returncode=exc.returncode, category="conflict", hint=_EXISTS_HINT)
-    return GitError(str(exc), returncode=exc.returncode, **attribution(exc))
+        return GitError(str(exc), category="conflict", hint=_EXISTS_HINT)
+    return GitError(str(exc), **attribution(exc))
 
 
 def _parse_status(out: str) -> tuple[str | None, str | None, int, int, int, int]:

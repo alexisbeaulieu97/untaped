@@ -14,9 +14,10 @@ explanation and its failed tasks (from job events), and, with ``evidence``,
 what shows it: the failed tasks and log tail of the responsible execution (the
 project or inventory update that failed first, else the job; a tail reads only
 the newest events), and the tasks a rerun changed. The run is compared with a
-saved baseline, or with a first pass on a baseline ref; the caller counts
-:meth:`SuiteRunOutcome.counted` toward the exit code, and a run that aborts
-counts the failures of the cases that finished before it propagates. With
+saved baseline, or with a first pass on a baseline ref; the caller reports
+:meth:`SuiteRunOutcome.deciding`, which decides the exit code, and a run that
+aborts hands the failures of the cases that finished to its ``report``
+callback before the error propagates. With
 ``hosts``, every case with a job carries its hosts' summaries; a case whose
 checks need them reads them anyway. With a :class:`Canceller`, every
 execution the run stops watching before it ends (timeout, polling error,
@@ -51,7 +52,6 @@ from typing import Any
 
 from untaped.sdk import (
     ConfigError,
-    Diagnostics,
     ErrorCategory,
     UntapedError,
     bounded_map,
@@ -198,6 +198,7 @@ class RunTestSuite:
         preflight: LaunchCheck | None = None,
         evidence: bool = True,
         hosts: bool = False,
+        report: Callable[[str | None, CaseFailure], object],
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
@@ -228,6 +229,8 @@ class RunTestSuite:
         self.cancelled = self._abandon.cancelled
         """``(kind, id)`` of executions whose cancel AWX accepted."""
         self._finals: dict[tuple[str, int], Job] = {}
+        self._report = report
+        """Reports a failure (with its ``suite/case``) that counts toward the exit code."""
 
     def __call__(
         self,
@@ -248,7 +251,8 @@ class RunTestSuite:
         suite's ``defaults.timeout``, else ``default_timeout`` (``None``: forever).
         ``scm_branch`` replaces every case's own. ``compare`` is a saved
         baseline; ``baseline`` is a ref every case runs on first, as the
-        baseline, whose environment failures then count as this run's.
+        baseline, whose environment failures then count as this run's, each
+        labelled ``suite/case (baseline)``.
         ``bindings`` binds a suite, by name, to another template than the one
         it names (a temporary copy); a pinned one gets no ``scm_branch``.
         """
@@ -262,13 +266,18 @@ class RunTestSuite:
                 outcome if compare is None else outcome.compared(compare, case_filter=case_filter)
             )
         before = run(scm_branch=baseline)
+        # Only the baseline's environment failures say something about this run.
+        carried = [
+            (f"{item} (baseline)" if item is not None else None, failure)
+            for item, failure in before.deciding()
+            if outranks_failure(failure)
+        ]
         try:
             outcome = run(scm_branch=scm_branch)
         except Exception:
-            _note(before.deciding())
+            self._note(carried)
             raise
         rows = [row.model_dump(mode="json") for row in before.results]
-        carried = [failure for failure in before.counted() if outranks_failure(failure)]
         return outcome.compared(saved_baselines(rows), case_filter=case_filter, carried=carried)
 
     def _run_pass(
@@ -301,7 +310,7 @@ class RunTestSuite:
             self._abandon.unfinished(self.known_executions())
             raise
         except Exception:
-            _note(
+            self._note(
                 (f"{row.suite}/{row.case}", row.failure)
                 for row in results.values()
                 if row.failure is not None
@@ -309,6 +318,15 @@ class RunTestSuite:
             raise
         # Indexed by declaration order, so the report ignores completion order.
         return SuiteRunOutcome(results=[results[index] for index in range(len(checked))])
+
+    def _note(self, failures: Iterable[tuple[str | None, CaseFailure]]) -> None:
+        """Report the failures of the cases that finished before the run aborted.
+
+        Each is reported with its ``suite/case`` and counts toward the exit
+        code, which the aborting error then joins.
+        """
+        for item, failure in failures:
+            self._report(item, failure)
 
     def known_executions(self) -> list[Job]:
         """Every submitted execution with its latest locally known status."""
@@ -1064,17 +1082,6 @@ def _task_checks(
     if unsure is not None:
         return unproven(unsure)
     return expect.check_failed_tasks(tasks)
-
-
-def _note(failures: Iterable[tuple[str | None, CaseFailure]]) -> None:
-    """Report the failures of the cases that finished before the run aborted.
-
-    Each prints as an ``error:`` line naming its ``suite/case`` and counts
-    toward the exit code, which the aborting error then joins.
-    """
-    diag = Diagnostics()
-    for item, failure in failures:
-        diag.failure(failure, item=item)
 
 
 def _collect_ref_sentinels(

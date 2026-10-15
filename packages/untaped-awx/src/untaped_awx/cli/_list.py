@@ -8,6 +8,7 @@ from cyclopts import App, Parameter
 from untaped.sdk import (
     ColumnsOption,
     FormatOption,
+    LimitOption,
     emit,
     raise_usage,
     report_errors,
@@ -60,9 +61,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                 negative="",
             ),
         ] = None,
-        limit: Annotated[
-            int | None, Parameter(name="--limit", help="Cap result count (0 = no limit).")
-        ] = None,
+        limit: LimitOption = None,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
         organization: OrganizationOption = None,
@@ -92,10 +91,6 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
         """List a complete selection by names, IDs, typed input, or query."""
         if with_scm and not offers_with_scm(spec):
             raise_usage(f"--with-scm is not available for {spec.cli_name}")
-        if limit is not None and limit < 0:
-            raise_usage("--limit must be non-negative")
-        # ``--limit 0`` means "no limit", as it does for ``jobs list``.
-        limit = limit or None
         with report_errors(), open_context() as ctx:
             with (
                 ctx.diag.progress(f"Loading {spec.kind}")

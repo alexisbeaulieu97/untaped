@@ -17,6 +17,7 @@ from untaped.sdk import (
     emit,
     finish,
     parse_kv_pairs,
+    resolve_text_input,
     unified_diff_text,
 )
 from untaped_recipe.application.run_hook import (
@@ -26,7 +27,6 @@ from untaped_recipe.application.run_hook import (
     ValidateHookRun,
     select_verb,
 )
-from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
@@ -293,7 +293,7 @@ def _local_hook_project(project: Path | None) -> Path | None:
 
 def _content_value(content: str | None) -> str | None:
     if content == "-":
-        return recipe_ui().stdin.read()
+        return resolve_text_input(value=None, file=None, what="content")
     return content
 
 

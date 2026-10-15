@@ -16,7 +16,7 @@ from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.cli import app
-from untaped_workspace.domain import RepoSpec, WorkspaceRecord
+from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from workspace.conftest import git
 from workspace.fakes import Listing

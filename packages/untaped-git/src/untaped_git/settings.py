@@ -15,7 +15,7 @@ class GitSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     store_dir: Path = Field(default=Path("~/.untaped/plugins/git/store"))
-    untaped_helper_first: bool = False
+    untaped_helper_only: bool = False
 
 
 def git_settings() -> GitSettings:
@@ -25,6 +25,11 @@ def git_settings() -> GitSettings:
     settings rather than receiving them from a command.
     """
     return get_config_section("git", GitSettings)
+
+
+def store_root() -> Path:
+    """The repo store's directory (``git.store_dir``, ``~`` expanded)."""
+    return git_settings().store_dir.expanduser()
 
 
 def credential_rank() -> tuple[str, ...]:

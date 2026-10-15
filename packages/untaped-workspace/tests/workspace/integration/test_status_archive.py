@@ -15,7 +15,7 @@ from untaped.testing.git import GitRemote
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.application.status import WorkspaceStatus
-from untaped_workspace.domain import RepoArg, WorkspaceRecord
+from untaped_workspace.domain.models import RepoArg, WorkspaceRecord
 from untaped_workspace.errors import WorkspaceNotFoundError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from untaped_workspace.infrastructure.catalog import RepoSources

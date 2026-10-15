@@ -810,8 +810,9 @@ class SuiteRunOutcome(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     results: Sequence[CaseResult]
-    carried: tuple[CaseFailure, ...] = ()
-    """Failures of the ``--baseline`` run that still count: its environment's."""
+    carried: tuple[tuple[str | None, CaseFailure], ...] = ()
+    """Failures of the ``--baseline`` run that still count (its environment's), each
+    with its ``suite/case (baseline)``."""
 
     def counted(self) -> list[CaseFailure]:
         """The failures that decide the exit code (none: exit 0).
@@ -830,14 +831,14 @@ class SuiteRunOutcome(BaseModel):
         ]
         if all(row.result is None for row in self.results):
             deciding.append((None, _NOTHING_RAN))
-        return [*deciding, *((None, failure) for failure in self.carried)]
+        return [*deciding, *self.carried]
 
     def compared(
         self,
         baseline: Mapping[tuple[str, str], Baseline],
         *,
         case_filter: set[str] | None,
-        carried: Iterable[CaseFailure] = (),
+        carried: Iterable[tuple[str | None, CaseFailure]] = (),
     ) -> SuiteRunOutcome:
         """Every row with its ``baseline`` and ``change``, then the ``removed`` baseline cases.
 

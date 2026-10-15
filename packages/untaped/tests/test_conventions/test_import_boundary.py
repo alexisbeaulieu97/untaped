@@ -249,6 +249,12 @@ def test_the_testing_module_is_public(boundary: Boundary) -> None:
     assert check("demo") == []
 
 
+def test_every_sdk_module_is_public(boundary: Boundary) -> None:
+    source = "from untaped.testing.git import git_remote\nfrom untaped.testing import git\n"
+    check = boundary(cap("demo", files={"testing.py": source}))
+    assert check("demo") == []
+
+
 def test_an_api_import_needs_a_declared_dependency(boundary: Boundary) -> None:
     check = boundary(
         cap("other", files={"api.py": "x = 1\n"}),

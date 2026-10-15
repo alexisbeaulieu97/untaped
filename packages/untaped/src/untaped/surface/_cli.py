@@ -6,7 +6,8 @@ carries what a caller must pass (required positionals in order, then required
 options sorted); every optional positional, option, alias, negative flag and
 choice has a line of its own, so adding one adds a line. Flattened dataclass
 parameters are containers: their fields are the options. Hidden commands and
-parameters are skipped unless deprecated or listed in
+parameters are skipped unless deprecated (a hidden flag whose help starts
+``Deprecated:`` counts) or listed in
 :data:`~untaped.surface._lists.WRITTEN_OUTSIDE`. Defaults are the declared
 ones, never a value settings would supply at run time.
 """
@@ -107,6 +108,7 @@ def _command(app: App, path: tuple[str, ...], mark: MarkName | None) -> Iterator
     required: list[str] = []
     position = 0
     for argument in _arguments(app, " ".join(path)):
+        own: MarkName | None = "deprecated" if _hand_deprecated(argument) else mark
         if argument.field_info.kind in _POSITIONAL:
             position += 1
             main = _positional_name(argument)
@@ -115,15 +117,15 @@ def _command(app: App, path: tuple[str, ...], mark: MarkName | None) -> Iterator
                 positionals.append(name)
             else:
                 default = _default(argument.field_info.default)
-                yield Line(f"{subject} [{name}]@{position} default={default}", mark)
-            yield from _spellings(f"{subject} {main}", argument, mark, main=main)
+                yield Line(f"{subject} [{name}]@{position} default={default}", own)
+            yield from _spellings(f"{subject} {main}", argument, own, main=main)
             continue
         if argument.required:
             main = _positive_names(argument)[0]
             required.append(f"{main} {'VALUE...' if _many(argument) else 'VALUE'}")
-            yield from _spellings(f"{subject} {main}", argument, mark, main=main)
+            yield from _spellings(f"{subject} {main}", argument, own, main=main)
             continue
-        yield from _option(subject, argument, mark)
+        yield from _option(subject, argument, own)
     yield Line(" ".join([subject, *positionals, *sorted(required)]), mark)
 
 
@@ -134,12 +136,19 @@ def _arguments(app: App, where: str) -> Iterator[Any]:
         kind = argument.field_info.kind
         if kind is inspect.Parameter.VAR_KEYWORD:
             raise SurfaceError(f"{where}: **kwargs parameters have no command-line spelling")
-        visible = argument.show or any(
-            f"{where} {name}" in WRITTEN_OUTSIDE for name in argument.names
+        visible = (
+            argument.show
+            or _hand_deprecated(argument)
+            or any(f"{where} {name}" in WRITTEN_OUTSIDE for name in argument.names)
         )
         if not visible or not argument.parse:
             continue
         yield argument
+
+
+def _hand_deprecated(argument: Any) -> bool:
+    """A flag deprecated without a new spelling: hidden, its help starting ``Deprecated:``."""
+    return not argument.show and (argument.parameter.help or "").startswith("Deprecated:")
 
 
 def _positional_name(argument: Any) -> str:

@@ -12,12 +12,12 @@ from pathlib import Path
 
 from untaped.sdk import GitCommandError, attribution, run_git
 from untaped_git.domain.hosts import HostAuth
-from untaped_git.domain.url import https_origin, store_key
+from untaped_git.domain.url import store_key
 from untaped_git.errors import GitError
 from untaped_git.infrastructure.store import (
     ATTEMPTS,
     TIMEOUT,
-    credential_config,
+    host_config,
     parse_symref,
     record_default_branch,
 )
@@ -68,15 +68,7 @@ def _ls_remote(
         raise GitError(
             f"could not create repo store directory {root}: {exc.strerror or exc}", system="local"
         ) from exc
-    host = auth(url)
-    origin = https_origin(url)
-    secret: dict[str, str] = {}
-    config: dict[str, str] = {}
-    if host is not None and origin is not None:
-        if host.credential is not None:
-            secret = credential_config(origin, host.credential)
-        if host.proxy:
-            config[f"http.{origin}/.proxy"] = host.proxy
+    secret, config = host_config(url, auth(url))
     try:
         result = run_git(
             ["ls-remote", *args],

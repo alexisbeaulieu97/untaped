@@ -1,10 +1,16 @@
 name: Release
 
-# A pushed v* tag publishes to PyPI and creates the GitHub release; a manual
-# dispatch (on any ref, a tag included) runs the same build as a TestPyPI
-# rehearsal. The checks live in scripts/release.py.
+# A push to main that changes the package version releases it to PyPI once
+# the pypi environment is approved, then tags the built commit and creates the
+# GitHub release. A pushed v* tag on main releases too, as the fallback. A
+# manual dispatch (on any ref, a tag included) runs the same build as a
+# TestPyPI rehearsal. `scripts/release.py route` decides; the checks live in
+# scripts/release.py too.
 "on":
   push:
+    branches: [main]
+    # Path filters are not evaluated for tag pushes.
+    paths: [packages/untaped/pyproject.toml]
     tags: ["v*"]
   workflow_dispatch: {}
 
@@ -16,13 +22,56 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The one routing decision. Later jobs read its outputs: version, index
+  # (pypi, testpypi or none) and tag (empty unless index is pypi).
+  route:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.route.outputs.version }}
+      index: ${{ steps.route.outputs.index }}
+      tag: ${{ steps.route.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          # route reads the version at the push's before commit.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+        with:
+          version: "0.11.26"
+          enable-cache: true
+
+      - name: Sync the locked environment
+        run: uv sync --locked
+
+      # The outputs are written only once route succeeded; the reason goes
+      # to the log and the job summary too.
+      - name: Route
+        id: route
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          BEFORE: ${{ github.event.before }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          uv run --no-sync python scripts/release.py route --event "$EVENT_NAME" --ref-type "$REF_TYPE" --ref-name "$REF_NAME" --repository "$REPOSITORY" --before "$BEFORE" > route.txt
+          tee -a "$GITHUB_OUTPUT" < route.txt
+          grep '^reason=' route.txt | cut -d= -f2- >> "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: route
+    if: needs.route.outputs.index != 'none'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      production: ${{ steps.route.outputs.production }}
-      index: ${{ steps.route.outputs.index }}
+    env:
+      VERSION: ${{ needs.route.outputs.version }}
+      INDEX: ${{ needs.route.outputs.index }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -41,37 +90,6 @@ jobs:
 
       - name: Reproducible build timestamp
         run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
-
-      # The one routing decision: only a pushed tag is production (PyPI and
-      # the GitHub release); a dispatch, even on a tag, is a TestPyPI
-      # rehearsal. Later steps read PRODUCTION and INDEX, later jobs the
-      # build outputs.
-      - name: Route
-        id: route
-        env:
-          PRODUCTION: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
-        run: |
-          set -euo pipefail
-          if [ "$PRODUCTION" = true ]; then index=pypi; else index=testpypi; fi
-          echo "PRODUCTION=$PRODUCTION" >> "$GITHUB_ENV"
-          echo "INDEX=$index" >> "$GITHUB_ENV"
-          echo "production=$PRODUCTION" >> "$GITHUB_OUTPUT"
-          echo "index=$index" >> "$GITHUB_OUTPUT"
-
-      - name: Release version
-        id: version
-        env:
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [ "$PRODUCTION" = true ]; then
-            # --tag also fails unless the tagged commit is on main.
-            version="$(uv run --no-sync python scripts/release.py version --tag "$REF_NAME")"
-          else
-            version="$(uv run --no-sync python scripts/release.py version)"
-          fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Check versions and pins
         run: uv run --no-sync python scripts/release.py check "$VERSION"
@@ -127,10 +145,10 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [route, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: ${{ needs.build.outputs.index }}
+    environment: ${{ needs.route.outputs.index }}
     permissions:
       id-token: write
     steps:
@@ -141,7 +159,7 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
-        if: needs.build.outputs.production == 'true'
+        if: needs.route.outputs.index == 'pypi'
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
         with:
           packages-dir: dist/
@@ -150,7 +168,7 @@ jobs:
           attestations: true
 
       - name: Publish to TestPyPI
-        if: needs.build.outputs.production != 'true'
+        if: needs.route.outputs.index != 'pypi'
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
         with:
           packages-dir: dist/
@@ -160,12 +178,12 @@ jobs:
           attestations: true
 
   verify:
-    needs: [build, publish]
+    needs: [route, build, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      VERSION: ${{ needs.build.outputs.version }}
-      INDEX: ${{ needs.build.outputs.index }}
+      VERSION: ${{ needs.route.outputs.version }}
+      INDEX: ${{ needs.route.outputs.index }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -224,16 +242,19 @@ jobs:
           done
           uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/published/bin/untaped" "$VERSION"
 
-  github-release:
-    needs: [build, verify]
-    if: needs.build.outputs.production == 'true'
+  # The tag comes after verify, so it marks what PyPI holds, and before the
+  # GitHub release, which needs it. A tag created with the GITHUB_TOKEN
+  # starts no second run.
+  release:
+    needs: [route, verify]
+    if: needs.route.outputs.index == 'pypi'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     env:
-      TAG: ${{ github.ref_name }}
-      VERSION: ${{ needs.build.outputs.version }}
+      TAG: ${{ needs.route.outputs.tag }}
+      VERSION: ${{ needs.route.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -260,6 +281,11 @@ jobs:
         with:
           name: release-notes
           path: .
+
+      - name: Tag the built commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-sync python scripts/release.py tag "$TAG" --repo "$GITHUB_REPOSITORY"
 
       - name: Draft, attach, then publish the GitHub release
         env:

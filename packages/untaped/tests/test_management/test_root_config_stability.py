@@ -317,7 +317,6 @@ def test_the_registry_holds_the_composed_sections_and_their_marks() -> None:
     assert setting_stability("beta.size") == "experimental"
     assert setting_stability("trial.probe") == "experimental"
     assert setting_stability("trial.steady") == "stable"
-    assert setting_stability("shell.aliases") == "deprecated"
 
 
 def _doctor_detail() -> str:

@@ -1,6 +1,6 @@
-"""Per-invocation tool execution context.
+"""Per-invocation command context.
 
-``app_context()`` hands a tool a context that resolves each settings section
+``app_context()`` hands a command a context that resolves each settings section
 lazily, at most once, the first time it is accessed. Only the sections a
 command actually reads are validated, so an invalid value in one plugin's
 section never breaks another plugin's commands. Profile (or any other
@@ -32,7 +32,7 @@ from untaped.ui import UiContext, ui_context
 
 @dataclass(frozen=True)
 class AppContext:
-    """Lazily resolved settings plus typed accessors handed to a tool command."""
+    """Lazily resolved settings plus typed accessors handed to a command."""
 
     settings_model: type[Settings] = field(default_factory=get_settings_model)
     _resolved: dict[str, Any] = field(default_factory=dict, init=False, repr=False, compare=False)

@@ -1,12 +1,16 @@
-"""Release checks for the tag-triggered workflow (``.github/workflows/release.yml``).
+"""Release checks and steps for the release workflow (``.github/workflows/release.yml``).
 
 Usage: ``uv run python scripts/release.py [--root DIR] <command> ...``. Each
 subcommand is one step of the workflow:
 
-- ``version [--tag TAG]`` prints the ``untaped`` package's version (the
-  version step, before the value reaches ``$GITHUB_ENV``); with ``--tag`` (a
-  production release) it first checks that TAG is ``v<version>`` and that
-  HEAD is on ``origin/main``, fetching ``main`` to know.
+- ``route --event E --ref-type T --ref-name N --repository OWNER/REPO
+  [--before SHA]`` decides what a run does and prints ``version``, ``index``
+  (``pypi``, ``testpypi`` or ``none``), ``tag`` and ``reason`` as
+  ``key=value`` lines for ``$GITHUB_OUTPUT``: a push to ``main`` that changes
+  the version releases it, a pushed ``v*`` tag on ``main`` releases (the
+  fallback), a dispatch is a TestPyPI rehearsal, and anything else on
+  ``main`` or in a fork publishes nothing.
+- ``version`` prints the ``untaped`` package's version (CI's wheel jobs).
 - ``readmes VERSION`` rewrites, in the checkout, each package README's
   ``blob/main`` and ``tree/main`` links into this repository to ``vVERSION``
   (just before the build), so a release's PyPI page keeps describing that
@@ -27,15 +31,21 @@ subcommand is one step of the workflow:
   are exactly the expected ones ready (default: every first-party entry point)
   and the quarantined ones quarantined, every ``--help``, and with
   ``--skills`` each expected plugin's packaged ``SKILL.md``.
+- ``tag TAG --repo OWNER/REPO`` creates the annotated tag TAG on the
+  checkout's commit once PyPI has the verified files, or confirms it is
+  already there; a ``v*`` tag on another commit is an error, since tags never
+  move.
 - ``github-release VERSION --tag TAG --repo OWNER/REPO --dist DIR --notes FILE``
-  creates, completes or verifies the GitHub release (the last job).
+  creates, completes or verifies the GitHub release (the last step).
 
-Every failure prints one line per error on stderr and exits 1.
+Every failure prints one line per error on stderr, nothing on stdout, and
+exits 1.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import functools
 import hashlib
 import json
@@ -67,6 +77,13 @@ INDEX_URLS = {
 }
 #: This repository on GitHub; links into it are ``REPO_URL/<kind>/<ref>/...``.
 REPO_URL = "https://github.com/alexisbeaulieu97/untaped"
+#: The one repository whose release runs publish; a fork's runs route to ``none``.
+PUBLISHING_REPOSITORY = REPO_URL.removeprefix("https://github.com/")
+#: The identity on the tags the release run creates (``tag``).
+TAGGER = {
+    "name": "github-actions[bot]",
+    "email": "41898282+github-actions[bot]@users.noreply.github.com",
+}
 #: A ``blob/main`` or ``tree/main`` link into this repository; group 1 is all before ``/main``.
 MAIN_LINK = re.compile(rf"({re.escape(REPO_URL)}/(?:blob|tree))/main(?![\w-])")
 #: ``index --complete`` retries this often, this many seconds apart (about 2 minutes).
@@ -99,14 +116,8 @@ def _member_dirs(root: Path) -> list[Path]:
     )
 
 
-def packages(root: Path) -> dict[str, dict[str, Any]]:
-    """``{canonical name: [project] table}`` for every package in the repo.
-
-    The root ``[project]`` (if any) plus each directory matched by
-    ``[tool.uv.workspace].members`` minus ``exclude`` that has a
-    ``pyproject.toml`` with ``[project]``. Raises ``ReleaseError`` on a
-    duplicate canonical name.
-    """
+def _package_dirs(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
+    """``{canonical name: (directory, [project] table)}``; see ``packages``."""
     found: dict[str, tuple[Path, dict[str, Any]]] = {}
     for directory in [root, *_member_dirs(root)]:
         project = _pyproject(directory).get("project")
@@ -117,6 +128,18 @@ def packages(root: Path) -> dict[str, dict[str, Any]]:
             dirs = sorted(str(d.relative_to(root)) for d in (found[name][0], directory))
             raise ReleaseError(f"two packages are named {name}: {', '.join(dirs)}")
         found[name] = (directory, project)
+    return found
+
+
+def packages(root: Path) -> dict[str, dict[str, Any]]:
+    """``{canonical name: [project] table}`` for every package in the repo.
+
+    The root ``[project]`` (if any) plus each directory matched by
+    ``[tool.uv.workspace].members`` minus ``exclude`` that has a
+    ``pyproject.toml`` with ``[project]``. Raises ``ReleaseError`` on a
+    duplicate canonical name.
+    """
+    found = _package_dirs(root)
     return {name: found[name][1] for name in sorted(found)}
 
 
@@ -137,24 +160,39 @@ def release_version(root: Path) -> str:
     return version
 
 
-def tagged_version(root: Path, tag: str) -> str:
-    """``release_version``, after checking that ``tag`` is ``v<version>``."""
-    version = release_version(root)
-    if tag != f"v{version}":
-        raise ReleaseError(f"tag {tag} does not match the package version {version}")
-    return version
+def _toplevel(root: Path) -> Path:
+    """The checkout holding ``root``; ``ReleaseError`` outside one."""
+    try:
+        top = git_toplevel(root)
+    except GitCommandError as exc:
+        raise ReleaseError(str(exc)) from exc
+    if top is None:
+        raise ReleaseError(f"{root} is not a git checkout")
+    return top
+
+
+def _head(top: Path) -> str:
+    """The commit checked out in ``top`` (a tag's commit, never the tag object)."""
+    return run_git(["rev-parse", "HEAD^{commit}"], cwd=top, timeout=30, capture=True).text.strip()
+
+
+def head_commit(root: Path) -> str:
+    """``_head`` of the checkout holding ``root``."""
+    top = _toplevel(root)
+    try:
+        return _head(top)
+    except GitCommandError as exc:
+        raise ReleaseError(str(exc)) from exc
 
 
 def check_on_main(root: Path) -> None:
     """Fetch ``origin``'s ``main`` and fail unless HEAD is on it (an ancestor or its tip)."""
+    top = _toplevel(root)
     try:
-        top = git_toplevel(root)
-        if top is None:
-            raise ReleaseError(f"{root} is not a git checkout")
         run_git(
             ["fetch", "--no-tags", "origin", "main"], cwd=top, timeout=120, retry_transient=True
         )
-        head = run_git(["rev-parse", "HEAD"], cwd=top, timeout=30, capture=True).text.strip()
+        head = _head(top)
         ancestor = run_git(
             ["merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"], cwd=top, timeout=30, check=False
         )
@@ -203,6 +241,126 @@ def version_errors(found: dict[str, dict[str, Any]], version: str) -> list[str]:
             errors.append(f"{name} is at {project.get('version')}, not {version}")
         errors += _pin_errors(name, project, set(found), version)
     return errors
+
+
+# --- routing ----------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class Route:
+    """What a release run does: ``route``'s answer, one ``key=value`` output each."""
+
+    version: str
+    #: ``pypi``, ``testpypi``, or ``none`` (nothing is built or published).
+    index: str
+    #: ``vVERSION`` for ``pypi``; empty otherwise.
+    tag: str
+    reason: str
+
+    def lines(self) -> str:
+        """The ``key=value`` lines for ``$GITHUB_OUTPUT``."""
+        return "".join(f"{key}={value}\n" for key, value in dataclasses.asdict(self).items())
+
+
+def route(
+    root: Path, *, event: str, ref_type: str, ref_name: str, repository: str, before: str
+) -> Route:
+    """Decide what the release run started by this event does.
+
+    A fork publishes nothing; a dispatch is a TestPyPI rehearsal; a pushed
+    ``v<version>`` tag on ``main`` releases; a push to ``main`` releases
+    when it changed the version (``_route_main``). Anything else is an error.
+    The version is read and checked first, whatever the event.
+    """
+    version = release_version(root)
+    if repository != PUBLISHING_REPOSITORY:
+        reason = f"{repository} is not the publishing repository: nothing to publish"
+        return Route(version, "none", "", reason)
+    match event, ref_type, ref_name:
+        case "workflow_dispatch", _, _:
+            return Route(version, "testpypi", "", "rehearsal: TestPyPI only")
+        case "push", "tag", _:
+            if ref_name != f"v{version}":
+                raise ReleaseError(f"tag {ref_name} does not match the package version {version}")
+            check_on_main(root)
+            return Route(version, "pypi", ref_name, f"{ref_name} is on main: releasing {version}")
+        case "push", "branch", "main":
+            return _route_main(root, version, before)
+    raise ReleaseError(f"nothing releases from a {event} of {ref_type} {ref_name}")
+
+
+def _route_main(root: Path, version: str, before: str) -> Route:
+    """A push to ``main``: release the version this push introduced, once.
+
+    The tag already at HEAD (a re-run, or a hand-pushed tag on this commit)
+    releases again, idempotently. Otherwise only a version this push changed
+    (compared with ``before``) releases, and only while its tag is absent.
+    """
+    tag = f"v{version}"
+    top = _toplevel(root)
+    try:
+        head = _head(top)
+        tagged = _remote_tag_commit(top, tag)
+        if tagged == head:
+            reason = (
+                f"{tag} is already at this commit (a re-run or a hand tag): releasing {version}"
+            )
+            return Route(version, "pypi", tag, reason)
+        previous = _version_at(root, top, before)
+    except GitCommandError as exc:
+        raise ReleaseError(str(exc)) from exc
+    if previous == version:
+        untagged = "" if tagged else " and not released yet"
+        reason = f"{version} is unchanged by this push{untagged}: nothing to publish"
+        return Route(version, "none", "", reason)
+    if tagged:
+        reason = f"{tag} already points at {tagged[:7]}, not this commit: nothing to publish"
+        return Route(version, "none", "", reason)
+    since = "is new" if previous is None else f"replaces {previous} at {before[:7]}"
+    return Route(version, "pypi", tag, f"{version} {since} and has no tag yet: releasing it")
+
+
+def _remote_tag_commit(top: Path, tag: str) -> str | None:
+    """The commit ``origin``'s ``refs/tags/<tag>`` names, or None when it has no such tag.
+
+    An annotated tag lists a second, peeled ``^{}`` line naming its commit;
+    a lightweight tag's only line already names it.
+    """
+    ref = f"refs/tags/{tag}"
+    listed = run_git(
+        ["ls-remote", "--tags", "origin", ref, f"{ref}^{{}}"],
+        cwd=top,
+        timeout=60,
+        capture=True,
+        retry_transient=True,
+    )
+    shas = {name: sha for sha, name in (line.split("\t", 1) for line in listed.text.splitlines())}
+    return shas.get(f"{ref}^{{}}", shas.get(ref))
+
+
+def _version_at(root: Path, top: Path, before: str) -> str | None:
+    """The ``untaped`` package's version at commit ``before``.
+
+    None when ``before`` is all zeros (a branch's first push) or the package
+    file did not exist there. A ``before`` the checkout lacks is an error.
+    """
+    if not before:
+        raise ReleaseError("a push to main needs --before")
+    if set(before) == {"0"}:
+        return None
+    directory = _package_dirs(root)["untaped"][0]
+    path = (directory / "pyproject.toml").resolve().relative_to(top).as_posix()
+    if run_git(
+        ["cat-file", "-e", f"{before}^{{commit}}"], cwd=top, timeout=30, check=False
+    ).returncode:
+        raise ReleaseError(f"commit {before} is not in this checkout")
+    shown = run_git(["show", f"{before}:{path}"], cwd=top, timeout=30, capture=True, check=False)
+    if shown.returncode:
+        return None
+    try:
+        return str(tomllib.loads(shown.text).get("project", {}).get("version"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ReleaseError(f"{path} at {before} is not valid TOML: {exc}") from exc
 
 
 # --- artifacts --------------------------------------------------------------
@@ -550,19 +708,101 @@ def _names(value: str) -> list[str]:
     return [name.strip() for name in value.split(",") if name.strip()]
 
 
+# --- gh ---------------------------------------------------------------------
+
+
+def _gh_list(gh: Gh, path: str, what: str) -> list[dict[str, Any]]:
+    """Every item of the paginated GitHub list at ``path``; ``ReleaseError`` naming ``what``.
+
+    ``--jq '.[]'`` prints one item per line on every page (``--slurp`` needs gh 2.48+).
+    """
+    result = gh("api", "--paginate", "--jq", ".[]", path)
+    if result.returncode:
+        raise ReleaseError(f"could not list {what}: {(result.stdout + result.stderr).strip()}")
+    return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+
+
+def _gh_json(gh: Gh, *args: str) -> Any:
+    """``gh api ARGS``'s JSON; ``ReleaseError`` on a non-zero exit."""
+    result = gh("api", *args)
+    if result.returncode:
+        output = (result.stdout + result.stderr).strip()
+        raise ReleaseError(f"gh api {args[-1]} failed: {output}")
+    return json.loads(result.stdout)
+
+
+# --- tag --------------------------------------------------------------------
+
+
+def _tag_commit(tag: str, repo: str, gh: Gh) -> str | None:
+    """The commit ``repo``'s tag ``tag`` names, or None when it has no such tag.
+
+    ``matching-refs`` matches by prefix (``v11.0.0`` lists ``v11.0.0rc1``
+    too), so only the exact ref counts. A lone ``GET git/ref`` would not
+    tell a 404 from any other failure.
+    """
+    refs = _gh_list(gh, f"repos/{repo}/git/matching-refs/tags/{tag}", "tags")
+    target = next((ref["object"] for ref in refs if ref.get("ref") == f"refs/tags/{tag}"), None)
+    while target is not None and target["type"] == "tag":
+        target = _gh_json(gh, f"repos/{repo}/git/tags/{target['sha']}")["object"]
+    return None if target is None else str(target["sha"])
+
+
+def _post_tag(tag: str, repo: str, head: str, gh: Gh) -> str | None:
+    """Create the annotated tag object and its ref: None, or why the ref already exists."""
+    fields = {
+        "tag": tag,
+        "message": f"untaped {tag.removeprefix('v')}",
+        "object": head,
+        "type": "commit",
+        **{f"tagger[{key}]": value for key, value in TAGGER.items()},
+    }
+    flags = [arg for key, value in fields.items() for arg in ("-f", f"{key}={value}")]
+    made = _gh_json(gh, "--method", "POST", *flags, f"repos/{repo}/git/tags")
+    ref = ["-f", f"ref=refs/tags/{tag}", "-f", f"sha={made['sha']}"]
+    result = gh("api", "--method", "POST", *ref, f"repos/{repo}/git/refs")
+    output = (result.stdout + result.stderr).strip()
+    if not result.returncode:
+        return None
+    if "Reference already exists" in output:
+        return output
+    raise ReleaseError(f"gh api repos/{repo}/git/refs failed: {output}")
+
+
+def create_tag(tag: str, repo: str, head: str, *, gh: Gh) -> str:
+    """Tag ``head`` as ``tag`` in ``repo`` (annotated, ``TAGGER``) unless it already is.
+
+    Returns the line to print. A tag on another commit is an error: the
+    ``v*`` ruleset forbids moving one. Losing a creation race to another run
+    (the ref already exists) re-reads the tag once and judges it the same way.
+    """
+    if not tag.startswith("v") or _format_errors(tag[1:]):
+        raise ReleaseError(f"tag {tag} is not v followed by a release version")
+    found = _tag_commit(tag, repo, gh)
+    if found is None:
+        conflict = _post_tag(tag, repo, head, gh)
+        if conflict is None:
+            return f"tagged {tag} at {head}"
+        found = _tag_commit(tag, repo, gh)
+        if found is None:
+            raise ReleaseError(f"could not create {tag}: {conflict}")
+    if found != head:
+        raise ReleaseError(
+            f"{tag} points at {found}, not the built commit {head}; v* tags cannot move: "
+            "release a patch version, or delete the wrong tag with the ruleset relaxed and re-run"
+        )
+    return f"{tag} already at {head}"
+
+
 # --- GitHub release ---------------------------------------------------------
 
 
 def _read_release(tag: str, repo: str, gh: Gh) -> dict[str, Any] | None:
     """The release for ``tag``, drafts included, or None when there is none.
 
-    It lists releases because ``releases/tags/<tag>`` hides drafts. ``--jq '.[]'``
-    prints one release per line on every page (``--slurp`` needs gh 2.48+).
+    It lists releases because ``releases/tags/<tag>`` hides drafts.
     """
-    result = gh("api", "--paginate", "--jq", ".[]", f"repos/{repo}/releases")
-    if result.returncode:
-        raise ReleaseError(f"could not list releases: {(result.stdout + result.stderr).strip()}")
-    releases = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    releases = _gh_list(gh, f"repos/{repo}/releases", "releases")
     matches = [release for release in releases if release.get("tag_name") == tag]
     if len(matches) > 1:
         raise ReleaseError(f"{len(matches)} releases are tagged {tag}")
@@ -638,8 +878,13 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=REPO_ROOT, help="repository root")
     commands = parser.add_subparsers(dest="command", required=True)
-    version = commands.add_parser("version", help="print the untaped package's version")
-    version.add_argument("--tag", help="fail unless TAG is v<version> and HEAD is on main")
+    route_ = commands.add_parser("route", help="decide what a release run does")
+    route_.add_argument("--event", required=True, help="github.event_name")
+    route_.add_argument("--ref-type", required=True, help="github.ref_type")
+    route_.add_argument("--ref-name", required=True, help="github.ref_name")
+    route_.add_argument("--repository", required=True, help="github.repository (OWNER/REPO)")
+    route_.add_argument("--before", default="", help="github.event.before (push to main only)")
+    commands.add_parser("version", help="print the untaped package's version")
     readmes = commands.add_parser("readmes", help="point package README links at vVERSION")
     readmes.add_argument("version")
     check = commands.add_parser("check", help="check versions, pins and (with --dist) artifacts")
@@ -666,6 +911,9 @@ def _parser() -> argparse.ArgumentParser:
     smoke.add_argument(
         "--skills", action="store_true", help="check each expected plugin's packaged skill"
     )
+    tag = commands.add_parser("tag", help="tag the checkout's commit, or confirm the tag is there")
+    tag.add_argument("tag")
+    tag.add_argument("--repo", required=True)
     github = commands.add_parser("github-release", help="create or verify the GitHub release")
     github.add_argument("version")
     github.add_argument("--tag", required=True)
@@ -709,12 +957,18 @@ def _smoke(root: Path, args: argparse.Namespace) -> list[str]:
 def _dispatch(args: argparse.Namespace) -> list[str]:
     root: Path = args.root
     match args.command:
-        case "version" if args.tag is None:
-            print(release_version(root))
+        case "route":
+            decided = route(
+                root,
+                event=args.event,
+                ref_type=args.ref_type,
+                ref_name=args.ref_name,
+                repository=args.repository,
+                before=args.before,
+            )
+            print(decided.lines(), end="")
         case "version":
-            version = tagged_version(root, args.tag)
-            check_on_main(root)
-            print(version)
+            print(release_version(root))
         case "readmes":
             changed = pin_readmes(root, args.version)
             print(f"pinned README links to v{args.version} in {changed} file(s)")
@@ -727,6 +981,9 @@ def _dispatch(args: argparse.Namespace) -> list[str]:
             return _index(root, args)
         case "smoke":
             return _smoke(root, args)
+        case "tag":
+            gh = functools.partial(_run, "gh")
+            print(create_tag(args.tag, args.repo, head_commit(root), gh=gh))
         case "github-release":
             gh = functools.partial(_run, "gh")
             publish_github_release(args.version, args.tag, args.repo, args.dist, args.notes, gh=gh)

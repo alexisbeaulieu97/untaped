@@ -177,7 +177,7 @@ def _label(kind: str, id_: int | None, name: str | None) -> str:
 
 
 def _confirm(ctx: AwxContext, *, verb: str, count: int, yes: bool) -> None:
-    ctx.progress_ui().confirm_or_cancel(
+    ctx.ui().confirm_or_cancel(
         f"{verb.capitalize()} {plural(count, 'job')}?",
         assume_yes=yes,
         refusal=f"{verb} requires --yes or --dry-run when not interactive",

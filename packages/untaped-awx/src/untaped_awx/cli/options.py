@@ -87,10 +87,12 @@ AllOption = Annotated[
 ParentOption = Annotated[
     str | None, Parameter(name="--parent", help="Scope to the parent resource name.")
 ]
-ContinueOption = Annotated[
+FailFastOption = Annotated[
     bool,
     Parameter(
-        name="--continue-on-error", negative="", help="Continue scheduling after a runtime failure."
+        name="--fail-fast",
+        negative="",
+        help="Stop scheduling after the first runtime failure; the rest are skipped.",
     ),
 ]
 ParallelOption = Annotated[
@@ -144,8 +146,8 @@ __all__ = [
     "AllOption",
     "ByIdOption",
     "CancelOption",
-    "ContinueOption",
     "DryRunOption",
+    "FailFastOption",
     "FilterOption",
     "FollowOption",
     "InventoryOption",

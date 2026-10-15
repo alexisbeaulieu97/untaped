@@ -27,8 +27,9 @@ fail instead (``--pinentry-mode=error``, see :func:`pass_gpg_options`),
 unless the user chose a pinentry mode themselves, and the error says how to
 unlock the store from a terminal.
 
-A token stored in plain text in the config file is deprecated: using one
-warns once per section per process and points at ``untaped auth migrate``.
+A token stored in plain text in the config file is deprecated and will be
+removed in 12.0: using one warns once per section per process and points at
+``untaped auth migrate``.
 """
 
 from __future__ import annotations
@@ -368,12 +369,13 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     if not takes_token_command(type(settings)) or token_override_env(section) is not None:
         return
     from untaped.deprecated_keys import warn_once  # noqa: PLC0415 - keep auth imports light
-    from untaped.messages import hint  # noqa: PLC0415
+    from untaped.messages import run_hint  # noqa: PLC0415
 
     warn_once(
-        f"{section}.token is stored in plain text in the config file, which is deprecated\n"
-        f"{hint('auth migrate')}",
+        f"{section}.token is stored in plain text in the config file,"
+        " which is deprecated and will be removed in 12.0",
         key=f"plaintext {section}.token",
+        hint=run_hint("auth migrate"),
     )
 
 

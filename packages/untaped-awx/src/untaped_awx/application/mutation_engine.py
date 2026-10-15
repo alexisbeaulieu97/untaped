@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any, Literal
 
-from untaped.sdk import ErrorCategory, Failure, UntapedError
+from untaped.sdk import Failure
 from untaped_awx.application.apply_field_diff import FieldDiff
 from untaped_awx.application.apply_membership import (
     MembershipReconciler,
@@ -30,6 +30,7 @@ from untaped_awx.application.mutation_planning import (
     MutationPlanner,
     record_id_of,
 )
+from untaped_awx.application.mutation_refs import tokens_in
 from untaped_awx.application.mutation_types import (
     DeferredReference,
     MutationPlan,
@@ -45,9 +46,10 @@ from untaped_awx.application.ports import (
     WorkflowNodeRepository,
 )
 from untaped_awx.application.prepared_body import BodyOperations
-from untaped_awx.application.scheduling import Schedule
+from untaped_awx.application.scheduling import Schedule, dooms_batch
 from untaped_awx.application.selection import SelectedResource
 from untaped_awx.domain import ApplyOutcome, BatchResult, Resource, ResourceSpec
+from untaped_awx.domain.outcomes import FAIL_FAST_ACTIONS, UNFINISHED_ACTIONS
 from untaped_awx.domain.payloads import as_dict
 from untaped_awx.errors import (
     AwxApiError,
@@ -145,7 +147,7 @@ class BatchMutationEngine:
         self,
         plan: MutationPlan,
         *,
-        continue_on_error: bool = False,
+        fail_fast: bool = False,
         parallel: int = 1,
     ) -> BatchResult:
         """Recheck and execute a prepared plan.
@@ -157,7 +159,6 @@ class BatchMutationEngine:
         """
         if parallel < 1:
             raise BadRequestError("parallel must be at least 1")
-        parallel = min(parallel, 10)
         bindings: dict[str, int] = {}
         conflicts, errors = self._preflight_conflicts(plan)
         if conflicts:
@@ -181,18 +182,14 @@ class BatchMutationEngine:
 
         outcomes, aborted = self._execute_bodies(
             plan,
-            continue_on_error=continue_on_error,
+            fail_fast=fail_fast,
             parallel=parallel,
             bindings=bindings,
         )
-        self._execute_memberships(
-            plan, outcomes, bindings, continue_on_error=continue_on_error and not aborted
-        )
-        self._execute_graphs(
-            plan, outcomes, bindings, continue_on_error=continue_on_error and not aborted
-        )
+        self._execute_memberships(plan, outcomes, bindings, fail_fast=fail_fast or aborted)
+        self._execute_graphs(plan, outcomes, bindings, fail_fast=fail_fast or aborted)
         partial = any(
-            outcome.action in {"failed", "partial"} or outcome.partial for outcome in outcomes
+            outcome.action in FAIL_FAST_ACTIONS or outcome.partial for outcome in outcomes
         )
         return BatchResult(outcomes=outcomes, partial=partial)
 
@@ -202,14 +199,14 @@ class BatchMutationEngine:
         *,
         mode: MutationMode = "apply",
         write: bool = False,
-        continue_on_error: bool = False,
+        fail_fast: bool = False,
         parallel: int = 1,
     ) -> BatchResult:
         """Convenience wrapper retaining preview-by-default behaviour."""
         plan = self.prepare(resources, mode=mode)
         if not write:
             return BatchResult(outcomes=[operation.preview for operation in plan.operations])
-        return self.execute(plan, continue_on_error=continue_on_error, parallel=parallel)
+        return self.execute(plan, fail_fast=fail_fast, parallel=parallel)
 
     def _preflight_conflicts(self, plan: MutationPlan) -> tuple[dict[int, str], dict[int, Failure]]:
         """Each conflicting operation's detail, and the error of a failed re-read."""
@@ -280,7 +277,7 @@ class BatchMutationEngine:
         self,
         plan: MutationPlan,
         *,
-        continue_on_error: bool,
+        fail_fast: bool,
         parallel: int,
         bindings: dict[str, int],
     ) -> tuple[list[ApplyOutcome], bool]:
@@ -305,15 +302,12 @@ class BatchMutationEngine:
                 )
             if outcome.id is not None and operation.create and outcome.action == "created":
                 bindings[f"planned:{index}"] = outcome.id
-            if outcome.action in {"failed", "partial"} and not continue_on_error:
+            if outcome.action in FAIL_FAST_ACTIONS and fail_fast:
                 schedule.stop()
             return outcome
 
         def blocked(index: int, dependencies: list[ApplyOutcome]) -> ApplyOutcome | None:
-            if any(
-                outcome.action in {"failed", "partial", "conflict", "skipped"}
-                for outcome in dependencies
-            ):
+            if any(outcome.action in UNFINISHED_ACTIONS for outcome in dependencies):
                 return self._status_outcome(
                     operations[index],
                     action="skipped",
@@ -403,7 +397,7 @@ class BatchMutationEngine:
                     **_failure(exc, operation),
                 }
             )
-            if _dooms_batch(exc):
+            if dooms_batch(exc):
                 raise _AbortBatchError(outcome) from exc
             return outcome
 
@@ -413,13 +407,11 @@ class BatchMutationEngine:
         outcomes: list[ApplyOutcome],
         bindings: Mapping[str, int],
         *,
-        continue_on_error: bool,
+        fail_fast: bool,
     ) -> None:
-        stopped = not continue_on_error and any(
-            outcome.action in {"failed", "partial"} for outcome in outcomes
-        )
+        stopped = fail_fast and any(outcome.action in FAIL_FAST_ACTIONS for outcome in outcomes)
         for operation, outcome in zip(plan.operations, outcomes, strict=True):
-            if outcome.action in {"failed", "skipped", "conflict", "partial"}:
+            if outcome.action in UNFINISHED_ACTIONS:
                 continue
             if not operation.membership_plans:
                 continue
@@ -428,6 +420,29 @@ class BatchMutationEngine:
                 item.to_associate or item.to_disassociate or item.to_reorder
                 for item in operation.membership_plans
             )
+            needed = tokens_in(
+                [
+                    (item.to_associate, item.desired_ids, item.to_reorder)
+                    for item in operation.membership_plans
+                ]
+            )
+            if membership_changed and not needed <= bindings.keys():
+                # A planned member's create failed; its row already says why.
+                outcomes[operation.index] = (
+                    self._status_outcome(
+                        operation, action="skipped", detail="skipped because a dependency failed"
+                    )
+                    if outcome.action == "unchanged"
+                    else outcome.model_copy(
+                        update={
+                            "action": "partial",
+                            "partial": True,
+                            "unverified": True,
+                            "detail": "membership skipped because a dependency failed",
+                        }
+                    )
+                )
+                continue
             if (stopped and membership_changed) or target_id is None:
                 outcomes[operation.index] = outcome.model_copy(
                     update={
@@ -468,7 +483,7 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = not continue_on_error or _dooms_batch(exc)
+                stopped = fail_fast or dooms_batch(exc)
                 continue
             if (
                 any(item.field_change is not None for item in plans)
@@ -482,17 +497,15 @@ class BatchMutationEngine:
         outcomes: list[ApplyOutcome],
         bindings: Mapping[str, int],
         *,
-        continue_on_error: bool,
+        fail_fast: bool,
     ) -> None:
         """Reconcile node graphs once every body and membership has been written."""
-        stopped = not continue_on_error and any(
-            outcome.action in {"failed", "partial"} for outcome in outcomes
-        )
+        stopped = fail_fast and any(outcome.action in FAIL_FAST_ACTIONS for outcome in outcomes)
         for operation, outcome in zip(plan.operations, outcomes, strict=True):
             graph_plan = operation.graph_plan
             if graph_plan is None or not graph_plan.changed or self._graph is None:
                 continue
-            if outcome.action in {"failed", "skipped", "conflict", "partial"}:
+            if outcome.action in UNFINISHED_ACTIONS:
                 continue
             if stopped or outcome.id is None:
                 outcomes[operation.index] = outcome.model_copy(
@@ -523,7 +536,7 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = not continue_on_error or _dooms_batch(exc)
+                stopped = fail_fast or dooms_batch(exc)
                 continue
             if outcome.action == "unchanged":
                 outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
@@ -546,18 +559,6 @@ class BatchMutationEngine:
                 "error": error,
             }
         )
-
-
-#: Failures that doom every remaining request of a batch alike.
-_BATCH_DOOMING = frozenset({ErrorCategory.AUTH, ErrorCategory.CONFIG})
-
-
-def _dooms_batch(exc: BaseException) -> bool:
-    """Whether ``exc`` (or its cause) is a rejected token or broken setup."""
-    return any(
-        isinstance(error, UntapedError) and error.category in _BATCH_DOOMING
-        for error in (exc, exc.__cause__)
-    )
 
 
 def _noop_warn(_message: str) -> None:

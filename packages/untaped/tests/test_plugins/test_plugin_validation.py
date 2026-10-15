@@ -92,7 +92,6 @@ RESERVED = [
     "doctor",
     "setup",
     "auth",
-    "alias",
     "plugin",
     "caches",
     "extensions",

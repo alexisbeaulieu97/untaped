@@ -18,9 +18,9 @@ EXAMPLES = Path(__file__).resolve().parents[5] / "examples"
 NAMES = ("hello", "shelf", "library")
 #: Each example's ``Requires-Dist``, as its pyproject.toml declares it.
 REQUIRES = {
-    "hello": ("untaped>=10,<11",),
-    "shelf": ("untaped>=10,<11",),
-    "library": ("untaped>=10,<11", 'untaped-shelf>=0.1,<0.2; extra == "shelf"'),
+    "hello": ("untaped>=11,<12",),
+    "shelf": ("untaped>=11,<12",),
+    "library": ("untaped>=11,<12", 'untaped-shelf>=0.1,<0.2; extra == "shelf"'),
 }
 
 

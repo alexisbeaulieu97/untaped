@@ -22,19 +22,17 @@ command runs and needs at least one row, so use it on a read command or add
 | `doctor`, `setup` | `untaped.doctor_check` |
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
-| `setup migrate-dirs` | `untaped.migration` (`id` of the plugin's migration, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`); with `--dry-run`, or when no row would move or delete anything, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep`, `then` or `failed`, `source`, `destination`, `detail`, `bytes`) |
+| `setup migrate-dirs` | `untaped.migration` (`id` of the plugin's migration, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`, and `error` on a failed row); with `--dry-run`, or when no row would move or delete anything, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep`, `then` or `failed`, `source`, `destination`, `detail`, `bytes`, and `error` on a failed row) |
 | `plugin list` | `untaped.plugin` (`name`, `status`, `distribution`, `version`; a ready plugin's `package`, `source_dir` and, from a checkout, `tests_dir`) |
 | `plugin list --contracts` | `untaped.contract` |
 | `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |
 | `plugin new` | `untaped.scaffold_outcome` (one per file, its `target_path`) |
 | `plugin check` (deprecated) | `untaped.plugin_check` (`plugin`, `check`, `title`, `status`, `detail`) |
-| `alias list` | `untaped.alias` |
-| `alias set`, `alias remove` | `untaped.alias_outcome` |
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
 skill names, one per line. With `--dry-run`, `config set/unset/migrate`,
-`plugin rank`, `plugin new`, `auth unset/migrate`, `profile create/delete/rename`, `alias
-set/remove` and `doctor fix` validate, write nothing and print their outcome
+`plugin rank`, `plugin new`, `auth unset/migrate`, `profile create/delete/rename`
+and `doctor fix` validate, write nothing and print their outcome
 with `action` `planned`; `doctor fix`'s manual fixes stay `skipped` and its
 refused ones `failed`.
 

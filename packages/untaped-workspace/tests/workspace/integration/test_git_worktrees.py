@@ -13,7 +13,8 @@ from pathlib import Path
 import pytest
 
 from untaped.testing.git import GitRemote
-from untaped_workspace.domain import LocalBranch, StoredRepo, StoreUse, archive_blockers
+from untaped_workspace.domain.models import LocalBranch, StoredRepo, StoreUse
+from untaped_workspace.domain.safety import archive_blockers
 from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees
 from workspace.conftest import add_submodule, commit_in, git, init_submodules, store_repo
@@ -631,6 +632,27 @@ def test_store_use_names_branches_worktrees_unpushed_work_and_stashes(
             LocalBranch(name="stashed", checked_out=False, unpushed=0, stashed=True),
         ),
         worktrees=1,  # the hand-added one is nobody's
+    )
+
+
+def test_a_commit_any_remote_has_is_pushed_for_archive_and_remove_alike(
+    worktrees: LocalGitWorktrees, make_upstream: Callable[..., GitRemote], tmp_path: Path
+) -> None:
+    url = make_upstream("api").url
+    dest = tmp_path / "w" / "api"
+    worktrees.checkout(url, dest, branch="forked", base=None)
+    commit_in(dest)
+    fork = tmp_path / "fork.git"
+    git(tmp_path, "init", "-q", "--bare", str(fork))
+    git(dest, "remote", "add", "fork", str(fork))
+    git(dest, "push", "-q", "fork", "forked")
+
+    status = worktrees.status(dest, branch="forked", base="main")
+    assert status is not None and status.unpushed == 0
+    worktrees.remove(url, dest, base="main", force=False)
+    assert worktrees.store_use(url, bases=["main"]) == StoreUse(
+        branches=(LocalBranch(name="forked", checked_out=False, unpushed=0, stashed=False),),
+        worktrees=0,
     )
 
 

@@ -23,7 +23,7 @@ from untaped_ansible.domain.payloads import (
     ProbeTarget,
 )
 from untaped_ansible.domain.repo_targets import remote_url_for
-from untaped_ansible.errors import GitCacheError
+from untaped_ansible.errors import RepoStoreError
 
 if TYPE_CHECKING:
     from untaped_ansible.application.ports import LsRemoteGit
@@ -94,7 +94,7 @@ class GitRemoteRefProbe:
                 if branch is not None:
                     target = target.model_copy(update={"default_branch": branch})
             refs = self._git.ls_remote(url, patterns=_patterns_for(target, kinds=kinds, mode=mode))
-        except GitCacheError as exc:
+        except RepoStoreError as exc:
             reason = str(exc) or type(exc).__name__
             return ProbeFailure(
                 kind="git", reason=f"{GIT_REF_PROBE_FAILURE_PREFIX}{reason}", category=exc.category

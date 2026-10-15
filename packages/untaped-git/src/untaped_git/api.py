@@ -26,7 +26,7 @@ from untaped_git.infrastructure import remote
 from untaped_git.infrastructure.adopt import Adopted, adopt, remove_if_emptied, unfinished_removals
 from untaped_git.infrastructure.repo_files import config_value, list_repos, repo_origin
 from untaped_git.infrastructure.store import Prefetched, RepoStore
-from untaped_git.settings import git_settings
+from untaped_git.settings import store_root
 
 __all__ = [
     "Adopted",
@@ -63,19 +63,12 @@ def ls_remote(url: str, patterns: Sequence[str] = ()) -> dict[str, str]:
     ``HEAD`` included (with no patterns, or when one asks for it); an annotated
     tag maps to its commit.
     """
-    root = git_settings().store_dir.expanduser()
-    return remote.ls_remote(url, patterns, root=root, auth=resolve_host)
+    return remote.ls_remote(url, patterns, root=store_root(), auth=resolve_host)
 
 
 def default_branch(url: str) -> str | None:
     """The branch ``url``'s ``HEAD`` points at, or ``None`` (``ls-remote --symref``)."""
-    root = git_settings().store_dir.expanduser()
-    return remote.default_branch(url, root=root, auth=resolve_host)
-
-
-def store_root() -> Path:
-    """The repo store's directory (``git.store_dir``, ``~`` expanded)."""
-    return git_settings().store_dir.expanduser()
+    return remote.default_branch(url, root=store_root(), auth=resolve_host)
 
 
 def overlaps_store(path: Path) -> bool:

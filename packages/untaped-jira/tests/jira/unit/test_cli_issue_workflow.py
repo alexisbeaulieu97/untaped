@@ -220,20 +220,18 @@ def test_patch_says_the_fields_changed_when_only_the_assignment_fails() -> None:
 def test_patch_assignee_me_resolves_the_authenticated_user() -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.get("/rest/api/2/myself").mock(
-            return_value=httpx.Response(200, json={"name": "alexis", "displayName": "Alexis"})
+            return_value=httpx.Response(200, json={"name": "jdoe", "displayName": "Jane Doe"})
         )
         route = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(return_value=httpx.Response(204))
         result = invoke_cli(app, ["issues", "patch", "ABC-1", "--assignee", "@me", "--yes"])
 
     assert result.exit_code == 0, result.output
-    assert json.loads(route.calls[0].request.content) == {"name": "alexis"}
+    assert json.loads(route.calls[0].request.content) == {"name": "jdoe"}
 
 
 def test_patch_dry_run_shows_the_edit_and_assignee_requests() -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
-        mock.get("/rest/api/2/myself").mock(
-            return_value=httpx.Response(200, json={"name": "alexis"})
-        )
+        mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(200, json={"name": "jdoe"}))
         mock.get("/rest/api/2/issue/ABC-1").mock(
             return_value=httpx.Response(200, json=_issue("ABC-1"))
         )
@@ -248,7 +246,7 @@ def test_patch_dry_run_shows_the_edit_and_assignee_requests() -> None:
         "PUT /rest/api/2/issue/ABC-1\n"
         '  summary: "Summary of ABC-1" → "New"\n'
         "PUT /rest/api/2/issue/ABC-1/assignee\n"
-        "  assignee: (none) → alexis\n"
+        "  assignee: (none) → jdoe\n"
     ) in result.stderr
     assert len(route.calls) == 0
 

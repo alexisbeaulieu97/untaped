@@ -1,7 +1,7 @@
-"""Typed CRUD over a tool's state section in ``~/.untaped/state.yml``.
+"""Typed CRUD over a plugin's state section in ``~/.untaped/state.yml``.
 
-The shared state file is co-owned by every untaped tool, so all writes ride
-:func:`untaped.config_file.mutate_tool_state` (section-scoped, locked,
+The shared state file is co-owned by every untaped plugin, so all writes ride
+:func:`untaped.config_file.mutate_plugin_state` (section-scoped, locked,
 atomic).
 ``StateCollection`` is a list of records keyed by an id field
 (workspace registry shape); ``StateMap`` is a flat ``str → str`` map
@@ -14,12 +14,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from untaped.config_file import mutate_tool_state, read_tool_state
+from untaped.config_file import mutate_plugin_state, read_plugin_state
 from untaped.errors import ConfigError
 
 
 class StateCollection:
-    """A list-of-records tool-state collection keyed by ``id_field``."""
+    """A list-of-records plugin-state collection keyed by ``id_field``."""
 
     def __init__(self, section: str, key: str, *, id_field: str = "name") -> None:
         self._section = section
@@ -28,7 +28,7 @@ class StateCollection:
 
     def entries(self) -> list[dict[str, Any]]:
         """All records; ``[]`` when unset. Malformed state raises ConfigError."""
-        return self._rows(read_tool_state(self._section))
+        return self._rows(read_plugin_state(self._section))
 
     def get(self, ident: str) -> dict[str, Any] | None:
         """The record whose id field equals ``ident``, or ``None``."""
@@ -48,13 +48,14 @@ class StateCollection:
         )
 
     def insert(self, record: Mapping[str, Any]) -> None:
-        """Insert ``record``; raise ConfigError when the id already exists."""
+        """Insert ``record``; a ``conflict`` ConfigError when its id already exists."""
         ident = self._record_id(record)
 
         def _replace(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if any(row.get(self._id_field) == ident for row in rows):
                 raise ConfigError(
-                    f"state record {ident!r} already exists in `{self._section}.{self._key}`"
+                    f"state record {ident!r} already exists in `{self._section}.{self._key}`",
+                    category="conflict",
                 )
             return [*rows, dict(record)]
 
@@ -74,7 +75,7 @@ class StateCollection:
             else:
                 state.pop(self._key, None)
 
-        mutate_tool_state(self._section, _apply)
+        mutate_plugin_state(self._section, _apply)
         return [dict(row) for row in replacement]
 
     def remove(self, ident: str) -> bool:
@@ -93,7 +94,7 @@ class StateCollection:
             else:
                 state.pop(self._key, None)
 
-        mutate_tool_state(self._section, _apply)
+        mutate_plugin_state(self._section, _apply)
         return removed
 
     def _rows(self, state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -124,7 +125,7 @@ class StateCollection:
 
 
 class StateMap:
-    """A flat ``str → str`` tool-state map."""
+    """A flat ``str → str`` plugin-state map."""
 
     def __init__(self, section: str, key: str) -> None:
         self._section = section
@@ -132,7 +133,7 @@ class StateMap:
 
     def entries(self) -> dict[str, str]:
         """The whole map; ``{}`` when unset. Malformed state raises ConfigError."""
-        return self._mapping(read_tool_state(self._section))
+        return self._mapping(read_plugin_state(self._section))
 
     def get(self, key: str) -> str | None:
         return self.entries().get(key)
@@ -143,7 +144,7 @@ class StateMap:
             mapping[key] = value
             state[self._key] = mapping
 
-        mutate_tool_state(self._section, _apply)
+        mutate_plugin_state(self._section, _apply)
 
     def remove(self, key: str) -> bool:
         removed = False
@@ -160,7 +161,7 @@ class StateMap:
             else:
                 state.pop(self._key, None)
 
-        mutate_tool_state(self._section, _apply)
+        mutate_plugin_state(self._section, _apply)
         return removed
 
     def _mapping(self, state: dict[str, Any]) -> dict[str, str]:

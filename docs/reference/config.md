@@ -33,17 +33,11 @@ overridden for one process with the environment variable shown.
 | `ui.color_roles` | mapping | empty | `UNTAPED_UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. Names: `header`, `border`, `key`, `value`, `success`, `info`, `warning`, `error`, `screen.accent`, `screen.muted`, `screen.highlight`, `screen.focus`, `screen.border`, `screen.value`, `screen.success`, `screen.error`, `screen.caret`, `screen.emphasis`, `screen.match`. |
 | `skills.updates` | `warn` \| `auto` \| `off` | `warn` | `UNTAPED_SKILLS__UPDATES` | What each run does when installed agent skills differ from this version: `warn` (print a warning), `auto` (update them in place), or `off`. |
 
-## `shell`
-
-| Key | Type | Default | Environment | Description |
-|---|---|---|---|---|
-| `shell.aliases` | mapping | empty | `UNTAPED_SHELL__ALIASES` | Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. Managed by `alias` commands. Deprecated: removed in the next major release; use a shell alias or function. |
-
 ## `ansible`
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `ansible.index_path` | path | `~/.untaped/ansible-index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
+| `ansible.index_path` | path | `~/.untaped/plugins/ansible/index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. |
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
@@ -78,9 +72,9 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `dotfiles.repos_dir` | path | `~/.untaped/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). Experimental: may change in a minor release. |
-| `dotfiles.kept_dir` | path | `~/.untaped/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. Experimental: may change in a minor release. |
-| `dotfiles.state_dir` | path | `~/.untaped/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json`, `attention` and the advisory lock. Experimental: may change in a minor release. |
+| `dotfiles.repos_dir` | path | `~/.untaped/plugins/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). Experimental: may change in a minor release. |
+| `dotfiles.kept_dir` | path | `~/.untaped/plugins/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. Experimental: may change in a minor release. |
+| `dotfiles.state_dir` | path | `~/.untaped/plugins/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json`, `attention` and the advisory lock. Experimental: may change in a minor release. |
 | `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in manifests. Experimental: may change in a minor release. |
 | `dotfiles.os` | `macos` \| `linux` \| `windows` (optional) | unset | `UNTAPED_DOTFILES__OS` | This machine's OS for `os` filters; detected when unset. Experimental: may change in a minor release. |
 
@@ -97,7 +91,7 @@ overridden for one process with the environment variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `git.store_dir` | path | `~/.untaped/plugins/git/store` | `UNTAPED_GIT__STORE_DIR` | Root of the repo store: one shared bare repository per remote, under `<store_dir>/<host>/<path>.git`. |
-| `git.untaped_helper_first` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_FIRST` | In untaped's worktrees, ask only untaped for a host's credentials, instead of your own Git credential helpers first. |
+| `git.untaped_helper_only` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_ONLY` | In untaped's worktrees, ask only untaped for a host's credentials, instead of your own Git credential helpers first. |
 
 ## `github`
 
@@ -138,7 +132,7 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `recipe.library_dir` | path | `~/.untaped/untaped-recipes` | `UNTAPED_RECIPE__LIBRARY_DIR` | Directory holding installed recipe packs. |
+| `recipe.library_dir` | path | `~/.untaped/plugins/recipe/library` | `UNTAPED_RECIPE__LIBRARY_DIR` | Directory holding installed recipe packs. |
 | `recipe.hook_timeout_seconds` | number | `60` | `UNTAPED_RECIPE__HOOK_TIMEOUT_SECONDS` | Per-hook request timeout; `0` disables it. |
 | `recipe.hook_startup_timeout_seconds` | number | `300` | `UNTAPED_RECIPE__HOOK_STARTUP_TIMEOUT_SECONDS` | Timeout for preparing a hook environment. |
 | `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backups prune` keeps this many newest bundles by default. |
@@ -168,6 +162,7 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
 | `http.timeout` | `UNTAPED_HTTP__TIMEOUT` | `http.timeout_seconds` | retired |
+| `shell.aliases` | `UNTAPED_SHELL__ALIASES` | none | deleted in 11.0; use a shell alias or function |
 | `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | retired |
 | `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | retired |
 | `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | `ansible.caches.index.max_age_seconds` | renamed |

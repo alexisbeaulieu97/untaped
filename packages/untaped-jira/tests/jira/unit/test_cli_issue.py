@@ -32,13 +32,13 @@ def test_me_table_renders_detail_view() -> None:
     contract). Before the migration this default-config render was a grid."""
     with respx.mock(base_url=BASE) as mock:
         mock.get("/rest/api/2/myself").mock(
-            return_value=httpx.Response(200, json={"name": "alexis", "displayName": "Alexis"})
+            return_value=httpx.Response(200, json={"name": "jdoe", "displayName": "Jane Doe"})
         )
         result = CliInvoker().invoke(app, ["whoami"])
 
     assert result.exit_code == 0, result.output
-    assert "name: alexis" in result.stdout
-    assert "display_name: Alexis" in result.stdout
+    assert "name: jdoe" in result.stdout
+    assert "display_name: Jane Doe" in result.stdout
     assert "╭" not in result.stdout
 
 
@@ -59,7 +59,7 @@ def test_issue_get_shows_detail_fields() -> None:
         "fields": {
             "summary": "Fix deploy",
             "status": {"name": "In Progress"},
-            "assignee": {"displayName": "Alexis"},
+            "assignee": {"displayName": "Jane Doe"},
             "updated": "2026-06-05T10:00:00.000-0400",
             "description": "Deploy fails on step 3.",
             "issuetype": {"name": "Bug"},
@@ -80,7 +80,7 @@ def test_issue_get_shows_detail_fields() -> None:
     row = json.loads(result.stdout)
     assert row["key"] == "ABC-1"
     assert row["status"] == "In Progress"
-    assert row["assignee"] == "Alexis"
+    assert row["assignee"] == "Jane Doe"
     assert row["description"] == "Deploy fails on step 3."
     assert row["issue_type"] == "Bug"
     assert row["priority"] == "High"

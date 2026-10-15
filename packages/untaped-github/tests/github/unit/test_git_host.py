@@ -17,6 +17,7 @@ from untaped.sdk import ConfigError
 from untaped.testing import invoke_cli, plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import Credential, GitHost, HostAuth, RepoStore, ls_remote
+from untaped_git.domain.hosts import resolve_host
 from untaped_github import SPEC
 from untaped_github.cli import app
 from untaped_github.errors import GitCorpusError
@@ -121,14 +122,14 @@ def test_the_store_asks_github_for_its_host() -> None:
     configure({"token": "ghp_secret"}, http={"proxy": "http://proxy.example:3128"})
     compose()
 
-    auth = GitHost.for_url("https://github.com/acme/api.git")
+    auth = resolve_host("https://github.com/acme/api.git")
 
     assert auth == HostAuth(
         "github",
         Credential(username="x-access-token", password=SecretStr("ghp_secret")),
         "http://proxy.example:3128",
     )
-    assert GitHost.for_url("https://gitlab.example/acme/api.git") is None
+    assert resolve_host("https://gitlab.example/acme/api.git") is None
 
 
 def test_an_unranked_overlap_on_the_github_host_is_a_config_error(

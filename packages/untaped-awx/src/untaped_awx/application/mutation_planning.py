@@ -24,6 +24,7 @@ from untaped_awx.application.apply_workflow_graph import (
     WorkflowGraphPlan,
     WorkflowGraphReconciler,
 )
+from untaped_awx.application.mutation_refs import tokens_in
 from untaped_awx.application.mutation_types import (
     DeferredReference,
     MutationPlan,
@@ -384,7 +385,7 @@ class MutationPlanner:
                 ),
                 spec,
             )
-            referenced = _tokens_in(
+            referenced = tokens_in(
                 {
                     "body": body.payload,
                     "parent": parents[index],
@@ -557,22 +558,6 @@ def _parent_target_indexes(resolver: PlanningFkResolver, resource: Resource) -> 
     ]
 
 
-def _tokens_in(value: Any) -> set[str]:
-    if isinstance(value, DeferredReference):
-        return {value.token}
-    if isinstance(value, Mapping):
-        result: set[str] = set()
-        for item in value.values():
-            result.update(_tokens_in(item))
-        return result
-    if isinstance(value, list | tuple | set | frozenset):
-        sequence_tokens: set[str] = set()
-        for item in value:
-            sequence_tokens.update(_tokens_in(item))
-        return sequence_tokens
-    return set()
-
-
 def _validate_selected_identity(
     spec: ResourceSpec,
     record: Mapping[str, Any],
@@ -609,7 +594,7 @@ def _validate_workflow_recursion(
     for operation in operations:
         graph_plan = operation.graph_plan
         if graph_plan is not None:
-            tokens = _tokens_in(graph_plan.runs())
+            tokens = tokens_in(graph_plan.runs())
             runs[operation.index] = sorted(token_indexes[t] for t in tokens if t in token_indexes)
     state: dict[int, bool] = {}  # True while on the current path
     path: list[int] = []

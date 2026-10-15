@@ -16,7 +16,7 @@ after upgrading untaped, check a command's `--help` before relying on it.
 
 - Settings live under `profiles.<name>.dotfiles`: `repos_dir` (clones),
   `kept_dir` (local files set aside) and `state_dir` (`status.json`,
-  `attention`). The defaults sit under `~/.untaped/dotfiles`.
+  `attention`). The defaults sit under `~/.untaped/plugins/dotfiles`.
 - `subscribe`, `apply` and `sync` run `git`, which must be on `PATH`. Git never
   prompts for credentials, so a private repo needs a credential helper or an
   SSH agent.

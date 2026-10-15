@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from untaped_recipe.application.apply_recipe import ApplyRecipe
+from untaped_recipe.domain.hook_project import UvHookRef
 from untaped_recipe.domain.plan import FileChange
 from untaped_recipe.domain.recipe import Recipe
 from untaped_recipe.errors import HookNotFoundError
@@ -23,7 +24,6 @@ from untaped_recipe.infrastructure.backup import (
 from untaped_recipe.infrastructure.file_writer import flush_changes
 from untaped_recipe.infrastructure.hook_resolver import (
     HookResolver,
-    UvHookRef,
 )
 from untaped_recipe.infrastructure.pack_store import PackLibrary, pack_content_hash
 

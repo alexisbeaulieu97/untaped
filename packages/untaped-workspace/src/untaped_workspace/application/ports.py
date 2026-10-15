@@ -100,8 +100,8 @@ class WorkspaceStore(Protocol):
         ...
 
     def archive(self, name: str, *, at: datetime) -> ArchivedRecord: ...
-    def remove(self, name: str) -> list[WorkspaceRecord]:
-        """Drop every record named ``name``, active and archived; the records dropped."""
+    def remove(self, name: str) -> None:
+        """Drop every record named ``name``, active and archived."""
         ...
 
     def locked(self, name: str) -> AbstractContextManager[None]:

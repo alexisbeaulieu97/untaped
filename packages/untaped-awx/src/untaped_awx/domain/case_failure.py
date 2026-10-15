@@ -217,7 +217,7 @@ class FailureEvidence(BaseModel):
 
 
 class CaseFailure(Failure):
-    """The ``failure`` of a case that did not pass: an :class:`Failure` plus evidence.
+    """The ``failure`` of a case that did not pass: a :class:`Failure` plus evidence.
 
     ``system`` is one of the ``awx.*`` systems above, or the error's own
     system when AWX is not responsible.

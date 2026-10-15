@@ -2395,6 +2395,40 @@ def test_hook_run_transform_content_overrides_do_not_require_existing_file(
     assert file_result.stdout == "from-file|file.txt|target"
 
 
+def test_hook_run_content_from_a_terminal_stdin_is_refused_not_read(tmp_path: Path) -> None:
+    hook_project = tmp_path / "hooks"
+    _write_hook_project(
+        hook_project,
+        public_name="show_context",
+        module_name="show_context",
+        code=(
+            "def transform(content, *, inputs, target, file, args, helpers):\n    return content\n"
+        ),
+    )
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(
+        app,
+        [
+            "hooks",
+            "run",
+            "show_context",
+            *_ctx(hook_project, target),
+            "--file",
+            "stdin.txt",
+            "--content",
+            "-",
+        ],
+        input="typed at a terminal",
+        interactive=True,
+    )
+
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert "no content provided" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("args", "message"),
     [

@@ -1,8 +1,8 @@
 """Import-boundary lint: layers inside one plugin point one way.
 
 ``cli → application → domain`` and ``infrastructure → domain``
-(``docs/reference/conventions.md``). A *runtime* import (``TYPE_CHECKING`` blocks are
-exempt) that crosses a layer the wrong way is flagged as
+(``docs/reference/conventions.md``). An import that crosses a layer the wrong
+way, ``TYPE_CHECKING`` blocks included, is flagged as
 ``<file>::layer::<from layer> -> <imported module>``:
 
 - ``domain`` imports nothing from ``application``, ``infrastructure`` or ``cli``;
@@ -30,6 +30,9 @@ FORBIDDEN = {
     "application": ("infrastructure", "cli"),
     "infrastructure": ("cli", "application"),
 }
+# Imports a ``TYPE_CHECKING`` block may make against the layers: an adapter
+# names the port it satisfies.
+TYPING_ONLY = frozenset({("infrastructure", "application")})
 # Only ``cli/`` resolves settings; lower layers receive narrowed models.
 SETTINGS_READERS = frozenset({"app_context", "get_config_section"})
 
@@ -40,28 +43,33 @@ def _is_type_checking(test: ast.expr) -> bool:
     return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
 
 
-def runtime_imports(tree: ast.Module) -> Iterator[ast.Import | ast.ImportFrom]:
-    """Imports outside ``if TYPE_CHECKING:`` bodies (the ``else`` runs at runtime)."""
-    exempt: set[int] = set()
+def _typing_only(tree: ast.Module) -> set[int]:
+    """The ids of every node inside an ``if TYPE_CHECKING:`` body (the ``else`` runs)."""
+    inside: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.If) and _is_type_checking(node.test):
             for stmt in node.body:
-                exempt.update(id(child) for child in ast.walk(stmt))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import | ast.ImportFrom) and id(node) not in exempt:
-            yield node
+                inside.update(id(child) for child in ast.walk(stmt))
+    return inside
 
 
 def _import_violations(
-    node: ast.Import | ast.ImportFrom, layer: str, package: str, module_package: str
+    node: ast.Import | ast.ImportFrom,
+    layer: str,
+    package: str,
+    module_package: str,
+    *,
+    typing_only: bool,
 ) -> Iterator[tuple[str, str]]:
-    """Yield ``(rule, detail)`` for one runtime import in ``layer`` of ``package``."""
-    if isinstance(node, ast.ImportFrom) and node.module == "untaped.sdk":
+    """Yield ``(rule, detail)`` for one import in ``layer`` of ``package``."""
+    if not typing_only and isinstance(node, ast.ImportFrom) and node.module == "untaped.sdk":
         for alias in node.names:
             if alias.name in SETTINGS_READERS:
                 yield "settings", f"{layer} -> {alias.name}"
     for target in import_targets(node, module_package):
         for other in FORBIDDEN[layer]:
+            if typing_only and (layer, other) in TYPING_ONLY:
+                continue
             banned = f"{package}.{other}"
             if target == banned or target.startswith(f"{banned}."):
                 yield "layer", f"{layer} -> {target}"
@@ -80,8 +88,13 @@ def layering_violations(package: str, source_dir: Path, files: Sequence[SourceFi
             continue
         rel = source.path.relative_to(source_dir.parent).as_posix()
         module_package = ".".join([package, *parts[:-1]])
-        for node in runtime_imports(source.tree):
-            for rule, detail in _import_violations(node, layer, package, module_package):
+        typing_only = _typing_only(source.tree)
+        for node in ast.walk(source.tree):
+            if not isinstance(node, ast.Import | ast.ImportFrom):
+                continue
+            for rule, detail in _import_violations(
+                node, layer, package, module_package, typing_only=id(node) in typing_only
+            ):
                 if not allows(source.lines, node.lineno, rule):
                     found.append(f"{rel}::{rule}::{detail}")
     return found

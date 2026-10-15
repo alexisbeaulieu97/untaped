@@ -24,12 +24,12 @@ from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
 
 from untaped._root_options import (
+    _before_separator,
     _consume_leading_root_options,
     _dispatch_with_root_options,
     _root_callback_signature,
     _root_options,
     _RootOption,
-    expand_alias,
     resolve_command,
 )
 from untaped.cache import current_call
@@ -43,7 +43,6 @@ from untaped.errors import ConfigError
 from untaped.git import forward_signals
 from untaped.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.management import (
-    build_root_alias_app,
     build_root_auth_app,
     build_root_config_app,
     build_root_doctor_app,
@@ -77,12 +76,9 @@ from untaped.plugins.registry import (
 )
 from untaped.profile_resolver import set_profile_override
 from untaped.settings import (
-    get_profile_settings_model,
-    get_settings,
-    get_settings_model,
     register_profile_settings,
     register_state_settings,
-    reset_config_registry_for_tests,
+    reset_config_registry,
 )
 from untaped.shell_settings import ShellProfileSettings
 from untaped.skills import InstallableSkill
@@ -135,8 +131,9 @@ _QUIET_QUARANTINE: ContextVar[bool] = ContextVar("untaped_quiet_quarantine", def
 def _register_shell_and_plugins(result: CompositionResult) -> None:
     """Register the shell plus every composed plugin's settings sections.
 
-    Runs exactly once per composition, after validation succeeds: a plugin
-    that fails any check registers nothing.
+    Runs after validation succeeds, so a plugin that fails any check
+    registers nothing, and again whenever the registry is rebuilt for the
+    remembered composition (:func:`_reregister`).
     """
     register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
     if SHELL_SPEC.state is not None:
@@ -226,10 +223,7 @@ def composed_with(
 
 
 def _reregister() -> None:
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
-    get_settings_model.cache_clear()
-    get_profile_settings_model.cache_clear()
+    reset_config_registry()
     if _COMPOSED_RESULT is not None:
         _register_shell_and_plugins(_COMPOSED_RESULT)
 
@@ -301,7 +295,6 @@ def build_root_app(
         ),
         "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
         "auth": build_root_auth_app(result=result),
-        "alias": build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
         "plugin": build_root_plugin_app(result=result, candidates=candidates),
     }
     for name in ROOT_MANAGEMENT_COMMANDS:
@@ -316,7 +309,9 @@ def build_root_app(
     _install_root_callback(
         root,
         _root_options(),
-        after_command=lambda tokens, failed: _check_skills_after(tokens, skills, failed=failed),
+        after_command=lambda tokens, failed: _check_skills_after(
+            root, tokens, skills, failed=failed
+        ),
     )
     for flag in chain(root.help_flags, root.version_flags):
         root[flag].group = (GLOBAL_OPTIONS_GROUP,)
@@ -441,7 +436,7 @@ _PREVIEW_FLAGS = frozenset({"--dry-run", "--check"})
 
 
 def _check_skills_after(
-    tokens: list[str], skills: Mapping[str, InstallableSkill], *, failed: bool
+    root: App, tokens: list[str], skills: Mapping[str, InstallableSkill], *, failed: bool
 ) -> None:
     """Run the per-run installed-skills check after a command.
 
@@ -450,11 +445,12 @@ def _check_skills_after(
     ``_PREVIEW_FLAGS`` option before any ``--``) it only reports, never
     updates. Never lets the check break the command.
     """
-    if not tokens or tokens[0].startswith("-") or tokens[0] in _SKILLS_CHECK_EXEMPT:
+    if not tokens or tokens[0].startswith("-"):
         return
-    options = tokens[: tokens.index("--")] if "--" in tokens else tokens
+    if resolve_command(root, tokens[0]) in _SKILLS_CHECK_EXEMPT:
+        return
     try:
-        preview = not _PREVIEW_FLAGS.isdisjoint(options)
+        preview = not _PREVIEW_FLAGS.isdisjoint(_before_separator(tokens))
         check_installed_skills(skills, allow_updates=not (failed or preview))
     except Exception:
         return
@@ -487,12 +483,6 @@ def _install_root_callback(
                 )
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
-                expanded = expand_alias(app, command_tokens)
-                if expanded is not command_tokens:
-                    # An alias may start with root options (`--profile prod awx …`).
-                    command_tokens = _consume_leading_root_options(
-                        expanded, root_options, applied_tokens
-                    )
                 dispatched = True
                 result = _dispatch_with_root_options(
                     app, command_tokens, root_options, applied_tokens

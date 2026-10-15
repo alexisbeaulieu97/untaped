@@ -1,9 +1,9 @@
 """Format rendering: structured/raw/pipe encoders and Rich terminal output.
 
-Split from ``ui.py``: this module owns *what output looks like* (the format
-renderers plus the pure format helpers); ``ui.py`` owns *interaction*
-(``UiContext`` — prompts, messages, progress). The two halves share only
-``ThemeSpec``.
+This module owns *what output looks like* (the format renderers plus the
+pure format helpers) and imports nothing of ``ui.py``, which owns
+*interaction* (``UiContext``: prompts, confirmations, screens) and renders
+through it.
 """
 
 from __future__ import annotations
@@ -349,7 +349,7 @@ def _format_record_line(key: str, value: object, *, theme: ThemeSpec, colorize: 
     line.append(key, style=key_style)
     line.append(": ")
     line.append(rendered_value, style=value_style)
-    return _render_text(line, colorize=colorize)
+    return render_styled(line, colorize=colorize)
 
 
 def resolve_box(border: BorderStyle) -> box.Box | None:
@@ -560,10 +560,6 @@ def render_styled(text: Text | str, *, colorize: bool, truncate: bool = False) -
     return _render_rich(
         text if isinstance(text, Text) else Text(text), colorize=colorize, truncate=truncate
     )
-
-
-def _render_text(text: Text, *, colorize: bool) -> str:
-    return _render_rich(text, colorize=colorize)
 
 
 def _styled_text(value: str, style: str | None) -> Text:

@@ -33,7 +33,7 @@ def _agile(*values: object) -> dict[str, object]:
 
 # (argv, method, path, status, body, kind, single entity)
 PRODUCERS: list[tuple[list[str], str, str, int, Any, str, bool]] = [
-    (["whoami"], "GET", "/rest/api/2/myself", 200, {"name": "alexis"}, "jira.user", True),
+    (["whoami"], "GET", "/rest/api/2/myself", 200, {"name": "jdoe"}, "jira.user", True),
     (["issues", "get", "ABC-1"], "GET", "/rest/api/2/issue/ABC-1", 200, _ISSUE, "jira.issue", True),
     (
         ["issues", "search", "--project", "ABC"],

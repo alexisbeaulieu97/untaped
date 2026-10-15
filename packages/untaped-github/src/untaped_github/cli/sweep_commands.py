@@ -241,9 +241,8 @@ def sweep_command(
                 rows, fmt=fmt, columns=columns, kind="github.sweep_match", empty="No matches found."
             )
         else:
-            rows = _repo_records(report.rows)
             emit(
-                _display_rows(rows, query=query, fmt=fmt),
+                _display_rows(report.rows, query=query, fmt=fmt),
                 fmt=fmt,
                 columns=columns,
                 table_columns=_default_columns(query=query, owners=owners, fmt=fmt),
@@ -291,10 +290,6 @@ def _validate_content_patterns(corpus: GitCorpus, query: SweepQuery) -> None:
         raise UsageError(f"{flag} {pattern!r}: {error}")
 
 
-def _repo_records(rows: tuple[RepoSweepOutcome, ...]) -> list[dict[str, object]]:
-    return [row.model_dump(mode="json") for row in rows]
-
-
 def _match_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
     return [
         {
@@ -322,21 +317,21 @@ def _file_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
 
 
 def _display_rows(
-    rows: list[dict[str, object]], *, query: SweepQuery, fmt: OutputFormat
+    rows: tuple[RepoSweepOutcome, ...], *, query: SweepQuery, fmt: OutputFormat
 ) -> list[dict[str, object]]:
     """Table rows: a count column per predicate after ``full_name``, lists joined by commas."""
+    records = [row.model_dump(mode="json") for row in rows]
     if fmt != "table":
-        return rows
+        return records
     labels = query.labels()
     display: list[dict[str, object]] = []
-    for row in rows:
-        hits = row["hits"]
-        display_row: dict[str, object] = {"full_name": row["full_name"]}
+    for row, record in zip(rows, records, strict=True):
+        display_row: dict[str, object] = {"full_name": row.full_name}
         for label in labels:
-            display_row[label] = hits.get(label, 0)  # type: ignore[attr-defined]
-        display_row.update(row)
-        display_row["refs_matched"] = ",".join(row["refs_matched"])  # type: ignore[arg-type]
-        display_row["owners"] = ",".join(row["owners"])  # type: ignore[arg-type]
+            display_row[label] = row.hits.get(label, 0)
+        display_row.update(record)
+        display_row["refs_matched"] = ",".join(row.refs_matched)
+        display_row["owners"] = ",".join(row.owners)
         display.append(display_row)
     return display
 

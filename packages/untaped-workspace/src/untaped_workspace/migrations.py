@@ -156,9 +156,7 @@ def apply_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Migra
     done = {"moved": 0, "deleted": 0, "kept": 0}
     failures: list[str] = []
     left: list[str] = []
-    scanned = {
-        _real(root): _scan(root) for root in roots() if root.is_dir() and _refused(root) is None
-    }
+    scanned, refusals = _scan_roots()
     borrowed = _borrowers(ctx, _mirrors(scanned))
     for root, found in scanned.items():
         for repo in found:
@@ -174,19 +172,33 @@ def apply_cache(ctx: PluginContext, options: MigrationOptions) -> Sequence[Migra
             left.append(shown_path(root))
     _drop_dangling_links()
     if not scanned:
-        detail = "no 10.x workspace cache"
+        detail = "; ".join(refusals) or "no 10.x workspace cache"
         return [MigrationOutcome(id=_CACHE_ID, action="unchanged", detail=detail)]
     parts = [f"moved {plural(done['moved'], 'repo')} into the repo store"]
     if done["deleted"]:
         parts.append(f"deleted {plural(done['deleted'], '9.x mirror')}")
     if done["kept"]:
         parts.append(f"kept {plural(done['kept'], '9.x mirror')} clones borrow from (--dissociate)")
-    parts += failures
+    parts += failures + refusals
     if left:
         parts.append(f"kept {', '.join(left)}: something other than repositories is left there")
     changed = done["moved"] or done["deleted"]
     action = "moved" if not failures else ("partial" if changed else "failed")
     return [MigrationOutcome(id=_CACHE_ID, action=action, detail="; ".join(parts))]
+
+
+def _scan_roots() -> tuple[dict[Path, list[_Old]], list[str]]:
+    """Each root to migrate (resolved) with its repos, and why each other root stays."""
+    scanned: dict[Path, list[_Old]] = {}
+    refusals: list[str] = []
+    for root in roots():
+        if not root.is_dir():
+            continue
+        if (reason := _refused(root)) is not None:
+            refusals.append(f"kept {shown_path(root)}: {reason}")
+        else:
+            scanned[_real(root)] = _scan(root)
+    return scanned, refusals
 
 
 def _mover(listed: Sequence[Path]) -> Callable[[Path], None]:

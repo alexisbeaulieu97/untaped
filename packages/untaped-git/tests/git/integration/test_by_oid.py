@@ -7,10 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from git.conftest import StoreFor, git
+from git.conftest import StoreError, StoreFor, git
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote, global_config
-from untaped_git.errors import StoreError
 from untaped_git.infrastructure.store import RepoStore
 
 MAIN = "refs/untaped/github/heads/main"

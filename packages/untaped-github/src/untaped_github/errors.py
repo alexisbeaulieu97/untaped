@@ -3,8 +3,8 @@
 Every error the plugin raises on purpose derives from :class:`GithubError`
 (itself an :class:`~untaped.sdk.UntapedError`) so ``report_errors``
 turns it into a clean ``error: ...`` line instead of a traceback. Failures are
-attributed to ``github``, except :class:`GitCorpusError` (``git``) and
-repository-inventory disk failures (``local``); a
+attributed to ``github``, except :class:`GitCorpusError` (``git``, or
+``local`` when a directory cannot be created); a
 :class:`GithubGraphqlError` takes its category from its ``kind`` (a rate
 limit is ``unavailable``, bad credentials ``auth``, a forbidden scope
 ``permission``).

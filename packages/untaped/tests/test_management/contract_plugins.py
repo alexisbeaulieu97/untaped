@@ -8,9 +8,11 @@ writes both on ``sys.path``.
 
 from __future__ import annotations
 
+from importlib.metadata import version
 from pathlib import Path
 from textwrap import dedent
 
+from untaped.management.plugin_new import _range
 from untaped.plugins.registry import PluginCandidate
 
 PACKAGES = ("untaped_rack", "untaped_bin")
@@ -135,7 +137,8 @@ BIN = {
         ''',
 }
 
-CORE_RANGE = "untaped>=10,<11"
+#: The running core's own range, so a fixture plugin is never quarantined after a major bump.
+CORE_RANGE = f"untaped{_range(version('untaped'))}"
 
 
 def write(site: Path) -> None:

@@ -42,7 +42,7 @@ class WatchJob:
         ``on_state`` sees each polled state that is not terminal yet; what it
         raises stops the watch.
         """
-        api_path = KIND_TO_API_PATH.get(job.kind, job.kind)
+        api_path = KIND_TO_API_PATH[job.kind]
 
         def fetch(current: Job) -> Job:
             record = self._client.request("GET", f"{api_path}/{current.id}/")

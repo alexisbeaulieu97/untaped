@@ -39,6 +39,9 @@ def _root() -> App:
         refresh: Annotated[bool, Parameter(negative="--cached")] = True,
         stdin: bool = False,
         secret: Annotated[str | None, Parameter(show=False)] = None,
+        legacy: Annotated[
+            bool, Parameter(negative="", show=False, help="Deprecated: does nothing now.")
+        ] = False,
     ) -> None:
         """Required and repeatable positionals, options of every shape."""
 
@@ -86,6 +89,7 @@ def test_a_command_with_every_option_shape(lines: set[str]) -> None:
         "cli untaped demo get --format alias=-f",
         "cli untaped demo get --format choice=json",
         "cli untaped demo get --format choice=table",
+        "cli untaped demo get --legacy switch  [deprecated]",
         "cli untaped demo get --refresh negative=--cached",
         "cli untaped demo get --refresh switch default=true",
         "cli untaped demo get --stdin negative=--no-stdin",
@@ -124,6 +128,11 @@ def test_marks_aliases_and_hidden_commands(lines: set[str]) -> None:
     assert _of(lines, "preview") == ["cli untaped demo preview  [experimental]"]
     assert _of(lines, "hidden") == []
     assert not [line for line in lines if "secret" in line]
+
+
+def test_a_flag_deprecated_by_its_help_keeps_its_line_marked(lines: set[str]) -> None:
+    # Hidden, so otherwise skipped: deprecating a flag in a minor must not read as removing it.
+    assert "cli untaped demo get --legacy switch  [deprecated]" in lines
 
 
 def test_a_plugin_mark_reaches_every_line() -> None:

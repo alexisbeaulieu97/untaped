@@ -6,7 +6,7 @@ that serialises ``create``, ``add``, ``archive`` and ``remove`` of one workspace
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +14,7 @@ from typing import Any
 
 from untaped.sdk import StateCollection, file_lock, not_found, q
 from untaped_workspace.domain.models import ArchivedRecord, RepoSpec, WorkspaceRecord
-from untaped_workspace.domain.naming import repo_key
+from untaped_workspace.domain.naming import repo_key, workspace_key
 from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError
 
 _BUSY_HINT = "wait for the other untaped command on this workspace to finish, then retry"
@@ -41,6 +41,7 @@ class StateWorkspaceStore:
     @contextmanager
     def locked(self, name: str) -> Iterator[None]:
         """Hold workspace ``name``'s lock; another process waits, then fails as busy."""
+        name = workspace_key(name)
         if self._workspaces_dir is None:
             raise WorkspaceError("this workspace store was built without a workspaces_dir")
         root = self._workspaces_dir.expanduser().resolve()
@@ -61,6 +62,7 @@ class StateWorkspaceStore:
         return [ArchivedRecord.model_validate(row) for row in self._archived.entries()]
 
     def get(self, name: str) -> WorkspaceRecord | None:
+        name = workspace_key(name)
         row = self._active.get(name)
         return None if row is None else WorkspaceRecord.model_validate(row)
 
@@ -77,6 +79,7 @@ class StateWorkspaceStore:
         self._active.mutate(_insert)
 
     def add_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord:
+        name = workspace_key(name)
         updated: WorkspaceRecord | None = None
 
         def _append(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -102,6 +105,7 @@ class StateWorkspaceStore:
 
     def update_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord:
         """Replace the repos of active workspace ``name`` that share a ``dir`` with ``repos``."""
+        name = workspace_key(name)
         by_dir = {spec.dir: spec for spec in repos}
         updated: WorkspaceRecord | None = None
 
@@ -131,6 +135,7 @@ class StateWorkspaceStore:
         The archived copy is written first: a failure in between leaves a
         recoverable duplicate rather than losing the workspace's history.
         """
+        name = workspace_key(name)
         record = self.get(name)
         if record is None:
             raise WorkspaceNotFoundError(
@@ -141,22 +146,16 @@ class StateWorkspaceStore:
         self._active.remove(name)
         return archived
 
-    def remove(self, name: str) -> list[WorkspaceRecord]:
+    def remove(self, name: str) -> None:
         """Drop every record named ``name``, active and archived (callers hold :meth:`locked`).
 
-        Returns the records dropped, active first. The active one goes first: a
-        failure in between leaves an archived record, which ``remove`` drops on
-        a retry.
+        The active one goes first: a failure in between leaves an archived
+        record, which ``remove`` drops on a retry.
         """
-        dropped: list[WorkspaceRecord] = []
+        name = workspace_key(name)
 
-        def _drop(model: type[WorkspaceRecord]) -> Callable[[Rows], Rows]:
-            def _filter(rows: Rows) -> Rows:
-                dropped.extend(model.model_validate(row) for row in rows if row.get("name") == name)
-                return [row for row in rows if row.get("name") != name]
+        def _drop(rows: Rows) -> Rows:
+            return [row for row in rows if row.get("name") != name]
 
-            return _filter
-
-        self._active.mutate(_drop(WorkspaceRecord))
-        self._archived.mutate(_drop(ArchivedRecord))
-        return dropped
+        self._active.mutate(_drop)
+        self._archived.mutate(_drop)

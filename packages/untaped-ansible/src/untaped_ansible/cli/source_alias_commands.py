@@ -1,4 +1,4 @@
-"""Source-alias management commands (``ansible source-alias``) for the Ansible tool."""
+"""Source-alias management commands (``ansible source-alias``) for the Ansible plugin."""
 
 from __future__ import annotations
 

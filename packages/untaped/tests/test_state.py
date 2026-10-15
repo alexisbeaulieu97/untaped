@@ -28,8 +28,10 @@ def test_upsert_appends_then_replaces_by_id(collection: StateCollection) -> None
 def test_insert_appends_but_rejects_duplicate_id(collection: StateCollection) -> None:
     collection.insert({"name": "a", "value": 1})
 
-    with pytest.raises(ConfigError, match="already exists"):
+    with pytest.raises(ConfigError, match="already exists") as raised:
         collection.insert({"name": "a", "value": 2})
+
+    assert raised.value.category == "conflict"
 
     assert collection.entries() == [{"name": "a", "value": 1}]
 

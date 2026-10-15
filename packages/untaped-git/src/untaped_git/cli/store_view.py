@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
-from untaped.sdk import plural, size_text
+from untaped.sdk import plural, shown_path, size_text
 from untaped_git.domain.records import RepoCount, StoreReport
 
 
@@ -52,7 +51,7 @@ def report_lines(report: StoreReport) -> list[str]:
 
 def _store_line(report: StoreReport) -> str:
     parts = [
-        _home(report.store_dir),
+        shown_path(report.store_dir),
         f"{report.repos:,} {'repo' if report.repos == 1 else 'repos'}",
         size_text(report.size_bytes),
     ]
@@ -67,8 +66,3 @@ def _repos_text(count: RepoCount) -> str:
 
 def _joined(values: dict[str, int], shown: Callable[[int], str]) -> str:
     return " · ".join(f"{name} {shown(value)}" for name, value in values.items())
-
-
-def _home(path: str) -> str:
-    home = str(Path.home())
-    return f"~{path.removeprefix(home)}" if path == home or path.startswith(f"{home}/") else path

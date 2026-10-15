@@ -299,8 +299,7 @@ def run_command(
     show_logs: Annotated[
         bool,
         Parameter(
-            # ``-v`` dropped in the plugin-API-v5 rollout: core now owns a
-            # global ``--verbose``/``-v``, so the short alias would shadow it.
+            # No ``-v``: core's global ``--verbose``/``-v`` owns it.
             name="--show-logs",
             negative="",
             help="Print the failure, failed tasks and log tail of each case that did not pass "
@@ -335,16 +334,6 @@ def run_command(
             "names.",
         ),
     ] = False,
-    dry_run: Annotated[
-        bool,
-        Parameter(
-            name="--dry-run",
-            negative="",
-            show=False,
-            help="Deprecated: use `awx test validate`. Checks the selected cases as it does "
-            "and launches nothing.",
-        ),
-    ] = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -372,29 +361,10 @@ def run_command(
         source_ref,
         scm_branch=scm_branch,
         baseline=baseline,
-        compare=compare,
         keep=keep,
         cancel=cancel,
-        dry_run=dry_run,
     )
     case_filter = set(cases) if cases else None
-    if dry_run:
-        _diag.warning(
-            "`awx test run --dry-run` is deprecated and will be removed in the next major "
-            "release; use `awx test validate`"
-        )
-        _validate(
-            paths,
-            var=var,
-            vars_file=vars_file,
-            non_interactive=non_interactive,
-            case_filter=case_filter,
-            source_ref=source_ref,
-            scm_branch=scm_branch,
-            fmt=fmt,
-            columns=columns,
-        )
-        return
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths) if source_ref is None else []
     structured = fmt not in {"table", "raw"}
@@ -451,6 +421,7 @@ def run_command(
             # Evidence and host summaries are hidden in the table and raw views.
             evidence=show_logs or structured,
             hosts=structured,
+            report=lambda item, failure: _diag.failure(failure, item=item),
         )
         try:
             # Results are emitted before the teardown, which a second Ctrl-C may cut short.
@@ -514,23 +485,10 @@ def _check_run_flags(
     *,
     scm_branch: str | None,
     baseline: str | None,
-    compare: Path | None,
     keep: bool,
     cancel: bool,
-    dry_run: bool,
 ) -> None:
-    """Refuse the flags ``--dry-run`` and ``--source-ref`` cannot go with, and ``--keep``
-    without ``--source-ref``."""
-    if dry_run:
-        ignored = {
-            "--keep": keep,
-            "--no-cancel": not cancel,
-            "--compare": compare is not None,
-            "--baseline": baseline is not None,
-        }
-        for flag, given in ignored.items():
-            if given:
-                raise_usage(f"--dry-run launches nothing, so {flag} does not apply")
+    """Refuse the flags ``--source-ref`` cannot go with, and ``--keep`` without it."""
     if source_ref is None:
         if keep:
             raise_usage("--keep applies to --source-ref only")
@@ -871,7 +829,7 @@ def prune_command(
             noun="temporary template",
             label=lambda copy: f"{copy.kind} {q(copy.name)}",
             describe=lambda copy: {"kind": copy.kind, "id": copy.id, "name": copy.name},
-            ui=ctx.progress_ui(),
+            ui=ctx.ui(),
             destructive=True,
             assume_yes=yes,
             preview_only=dry_run,

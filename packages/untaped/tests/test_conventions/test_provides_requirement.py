@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from importlib.metadata import version
 
 import pytest
 
 from test_conventions.support import Install
 from untaped.conventions import plugin_violations
+from untaped.management.plugin_new import _range
 from untaped.plugins.registry import PluginCandidate
 
 _PLUGIN = {
@@ -23,8 +25,9 @@ _PLUGIN = {
         ''',
 }
 
+_CORE = f"untaped{_range(version('untaped'))}"
 _RANGES = (
-    "untaped>=10,<11",
+    _CORE,
     "untaped-shelf>=1,<2; extra == 'shelf'",
     "untaped-kiosk>=3,<4; extra == 'kiosk'",
 )
@@ -47,7 +50,7 @@ def test_ranges_for_untaped_and_each_owner_extra_pass(install: Install) -> None:
 
 
 def test_an_owner_outside_an_extra_is_a_violation(install: Install) -> None:
-    requires = ("untaped>=10,<11", "untaped-shelf>=1,<2", "untaped-kiosk>=3,<4; extra == 'kiosk'")
+    requires = (_CORE, "untaped-shelf>=1,<2", "untaped-kiosk>=3,<4; extra == 'kiosk'")
     assert _rule(install, requires) == [
         "lend::provides-requirement::provides for shelf but has no 'shelf' extra "
         "requiring untaped-shelf"
@@ -55,7 +58,7 @@ def test_an_owner_outside_an_extra_is_a_violation(install: Install) -> None:
 
 
 def test_an_extra_without_a_range_is_a_violation(install: Install) -> None:
-    requires = ("untaped>=10,<11", "untaped-shelf; extra == 'shelf'", _RANGES[2])
+    requires = (_CORE, "untaped-shelf; extra == 'shelf'", _RANGES[2])
     assert _rule(install, requires) == [
         "lend::provides-requirement::its 'shelf' extra requires untaped-shelf with no version range"
     ]

@@ -3,7 +3,7 @@
 The root options (``--profile``, ``--verbose``, ``--quiet``, ``--deprecated``),
 accepted anywhere before the command's own arguments; the rewriting of a
 command's loose or deprecated spelling to its registered name, with the
-deprecation warnings; and the expansion of a user alias (``shell.aliases``).
+deprecation warnings.
 The bootstrap composition root uses this one implementation.
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -20,13 +20,11 @@ from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.cli import note_requested_format, raise_usage
 from untaped.deprecated_keys import warn_once
-from untaped.errors import UntapedError
 from untaped.messages import deprecated_message
 from untaped.output.policy import enable_quiet as _enable_quiet
 from untaped.output.policy import reset_quiet as _reset_quiet
 from untaped.output.sink import Diagnostics
 from untaped.profile_resolver import profile_scope
-from untaped.settings import load_settings_section
 from untaped.stability import (
     Deprecated,
     deprecated_aliases,
@@ -324,43 +322,6 @@ def _warn_deprecated_command(root: App, chain: Sequence[tuple[tuple[str, ...], A
 def resolve_command(app: App, token: str) -> str | None:
     """The command of ``app`` that ``token`` selects (as dispatch would), if any."""
     return _command_name(app, token)
-
-
-def expand_alias(app: App, tokens: list[str]) -> list[str]:
-    """Replace a leading user alias (``shell.aliases``) with the argv it stands for.
-
-    Only a first token that selects no command of ``app`` is looked up, so an
-    alias can never shadow a built-in command; the expansion is not expanded
-    again. The alias is looked up in the profile a ``--profile`` names
-    anywhere before ``--`` (else the active one). Returns ``tokens`` itself
-    when nothing expands (including when the ``shell`` settings cannot be
-    loaded: the unknown command then fails as usual, and ``doctor`` reports
-    the settings).
-    """
-    if not tokens or tokens[0].startswith("-") or resolve_command(app, tokens[0]) is not None:
-        return tokens
-    named = _named_profile(tokens[1:])
-    try:
-        with profile_scope(named) if named else nullcontext():
-            aliases = load_settings_section("shell").aliases
-    except UntapedError:
-        return tokens
-    argv = aliases.get(tokens[0])
-    if not argv:
-        return tokens
-    return [*argv, *tokens[1:]]
-
-
-def _named_profile(tokens: list[str]) -> str | None:
-    """The value of the last ``--profile`` before ``--`` in ``tokens``, if well formed."""
-    index = _last_root_option_index(tokens, _root_options()["--profile"])
-    if index is None:
-        return None
-    _, separator, inline = tokens[index].partition("=")
-    if separator:
-        return inline or None
-    following = tokens[index + 1 : index + 2]
-    return following[0] if following and not following[0].startswith("-") else None
 
 
 def _command_name(app: App, token: str) -> str | None:

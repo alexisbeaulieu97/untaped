@@ -383,7 +383,7 @@ _ORDERED: Final = WireModel.__pydantic_decorators__.model_serializers["_own_fiel
 Level = Literal["error", "warning", "hint", "info", "success", "debug", "progress"]
 """A stderr line's ``level``: the filter key, written beside ``kind``."""
 
-#: An optional field left out of the dump when unset, so a line keeps today's shape.
+#: An optional field left out of the dump when unset.
 _Omitted = Annotated[str | None, Field(exclude_if=_is_none)]
 
 
@@ -437,7 +437,7 @@ class Failure(Diagnostic, kind="untaped.failure"):
     # ``retryable`` and ``exit_code`` defaults are never used: both are filled
     # from ``category`` before validation; they only keep them optional to build.
     retryable: bool = False
-    message: str  # re-declared to keep today's wire order: message before hint
+    message: str  # re-declared to keep the wire order: message before hint
     hint: str | None = None
     exit_code: int = 1
     details: dict[str, JsonValue] = {}
@@ -452,7 +452,7 @@ class Failure(Diagnostic, kind="untaped.failure"):
     @model_validator(mode="before")
     @classmethod
     def _fill_from_category(cls, data: Any) -> Any:
-        """Fill ``retryable`` and ``exit_code`` from ``category`` (pre-11.0 data lacks them)."""
+        """Fill ``retryable`` and ``exit_code`` from ``category``, which alone selects them."""
         if not isinstance(data, dict) or "category" not in data:
             return data
         try:

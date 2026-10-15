@@ -470,7 +470,6 @@ def _import_every_shipped_module() -> None:
 
 def _samples() -> dict[str, WireModel]:
     from untaped.config.models import SettingOutcome, SettingRow
-    from untaped.management.alias import AliasOutcome, AliasRow
     from untaped.management.plugin_check import PluginCheckRow
     from untaped.management.plugin_new import ScaffoldOutcome
     from untaped.management.plugins import ContractRow
@@ -503,13 +502,6 @@ def _samples() -> dict[str, WireModel]:
         ),
         SettingRow(key="k", value={"a": [1]}, default=None, source="default", profile=None),
         SettingOutcome(key="k", profile="default", action="updated"),
-        AliasRow(name="ls", command="plugin list", argv=["plugin", "list"], profile="default"),
-        AliasOutcome(
-            name="ls",
-            profile="default",
-            action="failed",
-            error=Failure.from_exception(ConfigError("x")),
-        ),
         ProfileRow(name="default", active=True, keys=3),
         ProfileOutcome(name="work", action="renamed", previous_name="old"),
         ContractRow(

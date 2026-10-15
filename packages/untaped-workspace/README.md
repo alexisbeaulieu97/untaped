@@ -52,7 +52,8 @@ stay, so a later workspace on the same branch resumes the work. `remove`
 gives the space back: it drops the workspace's records and, for each repo no
 other workspace uses, deletes workspace's refs and the pushed branches from
 the repo store, and the repo itself when nothing else uses it. It refuses
-while a branch has commits the remote lacks, and keeps a branch with a stash.
+while the workspace's own branch has commits the remote lacks; other branches
+with unpushed commits or a stash stay, unless `--force` deletes them.
 
 ## Add repos
 

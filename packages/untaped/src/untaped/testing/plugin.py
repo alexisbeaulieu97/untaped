@@ -20,7 +20,7 @@ import pytest
 from untaped.auth import clear_token_cache
 from untaped.deprecated_keys import reset_key_warnings
 from untaped.prompts import reset_terminal_override, set_terminal_override
-from untaped.settings import get_settings, reset_config_registry_for_tests
+from untaped.settings import get_settings, reset_config_registry
 from untaped.testing import no_terminal
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
@@ -75,12 +75,10 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
 @pytest.fixture(autouse=True)
 def _isolate_config_registry_for_tests() -> Iterator[None]:
     """Reset the registered config sections, and any loaded contract providers, around each test."""
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
+    reset_config_registry()
     _forget_contract_providers()
     yield
-    reset_config_registry_for_tests()
-    get_settings.cache_clear()
+    reset_config_registry()
     _forget_contract_providers()
 
 

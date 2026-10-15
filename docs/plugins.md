@@ -9,10 +9,10 @@ profile command. See the [Glossary](../CONTRIBUTING.md#glossary).
 
 A plugin imports from `untaped.sdk` and nothing else in `untaped`, except
 `untaped.contracts` and `untaped.testing` for [contracts](./contracts.md);
-see [SDK stability](./reference/conventions.md#sdk-stability). First-party
-plugins also use each other's declared `api.py` modules (see
-[Depending on another plugin](./reference/conventions.md#depending-on-another-plugin));
-those are internal to `untaped` and not part of the plugin API.
+see [SDK stability](./reference/conventions.md#sdk-stability). Any plugin,
+first-party or not, may also import another plugin's declared `api` module,
+under the rules in
+[Depending on another plugin](./reference/conventions.md#depending-on-another-plugin).
 
 [`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
 complete, tested plugin with commands; copy it to start one. To fill another
@@ -42,10 +42,7 @@ name = "untaped-acme"
 version = "0.1.0"
 description = "Acme plugin for untaped."
 requires-python = ">=3.14.1"
-dependencies = [
-    "pydantic>=2.13.3,<3",
-    "untaped>=10,<11",
-]
+dependencies = ["pydantic>=2.13.3,<3", "untaped>=11,<12"]
 
 [project.entry-points."untaped.plugins"]
 acme = "untaped_acme:SPEC"
@@ -79,22 +76,21 @@ The entry point names the module's `SPEC` constant, one self-validating
 quarantined (`not-a-spec`) and never called.
 
 The plugin's `untaped` requirement (`Requires-Dist`) is the only
-compatibility check: declare it (`untaped>=10,<11`, raising the floor to the
-minor that added an API you use, for example `untaped>=10.1,<11`); without
+compatibility check: declare it (`untaped>=11,<12`, raising the floor to the
+minor that added an API you use, for example `untaped>=11.1,<12`); without
 one, nothing is checked. That range excludes pre-releases such as
-`10.0.0a0`; to run on a pre-release core, declare `untaped>=10.0.0a0,<11`. A
+`11.0.0a0`; to run on a pre-release core, declare `untaped>=11.0.0a0,<12`. A
 running `untaped` outside that range quarantines the plugin. Installers
 normally enforce the range, so this shows up mainly after upgrading `untaped`
 past it. The [changelog](../CHANGELOG.md) says what each version added or broke.
 
 ## Settings and the plugin app
 
-A plugin's config section is its name. Its `settings` model holds what
-users tune per profile; a plugin that writes managed data also declares a
-`state` model. The two field sets must be disjoint, and either may be left
-out. `plugin_dir(SPEC)` (`~/.untaped/plugins/<name>/`) is where it keeps
-other data. To rename a setting, see
-[Settings](./reference/conventions.md#settings).
+A plugin's config section is its name. Its `settings` model holds what users
+tune per profile; a plugin that writes managed data also declares a `state`
+model. The two field sets must be disjoint, and either may be left out.
+`plugin_dir(SPEC)` (`~/.untaped/plugins/<name>/`) is where it keeps other
+data. To rename a setting, see [Settings](./reference/conventions.md#settings).
 
 A complete plugin module, with a nullary app factory (leave it out for a
 plugin with no commands), one packaged skill and the `SPEC` the entry point
@@ -105,21 +101,20 @@ above names:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Annotated
 
+from cyclopts import App, Parameter
 from pydantic import BaseModel, ConfigDict
 
 from untaped.sdk import (
     PluginSpec,
     SkillAsset,
+    StdinOption,
     create_app,
     echo,
     get_config_section,
     read_identifiers,
 )
-
-if TYPE_CHECKING:
-    from cyclopts import App
 
 
 class AcmeSettings(BaseModel):
@@ -141,10 +136,17 @@ def build_app() -> App:
         echo(settings.greeting)
 
     @app.command(name="import")
-    def import_command(*, stdin: bool = False) -> None:
-        """Echo identifiers received as arguments or an untaped pipe."""
-        for identifier in read_identifiers([], stdin=stdin, id_field="repo"):
-            echo(identifier)
+    def import_command(
+        names: Annotated[list[str] | None, Parameter(help="Repository full names.")] = None,
+        /,
+        *,
+        stdin: StdinOption = False,
+    ) -> None:
+        """Echo repository names given as arguments or piped as github.repo records."""
+        for name in read_identifiers(
+            list(names or []), stdin=stdin, id_field="full_name", accept_kinds={"github.repo"}
+        ):
+            echo(name)
 
     return app
 
@@ -170,10 +172,10 @@ SPEC = PluginSpec(
 
 The optional `help` field (one non-empty line) is its summary in the Plugins
 panel of `untaped --help`. With it, the plugin is mounted lazily: `build_app()`
-runs only when dispatched, so `untaped --help` never imports its CLI.
-A factory that raises or returns something other than a cyclopts `App` then
-fails that command, `--help` included, with exit 4, naming the plugin;
-other commands and shell completion keep working. `untaped doctor` runs every
+runs only when dispatched, so `untaped --help` never imports its CLI. A
+factory that raises or returns something other than a cyclopts `App` then
+fails that command, `--help` included, with exit 4, naming the plugin; other
+commands and shell completion keep working. `untaped doctor` runs every
 factory and reports a failing one as a quarantine row (`bad-app-factory`, or
 `duplicate-kind` for a reused record kind). Without `help`, composition calls
 `build_app()` once at startup, a bad factory quarantines the plugin, and the
@@ -192,8 +194,6 @@ untaped acme hello
 untaped profile create staging --copy-from default
 untaped --profile staging config set acme.greeting "hello from staging"
 untaped --profile staging acme hello
-untaped plugin list
-untaped doctor
 ```
 
 Config keys are fully qualified (`acme.greeting`). A plugin reads and
@@ -219,48 +219,51 @@ it as is. Set `automatic=True` only on a fix that meets the rule in the
 
 ## Moving what an older version left
 
-When a new version of your plugin keeps its data somewhere else, declare a
-`DirMigration` in `PluginSpec.migrations` rather than asking users to move or
-delete the old directory by hand. `untaped setup migrate-dirs` previews every
-plugin's rows as one table, confirms (`--yes` skips it, `--dry-run` stops
-after the preview), then applies them in plugin-name order; `untaped doctor`
-warns while any row would still move or delete something.
+When your plugin's data moves, declare a `DirMigration` in
+`PluginSpec.migrations` rather than asking users to move or delete it by hand.
+`untaped setup migrate-dirs` previews every plugin's rows as one table,
+confirms (`--yes`, `--dry-run`), then applies them in plugin-name order;
+`untaped doctor` warns while any row would still move or delete something.
 
 ```python
-from untaped.sdk import DirMigration, MigrationOutcome, MigrationRow, delete_migration
+from untaped.sdk import delete_migration, move_migration, plugin_dir, setting_guard
+
+def data_moves():  # acme.data_dir now defaults to plugin_dir(SPEC) / "data"
+    return [(Path("~/.acme-data").expanduser(), plugin_dir(SPEC) / "data")]
 
 SPEC = PluginSpec(
     name="acme",
     ...,
     migrations=(
-        DirMigration(id="acme.data", title="data into the plugin's directory",
-                     preview=preview_data, apply=apply_data),
+        move_migration("acme.data", "1.x data", data_moves, guard=setting_guard("acme", "data_dir")),
         delete_migration("acme.cache", "1.x cache", lambda: [Path("~/.acme-cache").expanduser()]),
     ),
 )
 ```
 
 `preview(ctx, options)` only reads: it returns `MigrationRow`s (`action`
-`move`, `delete`, `keep` or `then`, with absolute `source` and
-`destination` paths, `detail` and `bytes`), none once there is nothing left,
-and must work with no settings (`ctx.settings` is `None` when yours don't
-validate); with `options.measure` false (doctor) it leaves `bytes` at 0.
-`apply(ctx, options)` does the work and returns its `MigrationOutcome`s; it
+`move`, `delete`, `keep` or `then`, with absolute `source` and `destination`
+paths, `detail` and `bytes`), none once there is nothing left, and must work
+with no settings; with `options.measure` false (doctor) it leaves `bytes` at
+0. `apply(ctx, options)` does the work and returns its `MigrationOutcome`s; it
 runs again on every `migrate-dirs`, so make it do nothing the second time.
 Core applies nothing of a migration whose preview raised, nor of two
 migrations when one would delete a directory the other moves or keeps.
-`unsafe_dir(path)` says why a directory must never go whole (it holds home
-or untaped's own files, or is a symlink); `delete_migration` keeps such a
-path, and any its `guard` refuses, as a `keep` row.
-Move data into `plugin_dir(SPEC)`. An id is `<plugin>.<noun>`; a malformed
-row, an id of another shape or a repeated one quarantines the plugin
-(`bad-migration`, `duplicate-migration`). `delete_migration` is the whole
-row for a directory nothing reads any more, and `old_dirs(default, section,
-key)` finds an old directory a deleted setting may have moved:
-`retired_values` reads that setting from config.yml even after its key left
-your settings model, until `config migrate` deletes it. `untaped plugin
-check` runs each preview on an empty `HOME`, and the example plugin
-(`examples/untaped-hello`) has one row.
+`unsafe_dir(path)` says why a directory must never go whole (it holds home or
+untaped's own files, or is a symlink); the helpers below keep such a path, and
+any their `guard` refuses, as a `keep` row. Move data into `plugin_dir(SPEC)`. An
+id is `<plugin>.<noun>`; a malformed row, an id of another shape or a repeated
+one quarantines the plugin (`bad-migration`, `duplicate-migration`).
+`move_migration` moves each `(source, destination)` pair `moves()` returns,
+never over existing data unless `replaceable(destination)` says a command only
+created it; `setting_guard` keeps a place a profile still sets; data that a
+symlink or saved path points into needs its own `DirMigration`.
+`delete_migration` is the whole row for a directory nothing reads any more,
+and `old_dirs(default, section, key)` finds an old directory a deleted setting
+may have moved: `retired_values` reads that setting from config.yml even after
+its key left your settings model, until `config migrate` deletes it.
+`untaped plugin check` runs each preview on an empty `HOME`; the example
+plugin (`examples/untaped-hello`) has one row.
 
 ## Caching what an upstream answers
 
@@ -280,14 +283,13 @@ untaped plugin new gitlab --fills workspace.repo_source
 ```
 
 `plugin new` writes `untaped-gitlab/` in the current directory (`--path`
-elsewhere, `--dry-run` to list the files first): the package with its
-`SPEC` offering the provider to the owner, the provider
-(`providers/workspace.py`) with every method of the contract and its
-docstring (the required ones as stubs, the optional ones and the bridge
-commented out, since a stub would count as filling them), a test running
-lint's `assert_clean`, `assert_fills` with a list of samples to fill in and
-`assert_surface`, and a `pyproject.toml` with the ranges and extra below
-(`untaped[lint]` in its `dev` group). It
+elsewhere, `--dry-run` to list the files first): the package with its `SPEC`
+offering the provider to the owner, the provider (`providers/workspace.py`)
+with every method of the contract and its docstring (the required ones as
+stubs, the optional ones and the bridge commented out, since a stub would
+count as filling them), a test running lint's `assert_clean`, `assert_fills`
+with a list of samples to fill in and `assert_surface`, and a `pyproject.toml`
+with the ranges and extra below (`untaped[lint]` in its `dev` group). It
 never writes into an existing directory.
 
 A plugin that fills a contract declares, besides its `untaped` range, the
@@ -296,10 +298,10 @@ versions:
 
 ```toml
 [project]
-dependencies = ["untaped>=10,<11", "pydantic>=2.13.3,<3"]
+dependencies = ["untaped>=11,<12", "pydantic>=2.13.3,<3"]
 
 [project.optional-dependencies]
-workspace = ["untaped-workspace>=10,<11"]
+workspace = ["untaped-workspace>=11,<12"]
 ```
 
 `untaped lint` fails a plugin with no `untaped` range, or with a
@@ -308,11 +310,9 @@ extra's range quarantines that offer alone (`owner-out-of-range`). The
 provider imports only `untaped.sdk`, `untaped.contracts`, `untaped.testing`
 and the owner's `api` module.
 
-Fill the stubs, add samples, drop the scaffold's `lint.live` ignore once
-the methods return, then run the plugin's tests and `untaped lint` in its
-directory against the installed package.
-[Testing contracts](./contracts.md#testing-contracts) says what each check
-does, and how an owner tests its own contracts.
+Fill the stubs, add samples, drop the scaffold's `lint.live` ignore once the
+methods return, then run the plugin's tests and `untaped lint` in its directory.
+[Testing contracts](./contracts.md#testing-contracts) says what each check does.
 
 ## Experimental and deprecated commands
 
@@ -383,18 +383,18 @@ Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
 [Lint](./lint.md)) from the plugin's own tests,
 `untaped.testing.assert_surface(SPEC, path)` to keep its commands, settings
 and contracts from losing a line by accident (experimental), and
-`untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme
-hello` in-process against the installed plugins; it returns the exit code,
-the captured output and `diagnostics`, the typed stderr lines the command
-emitted (progress lines only under `--verbose`, or when the test advances
-the clock with `untaped.testing.progress_clock()`).
+`untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme hello`
+in-process against the installed plugins; it returns the exit code, the
+captured output and `diagnostics`, the typed stderr lines the command emitted
+(progress lines only under `--verbose`, or when the test advances the clock
+with `untaped.testing.progress_clock()`).
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,
 see [Enforcement](./reference/conventions.md#enforcement).
 
-Test `SPEC.app_factory()` in isolation, assert that
-the entry-point name matches `SPEC.name`, and exercise root config, profile,
-skill, pipe and error paths. `untaped plugin list`, `untaped acme --help` and
-`untaped doctor` show the composed surface and any quarantine reason: a
-malformed plugin is quarantined so the other plugins still boot.
+Test `SPEC.app_factory()` in isolation, assert that the entry-point name
+matches `SPEC.name`, and exercise root config, profile, skill, pipe and error
+paths. `untaped plugin list`, `untaped acme --help` and `untaped doctor` show
+the composed surface and any quarantine reason: a malformed plugin is
+quarantined so the other plugins still boot.

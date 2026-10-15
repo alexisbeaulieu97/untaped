@@ -1,8 +1,7 @@
-"""FK-only specs: looked up via :class:`FkResolver` but never CRUD'd in v0.
+"""FK-only specs: looked up via :class:`FkResolver`, never saved or applied.
 
 These specs declare just enough for ``name → id`` resolution and
-``list/get`` browsing. They omit save/apply because the user explicitly
-scoped them out of v0.
+``list/get`` browsing; untaped does not manage these kinds' records.
 """
 
 from __future__ import annotations
@@ -37,7 +36,7 @@ ORGANIZATION_SPEC = AwxResourceSpec(
     list_columns=("id", "name"),
     commands=("list", "get"),
     fidelity="read_only",
-    fidelity_note="organization CRUD is out of v0 scope",
+    fidelity_note="untaped does not save or apply organizations",
 )
 
 
@@ -55,7 +54,7 @@ CREDENTIAL_TYPE_SPEC = AwxResourceSpec(
     list_columns=("id", "name", "kind"),
     commands=("list", "get"),
     fidelity="read_only",
-    fidelity_note="credential type CRUD is out of v0 scope",
+    fidelity_note="untaped does not save or apply credential types",
 )
 
 
@@ -75,7 +74,7 @@ EXECUTION_ENVIRONMENT_SPEC = AwxResourceSpec(
     list_columns=("id", "name", "image"),
     commands=(),
     fidelity="read_only",
-    fidelity_note="execution environment CRUD is out of v0 scope",
+    fidelity_note="untaped does not save or apply execution environments",
 )
 
 
@@ -90,7 +89,7 @@ LABEL_SPEC = AwxResourceSpec(
     list_columns=("id", "name", "organization"),
     commands=(),
     fidelity="read_only",
-    fidelity_note="label CRUD is out of v0 scope",
+    fidelity_note="untaped does not save or apply labels",
 )
 
 
@@ -104,7 +103,7 @@ INSTANCE_GROUP_SPEC = AwxResourceSpec(
     list_columns=("id", "name"),
     commands=(),
     fidelity="read_only",
-    fidelity_note="instance group CRUD is out of v0 scope",
+    fidelity_note="untaped does not save or apply instance groups",
 )
 
 

@@ -20,6 +20,11 @@ ApplyAction = Literal[
     "partial",
 ]
 
+FAIL_FAST_ACTIONS: frozenset[ApplyAction] = frozenset({"failed", "partial"})
+"""Actions that stop a fail-fast run (``OutcomeRecord.failed`` also counts ``conflict``)."""
+UNFINISHED_ACTIONS: frozenset[ApplyAction] = FAIL_FAST_ACTIONS | {"conflict", "skipped"}
+"""Actions of a write that did not fully land: they fail the run and block dependents."""
+
 
 class FieldChange(BaseModel):
     """One row of an apply diff."""

@@ -8,19 +8,15 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import UsageError
-from untaped_workspace.domain import (
-    RepoSpec,
-    WorkspaceRecord,
-    WorktreeStatus,
-    archive_blockers,
-    archive_hint,
+from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord, WorktreeStatus
+from untaped_workspace.domain.naming import (
     assign_dirs,
     branch_for,
     repo_identity,
     validate_workspace_name,
 )
 from untaped_workspace.domain.records import RepoOutcome, StatusRow
-from untaped_workspace.domain.safety import NOT_STORED, SUBMODULES
+from untaped_workspace.domain.safety import NOT_STORED, SUBMODULES, archive_blockers, archive_hint
 
 
 @pytest.mark.parametrize("name", ["JIRA-1234", "feature_x", "a.b"])
@@ -32,6 +28,16 @@ def test_valid_workspace_names(name: str) -> None:
 def test_invalid_workspace_names(name: str) -> None:
     with pytest.raises(UsageError):
         validate_workspace_name(name)
+
+
+def test_a_decomposed_name_is_its_composed_spelling() -> None:
+    assert validate_workspace_name("cafe\u0301") == "caf\u00e9"
+
+
+def test_a_name_too_long_for_a_directory_says_so() -> None:
+    assert validate_workspace_name("x" * 128) == "x" * 128
+    with pytest.raises(UsageError, match="at most 128 bytes"):
+        validate_workspace_name("x" * 129)
 
 
 @pytest.mark.parametrize(

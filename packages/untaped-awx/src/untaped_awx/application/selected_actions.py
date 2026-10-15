@@ -1,7 +1,7 @@
 """Bounded scheduling for independent actions on already validated fixed targets.
 
 A failed action's outcome keeps its exception (``error``) and the row's
-structured error (``error_info``, counted toward the run's exit code).
+structured ``failure``; building it counts nothing, reporting it does.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from untaped.sdk import Failure
-from untaped_awx.application.scheduling import Schedule, ScheduleInterruptedError
+from untaped_awx.application.scheduling import Schedule, ScheduleInterruptedError, dooms_batch
 from untaped_awx.application.selection import SelectedResource
 
 
@@ -23,14 +23,14 @@ class SelectedActionOutcome[T]:
     detail: str | None = None
     error: Exception | None = field(default=None, repr=False)
     """Typed evidence for the caller; never render the unsanitized exception."""
-    error_info: Failure | None = None
+    failure: Failure | None = None
     """The failure's category, system and sanitized ``detail``: a row's ``error``."""
 
     def row_error(self) -> dict[str, Any]:
         """``{"error": ...}`` for the row of a failed action, else ``{}``."""
-        if self.error_info is None:
+        if self.failure is None:
             return {}
-        return {"error": self.error_info.model_dump(mode="json")}
+        return {"error": self.failure.model_dump(mode="json")}
 
 
 class ActionsInterruptedError(KeyboardInterrupt):
@@ -46,10 +46,13 @@ def run_selected_actions[T](
     worker: Callable[[SelectedResource], T],
     *,
     parallel: int = 1,
-    continue_on_error: bool = False,
+    fail_fast: bool = False,
     error_detail: Callable[[Exception, SelectedResource], str] = lambda exc, _: str(exc),
 ) -> list[SelectedActionOutcome[T]]:
-    """Stop new submissions on failure; retain in-flight results in target order.
+    """Run every target unless a failure stops new submissions; keep target order.
+
+    A failure stops them under ``fail_fast``, and a rejected token or broken
+    setup (:func:`dooms_batch`) always does.
 
     Ctrl-C stops new submissions, lets in-flight submissions finish, and
     raises :class:`ActionsInterruptedError` with every outcome gathered so far.
@@ -61,7 +64,7 @@ def run_selected_actions[T](
         try:
             return SelectedActionOutcome(target, "completed", worker(target))
         except Exception as exc:
-            if not continue_on_error:
+            if fail_fast or dooms_batch(exc):
                 schedule.stop()
             detail = error_detail(exc, target)
             return SelectedActionOutcome(
@@ -69,7 +72,7 @@ def run_selected_actions[T](
                 "failed",
                 detail=detail,
                 error=exc,
-                error_info=Failure.from_exception(exc, message=detail),
+                failure=Failure.from_exception(exc, message=detail),
             )
 
     try:

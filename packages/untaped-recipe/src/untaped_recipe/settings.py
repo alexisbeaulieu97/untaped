@@ -1,4 +1,4 @@
-"""Settings for the recipe tool."""
+"""Settings for the recipe plugin."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ class RecipeSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    library_dir: Path = Path("~/.untaped/untaped-recipes")
+    library_dir: Path = Path("~/.untaped/plugins/recipe/library")
     hook_timeout_seconds: float = Field(default=60, ge=0)
     hook_startup_timeout_seconds: float = Field(default=300, ge=0)
     backup_keep: int | None = Field(default=None, ge=1)

@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from git.conftest import StoreFor
+from git.conftest import StoreError, StoreFor
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote, trace2_events
-from untaped_git.errors import StoreError
 
 NAMES = [f"b{index:03d}" for index in range(120)]
 

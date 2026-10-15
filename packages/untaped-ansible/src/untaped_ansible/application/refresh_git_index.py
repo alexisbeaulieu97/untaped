@@ -7,6 +7,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import batched
 from typing import Literal
 
 from pydantic import ConfigDict, Field
@@ -41,7 +42,6 @@ from untaped_ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped_ansible.domain.repo_targets import remote_url_for
-from untaped_ansible.errors import GitCacheError
 from untaped_ansible.settings import SourceDefinition
 from untaped_github.api import (
     RepositoryInventoryScope,
@@ -50,12 +50,6 @@ from untaped_github.api import (
 )
 
 ProbeMode = Literal["all", "default_branch"]
-
-# Errors a fetch/parse worker may raise: GitCacheError from the repo store
-# and UntapedError from the SQLite index. The worker has no HTTP path
-# (GitHub REST/GraphQL traffic happens in expansion and the probe), so no
-# HTTP-specific error type belongs here.
-_REPO_FAILURE_ERRORS = (GitCacheError, UntapedError)
 
 # Version of what a ref snapshot stores: dependency-file parsing, identity
 # resolution and the resulting edge shape. It is folded into the dependency
@@ -193,7 +187,9 @@ class RefreshGitSourceIndex:
         probe_mode = self._probe_mode(source)
         probe_fallbacks: dict[str, str] = {}
 
-        for batch_index, batch in enumerate(_chunks(pending_repos, self._repo_batch_size)):
+        for batch_index, batch in enumerate(
+            batched(pending_repos, self._repo_batch_size, strict=False)
+        ):
             probe_report = self._probe.probe(
                 batch,
                 kinds=probe_kinds,
@@ -378,7 +374,7 @@ class RefreshGitSourceIndex:
                     aliases_fingerprint=aliases_fingerprint,
                     checked_at=checked_at,
                 )
-            except _REPO_FAILURE_ERRORS as exc:
+            except UntapedError as exc:  # the repo store's or the index's (no HTTP here)
                 return RepoFailure(
                     repo=task.repo.full_name,
                     reason=str(exc) or type(exc).__name__,
@@ -731,11 +727,6 @@ def _merge_rate_limit(
 
 def _rate_limit_pause_reason(remaining: int) -> str:
     return f"GitHub GraphQL rate limit is low: {remaining} points remaining"
-
-
-def _chunks[T](values: list[T], size: int) -> Iterable[list[T]]:
-    for start in range(0, len(values), size):
-        yield values[start : start + size]
 
 
 def _str(value: object) -> str | None:

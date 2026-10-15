@@ -27,12 +27,11 @@ from untaped import bootstrap
 from untaped.app_context import app_context
 from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
-from untaped.output.policy import is_quiet
+from untaped.output.policy import is_quiet, is_verbose
 from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.profile_resolver import profile_override, set_profile_override
-from untaped.settings import get_settings, reset_config_registry_for_tests
+from untaped.settings import get_settings, reset_config_registry
 from untaped.testing import CliInvoker, plugin_candidate
-from untaped.verbose import is_verbose
 
 
 class _ExtProfile(BaseModel):
@@ -440,7 +439,7 @@ def test_reset_restores_composed_state(_isolated_config: Path) -> None:
     assert app_context().section("ext", _ExtProfile).token == "default-token"
 
     set_profile_override("work")
-    reset_config_registry_for_tests()
+    reset_config_registry()
     get_settings.cache_clear()
     with pytest.raises(ConfigError):
         app_context().section("ext", _ExtProfile)

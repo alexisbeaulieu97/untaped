@@ -40,9 +40,9 @@ def store_check(_ctx: PluginContext) -> DoctorResult:
     day), and an interrupted release finishes on the repo's next use.
     """
     from untaped_git.infrastructure.report import store_report  # noqa: PLC0415
-    from untaped_git.settings import git_settings  # noqa: PLC0415
+    from untaped_git.settings import store_root  # noqa: PLC0415
 
-    report = store_report(git_settings().store_dir.expanduser(), version=None)
+    report = store_report(store_root(), version=None)
     problems = []
     if report.gc_log:
         problems.append(

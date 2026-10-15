@@ -14,7 +14,7 @@ from untaped.sdk import UsageError
 from untaped.testing.git import GitRemote
 from untaped_workspace.api import Repo
 from untaped_workspace.application.provision import ProvisionRepos
-from untaped_workspace.domain import Checkout, RepoArg
+from untaped_workspace.domain.models import Checkout, RepoArg
 from untaped_workspace.domain.records import RepoOutcome
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore

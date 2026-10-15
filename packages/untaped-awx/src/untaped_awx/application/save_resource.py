@@ -278,7 +278,7 @@ _METADATA_EXTRACTORS: dict[str, _MetadataExtractor] = {
 """Per-kind hooks for non-default metadata extraction.
 
 Keep this map small: most kinds use ``_default_metadata`` via
-``identity_keys = ("name", "organization")``. Schedule, Host, and Group
-are the v0.5 users; new kinds with non-default identity should add an
+``identity_keys = ("name", "organization")``. Schedule, InventorySource, Host
+and Group use it; new kinds with non-default identity should add an
 entry here rather than letting saves silently lose ``metadata.parent``.
 """

@@ -11,7 +11,15 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import PluginSpec, SkillAsset, delete_migration, old_dirs, shown_path
+from untaped.sdk import (
+    PluginSpec,
+    SkillAsset,
+    delete_migration,
+    move_migration,
+    old_dirs,
+    setting_guard,
+    shown_path,
+)
 from untaped_ansible.doctor import DOCTOR_CHECKS
 from untaped_ansible.settings import INDEX, AnsibleSettings, AnsibleState
 
@@ -26,6 +34,19 @@ def build_app() -> App:
     from untaped_ansible.cli import app  # noqa: PLC0415
 
     return app
+
+
+def _index_moves() -> Sequence[tuple[Path, Path]]:
+    """10.x's index into ``plugin_dir``, where ``ansible.index_path`` now defaults."""
+    new: Path = AnsibleSettings.model_fields["index_path"].default
+    return [(Path("~/.untaped/ansible-index.sqlite3").expanduser(), new.expanduser())]
+
+
+def _empty_index(path: Path) -> bool:
+    """Whether the index at ``path`` holds no refreshed source (a command opened it, no more)."""
+    from untaped_ansible.infrastructure.sqlite_schema import holds_no_source  # noqa: PLC0415
+
+    return holds_no_source(path)
 
 
 def _git_cache_10x() -> Sequence[Path]:
@@ -69,6 +90,15 @@ SPEC = PluginSpec(
     doctor_checks=DOCTOR_CHECKS,
     caches=(INDEX,),
     migrations=(
+        move_migration(
+            "ansible.index",
+            "10.x dependency index",
+            _index_moves,
+            detail="saved sources keep their refreshed data",
+            sidecars=("-journal", "-wal", "-shm"),  # a hot journal travels with its database
+            guard=setting_guard("ansible", "index_path"),
+            replaceable=_empty_index,
+        ),
         delete_migration(
             "ansible.cache",
             "10.x git cache",

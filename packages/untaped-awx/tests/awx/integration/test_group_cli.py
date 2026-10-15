@@ -189,6 +189,7 @@ def test_groups_apply_preview_shows_membership_diff_without_writes(
     # Preview output mentions the host membership change.
     assert "hosts" in result.output
     assert "web-01" in result.output
+    assert "scope=parent=Inventory/prod (org Default):" in result.stderr
 
 
 def test_groups_apply_associates_child_groups(fake_aap: Any, tmp_path: Path) -> None:

@@ -26,7 +26,7 @@ class TestDefaultLayout:
     def test_profile_shaped_config_resolves_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """With no tool-registered layout, the default profiles layout resolves profiles.default."""
+        """The profiles layout resolves profiles.default."""
         cfg = tmp_path / "config.yml"
         cfg.write_text("profiles:\n  default:\n    skills:\n      updates: auto\nactive: default\n")
         monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))

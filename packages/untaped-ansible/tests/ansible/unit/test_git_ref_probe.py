@@ -10,8 +10,9 @@ import pytest
 
 from untaped.settings import get_settings
 from untaped_ansible.domain.payloads import GitRef, ProbeTarget
+from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure.git_ref_probe import GitRemoteRefProbe
-from untaped_ansible.infrastructure.git_store import GitCacheError, GitSourceStore
+from untaped_ansible.infrastructure.git_store import GitSourceStore
 
 _URL = "https://github.com/acme/site.git"
 _TARGET = ProbeTarget(full_name="acme/site", default_branch="main", clone_url=_URL)
@@ -109,7 +110,7 @@ def test_git_probe_asks_the_remotes_head_when_the_inventory_names_no_branch(
 
 def test_git_probe_reports_git_failures_per_repo() -> None:
     git = FakeGit()
-    git.failures[_URL] = GitCacheError("git ls-remote failed")
+    git.failures[_URL] = RepoStoreError("git ls-remote failed")
 
     report = GitRemoteRefProbe(git, clone_protocol="https").probe(
         [_TARGET],
@@ -124,7 +125,7 @@ def test_git_probe_reports_git_failures_per_repo() -> None:
 
 def test_git_probe_timeout_is_a_retryable_failure() -> None:
     git = FakeGit()
-    git.failures[_URL] = GitCacheError("git ls-remote timed out after 60s", category="unavailable")
+    git.failures[_URL] = RepoStoreError("git ls-remote timed out after 60s", category="unavailable")
 
     report = GitRemoteRefProbe(git, clone_protocol="https").probe(
         [_TARGET],

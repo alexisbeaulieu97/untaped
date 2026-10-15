@@ -104,7 +104,7 @@ _DEPLOY = ("--filter", "name=deploy")
         # --organization (alias --org) scopes a name found in several organizations
         ((*_JT, "get", "shared", "--organization", "Default"), ("id",), None, ["33"]),
         ((*_JT, "get", "shared", "--org", "Other"), ("id",), None, ["34"]),
-        (("projects", "list", "--limit", "0"), ("name",), None, ["10", "11", "ops", "playbooks"]),
+        (("projects", "list", "--limit", "4"), ("name",), None, ["10", "11", "ops", "playbooks"]),
     ],
 )  # fmt: skip
 def test_read_selection(

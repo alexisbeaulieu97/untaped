@@ -168,10 +168,10 @@ from the repo store: workspace's refs (`origin/*`, the tags), its file and
 the local branches that no worktree has checked out and whose commits are
 all on the remote go, and the repo itself when no other plugin uses it.
 
-- Before anything changes, a branch of the workspace with commits the remote
-  lacks refuses the removal (exit 1, "branch BRANCH: N commits not pushed"),
-  as archive's blockers do. Push it from a workspace on that branch, or pass
-  `--force`, which deletes it.
+- Before anything changes, a branch of the workspace with commits no remote
+  branch has refuses the removal (exit 1, "branch BRANCH: N commits not
+  pushed"), as archive's blockers do. Push it from a workspace on that
+  branch, or pass `--force`, which deletes it.
 - Other branches with unpushed commits or a stash made on them stay, and
   keep the repo (listed under `held by branches` in `untaped git store`).
   `--force` deletes them too, and the preview and the confirmation name

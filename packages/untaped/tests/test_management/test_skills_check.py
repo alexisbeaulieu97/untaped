@@ -80,7 +80,9 @@ def test_failed_command_still_warns(tmp_path: Path) -> None:
     assert "installed skills are out of date" in output
 
 
-@pytest.mark.parametrize("args", [("skills", "list"), ("doctor",), ("--version",)])
+@pytest.mark.parametrize(
+    "args", [("skills", "list"), ("doctor",), ("--version",), ("Skills", "list"), ("DOCTOR",)]
+)
 def test_skills_and_doctor_commands_do_not_warn(tmp_path: Path, args: tuple[str, ...]) -> None:
     root = _install_then_change(tmp_path)
     assert "installed skills are out of date" not in _run(root, *args)[1]

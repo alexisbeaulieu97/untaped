@@ -85,8 +85,8 @@ so a prompt segment needs only the shell:
 ```toml
 # starship.toml
 [custom.dotfiles]
-command = "cat ~/.untaped/dotfiles/attention"
-when = 'test "$(cat ~/.untaped/dotfiles/attention 2>/dev/null)" != 0'
+command = "cat ~/.untaped/plugins/dotfiles/attention"
+when = 'test "$(cat ~/.untaped/plugins/dotfiles/attention 2>/dev/null)" != 0'
 format = "[⇣ $output dotfiles]($style) "
 ```
 

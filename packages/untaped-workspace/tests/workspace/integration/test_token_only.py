@@ -3,7 +3,7 @@
 The store asks the plugin filling ``GitHost`` for the fetch, and a user's
 ``git push`` in a worktree asks ``untaped git credential`` (here a recording
 ``untaped`` on ``PATH``). A stale helper of the user's that git asks first is
-put behind untaped's in untaped's worktrees only, by ``git.untaped_helper_first``
+put behind untaped's in untaped's worktrees only, by ``git.untaped_helper_only``
 and the next ``status --fetch``.
 """
 
@@ -112,7 +112,7 @@ def test_the_store_fetch_asks_the_forge_and_git_asks_untaped(
     assert untaped_on_path.read_text().splitlines() == ["--profile default git credential get"]
 
 
-def test_helper_first_puts_a_stale_helper_behind_untaped_in_its_worktrees_only(
+def test_helper_only_puts_a_stale_helper_behind_untaped_in_its_worktrees_only(
     forge: type[Forge],
     untaped_on_path: Path,
     remote: GitRemote,
@@ -132,7 +132,7 @@ def test_helper_first_puts_a_stale_helper_behind_untaped_in_its_worktrees_only(
     hosts = json.loads(run(git_app, ["hosts", "--format", "json"]).stdout)
     assert [(row["host"], row["helpers_first"]) for row in hosts] == [("git.example", [stale])]
 
-    monkeypatch.setenv("UNTAPED_GIT__UNTAPED_HELPER_FIRST", "true")
+    monkeypatch.setenv("UNTAPED_GIT__UNTAPED_HELPER_ONLY", "true")
     get_settings.cache_clear()
     assert run(app, ["status", "--fetch", "J-1"]).exit_code == 0
 

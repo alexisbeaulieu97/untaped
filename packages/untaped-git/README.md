@@ -38,7 +38,7 @@ hand-added worktree, branch or stash holds it.
 
 In the worktrees untaped creates, Git asks `untaped git credential` for the
 host's credentials, after your own credential helpers. When an old keychain
-entry answers first, set `git.untaped_helper_first: true`: untaped's worktrees
+entry answers first, set `git.untaped_helper_only: true`: untaped's worktrees
 then ask only untaped for that host, never your own helpers.
 
 ## Reference

@@ -462,22 +462,6 @@ def test_validate_refuses_scm_branch_with_source_ref(cli: CliInvoker, tmp_path: 
     assert "--source-ref and --scm-branch cannot be combined" in result.stderr
 
 
-def test_run_dry_run_is_deprecated_in_favour_of_validate(
-    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
-) -> None:
-    fake_aap.seed("job_templates", name="Deploy app")
-    test_file = _write(tmp_path / "v.yml", _BAD_AND_OK)
-
-    result = cli.invoke(app, ["test", "run", str(test_file), "--case", "bad", "--dry-run"])
-
-    assert result.exit_code == 1
-    assert "`awx test run --dry-run` is deprecated" in result.stderr
-    assert "use `awx test validate`" in result.stderr
-    assert "error: v/bad: " in result.stderr
-    assert all(action != "launch" for _, _, action, _ in fake_aap.actions_called)
-    assert "--dry-run" not in cli.invoke(app, ["test", "run", "--help"]).stdout
-
-
 def test_validate_reports_each_case_as_an_attributed_error(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

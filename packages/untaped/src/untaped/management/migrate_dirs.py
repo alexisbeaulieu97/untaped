@@ -26,6 +26,7 @@ from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.messages import plural, shown_path
 from untaped.migrations import overlapping
+from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
     CompositionResult,
@@ -57,7 +58,7 @@ class Planned:
     plugin: str
     migration: DirMigration
     rows: tuple[MigrationRow, ...] = ()
-    error: str | None = None
+    error: Failure | None = None
 
     @property
     def changes(self) -> bool:
@@ -96,7 +97,7 @@ def plan(result: CompositionResult, options: MigrationOptions) -> list[Planned]:
 
 def _clashes(planned: list[Planned]) -> list[Planned]:
     """Fail both migrations when one would delete a directory the other moves or keeps."""
-    errors: dict[int, str] = {}
+    errors: dict[int, Failure] = {}
     for index, item in enumerate(planned):
         for row in item.rows:
             if row.action != "delete" or not row.source:
@@ -110,11 +111,16 @@ def _clashes(planned: list[Planned]) -> list[Planned]:
                     continue
                 shown = shown_path(row.source)
                 errors.setdefault(
-                    index, f"would delete {shown}, which {other.migration.id} uses; nothing ran"
+                    index,
+                    Failure.plain(
+                        f"would delete {shown}, which {other.migration.id} uses; nothing ran"
+                    ),
                 )
                 errors.setdefault(
                     other_index,
-                    f"{item.migration.id} would delete {shown}, which this uses; nothing ran",
+                    Failure.plain(
+                        f"{item.migration.id} would delete {shown}, which this uses; nothing ran"
+                    ),
                 )
     return [
         replace(item, error=errors[index]) if index in errors and item.error is None else item
@@ -136,7 +142,14 @@ def preview_records(planned: Sequence[Planned]) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     for item in planned:
         if item.error is not None:
-            records.append({"id": item.migration.id, "action": "failed", "detail": item.error})
+            records.append(
+                {
+                    "id": item.migration.id,
+                    "action": "failed",
+                    "detail": item.error.message,
+                    "error": item.error.model_dump(mode="json"),
+                }
+            )
             continue
         records.extend({"id": item.migration.id, **row.model_dump()} for row in item.rows)
     return records
@@ -182,14 +195,14 @@ def _apply(
     for item in planned:
         migration = item.migration
         if item.error is not None:
-            detail = f"not applied: {item.error}"
-            outcomes.append(MigrationOutcome(id=migration.id, action="failed", detail=detail))
+            detail = f"not applied: {item.error.message}"
+            outcomes.append(_failed(migration, item.error, detail=detail))
             continue
         try:
             done = migration.apply(contexts[item.plugin], options)
             outcomes.extend(_outcomes(migration, done))
         except Exception as exc:  # one migration's failure never stops the others
-            outcomes.append(MigrationOutcome(id=migration.id, action="failed", detail=_raised(exc)))
+            outcomes.append(_failed(migration, _raised(exc)))
     return outcomes
 
 
@@ -198,8 +211,22 @@ def _outcomes(migration: DirMigration, done: object) -> list[MigrationOutcome]:
         isinstance(outcome, MigrationOutcome) for outcome in done
     ):
         detail = f"apply returned {type(done).__name__}, expected MigrationOutcome rows"
-        return [MigrationOutcome(id=migration.id, action="failed", detail=detail)]
-    return list(done)
+        return [_failed(migration, Failure.plain(detail))]
+    # A failed or partial row a migration built itself still carries a structured error.
+    return [
+        outcome.model_copy(update={"error": Failure.plain(outcome.detail)})
+        if outcome.failed and outcome.error is None
+        else outcome
+        for outcome in done
+    ]
+
+
+def _failed(
+    migration: DirMigration, error: Failure, *, detail: str | None = None
+) -> MigrationOutcome:
+    """A ``failed`` outcome carrying ``error``; ``detail`` defaults to its message."""
+    text = error.message if detail is None else detail
+    return MigrationOutcome(id=migration.id, action="failed", detail=text, error=error)
 
 
 def _rows(rows: object) -> Sequence[MigrationRow]:
@@ -208,10 +235,11 @@ def _rows(rows: object) -> Sequence[MigrationRow]:
     return rows
 
 
-def _raised(exc: Exception) -> str:
+def _raised(exc: Exception) -> Failure:
+    """``exc`` as a row's failure: an untaped error as itself, a plugin's bug as what it raised."""
     if isinstance(exc, UntapedError):
-        return str(exc)
-    return f"raised {type(exc).__name__}: {exc}"
+        return Failure.from_exception(exc)
+    return Failure.from_exception(exc, message=f"raised {type(exc).__name__}: {exc}")
 
 
 def _declined() -> bool:

@@ -59,7 +59,9 @@ class SaveResources:
                 yield SaveOutcome(
                     kind=spec.kind,
                     action="skipped",
-                    detail="not roundtrippable in v0",
+                    detail=f"read-only: {spec.fidelity_note}"
+                    if spec.fidelity_note
+                    else "read-only kind",
                 )
                 continue
             server_filters = _server_filters_for_spec(

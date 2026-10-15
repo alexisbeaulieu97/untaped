@@ -4,13 +4,13 @@ version = "0.1.0"
 description = "A minimal example plugin for untaped."
 readme = "README.md"
 requires-python = ">=3.14.1"
-dependencies = ["untaped>=10,<11", "pydantic>=2.13.3,<3"]
+dependencies = ["untaped>=11,<12", "pydantic>=2.13.3,<3"]
 
 [project.entry-points."untaped.plugins"]
 hello = "untaped_hello:SPEC"
 
 [dependency-groups]
-dev = ["pytest>=9", "untaped[lint]>=10,<11"]
+dev = ["pytest>=9", "untaped[lint]>=11,<12"]
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

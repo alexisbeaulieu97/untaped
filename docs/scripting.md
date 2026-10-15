@@ -147,7 +147,7 @@ let a CI step tell "the check found something" (3) apart from "the tool
 failed" (1), "fix the setup" (4) and "try again later" (5):
 
 ```bash
-untaped github sweep --org acme --grep 'log4j' --fail-on-match --format raw --columns repo
+untaped github sweep --org acme --grep 'log4j' --fail-on-match --format raw --columns full_name
 case $? in
   0) echo "clean" ;;
   3) echo "banned pattern found" ;;

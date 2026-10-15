@@ -1001,6 +1001,18 @@ def test_safe_path_segment(value: str, expected: str) -> None:
     assert safe_path_segment(value) == expected
 
 
+def test_safe_path_segment_is_one_name_for_both_unicode_spellings() -> None:
+    composed, decomposed = "caf\u00e9", "cafe\u0301"
+    assert safe_path_segment(decomposed) == safe_path_segment(composed) == composed
+
+
+def test_a_long_segment_keeps_a_prefix_and_a_hash_within_the_limit() -> None:
+    first, second = "é" * 100 + "a", "é" * 100 + "b"
+    short, other = safe_path_segment(first), safe_path_segment(second)
+    assert short != other and len(short.encode()) <= 128 and len(other.encode()) <= 128
+    assert short.startswith("é" * 50) and safe_path_segment("x" * 128) == "x" * 128
+
+
 # ── command-scope config and extra environment ─────────────────────────────
 
 

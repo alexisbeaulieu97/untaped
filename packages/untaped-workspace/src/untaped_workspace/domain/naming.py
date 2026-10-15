@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Sequence
 
 from pydantic import ValidationError
@@ -10,10 +11,25 @@ from untaped.sdk import UsageError, first_validation_error, q, safe_path_segment
 from untaped_workspace.domain.models import RepoSpec
 from untaped_workspace.domain.repo import Repo
 
+#: The longest name :func:`~untaped.sdk.safe_path_segment` keeps as it is.
+_NAME_MAX_BYTES = 128
+
+
+def workspace_key(name: str) -> str:
+    """``name`` NFC-normalised: how a typed name finds the workspace ``create`` stored."""
+    return unicodedata.normalize("NFC", name)
+
 
 def validate_workspace_name(name: str) -> str:
-    """Return ``name`` if it is one safe path segment, else raise ``UsageError``."""
+    """``name`` NFC-normalised if it is one safe path segment, else raise ``UsageError``.
+
+    Normalised first, so a decomposed name (as macOS file names often are)
+    is the same workspace as its composed spelling.
+    """
+    name = workspace_key(name)
     if not name or name.startswith(".") or safe_path_segment(name) != name:
+        if name and len(name.encode()) > _NAME_MAX_BYTES:
+            raise UsageError(f"invalid workspace name {q(name)}: at most {_NAME_MAX_BYTES} bytes")
         raise UsageError(f"invalid workspace name {q(name)}: use letters, digits, '.', '_' or '-'")
     return name
 

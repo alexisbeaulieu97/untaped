@@ -1,8 +1,8 @@
 """The SDK's settings layout: map the raw config file to effective values.
 
 `ProfilesSettingsLayout` layers ``profiles.default`` beneath
-``profiles.<active>`` and is the SDK's only layout — every tool resolves
-through it.
+``profiles.<active>`` and is the SDK's only layout — every plugin
+resolves through it.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ class ResolvedConfig:
 class ProfilesSettingsLayout:
     """Layer ``profiles.default`` beneath ``profiles.<active>``.
 
-    Profiles are a first-class SDK plugin, so this layout (and the
+    Profiles are a core feature, not a plugin, so this layout (and the
     resolver it delegates to) lives in core.
 
     ``sections`` supplies the default section models: each layered profile's

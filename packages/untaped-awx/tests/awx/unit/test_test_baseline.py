@@ -187,8 +187,10 @@ def test_a_run_where_no_case_ran_fails() -> None:
 
 
 def test_the_failures_a_baseline_run_carries_count_too() -> None:
-    outcome = SuiteRunOutcome(results=[_row("a", "pass")], carried=(_UNAVAILABLE,))
-    assert outcome.counted() == [_UNAVAILABLE]
+    outcome = SuiteRunOutcome(
+        results=[_row("a", "pass")], carried=(("s/a (baseline)", _UNAVAILABLE),)
+    )
+    assert outcome.deciding() == [("s/a (baseline)", _UNAVAILABLE)]
 
 
 def test_saved_rows_become_baselines() -> None:

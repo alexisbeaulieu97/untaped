@@ -366,8 +366,8 @@ def _update(
                 continue
             if item.state is SkillState.orphaned:
                 if named:
-                    _diag.failure(Failure.plain(f"{item.name}: skill no longer shipped"))
-                    rows.append(_outcome_row(item, "failed"))
+                    error = _diag.failure(Failure.plain("skill no longer shipped"), item=item.name)
+                    rows.append(_failed_row(item, error))
                     failed = True
                 continue
             if dry_run:
@@ -376,8 +376,7 @@ def _update(
             try:
                 update_installed_skill(skills, item)
             except UntapedError as exc:
-                _diag.failure(Failure.plain(f"{item.name}: {exc}"))
-                rows.append(_outcome_row(item, "failed"))
+                rows.append(_failed_row(item, _diag.failure(exc, item=item.name)))
                 failed = True
                 continue
             rows.append(_outcome_row(item, "updated"))
@@ -444,6 +443,11 @@ def _outcome_row(item: InstalledSkill, action: str) -> dict[str, object]:
         "target_path": str(item.path),
         "action": action,
     }
+
+
+def _failed_row(item: InstalledSkill, error: Failure) -> dict[str, object]:
+    """A ``failed`` outcome row carrying its structured failure."""
+    return {**_outcome_row(item, "failed"), "error": error.model_dump(mode="json")}
 
 
 def _resolve_short(selector: str, skills: Mapping[str, object]) -> str:

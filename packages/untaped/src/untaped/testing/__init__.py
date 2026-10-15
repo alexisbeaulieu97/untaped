@@ -435,7 +435,10 @@ def check_conventions(
     fails with the reason it was refused, such as a broken rename declaration.
     The rules that read only the plugin's files run only when ``untaped[lint]``
     is installed, which now owns them; without it a warning says so.
+    Composing, it brings back the composition it started with (and warns
+    about no quarantined plugin), and can't run inside a contract call.
     """
+    from untaped import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
     from untaped.conventions import (  # noqa: PLC0415
         FILE_RULES_MISSING,
         file_rules_installed,
@@ -445,7 +448,8 @@ def check_conventions(
     if not file_rules_installed():
         warnings.warn(FILE_RULES_MISSING, UserWarning, stacklevel=3)  # past the deprecated wrapper
 
-    found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)
+    with bootstrap.kept_composition(quiet=True):
+        found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)
     assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)
 
 

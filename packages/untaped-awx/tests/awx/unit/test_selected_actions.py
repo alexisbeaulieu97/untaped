@@ -16,8 +16,8 @@ def targets(count: int) -> list[SelectedResource]:
     ]
 
 
-@pytest.mark.parametrize("continue_on_error", [False, True])
-def test_serial_stops_after_failure_unless_continue_requested(continue_on_error: bool) -> None:
+@pytest.mark.parametrize("fail_fast", [False, True])
+def test_serial_stops_after_failure_only_when_fail_fast(fail_fast: bool) -> None:
     writes: list[int] = []
 
     def worker(target: SelectedResource) -> int:
@@ -26,12 +26,12 @@ def test_serial_stops_after_failure_unless_continue_requested(continue_on_error:
             raise RuntimeError("failed")
         return target.id
 
-    results = run_selected_actions(targets(3), worker, continue_on_error=continue_on_error)
-    assert writes == ([1, 2, 3] if continue_on_error else [1, 2])
+    results = run_selected_actions(targets(3), worker, fail_fast=fail_fast)
+    assert writes == ([1, 2] if fail_fast else [1, 2, 3])
     assert [result.action for result in results] == [
         "completed",
         "failed",
-        "completed" if continue_on_error else "skipped",
+        "skipped" if fail_fast else "completed",
     ]
     assert results[0].result == 1
 
@@ -55,7 +55,9 @@ def test_failure_preserves_in_flight_outcomes_and_never_starts_remaining() -> No
         failure_collected.set()
         return str(exc)
 
-    results = run_selected_actions(targets(5), worker, parallel=2, error_detail=describe)
+    results = run_selected_actions(
+        targets(5), worker, parallel=2, fail_fast=True, error_detail=describe
+    )
     assert sorted(writes) == [1, 2]
     assert [result.action for result in results] == [
         "failed",
@@ -86,3 +88,19 @@ def test_parallelism_is_capped_at_ten() -> None:
     results = run_selected_actions(targets(20), worker, parallel=100)
     assert maximum == 10
     assert all(result.action == "completed" for result in results)
+
+
+def test_a_rejected_token_stops_the_rest_without_fail_fast() -> None:
+    from untaped.sdk import ConfigError
+
+    writes: list[int] = []
+
+    def worker(target: SelectedResource) -> int:
+        writes.append(target.id)
+        if target.id == 1:
+            raise ConfigError("AWX rejected the token (HTTP 401)")
+        return target.id
+
+    results = run_selected_actions(targets(3), worker)
+    assert writes == [1]
+    assert [result.action for result in results] == ["failed", "skipped", "skipped"]

@@ -12,12 +12,12 @@ import statistics
 from collections.abc import Callable
 from pathlib import Path
 
+from untaped.sdk import dir_bytes
 from untaped_git.domain.records import RepoCount, StoreReport
 from untaped_git.infrastructure.repo_files import (
     config_value,
     list_repos,
     private_files,
-    tree_size,
     worktree_entries,
 )
 
@@ -32,7 +32,7 @@ def store_report(root: Path, *, version: str | None) -> StoreReport:
     used_by: dict[str, int] = {}
     exclusive: dict[str, int] = {}
     unowned, held = RepoCount(), RepoCount()
-    sizes = [tree_size(repo) for repo in repos]
+    sizes = [dir_bytes(repo) for repo in repos]
     for repo, size in zip(repos, sizes, strict=True):
         if config_value(repo / "config", "untaped", "filter") == "ignored":
             host = repo.relative_to(root).parts[0]
