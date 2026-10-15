@@ -223,13 +223,17 @@ deprecation warning ships in a minor first. A release is cut when its
 milestone's issues are closed.
 
 A release is a release PR, a TestPyPI rehearsal whenever the workflow, the
-build or the package set changed, and a `vX.Y.Z` tag on `main`.
-`.github/workflows/release.yml` does the rest; the workflow and
+build or the package set changed, and the merge of the release PR.
+`.github/workflows/release.yml` does the rest: a push to `main` that changes
+the version builds it, waits for the `pypi` approval, publishes, tags the
+built commit `vX.Y.Z` and creates the GitHub release. The workflow and
 `scripts/release.py` are the reference for what each step checks.
 
 Publishing, dispatching a release workflow, creating a tag or release,
 merging a PR and changing repository settings each need explicit approval for
-that exact action, because each changes shared or public state.
+that exact action, because each changes shared or public state. Merging the
+release PR is the decision to release, so only the maintainer merges it,
+never an agent.
 
 ### One-time setup
 
@@ -237,10 +241,12 @@ that exact action, because each changes shared or public state.
   repository `untaped`, workflow `release.yml`, environment `pypi` (PyPI) or
   `testpypi` (TestPyPI). Each new PyPI project needs a pending publisher on
   both indexes before its first rehearsal.
-- **The `pypi` environment** requires reviewer approval, and its deployment
-  rules must allow `v*` tags (not only `main`).
-- **A tag ruleset** blocks updating and deleting `v*` tags. It is a
-  repository setting, made by hand.
+- **The `pypi` environment** requires reviewer approval: it is the only
+  human step between a version-changing merge and PyPI. Its deployment rules
+  allow both `main` and `v*` tags, and "Prevent self-review" stays off, since
+  the maintainer who merges the release PR also approves its run.
+- **A tag ruleset** blocks updating and deleting `v*` tags, not creating
+  them, so the release run can tag. It is a repository setting, made by hand.
 
 ### The release PR
 
@@ -278,19 +284,23 @@ it. TestPyPI files are immutable, so re-rehearsing the same commit is a
 no-op. Builds are stamped with the commit time, so the next TestPyPI
 rehearsal of an already-rehearsed version from a new commit fails the index
 check: rehearse a pre-release such as `X.Y.Zrc1` first, or accept that
-`X.Y.Z` cannot be rehearsed again. The tag run checks PyPI only, so a
+`X.Y.Z` cannot be rehearsed again. The release run checks PyPI only, so a
 rehearsal never blocks the release.
 
 ### Release
 
 1. Merge the release PR.
-2. Tag the merge commit on `main` `vX.Y.Z` and push the tag.
-3. Check that CI is green for that commit, then approve the `pypi`
-   environment.
+2. Check that a Release run started on the merge commit (its `route` job
+   says why it releases, or why not). No run, or one that failed with no
+   jobs, means the trigger or `release.yml` is broken: see below.
+3. Once CI is green for that commit, approve the `pypi` environment when the
+   run asks.
 
-The GitHub release is created from the CHANGELOG section once the published
-package installs. Builds use the commit timestamp, so rebuilding a tag gives
-byte-identical files.
+After PyPI has the files and the published package installs, the run tags
+the built commit `vX.Y.Z` ("untaped X.Y.Z") and creates the GitHub release
+from the CHANGELOG section. A push to `main` that leaves the version as it
+was, such as a dependency bump, ends at `route` with nothing published. A
+fork's runs publish nothing.
 
 ### A failed run
 
@@ -301,6 +311,32 @@ byte-identical files.
 - The GitHub release step finds a leftover draft by listing releases and
   finishes it. It never changes a published release: one whose assets match
   is a no-op, and one with a mismatch fails.
+- A rejected approval publishes nothing and leaves the version untagged.
+  Re-run failed jobs to be asked again (GitHub offers re-runs for 30 days
+  from the run's start), push the tag by hand, or merge the next release PR.
+  An approval left waiting expires after those 30 days, with the re-run, so
+  then only the hand tag or the next release PR remain.
+- A cancelled Release run (a newer pending run in the same concurrency group
+  replaced it): **Re-run all jobs** routes it again.
+- Never re-run a release run that went green.
+- The tag step is idempotent: a tag already on the built commit passes, and
+  one on another commit fails, because `v*` tags never move. Then release a
+  patch version, or relax the ruleset, delete the wrong tag, re-run and
+  restore the ruleset.
+- When the `main` run cannot release (no run, re-runs expired, a broken
+  workflow), push the tag by hand: `git tag -a vX.Y.Z -m "untaped X.Y.Z"
+  <sha>` and `git push origin vX.Y.Z`. That starts a release run for the
+  tag, with the workflow at the tagged commit, so after a workflow fix tag
+  the fix's commit on `main`, not the release PR's merge commit (tags never
+  move). If anything was already published from the earlier commit, release
+  a patch version instead: the new commit builds different bytes. Only push
+  a tag when the `main` run did not release: both runs ask for approval.
+- If no workflow can run at all, the tag and the GitHub release can be made
+  by hand (`gh release create vX.Y.Z --verify-tag --notes-file ...` with the
+  built files), and the packages built with
+  `uv build --all-packages --no-sources` from a checkout of the commit, with
+  `SOURCE_DATE_EPOCH` set to its commit time so the files match any already
+  uploaded, then published with a PyPI API token through `uv publish`.
 
 ## Evaluating a skill change
 
