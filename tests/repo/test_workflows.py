@@ -1,13 +1,16 @@
 """Contract tests for the GitHub Actions workflows.
 
-They pin the tag-triggered release's routing (only a pushed tag reaches PyPI),
-its least-privilege jobs and step order, CI's use of ``scripts/release.py``,
-and the supply-chain hygiene of every workflow.
+They pin the release's routing (one ``scripts/release.py route`` step reads the
+event, and every later job reads its outputs), its least-privilege jobs and
+step order (PyPI, then the tag, then the GitHub release), CI's use of
+``scripts/release.py``, and the supply-chain hygiene of every workflow.
 """
 
 from __future__ import annotations
 
 import functools
+import re
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -27,10 +30,18 @@ EXPECTED_ACTION_REFS = {
     "astral-sh/setup-uv": ("v8.2.0", "fac544c07dec837d0ccb6301d7b5580bf5edae39"),
     "pypa/gh-action-pypi-publish": ("v1.14.0", "cef221092ed1bacb1cc03d23a2d87d1d172e277b"),
 }
-PRODUCTION = "${{ github.event_name == 'push' && github.ref_type == 'tag' }}"
-IS_PRODUCTION = "needs.build.outputs.production == 'true'"
-INDEX = "${{ needs.build.outputs.index }}"
+IS_PYPI = "needs.route.outputs.index == 'pypi'"
+INDEX = "${{ needs.route.outputs.index }}"
+VERSION = "${{ needs.route.outputs.version }}"
 SCRIPT = "uv run --no-sync python scripts/release.py"
+# The event facts only the route step may read: the route row they decide.
+EVENT_CONTEXTS = {
+    "EVENT_NAME": "github.event_name",
+    "REF_TYPE": "github.ref_type",
+    "REF_NAME": "github.ref_name",
+    "BEFORE": "github.event.before",
+    "REPOSITORY": "github.repository",
+}
 
 
 @functools.cache
@@ -46,6 +57,23 @@ def _steps(workflow: str, job: str) -> list[dict[str, Any]]:
 
 def _all_steps(workflow: str) -> list[dict[str, Any]]:
     return [step for job in _workflow(workflow)["jobs"] for step in _steps(workflow, job)]
+
+
+def _expressions(node: Any, key: str = "") -> Iterator[str]:
+    """Every expression in a parsed workflow: ``${{ }}`` bodies and ``if`` values.
+
+    Comments are gone once parsed, so only what GitHub evaluates counts.
+    """
+    if isinstance(node, dict):
+        for child_key, child in node.items():
+            yield from _expressions(child, str(child_key))
+    elif isinstance(node, list):
+        for child in node:
+            yield from _expressions(child, key)
+    elif isinstance(node, str):
+        if key == "if" and "${{" not in node:
+            yield node
+        yield from re.findall(r"\$\{\{(.*?)\}\}", node)
 
 
 def _find(
@@ -112,54 +140,77 @@ def test_checkout_and_setup_uv_steps_are_hardened() -> None:
 
 
 def test_release_workflow_shape() -> None:
-    """Triggers, least-privilege permissions and each job's ``needs``."""
+    """Triggers, least-privilege permissions and each job's ``needs``.
+
+    Only ``publish`` holds an OIDC token and only ``release`` (the tag and the
+    GitHub release) can write; ``release`` waits for ``verify``, so a tag
+    marks only files PyPI holds. No job uses ``always()``, which would run
+    ``publish`` after a skipped ``build``.
+    """
     workflow = _workflow("release.yml")
     jobs = workflow["jobs"]
-    assert workflow["on"] == {"push": {"tags": ["v*"]}, "workflow_dispatch": {}}
-    assert workflow["permissions"] == {"contents": "read"}
-    assert {name: (job.get("needs"), job.get("permissions")) for name, job in jobs.items()} == {
-        "build": (None, None),
-        "publish": ("build", {"id-token": "write"}),
-        "verify": (["build", "publish"], None),
-        "github-release": (["build", "verify"], {"contents": "write"}),
+    assert workflow["on"] == {
+        "push": {
+            "branches": ["main"],
+            "paths": ["packages/untaped/pyproject.toml"],
+            "tags": ["v*"],
+        },
+        "workflow_dispatch": {},
     }
+    assert workflow["permissions"] == {"contents": "read"}
+    assert "env" not in workflow
+    assert {name: (job.get("needs"), job.get("permissions")) for name, job in jobs.items()} == {
+        "route": (None, None),
+        "build": ("route", None),
+        "publish": (["route", "build"], {"id-token": "write"}),
+        "verify": (["route", "build", "publish"], None),
+        "release": (["route", "verify"], {"contents": "write"}),
+    }
+    assert {name: job.get("if") for name, job in jobs.items()} == {
+        "route": None,
+        "build": "needs.route.outputs.index != 'none'",
+        "publish": None,
+        "verify": None,
+        "release": IS_PYPI,
+    }
+    assert not any("always()" in expression for expression in _expressions(workflow))
     assert not any("actions/checkout" in str(s.get("uses", "")) for s in jobs["publish"]["steps"])
 
 
-def test_one_expression_routes_every_job() -> None:
-    """Only a pushed tag is production; everything else is a TestPyPI rehearsal.
+def test_only_the_route_step_reads_the_event() -> None:
+    """Each event fact is read once, by ``release.py route``; later jobs read its outputs.
 
-    Truth table: push/tag -> PyPI + GitHub release; workflow_dispatch/tag,
-    workflow_dispatch/branch and push/branch -> TestPyPI, no GitHub release.
-    A dispatch that targets a tag is a rehearsal, so the expression checks the
-    event as well as the ref type. The build's route step evaluates it once;
-    its later steps read ``$PRODUCTION``/``$INDEX`` and later jobs the build
-    outputs.
+    Truth table (``tests/repo/test_release_script.py``): a fork -> none; a
+    dispatch on any ref -> TestPyPI; a pushed tag on main -> PyPI; a push to
+    main -> PyPI when it changed the version or its tag is already at HEAD,
+    else none. The step writes its outputs only after ``route`` succeeded.
     """
-    text = (WORKFLOW_DIR / "release.yml").read_text(encoding="utf-8")
-    assert (text.count("github.event_name"), text.count("github.ref_type")) == (1, 1)
     workflow = _workflow("release.yml")
     jobs = workflow["jobs"]
-    assert "env" not in workflow
-    build = _steps("release.yml", "build")
-    route = build[_find(build, id="route")]
-    assert route["env"] == {"PRODUCTION": PRODUCTION}
+    expressions = list(_expressions(workflow))
+    for context in EVENT_CONTEXTS.values():
+        pattern = re.compile(rf"\b{re.escape(context)}\b")
+        assert sum(len(pattern.findall(e)) for e in expressions) == 1, context
+    route = _steps("release.yml", "route")[_find(_steps("release.yml", "route"), id="route")]
+    assert route["env"] == {
+        name: f"${{{{ {context} }}}}" for name, context in EVENT_CONTEXTS.items()
+    }
     assert route["run"].splitlines() == [
         "set -euo pipefail",
-        'if [ "$PRODUCTION" = true ]; then index=pypi; else index=testpypi; fi',
-        'echo "PRODUCTION=$PRODUCTION" >> "$GITHUB_ENV"',
-        'echo "INDEX=$index" >> "$GITHUB_ENV"',
-        'echo "production=$PRODUCTION" >> "$GITHUB_OUTPUT"',
-        'echo "index=$index" >> "$GITHUB_OUTPUT"',
+        f'{SCRIPT} route --event "$EVENT_NAME" --ref-type "$REF_TYPE" --ref-name "$REF_NAME"'
+        ' --repository "$REPOSITORY" --before "$BEFORE" > route.txt',
+        'tee -a "$GITHUB_OUTPUT" < route.txt',
+        "grep '^reason=' route.txt | cut -d= -f2- >> \"$GITHUB_STEP_SUMMARY\"",
     ]
-    assert jobs["build"]["outputs"] == {
-        "version": "${{ steps.version.outputs.version }}",
-        "production": "${{ steps.route.outputs.production }}",
-        "index": "${{ steps.route.outputs.index }}",
+    assert jobs["route"]["outputs"] == {
+        key: f"${{{{ steps.route.outputs.{key} }}}}" for key in ("version", "index", "tag")
     }
+    assert _steps("release.yml", "route")[0]["with"]["fetch-depth"] == 0
+    assert jobs["build"]["env"] == {"VERSION": VERSION, "INDEX": INDEX}
+    assert "outputs" not in jobs["build"]
     assert jobs["publish"]["environment"] == INDEX
-    assert jobs["verify"]["env"]["INDEX"] == INDEX
-    assert jobs["github-release"]["if"] == IS_PRODUCTION
+    assert jobs["verify"]["env"] == {"VERSION": VERSION, "INDEX": INDEX}
+    build = _steps("release.yml", "build")
     index = build[_find(build, run=f'{SCRIPT} index "$VERSION" --dist dist --index "$INDEX"')]
     assert "env" not in index
 
@@ -175,9 +226,9 @@ def test_each_index_publish_is_routed_and_skips_existing_with_attestations() -> 
         )
         for s in steps
     } == {
-        "Publish to PyPI": (IS_PRODUCTION, None, True, True),
+        "Publish to PyPI": (IS_PYPI, None, True, True),
         "Publish to TestPyPI": (
-            "needs.build.outputs.production != 'true'",
+            "needs.route.outputs.index != 'pypi'",
             "https://test.pypi.org/legacy/",
             True,
             True,
@@ -194,8 +245,6 @@ def test_build_guards_and_checks_run_before_anything_is_uploaded() -> None:
         _find(
             steps, run='echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"'
         ),
-        _find(steps, id="route"),
-        _find(steps, id="version"),
         _find(steps, run=f'{SCRIPT} check "$VERSION"'),
         _find(steps, run=f'{SCRIPT} notes "$VERSION" > release-notes.md'),
         _find(steps, run=f'{SCRIPT} readmes "$VERSION"'),
@@ -216,24 +265,7 @@ def test_build_guards_and_checks_run_before_anything_is_uploaded() -> None:
     )
 
 
-def test_a_production_version_names_the_tag_and_checks_main() -> None:
-    """Only production passes ``--tag``, which also refuses a commit not on main."""
-    steps = _steps("release.yml", "build")
-    step = steps[_find(steps, id="version")]
-    assert step["env"] == {"REF_NAME": "${{ github.ref_name }}"}
-    assert "if" not in step
-    assert step["run"].splitlines()[:7] == [
-        "set -euo pipefail",
-        'if [ "$PRODUCTION" = true ]; then',
-        "  # --tag also fails unless the tagged commit is on main.",
-        f'  version="$({SCRIPT} version --tag "$REF_NAME")"',
-        "else",
-        f'  version="$({SCRIPT} version)"',
-        "fi",
-    ]
-
-
-@pytest.mark.parametrize("job", ["build", "verify", "github-release"])
+@pytest.mark.parametrize("job", ["route", "build", "verify", "release"])
 def test_each_job_syncs_the_lock_before_running_the_script(job: str) -> None:
     steps = _steps("release.yml", job)
     sync = _find(steps, run="uv sync --locked")
@@ -289,11 +321,14 @@ def test_every_smoke_runs_under_an_isolated_home(workflow: str, job: str, smoke:
     assert _find(steps, run='echo "HOME=$home_dir" >> "$GITHUB_ENV"') < _find(steps, run=smoke)
 
 
-def test_github_release_runs_the_script_on_the_built_artifacts() -> None:
-    job = _workflow("release.yml")["jobs"]["github-release"]
+def test_release_tags_the_built_commit_then_publishes_the_github_release() -> None:
+    """The tag and the GitHub release name the route's tag, never ``github.ref_name``
+    (``main`` on a push to main), and the tag exists before the release needs it."""
+    job = _workflow("release.yml")["jobs"]["release"]
     runs = [str(s["run"]).strip() for s in job["steps"] if s.get("run")]
     assert runs == [
         "uv sync --locked",
+        f'{SCRIPT} tag "$TAG" --repo "$GITHUB_REPOSITORY"',
         f'{SCRIPT} github-release "$VERSION" --tag "$TAG"'
         ' --repo "$GITHUB_REPOSITORY" --dist dist --notes release-notes.md',
     ]
@@ -301,13 +336,10 @@ def test_github_release_runs_the_script_on_the_built_artifacts() -> None:
         s["with"]["name"] for s in job["steps"] if "download-artifact" in str(s.get("uses", ""))
     }
     assert downloads == {"dist", "release-notes"}
-    assert job["env"] == {
-        "TAG": "${{ github.ref_name }}",
-        "VERSION": "${{ needs.build.outputs.version }}",
-    }
-    assert [s.get("env") for s in job["steps"]] == [None] * (len(job["steps"]) - 1) + [
+    assert job["env"] == {"TAG": "${{ needs.route.outputs.tag }}", "VERSION": VERSION}
+    assert [s.get("env") for s in job["steps"]] == [None] * (len(job["steps"]) - 2) + [
         {"GH_TOKEN": "${{ github.token }}"}
-    ]
+    ] * 2
 
 
 def test_ci_runs_the_release_check_and_smoke() -> None:
