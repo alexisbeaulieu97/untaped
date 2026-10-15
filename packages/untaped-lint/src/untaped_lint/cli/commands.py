@@ -15,7 +15,7 @@ from untaped.sdk import (
     create_app,
     emit,
     get_config_section,
-    read_records,
+    read_stdin_input,
     report_errors,
 )
 from untaped_lint.cli.options import IgnoreOption, SelectOption, StrictOption
@@ -64,7 +64,10 @@ def lint_command(
         if stdin:
             if paths:
                 raise UsageError("--stdin reads records, so it takes no PATHS")
-            subjects, findings = stdin_subjects(read_records()), []
+            piped = read_stdin_input(what="records")
+            if piped.records is None:
+                raise UsageError("--stdin reads records: pipe untaped's --format pipe output")
+            subjects, findings = stdin_subjects(piped.records), []
         else:
             found = repository_subjects(declared_plugins(Path.cwd()), installed_plugins())
             subjects, findings = found.subjects, found.findings
