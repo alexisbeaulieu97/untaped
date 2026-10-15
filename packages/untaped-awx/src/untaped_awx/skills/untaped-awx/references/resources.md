@@ -162,9 +162,10 @@ The preview, `--dry-run`, `--yes` and exit-code rules are in the skill's
 "Destructive operations" section. Beyond them:
 
 - Writes run one at a time; `--parallel N` allows up to ten. A failure fails
-  its row and the rest still run; `--fail-fast` stops scheduling new writes
-  after the first failure (writes already running finish, the rest are
-  skipped).
+  its row and the rest still run, except a row that needs a resource whose
+  create failed. `--fail-fast` stops scheduling new writes after the first
+  failure, and a rejected token or broken configuration always does; writes
+  already running finish and the rest are skipped.
 - There is no transaction or rollback; result rows keep the ids they reached.
 - Each write re-reads what it changes to detect a conflicting change.
   `delete` re-reads after an interactive prompt; with `--yes` the read just

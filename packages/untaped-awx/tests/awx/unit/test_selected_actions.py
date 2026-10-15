@@ -88,3 +88,19 @@ def test_parallelism_is_capped_at_ten() -> None:
     results = run_selected_actions(targets(20), worker, parallel=100)
     assert maximum == 10
     assert all(result.action == "completed" for result in results)
+
+
+def test_a_rejected_token_stops_the_rest_without_fail_fast() -> None:
+    from untaped.sdk import ConfigError
+
+    writes: list[int] = []
+
+    def worker(target: SelectedResource) -> int:
+        writes.append(target.id)
+        if target.id == 1:
+            raise ConfigError("AWX rejected the token (HTTP 401)")
+        return target.id
+
+    results = run_selected_actions(targets(3), worker)
+    assert writes == [1]
+    assert [result.action for result in results] == ["failed", "skipped", "skipped"]

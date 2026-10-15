@@ -232,7 +232,7 @@ def test_inventory_sync_names_the_inventory_without_sources(fake_aap: Any) -> No
 
 
 @pytest.mark.parametrize("fail_fast", [False, True])
-def test_launch_runtime_failure_retains_success_and_skips_without_retry(
+def test_launch_runtime_failure_continues_unless_fail_fast_and_never_retries(
     fake_aap: Any, fail_fast: bool
 ) -> None:
     seed(fake_aap)

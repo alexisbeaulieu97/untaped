@@ -24,7 +24,8 @@ untaped awx workflow-templates launch "Release train" --follow
 - `--organization` scopes the template lookup and the `--launch-inventory`
   and `--credential` names.
 - A single named template launches at once; several targets or a query or
-  `--stdin` selection are listed and confirmed once.
+  `--stdin` selection are listed and confirmed once. A failed launch fails
+  its row and the rest still launch, unless `--fail-fast`.
 - Results are `awx.launch_outcome` rows; pipe them into
   `untaped awx jobs wait --stdin` or `untaped awx jobs logs --stdin --follow`.
 

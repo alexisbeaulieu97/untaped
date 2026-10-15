@@ -446,7 +446,7 @@ def test_new_and_existing_secret_values_are_redacted_from_runtime_errors() -> No
     assert "new-secret" not in repr(result)
 
 
-def test_failed_creation_skips_only_its_dependents_when_continuing() -> None:
+def test_failed_creation_skips_only_its_dependents() -> None:
     from untaped_awx.errors import BadRequestError
 
     class Failing(_Client):
@@ -578,6 +578,39 @@ def test_a_membership_failure_row_carries_its_error() -> None:
     assert partial.error is not None
     assert partial.error.category == "unavailable"
     assert partial.error.retryable
+
+
+@pytest.mark.parametrize(("fail_fast", "auth"), [(False, False), (True, False), (False, True)])
+def test_a_membership_failure_skips_later_memberships_only_when_stopping(
+    fail_fast: bool, auth: bool
+) -> None:
+    from untaped.sdk import ConfigError
+    from untaped_awx.errors import BadRequestError
+
+    class RefusingFirst(_MembershipClient):
+        def sub_endpoint_request(
+            self, spec: ResourceSpec, record_id: int, sub_endpoint: str, method: str, **kw: Any
+        ) -> dict[str, Any]:
+            if record_id == 1:
+                if auth:
+                    raise ConfigError("AWX rejected the token (HTTP 401)")
+                raise BadRequestError("refused", status=503)
+            return super().sub_endpoint_request(spec, record_id, sub_endpoint, method, **kw)
+
+    client = RefusingFirst([])
+    plan = _group_engine(client).prepare([_group("first", ["second"]), _group("second", ["first"])])
+    result = _group_engine(client).execute(plan, fail_fast=fail_fast)
+    first, second = result.outcomes
+    assert first.action == "partial"
+    if fail_fast or auth:
+        assert (second.action, second.detail) == (
+            "partial",
+            "membership skipped after runtime failure",
+        )
+        assert (2, "children") not in client.members
+    else:
+        assert second.action == "created"
+        assert client.members[(2, "children")] == [1]
 
 
 def test_a_preflight_reread_failure_row_carries_its_error() -> None:

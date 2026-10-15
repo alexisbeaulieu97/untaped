@@ -203,7 +203,8 @@ class TemporarySets:
         A copy AWX did not store as its spec asks (the engine could not verify
         it) is a failure too: its cases would not test the spec.
         """
-        result = self._engine.execute(plan)
+        # All or nothing: copies made after a failure would only be torn down.
+        result = self._engine.execute(plan, fail_fast=True)
         problems: list[tuple[str, UntapedError]] = []
         for outcome in result.outcomes:
             label = f"{outcome.kind} {q(outcome.name)}"

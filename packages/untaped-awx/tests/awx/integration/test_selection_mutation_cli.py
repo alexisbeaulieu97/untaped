@@ -200,11 +200,22 @@ def test_membership_noop_never_prompts_or_posts(fake_aap: Any) -> None:
     assert not any(call.request.method == "POST" for call in fake_aap.router.calls)
 
 
+def test_continue_on_error_is_gone(fake_aap: Any) -> None:
+    """Continuing is the default since 11.0; ``--fail-fast`` opts out."""
+    seed(fake_aap, "projects")
+    result = CliInvoker().invoke(
+        app,
+        ["projects", "patch", "target", "--set", "description=new", "--yes", "--continue-on-error"],
+    )
+    assert result.exit_code == 2, result.output
+    assert "--continue-on-error" in result.stderr
+    assert fake_aap.get_record("projects", 10)["description"] == "old"
+
+
 @pytest.mark.parametrize(
     "extra",
     [
         ["--allow-unverified"],
-        ["--continue-on-error"],
         ["--inventory", "prod"],
         ["--parallel", "0"],
     ],
@@ -405,7 +416,7 @@ def test_numeric_names_and_ids_remain_distinct(fake_aap: Any) -> None:
 
 
 @pytest.mark.parametrize("fail_fast", [False, True])
-def test_patch_runtime_failure_stops_scheduling(
+def test_patch_runtime_failure_continues_unless_fail_fast(
     fake_aap: Any, fail_fast: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import httpx
@@ -487,7 +498,7 @@ def test_patch_failure_is_an_attributed_error_and_the_skip_a_warning(
 
 
 @pytest.mark.parametrize("fail_fast", [False, True])
-def test_delete_runtime_failure_stops_scheduling(
+def test_delete_runtime_failure_continues_unless_fail_fast(
     fake_aap: Any, fail_fast: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import httpx
@@ -522,6 +533,29 @@ def test_delete_runtime_failure_stops_scheduling(
         "skipped" if fail_fast else "deleted",
     ]
     assert (11 in fake_aap.store["projects"]) is fail_fast
+
+
+def test_delete_stops_on_a_rejected_token_without_fail_fast(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+
+    seed(fake_aap, "projects")
+    fake_aap.seed("projects", id=11, name="second", organization=1)
+    fake_aap.seed("projects", id=12, name="third", organization=1)
+    monkeypatch.setattr(
+        fake_aap, "_delete", lambda path, id_: httpx.Response(401, json={"detail": "no"})
+    )
+    result = CliInvoker().invoke(
+        app,
+        ["projects", "delete", "10", "11", "12", "--by-id", "--yes", "--format", "json"],
+    )
+    assert result.exit_code != 0
+    assert [row["action"] for row in json.loads(result.stdout)] == [
+        "failed",
+        "skipped",
+        "skipped",
+    ]
 
 
 def test_yes_with_dry_run_previews_without_writing(fake_aap: Any) -> None:

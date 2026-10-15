@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any, Literal
 
-from untaped.sdk import ErrorCategory, Failure, UntapedError
+from untaped.sdk import Failure
 from untaped_awx.application.apply_field_diff import FieldDiff
 from untaped_awx.application.apply_membership import (
     MembershipReconciler,
@@ -45,7 +45,7 @@ from untaped_awx.application.ports import (
     WorkflowNodeRepository,
 )
 from untaped_awx.application.prepared_body import BodyOperations
-from untaped_awx.application.scheduling import Schedule
+from untaped_awx.application.scheduling import Schedule, dooms_batch
 from untaped_awx.application.selection import SelectedResource
 from untaped_awx.domain import ApplyOutcome, BatchResult, Resource, ResourceSpec
 from untaped_awx.domain.payloads import as_dict
@@ -399,7 +399,7 @@ class BatchMutationEngine:
                     **_failure(exc, operation),
                 }
             )
-            if _dooms_batch(exc):
+            if dooms_batch(exc):
                 raise _AbortBatchError(outcome) from exc
             return outcome
 
@@ -462,7 +462,7 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = fail_fast or _dooms_batch(exc)
+                stopped = fail_fast or dooms_batch(exc)
                 continue
             if (
                 any(item.field_change is not None for item in plans)
@@ -515,7 +515,7 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = fail_fast or _dooms_batch(exc)
+                stopped = fail_fast or dooms_batch(exc)
                 continue
             if outcome.action == "unchanged":
                 outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
@@ -538,18 +538,6 @@ class BatchMutationEngine:
                 "error": error,
             }
         )
-
-
-#: Failures that doom every remaining request of a batch alike.
-_BATCH_DOOMING = frozenset({ErrorCategory.AUTH, ErrorCategory.CONFIG})
-
-
-def _dooms_batch(exc: BaseException) -> bool:
-    """Whether ``exc`` (or its cause) is a rejected token or broken setup."""
-    return any(
-        isinstance(error, UntapedError) and error.category in _BATCH_DOOMING
-        for error in (exc, exc.__cause__)
-    )
 
 
 def _noop_warn(_message: str) -> None:

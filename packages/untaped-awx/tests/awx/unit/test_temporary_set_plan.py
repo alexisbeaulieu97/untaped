@@ -282,3 +282,25 @@ def test_select_cases_keeps_declaration_order() -> None:
         ("b", "x"),
     ]
     assert isinstance(select_cases(suites, None)[0][2], Case)
+
+
+def test_provisioning_stops_at_the_first_failed_copy() -> None:
+    """All or nothing: copies made after a failure would only be torn down."""
+    from typing import cast
+
+    from untaped_awx.application.mutation_engine import BatchMutationEngine
+    from untaped_awx.application.suites.temporary_set import TemporarySets
+    from untaped_awx.domain import BatchResult
+
+    calls: list[dict[str, Any]] = []
+
+    class Engine:
+        def execute(self, plan: Any, **kwargs: Any) -> BatchResult:
+            calls.append(kwargs)
+            return BatchResult(outcomes=[])
+
+    sets = TemporarySets(
+        engine=cast(BatchMutationEngine, Engine()), client=Any, catalog=Any, fk=Any
+    )
+    sets.provision(cast(Any, None), cast(Any, None))
+    assert calls == [{"fail_fast": True}]

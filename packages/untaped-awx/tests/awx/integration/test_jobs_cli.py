@@ -723,6 +723,13 @@ def test_jobs_list_defaults_to_twenty(fake_aap: Any, args: list[str], expected: 
     assert len(result.stdout.split()) == expected
 
 
+def test_jobs_logs_rejects_a_negative_tail(fake_aap: Any) -> None:
+    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--tail", "-1"])
+    assert result.exit_code == 2, result.output
+    assert "--tail" in result.stderr
+    assert not fake_aap.router.calls
+
+
 def test_jobs_kind_rejects_unknown_values(fake_aap: Any) -> None:
     result = CliInvoker().invoke(app, ["jobs", "get", "42", "--kind", "workflow"])
     assert result.exit_code == 2, result.output

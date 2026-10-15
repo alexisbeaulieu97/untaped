@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from cyclopts import Parameter
+from cyclopts.validators import Number
 
 from untaped.sdk import (
     ColumnsOption,
@@ -581,7 +582,11 @@ def jobs_logs(
     ] = False,
     tail: Annotated[
         int | None,
-        Parameter(name="--tail", help="Show only the last N historical lines before following."),
+        Parameter(
+            name="--tail",
+            help="Show only the last N historical lines before following.",
+            validator=Number(gte=0),
+        ),
     ] = None,
     grep: Annotated[
         str | None,
