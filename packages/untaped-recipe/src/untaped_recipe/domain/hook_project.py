@@ -36,15 +36,6 @@ class UvHookRef:
     module: str
 
 
-@dataclass(frozen=True)
-class HookWorkerCallResult:
-    """Result plus diagnostics and warnings captured from one worker request."""
-
-    result: object
-    diagnostics: str
-    warnings: tuple[str, ...] = ()
-
-
 def is_valid_dotted_name(name: str) -> bool:
     """Return true when ``name`` is a safe dotted hook/module identifier."""
     return bool(_DOTTED_NAME_RE.fullmatch(name.strip()))

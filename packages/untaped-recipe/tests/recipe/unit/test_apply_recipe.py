@@ -11,8 +11,8 @@ import pytest
 from untaped_recipe.application.apply_recipe import ApplyRecipe
 from untaped_recipe.application.run_bulk import RunBulkApply
 from untaped_recipe.application.targets import Target
-from untaped_recipe.domain.hook_project import HookWorkerCallResult, UvHookRef
-from untaped_recipe.domain.plan import HookDebugResult, Verdict
+from untaped_recipe.domain.hook_project import UvHookRef
+from untaped_recipe.domain.plan import HookDebugResult, HookWorkerCallResult, Verdict
 from untaped_recipe.domain.recipe import Recipe
 from untaped_recipe.hook_worker import handle_request
 from untaped_recipe.infrastructure.file_writer import flush_changes

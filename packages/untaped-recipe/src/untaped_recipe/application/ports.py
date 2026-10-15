@@ -6,14 +6,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol
 
-from untaped_recipe.domain.hook_project import HookWorkerCallResult, UvHookRef
+from untaped_recipe.domain.hook_project import UvHookRef
 from untaped_recipe.domain.pack import (
     InstalledPack,
     PackManifest,
     PackRef,
     RecipeEntry,
 )
-from untaped_recipe.domain.plan import HookDebugResult, Verdict
+from untaped_recipe.domain.plan import HookDebugResult, HookWorkerCallResult, Verdict
 
 
 class PromptFunc(Protocol):

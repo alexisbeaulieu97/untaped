@@ -23,9 +23,9 @@ from packaging.version import Version
 from pydantic import ValidationError
 
 import untaped_recipe.infrastructure.hook_worker_client as worker_client
-from untaped_recipe.domain.hook_project import HookWorkerCallResult, UvHookRef, ensure_hook_supports
+from untaped_recipe.domain.hook_project import UvHookRef, ensure_hook_supports
 from untaped_recipe.domain.pack import PackManifest
-from untaped_recipe.domain.plan import Verdict
+from untaped_recipe.domain.plan import HookWorkerCallResult, Verdict
 from untaped_recipe.infrastructure.hook_executor import HookExecutor
 from untaped_recipe.infrastructure.hook_resolver import (
     BuiltinHookRef,

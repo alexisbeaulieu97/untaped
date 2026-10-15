@@ -20,9 +20,9 @@ ApplyAction = Literal[
     "partial",
 ]
 
-FAILED_ACTIONS: frozenset[ApplyAction] = frozenset({"failed", "partial"})
-"""Actions of a write that failed: they stop a fail-fast run."""
-UNFINISHED_ACTIONS: frozenset[ApplyAction] = FAILED_ACTIONS | {"conflict", "skipped"}
+FAIL_FAST_ACTIONS: frozenset[ApplyAction] = frozenset({"failed", "partial"})
+"""Actions that stop a fail-fast run (``OutcomeRecord.failed`` also counts ``conflict``)."""
+UNFINISHED_ACTIONS: frozenset[ApplyAction] = FAIL_FAST_ACTIONS | {"conflict", "skipped"}
 """Actions of a write that did not fully land: they fail the run and block dependents."""
 
 

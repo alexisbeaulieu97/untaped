@@ -19,7 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_
 from untaped.sdk import ErrorCategory
 from untaped_recipe._worker import hook_worker
 from untaped_recipe._worker import worker_protocol as protocol
-from untaped_recipe.domain.hook_project import HookWorkerCallResult, UvHookRef
+from untaped_recipe.domain.hook_project import UvHookRef
+from untaped_recipe.domain.plan import HookWorkerCallResult
 from untaped_recipe.errors import HookFailedError, RecipeError, UvMissingError
 from untaped_recipe.infrastructure.uv_project import uv_environment
 

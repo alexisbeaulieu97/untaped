@@ -210,7 +210,7 @@ class TemporarySets:
             label = f"{outcome.kind} {q(outcome.name)}"
             if outcome.error is not None:
                 problems.append((label, _error(outcome.error)))
-            elif outcome.action in {"failed", "partial", "conflict"}:
+            elif outcome.failed:
                 problems.append((label, AwxError(outcome.detail or outcome.action)))
             elif outcome.unverified:
                 unverified = BadRequestError(
