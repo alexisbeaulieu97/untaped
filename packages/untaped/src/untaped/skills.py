@@ -260,7 +260,7 @@ def find_installed_skills(
 def outdated_skills(
     skills: Mapping[str, InstallableSkill], *, project_dir: Path | None = None
 ) -> list[InstalledSkill]:
-    """Return installed skills that are outdated or no longer shipped.
+    """Return installed skills that are outdated or orphaned.
 
     Looks in the global codex/claude skill roots and, with ``project_dir``,
     that directory's local roots.
@@ -278,7 +278,9 @@ def update_installed_skill(
     """Replace ``installed`` in place with the packaged copy of the same skill."""
     spec = skills.get(installed.name)
     if spec is None:
-        raise ConfigError(f"skill no longer shipped: {installed.name}", category="not_found")
+        raise ConfigError(
+            f"no plugin installed here ships this skill: {installed.name}", category="not_found"
+        )
     if not spec.source.is_dir():
         raise ConfigError(f"skill source missing: {installed.name} ({spec.source})")
     destination = SkillInstallDestination(

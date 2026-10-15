@@ -7,7 +7,7 @@ naming no skill exactly retries with the ``untaped-`` prefix, while the
 installed directory and marker always keep the full ``untaped-*`` ID.
 
 :func:`check_installed_skills` runs after every root command: installed
-skills that no longer match this version are reported (or, with
+skills that are out of date are reported (or, with
 ``skills.updates: auto``, updated in place) so agents do not follow stale
 instructions.
 """
@@ -76,7 +76,7 @@ CheckOption = Annotated[
     Parameter(
         name="--check",
         negative="",
-        help="Exit 3 when an installed skill is outdated or no longer shipped.",
+        help="Exit 3 when an installed skill is outdated or shipped by no installed plugin.",
     ),
 ]
 RemoveTargetOption = Annotated[
@@ -243,7 +243,7 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
 def check_installed_skills(
     skills: Mapping[str, InstallableSkill], *, allow_updates: bool = True
 ) -> None:
-    """Report installed skills that no longer match this version.
+    """Report installed skills that are out of date.
 
     Runs after every root command. ``skills.updates`` picks the behaviour:
     ``warn`` (default) prints a warning, ``auto`` updates outdated skills in
@@ -360,7 +360,9 @@ def _update(
                 continue
             if item.state is SkillState.orphaned:
                 if named:
-                    error = _diag.failure(Failure.plain("skill no longer shipped"), item=item.name)
+                    error = _diag.failure(
+                        Failure.plain("no plugin installed here ships this skill"), item=item.name
+                    )
                     rows.append(_failed_row(item, error))
                     failed = True
                 continue

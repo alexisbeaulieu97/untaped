@@ -111,10 +111,13 @@ def test_env_var_selects_the_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert "warning" not in _run(root, "demo", "--help")[1]
 
 
-def test_unshipped_skill_is_left_to_doctor(_isolated_config: Path, tmp_path: Path) -> None:
+@pytest.mark.parametrize("mode", ["warn", "auto"])
+def test_unshipped_skill_is_left_to_doctor(
+    _isolated_config: Path, tmp_path: Path, mode: str
+) -> None:
     # Another environment (``uvx untaped`` without plugins) may lack the plugin
     # that ships it, so the per-run check cannot tell it is gone for good.
-    write_config(_isolated_config, "profiles:\n  default:\n    skills: {updates: auto}\n")
+    write_config(_isolated_config, f"profiles:\n  default:\n    skills: {{updates: {mode}}}\n")
     old_root, _ = _root(tmp_path, "untaped-gone")
     assert _run(old_root, "skills", "install", "gone")[0] == 0
     root, _ = _root(tmp_path, "untaped-demo")

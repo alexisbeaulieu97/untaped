@@ -1,4 +1,3 @@
-Commands no longer warn that installed skills are "no longer shipped" when
-the plugin shipping them is just missing from this run, as with `uvx untaped`
-without extras; `untaped doctor` and `untaped skills status` still report
-them.
+Commands no longer warn about installed skills that no plugin installed here
+ships, such as plugin skills under `uvx untaped` without extras; `untaped
+doctor` and `untaped skills status` still report them.
