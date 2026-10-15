@@ -164,14 +164,14 @@ def test_table_render_preserves_bracketed_content(
     """Square brackets in user data are not interpreted as Rich markup.
 
     Regression guard: an AWX template named
-    ``JOB-commun-gerer-acls-nonprod-[v2.3.1-test-aap]`` previously rendered
-    in the ``--format table`` output as ``JOB-commun-gerer-acls-nonprod-``
-    because Rich parsed ``[v2.3.1-test-aap]`` as a (malformed) markup tag
+    ``deploy-web-app-staging-[v2.3.1-test]`` previously rendered
+    in the ``--format table`` output as ``deploy-web-app-staging-``
+    because Rich parsed ``[v2.3.1-test]`` as a (malformed) markup tag
     and silently stripped it. Cells must be wrapped in ``rich.text.Text``
     (or otherwise have markup disabled) so bracketed user data survives
     rendering verbatim.
     """
-    long_name = "JOB-commun-gerer-acls-nonprod-[v2.3.1-test-aap]"
+    long_name = "deploy-web-app-staging-[v2.3.1-test]"
     monkeypatch.setenv("COLUMNS", "200")
     out = _render([{"name": long_name}], fmt="table")
     assert long_name in out

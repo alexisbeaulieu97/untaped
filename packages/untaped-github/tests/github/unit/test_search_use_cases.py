@@ -125,8 +125,8 @@ def _issue_row(id_: int, updated_at: str, **fields: Any) -> dict[str, Any]:
     }
 
 
-_LONG = "Desjardins/infrasinteroutils-gha-actions-commun-intergiciel"
-_USES_LONG = f"uses: {_LONG}/.github/actions/set-constants-url"
+_LONG = "example-co/platformtoolshared-gha-actions-common-middleware"
+_USES_LONG = f"uses: {_LONG}/.github/actions/configure-env-url"
 
 
 @pytest.mark.parametrize(
@@ -143,7 +143,7 @@ _USES_LONG = f"uses: {_LONG}/.github/actions/set-constants-url"
         pytest.param(
             SearchRepos,
             RepoSearchFilters(raw_query=_USES_LONG, archived="only"),
-            {("Desjardins", f"team{i}"): _repos(7, f"{_LONG}-{i}-") for i in range(3)},
+            {("example-co", f"team{i}"): _repos(7, f"{_LONG}-{i}-") for i in range(3)},
             [6, 6, 6, 3],
             "archived:true",
             id="repos-long-names-across-teams",
