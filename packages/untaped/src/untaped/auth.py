@@ -30,7 +30,7 @@ unlock the store from a terminal.
 A token stored in plain text in the config file is deprecated and will be
 removed in 12.0: using one warns once per section per process and points at
 ``untaped auth migrate``.
-"""
+"""  # untaped: allow hand-typed-deprecation
 
 from __future__ import annotations
 
@@ -372,8 +372,9 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     from untaped.messages import run_hint  # noqa: PLC0415
 
     warn_once(
-        f"{section}.token is stored in plain text in the config file,"
-        " which is deprecated and will be removed in 12.0",
+        f"{section}.token is stored in plain text"  # untaped: allow hand-typed-deprecation
+        " in the config file, which is deprecated"
+        " and will be removed in 12.0",
         key=f"plaintext {section}.token",
         hint=run_hint("auth migrate"),
     )

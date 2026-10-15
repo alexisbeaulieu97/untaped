@@ -32,7 +32,7 @@ from untaped.cache import (
     refresh_option,
 )
 
-# report_error and report_row_errors are deprecated until 12.0; the SDK still exports them.
+# report_error and report_row_errors are deprecated; the SDK exports them until their removal.
 from untaped.cli import (  # type: ignore[deprecated]
     ColumnsOption,
     DryRunOption,
@@ -57,7 +57,7 @@ from untaped.cli import (  # type: ignore[deprecated]
     writes,
 )
 from untaped.concurrency import bounded_map
-from untaped.deprecated_keys import Retired, retired_values
+from untaped.deprecated_keys import Renamed, Retired, retired_values
 from untaped.diff import unified_diff_text
 from untaped.doctor_checks import connection_check, executable_check, online_check
 from untaped.editor import run_editor
@@ -153,7 +153,13 @@ from untaped.records import (
 )
 from untaped.settings import HttpSettings, get_config_section
 from untaped.skills import project_root
-from untaped.stability import deprecated, deprecated_alias, experimental
+from untaped.stability import (
+    Deprecated,
+    UntapedDeprecationWarning,
+    deprecated,
+    deprecated_alias,
+    experimental,
+)
 from untaped.state import StateCollection, StateMap
 from untaped.stdin import (
     StdinInput,
@@ -393,8 +399,11 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "executable_check",
     "online_check",
     # conventions
+    "Deprecated",
     "ExitCode",
+    "Renamed",
     "Retired",
+    "UntapedDeprecationWarning",
     "deprecated",
     "deprecated_alias",
     "experimental",

@@ -21,9 +21,9 @@ from typing import Any
 from cyclopts import App
 
 from untaped.stability import children, deprecated_aliases, mark_of
-from untaped.surface._lines import Line, MarkName
+from untaped.surface._lines import DEPRECATED, DeprecatedMark, Line, LineMark
 from untaped.surface._lists import WRITTEN_OUTSIDE
-from untaped.surface._sdk import SurfaceError, mark_name
+from untaped.surface._sdk import SurfaceError, line_mark
 from untaped.surface._types import choice_text, default_text
 
 ROOT = "untaped"
@@ -34,21 +34,21 @@ _POSITIONAL = (
 )
 
 
-def cli_lines(root: App, plugin_marks: Mapping[str, MarkName | None]) -> list[Line]:
+def cli_lines(root: App, plugin_marks: Mapping[str, LineMark | None]) -> list[Line]:
     """Every ``cli`` line of ``root``; ``plugin_marks`` are the composed plugins' marks."""
     lines = list(_root_options(root))
-    lines.extend(_walk(root, (ROOT,), None, plugin_marks, top=True))
+    lines.extend(_walk(root, root, (ROOT,), None, plugin_marks, top=True))
     return lines
 
 
-def subtree_lines(root: App, name: str, mark: MarkName | None) -> list[Line]:
+def subtree_lines(root: App, name: str, mark: LineMark | None) -> list[Line]:
     """The ``cli`` lines of the plugin mounted at ``untaped <name>``, the group itself included."""
     for child, sub in children(root, resolve=True):
         if child == name:
-            own = mark_name(mark_of(sub)) or mark
+            own = line_mark(mark_of(sub), root) or mark
             return [
                 *_command(sub, (ROOT, name), own),
-                *_walk(sub, (ROOT, name), own, {}, top=False),
+                *_walk(root, sub, (ROOT, name), own, {}, top=False),
             ]
     return []
 
@@ -72,35 +72,40 @@ def _root_options(root: App) -> Iterator[Line]:
 
 
 def _walk(
+    root: App,
     app: App,
     path: tuple[str, ...],
-    inherited: MarkName | None,
-    plugin_marks: Mapping[str, MarkName | None],
+    inherited: LineMark | None,
+    plugin_marks: Mapping[str, LineMark | None],
     *,
     top: bool,
 ) -> Iterator[Line]:
     aliases = deprecated_aliases(app)
-    for old, new in sorted(aliases.items()):
+    for old, alias in sorted(aliases.items()):
         if not old.startswith("-"):
-            yield Line(f"cli {' '.join((*path, old))} -> {' '.join((*path, new))}", "deprecated")
+            yield Line(
+                f"cli {' '.join((*path, old))} -> {' '.join((*path, alias.new))}",
+                DeprecatedMark(alias.removed_in),
+            )
     for name, sub in sorted(children(app, resolve=True), key=lambda item: item[0]):
         here = (*path, name)
-        own = mark_name(mark_of(sub))
+        own = line_mark(mark_of(sub), root)
         if top and own is None:
             own = plugin_marks.get(name)
         mark = own or inherited
         hidden = sub.show is False
-        if hidden and mark != "deprecated" and " ".join(here) not in WRITTEN_OUTSIDE:
+        deprecated = isinstance(mark, DeprecatedMark)
+        if hidden and not deprecated and " ".join(here) not in WRITTEN_OUTSIDE:
             continue
         yield from _command(sub, here, mark)
-        yield from _walk(sub, here, mark, plugin_marks, top=False)
+        yield from _walk(root, sub, here, mark, plugin_marks, top=False)
 
 
-def _command(app: App, path: tuple[str, ...], mark: MarkName | None) -> Iterator[Line]:
+def _command(app: App, path: tuple[str, ...], mark: LineMark | None) -> Iterator[Line]:
     subject = f"cli {' '.join(path)}"
-    for old, new in sorted(deprecated_aliases(app).items()):
+    for old, alias in sorted(deprecated_aliases(app).items()):
         if old.startswith("-"):
-            yield Line(f"{subject} {old} -> {new}", "deprecated")
+            yield Line(f"{subject} {old} -> {alias.new}", DeprecatedMark(alias.removed_in))
     if app.default_command is None:
         yield Line(subject, mark)
         return
@@ -108,7 +113,7 @@ def _command(app: App, path: tuple[str, ...], mark: MarkName | None) -> Iterator
     required: list[str] = []
     position = 0
     for argument in _arguments(app, " ".join(path)):
-        own: MarkName | None = "deprecated" if _hand_deprecated(argument) else mark
+        own: LineMark | None = DEPRECATED if _hand_deprecated(argument) else mark
         if argument.field_info.kind in _POSITIONAL:
             position += 1
             main = _positional_name(argument)
@@ -148,7 +153,10 @@ def _arguments(app: App, where: str) -> Iterator[Any]:
 
 def _hand_deprecated(argument: Any) -> bool:
     """A flag deprecated without a new spelling: hidden, its help starting ``Deprecated:``."""
-    return not argument.show and (argument.parameter.help or "").startswith("Deprecated:")
+    hand_typed = (argument.parameter.help or "").startswith(
+        "Deprecated:"  # untaped: allow hand-typed-deprecation
+    )
+    return not argument.show and hand_typed
 
 
 def _positional_name(argument: Any) -> str:
@@ -178,7 +186,7 @@ def _is_switch(argument: Any) -> bool:
     return count == 0 and not consume_all
 
 
-def _option(subject: str, argument: Any, mark: MarkName | None) -> Iterator[Line]:
+def _option(subject: str, argument: Any, mark: LineMark | None) -> Iterator[Line]:
     names = _positive_names(argument)
     main = names[0]
     default = argument.field_info.default
@@ -190,7 +198,7 @@ def _option(subject: str, argument: Any, mark: MarkName | None) -> Iterator[Line
     yield from _spellings(f"{subject} {main}", argument, mark, main=main)
 
 
-def _spellings(prefix: str, argument: Any, mark: MarkName | None, *, main: str) -> Iterator[Line]:
+def _spellings(prefix: str, argument: Any, mark: LineMark | None, *, main: str) -> Iterator[Line]:
     for alias in _positive_names(argument):
         if alias != main:
             yield Line(f"{prefix} alias={alias}", mark)
@@ -199,7 +207,7 @@ def _spellings(prefix: str, argument: Any, mark: MarkName | None, *, main: str) 
     yield from _choices(prefix, argument, mark)
 
 
-def _choices(prefix: str, argument: Any, mark: MarkName | None) -> Iterator[Line]:
+def _choices(prefix: str, argument: Any, mark: LineMark | None) -> Iterator[Line]:
     for choice in argument.get_choices(force=True) or ():
         yield Line(f"{prefix} choice={choice_text(choice)}", mark)
 

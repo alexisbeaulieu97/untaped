@@ -56,6 +56,7 @@ import shutil
 import sys
 import threading
 import time
+import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
@@ -68,6 +69,7 @@ from untaped.errors import ErrorCategory, ExitCode, UntapedError, combine_exit_c
 from untaped.output.diagnostic import (
     NOT_COUNTED,
     Debug,
+    DeprecationNotice,
     Diagnostic,
     Failure,
     Message,
@@ -88,7 +90,13 @@ from untaped.output.policy import (
 )
 from untaped.output.progress import ProgressHandle
 from untaped.redaction import redact_url_password
-from untaped.render import render_message, render_styled, should_colorize, stream_is_tty
+from untaped.render import (
+    MessageKind,
+    render_message,
+    render_styled,
+    should_colorize,
+    stream_is_tty,
+)
 from untaped.theme import BUILTIN_THEMES
 
 if TYPE_CHECKING:
@@ -587,17 +595,19 @@ def _level(diagnostic: Diagnostic) -> str:
 def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> str:
     """The text line of a diagnostic emitted without a presentation.
 
-    An ``info``, ``success`` or ``warning`` message renders through the theme
-    (``theme``: the policy's, else the default), as ``ui.message`` does; its
-    ``hint:`` line, a failure, a debug line and a stale-data line do not.
+    An ``info``, ``success`` or ``warning`` message and a deprecation render
+    through the theme (``theme``: the policy's, else the default), as
+    ``ui.message`` does; its ``hint:`` line, a failure, a debug line and a
+    stale-data line do not.
     """
     level = _level(diagnostic)
     if isinstance(diagnostic, Debug):
         return f"DEBUG {diagnostic.logger}: {diagnostic.message}"
     message = diagnostic.message
-    if isinstance(diagnostic, Message) and diagnostic.level != "hint":
+    themed = _themed_level(diagnostic)
+    if themed is not None:
         line = render_message(
-            diagnostic.level,
+            themed,
             message,
             theme=theme or BUILTIN_THEMES["default"],
             colorize=color,
@@ -609,6 +619,15 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
     if diagnostic.hint is not None:
         line += f"\n{_HINT_PREFIX}{diagnostic.hint}"
     return line
+
+
+def _themed_level(diagnostic: Diagnostic) -> MessageKind | None:
+    """The theme level ``diagnostic`` renders through, if it renders through the theme."""
+    if isinstance(diagnostic, DeprecationNotice):
+        return "warning"
+    if isinstance(diagnostic, Message) and diagnostic.level != "hint":
+        return diagnostic.level
+    return None
 
 
 def _blank(diagnostic: Diagnostic) -> bool:
@@ -915,16 +934,88 @@ def current_sink() -> Sink:
 
 @contextmanager
 def diagnostics_scope() -> Iterator[None]:
-    """Scope one invocation: its policy (an enclosing scope's, else the unscoped one) and sink."""
+    """Scope one invocation: its policy (an enclosing scope's, else the unscoped one) and sink.
+
+    For its duration a Python warning that is shown (not one a filter turns
+    into an error or ignores) reaches the sink like any line: an
+    :class:`~untaped.stability.UntapedDeprecationWarning` as the
+    ``untaped.deprecation`` record it carries, any other as a warning
+    message, so JSON diagnostics stay one object per line. A warning
+    something else records (``warnings.catch_warnings(record=True)``,
+    ``pytest.warns``) is left to it.
+    """
     parent = context_holder()
     policy = replace(parent.policy) if parent is not None else unscoped_policy()
     scope = _Scope(policy)
     token = enter(scope)
+    shown = warnings.showwarning
+    warnings.showwarning = _WarningRoute(shown)
     try:
         yield
     finally:
+        warnings.showwarning = shown
         leave(scope, token)
         scope.sink.close()
+
+
+#: How Python shows a warning when nothing records it; ``catch_warnings(record=True)``
+#: swaps it for its log while it records.
+_SHOW_UNRECORDED = getattr(warnings, "_showwarnmsg_impl", None)
+
+
+def _recording() -> bool:
+    """Whether a ``catch_warnings(record=True)`` is recording the warnings shown now.
+
+    It swaps the show function, or with context-aware warnings (``-X
+    context_aware_warnings``, the default on free-threaded builds) sets the
+    current context's ``log``.
+    """
+    if getattr(warnings, "_showwarnmsg_impl", None) is not _SHOW_UNRECORDED:
+        return True
+    context = getattr(warnings, "_get_context", None)
+    return context is not None and getattr(context(), "log", None) is not None
+
+
+class _WarningRoute:
+    """``warnings.showwarning`` inside a scope: a warning nothing records goes to the sink."""
+
+    def __init__(self, shown: Callable[..., None]) -> None:
+        self._shown = shown
+
+    def __call__(
+        self,
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        file: TextIO | None = None,
+        line: str | None = None,
+    ) -> None:
+        if _recording():
+            self._shown(message, category, filename, lineno, file, line)
+            return
+        _show_warning(message, category, filename, lineno)
+
+
+def _show_warning(
+    message: Warning | str, category: type[Warning], filename: str, lineno: int
+) -> None:
+    """A shown Python warning as a diagnostic on the sink."""
+    from untaped.stability import UntapedDeprecationWarning  # noqa: PLC0415 - avoids a cycle
+
+    if isinstance(message, UntapedDeprecationWarning):
+        current_sink().emit(
+            DeprecationNotice(
+                message=str(message),
+                id=message.id,
+                removed_in=message.removed_in,
+                distribution=message.distribution,
+                replacement=message.replacement,
+            )
+        )
+        return
+    text = f"{category.__name__}: {message} ({filename}:{lineno})"
+    current_sink().emit(Message(level="warning", message=text))
 
 
 def count_row_failures(rows: Iterable[object]) -> None:

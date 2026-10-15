@@ -55,7 +55,7 @@ from untaped.prompts import (
     set_terminal_override,
 )
 from untaped.screen.core import Cancel, Quit, Screen
-from untaped.stability import apply_marks
+from untaped.stability import apply_marks, deprecated
 from untaped.testing.contracts import assert_fills, compose_with
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
 from untaped.testing.surface import assert_surface
@@ -411,9 +411,11 @@ def import_targets(node: ast.Import | ast.ImportFrom, package: str) -> list[str]
     return resolve(node, package)
 
 
-# A literal message, so mypy reports the calls (``deprecated_message``'s wording).
+# untaped's mark dates it on the surface; the literal under it is what mypy reports
+# (``deprecated_message``'s wording for that mark).
+@deprecated(removed_in=12, replacement="untaped_lint.testing.assert_clean from untaped[lint]")
 @warnings.deprecated(
-    "check_conventions is deprecated and will be removed in the next major release; "
+    "check_conventions is deprecated and will be removed in 12.0; "
     "use untaped_lint.testing.assert_clean from untaped[lint]"
 )
 def check_conventions(

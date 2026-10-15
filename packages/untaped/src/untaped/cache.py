@@ -324,14 +324,23 @@ class Cache:
     ``PluginSpec.caches`` and its setting ``<plugin>.caches.<name>.max_age_seconds``
     overrides it. ``renamed_from`` names old keys of the plugin's section
     (dotted, relative to it) that are still read as that setting, with a
-    warning. ``version`` returns the version of the code that fills the
+    warning, until the plugin's major ``removed_in`` (undated without it).
+    ``version`` returns the version of the code that fills the
     cache (usually :func:`code_version`); it is called each time the cache
     is read (once per :meth:`serve`), never at import, and a key filled at
     another version is refreshed like an expired one. Two declarations with the same values
     (the same ``version`` callable) are equal.
     """
 
-    __slots__ = ("default_max_age", "label", "name", "plugin", "renamed_from", "version")
+    __slots__ = (
+        "default_max_age",
+        "label",
+        "name",
+        "plugin",
+        "removed_in",
+        "renamed_from",
+        "version",
+    )
 
     def __init__(
         self,
@@ -341,9 +350,11 @@ class Cache:
         label: str,
         max_age: timedelta,
         renamed_from: Sequence[str] = (),
+        removed_in: int | None = None,
         version: Callable[[], str] | None = None,
     ) -> None:
         from untaped.plugins.registry import check_plugin_name  # noqa: PLC0415 - no cycle
+        from untaped.stability import check_removed_in  # noqa: PLC0415 - no cycle
 
         check_plugin_name(plugin)
         if not _NAME.fullmatch(name):
@@ -357,17 +368,23 @@ class Cache:
         self.label = label
         self.default_max_age = max_age
         self.renamed_from = _old_keys(f"{plugin}.{name}", renamed_from)
+        if check_removed_in(removed_in) is not None and not self.renamed_from:
+            raise ConfigError(
+                f"cache {plugin}.{name}: removed_in dates renamed_from, which is empty"
+            )
+        self.removed_in = removed_in
         self.version = version
 
     def _identity(
         self,
-    ) -> tuple[str, str, str, timedelta, tuple[str, ...], Callable[[], str] | None]:
+    ) -> tuple[str, str, str, timedelta, tuple[str, ...], int | None, Callable[[], str] | None]:
         return (
             self.plugin,
             self.name,
             self.label,
             self.default_max_age,
             self.renamed_from,
+            self.removed_in,
             self.version,
         )
 

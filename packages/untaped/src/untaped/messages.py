@@ -113,25 +113,55 @@ def hint(command: str) -> str:
     return f"hint: {run_hint(command)}"
 
 
-def deprecated_message(old: str, new: str | None = None) -> str:
-    """The deprecation sentence: ``<old> is deprecated and will be removed …[; use <new>]``.
+_FUTURE_MAJOR = "a future major release"
 
-    One wording for every deprecated spelling (commands, flags, config keys
-    and their environment variables); callers pass the spellings as shown.
-    Without a replacement the sentence ends at "next major release".
+
+def removal_phrase(removal: str | None = None) -> str:
+    """``removed in <removal>``, or ``removed in a future major release`` when undated.
+
+    ``removal`` is :func:`untaped.stability.removal_text`'s (``12.0``,
+    ``untaped-awx 12.0``). For short notes such as ``config list``'s and
+    doctor's; a sentence uses :func:`deprecated_message`.
     """
-    message = f"{old} is deprecated and will be removed in the next major release"
-    return message if new is None else f"{message}; use {new}"
+    return f"removed in {removal or _FUTURE_MAJOR}"
+
+
+def deprecated_message(
+    subject: str, replacement: str | None = None, removal: str | None = None
+) -> str:
+    """The deprecation sentence: ``<subject> is deprecated and will be removed in <removal>…``.
+
+    One wording for every deprecated thing (commands, flags, config keys and
+    their environment variables); callers pass the spellings as shown.
+    ``removal`` is :func:`untaped.stability.removal_text`'s (``12.0``,
+    ``untaped-awx 12.0``); without one the sentence names no date: "a future
+    major release".
+    """
+    message = f"{subject} is deprecated and will be {removal_phrase(removal)}"
+    return message if replacement is None else f"{message}; use {replacement}"
+
+
+def deprecated_ignored_message(old: str, kept: str, new: str, removal: str | None = None) -> str:
+    """An old key set beside the spelling that wins: ``<old> is deprecated and ignored …``.
+
+    ``kept`` is the spelling whose value was read; when it is not ``new``,
+    the sentence also says to use ``new``.
+    """
+    advice = "" if kept == new else f"; use {new}"
+    return (
+        f"{old} is deprecated and ignored because {kept} is also set{advice}; "
+        f"it is {removal_phrase(removal)}"
+    )
 
 
 EXPERIMENTAL_LINE = "Experimental: may change in a minor release."
 """The help line every experimental command ends with."""
 
 
-def deprecated_line(replacement: str | None = None) -> str:
-    """The help line every deprecated command ends with: ``Deprecated: removed …[; use <new>].``"""
+def deprecated_line(replacement: str | None = None, removal: str | None = None) -> str:
+    """The help line every deprecated thing ends with: ``Deprecated: removed in <removal>….``"""
     suffix = "" if replacement is None else f"; use {replacement}"
-    return f"Deprecated: removed in the next major release{suffix}."
+    return f"Deprecated: {removal_phrase(removal)}{suffix}."
 
 
 def shown_path(path: Path | str) -> str:
@@ -182,6 +212,7 @@ __all__ = [
     "EXPERIMENTAL_LINE",
     "command_argv",
     "command_line",
+    "deprecated_ignored_message",
     "deprecated_line",
     "deprecated_message",
     "duration_text",
@@ -189,6 +220,7 @@ __all__ = [
     "not_found",
     "plural",
     "q",
+    "removal_phrase",
     "size_text",
     "split_profile",
     "summary",

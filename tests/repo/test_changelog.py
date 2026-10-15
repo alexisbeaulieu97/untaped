@@ -45,6 +45,7 @@ def repo(tmp_path: Path) -> Path:
     _git(tmp_path, "config", "user.name", "t")
     _write(tmp_path, "README.md", "x\n")
     _commit(tmp_path, "base")
+    _git(tmp_path, "tag", "v10.0.0")  # build compares with the newest release
     return tmp_path
 
 
@@ -321,6 +322,22 @@ def test_a_second_build_of_a_version_is_refused() -> None:
 def test_an_upgrading_fragment_is_refused_outside_a_major(version: str) -> None:
     with pytest.raises(changelog.ChangelogError, match="upgrading fragments"):
         _build(RELEASED, version, upgrading=["- do"])
+
+
+def test_main_holds_upgrading_fragments_only_while_a_breaking_change_waits() -> None:
+    # main stays releasable as a minor, which refuses upgrading fragments; only a Breaking
+    # entry makes the next release a major. An upgrading fragment also tells test_surface
+    # that a major is in preparation, which lets stable lines go.
+    fragments = changelog.load_fragments(REPO_ROOT)
+    upgrading = [f.path for f in fragments if f.type == "upgrading"]
+    breaking = any(changelog.is_breaking(f.text) for f in fragments)
+
+    assert breaking or not upgrading, (
+        f"{', '.join(upgrading)}: no Breaking entry waits in changelog.d/, so the next "
+        "release is a minor and `changelog.py build` refuses upgrading fragments. Say what "
+        "to do in the change's own fragment (a deprecation's replacement in its deprecated "
+        "entry), or wait for the major's milestone."
+    )
 
 
 def test_a_bad_version_is_refused() -> None:

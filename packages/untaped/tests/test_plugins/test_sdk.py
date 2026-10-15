@@ -161,8 +161,11 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "doctor checks": ("connection_check", "executable_check", "online_check"),
     "conventions": (
+        "Deprecated",
         "ExitCode",
+        "Renamed",
         "Retired",
+        "UntapedDeprecationWarning",
         "deprecated",
         "deprecated_alias",
         "experimental",

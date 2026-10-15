@@ -111,7 +111,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: the label is a noun phrase without `…`; report counts, never a formatted fraction | `with ctx.diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
 | Styled line | A Rich `Text` line for streamed human output (live job events) | stdout: `ui.styled(text)` (see its `tail=` and `truncate=`); stderr: `ctx.diag.info(text, unmuted=True)`, or `ctx.diag.relay(text)` for another tool's output |
 
-`ctx.diag` replaces the stderr helpers, which warn until 12.0; never `echo()` an `error:`, `warning:`
+`ctx.diag` replaces the deprecated stderr helpers; never `echo()` an `error:`, `warning:`
 or `failed:` line. `-q` mutes `info`, `success` and progress; `unmuted=True` is for a preview before
 a prompt, a stream the user asked to watch or output a flag asks for. Never `print()`, `warnings.warn()`
 (take a `warn` callback; a `DeprecationWarning` for a Python API is the exception) or your own `Console`.
@@ -148,16 +148,10 @@ Rules for parameters:
 - Negative `--no-*` flags exist only for booleans that default to true.
   Declare other booleans with `negative=""`.
 
-To rename a command, group or flag, keep the old spelling as a hidden,
-deprecated alias until the next major release:
-`deprecated_alias(parent_app, "me", "whoami")` for a command or group, and
-`deprecated_alias(command_app, "--old-flag", "--new-flag")` for a flag. The
-root rewrites the old token and prints
-``warning: `me` is deprecated and will be removed in the next major release; use `whoami` ``.
-The old spelling never appears in `--help`. Aliases apply through the
-`untaped` root, so test them with `untaped.testing.invoke_root([...])`.
-A flag deprecated without a new spelling is hidden (`show=False`), starts its
-help with `Deprecated:` and warns when used; the major-release test fails on it.
+To rename a command, group or flag, keep the old spelling as a hidden alias,
+`deprecated_alias(parent_app, "me", "whoami", removed_in=12)` (a flag: `"--old"`,
+`"--new"` on the command's app), tested through `untaped.testing.invoke_root`;
+[Deprecating something](deprecation.md) covers every kind.
 
 Command names are kebab-case; use plural nouns for collections. Names are
 free, but a command that writes declares it with `@writes`, or
@@ -376,16 +370,17 @@ retired_keys: ClassVar[Mapping[str, str | Retired]] = {"cache_dir": Retired(note
 ```
 
 - A key in `renamed_keys` (and its `UNTAPED_*` variable) is read as the new
-  key, with a warning, until the next major; then it moves to `retired_keys`
-  and is no longer read. Targets chain through old keys; a renamed key never
+  key, with a warning, until its removal version
+  (`Renamed("new", removed_in=12)`); then it moves to `retired_keys` and is
+  no longer read. Targets chain through old keys; a renamed key never
   points at a retired one; entries are never deleted, old names never reused.
   A key moving into a cache's setting is `Cache(renamed_from=...)` instead.
 - A key with no successor retires as `Retired(note=...)`: doctor prints the
   note and `config migrate` deletes the key, printing the value it held.
 - A rename keeps the meaning. A change of unit, type or choices is a new key;
-  mark the old leaf field `Annotated[bool, deprecated(replacement="mode")]`
-  (outermost `Annotated`; never a model or state field). It is still read,
-  with a warning naming the replacement (a key or prose), until the next major.
+  mark the old leaf field `Annotated[bool, deprecated(removed_in=12, replacement="mode")]`
+  (outermost `Annotated`; never a model or state field). It is still read, with
+  a warning naming the replacement, until then ([more](deprecation.md)).
 
 Each warning prints once per process. Composition quarantines a plugin
 whose declarations or marks break these rules (`bad-settings-keys`).
@@ -395,6 +390,6 @@ whose declarations or marks break these rules (`bad-settings-keys`).
 `untaped.sdk`, `untaped.contracts` and `untaped.testing` are stable within a
 major release: a minor or patch release adds to them and never breaks them.
 Plugins import only these; other `untaped` modules are internal.
-A deprecated SDK attribute or callable is marked with `warnings.deprecated`
-and removed in the next major release.
+A deprecated SDK attribute or callable is removed at the major its warning
+names ([Deprecating something](deprecation.md)).
 For what users can rely on, see [Versioning](../versioning.md).

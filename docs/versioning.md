@@ -95,12 +95,12 @@ command) is marked with `@experimental` in the code and listed here, not in a
 ## Breaking changes
 
 - A command that goes away with no successor is marked deprecated: it is
-  listed by `untaped --deprecated --help`, ends its `--help` with a line saying
-  so, and warns on every run until the next major release removes it.
+  listed by `untaped --deprecated --help`, ends its `--help` with a line
+  naming the release that removes it, and warns on every run until then.
 - A renamed command or flag keeps working as a hidden, deprecated alias until
-  the next major release, and prints a warning naming the new spelling.
+  the major its warning names, and the warning names the new spelling.
 - A renamed setting's old name, and its `UNTAPED_*` variable, keeps working
-  as a renamed key until the next major release; see
+  as a renamed key until the major its warning names; see
   [Renamed settings](./configuration.md#renamed-settings).
 - A deprecated setting keeps working too, and `untaped config list` lists it
   under `Deprecated` once it is set; experimental settings sit under

@@ -107,6 +107,7 @@ INDEX = Cache(
     label="source data",
     max_age=timedelta(days=1),
     renamed_from=("stale_after_seconds",),
+    removed_in=12,
 )
 
 

@@ -16,7 +16,9 @@ Every stderr line is a :class:`Diagnostic`:
   exit code; also the ``error`` of a failed row;
 - :class:`Debug` (``untaped.debug``): a log record under ``--verbose``;
 - :class:`StaleData` (``untaped.stale``): a ``warning`` that cached data was
-  served stale, and why.
+  served stale, and why;
+- :class:`DeprecationNotice` (``untaped.deprecation``): a ``warning`` that a
+  deprecated thing was used, and the major that removes it.
 
 ``level`` is a class constant on every fixed-level kind (only ``Message``
 carries it as a field), so a ``Failure`` nested in a row dumps its payload
@@ -656,6 +658,29 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         )
 
 
+class DeprecationNotice(Diagnostic, kind="untaped.deprecation"):
+    """A deprecated thing was used: a ``warning``, never counted; the sentence is ``message``.
+
+    ``id`` is its surface identity (``cli untaped awx put``,
+    ``cfg ansible.stale_after_seconds -> ansible.caches.index.max_age_seconds``;
+    a setting's line adds its type and default after it), so a harness can
+    allow-list exactly what it has reviewed. ``removed_in`` is the major that
+    removes it (``None`` when its mark names none); ``distribution`` whose
+    major that is (``None`` for core's own, the plugin's distribution
+    otherwise); ``replacement`` what to use instead. Built by
+    :func:`untaped.stability.notify_deprecation`.
+    """
+
+    level: ClassVar[Level] = "warning"
+
+    id: str
+    removed_in: int | None
+    distribution: str | None
+    replacement: str | None
+    hint: str | None = None
+    message: str
+
+
 def _utc_minute(value: datetime) -> str:
     return f"{_to_utc(value):%Y-%m-%d %H:%M}"
 
@@ -797,6 +822,7 @@ __all__ = [
     "KIND_PATTERN",
     "NOT_COUNTED",
     "Debug",
+    "DeprecationNotice",
     "Diagnostic",
     "DuplicateKindError",
     "Failure",

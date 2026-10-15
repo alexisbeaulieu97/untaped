@@ -10,6 +10,7 @@ from cyclopts import App, Parameter
 
 from untaped.bootstrap import build_root_app, kept_composition
 from untaped.stability import apply_marks, deprecated_alias, experimental
+from untaped.surface import DeprecatedMark
 from untaped.surface._cli import cli_lines, subtree_lines
 
 
@@ -137,7 +138,7 @@ def test_a_flag_deprecated_by_its_help_keeps_its_line_marked(lines: set[str]) ->
 
 def test_a_plugin_mark_reaches_every_line() -> None:
     lines = subtree_lines(_root(), "demo", "experimental")
-    assert {line.mark for line in lines} == {"experimental", "deprecated"}
+    assert {line.mark for line in lines} == {"experimental", DeprecatedMark()}
 
 
 def test_the_root_lists_its_options_and_cyclopts_built_ins() -> None:
