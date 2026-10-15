@@ -221,5 +221,5 @@ def test_a_management_app_without_a_reserved_name_fails_the_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(bootstrap, "ROOT_MANAGEMENT_COMMANDS", ("config", "profile"))
-    with pytest.raises(RuntimeError, match=r"unreserved management commands: .*'alias'"):
+    with pytest.raises(RuntimeError, match=r"unreserved management commands: .*'auth'"):
         bootstrap.build_root_app(candidates=())

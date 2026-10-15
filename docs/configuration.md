@@ -225,38 +225,6 @@ authenticates against each configured service. A failed check makes it exit
 nonzero; a `warn` row does not. To write a profile's service settings
 interactively, see [Getting started](./getting-started.md#set-up-your-services).
 
-## Command aliases
-
-> Deprecated: `untaped alias` and the `shell.aliases` setting are removed in
-> the next major release. Use a shell alias or function instead
-> (`alias failed='untaped awx jobs list --status failed'`).
-
-An alias is a shortcut for a longer command. Put the command after `--`:
-
-```bash
-untaped alias set failed -- awx jobs list --status failed
-untaped failed --limit 5   # untaped awx jobs list --status failed --limit 5
-untaped alias set pj --profile prod -- awx jobs list   # stored in profile prod
-untaped alias set prod-jobs -- --profile prod awx jobs list   # runs with --profile prod
-untaped alias remove failed --yes
-```
-
-`untaped NAME [ARGS…]` runs the stored command with `ARGS` appended. The
-stored argv goes to `untaped` as is; no shell runs it.
-
-- Aliases are stored per profile in the `shell.aliases` setting (name to argv
-  list). Aliases in `profiles.default` apply beneath the active profile's.
-- `alias set` and `alias remove` change the active profile, or the one a
-  root `--profile` before `--` names; after `--`, `--profile` is part of the
-  alias. `untaped NAME` looks the alias up the same way, so
-  `untaped pj --profile prod` works too.
-- To remove an alias inherited from `default`, run
-  `untaped --profile default alias remove NAME`.
-- Names use lowercase letters, digits and dashes. An alias never shadows a
-  built-in command or plugin: `alias set` rejects the name (exit 2) and a
-  stored one is ignored.
-- An alias is expanded once; it cannot run another alias.
-
 ## TLS and shared UI settings
 
 `http.*` and `ui.*` are profile settings shared by all plugins. HTTP

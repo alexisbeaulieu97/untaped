@@ -71,7 +71,6 @@ cfg recipe.hook_startup_timeout_seconds number(minimum=0) default=300
 cfg recipe.hook_timeout_seconds number(minimum=0) default=60
 cfg recipe.library_dir string(format=path) default=~/.untaped/untaped-recipes
 cfg recipe.preview_max_rows integer(minimum=0) default=50
-cfg shell.aliases object default={}  [deprecated]
 cfg skills.updates choice=auto
 cfg skills.updates choice=off
 cfg skills.updates choice=warn
@@ -122,42 +121,6 @@ cli untaped --quiet switch
 cli untaped --verbose alias=-v
 cli untaped --verbose switch
 cli untaped --version switch
-cli untaped alias  [deprecated]
-cli untaped alias list  [deprecated]
-cli untaped alias list --columns VALUE... default=unset  [deprecated]
-cli untaped alias list --columns alias=-c  [deprecated]
-cli untaped alias list --format VALUE default=table  [deprecated]
-cli untaped alias list --format alias=-f  [deprecated]
-cli untaped alias list --format choice=json  [deprecated]
-cli untaped alias list --format choice=pipe  [deprecated]
-cli untaped alias list --format choice=raw  [deprecated]
-cli untaped alias list --format choice=table  [deprecated]
-cli untaped alias list --format choice=yaml  [deprecated]
-cli untaped alias remove --columns VALUE... default=unset  [deprecated]
-cli untaped alias remove --columns alias=-c  [deprecated]
-cli untaped alias remove --dry-run switch  [deprecated]
-cli untaped alias remove --format VALUE default=table  [deprecated]
-cli untaped alias remove --format alias=-f  [deprecated]
-cli untaped alias remove --format choice=json  [deprecated]
-cli untaped alias remove --format choice=pipe  [deprecated]
-cli untaped alias remove --format choice=raw  [deprecated]
-cli untaped alias remove --format choice=table  [deprecated]
-cli untaped alias remove --format choice=yaml  [deprecated]
-cli untaped alias remove --yes alias=-y  [deprecated]
-cli untaped alias remove --yes switch  [deprecated]
-cli untaped alias remove NAME  [deprecated]
-cli untaped alias set --columns VALUE... default=unset  [deprecated]
-cli untaped alias set --columns alias=-c  [deprecated]
-cli untaped alias set --dry-run switch  [deprecated]
-cli untaped alias set --format VALUE default=table  [deprecated]
-cli untaped alias set --format alias=-f  [deprecated]
-cli untaped alias set --format choice=json  [deprecated]
-cli untaped alias set --format choice=pipe  [deprecated]
-cli untaped alias set --format choice=raw  [deprecated]
-cli untaped alias set --format choice=table  [deprecated]
-cli untaped alias set --format choice=yaml  [deprecated]
-cli untaped alias set NAME  [deprecated]
-cli untaped alias set [COMMAND...]@2 default=unset  [deprecated]
 cli untaped ansible
 cli untaped ansible deps --all-refs switch
 cli untaped ansible deps --backend VALUE default=unset

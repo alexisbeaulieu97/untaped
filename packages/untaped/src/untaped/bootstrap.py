@@ -29,7 +29,6 @@ from untaped._root_options import (
     _root_callback_signature,
     _root_options,
     _RootOption,
-    expand_alias,
     resolve_command,
 )
 from untaped.cache import current_call
@@ -43,7 +42,6 @@ from untaped.errors import ConfigError
 from untaped.git import forward_signals
 from untaped.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.management import (
-    build_root_alias_app,
     build_root_auth_app,
     build_root_config_app,
     build_root_doctor_app,
@@ -301,7 +299,6 @@ def build_root_app(
         ),
         "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
         "auth": build_root_auth_app(result=result),
-        "alias": build_root_alias_app(builtin_for=lambda name: resolve_command(root, name)),
         "plugin": build_root_plugin_app(result=result, candidates=candidates),
     }
     for name in ROOT_MANAGEMENT_COMMANDS:
@@ -487,12 +484,6 @@ def _install_root_callback(
                 )
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
-                expanded = expand_alias(app, command_tokens)
-                if expanded is not command_tokens:
-                    # An alias may start with root options (`--profile prod awx …`).
-                    command_tokens = _consume_leading_root_options(
-                        expanded, root_options, applied_tokens
-                    )
                 dispatched = True
                 result = _dispatch_with_root_options(
                     app, command_tokens, root_options, applied_tokens

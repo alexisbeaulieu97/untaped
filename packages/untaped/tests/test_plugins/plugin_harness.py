@@ -22,6 +22,7 @@ from untaped.plugins.registry import (
     PluginSpec,
     SkillAsset,
 )
+from untaped.stability import Stability
 
 
 class Profile(BaseModel):
@@ -80,6 +81,7 @@ def make_spec(
     skills: tuple[SkillAsset, ...] = (),
     checks: tuple[DoctorCheck, ...] = (),
     factory: Callable[[], App] | None = None,
+    stability: Stability | None = None,
 ) -> PluginSpec:
     return PluginSpec(
         name=name,
@@ -88,6 +90,7 @@ def make_spec(
         state=state,
         skills=skills,
         doctor_checks=checks,
+        stability=stability,
     )
 
 

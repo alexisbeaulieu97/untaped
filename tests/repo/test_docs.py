@@ -85,7 +85,7 @@ def _setting_command_problems(root: App, page: str) -> list[str]:
                 problems.append(f"{section}: `{span}` is not a command")
             elif flags:
                 problems += [
-                    f"{section}: {p}" for p in _unknown_options(root, path + flags.split(), set())
+                    f"{section}: {p}" for p in _unknown_options(root, path + flags.split())
                 ]
     return problems
 
@@ -357,12 +357,12 @@ def _untaped_commands(block: str) -> list[list[str]]:
     return commands
 
 
-def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]:
+def _unknown_options(root: App, argv: list[str]) -> list[str]:
     app, path, flags, words = root, [], [], []
     skip_value = False
     for token in argv:
         if token == "--":
-            break  # the rest is data (``alias set NAME -- COMMAND…``)
+            break  # the rest is data
         if skip_value:
             skip_value = False
         elif token.startswith("-") and token != "-":  # a bare ``-`` names stdin
@@ -374,7 +374,7 @@ def _unknown_options(root: App, argv: list[str], aliases: set[str]) -> list[str]
         else:
             words.append(token)
     if not path:
-        if words[:1] == [_EXAMPLE_PROVIDER] or (words and words[0] in aliases):
+        if words[:1] == [_EXAMPLE_PROVIDER]:
             return []
         if words:
             return [f"untaped {words[0]}: not a command"]
@@ -395,25 +395,22 @@ def test_command_examples_use_real_commands_and_options(
     problems = []
     for path in markdown_files():
         for block in _bash_blocks(path):
-            commands = _untaped_commands(block)
-            # A block may run an alias it defines (``alias set NAME -- …``).
-            aliases = {argv[2] for argv in commands if argv[:2] == ["alias", "set"] and argv[2:]}
-            for argv in commands:
+            for argv in _untaped_commands(block):
                 problems.extend(
                     f"{path.relative_to(REPO_ROOT)}: {problem}"
-                    for problem in _unknown_options(root, argv, aliases)
+                    for problem in _unknown_options(root, argv)
                 )
     assert problems == []
 
 
-def _prose_command_problem(root: App, command: str, aliases: set[str]) -> str | None:
+def _prose_command_problem(root: App, command: str) -> str | None:
     """Why the inline ``command`` names no real command (``None`` when it does).
 
     A placeholder in command position (``untaped awx <resource> edit``) ends
     the check: only the words before it must resolve.
     """
     words = list(itertools.takewhile(lambda t: not t.startswith("-"), shlex.split(command)[1:]))
-    if words[:1] and words[0] in aliases | {_EXAMPLE_PROVIDER, *_EXAMPLE_PLUGINS}:
+    if words[:1] and words[0] in {_EXAMPLE_PROVIDER, *_EXAMPLE_PLUGINS}:
         return None
     for index, word in enumerate(words):
         if re.fullmatch(r"<[^>]+>", word) or quoted_commands.PLACEHOLDER.match(word):
@@ -428,18 +425,11 @@ def test_inline_commands_name_real_commands(
     """Every ``untaped …`` in inline code names a real command (skills are checked on their own)."""
     root = build_root_app(candidates=first_party_candidates)
     pages = [path for path in markdown_files() if "skills" not in path.parts]
-    aliases = {
-        argv[2]
-        for path in pages
-        for block in _bash_blocks(path)
-        for argv in _untaped_commands(block)
-        if argv[:2] == ["alias", "set"] and argv[2:]
-    }
     problems = [
         f"{path.relative_to(REPO_ROOT)}: {command}: {problem}"
         for path in pages
         for command, inline in quoted_commands.commands(path.read_text(encoding="utf-8"))
-        if inline and (problem := _prose_command_problem(root, command, aliases)) is not None
+        if inline and (problem := _prose_command_problem(root, command)) is not None
     ]
     assert problems == []
 
@@ -452,7 +442,7 @@ def test_inline_commands_name_real_commands(
         ("untaped awx <resource> edit", False),
         ("untaped awxx <resource> edit", True),
         ("untaped COMMAND --help", False),
-        ("untaped failed --limit 5", False),
+        ("untaped failed --limit 5", True),
         ("untaped github repos list --nope", True),
     ],
 )
@@ -460,7 +450,7 @@ def test_inline_command_detector(
     first_party_candidates: tuple[PluginCandidate, ...], command: str, fails: bool
 ) -> None:
     root = build_root_app(candidates=first_party_candidates)
-    assert (_prose_command_problem(root, command, {"failed"}) is not None) is fails
+    assert (_prose_command_problem(root, command) is not None) is fails
 
 
 DOCS_PAGES = [

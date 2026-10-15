@@ -34,7 +34,12 @@ def _root() -> App:
         """Old."""
 
     spec = make_spec(name="svc", factory=lambda: app)
-    return bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
+    sunset = make_spec(
+        name="sunset",
+        factory=lambda: create_app(name="sunset", help="Sunset."),
+        stability=deprecated(),
+    )
+    return bootstrap.build_root_app(candidates=[plugin_candidate(spec), plugin_candidate(sunset)])
 
 
 def _help(*argv: str) -> str:
@@ -45,7 +50,7 @@ def _help(*argv: str) -> str:
 
 def test_root_help_has_no_deprecated_panel_without_the_flag() -> None:
     assert "Deprecated" not in _help("--help")
-    assert "alias" not in _help("--help")
+    assert "sunset" not in _help("--help")
 
 
 @pytest.mark.parametrize(
@@ -55,7 +60,7 @@ def test_the_flag_adds_the_deprecated_panel_before_or_after_help(argv: list[str]
     text = _help(*argv)
 
     assert "Deprecated" in text
-    assert "alias" in text
+    assert "sunset" in text
 
 
 @pytest.mark.parametrize(

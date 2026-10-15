@@ -183,14 +183,6 @@ def test_validate_prints_the_plan_and_writes_nothing(aap: FakeAap, repo: Path) -
     assert aap.list_records("job_templates") == []
 
 
-def test_dry_run_checks_like_validate_and_launches_nothing(aap: FakeAap, repo: Path) -> None:
-    code, [planned], stderr = _run("--dry-run")
-
-    assert code == 0, stderr
-    assert planned["action"] == "planned"
-    assert (aap.list_records("job_templates"), _launches(aap)) == ([], [])
-
-
 def test_validate_without_source_ref_checks_the_scm_branch_it_would_pass(
     aap: FakeAap, repo: Path
 ) -> None:
@@ -507,9 +499,6 @@ def test_an_interrupted_run_still_tears_down(
         (["--scm-branch", "main"], "--source-ref and --scm-branch cannot be combined"),
         (["--baseline", "main"], "--source-ref and --baseline cannot be combined"),
         (["--no-cancel"], "add --keep"),
-        (["--dry-run", "--keep"], "--dry-run launches nothing, so --keep does not apply"),
-        (["--dry-run", "--no-cancel"], "so --no-cancel does not apply"),
-        (["--dry-run", "--baseline", "main"], "so --baseline does not apply"),
     ],
 )
 def test_flags_source_ref_cannot_go_with_are_refused(
