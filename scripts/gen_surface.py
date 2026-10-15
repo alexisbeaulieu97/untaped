@@ -76,6 +76,9 @@ def main(argv: list[str]) -> int:
     """Write the file, report with ``--check`` whether it is current, or list ``--due`` lines."""
     if "--due" in argv:
         rest = argv[argv.index("--due") + 1 :]
+        if len(rest) > 1 or (rest and not rest[0].isdigit()):
+            print("usage: gen_surface.py --due [MAJOR]", file=sys.stderr)
+            return 2
         major = int(rest[0]) if rest else next_major(release_version(REPO_ROOT))
         report, code = due_report(OUTPUT.read_text(encoding="utf-8"), major)
         sys.stdout.write(report)

@@ -16,7 +16,7 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 | A renamed command or flag | `deprecated_alias(parent_app, "me", "whoami", removed_in=3)`; a flag: `deprecated_alias(command_app, "--old", "--new", removed_in=3)` |
 | A setting | `old: Annotated[bool, deprecated(removed_in=3, replacement="acme.mode")] = False` |
 | A renamed setting key | `renamed_keys = {"old_key": Renamed("new_key", removed_in=3)}` on the section's model |
-| A cache setting's old key | `Cache(..., renamed_from="stale_after_seconds", removed_in=3)` |
+| A cache setting's old key | `Cache(..., renamed_from=("stale_after_seconds",), removed_in=3)` |
 
 `removed_in` is a bare major of your distribution: `3` for `untaped-acme
 3.0`. untaped's own plugins use untaped's majors, since they release in
@@ -58,7 +58,6 @@ In this workspace `tests/repo/test_major_release.py` reads the marks of
 ```text
 cli untaped plugin check  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
 ```
-
 
 - nothing may still be marked removed in the major main carries or earlier
   (from `12.0.0rc1` on, that is 12), so whatever 12.0 removes goes in prep PRs

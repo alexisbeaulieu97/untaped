@@ -28,6 +28,8 @@ from untaped.surface._sdk import line_mark
 from untaped.surface._types import choice_text, default_text, node_token, schema_of
 
 if TYPE_CHECKING:
+    from cyclopts import App
+
     from untaped.plugins.registry import CompositionResult
     from untaped.stability import Stability
 
@@ -146,15 +148,21 @@ def setting_leaves(section: Section) -> list[Setting]:
     ]
 
 
-def settings_lines(result: CompositionResult, *, root: bool = True) -> list[Line]:
-    """Every ``cfg`` and ``state`` line of the composition (``root=False``: plugins only)."""
+def settings_lines(
+    result: CompositionResult, *, root: bool = True, tree: App | None = None
+) -> list[Line]:
+    """Every ``cfg`` and ``state`` line of the composition (``root=False``: plugins only).
+
+    ``tree`` (the root app) names a plugin mark's object replacement, as on
+    the plugin's ``cli`` lines.
+    """
     lines: list[Line] = []
     for section in sections(result, extensions=False, root=root):
         area = "state" if section.is_state else "cfg"
-        plugin_mark = line_mark(section.stability)
+        plugin_mark = line_mark(section.stability, tree)
         schema = schema_of(section.model)
         for leaf in setting_leaves(section):
-            mark = plugin_mark if section.is_state else line_mark(leaf.mark)
+            mark = plugin_mark if section.is_state else line_mark(leaf.mark, tree)
             lines.extend(_leaf_lines(area, leaf, mark, schema, section.prefix))
         if not section.is_state:
             lines.extend(_renamed(section))

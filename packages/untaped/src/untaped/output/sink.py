@@ -963,6 +963,19 @@ def diagnostics_scope() -> Iterator[None]:
 _SHOW_UNRECORDED = getattr(warnings, "_showwarnmsg_impl", None)
 
 
+def _recording() -> bool:
+    """Whether a ``catch_warnings(record=True)`` is recording the warnings shown now.
+
+    It swaps the show function, or with context-aware warnings (``-X
+    context_aware_warnings``, the default on free-threaded builds) sets the
+    current context's ``log``.
+    """
+    if getattr(warnings, "_showwarnmsg_impl", None) is not _SHOW_UNRECORDED:
+        return True
+    context = getattr(warnings, "_get_context", None)
+    return context is not None and getattr(context(), "log", None) is not None
+
+
 class _WarningRoute:
     """``warnings.showwarning`` inside a scope: a warning nothing records goes to the sink."""
 
@@ -978,7 +991,7 @@ class _WarningRoute:
         file: TextIO | None = None,
         line: str | None = None,
     ) -> None:
-        if getattr(warnings, "_showwarnmsg_impl", None) is not _SHOW_UNRECORDED:
+        if _recording():
             self._shown(message, category, filename, lineno, file, line)
             return
         _show_warning(message, category, filename, lineno)

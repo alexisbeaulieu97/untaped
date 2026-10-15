@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import warnings
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import replace
 from datetime import timedelta
-from typing import ClassVar
+from pathlib import Path
+from typing import Annotated, Any, ClassVar
 
 import pytest
 from cyclopts import App
@@ -22,11 +25,14 @@ from untaped.errors import ConfigError
 from untaped.messages import deprecated_ignored_message, deprecated_line, deprecated_message
 from untaped.output import sink
 from untaped.output.diagnostic import DeprecationNotice
+from untaped.plugins.registry import PluginSpec
+from untaped.settings import get_settings
 from untaped.stability import (
     UntapedDeprecationWarning,
     check_removed_in,
     deprecated,
     deprecated_alias,
+    forget_notices,
     removal_text,
 )
 from untaped.testing import CliInvoker, invoke_cli, plugin_candidate
@@ -249,6 +255,7 @@ def _warn_from_a_command(warning: Warning) -> App:
 def shown(monkeypatch: pytest.MonkeyPatch) -> None:
     """Python shows warnings as it does outside pytest's recording, every time."""
     monkeypatch.setattr(warnings, "_showwarnmsg_impl", sink._SHOW_UNRECORDED)
+    monkeypatch.setattr(warnings._get_context(), "log", None)  # context-aware recording
     monkeypatch.setattr(warnings, "filters", [])
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     warnings.simplefilter("always")
@@ -289,3 +296,127 @@ def test_another_python_warning_is_a_warning_line_and_the_hook_ends_with_its_sco
     assert line["level"] == "warning"
     assert str(line["message"]).startswith("DeprecationWarning: plain (")
     assert warnings.showwarning is before
+
+
+_RECORDED = """
+import warnings
+from untaped.output.sink import diagnostics_scope
+with warnings.catch_warnings(record=True) as log:
+    warnings.simplefilter("always")
+    with diagnostics_scope():
+        warnings.warn("recorded", DeprecationWarning, stacklevel=1)
+assert [str(w.message) for w in log] == ["recorded"], log
+"""
+
+
+@pytest.mark.parametrize("flags", [[], ["-X", "context_aware_warnings=1"]])
+def test_a_recorded_warning_stays_with_its_recorder(flags: list[str]) -> None:
+    done = subprocess.run(
+        [sys.executable, *flags, "-c", _RECORDED], capture_output=True, text=True, check=False
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stderr == ""
+
+
+# --- a plugin's dated settings ---------------------------------------------------------------
+
+
+class _Acme(BaseModel):
+    renamed_keys: ClassVar[Mapping[str, object]] = {"old_wait": Renamed("wait", removed_in=4)}
+
+    mode: bool = False
+    old_mode: Annotated[bool, deprecated(removed_in=3, replacement="acme.mode")] = False
+    wait: int = 5
+
+
+@pytest.fixture
+def acme(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[App]:
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "profiles:\n  default:\n    acme:\n      old_mode: true\n      old_wait: 9\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(config))
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    get_settings.cache_clear()
+    forget_notices()
+    yield bootstrap.build_root_app(
+        candidates=[plugin_candidate(make_spec(name="acme", settings=_Acme))]
+    )
+    get_settings.cache_clear()
+    forget_notices()
+
+
+def _invoke(root: App, *argv: str) -> tuple[Any, list[dict[str, Any]]]:
+    result = CliInvoker().invoke(root.meta, list(argv))
+    assert result.exit_code == 0, result.output
+    notices = [json.loads(line) for line in result.stderr.splitlines()]
+    return result, [line for line in notices if line["kind"] == "untaped.deprecation"]
+
+
+def test_config_list_carries_the_dated_removal(acme: App) -> None:
+    result, _ = _invoke(acme, "config", "list", "--format", "json")
+    rows = {row["key"]: row for row in json.loads(result.stdout)}
+
+    old_mode = rows["acme.old_mode"]
+    assert (old_mode["removed_in"], old_mode["distribution"]) == (3, "untaped-acme")
+    assert old_mode["note"] == "use `acme.mode`, removed in untaped-acme 3.0"
+    wait = rows["acme.wait"]
+    # The setting is stable; only its old spelling goes, which the note dates.
+    assert (wait["stability"], wait["removed_in"]) == ("stable", None)
+    assert wait["note"] == "from acme.old_wait, removed in untaped-acme 4.0"
+    assert (rows["acme.mode"]["removed_in"], rows["acme.mode"]["distribution"]) == (None, None)
+
+
+def test_each_dated_setting_warns_as_its_record(acme: App) -> None:
+    _, notices = _invoke(acme, "config", "get", "acme.wait")
+
+    by_id = {notice["id"]: notice for notice in notices}
+    assert by_id["cfg acme.old_wait -> acme.wait"]["message"] == (
+        "acme.old_wait is deprecated and will be removed in untaped-acme 4.0; use acme.wait"
+    )
+    assert by_id["cfg acme.old_mode"]["message"] == (
+        "acme.old_mode is deprecated and will be removed in untaped-acme 3.0; use acme.mode"
+    )
+    assert {notice["removed_in"] for notice in notices} == {3, 4}
+
+
+def test_doctor_names_each_old_key_s_removal(acme: App) -> None:
+    result, _ = _invoke(acme, "doctor", "--format", "json")
+    (row,) = [row for row in json.loads(result.stdout) if row["check"] == "deprecated-keys"]
+    assert row["detail"] == (
+        "acme.old_wait (profile default, removed in untaped-acme 4.0) → acme.wait; "
+        "acme.old_mode (profile default, removed in untaped-acme 3.0): use acme.mode"
+    )
+
+
+def test_a_cache_rename_s_record_is_its_surface_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index = Cache(
+        "hello",
+        "index",
+        label="index",
+        max_age=timedelta(hours=1),
+        renamed_from=("motd_seconds",),
+        removed_in=5,
+    )
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "profiles:\n  default:\n    hello:\n      motd_seconds: 9\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(config))
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    get_settings.cache_clear()
+    forget_notices()
+    root = bootstrap.build_root_app(
+        candidates=[plugin_candidate(PluginSpec(name="hello", caches=(index,)))]
+    )
+
+    _, notices = _invoke(root, "config", "get", "hello.caches.index.max_age_seconds")
+
+    (notice,) = notices
+    assert notice["id"] == "cfg hello.motd_seconds -> hello.caches.index.max_age_seconds"
+    assert (notice["removed_in"], notice["distribution"]) == (5, "untaped-hello")
+    get_settings.cache_clear()
+    forget_notices()

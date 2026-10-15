@@ -33,7 +33,7 @@ from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
-_NEXT_MAJOR = "is deprecated and will be removed in a future major release"
+_UNDATED = "is deprecated and will be removed in a future major release"
 
 
 def _service(*, stability: Experimental | Deprecated | None = None) -> App:
@@ -334,7 +334,7 @@ def test_a_deprecated_command_warns_once_naming_its_replacement() -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stderr.count("warning:") == 1
-    assert f"warning: `untaped svc put` {_NEXT_MAJOR}; use `untaped svc set`\n" in result.stderr
+    assert f"warning: `untaped svc put` {_UNDATED}; use `untaped svc set`\n" in result.stderr
 
 
 def test_the_warning_follows_a_renamed_replacement() -> None:
@@ -351,10 +351,10 @@ def test_the_warning_follows_a_renamed_replacement() -> None:
 
     result = CliInvoker().invoke(_root(app).meta, ["svc", "put"])
 
-    assert f"`untaped svc put` {_NEXT_MAJOR}; use `untaped svc assign`" in result.stderr
+    assert f"`untaped svc put` {_UNDATED}; use `untaped svc assign`" in result.stderr
 
 
-def test_without_a_replacement_the_sentence_ends_at_the_next_major_release() -> None:
+def test_without_a_replacement_the_sentence_ends_at_its_removal() -> None:
     app = create_app(name="svc", help="Service.")
 
     @app.command(name="old")
@@ -365,8 +365,7 @@ def test_without_a_replacement_the_sentence_ends_at_the_next_major_release() -> 
     root = _root(app)
 
     assert (
-        f"`untaped svc old` {_NEXT_MAJOR}\n"
-        in CliInvoker().invoke(root.meta, ["svc", "old"]).stderr
+        f"`untaped svc old` {_UNDATED}\n" in CliInvoker().invoke(root.meta, ["svc", "old"]).stderr
     )
     assert (
         _help(root, "--deprecated", "svc", "old")
@@ -388,7 +387,7 @@ def test_a_replacement_missing_at_run_time_falls_back_to_the_plain_sentence() ->
     result = CliInvoker().invoke(_root(app).meta, ["svc", "old"])
 
     assert result.exit_code == 0, result.output
-    assert f"`untaped svc old` {_NEXT_MAJOR}\n" in result.stderr
+    assert f"`untaped svc old` {_UNDATED}\n" in result.stderr
 
 
 def test_the_innermost_deprecated_node_on_the_chain_wins() -> None:
@@ -402,7 +401,7 @@ def test_the_innermost_deprecated_node_on_the_chain_wins() -> None:
     root = _root(app)
 
     stderr = CliInvoker().invoke(root.meta, ["svc", "inner"]).stderr
-    assert f"`untaped svc inner` {_NEXT_MAJOR}; use `untaped svc other`" in stderr
+    assert f"`untaped svc inner` {_UNDATED}; use `untaped svc other`" in stderr
     assert stderr.count("warning:") == 1
 
 

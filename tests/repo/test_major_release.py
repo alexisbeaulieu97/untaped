@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import gen_surface  # scripts/gen_surface.py
 import pytest
 import release  # scripts/release.py
 from packaging.version import Version
@@ -300,3 +301,41 @@ def test_the_rc_prep_final_sequence() -> None:
     # A prep PR removes it; the final release PR finds nothing left.
     assert overdue([], limit_of("12.0.0")) == []
     assert not _promises(released, [], version="12.0.0")
+
+
+# --- gen_surface.py --due ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("version", "major"),
+    [("11.1.0", 12), ("11.0.0", 12), ("12.0.0rc1", 12), ("12.0.0", 13), ("12.0.1rc1", 13)],
+)
+def test_due_defaults_to_the_next_major(version: str, major: int) -> None:
+    assert gen_surface.next_major(version) == major
+
+
+def test_due_lists_the_lines_and_fails_while_any_remain() -> None:
+    from untaped.surface import render
+
+    text = render(
+        [Line("cli untaped a", DeprecatedMark(12)), Line("cli untaped b", DeprecatedMark(13))]
+    )
+
+    assert gen_surface.due_report(text, 12) == (
+        "Due in 12.0 (1 line):\n  cli untaped a  [deprecated, removed in 12.0]\n",
+        1,
+    )
+    assert gen_surface.due_report(text, 11) == ("Nothing is due in 11.0.\n", 0)
+
+
+@pytest.mark.parametrize("argv", [["--due", "--check"], ["--due", "12", "13"]])
+def test_due_refuses_anything_but_a_major(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert gen_surface.main(argv) == 2
+    assert "usage: gen_surface.py --due [MAJOR]" in capsys.readouterr().err
+
+
+def test_due_with_a_major_reads_the_committed_file(capsys: pytest.CaptureFixture[str]) -> None:
+    code = gen_surface.main(["--due", "1"])
+    assert (code, capsys.readouterr().out) == (0, "Nothing is due in 1.0.\n")

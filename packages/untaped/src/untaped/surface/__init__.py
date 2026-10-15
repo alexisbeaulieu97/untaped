@@ -86,9 +86,9 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
         marks = _plugin_marks(result, root)
         modules: dict[str, LineMark | None] = dict.fromkeys(SDK_MODULES)
         for plugin in result.plugins:
-            modules.update(_plugin_modules(plugin.spec, plugin.plugin_ref.entry_point))
+            modules.update(_plugin_modules(plugin.spec, plugin.plugin_ref.entry_point, root))
         lines = cli_lines(root, marks)
-        lines.extend(settings_lines(result))
+        lines.extend(settings_lines(result, tree=root))
         lines.extend(_owned(result, modules, marks))
         lines.extend(_convention_lines())
     return sorted(set(lines))
@@ -112,9 +112,9 @@ def plugin_lines(spec: PluginSpec) -> list[Line]:
         result = composition()
         check_quarantine(result)
         marks = _plugin_marks(result, root)
-        modules = _plugin_modules(spec, candidate.target)
+        modules = _plugin_modules(spec, candidate.target, root)
         lines = subtree_lines(root, spec.name, marks.get(spec.name))
-        lines.extend(settings_lines(result, root=False))
+        lines.extend(settings_lines(result, root=False, tree=root))
         lines.extend(_owned(result, modules, marks, core=False))
     return sorted(set(lines))
 
@@ -125,8 +125,8 @@ def _plugin_marks(result: CompositionResult, root: App) -> dict[str, LineMark | 
     return {plugin.spec.name: line_mark(plugin.spec.stability, root) for plugin in result.plugins}
 
 
-def _plugin_modules(spec: PluginSpec, target: object) -> dict[str, LineMark | None]:
-    """``<package>.api`` and ``<package>.testing`` of a plugin, when importable."""
+def _plugin_modules(spec: PluginSpec, target: object, tree: App) -> dict[str, LineMark | None]:
+    """``<package>.api`` and ``<package>.testing`` of a plugin, when importable, with its mark."""
     from untaped.conventions import candidate_package  # noqa: PLC0415
     from untaped.surface._sdk import line_mark  # noqa: PLC0415
 
@@ -136,7 +136,7 @@ def _plugin_modules(spec: PluginSpec, target: object) -> dict[str, LineMark | No
     found: dict[str, LineMark | None] = {}
     for module in (f"{package}.api", f"{package}.testing"):
         if importlib.util.find_spec(module) is not None:
-            found[module] = line_mark(spec.stability)
+            found[module] = line_mark(spec.stability, tree)
     return found
 
 

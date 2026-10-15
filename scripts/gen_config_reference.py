@@ -29,6 +29,7 @@ from release import packages
 from untaped.theme import ROLE_NAMES, SYMBOL_NAMES
 
 if TYPE_CHECKING:
+    from untaped.plugins.registry import PluginCandidate
     from untaped.stability import Stability
     from untaped.surface._settings import Section
 
@@ -230,6 +231,14 @@ def _env_name(key: str) -> str:
     return env_var_name(key.split("."))
 
 
+def _first_party() -> tuple[PluginCandidate, ...]:
+    """The installed candidates of this repository's own distributions."""
+    from untaped.plugins.registry import discover_candidates  # noqa: PLC0415
+
+    own = packages(REPO_ROOT)
+    return tuple(c for c in discover_candidates() if canonicalize_name(c.distribution) in own)
+
+
 def collect_sections() -> list[Section]:
     """``(title, prefix, model, is_state, stability)``: the shell and each first-party plugin.
 
@@ -238,12 +247,10 @@ def collect_sections() -> list[Section]:
     plugin rather than drop its section.
     """
     from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
-    from untaped.plugins.registry import compose, discover_candidates  # noqa: PLC0415
+    from untaped.plugins.registry import compose  # noqa: PLC0415
     from untaped.surface._settings import check_quarantine, sections  # noqa: PLC0415
 
-    own = packages(REPO_ROOT)
-    first_party = [c for c in discover_candidates() if canonicalize_name(c.distribution) in own]
-    result = compose(SHELL_SPEC, first_party)
+    result = compose(SHELL_SPEC, _first_party())
     check_quarantine(result)
     return sections(result, extensions=False)
 
@@ -282,18 +289,6 @@ def _section_rows(section: Section) -> list[Row]:
     ]
 
 
-def _distributions() -> dict[str, str]:
-    """Each first-party plugin's distribution, by its name (a setting's section)."""
-    from untaped.plugins.registry import discover_candidates  # noqa: PLC0415
-
-    own = packages(REPO_ROOT)
-    return {
-        c.name: c.distribution
-        for c in discover_candidates()
-        if canonicalize_name(c.distribution) in own
-    }
-
-
 def _description(row: Row) -> str:
     """The description cell: the text, then the sentence for a marked setting."""
     from untaped.messages import EXPERIMENTAL_LINE, deprecated_line  # noqa: PLC0415
@@ -302,7 +297,7 @@ def _description(row: Row) -> str:
     if row.mark is None:
         return str(row.description)
     if isinstance(row.mark, Deprecated):
-        owner = _distributions().get(row.key.partition(".")[0])
+        owner = {c.name: c.distribution for c in _first_party()}.get(row.key.partition(".")[0])
         removal = removal_text(row.mark.removed_in, owner)
         line = deprecated_line(replacement_text(row.mark, None), removal)
     else:

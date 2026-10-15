@@ -73,8 +73,10 @@ class Renamed:
     """A ``renamed_keys`` value: the key the old one is read as, until ``removed_in``.
 
     ``removed_in`` is the plugin's major that stops reading the old key
-    (``Renamed("sweep.parallel", removed_in=12)``); it is required, so a
-    rename always names its date.
+    (``Renamed("sweep.parallel", removed_in=12)``). It must be passed;
+    ``None`` leaves the rename undated, and is meant only for a
+    ``Cache(renamed_from=...)`` declared without a date, which the release
+    checks and ``assert_surface(version=)`` refuse.
     """
 
     to: str

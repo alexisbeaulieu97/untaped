@@ -17,7 +17,7 @@ from untaped.config_schema import (
 from untaped.messages import removal_phrase
 from untaped.records import OutcomeRecord, Record, TableGlyph
 from untaped.redaction import redact_url_password
-from untaped.stability import SettingStability
+from untaped.stability import SettingStability, removal_text
 
 
 @dataclass(frozen=True)
@@ -81,8 +81,6 @@ class SettingEntry(BaseModel):
     """For a deprecated setting: the major that removes it."""
     distribution: str | None = None
     """For a deprecated setting: the plugin distribution whose major that is (``None``: core)."""
-    removal: str | None = None
-    """For a deprecated setting: its removal version as text (``untaped-acme 12.0``)."""
 
 
 class SettingOutcome(OutcomeRecord, kind="untaped.setting_outcome"):
@@ -160,7 +158,7 @@ def _deprecated_note(entry: SettingEntry) -> str | None:
     """A deprecated setting's note: ``use NEW, removed in …`` (``removed in …`` without one)."""
     if entry.stability != "deprecated":
         return None
-    removal = removal_phrase(entry.removal)
+    removal = removal_phrase(removal_text(entry.removed_in, entry.distribution))
     return removal if entry.use is None else f"use {entry.use}, {removal}"
 
 

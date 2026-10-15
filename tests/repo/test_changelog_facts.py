@@ -5,7 +5,8 @@ newest release tag's (release candidates included) and writes one line per
 removal version that rose, unless an entry of the release names the thing.
 On a release PR (``CHANGELOG.md`` has the workspace version's section and
 ``changelog.d/`` is empty) the section must carry each fact or such an entry,
-so a generated line is never dropped or hand-edited away.
+so a generated line is never dropped or hand-edited away; once the version is
+tagged, main's later PRs are no release PR.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import pytest
 import release  # scripts/release.py
 
 import changelog  # scripts/changelog.py
-from repo.support import REPO_ROOT, no_baseline
+from repo.support import REPO_ROOT, no_baseline, reachable_tags
 from untaped.surface import DeprecatedMark, Line, render
 
 
@@ -50,6 +51,8 @@ def test_the_release_section_carries_every_fact() -> None:
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     if not is_release_pr(version, text, changelog.fragment_paths(REPO_ROOT)):
         pytest.skip(f"not a release PR: CHANGELOG.md has no built {version} section to check")
+    if f"v{version}" in reachable_tags():
+        pytest.skip(f"v{version} is released: its section was checked on its release PR")
     try:
         facts = changelog.surface_facts(REPO_ROOT)
     except changelog.ChangelogError:
@@ -144,6 +147,30 @@ def test_a_raised_major_is_a_fact() -> None:
             "report_error", "`report_error` will now be removed in 13.0 instead of 12.0."
         )
     ]
+
+
+def test_a_thing_s_lines_share_one_fact() -> None:
+    def lines(major: int) -> list[Line]:
+        mark = DeprecatedMark(major, "untaped lint")
+        return [
+            Line("cli untaped plugin check", mark),
+            Line("cli untaped plugin check --format VALUE default=table", mark),
+            Line("cli untaped plugin check --format choice=json", mark),
+            Line("cli untaped plugin check [NAME]@1 default=unset", mark),
+            Line("sdk untaped.sdk.report_error(exc)", DeprecatedMark(major)),
+            Line("sdk untaped.sdk.report_error(item=) default=None", DeprecatedMark(major)),
+            # Raised further on its own: its own fact.
+            Line("cli untaped plugin check --columns VALUE", DeprecatedMark(major + 1)),
+        ]
+
+    facts = changelog.postponement_facts(_file(*lines(12)), _file(*lines(13)))
+
+    assert [fact.name for fact in facts] == [
+        "plugin check",
+        "plugin check --columns",
+        "report_error",
+    ]
+    assert facts[1].text.endswith("removed in 14.0 instead of 13.0.")
 
 
 def test_a_fallen_date_never_reaches_the_build() -> None:

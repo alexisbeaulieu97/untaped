@@ -389,19 +389,30 @@ def names(entry: str, name: str) -> bool:
 
 
 def postponement_facts(baseline: str | None, current: str | None) -> list[Fact]:
-    """One fact per line whose removal version rose between two surface files' texts."""
+    """One fact per thing whose removal version rose between two surface files' texts.
+
+    A mark reaches every line under the thing (a command's flags and choices,
+    a callable's parameters), so its lines share one fact: a line whose short
+    name extends another moved line's (``plugin check --format`` under
+    ``plugin check``) by whole words, with the same dates, adds none.
+    """
     from untaped.surface import parse, postponements  # noqa: PLC0415
 
     if baseline is None or current is None:
         return []
-    facts: list[Fact] = []
+    raised: dict[str, tuple[int, int]] = {}
     for moved in postponements(parse(baseline), parse(current)):
-        if moved.now <= moved.was:
-            continue  # a date that fell: test_major_release.py refuses it
-        name = short_name(moved.line.identity)
-        text = f"`{name}` will now be removed in {moved.now}.0 instead of {moved.was}.0."
-        facts.append(Fact(name, text))
-    return facts
+        if moved.now > moved.was:  # a date that fell: test_major_release.py refuses it
+            raised.setdefault(short_name(moved.line.identity), (moved.was, moved.now))
+    return [
+        Fact(name, f"`{name}` will now be removed in {now}.0 instead of {was}.0.")
+        for name, (was, now) in raised.items()
+        if not any(
+            name.startswith(f"{other} ") and raised[other] == (was, now)
+            for other in raised
+            if other != name
+        )
+    ]
 
 
 def missing_facts(entries: Sequence[str], facts: Sequence[Fact]) -> list[Fact]:

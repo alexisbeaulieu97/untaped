@@ -22,11 +22,11 @@ The state file sits in the config file's directory and is named after it:
 
 ### Renamed settings
 
-A renamed setting keeps working under its old name until the next major
-release, with a warning naming the new one. `untaped config migrate` renames
+A renamed setting keeps working under its old name until the major its
+warning names, with a warning naming the new one. `untaped config migrate` renames
 old keys in every profile of `config.yml` (`--dry-run` first shows what it
 would change); it does not touch environment variables, so rename an
-`UNTAPED_*` variable yourself. After the next major release an old key is
+`UNTAPED_*` variable yourself. After that major an old key is
 retired: it is no longer read, `untaped doctor` names it, and `config migrate`
 still renames it. A setting with no new name is deleted instead: doctor says
 why and what to set in its place, and `config migrate` removes the key,

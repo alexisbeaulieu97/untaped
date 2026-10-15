@@ -177,7 +177,6 @@ def _stability_fields(repo: SettingsReader, descriptor: FieldDescriptor) -> dict
             "use": replacement_text(mark, None),
             "removed_in": mark.removed_in,
             "distribution": distribution,
-            "removal": removal_text(mark.removed_in, distribution),
         }
     return fields
 
