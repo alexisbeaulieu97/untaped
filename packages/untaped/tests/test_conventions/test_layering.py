@@ -1,4 +1,4 @@
-"""Layering: runtime imports, where they point, and the layer and settings rules."""
+"""Layering: where imports point, and the layer and settings rules."""
 
 from __future__ import annotations
 
@@ -7,29 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.conventions.layering import layering_violations, runtime_imports
+from untaped.conventions.layering import layering_violations
 from untaped.conventions.source import import_targets, source_files
-
-
-def test_runtime_imports_skip_only_type_checking_bodies() -> None:
-    source = """
-from typing import TYPE_CHECKING
-import untaped.plugins.demo.cli.app
-if TYPE_CHECKING:
-    from untaped.plugins.demo.application.ports import Port
-else:
-    from untaped.plugins.demo.application import ports
-from ..application import use_case
-"""
-    tree = ast.parse(source)
-    package = "untaped.plugins.demo.infrastructure"
-    targets = [t for node in runtime_imports(tree) for t in import_targets(node, package)]
-    assert targets == [
-        "typing",
-        "untaped.plugins.demo.cli.app",
-        "untaped.plugins.demo.application",  # the else branch
-        "untaped.plugins.demo.application",  # the relative import
-    ]
 
 
 @pytest.mark.parametrize(
@@ -85,6 +64,11 @@ def test_import_targets_resolve_relative_imports(statement: str, targets: list[s
             "if TYPE_CHECKING:\n    from acme.infrastructure.http import Ref",
             ["acme/application/ports.py::layer::application -> acme.infrastructure.http"],
         ),
+        (
+            "infrastructure/http.py",
+            "if TYPE_CHECKING:\n    pass\nelse:\n    from acme.application.ports import Port",
+            ["acme/infrastructure/http.py::layer::infrastructure -> acme.application.ports"],
+        ),
     ],
     ids=[
         "layer-domain",
@@ -95,6 +79,7 @@ def test_import_targets_resolve_relative_imports(statement: str, targets: list[s
         "cli",
         "port-for-typing",
         "typing-import-against-the-layers",
+        "else-branch-runs",
     ],
 )
 def test_layer_and_settings_rules(

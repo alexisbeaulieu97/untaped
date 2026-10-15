@@ -188,9 +188,7 @@ class BatchMutationEngine:
         )
         self._execute_memberships(plan, outcomes, bindings, fail_fast=fail_fast or aborted)
         self._execute_graphs(plan, outcomes, bindings, fail_fast=fail_fast or aborted)
-        partial = any(
-            outcome.action in FAILED_ACTIONS or outcome.partial for outcome in outcomes
-        )
+        partial = any(outcome.action in FAILED_ACTIONS or outcome.partial for outcome in outcomes)
         return BatchResult(outcomes=outcomes, partial=partial)
 
     def run(

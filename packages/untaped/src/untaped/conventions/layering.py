@@ -53,14 +53,6 @@ def _typing_only(tree: ast.Module) -> set[int]:
     return inside
 
 
-def runtime_imports(tree: ast.Module) -> Iterator[ast.Import | ast.ImportFrom]:
-    """Imports outside ``if TYPE_CHECKING:`` bodies (the ``else`` runs at runtime)."""
-    typing_only = _typing_only(tree)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import | ast.ImportFrom) and id(node) not in typing_only:
-            yield node
-
-
 def _import_violations(
     node: ast.Import | ast.ImportFrom,
     layer: str,
