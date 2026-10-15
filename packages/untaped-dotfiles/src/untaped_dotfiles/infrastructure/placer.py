@@ -151,7 +151,7 @@ def _umask() -> int:
 def replace_symlink(destination: Path, target: Path) -> None:
     """Point the symlink ``target`` at ``destination`` in one step (never missing meanwhile)."""
     # A short name: the target's own may already be near the filesystem's limit.
-    digest = hashlib.sha256(target.name.encode()).hexdigest()[:12]
+    digest = hashlib.sha256(os.fsencode(target.name)).hexdigest()[:12]
     temporary = target.with_name(f".untaped-relink-{digest}")
     temporary.unlink(missing_ok=True)
     os.symlink(destination, temporary)

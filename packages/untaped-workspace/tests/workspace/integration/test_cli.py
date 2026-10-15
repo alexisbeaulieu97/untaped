@@ -83,11 +83,21 @@ def test_create_without_repos_makes_an_empty_workspace(workspace_env: Path) -> N
     assert record is not None and not record.repos
 
 
-def test_a_decomposed_name_finds_the_workspace_create_stored(workspace_env: Path) -> None:
-    assert run(app, ["create", "cafe\u0301"]).exit_code == 0  # as macOS file names spell it
+def test_a_decomposed_name_finds_the_workspace_create_stored(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
+    url = make_upstream("api").url
+    assert run(app, ["create", "cafe\u0301", "--repo", url]).exit_code == 0  # macOS's spelling
     assert run(app, ["path", "cafe\u0301"]).stdout.strip() == str(workspace_env / "caf\u00e9")
-    assert run(app, ["remove", "cafe\u0301", "--yes"]).exit_code == 0
-    assert StateWorkspaceStore().get("caf\u00e9") is None
+    dry = run(app, ["remove", "cafe\u0301", "--dry-run", "--format", "json"])
+    assert [(r["workspace"], r["repo"]) for r in _rows(dry)] == [
+        ("caf\u00e9", "acme/api"),
+        ("caf\u00e9", ""),
+    ]
+    assert not any("used by" in r["detail"] for r in _rows(dry))  # its own record isn't a holder
+    assert run(app, ["archive", "cafe\u0301", "--yes"]).exit_code == 0
+    assert run(app, ["remove", "cafe\u0301", "--yes"]).exit_code == 0  # archived only
+    assert not StateWorkspaceStore().archived()
 
 
 def test_add_without_repos_is_usage() -> None:
