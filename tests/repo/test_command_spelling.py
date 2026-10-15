@@ -62,9 +62,9 @@ def test_deprecated_command_alias_is_rewritten_with_a_warning(
 
     assert canonical_command_tokens(root, ["jira", "me"]) == ["jira", "whoami"]
     assert (
-        "warning: `me` is deprecated and will be removed in the next major release; use `whoami`"
-        in (capsys.readouterr().err)
-    )
+        "warning: `untaped jira me` is deprecated and will be removed in a future major release; "
+        "use `untaped jira whoami`"
+    ) in capsys.readouterr().err
     assert "me" not in list(root["jira"])  # hidden: never listed in help
 
 
@@ -80,7 +80,7 @@ def test_deprecated_option_alias_is_rewritten_up_to_the_separator(
         "--",
         "-F",
     ]
-    assert "use `--follow`" in capsys.readouterr().err
+    assert "use `untaped jira logs --follow`" in capsys.readouterr().err
     assert canonical_command_tokens(root, ["jira", "logs"]) == ["jira", "logs"]
 
 

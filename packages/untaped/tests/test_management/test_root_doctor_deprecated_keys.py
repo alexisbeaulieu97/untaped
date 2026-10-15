@@ -69,10 +69,12 @@ def test_old_keys_in_every_profile_are_listed_with_the_migrate_fix(
     row = rows["deprecated-keys"]
     assert (row["status"], row["title"]) == ("warn", "deprecated config keys")
     assert row["detail"] == (
-        "old.corpus_path (profile default) → old.cache_dir; "
-        "old.legacy (profile default, deprecated): use cache_dir; "
+        "old.corpus_path (profile default, removed in a future major release) "
+        "→ old.cache_dir; "
+        "old.legacy (profile default, removed in a future major release): use cache_dir; "
         "old.repo_path (profile work, retired) → old.cache_dir; "
-        "old.sweep.sync_concurrency (profile work) → old.sweep.parallel"
+        "old.sweep.sync_concurrency (profile work, removed in a future major release) "
+        "→ old.sweep.parallel"
     )
     assert (row["fix"], row["automatic"]) == (["--profile", "default", "config", "migrate"], True)
     assert rows["unknown-keys"]["status"] == "pass"

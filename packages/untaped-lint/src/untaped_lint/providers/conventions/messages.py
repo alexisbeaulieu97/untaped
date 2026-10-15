@@ -22,7 +22,12 @@ An AST scan over a package's source flags:
 - ``local-plural`` — a local pluralize helper: use ``plural()``;
 - ``print`` / ``rich-console`` — ``print(…)`` or a direct
   ``rich.console.Console``: use ``echo`` / ``UiContext`` for stdout,
-  ``ctx.diag`` for stderr.
+  ``ctx.diag`` for stderr;
+- ``hand-typed-deprecation`` — a string, f-string or docstring shaped like a
+  deprecation sentence (:data:`DEPRECATION_SHAPES`): every deprecation is a
+  promise with a date, so its sentence comes from its mark, never typed by
+  hand (``warnings.deprecated``'s own literal excepted: type checkers read
+  only a literal). A marker anywhere on a multi-line string allows it.
 
 Lines are ``<path>::<rule>::<message snippet>``; ``# untaped: allow <rule>``
 on the flagged line suppresses one.
@@ -31,6 +36,7 @@ on the flagged line suppresses one.
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
@@ -42,6 +48,26 @@ USAGE_RAISERS = frozenset({"UsageError", "raise_usage"})
 PLURAL_HELPERS = frozenset({"plural", "_plural", "pluralize", "_pluralize", "plural_s", "_s"})
 PROPER_NOUNS = frozenset({"GitHub", "Jira", "Ansible", "Git", "YAML", "JSON", "AWX", "SSH"})
 _SNIPPET = 72
+
+DEPRECATION_SHAPES = re.compile(
+    "|".join(
+        (
+            r"\bis deprecated\b",  # untaped: allow hand-typed-deprecation
+            r"\bwill be removed\b",  # untaped: allow hand-typed-deprecation
+            r"\bremoved in \d",  # untaped: allow hand-typed-deprecation
+            r"\bfuture major\b",  # untaped: allow hand-typed-deprecation
+            r"\buntil \d+\.0\b",  # untaped: allow hand-typed-deprecation
+            r"\bnext major\b",  # untaped: allow hand-typed-deprecation
+            r"\A\s*Deprecated:",  # untaped: allow hand-typed-deprecation
+        )
+    )
+)
+"""The shapes of a deprecation sentence, which only untaped's message helpers build."""
+
+_DEPRECATION_HINT = (
+    "build it from the mark: deprecated(removed_in=…), deprecated_alias(…, removed_in=…), "
+    "Renamed(…, removed_in=…)"
+)
 
 
 def _text(node: ast.expr) -> str | None:
@@ -86,8 +112,26 @@ def _error_case(text: str) -> bool:
     return capitalized or (stripped.endswith(".") and not stripped.endswith("..."))
 
 
+def deprecation_sentences(tree: ast.Module) -> Iterator[tuple[int, int, str]]:
+    """Yield ``(first line, last line, snippet)`` for each hand-typed deprecation sentence."""
+    skipped: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and callee(node) == "deprecated" and node.args:
+            skipped.update(id(inner) for inner in ast.walk(node.args[0]))
+        elif isinstance(node, ast.JoinedStr):
+            skipped.update(id(value) for value in node.values)
+    for node in ast.walk(tree):
+        if id(node) in skipped or not isinstance(node, ast.Constant | ast.JoinedStr):
+            continue
+        text = _text(node)
+        if text is not None and DEPRECATION_SHAPES.search(text):
+            yield node.lineno, node.end_lineno or node.lineno, _snippet(text)
+
+
 def tree_violations(tree: ast.Module) -> Iterator[tuple[int, str, str]]:
     """Yield ``(lineno, rule, detail)`` for one module."""
+    for lineno, _, snippet in deprecation_sentences(tree):
+        yield lineno, "hand-typed-deprecation", f"{snippet}: {_DEPRECATION_HINT}"
     docstrings = {
         id(node.body[0].value)
         for node in ast.walk(tree)
@@ -178,7 +222,10 @@ def message_violations(source_dir: Path, files: Sequence[SourceFile]) -> list[st
     found: list[str] = []
     for source in files:
         rel = source.path.relative_to(source_dir.parent).as_posix()
+        # A sentence's marker may sit on any of its lines (a docstring's last, say).
+        spans = {first: last for first, last, _ in deprecation_sentences(source.tree)}
         for lineno, rule, detail in tree_violations(source.tree):
-            if not allows(source.lines, lineno, rule):
+            last = spans.get(lineno, lineno) if rule == "hand-typed-deprecation" else lineno
+            if not any(allows(source.lines, line, rule) for line in range(lineno, last + 1)):
                 found.append(f"{rel}::{rule}::{detail}")
     return found

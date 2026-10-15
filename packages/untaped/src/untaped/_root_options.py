@@ -19,17 +19,17 @@ from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.cli import note_requested_format, raise_usage
-from untaped.deprecated_keys import warn_once
-from untaped.messages import deprecated_message
 from untaped.output.policy import enable_quiet as _enable_quiet
 from untaped.output.policy import reset_quiet as _reset_quiet
-from untaped.output.sink import Diagnostics
 from untaped.profile_resolver import profile_scope
 from untaped.stability import (
+    Alias,
     Deprecated,
     deprecated_aliases,
     enable_show_deprecated,
     mark_of,
+    notify_deprecation,
+    path_owner,
     replacement_text,
     reset_show_deprecated,
 )
@@ -283,21 +283,29 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
         if name is None:
             consumed = False
             break
-        if token not in current and token in deprecated_aliases(current):
-            _warn_deprecated(token, name)
+        path = chain[-1][0] if chain else ()
+        aliases = deprecated_aliases(current)
+        if token not in current and token in aliases:
+            _warn_alias(("untaped", *path), token, aliases[token], command=True)
         token = rewritten[index] = name
         current = current[token]
-        chain.append(((*(chain[-1][0] if chain else ()), token), current))
+        chain.append(((*path, token), current))
     if not consumed:
-        _rewrite_option_aliases(current, rewritten, index)
+        path = ("untaped", *(chain[-1][0] if chain else ()))
+        _rewrite_option_aliases(current, path, rewritten, index)
     if not any(token in _HELP_OR_VERSION for token in _before_separator(rewritten)):
         _warn_deprecated_command(app, chain)
     return rewritten
 
 
-def _rewrite_option_aliases(command: App, tokens: list[str], start: int) -> None:
-    """Rewrite ``command``'s deprecated option spellings in ``tokens[start:]`` (up to a ``--``)."""
-    options = {old: new for old, new in deprecated_aliases(command).items() if old[0] == "-"}
+def _rewrite_option_aliases(
+    command: App, path: tuple[str, ...], tokens: list[str], start: int
+) -> None:
+    """Rewrite ``command``'s deprecated option spellings in ``tokens[start:]`` (up to a ``--``).
+
+    ``path`` is the command's full path (``("untaped", "logs")``).
+    """
+    options = {old: alias for old, alias in deprecated_aliases(command).items() if old[0] == "-"}
     if not options:
         return
     for position in range(start, len(tokens)):
@@ -305,8 +313,25 @@ def _rewrite_option_aliases(command: App, tokens: list[str], start: int) -> None
         if name == "--":
             break
         if name in options:
-            _warn_deprecated(name, options[name])
-            tokens[position] = f"{options[name]}{separator}{value}"
+            _warn_alias(path, name, options[name], command=False)
+            tokens[position] = f"{options[name].new}{separator}{value}"
+
+
+def _warn_alias(path: tuple[str, ...], old: str, alias: Alias, *, command: bool) -> None:
+    """Warn that ``old`` is a deprecated spelling at ``path``, naming both spellings in full.
+
+    Both sides carry the full path (`` `untaped jira me` ``, `` `untaped logs -F` ``);
+    the id is the alias's surface line.
+    """
+    prefix = " ".join(path)
+    new = f"{prefix} {alias.new}" if command else alias.new
+    notify_deprecation(
+        f"cli {prefix} {old} -> {new}",
+        f"`{prefix} {old}`",
+        removed_in=alias.removed_in,
+        owner=path_owner(path),
+        replacement=f"`{prefix} {alias.new}`",
+    )
 
 
 def _warn_deprecated_command(root: App, chain: Sequence[tuple[tuple[str, ...], App]]) -> None:
@@ -314,8 +339,14 @@ def _warn_deprecated_command(root: App, chain: Sequence[tuple[tuple[str, ...], A
     for path, node in reversed(chain):
         mark = mark_of(node)
         if isinstance(mark, Deprecated):
-            replacement = replacement_text(mark, root)
-            warn_once(deprecated_message(f"`untaped {' '.join(path)}`", replacement))
+            full = ("untaped", *path)
+            notify_deprecation(
+                f"cli {' '.join(full)}",
+                f"`{' '.join(full)}`",
+                removed_in=mark.removed_in,
+                owner=path_owner(full),
+                replacement=replacement_text(mark, root),
+            )
             return
 
 
@@ -334,7 +365,7 @@ def _command_name(app: App, token: str) -> str | None:
         return token
     aliases = deprecated_aliases(app)
     if token in aliases:
-        return aliases[token]
+        return aliases[token].new
     wanted = _loose_command_key(token)
     matches = [
         name for name in app if not name.startswith("-") and _loose_command_key(name) == wanted
@@ -384,10 +415,6 @@ def _consume_path_root_options(
         current = current[name]
         index += 1
     return remaining
-
-
-def _warn_deprecated(old: str, new: str) -> None:
-    Diagnostics().warning(deprecated_message(f"`{old}`", f"`{new}`"))
 
 
 def _loose_command_key(name: str) -> str:

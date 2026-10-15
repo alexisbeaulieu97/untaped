@@ -325,20 +325,20 @@ from untaped.sdk import PluginSpec, create_app, deprecated, experimental
 SPEC = PluginSpec(name="acme", ..., stability=experimental)  # whole plugin
 lab = create_app(name="lab", help="Try things.", stability=experimental)  # a group
 
-
 @app.command(name="put")
-@deprecated(replacement=set_command)  # the path follows a rename
+@deprecated(removed_in=3, replacement=set_command)  # the path follows a rename
 def put_command() -> None: ...
 ```
 
-- Mark a plugin on its spec, never on its factory's app: a lazy mount reads
-  only the spec.
+- Mark a plugin on its spec, not its app: a lazy mount reads only the spec.
 - Name the replacement as the function or app, or as text (a command like
   `"untaped acme set"`, a setting key or prose) when it is in another
   plugin or on a spec. Text must resolve.
-- A deprecated command shows with `untaped --deprecated --help` and warns once
-  per run. `untaped lint` rejects a hand-typed `Experimental:` or
-  `Deprecated:`, a misplaced or redundant mark and a stale replacement.
+- `removed_in` is your distribution's major, which the warning names
+  ([every kind](./reference/deprecation.md)). A deprecated command shows with
+  `untaped --deprecated --help` and warns once per run. `untaped lint`
+  rejects a hand-typed `Experimental:` or `Deprecated:`, a misplaced or
+  redundant mark and a stale replacement.
 - Mark a setting on its field, as `Annotated[int, experimental]`; it
   inherits its plugin's mark, and `config list` lists it apart.
 

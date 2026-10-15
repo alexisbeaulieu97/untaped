@@ -282,15 +282,29 @@ def _section_rows(section: Section) -> list[Row]:
     ]
 
 
+def _distributions() -> dict[str, str]:
+    """Each first-party plugin's distribution, by its name (a setting's section)."""
+    from untaped.plugins.registry import discover_candidates  # noqa: PLC0415
+
+    own = packages(REPO_ROOT)
+    return {
+        c.name: c.distribution
+        for c in discover_candidates()
+        if canonicalize_name(c.distribution) in own
+    }
+
+
 def _description(row: Row) -> str:
     """The description cell: the text, then the sentence for a marked setting."""
     from untaped.messages import EXPERIMENTAL_LINE, deprecated_line  # noqa: PLC0415
-    from untaped.stability import Deprecated, replacement_text  # noqa: PLC0415
+    from untaped.stability import Deprecated, removal_text, replacement_text  # noqa: PLC0415
 
     if row.mark is None:
         return str(row.description)
     if isinstance(row.mark, Deprecated):
-        line = deprecated_line(replacement_text(row.mark, None))
+        owner = _distributions().get(row.key.partition(".")[0])
+        removal = removal_text(row.mark.removed_in, owner)
+        line = deprecated_line(replacement_text(row.mark, None), removal)
     else:
         line = EXPERIMENTAL_LINE
     return f"{row.description} {line}"

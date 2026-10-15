@@ -243,7 +243,8 @@ _ECHO_ERR = deprecated_message("echo(…, err=True)", "ctx.diag")
 def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
     """Print a CLI message to stdout or stderr.
 
-    ``err=True`` is deprecated until 12.0: write stderr through ``ctx.diag``.
+    ``err=True``: deprecated, and its warning names the release that removes
+    it; write stderr through ``ctx.diag``.
     A stderr message prints verbatim (``--quiet`` never mutes it). Under JSON
     diagnostics it becomes one JSON line, its level taken from an ``error:``
     (counted, like any failure), ``warning:`` or ``hint:`` prefix (else
@@ -269,7 +270,8 @@ def report_error(
 ) -> None:
     """Print one failure on stderr and count it toward the run's exit code.
 
-    Deprecated until 12.0: use ``ctx.diag.failure``.
+    Deprecated, and its warning names the release that removes it: use
+    ``ctx.diag.failure``.
 
     Text is ``error: <msg>`` (``error: <item>: <msg>`` for a per-item
     failure, as :func:`~untaped.output.diagnostic.format_error` renders it);

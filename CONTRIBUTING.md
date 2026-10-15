@@ -263,7 +263,16 @@ It touches these and nothing else:
   the section first with `changelog.py draft`. A pre-release (`X.Y.Zrc1`)
   writes `## X.Y.Zrc1`; a later build of the same version retitles that
   section and adds new fragments. Only a release PR may edit these paths, and
-  it fails while any fragment is left.
+  it fails while any fragment is left. `build` also writes a Deprecated line
+  for each removal version raised since the newest release tag, so run
+  `git fetch --tags origin` first; it refuses to run without a tag.
+
+Nothing may still be marked removed in the major `main` carries (from
+`X.0.0rc1` on, X), so a major's removals land in prep PRs before its release
+PR: `uv run python scripts/gen_surface.py --due` lists them. To keep one
+longer instead, raise its `removed_in`, regenerate the surface and add a
+`deprecated` fragment saying why
+([Deprecating something](docs/reference/deprecation.md)).
 
 A major release's changelog section (see [Versioning](docs/versioning.md))
 opens with `### Upgrading`: one item for each Breaking entry, saying what a
@@ -469,7 +478,7 @@ layered over `default`.
 root options (`_root_options.py`).
 
 **Renamed key**: an old name of a setting that still works, with a warning,
-until the next major release.
+until its removal version.
 
 **Retired key**: an old name of a setting that is no longer read;
 `untaped config migrate` still renames it.
@@ -486,11 +495,15 @@ _Avoid_: status, maturity.
 `--help`.
 _Avoid_: beta, preview, unstable.
 
-**Deprecated command**: a command that still works, with a warning, until the
-next major release removes it.
+**Deprecated command**: a command that still works, with a warning, until
+its removal version.
 
 **Deprecated setting**: a setting still read as before, with a warning,
-until the next major release removes it.
+until its removal version.
+
+**Removal version**: the major release that removes a deprecated thing,
+named in its declaration (`removed_in=`) and shown in its warning.
+_Avoid_: sunset, end of life, until.
 
 **Fix**: the `untaped` command a doctor row names to resolve what it found.
 _Avoid_: repair, remedy.

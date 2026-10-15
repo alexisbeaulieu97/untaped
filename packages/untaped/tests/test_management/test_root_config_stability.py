@@ -168,7 +168,7 @@ def test_a_deprecated_plugin_marks_its_settings_deprecated() -> None:
     rows = _rows()
 
     assert {rows[key]["stability"] for key in ("sunset.host", "sunset.port")} == {"deprecated"}
-    assert rows["sunset.host"]["note"] == "use a newer service"
+    assert rows["sunset.host"]["note"] == "use a newer service, removed in a future major release"
 
 
 def test_an_experimental_plugin_marks_its_settings_experimental() -> None:
@@ -179,7 +179,7 @@ def test_a_field_mark_wins_over_the_plugin_mark() -> None:
     rows = _rows()
 
     assert rows["beta.old"]["stability"] == "deprecated"
-    assert rows["beta.old"]["note"] == "use `beta.size`"
+    assert rows["beta.old"]["note"] == "use `beta.size`, removed in a future major release"
 
 
 def test_structured_output_is_one_flat_list_with_every_setting() -> None:
@@ -192,7 +192,7 @@ def test_structured_output_is_one_flat_list_with_every_setting() -> None:
         "trial.old_flag": "deprecated",
         "trial.gone": "deprecated",
     }
-    assert rows["trial.gone"]["note"] is None
+    assert rows["trial.gone"]["note"] == "removed in a future major release"
     assert rows["http.timeout_seconds"]["stability"] == "stable"
 
 
@@ -211,7 +211,7 @@ def test_an_experimental_setting_read_through_an_old_spelling_is_listed_as_depre
     tables = _tables()
 
     assert "moved.wait" not in tables["Experimental"]
-    assert "from deprecated moved.old_wait" in tables["Deprecated"]
+    assert "from moved.old_wait, removed in a" in tables["Deprecated"]
     assert _rows()["moved.wait"]["stability"] == "experimental"
 
 
@@ -341,8 +341,9 @@ def test_doctor_lists_every_key_set_in_a_deprecated_plugins_section(
 
     detail = _doctor_detail()
 
-    assert "sunset.host (profile default, deprecated): use a newer service" in detail
-    assert "sunset.port (profile default, deprecated): use a newer service" in detail
+    removal = "removed in a future major release"
+    assert f"sunset.host (profile default, {removal}): use a newer service" in detail
+    assert f"sunset.port (profile default, {removal}): use a newer service" in detail
     assert "beta." not in detail
 
 
@@ -359,7 +360,7 @@ def test_doctor_reports_a_deprecated_plugins_keys_not_their_contents(
 
     assert detail.count("sunset.headers ") == 1
     assert "sunset.headers.X-A" not in detail
-    assert "sunset.tls.verify (profile default, deprecated)" in detail
+    assert "sunset.tls.verify (profile default, removed in a future major release)" in detail
     assert "typo_key" not in detail
 
 

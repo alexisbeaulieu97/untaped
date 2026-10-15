@@ -44,10 +44,18 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, get_args, get_origin
 
+from cyclopts import App
 from pydantic import BaseModel
 
-from untaped.stability import Deprecated, Experimental, Stability, class_mark, function_mark
-from untaped.surface._lines import Line, MarkName
+from untaped.stability import (
+    Deprecated,
+    Experimental,
+    Stability,
+    class_mark,
+    function_mark,
+    replacement_text,
+)
+from untaped.surface._lines import DEPRECATED, DeprecatedMark, Line, LineMark
 from untaped.surface._lists import HOOKS, IMPLEMENTERS
 from untaped.surface._types import default_text, factory_default, literal_values, named_token
 
@@ -68,31 +76,35 @@ class Exports:
     """Exported path → class, for the override sweep."""
 
 
-def mark_name(mark: Stability | None) -> MarkName | None:
-    """A stability marker as a line's mark."""
+def line_mark(mark: Stability | None, tree: App | None = None) -> LineMark | None:
+    """A stability marker as a line's mark: a deprecation keeps its date and replacement.
+
+    An object replacement is named only against ``tree`` (the root app).
+    """
     if isinstance(mark, Experimental):
         return "experimental"
     if isinstance(mark, Deprecated):
-        return "deprecated"
+        use = replacement_text(mark, tree)
+        return DeprecatedMark(mark.removed_in, None if use is None else use.replace("`", ""))
     return None
 
 
-def own_mark(obj: object) -> MarkName | None:
+def own_mark(obj: object) -> LineMark | None:
     """The mark declared on ``obj``: untaped's marker, else ``warnings.deprecated``."""
     target = obj.fget if isinstance(obj, property) else obj
     target = getattr(target, "__func__", target)
     # A class's mark is its own: a subclass of an experimental class is stable.
-    found = mark_name(class_mark(target) if isinstance(target, type) else function_mark(target))
+    found = line_mark(class_mark(target) if isinstance(target, type) else function_mark(target))
     if isinstance(target, type):
         deprecated = vars(target).get("__deprecated__")
     else:
         deprecated = getattr(target, "__deprecated__", None)
     if found is None and deprecated is not None:
-        return "deprecated"
+        return DEPRECATED
     return found
 
 
-def collect_exports(modules: Mapping[str, MarkName | None]) -> Exports:
+def collect_exports(modules: Mapping[str, LineMark | None]) -> Exports:
     """The exported names of ``modules`` (module path → the mark its plugin gives it)."""
     exports = Exports()
     for path in sorted(modules):
@@ -109,7 +121,7 @@ def collect_exports(modules: Mapping[str, MarkName | None]) -> Exports:
 
 
 def module_lines(
-    path: str, plugin_mark: MarkName | None, exports: Exports, *, plugin: bool = False
+    path: str, plugin_mark: LineMark | None, exports: Exports, *, plugin: bool = False
 ) -> list[Line]:
     """Every ``sdk`` line of module ``path``; ``plugin_mark`` is its plugin's mark.
 
@@ -168,7 +180,7 @@ class _Walker:
         self.plugin = plugin
         self.stop = frozenset(exports.classes.values()) if plugin else frozenset[type]()
 
-    def bases(self, subject: str, cls: type, mark: MarkName | None) -> list[Line]:
+    def bases(self, subject: str, cls: type, mark: LineMark | None) -> list[Line]:
         """A plugin class's ``base=`` lines: each exported untaped class it subclasses."""
         if not self.plugin:
             return []
@@ -181,7 +193,7 @@ class _Walker:
             if base in paths and not foreign(base)
         ]
 
-    def export(self, subject: str, obj: object, mark: MarkName | None) -> list[Line]:
+    def export(self, subject: str, obj: object, mark: LineMark | None) -> list[Line]:
         if isinstance(obj, type) and issubclass(obj, enum.Enum):
             return self.enum(subject, obj, mark)
         if isinstance(obj, type):
@@ -198,7 +210,7 @@ class _Walker:
             return [Line(f"sdk {subject} choice={_choice(v)}", mark) for v in values]
         return [Line(f"sdk {subject}", mark)]
 
-    def enum(self, subject: str, cls: type[enum.Enum], mark: MarkName | None) -> list[Line]:
+    def enum(self, subject: str, cls: type[enum.Enum], mark: LineMark | None) -> list[Line]:
         lines = [
             Line(f"sdk {subject}.{member.name} = {default_text(member.value)}", mark)
             for member in cls
@@ -206,7 +218,7 @@ class _Walker:
         lines.extend(self.members(subject, cls, mark, skip=set(cls.__members__)))
         return lines
 
-    def cls(self, subject: str, cls: type, mark: MarkName | None) -> list[Line]:
+    def cls(self, subject: str, cls: type, mark: LineMark | None) -> list[Line]:
         lines = self.bases(subject, cls, mark)
         if implementer_shaped(cls, self.exports):
             return [*lines, *self.implementer(subject, cls, mark)]
@@ -217,7 +229,7 @@ class _Walker:
         lines.extend(self.members(subject, cls, mark))
         return lines
 
-    def implementer(self, subject: str, cls: type, mark: MarkName | None) -> list[Line]:
+    def implementer(self, subject: str, cls: type, mark: LineMark | None) -> list[Line]:
         """``implement=`` names the abstract members; each of those, and each hook the
         class defines itself, gets one line with its full typed signature."""
         abstract = sorted(getattr(cls, "__abstractmethods__", ()))
@@ -278,7 +290,7 @@ class _Walker:
         return f"({', '.join(parts)}) -> {returns}"
 
     def members(
-        self, subject: str, cls: type, mark: MarkName | None, *, skip: set[str] | None = None
+        self, subject: str, cls: type, mark: LineMark | None, *, skip: set[str] | None = None
     ) -> list[Line]:
         skip = set(skip or ())
         lines: list[Line] = []
@@ -309,7 +321,7 @@ class _Walker:
         klass: type,
         name: str,
         annotations: Mapping[str, Any],
-        mark: MarkName | None,
+        mark: LineMark | None,
         fields: set[str],
     ) -> list[Line]:
         where = f"{subject}.{name}"
@@ -339,7 +351,7 @@ class _Walker:
             return [Line(f"sdk {where}", member_mark)]
         return [Line(f"sdk {where} class", member_mark)]
 
-    def init_subclass(self, subject: str, klass: type, mark: MarkName | None) -> list[Line]:
+    def init_subclass(self, subject: str, klass: type, mark: LineMark | None) -> list[Line]:
         hook = vars(klass)["__init_subclass__"]
         function = _function_of(hook)
         if function is None:
@@ -362,7 +374,7 @@ class _Walker:
         self,
         subject: str,
         function: Callable[..., Any] | type,
-        mark: MarkName | None,
+        mark: LineMark | None,
         *,
         module: types.ModuleType,
         skip_first: bool = False,
@@ -426,7 +438,7 @@ class _Walker:
         name: str,
         parameter: inspect.Parameter,
         arity: str | None,
-        mark: MarkName | None,
+        mark: LineMark | None,
         factories: Mapping[str, object],
     ) -> Line:
         default = parameter.default

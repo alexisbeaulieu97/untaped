@@ -33,7 +33,7 @@ from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
-_NEXT_MAJOR = "is deprecated and will be removed in the next major release"
+_NEXT_MAJOR = "is deprecated and will be removed in a future major release"
 
 
 def _service(*, stability: Experimental | Deprecated | None = None) -> App:
@@ -106,7 +106,7 @@ def test_deprecated_marks_a_function_and_returns_it_unchanged() -> None:
     marked = deprecated(replacement="a shell alias")(command)
 
     assert marked is command
-    assert function_mark(command) == Deprecated("a shell alias")
+    assert function_mark(command) == Deprecated(replacement="a shell alias")
 
 
 def test_the_markers_are_not_python_deprecation_markers() -> None:
@@ -127,7 +127,9 @@ def test_a_wrong_stability_value_is_refused_by_create_app_and_the_spec(wrong: ob
 
 
 def test_an_uncalled_deprecated_says_to_call_it() -> None:
-    with pytest.raises(TypeError, match=r"call it: deprecated\(replacement=\.\.\.\)"):
+    with pytest.raises(
+        TypeError, match=r"call it: deprecated\(removed_in=\.\.\., replacement=\.\.\.\)"
+    ):
         check_stability(deprecated, where="here")
 
 
@@ -202,7 +204,7 @@ def test_each_marked_command_help_ends_with_its_line() -> None:
     assert (
         _help(root, "svc", "put")
         .rstrip()
-        .endswith("Deprecated: removed in the next major release; use untaped svc set.")
+        .endswith("Deprecated: removed in a future major release; use untaped svc set.")
     )
     assert EXPERIMENTAL_LINE not in _help(root, "svc", "set")
 
@@ -369,7 +371,7 @@ def test_without_a_replacement_the_sentence_ends_at_the_next_major_release() -> 
     assert (
         _help(root, "--deprecated", "svc", "old")
         .rstrip()
-        .endswith("Deprecated: removed in the next major release.")
+        .endswith("Deprecated: removed in a future major release.")
     )
 
 
@@ -427,7 +429,7 @@ def test_invoke_cli_gives_a_directly_invoked_app_its_marks() -> None:
     text = CliInvoker().invoke(app, ["put", "--help"]).stdout
 
     assert text.rstrip().endswith(
-        "Deprecated: removed in the next major release; use untaped svc set."
+        "Deprecated: removed in a future major release; use untaped svc set."
     )
 
 

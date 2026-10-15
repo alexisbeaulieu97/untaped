@@ -264,7 +264,7 @@ def test_quiet_prints_the_checklist_without_its_footer(contract_plugins_site: Pa
     # Only the deprecation warning (and, without untaped[lint], the skipped
     # file rules), which -q never mutes: no footer.
     assert quiet.stderr.splitlines()[0] == (
-        "warning: `untaped plugin check` is deprecated and will be removed in the next major "
-        "release; use untaped lint, from untaped[lint]"
+        "warning: `untaped plugin check` is deprecated and will be removed in 12.0; "
+        "use untaped lint, from untaped[lint]"
     )
     assert len(quiet.stderr.splitlines()) == (1 if file_rules_installed() else 3)

@@ -4,7 +4,8 @@ The file lists what ``docs/versioning.md`` promises, one line per promise
 (:mod:`untaped.surface` holds the grammar and the rules). A minor release
 keeps every stable line of the newest final tag; a major in preparation (an
 ``upgrading`` fragment in ``changelog.d/``, or a workspace version whose
-major is past the tag's) may drop them.
+major is past the tag's) may drop them, except a deprecated line dated for a
+later major.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ from untaped.deprecated_keys import DECLARATIONS
 from untaped.git import GitCommandError
 from untaped.management import plugin_check
 from untaped.plugins.registry import PLUGINS_ENTRY_POINT_GROUP
-from untaped.surface import Line, parse, removed
+from untaped.surface import DeprecatedMark, Line, parse, removed
 from untaped.surface._lists import CONVENTIONS
 from untaped_git.infrastructure import worktree_config
 
@@ -64,11 +65,19 @@ def test_generation_does_not_depend_on_home(
 # --- removals since the last release -------------------------------------------
 
 
-def removal_exempt(version: str, baseline: str, fragments: list[str]) -> bool:
-    """A major in preparation: an ``upgrading`` fragment, or a version past the baseline major."""
+def removal_target(version: str, baseline: str, fragments: list[str]) -> int:
+    """The major whose removals may land: the next one while an ``upgrading`` fragment waits."""
     if any(name.endswith(".upgrading.md") for name in fragments):
-        return True
-    return Version(version).major > Version(baseline.removeprefix("v")).major
+        return Version(baseline.removeprefix("v")).major + 1
+    return Version(version).major
+
+
+def removal_exempt(line: Line, target: int, baseline: str) -> bool:
+    """Whether ``line`` may be gone: a dated one at its major, any other in a major's prep."""
+    mark = line.deprecation
+    if mark is not None and mark.removed_in is not None:
+        return mark.removed_in <= target
+    return target > Version(baseline.removeprefix("v")).major
 
 
 def removal_message(tag: str, gone: list[Line]) -> str:
@@ -92,9 +101,12 @@ def test_no_stable_surface_removed(generated: str) -> None:
     except GitCommandError:
         pytest.skip(f"the baseline {tag} predates {SURFACE_FILE}")
     fragments = [path.name for path in (REPO_ROOT / "changelog.d").glob("*.md")]
-    if removal_exempt(release.release_version(REPO_ROOT), tag, fragments):
-        pytest.skip("a major release in preparation may remove stable lines")
-    gone = removed(parse(recorded), parse(generated))
+    target = removal_target(release.release_version(REPO_ROOT), tag, fragments)
+    gone = [
+        line
+        for line in removed(parse(recorded), parse(generated))
+        if not removal_exempt(line, target, tag)
+    ]
     assert not gone, removal_message(tag, gone)
 
 
@@ -111,18 +123,38 @@ def test_the_baseline_is_the_newest_final_tag(tags: list[str], expected: str | N
 
 
 @pytest.mark.parametrize(
-    ("version", "fragments", "exempt"),
+    ("version", "fragments", "target"),
     [
-        ("11.2.0", ["x.added.md"], False),
-        ("11.2.0", ["x.upgrading.md"], True),
-        ("12.0.0rc1", [], True),
-        ("12.0.0", [], True),
+        ("11.2.0", ["x.added.md"], 11),
+        ("11.2.0", ["x.upgrading.md"], 12),
+        ("12.0.0rc1", [], 12),
+        ("12.0.0", [], 12),
     ],
 )
-def test_a_major_in_preparation_may_remove(
-    version: str, fragments: list[str], exempt: bool
+def test_the_removal_target(version: str, fragments: list[str], target: int) -> None:
+    assert removal_target(version, "v11.1.0", fragments) == target
+
+
+@pytest.mark.parametrize(
+    ("mark", "target", "exempt"),
+    [
+        # A minor keeps everything it promised.
+        (None, 11, False),
+        (DeprecatedMark(), 11, False),
+        (DeprecatedMark(12), 11, False),
+        # A major's prep drops stable and undated lines, and what is dated for it.
+        (None, 12, True),
+        (DeprecatedMark(), 12, True),
+        (DeprecatedMark(12), 12, True),
+        (DeprecatedMark(11), 12, True),
+        # A line dated later stays: it was promised that long.
+        (DeprecatedMark(13), 12, False),
+    ],
+)
+def test_a_major_in_preparation_removes_what_is_due(
+    mark: DeprecatedMark | None, target: int, exempt: bool
 ) -> None:
-    assert removal_exempt(version, "v11.1.0", fragments) is exempt
+    assert removal_exempt(Line("cli untaped awx put", mark), target, "v11.1.0") is exempt
 
 
 def test_a_clone_without_tags_fails_under_ci_and_skips_locally(

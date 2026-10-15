@@ -45,6 +45,7 @@ def repo(tmp_path: Path) -> Path:
     _git(tmp_path, "config", "user.name", "t")
     _write(tmp_path, "README.md", "x\n")
     _commit(tmp_path, "base")
+    _git(tmp_path, "tag", "v10.0.0")  # build compares with the newest release
     return tmp_path
 
 

@@ -37,9 +37,9 @@ from pydantic_settings import (
 )
 from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 
-from untaped.deprecated_keys import KeyUse, key_mappings, rename_keys, use_warning, warn_once
+from untaped.deprecated_keys import KeyUse, Renamed, key_mappings, notify_use, rename_keys
 from untaped.errors import ConfigError, first_validation_error
-from untaped.messages import hint
+from untaped.messages import run_hint
 from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
 from untaped.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.stability import Stability
@@ -265,7 +265,7 @@ def section_model(
                 {
                     "__module__": model.__module__,
                     "__qualname__": model.__qualname__,
-                    "__annotations__": {"renamed_keys": ClassVar[Mapping[str, str]]},
+                    "__annotations__": {"renamed_keys": ClassVar[Mapping[str, str | Renamed]]},
                     "renamed_keys": MappingProxyType(renamed),
                 },
             ),
@@ -288,8 +288,10 @@ def section_model(
     )
 
 
-def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[str, str]:
+def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[str, str | Renamed]:
     """``model``'s ``renamed_keys`` plus each cache's ``renamed_from``; ``{}`` when none renames.
+
+    A cache's old keys are dated by its ``removed_in`` (undated without one).
 
     Raises :class:`ConfigError` for an old key two caches claim, or one the
     owner already declares (renamed or retired).
@@ -317,7 +319,8 @@ def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[st
             if name == "renamed_keys":
                 own = dict(mapping)
     return own | {
-        old: f"caches.{declared.name}.max_age_seconds" for old, declared in claimed.items()
+        old: Renamed(f"caches.{declared.name}.max_age_seconds", removed_in=declared.removed_in)
+        for old, declared in claimed.items()
     }
 
 
@@ -529,7 +532,7 @@ class LayoutSettingsSource(InitSettingsSource):
         for sections in resolved.uses.values():
             for section, uses in sections.items():
                 for use in uses:
-                    _warn_use(use, section=section)
+                    notify_config_key(use, section=section)
         # Only splice (and so only validate) the state sections this model
         # actually declares: a broken state section must not block loading
         # an unrelated one (see :func:`load_settings_section`).
@@ -540,24 +543,20 @@ class LayoutSettingsSource(InitSettingsSource):
 _MIGRATE_FIXES = {"renamed": "rename it in", "ignored": "remove it from"}
 
 
-def config_key_warning(use: KeyUse, *, section: str) -> str | None:
-    """The warning for an old key or deprecated setting read from ``config.yml``."""
-    message = use_warning(
+def notify_config_key(use: KeyUse, *, section: str) -> None:
+    """Warn once about an old key or deprecated setting read from ``config.yml``.
+
+    A renamed or ignored key's warning hints at ``config migrate``.
+    """
+    fix = _MIGRATE_FIXES.get(use.kind)
+    notify_use(
         use,
+        section=section,
         old=f"{section}.{use.old}",
         new=f"{section}.{use.new}",
         kept=f"{section}.{use.kept}",
+        hint=None if fix is None else f"{run_hint('config migrate')} to {fix} config.yml",
     )
-    if message is not None and use.kind in _MIGRATE_FIXES:
-        message = f"{message}\n{hint('config migrate')} to {_MIGRATE_FIXES[use.kind]} config.yml"
-    return message
-
-
-def _warn_use(use: KeyUse, *, section: str) -> None:
-    """Warn once about an old key or deprecated setting read from ``config.yml``."""
-    message = config_key_warning(use, section=section)
-    if message is not None:
-        warn_once(message, key=f"{section}.{use.old}")
 
 
 def env_var_name(path: Iterable[str]) -> str:
@@ -679,14 +678,13 @@ class _RenamingEnvSource(EnvSettingsSource):
             for use in uses:
                 # The new key follows the old one's form: a variable or a blob key.
                 as_variable = _env_is_set(_env_name(section, use.old))
-                message = use_warning(
+                notify_use(
                     use,
+                    section=section,
                     old=_env_spelling(section, use.old),
                     new=_env_name(section, use.new) if as_variable else use.new,
                     kept=None if use.kept is None else _env_spelling(section, use.kept),
                 )
-                if message is not None:
-                    warn_once(message)
         return data
 
 

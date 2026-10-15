@@ -14,6 +14,7 @@ from untaped.config_schema import (
     FieldDescriptor,
     redact_nested_url_passwords,
 )
+from untaped.messages import removal_phrase
 from untaped.records import OutcomeRecord, Record, TableGlyph
 from untaped.redaction import redact_url_password
 from untaped.stability import SettingStability
@@ -43,6 +44,17 @@ class Source:
         return self.label
 
 
+@dataclass(frozen=True)
+class OldSpelling:
+    """An old key or variable a setting's value was read through, and when it stops being read."""
+
+    shown: str
+    """As the user wrote it: ``ansible.stale_after_seconds`` or ``UNTAPED_ANSIBLE__…``."""
+    removed_in: int | None
+    section: str
+    """The section it belongs to, whose plugin's major ``removed_in`` is."""
+
+
 class SettingEntry(BaseModel):
     """One row in the ``untaped config list`` table.
 
@@ -65,6 +77,12 @@ class SettingEntry(BaseModel):
     """The setting's own mark, else its plugin's."""
     use: str | None = None
     """For a deprecated setting: what replaces it, as help shows it."""
+    removed_in: int | None = None
+    """For a deprecated setting: the major that removes it."""
+    distribution: str | None = None
+    """For a deprecated setting: the plugin distribution whose major that is (``None``: core)."""
+    removal: str | None = None
+    """For a deprecated setting: its removal version as text (``untaped-acme 12.0``)."""
 
 
 class SettingOutcome(OutcomeRecord, kind="untaped.setting_outcome"):
@@ -107,11 +125,16 @@ class SettingRow(Record, kind="untaped.setting"):
     profile: str | None
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
     note: str | None = None
-    """Set when the value came from a deprecated key or variable, or the setting is
-    deprecated and names a replacement."""
+    """Set when the value came from a deprecated key or variable (``from OLD, removed
+    in …``), and for a deprecated setting (``use NEW, removed in …``)."""
     stability: SettingStability = "stable"
     """``stable``, ``experimental`` or ``deprecated``; the table is split by it, so
     it is not a column."""
+    removed_in: int | None = None
+    """For a deprecated setting: the major that removes it (``None`` when undated)."""
+    distribution: str | None = None
+    """For a deprecated setting: the plugin distribution whose major that is; ``None``
+    for a core setting."""
 
 
 def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
@@ -126,9 +149,19 @@ def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
         default=_human(entry.default) if human else entry.default,
         source=entry.source.label,
         profile=entry.profile,
-        note=entry.note or (None if entry.use is None else f"use {entry.use}"),
+        note=entry.note or _deprecated_note(entry),
         stability=entry.stability,
+        removed_in=entry.removed_in,
+        distribution=entry.distribution,
     )
+
+
+def _deprecated_note(entry: SettingEntry) -> str | None:
+    """A deprecated setting's note: ``use NEW, removed in …`` (``removed in …`` without one)."""
+    if entry.stability != "deprecated":
+        return None
+    removal = removal_phrase(entry.removal)
+    return removal if entry.use is None else f"use {entry.use}, {removal}"
 
 
 def _human(value: object) -> str | None:

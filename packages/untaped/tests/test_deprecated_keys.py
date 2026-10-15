@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from untaped.deprecated_keys import (
     DeletedKey,
+    DeprecatedKey,
     KeyMove,
     KeyUse,
     Retired,
@@ -74,7 +75,7 @@ def test_chains_through_both_mappings() -> None:
         "ancient_path": 3,
         "sweep.sync_concurrency": 1,
     }
-    assert mappings.deprecated == {"legacy": "mode"}
+    assert mappings.deprecated == {"legacy": DeprecatedKey("mode", removed_in=None)}
 
 
 def test_a_model_without_declarations_maps_nothing() -> None:

@@ -27,8 +27,8 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from untaped.stability import Experimental, class_mark, function_mark
-from untaped.surface._lines import Line, MarkName
-from untaped.surface._sdk import SurfaceError, mark_name
+from untaped.surface._lines import DeprecatedMark, Line, LineMark
+from untaped.surface._sdk import SurfaceError, line_mark
 from untaped.surface._types import (
     choice_text,
     default_text,
@@ -63,15 +63,15 @@ def owned_contracts(spec: PluginSpec) -> list[ContractInfo]:
 def contract_lines(
     owner: str,
     infos: Iterable[ContractInfo],
-    plugin_mark: MarkName | None,
+    plugin_mark: LineMark | None,
     stable_classes: set[type],
 ) -> list[Line]:
     """The ``contract`` lines of ``owner``'s contracts and their payload models."""
     lines: list[Line] = []
-    reached: dict[type[BaseModel], set[MarkName | None]] = {}
+    reached: dict[type[BaseModel], set[LineMark | None]] = {}
     stable_methods: dict[type[BaseModel], set[str]] = {}
     for info in infos:
-        contract_mark = mark_name(function_mark(info.cls)) or plugin_mark
+        contract_mark = line_mark(function_mark(info.cls)) or plugin_mark
         subject = f"contract {owner}.{info.name}"
         abstract = ",".join(sorted(getattr(info.cls, "__abstractmethods__", ())))
         lines.append(Line(f"{subject} abstract={abstract}", contract_mark))
@@ -110,15 +110,13 @@ def contract_lines(
     return lines
 
 
-def method_mark(info: ContractInfo, name: str, plugin_mark: MarkName | None) -> MarkName | None:
+def method_mark(info: ContractInfo, name: str, plugin_mark: LineMark | None) -> LineMark | None:
     """A contract method's mark: its own, else its contract's, else its plugin's."""
-    from untaped.contracts._schema import method_stability  # noqa: PLC0415
-
-    stability = method_stability(info, name)
-    return (None if stability == "stable" else stability) or plugin_mark
+    own = function_mark(info.methods[name].function) or function_mark(info.cls)
+    return line_mark(own) or plugin_mark
 
 
-def model_lines(subject: str, model: type[BaseModel], mark: MarkName | None) -> list[Line]:
+def model_lines(subject: str, model: type[BaseModel], mark: LineMark | None) -> list[Line]:
     """A payload model's owner line (its required fields) and one typed line per field."""
     schema = schema_of(model)
     # A model that refers to itself is a reference to its own def.
@@ -184,7 +182,7 @@ def _models(annotation: object) -> Iterator[type[BaseModel]]:
             yield from _models(arg)
 
 
-def _closure(reached: dict[type[BaseModel], set[MarkName | None]]) -> list[type[BaseModel]]:
+def _closure(reached: dict[type[BaseModel], set[LineMark | None]]) -> list[type[BaseModel]]:
     """Every model reachable from ``reached``'s, through their fields."""
     seen: list[type[BaseModel]] = []
     queue = list(reached)
@@ -199,19 +197,23 @@ def _closure(reached: dict[type[BaseModel], set[MarkName | None]]) -> list[type[
 
 
 def _reaching(
-    model: type[BaseModel], reached: dict[type[BaseModel], set[MarkName | None]]
-) -> set[MarkName | None]:
+    model: type[BaseModel], reached: dict[type[BaseModel], set[LineMark | None]]
+) -> set[LineMark | None]:
     """The marks of the contract methods that reach ``model``, through any chain of fields."""
-    marks: set[MarkName | None] = set()
+    marks: set[LineMark | None] = set()
     for root, root_marks in reached.items():
         if model in _closure({root: root_marks}):
             marks |= root_marks
     return marks
 
 
-def _model_mark(marks: set[MarkName | None], stable_export: bool) -> MarkName | None:
+def _model_mark(marks: set[LineMark | None], stable_export: bool) -> LineMark | None:
     if stable_export or None in marks:
         return None
-    if "deprecated" in marks:
-        return "deprecated"
+    deprecations = sorted(
+        (mark for mark in marks if isinstance(mark, DeprecatedMark)),
+        key=lambda mark: (mark.removed_in is None, mark.removed_in or 0),
+    )
+    if deprecations:
+        return deprecations[-1]
     return "experimental"

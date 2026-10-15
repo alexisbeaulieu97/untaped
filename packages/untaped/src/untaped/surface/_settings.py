@@ -10,7 +10,7 @@ sets.
 
 A ``cfg`` line carries the key's coarse type and declared default, with a
 ``choice=`` line per Literal value; a renamed key that is still read is
-``cfg <old> -> <new>  [deprecated]``. A ``state`` line carries the key and its
+``cfg <old> -> <new>  [deprecated, removed in <major>.0]``. A ``state`` line carries the key and its
 type. A retired key gives no line: it is a major's removal, and its
 ``upgrading`` fragment is the signal the guard already reads.
 """
@@ -23,7 +23,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pydantic import BaseModel
 
-from untaped.surface._lines import Line, MarkName
+from untaped.surface._lines import DeprecatedMark, Line, LineMark
+from untaped.surface._sdk import line_mark
 from untaped.surface._types import choice_text, default_text, node_token, schema_of
 
 if TYPE_CHECKING:
@@ -147,15 +148,13 @@ def setting_leaves(section: Section) -> list[Setting]:
 
 def settings_lines(result: CompositionResult, *, root: bool = True) -> list[Line]:
     """Every ``cfg`` and ``state`` line of the composition (``root=False``: plugins only)."""
-    from untaped.stability import Deprecated, Experimental  # noqa: PLC0415
-
     lines: list[Line] = []
     for section in sections(result, extensions=False, root=root):
         area = "state" if section.is_state else "cfg"
-        plugin_mark = _mark(section.stability, Deprecated, Experimental)
+        plugin_mark = line_mark(section.stability)
         schema = schema_of(section.model)
         for leaf in setting_leaves(section):
-            mark = plugin_mark if section.is_state else _mark(leaf.mark, Deprecated, Experimental)
+            mark = plugin_mark if section.is_state else line_mark(leaf.mark)
             lines.extend(_leaf_lines(area, leaf, mark, schema, section.prefix))
         if not section.is_state:
             lines.extend(_renamed(section))
@@ -163,7 +162,7 @@ def settings_lines(result: CompositionResult, *, root: bool = True) -> list[Line
 
 
 def extension_lines(
-    owner: str, contracts: Mapping[str, Mapping[str, MarkName | None]]
+    owner: str, contracts: Mapping[str, Mapping[str, LineMark | None]]
 ) -> list[Line]:
     """``cfg <owner>.extensions.<contract>.rank.<method>``: one per owned contract method,
     marked like that method's ``contract`` line."""
@@ -174,16 +173,8 @@ def extension_lines(
     ]
 
 
-def _mark(stability: object, deprecated: type, experimental: type) -> MarkName | None:
-    if isinstance(stability, deprecated):
-        return "deprecated"
-    if isinstance(stability, experimental):
-        return "experimental"
-    return None
-
-
 def _leaf_lines(
-    area: str, leaf: Setting, mark: MarkName | None, schema: Mapping[str, Any], prefix: str
+    area: str, leaf: Setting, mark: LineMark | None, schema: Mapping[str, Any], prefix: str
 ) -> list[Line]:
     parts = leaf.key.split(".")[1:] if prefix else leaf.key.split(".")
     token = node_token(_node(schema, parts, leaf.key), schema.get("$defs", {}))
@@ -217,7 +208,7 @@ def _model_node(node: Mapping[str, Any], defs: Mapping[str, Any]) -> Mapping[str
 
 
 def _renamed(section: Section) -> list[Line]:
-    """``cfg <old> -> <new>  [deprecated]`` for each renamed key still read.
+    """``cfg <old> -> <new>  [deprecated, removed in <major>.0]`` for each renamed key still read.
 
     The root's sections (``Settings``' own fields) declare their own.
     """
@@ -229,8 +220,11 @@ def _renamed(section: Section) -> list[Line]:
     else:
         found = model_sections(section.model)
         models = {name: found[name] for name in sorted(_root_sections() & set(found))}
-    return [
-        Line(f"cfg {prefix}.{old} -> {prefix}.{new}", "deprecated")
-        for prefix, model in models.items()
-        for old, new in sorted(key_mappings(model).readable.items())
-    ]
+    lines: list[Line] = []
+    for prefix, model in models.items():
+        mappings = key_mappings(model)
+        lines.extend(
+            Line(f"cfg {prefix}.{old} -> {prefix}.{new}", DeprecatedMark(mappings.removed_in[old]))
+            for old, new in sorted(mappings.readable.items())
+        )
+    return lines

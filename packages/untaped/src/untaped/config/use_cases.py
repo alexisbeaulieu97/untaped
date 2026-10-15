@@ -5,13 +5,20 @@ from __future__ import annotations
 from collections.abc import Container
 from typing import Any
 
-from untaped.config.models import SettingEntry, Source, display_default, display_value
+from untaped.config.models import (
+    OldSpelling,
+    SettingEntry,
+    Source,
+    display_default,
+    display_value,
+)
 from untaped.config.ports import SettingsReader
 from untaped.config_schema import FieldDescriptor
 from untaped.deprecated_keys import rename_keys
 from untaped.errors import ConfigError
+from untaped.messages import removal_phrase
 from untaped.profile_resolver import DEFAULT_PROFILE
-from untaped.stability import Deprecated, replacement_text, stability_name
+from untaped.stability import Deprecated, owner, removal_text, replacement_text, stability_name
 
 _UNRESOLVED: Any = object()
 
@@ -117,7 +124,8 @@ class ListAllProfilesSettings:
             for use in uses:
                 if use.kind == "renamed":
                     path = (section, *use.new.split("."))
-                    notes[path] = _deprecated_note(f"{section}.{use.old}")
+                    old = OldSpelling(f"{section}.{use.old}", use.removed_in, section)
+                    notes[path] = _deprecated_note(old)
         return current, notes
 
 
@@ -160,14 +168,23 @@ def setting_entry_for_descriptor(
 
 
 def _stability_fields(repo: SettingsReader, descriptor: FieldDescriptor) -> dict[str, Any]:
-    """The entry fields that say how stable ``descriptor`` is and what replaces it."""
+    """The entry fields that say how stable ``descriptor`` is, what replaces it and when it goes."""
     mark = repo.mark(descriptor)
-    use = replacement_text(mark, None) if isinstance(mark, Deprecated) else None
-    return {"stability": stability_name(mark), "use": use}
+    fields: dict[str, Any] = {"stability": stability_name(mark)}
+    if isinstance(mark, Deprecated):
+        distribution = owner(descriptor.path[0])
+        fields |= {
+            "use": replacement_text(mark, None),
+            "removed_in": mark.removed_in,
+            "distribution": distribution,
+            "removal": removal_text(mark.removed_in, distribution),
+        }
+    return fields
 
 
-def _deprecated_note(old: str) -> str:
-    return f"from deprecated {old}"
+def _deprecated_note(old: OldSpelling) -> str:
+    """``from OLD, removed in …``: the old spelling a value was read through, and its date."""
+    return f"from {old.shown}, {removal_phrase(removal_text(old.removed_in, owner(old.section)))}"
 
 
 def _iter_leaves(

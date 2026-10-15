@@ -464,6 +464,7 @@ DOCS_PAGES = [
     "plugins.md",
     "reference/config.md",
     "reference/conventions.md",
+    "reference/deprecation.md",
     "reference/environment.md",
     "reference/exit-codes.md",
     "reference/records.md",

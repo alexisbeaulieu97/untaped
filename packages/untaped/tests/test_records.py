@@ -25,7 +25,14 @@ from pydantic import (
 )
 
 from untaped.errors import ConfigError, HttpStatusError, HttpTransportError
-from untaped.output.diagnostic import Debug, Message, Progress, StaleData, WireModel
+from untaped.output.diagnostic import (
+    Debug,
+    DeprecationNotice,
+    Message,
+    Progress,
+    StaleData,
+    WireModel,
+)
 from untaped.output.sink import (
     Diagnostics,
     current_sink,
@@ -499,6 +506,14 @@ def _samples() -> dict[str, WireModel]:
             now=datetime(2026, 10, 10, tzinfo=UTC),
             max_age=timedelta(hours=1),
             error=Failure.from_exception(ConfigError("x")),
+        ),
+        DeprecationNotice(
+            id="cli untaped hello old",
+            removed_in=12,
+            distribution="untaped-hello",
+            replacement="untaped hello new",
+            hint="h",
+            message="`untaped hello old` is deprecated",
         ),
         SettingRow(key="k", value={"a": [1]}, default=None, source="default", profile=None),
         SettingOutcome(key="k", profile="default", action="updated"),

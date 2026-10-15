@@ -82,7 +82,7 @@ from untaped.settings import (
 )
 from untaped.shell_settings import ShellProfileSettings
 from untaped.skills import InstallableSkill
-from untaped.stability import apply_marks, mark_app, panel_for
+from untaped.stability import apply_marks, bind_owners, mark_app, panel_for
 from untaped.verbose import reset as _reset_verbose
 
 #: Unified executable name; also the identity reported before dispatch selects
@@ -133,8 +133,10 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
 
     Runs after validation succeeds, so a plugin that fails any check
     registers nothing, and again whenever the registry is rebuilt for the
-    remembered composition (:func:`_reregister`).
+    remembered composition (:func:`_reregister`). Each plugin's distribution
+    is bound as the owner its deprecations name.
     """
+    bind_owners({plugin.spec.name: plugin.plugin_ref.distribution for plugin in result.plugins})
     register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
     if SHELL_SPEC.state is not None:
         register_state_settings(SHELL_SPEC.section, SHELL_SPEC.state)
@@ -226,6 +228,8 @@ def _reregister() -> None:
     reset_config_registry()
     if _COMPOSED_RESULT is not None:
         _register_shell_and_plugins(_COMPOSED_RESULT)
+    else:
+        bind_owners({})
 
 
 def composition() -> CompositionResult:

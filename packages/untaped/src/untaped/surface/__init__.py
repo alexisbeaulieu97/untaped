@@ -25,30 +25,41 @@ The rules every contributor keeps:
   snapshot tool of its own.
 - **Respelling existing lines bumps** :data:`FORMAT` and teaches
   :func:`upgrade` the old spelling, so a baseline file still compares.
+- **A deprecated line names its removal version.** Its mark carries the
+  major that removes it (``[deprecated, removed in <major>.0]``);
+  :func:`postponements` and :func:`due` are the two questions the release
+  check and the changelog build ask of it.
 """
 
 from __future__ import annotations
 
 import importlib.util
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from untaped.surface._guard import removed
-from untaped.surface._lines import FORMAT, Line, parse, render, upgrade
+from untaped.surface._lines import FORMAT, DeprecatedMark, Line, LineMark, parse, render, upgrade
 from untaped.surface._sdk import SurfaceError
 
 if TYPE_CHECKING:
+    from cyclopts import App
+
     from untaped.plugins.registry import CompositionResult, PluginCandidate, PluginSpec
-    from untaped.surface._lines import MarkName
 
 __all__ = [
     "FORMAT",
     "SDK_MODULES",
+    "DeprecatedMark",
     "Line",
+    "LineMark",
+    "Postponement",
     "SurfaceError",
+    "due",
     "generate",
     "parse",
     "plugin_lines",
+    "postponements",
     "removed",
     "render",
     "upgrade",
@@ -72,8 +83,8 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
         root = build_root_app(candidates=candidates)
         result = composition()
         check_quarantine(result)
-        marks = _plugin_marks(result)
-        modules: dict[str, MarkName | None] = dict.fromkeys(SDK_MODULES)
+        marks = _plugin_marks(result, root)
+        modules: dict[str, LineMark | None] = dict.fromkeys(SDK_MODULES)
         for plugin in result.plugins:
             modules.update(_plugin_modules(plugin.spec, plugin.plugin_ref.entry_point))
         lines = cli_lines(root, marks)
@@ -100,7 +111,7 @@ def plugin_lines(spec: PluginSpec) -> list[Line]:
         root = build_root_app(candidates=[candidate])
         result = composition()
         check_quarantine(result)
-        marks = _plugin_marks(result)
+        marks = _plugin_marks(result, root)
         modules = _plugin_modules(spec, candidate.target)
         lines = subtree_lines(root, spec.name, marks.get(spec.name))
         lines.extend(settings_lines(result, root=False))
@@ -108,31 +119,31 @@ def plugin_lines(spec: PluginSpec) -> list[Line]:
     return sorted(set(lines))
 
 
-def _plugin_marks(result: CompositionResult) -> dict[str, MarkName | None]:
-    from untaped.surface._sdk import mark_name  # noqa: PLC0415
+def _plugin_marks(result: CompositionResult, root: App) -> dict[str, LineMark | None]:
+    from untaped.surface._sdk import line_mark  # noqa: PLC0415
 
-    return {plugin.spec.name: mark_name(plugin.spec.stability) for plugin in result.plugins}
+    return {plugin.spec.name: line_mark(plugin.spec.stability, root) for plugin in result.plugins}
 
 
-def _plugin_modules(spec: PluginSpec, target: object) -> dict[str, MarkName | None]:
+def _plugin_modules(spec: PluginSpec, target: object) -> dict[str, LineMark | None]:
     """``<package>.api`` and ``<package>.testing`` of a plugin, when importable."""
     from untaped.conventions import candidate_package  # noqa: PLC0415
-    from untaped.surface._sdk import mark_name  # noqa: PLC0415
+    from untaped.surface._sdk import line_mark  # noqa: PLC0415
 
     package = candidate_package(target)
     if package is None:
         return {}
-    found: dict[str, MarkName | None] = {}
+    found: dict[str, LineMark | None] = {}
     for module in (f"{package}.api", f"{package}.testing"):
         if importlib.util.find_spec(module) is not None:
-            found[module] = mark_name(spec.stability)
+            found[module] = line_mark(spec.stability)
     return found
 
 
 def _owned(
     result: CompositionResult,
-    modules: dict[str, MarkName | None],
-    marks: dict[str, MarkName | None],
+    modules: dict[str, LineMark | None],
+    marks: dict[str, LineMark | None],
     *,
     core: bool = True,
 ) -> list[Line]:
@@ -165,3 +176,46 @@ def _convention_lines() -> list[Line]:
     from untaped.surface._lists import CONVENTIONS  # noqa: PLC0415
 
     return [Line(f"convention {entry}") for entry in CONVENTIONS]
+
+
+@dataclass(frozen=True)
+class Postponement:
+    """A line whose removal version changed between two files, from ``was`` to ``now``."""
+
+    line: Line
+    was: int
+    now: int
+
+
+def postponements(baseline: Sequence[Line], current: Sequence[Line]) -> list[Postponement]:
+    """Each line both files date, whose removal version differs (raised or lowered).
+
+    A line undated or absent in ``baseline``, or undated or gone in
+    ``current``, gives nothing: no release showed a date that moved. The one
+    pairing the release check and the changelog build both read.
+    """
+    dated = {
+        line.identity: mark.removed_in
+        for line in baseline
+        if (mark := line.deprecation) is not None and mark.removed_in is not None
+    }
+    found = [
+        Postponement(line, dated[line.identity], mark.removed_in)
+        for line in current
+        if (mark := line.deprecation) is not None
+        and mark.removed_in is not None
+        and line.identity in dated
+        and dated[line.identity] != mark.removed_in
+    ]
+    return sorted(found, key=lambda item: item.line.identity)
+
+
+def due(lines: Sequence[Line], major: int) -> list[Line]:
+    """The lines marked deprecated with a removal version at or below ``major``, in order."""
+    return sorted(
+        line
+        for line in lines
+        if (mark := line.deprecation) is not None
+        and mark.removed_in is not None
+        and mark.removed_in <= major
+    )

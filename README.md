@@ -68,8 +68,9 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
   release.
 - Reference: [settings](./docs/reference/config.md),
   [output records](./docs/reference/records.md),
-  [exit codes](./docs/reference/exit-codes.md) and
-  [environment variables](./docs/reference/environment.md).
+  [exit codes](./docs/reference/exit-codes.md),
+  [environment variables](./docs/reference/environment.md) and
+  [deprecations](./docs/reference/deprecation.md).
 - [Building a plugin](./docs/plugins.md): add a plugin from
   your own package, with its [conventions](./docs/reference/conventions.md),
   [how composition works](./docs/composition.md),

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
 from untaped.conventions.settings_names import settings_name_violations
-from untaped.deprecated_keys import key_mappings, mapping_errors
+from untaped.deprecated_keys import DeprecatedKey, key_mappings, mapping_errors
 from untaped.errors import ConfigError
 from untaped.plugins.registry import PluginSpec
 from untaped.stability import (
@@ -43,17 +43,17 @@ class Section(BaseModel):
 def test_leaf_marks_are_collected_with_dotted_paths() -> None:
     assert field_marks(Section) == {
         "optional": experimental,
-        "legacy": Deprecated("a shell alias"),
+        "legacy": Deprecated(replacement="a shell alias"),
         "sweep.parallel": experimental,
-        "sweep.old": Deprecated("sweep.parallel"),
+        "sweep.old": Deprecated(replacement="sweep.parallel"),
     }
     assert mark_errors(Section) == []
 
 
 def test_a_deprecated_field_feeds_the_key_mappings_with_its_replacement() -> None:
     assert key_mappings(Section).deprecated == {
-        "legacy": "a shell alias",
-        "sweep.old": "sweep.parallel",
+        "legacy": DeprecatedKey("a shell alias", removed_in=None),
+        "sweep.old": DeprecatedKey("sweep.parallel", removed_in=None),
     }
 
 
@@ -61,7 +61,7 @@ def test_a_mark_without_a_replacement_maps_to_none() -> None:
     class Bare(BaseModel):
         old: Annotated[int, deprecated()] = 0
 
-    assert key_mappings(Bare).deprecated == {"old": None}
+    assert key_mappings(Bare).deprecated == {"old": DeprecatedKey(None, removed_in=None)}
 
 
 def test_reading_a_marked_attribute_emits_no_python_deprecation_warning() -> None:

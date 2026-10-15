@@ -16,7 +16,10 @@ help line, the run-time warning and the conventions checks:
   tree so a warning keeps naming it after a rename;
 - :func:`marks`, the one query every checker and generator reads;
 - the renamed-command and renamed-option spellings of
-  :func:`deprecated_alias`, a different mechanism with a successor.
+  :func:`deprecated_alias`, a different mechanism with a successor;
+- the removal version every deprecation names (``removed_in``), whose text
+  :func:`removal_text` renders, and the one emitter of a deprecation on the
+  sink, :func:`notify_deprecation`.
 
 Neither marker is, or subclasses, ``warnings.deprecated``: that one warns on
 every use and, on a settings field, becomes pydantic field deprecation.
@@ -38,7 +41,12 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from untaped.config_schema import unwrap_optional
-from untaped.messages import EXPERIMENTAL_LINE, deprecated_line
+from untaped.messages import (
+    EXPERIMENTAL_LINE,
+    deprecated_ignored_message,
+    deprecated_line,
+    deprecated_message,
+)
 
 if TYPE_CHECKING:
     from untaped.plugins.registry import CompositionResult
@@ -61,18 +69,33 @@ class Experimental(_Marker):
     """The ``experimental`` marker: may change or go away in a minor release."""
 
 
-@dataclass(frozen=True)
-class Deprecated(_Marker):
-    """The ``deprecated`` marker: still works, with a warning, until the next major release.
+def check_removed_in(value: object) -> int | None:
+    """``value`` when it is ``None`` or a major number (an ``int`` of at least 1, not a bool).
 
-    ``replacement`` is a command function or :class:`~cyclopts.App` (untaped
-    derives its path), or text: ``"untaped github sync"`` or a setting key
-    (shown in backticks) or prose (shown as is).
+    Raises ``TypeError`` otherwise: a string or a minor would invite
+    ``"12.1"``, which no release check should have to interpret.
+    """
+    if value is None or (isinstance(value, int) and not isinstance(value, bool) and value >= 1):
+        return value
+    raise TypeError(f"removed_in is the major number that removes it: removed_in=12, not {value!r}")
+
+
+@dataclass(frozen=True, kw_only=True)
+class Deprecated(_Marker):
+    """The ``deprecated`` marker: still works, with a warning, until its removal version.
+
+    ``removed_in`` is the major that removes it (``12``); ``None`` is undated
+    and reads "a future major release". ``replacement`` is a command function
+    or :class:`~cyclopts.App` (untaped derives its path), or text:
+    ``"untaped github sync"`` or a setting key (shown in backticks) or prose
+    (shown as is).
     """
 
     replacement: Callable[..., Any] | App | str | None = None
+    removed_in: int | None = None
 
     def __post_init__(self) -> None:
+        check_removed_in(self.removed_in)
         replacement = self.replacement
         if replacement is None or callable(replacement):
             return
@@ -87,14 +110,21 @@ experimental = Experimental()
 """Mark a command, group or plugin experimental (``@experimental``, ``stability=``)."""
 
 
-def deprecated(*, replacement: Callable[..., Any] | App | str | None = None) -> Deprecated:
-    """Mark a command, group or plugin deprecated, naming what replaces it.
+def deprecated(
+    *,
+    removed_in: int | None = None,
+    replacement: Callable[..., Any] | App | str | None = None,
+) -> Deprecated:
+    """Mark a command, group, plugin or setting deprecated, naming its removal and replacement.
 
-    ``replacement`` is keyword-only, so a bare ``@deprecated`` fails at import.
-    Use it as ``@deprecated(replacement=set_command)`` under ``@app.command``
-    or as ``stability=deprecated(...)``.
+    ``removed_in`` is the major that removes it (``removed_in=12``; a plugin's
+    own major for a plugin's command). Every deprecation names one: leaving
+    it out is allowed until untaped 12 and reads "a future major release".
+    Both are keyword-only, so a bare ``@deprecated`` fails at import. Use it
+    as ``@deprecated(removed_in=12, replacement=set_command)`` under
+    ``@app.command`` or as ``stability=deprecated(...)``.
     """
-    return Deprecated(replacement=replacement)
+    return Deprecated(replacement=replacement, removed_in=removed_in)
 
 
 type Stability = Experimental | Deprecated
@@ -110,10 +140,10 @@ def check_stability(value: object, *, where: str) -> Stability | None:
     if value is None or isinstance(value, Experimental | Deprecated):
         return value
     hint = (
-        "call it: deprecated(replacement=...)"
+        "call it: deprecated(removed_in=..., replacement=...)"
         if value is deprecated
-        else "use untaped.sdk.experimental or untaped.sdk.deprecated(replacement=...), "
-        "not warnings.deprecated"
+        else "use untaped.sdk.experimental or untaped.sdk.deprecated(removed_in=..., "
+        "replacement=...), not warnings.deprecated"
     )
     raise TypeError(f"{where}: stability must be experimental or deprecated(...); {hint}")
 
@@ -182,7 +212,7 @@ class AppMark:
 # Keyed by ``id(app)``: cyclopts apps are unhashable. A finalizer drops the
 # entry with the app, so a recycled id never inherits a stale mark.
 _APP_MARKS: dict[int, AppMark] = {}
-_DEPRECATED_ALIASES: dict[int, dict[str, str]] = {}
+_DEPRECATED_ALIASES: dict[int, dict[str, Alias]] = {}
 
 
 def _forget_with(app: App, table: dict[int, Any]) -> None:
@@ -231,13 +261,32 @@ def mark_app(
 
 
 def _ensure_epilogue(app: App, line: str, *, own_only: bool) -> None:
-    """End ``app``'s help epilogue with ``line`` (once); ``own_only`` spares an app without one."""
+    """End ``app``'s help epilogue with ``line`` (once); ``own_only`` spares an app without one.
+
+    A stability line written before the app was mounted (when its owner, and
+    so its removal version's wording, was not known yet) is replaced, never
+    kept beside the new one.
+    """
     epilogue = app.help_epilogue
     if epilogue is None:
         if not own_only:
             app.help_epilogue = line
-    elif line not in epilogue:
-        app.help_epilogue = f"{epilogue.rstrip()}\n\n{line}"
+        return
+    if line in epilogue:
+        return
+    paragraphs = [
+        paragraph
+        for paragraph in epilogue.rstrip().split("\n\n")
+        if not _is_stability_line(paragraph)
+    ]
+    app.help_epilogue = "\n\n".join([*paragraphs, line]) if paragraphs else line
+
+
+def _is_stability_line(paragraph: str) -> bool:
+    return paragraph == EXPERIMENTAL_LINE or paragraph.startswith(_DEPRECATED_LINE_START)
+
+
+_DEPRECATED_LINE_START = deprecated_line().partition(" removed in ")[0] + " removed in "
 
 
 # --- replacements ------------------------------------------------------------
@@ -319,12 +368,17 @@ def replacement_text(
 def stability_line(
     stability: Stability, tree: App | None, prefix: tuple[str, ...] = (_ROOT_NAME,)
 ) -> str | None:
-    """The help line for ``stability``; ``None`` while an object replacement has no ``tree``."""
+    """The help line for ``stability``; ``None`` while an object replacement has no ``tree``.
+
+    A deprecated line names the removal version of the plugin that owns
+    ``prefix`` (``removed in untaped-awx 12.0``), or core's bare version.
+    """
     if isinstance(stability, Experimental):
         return EXPERIMENTAL_LINE
     if callable(stability.replacement) and tree is None:
         return None
-    return deprecated_line(replacement_text(stability, tree, prefix))
+    removal = removal_text(stability.removed_in, path_owner(prefix))
+    return deprecated_line(replacement_text(stability, tree, prefix), removal)
 
 
 # --- applying marks to a tree ------------------------------------------------
@@ -564,28 +618,158 @@ def stability_name(mark: Stability | None) -> SettingStability:
 # --- renamed commands and options -------------------------------------------
 
 
-def deprecated_alias(app: App, old: str, new: str) -> None:
+@dataclass(frozen=True)
+class Alias:
+    """A deprecated spelling's target and the major that removes the spelling."""
+
+    new: str
+    removed_in: int | None = None
+
+
+def deprecated_alias(app: App, old: str, new: str, *, removed_in: int | None = None) -> None:
     """Keep ``old`` working as a hidden, deprecated spelling of ``new`` on ``app``.
 
     For a renamed command or group, ``app`` is its parent and the names are
-    command names (``deprecated_alias(jira_app, "me", "whoami")``). For a
-    renamed option or short flag, ``app`` is the command itself and the names
-    are flags (``deprecated_alias(logs_app, "-f", "--follow")``). The root
-    shell rewrites the old token to the new one before dispatch and prints a
-    warning naming both on stderr; the old spelling never appears in
-    ``--help``. Aliases apply to invocations through the
-    ``untaped`` root (test them with ``build_root_app``); they are removed in
-    the next major release.
+    command names (``deprecated_alias(jira_app, "me", "whoami", removed_in=12)``).
+    For a renamed option or short flag, ``app`` is the command itself and the
+    names are flags (``deprecated_alias(logs_app, "-f", "--follow", removed_in=12)``).
+    The root shell rewrites the old token to the new one before dispatch and
+    prints a warning naming both on stderr; the old spelling never appears in
+    ``--help``. Aliases apply to invocations through the ``untaped`` root
+    (test them with ``build_root_app``). ``removed_in`` is the major that
+    removes the old spelling; leaving it out is allowed until untaped 12 and
+    reads "a future major release".
     """
+    check_removed_in(removed_in)
     if old.startswith("-") != new.startswith("-"):
         raise ValueError(f"alias {old!r} -> {new!r} mixes a command and an option")
     key = id(app)
     if key not in _DEPRECATED_ALIASES:
         _DEPRECATED_ALIASES[key] = {}
         _forget_with(app, _DEPRECATED_ALIASES)
-    _DEPRECATED_ALIASES[key][old] = new
+    _DEPRECATED_ALIASES[key][old] = Alias(new, removed_in)
 
 
-def deprecated_aliases(app: App) -> Mapping[str, str]:
-    """The ``{old: new}`` deprecated spellings registered on ``app``."""
+def deprecated_aliases(app: App) -> Mapping[str, Alias]:
+    """The deprecated spellings registered on ``app``, old spelling → :class:`Alias`."""
     return _DEPRECATED_ALIASES.get(id(app), {})
+
+
+# --- removal versions and the deprecation emitter ------------------------------
+
+# Plugin name → its distribution, bound by the composition (``bind_owners``):
+# a plugin's deprecations name whose major they mean, core's own name none.
+_OWNERS: dict[str, str] = {}
+
+
+def bind_owners(owners: Mapping[str, str]) -> None:
+    """Record each composed plugin's distribution (plugin name → distribution), anew."""
+    _OWNERS.clear()
+    _OWNERS.update(owners)
+
+
+def owner(name: str) -> str | None:
+    """The distribution of composed plugin ``name`` (a command's first word, a setting's section).
+
+    ``None`` for core's own commands and sections, and outside a composition.
+    """
+    return _OWNERS.get(name)
+
+
+def path_owner(path: tuple[str, ...]) -> str | None:
+    """The owner of the command at ``path`` (``("untaped", "awx", "put")``)."""
+    return owner(path[1]) if len(path) > 1 else None
+
+
+def removal_text(removed_in: int | None, owner: str | None) -> str | None:
+    """``12.0`` for core's own, ``untaped-awx 12.0`` for a plugin's, ``None`` when undated.
+
+    A plugin's major is its own, so its text names its distribution, whoever
+    maintains it.
+    """
+    if removed_in is None:
+        return None
+    return f"{removed_in}.0" if owner is None else f"{owner} {removed_in}.0"
+
+
+class UntapedDeprecationWarning(DeprecationWarning):
+    """A deprecation of a Python API, carrying what the ``untaped.deprecation`` record carries.
+
+    ``id`` is the deprecated thing's surface identity, ``removed_in`` its
+    removal major (``None`` undated), ``distribution`` its owner (``None``
+    for core's own) and ``replacement`` what to use instead.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        id: str,
+        removed_in: int | None = None,
+        distribution: str | None = None,
+        replacement: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.id = id
+        self.removed_in = removed_in
+        self.distribution = distribution
+        self.replacement = replacement
+
+
+_NOTIFIED: set[str] = set()
+
+
+def first_notice(key: str) -> bool:
+    """Whether ``key`` has not been warned about in this process yet (and remember it)."""
+    if key in _NOTIFIED:
+        return False
+    _NOTIFIED.add(key)
+    return True
+
+
+def forget_notices() -> None:
+    """Forget which deprecations were warned about (tests, embedding)."""
+    _NOTIFIED.clear()
+
+
+def notify_deprecation(
+    id: str,
+    subject: str,
+    *,
+    removed_in: int | None,
+    owner: str | None = None,
+    replacement: str | None = None,
+    kept: str | None = None,
+    key: str | None = None,
+    hint: str | None = None,
+) -> None:
+    """Warn once that ``subject`` is deprecated, as an ``untaped.deprecation`` record.
+
+    The one emitter of a deprecation on the sink: ``id`` is the deprecated
+    thing's surface identity (``cli untaped awx put``), ``subject`` how the
+    sentence names it, ``replacement`` the replacement as shown (backticks
+    included). ``kept`` says the old spelling was ignored because ``kept``
+    is also set. Once per process per ``key`` (else per ``id``), so callers
+    warning about one thing in different words share it. ``hint`` is the
+    follow-up, its own line and its own field under JSON.
+    """
+    if not first_notice(id if key is None else key):
+        return
+    from untaped.output.diagnostic import DeprecationNotice  # noqa: PLC0415 - off the CLI path
+    from untaped.output.sink import Diagnostics  # noqa: PLC0415
+
+    removal = removal_text(removed_in, owner)
+    if kept is None:
+        message = deprecated_message(subject, replacement, removal)
+    else:
+        message = deprecated_ignored_message(subject, kept, replacement or kept, removal)
+    Diagnostics().emit(
+        DeprecationNotice(
+            message=message,
+            hint=hint,
+            id=id,
+            removed_in=removed_in,
+            distribution=owner,
+            replacement=None if replacement is None else replacement.replace("`", ""),
+        )
+    )

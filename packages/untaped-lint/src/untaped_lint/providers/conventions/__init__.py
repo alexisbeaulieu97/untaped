@@ -76,6 +76,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("local-plural", "error", "Plurals use core's plural(), not a local helper."),
     ("print", "error", "Stdout goes through echo or UiContext, stderr through ctx.diag."),
     ("rich-console", "error", "No direct rich Console: use echo, UiContext or ctx.diag."),
+    ("hand-typed-deprecation", "error", "Deprecation sentences come from marks, not literals."),
     ("errors-module", "error", "A plugin keeps its error classes in errors.py."),
     ("foreign-section", "error", "A plugin reads only its own config section."),
     ("private-test-import", "error", "Tests import no private module or name."),
@@ -153,7 +154,7 @@ def file_lines(
     """The file rules' ``<where>::<rule>::<detail>`` lines for ``package`` in ``source_dir``.
 
     Core's deprecated ``untaped plugin check`` and ``check_conventions`` read
-    these lines to keep their rows unchanged until 12.0. An unreadable file is
+    these lines to keep their rows unchanged until they are removed. An unreadable file is
     one ``unreadable-file`` line and the other rules don't run.
     """
     try:
