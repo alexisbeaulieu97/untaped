@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import not_found
+from untaped_workspace.domain.naming import workspace_key
 from untaped_workspace.errors import WorkspaceNotFoundError
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ def locate_workspace(
 
 def workspace_root(workspaces_dir: Path, name: str) -> Path:
     """Absolute directory of workspace ``name`` (``~`` expanded, symlinks resolved)."""
-    return workspaces_dir.expanduser().resolve() / name
+    return workspaces_dir.expanduser().resolve() / workspace_key(name)
 
 
 def active_workspace(store: WorkspaceStore, name: str) -> WorkspaceRecord:

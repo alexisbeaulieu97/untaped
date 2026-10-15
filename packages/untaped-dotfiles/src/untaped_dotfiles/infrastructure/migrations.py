@@ -178,6 +178,10 @@ def apply(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationOu
         return [MigrationOutcome(id=ID, action="unchanged", detail="nothing left to move")]
     old, new = _old(), _new()
     with StateDotfilesStore(state_dir=new).locked():
+        # Again under the lock: a command that held it may have just made one.
+        if taken := _conflicts(old, new):
+            detail = f"kept: {shown_path(taken[0])} already exists; keep one of them"
+            return [MigrationOutcome(id=ID, action="failed", detail=detail)]
         moved = old.is_dir()
         if moved:
             for entry in sorted(old.iterdir()):

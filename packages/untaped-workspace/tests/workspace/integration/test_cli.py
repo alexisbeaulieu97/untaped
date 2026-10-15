@@ -83,6 +83,13 @@ def test_create_without_repos_makes_an_empty_workspace(workspace_env: Path) -> N
     assert record is not None and not record.repos
 
 
+def test_a_decomposed_name_finds_the_workspace_create_stored(workspace_env: Path) -> None:
+    assert run(app, ["create", "cafe\u0301"]).exit_code == 0  # as macOS file names spell it
+    assert run(app, ["path", "cafe\u0301"]).stdout.strip() == str(workspace_env / "caf\u00e9")
+    assert run(app, ["remove", "cafe\u0301", "--yes"]).exit_code == 0
+    assert StateWorkspaceStore().get("caf\u00e9") is None
+
+
 def test_add_without_repos_is_usage() -> None:
     assert run(app, ["create", "J-1"]).exit_code == 0
     result = run(app, ["add", "J-1"])

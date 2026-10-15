@@ -9,7 +9,8 @@ the migration runs: links still resolve, state names the new place, and
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -131,3 +132,25 @@ def test_an_entry_both_directories_hold_is_never_merged(ten_x: Path) -> None:
     assert row.action == "keep" and "plugins/dotfiles/repos already exists" in row.detail
     assert [o.action for o in migration.apply(ctx, OPTIONS)] == ["unchanged"]
     assert (_untaped() / "dotfiles" / "repos").is_dir()
+
+
+def test_an_entry_made_while_waiting_for_the_lock_is_never_merged(
+    ten_x: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped_dotfiles.infrastructure import migrations
+
+    locked = migrations.StateDotfilesStore.locked
+    made = _untaped() / "plugins" / "dotfiles" / "repos"
+
+    @contextmanager
+    def subscribed_meanwhile(self: migrations.StateDotfilesStore) -> Iterator[None]:
+        with locked(self):
+            made.mkdir(parents=True)  # a command that held the lock subscribed
+            yield
+
+    monkeypatch.setattr(migrations.StateDotfilesStore, "locked", subscribed_meanwhile)
+    ctx, migration = PluginContext(settings=None), SPEC.migrations[0]
+
+    (outcome,) = migration.apply(ctx, OPTIONS)
+    assert outcome.action == "failed" and "plugins/dotfiles/repos already exists" in outcome.detail
+    assert (_untaped() / "dotfiles" / "repos" / "dotfiles").is_dir() and not any(made.iterdir())
