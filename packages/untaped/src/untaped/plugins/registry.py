@@ -925,7 +925,8 @@ def _commit(
     return registered
 
 
-def _resolve_target(target: object) -> object:
+def resolve_target(target: object) -> object:
+    """The object an entry point's ``module:attr`` target names (a non-string passes through)."""
     if not isinstance(target, str):
         return target
     module_name, sep, attr_path = target.partition(":")
@@ -1054,7 +1055,7 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
     _check_entry_point_group(candidate)
     _check_requires_dist(candidate, state)
     try:
-        spec = _resolve_target(candidate.target)
+        spec = resolve_target(candidate.target)
     except DuplicateKindError as exc:
         raise _Quarantine("duplicate-kind", str(exc), entry_point="") from None
     except Exception as exc:

@@ -425,7 +425,6 @@ def apply_command(
             todo = [s for s in steps if s.action in ("apply", "remove")]
             if todo or moved:
                 _confirm(
-                    svc,
                     planned,
                     fmt=fmt,
                     verb="apply",
@@ -440,9 +439,7 @@ def apply_command(
         for row in rows:
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.item}/{row.source}")
-        failed = bool(resolved.problems) or any(
-            row.action in ("failed", "conflict") for row in rows
-        )
+        failed = bool(resolved.problems) or any(row.failed for row in rows)
         failed = failed or any(row.error is not None for row in pulled.values())
     finish(failed)
 
@@ -535,7 +532,6 @@ def remove_command(
                 return
             recorded = [s for s in steps if s.found.record is not None]
             _confirm(
-                svc,
                 planned,
                 fmt=fmt,
                 verb="remove",
@@ -626,7 +622,6 @@ def _moving_with(
 
 
 def _confirm(
-    svc: Services,
     planned: Sequence[PlaceOutcome],
     *,
     fmt: OutputFormat,

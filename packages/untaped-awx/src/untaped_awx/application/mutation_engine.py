@@ -49,6 +49,7 @@ from untaped_awx.application.prepared_body import BodyOperations
 from untaped_awx.application.scheduling import Schedule, dooms_batch
 from untaped_awx.application.selection import SelectedResource
 from untaped_awx.domain import ApplyOutcome, BatchResult, Resource, ResourceSpec
+from untaped_awx.domain.outcomes import FAIL_FAST_ACTIONS, UNFINISHED_ACTIONS
 from untaped_awx.domain.payloads import as_dict
 from untaped_awx.errors import (
     AwxApiError,
@@ -188,7 +189,7 @@ class BatchMutationEngine:
         self._execute_memberships(plan, outcomes, bindings, fail_fast=fail_fast or aborted)
         self._execute_graphs(plan, outcomes, bindings, fail_fast=fail_fast or aborted)
         partial = any(
-            outcome.action in {"failed", "partial"} or outcome.partial for outcome in outcomes
+            outcome.action in FAIL_FAST_ACTIONS or outcome.partial for outcome in outcomes
         )
         return BatchResult(outcomes=outcomes, partial=partial)
 
@@ -301,15 +302,12 @@ class BatchMutationEngine:
                 )
             if outcome.id is not None and operation.create and outcome.action == "created":
                 bindings[f"planned:{index}"] = outcome.id
-            if outcome.action in {"failed", "partial"} and fail_fast:
+            if outcome.action in FAIL_FAST_ACTIONS and fail_fast:
                 schedule.stop()
             return outcome
 
         def blocked(index: int, dependencies: list[ApplyOutcome]) -> ApplyOutcome | None:
-            if any(
-                outcome.action in {"failed", "partial", "conflict", "skipped"}
-                for outcome in dependencies
-            ):
+            if any(outcome.action in UNFINISHED_ACTIONS for outcome in dependencies):
                 return self._status_outcome(
                     operations[index],
                     action="skipped",
@@ -411,9 +409,9 @@ class BatchMutationEngine:
         *,
         fail_fast: bool,
     ) -> None:
-        stopped = fail_fast and any(outcome.action in {"failed", "partial"} for outcome in outcomes)
+        stopped = fail_fast and any(outcome.action in FAIL_FAST_ACTIONS for outcome in outcomes)
         for operation, outcome in zip(plan.operations, outcomes, strict=True):
-            if outcome.action in {"failed", "skipped", "conflict", "partial"}:
+            if outcome.action in UNFINISHED_ACTIONS:
                 continue
             if not operation.membership_plans:
                 continue
@@ -502,12 +500,12 @@ class BatchMutationEngine:
         fail_fast: bool,
     ) -> None:
         """Reconcile node graphs once every body and membership has been written."""
-        stopped = fail_fast and any(outcome.action in {"failed", "partial"} for outcome in outcomes)
+        stopped = fail_fast and any(outcome.action in FAIL_FAST_ACTIONS for outcome in outcomes)
         for operation, outcome in zip(plan.operations, outcomes, strict=True):
             graph_plan = operation.graph_plan
             if graph_plan is None or not graph_plan.changed or self._graph is None:
                 continue
-            if outcome.action in {"failed", "skipped", "conflict", "partial"}:
+            if outcome.action in UNFINISHED_ACTIONS:
                 continue
             if stopped or outcome.id is None:
                 outcomes[operation.index] = outcome.model_copy(

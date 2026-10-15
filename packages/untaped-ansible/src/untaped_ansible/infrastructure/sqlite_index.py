@@ -6,6 +6,7 @@ import sqlite3
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from itertools import batched
 from pathlib import Path
 from threading import Lock
 
@@ -54,7 +55,7 @@ class SqliteDependencyIndex:
             return {}
         scans: dict[tuple[str, str], RefScanMetadata] = {}
         with self._db() as db:
-            for chunk in _chunks(requested, 400):
+            for chunk in batched(requested, 400, strict=False):
                 placeholders = ",".join("(?, ?)" for _ in chunk)
                 params: list[object] = [
                     value for ref_kind, source_ref in chunk for value in (ref_kind, source_ref)
@@ -258,7 +259,7 @@ class SqliteDependencyIndex:
         for repo in requested:
             by_key.setdefault(repo_key(repo), []).append(repo)
         with self._db() as db:
-            for chunk in _chunks(list(by_key), 400):
+            for chunk in batched(list(by_key), 400, strict=False):
                 placeholders = ",".join("(?)" for _ in chunk)
                 params: list[object] = [*chunk, source_key]
                 rows = db.execute(
@@ -339,7 +340,7 @@ class SqliteDependencyIndex:
         if not keys:
             return selected
         with self._db() as db:
-            for chunk in _chunks(keys, 400):
+            for chunk in batched(keys, 400, strict=False):
                 marks = ",".join("?" for _ in chunk)
                 rows = db.execute(
                     f"""
@@ -385,7 +386,7 @@ class SqliteDependencyIndex:
         with self._db() as db:
             # 400 pairs x 2 columns = 800 bound params, under the pre-3.32
             # limit of 999 (matching the ref_scans VALUES chunking above).
-            for chunk in _chunks(list(by_key), 400):
+            for chunk in batched(list(by_key), 400, strict=False):
                 placeholders = ",".join("(?, ?)" for _ in chunk)
                 params: list[object] = [value for pair in chunk for value in pair]
                 if source_key is not None:
@@ -522,7 +523,7 @@ def _existing_snapshot_ids(
     ids: dict[_SnapshotIdentity, int] = {}
     # 200 identities x 4 columns = 800 bound params, under the pre-3.32 limit of
     # 999, even though this module already assumes SQLite >= 3.35 (RETURNING).
-    for chunk in _chunks(identities, 200):
+    for chunk in batched(identities, 200, strict=False):
         placeholders = ",".join("(?, ?, ?, ?)" for _ in chunk)
         params = [value for identity in chunk for value in identity]
         rows = db.execute(
@@ -794,11 +795,6 @@ def _delete_orphan_snapshots(db: sqlite3.Connection) -> None:
         )
         """
     )
-
-
-def _chunks[T](values: list[T], size: int) -> Iterator[list[T]]:
-    for start in range(0, len(values), size):
-        yield values[start : start + size]
 
 
 def _optional_str(value: object) -> str | None:

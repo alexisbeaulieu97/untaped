@@ -158,8 +158,8 @@ def _installed_for(cls: type) -> list[str]:
     from untaped.conventions import candidate_package  # noqa: PLC0415
     from untaped.plugins.registry import (  # noqa: PLC0415
         PluginSpec,
-        _resolve_target,
         discover_candidates,
+        resolve_target,
     )
 
     top = cls.__module__.partition(".")[0]
@@ -169,7 +169,7 @@ def _installed_for(cls: type) -> list[str]:
         if package is None or package.partition(".")[0] != top:
             continue
         try:
-            spec = _resolve_target(candidate.target)
+            spec = resolve_target(candidate.target)
         except ImportError, AttributeError:
             continue  # a target that does not resolve offers nothing
         if isinstance(spec, PluginSpec):

@@ -32,14 +32,14 @@ from untaped.cli import (
     report_errors,
     writes,
 )
-from untaped.config.editor import run_config_editor
 from untaped.config.models import SettingEntry, SettingOutcome, SettingRow, setting_entry_row
-from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
 from untaped.config_file import read_config_dict
 from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, key_mappings, warn_once
 from untaped.errors import ConfigError
+from untaped.management.config_editor import run_config_editor
+from untaped.management.config_prompting import resolve_set_value
 from untaped.messages import deprecated_message, hint, plural, run_hint
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model

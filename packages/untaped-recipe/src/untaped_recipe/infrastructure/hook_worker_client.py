@@ -9,7 +9,6 @@ import subprocess
 import time
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Condition, Lock, Thread
@@ -20,8 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_
 from untaped.sdk import ErrorCategory
 from untaped_recipe._worker import hook_worker
 from untaped_recipe._worker import worker_protocol as protocol
+from untaped_recipe.domain.hook_project import UvHookRef
+from untaped_recipe.domain.plan import HookWorkerCallResult
 from untaped_recipe.errors import HookFailedError, RecipeError, UvMissingError
-from untaped_recipe.infrastructure.hook_resolver import UvHookRef
 from untaped_recipe.infrastructure.uv_project import uv_environment
 
 APPLY_DIAGNOSTIC_LIMIT = 4000
@@ -59,15 +59,6 @@ class FatalHookWorkerError(RecipeError, ValueError):
     """Raised when a worker process cannot safely be reused (the hook run failed)."""
 
     category = ErrorCategory.FAILED
-
-
-@dataclass(frozen=True)
-class HookWorkerCallResult:
-    """Result plus diagnostics and warnings captured from one worker request."""
-
-    result: object
-    diagnostics: str
-    warnings: tuple[str, ...] = ()
 
 
 class UvHookWorkerPool:

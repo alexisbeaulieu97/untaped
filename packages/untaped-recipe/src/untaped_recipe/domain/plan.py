@@ -98,6 +98,15 @@ class TargetPlan(BaseModel):
 
 
 @dataclass(frozen=True)
+class HookWorkerCallResult:
+    """Result plus diagnostics and warnings captured from one worker request."""
+
+    result: object
+    diagnostics: str
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class HookDebugResult[T]:
     """Hook result plus diagnostics and accumulated warnings for one invocation."""
 
