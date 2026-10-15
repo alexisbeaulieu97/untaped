@@ -14,6 +14,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, SecretStr, TypeAdapter, ValidationError
 
+from untaped.config.models import OldSpelling
 from untaped.config_file import (
     mutate_config,
     read_config_dict,
@@ -128,16 +129,21 @@ class SettingsFileRepository:
 
     def env_var_supplying(self, descriptor: FieldDescriptor) -> str | None:
         """The set ``UNTAPED_*`` variable for ``descriptor``: its own, else an old spelling's."""
-        names = [self.env_var_for(descriptor)]
+        found = self._env_spelling(descriptor)
+        return None if found is None else found[0]
+
+    def _env_spelling(self, descriptor: FieldDescriptor) -> tuple[str, str | None] | None:
+        """The set variable for ``descriptor`` and the old key it spells (``None``: its own)."""
+        names: list[tuple[str, str | None]] = [(self.env_var_for(descriptor), None)]
         model = self.section_model(descriptor.path[0])
         if model is not None:
             readable = key_mappings(model).readable
             names += [
-                env_var_name((descriptor.path[0], *old.split(".")))
+                (env_var_name((descriptor.path[0], *old.split("."))), old)
                 for old in old_spellings(model, _relative(descriptor))
                 if old in readable
             ]
-        return next((name for name in names if name in os.environ), None)
+        return next((found for found in names if found[0] in os.environ), None)
 
     def _resolve(self) -> ResolvedConfig:
         """The layered profiles with the old keys they used (read once per repository)."""
@@ -162,24 +168,27 @@ class SettingsFileRepository:
             section_stability=section_stabilities(),
         )
 
-    def deprecated_source(self, descriptor: FieldDescriptor) -> str | None:
+    def deprecated_source(self, descriptor: FieldDescriptor) -> OldSpelling | None:
         """The old key or variable that supplied ``descriptor``'s value, if any.
 
         The environment wins, as it does for the value; otherwise only the
         profile whose layer won counts.
         """
-        name = self.env_var_supplying(descriptor)
-        if name is not None:
-            return None if name == self.env_var_for(descriptor) else name
         section, key = descriptor.path[0], _relative(descriptor)
         model = self.section_model(section)
+        env = self._env_spelling(descriptor)
+        if env is not None:
+            name, old = env
+            if old is None or model is None:
+                return None
+            return OldSpelling(name, key_mappings(model).removed_in.get(old), section)
         if model is None or not key_mappings(model):
             return None
         resolved = self._resolve()
         profile = resolved.provenance.get(descriptor.path)
         for use in resolved.uses.get(profile or "", {}).get(section, ()):
             if use.kind == "renamed" and use.new == key:
-                return f"{section}.{use.old}"
+                return OldSpelling(f"{section}.{use.old}", use.removed_in, section)
         return None
 
     def set_value(

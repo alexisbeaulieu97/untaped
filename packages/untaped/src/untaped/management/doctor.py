@@ -53,6 +53,7 @@ from untaped.messages import (
     command_argv,
     command_line,
     plural,
+    removal_phrase,
     run_hint,
     split_profile,
     summary,
@@ -93,6 +94,7 @@ from untaped.settings import (
     settings_overlay,
 )
 from untaped.skills import SkillState, outdated_skills, project_root
+from untaped.stability import owner, removal_text
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
 from untaped.token_store import pass_problem
 
@@ -554,12 +556,14 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
     parts = []
     for item in found:
         old = f"{item.section}.{item.old}"
+        removal = removal_phrase(removal_text(item.removed_in, owner(item.section)))
         if item.kind == "deprecated":
             advice = f": use {item.message}" if item.message else ""
-            parts.append(f"{old} (profile {item.profile}, deprecated){advice}")
+            parts.append(f"{old} (profile {item.profile}, {removal}){advice}")
+        elif item.kind == "retired":
+            parts.append(f"{old} (profile {item.profile}, retired) → {item.section}.{item.new}")
         else:
-            retired = ", retired" if item.kind == "retired" else ""
-            parts.append(f"{old} (profile {item.profile}{retired}) → {item.section}.{item.new}")
+            parts.append(f"{old} (profile {item.profile}, {removal}) → {item.section}.{item.new}")
     for variable in variables:
         if variable.new is not None:
             parts.append(f"{variable.name} (environment, retired) → {variable.new}")

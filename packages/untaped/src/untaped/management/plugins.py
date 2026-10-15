@@ -159,7 +159,7 @@ def build_root_plugin_app(
             emit(outcomes, fmt=fmt, columns=columns)
 
     @app.command(name="check")
-    @deprecated(replacement="untaped lint, from untaped[lint]")
+    @deprecated(removed_in=12, replacement="untaped lint, from untaped[lint]")
     def check_command(
         name: Annotated[
             str | None, Parameter(help="The plugin to check; every installed one when left out.")

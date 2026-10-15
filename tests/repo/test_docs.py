@@ -23,6 +23,7 @@ import tomllib
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
+from typing import Annotated
 
 import gen_config_reference as generator
 import pytest
@@ -37,6 +38,7 @@ from untaped.bootstrap import build_root_app
 from untaped.cache import Cache
 from untaped.plugins import registry
 from untaped.plugins.registry import PluginCandidate, PluginSpec
+from untaped.stability import deprecated
 
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 
@@ -164,6 +166,24 @@ def test_config_reference_lists_each_cache_setting_and_its_rename(
         "`hello.caches.motd.max_age_seconds` | renamed |"
     ) in page
     assert "hello.extensions" not in page
+
+
+class _Dated(BaseModel):
+    mode: bool = Field(default=False, description="The mode.")
+    old_mode: Annotated[bool, deprecated(removed_in=3, replacement="hello.mode")] = Field(
+        default=False, description="The old mode."
+    )
+
+
+def test_config_reference_names_a_deprecated_setting_s_removal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = PluginSpec(name="hello", settings=_Dated, contracts=lambda: ())
+    candidate = PluginCandidate(distribution="untaped-hello", name="hello", target=spec)
+    monkeypatch.setattr(generator, "packages", lambda root: {"untaped-hello": {}})
+    monkeypatch.setattr(registry, "discover_candidates", lambda: (candidate,))
+    page = generator.render()
+    assert ("The old mode. Deprecated: removed in untaped-hello 3.0; use `hello.mode`.") in page
 
 
 def _package_readmes() -> list[Path]:
@@ -464,6 +484,7 @@ DOCS_PAGES = [
     "plugins.md",
     "reference/config.md",
     "reference/conventions.md",
+    "reference/deprecation.md",
     "reference/environment.md",
     "reference/exit-codes.md",
     "reference/records.md",

@@ -3,8 +3,10 @@
 A section model declares two ClassVars, each mapping dotted paths relative
 to the section:
 
-- ``renamed_keys`` (``{"old": "new"}``): the old key is still read, as the
-  new one, with a warning, until the next major release;
+- ``renamed_keys`` (``{"old": Renamed("new", removed_in=12)}``): the old
+  key is still read, as the new one, with a warning, until the major
+  ``removed_in`` names (a bare ``"new"`` string is undated, allowed until
+  untaped 12);
 - ``retired_keys`` (same shape): the old key is no longer read, but
   ``config migrate`` still renames it. A :class:`Retired` value instead of a
   target retires a key nothing in its own section replaces: its ``note``
@@ -12,8 +14,8 @@ to the section:
   printing the value it held. A chain may end at such a key.
 
 A current field that is still read with its old meaning is marked on the
-field instead: ``Annotated[T, deprecated(replacement="use X")]`` (see
-:mod:`untaped.stability`); it is read with a warning that names the
+field instead: ``Annotated[T, deprecated(removed_in=12, replacement="acme.mode")]``
+(see :mod:`untaped.stability`); it is read with a warning that names the
 replacement.
 
 This module is the one home for the rules those declarations follow, for
@@ -35,9 +37,19 @@ from pydantic import BaseModel
 
 from untaped.config_schema import unwrap_optional, walk_settings
 from untaped.errors import ConfigError
-from untaped.messages import deprecated_message
 from untaped.profile_resolver import DEFAULT_PROFILE
-from untaped.stability import Deprecated, Stability, field_marks, mark_errors, replacement_text
+from untaped.stability import (
+    Deprecated,
+    Stability,
+    check_removed_in,
+    field_marks,
+    first_notice,
+    forget_notices,
+    mark_errors,
+    notify_deprecation,
+    owner,
+    replacement_text,
+)
 
 DECLARATIONS = ("renamed_keys", "retired_keys")
 
@@ -54,6 +66,32 @@ class Retired:
     """
 
     note: str
+
+
+@dataclass(frozen=True, slots=True)
+class Renamed:
+    """A ``renamed_keys`` value: the key the old one is read as, until ``removed_in``.
+
+    ``removed_in`` is the plugin's major that stops reading the old key
+    (``Renamed("sweep.parallel", removed_in=12)``). It must be passed;
+    ``None`` leaves the rename undated, and is meant only for a
+    ``Cache(renamed_from=...)`` declared without a date, which the release
+    checks and ``assert_surface(version=)`` refuse.
+    """
+
+    to: str
+    removed_in: int | None = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        check_removed_in(self.removed_in)
+
+
+@dataclass(frozen=True, slots=True)
+class DeprecatedKey:
+    """A deprecated setting of a section: its replacement text, and the major that removes it."""
+
+    replacement: str | None
+    removed_in: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,11 +130,14 @@ class KeyMappings:
     distance: Mapping[str, int]
     """Hops from each old key to its current field (the closest hop wins)."""
 
-    deprecated: Mapping[str, str | None]
-    """Current field → replacement text (``None`` when it has none), for each deprecated setting."""
+    deprecated: Mapping[str, DeprecatedKey]
+    """Current field → its replacement and removal version, for each deprecated setting."""
 
     deleted: Mapping[str, DeletedKey] = field(default_factory=dict)
     """Old keys whose chain ends at a :class:`Retired` key (that key included)."""
+
+    removed_in: Mapping[str, int | None] = field(default_factory=dict)
+    """Old key → the major that stops reading it, for each key in :attr:`readable`."""
 
     def __bool__(self) -> bool:
         return bool(self.migratable or self.deprecated or self.deleted)
@@ -119,6 +160,9 @@ class KeyUse:
     message: str | None = None
     """For a ``deprecated`` setting: its replacement text, if it names one."""
 
+    removed_in: int | None = None
+    """The major that stops reading the old key (or removes the setting); ``None`` undated."""
+
 
 NO_KEY_MAPPINGS = KeyMappings({}, {}, frozenset(), {}, {})
 
@@ -128,9 +172,29 @@ def _declared(model: type[BaseModel], name: str) -> object:
 
 
 def _valid(model: type[BaseModel], name: str) -> Mapping[str, str]:
-    """The string targets of a declaration ``mapping_errors`` has already checked."""
+    """The targets of a declaration ``mapping_errors`` has already checked (a rename's ``to``)."""
     declared = typing.cast(Mapping[str, object], _declared(model, name))
-    return {key: value for key, value in declared.items() if isinstance(value, str)}
+    return _targets(declared)
+
+
+def _targets(declared: Mapping[str, object]) -> dict[str, str]:
+    """Each key's target: a string, or a :class:`Renamed`'s ``to``; anything else is left out."""
+    found: dict[str, str] = {}
+    for key, value in declared.items():
+        if isinstance(value, str):
+            found[key] = value
+        elif isinstance(value, Renamed):
+            found[key] = value.to
+    return found
+
+
+def _rename_dates(model: type[BaseModel]) -> dict[str, int | None]:
+    """Each ``renamed_keys`` entry's removal major (``None`` for a bare string)."""
+    declared = typing.cast(Mapping[str, object], _declared(model, "renamed_keys"))
+    return {
+        key: value.removed_in if isinstance(value, Renamed) else None
+        for key, value in declared.items()
+    }
 
 
 def _retired_notes(model: type[BaseModel]) -> Mapping[str, str]:
@@ -142,7 +206,9 @@ def _retired_notes(model: type[BaseModel]) -> Mapping[str, str]:
 def _valid_value(name: str, value: object) -> bool:
     if isinstance(value, str):
         return bool(value)
-    return name == "retired_keys" and isinstance(value, Retired) and bool(value.note.strip())
+    if name == "renamed_keys":
+        return isinstance(value, Renamed) and bool(value.to)
+    return isinstance(value, Retired) and bool(value.note.strip())
 
 
 def _nested_models(model: type[BaseModel]) -> list[type[BaseModel]]:
@@ -178,13 +244,23 @@ def mapping_errors(model: type[BaseModel]) -> list[str]:
     declared: dict[str, Mapping[str, object]] = {}
     for name in DECLARATIONS:
         value = _declared(model, name)
-        if not isinstance(value, Mapping) or not all(
+        if (
+            name == "retired_keys"
+            and isinstance(value, Mapping)
+            and any(isinstance(item, Renamed) for item in value.values())
+        ):
+            errors.append(
+                "retired_keys holds Retired(note=); a Renamed key is still read, "
+                "so it belongs in renamed_keys until its major"
+            )
+            value = {}
+        elif not isinstance(value, Mapping) or not all(
             isinstance(key, str) and key and _valid_value(name, item) for key, item in value.items()
         ):
             target = (
                 "non-empty strings or Retired(note=)"
                 if name == "retired_keys"
-                else ("non-empty strings")
+                else "Renamed(to, removed_in=) or non-empty strings"
             )
             errors.append(f"{name} must map non-empty strings to {target}")
             value = {}
@@ -200,7 +276,8 @@ def mapping_errors(model: type[BaseModel]) -> list[str]:
     if not any(declared.values()):
         return errors
     leaves = set(_leaf_paths(model))
-    errors.extend(_mapping_errors(declared["renamed_keys"], declared["retired_keys"], leaves))
+    renamed = _targets(declared["renamed_keys"])
+    errors.extend(_mapping_errors(renamed, declared["retired_keys"], leaves))
     return errors
 
 
@@ -287,7 +364,9 @@ def key_mappings(model: type[BaseModel]) -> KeyMappings:
     if errors:
         raise ConfigError(f"invalid key declarations on {model.__name__}: {errors[0]}")
     deprecated = {
-        path: (mark.replacement if isinstance(mark.replacement, str) else None)
+        path: DeprecatedKey(
+            mark.replacement if isinstance(mark.replacement, str) else None, mark.removed_in
+        )
         for path, mark in field_marks(model).items()
         if isinstance(mark, Deprecated)
     }
@@ -308,13 +387,16 @@ def key_mappings(model: type[BaseModel]) -> KeyMappings:
         else:
             live[key] = (path[-1], len(path) - 1)
     migratable = {key: end[0] for key, end in live.items()}
+    readable = {key: migratable[key] for key in renamed if key in migratable}
+    dates = _rename_dates(model)
     return KeyMappings(
-        readable={key: migratable[key] for key in renamed if key in migratable},
+        readable=readable,
         migratable=migratable,
         retired=frozenset(key for key in retired if key in migratable),
         distance={key: end[1] for key, end in live.items()},
         deprecated=deprecated,
         deleted=deleted,
+        removed_in={key: dates.get(key) for key in readable},
     )
 
 
@@ -413,16 +495,28 @@ def rename_keys(
                 if not _place(result, new, value):
                     _place(result, old, value)
                     continue
-                uses.append(KeyUse(old, new, "renamed"))
+                uses.append(KeyUse(old, new, "renamed", removed_in=mappings.removed_in.get(old)))
             else:
                 _pop(result, old)
-                uses.append(KeyUse(old, new, "ignored", kept=keeper))
+                uses.append(
+                    KeyUse(
+                        old, new, "ignored", kept=keeper, removed_in=mappings.removed_in.get(old)
+                    )
+                )
     for old in sorted(mappings.retired):
         if _lookup(result, old) is not _MISSING:
             uses.append(KeyUse(old, mappings.migratable[old], "retired"))
-    for key, message in sorted(mappings.deprecated.items()):
+    for key, setting in sorted(mappings.deprecated.items()):
         if _lookup(result, key) is not _MISSING:
-            uses.append(KeyUse(key, key, "deprecated", message=message))
+            uses.append(
+                KeyUse(
+                    key,
+                    key,
+                    "deprecated",
+                    message=setting.replacement,
+                    removed_in=setting.removed_in,
+                )
+            )
     return result, tuple(uses)
 
 
@@ -440,6 +534,9 @@ class FoundKey:
     message: str | None = None
     """For a deprecated setting: its replacement text, if it names one; for a
     deleted key: its :class:`Retired` note."""
+
+    removed_in: int | None = None
+    """For a renamed key or deprecated setting: the major that stops reading it."""
 
 
 def profile_sections(
@@ -510,10 +607,29 @@ def scan_keys(
             if move.action == "deleted":
                 found.append(FoundKey(profile, section, move.old, None, "deleted", move.note))
                 continue
-            found.append(FoundKey(profile, section, move.old, mappings.migratable[move.old], kind))
-        for key, message in sorted(mappings.deprecated.items()):
+            found.append(
+                FoundKey(
+                    profile,
+                    section,
+                    move.old,
+                    mappings.migratable[move.old],
+                    kind,
+                    removed_in=mappings.removed_in.get(move.old),
+                )
+            )
+        for key, setting in sorted(mappings.deprecated.items()):
             if _lookup(data, key) is not _MISSING:
-                found.append(FoundKey(profile, section, key, None, "deprecated", message))
+                found.append(
+                    FoundKey(
+                        profile,
+                        section,
+                        key,
+                        None,
+                        "deprecated",
+                        setting.replacement,
+                        removed_in=setting.removed_in,
+                    )
+                )
         plugin = (stabilities or {}).get(section)
         if isinstance(plugin, Deprecated):
             reported = {
@@ -522,7 +638,7 @@ def scan_keys(
             use = replacement_text(plugin, None)
             keys = (".".join(d.path) for d in walk_settings(model, include_collections=True))
             found.extend(
-                FoundKey(profile, section, key, None, "deprecated", use)
+                FoundKey(profile, section, key, None, "deprecated", use, plugin.removed_in)
                 for key in keys
                 if key not in reported and _lookup(data, key) is not _MISSING
             )
@@ -585,20 +701,17 @@ def old_spellings(model: type[BaseModel], key: str) -> list[str]:
     return sorted(olds, key=lambda old: (mappings.distance[old], old))
 
 
-_warned: set[str] = set()
-
-
 def warn_once(message: str, *, key: str | None = None, hint: str | None = None) -> None:
     """Print ``message`` as a warning, once per process per ``key`` (else per text).
 
     Callers warning about one old key in different words pass the same
-    ``key``, so only the first of them prints. ``hint`` is the warning's
+    ``key``, so only the first of them prints; a deprecation goes through
+    :func:`notify_use` or :func:`~untaped.stability.notify_deprecation`
+    instead, which share the same memory. ``hint`` is the warning's
     follow-up (:func:`~untaped.messages.run_hint`), its own field under JSON.
     """
-    seen = message if key is None else key
-    if seen in _warned:
+    if not first_notice(message if key is None else key):
         return
-    _warned.add(seen)
     from untaped.output.sink import Diagnostics  # noqa: PLC0415 - keeps rendering off this path
 
     Diagnostics().warning(message, hint=hint)
@@ -606,41 +719,63 @@ def warn_once(message: str, *, key: str | None = None, hint: str | None = None) 
 
 def reset_key_warnings() -> None:
     """Forget which deprecation warnings were printed (tests, embedding)."""
-    _warned.clear()
+    forget_notices()
 
 
-def use_warning(use: KeyUse, *, old: str, new: str, kept: str | None = None) -> str | None:
-    """The warning for ``use``, with keys spelled as the caller names them.
+def notify_use(
+    use: KeyUse,
+    *,
+    section: str,
+    old: str,
+    new: str,
+    kept: str | None = None,
+    hint: str | None = None,
+) -> None:
+    """Warn once about ``use``, with keys spelled as the caller names them.
 
     ``old``/``new``/``kept`` are the user-facing spellings (``demo.old_key``
     or ``UNTAPED_DEMO__OLD_KEY``); retired keys get no read-time warning.
+    The record's id is the key's surface identity, whatever the spelling,
+    and one warning per ``<section>.<old key>`` is printed per process.
     """
-    if use.kind == "renamed":
-        return deprecated_message(old, new)
-    if use.kind == "ignored":
-        advice = "" if kept == new else f"; use {new}"
-        return f"{old} is deprecated and ignored because {kept} is also set{advice}"
+    if use.kind == "retired":
+        return
     if use.kind == "deprecated":
-        return deprecated_message(old, use.message)
-    return None
+        identity = f"cfg {section}.{use.old}"
+        replacement = use.message
+    else:
+        identity = f"cfg {section}.{use.old} -> {section}.{use.new}"
+        replacement = new
+    notify_deprecation(
+        identity,
+        old,
+        removed_in=use.removed_in,
+        owner=owner(section),
+        replacement=replacement,
+        kept=kept if use.kind == "ignored" else None,
+        key=f"{section}.{use.old}",
+        hint=hint,
+    )
 
 
 __all__ = [
     "NO_KEY_MAPPINGS",
     "DeletedKey",
+    "DeprecatedKey",
     "FoundKey",
     "KeyMappings",
     "KeyMove",
     "KeyUse",
+    "Renamed",
     "Retired",
     "apply_move",
     "key_mappings",
     "mapping_errors",
     "migration_moves",
+    "notify_use",
     "old_spellings",
     "rename_keys",
     "reset_key_warnings",
     "scan_keys",
-    "use_warning",
     "warn_once",
 ]

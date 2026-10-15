@@ -36,18 +36,18 @@ from untaped.config.models import SettingEntry, SettingOutcome, SettingRow, sett
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
 from untaped.config_file import read_config_dict
-from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, key_mappings, warn_once
+from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, KeyUse, key_mappings, notify_use
 from untaped.errors import ConfigError
 from untaped.management.config_editor import run_config_editor
 from untaped.management.config_prompting import resolve_set_value
-from untaped.messages import deprecated_message, hint, plural, run_hint
+from untaped.messages import hint, plural, run_hint
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
 from untaped.settings import (
     Settings,
     active_settings_layout,
-    config_key_warning,
     model_sections,
+    notify_config_key,
     resolve_config_path,
 )
 from untaped.stability import show_deprecated
@@ -95,9 +95,11 @@ class RootConfigContext:
         if scope is None:
             return key
         if rest in scope.mappings.readable:
-            new = f"{first}.{scope.mappings.readable[rest]}"
-            warn_once(_file_warning(first, rest) or deprecated_message(key, new), key=key)
-            return new
+            target = scope.mappings.readable[rest]
+            if not _warned_from_file(first, rest):
+                use = KeyUse(rest, target, "renamed", removed_in=scope.mappings.removed_in[rest])
+                notify_use(use, section=first, old=key, new=f"{first}.{target}")
+            return f"{first}.{target}"
         if rest in scope.mappings.deleted:
             note = scope.mappings.deleted[rest].reason()
             raise ConfigError(
@@ -123,21 +125,22 @@ class RootConfigContext:
         )
 
 
-def _file_warning(section: str, old: str) -> str | None:
-    """The ``config.yml`` warning for ``old`` (with its migrate hint), if a layered profile has it.
+def _warned_from_file(section: str, old: str) -> bool:
+    """Warn about ``old`` as reading ``config.yml`` does, migrate hint included, if one has it.
 
-    Reading the file warns about the same key; both share one ``warn_once``
-    key, so a command that names an old key the file also has warns once.
+    Reading the file warns about the same key under the same memory, so a
+    command that names an old key the file also has warns once.
     """
     try:
         resolved = active_settings_layout().resolve(read_config_dict())
     except ConfigError:
-        return None
+        return False
     for sections in resolved.uses.values():
         for use in sections.get(section, ()):
             if use.old == old:
-                return config_key_warning(use, section=section)
-    return None
+                notify_config_key(use, section=section)
+                return True
+    return False
 
 
 def _split_first(key: str) -> tuple[str, str | None]:
@@ -408,7 +411,11 @@ def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
     section, rest = _split_first(key)
     scope = ctx.sections.get(section)
     if rest is not None and scope is not None and rest in scope.mappings.deprecated:
-        warn_once(deprecated_message(key, scope.mappings.deprecated[rest]), key=key)
+        setting = scope.mappings.deprecated[rest]
+        use = KeyUse(
+            rest, rest, "deprecated", message=setting.replacement, removed_in=setting.removed_in
+        )
+        notify_use(use, section=section, old=key, new=key)
 
 
 def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
@@ -417,7 +424,8 @@ def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
     scope = ctx.sections.get(section)
     if rest == "token" and scope is not None and "token_command" in scope.settings_fields:
         _diag.warning(
-            f"storing {key} in plain text in config.yml is deprecated and will be removed in 12.0",
+            f"storing {key} in plain text in config.yml"  # untaped: allow hand-typed-deprecation
+            " is deprecated and will be removed in 12.0",
             hint=run_hint(f"auth set {section}"),
         )
 

@@ -11,7 +11,10 @@ Usage: ``uv run python scripts/changelog.py [--root DIR] <command>``.
   deletes the fragments. On a major release it moves the previous major's
   sections to ``changelog/<X>.x.md``. A later build of the same base version
   (``X.Y.Zrc2``, ``X.Y.Z``) retitles the pre-release section and adds any new
-  fragments.
+  fragments. Under Deprecated it writes one generated line for each
+  deprecation whose removal version rose since the newest release tag
+  (``tests/repo/surface.txt`` against that tag's copy), unless an entry
+  already names the thing. It needs that tag: fetch tags first.
 
 A fragment is ``changelog.d/<slug>.<type>.md`` holding one entry: the
 sentence as it should read, wrapped at 78 columns (a line holding one longer
@@ -33,6 +36,8 @@ import textwrap
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from release import baseline_tag  # scripts/release.py
 
 from untaped.git import GitCommandError, run_git
 
@@ -57,6 +62,10 @@ _PRE_RELEASE = re.compile(r"^(\d+\.\d+\.\d+)(?:a|b|rc)\d+$")
 _SECTION_TITLE = re.compile(r"^(\d+)\.\d+\.\d+")
 _ARCHIVE_LINK = re.compile(r"\[(\d+)\.x\]\(changelog/\1\.x\.md\)")
 _NOT_ON_MAIN = 10**9
+SURFACE_FILE = "tests/repo/surface.txt"
+NO_TAG = "no release tag reachable: run `git fetch --tags origin` before `changelog.py build`"
+_SDK_PLUGIN_MODULE = re.compile(r"^untaped_\w+\.(?:api|testing)\.")
+_CLI_WORD = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 class ChangelogError(Exception):
@@ -323,10 +332,132 @@ def older_releases(majors: Sequence[int]) -> str:
     return textwrap.fill(text, WIDTH, break_long_words=False, break_on_hyphens=False)
 
 
+@dataclass(frozen=True)
+class Fact:
+    """A generated Deprecated entry: a removal version that rose since the last release."""
+
+    name: str
+    """The thing's short name, which an entry names to replace this line."""
+    text: str
+
+
+def short_name(identity: str) -> str:
+    """What a surface line is called in prose, one rule per area.
+
+    ``sdk`` lines drop the module (``untaped.sdk.report_error(exc)`` is
+    ``report_error``); ``cli`` lines drop ``untaped`` and keep the path with
+    its flag (``awx test run --dry-run``; an alias is its old spelling);
+    ``cfg`` and ``state`` lines are the key (a rename's old key); a
+    ``behaviour`` line is its name without the owner.
+    """
+    from untaped.surface import SDK_MODULES  # noqa: PLC0415
+
+    area, _, rest = identity.partition(" ")
+    rest = rest.partition(" -> ")[0]
+    if area == "cli":
+        words = rest.split(" ")[1:]
+        kept: list[str] = []
+        for word in words:
+            if word.startswith("-"):
+                kept.append(word)
+                break
+            if not _CLI_WORD.match(word):
+                break
+            kept.append(word)
+        return " ".join(kept)
+    if area == "sdk":
+        subject = re.split(r"[( ]", rest, maxsplit=1)[0]
+        plugin = _SDK_PLUGIN_MODULE.match(subject)
+        if plugin is not None:
+            return subject[plugin.end() :]
+        modules = sorted(SDK_MODULES, key=len, reverse=True)
+        module = next((m for m in modules if subject.startswith(f"{m}.")), None)
+        return subject if module is None else subject[len(module) + 1 :]
+    if area == "behaviour":
+        return rest.partition(".")[2] or rest
+    return rest.split(" ")[0]
+
+
+def names(entry: str, name: str) -> bool:
+    """Whether ``entry`` names ``name`` as a whole token.
+
+    ``report_error`` is not ``report_errors``, and ``awx test run --dry-run``
+    is not ``auth migrate --dry-run``; ``untaped.sdk.report_error`` names it.
+    """
+    pattern = rf"(?<![\w-]){re.escape(name)}(?![\w-]|\.\w)"
+    return re.search(pattern, " ".join(entry.split())) is not None
+
+
+def postponement_facts(baseline: str | None, current: str | None) -> list[Fact]:
+    """One fact per thing whose removal version rose between two surface files' texts.
+
+    A mark reaches every line under the thing (a command's flags and choices,
+    a callable's parameters, a class's members), so its lines share one fact:
+    a line whose short name extends another moved line's by a word or a
+    member (``plugin check --format`` under ``plugin check``,
+    ``AppContext.diag`` under ``AppContext``), with the same dates, adds none.
+    """
+    from untaped.surface import parse, postponements  # noqa: PLC0415
+
+    if baseline is None or current is None:
+        return []
+    raised: dict[str, tuple[int, int]] = {}
+    for moved in postponements(parse(baseline), parse(current)):
+        if moved.now > moved.was:  # a date that fell: test_major_release.py refuses it
+            raised.setdefault(short_name(moved.line.identity), (moved.was, moved.now))
+    return [
+        Fact(name, f"`{name}` will now be removed in {now}.0 instead of {was}.0.")
+        for name, (was, now) in raised.items()
+        if not any(
+            name.startswith((f"{other} ", f"{other}.")) and raised[other] == (was, now)
+            for other in raised
+            if other != name
+        )
+    ]
+
+
+def missing_facts(entries: Sequence[str], facts: Sequence[Fact]) -> list[Fact]:
+    """The facts no entry of ``entries`` names."""
+    return [fact for fact in facts if not any(names(entry, fact.name) for entry in entries)]
+
+
+def surface_facts(root: Path) -> list[Fact]:
+    """The facts for ``root``: its surface file against the newest reachable release tag's.
+
+    Raises :class:`ChangelogError` with :data:`NO_TAG` when no tag is reachable.
+    """
+    tag = baseline_tag(
+        _git(root, "tag", "--list", "v*", "--merged", "HEAD").split(), prereleases=True
+    )
+    if tag is None:
+        raise ChangelogError(NO_TAG)
+    current = root / SURFACE_FILE
+    try:
+        baseline = _git(root, "show", f"{tag}:{SURFACE_FILE}")
+    except GitCommandError:
+        baseline = None  # the tag predates the file
+    text = current.read_text(encoding="utf-8") if current.is_file() else None
+    return postponement_facts(baseline, text)
+
+
+def _fact_entry(fact: Fact) -> str:
+    lines = textwrap.wrap(fact.text, FRAGMENT_WIDTH, break_long_words=False, break_on_hyphens=False)
+    return "\n".join(["- " + lines[0], *("  " + line for line in lines[1:])])
+
+
 def build_text(
-    changelog: str, version: str, entries: Mapping[str, Sequence[str]]
+    changelog: str,
+    version: str,
+    entries: Mapping[str, Sequence[str]],
+    facts: Sequence[Fact] = (),
 ) -> tuple[str, dict[int, str]]:
-    """The changelog after releasing ``version``, and the archive files to write by major."""
+    """The changelog after releasing ``version``, and the archive files to write by major.
+
+    Each of ``facts`` that no Deprecated entry of this build's fragments names
+    joins the Deprecated list. A pre-release section's entries never silence
+    one: the facts compare with the newest tag, that pre-release included, so
+    a fact here is a change since its section was written.
+    """
     parsed = _VERSION.match(version)
     if parsed is None:
         raise ChangelogError(f"'{version}' is not X.Y.Z or a pre-release X.Y.Z(a|b|rc)N")
@@ -344,10 +475,13 @@ def build_text(
         match = _PRE_RELEASE.match(sections[0][0])
         if match and match[1] == parsed["base"]:
             previous = sections.pop(0)
-    if previous is None and not any(entries.values()):
+    if previous is None and not any(entries.values()) and not facts:
         raise ChangelogError("nothing to release: changelog.d/ holds no fragments")
     preamble, merged = _parse_body(previous[1]) if previous else ("", {})
     combined = {k: [*merged.get(k, []), *entries.get(k, [])] for k in TYPES}
+    combined["deprecated"] += [
+        _fact_entry(fact) for fact in missing_facts(entries.get("deprecated", []), facts)
+    ]
     archives: dict[int, str] = {}
     if is_major:
         keep: list[tuple[str, str]] = []
@@ -382,9 +516,10 @@ def _with_archives(sections: list[tuple[str, str]], added: Sequence[int]) -> lis
 
 def build(root: Path, version: str) -> None:
     """Release ``version``: rewrite CHANGELOG.md, write archives, delete the fragments."""
+    facts = surface_facts(root)
     entries = collect(root, strict=True)
     changelog_path = root / "CHANGELOG.md"
-    text, archives = build_text(changelog_path.read_text(encoding="utf-8"), version, entries)
+    text, archives = build_text(changelog_path.read_text(encoding="utf-8"), version, entries, facts)
     for major in archives:
         if (root / "changelog" / f"{major}.x.md").exists():
             raise ChangelogError(f"changelog/{major}.x.md already exists")

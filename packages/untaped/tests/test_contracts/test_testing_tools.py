@@ -6,8 +6,10 @@ import json
 import math
 from abc import abstractmethod
 from pathlib import Path
+from typing import Annotated
 
 import pytest
+from pydantic import BaseModel
 
 from test_contracts.support import (
     Book,
@@ -25,7 +27,7 @@ from untaped.contracts import Contract, Issued, Ok, Record, Source, _fills, brid
 from untaped.contracts._declare import contract_of
 from untaped.contracts._schema import schema_hash
 from untaped.plugins.registry import PluginSpec
-from untaped.sdk import experimental
+from untaped.sdk import deprecated, experimental
 from untaped.testing import assert_fills, assert_surface, compose_with
 
 
@@ -260,3 +262,45 @@ def test_removing_experimental_lines_passes(tmp_path: Path) -> None:
     assert_surface(_owner(_contract("v1", mark=True)), path)
     assert "abstract=items  [experimental]" in path.read_text(encoding="utf-8")
     assert_surface(_owner(_contract("breaking", mark=True)), path)
+
+
+class _Undated(BaseModel):
+    old: Annotated[int, deprecated(replacement="items.new")] = 0
+    new: int = 0
+
+
+class _Dated(BaseModel):
+    old: Annotated[int, deprecated(removed_in=3, replacement="items.new")] = 0
+    new: int = 0
+
+
+def _dated(removed_in: int | None) -> PluginSpec:
+    return PluginSpec(name="items", settings=_Undated if removed_in is None else _Dated)
+
+
+def test_an_undated_file_stays_format_1_and_a_dated_one_is_rewritten(tmp_path: Path) -> None:
+    path = tmp_path / "surface.txt"
+    assert_surface(_dated(None), path)
+    assert path.read_text(encoding="utf-8").startswith("# untaped surface 1\n")
+    assert_surface(_dated(3), path)
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("# untaped surface 2\n")
+    assert "cfg items.old integer default=0  [deprecated, removed in 3.0; use items.new]\n" in text
+
+
+@pytest.mark.parametrize("version", ["2.3.0", "2.3.1.dev5+g1234"])
+def test_with_a_version_a_later_date_passes(tmp_path: Path, version: str) -> None:
+    assert_surface(_dated(3), tmp_path / "surface.txt", version=version)
+
+
+@pytest.mark.parametrize("version", ["3.0.0", "3.0.0rc1", "3.0.0.dev0", "4.1.0"])
+def test_with_a_version_an_overdue_line_fails(tmp_path: Path, version: str) -> None:
+    with pytest.raises(AssertionError, match=r"marked for \d+\.0 or earlier") as failed:
+        assert_surface(_dated(3), tmp_path / "surface.txt", version=version)
+    assert "  cfg items.old integer default=0  [deprecated, removed in 3.0" in str(failed.value)
+
+
+def test_with_a_version_an_undated_line_fails(tmp_path: Path) -> None:
+    assert_surface(_dated(None), tmp_path / "surface.txt")  # without a version: as before
+    with pytest.raises(AssertionError, match="every deprecation is a promise with a date"):
+        assert_surface(_dated(None), tmp_path / "surface.txt", version="2.3.0")

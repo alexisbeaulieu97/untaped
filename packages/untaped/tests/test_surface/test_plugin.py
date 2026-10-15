@@ -17,7 +17,7 @@ from untaped.deprecated_keys import key_mappings
 from untaped.plugins.registry import PluginSpec
 from untaped.settings import SkillsSettings
 from untaped.stability import experimental
-from untaped.surface import Line, SurfaceError, plugin_lines
+from untaped.surface import DeprecatedMark, Line, SurfaceError, plugin_lines
 from untaped.surface._sdk import own_mark
 from untaped.surface._settings import settings_lines
 
@@ -81,7 +81,7 @@ def test_settings_and_state_lines() -> None:
 
 def test_an_experimental_plugin_marks_every_line() -> None:
     lines = plugin_lines(PluginSpec(name="bins", settings=Settings, stability=experimental))
-    assert {line.mark for line in lines} == {"experimental", "deprecated"}
+    assert {line.mark for line in lines} == {"experimental", DeprecatedMark()}
 
 
 def test_a_contract_and_the_payload_models_it_reaches() -> None:
@@ -125,7 +125,7 @@ def renamed_skills_key(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 @pytest.mark.usefixtures("renamed_skills_key")
 def test_a_root_section_keeps_its_renamed_key() -> None:
     lines = settings_lines(bootstrap.compose_root(candidates=[]))
-    assert Line("cfg skills.auto_update -> skills.updates", "deprecated") in lines
+    assert Line("cfg skills.auto_update -> skills.updates", DeprecatedMark()) in lines
 
 
 def test_extension_rank_keys_take_their_methods_marks() -> None:
@@ -199,5 +199,5 @@ def test_a_subclass_does_not_inherit_warnings_deprecated() -> None:
         class New(Old):
             pass
 
-    assert own_mark(Old) == "deprecated"
+    assert own_mark(Old) == DeprecatedMark()
     assert own_mark(New) is None

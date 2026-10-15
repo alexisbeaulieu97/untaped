@@ -229,7 +229,10 @@ def test_shelf_keeps_its_surface() -> None:
   method, optional payload field or Literal value, a new command or
   optional flag, and anything removed while experimental are compatible
   and rewrite the file. To accept a breaking change in a major release,
-  delete the file. Commit it. A stable contract method that reaches a model
+  delete the file. Commit it. With `version=` (your distribution's
+  version) it also fails an undated deprecation and anything still marked
+  removed in that version's major or earlier
+  ([Deprecating something](./reference/deprecation.md#the-checks)). A stable contract method that reaches a model
   marked `@experimental` fails here, so a contract is never stabilised with
   a model nobody meant to promise.
 - An owner may ship checks every provider must pass as a

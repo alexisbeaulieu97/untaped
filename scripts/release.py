@@ -59,13 +59,13 @@ import urllib.error
 import urllib.request
 import zipfile
 from collections import Counter
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 
 from untaped.git import GitCommandError, git_toplevel, run_git
 
@@ -158,6 +158,26 @@ def release_version(root: Path) -> str:
     if errors := _format_errors(version):
         raise ReleaseError(errors[0])
     return version
+
+
+def baseline_tag(tags: Iterable[str], *, prereleases: bool = False) -> str | None:
+    """The newest release among ``tags`` (``vX.Y.Z``; never a dev release, never another name).
+
+    Release candidates (``vX.Y.ZrcN``) count only with ``prereleases=True``:
+    a promise is what a final release showed (the surface checks), while the
+    changelog build compares with whatever was released last.
+    """
+    found: list[tuple[Version, str]] = []
+    for tag in tags:
+        if not tag.startswith("v"):
+            continue
+        try:
+            version = Version(tag.removeprefix("v"))
+        except InvalidVersion:
+            continue
+        if not version.is_devrelease and (prereleases or not version.is_prerelease):
+            found.append((version, tag))
+    return max(found)[1] if found else None
 
 
 def _toplevel(root: Path) -> Path:

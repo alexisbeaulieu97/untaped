@@ -22,11 +22,11 @@ The state file sits in the config file's directory and is named after it:
 
 ### Renamed settings
 
-A renamed setting keeps working under its old name until the next major
-release, with a warning naming the new one. `untaped config migrate` renames
+A renamed setting keeps working under its old name until the major its
+warning names, with a warning naming the new one. `untaped config migrate` renames
 old keys in every profile of `config.yml` (`--dry-run` first shows what it
 would change); it does not touch environment variables, so rename an
-`UNTAPED_*` variable yourself. After the next major release an old key is
+`UNTAPED_*` variable yourself. After that major an old key is
 retired: it is no longer read, `untaped doctor` names it, and `config migrate`
 still renames it. A setting with no new name is deleted instead: doctor says
 why and what to set in its place, and `config migrate` removes the key,
@@ -183,9 +183,11 @@ untaped checks upstream again (`0` checks every time). The
 
 `config list` prints stable settings first, then experimental ones under an
 `Experimental` heading. A deprecated setting appears under `Deprecated` once
-it is set, as does any setting set under an old name; `untaped --deprecated
-config list` lists them all, and `config set` warns when it sets a deprecated
-setting. `--format json` lists every setting with its `stability`.
+it is set, as does any setting set under an old name, with a note naming the
+release that removes it; `untaped --deprecated config list` lists them all,
+and `config set` warns when it sets a deprecated setting. `--format json`
+lists every setting with its `stability`, and a deprecated one with its
+`removed_in` and `distribution`.
 
 `config set` validates the value against the setting's type instead of
 parsing it as YAML:
@@ -327,8 +329,8 @@ call, so the error quotes its first line and, for gpg's, names the usual fix.
 login, set `github.token_command` as above.
 
 A token in `<section>.token` is stored in plain text in `config.yml`. Keeping
-it there is deprecated and will be removed in 12.0, but it is still read until
-then; `UNTAPED_<SECTION>__TOKEN` avoids the file altogether. Loading one warns
+it there is deprecated, and it is still read until the major its warning
+names; `UNTAPED_<SECTION>__TOKEN` avoids the file altogether. Loading one warns
 once per run, `config set <section>.token` warns, `untaped doctor` warns with
 `untaped auth migrate` as the fix, and `untaped setup` no longer offers it.
 

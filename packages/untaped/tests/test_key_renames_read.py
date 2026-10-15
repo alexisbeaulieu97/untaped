@@ -44,7 +44,7 @@ class DemoSettings(BaseModel):
 
 
 RENAMED = (
-    "warning: demo.corpus_path is deprecated and will be removed in the next major release; "
+    "warning: demo.corpus_path is deprecated and will be removed in a future major release; "
     "use demo.cache_dir"
 )
 MIGRATE_HINT = "hint: run `untaped config migrate` to rename it in config.yml"
@@ -100,7 +100,8 @@ def test_both_spellings_in_one_profile_the_new_key_wins(
 
     assert get_config_section("demo", DemoSettings).cache_dir == "/new"
     assert (
-        "warning: demo.corpus_path is deprecated and ignored because demo.cache_dir is also set\n"
+        "warning: demo.corpus_path is deprecated and ignored because demo.cache_dir is also set; "
+        "it is removed in a future major release\n"
         "hint: run `untaped config migrate` to remove it from config.yml"
     ) in capsys.readouterr().err
 
@@ -133,7 +134,7 @@ def test_a_deprecated_setting_keeps_its_value_and_warns(
 
     assert get_config_section("demo", DemoSettings).legacy is True
     assert (
-        "warning: demo.legacy is deprecated and will be removed in the next major release; "
+        "warning: demo.legacy is deprecated and will be removed in a future major release; "
         "use cache_dir"
     ) in capsys.readouterr().err
 
@@ -156,7 +157,7 @@ def test_old_env_variable_is_read_without_the_migrate_hint(
     assert get_config_section("demo", DemoSettings).cache_dir == "/env"
     err = capsys.readouterr().err
     assert (
-        "warning: UNTAPED_DEMO__CORPUS_PATH is deprecated and will be removed in the next "
+        "warning: UNTAPED_DEMO__CORPUS_PATH is deprecated and will be removed in a future "
         "major release; use UNTAPED_DEMO__CACHE_DIR"
     ) in err
     assert "config migrate" not in err
@@ -199,7 +200,7 @@ def test_old_key_in_an_env_blob_names_the_blob(
     assert get_config_section("demo", DemoSettings).sweep.parallel == 5
     assert (
         "warning: sweep.sync_concurrency in UNTAPED_DEMO is deprecated and will be removed "
-        "in the next major release; use sweep.parallel"
+        "in a future major release; use sweep.parallel"
     ) in capsys.readouterr().err
 
 
@@ -275,5 +276,13 @@ def test_the_warning_is_a_json_diagnostic(config: Path) -> None:
     result = invoke_cli(_demo_root(), ["demo", "show", "--format", "json"])
 
     lines = [json.loads(line) for line in result.stderr.splitlines()]
-    message = f"{RENAMED.removeprefix('warning: ')}\n{MIGRATE_HINT}"
-    assert {"level": "warning", "message": message}.items() <= lines[0].items()
+    assert {
+        "level": "warning",
+        "kind": "untaped.deprecation",
+        "id": "cfg demo.corpus_path -> demo.cache_dir",
+        "removed_in": None,
+        "distribution": "untaped-demo",
+        "replacement": "demo.cache_dir",
+        "hint": MIGRATE_HINT.removeprefix("hint: "),
+        "message": RENAMED.removeprefix("warning: "),
+    }.items() <= lines[0].items()

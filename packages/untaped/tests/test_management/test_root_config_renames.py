@@ -57,7 +57,7 @@ def test_get_an_old_key_reads_the_new_one_with_a_warning(_isolated_config: Path)
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "/c"
     assert (
-        "warning: renamed.corpus_path is deprecated and will be removed in the next major "
+        "warning: renamed.corpus_path is deprecated and will be removed in a future major "
         "release; use renamed.cache_dir"
     ) in result.stderr
 
@@ -160,7 +160,7 @@ def test_list_notes_a_value_from_an_old_key(_isolated_config: Path) -> None:
     assert (row["value"], row["source"], row["note"]) == (
         "/c",
         "profile:default",
-        "from deprecated renamed.corpus_path",
+        "from renamed.corpus_path, removed in a future major release",
     )
 
 
@@ -186,7 +186,7 @@ def test_list_notes_an_old_environment_variable(
     assert (row["value"], row["source"], row["note"]) == (
         "/e",
         "env",
-        "from deprecated UNTAPED_RENAMED__CORPUS_PATH",
+        "from UNTAPED_RENAMED__CORPUS_PATH, removed in a future major release",
     )
 
 
@@ -203,7 +203,7 @@ def test_list_shows_a_value_from_an_old_key_in_the_deprecated_table(
     assert " note " not in before_heading.splitlines()[1]
     assert "renamed.cache_dir" not in before_heading
     assert "renamed.cache_dir" in after_heading
-    assert "from deprecated renamed.corpus_path" in after_heading
+    assert "from renamed.corpus_path, removed in a" in after_heading
 
 
 def test_list_all_profiles_shows_new_names_with_the_note(_isolated_config: Path) -> None:
@@ -219,5 +219,9 @@ def test_list_all_profiles_shows_new_names_with_the_note(_isolated_config: Path)
     rows = [(row["profile"], row["key"], row["note"]) for row in json.loads(result.stdout)]
     assert rows == [
         ("default", "renamed.cache_dir", None),
-        ("work", "renamed.sweep.parallel", "from deprecated renamed.sweep.sync_concurrency"),
+        (
+            "work",
+            "renamed.sweep.parallel",
+            "from renamed.sweep.sync_concurrency, removed in a future major release",
+        ),
     ]

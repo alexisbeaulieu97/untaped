@@ -24,7 +24,7 @@ from untaped.cli import create_app, echo, report_errors
 from untaped.config_file import read_config_dict
 from untaped.conventions.settings_names import name_problem, settings_name_violations
 from untaped.deprecated_keys import Retired, key_mappings, mapping_errors
-from untaped.output.diagnostic import Message
+from untaped.output.diagnostic import DeprecationNotice, Message
 from untaped.output.progress import ProgressHandle
 from untaped.plugins.registry import PluginSpec, settings_model
 from untaped.settings import get_settings
@@ -85,7 +85,9 @@ def _hello(body: str, profile: str = "default") -> str:
 
 def _warnings(result: CliResult) -> list[str]:
     return [
-        d.message for d in result.diagnostics if isinstance(d, Message) and d.level == "warning"
+        d.message
+        for d in result.diagnostics
+        if isinstance(d, DeprecationNotice) or (isinstance(d, Message) and d.level == "warning")
     ]
 
 
@@ -215,7 +217,7 @@ def test_an_old_key_is_read_as_the_setting_with_a_warning() -> None:
     assert result.stdout.strip() == "9"
     (warning,) = _warnings(result)
     assert warning.startswith(
-        f"hello.motd_seconds is deprecated and will be removed in the next major release; "
+        f"hello.motd_seconds is deprecated and will be removed in a future major release; "
         f"use {SETTING}"
     )
     assert MOTD_RENAMED.max_age() == timedelta(seconds=9)

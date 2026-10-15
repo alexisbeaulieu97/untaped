@@ -172,7 +172,8 @@ class UiContext:
     def message(self, kind: MessageKind, text: str) -> None:
         """Print a ``success``/``info``/``warning``/``error`` line to stderr.
 
-        Deprecated until 12.0: write through ``ctx.diag`` instead.
+        Deprecated, and its warning names the release that removes it:
+        write through ``ctx.diag`` instead.
 
         ``--quiet`` (or a context built with ``quiet=True``) mutes ``success``
         and ``info``. An ``error`` line is a counted failure (category
@@ -213,8 +214,8 @@ class UiContext:
         ``[label] ``). With ``truncate``, each line of ``text`` too wide for
         the terminal ends in an ellipsis instead of wrapping (aligned output
         such as trees). Under JSON diagnostics a stderr line is an ``info``
-        JSON line. ``err=True`` is deprecated until 12.0: write stderr through
-        ``ctx.diag.info(text, unmuted=True)``.
+        JSON line. ``err=True``: deprecated, and its warning names the release
+        that removes it; write stderr through ``ctx.diag.info(text, unmuted=True)``.
         """
         plain = text if isinstance(text, str) else text.plain
         # Rendering may drop trailing spaces: render without them, then restore.
