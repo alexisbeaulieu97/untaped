@@ -412,12 +412,12 @@ def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
 
 
 def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
-    """Deprecate ``config set <section>.token`` where ``auth set`` can store it instead."""
+    """Discourage ``config set <section>.token`` where ``auth set`` can store it instead."""
     section, rest = _split_first(key)
     scope = ctx.sections.get(section)
     if rest == "token" and scope is not None and "token_command" in scope.settings_fields:
         _diag.warning(
-            f"storing {key} in plain text in config.yml is deprecated",
+            f"storing {key} in plain text in config.yml is discouraged",
             hint=run_hint(f"auth set {section}"),
         )
 
