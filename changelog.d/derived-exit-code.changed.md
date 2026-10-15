@@ -1,4 +1,4 @@
-**Breaking (cli):** A command that prints a failure exits non-zero even when
+**Breaking (core):** a command that prints a failure exits non-zero even when
 it finishes: the exit code is the most severe failure it printed or emitted as
 a failed row, and a predicate hit (exit 3) no longer hides one. Among shipped
 commands this changes only three dry runs, which now fail on the problem their

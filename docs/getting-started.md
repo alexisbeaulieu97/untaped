@@ -168,7 +168,7 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`:
 
 ```bash
 untaped github repos list --org acme --format json
-untaped github repos list --org acme --format raw --columns repo
+untaped github repos list --org acme --format raw --columns full_name
 ```
 
 - `table` (the usual default) is for people.

@@ -47,7 +47,7 @@ def _project(
     _write(dir_ / "pyproject.toml", "\n".join(lines) + "\n")
 
 
-CAPS = ("awx", "ansible", "github", "jira", "workspace", "recipe")
+PLUGINS = ("awx", "ansible", "github", "jira", "workspace", "recipe")
 
 
 def _split_repo(root: Path, version: str = "10.0.0") -> Path:
@@ -58,19 +58,19 @@ def _split_repo(root: Path, version: str = "10.0.0") -> Path:
         'members = ["packages/*", "examples/*"]\n'
         'exclude = ["examples/untaped-hello"]\n',
     )
-    pins = {cap: [f"untaped-{cap}=={version}"] for cap in CAPS}
+    pins = {name: [f"untaped-{name}=={version}"] for name in PLUGINS}
     _project(
         root / "packages" / "untaped",
         "untaped",
         version,
         ("pydantic>=2",),
-        {**pins, "all": [f"untaped-{c}=={version}" for c in CAPS]},
+        {**pins, "all": [f"untaped-{c}=={version}" for c in PLUGINS]},
     )
-    for cap in CAPS:
+    for name in PLUGINS:
         deps = (f"untaped=={version}",) + (
-            (f"untaped-github=={version}",) if cap in ("ansible", "workspace") else ()
+            (f"untaped-github=={version}",) if name in ("ansible", "workspace") else ()
         )
-        _project(root / "packages" / f"untaped-{cap}", f"untaped-{cap}", version, deps)
+        _project(root / "packages" / f"untaped-{name}", f"untaped-{name}", version, deps)
     _project(root / "examples" / "untaped-hello", "untaped-hello", "0.1.0", ("untaped>=10",))
     return root
 
@@ -86,7 +86,7 @@ def test_a_single_project_repo_is_one_package(tmp_path: Path) -> None:
 
 def test_the_split_layout_finds_seven_packages_and_skips_the_example(tmp_path: Path) -> None:
     root = _split_repo(tmp_path)
-    assert sorted(release.packages(root)) == sorted(["untaped", *(f"untaped-{c}" for c in CAPS)])
+    assert sorted(release.packages(root)) == sorted(["untaped", *(f"untaped-{c}" for c in PLUGINS)])
     assert release.release_version(root) == "10.0.0"
     assert release.version_errors(release.packages(root), "10.0.0") == []
 
@@ -214,7 +214,7 @@ def test_markers_and_extras_on_an_exact_pin_are_fine(tmp_path: Path) -> None:
 
 def test_expected_artifacts_normalize_names(tmp_path: Path) -> None:
     root = _split_repo(tmp_path)
-    stems = ["untaped", *(f"untaped_{cap}" for cap in CAPS)]
+    stems = ["untaped", *(f"untaped_{name}" for name in PLUGINS)]
     assert release.expected_artifacts(release.packages(root), "10.0.0") == {
         file
         for stem in stems
@@ -500,7 +500,7 @@ def test_a_wait_re_fetches_only_the_packages_still_missing_files(tmp_path: Path)
     errors, present, to_upload = release.index_errors(
         root, "10.0.0", dist, index="testpypi", complete=True, fetch=fetch, sleep=lambda _: None
     )
-    names = sorted(["untaped", *(f"untaped-{cap}" for cap in CAPS)])
+    names = sorted(["untaped", *(f"untaped-{name}" for name in PLUGINS)])
     first = [f"https://test.pypi.org/pypi/{name}/10.0.0/json" for name in names]
     assert urls == [*first, "https://test.pypi.org/pypi/untaped/10.0.0/json"]
     assert (errors, present, to_upload) == ([], 2 * len(names), 0)
@@ -525,7 +525,7 @@ def test_each_package_is_checked_against_its_own_index_entry(tmp_path: Path) -> 
     errors, present, to_upload = release.index_errors(
         root, "10.0.0", dist, index="testpypi", complete=False, fetch=fetch
     )
-    names = sorted(["untaped", *(f"untaped-{cap}" for cap in CAPS)])
+    names = sorted(["untaped", *(f"untaped-{name}" for name in PLUGINS)])
     assert urls == [f"https://test.pypi.org/pypi/{name}/10.0.0/json" for name in names]
     assert errors == [f"unexpected on testpypi: {WHEEL}"]
     assert (present, to_upload) == (1, 2 * len(names) - 1)
@@ -759,7 +759,7 @@ def _fake_untaped(tmp_path: Path) -> Path:
     return exe
 
 
-READY = [{"name": cap, "status": "ready"} for cap in FIRST_PARTY]
+READY = [{"name": name, "status": "ready"} for name in FIRST_PARTY]
 
 
 def _smoke(
