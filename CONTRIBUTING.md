@@ -69,14 +69,17 @@ uv lock --check                                 # lock file is current
 
 ## Adding a first-party plugin
 
-A first-party plugin follows the [plugin rules](docs/reference/conventions.md)
-and uses this layout:
+A first-party plugin is treated like any third-party plugin: it uses only
+`untaped.sdk`, `untaped.contracts`, `untaped.testing` and other plugins'
+declared `api` modules, and gets no special treatment in how it is loaded or
+what it may use, because any of them may move to its own repository. It
+follows the [plugin rules](docs/reference/conventions.md) and uses this layout:
 
 ```
 packages/untaped-<name>/src/untaped_<name>/
 ├── __init__.py        # SPEC: PluginSpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time)
 ├── settings.py        # settings model + state model (field sets must be disjoint)
-├── api.py             # optional: declared public module other first-party plugins may import
+├── api.py             # optional: declared public module other plugins may import
 ├── cli/               # cyclopts commands (thin)
 ├── application/       # use cases (orchestration); ports in application/ports.py
 ├── domain/            # entities, value objects (pure, no I/O)
@@ -110,8 +113,8 @@ packages/untaped-<name>/src/untaped_<name>/
 
 A plugin whose settings import another's `api` (ansible imports
 github's) is quarantined with it when that import fails. Shared logic follows
-[Depending on another plugin](docs/reference/conventions.md#depending-on-another-plugin);
-in this repository it may also live in core. Declare a
+[Depending on another plugin](docs/reference/conventions.md#depending-on-another-plugin),
+or becomes an SDK helper that every plugin can use. Declare a
 [contract](docs/contracts.md) once a second plugin would fill it.
 
 ## Workflow
