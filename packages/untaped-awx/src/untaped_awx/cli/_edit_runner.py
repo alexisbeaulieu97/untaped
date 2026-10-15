@@ -22,13 +22,13 @@ from untaped_awx.application.save_resource import SaveResource
 from untaped_awx.application.selection import SelectedResource
 from untaped_awx.cli._apply_runner import build_mutation_engine
 from untaped_awx.cli._mutation_runner import (
-    UNFINISHED_ACTIONS,
     WriteControls,
     emit_outcomes,
     preview_and_execute,
 )
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.domain import ResourceSpec
+from untaped_awx.domain.outcomes import UNFINISHED_ACTIONS
 
 #: Failures while preparing an edited batch that the edit cannot fix.
 _NOT_THE_EDIT = frozenset(

@@ -7,6 +7,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import batched
 from typing import Literal
 
 from pydantic import ConfigDict, Field
@@ -186,7 +187,9 @@ class RefreshGitSourceIndex:
         probe_mode = self._probe_mode(source)
         probe_fallbacks: dict[str, str] = {}
 
-        for batch_index, batch in enumerate(_chunks(pending_repos, self._repo_batch_size)):
+        for batch_index, batch in enumerate(
+            batched(pending_repos, self._repo_batch_size, strict=False)
+        ):
             probe_report = self._probe.probe(
                 batch,
                 kinds=probe_kinds,
@@ -724,11 +727,6 @@ def _merge_rate_limit(
 
 def _rate_limit_pause_reason(remaining: int) -> str:
     return f"GitHub GraphQL rate limit is low: {remaining} points remaining"
-
-
-def _chunks[T](values: list[T], size: int) -> Iterable[list[T]]:
-    for start in range(0, len(values), size):
-        yield values[start : start + size]
 
 
 def _str(value: object) -> str | None:

@@ -34,6 +34,7 @@ from untaped_awx.cli.options import (
     YesOption,
 )
 from untaped_awx.domain import ApplyOutcome
+from untaped_awx.domain.outcomes import UNFINISHED_ACTIONS
 
 
 def validate_controls(
@@ -92,10 +93,6 @@ def confirm_batch(ctx: AwxContext, *, count: int, verb: str, yes: bool, dry_run:
         refusal=f"{verb} requires --yes or --dry-run when not interactive",
     )
     return True
-
-
-#: Outcome actions that fail the run: the write did not fully land.
-UNFINISHED_ACTIONS = frozenset({"failed", "partial", "conflict", "skipped"})
 
 
 def emit_outcomes(
