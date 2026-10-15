@@ -15,7 +15,6 @@ DependencyMatch.root_ref
 DependencyMatch.input_kind
 DependencyMatch.input_id
 DependencyMatch.input_name
-ReachedNode.root_ref  # ansible reach rows
 FailureEvidence.unreachable_hosts  # awx test results
 FailureEvidence.changed_tasks
 CaseResult.rerun_job_id
@@ -30,40 +29,26 @@ RepoRecord.subscribed_at  # dotfiles state.yml
 AppliedRecord.source_commit
 AppliedRecord.applied_at
 ItemRow.suggested  # dotfiles rows
-StatusSummary.foreign
 IssueResult.user_login  # github.issue
 IssueResult.is_pull_request
 JiraUser.email_address  # jira rows
 IssueResult.api_url
 IssueResult.priority
-CommentResult.api_url
 IssueDetailResult.reporter
-IssueOutcome.api_url
 IssueOutcome.comment_id
 IssueOutcome.linked_key
 TransitionResult.to_status
 ProjectResult.project_type_key
-BoardResult.api_url
 SprintResult.start_at
 SprintResult.end_at
 SprintResult.goal
 SprintResult.origin_board_id
-BackupPruneRecord.size_bytes  # recipe backup prune rows
 ProfileOutcome.previous_name  # profile rename/copy rows
 ProfileOutcome.copied_from
 
 GitHostRecord.helpers_first  # git.host rows
-StoreReport.packs_median  # git.store report
-StoreReport.packs_max
-StoreReport.loose_objects
-StoreReport.filter_ignored
-StoreReport.gc_log
 
 # The git plugin's repo store API with no first-party caller yet.
-StoreError
-GitHost.for_url
-RepoStore.ensure
-RepoStore.filter_state
 RepoStore.delete_refs
 
 # untaped.testing.git: fixtures for plugins that test against the repo store.
@@ -72,16 +57,10 @@ GitRemote.delete_branch
 GitRemote.refuse_by_oid
 GitRemote.drop_pack
 GitRemote.packs_requested
-git_remote
-hostile_git_home
-git_shim
-trace2_events
 
 # Read through getattr over a field table (awx application.workflow_graph).
-NodeRun.workflow_job_template
 NodeRun.inventory_source
 NodeRun.system_job_template
-NodePrompts.credentials
 NodePrompts.instance_groups
 NodePrompts.execution_environment
 NodePrompts.job_tags
@@ -92,7 +71,6 @@ WorkflowNodeSpec.always
 
 # Public API for recipe hook authors.
 HookHelpers.pass_
-HookHelpers.fail
 YamlDumpOptions.block_seq_indent  # TypedDict keys
 YamlDumpOptions.explicit_start
 YamlDumpOptions.explicit_end

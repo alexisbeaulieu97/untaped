@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING
 from untaped.sdk import ErrorCategory, attribution
 from untaped_recipe._worker import worker_protocol as protocol
 from untaped_recipe._worker.helpers import HookHelpers
-from untaped_recipe.domain.hook_project import HookKind, ensure_hook_supports
+from untaped_recipe.domain.hook_project import HookKind, UvHookRef, ensure_hook_supports
 from untaped_recipe.domain.plan import HookDebugResult, Verdict
 from untaped_recipe.errors import RecipeError
-from untaped_recipe.infrastructure.hook_resolver import HookResolver, UvHookRef
+from untaped_recipe.infrastructure.hook_resolver import HookResolver
 from untaped_recipe.infrastructure.hook_worker_client import (
     APPLY_DIAGNOSTIC_LIMIT,
     DEBUG_DIAGNOSTIC_LIMIT,

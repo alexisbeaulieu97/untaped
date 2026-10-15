@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Sequence
 from typing import Literal, get_args, get_origin
 
@@ -12,6 +11,7 @@ from untaped.config.use_cases import GetSetting
 from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
 from untaped.prompts import PromptChoice
+from untaped.stdin import read_stdin_text
 from untaped.theme import BUILTIN_THEMES
 from untaped.ui import ui_context
 
@@ -39,9 +39,7 @@ def resolve_set_value(
 
 
 def _read_stdin_value() -> str:
-    if sys.stdin.isatty():
-        raise ConfigError("no value received on stdin", category="invalid")
-    value = sys.stdin.read().rstrip("\r\n")
+    value = read_stdin_text().rstrip("\r\n")
     if "\n" in value or "\r" in value:
         raise ConfigError("--stdin expects exactly one value", category="invalid")
     if not value.strip():

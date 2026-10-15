@@ -127,15 +127,6 @@ def test_list_each_kind_in_map_routes_correctly() -> None:
         assert client.paginate_calls[0][0] == path, kind
 
 
-def test_list_unknown_kind_falls_through_unchanged() -> None:
-    """Kinds outside the map use the raw value as the collection — same
-    as the prior ``_kind_path(kind)`` helper. Defensive but rarely hit."""
-    client = _FakeClient()
-    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
-    list(repo.list(kind="custom_kind"))
-    assert client.paginate_calls[0][0] == "custom_kind/"
-
-
 def test_list_defaults_to_newest_first() -> None:
     client = _FakeClient()
     repo = JobRecordRepository(cast(RawHttpResourceClient, client))

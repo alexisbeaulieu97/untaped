@@ -5,8 +5,7 @@ the matching AWX collection path via :data:`KIND_TO_API_PATH`. Lists are
 newest-first unless the caller passes its own ``order_by``; a job's host
 summaries (its PLAY RECAP per host) are read failed hosts first. A workflow
 job's nodes are read as they ran, and its pending approvals approved or
-denied. The lookup keeps a ``<kind>`` fallback so callers passing an unknown
-kind hit the same path the prior CLI helper used (defensive, rarely fires).
+denied.
 """
 
 from __future__ import annotations
@@ -33,13 +32,13 @@ class JobRecordRepository:
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
         return self._client.paginate_path(
-            f"{KIND_TO_API_PATH.get(kind, kind)}/",
+            f"{KIND_TO_API_PATH[kind]}/",
             params={"order_by": "-id", **(params or {})},
             limit=limit,
         )
 
     def get(self, *, kind: str, job_id: int) -> dict[str, Any]:
-        return self._client.request("GET", f"{KIND_TO_API_PATH.get(kind, kind)}/{job_id}/")
+        return self._client.request("GET", f"{KIND_TO_API_PATH[kind]}/{job_id}/")
 
     def host_summaries(
         self, job: Job, params: Mapping[str, str] | None = None
@@ -65,12 +64,12 @@ class JobRecordRepository:
 
     def cancel(self, *, kind: str, job_id: int) -> None:
         """``POST <collection>/<id>/cancel/``: AWX answers 202 and stops the job later."""
-        self._client.request("POST", f"{KIND_TO_API_PATH.get(kind, kind)}/{job_id}/cancel/")
+        self._client.request("POST", f"{KIND_TO_API_PATH[kind]}/{job_id}/cancel/")
 
     def relaunch(self, *, kind: str, job_id: int, hosts: str | None = None) -> dict[str, Any]:
         """``POST <collection>/<id>/relaunch/``; returns the new execution record."""
         return self._client.request(
             "POST",
-            f"{KIND_TO_API_PATH.get(kind, kind)}/{job_id}/relaunch/",
+            f"{KIND_TO_API_PATH[kind]}/{job_id}/relaunch/",
             json={"hosts": hosts} if hosts else {},
         )
