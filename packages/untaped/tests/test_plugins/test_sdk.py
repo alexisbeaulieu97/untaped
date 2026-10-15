@@ -8,7 +8,6 @@ import untaped.sdk as sdk
 
 SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     "composition": (
-        "ApplicationSpec",
         "PluginContext",
         "PluginSpec",
         "Plugin",
@@ -59,7 +58,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "is_envelope_line",
         "kind_of",
         "parse_envelope_line",
-        "read_records",
         "record_model",
         "render_rows",
         "summary",

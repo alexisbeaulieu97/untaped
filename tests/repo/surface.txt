@@ -4491,17 +4491,6 @@ sdk untaped.sdk.AppContext.settings
 sdk untaped.sdk.AppContext.settings_model
 sdk untaped.sdk.AppContext.ui()
 sdk untaped.sdk.AppContext.ui(strict=) default=true
-sdk untaped.sdk.ApplicationSpec(doctor_checks@7=) default=[]
-sdk untaped.sdk.ApplicationSpec(name, app_factory, section, settings) callback(app_factory, 0)
-sdk untaped.sdk.ApplicationSpec(skills@6=) default=[]
-sdk untaped.sdk.ApplicationSpec(state@5=) default=None
-sdk untaped.sdk.ApplicationSpec.app_factory
-sdk untaped.sdk.ApplicationSpec.doctor_checks
-sdk untaped.sdk.ApplicationSpec.name
-sdk untaped.sdk.ApplicationSpec.section
-sdk untaped.sdk.ApplicationSpec.settings
-sdk untaped.sdk.ApplicationSpec.skills
-sdk untaped.sdk.ApplicationSpec.state
 sdk untaped.sdk.Back()  [experimental]
 sdk untaped.sdk.BatchOutcome(cancelled@4=) default=false
 sdk untaped.sdk.BatchOutcome(failures@3=) default=[]
@@ -5544,7 +5533,6 @@ sdk untaped.sdk.TreeRow.summary  [experimental]
 sdk untaped.sdk.UiContext()
 sdk untaped.sdk.UiContext(prompt_backend=) default=None
 sdk untaped.sdk.UiContext(quiet=) default=false
-sdk untaped.sdk.UiContext(renderer=) default=None
 sdk untaped.sdk.UiContext(stderr=) default=None
 sdk untaped.sdk.UiContext(stdin=) default=None
 sdk untaped.sdk.UiContext(stdout=) default=None
@@ -5727,8 +5715,6 @@ sdk untaped.sdk.raise_usage(message)
 sdk untaped.sdk.read_identifiers(accept_kinds=) default=None
 sdk untaped.sdk.read_identifiers(id_field=) default=None
 sdk untaped.sdk.read_identifiers(positional, *, stdin)
-sdk untaped.sdk.read_records()
-sdk untaped.sdk.read_records(accept_kinds=) default=None
 sdk untaped.sdk.read_stdin()
 sdk untaped.sdk.read_stdin_input()
 sdk untaped.sdk.read_stdin_input(accept_kinds=) default=None
