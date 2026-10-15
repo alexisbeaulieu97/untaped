@@ -30,7 +30,7 @@ from untaped_ansible.domain.payloads import (
     RepoFailure,
     SourceRepoMetadata,
 )
-from untaped_ansible.errors import GitCacheError
+from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure import GithubRefProbe, GitSourceStore, SqliteDependencyIndex
 
 _REQS = "roles/requirements.yml"
@@ -516,7 +516,7 @@ def test_source_remove_keeps_the_source_when_a_release_fails(tmp_path: Path, mon
     _seed_unchanged_scan(monkeypatch, {"acme/site": "sha-site"})
 
     def fail(self: GitSourceStore, url: str) -> None:
-        raise GitCacheError(f"could not lock repo store for {url}", category="unavailable")
+        raise RepoStoreError(f"could not lock repo store for {url}", category="unavailable")
 
     monkeypatch.setattr(GitSourceStore, "release", fail)
     result = _run("source", "remove", "prod", "--yes", "--format", "json")

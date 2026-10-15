@@ -178,7 +178,11 @@ def test_save_resources_skips_read_only_kinds_and_preserves_order() -> None:
 
     assert client.list_calls == [("JobTemplate", None)]
     assert [(outcome.kind, outcome.action, outcome.detail) for outcome in outcomes] == [
-        ("Credential", "skipped", "not roundtrippable in v0"),
+        (
+            "Credential",
+            "skipped",
+            "read-only: AWX returns its secrets as $encrypted$, so it cannot be applied back",
+        ),
         ("JobTemplate", "saved", None),
     ]
 

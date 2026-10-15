@@ -10,6 +10,7 @@ from cyclopts import App
 from pydantic import BaseModel
 
 from test_conventions.support import Install
+from untaped import bootstrap
 from untaped.conventions import plugin_violations
 from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.sdk import kind_of
@@ -169,6 +170,20 @@ def test_a_quarantined_plugin_is_warned_about_once(
     broken = PluginCandidate(distribution="broken", name="broken", target="no_such_mod:SPEC")
     plugin_violations("demo", candidates=[*demo, broken])
     assert capsys.readouterr().err.count("quarantined") == 1
+
+
+def test_check_conventions_keeps_the_composition_and_stays_quiet(
+    demo: list[PluginCandidate], capsys: pytest.CaptureFixture[str]
+) -> None:
+    bootstrap.compose_root(candidates=[])
+    before = bootstrap.composition()
+    broken = PluginCandidate(distribution="broken", name="broken", target="no_such_mod:SPEC")
+
+    with pytest.raises(AssertionError):
+        check_conventions("demo", candidates=[*demo, broken])
+
+    assert bootstrap.composition() is before
+    assert "quarantined" not in capsys.readouterr().err
 
 
 def test_an_app_factory_outside_any_package_names_the_plugin(

@@ -26,7 +26,7 @@ from untaped.sdk import (
     run_git,
 )
 from untaped_ansible.domain.payloads import GitRef
-from untaped_ansible.errors import GitCacheError as GitCacheError
+from untaped_ansible.errors import RepoStoreError
 from untaped_git.api import (
     Released,
     Removed,
@@ -90,14 +90,14 @@ class GitSourceStore:
         try:
             return ls_remote(url, patterns)
         except UntapedError as exc:
-            raise GitCacheError(str(exc), **attribution(exc)) from exc
+            raise RepoStoreError(str(exc), **attribution(exc)) from exc
 
     def default_branch(self, url: str) -> str | None:
         """The branch ``url``'s ``HEAD`` points at, or ``None``."""
         try:
             return default_branch(url)
         except UntapedError as exc:
-            raise GitCacheError(str(exc), **attribution(exc)) from exc
+            raise RepoStoreError(str(exc), **attribution(exc)) from exc
 
     def read_files(
         self, url: str, shas: Sequence[str], paths: Sequence[str]
@@ -142,7 +142,7 @@ class GitSourceStore:
     def _store(self, url: str) -> RepoStore:
         from untaped_ansible import SPEC  # noqa: PLC0415  # the package imports this module
 
-        return RepoStore.for_url(url, plugin=SPEC, error=GitCacheError)
+        return RepoStore.for_url(url, plugin=SPEC, error=RepoStoreError)
 
 
 def _peeled_refs(store: RepoStore) -> dict[str, str]:
@@ -162,9 +162,7 @@ def _peeled_refs(store: RepoStore) -> dict[str, str]:
     return held
 
 
-def local_remote_url(
-    path: Path, *, git: str = "git", timeout: float = DEFAULT_TIMEOUT
-) -> str | None:
+def local_remote_url(path: Path) -> str | None:
     """Return the ``origin`` remote URL (else the first remote URL) for ``path``.
 
     Delegates to ``git config`` so linked worktrees, config includes, and
@@ -179,13 +177,13 @@ def local_remote_url(
 
     def lookup(*args: str) -> str:
         try:
-            result = run_git(args, cwd=cwd, git=git, timeout=timeout, capture=True, check=False)
+            result = run_git(args, cwd=cwd, timeout=DEFAULT_TIMEOUT, capture=True, check=False)
         except GitCommandError:
             return ""
         return result.text.strip() if result.returncode == 0 else ""
 
     try:
-        top = git_toplevel(cwd, git=git, timeout=timeout)
+        top = git_toplevel(cwd, timeout=DEFAULT_TIMEOUT)
     except GitCommandError:
         return None
     if top != cwd.resolve():
@@ -206,17 +204,17 @@ def _parse_cat_file_batch(output: bytes, blob_ids: list[str]) -> dict[str, str]:
     for blob in blob_ids:
         header_end = output.find(b"\n", offset)
         if header_end < 0:
-            raise GitCacheError(f"git cat-file --batch returned truncated output for {blob}")
+            raise RepoStoreError(f"git cat-file --batch returned truncated output for {blob}")
         fields = output[offset:header_end].decode("utf-8", errors="replace").split()
         if len(fields) != 3 or fields[1] != "blob":
-            raise GitCacheError(f"git cat-file --batch could not read {blob}: {' '.join(fields)}")
+            raise RepoStoreError(f"git cat-file --batch could not read {blob}: {' '.join(fields)}")
         size = int(fields[2])
         start = header_end + 1
         end = start + size
         # Each object is ``<header>\n<size bytes>\n``; anything shorter is a
         # cut-off stream, never a smaller file.
         if end + 1 > len(output) or output[end : end + 1] != b"\n":
-            raise GitCacheError(f"git cat-file --batch returned truncated output for {blob}")
+            raise RepoStoreError(f"git cat-file --batch returned truncated output for {blob}")
         contents[fields[0]] = output[start:end].decode("utf-8", errors="replace")
         offset = end + 1
     return contents

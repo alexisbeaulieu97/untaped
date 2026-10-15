@@ -42,10 +42,7 @@ name = "untaped-acme"
 version = "0.1.0"
 description = "Acme plugin for untaped."
 requires-python = ">=3.14.1"
-dependencies = [
-    "pydantic>=2.13.3,<3",
-    "untaped>=11,<12",
-]
+dependencies = ["pydantic>=2.13.3,<3", "untaped>=11,<12"]
 
 [project.entry-points."untaped.plugins"]
 acme = "untaped_acme:SPEC"
@@ -89,12 +86,11 @@ past it. The [changelog](../CHANGELOG.md) says what each version added or broke.
 
 ## Settings and the plugin app
 
-A plugin's config section is its name. Its `settings` model holds what
-users tune per profile; a plugin that writes managed data also declares a
-`state` model. The two field sets must be disjoint, and either may be left
-out. `plugin_dir(SPEC)` (`~/.untaped/plugins/<name>/`) is where it keeps
-other data. To rename a setting, see
-[Settings](./reference/conventions.md#settings).
+A plugin's config section is its name. Its `settings` model holds what users
+tune per profile; a plugin that writes managed data also declares a `state`
+model. The two field sets must be disjoint, and either may be left out.
+`plugin_dir(SPEC)` (`~/.untaped/plugins/<name>/`) is where it keeps other
+data. To rename a setting, see [Settings](./reference/conventions.md#settings).
 
 A complete plugin module, with a nullary app factory (leave it out for a
 plugin with no commands), one packaged skill and the `SPEC` the entry point
@@ -105,21 +101,20 @@ above names:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Annotated
 
+from cyclopts import App, Parameter
 from pydantic import BaseModel, ConfigDict
 
 from untaped.sdk import (
     PluginSpec,
     SkillAsset,
+    StdinOption,
     create_app,
     echo,
     get_config_section,
     read_identifiers,
 )
-
-if TYPE_CHECKING:
-    from cyclopts import App
 
 
 class AcmeSettings(BaseModel):
@@ -141,10 +136,17 @@ def build_app() -> App:
         echo(settings.greeting)
 
     @app.command(name="import")
-    def import_command(*, stdin: bool = False) -> None:
-        """Echo identifiers received as arguments or an untaped pipe."""
-        for identifier in read_identifiers([], stdin=stdin, id_field="repo"):
-            echo(identifier)
+    def import_command(
+        names: Annotated[list[str] | None, Parameter(help="Repository full names.")] = None,
+        /,
+        *,
+        stdin: StdinOption = False,
+    ) -> None:
+        """Echo repository names given as arguments or piped as github.repo records."""
+        for name in read_identifiers(
+            list(names or []), stdin=stdin, id_field="full_name", accept_kinds={"github.repo"}
+        ):
+            echo(name)
 
     return app
 
@@ -170,10 +172,10 @@ SPEC = PluginSpec(
 
 The optional `help` field (one non-empty line) is its summary in the Plugins
 panel of `untaped --help`. With it, the plugin is mounted lazily: `build_app()`
-runs only when dispatched, so `untaped --help` never imports its CLI.
-A factory that raises or returns something other than a cyclopts `App` then
-fails that command, `--help` included, with exit 4, naming the plugin;
-other commands and shell completion keep working. `untaped doctor` runs every
+runs only when dispatched, so `untaped --help` never imports its CLI. A
+factory that raises or returns something other than a cyclopts `App` then
+fails that command, `--help` included, with exit 4, naming the plugin; other
+commands and shell completion keep working. `untaped doctor` runs every
 factory and reports a failing one as a quarantine row (`bad-app-factory`, or
 `duplicate-kind` for a reused record kind). Without `help`, composition calls
 `build_app()` once at startup, a bad factory quarantines the plugin, and the
@@ -192,8 +194,6 @@ untaped acme hello
 untaped profile create staging --copy-from default
 untaped --profile staging config set acme.greeting "hello from staging"
 untaped --profile staging acme hello
-untaped plugin list
-untaped doctor
 ```
 
 Config keys are fully qualified (`acme.greeting`). A plugin reads and
@@ -393,8 +393,8 @@ Define `build_app` (the `app_factory`) in the plugin package's
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,
 see [Enforcement](./reference/conventions.md#enforcement).
 
-Test `SPEC.app_factory()` in isolation, assert that
-the entry-point name matches `SPEC.name`, and exercise root config, profile,
-skill, pipe and error paths. `untaped plugin list`, `untaped acme --help` and
-`untaped doctor` show the composed surface and any quarantine reason: a
-malformed plugin is quarantined so the other plugins still boot.
+Test `SPEC.app_factory()` in isolation, assert that the entry-point name
+matches `SPEC.name`, and exercise root config, profile, skill, pipe and error
+paths. `untaped plugin list`, `untaped acme --help` and `untaped doctor` show
+the composed surface and any quarantine reason: a malformed plugin is
+quarantined so the other plugins still boot.

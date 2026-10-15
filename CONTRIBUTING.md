@@ -54,9 +54,11 @@ uv lock --check                                 # lock file is current
   page) is a one-screen guide that links to it. A package README links into
   this repository with absolute `blob/main` URLs, which the release build
   points at its own `vX.Y.Z` tag.
-- `examples/untaped-hello/` is a minimal third-party plugin with its own
-  tests; it is not a workspace member and is never published. CI installs it
-  beside the core wheel and runs its tests outside the repository.
+- `examples/` holds third-party plugins with their own tests: `untaped-hello`
+  (a minimal plugin) and `untaped-shelf` and `untaped-library` (a contract
+  owner and its provider). They are not workspace members and are never
+  published. CI installs each beside the core wheel and runs its tests
+  outside the repository.
 - `docs/` holds the user guides and the plugin guide; `docs/reference/`
   holds lookup pages (settings, records, exit codes, environment variables,
   conventions). Each page stays at most 400 lines long; split one by reader task
@@ -79,7 +81,7 @@ packages/untaped-<name>/src/untaped_<name>/
 ├── application/       # use cases (orchestration); ports in application/ports.py
 ├── domain/            # entities, value objects (pure, no I/O)
 ├── infrastructure/    # external adapters (httpx clients, fs, …)
-├── errors.py          # <Cap>Error(UntapedError) and its subclasses
+├── errors.py          # <Name>Error(UntapedError) and its subclasses
 └── skills/            # packaged agent skills shipped via SPEC.skills
 ```
 
@@ -242,7 +244,7 @@ that exact action, because each changes shared or public state.
 It touches these and nothing else:
 
 - versions: every package version and sibling pin in each
-  `packages/*/pyproject.toml`, and on a major `examples/untaped-hello`'s
+  `packages/*/pyproject.toml`, and on a major each `examples/*` plugin's
   `untaped` range (`>=X,<X+1`);
 - `uv.lock` (`uv lock`);
 - `CHANGELOG.md`, `changelog/` and `changelog.d/`: run

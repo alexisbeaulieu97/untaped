@@ -33,13 +33,13 @@ from untaped.sdk import (
     read_identifiers,
     render_rows,
     run_editor,
+    ui_context,
     writes,
 )
 from untaped_recipe.application.check_pack import check_library, check_ref
 from untaped_recipe.application.files import read_recipe_file
 from untaped_recipe.application.resolution import find_library_recipe
 from untaped_recipe.builtins.registry import BUILTIN_HOOKS
-from untaped_recipe.cli._context import recipe_ui
 from untaped_recipe.cli.common import (
     as_recipe_error,
     library_dir,
@@ -263,7 +263,7 @@ def sync_command(
             noun="pack",
             label=lambda plan: plan.pack.name,
             describe=lambda plan: _sync_row(plan, action="planned"),
-            ui=recipe_ui(),
+            ui=ui_context(strict=False),
             destructive=True,
             assume_yes=yes,
             preview_only=dry_run,
@@ -628,7 +628,7 @@ def remove_command(
             noun="pack",
             label=str,
             describe=lambda item: {"name": item},
-            ui=recipe_ui(),
+            ui=ui_context(strict=False),
             destructive=True,
             assume_yes=yes,
             preview_only=dry_run,

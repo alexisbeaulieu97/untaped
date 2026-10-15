@@ -8,8 +8,8 @@ startup the root composes the plugins in this order:
 1. **Discovery.** Every entry point in the `untaped.plugins` group is a
    candidate, first-party ones included. Its distribution's `untaped`
    requirement is checked against the running version.
-2. **Resolution.** The entry point is loaded and called, and must return a
-   `PluginSpec`.
+2. **Resolution.** The entry point is loaded, never called, and must name a
+   [`PluginSpec` constant](./plugins.md#plugin-package).
 3. **Validation.** The declaration is checked: reserved names, the
    entry-point name, duplicate names, skills and doctor checks,
    overlapping settings and state fields, and the settings model's

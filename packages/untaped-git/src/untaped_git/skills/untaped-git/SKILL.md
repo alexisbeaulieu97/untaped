@@ -16,7 +16,7 @@ from.
 - Git 2.29 or newer; `untaped doctor` checks it (`git.version`) and the
   store (`git.store`: paused maintenance, interrupted releases).
 - Settings live under `profiles.<name>.git`: `store_dir` (the repo store,
-  default `~/.untaped/plugins/git/store`) and `untaped_helper_first`.
+  default `~/.untaped/plugins/git/store`) and `untaped_helper_only`.
 
 ## Commands
 
@@ -33,8 +33,9 @@ from.
    credentials; `credential` false means the plugin has no token (set it
    with `untaped auth set`).
 2. `helpers_first` names helpers your own Git config asks before untaped.
-   If one holds a stale password, set `git.untaped_helper_first: true`;
-   untaped's worktrees then ask only untaped for that host.
+   If one holds a stale password, set `git.untaped_helper_only: true`;
+   untaped's worktrees then ask only untaped for that host, and the column
+   is empty.
 3. Reclaiming disk: `untaped git store` shows `exclusive` (repos only one
    plugin uses). That plugin's own delete command releases them (`github
    cache delete`, `workspace remove`, `ansible source remove`); a repo

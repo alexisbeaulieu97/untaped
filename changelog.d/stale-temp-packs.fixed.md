@@ -1,4 +1,3 @@
-Repo caches (workspace, ansible refresh, github sweep and cache) now delete
-what interrupted fetches left behind once it is an hour old: temporary pack
-files, which could hold gigabytes, and a `shallow.lock` that made every later
-fetch fail.
+The repo store deletes what an interrupted fetch left in a repository once it
+is an hour old, such as temporary pack files that could hold gigabytes and
+lock files that made every later fetch fail; the 10.x repo caches kept them.

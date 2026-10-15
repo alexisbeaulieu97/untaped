@@ -32,7 +32,7 @@ from untaped.cli import (
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, most_severe
-from untaped.messages import hint, plural
+from untaped.messages import hint, plural, run_hint
 from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import CompositionResult, settings_model
@@ -331,11 +331,11 @@ def _unset(
         _, provenance = resolve_profiles(raw, active_override=profile)
         holder = provenance.get((section, "token_command"))
         if holder is not None and holder != profile:
-            fix = hint(f"--profile {holder} auth unset {section}")
             _diag.info(
                 f"{section}.token_command is inherited from profile {holder}; "
-                f"profile {profile} is unchanged\n{fix}",
+                f"profile {profile} is unchanged"
             )
+            _diag.hint(run_hint(f"--profile {holder} auth unset {section}"))
         else:
             _diag.info(f"{section}.token_command is not set in profile {profile}")
         emit(row, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)

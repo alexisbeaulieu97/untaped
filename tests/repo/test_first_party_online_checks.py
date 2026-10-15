@@ -49,7 +49,7 @@ def _mock_services(mock: respx.MockRouter, *, github_status: int = 200) -> None:
         return_value=httpx.Response(github_status, json={"login": "octocat", "id": 1})
     )
     mock.get("https://jira.example.com/rest/api/2/myself").mock(
-        return_value=httpx.Response(200, json={"name": "alexis"})
+        return_value=httpx.Response(200, json={"name": "jdoe"})
     )
 
 
@@ -63,7 +63,7 @@ def test_each_configured_service_is_contacted(
     assert rows["awx.api"]["status"] == "pass"
     assert rows["awx.api"]["detail"] == "authenticated as admin"
     assert rows["github.api"]["detail"] == "authenticated as octocat"
-    assert rows["jira.api"]["detail"] == "authenticated as alexis"
+    assert rows["jira.api"]["detail"] == "authenticated as jdoe"
 
 
 def test_a_rejected_token_names_the_fix(

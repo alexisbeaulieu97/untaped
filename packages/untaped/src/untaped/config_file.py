@@ -188,8 +188,8 @@ def replace_config_text(text: str, *, expected: str | None, path: Path | None = 
         get_settings.cache_clear()
 
 
-def read_tool_state(section: str, path: Path | None = None) -> dict[str, Any]:
-    """Return a copy of a tool's state ``section`` dict, or ``{}``.
+def read_plugin_state(section: str, path: Path | None = None) -> dict[str, Any]:
+    """Return a copy of a plugin's state ``section`` dict, or ``{}``.
 
     State is read from ``state.yml`` (``path``, default
     :func:`~untaped.settings.resolve_state_path`).
@@ -199,19 +199,19 @@ def read_tool_state(section: str, path: Path | None = None) -> dict[str, Any]:
     return copy.deepcopy(raw) if isinstance(raw, dict) else {}
 
 
-def mutate_tool_state(
+def mutate_plugin_state(
     section: str,
     fn: Callable[[dict[str, Any]], None],
     path: Path | None = None,
 ) -> None:
-    """Safely mutate a tool's state ``section`` in ``state.yml`` under its lock.
+    """Safely mutate a plugin's state ``section`` in ``state.yml`` under its lock.
 
     ``fn`` receives only the named section's dict to mutate in place; every other
     section — and any keys within this section that ``fn`` does not touch — is
-    preserved. Independent tools share one state file (possibly across SDK
+    preserved. Independent plugins share one state file (possibly across SDK
     versions), so a write must never drop data it doesn't understand. The section
     is removed when ``fn`` leaves it empty; nothing is written when ``fn``
-    changes nothing. ``path`` resolves as in :func:`read_tool_state`.
+    changes nothing. ``path`` resolves as in :func:`read_plugin_state`.
     """
     check_state_section_name(section)
     state_path = path or resolve_state_path()

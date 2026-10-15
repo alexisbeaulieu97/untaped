@@ -32,10 +32,10 @@ def _search_page(start: int, total: int, *keys: str) -> httpx.Response:
 def test_client_sends_pat_bearer_header_and_joins_api_prefix() -> None:
     with respx.mock(base_url=BASE) as mock:
         route = mock.get("/rest/api/2/myself").mock(
-            return_value=httpx.Response(200, json={"name": "alexis"})
+            return_value=httpx.Response(200, json={"name": "jdoe"})
         )
         with JiraClient(_settings(api_prefix="/rest/api/2/")) as client:
-            assert client.me()["name"] == "alexis"
+            assert client.me()["name"] == "jdoe"
 
     assert route.calls[0].request.headers["authorization"] == "Bearer jira_pat"
     assert route.calls[0].request.headers["accept"] == "application/json"

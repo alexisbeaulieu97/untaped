@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from test_management.support import write_config
 from untaped.config_file import (
     mutate_config,
-    mutate_tool_state,
-    read_tool_state,
+    mutate_plugin_state,
+    read_plugin_state,
     write_config_dict,
 )
 from untaped.errors import ConfigError
@@ -94,7 +94,7 @@ def test_state_writes_never_touch_a_refused_state_file(
     with pytest.raises(ConfigError, match=match):
         StateMap("demo", "aliases").set("web", "org/web")
     with pytest.raises(ConfigError, match=match):
-        mutate_tool_state("demo", lambda section: section.update(items=[]))
+        mutate_plugin_state("demo", lambda section: section.update(items=[]))
     assert state.read_text(encoding="utf-8") == text
 
 
@@ -122,7 +122,7 @@ def test_reads_refuse_a_stamped_state_file(_isolated_config: Path, stamp: str, m
     write_config(state, f"format_version: {stamp}\ndemo:\n  items: []\n")
     register_state_settings("demo", _DemoState)
     _refused(get_settings, match)
-    _refused(lambda: read_tool_state("demo"), match)
+    _refused(lambda: read_plugin_state("demo"), match)
     _refused(StateCollection("demo", "items", id_field="id").entries, match)
     _refused(lambda: StateCollection("demo", "items", id_field="id").get("a"), match)
     _refused(StateMap("demo", "aliases").entries, match)

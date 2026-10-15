@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 
 from untaped.sdk import GitResult
-from untaped_ansible.infrastructure.git_store import GitCacheError, GitSourceStore
+from untaped_ansible.errors import RepoStoreError
+from untaped_ansible.infrastructure.git_store import GitSourceStore
 from untaped_git.api import TreeEntry
 
 
@@ -73,7 +74,7 @@ def test_read_files_rejects_truncated_cat_file_output(
 ) -> None:
     source = _source(monkeypatch, FakeStore({"a.yml": "b1", "b.yml": "b2"}, batch_stdout))
 
-    with pytest.raises(GitCacheError, match="truncated"):
+    with pytest.raises(RepoStoreError, match="truncated"):
         source.read_files("https://github.com/acme/site.git", ["abc123"], ["a.yml", "b.yml"])
 
 

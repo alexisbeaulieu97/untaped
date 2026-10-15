@@ -41,7 +41,6 @@ from untaped_ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped_ansible.domain.repo_targets import remote_url_for
-from untaped_ansible.errors import GitCacheError
 from untaped_ansible.settings import SourceDefinition
 from untaped_github.api import (
     RepositoryInventoryScope,
@@ -50,12 +49,6 @@ from untaped_github.api import (
 )
 
 ProbeMode = Literal["all", "default_branch"]
-
-# Errors a fetch/parse worker may raise: GitCacheError from the repo store
-# and UntapedError from the SQLite index. The worker has no HTTP path
-# (GitHub REST/GraphQL traffic happens in expansion and the probe), so no
-# HTTP-specific error type belongs here.
-_REPO_FAILURE_ERRORS = (GitCacheError, UntapedError)
 
 # Version of what a ref snapshot stores: dependency-file parsing, identity
 # resolution and the resulting edge shape. It is folded into the dependency
@@ -378,7 +371,7 @@ class RefreshGitSourceIndex:
                     aliases_fingerprint=aliases_fingerprint,
                     checked_at=checked_at,
                 )
-            except _REPO_FAILURE_ERRORS as exc:
+            except UntapedError as exc:  # the repo store's or the index's (no HTTP here)
                 return RepoFailure(
                     repo=task.repo.full_name,
                     reason=str(exc) or type(exc).__name__,

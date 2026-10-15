@@ -1,4 +1,4 @@
-"""Source management commands and refresh helpers for the Ansible tool."""
+"""Source management commands and refresh helpers for the Ansible plugin."""
 
 from __future__ import annotations
 

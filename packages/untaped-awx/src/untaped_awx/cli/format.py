@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE
-from untaped_awx.domain import ApplyOutcome, FieldChange
+from untaped_awx.domain import ApplyOutcome, FieldChange, IdentityRef
 
 OUTCOME_TABLE_COLUMNS = ("id", "name", "kind", "action", "fields_changed", "detail")
 """A mutation table's defaults; ``scope``, ``identity`` and the flags stay in the record."""
@@ -47,7 +47,22 @@ def format_scope(scope: Mapping[str, Any] | None) -> str:
     """Render a selection scope as ``org=Default inventory=prod`` (``-`` if empty)."""
     if not scope:
         return "-"
-    return " ".join(f"{_SCOPE_LABELS.get(key, key)}={value}" for key, value in scope.items())
+    return " ".join(
+        f"{_SCOPE_LABELS.get(key, key)}={_scope_value(value)}" for key, value in scope.items()
+    )
+
+
+def _scope_value(value: Any) -> str:
+    """A scope value; a parent reference reads ``Inventory/prod (org Default)``."""
+    ref = value.model_dump() if isinstance(value, IdentityRef) else value
+    if not isinstance(ref, Mapping) or not {"kind", "name"} <= ref.keys():
+        return str(value)
+    text = f"{ref['kind']}/{ref['name']}"
+    if ref.get("organization"):
+        text += f" (org {ref['organization']})"
+    if ref.get("parent"):
+        text += f" in {_scope_value(ref['parent'])}"
+    return text
 
 
 def format_value(value: Any) -> str:

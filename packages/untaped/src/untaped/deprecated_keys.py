@@ -264,7 +264,7 @@ def _mapping_errors(
     errors.extend(
         f"the rename chain from {key!r} is a cycle"
         for key in sorted(mapped)
-        if _chain_end(key, mapped) is None
+        if _chain(key, mapped) is None
     )
     return errors
 
@@ -275,18 +275,6 @@ def _clashing_leaf(key: str, leaves: set[str]) -> str | None:
         if key == leaf or key.startswith(f"{leaf}.") or leaf.startswith(f"{key}."):
             return leaf
     return None
-
-
-def _chain_end(key: str, mapped: Mapping[str, str]) -> tuple[str, int] | None:
-    """``(current field, hops)`` at the end of ``key``'s chain; ``None`` on a cycle."""
-    seen = {key}
-    current, hops = mapped[key], 1
-    while current in mapped:
-        if current in seen:
-            return None
-        seen.add(current)
-        current, hops = mapped[current], hops + 1
-    return current, hops
 
 
 @cache
@@ -600,11 +588,12 @@ def old_spellings(model: type[BaseModel], key: str) -> list[str]:
 _warned: set[str] = set()
 
 
-def warn_once(message: str, *, key: str | None = None) -> None:
+def warn_once(message: str, *, key: str | None = None, hint: str | None = None) -> None:
     """Print ``message`` as a warning, once per process per ``key`` (else per text).
 
     Callers warning about one old key in different words pass the same
-    ``key``, so only the first of them prints.
+    ``key``, so only the first of them prints. ``hint`` is the warning's
+    follow-up (:func:`~untaped.messages.run_hint`), its own field under JSON.
     """
     seen = message if key is None else key
     if seen in _warned:
@@ -612,7 +601,7 @@ def warn_once(message: str, *, key: str | None = None) -> None:
     _warned.add(seen)
     from untaped.output.sink import Diagnostics  # noqa: PLC0415 - keeps rendering off this path
 
-    Diagnostics().warning(message)
+    Diagnostics().warning(message, hint=hint)
 
 
 def reset_key_warnings() -> None:

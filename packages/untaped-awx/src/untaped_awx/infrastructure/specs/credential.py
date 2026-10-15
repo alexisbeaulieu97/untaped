@@ -1,4 +1,4 @@
-"""Credential: read-only in v0.
+"""Credential: read-only (list and get).
 
 The ``$encrypted$`` placeholder problem (live secrets cannot be read
 back) makes save/apply roundtripping a separate design effort. Listing
@@ -38,5 +38,5 @@ CREDENTIAL_SPEC = AwxResourceSpec(
     list_columns=("id", "name", "credential_type"),
     commands=("list", "get"),
     fidelity="read_only",
-    fidelity_note="$encrypted$ roundtrip deferred to v0.5",
+    fidelity_note="AWX returns its secrets as $encrypted$, so it cannot be applied back",
 )

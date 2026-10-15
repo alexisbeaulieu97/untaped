@@ -35,7 +35,7 @@ from pydantic import BaseModel, ValidationError
 
 from untaped.errors import ExitCode, UsageError, first_validation_error
 from untaped.management._render import emit_check_list, emit_isolated
-from untaped.messages import not_found, summary
+from untaped.messages import not_found, plural, summary
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
     CompositionResult,
@@ -188,9 +188,7 @@ def _migrations(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
                     detail = f"preview returned {type(found).__name__}, expected MigrationRow rows"
                     rows.append(row("migrations", migration.id, "fail", detail))
                     continue
-                rows.append(
-                    row("migrations", migration.id, "pass", "preview runs on an empty HOME")
-                )
+                rows.append(row("migrations", migration.id, "pass", _EMPTY_HOME))
         finally:
             for key, value in saved.items():
                 if value is None:
@@ -383,7 +381,7 @@ def _call(
     if problems:
         return row("live", title, "fail", "; ".join(problems))
     samples += _samples(provider, items)
-    return row("live", title, "pass", f"{len(items)} item{'' if len(items) == 1 else 's'}")
+    return row("live", title, "pass", plural(len(items), "item"))
 
 
 def _round_trips(items: Sequence[Any]) -> Iterator[str]:
@@ -422,7 +420,7 @@ def _fills(provider: Provider, samples: Sequence[object], row: _Row) -> PluginCh
     problems = fills_problems(provider, samples)
     if problems:
         return row("fills", what, "fail", "; ".join(problems))
-    return row("fills", what, "pass", f"{len(samples)} live item{'' if len(samples) == 1 else 's'}")
+    return row("fills", what, "pass", plural(len(samples), "live item"))
 
 
 def _schema(provider: Provider, what: str, row: _Row) -> PluginCheckRow:

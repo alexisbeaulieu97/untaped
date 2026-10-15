@@ -1,4 +1,4 @@
-"""Settings for the recipe tool."""
+"""Settings for the recipe plugin."""
 
 from __future__ import annotations
 

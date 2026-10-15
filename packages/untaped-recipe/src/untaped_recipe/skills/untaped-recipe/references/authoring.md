@@ -29,6 +29,9 @@ hook, the built-in `yaml_edit` hook.
 - Each input takes `type` (`str`, `int`, `bool`, `float`, `list`, `dict`),
   `default`, `required`, `description`, `sensitive`, `scope` (`global` or
   `target`) and `from` (derivation templates).
+- A `list` input may set `items` and a `dict` input `values` to the scalar
+  type (`str`, `int`, `bool`, `float`; default `str`) its elements are
+  coerced to; neither is valid on any other type.
 - A `default` must coerce to the input's `type` (`validate` reports it) and
   cannot be combined with `required: true`.
 - Step types and their required fields: `validate` (`hook`), `transform`

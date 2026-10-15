@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from untaped_workspace.domain import CommandResult
+from untaped_workspace.domain.models import CommandResult
 from untaped_workspace.infrastructure import SubprocessRunner, command_runner
 
 

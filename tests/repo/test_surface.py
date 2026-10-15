@@ -12,22 +12,28 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
-import os
 import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import NoReturn
 
 import gen_surface as generator  # scripts/gen_surface.py
 import pytest
 import release  # scripts/release.py
-from packaging.version import InvalidVersion, Version
+from packaging.version import Version
 
-from repo.support import PACKAGES, REPO_ROOT
+from repo.support import (
+    PACKAGES,
+    REPO_ROOT,
+    SURFACE_FILE,
+    baseline_tag,
+    git,
+    no_baseline,
+    release_baseline,
+)
 from untaped.contracts._fills import FILLS_FILE
 from untaped.deprecated_keys import DECLARATIONS
-from untaped.git import GitCommandError, run_git
+from untaped.git import GitCommandError
 from untaped.management import plugin_check
 from untaped.plugins.registry import PLUGINS_ENTRY_POINT_GROUP
 from untaped.surface import Line, parse, removed
@@ -35,7 +41,6 @@ from untaped.surface._lists import CONVENTIONS
 from untaped_git.infrastructure import worktree_config
 
 REGENERATE = "uv run python scripts/gen_surface.py"
-FILE = "tests/repo/surface.txt"
 
 
 @pytest.fixture(scope="module")
@@ -45,8 +50,8 @@ def generated() -> str:
 
 
 def test_surface_is_current(generated: str) -> None:
-    committed = (REPO_ROOT / FILE).read_text(encoding="utf-8")
-    assert committed == generated, f"{FILE} is stale; run: {REGENERATE}"
+    committed = (REPO_ROOT / SURFACE_FILE).read_text(encoding="utf-8")
+    assert committed == generated, f"{SURFACE_FILE} is stale; run: {REGENERATE}"
 
 
 def test_generation_does_not_depend_on_home(
@@ -57,23 +62,6 @@ def test_generation_does_not_depend_on_home(
 
 
 # --- removals since the last release -------------------------------------------
-
-
-def _git(*args: str) -> str:
-    return run_git(["-C", str(REPO_ROOT), *args], timeout=60, capture=True).text
-
-
-def baseline_tag(tags: list[str]) -> str | None:
-    """The newest final release among ``tags`` (``vX.Y.Z``; pre- and dev releases skipped)."""
-    found: list[tuple[Version, str]] = []
-    for tag in tags:
-        try:
-            version = Version(tag.removeprefix("v"))
-        except InvalidVersion:
-            continue
-        if tag.startswith("v") and not version.is_prerelease and not version.is_devrelease:
-            found.append((version, tag))
-    return max(found)[1] if found else None
 
 
 def removal_exempt(version: str, baseline: str, fragments: list[str]) -> bool:
@@ -97,21 +85,12 @@ def removal_message(tag: str, gone: list[Line]) -> str:
     )
 
 
-def no_baseline() -> NoReturn:
-    """No release tag to compare with: a CI checkout without tags fails; a local one skips."""
-    if os.environ.get("CI"):
-        pytest.fail("no release tag reachable from HEAD: CI must check out with tags")
-    pytest.skip("no release tag reachable from HEAD (fetch tags to run this check)")
-
-
 def test_no_stable_surface_removed(generated: str) -> None:
-    tag = baseline_tag(_git("tag", "--list", "v*", "--merged", "HEAD").split())
-    if tag is None:
-        no_baseline()
+    tag = release_baseline()
     try:
-        recorded = _git("show", f"{tag}:{FILE}")
+        recorded = git("show", f"{tag}:{SURFACE_FILE}")
     except GitCommandError:
-        pytest.skip(f"the baseline {tag} predates {FILE}")
+        pytest.skip(f"the baseline {tag} predates {SURFACE_FILE}")
     fragments = [path.name for path in (REPO_ROOT / "changelog.d").glob("*.md")]
     if removal_exempt(release.release_version(REPO_ROOT), tag, fragments):
         pytest.skip("a major release in preparation may remove stable lines")

@@ -30,8 +30,12 @@ if TYPE_CHECKING:
     from untaped.plugins.registry import CompositionResult
     from untaped.stability import Stability
 
-#: The root model's own sections; the rest of it is the pydantic-settings base.
-_ROOT_SECTIONS = frozenset({"http", "ui", "skills"})
+
+def _root_sections() -> frozenset[str]:
+    """The root model's own sections: ``Settings``' fields, not the pydantic-settings base."""
+    from untaped.settings import Settings  # noqa: PLC0415
+
+    return frozenset(Settings.model_fields)
 
 
 class Section(NamedTuple):
@@ -120,7 +124,7 @@ def setting_leaves(section: Section) -> list[Setting]:
     prefix, model = section.prefix, section.model
     leaves = walk_settings(model, (prefix,) if prefix else (), include_collections=True)
     if not prefix:
-        leaves = [leaf for leaf in leaves if leaf.path[0] in _ROOT_SECTIONS]
+        leaves = [leaf for leaf in leaves if leaf.path[0] in _root_sections()]
     models = {prefix: model} if prefix else model_sections(model)
     return [
         Setting(
@@ -215,7 +219,7 @@ def _model_node(node: Mapping[str, Any], defs: Mapping[str, Any]) -> Mapping[str
 def _renamed(section: Section) -> list[Line]:
     """``cfg <old> -> <new>  [deprecated]`` for each renamed key still read.
 
-    The root's sections (``http``, ``ui``, ``skills``) declare their own.
+    The root's sections (``Settings``' own fields) declare their own.
     """
     from untaped.deprecated_keys import key_mappings  # noqa: PLC0415
     from untaped.settings import model_sections  # noqa: PLC0415
@@ -224,7 +228,7 @@ def _renamed(section: Section) -> list[Line]:
         models = {section.prefix: section.model}
     else:
         found = model_sections(section.model)
-        models = {name: found[name] for name in sorted(_ROOT_SECTIONS & set(found))}
+        models = {name: found[name] for name in sorted(_root_sections() & set(found))}
     return [
         Line(f"cfg {prefix}.{old} -> {prefix}.{new}", "deprecated")
         for prefix, model in models.items()

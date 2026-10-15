@@ -29,6 +29,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    ErrorCategory,
     Failure,
     FormatOption,
     LimitOption,
@@ -36,6 +37,7 @@ from untaped.sdk import (
     echo,
     emit,
     finish,
+    not_found,
     parse_kv_pairs,
     q,
     raise_usage,
@@ -45,6 +47,7 @@ from untaped.sdk import (
 )
 from untaped_awx.application import GetUnifiedTemplate
 from untaped_awx.cli.context import open_context
+from untaped_awx.errors import AwxError
 
 app = create_app(
     name="unified-templates",
@@ -150,7 +153,13 @@ def get_command(
             return
         records, missing = GetUnifiedTemplate(ctx.ujts)(ids=identifiers)
     for raw in missing:
-        ctx.diag.failure(Failure.plain(f"{raw}: not found"))
+        ctx.diag.failure(
+            Failure(
+                category=ErrorCategory.NOT_FOUND,
+                system=AwxError.system,
+                message=not_found("unified template", raw),
+            )
+        )
     if records:
         emit(
             records,

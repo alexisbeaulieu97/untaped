@@ -91,10 +91,10 @@ def _owner(path: Path) -> tuple[str, str | None]:
 
 def comparable(first: Path, second: Path) -> bool:
     """Skill files meet only their own plugin's skill files and README."""
-    (kind_a, cap_a), (kind_b, cap_b) = _owner(first), _owner(second)
+    (kind_a, plugin_a), (kind_b, plugin_b) = _owner(first), _owner(second)
     if "skill" not in (kind_a, kind_b):
         return True
-    return cap_a == cap_b and {kind_a, kind_b} <= {"skill", "readme"}
+    return plugin_a == plugin_b and {kind_a, kind_b} <= {"skill", "readme"}
 
 
 def _comparable_paragraphs(page: Path) -> list[str]:

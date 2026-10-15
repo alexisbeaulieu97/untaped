@@ -14,10 +14,11 @@ _UNTAPED_HELPER = re.compile(r"^\s*helper\s*=\s*(?P<value>!.*\bgit credential\s*
 
 
 def user_helpers(host: str, *, cwd: Path) -> list[str]:
-    """The user's own credential helpers that apply to ``https://<host>``, in git's order.
+    """The user's own credential helpers git asks for ``https://<host>``, in its order.
 
     Read from the user's config alone (``cwd`` is a directory outside any
-    repository); a helper scoped to another URL is left out.
+    repository); a helper scoped to another URL is left out, and an empty
+    one drops those before it, as it does for git.
     """
     try:
         result = run_git(
@@ -35,11 +36,15 @@ def user_helpers(host: str, *, cwd: Path) -> list[str]:
     for line in result.text.splitlines():
         key, _, value = line.partition(" ")
         match = _HELPER_KEY.match(key.lower())
-        if match is None or not value:
+        if match is None:
             continue
         scope = match.group("url")
-        if scope is None or scope.rstrip("/") in (f"https://{host}", host):
+        if scope is not None and scope.rstrip("/") not in (f"https://{host}", host):
+            continue
+        if value:
             helpers.append(value)
+        else:
+            helpers.clear()
     return helpers
 
 

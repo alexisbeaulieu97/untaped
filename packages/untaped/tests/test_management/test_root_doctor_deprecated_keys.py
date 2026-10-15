@@ -144,3 +144,33 @@ def test_a_deleted_key_is_unknown_with_its_note_and_the_migrate_fix(
     )
     assert (row["fix"], row["automatic"]) == (["--profile", "default", "config", "migrate"], True)
     assert rows["deprecated-keys"]["status"] == "pass"
+
+
+def test_a_retired_or_deleted_variable_still_set_is_named(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Retired keys are no longer read, so a variable left in a shell profile is silently ignored.
+    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    monkeypatch.setenv("UNTAPED_OLD__REPO_PATH", "/r")
+    monkeypatch.setenv("untaped_old__store_dir", "/s")
+
+    row = _rows(**{"deprecated-keys": ""})["deprecated-keys"]
+
+    assert row["status"] == "warn"
+    assert row["detail"] == (
+        "UNTAPED_OLD__REPO_PATH (environment, retired) → UNTAPED_OLD__CACHE_DIR; "
+        "UNTAPED_OLD__STORE_DIR (environment): deleted in 11.0; set git.store_dir"
+    )
+    # config migrate rewrites the config file, not the environment.
+    assert (row["fix"], row["automatic"]) == (None, False)
+
+
+def test_a_renamed_variable_is_left_to_the_read_warning(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    monkeypatch.setenv("UNTAPED_OLD__CORPUS_PATH", "/c")
+
+    row = _rows(**{"deprecated-keys": ""})["deprecated-keys"]
+
+    assert row["status"] == "pass"

@@ -1,4 +1,4 @@
-"""Settings and state models for the Ansible tool."""
+"""Settings and state models for the Ansible plugin."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ class AnsibleSettings(BaseModel):
 
 
 class AnsibleState(BaseModel):
-    """Top-level Ansible tool app state."""
+    """The Ansible plugin's state: its saved sources and aliases."""
 
     model_config = ConfigDict(frozen=True)
 

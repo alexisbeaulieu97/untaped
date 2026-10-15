@@ -155,4 +155,4 @@ def _dependency_order(dependencies: Sequence[Sequence[int]]) -> list[int]:
     return order
 
 
-__all__ = ["MAX_PARALLEL", "Schedule", "ScheduleInterruptedError"]
+__all__ = ["MAX_PARALLEL", "Schedule", "ScheduleInterruptedError", "dooms_batch"]

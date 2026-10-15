@@ -6,7 +6,7 @@ that serialises ``create``, ``add``, ``archive`` and ``remove`` of one workspace
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -146,23 +146,16 @@ class StateWorkspaceStore:
         self._active.remove(name)
         return archived
 
-    def remove(self, name: str) -> list[WorkspaceRecord]:
+    def remove(self, name: str) -> None:
         """Drop every record named ``name``, active and archived (callers hold :meth:`locked`).
 
-        Returns the records dropped, active first. The active one goes first: a
-        failure in between leaves an archived record, which ``remove`` drops on
-        a retry.
+        The active one goes first: a failure in between leaves an archived
+        record, which ``remove`` drops on a retry.
         """
         name = workspace_key(name)
-        dropped: list[WorkspaceRecord] = []
 
-        def _drop(model: type[WorkspaceRecord]) -> Callable[[Rows], Rows]:
-            def _filter(rows: Rows) -> Rows:
-                dropped.extend(model.model_validate(row) for row in rows if row.get("name") == name)
-                return [row for row in rows if row.get("name") != name]
+        def _drop(rows: Rows) -> Rows:
+            return [row for row in rows if row.get("name") != name]
 
-            return _filter
-
-        self._active.mutate(_drop(WorkspaceRecord))
-        self._archived.mutate(_drop(ArchivedRecord))
-        return dropped
+        self._active.mutate(_drop)
+        self._archived.mutate(_drop)

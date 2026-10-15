@@ -2,42 +2,31 @@
 
 Fires when the workspace version is ``X.0.0`` (or an ``X.0.0`` pre-release),
 ``CHANGELOG.md`` has a section for that version and ``changelog.d/`` holds no
-fragments, which is the state of a major release PR (and of main just after
-the release, where the test passes anyway). Between releases main carries the
-last released version, so the version alone would fire there. ``retired_keys`` never count: they are
-what a major leaves behind for ``config migrate``.
+fragments, which is the state of a major release PR and of main just after the
+release. Between releases main carries the last released version, so the
+version alone would fire there.
+
+The previous major's spellings are the lines its newest release (never the
+major's own tag) marks ``[deprecated]`` in ``tests/repo/surface.txt``: what
+that release warned about. A spelling deprecated while the major was being prepared reached no
+release yet, so it stays, with its warning, until the next major. Retired keys
+never count: they have no surface line, and are what a major leaves behind for
+``config migrate``.
 """
 
 from __future__ import annotations
 
-import functools
 import re
-import warnings
-from collections.abc import Iterator, Mapping, Sequence
-from typing import Annotated, Any, ClassVar
+from collections.abc import Sequence
 
 import pytest
 import release  # scripts/release.py (``pythonpath = ["scripts"]``)
-from cyclopts import App, Parameter
 from packaging.version import Version
-from pydantic import BaseModel
 
 import changelog  # scripts/changelog.py
-from repo.support import REPO_ROOT
-from test_plugins.plugin_harness import make_spec
-from untaped import bootstrap, sdk
-from untaped.cli import create_app
-from untaped.plugins.registry import CompositionResult, PluginCandidate
-from untaped.settings import profile_section_models
-from untaped.stability import (
-    Deprecated,
-    deprecated,
-    deprecated_alias,
-    deprecated_aliases,
-    experimental,
-    marks,
-)
-from untaped.testing import plugin_candidate
+from repo.support import REPO_ROOT, SURFACE_FILE, baseline_tag, git, release_baseline
+from untaped.git import GitCommandError
+from untaped.surface import Line, parse
 
 
 def is_major_release(version: str, text: str, fragments: Sequence[str]) -> bool:
@@ -47,92 +36,32 @@ def is_major_release(version: str, text: str, fragments: Sequence[str]) -> bool:
     return parsed.minor == 0 and parsed.micro == 0 and built and not fragments
 
 
-def settings_leftovers(sections: Mapping[str, type[BaseModel]]) -> list[str]:
-    """Each section declaring ``renamed_keys``."""
-    return [
-        f"{section}: renamed_keys {sorted(model.renamed_keys)}"
-        for section, model in sections.items()
-        if getattr(model, "renamed_keys", None)
-    ]
+def leftovers(released: Sequence[Line], current: Sequence[Line]) -> list[Line]:
+    """The lines ``released`` marks deprecated that ``current`` still has, marked or not."""
+    present = {line.identity for line in current}
+    return sorted(
+        line for line in released if line.mark == "deprecated" and line.identity in present
+    )
 
 
-def mark_leftovers(root: App, result: CompositionResult) -> list[str]:
-    """Every plugin, group, command or setting marked ``deprecated``."""
-    return [
-        (
-            f"{mark.where}: deprecated setting"
-            if mark.target == "setting"
-            else f"untaped {mark.where}: deprecated {mark.target}"
-        )
-        for mark in marks(root, result, resolve=True)
-        if isinstance(mark.stability, Deprecated)
-    ]
-
-
-def alias_leftovers(app: App, path: tuple[str, ...] = ()) -> Iterator[str]:
-    """Every ``deprecated_alias`` registered on ``app`` or a command below it."""
-    where = " ".join(path) or "untaped"
-    for old, new in sorted(deprecated_aliases(app).items()):
-        yield f"{where}: deprecated alias {old} -> {new}"
-    for name in app:
-        if not name.startswith("-"):
-            yield from alias_leftovers(app[name], (*path, name))
-
-
-def option_leftovers(app: App, path: tuple[str, ...] = ()) -> Iterator[str]:
-    """Every hidden option whose help starts with ``Deprecated:`` on a command below ``app``."""
-    where = " ".join(path) or "untaped"
-    if app.default_command is not None:
-        for argument in app.assemble_argument_collection():
-            help_text = argument.parameter.help or ""
-            if not argument.show and help_text.startswith("Deprecated:"):
-                yield f"{where}: deprecated option {' '.join(argument.names)}"
-    for name in app:
-        if not name.startswith("-"):
-            yield from option_leftovers(app[name], (*path, name))
-
-
-def sdk_leftovers(namespace: Mapping[str, object]) -> list[str]:
-    """Each export, or attribute of an exported class, marked ``@warnings.deprecated``."""
-    found = [name for name, value in namespace.items() if _deprecated(value)]
-    for name, value in namespace.items():
-        if isinstance(value, type):
-            found.extend(
-                f"{name}.{attr}" for attr, member in vars(value).items() if _deprecated(member)
-            )
-    return found
-
-
-def _deprecated(value: object) -> bool:
-    if isinstance(value, property):
-        value = value.fget
-    elif isinstance(value, functools.cached_property):
-        value = value.func
-    elif isinstance(value, staticmethod | classmethod):
-        value = value.__func__
-    return getattr(value, "__deprecated__", None) is not None
-
-
-def test_a_major_release_drops_deprecated_spellings(
-    first_party_candidates: tuple[PluginCandidate, ...], fresh_composition: None
-) -> None:
+def test_a_major_release_drops_deprecated_spellings() -> None:
     version = release.release_version(REPO_ROOT)
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     if not is_major_release(version, text, changelog.fragment_paths(REPO_ROOT)):
         pytest.skip(f"{version} is not a major release being prepared")
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-    sections = profile_section_models()
-    exports = {name: getattr(sdk, name) for name in sdk.__all__}
+    tag = release_baseline(before_major=Version(version).major)
+    try:
+        released = parse(git("show", f"{tag}:{SURFACE_FILE}"))
+    except GitCommandError:
+        pytest.skip(f"{tag} predates {SURFACE_FILE}, so it records no deprecations")
+    # test_surface keeps the committed file equal to what the code generates.
+    current = parse((REPO_ROOT / SURFACE_FILE).read_text(encoding="utf-8"))
 
-    leftovers = [
-        *settings_leftovers(sections),
-        *mark_leftovers(root, bootstrap.composition()),
-        *alias_leftovers(root),
-        *option_leftovers(root),
-        *sdk_leftovers(exports),
-    ]
+    found = leftovers(released, current)
 
-    assert not leftovers, f"remove before releasing {version}:\n" + "\n".join(leftovers)
+    assert not found, f"{tag} deprecated these; remove them before releasing {version}:\n" + (
+        "\n".join(f"  {line.identity}" for line in found)
+    )
 
 
 @pytest.mark.parametrize(
@@ -153,131 +82,36 @@ def test_is_major_release(version: str, text: str, fragments: list[str], expecte
     assert is_major_release(version, text, fragments) is expected
 
 
-class _Renamed(BaseModel):
-    renamed_keys: ClassVar[dict[str, str]] = {"old": "new"}
-    retired_keys: ClassVar[dict[str, str]] = {"older": "new"}
-    new: int = 0
+def test_leftovers_are_what_the_last_release_deprecated_and_still_exists() -> None:
+    released = [
+        Line("sdk untaped.sdk.old(x)", "deprecated"),
+        Line("cli untaped jira me -> untaped jira whoami", "deprecated"),
+        Line("cfg acme.old -> acme.new", "deprecated"),
+        Line("sdk untaped.sdk.kept(x)"),
+    ]
+    current = [
+        Line("sdk untaped.sdk.old(x)", "deprecated"),
+        Line("cfg acme.old -> acme.new"),  # a dropped mark does not hide it
+        # Deprecated since that release: it warned in no release yet, so it stays.
+        Line("sdk untaped.sdk.kept(x)", "deprecated"),
+    ]
 
-
-class _Retired(BaseModel):
-    retired_keys: ClassVar[dict[str, str]] = {"old": "new"}
-    new: int = 0
-
-
-def test_settings_leftovers_name_each_section_but_not_retired_keys() -> None:
-    sections = {"a": _Renamed, "c": _Retired}
-
-    assert settings_leftovers(sections) == ["a: renamed_keys ['old']"]
-
-
-def test_mark_leftovers_report_a_deprecated_plugin_group_and_command() -> None:
-    def factory() -> App:
-        app = create_app(name="svc", help="Service.")
-        app.command(create_app(name="sunset", help="Sunset.", stability=deprecated()))
-
-        @app.command(name="old")
-        @deprecated()
-        def old() -> None: ...
-
-        @app.command(name="trial")
-        @experimental
-        def trial() -> None: ...
-
-        return app
-
-    spec = make_spec(name="svc", factory=factory, stability=deprecated())
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
-
-    found = mark_leftovers(root, bootstrap.composition())
-    assert [line for line in found if line.startswith("untaped svc")] == [
-        "untaped svc: deprecated plugin",
-        "untaped svc sunset: deprecated command",
-        "untaped svc old: deprecated command",
+    assert leftovers(released, current) == [
+        Line("cfg acme.old -> acme.new", "deprecated"),
+        Line("sdk untaped.sdk.old(x)", "deprecated"),
     ]
 
 
-class _Marked(BaseModel):
-    old: Annotated[bool, deprecated(replacement="new")] = False
-    trial: Annotated[int, experimental] = 1
-    new: bool = False
-
-
-def test_mark_leftovers_report_a_deprecated_setting_but_not_an_experimental_one() -> None:
-    spec = make_spec(
-        name="svc", factory=lambda: create_app(name="svc", help="S."), settings=_Marked
-    )
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
-
-    found = mark_leftovers(root, bootstrap.composition())
-
-    assert [line for line in found if line.startswith("svc.")] == ["svc.old: deprecated setting"]
-
-
-def test_alias_leftovers_name_the_command() -> None:
-    root = App(name="untaped")
-    group = App(name="jira")
-    group.command(App(name="whoami"))
-    root.command(group)
-    deprecated_alias(root, "--old", "--new")
-    deprecated_alias(group, "me", "whoami")
-
-    assert list(alias_leftovers(root)) == [
-        "untaped: deprecated alias --old -> --new",
-        "jira: deprecated alias me -> whoami",
-    ]
-
-
-def test_option_leftovers_name_hidden_deprecated_options_only() -> None:
-    root = App(name="untaped")
-    group = App(name="awx")
-
-    @group.command(name="run")
-    def run(
-        *,
-        old: Annotated[
-            bool, Parameter(name="--old", negative="", show=False, help="Deprecated: use new.")
-        ] = False,
-        hidden: Annotated[bool, Parameter(name="--hidden", negative="", show=False)] = False,
-        shown: Annotated[
-            bool, Parameter(name="--shown", negative="", help="Deprecated: still visible.")
-        ] = False,
-    ) -> None: ...
-
-    root.command(group)
-
-    assert list(option_leftovers(root)) == ["awx run: deprecated option --old"]
-
-
-@warnings.deprecated("use g")
-def _old_function() -> None: ...
-
-
-class _Client:
-    @property
-    @warnings.deprecated("use b")
-    def a(self) -> int:
-        return 1
-
-    @functools.cached_property
-    @warnings.deprecated("use d")
-    def c(self) -> int:
-        return 1
-
-    @staticmethod
-    @warnings.deprecated("use f")
-    def e() -> int:
-        return 1
-
-    @classmethod
-    @warnings.deprecated("use h")
-    def g(cls) -> int:
-        return 1
-
-    def current(self) -> int:
-        return 1
-
-
-def test_sdk_leftovers_look_through_properties_and_method_wrappers() -> None:
-    namespace: dict[str, Any] = {"f": _old_function, "Client": _Client, "VALUE": 3}
-
-    assert sdk_leftovers(namespace) == ["f", "Client.a", "Client.c", "Client.e", "Client.g"]
+@pytest.mark.parametrize(
+    ("tags", "expected"),
+    [
+        # On main just after the major's tag, the baseline is still the previous major.
+        (["v10.1.0", "v11.0.0"], "v10.1.0"),
+        (["v10.0.0", "v10.1.0", "v11.0.0rc1"], "v10.1.0"),
+        (["v11.0.0"], None),
+    ],
+)
+def test_the_baseline_is_the_previous_majors_newest_release(
+    tags: list[str], expected: str | None
+) -> None:
+    assert baseline_tag(tags, before_major=11) == expected

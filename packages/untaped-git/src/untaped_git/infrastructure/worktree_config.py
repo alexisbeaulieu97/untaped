@@ -44,7 +44,7 @@ def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | No
         helper = f"credential.{origin}.helper"
         _worktree_config(store, worktree, f"credential.{origin}.useHttpPath", "true")
         _worktree_config(store, worktree, "--unset-all", helper, check=False)
-        if store._helper_first:
+        if store._helper_only:
             _worktree_config(store, worktree, "--add", helper, "")
         _worktree_config(store, worktree, "--add", helper, _helper_command(profile))
 

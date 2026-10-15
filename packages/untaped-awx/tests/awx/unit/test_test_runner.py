@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
@@ -19,7 +20,7 @@ from untaped_awx.application.suites.ports import (
 from untaped_awx.application.suites.resolver import ResolveCasePayload
 from untaped_awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
 from untaped_awx.domain import Job, JobEvent
-from untaped_awx.domain.case_failure import FailureEvidence
+from untaped_awx.domain.case_failure import CaseFailure, FailureEvidence
 from untaped_awx.domain.suite import (
     Baseline,
     Case,
@@ -189,6 +190,11 @@ class StubWatcher:
         return self._by_id.get(job.id, self._default)
 
 
+def _count(item: str | None, failure: CaseFailure) -> None:
+    """Report a failure as the CLI does: an ``error:`` line that counts toward the exit code."""
+    Diagnostics().failure(failure, item=item)
+
+
 def _exit_code(outcome: SuiteRunOutcome) -> int:
     """The exit code ``awx test run`` gives ``outcome``: the most severe counted failure."""
     with diagnostics_scope():
@@ -246,6 +252,7 @@ def _make_runner(
         preflight=preflight,
         host_reader=host_reader,
         hosts=hosts,
+        report=_count,
     )
 
 
@@ -291,6 +298,7 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
         host_reader=_no_hosts,
         job_url=lambda job: None,
         stop=stop,
+        report=_count,
     )
     suite = _suite("s", {f"c{i}": {"extra_vars": {"case_name": f"c{i}"}} for i in range(6)})
     started = time.monotonic()
@@ -770,6 +778,7 @@ def test_evidence_is_skipped_when_not_wanted_but_the_failure_is_attributed() -> 
         host_reader=_no_hosts,
         job_url=lambda job: None,
         evidence=False,
+        report=_count,
     )
     [row] = runner([_case_suite({})]).results
     assert row.failure is not None
@@ -1368,6 +1377,7 @@ def _regression_runner(
     stop: threading.Event | None = None,
     fk: StubFk | None = None,
     host_reader: HostsById | None = None,
+    report: Callable[[str | None, CaseFailure], None] | None = None,
 ) -> tuple[RunTestSuite, SequenceLauncher, HostsById, EventsById]:
     launcher = SequenceLauncher()
     host_reader = host_reader or HostsById(hosts or {})
@@ -1393,6 +1403,7 @@ def _regression_runner(
         canceller=canceller,
         evidence=evidence,
         stop=stop,
+        report=report or _count,
     )
     return runner, launcher, host_reader, event_reader
 
@@ -1792,7 +1803,33 @@ def test_the_baseline_runs_environment_failures_count() -> None:
     runner, _, _, _ = _regression_runner(finals)
     outcome = runner([_case_suite({})], baseline="main")
     [row] = outcome.results
-    assert (row.change, [f.system for f in outcome.counted()]) == ("fixed", ["awx.controller"])
+    assert row.change == "fixed"
+    assert [(item, f.system) for item, f in outcome.deciding()] == [
+        ("s/c (baseline)", "awx.controller")
+    ]
+
+
+def test_an_aborted_run_reports_only_the_baseline_failures_that_outrank_a_failed_test() -> None:
+    finals: dict[int, str | Job] = {
+        5: "failed",
+        6: Job(id=6, kind="job", status="error", job_explanation="pod lost"),
+        7: "successful",
+    }
+
+    def job_url(job: Job) -> str:
+        if job.id == 7:
+            raise RuntimeError("bug")
+        return "url"
+
+    reported: list[tuple[str | None, str]] = []
+    runner, _, _, _ = _regression_runner(
+        finals,
+        job_url=job_url,
+        report=lambda item, failure: reported.append((item, failure.system)),
+    )
+    with pytest.raises(RuntimeError, match="bug"):
+        runner([_suite("s", {"a": {}, "b": {}})], baseline="main")
+    assert reported == [("s/b (baseline)", "awx.controller")]
 
 
 def test_a_saved_baseline_is_compared_with() -> None:

@@ -9,10 +9,14 @@ from pathlib import Path
 import pytest
 
 from untaped.testing.git import GitRemote, git_remote
-from untaped_git.errors import StoreError
+from untaped_git.errors import GitError
 from untaped_git.infrastructure.store import RepoStore
 
 type StoreFor = Callable[..., RepoStore]
+
+
+class StoreError(GitError):
+    """The error class the tests' store handles raise; a consumer passes its own."""
 
 
 @pytest.fixture
@@ -31,7 +35,7 @@ def store_for(tmp_path: Path, remote: GitRemote, warnings: list[str]) -> StoreFo
     root = tmp_path / "store"
 
     def build(plugin: str, *, url: str | None = None) -> RepoStore:
-        return RepoStore(
+        return RepoStore._open(
             root / "git.example" / "app.git",
             url=url or remote.url,
             plugin=plugin,
@@ -41,6 +45,12 @@ def store_for(tmp_path: Path, remote: GitRemote, warnings: list[str]) -> StoreFo
         )
 
     return build
+
+
+def ensure(store: RepoStore) -> bool:
+    """Create the repo and reconcile its policy, as every writer does first; created?"""
+    with store._locked():
+        return store._ensure()
 
 
 def git(repo: Path, *args: str, bare: bool = True, input: str | None = None) -> str:

@@ -31,7 +31,7 @@ from untaped_ansible.domain.payloads import (
     SkippedRef,
     SourceRepoMetadata,
 )
-from untaped_ansible.infrastructure.git_store import GitCacheError
+from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.settings import SourceDefinition
 
@@ -157,7 +157,7 @@ class FakeGitCache:
             )
         try:
             if name in self.fail_fetches:
-                raise GitCacheError(f"git fetch failed for {name}")
+                raise RepoStoreError(f"git fetch failed for {name}")
             self.fetches.append((name, tuple(f"{ref.kind}/{ref.name}" for ref in refs)))
         finally:
             with self._in_flight:

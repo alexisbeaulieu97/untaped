@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from git.conftest import StoreError
 from untaped import bootstrap
 from untaped.sdk import ErrorCategory
 from untaped.testing import CliInvoker, plugin_candidate
 from untaped.testing.git import git_shim
 from untaped_git import SPEC
-from untaped_git.errors import StoreError
 from untaped_git.infrastructure.lock import repo_lock
 
 

@@ -11,11 +11,10 @@ from pathlib import Path
 import pytest
 
 import untaped_git.infrastructure.adopt as adopt_module
-from git.conftest import all_refs, git
+from git.conftest import StoreError, all_refs, git
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote
 from untaped_git.api import adopt, remove_if_emptied
-from untaped_git.errors import StoreError
 
 
 def _store_repo() -> Path:
@@ -476,3 +475,32 @@ def test_a_worktree_path_another_repository_now_uses_is_left_alone(
     adopt(source, plugin="workspace", error=StoreError)
 
     assert (tree / ".git").read_text(encoding="utf-8") == before
+
+
+def test_ctrl_c_while_deleting_a_dropped_copy_leaves_nothing_a_later_run_adopts(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tree = tmp_path / "ws" / "app"
+    adopt(_workspace_10x(remote, tmp_path / "a", tree), plugin="workspace", error=StoreError)
+    root = tmp_path / "github-cache"
+    github, _ = _github_10x(remote, root)
+    rmtree = shutil.rmtree
+
+    def interrupted(path: Path, *args: object, **kwargs: object) -> None:
+        if (Path(path) / "HEAD").is_file():  # the dropped repository: cut short halfway
+            (Path(path) / "config").unlink()
+            raise KeyboardInterrupt
+        rmtree(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(shutil, "rmtree", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        adopt(
+            github,
+            plugin="github",
+            error=StoreError,
+            worktrees=(root / "worktrees", tmp_path / "new"),
+        )
+    monkeypatch.undo()
+
+    assert not github.exists()
+    assert remove_if_emptied(root)

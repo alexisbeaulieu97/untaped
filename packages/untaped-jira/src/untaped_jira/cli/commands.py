@@ -18,6 +18,7 @@ from untaped.sdk import (
     StdinOption,
     UsageError,
     YesOption,
+    app_context,
     batch_apply,
     create_app,
     emit,
@@ -173,7 +174,7 @@ def whoami_command(
     from untaped_jira.application import WhoAmI  # noqa: PLC0415
 
     with report_errors():
-        with open_client() as (client, _), _diag.progress("Fetching authenticated user"):
+        with open_client() as client, _diag.progress("Fetching authenticated user"):
             row = WhoAmI(client)()
         emit(row, fmt=fmt, columns=columns, kind="jira.user")
 
@@ -203,7 +204,7 @@ def issue_get_command(
             )
         ]
         single = not stdin and len(resolved) == 1
-        with open_client() as (client, _), _diag.progress("Fetching issues"):
+        with open_client() as client, _diag.progress("Fetching issues"):
             get_issue = GetIssue(client, comments=comments)
             if single:
                 rows, any_failed = [get_issue(resolved[0])], False
@@ -262,7 +263,7 @@ def comment_list_command(
 
     with report_errors():
         key = validate_issue_key(key)
-        with open_client() as (client, _), _diag.progress("Fetching comments"):
+        with open_client() as client, _diag.progress("Fetching comments"):
             rows = ListComments(client)(key, limit=limit)
         emit(
             rows,
@@ -304,7 +305,7 @@ def issue_search_command(
             text=text,
             sprint=sprint,
         )
-        with open_client() as (client, _), _diag.progress("Querying Jira issues"):
+        with open_client() as client, _diag.progress("Querying Jira issues"):
             rows = SearchIssues(client)(filters, limit=limit)
         emit(
             rows,
@@ -345,7 +346,7 @@ def issue_assigned_command(
             text=text,
             sprint=sprint,
         )
-        with open_client() as (client, _), _diag.progress("Querying assigned issues"):
+        with open_client() as client, _diag.progress("Querying assigned issues"):
             rows = SearchIssues(client)(filters, limit=limit)
         emit(
             rows,
@@ -372,7 +373,7 @@ def _username(assignee: str) -> str:
         return assignee
     from untaped_jira.application import WhoAmI  # noqa: PLC0415
 
-    with open_client() as (client, _), _diag.progress("Fetching authenticated user"):
+    with open_client() as client, _diag.progress("Fetching authenticated user"):
         name = WhoAmI(client)().name
     if not name:
         raise JiraError("the authenticated Jira user has no username")
@@ -416,14 +417,15 @@ def _send(
 
     if dry_run:
         if callable(preview):
-            with open_client() as (client, _):
+            with open_client() as client:
                 show(client)
         else:
             _show(preview)
         emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
         return
     policy = current_jira_settings().confirm
-    with open_client() as (client, ui):
+    with open_client() as client:
+        ui = app_context().ui(strict=False)
         if needs_confirmation(policy, destructive=destructive):
             ui.confirm_or_cancel(
                 "Send this request to Jira?",
@@ -635,7 +637,7 @@ def issue_transitions_command(
 
     with report_errors():
         key = validate_issue_key(key)
-        with open_client() as (client, _), _diag.progress("Fetching available transitions"):
+        with open_client() as client, _diag.progress("Fetching available transitions"):
             rows = ListTransitions(client)(key)
         emit(
             rows,
@@ -685,7 +687,8 @@ def issue_transition_command(
         ]
         settings = current_jira_settings()
         single = not stdin and len(resolved) == 1
-        with open_client() as (client, ui):
+        with open_client() as client:
+            ui = app_context().ui(strict=False)
             transition = TransitionIssue(client, base_url=settings.base_url)
             with _diag.progress("Resolving transitions"):
                 plans, resolve_failed = resolve_each(
@@ -803,7 +806,7 @@ def project_list_command(
     from untaped_jira.application import ListProjects  # noqa: PLC0415
 
     with report_errors():
-        with open_client() as (client, _), _diag.progress("Listing projects"):
+        with open_client() as client, _diag.progress("Listing projects"):
             rows = ListProjects(client)()
         emit(
             rows,
@@ -829,7 +832,7 @@ def project_get_command(
 
     with report_errors():
         key = validate_project_key(key)
-        with open_client() as (client, _), _diag.progress("Fetching project"):
+        with open_client() as client, _diag.progress("Fetching project"):
             row = GetProject(client)(key)
         emit(row, fmt=fmt, columns=columns, kind="jira.project")
 
@@ -855,7 +858,7 @@ def board_list_command(
     from untaped_jira.application import ListBoards  # noqa: PLC0415
 
     with report_errors():
-        with open_client() as (client, _), _diag.progress("Listing boards"):
+        with open_client() as client, _diag.progress("Listing boards"):
             rows = ListBoards(client)(
                 project_key_or_id=project,
                 name=name,
@@ -890,7 +893,7 @@ def sprint_list_command(
 
     with report_errors():
         settings = current_jira_settings()
-        with open_client() as (client, _), _diag.progress("Listing sprints"):
+        with open_client() as client, _diag.progress("Listing sprints"):
             rows = ListSprints(client, default_board_id=settings.default_board_id)(
                 board_id=board_id,
                 state=state,

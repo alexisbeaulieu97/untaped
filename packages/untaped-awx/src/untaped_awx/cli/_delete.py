@@ -102,8 +102,8 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         row["detail"] = outcome.detail
                         row.update(outcome.row_error())
                         label = f"{outcome.target.kind}#{outcome.target.id}"
-                        if outcome.error_info is not None:
-                            ctx.diag.failure(outcome.error_info, item=label)
+                        if outcome.failure is not None:
+                            ctx.diag.failure(outcome.failure, item=label)
                         elif outcome.detail:
                             ctx.diag.warning(f"{label}: {outcome.detail}")
                     failed = any(outcome.action != "completed" for outcome in outcomes)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -21,4 +23,21 @@ class DeferredReference:
 PlannedId = int | DeferredReference
 
 
-__all__ = ["DeferredReference", "PlannedId"]
+def tokens_in(value: Any) -> set[str]:
+    """Every planned token ``value`` holds, however deeply nested."""
+    if isinstance(value, DeferredReference):
+        return {value.token}
+    if isinstance(value, Mapping):
+        result: set[str] = set()
+        for item in value.values():
+            result.update(tokens_in(item))
+        return result
+    if isinstance(value, list | tuple | set | frozenset):
+        sequence_tokens: set[str] = set()
+        for item in value:
+            sequence_tokens.update(tokens_in(item))
+        return sequence_tokens
+    return set()
+
+
+__all__ = ["DeferredReference", "PlannedId", "tokens_in"]

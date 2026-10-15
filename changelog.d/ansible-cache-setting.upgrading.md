@@ -1,3 +1,3 @@
-`ansible.stale_after_seconds` and `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` are
-still read, with a warning, until 12.0; `untaped config migrate` moves the
-setting to `ansible.caches.index.max_age_seconds`.
+Rename `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` to
+`UNTAPED_ANSIBLE__CACHES__INDEX__MAX_AGE_SECONDS`; `untaped config migrate`
+moves `ansible.stale_after_seconds` in `config.yml`.

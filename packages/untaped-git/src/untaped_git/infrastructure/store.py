@@ -131,10 +131,12 @@ _HANDLE_REFUSED = ("fetch", "checkout", "worktree")
 class RepoStore:
     """One repo of the store, as one plugin sees it; see the module docstring.
 
-    Build it with :meth:`for_url`. Writers (``ensure``, ``fetch``,
-    ``prefetch`` and what calls it, ``delete_refs``,
-    ``write_worktree_config``) hold the repo's lock; ``refs``, ``ls_tree``
-    and a handle's ``run`` only read and do not.
+    Build it with :meth:`for_url` or :meth:`owned_by`, which also resolve
+    the host's credentials and ``git.untaped_helper_only``; a handle built
+    directly has neither. Writers (``fetch``, ``prefetch`` and what calls it,
+    ``delete_refs``, ``write_worktree_config``, ``release``) hold the repo's
+    lock, and the fetching ones create the repo when it is missing; ``refs``,
+    ``ls_tree`` and a handle's ``run`` only read and do not.
     """
 
     def __init__(
@@ -145,10 +147,6 @@ class RepoStore:
         plugin: str,
         error: type[UntapedError],
         map_error: Callable[[GitCommandError], UntapedError] | None = None,
-        auth: Callable[[str], HostAuth | None] | None = None,
-        warn: Callable[[str], None] | None = None,
-        helper_first: bool = False,
-        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._path = path
         self._url = url
@@ -157,11 +155,34 @@ class RepoStore:
         self._plain = self._layout.heads == "refs/remotes/origin/"
         self._error = error
         self._map_error = map_error
-        self._auth = auth
         self._resolved: tuple[HostAuth | None] | None = None
-        self._warn = warn or _diag.warning
-        self._helper_first = helper_first
-        self._sleep = sleep
+        # Set by ``_open``: the host lookup, warning sink, helper policy and retry pause.
+        self._auth: Callable[[str], HostAuth | None] | None = None
+        self._warn: Callable[[str], None] = _diag.warning
+        self._helper_only = False
+        self._sleep: Callable[[float], None] = time.sleep
+
+    @classmethod
+    def _open(
+        cls,
+        path: Path,
+        *,
+        url: str,
+        plugin: str,
+        error: type[UntapedError],
+        map_error: Callable[[GitCommandError], UntapedError] | None = None,
+        auth: Callable[[str], HostAuth | None] | None = None,
+        warn: Callable[[str], None] | None = None,
+        helper_only: bool = False,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> Self:
+        """A handle with its knobs: what :meth:`for_url` resolves, or a test's own."""
+        store = cls(path, url=url, plugin=plugin, error=error, map_error=map_error)
+        store._auth = auth
+        store._warn = warn or _diag.warning
+        store._helper_only = helper_only
+        store._sleep = sleep
+        return store
 
     @classmethod
     def for_url(
@@ -180,17 +201,17 @@ class RepoStore:
         """
         from untaped_git.domain.hosts import resolve_host  # noqa: PLC0415  # contracts load lazily
         from untaped_git.domain.url import store_key  # noqa: PLC0415
-        from untaped_git.settings import git_settings  # noqa: PLC0415
+        from untaped_git.settings import git_settings, store_root  # noqa: PLC0415
 
         settings = git_settings()
-        return cls(
-            settings.store_dir.expanduser().joinpath(*store_key(url)),
+        return cls._open(
+            store_root().joinpath(*store_key(url)),
             url=url,
             plugin=_plugin_name(plugin),
             error=error,
             map_error=map_error,
             auth=resolve_host,
-            helper_first=settings.untaped_helper_first,
+            helper_only=settings.untaped_helper_only,
         )
 
     @classmethod
@@ -207,24 +228,24 @@ class RepoStore:
         label (``remote.origin.url``). A repo without a label is skipped.
         """
         from untaped_git.domain.hosts import resolve_host  # noqa: PLC0415  # contracts load lazily
-        from untaped_git.settings import git_settings  # noqa: PLC0415
+        from untaped_git.settings import git_settings, store_root  # noqa: PLC0415
 
         name = _plugin_name(plugin)
         settings = git_settings()
         stores = []
-        for repo in list_repos(settings.store_dir.expanduser()):
+        for repo in list_repos(store_root()):
             label = repo_origin(repo)
             if label is None or not private_file(repo, name).is_file():
                 continue
             stores.append(
-                cls(
+                cls._open(
                     repo,
                     url=label,
                     plugin=name,
                     error=error,
                     map_error=map_error,
                     auth=resolve_host,
-                    helper_first=settings.untaped_helper_first,
+                    helper_only=settings.untaped_helper_only,
                 )
             )
         return stores
@@ -256,7 +277,7 @@ class RepoStore:
         """Whether this plugin has a part in the repo, so :meth:`release` has work to do.
 
         Its private file or refs are there, or a release of its own was
-        interrupted (the mark the next :meth:`ensure` or :meth:`release` finishes).
+        interrupted (the mark the next fetch, prefetch or :meth:`release` finishes).
         """
         if not self.exists():
             return False
@@ -299,12 +320,12 @@ class RepoStore:
 
     # ── lifecycle ──────────────────────────────────────────────────────────
 
-    def ensure(self) -> bool:
-        """Create the repo when missing and reconcile its policy; ``True`` when created."""
-        with self._locked():
-            return self._ensure()
-
     def _ensure(self) -> bool:
+        """Create the repo when missing and reconcile its policy; ``True`` when created.
+
+        ``fetch``, ``prefetch`` and ``checkout`` call it first under the lock,
+        so the next of them also finishes an interrupted release.
+        """
         store_release.remove_removing(self)
         marked = self._config_get(RELEASE_MARK) if self.exists() else None
         if marked is not None:
@@ -355,7 +376,7 @@ class RepoStore:
         left, the repo stays (:class:`Released` names who kept it); otherwise
         it is renamed to ``<repo>.git.removing`` and deleted
         (:class:`Removed`). The ``untaped.release`` mark written first lets
-        the next :meth:`ensure` finish a release that was interrupted, and
+        the next fetch or prefetch finish a release that was interrupted, and
         another plugin's interrupted release is finished first.
 
         ``unless_in_use`` changes nothing while one of this plugin's worktrees
@@ -654,7 +675,7 @@ class RepoStore:
         if not trees and not blobs:
             raise ValueError("prefetched() reads nothing: pass trees, blobs or both")
         self.prefetch(trees=trees, paths=paths, blobs=blobs, progress=progress)
-        return Prefetched(self, tuple(trees), tuple(paths), tuple(blobs))
+        return Prefetched(self)
 
     def _check_ids(self, blobs: Sequence[str]) -> None:
         """Refuse an id of the other object format than this repo's (``invalid``)."""
@@ -845,15 +866,9 @@ class RepoStore:
         user's ``git fetch``/``push`` there uses this handle's URL
         (``insteadOf`` over the store's label) and, for https, asks
         ``untaped git credential`` with ``profile`` after the user's own
-        helpers (instead of them with ``git.untaped_helper_first``).
+        helpers (instead of them with ``git.untaped_helper_only``).
         """
         worktree_config.write_worktree_config(self, worktree, profile=profile)
-
-    # ── report data ────────────────────────────────────────────────────────
-
-    def filter_state(self) -> str | None:
-        """``honoured``, ``ignored`` or ``None`` (no fetch has brought anything yet)."""
-        return self._config_get("untaped.filter") if self.exists() else None
 
     # ── internals ──────────────────────────────────────────────────────────
 
@@ -964,14 +979,8 @@ class RepoStore:
         label = repo_origin(self._path)
         if label and label != self._url:
             settings[f"url.{self._url}.insteadOf"] = label
-        auth = self._host_auth()
-        secret: dict[str, str] = {}
-        origin = https_origin(self._url)
-        if auth is not None:
-            if auth.credential is not None and origin is not None:
-                secret = credential_config(origin, auth.credential)
-            if auth.proxy and origin is not None:
-                settings[f"http.{origin}/.proxy"] = auth.proxy
+        secret, proxy = host_config(self._url, self._host_auth())
+        settings.update(proxy)
         settings.update(config or {})
         try:
             return run_git(
@@ -1058,17 +1067,8 @@ class Prefetched:
     outside the prefetched trees and paths fails instead of fetching.
     """
 
-    def __init__(
-        self,
-        store: RepoStore,
-        trees: tuple[str, ...],
-        paths: tuple[str, ...],
-        blobs: tuple[str, ...] = (),
-    ) -> None:
+    def __init__(self, store: RepoStore) -> None:
         self._store = store
-        self.trees = trees
-        self.paths = paths
-        self.blobs = blobs
 
     def run(
         self,
@@ -1122,7 +1122,21 @@ def parse_symref(text: str) -> str | None:
     return None
 
 
-def credential_config(origin: str, credential: Credential) -> dict[str, str]:
+def host_config(url: str, auth: HostAuth | None) -> tuple[dict[str, str], dict[str, str]]:
+    """What ``auth`` gives a command reaching ``url``: ``run_git``'s ``auth_config`` and ``config``.
+
+    The credential and the proxy, both scoped to ``url``'s https origin; an
+    ssh URL gets neither (its credentials are the user's own).
+    """
+    origin = https_origin(url)
+    if auth is None or origin is None:
+        return {}, {}
+    secret = {} if auth.credential is None else _credential_config(origin, auth.credential)
+    proxy = {f"http.{origin}/.proxy": auth.proxy} if auth.proxy else {}
+    return secret, proxy
+
+
+def _credential_config(origin: str, credential: Credential) -> dict[str, str]:
     """The command-scope setting that sends ``credential`` to ``origin`` only (``run_git``'s
     ``auth_config``: a private include file, never argv or the environment)."""
     header = basic_header(credential.username, credential.password)

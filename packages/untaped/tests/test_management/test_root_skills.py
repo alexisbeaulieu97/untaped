@@ -17,6 +17,8 @@ import pytest
 
 from test_management.support import asset, compose, make_spec
 from untaped import bootstrap
+from untaped.errors import ConfigError
+from untaped.management import skills as skills_cli
 from untaped.management.skills import build_root_skills_app
 from untaped.testing import CliInvoker
 
@@ -25,7 +27,7 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 def _skills_app(tmp_path: Path, *names: str) -> object:
     specs = [
-        make_spec(f"cap-{index}", skills=(asset(tmp_path, name),))
+        make_spec(f"plugin-{index}", skills=(asset(tmp_path, name),))
         for index, name in enumerate(names)
     ]
     result = compose(*specs)
@@ -64,8 +66,8 @@ def test_exact_name_wins_over_short_expansion(tmp_path: Path) -> None:
     first = asset(tmp_path, "untaped-demo")
     second = asset(tmp_path, "demo")
     result_compose = compose(
-        make_spec("cap-a", skills=(first,)),
-        make_spec("cap-b", skills=(second,)),
+        make_spec("plugin-a", skills=(first,)),
+        make_spec("plugin-b", skills=(second,)),
     )
     app = build_root_skills_app(shell=bootstrap.SHELL_SPEC, result=result_compose)
     target = tmp_path / "skills"
@@ -255,6 +257,27 @@ def test_update_named_current_skill_is_unchanged(tmp_path: Path) -> None:
     app = _skills_app(tmp_path, "untaped-one")
     _install(app, "one")
     assert [row["action"] for row in _json(app, "update", "one")] == ["unchanged"]
+
+
+def test_update_keeps_a_failure_s_category_on_its_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one")
+    Path.home().joinpath(".agents", "skills", "untaped-one", "SKILL.md").write_text("old\n")
+
+    def broken(*_args: object) -> None:
+        raise ConfigError("could not update it", hint="check the permissions")
+
+    monkeypatch.setattr(skills_cli, "update_installed_skill", broken)
+    result = CliInvoker().invoke(app, ["update", "--format", "json"])  # type: ignore[arg-type]
+
+    assert result.exit_code == 4
+    [row] = json.loads(result.stdout)
+    assert row["action"] == "failed"
+    assert row["error"]["category"] == "config"
+    assert row["error"]["hint"] == "check the permissions"
+    assert "error: untaped-one: could not update it" in result.stderr
 
 
 def test_update_unknown_installed_name_fails(tmp_path: Path) -> None:

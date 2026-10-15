@@ -16,20 +16,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Iterable, Mapping
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol
 
 from untaped_awx.domain import Job, JobEvent, ResourceSpec
 from untaped_awx.domain.suite import VariableSpec
 
 
-@runtime_checkable
 class Filesystem(Protocol):
     """Read text files. Decoupled so unit tests can stub it."""
 
     def read_text(self, path: Path) -> str: ...
 
 
-@runtime_checkable
 class Prompt(Protocol):
     """Interactive prompt for variable values. Stubbed in unit tests."""
 
@@ -38,7 +36,6 @@ class Prompt(Protocol):
     def ask(self, spec: VariableSpec) -> str: ...
 
 
-@runtime_checkable
 class Launcher(Protocol):
     """POST a launch payload, return the resulting :class:`Job` record."""
 
@@ -53,7 +50,6 @@ class Launcher(Protocol):
     ) -> Job: ...
 
 
-@runtime_checkable
 class Watcher(Protocol):
     """Poll a :class:`Job` until it reaches a terminal state.
 
@@ -72,14 +68,12 @@ class Watcher(Protocol):
     ) -> Job: ...
 
 
-@runtime_checkable
 class LogReader(Protocol):
     """Return a job's full stdout, one string per line."""
 
     def __call__(self, job: Job, /) -> list[str]: ...
 
 
-@runtime_checkable
 class EventReader(Protocol):
     """Read a job's events; ``params`` filter server-side, ``follow=False`` reads once."""
 
@@ -88,14 +82,12 @@ class EventReader(Protocol):
     ) -> Iterable[JobEvent]: ...
 
 
-@runtime_checkable
 class TailReader(Protocol):
     """Return the last ``lines`` log lines of a job, from its newest events only."""
 
     def __call__(self, job: Job, lines: int, /) -> list[str]: ...
 
 
-@runtime_checkable
 class HostReader(Protocol):
     """Read a job's host summary records (``job_host_summaries``), lazily, failed hosts first.
 
@@ -107,21 +99,18 @@ class HostReader(Protocol):
     ) -> Iterable[Mapping[str, Any]]: ...
 
 
-@runtime_checkable
 class NodeReader(Protocol):
     """Read a workflow job's nodes (``workflow_jobs/<id>/workflow_nodes/``), every page."""
 
     def __call__(self, job: Job, /) -> Iterable[Mapping[str, Any]]: ...
 
 
-@runtime_checkable
 class ApprovalDecider(Protocol):
     """Approve or deny a pending workflow approval (``workflow_approvals/<id>/approve/``)."""
 
     def __call__(self, approval_id: int, *, approve: bool) -> None: ...
 
 
-@runtime_checkable
 class JobReader(Protocol):
     """Re-read an execution: as it is now, or once AWX has saved its events."""
 
@@ -130,7 +119,6 @@ class JobReader(Protocol):
     def settled(self, job: Job) -> Job: ...
 
 
-@runtime_checkable
 class LaunchCheck(Protocol):
     """Raise when AWX would reject or ignore a launch, before anything runs.
 
@@ -155,7 +143,6 @@ class LaunchCheck(Protocol):
         ...
 
 
-@runtime_checkable
 class Parser(Protocol):
     """Splits frontmatter, parses YAML (with ``!ref``), renders Jinja2.
 
@@ -172,7 +159,6 @@ class Parser(Protocol):
     def render_body(self, body: str, values: Mapping[str, Any]) -> str: ...
 
 
-@runtime_checkable
 class VarsResolver(Protocol):
     """Resolve declared variables → typed values from CLI / files / prompt."""
 

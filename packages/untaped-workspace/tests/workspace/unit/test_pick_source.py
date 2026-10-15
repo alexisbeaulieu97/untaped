@@ -15,7 +15,8 @@ from untaped.testing import compose_with
 from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo
-from untaped_workspace.domain import RepoArg, StoredRepo, looks_like_url, repo_key
+from untaped_workspace.domain.models import RepoArg, StoredRepo
+from untaped_workspace.domain.naming import looks_like_url, repo_key
 from untaped_workspace.infrastructure.pick_source import RepoPickSource
 from workspace.fakes import Listing, age_answers, repo
 

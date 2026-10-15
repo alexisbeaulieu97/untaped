@@ -26,7 +26,7 @@ from untaped.output.diagnostic import format_error
 from untaped.settings import (
     HttpSettings,
     register_profile_settings,
-    reset_config_registry_for_tests,
+    reset_config_registry,
 )
 
 
@@ -91,7 +91,7 @@ def test_connected_client_defaults_to_resolved_profile_http(
         encoding="utf-8",
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    reset_config_registry_for_tests()
+    reset_config_registry()
 
     captured: dict[str, object] = {}
     real_client = httpx.Client
@@ -106,7 +106,7 @@ def test_connected_client_defaults_to_resolved_profile_http(
         with connected_client(config, section="demo"):
             pass
     finally:
-        reset_config_registry_for_tests()
+        reset_config_registry()
 
     assert captured["proxy"] == "http://corp-proxy:3128"
 

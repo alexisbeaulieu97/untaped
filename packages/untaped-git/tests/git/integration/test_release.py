@@ -8,11 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from git.conftest import StoreFor, all_refs, git
+from git.conftest import StoreError, StoreFor, all_refs, ensure, git
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote
 from untaped_git.domain.release import Released, Removed
-from untaped_git.errors import StoreError
 from untaped_git.infrastructure.repo_files import worktree_entries
 from untaped_git.infrastructure.store import RepoStore
 from untaped_git.infrastructure.store_release import RELEASE_MARK
@@ -163,7 +162,7 @@ def test_a_branch_left_behind_keeps_the_repo_without_a_mark(
     assert outcome.kept() == "branch fix"
     before = all_refs(workspace.path)
     # S39: no mark, so another consumer's ensure() finishes nothing and deletes nothing.
-    assert store_for("github").ensure() is False
+    assert ensure(store_for("github")) is False
     assert all_refs(workspace.path) == before
 
 
@@ -201,7 +200,7 @@ def test_ensure_finishes_an_interrupted_release_and_keeps_the_others(
     github.private_file.write_text("{}")
     git(github.path, "config", RELEASE_MARK, "github")  # killed right after the mark
 
-    assert ansible.ensure() is False
+    assert ensure(ansible) is False
 
     refs = all_refs(github.path)
     assert "refs/untaped/ansible/heads/main" in refs
@@ -218,7 +217,7 @@ def test_ensure_recreates_a_repo_whose_interrupted_release_left_nobody(
     git(github.path, "config", RELEASE_MARK, "github")
     ansible = store_for("ansible")
 
-    assert ansible.ensure() is True
+    assert ensure(ansible) is True
 
     assert not any(ref.startswith("refs/untaped/") for ref in all_refs(ansible.path))
     ansible.fetch(branches=["main"])
@@ -232,7 +231,7 @@ def test_a_removing_directory_is_deleted_by_ensure_and_by_the_leftover_sweep(
     removing = github.path.with_name("app.git.removing")
     (removing / "objects").mkdir(parents=True)
 
-    github.ensure()
+    ensure(github)
     assert not removing.exists()
 
     (removing / "objects").mkdir(parents=True)

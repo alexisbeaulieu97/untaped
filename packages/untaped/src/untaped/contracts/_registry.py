@@ -66,6 +66,11 @@ PROVIDER_REASONS = frozenset(
 )
 
 
+def upgrade_hint(plugin: str) -> str:
+    """The hint for a defect in ``plugin``'s own offer: a newer release may fix it."""
+    return f"upgrade untaped-{plugin}"
+
+
 @dataclass(frozen=True)
 class Quarantined:
     """A provider excluded from its owner's contracts, and why."""
@@ -463,7 +468,7 @@ def doctor_rows(plugins: frozenset[str] | None = None) -> list[DoctorRow]:
 
 
 def _offer_row(entry: Provider | Quarantined) -> DoctorRow:
-    upgrade = f"upgrade untaped-{entry.plugin}"
+    upgrade = upgrade_hint(entry.plugin)
     if isinstance(entry, Quarantined):
         name = "" if entry.contract is None else f".{_contract_name(entry.contract)}"
         if entry.reason == "owner-not-installed":

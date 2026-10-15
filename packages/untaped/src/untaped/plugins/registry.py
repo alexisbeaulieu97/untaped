@@ -522,7 +522,7 @@ class _Quarantine(Exception):
         )
 
 
-def _parse_requirement(requirement: object) -> Requirement | None:
+def parse_requirement(requirement: object) -> Requirement | None:
     """Parse one PEP 508 Requires-Dist string; ``None`` when malformed."""
     if not isinstance(requirement, str):
         return None
@@ -561,7 +561,7 @@ def owner_requirement(
     """
     wanted = canonicalize_name(distribution or f"untaped-{owner}")
     for line in requires_dist:
-        parsed = _parse_requirement(line)
+        parsed = parse_requirement(line)
         if parsed is None or parsed.marker is None or canonicalize_name(parsed.name) != wanted:
             continue
         # The environment fills every other variable, so ``extra`` decides; a marker
@@ -614,7 +614,7 @@ def _check_entry_point_group(candidate: PluginCandidate) -> None:
 def _check_requires_dist(candidate: PluginCandidate, state: _CompositionState) -> None:
     untaped_requirements: list[tuple[str, Requirement]] = []
     for requirement in candidate.requires_dist:
-        parsed = _parse_requirement(requirement)
+        parsed = parse_requirement(requirement)
         if parsed is None:
             raise _Quarantine(
                 "bad-metadata",

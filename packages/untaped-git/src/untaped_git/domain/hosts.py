@@ -56,11 +56,6 @@ class GitHost(Contract, shell=False):
         """The proxy URL for ``url``, or ``None`` for the user's own git config."""
         raise NotImplementedError
 
-    @classmethod
-    def for_url(cls, url: str) -> HostAuth | None:
-        """The provider for ``url``'s host and its answers; ``None`` means plain git."""
-        return resolve_host(url)
-
 
 @dataclass(frozen=True, slots=True)
 class HostAuth:

@@ -325,6 +325,8 @@ def test_a_stash_keeps_its_branch_and_the_repo(
 
     # Any consumer's next use creates nothing, deletes nothing and finishes no release.
     files = sorted(path.name for path in repo.iterdir())
-    assert RepoStore.for_url(remote.url, plugin="ansible", error=WorkspaceError).ensure() is False
+    store = RepoStore.for_url(remote.url, plugin="ansible", error=WorkspaceError)
+    with store._locked():
+        assert store._ensure() is False
     assert _refs(repo) == ["refs/heads/b1", "refs/stash"]
     assert sorted(path.name for path in repo.iterdir()) == files

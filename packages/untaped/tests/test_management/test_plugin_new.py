@@ -16,7 +16,7 @@ import pytest
 from test_management.contract_plugins import candidates
 from untaped import bootstrap
 from untaped.conventions import plugin_violations
-from untaped.errors import UsageError
+from untaped.errors import ConfigError, UntapedError, UsageError
 from untaped.management.plugin_new import BUILD_SYSTEM, ScaffoldOutcome, scaffold
 from untaped.plugins.registry import PluginCandidate
 from untaped.testing import compose_with, invoke_cli
@@ -145,7 +145,6 @@ def test_dry_run_plans_every_file_and_writes_none(tmp_path: Path) -> None:
     [
         ("Git_Lab", "rack.item_source", "must be lowercase words"),
         ("plugin", "rack.item_source", "'plugin' is a reserved"),
-        ("rack", "rack.item_source", "a plugin named 'rack' is already installed"),
         ("gitlab", "rack", "--fills takes OWNER.CONTRACT"),
         ("gitlab", "nowhere.item_source", "contract owner not found: 'nowhere'; known: rack"),
         ("gitlab", "rack.nothing", "contract not found: 'rack.nothing'; known: rack.item_source"),
@@ -159,10 +158,18 @@ def test_what_it_cannot_scaffold_is_a_usage_error(
     assert not (tmp_path / "out").exists()
 
 
+def test_an_installed_name_is_a_conflict(tmp_path: Path) -> None:
+    with pytest.raises(UntapedError, match="a plugin named 'rack' is already installed") as raised:
+        _new(tmp_path / "out", "rack")
+    assert raised.value.category == "conflict"
+    assert not (tmp_path / "out").exists()
+
+
 def test_an_existing_directory_is_never_overwritten(tmp_path: Path) -> None:
     (tmp_path / "untaped-gitlab").mkdir()
-    with pytest.raises(UsageError, match="already exists"):
+    with pytest.raises(UntapedError, match="already exists") as raised:
         _new(tmp_path)
+    assert raised.value.category == "conflict"
     assert list((tmp_path / "untaped-gitlab").iterdir()) == []
 
 
@@ -208,8 +215,11 @@ def test_an_owner_without_its_contract_in_api_is_refused(
     result = bootstrap.compose_root(candidates=[_RACK])
     assert owned_contracts()["rack"]  # loaded before the api stops exporting it
     monkeypatch.delattr(importlib.import_module("untaped_rack.api"), "ItemSource")
-    with pytest.raises(UsageError, match=r"rack doesn't export ItemSource from untaped_rack\.api"):
+    with pytest.raises(
+        ConfigError, match=r"rack doesn't export ItemSource from untaped_rack\.api"
+    ) as raised:
         scaffold(result, [_RACK], "gitlab", "rack.item_source", path=tmp_path, dry_run=True)
+    assert (raised.value.system, raised.value.hint) == ("rack", "upgrade untaped-rack")
 
 
 def test_a_name_the_owners_api_does_not_export_is_refused(
@@ -220,8 +230,11 @@ def test_a_name_the_owners_api_does_not_export_is_refused(
     result = bootstrap.compose_root(candidates=[_RACK])
     assert owned_contracts()["rack"]
     monkeypatch.delattr(importlib.import_module("untaped_rack.api"), "Item")
-    with pytest.raises(UsageError, match=r"ItemSource names Item, which untaped_rack\.api doesn't"):
+    with pytest.raises(
+        ConfigError, match=r"ItemSource names Item, which untaped_rack\.api doesn't"
+    ) as raised:
         scaffold(result, [_RACK], "gitlab", "rack.item_source", path=tmp_path, dry_run=True)
+    assert raised.value.system == "rack"
 
 
 def _toy_imports(
@@ -247,7 +260,7 @@ def _toy_imports(
     vars(api).update(exports or {}, Item=Item)
     api.__all__ = sorted({*(exports or {}), "Item"})  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, contract_module.__name__, contract_module)
-    return _imports(names, api, Source, "untaped_gitlab", "GitlabSettings")
+    return _imports(names, api, Source, "untaped_gitlab", "GitlabSettings", owner="toy")
 
 
 def test_a_module_the_contract_imports_is_imported_whole(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -297,6 +310,17 @@ def test_a_name_the_api_keeps_for_itself_comes_from_its_own_home(
     assert found.splitlines()[0] == "from decimal import Decimal"
 
 
+def test_a_name_is_placed_without_pytest_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A tool install has no pytest, which untaped.testing.git imports at the top.
+    from decimal import Decimal
+
+    from untaped.management.plugin_new import _home
+
+    monkeypatch.delitem(sys.modules, "untaped.testing.git", raising=False)
+    monkeypatch.setitem(sys.modules, "pytest", None)
+    assert _home("Decimal", Decimal) == "decimal"
+
+
 def test_an_attribute_after_a_dot_comes_with_its_module() -> None:
     from untaped.management.plugin_new import _names
 
@@ -318,7 +342,7 @@ def test_an_attribute_after_a_dot_comes_with_its_module() -> None:
 def test_a_name_without_a_public_home_is_refused(
     monkeypatch: pytest.MonkeyPatch, value: object
 ) -> None:
-    with pytest.raises(UsageError, match=r"Source names Payload, which untaped_toy\.api doesn't"):
+    with pytest.raises(ConfigError, match=r"Source names Payload, which untaped_toy\.api doesn't"):
         _toy_imports(monkeypatch, {"Payload"}, Payload=value)
 
 

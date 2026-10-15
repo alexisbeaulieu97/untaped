@@ -228,10 +228,11 @@ def export_top_command(
 
     ``export --all-kinds --out-dir DIR`` writes one file per resource
     using the full identity in the filename so same-named records
-    across organizations don't collide:
-    ``<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml``.
-    Kinds with read-only fidelity (Credential) are skipped with a
-    one-line note.
+    across organizations don't collide: ``<Kind>[__<org>]__<name>.yml``,
+    or, for a resource with a parent (such as a Host or Schedule),
+    ``<Kind>__<parent_kind>__[<parent_org>__]<parent_name>__<name>.yml``.
+    Read-only kinds (such as Credential and Organization) are skipped
+    with a one-line note.
 
     Default stdout shape is a multi-doc YAML stream of the same
     envelopes the files contain, so the dump pipes straight into
@@ -420,7 +421,7 @@ def jobs_events(
                 fmt=fmt,
                 cols=cols,
                 follow=follow,
-                ui=ctx.progress_ui(),
+                ui=ctx.ui(),
                 pad=pad,
             )
 

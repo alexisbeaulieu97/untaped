@@ -35,7 +35,7 @@ cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.proxy string[] default=[]  [experimental]
 cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
-cfg git.untaped_helper_first boolean default=false
+cfg git.untaped_helper_only boolean default=false
 cfg github.base_url string default=https://api.github.com
 cfg github.default_org string? default=unset
 cfg github.git_protocol choice=https
@@ -5800,7 +5800,6 @@ sdk untaped_git.api.Credential.username
 sdk untaped_git.api.GitHost base=untaped.contracts.Contract  [experimental]
 sdk untaped_git.api.GitHost implement=credential,home  [experimental]
 sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
-sdk untaped_git.api.GitHost.for_url(url)  [experimental]
 sdk untaped_git.api.GitHost.home() -> string?  [experimental]
 sdk untaped_git.api.GitHost.proxy(url)  [experimental]
 sdk untaped_git.api.GitUrl
@@ -5808,8 +5807,7 @@ sdk untaped_git.api.HostAuth(plugin, credential, proxy)
 sdk untaped_git.api.HostAuth.credential
 sdk untaped_git.api.HostAuth.plugin
 sdk untaped_git.api.HostAuth.proxy
-sdk untaped_git.api.Prefetched(blobs@4=) default=[]
-sdk untaped_git.api.Prefetched(store, trees, paths)
+sdk untaped_git.api.Prefetched(store)
 sdk untaped_git.api.Prefetched.run(argv)
 sdk untaped_git.api.Prefetched.run(capture=) default=true
 sdk untaped_git.api.Prefetched.run(check=) default=true
@@ -5839,22 +5837,16 @@ sdk untaped_git.api.Released.stash
 sdk untaped_git.api.Removed()
 sdk untaped_git.api.Removed(freed_bytes@1=) default=0
 sdk untaped_git.api.Removed.freed_bytes
-sdk untaped_git.api.RepoStore(auth=) default=None callback(1)
-sdk untaped_git.api.RepoStore(helper_first=) default=false
 sdk untaped_git.api.RepoStore(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore(path, *, url, plugin, error)
-sdk untaped_git.api.RepoStore(sleep=) default=<computed> callback(1)
-sdk untaped_git.api.RepoStore(warn=) default=None callback(1)
 sdk untaped_git.api.RepoStore.checkout(worktree, ref)
 sdk untaped_git.api.RepoStore.delete_refs(names)
-sdk untaped_git.api.RepoStore.ensure()
 sdk untaped_git.api.RepoStore.exists()
 sdk untaped_git.api.RepoStore.fetch()
 sdk untaped_git.api.RepoStore.fetch(branches=) default=[]
 sdk untaped_git.api.RepoStore.fetch(progress=) default=NO_PROGRESS
 sdk untaped_git.api.RepoStore.fetch(prune=) default=false
 sdk untaped_git.api.RepoStore.fetch(tags=) default=[]
-sdk untaped_git.api.RepoStore.filter_state()
 sdk untaped_git.api.RepoStore.for_url(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore.for_url(url, *, plugin, error)
 sdk untaped_git.api.RepoStore.has_part()

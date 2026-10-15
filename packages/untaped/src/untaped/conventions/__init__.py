@@ -1,4 +1,4 @@
-"""Convention checks for plugins and the root app.
+"""Convention checks for plugins (the repo's tests run them on the root app too).
 
 See ``docs/reference/conventions.md#enforcement``.
 
@@ -17,16 +17,15 @@ from importlib.util import find_spec
 from pathlib import Path
 
 from cyclopts import App
-from packaging.requirements import InvalidRequirement, Requirement
+from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-from untaped.bootstrap import SHELL_SPEC, build_root_app, composition
+from untaped.bootstrap import build_root_app, composition
 from untaped.conventions.blob_reader import blob_reader_violations
 from untaped.conventions.help_tree import help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.layering import layering_violations
 from untaped.conventions.messages import message_violations
-from untaped.conventions.settings_names import settings_name_violations
 from untaped.conventions.source import SourceFile, source_files
 from untaped.conventions.stability import stability_violations
 from untaped.conventions.structure import (
@@ -35,13 +34,12 @@ from untaped.conventions.structure import (
 )
 from untaped.conventions.terminal_boundary import terminal_boundary_violations
 from untaped.plugins.registry import (
-    ROOT_MANAGEMENT_COMMANDS,
     PluginCandidate,
     PluginSpec,
     discover_candidates,
     owner_requirement,
+    parse_requirement,
 )
-from untaped.settings import Settings, model_sections
 
 
 def plugin_violations(
@@ -185,9 +183,8 @@ def _required(requirements: Sequence[str], extras: frozenset[str] = frozenset())
     """
     names: set[str] = set()
     for requirement in requirements:
-        try:
-            parsed = Requirement(requirement)
-        except InvalidRequirement:
+        parsed = parse_requirement(requirement)
+        if parsed is None:
             continue
         if (
             parsed.marker is None
@@ -231,7 +228,7 @@ def _provides_violations(
     found: list[str] = []
     core = [
         parsed
-        for parsed in (_parse(line) for line in requires)
+        for parsed in (parse_requirement(line) for line in requires)
         if parsed is not None
         and canonicalize_name(parsed.name) == "untaped"
         and not _mentions_extra(str(parsed.marker or ""))
@@ -249,13 +246,6 @@ def _provides_violations(
         elif not (requirement.specifier or requirement.url):
             found.append(f"{rule}its {owner!r} extra requires {distribution} with no version range")
     return found
-
-
-def _parse(line: str) -> Requirement | None:
-    try:
-        return Requirement(line)
-    except InvalidRequirement:
-        return None
 
 
 def _boundary(
@@ -293,30 +283,6 @@ def candidate_package(target: object) -> str | None:
         return package_of(target)[0]
     except LookupError:
         return None
-
-
-def core_violations() -> list[str]:
-    """Violations in the root commands, ``untaped.management`` and core's sections.
-
-    Repo-internal.
-    """
-    root = build_root_app(candidates=[])
-    result = composition()
-    management = _source_dir("untaped.management")
-    sections = {**model_sections(Settings), SHELL_SPEC.section: SHELL_SPEC.settings}
-    src = _source_dir("untaped").parent
-    return sorted(
-        [
-            *help_tree_violations(root, sorted(ROOT_MANAGEMENT_COMMANDS)),
-            *stability_violations(root, result, ROOT_MANAGEMENT_COMMANDS, sections=sections),
-            *message_violations(management, list(source_files(management))),
-            *(
-                line
-                for section, model in sections.items()
-                for line in settings_name_violations(section, model, src)
-            ),
-        ]
-    )
 
 
 def package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:

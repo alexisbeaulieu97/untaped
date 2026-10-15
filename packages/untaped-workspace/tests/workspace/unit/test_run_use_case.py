@@ -14,7 +14,7 @@ import pytest
 
 from untaped_workspace.application import run as run_module
 from untaped_workspace.application.run import RunInRepos, RunTarget
-from untaped_workspace.domain import CommandResult, RepoSpec
+from untaped_workspace.domain.models import CommandResult, RepoSpec
 from untaped_workspace.domain.records import RunOutcome
 
 

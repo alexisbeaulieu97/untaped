@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import os
-import stat
 from pathlib import Path
 
+from untaped.sdk import dir_bytes
 from untaped_github.application.inventory import split_full_name
 from untaped_github.application.ports import GitCorpus
 from untaped_github.domain import CorpusRepoResult, WorktreeResult
@@ -52,22 +51,4 @@ class WorktreeCorpus:
 
 def with_disk_bytes(row: CorpusRepoResult) -> CorpusRepoResult:
     """``row`` with ``disk_bytes`` measured from its store repository on disk."""
-    return row.model_copy(update={"disk_bytes": _disk_bytes(Path(row.path))})
-
-
-def _disk_bytes(path: Path) -> int:
-    """Bytes of the regular files under ``path``, the space deleting it frees.
-
-    Links count as themselves, not what they point at, and a file that
-    vanishes or cannot be read while measuring is skipped.
-    """
-    total = 0
-    for directory, _, files in os.walk(path):
-        for name in files:
-            try:
-                info = os.lstat(os.path.join(directory, name))
-            except OSError:
-                continue
-            if stat.S_ISREG(info.st_mode):
-                total += info.st_size
-    return total
+    return row.model_copy(update={"disk_bytes": dir_bytes(Path(row.path))})

@@ -62,7 +62,7 @@ FORMAT_VERSION = 1
 
 
 class HttpSettings(BaseModel):
-    """Cross-cutting HTTP behaviour for a tool's HTTP client (per-profile)."""
+    """Cross-cutting HTTP behaviour for a plugin's HTTP client (per-profile)."""
 
     retired_keys: ClassVar[Mapping[str, str]] = {"timeout": "timeout_seconds"}
 
@@ -80,7 +80,7 @@ class SkillsSettings(BaseModel):
 
 
 class _ConfigRegistry:
-    """Mutable in-process registry of the running tool's config sections."""
+    """Mutable in-process registry of the composed plugins' config sections."""
 
     def __init__(self) -> None:
         self.profile_sections: dict[str, type[BaseModel]] = {}
@@ -379,7 +379,7 @@ def active_settings_layout() -> ProfilesSettingsLayout:
 def register_profile_settings(
     section: str, model: type[BaseModel], stability: Stability | None = None
 ) -> None:
-    """Register a tool's profile-scoped section (lives under ``profiles.<name>``).
+    """Register a plugin's profile-scoped section (lives under ``profiles.<name>``).
 
     ``stability`` is the owning plugin's mark; its settings inherit it
     unless a field carries a mark of its own.
@@ -398,7 +398,7 @@ def registered_profile_model(section: str) -> type[BaseModel] | None:
 
 
 def register_state_settings(section: str, model: type[BaseModel]) -> None:
-    """Register a tool's top-level state section spliced into the effective config."""
+    """Register a plugin's top-level state section spliced into the effective config."""
     _CONFIG_REGISTRY.register_state_settings(section, model)
 
 
@@ -415,21 +415,21 @@ def validate_disjoint_settings_sections(
 
 
 def _reject_reserved_section(section: str) -> None:
-    """Reject a tool section name that core owns (:data:`RESERVED_SECTIONS`).
+    """Reject a plugin section name that core owns (:data:`RESERVED_SECTIONS`).
 
     ``http``/``ui``/``skills`` are base fields on :class:`Settings`;
-    registering a tool section with one of those names would shadow the SDK
+    registering a plugin section with one of those names would shadow the SDK
     field in the dynamically built model and break config resolution.
     """
     if section in RESERVED_SECTIONS:
         raise ConfigError(f"reserved SDK settings section: {section!r}")
 
 
-def reset_config_registry_for_tests() -> None:
-    """Reset the running tool's registered config sections.
+def reset_config_registry() -> None:
+    """Forget every registered config section and drop the settings caches.
 
-    Public only for test isolation. Production code registers sections during
-    unified composition.
+    Composition registers the sections again (``bootstrap._reregister``);
+    tests call it for isolation.
     """
     _CONFIG_REGISTRY.reset()
 
@@ -600,6 +600,39 @@ def env_sets_key(section: str, key: str) -> bool:
     except ValueError:
         return True
     return not isinstance(data, dict) or key in data
+
+
+@dataclass(frozen=True)
+class RetiredVariable:
+    """A set ``UNTAPED_*`` variable naming a key that is no longer read."""
+
+    name: str
+    new: str | None = None
+    """The current key's variable, for a retired key."""
+    note: str | None = None
+    """The :class:`~untaped.deprecated_keys.Retired` note, for a deleted key."""
+
+
+def retired_env_vars(sections: Mapping[str, type[BaseModel]]) -> list[RetiredVariable]:
+    """Each set variable spelling a retired or deleted key of ``sections``.
+
+    Neither is read any more, so without this a variable left in a shell
+    profile or CI is ignored with no signal.
+    """
+    found: list[RetiredVariable] = []
+    for section, model in sections.items():
+        mappings = key_mappings(model)
+        for old in sorted(mappings.retired):
+            name = _env_name(section, old)
+            if _env_is_set(name):
+                found.append(
+                    RetiredVariable(name, new=_env_name(section, mappings.migratable[old]))
+                )
+        for old, deleted in sorted(mappings.deleted.items()):
+            name = _env_name(section, old)
+            if _env_is_set(name):
+                found.append(RetiredVariable(name, note=deleted.reason()))
+    return found
 
 
 def _env_spelling(section: str, key: str) -> str:
@@ -775,7 +808,7 @@ RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
 
 #: Config sections core owns: the ``Settings`` fields, the top-level layout
 #: keys and the keys injected into plugin sections (:data:`RESERVED_SECTION_KEYS`).
-#: No tool section or state section may take one.
+#: No plugin section or state section may take one.
 RESERVED_SECTIONS = frozenset(
     {*RESERVED_SECTION_KEYS, *Settings.model_fields, *RESERVED_STATE_SECTIONS}
 )
@@ -1085,4 +1118,4 @@ def _section_model(
     )
 
 
-reset_config_registry_for_tests()
+reset_config_registry()

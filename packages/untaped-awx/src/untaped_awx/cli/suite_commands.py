@@ -299,8 +299,7 @@ def run_command(
     show_logs: Annotated[
         bool,
         Parameter(
-            # ``-v`` dropped in the plugin-API-v5 rollout: core now owns a
-            # global ``--verbose``/``-v``, so the short alias would shadow it.
+            # No ``-v``: core's global ``--verbose``/``-v`` owns it.
             name="--show-logs",
             negative="",
             help="Print the failure, failed tasks and log tail of each case that did not pass "
@@ -422,6 +421,7 @@ def run_command(
             # Evidence and host summaries are hidden in the table and raw views.
             evidence=show_logs or structured,
             hosts=structured,
+            report=lambda item, failure: _diag.failure(failure, item=item),
         )
         try:
             # Results are emitted before the teardown, which a second Ctrl-C may cut short.
@@ -829,7 +829,7 @@ def prune_command(
             noun="temporary template",
             label=lambda copy: f"{copy.kind} {q(copy.name)}",
             describe=lambda copy: {"kind": copy.kind, "id": copy.id, "name": copy.name},
-            ui=ctx.progress_ui(),
+            ui=ctx.ui(),
             destructive=True,
             assume_yes=yes,
             preview_only=dry_run,

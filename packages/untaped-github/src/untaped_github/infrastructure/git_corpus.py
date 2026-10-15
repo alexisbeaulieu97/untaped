@@ -76,8 +76,8 @@ class GitCorpusCache:
 
     ``web_host`` is the Git host of ``github.base_url``; with ``protocol``
     ``ssh`` a repo on it is fetched over ``git@<web_host>:<owner>/<name>.git``
-    (the store keeps one repo for both spellings). ``git`` and ``timeout``
-    apply to pattern validation, the one git run outside the store.
+    (the store keeps one repo for both spellings). ``warn`` hears a corrupt
+    metadata file that listing skips.
     """
 
     def __init__(
@@ -85,14 +85,10 @@ class GitCorpusCache:
         *,
         web_host: str | None = None,
         protocol: GitProtocol = "https",
-        git: str = "git",
-        timeout: float = DEFAULT_TIMEOUT,
         warn: Callable[[str], None] | None = None,
     ) -> None:
         self._web_host = web_host
         self._protocol = protocol
-        self._git = git
-        self._timeout = timeout
         self._warn = warn or _diag.warning
 
     def sync_repo(
@@ -268,8 +264,7 @@ class GitCorpusCache:
                 result = run_git(
                     args,
                     cwd=Path(scratch),
-                    git=self._git,
-                    timeout=self._timeout,
+                    timeout=DEFAULT_TIMEOUT,
                     check=False,
                     locale_c=False,
                 )
