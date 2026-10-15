@@ -18,6 +18,7 @@ import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
 
@@ -145,11 +146,11 @@ LINT_SINCE = Version("11.1.0")
 def test_the_examples_lint_range_leaves_out_releases_without_lint() -> None:
     core = PACKAGES / "untaped" / "pyproject.toml"
     if Version(tomllib.loads(core.read_text(encoding="utf-8"))["project"]["version"]) < LINT_SINCE:
-        return  # the floor can't rise before the release that has it
+        pytest.skip("no release carries the lint extra yet, so the floor can't rise")
     stale = []
     for path in sorted((REPO_ROOT / "examples").glob("*/pyproject.toml")):
         groups = tomllib.loads(path.read_text(encoding="utf-8")).get("dependency-groups", {})
-        for line in (each for lines in groups.values() for each in lines):
+        for line in (each for lines in groups.values() for each in lines if isinstance(each, str)):
             requirement = Requirement(line)
             if "lint" in requirement.extras and requirement.specifier.contains("11.0.0"):
                 stale.append(f"{path.relative_to(REPO_ROOT)}: {line}")
