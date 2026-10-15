@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
+from untaped_recipe.domain.hook_project import HookWorkerCallResult, UvHookRef
 from untaped_recipe.domain.pack import (
     InstalledPack,
     PackManifest,
@@ -13,12 +14,6 @@ from untaped_recipe.domain.pack import (
     RecipeEntry,
 )
 from untaped_recipe.domain.plan import HookDebugResult, Verdict
-
-if TYPE_CHECKING:
-    from untaped_recipe.infrastructure.hook_resolver import UvHookRef
-    from untaped_recipe.infrastructure.hook_worker_client import (
-        HookWorkerCallResult,
-    )
 
 
 class PromptFunc(Protocol):

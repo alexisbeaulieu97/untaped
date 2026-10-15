@@ -8,7 +8,7 @@ from types import ModuleType
 
 from untaped.sdk import not_found
 from untaped_recipe.builtins.registry import BUILTIN_HOOKS, BuiltinHook
-from untaped_recipe.domain.hook_project import hook_module_file, is_valid_dotted_name
+from untaped_recipe.domain.hook_project import UvHookRef, hook_module_file, is_valid_dotted_name
 from untaped_recipe.domain.pack import PackManifest, parse_ref
 from untaped_recipe.domain.paths import is_path_ref
 from untaped_recipe.errors import HookNotFoundError
@@ -27,16 +27,6 @@ class BuiltinHookRef:
     name: str
     exports: frozenset[str]
     module: ModuleType
-
-
-@dataclass(frozen=True)
-class UvHookRef:
-    """Reference to an external uv-managed hook project."""
-
-    name: str
-    exports: frozenset[str]
-    project_root: Path
-    module: str
 
 
 HookRef = BuiltinHookRef | UvHookRef

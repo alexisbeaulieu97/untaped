@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -23,6 +24,25 @@ _DOTTED_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]
 # dependency would pull the CLI into the pack env. Both belong in the dev group.
 _FORBIDDEN_RUNTIME_DEPENDENCIES = frozenset({"untaped", "untaped-recipe"})
 HookKind = Literal["transform", "validate"]
+
+
+@dataclass(frozen=True)
+class UvHookRef:
+    """Reference to an external uv-managed hook project."""
+
+    name: str
+    exports: frozenset[str]
+    project_root: Path
+    module: str
+
+
+@dataclass(frozen=True)
+class HookWorkerCallResult:
+    """Result plus diagnostics and warnings captured from one worker request."""
+
+    result: object
+    diagnostics: str
+    warnings: tuple[str, ...] = ()
 
 
 def is_valid_dotted_name(name: str) -> bool:
