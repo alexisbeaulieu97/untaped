@@ -310,6 +310,17 @@ def test_a_name_the_api_keeps_for_itself_comes_from_its_own_home(
     assert found.splitlines()[0] == "from decimal import Decimal"
 
 
+def test_a_name_is_placed_without_pytest_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A tool install has no pytest, which untaped.testing.git imports at the top.
+    from decimal import Decimal
+
+    from untaped.management.plugin_new import _home
+
+    monkeypatch.delitem(sys.modules, "untaped.testing.git", raising=False)
+    monkeypatch.setitem(sys.modules, "pytest", None)
+    assert _home("Decimal", Decimal) == "decimal"
+
+
 def test_an_attribute_after_a_dot_comes_with_its_module() -> None:
     from untaped.management.plugin_new import _names
 

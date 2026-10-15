@@ -40,13 +40,18 @@ def git(*args: str) -> str:
     return run_git(["-C", str(REPO_ROOT), *args], timeout=60, capture=True).text
 
 
-def baseline_tag(tags: list[str]) -> str | None:
-    """The newest final release among ``tags`` (``vX.Y.Z``; pre- and dev releases skipped)."""
+def baseline_tag(tags: list[str], *, before_major: int | None = None) -> str | None:
+    """The newest final release among ``tags`` (``vX.Y.Z``; pre- and dev releases skipped).
+
+    With ``before_major``, only releases of an earlier major count.
+    """
     found: list[tuple[Version, str]] = []
     for tag in tags:
         try:
             version = Version(tag.removeprefix("v"))
         except InvalidVersion:
+            continue
+        if before_major is not None and version.major >= before_major:
             continue
         if tag.startswith("v") and not version.is_prerelease and not version.is_devrelease:
             found.append((version, tag))
@@ -60,9 +65,14 @@ def no_baseline() -> NoReturn:
     pytest.skip("no release tag reachable from HEAD (fetch tags to run this check)")
 
 
-def release_baseline() -> str:
-    """The newest final release tag reachable from HEAD (see :func:`no_baseline` without one)."""
-    tag = baseline_tag(git("tag", "--list", "v*", "--merged", "HEAD").split())
+def release_baseline(*, before_major: int | None = None) -> str:
+    """The newest final release tag reachable from HEAD (see :func:`no_baseline` without one).
+
+    ``before_major`` limits it to an earlier major's releases (see :func:`baseline_tag`).
+    """
+    tag = baseline_tag(
+        git("tag", "--list", "v*", "--merged", "HEAD").split(), before_major=before_major
+    )
     if tag is None:
         no_baseline()
     return tag

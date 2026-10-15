@@ -212,7 +212,13 @@ def _outcomes(migration: DirMigration, done: object) -> list[MigrationOutcome]:
     ):
         detail = f"apply returned {type(done).__name__}, expected MigrationOutcome rows"
         return [_failed(migration, Failure.plain(detail))]
-    return list(done)
+    # A failed or partial row a migration built itself still carries a structured error.
+    return [
+        outcome.model_copy(update={"error": Failure.plain(outcome.detail)})
+        if outcome.failed and outcome.error is None
+        else outcome
+        for outcome in done
+    ]
 
 
 def _failed(

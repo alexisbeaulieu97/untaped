@@ -516,7 +516,10 @@ def _home(name: str, value: object) -> str | None:
 
     # The modules a plugin may import untaped from (the import-boundary convention).
     for public in SDK_MODULES:
-        module = import_module(public)
+        try:
+            module = import_module(public)
+        except ImportError:  # untaped.testing.git needs pytest, which a tool install lacks
+            continue
         if name in module.__all__ and getattr(module, name) is value:
             return public
     defined = getattr(value, "__module__", None)

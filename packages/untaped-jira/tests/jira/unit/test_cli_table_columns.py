@@ -25,7 +25,7 @@ _ISSUE = {
         "status": {"name": "Open"},
         "issuetype": {"name": "Bug"},
         "priority": {"name": "High"},
-        "assignee": {"displayName": "Alexis"},
+        "assignee": {"displayName": "Jane Doe"},
         "updated": "2026-06-05T10:00:00.000-0400",
     },
 }

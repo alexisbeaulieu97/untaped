@@ -668,3 +668,16 @@ def test_a_failed_row_keeps_the_error_s_category_and_exit_code() -> None:
     (outcome,) = json.loads(result.stdout)
     assert outcome["detail"] == "the old directory is not readable"
     assert outcome["error"]["category"] == "config"
+
+
+def test_a_failed_row_a_migration_builds_itself_carries_an_error() -> None:
+    def apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
+        return [MigrationOutcome(id="alpha.data", action="failed", detail="disk full")]
+
+    _plant()
+    applying = (_spec("alpha", replace(_move_row("alpha"), apply=apply)),)
+    result = _run("--yes", "--format", "json", specs=applying)
+
+    assert result.exit_code == 1
+    (outcome,) = json.loads(result.stdout)
+    assert (outcome["detail"], outcome["error"]["category"]) == ("disk full", "failed")

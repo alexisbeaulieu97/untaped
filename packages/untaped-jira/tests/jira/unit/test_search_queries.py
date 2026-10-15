@@ -39,14 +39,14 @@ def test_scope_jql_order_by_used_when_raw_jql_has_none() -> None:
 def test_shortcut_filters_render_jql_with_default_order() -> None:
     query = JiraIssueSearchFilters(
         project="ABC",
-        assignee="alexis",
+        assignee="jdoe",
         status="In Progress",
         text="broken deploy",
         sprint="42",
     ).to_jql()
 
     assert query == (
-        'project = ABC AND assignee = "alexis" AND status = "In Progress" '
+        'project = ABC AND assignee = "jdoe" AND status = "In Progress" '
         'AND text ~ "broken deploy" AND sprint = 42 ORDER BY updated DESC'
     )
 

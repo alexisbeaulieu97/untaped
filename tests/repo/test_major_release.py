@@ -2,13 +2,13 @@
 
 Fires when the workspace version is ``X.0.0`` (or an ``X.0.0`` pre-release),
 ``CHANGELOG.md`` has a section for that version and ``changelog.d/`` holds no
-fragments, which is the state of a major release PR (and of main just after
-the release, where the test passes anyway). Between releases main carries the
-last released version, so the version alone would fire there.
+fragments, which is the state of a major release PR and of main just after the
+release. Between releases main carries the last released version, so the
+version alone would fire there.
 
-The previous major's spellings are the lines its newest release marks
-``[deprecated]`` in ``tests/repo/surface.txt``: what that release warned
-about. A spelling deprecated while the major was being prepared reached no
+The previous major's spellings are the lines its newest release (never the
+major's own tag) marks ``[deprecated]`` in ``tests/repo/surface.txt``: what
+that release warned about. A spelling deprecated while the major was being prepared reached no
 release yet, so it stays, with its warning, until the next major. Retired keys
 never count: they have no surface line, and are what a major leaves behind for
 ``config migrate``.
@@ -24,7 +24,7 @@ import release  # scripts/release.py (``pythonpath = ["scripts"]``)
 from packaging.version import Version
 
 import changelog  # scripts/changelog.py
-from repo.support import REPO_ROOT, SURFACE_FILE, git, release_baseline
+from repo.support import REPO_ROOT, SURFACE_FILE, baseline_tag, git, release_baseline
 from untaped.git import GitCommandError
 from untaped.surface import Line, parse
 
@@ -49,7 +49,7 @@ def test_a_major_release_drops_deprecated_spellings() -> None:
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     if not is_major_release(version, text, changelog.fragment_paths(REPO_ROOT)):
         pytest.skip(f"{version} is not a major release being prepared")
-    tag = release_baseline()
+    tag = release_baseline(before_major=Version(version).major)
     try:
         released = parse(git("show", f"{tag}:{SURFACE_FILE}"))
     except GitCommandError:
@@ -100,3 +100,18 @@ def test_leftovers_are_what_the_last_release_deprecated_and_still_exists() -> No
         Line("cfg acme.old -> acme.new", "deprecated"),
         Line("sdk untaped.sdk.old(x)", "deprecated"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("tags", "expected"),
+    [
+        # On main just after the major's tag, the baseline is still the previous major.
+        (["v10.1.0", "v11.0.0"], "v10.1.0"),
+        (["v10.0.0", "v10.1.0", "v11.0.0rc1"], "v10.1.0"),
+        (["v11.0.0"], None),
+    ],
+)
+def test_the_baseline_is_the_previous_majors_newest_release(
+    tags: list[str], expected: str | None
+) -> None:
+    assert baseline_tag(tags, before_major=11) == expected
