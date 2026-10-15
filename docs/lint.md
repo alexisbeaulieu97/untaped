@@ -68,7 +68,7 @@ installed rule declares is a warning; `untaped doctor` checks `lint.ignore`
 | 0 | No finding, or warnings only |
 | 3 | A finding of severity `error`, or any finding with `--strict` |
 | 1 | A rule or provider could not run (an `untaped.failure` on stderr) |
-| 2 | A usage mistake: a malformed `--select` or `--ignore`, `--stdin` with PATHS |
+| 2 | A usage mistake: a malformed `--select` or `--ignore`, `--stdin` with PATHS or with input that is not kinded `--format pipe` records |
 | 4 | A configuration problem, such as every provider quarantined |
 
 The most severe wins: a rule that could not run (1) is never hidden by an

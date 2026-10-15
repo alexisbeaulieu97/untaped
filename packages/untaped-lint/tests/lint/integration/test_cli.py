@@ -65,17 +65,23 @@ def test_a_failure_row_exits_1_even_with_error_findings() -> None:
     [
         (["src/*.py"], WIDGET),
         ([], pipe(Widget(name="w"), kind=None)),
-        ([], "w\n"),
         (["--select", "Not An Id"], WIDGET),
         (["--ignore", "acme.wide:"], WIDGET),
     ],
-    ids=["stdin-with-paths", "kind-less-record", "bare-values", "bad-select", "bad-ignore"],
+    ids=["stdin-with-paths", "kind-less-record", "bad-select", "bad-ignore"],
 )
 def test_usage_mistakes_exit_2(args: list[str], input: str) -> None:
     with compose_with("lint", provides={"acme": [Acme()]}):
         result = _lint(*args, input=input)
     assert result.exit_code == 2, result.stderr
     assert not result.stdout
+
+
+def test_bare_values_on_stdin_are_a_usage_mistake() -> None:
+    with compose_with("lint", provides={"acme": [Acme()]}):
+        result = _lint(input="w\n")
+    assert result.exit_code == 2, result.stderr
+    assert "--format pipe" in result.stderr
 
 
 def test_every_provider_quarantined_exits_4() -> None:
