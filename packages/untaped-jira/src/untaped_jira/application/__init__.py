@@ -1,4 +1,4 @@
-"""Application use cases for the Jira tool."""
+"""Application use cases for the Jira plugin."""
 
 from untaped_jira.application.use_cases import (
     AddComment,

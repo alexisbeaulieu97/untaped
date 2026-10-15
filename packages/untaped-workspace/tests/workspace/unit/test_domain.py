@@ -8,19 +8,15 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import UsageError
-from untaped_workspace.domain import (
-    RepoSpec,
-    WorkspaceRecord,
-    WorktreeStatus,
-    archive_blockers,
-    archive_hint,
+from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord, WorktreeStatus
+from untaped_workspace.domain.naming import (
     assign_dirs,
     branch_for,
     repo_identity,
     validate_workspace_name,
 )
 from untaped_workspace.domain.records import RepoOutcome, StatusRow
-from untaped_workspace.domain.safety import NOT_STORED, SUBMODULES
+from untaped_workspace.domain.safety import NOT_STORED, SUBMODULES, archive_blockers, archive_hint
 
 
 @pytest.mark.parametrize("name", ["JIRA-1234", "feature_x", "a.b"])

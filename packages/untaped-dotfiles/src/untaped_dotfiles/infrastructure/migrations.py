@@ -3,15 +3,16 @@
 The directory's entries move (clones, kept files), but three things outside
 it point in: ``state.yml``'s managed repo ``path``, each ``link`` record's
 ``source_hash``/``target_hash`` (the link's destination), and the symlinks
-themselves. Applying, under the lock 11.0's commands take
-(``plugins/dotfiles/.lock``), moves the old directory's entries into the new
-one, repoints every recorded symlink that still points into the old place,
-then rewrites state. Symlinks go before state because state is what finds
-them: a crash anywhere leaves either entries still in the old directory or
-state still naming it, so the next run finishes. What an 11.0 command
-already wrote in the new directory (the status files, the lock) is
-replaced; an entry both directories hold (``repos`` from an 11.0
-``subscribe``) is a ``keep`` row, never merged. Paths are rebased in both
+themselves. Applying, under the lock 11.0's commands take (``.lock`` in the
+configured ``dotfiles.state_dir``), moves the old directory's entries into
+the new one, repoints every recorded symlink that still points into the old
+place, then rewrites state. Symlinks go before state because state is what
+finds them: a crash anywhere leaves either entries still in the old
+directory or state still naming it, so the next run finishes. The old
+directory's status files and lock are deleted, not moved: what an 11.0
+command already wrote in the new directory stays, and the next command
+rewrites them anyway. Any other entry both directories hold (``repos`` from
+an 11.0 ``subscribe``) is a ``keep`` row, never merged. Paths are rebased in both
 spellings state can hold, as written and with symlinks resolved (the
 commands resolve theirs).
 
@@ -49,8 +50,8 @@ from untaped_dotfiles.settings import DotfilesSettings
 ID = "dotfiles.data"
 _OLD = Path("~/.untaped/dotfiles")
 _DIR_KEYS = ("repos_dir", "kept_dir", "state_dir")
-#: What an 11.0 command writes in the new directory before the migration
-#: runs (``status`` and the lock): rewritten on the next run, so dropped.
+#: What a command rewrites on its next run (``status``'s files, the lock): the
+#: old directory's copies are deleted, never moved or counted as a conflict.
 _REGENERATED = frozenset({".lock", STATUS_FILE, ATTENTION_FILE})
 
 
@@ -62,6 +63,12 @@ def _new() -> Path:
     """The 11.0 directory: ``dotfiles.state_dir``'s default, ``plugin_dir`` of dotfiles."""
     default: Path = DotfilesSettings.model_fields["state_dir"].default
     return default.expanduser()
+
+
+def _state_dir(ctx: PluginContext) -> Path:
+    """The configured ``dotfiles.state_dir``, whose ``.lock`` every command takes."""
+    settings = ctx.settings if isinstance(ctx.settings, DotfilesSettings) else DotfilesSettings()
+    return settings.state_dir.expanduser().resolve()
 
 
 def _prefixes() -> list[tuple[Path, Path]]:
@@ -177,7 +184,7 @@ def apply(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationOu
     if not any(row.action == "move" for row in preview(ctx, quick)):
         return [MigrationOutcome(id=ID, action="unchanged", detail="nothing left to move")]
     old, new = _old(), _new()
-    with StateDotfilesStore(state_dir=new).locked():
+    with StateDotfilesStore(state_dir=_state_dir(ctx)).locked():
         # Again under the lock: a command that held it may have just made one.
         if taken := _conflicts(old, new):
             detail = f"kept: {shown_path(taken[0])} already exists; keep one of them"

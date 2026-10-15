@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk import MigrationOptions, PluginContext
+from untaped.sdk import MigrationOptions, PluginContext, shown_path
 from untaped.testing.git import GitRemote
 from untaped_workspace import migrations
 from untaped_workspace.settings import WorkspaceSettings
@@ -152,7 +152,11 @@ def test_a_root_configured_to_the_store_stays(
     rows = [row for row in migrations.preview_cache(ctx, KEEP) if row.source == str(store_root)]
     assert [row.action for row in rows] == ["keep"]
     assert "overlaps the repo store" in rows[0].detail
-    migrations.apply_cache(ctx, KEEP)
+    (outcome,) = migrations.apply_cache(ctx, KEEP)
+    assert outcome.action == "unchanged"
+    assert (
+        outcome.detail == f"kept {shown_path(store_root)}: {rows[0].detail.removeprefix('kept: ')}"
+    )
     assert repo.is_dir()
 
 

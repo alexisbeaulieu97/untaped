@@ -11,7 +11,7 @@ from untaped.contracts import Answers, Ok
 from untaped.sdk import Picked, PickItem, PickResult, UntapedError
 from untaped_workspace.api import Repo
 from untaped_workspace.cli.picker import build_request, name_validator, repo_args
-from untaped_workspace.domain import RepoArg, StoredRepo, WorkspaceRecord
+from untaped_workspace.domain.models import RepoArg, StoredRepo, WorkspaceRecord
 from untaped_workspace.infrastructure import StateWorkspaceStore
 from untaped_workspace.infrastructure.pick_source import RepoPickSource
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from untaped_workspace.application.locate import locate_workspace
-from untaped_workspace.domain import WorkspaceRecord
+from untaped_workspace.domain.models import WorkspaceRecord
 from untaped_workspace.errors import WorkspaceNotFoundError
 from untaped_workspace.infrastructure import StateWorkspaceStore
 

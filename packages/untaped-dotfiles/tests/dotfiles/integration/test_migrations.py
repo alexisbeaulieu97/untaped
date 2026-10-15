@@ -154,3 +154,28 @@ def test_an_entry_made_while_waiting_for_the_lock_is_never_merged(
     (outcome,) = migration.apply(ctx, OPTIONS)
     assert outcome.action == "failed" and "plugins/dotfiles/repos already exists" in outcome.detail
     assert (_untaped() / "dotfiles" / "repos" / "dotfiles").is_dir() and not any(made.iterdir())
+
+
+def test_apply_takes_the_lock_commands_take_under_a_custom_state_dir(
+    ten_x: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped_dotfiles.infrastructure import migrations
+    from untaped_dotfiles.settings import DotfilesSettings
+
+    locked = migrations.StateDotfilesStore.locked
+    taken: list[Path] = []
+
+    @contextmanager
+    def spy(self: migrations.StateDotfilesStore) -> Iterator[None]:
+        taken.append(self._state_dir)
+        with locked(self):
+            yield
+
+    monkeypatch.setattr(migrations.StateDotfilesStore, "locked", spy)
+    state_dir = tmp_path / "custom-state"
+    ctx = PluginContext(settings=DotfilesSettings(state_dir=state_dir))
+
+    (outcome,) = SPEC.migrations[0].apply(ctx, OPTIONS)
+
+    assert outcome.action == "moved", outcome.detail
+    assert taken == [state_dir.resolve()]

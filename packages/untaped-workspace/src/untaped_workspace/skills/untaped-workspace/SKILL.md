@@ -70,8 +70,9 @@ the workspace directory, and exits 2 outside one.
 5. `untaped workspace remove NAME` once nothing in the workspace is needed
    (active or archived; an active one is archived first, with archive's
    checks). It drops the workspace's records and releases each repo no other
-   workspace uses: pushed branches go, a branch with a stash stays. It
-   refuses while a branch has commits the remote lacks; `--dry-run` previews.
+   workspace uses: pushed branches go. It refuses while the workspace's own
+   branch has commits the remote lacks; other branches with unpushed commits
+   or a stash stay unless `--force` deletes them. `--dry-run` previews.
 
 ## Safety
 

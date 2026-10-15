@@ -1,4 +1,4 @@
-"""Pure domain models and helpers for the Jira tool."""
+"""Pure domain models and helpers for the Jira plugin."""
 
 from untaped_jira.domain.changes import (
     ConfirmPolicy,

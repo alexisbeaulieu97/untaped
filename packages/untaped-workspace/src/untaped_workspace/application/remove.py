@@ -83,7 +83,6 @@ class RemovalPlan:
 
     name: str
     active: WorkspaceRecord | None
-    archived: tuple[ArchivedRecord, ...]
     repos: tuple[RepoPlan, ...]
     status: tuple[StatusRow, ...]
     """The active workspace's status rows (archive's check); empty when it is archived."""
@@ -248,9 +247,7 @@ class RemoveWorkspace:
                     bases=repo_bases,
                 )
             )
-        return RemovalPlan(
-            name=name, active=active, archived=archived, repos=tuple(repos), status=status
-        )
+        return RemovalPlan(name=name, active=active, repos=tuple(repos), status=status)
 
     def _holders(self, excluding: str | None = None) -> dict[Key, str]:
         """Each repo a remaining record names → the first workspace naming it."""

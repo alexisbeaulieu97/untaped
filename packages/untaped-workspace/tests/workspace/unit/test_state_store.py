@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import StateCollection
-from untaped_workspace.domain import RepoSpec, WorkspaceRecord
+from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError
 from untaped_workspace.infrastructure import StateWorkspaceStore
 
@@ -111,16 +111,12 @@ def test_remove_drops_every_record_of_the_name() -> None:
     store.create(WorkspaceRecord(name="w", created_at=T0))
     store.add_repos("w", [SPEC])
 
-    dropped = store.remove("w")
+    store.remove("w")
 
-    assert [(record.name, record.repos) for record in dropped] == [
-        ("w", (SPEC,)),
-        ("w", ()),
-        ("w", ()),
-    ]
     assert store.get("w") is None
     assert [record.name for record in store.archived()] == ["other"]
-    assert store.remove("w") == []
+    store.remove("w")  # nothing left of the name: a no-op
+    assert [record.name for record in store.archived()] == ["other"]
 
 
 def test_a_workspace_made_before_11_from_a_url_untaped_now_refuses_still_loads() -> None:
@@ -139,4 +135,5 @@ def test_a_workspace_made_before_11_from_a_url_untaped_now_refuses_still_loads()
 
     assert [spec.url for spec in store.get("other").repos] == ["/srv/git/api.git"]  # type: ignore[union-attr]
     assert [spec.url for spec in store.get("w").repos] == ["http://git.example/acme/web.git"]  # type: ignore[union-attr]
-    assert [record.name for record in store.remove("other")] == ["other"]
+    store.remove("other")
+    assert [record.name for record in store.active()] == ["w"]

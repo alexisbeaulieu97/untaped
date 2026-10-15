@@ -11,19 +11,17 @@ from untaped_jira.settings import JiraSettings
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from untaped.sdk import UiContext
     from untaped_jira.infrastructure import JiraClient
 
 
 @contextmanager
-def open_client() -> Iterator[tuple[JiraClient, UiContext]]:
-    """Yield a Jira client and a UI whose unknown theme falls back to the default."""
+def open_client() -> Iterator[JiraClient]:
+    """Yield a Jira client built from the active ``jira`` settings."""
     from untaped_jira.infrastructure import JiraClient  # noqa: PLC0415
 
     ctx = app_context()
-    ui = ctx.ui(strict=False)
     with JiraClient(ctx.section("jira", JiraSettings), http=ctx.http) as client:
-        yield client, ui
+        yield client
 
 
 def current_jira_settings() -> JiraSettings:
