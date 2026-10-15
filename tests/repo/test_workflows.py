@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import re
+from collections import Counter
 from collections.abc import Iterator
 from typing import Any
 
@@ -158,6 +159,12 @@ def test_release_workflow_shape() -> None:
         "workflow_dispatch": {},
     }
     assert workflow["permissions"] == {"contents": "read"}
+    # Never cancel: a pyproject-touching push must not cancel a release
+    # waiting for its approval in the same group.
+    assert workflow["concurrency"] == {
+        "group": "release-${{ github.ref }}",
+        "cancel-in-progress": False,
+    }
     assert "env" not in workflow
     assert {name: (job.get("needs"), job.get("permissions")) for name, job in jobs.items()} == {
         "route": (None, None),
@@ -184,13 +191,37 @@ def test_only_the_route_step_reads_the_event() -> None:
     dispatch on any ref -> TestPyPI; a pushed tag on main -> PyPI; a push to
     main -> PyPI when it changed the version or its tag is already at HEAD,
     else none. The step writes its outputs only after ``route`` succeeded.
+
+    Nothing else reads the event: no other ``github`` context (beyond the
+    concurrency group's ``github.ref`` and the release job's token), no step
+    ``if`` beyond the two publish routes, and no ``$GITHUB_REF*`` or
+    ``$GITHUB_EVENT*`` variable in a script. A step that re-derived "only a
+    tag is production" would skip part of a release from ``main``.
     """
     workflow = _workflow("release.yml")
     jobs = workflow["jobs"]
-    expressions = list(_expressions(workflow))
-    for context in EVENT_CONTEXTS.values():
-        pattern = re.compile(rf"\b{re.escape(context)}\b")
-        assert sum(len(pattern.findall(e)) for e in expressions) == 1, context
+    contexts = Counter(
+        context
+        for expression in _expressions(workflow)
+        for context in re.findall(r"\bgithub\.[\w.]+", expression)
+    )
+    assert contexts == {
+        **dict.fromkeys(EVENT_CONTEXTS.values(), 1),
+        "github.ref": 1,
+        "github.token": 2,
+    }
+    step_ifs = {
+        (job, step["name"]): step["if"]
+        for job in jobs
+        for step in _steps("release.yml", job)
+        if "if" in step
+    }
+    assert step_ifs == {
+        ("publish", "Publish to PyPI"): IS_PYPI,
+        ("publish", "Publish to TestPyPI"): "needs.route.outputs.index != 'pypi'",
+    }
+    scripts = "\n".join(str(step.get("run", "")) for step in _all_steps("release.yml"))
+    assert not re.search(r"\bGITHUB_(REF|EVENT|HEAD_REF|BASE_REF|SHA)", scripts)
     route = _steps("release.yml", "route")[_find(_steps("release.yml", "route"), id="route")]
     assert route["env"] == {
         name: f"${{{{ {context} }}}}" for name, context in EVENT_CONTEXTS.items()

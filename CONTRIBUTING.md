@@ -308,20 +308,26 @@ fork's runs publish nothing.
 - The GitHub release step finds a leftover draft by listing releases and
   finishes it. It never changes a published release: one whose assets match
   is a no-op, and one with a mismatch fails.
-- A rejected or expired approval publishes nothing and leaves the version
-  untagged. Re-run failed jobs to be asked again (GitHub offers re-runs for
-  30 days), or merge the next release PR.
+- A rejected approval publishes nothing and leaves the version untagged.
+  Re-run failed jobs to be asked again (GitHub offers re-runs for 30 days
+  from the run's start), push the tag by hand, or merge the next release PR.
+  An approval left waiting expires after those 30 days, with the re-run, so
+  then only the hand tag or the next release PR remain.
+- A cancelled Release run (a newer pending run in the same concurrency group
+  replaced it): **Re-run all jobs** routes it again.
 - Never re-run a release run that went green.
 - The tag step is idempotent: a tag already on the built commit passes, and
   one on another commit fails, because `v*` tags never move. Then release a
   patch version, or relax the ruleset, delete the wrong tag, re-run and
   restore the ruleset.
 - When the `main` run cannot release (no run, re-runs expired, a broken
-  workflow fixed in a new commit), push the tag by hand on the commit to
-  release: `git tag -a vX.Y.Z -m "untaped X.Y.Z" <sha>` and
-  `git push origin vX.Y.Z`. That starts a release run for the tag, with the
-  workflow at that commit. Only do this when the `main` run did not release:
-  both runs ask for approval.
+  workflow), push the tag by hand: `git tag -a vX.Y.Z -m "untaped X.Y.Z"
+  <sha>` and `git push origin vX.Y.Z`. That starts a release run for the
+  tag, with the workflow at the tagged commit, so after a workflow fix tag
+  the fix's commit on `main`, not the release PR's merge commit (tags never
+  move). If anything was already published from the earlier commit, release
+  a patch version instead: the new commit builds different bytes. Only push
+  a tag when the `main` run did not release: both runs ask for approval.
 - If no workflow can run at all, the tag and the GitHub release can be made
   by hand (`gh release create vX.Y.Z --verify-tag --notes-file ...` with the
   built files), and the packages built with

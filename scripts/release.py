@@ -10,7 +10,7 @@ subcommand is one step of the workflow:
   the version releases it, a pushed ``v*`` tag on ``main`` releases (the
   fallback), a dispatch is a TestPyPI rehearsal, and anything else on
   ``main`` or in a fork publishes nothing.
-- ``version`` prints the ``untaped`` package's version.
+- ``version`` prints the ``untaped`` package's version (CI's wheel jobs).
 - ``readmes VERSION`` rewrites, in the checkout, each package README's
   ``blob/main`` and ``tree/main`` links into this repository to ``vVERSION``
   (just before the build), so a release's PyPI page keeps describing that
@@ -160,14 +160,6 @@ def release_version(root: Path) -> str:
     return version
 
 
-def tagged_version(root: Path, tag: str) -> str:
-    """``release_version``, after checking that ``tag`` is ``v<version>``."""
-    version = release_version(root)
-    if tag != f"v{version}":
-        raise ReleaseError(f"tag {tag} does not match the package version {version}")
-    return version
-
-
 def _toplevel(root: Path) -> Path:
     """The checkout holding ``root``; ``ReleaseError`` outside one."""
     try:
@@ -179,13 +171,16 @@ def _toplevel(root: Path) -> Path:
     return top
 
 
+def _head(top: Path) -> str:
+    """The commit checked out in ``top`` (a tag's commit, never the tag object)."""
+    return run_git(["rev-parse", "HEAD^{commit}"], cwd=top, timeout=30, capture=True).text.strip()
+
+
 def head_commit(root: Path) -> str:
-    """The commit checked out at ``root`` (a tag's commit, never the tag object)."""
+    """``_head`` of the checkout holding ``root``."""
     top = _toplevel(root)
     try:
-        return run_git(
-            ["rev-parse", "HEAD^{commit}"], cwd=top, timeout=30, capture=True
-        ).text.strip()
+        return _head(top)
     except GitCommandError as exc:
         raise ReleaseError(str(exc)) from exc
 
@@ -197,7 +192,7 @@ def check_on_main(root: Path) -> None:
         run_git(
             ["fetch", "--no-tags", "origin", "main"], cwd=top, timeout=120, retry_transient=True
         )
-        head = run_git(["rev-parse", "HEAD"], cwd=top, timeout=30, capture=True).text.strip()
+        head = _head(top)
         ancestor = run_git(
             ["merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"], cwd=top, timeout=30, check=False
         )
@@ -285,7 +280,8 @@ def route(
         case "workflow_dispatch", _, _:
             return Route(version, "testpypi", "", "rehearsal: TestPyPI only")
         case "push", "tag", _:
-            tagged_version(root, ref_name)
+            if ref_name != f"v{version}":
+                raise ReleaseError(f"tag {ref_name} does not match the package version {version}")
             check_on_main(root)
             return Route(version, "pypi", ref_name, f"{ref_name} is on main: releasing {version}")
         case "push", "branch", "main":
@@ -302,8 +298,8 @@ def _route_main(root: Path, version: str, before: str) -> Route:
     """
     tag = f"v{version}"
     top = _toplevel(root)
-    head = head_commit(root)
     try:
+        head = _head(top)
         tagged = _remote_tag_commit(top, tag)
         if tagged == head:
             reason = (
@@ -361,7 +357,10 @@ def _version_at(root: Path, top: Path, before: str) -> str | None:
     shown = run_git(["show", f"{before}:{path}"], cwd=top, timeout=30, capture=True, check=False)
     if shown.returncode:
         return None
-    return str(tomllib.loads(shown.text).get("project", {}).get("version"))
+    try:
+        return str(tomllib.loads(shown.text).get("project", {}).get("version"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ReleaseError(f"{path} at {before} is not valid TOML: {exc}") from exc
 
 
 # --- artifacts --------------------------------------------------------------
@@ -709,7 +708,18 @@ def _names(value: str) -> list[str]:
     return [name.strip() for name in value.split(",") if name.strip()]
 
 
-# --- tag --------------------------------------------------------------------
+# --- gh ---------------------------------------------------------------------
+
+
+def _gh_list(gh: Gh, path: str, what: str) -> list[dict[str, Any]]:
+    """Every item of the paginated GitHub list at ``path``; ``ReleaseError`` naming ``what``.
+
+    ``--jq '.[]'`` prints one item per line on every page (``--slurp`` needs gh 2.48+).
+    """
+    result = gh("api", "--paginate", "--jq", ".[]", path)
+    if result.returncode:
+        raise ReleaseError(f"could not list {what}: {(result.stdout + result.stderr).strip()}")
+    return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
 
 
 def _gh_json(gh: Gh, *args: str) -> Any:
@@ -721,6 +731,9 @@ def _gh_json(gh: Gh, *args: str) -> Any:
     return json.loads(result.stdout)
 
 
+# --- tag --------------------------------------------------------------------
+
+
 def _tag_commit(tag: str, repo: str, gh: Gh) -> str | None:
     """The commit ``repo``'s tag ``tag`` names, or None when it has no such tag.
 
@@ -728,10 +741,7 @@ def _tag_commit(tag: str, repo: str, gh: Gh) -> str | None:
     too), so only the exact ref counts. A lone ``GET git/ref`` would not
     tell a 404 from any other failure.
     """
-    listed = gh("api", "--paginate", "--jq", ".[]", f"repos/{repo}/git/matching-refs/tags/{tag}")
-    if listed.returncode:
-        raise ReleaseError(f"could not list tags: {(listed.stdout + listed.stderr).strip()}")
-    refs = [json.loads(line) for line in listed.stdout.splitlines() if line.strip()]
+    refs = _gh_list(gh, f"repos/{repo}/git/matching-refs/tags/{tag}", "tags")
     target = next((ref["object"] for ref in refs if ref.get("ref") == f"refs/tags/{tag}"), None)
     while target is not None and target["type"] == "tag":
         target = _gh_json(gh, f"repos/{repo}/git/tags/{target['sha']}")["object"]
@@ -790,13 +800,9 @@ def create_tag(tag: str, repo: str, head: str, *, gh: Gh) -> str:
 def _read_release(tag: str, repo: str, gh: Gh) -> dict[str, Any] | None:
     """The release for ``tag``, drafts included, or None when there is none.
 
-    It lists releases because ``releases/tags/<tag>`` hides drafts. ``--jq '.[]'``
-    prints one release per line on every page (``--slurp`` needs gh 2.48+).
+    It lists releases because ``releases/tags/<tag>`` hides drafts.
     """
-    result = gh("api", "--paginate", "--jq", ".[]", f"repos/{repo}/releases")
-    if result.returncode:
-        raise ReleaseError(f"could not list releases: {(result.stdout + result.stderr).strip()}")
-    releases = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    releases = _gh_list(gh, f"repos/{repo}/releases", "releases")
     matches = [release for release in releases if release.get("tag_name") == tag]
     if len(matches) > 1:
         raise ReleaseError(f"{len(matches)} releases are tagged {tag}")

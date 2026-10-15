@@ -142,20 +142,6 @@ def test_a_trailing_newline_is_not_a_release_version(tmp_path: Path) -> None:
     ]
 
 
-@pytest.mark.parametrize("version", ["10.0.0", "10.0.0rc1"])
-def test_a_tag_naming_the_version_is_accepted(tmp_path: Path, version: str) -> None:
-    _project(tmp_path, "untaped", version)
-    assert release.tagged_version(tmp_path, f"v{version}") == version
-
-
-@pytest.mark.parametrize("tag", ["v10.0.1", "10.0.0", "v10.0.0rc1", "v10.0.0\n"])
-def test_a_tag_that_is_not_v_and_the_version_is_refused(tmp_path: Path, tag: str) -> None:
-    _project(tmp_path, "untaped", "10.0.0")
-    with pytest.raises(release.ReleaseError) as caught:
-        release.tagged_version(tmp_path, tag)
-    assert str(caught.value) == f"tag {tag} does not match the package version 10.0.0"
-
-
 def test_a_tag_that_differs_names_every_package_and_pin(tmp_path: Path) -> None:
     _project(
         tmp_path,
@@ -1235,13 +1221,15 @@ def test_a_tag_on_another_commit_is_refused(ref: tuple[str, str]) -> None:
 def test_losing_the_race_to_the_same_commit_is_fine() -> None:
     gh = FakeTagGh(race=("tag", "t-head"))
     assert _tag(gh) == f"{TAG} already at {HEAD}"
-    assert gh.calls[-2:] == [MATCHING, ["api", f"repos/{REPO}/git/tags/t-head"]]
+    peel = ["api", f"repos/{REPO}/git/tags/t-head"]
+    assert gh.calls == [MATCHING, POST_TAG, POST_REF, MATCHING, peel]
 
 
 def test_losing_the_race_to_another_commit_is_refused() -> None:
     gh = FakeTagGh(race=("commit", OTHER))
     with pytest.raises(release.ReleaseError, match=rf"^{TAG} points at {OTHER}, not the built"):
         _tag(gh)
+    assert gh.calls == [MATCHING, POST_TAG, POST_REF, MATCHING]
 
 
 @pytest.mark.parametrize(
@@ -1510,14 +1498,15 @@ def test_a_pushed_tag_on_main_is_a_release(
     )
 
 
-def test_a_pushed_tag_that_is_not_the_version_is_refused(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("tag", ["v10.0.1", "10.0.0", "v10.0.0rc1", "v10.0.0\n"])
+def test_a_pushed_tag_that_is_not_v_and_the_version_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], tag: str
 ) -> None:
-    work = _clone_of_main(tmp_path)
-    assert _route(capsys, work, ref_type="tag", ref_name="v10.0.1") == (
+    _project(tmp_path, "untaped", "10.0.0")
+    assert _route(capsys, tmp_path, ref_type="tag", ref_name=tag) == (
         1,
         "",
-        "tag v10.0.1 does not match the package version 10.0.0\n",
+        f"tag {tag} does not match the package version 10.0.0\n",
     )
 
 
@@ -1611,6 +1600,22 @@ def test_a_first_push_counts_as_a_changed_version(
     )
 
 
+def test_a_malformed_pyproject_at_before_is_refused(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "--initial-branch=main")
+    _write(origin / "pyproject.toml", "[project\n")
+    _git(origin, "add", ".")
+    before = _commit(origin, message="broken")
+    _commit(origin, "10.1.0", "fixed")
+    _git(tmp_path, "clone", "-q", str(origin), "work")
+    code, out, err = _route(capsys, tmp_path / "work", before=before)
+    assert (code, out) == (1, "")
+    assert err.startswith(f"pyproject.toml at {before} is not valid TOML: ")
+
+
 def test_a_package_absent_at_before_counts_as_a_changed_version(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1673,18 +1678,26 @@ def test_any_other_event_or_branch_is_refused(
     )
 
 
+@pytest.mark.parametrize("tagged", [False, True], ids=["absent", "present"])
 def test_the_tag_command_tags_the_checked_out_commit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tagged: bool,
 ) -> None:
     work = _clone_of_main(tmp_path)
     head = _git(work, "rev-parse", "HEAD")
-    gh = FakeTagGh({TAG: ("commit", head)})
+    gh = FakeTagGh({TAG: ("commit", head)} if tagged else {})
     monkeypatch.setattr(release, "_run", lambda exe, *args: gh(*args))
+    printed = f"{TAG} already at {head}" if tagged else f"tagged {TAG} at {head}"
     assert _main(capsys, "--root", str(work), "tag", TAG, "--repo", REPO) == (
         0,
-        f"{TAG} already at {head}\n",
+        printed + "\n",
         "",
     )
+    if not tagged:
+        expected = [arg.replace(HEAD, head) for arg in POST_TAG]
+        assert gh.calls[1] == expected
 
 
 def test_the_tag_command_needs_a_checkout(
