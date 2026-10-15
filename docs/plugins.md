@@ -219,24 +219,23 @@ it as is. Set `automatic=True` only on a fix that meets the rule in the
 
 ## Moving what an older version left
 
-When a new version of your plugin keeps its data somewhere else, declare a
-`DirMigration` in `PluginSpec.migrations` rather than asking users to move or
-delete the old directory by hand. `untaped setup migrate-dirs` previews every
-plugin's rows as one table, confirms (`--yes` skips it, `--dry-run` stops
-after the preview), then applies them in plugin-name order; `untaped doctor`
-warns while any row would still move or delete something.
+When your plugin's data moves, declare a `DirMigration` in
+`PluginSpec.migrations` rather than asking users to move or delete it by hand.
+`untaped setup migrate-dirs` previews every plugin's rows as one table,
+confirms (`--yes`, `--dry-run`), then applies them in plugin-name order;
+`untaped doctor` warns while any row would still move or delete something.
 
 ```python
-from untaped.sdk import delete_migration, move_migration, plugin_dir
+from untaped.sdk import delete_migration, move_migration, plugin_dir, setting_guard
 
-def data_moves(ctx):
+def data_moves():  # acme.data_dir now defaults to plugin_dir(SPEC) / "data"
     return [(Path("~/.acme-data").expanduser(), plugin_dir(SPEC) / "data")]
 
 SPEC = PluginSpec(
     name="acme",
     ...,
     migrations=(
-        move_migration("acme.data", "1.x data", data_moves),
+        move_migration("acme.data", "1.x data", data_moves, guard=setting_guard("acme", "data_dir")),
         delete_migration("acme.cache", "1.x cache", lambda: [Path("~/.acme-cache").expanduser()]),
     ),
 )
@@ -245,19 +244,20 @@ SPEC = PluginSpec(
 `preview(ctx, options)` only reads: it returns `MigrationRow`s (`action`
 `move`, `delete`, `keep` or `then`, with absolute `source` and `destination`
 paths, `detail` and `bytes`), none once there is nothing left, and must work
-with no settings (`ctx.settings` is `None` when yours don't validate); with
-`options.measure` false (doctor) it leaves `bytes` at 0. `apply(ctx, options)`
-does the work and returns its `MigrationOutcome`s; it runs again on every
-`migrate-dirs`, so make it do nothing the second time. Core applies nothing of
-a migration whose preview raised, nor of two migrations when one would delete
-a directory the other moves or keeps. `unsafe_dir(path)` says why a directory
-must never go whole (it holds home or untaped's own files, or is a symlink);
-`delete_migration` keeps such a path, and any its `guard` refuses, as a `keep`
-row. Move data into `plugin_dir(SPEC)`. An id is `<plugin>.<noun>`; a
-malformed row, an id of another shape or a repeated one quarantines the plugin
-(`bad-migration`, `duplicate-migration`). `move_migration` moves each
-`(source, destination)` pair `moves(ctx)` returns, never over existing data;
-data that a symlink or saved path points into needs its own `DirMigration`.
+with no settings; with `options.measure` false (doctor) it leaves `bytes` at
+0. `apply(ctx, options)` does the work and returns its `MigrationOutcome`s; it
+runs again on every `migrate-dirs`, so make it do nothing the second time.
+Core applies nothing of a migration whose preview raised, nor of two
+migrations when one would delete a directory the other moves or keeps.
+`unsafe_dir(path)` says why a directory must never go whole (it holds home or
+untaped's own files, or is a symlink); the helpers below keep such a path, and
+any their `guard` refuses, as a `keep` row. Move data into `plugin_dir(SPEC)`. An
+id is `<plugin>.<noun>`; a malformed row, an id of another shape or a repeated
+one quarantines the plugin (`bad-migration`, `duplicate-migration`).
+`move_migration` moves each `(source, destination)` pair `moves()` returns,
+never over existing data unless `replaceable(destination)` says a command only
+created it; `setting_guard` keeps a place a profile still sets; data that a
+symlink or saved path points into needs its own `DirMigration`.
 `delete_migration` is the whole row for a directory nothing reads any more,
 and `old_dirs(default, section, key)` finds an old directory a deleted setting
 may have moved: `retired_values` reads that setting from config.yml even after

@@ -5551,7 +5551,10 @@ sdk untaped.sdk.is_envelope_line(obj)
 sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.most_severe(errors)
 sdk untaped.sdk.move_migration(detail=) default=""
-sdk untaped.sdk.move_migration(id, title, moves) callback(moves, 1)
+sdk untaped.sdk.move_migration(guard=) default=None callback(1)
+sdk untaped.sdk.move_migration(id, title, moves) callback(moves, 0)
+sdk untaped.sdk.move_migration(replaceable=) default=None callback(1)
+sdk untaped.sdk.move_migration(sidecars=) default=[]
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.old_dirs(default, section, key)
@@ -5637,6 +5640,8 @@ sdk untaped.sdk.run_git(stdin=) default=None
 sdk untaped.sdk.run_hint(command)
 sdk untaped.sdk.safe_path_segment(value)
 sdk untaped.sdk.same_origin(url, base)
+sdk untaped.sdk.setting_guard(*keys)
+sdk untaped.sdk.setting_guard(section)
 sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
 sdk untaped.sdk.summary(operation, counts)

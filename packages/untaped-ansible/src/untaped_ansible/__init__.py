@@ -12,13 +12,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import (
-    PluginContext,
     PluginSpec,
     SkillAsset,
     delete_migration,
     move_migration,
     old_dirs,
-    plugin_dir,
+    setting_guard,
     shown_path,
 )
 from untaped_ansible.doctor import DOCTOR_CHECKS
@@ -37,25 +36,17 @@ def build_app() -> App:
     return app
 
 
-#: 10.x's index, and the SQLite files beside it that travel with it (journal first).
-_INDEX_10X = Path("~/.untaped/ansible-index.sqlite3")
-_SIDECARS = ("-journal", "-wal", "-shm")
+def _index_moves() -> Sequence[tuple[Path, Path]]:
+    """10.x's index into ``plugin_dir``, where ``ansible.index_path`` now defaults."""
+    new: Path = AnsibleSettings.model_fields["index_path"].default
+    return [(Path("~/.untaped/ansible-index.sqlite3").expanduser(), new.expanduser())]
 
 
-def _index_moves(ctx: PluginContext) -> Sequence[tuple[Path, Path]]:
-    """10.x's index into ``plugin_dir`` while ``ansible.index_path`` keeps its default.
+def _empty_index(path: Path) -> bool:
+    """Whether the index at ``path`` holds no refreshed source (a command opened it, no more)."""
+    from untaped_ansible.infrastructure.sqlite_schema import holds_no_source  # noqa: PLC0415
 
-    A profile pointing ``index_path`` anywhere else (the old file included)
-    keeps what it names; settings that don't validate move nothing.
-    """
-    settings = ctx.settings
-    if not isinstance(settings, AnsibleSettings):
-        return []
-    if settings.index_path != AnsibleSettings.model_fields["index_path"].default:
-        return []
-    old, new = _INDEX_10X.expanduser(), plugin_dir(SPEC) / "index.sqlite3"
-    pairs = [(old.with_name(old.name + end), new.with_name(new.name + end)) for end in _SIDECARS]
-    return [*pairs, (old, new)]
+    return holds_no_source(path)
 
 
 def _git_cache_10x() -> Sequence[Path]:
@@ -104,6 +95,9 @@ SPEC = PluginSpec(
             "10.x dependency index",
             _index_moves,
             detail="saved sources keep their refreshed data",
+            sidecars=("-journal", "-wal", "-shm"),  # a hot journal travels with its database
+            guard=setting_guard("ansible", "index_path"),
+            replaceable=_empty_index,
         ),
         delete_migration(
             "ansible.cache",

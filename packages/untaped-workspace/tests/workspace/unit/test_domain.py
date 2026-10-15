@@ -34,6 +34,16 @@ def test_invalid_workspace_names(name: str) -> None:
         validate_workspace_name(name)
 
 
+def test_a_decomposed_name_is_its_composed_spelling() -> None:
+    assert validate_workspace_name("cafe\u0301") == "caf\u00e9"
+
+
+def test_a_name_too_long_for_a_directory_says_so() -> None:
+    assert validate_workspace_name("x" * 128) == "x" * 128
+    with pytest.raises(UsageError, match="at most 128 bytes"):
+        validate_workspace_name("x" * 129)
+
+
 @pytest.mark.parametrize(
     ("url", "expected"),
     [

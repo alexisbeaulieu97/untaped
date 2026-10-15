@@ -1,21 +1,22 @@
 """``setup migrate-dirs``: 10.x's ``~/.untaped/dotfiles`` into ``plugins/dotfiles/``.
 
-The directory moves whole (clones, kept files, status files), but three
-things outside it point in: ``state.yml``'s managed repo ``path``, each
-``link`` record's ``source_hash``/``target_hash`` (the link's destination),
-and the symlinks themselves. Applying, under the dotfiles lock, moves the
-directory, repoints every recorded symlink that still points into the old
-place, then rewrites state. Symlinks go before state because state is
-what finds them: a crash between the two leaves state still naming the old
-place, so the next run finishes. A new directory holding only what an 11.0
-command already wrote there (the status files, the lock) is replaced; one
-holding anything else is a ``keep`` row. Paths are rebased in both spellings state
-can hold, as written and with symlinks resolved (the commands resolve
-theirs).
+The directory's entries move (clones, kept files), but three things outside
+it point in: ``state.yml``'s managed repo ``path``, each ``link`` record's
+``source_hash``/``target_hash`` (the link's destination), and the symlinks
+themselves. Applying, under the lock 11.0's commands take
+(``plugins/dotfiles/.lock``), moves the old directory's entries into the new
+one, repoints every recorded symlink that still points into the old place,
+then rewrites state. Symlinks go before state because state is what finds
+them: a crash anywhere leaves either entries still in the old directory or
+state still naming it, so the next run finishes. What an 11.0 command
+already wrote in the new directory (the status files, the lock) is
+replaced; an entry both directories hold (``repos`` from an 11.0
+``subscribe``) is a ``keep`` row, never merged. Paths are rebased in both
+spellings state can hold, as written and with symlinks resolved (the
+commands resolve theirs).
 
-It runs only while all three directory settings keep their defaults; a
-profile that set any of them keeps the old directory as a ``keep`` row, to
-be moved by hand.
+A profile that still sets a directory setting into the old place keeps it,
+as a ``keep`` row, to be moved by hand.
 """
 
 from __future__ import annotations
@@ -34,8 +35,10 @@ from untaped.sdk import (
     StateCollection,
     dir_bytes,
     plural,
+    setting_guard,
     shown_path,
 )
+from untaped_dotfiles.infrastructure.placer import replace_symlink
 from untaped_dotfiles.infrastructure.state_store import (
     ATTENTION_FILE,
     STATUS_FILE,
@@ -82,21 +85,14 @@ def _rebase(value: object, prefixes: Sequence[tuple[Path, Path]]) -> str | None:
     return None
 
 
-def _taken(new: Path) -> bool:
-    """Whether ``new`` holds anything but files a command regenerates."""
-    if new.is_symlink() or new.is_file():
-        return True
+def _conflicts(old: Path, new: Path) -> list[Path]:
+    """Entries both directories hold (regenerated files aside): never merged."""
     try:
-        return any(entry.name not in _REGENERATED or not entry.is_file() for entry in new.iterdir())
-    except FileNotFoundError:
-        return False
-
-
-def _custom(settings: DotfilesSettings) -> list[str]:
+        names = [entry.name for entry in old.iterdir() if entry.name not in _REGENERATED]
+    except OSError:
+        return []
     return [
-        key
-        for key in _DIR_KEYS
-        if getattr(settings, key) != DotfilesSettings.model_fields[key].default
+        new / name for name in sorted(names) if (new / name).exists() or (new / name).is_symlink()
     ]
 
 
@@ -144,23 +140,18 @@ def _pending(prefixes: Sequence[tuple[Path, Path]]) -> tuple[int, int]:
     return rows, len(_stale_links(prefixes))
 
 
-def preview(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
-    settings = ctx.settings
-    if not isinstance(settings, DotfilesSettings):
-        return []
+def preview(_ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
     old, new = _old(), _new()
-    if custom := _custom(settings):
-        if not old.exists():
-            return []
-        keys = ", ".join(f"dotfiles.{key}" for key in custom)
-        return [MigrationRow(action="keep", source=str(old), detail=f"kept: {keys} is set")]
     if old.is_symlink():
         target = shown_path(os.path.realpath(old))
         detail = f"kept: a symlink to {target}; its directory already stays where it is"
         return [MigrationRow(action="keep", source=str(old), detail=detail)]
-    if old.exists() and _taken(new):
-        detail = f"kept: {shown_path(new)} already exists; keep one of them"
-        return [MigrationRow(action="keep", source=str(old), detail=detail)]
+    if old.exists():
+        reason = setting_guard("dotfiles", *_DIR_KEYS)(old)
+        if reason is None and (taken := _conflicts(old, new)):
+            reason = f"{shown_path(taken[0])} already exists; keep one of them"
+        if reason is not None:
+            return [MigrationRow(action="keep", source=str(old), detail=f"kept: {reason}")]
     rows, links = _pending(_prefixes())
     if not old.exists() and not rows and not links:
         return []
@@ -186,20 +177,19 @@ def apply(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationOu
     if not any(row.action == "move" for row in preview(ctx, quick)):
         return [MigrationOutcome(id=ID, action="unchanged", detail="nothing left to move")]
     old, new = _old(), _new()
-    lock_dir = old if old.is_dir() else new
-    with StateDotfilesStore(state_dir=lock_dir).locked():
+    with StateDotfilesStore(state_dir=new).locked():
         moved = old.is_dir()
         if moved:
-            if new.is_dir():
-                for name in _REGENERATED:
-                    (new / name).unlink(missing_ok=True)
-                new.rmdir()
-            new.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(old, new)  # the lock is on the file, which moves with it
+            for entry in sorted(old.iterdir()):
+                if entry.name in _REGENERATED:
+                    entry.unlink()  # 10.x's status files: the next command writes new ones
+                else:
+                    shutil.move(entry, new / entry.name)
+            old.rmdir()
         prefixes = _prefixes()
         links = _stale_links(prefixes)
         for target, pointing in links:
-            _relink(target, pointing)
+            replace_symlink(Path(pointing), target)
         _REPOS.mutate(_rows(_repo_row, prefixes))
         _APPLIED.mutate(_rows(_applied_row, prefixes))
     parts = [f"moved {shown_path(old)} to {shown_path(new)}"] if moved else []
@@ -212,11 +202,3 @@ def _rows(
     prefixes: Sequence[tuple[Path, Path]],
 ) -> Callable[[list[dict[str, Any]]], list[dict[str, Any]]]:
     return lambda rows: [fix(row, prefixes) for row in rows]
-
-
-def _relink(target: Path, pointing: str) -> None:
-    """Point the symlink ``target`` at ``pointing``, replacing it in one step."""
-    temporary = target.with_name(f".{target.name}.untaped-relink")
-    temporary.unlink(missing_ok=True)
-    os.symlink(pointing, temporary)
-    os.replace(temporary, target)

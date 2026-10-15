@@ -96,7 +96,7 @@ class ProvisionRepos:
         already present or requested twice are not). ``progress`` counts the
         repo sources asked while names are resolved.
         """
-        validate_workspace_name(name)
+        name = validate_workspace_name(name)
         resolved = self._resolve(repos, progress)
         with self._store.locked(name):
             refuse_occupied(self._store, self._workspaces_dir, name)

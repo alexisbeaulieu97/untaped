@@ -590,7 +590,7 @@ def _read_until(payload: bytes, cursor: int, delimiter: bytes) -> tuple[bytes, i
 
 def _worktree_path(repo: str, ref: str) -> Path:
     digest = hashlib.sha256(f"{repo}@{ref}".encode()).hexdigest()[:12]
-    name = f"{safe_path_segment(repo)}-{safe_path_segment(ref)}-{digest}"
+    name = f"{safe_path_segment(f'{repo}-{ref}')}-{digest}"  # one capped segment
     return plugin_dir(SPEC) / "worktrees" / name
 
 

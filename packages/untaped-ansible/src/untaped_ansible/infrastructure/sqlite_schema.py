@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from untaped.sdk import Diagnostics
@@ -18,7 +19,9 @@ SCHEMA_VERSION = 4
 #: ``user_version``: a reader whose ``SCHEMA_VERSION`` is at least a newer
 #: index's ``additive_since`` opens it and reads its own tables by name, so
 #: 11.x releases sharing one ``~/.untaped`` share the index. A change to an
-#: existing table raises it to the new ``SCHEMA_VERSION``.
+#: existing table raises it to the new ``SCHEMA_VERSION``. Foreign keys are
+#: off and an older writer deletes and replaces rows in the tables it knows,
+#: so a table a newer version adds must tolerate rows whose parent is gone.
 ADDITIVE_SINCE = 4
 
 _diag = Diagnostics()
@@ -125,7 +128,7 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
     version = int(db.execute("pragma user_version").fetchone()[0])
     if version == SCHEMA_VERSION:
         if _additive_since(db) is None:
-            db.executescript(f"begin;\n{_STAMP_SQL}\ncommit;")
+            _stamp(db)
         return
     if version > SCHEMA_VERSION:
         additive_since = _additive_since(db)
@@ -163,13 +166,41 @@ insert or replace into schema_meta (id, additive_since) values (1, {ADDITIVE_SIN
 """
 
 
+def _stamp(db: sqlite3.Connection) -> None:
+    """Stamp an index from before ``schema_meta``; a read-only one is read unstamped."""
+    try:
+        db.executescript(f"begin;\n{_STAMP_SQL}\ncommit;")
+    except sqlite3.OperationalError as exc:
+        if "readonly" not in str(exc):
+            raise
+        db.rollback()
+
+
 def _additive_since(db: sqlite3.Connection) -> int | None:
     """The index's ``schema_meta.additive_since``; ``None`` when it has no stamp."""
     try:
         row = db.execute("select additive_since from schema_meta where id = 1").fetchone()
-    except sqlite3.OperationalError:  # no schema_meta table: written before the stamp
+    except sqlite3.OperationalError as exc:
+        if "no such table" not in str(exc):
+            raise  # locked or unreadable: not the same as written before the stamp
         return None
     return None if row is None else int(row[0])
+
+
+def holds_no_source(path: Path) -> bool:
+    """Whether the index at ``path`` has no source refreshed into it (read-only, never raises).
+
+    What ``setup migrate-dirs`` replaces with the 10.x index: a command that
+    only opened the new one created its tables and nothing else.
+    """
+    try:
+        with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as db:
+            return not any(
+                db.execute(f"select 1 from {table} limit 1").fetchone()
+                for table in ("source_runs", "source_ref_scans", "source_refresh_progress")
+            )
+    except sqlite3.Error, OSError, ValueError:
+        return False
 
 
 def _drop_tables(db: sqlite3.Connection) -> None:

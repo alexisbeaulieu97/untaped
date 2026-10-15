@@ -212,7 +212,7 @@ def _failure_category(stderr: str) -> ErrorCategory | None:
 
 
 #: The most bytes :func:`safe_path_segment` returns: room for a suffix
-#: (``.git``, ``-<ref>``) under every filesystem's 255-byte name limit.
+#: (``.git``, ``-<digest>``) under every filesystem's 255-byte name limit.
 _SEGMENT_MAX_BYTES = 128
 
 
