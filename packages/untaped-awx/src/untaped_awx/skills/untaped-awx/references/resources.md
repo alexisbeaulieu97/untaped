@@ -159,7 +159,7 @@ nothing afterwards.
 ## Confirmations and batches
 
 The preview, `--dry-run`, `--yes` and exit-code rules are in the skill's
-"Destructive operations" section. Beyond them:
+"Safety" section. Beyond them:
 
 - Writes run one at a time; `--parallel N` allows up to ten. A failure fails
   its row and the rest still run, except a row that needs a resource whose

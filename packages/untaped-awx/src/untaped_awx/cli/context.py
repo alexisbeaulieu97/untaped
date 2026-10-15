@@ -81,7 +81,7 @@ class AwxContext:
         """The stderr handle for messages, failures and progress."""
         return self._context.diag
 
-    def progress_ui(self) -> UiContext:
+    def ui(self) -> UiContext:
         """Themed UI for prompts and ``ui=`` callers; a bad ``ui.theme`` falls back."""
         return self._context.ui(strict=False)
 

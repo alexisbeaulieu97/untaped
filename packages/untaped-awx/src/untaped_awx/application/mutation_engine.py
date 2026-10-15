@@ -30,6 +30,7 @@ from untaped_awx.application.mutation_planning import (
     MutationPlanner,
     record_id_of,
 )
+from untaped_awx.application.mutation_refs import tokens_in
 from untaped_awx.application.mutation_types import (
     DeferredReference,
     MutationPlan,
@@ -157,7 +158,6 @@ class BatchMutationEngine:
         """
         if parallel < 1:
             raise BadRequestError("parallel must be at least 1")
-        parallel = min(parallel, 10)
         bindings: dict[str, int] = {}
         conflicts, errors = self._preflight_conflicts(plan)
         if conflicts:
@@ -422,6 +422,29 @@ class BatchMutationEngine:
                 item.to_associate or item.to_disassociate or item.to_reorder
                 for item in operation.membership_plans
             )
+            needed = tokens_in(
+                [
+                    (item.to_associate, item.desired_ids, item.to_reorder)
+                    for item in operation.membership_plans
+                ]
+            )
+            if membership_changed and not needed <= bindings.keys():
+                # A planned member's create failed; its row already says why.
+                outcomes[operation.index] = (
+                    self._status_outcome(
+                        operation, action="skipped", detail="skipped because a dependency failed"
+                    )
+                    if outcome.action == "unchanged"
+                    else outcome.model_copy(
+                        update={
+                            "action": "partial",
+                            "partial": True,
+                            "unverified": True,
+                            "detail": "membership skipped because a dependency failed",
+                        }
+                    )
+                )
+                continue
             if (stopped and membership_changed) or target_id is None:
                 outcomes[operation.index] = outcome.model_copy(
                     update={

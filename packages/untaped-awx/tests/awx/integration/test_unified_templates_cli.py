@@ -214,10 +214,21 @@ def test_get_reports_missing_id_and_exits_nonzero(fake_aap: Any) -> None:
         ["unified-templates", "get", "10", "999", "--format", "raw", "--columns", "id"],
     )
     assert result.exit_code == 1
-    assert "999" in result.stderr
-    assert "not found" in result.stderr
+    assert "error: unified template not found: '999'" in result.stderr
     # The found id (10) still prints to stdout.
     assert result.stdout.strip() == "10"
+
+
+def test_get_reports_a_missing_id_as_not_found(fake_aap: Any) -> None:
+    _seed_all_kinds(fake_aap)
+    result = CliInvoker().invoke(app, ["unified-templates", "get", "999"])
+    assert result.exit_code == 1
+    [failure] = result.diagnostics
+    assert (failure.category, failure.system, failure.message) == (
+        "not_found",
+        "awx",
+        "unified template not found: '999'",
+    )
 
 
 def test_get_stdin_round_trips_from_list_output(fake_aap: Any) -> None:

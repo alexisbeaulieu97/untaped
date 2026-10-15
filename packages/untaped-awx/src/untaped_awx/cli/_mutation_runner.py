@@ -18,6 +18,7 @@ from untaped.sdk import (
 )
 from untaped_awx.application.mutation_engine import BatchMutationEngine
 from untaped_awx.application.mutation_types import MutationPlan
+from untaped_awx.application.scheduling import MAX_PARALLEL
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.cli.format import (
     OUTCOME_TABLE_COLUMNS,
@@ -45,7 +46,7 @@ def validate_controls(
     """
     if allow_unverified and not yes and not dry_run:
         raise UsageError("--allow-unverified requires --yes")
-    return clamp_parallel(parallel, cap=10, policy="httpx.Limits.max_connections=10")
+    return clamp_parallel(parallel, cap=MAX_PARALLEL, policy="the AWX concurrent-request cap")
 
 
 @Parameter(name="*")
@@ -85,7 +86,7 @@ def confirm_batch(ctx: AwxContext, *, count: int, verb: str, yes: bool, dry_run:
     """
     if dry_run or count == 0:
         return False
-    ctx.progress_ui().confirm_or_cancel(
+    ctx.ui().confirm_or_cancel(
         f"{verb.capitalize()} {plural(count, 'resource')}?",
         assume_yes=yes,
         refusal=f"{verb} requires --yes or --dry-run when not interactive",

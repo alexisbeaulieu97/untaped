@@ -97,7 +97,7 @@ def run_edit(
                     ctx.diag.warning(
                         "invalid edited batch; no changes written; fix the YAML or field values"
                     )
-                    ui = ctx.progress_ui()
+                    ui = ctx.ui()
                     with ui.terminal(refusal="edit requires a terminal to reopen the editor"):
                         reopen = ui.confirm("Reopen editor?", default=False)
                     if reopen:

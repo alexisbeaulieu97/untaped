@@ -438,7 +438,7 @@ def test_apply_emits_clamp_warning_above_cap(
     result = CliInvoker().invoke(app, ["apply", str(yml), "--parallel", "100"])
     assert result.exit_code == 0, result.output
     assert "clamped to 10" in result.output
-    assert "httpx.Limits.max_connections=10" in result.output
+    assert "(the AWX concurrent-request cap)" in result.output
 
 
 @pytest.mark.parametrize(

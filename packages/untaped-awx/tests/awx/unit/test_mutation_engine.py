@@ -935,3 +935,51 @@ def test_editor_return_values_cannot_mutate_original_snapshot() -> None:
     again, original = batch.parse(text)
     assert again[0].metadata.name == "original"
     assert original[0].record["description"] == "old"
+
+
+class _RefusingWebServers(_MembershipClient):
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if method == "POST" and json is not None and json.get("name") == "web-servers":
+            from untaped_awx.errors import BadRequestError
+
+            raise BadRequestError("refused", status=400)
+        if method == "GET" and params is not None:
+            found = [r for r in self.records.values() if r["name"] == params["name"]]
+            return {"results": found}
+        return super().request(method, path, params=params, json=json)
+
+
+def test_a_membership_on_a_failed_create_is_skipped_as_a_dependency() -> None:
+    client = _RefusingWebServers([])
+    result = _group_engine(client).run(
+        [_group("app-tier", ["web-servers"]), _group("web-servers", [])], write=True
+    )
+    app_tier, web_servers = result.outcomes
+    assert web_servers.action == "failed"
+    assert (app_tier.action, app_tier.detail) == (
+        "partial",
+        "membership skipped because a dependency failed",
+    )
+    assert app_tier.error is None
+    assert client.members == {}
+
+
+def test_an_unchanged_body_whose_membership_needs_a_failed_create_is_skipped() -> None:
+    client = _RefusingWebServers([{"id": 5, "name": "app-tier", "inventory": 30}])
+    result = _group_engine(client).run(
+        [_group("app-tier", ["web-servers"]), _group("web-servers", [])], write=True
+    )
+    app_tier, web_servers = result.outcomes
+    assert web_servers.action == "failed"
+    assert (app_tier.action, app_tier.detail) == (
+        "skipped",
+        "skipped because a dependency failed",
+    )
+    assert client.members == {}
