@@ -81,7 +81,8 @@ def test_bare_values_on_stdin_are_a_usage_mistake() -> None:
     with compose_with("lint", provides={"acme": [Acme()]}):
         result = _lint(input="w\n")
     assert result.exit_code == 2, result.stderr
-    assert "--format pipe" in result.stderr
+    assert not result.stdout
+    assert "--stdin reads records: pipe untaped's --format pipe output" in result.stderr
 
 
 def test_every_provider_quarantined_exits_4() -> None:
