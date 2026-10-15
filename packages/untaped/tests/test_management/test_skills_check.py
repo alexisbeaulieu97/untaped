@@ -1,7 +1,7 @@
 """The per-run installed-skills check wired into the root app.
 
-After every root command, installed skills that no longer match this version
-are reported on stderr; ``skills.updates`` switches the check to updating
+After every root command, installed skills that are out of date are
+reported on stderr; ``skills.updates`` switches the check to updating
 them in place (``auto``) or silences it (``off``).
 """
 
