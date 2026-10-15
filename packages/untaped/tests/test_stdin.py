@@ -51,7 +51,10 @@ def test_read_stdin_input_parses_envelopes() -> None:
 
 
 def test_read_stdin_input_names_the_malformed_envelope_line() -> None:
-    with _feed(_env({"x": 1}) + "\nnot json\n"), pytest.raises(ConfigError, match="line 2: "):
+    with (
+        _feed(_env({"x": 1}) + "\nnot json\n"),
+        pytest.raises(ConfigError, match="line 2: invalid JSON"),
+    ):
         read_stdin_input()
 
 

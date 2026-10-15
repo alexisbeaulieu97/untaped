@@ -87,7 +87,7 @@ from untaped.output.policy import (
 )
 from untaped.output.progress import ProgressHandle
 from untaped.redaction import redact_url_password
-from untaped.render import RichTerminalRenderer, render_styled, should_colorize, stream_is_tty
+from untaped.render import render_message, render_styled, should_colorize, stream_is_tty
 from untaped.theme import BUILTIN_THEMES
 
 if TYPE_CHECKING:
@@ -595,7 +595,7 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
         return f"DEBUG {diagnostic.logger}: {diagnostic.message}"
     message = diagnostic.message
     if isinstance(diagnostic, Message) and diagnostic.level != "hint":
-        line = RichTerminalRenderer().render_message(
+        line = render_message(
             diagnostic.level,
             message,
             theme=theme or BUILTIN_THEMES["default"],

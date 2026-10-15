@@ -313,7 +313,8 @@ identifiers = read_identifiers([], stdin=True, id_field="full_name", accept_kind
 ```
 
 For whole records, `read_stdin_input(accept_kinds=...)` returns the bare
-values or the parsed envelopes (a `StdinInput`). Both raise on empty stdin.
+values or the parsed envelopes (a `StdinInput`). `read_identifiers` and
+`read_stdin_input` raise on empty stdin.
 When an empty pipe (a filter that matched nothing) should do nothing, pass
 `read_stdin_input(allow_empty=True)`: it returns no values, which the command
 must treat as "nothing to do", never as "everything". A terminal stdin with
