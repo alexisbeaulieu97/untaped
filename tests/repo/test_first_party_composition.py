@@ -11,11 +11,19 @@ from pathlib import Path
 
 import pytest
 
+from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
 from untaped._root_options import _root_options
+from untaped.cli import create_app
 from untaped.messages import EXPERIMENTAL_LINE
 from untaped.plugins.registry import PluginCandidate, PluginSpec
-from untaped.stability import enable_show_deprecated, mark_of, panel_for, reset_show_deprecated
+from untaped.stability import (
+    deprecated,
+    enable_show_deprecated,
+    mark_of,
+    panel_for,
+    reset_show_deprecated,
+)
 from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -195,30 +203,36 @@ def test_a_plugin_section_lists_before_global_options(
 def test_the_deprecated_flag_adds_the_deprecated_panel_before_global_options(
     first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
+    root = bootstrap.build_root_app(candidates=[*first_party_candidates, _sunset()])
 
     panels = _panels(CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout)
 
     assert list(panels) == ["Commands", "Plugins", "Experimental", "Deprecated", "Global options"]
-    assert "alias" in panels["Deprecated"] and "alias" not in panels["Commands"]
+    assert "sunset" in panels["Deprecated"] and "sunset" not in panels["Plugins"]
 
 
 def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visible(
     first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
+    root = bootstrap.build_root_app(candidates=[*first_party_candidates, _sunset()])
 
     # Hiding it would let the help-tree and stability walks skip it.
-    assert root["alias"].show is not False
+    assert root["sunset"].show is not False
     completion = root.generate_completion(shell="bash")
-    assert '"alias"' not in completion
+    assert '"sunset"' not in completion
     assert '"config"' in completion
     token = enable_show_deprecated()
     try:
         # The same call lists it once the flag is on, so the check above can fail.
-        assert '"alias"' in root.generate_completion(shell="bash")
+        assert '"sunset"' in root.generate_completion(shell="bash")
     finally:
         reset_show_deprecated(token)
+
+
+def _sunset() -> PluginCandidate:
+    """A deprecated plugin beside the first-party ones (none of which is deprecated)."""
+    spec = make_spec(name="sunset", factory=lambda: create_app(name="sunset", help="Sunset."))
+    return plugin_candidate(replace(spec, stability=deprecated()))
 
 
 def test_awx_test_sits_in_awxs_experimental_panel(

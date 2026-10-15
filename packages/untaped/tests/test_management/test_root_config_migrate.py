@@ -299,3 +299,20 @@ def test_only_deletes_lead_the_summary(_isolated_config: Path) -> None:
     (row,) = json.loads(result.stdout)
     assert row["detail"].startswith("was <mapping>; deleted in 11.0;")
     assert "would delete 1 key" in result.stderr
+
+
+def test_deletes_the_removed_command_aliases(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    shell:\n      aliases:\n        failed: [awx, jobs, list]\n",
+    )
+    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose())
+
+    result = CliInvoker().invoke(app, ["migrate", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    (row,) = json.loads(result.stdout)
+    assert row["from"] == "shell.aliases"
+    assert row["action"] == "deleted"
+    assert row["detail"].endswith("deleted in 11.0; use a shell alias or function")
+    assert "shell" not in _isolated_config.read_text()

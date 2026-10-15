@@ -33,12 +33,6 @@ overridden for one process with the environment variable shown.
 | `ui.color_roles` | mapping | empty | `UNTAPED_UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. Names: `header`, `border`, `key`, `value`, `success`, `info`, `warning`, `error`, `screen.accent`, `screen.muted`, `screen.highlight`, `screen.focus`, `screen.border`, `screen.value`, `screen.success`, `screen.error`, `screen.caret`, `screen.emphasis`, `screen.match`. |
 | `skills.updates` | `warn` \| `auto` \| `off` | `warn` | `UNTAPED_SKILLS__UPDATES` | What each run does when installed agent skills differ from this version: `warn` (print a warning), `auto` (update them in place), or `off`. |
 
-## `shell`
-
-| Key | Type | Default | Environment | Description |
-|---|---|---|---|---|
-| `shell.aliases` | mapping | empty | `UNTAPED_SHELL__ALIASES` | Command aliases: `untaped NAME [ARGS…]` runs the argv stored under NAME. Managed by `alias` commands. Deprecated: removed in the next major release; use a shell alias or function. |
-
 ## `ansible`
 
 | Key | Type | Default | Environment | Description |
@@ -162,6 +156,7 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
 | `http.timeout` | `UNTAPED_HTTP__TIMEOUT` | `http.timeout_seconds` | retired |
+| `shell.aliases` | `UNTAPED_SHELL__ALIASES` | none | deleted in 11.0; use a shell alias or function |
 | `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | retired |
 | `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | retired |
 | `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | `ansible.caches.index.max_age_seconds` | renamed |

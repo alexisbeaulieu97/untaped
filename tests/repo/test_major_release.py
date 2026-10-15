@@ -214,12 +214,6 @@ def test_mark_leftovers_report_a_deprecated_setting_but_not_an_experimental_one(
     assert [line for line in found if line.startswith("svc.")] == ["svc.old: deprecated setting"]
 
 
-def test_the_deprecated_alias_command_blocks_a_major_release() -> None:
-    root = bootstrap.build_root_app(candidates=[])
-
-    assert "untaped alias: deprecated group" in mark_leftovers(root, bootstrap.composition())
-
-
 def test_alias_leftovers_name_the_command() -> None:
     root = App(name="untaped")
     group = App(name="jira")
@@ -255,14 +249,6 @@ def test_option_leftovers_name_hidden_deprecated_options_only() -> None:
     assert list(option_leftovers(root)) == ["awx run: deprecated option --old"]
 
 
-def test_option_leftovers_see_the_first_party_deprecated_dry_run(
-    first_party_candidates: tuple[PluginCandidate, ...], fresh_composition: None
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    assert "awx test run: deprecated option --dry-run" in list(option_leftovers(root))
-
-
 @warnings.deprecated("use g")
 def _old_function() -> None: ...
 
@@ -296,11 +282,3 @@ def test_sdk_leftovers_look_through_properties_and_method_wrappers() -> None:
     namespace: dict[str, Any] = {"f": _old_function, "Client": _Client, "VALUE": 3}
 
     assert sdk_leftovers(namespace) == ["f", "Client.a", "Client.c", "Client.e", "Client.g"]
-
-
-def test_the_deprecated_shell_aliases_setting_blocks_a_major_release(
-    first_party_candidates: tuple[PluginCandidate, ...], fresh_composition: None
-) -> None:
-    root = bootstrap.build_root_app(candidates=first_party_candidates)
-
-    assert "shell.aliases: deprecated setting" in mark_leftovers(root, bootstrap.composition())

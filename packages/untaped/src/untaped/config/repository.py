@@ -320,18 +320,22 @@ class SettingsFileRepository:
         Returns one row per change (``profile``, ``from``, ``to``, ``action``:
         ``renamed``, ``dropped`` or ``deleted``, and ``detail``: for a delete,
         the value the key held and why it went); ``dry_run`` writes nothing.
-        Deprecated settings and ``state.yml`` are left alone.
+        A section the migration leaves empty is removed. Deprecated settings
+        and ``state.yml`` are left alone.
         """
         rows: list[dict[str, str]] = []
         renames: list[KeyRename] = []
 
         def _apply(data: dict[str, Any]) -> None:
+            emptied: list[tuple[str, str]] = []
             for name, section, model, section_data in profile_sections(
                 data, self._section_models()
             ):
                 for move in migration_moves(model, section_data):
                     if not apply_move(section_data, move):
                         continue
+                    if not section_data:
+                        emptied.append((name, section))
                     deleted = move.action == "deleted"
                     rows.append(
                         {
@@ -347,6 +351,8 @@ class SettingsFileRepository:
                         renames.append(
                             ((*base, *move.old.split(".")), (*base, *move.to.split(".")))
                         )
+            for name, section in emptied:
+                data["profiles"][name].pop(section, None)
 
         if dry_run:
             _apply(read_config_dict())

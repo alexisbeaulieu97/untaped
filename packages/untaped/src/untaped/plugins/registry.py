@@ -79,7 +79,6 @@ ROOT_MANAGEMENT_COMMANDS = (
     "doctor",
     "setup",
     "auth",
-    "alias",
     "plugin",
 )
 
