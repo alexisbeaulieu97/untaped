@@ -1,4 +1,4 @@
-"""Format rendering: structured/raw/pipe encoders and the Rich terminal renderer.
+"""Format rendering: structured/raw/pipe encoders and Rich terminal output.
 
 Split from ``ui.py``: this module owns *what output looks like* (the format
 renderers plus the pure format helpers); ``ui.py`` owns *interaction*
