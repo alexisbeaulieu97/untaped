@@ -1503,10 +1503,10 @@ def awx_config() -> AwxSettings:
 
 @pytest.fixture
 def schedule_stopped(monkeypatch: pytest.MonkeyPatch) -> threading.Event:
-    """An event set once any batch :class:`Schedule` stops on a failure.
+    """An event set once any batch :class:`Schedule` is stopped.
 
-    A test that holds an in-flight item until the failure reached the
-    scheduler waits on this instead of sleeping.
+    A test that holds an in-flight item until a failure or abort has stopped
+    the scheduler waits on this instead of sleeping.
     """
     from untaped_awx.application.scheduling import Schedule
 

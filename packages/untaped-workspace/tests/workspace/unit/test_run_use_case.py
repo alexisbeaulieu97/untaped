@@ -161,18 +161,24 @@ class SlowRunner:
 
     The first calls wait until ``overlap`` of them run at once (5 s at most),
     so a test of concurrent runs does not depend on how fast workers start.
+    With ``slow_until``, ``slow`` names return once that event is set instead.
     """
 
     def __init__(
-        self, codes: Mapping[str, int | None] | None = None, slow: str = "", overlap: int = 1
+        self,
+        codes: Mapping[str, int | None] | None = None,
+        slow: str = "",
+        overlap: int = 1,
+        slow_until: threading.Event | None = None,
     ) -> None:
         self.codes = codes or {}
         self.slow = slow
         self.overlap = overlap
+        self.slow_until = slow_until
         self.active = 0
         self.max_active = 0
         self.started: list[str] = []
-        self.lock = threading.Condition()
+        self.in_flight = threading.Condition()
         self.cancelled = False
 
     def cancel(self) -> None:
@@ -181,14 +187,17 @@ class SlowRunner:
     def run(
         self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
     ) -> CommandResult:
-        with self.lock:
+        with self.in_flight:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
             self.started.append(cwd.name)
-            self.lock.notify_all()
-            self.lock.wait_for(lambda: self.max_active >= self.overlap, timeout=5)
-        time.sleep(0.3 if cwd.name == self.slow else 0.05)
-        with self.lock:
+            self.in_flight.notify_all()
+            self.in_flight.wait_for(lambda: self.max_active >= self.overlap, timeout=5)
+        if cwd.name == self.slow and self.slow_until is not None:
+            assert self.slow_until.wait(5)
+        else:
+            time.sleep(0.3 if cwd.name == self.slow else 0.05)
+        with self.in_flight:
             self.active -= 1
         return CommandResult(
             returncode=self.codes.get(cwd.name, 0),
@@ -208,8 +217,15 @@ def test_parallelism_is_bounded(tmp_path: Path) -> None:
 
 
 def test_fail_fast_with_parallel_lets_running_jobs_finish(tmp_path: Path) -> None:
-    runner = SlowRunner({"a": 1}, slow="b", overlap=2)
-    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=True)(
+    a_reported = threading.Event()
+    # b keeps running until a's failure has been reported
+    runner = SlowRunner({"a": 1}, slow="b", overlap=2, slow_until=a_reported)
+
+    def on_done(row: RunOutcome) -> None:
+        if row.dir == "a":
+            a_reported.set()
+
+    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=True, on_done=on_done)(
         _targets(tmp_path, "a", "b", "c", "d"), ["x"]
     )
     assert [r.action for r in rows] == ["failed", "ran", "skipped", "skipped"]

@@ -356,7 +356,6 @@ def test_action_invalid_name_in_selection_prevents_all_posts(
 
 
 def test_monitoring_concurrency_is_bounded() -> None:
-    import threading
     import time
 
     from rich.console import Console
@@ -638,7 +637,6 @@ def test_ctrl_c_while_waiting_stops_promptly_and_lists_only_running_executions(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Ctrl-C on the main thread must not block until every execution ends."""
-    import threading
     import time
 
     seed(fake_aap)
@@ -921,7 +919,6 @@ def test_cancel_cancels_an_abandoned_execution_while_others_still_run(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch, abandoned_by: str, flag: str
 ) -> None:
     """``deploy``'s cancel must not wait for ``other``'s watch to end."""
-    import threading
 
     from untaped_awx.application import RunAction
     from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
