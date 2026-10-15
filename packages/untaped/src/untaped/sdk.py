@@ -118,7 +118,6 @@ from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.plugins.registry import (
-    ApplicationSpec,
     DirMigration,
     DoctorCheck,
     DoctorResult,
@@ -151,7 +150,6 @@ from untaped.state import StateCollection, StateMap
 from untaped.stdin import (
     StdinInput,
     read_identifiers,
-    read_records,
     read_stdin,
     read_stdin_input,
     resolve_text_input,
@@ -241,7 +239,6 @@ _SCREEN_EXPORTS: dict[str, str] = {
 
 __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
     # composition
-    "ApplicationSpec",
     "PluginContext",
     "PluginSpec",
     "DoctorCheck",
@@ -288,7 +285,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "is_envelope_line",
     "kind_of",
     "parse_envelope_line",
-    "read_records",
     "record_model",
     "render_rows",
     "summary",
