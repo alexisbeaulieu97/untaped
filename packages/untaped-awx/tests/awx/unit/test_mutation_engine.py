@@ -580,9 +580,9 @@ def test_a_membership_failure_row_carries_its_error() -> None:
     assert partial.error.retryable
 
 
-@pytest.mark.parametrize(("fail_fast", "auth"), [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize(("fail_fast", "doomed"), [(False, False), (True, False), (False, True)])
 def test_a_membership_failure_skips_later_memberships_only_when_stopping(
-    fail_fast: bool, auth: bool
+    fail_fast: bool, doomed: bool
 ) -> None:
     from untaped.sdk import ConfigError
     from untaped_awx.errors import BadRequestError
@@ -592,7 +592,7 @@ def test_a_membership_failure_skips_later_memberships_only_when_stopping(
             self, spec: ResourceSpec, record_id: int, sub_endpoint: str, method: str, **kw: Any
         ) -> dict[str, Any]:
             if record_id == 1:
-                if auth:
+                if doomed:
                     raise ConfigError("AWX rejected the token (HTTP 401)")
                 raise BadRequestError("refused", status=503)
             return super().sub_endpoint_request(spec, record_id, sub_endpoint, method, **kw)
@@ -602,7 +602,7 @@ def test_a_membership_failure_skips_later_memberships_only_when_stopping(
     result = _group_engine(client).execute(plan, fail_fast=fail_fast)
     first, second = result.outcomes
     assert first.action == "partial"
-    if fail_fast or auth:
+    if fail_fast or doomed:
         assert (second.action, second.detail) == (
             "partial",
             "membership skipped after runtime failure",

@@ -300,7 +300,10 @@ def test_provisioning_stops_at_the_first_failed_copy() -> None:
             return BatchResult(outcomes=[])
 
     sets = TemporarySets(
-        engine=cast(BatchMutationEngine, Engine()), client=Any, catalog=Any, fk=Any
+        engine=cast(BatchMutationEngine, Engine()),
+        client=cast(Any, None),
+        catalog=cast(Any, None),
+        fk=cast(Any, None),
     )
     sets.provision(cast(Any, None), cast(Any, None))
     assert calls == [{"fail_fast": True}]

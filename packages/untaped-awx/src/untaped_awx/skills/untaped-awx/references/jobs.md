@@ -25,7 +25,8 @@ untaped awx workflow-templates launch "Release train" --follow
   and `--credential` names.
 - A single named template launches at once; several targets or a query or
   `--stdin` selection are listed and confirmed once. A failed launch fails
-  its row and the rest still launch, unless `--fail-fast`.
+  its row and the rest still launch, unless `--fail-fast` (a rejected token
+  or broken configuration always stops them).
 - Results are `awx.launch_outcome` rows; pipe them into
   `untaped awx jobs wait --stdin` or `untaped awx jobs logs --stdin --follow`.
 
@@ -65,7 +66,8 @@ untaped awx inventories sync Production --follow
 `inventories sync` updates every source of the inventory. Smart or
 source-less inventories and manual or invalid sources fail the preflight
 before any POST, so nothing starts; a failure after it fails only its row
-unless `--fail-fast`.
+unless `--fail-fast` (a rejected token or broken configuration always stops
+the rest).
 Results are `awx.sync_outcome` rows.
 
 ## Wait, follow, time out, cancel
