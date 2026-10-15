@@ -10,6 +10,7 @@ from contextlib import redirect_stderr
 import pytest
 
 from untaped import verbose
+from untaped.output.policy import is_verbose
 
 
 @pytest.fixture(autouse=True)
@@ -27,18 +28,18 @@ def _reset_verbose() -> Iterator[None]:
 
 
 def test_verbose_defaults_off() -> None:
-    assert verbose.is_verbose() is False
+    assert is_verbose() is False
 
 
 def test_enable_turns_verbose_on() -> None:
     verbose.enable()
-    assert verbose.is_verbose() is True
+    assert is_verbose() is True
 
 
 def test_reset_turns_verbose_off() -> None:
     verbose.enable()
     verbose.reset()
-    assert verbose.is_verbose() is False
+    assert is_verbose() is False
 
 
 def test_reset_undoes_debug_logging() -> None:
@@ -53,7 +54,7 @@ def test_reset_undoes_debug_logging() -> None:
 def test_enable_accepts_a_handler_value_and_ignores_it() -> None:
     # The root-option dispatcher calls handlers with a string; flags ignore it.
     verbose.enable("")
-    assert verbose.is_verbose() is True
+    assert is_verbose() is True
 
 
 def test_verbose_routes_the_untaped_logger_to_stderr_as_debug_lines() -> None:

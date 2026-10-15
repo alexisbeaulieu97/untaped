@@ -368,12 +368,12 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     if not takes_token_command(type(settings)) or token_override_env(section) is not None:
         return
     from untaped.deprecated_keys import warn_once  # noqa: PLC0415 - keep auth imports light
-    from untaped.messages import hint  # noqa: PLC0415
+    from untaped.messages import run_hint  # noqa: PLC0415
 
     warn_once(
-        f"{section}.token is stored in plain text in the config file, which is deprecated\n"
-        f"{hint('auth migrate')}",
+        f"{section}.token is stored in plain text in the config file, which is deprecated",
         key=f"plaintext {section}.token",
+        hint=run_hint("auth migrate"),
     )
 
 

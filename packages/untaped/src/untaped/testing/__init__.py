@@ -401,10 +401,14 @@ def check_conventions(
     provider that is not installed. ``# untaped: allow <rule>`` on the flagged
     node's first line allows that one violation. A quarantined plugin
     fails with the reason it was refused, such as a broken rename declaration.
+    Composing, it brings back the composition it started with (and warns
+    about no quarantined plugin), and can't run inside a contract call.
     """
+    from untaped import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
     from untaped.conventions import plugin_violations  # noqa: PLC0415
 
-    found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)
+    with bootstrap.kept_composition(quiet=True):
+        found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)
     assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)
 
 

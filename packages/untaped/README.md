@@ -12,7 +12,7 @@ uv tool install 'untaped[all]'   # or 'untaped[github]', 'untaped[awx]', ...
 pip install 'untaped[all]'
 ```
 
-See the [project README](https://github.com/alexisbeaulieu97/untaped#readme)
+See the [project README](https://github.com/alexisbeaulieu97/untaped/blob/main/README.md)
 for the extras, install and usage, and
 [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md)
 for the first commands.

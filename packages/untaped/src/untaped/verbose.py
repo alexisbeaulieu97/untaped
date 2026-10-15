@@ -69,4 +69,4 @@ def configure_logging(level: int | str) -> None:
         logger.addHandler(handler)
 
 
-__all__ = ["configure_logging", "enable", "is_verbose", "reset"]
+__all__ = ["configure_logging", "enable", "reset"]

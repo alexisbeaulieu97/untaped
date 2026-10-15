@@ -88,6 +88,7 @@ from untaped.settings import (
     resolve_config_path,
     resolve_state_path,
     resolve_with_overlay,
+    retired_env_vars,
     section_stabilities,
     settings_overlay,
 )
@@ -547,7 +548,8 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
         for item in scan_keys(raw, profile_section_models(), section_stabilities())
         if item.kind != "deleted"
     ]
-    if not found:
+    variables = retired_env_vars(profile_section_models())
+    if not found and not variables:
         return _row("deprecated-keys", shell.name, _PASS, title, "no deprecated keys")
     parts = []
     for item in found:
@@ -558,6 +560,11 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
         else:
             retired = ", retired" if item.kind == "retired" else ""
             parts.append(f"{old} (profile {item.profile}{retired}) → {item.section}.{item.new}")
+    for variable in variables:
+        if variable.new is not None:
+            parts.append(f"{variable.name} (environment, retired) → {variable.new}")
+        else:
+            parts.append(f"{variable.name} (environment): {variable.note}")
     fix = None
     if any(item.kind != "deprecated" for item in found):
         fix = command_argv("config migrate", profile=selected_profile(dict(raw)))
@@ -609,7 +616,9 @@ def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
 
     title = "no directories left by older versions"
     planned = plan(result, MigrationOptions(measure=False))
-    failed = [f"{item.migration.id}: {item.error}" for item in planned if item.error is not None]
+    failed = [
+        f"{item.migration.id}: {item.error.message}" for item in planned if item.error is not None
+    ]
     if failed:
         return _row("migrate-dirs", shell.name, _WARN, title, "; ".join(failed))
     if not any(item.changes for item in planned):

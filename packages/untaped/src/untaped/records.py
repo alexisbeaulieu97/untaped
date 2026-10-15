@@ -49,7 +49,6 @@ from typing import (
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from untaped.output.diagnostic import (
-    KIND_PATTERN,
     DuplicateKindError,
     Failure,
     UtcTimestamp,
@@ -229,7 +228,6 @@ class Issued(Record):
 
 __all__ = [
     "FAILURE_ACTIONS",
-    "KIND_PATTERN",
     "OUTCOME_ACTIONS",
     "AbsolutePath",
     "CheckRecord",

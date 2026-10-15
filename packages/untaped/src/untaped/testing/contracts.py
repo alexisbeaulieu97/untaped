@@ -156,7 +156,11 @@ def _bound(cls: type) -> Provider:
 def _installed_for(cls: type) -> list[str]:
     """The installed plugin offering ``cls`` and the installed owners it provides for."""
     from untaped.conventions import candidate_package  # noqa: PLC0415
-    from untaped.plugins.registry import PluginSpec, discover_candidates  # noqa: PLC0415
+    from untaped.plugins.registry import (  # noqa: PLC0415
+        PluginSpec,
+        _resolve_target,
+        discover_candidates,
+    )
 
     top = cls.__module__.partition(".")[0]
     installed = {candidate.name: candidate for candidate in discover_candidates()}
@@ -164,18 +168,12 @@ def _installed_for(cls: type) -> list[str]:
         package = candidate_package(candidate.target)
         if package is None or package.partition(".")[0] != top:
             continue
-        spec = _resolve(candidate.target)
+        try:
+            spec = _resolve_target(candidate.target)
+        except ImportError, AttributeError:
+            continue  # a target that does not resolve offers nothing
         if isinstance(spec, PluginSpec):
             return [candidate.name, *(owner for owner in spec.provides if owner in installed)]
     raise LookupError(
         f"no installed plugin offers {cls.__qualname__}; compose it with compose_with(...)"
     )
-
-
-def _resolve(target: object) -> object:
-    if not isinstance(target, str):
-        return target
-    from importlib import import_module  # noqa: PLC0415
-
-    module, _, attribute = target.partition(":")
-    return getattr(import_module(module), attribute, None)

@@ -18,7 +18,7 @@ JSON Schema. ``plugin new`` scaffolds a plugin filling a contract and
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal
 
@@ -39,7 +39,7 @@ from untaped.config.models import SettingOutcome
 from untaped.config.repository import SettingsFileRepository
 from untaped.errors import ConfigError, UsageError, first_validation_error
 from untaped.management._render import emit_isolated
-from untaped.messages import command_line, not_found
+from untaped.messages import not_found, run_hint
 from untaped.output.diagnostic import WireModel
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
@@ -229,7 +229,7 @@ def _contract_rows() -> list[ContractRow]:
     rows: list[ContractRow] = []
     owned = owned_contracts()
     for owner in unreadable_owners():
-        _diag.warning(f"{owner}'s contracts couldn't be read; `{command_line('doctor')}` says why")
+        _diag.warning(f"{owner}'s contracts couldn't be read", hint=run_hint("doctor"))
     for owner, infos in sorted(owned.items()):
         try:
             extensions: Mapping[str, ExtensionSettings] = rankings(owner)
@@ -275,7 +275,7 @@ def _rank(
     if owner not in owners:
         raise UsageError(
             f"{owner!r} owns no contract (contract owners: {', '.join(owners) or 'none'})",
-            hint=f"run `{command_line('plugin list --contracts')}`",
+            hint=run_hint("plugin list --contracts"),
         )
     if plugins:
         _check_rankable(owner, name, method, plugins)
@@ -341,8 +341,8 @@ def _check_rankable(owner: str, name: str, method: str, plugins: list[str]) -> N
 
     owned = owned_contracts()
     if owner not in owned:
-        raise UsageError(
-            f"{owner}'s contracts couldn't be read", hint=f"run `{command_line('doctor')}`"
+        raise ConfigError(
+            f"{owner}'s contracts couldn't be read", system=owner, hint=run_hint("doctor")
         )
     info: ContractInfo | None = next((each for each in owned[owner] if each.name == name), None)
     if info is None:
@@ -365,9 +365,7 @@ def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
     """``kind``'s JSON Schema, with ``$id`` and ``title`` the kind."""
     model = record_model(kind) or _load_kind(kind, result)
     if model is None:
-        prefix = kind.partition(".")[0]
-        known = sorted(each for each in record_kinds() if each.partition(".")[0] == prefix)
-        raise UsageError(not_found("record kind", kind, known=known))
+        raise UsageError(not_found("record kind", kind, known=_near(kind, record_kinds())))
     schema = model.model_json_schema()
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -375,6 +373,14 @@ def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
         **schema,
         "title": kind,
     }
+
+
+def _near(kind: str, kinds: Iterable[str]) -> list[str]:
+    """The kinds sharing ``kind``'s prefix, else every prefix as ``<prefix>.*``."""
+    prefix = kind.partition(".")[0]
+    kinds = sorted(kinds)
+    same = [each for each in kinds if each.partition(".")[0] == prefix]
+    return same or [f"{each}.*" for each in dict.fromkeys(k.partition(".")[0] for k in kinds)]
 
 
 def _load_kind(kind: str, result: CompositionResult) -> type[WireModel] | None:

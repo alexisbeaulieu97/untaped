@@ -15,7 +15,7 @@ import yaml
 
 from untaped.config_file import (
     mutate_config,
-    mutate_tool_state,
+    mutate_plugin_state,
     read_config_dict,
     set_at_path,
     unset_at_path,
@@ -127,7 +127,7 @@ def test_tool_state_write_preserves_state_file_comments(cfg: Path) -> None:
         assert isinstance(rows, list)
         rows.append({"name": "beta", "created_at": "2026-10-01T00:00:00Z", "repos": []})
 
-    mutate_tool_state("workspace", _add)
+    mutate_plugin_state("workspace", _add)
 
     text = state_file.read_text(encoding="utf-8")
     assert "    - name: alpha   # first\n" in text

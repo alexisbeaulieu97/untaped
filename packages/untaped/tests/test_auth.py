@@ -26,7 +26,7 @@ from untaped.settings import (
     get_settings,
     get_settings_model,
     register_profile_settings,
-    reset_config_registry_for_tests,
+    reset_config_registry,
 )
 
 
@@ -182,7 +182,7 @@ def test_section_accessors_apply_token_fallbacks(
     config.write_text("profiles:\n  default:\n    demo:\n      base_url: https://x\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(config))
     monkeypatch.setenv("DEMO_TOKEN_2", "env-token")
-    reset_config_registry_for_tests()
+    reset_config_registry()
     register_profile_settings("demo", DemoSettings)
     get_settings.cache_clear()
     get_settings_model.cache_clear()
@@ -190,7 +190,7 @@ def test_section_accessors_apply_token_fallbacks(
         via_context = app_context().section("demo", DemoSettings)
         via_helper = get_config_section("demo", DemoSettings)
     finally:
-        reset_config_registry_for_tests()
+        reset_config_registry()
     for settings in (via_context, via_helper):
         assert settings.token is not None
         assert settings.token.get_secret_value() == "env-token"

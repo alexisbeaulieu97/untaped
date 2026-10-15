@@ -39,13 +39,12 @@ from untaped.management.doctor import (
 )
 from untaped.messages import command_argv, not_found, run_hint, split_profile, summary
 from untaped.output.diagnostic import Failure
-from untaped.output.policy import DIAGNOSTICS_ENV
+from untaped.output.policy import DIAGNOSTICS_ENV, is_verbose
 from untaped.output.sink import Diagnostics, count_row_failures, current_sink
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
-from untaped.verbose import is_verbose
 
 _diag = Diagnostics()
 

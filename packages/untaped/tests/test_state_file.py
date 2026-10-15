@@ -16,14 +16,14 @@ import yaml
 from pydantic import BaseModel
 
 from untaped.config.repository import SettingsFileRepository
-from untaped.config_file import mutate_tool_state, read_tool_state
+from untaped.config_file import mutate_plugin_state, read_plugin_state
 from untaped.errors import ConfigError
 from untaped.settings import (
     get_config_section,
     get_settings,
     register_profile_settings,
     register_state_settings,
-    reset_config_registry_for_tests,
+    reset_config_registry,
     resolve_state_path,
 )
 from untaped.state import StateCollection
@@ -54,9 +54,9 @@ class DemoState(BaseModel):
 def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     path = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(path))
-    reset_config_registry_for_tests()
+    reset_config_registry()
     yield path
-    reset_config_registry_for_tests()
+    reset_config_registry()
     get_settings.cache_clear()
 
 
@@ -142,9 +142,9 @@ def test_state_path_must_not_be_the_config_file(cfg: Path, monkeypatch: pytest.M
 def test_reserved_sections_are_never_state(cfg: Path, section: str) -> None:
     cfg.write_text("profiles:\n  default: {}\nactive: default\n")
     with pytest.raises(ConfigError, match="reserved"):
-        mutate_tool_state(section, lambda state: state.update(x=1))
+        mutate_plugin_state(section, lambda state: state.update(x=1))
     with pytest.raises(ConfigError, match="reserved"):
-        read_tool_state(section)
+        read_plugin_state(section)
     assert yaml.safe_load(cfg.read_text()) == {"profiles": {"default": {}}, "active": "default"}
 
 
@@ -160,7 +160,7 @@ def test_reserved_names_cannot_register_state(cfg: Path, section: str) -> None:
 def test_state_left_in_config_is_not_read(cfg: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cfg.write_text(LEGACY)
     assert StateCollection("demo", "items").entries() == []
-    assert read_tool_state("demo") == {}
+    assert read_plugin_state("demo") == {}
     assert capsys.readouterr().err == ""
 
 
@@ -222,7 +222,7 @@ def test_malformed_state_section_is_not_overwritten(cfg: Path) -> None:
     state_file = cfg.parent / "state.yml"
     state_file.write_text("demo: [1, 2]\n")
     with pytest.raises(ConfigError, match="must be a mapping"):
-        mutate_tool_state("demo", lambda state: state.update(items=[]))
+        mutate_plugin_state("demo", lambda state: state.update(items=[]))
     assert state_file.read_text() == "demo: [1, 2]\n"
 
 

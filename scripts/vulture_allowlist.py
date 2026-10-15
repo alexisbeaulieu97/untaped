@@ -102,14 +102,10 @@ _typed_options_are_supported
 # SDK and repo checks that only tests call.
 UiContext.confirm_action  # documented SDK
 _clear_for_tests  # test hook for the composed root
-core_violations  # repo lint of the core commands
 ScreenRun.commands_run  # read by tests that drive screens
 ProgressClock.advance  # untaped.testing: a test moves the progress clock
 open_tasks  # tests check that no progress task is left open
 drop_tasks  # the root conftest's cleanup of a leaked progress task
-Cache.serve  # SDK: the toy example's; first package caller C (#537, ansible)
-Cache.seed  # SDK: first caller C (#537, ansible's upgrade-day seed)
-Cache.forget  # SDK: first caller C (#537, ansible's source set/remove)
 
 # Wire fields read by stderr's JSON readers, never by untaped itself.
 StaleData.age_seconds

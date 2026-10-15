@@ -722,8 +722,13 @@ def test_unset_leaves_an_inherited_command_alone(
     result = _auth("unset", "svc", "--yes", "--format", "json")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["action"] == "unchanged"
-    assert "inherited from profile default; profile work is unchanged" in result.stderr
-    assert "untaped --profile default auth unset svc" in result.stderr
+    lines = [json.loads(line) for line in result.stderr.splitlines()]
+    assert [(line["level"], line["message"]) for line in lines] == [
+        ("info", "svc.token_command is inherited from profile default; profile work is unchanged"),
+        ("hint", "run `untaped --profile default auth unset svc`"),
+    ]
+    quiet = _auth("-q", "unset", "svc", "--yes")
+    assert "hint: run `untaped --profile default auth unset svc`" in quiet.stderr
     assert stores.entries() == {"untaped/default/svc": "tok"}
 
 
@@ -935,6 +940,23 @@ def test_loading_a_plaintext_token_warns_once(
     assert "tok-7f3a" not in err
 
 
+def test_the_plaintext_token_warning_carries_its_hint(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.settings import register_profile_settings
+
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    register_profile_settings("svc", SvcProfile)
+    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: tok-7f3a\n")
+    get_config_section("svc", SvcProfile)
+    [line] = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert line["level"] == "warning"
+    assert line["message"] == (
+        "svc.token is stored in plain text in the config file, which is deprecated"
+    )
+    assert line["hint"] == "run `untaped auth migrate`"
+
+
 @pytest.mark.parametrize(
     ("name", "value", "warns"),
     [
@@ -969,6 +991,11 @@ def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "storing svc.token in plain text in config.yml is deprecated" in result.stderr
     assert "untaped auth set svc" in result.stderr
+    as_json = invoke_cli(root.meta, ["config", "set", "svc.token", "tok", "--format", "json"])
+    lines = [json.loads(line) for line in as_json.stderr.splitlines()]
+    [line] = [line for line in lines if line["level"] == "warning"]
+    assert line["message"] == "storing svc.token in plain text in config.yml is deprecated"
+    assert line["hint"] == "run `untaped auth set svc`"
     quiet = invoke_cli(root.meta, ["config", "set", "svc.base_url", "https://svc"])
     assert "deprecated" not in quiet.stderr
 

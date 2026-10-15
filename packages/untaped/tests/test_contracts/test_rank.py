@@ -410,6 +410,18 @@ def test_plugin_list_contracts_names_an_owner_whose_contracts_break() -> None:
     assert "acme's contracts couldn't be read" in result.stderr
 
 
+def test_ranking_for_an_owner_whose_contracts_break_is_its_failure() -> None:
+    def broken() -> tuple[type[Contract], ...]:
+        raise ImportError("acme api broke")
+
+    acme = PluginSpec(name="acme", contracts=broken)
+    result = _run(["plugin", "rank", "acme.source", "items", "shop", "-f", "json"], *_all(), acme)
+    assert result.exit_code == 4, result.stderr
+    [line] = [json.loads(line) for line in result.stderr.splitlines() if "acme" in line]
+    assert line["message"] == "acme's contracts couldn't be read"
+    assert (line["system"], line["hint"]) == ("acme", "run `untaped doctor`")
+
+
 def test_plugin_schema_prints_a_diagnostic_kinds_schema() -> None:
     result = _run(["plugin", "schema", "untaped.failure"], *_all())
     schema = json.loads(result.stdout)
@@ -430,7 +442,9 @@ def test_plugin_schema_prints_the_progress_kind() -> None:
 def test_plugin_schema_of_an_unknown_kind_exits_2() -> None:
     result = _run(["plugin", "schema", "nope.thing"], *_all())
     assert result.exit_code == 2
-    assert "record kind not found: 'nope.thing'; known: none" in result.stderr
+    # No kind has that prefix: the known prefixes are listed instead of none.
+    assert "record kind not found: 'nope.thing'; known: " in result.stderr
+    assert "shelf.*" in result.stderr and "untaped.*" in result.stderr
     result = _run(["plugin", "schema", "shelf.nope"], *_all())
     assert "known: shelf.book" in result.stderr
 

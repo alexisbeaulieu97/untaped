@@ -11,9 +11,9 @@ from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
 from untaped._root_options import _apply_help_root_options, _root_options, _RootOption
 from untaped.cli import create_app, echo
+from untaped.output.policy import is_verbose
 from untaped.stability import deprecated, show_deprecated
 from untaped.testing import CliInvoker, plugin_candidate
-from untaped.verbose import is_verbose
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 

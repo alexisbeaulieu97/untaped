@@ -39,6 +39,7 @@ from untaped.contracts._registry import (
     owner_of,
     ranking,
     ready_of,
+    upgrade_hint,
 )
 from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.http import request_deadline
@@ -300,10 +301,15 @@ def gather[C: Contract, **P, R](
 
 
 def _excluded[R](plugin: str, reason: str, detail: str, rank: int | None) -> Answer[R]:
-    """A provider the SDK set aside: skipped when unranked, failed when ranked."""
+    """A provider the SDK set aside: skipped when unranked, failed when ranked.
+
+    The failure hints at upgrading ``plugin`` unless the reason is no defect
+    of its own (its owner is not installed).
+    """
     if rank is None:
         return Skipped(plugin, reason, detail, rank)
-    error = ConfigError(detail, system=plugin, hint=f"upgrade untaped-{plugin}")
+    hint = None if reason == "owner-not-installed" else upgrade_hint(plugin)
+    error = ConfigError(detail, system=plugin, hint=hint)
     return Failed(plugin, error, rank, reason)
 
 

@@ -37,7 +37,7 @@ from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from untaped.errors import ConfigError, UsageError
+from untaped.errors import ConfigError, ErrorCategory, UntapedError, UsageError
 from untaped.messages import not_found
 from untaped.plugins.registry import (
     CompositionResult,
@@ -76,7 +76,11 @@ def scaffold(
     owner, contract = _owner_contract(result, candidates, fills)
     dest = (path / f"untaped-{name}").absolute()
     if dest.exists():
-        raise UsageError(f"{dest} already exists; choose another --path or plugin name")
+        raise UntapedError(
+            f"{dest} already exists; choose another --path or plugin name",
+            category=ErrorCategory.CONFLICT,
+            system="local",
+        )
     files = _Scaffold(name, owner, contract, candidates).files()
     outcomes: list[ScaffoldOutcome] = []
     for relative, text in files.items():
@@ -99,7 +103,9 @@ def _check_name(name: str, candidates: Sequence[PluginCandidate]) -> None:
     if reserved is not None:
         raise UsageError(f"{name!r} is a reserved {reserved}; choose another plugin name")
     if any(candidate.name == name for candidate in candidates):
-        raise UsageError(f"a plugin named {name!r} is already installed")
+        raise UntapedError(
+            f"a plugin named {name!r} is already installed", category=ErrorCategory.CONFLICT
+        )
 
 
 def _owner_contract(
@@ -313,7 +319,9 @@ class _Scaffold:
             line for text in live for line in text.splitlines() if line.startswith("def ")
         ]
         names = {info.cls.__name__, *_names("\n".join(signatures))}
-        imports = _imports(names, self.api, info.cls, self.package, f"{self.camel}Settings")
+        imports = _imports(
+            names, self.api, info.cls, self.package, f"{self.camel}Settings", owner=self.owner.name
+        )
         body = "\n".join([*live, *commented]) or "pass\n"
         return (
             f'"""{self.name}\'s provider of {self.owner.name}\'s {info.cls.__name__} contract.\n\n'
@@ -360,6 +368,13 @@ pytest_plugins = ["untaped.testing.plugin"]
 '''
 
 
+def _owner_defect(owner: str, message: str) -> ConfigError:
+    """A defect in the installed owner's package: no flag fixes it, a fixed owner does."""
+    from untaped.contracts._registry import upgrade_hint  # noqa: PLC0415 - loads contracts
+
+    return ConfigError(message, system=owner, hint=upgrade_hint(owner))
+
+
 def _api(
     owner: PluginCandidate, candidates: Sequence[PluginCandidate], info: ContractInfo
 ) -> ModuleType:
@@ -373,9 +388,10 @@ def _api(
     except ImportError:
         module = None
     if module is None or getattr(module, info.cls.__name__, None) is not info.cls:
-        raise UsageError(
+        raise _owner_defect(
+            owner.name,
             f"{owner.name} doesn't export {info.cls.__name__} from {module_name}, "
-            "the only module a provider may import from its owner"
+            "the only module a provider may import from its owner",
         )
     return module
 
@@ -436,7 +452,9 @@ def _names(code: str) -> set[str]:
     } - {"def", "NotImplementedError"}
 
 
-def _imports(names: set[str], api: ModuleType, contract: type, package: str, settings: str) -> str:
+def _imports(
+    names: set[str], api: ModuleType, contract: type, package: str, settings: str, *, owner: str
+) -> str:
     """The provider module's imports: from the owner's api, else from a public home.
 
     A name the contract's own module sees but the api doesn't export comes
@@ -459,9 +477,10 @@ def _imports(names: set[str], api: ModuleType, contract: type, package: str, set
             continue
         home = _home(name, value)
         if home is None or _within(home, owner_top):
-            raise UsageError(
+            raise _owner_defect(
+                owner,
                 f"{contract.__name__} names {name}, which {api.__name__} doesn't export; "
-                "a provider may import only the owner's api"
+                "a provider may import only the owner's api",
             )
         if isinstance(value, ModuleType):
             plain.append(f"import {home}" if home == name else f"import {home} as {name}")
@@ -480,10 +499,6 @@ def _imports(names: set[str], api: ModuleType, contract: type, package: str, set
     return "\n\n".join(group for group in groups if group)
 
 
-#: The modules a plugin may import untaped from (the import-boundary convention).
-_UNTAPED_PUBLIC = ("untaped.contracts", "untaped.sdk", "untaped.testing")
-
-
 def _within(module: str, top: str) -> bool:
     return module == top or module.startswith(f"{top}.")
 
@@ -497,7 +512,10 @@ def _home(name: str, value: object) -> str | None:
     if isinstance(value, ModuleType):
         found = value.__name__
         return None if any(part.startswith("_") for part in found.split(".")) else found
-    for public in _UNTAPED_PUBLIC:
+    from untaped.surface import SDK_MODULES  # noqa: PLC0415 - not at CLI startup
+
+    # The modules a plugin may import untaped from (the import-boundary convention).
+    for public in SDK_MODULES:
         module = import_module(public)
         if name in module.__all__ and getattr(module, name) is value:
             return public

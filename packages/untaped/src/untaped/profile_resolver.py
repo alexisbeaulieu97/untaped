@@ -1,8 +1,8 @@
 """Pure helper that merges ``profiles.default`` with ``profiles.<active>``.
 
-Profiles are a first-class SDK plugin: this resolver and
-:class:`untaped.settings_layout.ProfilesSettingsLayout` are the SDK's home
-for profile resolution.
+Profiles are a core feature, not a plugin: this resolver and
+:class:`untaped.settings_layout.ProfilesSettingsLayout` are core's home for
+profile resolution.
 
 The resolver is layer-agnostic: callers hand it the parsed
 ``~/.untaped/config.yml`` dict and an optional ``active_override`` (set when

@@ -40,7 +40,7 @@ from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSe
 from untaped.config_file import read_config_dict
 from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, key_mappings, warn_once
 from untaped.errors import ConfigError
-from untaped.messages import deprecated_message, hint, plural
+from untaped.messages import deprecated_message, hint, plural, run_hint
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
 from untaped.settings import (
@@ -416,8 +416,10 @@ def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
     section, rest = _split_first(key)
     scope = ctx.sections.get(section)
     if rest == "token" and scope is not None and "token_command" in scope.settings_fields:
-        fix = hint(f"auth set {section}")
-        _diag.warning(f"storing {key} in plain text in config.yml is deprecated\n{fix}")
+        _diag.warning(
+            f"storing {key} in plain text in config.yml is deprecated",
+            hint=run_hint(f"auth set {section}"),
+        )
 
 
 def _unset(

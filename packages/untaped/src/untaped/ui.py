@@ -1,4 +1,4 @@
-"""Semantic UI primitives: prompts, messages, and progress for tool commands."""
+"""A command's interaction: prompts, confirmations, screens and styled stdout (``UiContext``)."""
 
 from __future__ import annotations
 

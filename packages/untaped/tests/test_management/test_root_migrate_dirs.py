@@ -601,3 +601,70 @@ def test_setting_guard_keeps_a_place_any_profile_still_names(_isolated_config: P
 
     assert guard(old) == "config.yml or the environment still sets alpha.data_dir there"
     assert guard(_old("beta")) is None
+
+
+def test_delete_migration_keeps_the_dirs_holding_the_config_and_state_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_dir, state_dir = tmp_path / "conf", tmp_path / "elsewhere" / "state"
+    config_dir.mkdir()
+    state_dir.mkdir(parents=True)
+    (config_dir / "config.yml").write_text("{}\n", encoding="utf-8")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(config_dir / "config.yml"))
+    monkeypatch.setenv("UNTAPED_STATE", str(state_dir / "state.yml"))
+    row = delete_migration("alpha.x", "x", lambda: [config_dir, state_dir.parent])
+    ctx, options = PluginContext(settings=None), MigrationOptions()
+
+    rows = row.preview(ctx, options)
+    assert [r.action for r in rows] == ["keep", "keep"]
+    assert all("it holds" in r.detail for r in rows)
+    assert [o.action for o in row.apply(ctx, options)] == ["unchanged"]
+    assert (config_dir / "config.yml").is_file() and state_dir.is_dir()
+
+
+def test_delete_migration_reports_what_it_deleted_before_a_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    real_rmtree = shutil.rmtree
+
+    def rmtree(path: Path, *args: object, **kwargs: object) -> None:
+        if Path(path) == second:
+            raise PermissionError(13, "Permission denied")
+        real_rmtree(path)
+
+    monkeypatch.setattr(shutil, "rmtree", rmtree)
+    row = delete_migration("alpha.x", "x", lambda: [first, second])
+
+    (outcome,) = row.apply(PluginContext(settings=None), MigrationOptions())
+
+    assert outcome.action == "partial"
+    assert outcome.detail.startswith("deleted ") and "could not delete" in outcome.detail
+    assert not first.exists() and second.is_dir()
+
+
+def test_a_failed_row_keeps_the_error_s_category_and_exit_code() -> None:
+    from untaped.errors import ConfigError
+
+    def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
+        raise ConfigError("cannot read the old settings", hint="fix config.yml")
+
+    def apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
+        raise ConfigError("the old directory is not readable")
+
+    _plant()
+    previewing = (_spec("alpha", replace(_move_row("alpha"), preview=preview)),)
+    result = _run("--dry-run", "--format", "json", specs=previewing)
+    assert result.exit_code == 4
+    (row,) = json.loads(result.stdout)
+    assert row["detail"] == "cannot read the old settings"
+    assert (row["error"]["category"], row["error"]["hint"]) == ("config", "fix config.yml")
+
+    applying = (_spec("alpha", replace(_move_row("alpha"), apply=apply)),)
+    result = _run("--yes", "--format", "json", specs=applying)
+    assert result.exit_code == 4
+    (outcome,) = json.loads(result.stdout)
+    assert outcome["detail"] == "the old directory is not readable"
+    assert outcome["error"]["category"] == "config"

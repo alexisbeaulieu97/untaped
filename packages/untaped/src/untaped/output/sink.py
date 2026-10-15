@@ -44,8 +44,9 @@ Rules the sink keeps:
 
 A presentation (``rendered``) may accompany a diagnostic: the exact text the
 text renderer prints (a callable taking whether to colour, or a string). It
-is not on the wire and never reaches a JSON line. It keeps today's text
-byte-identical: themed ``ui.message`` lines, verbatim ``echo`` lines.
+is not on the wire and never reaches a JSON line: a themed ``ui.message``
+line, a styled ``info`` line, an error with its ``hint:`` line, a debug log
+record as its formatter writes it.
 """
 
 from __future__ import annotations

@@ -29,7 +29,12 @@ from untaped.plugins.registry import (
     MigrationRow,
     PluginContext,
 )
-from untaped.settings import DEFAULT_CONFIG_PATH, env_var_name
+from untaped.settings import (
+    DEFAULT_CONFIG_PATH,
+    env_var_name,
+    resolve_config_path,
+    resolve_state_path,
+)
 
 
 def dir_bytes(path: Path) -> int:
@@ -107,16 +112,19 @@ def overlapping(left: Path, right: Path) -> bool:
 def unsafe_dir(path: Path) -> str | None:
     """Why ``path`` must never be deleted or moved whole, or ``None``.
 
-    It holds the home directory or untaped's config directory, or overlaps
-    the plugins' own data (``~/.untaped/plugins``); a symlink is judged by
-    what it points to.
+    It holds the home directory, untaped's default config directory or the
+    directory of the active config or state file (``UNTAPED_CONFIG``,
+    ``UNTAPED_STATE``), or overlaps the plugins' own data
+    (``~/.untaped/plugins``); a symlink is judged by what it points to.
     """
     real = _real(path)
     untaped = Path(DEFAULT_CONFIG_PATH).expanduser().parent
     if _real(Path.home()).is_relative_to(real):
         return "it holds your home directory"
-    if _real(untaped).is_relative_to(real):
-        return f"it holds {shown_path(untaped)}"
+    kept = (untaped, resolve_config_path().parent, resolve_state_path().parent)
+    for held in dict.fromkeys(kept):
+        if _real(held).is_relative_to(real):
+            return f"it holds {shown_path(held)}"
     if overlapping(path, untaped / "plugins"):
         return f"it overlaps the plugins' data in {shown_path(untaped / 'plugins')}"
     return None
@@ -134,7 +142,8 @@ def delete_migration(
 
     The preview has one ``delete`` row per existing path, with its size and
     ``detail``; applying deletes them and reports ``deleted`` (or
-    ``unchanged`` when none is left). A symlink, a path :func:`unsafe_dir`
+    ``unchanged`` when none is left; ``partial`` when a later path fails
+    after an earlier one was deleted). A symlink, a path :func:`unsafe_dir`
     refuses, or one ``guard`` returns a reason for (a directory another
     plugin still uses), is a ``keep`` row with that reason instead, and stays. ``paths``
     runs at preview and at apply time, so it may read settings.
@@ -161,7 +170,8 @@ def delete_migration(
         existing = [path for path in _existing(paths()) if refused(path) is None]
         if not existing:
             return [MigrationOutcome(id=id, action="unchanged", detail="nothing left to delete")]
-        freed, done = 0, []
+        freed = 0
+        done: list[str] = []
         for path in existing:
             size = dir_bytes(path)
             try:
@@ -170,8 +180,11 @@ def delete_migration(
                 else:
                     path.unlink()
             except OSError as exc:
-                detail = f"could not delete {shown_path(path)}: {exc.strerror or exc}"
-                return [MigrationOutcome(id=id, action="failed", detail=detail)]
+                text = f"could not delete {shown_path(path)}: {exc.strerror or exc}"
+                if not done:
+                    return [MigrationOutcome(id=id, action="failed", detail=text)]
+                text = f"deleted {', '.join(done)} ({size_text(freed)} freed); {text}"
+                return [MigrationOutcome(id=id, action="partial", detail=text)]
             freed += size
             done.append(shown_path(path))
         text = f"deleted {', '.join(done)} ({size_text(freed)} freed)"
@@ -329,7 +342,7 @@ def _existing(paths: Sequence[Path]) -> list[Path]:
     """The paths that exist, once each."""
     seen: list[Path] = []
     for path in paths:
-        if (path.exists() or path.is_symlink()) and path not in seen:
+        if _there(path) and path not in seen:
             seen.append(path)
     return seen
 
