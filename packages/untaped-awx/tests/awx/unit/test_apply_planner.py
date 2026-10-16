@@ -12,7 +12,7 @@ from typing import Any, cast
 
 import pytest
 
-from untaped_awx.application.apply_planner import ApplyPlanner, scope_for
+from untaped_awx.application.apply_planner import ApplyPlanner, scope_for, unrecognized_warning
 from untaped_awx.application.ports import FkResolver
 from untaped_awx.domain import FkRef, Metadata, Resource
 from untaped_awx.domain.envelope import IdentityRef
@@ -116,6 +116,14 @@ def test_plan_payload_passes_through_unknown_fields() -> None:
     assert payload["scm_type"] == "git"
     assert payload["scm_url"] == "https://example.com"
     assert payload["future_field"] == "x"  # passed through, not dropped
+
+
+def test_unrecognized_warning_names_the_unknown_fields_sorted() -> None:
+    """The text apply, patch and ``--stdin`` all warn with, pinned word for word."""
+    assert unrecognized_warning(PROJECT_SPEC, ["scm_type", "zeta", "alpha"]) == (
+        "Project: 2 fields sent as-is (not in this tool's known schema): alpha, zeta"
+    )
+    assert unrecognized_warning(PROJECT_SPEC, ["scm_type", "name"]) is None
 
 
 def test_plan_payload_strips_read_only_fields() -> None:

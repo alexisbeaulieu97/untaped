@@ -6,9 +6,10 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 from untaped_awx.application import SaveResource
-from untaped_awx.application.ports import FkResolver, ResourceClient
+from untaped_awx.application.ports import FkResolver, ResourceClient, WorkflowNodeRepository
 from untaped_awx.domain import ResourceSpec, ServerRecord
 from untaped_awx.infrastructure.specs import (
+    INVENTORY_SPEC,
     JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
     SCHEDULE_SPEC,
@@ -198,3 +199,94 @@ def test_save_scm_project_omits_derived_local_path() -> None:
 
 def test_save_manual_project_keeps_local_path() -> None:
     assert _save_project(scm_type="", local_path="my_playbooks")["local_path"] == "my_playbooks"
+
+
+class _ListRowClient(_StubClient):
+    """Serves sub-documents and detail reads, counting each."""
+
+    def __init__(self, *, find_result: dict[str, Any], detail: dict[str, Any]) -> None:
+        super().__init__(find_result=find_result)
+        self._detail = detail
+        self.reads: list[str] = []
+
+    def sub_documents(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+        self.reads.append("sub_documents")
+        return {field: self._detail[field] for field in spec.sub_document_fields}
+
+    def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
+        self.reads.append("get")
+        return ServerRecord(**self._detail)
+
+
+def test_list_row_reads_sub_documents_not_the_record() -> None:
+    survey = {"spec": [{"variable": "pw", "type": "password", "default": "x"}]}
+    row = {"id": 7, "name": "deploy", "organization": 1, "playbook": "site.yml"}
+    client = _ListRowClient(find_result=row, detail={**row, "survey_spec": survey})
+    fk = _StubFk({("Organization", 1): "Default"})
+
+    snapshot = SaveResource(
+        cast(ResourceClient, client), cast(FkResolver, fk)
+    ).snapshot_from_record(JOB_TEMPLATE_SPEC, dict(row))
+
+    assert client.reads == ["sub_documents"]
+    assert snapshot.record == {**row, "survey_spec": survey}
+    assert snapshot.resource.spec["survey_spec"]["spec"][0]["default"] == "$encrypted$"
+
+
+def test_a_constructed_inventory_is_read_again() -> None:
+    """``get`` hydrates a constructed inventory's source settings from their own route."""
+    row = {"id": 9, "name": "combined", "organization": 1, "kind": "constructed"}
+    client = _ListRowClient(find_result=row, detail={**row, "limit": "web*"})
+    fk = _StubFk({("Organization", 1): "Default"})
+
+    snapshot = SaveResource(
+        cast(ResourceClient, client), cast(FkResolver, fk)
+    ).snapshot_from_record(INVENTORY_SPEC, dict(row))
+
+    assert client.reads == ["get"]
+    assert snapshot.resource.spec["limit"] == "web*"
+
+
+class _Nodes:
+    """A workflow's node list; nodes have no members."""
+
+    def __init__(self, nodes: list[dict[str, Any]]) -> None:
+        self._nodes = nodes
+
+    def list_nodes(
+        self, *, workflow_id: int, params: dict[str, str] | None = None
+    ) -> Iterator[dict[str, Any]]:
+        return iter(self._nodes)
+
+    def list_node_members(self, *, node_id: int, relation: str) -> Iterator[dict[str, Any]]:
+        return iter(())
+
+
+def test_opaque_nodes_are_recorded() -> None:
+    """A node export leaves out (its template is gone) is named on the snapshot."""
+    nodes = _Nodes(
+        [
+            {"id": 1, "identifier": "gone", "unified_job_template": None},
+            {
+                "id": 2,
+                "identifier": "deploy",
+                "unified_job_template": 7,
+                "summary_fields": {"unified_job_template": {"unified_job_type": "system_job"}},
+            },
+        ]
+    )
+    row = {"id": 40, "name": "pipeline", "organization": 1, "survey_spec": {}}
+    fk = _StubFk({("Organization", 1): "Default", ("SystemJobTemplate", 7): "Cleanup"})
+    warnings: list[str] = []
+    use = SaveResource(
+        cast(ResourceClient, _StubClient(find_result=row)),
+        cast(FkResolver, fk),
+        nodes=cast(WorkflowNodeRepository, nodes),
+        warn=warnings.append,
+    )
+
+    snapshot = use.snapshot_from_record(WORKFLOW_JOB_TEMPLATE_SPEC, dict(row))
+
+    assert snapshot.opaque_nodes == ("gone",)
+    assert [node["id"] for node in snapshot.resource.spec["nodes"]] == ["deploy"]
+    assert len(warnings) == 1

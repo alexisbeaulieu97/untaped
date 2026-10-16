@@ -1,0 +1,53 @@
+kind: WorkflowJobTemplate
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: release
+  organization: Default
+spec:
+  description: Build, deploy, verify
+  extra_vars: '{}'
+  inventory: prod
+  ask_limit_on_launch: true
+  survey_enabled: false
+  survey_spec: {}
+  labels:
+  - prod
+  nodes:
+  - id: approve
+    approval:
+      name: Approve
+      timeout: 600
+    success:
+    - deploy
+  - id: deploy
+    run:
+      job_template: deploy
+    prompts:
+      inventory: staging
+      credentials:
+      - ssh
+      extra_vars:
+        version: 4
+      limit: web*
+    success:
+    - sync-project
+    - sync-source
+    failure:
+    - cleanup
+  - id: cleanup
+    run:
+      system_job_template: Cleanup Job Details
+  - id: sync-project
+    run:
+      project: playbooks
+  - id: sync-source
+    run:
+      inventory_source: from-git
+      inventory: prod
+    always:
+    - nested
+  - id: nested
+    run:
+      workflow_job_template: nested
+      organization: Ops
+    all_parents_must_converge: true

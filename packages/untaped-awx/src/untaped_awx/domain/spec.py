@@ -13,7 +13,7 @@ exercised against any kind without depending on AWX-specific transport.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -249,3 +249,9 @@ class ResourceSpec(BaseModel):
     def lacks_sub_documents(self, record: Mapping[str, Any]) -> bool:
         """Whether ``record`` (e.g. a list row) is missing a sub-document field."""
         return any(field not in record for field in self.sub_document_fields)
+
+
+def unrecognized_names(names: Iterable[str], known: Iterable[str]) -> list[str]:
+    """The ``names`` not in ``known`` (a spec's :attr:`ResourceSpec.known_fields`), sorted."""
+    known = frozenset(known)
+    return sorted(name for name in names if name not in known)

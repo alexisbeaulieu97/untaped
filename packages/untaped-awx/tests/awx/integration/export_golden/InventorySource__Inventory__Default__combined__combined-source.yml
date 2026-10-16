@@ -1,0 +1,15 @@
+kind: InventorySource
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: combined-source
+  parent:
+    kind: Inventory
+    name: combined
+    organization: Default
+spec:
+  source: constructed
+  source_vars: |
+    plugin: constructed
+  update_cache_timeout: 60
+  limit: web*
+  verbosity: 1

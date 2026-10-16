@@ -1,12 +1,22 @@
+"""Reading and writing ``Resource`` documents as YAML files."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
+import yaml
+from pydantic import ValidationError
 
 from untaped.sdk import ConfigError
 from untaped_awx.domain import Metadata, Resource
-from untaped_awx.infrastructure.yaml_io import dump_resource, read_resource_files
+from untaped_awx.infrastructure.yaml_io import (
+    dump_resource,
+    read_resource_documents,
+    read_resource_files,
+    read_resource_text,
+    resource_paths,
+)
 
 
 def _resource(kind: str, name: str, **spec: object) -> Resource:
@@ -158,3 +168,81 @@ def test_comment_lines_follow_fidelity_note(tmp_path: Path) -> None:
     out.write_text(text)
     [back] = read_resources(out)
     assert back == r
+
+
+_DOC = "kind: Project\nmetadata: {name: %s, organization: Default}\nspec: {}\n"
+
+
+def _positions(text: str) -> list[tuple[int, str]]:
+    """Each document's index with its resource name, or ``error: <message>``."""
+    return [
+        (index, f"error: {doc}" if isinstance(doc, str) else doc.metadata.name)
+        for index, doc in read_resource_documents(text, source="specs.yml")
+    ]
+
+
+def test_read_resource_documents_counts_every_document_from_one() -> None:
+    text = "\n".join(["---", _DOC % "a", "---", "", "---", "# nothing", "---", _DOC % "d"])
+
+    assert _positions(text) == [(1, "a"), (4, "d")]
+
+
+def test_read_resource_documents_reports_a_bad_document_and_reads_on() -> None:
+    text = "---\n".join(["- not a mapping\n", _DOC % "b", "kind: Project\nstatus: x\n", _DOC % "d"])
+
+    [first, second, third, fourth] = _positions(text)
+
+    assert first == (1, "error: specs.yml: each YAML doc must be a mapping")
+    assert second == (2, "b")
+    assert third[0] == 3 and third[1].startswith("error: specs.yml: ")
+    assert fourth == (4, "d")
+
+
+def test_read_resource_documents_stops_a_file_at_its_yaml_error() -> None:
+    text = "---\n".join([_DOC % "a", "kind: [unclosed\n", _DOC % "c"])
+
+    [first, second] = _positions(text)
+
+    assert first == (1, "a")
+    assert second[0] == 2 and second[1].startswith("error: invalid YAML in specs.yml: ")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "- 1\n---\nkind: [\n",
+        "kind: Project\nstatus: x\n---\nkind: [\n",
+    ],
+    ids=["after-a-non-mapping", "after-an-invalid-resource"],
+)
+def test_read_resource_text_raises_a_syntax_error_first(text: str) -> None:
+    """Every document is read before any is validated, so the YAML error wins."""
+    with pytest.raises(ConfigError) as info:
+        list(read_resource_text(text, source="<stdin>"))
+
+    assert str(info.value).startswith("invalid YAML in <stdin>: ")
+    assert info.value.category == "invalid"
+    assert isinstance(info.value.__cause__, yaml.YAMLError)
+
+
+def test_read_resource_text_raises_the_first_invalid_document() -> None:
+    text = "---\n".join([_DOC % "a", "kind: Project\nstatus: x\n", "- not a mapping\n"])
+
+    with pytest.raises(ConfigError) as info:
+        list(read_resource_text(text, source="specs.yml"))
+
+    assert str(info.value).startswith("specs.yml: ")
+    assert isinstance(info.value.__cause__, ValidationError)
+
+
+def test_resource_paths_lists_a_directory_sorted(tmp_path: Path) -> None:
+    for name in ("b.yaml", "a.yml", "sub/c.yml", "notes.txt"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("")
+
+    assert resource_paths(tmp_path) == [
+        tmp_path / "a.yml",
+        tmp_path / "b.yaml",
+        tmp_path / "sub/c.yml",
+    ]
+    assert resource_paths(tmp_path / "a.yml") == [tmp_path / "a.yml"]

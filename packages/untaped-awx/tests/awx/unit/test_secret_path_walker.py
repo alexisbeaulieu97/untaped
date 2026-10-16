@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped_awx.application.secret_paths import (
+from untaped_awx.domain.secret_paths import (
     path_slots,
     remove_at,
     replace_at,
@@ -72,7 +72,7 @@ def test_value_filtered_wildcard_matches_only_slots_holding_that_value() -> None
 
 
 def test_strip_keeps_plain_survey_defaults_and_names_the_filtered_path() -> None:
-    from untaped_awx.application.secret_paths import strip_encrypted_in_place
+    from untaped_awx.domain.secret_paths import strip_encrypted_in_place
     from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
     payload: dict[str, Any] = {

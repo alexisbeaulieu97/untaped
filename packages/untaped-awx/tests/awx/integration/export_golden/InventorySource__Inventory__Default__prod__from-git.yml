@@ -1,0 +1,16 @@
+kind: InventorySource
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: from-git
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  source: scm
+  source_path: inventory/hosts.yml
+  source_vars: |
+    ---
+    compose: {}
+  overwrite: true
+  source_project: playbooks

@@ -8,7 +8,7 @@ Plans + executes the multi-FK sub-endpoint reconciliation that backs
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any, cast
 
 import pytest
@@ -74,6 +74,9 @@ class _StubFk:
         raise NotImplementedError
 
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
+        return None
+
+    def seed(self, kind: str, records: Iterable[Mapping[str, Any]]) -> None:
         return None
 
 

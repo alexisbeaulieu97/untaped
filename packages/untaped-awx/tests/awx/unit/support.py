@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
 
 from untaped_awx.application import BatchMutationEngine
@@ -51,6 +51,9 @@ class _Fk:
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
         return None
 
+    def seed(self, kind: str, records: Iterable[Mapping[str, Any]]) -> None:
+        return None
+
 
 class _Client:
     def __init__(self, records: list[dict[str, Any]]) -> None:
@@ -69,6 +72,9 @@ class _Client:
 
     def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
         return ServerRecord(**self.records[id_])
+
+    def sub_documents(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+        return {field: self.records[id_].get(field, {}) for field in spec.sub_document_fields}
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         self.find_calls += 1

@@ -1,0 +1,9 @@
+kind: WorkflowJobTemplate
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: nested
+  organization: Ops
+spec:
+  survey_spec: {}
+  labels: []
+  nodes: []
