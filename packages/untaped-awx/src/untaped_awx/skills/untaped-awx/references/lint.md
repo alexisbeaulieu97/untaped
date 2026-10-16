@@ -22,7 +22,8 @@ results in every profile.
 Without FILES the controller is read once into a snapshot kept for an hour
 (`awx.caches.resources.max_age_seconds`, per profile and controller);
 `--refresh` reads it again now, `--cached` reads only what is kept. The
-snapshot redacts secret-named launch variables before it is kept.
+snapshot redacts secret-named launch and inventory variables before it is
+kept.
 
 ## Reading a finding
 

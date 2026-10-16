@@ -91,6 +91,7 @@ def seed_controller(fake: Any) -> None:
     fake.playbooks[10] = ["site.yml"]
     fake.seed(
         "inventories", id=20, name="prod", organization=1, kind="", total_hosts=0,
+        variables="ansible_password: swordfish\nansible_user: deploy\n",
         summary_fields=_PLATFORM,
     )  # fmt: skip
     fake.seed(

@@ -7,9 +7,9 @@ read per reference. Every kind is read, ``export``'s read-only ones too: a
 rule may judge what ``apply`` cannot write.
 
 A kind the token may not list is left out: its references are
-``unresolved``, not ``absent``. Each document's secret-named launch
-variables are redacted before it joins the snapshot, since the snapshot is
-cached on disk.
+``unresolved``, not ``absent``. Each document's secret-named launch and
+inventory variables are redacted before it joins the snapshot, since the
+snapshot is cached on disk.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from untaped_awx.application.resources.ports import (
 from untaped_awx.application.resources.save_resource import ResourceSnapshot, SaveResource
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.lint.resources import AwxResources, ControllerFacts, Linted
-from untaped_awx.domain.lint.secrets import redact_launch_variables
+from untaped_awx.domain.lint.secrets import redact_variables
 from untaped_awx.errors import AwxApiError, PermissionDeniedError
 from untaped_lint.api import ResourceLocation
 
@@ -75,7 +75,7 @@ def load_controller(
             read.append((spec, save.snapshot_from_record(spec, row)))
     progress.update(None, done=total, total=total)
     loaded = tuple(spec.kind for spec, _rows in listed)
-    resources = [redact_launch_variables(snapshot.resource) for _spec, snapshot in read]
+    resources = [redact_variables(snapshot.resource) for _spec, snapshot in read]
     references = SnapshotReferences(resources, catalog=catalog, base=OfflineBase(loaded))
     items = tuple(
         Linted(

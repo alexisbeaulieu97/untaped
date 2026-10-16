@@ -172,7 +172,9 @@ def test_the_snapshot_is_redacted_owner_only_and_served_from_the_cache(fake_aap:
     first = _lint()
     snapshot = _snapshot_file()
     text = snapshot.read_text(encoding="utf-8")
-    assert "hunter2" not in text
+    assert "hunter2" not in text  # a template's launch variable
+    assert "swordfish" not in text  # an inventory's variable
+    assert "ansible_user" in text  # what is not secret-named stays
     assert "$encrypted$" in text
     assert snapshot.stat().st_mode & 0o077 == 0
     AwxResources.model_validate_json(text)
