@@ -20,7 +20,7 @@ from typing import Any
 
 from cyclopts import App
 
-from untaped.stability import children, deprecated_aliases, mark_of, marked_options
+from untaped.stability import children, deprecated_aliases, mark_of, marked_options, option_name
 from untaped.surface._lines import DeprecatedMark, Line, LineMark
 from untaped.surface._lists import WRITTEN_OUTSIDE
 from untaped.surface._sdk import SurfaceError, line_mark
@@ -47,7 +47,7 @@ def subtree_lines(root: App, name: str, mark: LineMark | None) -> list[Line]:
         if child == name:
             own = line_mark(mark_of(sub), root) or mark
             return [
-                *_command(sub, (ROOT, name), own),
+                *_command(root, sub, (ROOT, name), own),
                 *_walk(root, sub, (ROOT, name), own, {}, top=False),
             ]
     return []
@@ -68,7 +68,7 @@ def _root_options(root: App) -> Iterator[Line]:
             yield from (Line(f"cli {ROOT} {names[0]} alias={alias}") for alias in names[1:])
     for name in sorted(root):
         if name.startswith("-") and name not in flags:
-            yield from _command(root[name], (ROOT, name), None)
+            yield from _command(root, root[name], (ROOT, name), None)
 
 
 def _walk(
@@ -97,11 +97,11 @@ def _walk(
         deprecated = isinstance(mark, DeprecatedMark)
         if hidden and not deprecated and " ".join(here) not in WRITTEN_OUTSIDE:
             continue
-        yield from _command(sub, here, mark)
+        yield from _command(root, sub, here, mark)
         yield from _walk(root, sub, here, mark, plugin_marks, top=False)
 
 
-def _command(app: App, path: tuple[str, ...], mark: LineMark | None) -> Iterator[Line]:
+def _command(root: App, app: App, path: tuple[str, ...], mark: LineMark | None) -> Iterator[Line]:
     subject = f"cli {' '.join(path)}"
     for old, alias in sorted(deprecated_aliases(app).items()):
         if old.startswith("-"):
@@ -114,7 +114,7 @@ def _command(app: App, path: tuple[str, ...], mark: LineMark | None) -> Iterator
     position = 0
     marked = {argument.field_info.name: option for argument, option in marked_options(app)}
     for argument in _arguments(app, " ".join(path), frozenset(marked)):
-        own = line_mark(marked.get(argument.field_info.name)) or mark
+        own = line_mark(marked.get(argument.field_info.name), root) or mark
         if argument.field_info.kind in _POSITIONAL:
             position += 1
             main = _positional_name(argument)
@@ -183,11 +183,6 @@ def _option(subject: str, argument: Any, mark: LineMark | None) -> Iterator[Line
     main = _positive_names(argument)[0]
     yield Line(option_identity(subject, argument), mark)
     yield from _spellings(f"{subject} {main}", argument, mark, main=main)
-
-
-def option_name(argument: Any) -> str:
-    """The spelling an option's line goes under: its first long positive name."""
-    return _positive_names(argument)[0]
 
 
 def option_identity(subject: str, argument: Any) -> str:

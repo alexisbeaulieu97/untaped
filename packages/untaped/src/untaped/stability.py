@@ -39,6 +39,7 @@ import typing
 import warnings
 import weakref
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -210,16 +211,26 @@ class _DeprecatedGroup(Group):
         return show_deprecated()
 
 
-# The command whose help is being printed, as the root's token rewrite selected it: the
-# Deprecated options panel reads its marks to write each option's line.
-_SELECTED_COMMAND: ContextVar[tuple[App, tuple[str, ...]] | None] = ContextVar(
+# The command whose help is being printed, as the root's token rewrite selected it, with the
+# root: the Deprecated options panel reads its marks to write each option's line.
+_SELECTED_COMMAND: ContextVar[tuple[App, App, tuple[str, ...]] | None] = ContextVar(
     "untaped_selected_command", default=None
 )
 
 
-def select_command(command: App, path: tuple[str, ...]) -> None:
+@contextmanager
+def command_selection() -> Iterator[None]:
+    """The scope of one invocation's :func:`select_command`; the selection ends with it."""
+    token = _SELECTED_COMMAND.set(None)
+    try:
+        yield
+    finally:
+        _SELECTED_COMMAND.reset(token)
+
+
+def select_command(root: App, command: App, path: tuple[str, ...]) -> None:
     """Record ``command`` (at ``path``, ``("untaped", "awx", ...)``) as this invocation's."""
-    _SELECTED_COMMAND.set((command, path))
+    _SELECTED_COMMAND.set((root, command, path))
 
 
 def _deprecated_options_help(console: Any, options: Any, panel: Any) -> None:
@@ -229,22 +240,17 @@ def _deprecated_options_help(console: Any, options: Any, panel: Any) -> None:
     selected = _SELECTED_COMMAND.get()
     lines: dict[str, str] = {}
     if selected is not None:
-        command, path = selected
+        root, command, path = selected
         for argument, mark in marked_options(command):
-            line = deprecated_line(
-                _unquoted(replacement_text(mark, None)),
-                removal_text(mark.removed_in, path_owner(path)),
-            )
-            lines.update(dict.fromkeys(argument.names, line))
+            removal = removal_text(mark.removed_in, path_owner(path))
+            line = deprecated_line(replacement_text(mark, root), removal)
+            # An entry's description is plain text, not markdown, so no backticks.
+            lines.update(dict.fromkeys(argument.names, line.replace("`", "")))
     entries = []
     for entry in panel.entries:
         found = next((lines[name] for name in entry.all_options if name in lines), None)
         entries.append(entry if found is None else entry.copy(description=found))
     DefaultFormatter()(console, options, panel.copy(entries=entries))
-
-
-def _unquoted(text: str | None) -> str | None:
-    return None if text is None else text.replace("`", "")
 
 
 # The order of all core panels is untaped.help_panels'.
@@ -264,7 +270,8 @@ replacement="--limit 1 --yes")] = False``. The root warns when any of its spelli
 def marked_options(command: App) -> list[tuple[Any, Deprecated]]:
     """Each option of ``command``'s function marked ``deprecated(...)``, with its mark.
 
-    Positional parameters are never options, so a mark on one is not listed.
+    Only a keyword-only parameter with its own spellings is an option: a mark on a positional
+    or a flattened dataclass is not listed (``deprecated-option-panel`` reports it).
     """
     function = command.default_command
     if function is None:
@@ -277,7 +284,14 @@ def marked_options(command: App) -> list[tuple[Any, Deprecated]]:
         for argument in command.assemble_argument_collection(parse_docstring=False)
         if argument.field_info.name in marks
         and argument.field_info.kind is inspect.Parameter.KEYWORD_ONLY
+        and not argument.children
     ]
+
+
+def option_name(argument: Any) -> str:
+    """The spelling an option goes under: its first long positive name, else its first one."""
+    positive: list[str] = [name for name in argument.names if name not in argument.negatives]
+    return next((name for name in positive if name.startswith("--")), positive[0])
 
 
 def panel_for(stability: Stability) -> Group:
@@ -520,7 +534,7 @@ def _apply(
 # --- the query ---------------------------------------------------------------
 
 
-type MarkTarget = Literal["plugin", "group", "command", "setting", "behaviour"]
+type MarkTarget = Literal["plugin", "group", "command", "option", "setting", "behaviour"]
 
 
 @dataclass(frozen=True)
@@ -528,8 +542,9 @@ class Mark:
     """One mark: where it sits, what it marks, and what it says."""
 
     where: str
-    """The command path (``awx test``), plugin name, setting key (``awx.test_parallel``) or
-    behaviour (``untaped.plaintext-token``, ``<plugin>.<name>`` for a plugin's)."""
+    """The command path (``awx test``), option (``awx test run --dry-run``), plugin name,
+    setting key (``awx.test_parallel``) or behaviour (``untaped.plaintext-token``,
+    ``<plugin>.<name>`` for a plugin's)."""
     target: MarkTarget
     stability: Stability
     replacement: str | None
@@ -537,7 +552,8 @@ class Mark:
 
 
 def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> list[Mark]:
-    """Every mark in the composition: plugin specs, groups, commands, settings and behaviours.
+    """Every mark in the composition: plugin specs, groups, commands, options, settings and
+    behaviours.
 
     Takes the composition, not only the app, because a spec mark is not on a
     lazy app. A setting is recorded only for a mark of its own field; one
@@ -625,6 +641,10 @@ def _collect(
                 else ("group" if any(True for _ in children(sub, resolve=False)) else "command")
             )
             found.append(_record(" ".join(here), target, mark, root))
+        found.extend(
+            _record(f"{' '.join(here)} {option_name(argument)}", "option", option, root)
+            for argument, option in marked_options(sub)
+        )
         _collect(sub, root, here, plugins, found, resolve=resolve)
 
 

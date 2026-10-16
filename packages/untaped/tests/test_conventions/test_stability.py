@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Annotated
 
 import pytest
@@ -105,6 +105,84 @@ def test_a_deprecated_option_and_its_panel_go_together() -> None:
         "svc run::deprecated-option-panel::--loose carries a deprecated(...) mark, so it belongs "
         "in DEPRECATED_OPTIONS, which hides it until --deprecated: "
         "Parameter(group=DEPRECATED_OPTIONS)",
+    ]
+
+
+@dataclass
+class _Flags:
+    fast: bool = False
+
+
+def test_a_mark_the_option_mechanism_ignores_or_hides_is_reported() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+
+        @app.command(name="run")
+        def run(
+            mode: Annotated[str, Parameter(group=DEPRECATED_OPTIONS), deprecated(removed_in=3)],
+            *,
+            flags: Annotated[
+                _Flags | None,
+                Parameter(name="*", group=DEPRECATED_OPTIONS),
+                deprecated(removed_in=3),
+            ] = None,
+            hidden: Annotated[
+                bool,
+                Parameter(group=DEPRECATED_OPTIONS, negative="", show=False),
+                deprecated(removed_in=3),
+            ] = False,
+        ) -> None:
+            """Run it."""
+
+        return app
+
+    rows = [row for row in _violations(factory) if "::deprecated-option-panel::" in row]
+    assert rows == [
+        "svc run::deprecated-option-panel::--hidden has show=False, which keeps it out of "
+        "DEPRECATED_OPTIONS even under --deprecated; the panel already hides it, so drop "
+        "show=False",
+        "svc run::deprecated-option-panel::--mode's deprecated(...) mark has no effect: only a "
+        "keyword-only option (after *) that is not a flattened dataclass can be deprecated",
+        "svc run::deprecated-option-panel::flags's deprecated(...) mark has no effect: only a "
+        "keyword-only option (after *) that is not a flattened dataclass can be deprecated",
+    ]
+
+
+def test_an_option_s_replacement_and_nesting_are_checked() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+
+        @app.command(name="old")
+        @deprecated(removed_in=3)
+        def old(
+            *,
+            under: Annotated[
+                bool, Parameter(group=DEPRECATED_OPTIONS, negative=""), deprecated(removed_in=3)
+            ] = False,
+        ) -> None:
+            """Old."""
+
+        @app.command(name="run")
+        def run(
+            *,
+            nowhere: Annotated[
+                bool,
+                Parameter(group=DEPRECATED_OPTIONS, negative=""),
+                deprecated(removed_in=3, replacement="untaped svc nope"),
+            ] = False,
+            flagged: Annotated[
+                bool,
+                Parameter(group=DEPRECATED_OPTIONS, negative=""),
+                deprecated(removed_in=3, replacement="--limit 1 --yes"),
+            ] = False,
+        ) -> None:
+            """Run it."""
+
+        return app
+
+    assert _violations(factory) == [
+        "svc old --under::nested-mark::deprecated under deprecated svc old",
+        "svc run --nowhere::bad-replacement::`untaped svc nope` does not resolve to a command",
     ]
 
 

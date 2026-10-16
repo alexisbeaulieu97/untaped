@@ -6,14 +6,16 @@ Checks every command of a subtree against ``docs/plugins.md``:
   help, a command docstring, a parameter's help (a hidden one's too) or a
   settings field's description (core writes the line from the mark);
 - ``deprecated-option-panel`` — an option marked ``deprecated(...)`` outside
-  ``DEPRECATED_OPTIONS`` (which hides it until ``--deprecated``), or an
-  unmarked option inside it;
+  ``DEPRECATED_OPTIONS`` (which hides it until ``--deprecated``) or with
+  ``show=False`` (which keeps it out of that panel), an unmarked option inside
+  it, or a mark on a parameter that is not an option (a positional, a
+  flattened dataclass), which nothing reads;
 - ``wrong-deprecated`` — a command function carries Python's
   ``warnings.deprecated`` (cyclopts would print its text), or a settings field
   pydantic's ``deprecated=``, where untaped's ``deprecated(...)`` alone belongs;
   an SDK callable is the other way round and carries both (below);
-- ``nested-mark`` — a mark under a mark that makes it redundant or
-  contradictory: experimental under experimental, or anything under
+- ``nested-mark`` — a mark (a deprecated option's too) under a mark that makes
+  it redundant or contradictory: experimental under experimental, or anything under
   deprecated (deprecated under experimental is allowed); a settings field
   sits under its plugin;
 - ``bad-replacement`` — a ``deprecated`` replacement that is not mounted, is
@@ -80,6 +82,7 @@ from untaped.stability import (
     mark_of,
     marked_options,
     marks,
+    parameter_marks,
     pydantic_deprecated_fields,
     read_parameter_marks,
     replacement_path,
@@ -219,19 +222,33 @@ def _nested(mark: Mark, every: list[Mark]) -> Iterator[str]:
 
 
 def _option_panel(app: App) -> Iterator[str]:
-    """A marked option outside ``DEPRECATED_OPTIONS``, or an unmarked one inside it."""
+    """A deprecated option and ``DEPRECATED_OPTIONS`` go together, and the panel shows it."""
     if app.default_command is None:
         return
-    marked = {argument.field_info.name for argument, _ in marked_options(app)}
+    marked = parameter_marks(app.default_command)
+    options = {argument.field_info.name for argument, _ in marked_options(app)}
     for argument in app.assemble_argument_collection(parse_docstring=False):
-        name = argument.names[0] if argument.names else argument.field_info.name
+        if argument.keys:
+            continue  # a flattened dataclass's field: its parameter is checked
+        field = argument.field_info.name
+        name = argument.names[0] if argument.names and not argument.children else field
         inside = any(group is DEPRECATED_OPTIONS for group in as_groups(argument.parameter.group))
-        if argument.field_info.name in marked and not inside:
+        if field in marked and field not in options:
+            yield (
+                f"{name}'s deprecated(...) mark has no effect: only a keyword-only option "
+                "(after *) that is not a flattened dataclass can be deprecated"
+            )
+        elif field in options and not inside:
             yield (
                 f"{name} carries a deprecated(...) mark, so it belongs in DEPRECATED_OPTIONS, "
                 "which hides it until --deprecated: Parameter(group=DEPRECATED_OPTIONS)"
             )
-        elif inside and argument.field_info.name not in marked:
+        elif field in options and argument.parameter.show is False:
+            yield (
+                f"{name} has show=False, which keeps it out of DEPRECATED_OPTIONS even under "
+                "--deprecated; the panel already hides it, so drop show=False"
+            )
+        elif inside and field not in marked:
             yield f"{name} is in DEPRECATED_OPTIONS without a deprecated(removed_in=...) mark"
 
 

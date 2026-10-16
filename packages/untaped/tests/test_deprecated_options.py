@@ -12,14 +12,20 @@ from cyclopts import App, Parameter
 from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
 from untaped.cli import create_app
-from untaped.stability import DEPRECATED_OPTIONS, deprecated
+from untaped.stability import _SELECTED_COMMAND, DEPRECATED_OPTIONS, deprecated
+from untaped.surface._cli import subtree_lines
 from untaped.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
+def preview() -> None:
+    """Preview it."""
+
+
 def _svc() -> App:
     app = create_app(name="svc", help="Service.")
+    app.command(preview, name="preview")
 
     @app.command(name="run")
     def run(
@@ -35,6 +41,11 @@ def _svc() -> App:
             Parameter(name="--old-name", group=DEPRECATED_OPTIONS),
             deprecated(removed_in=3),
         ] = None,
+        look: Annotated[
+            bool,
+            Parameter(group=DEPRECATED_OPTIONS, negative=""),
+            deprecated(removed_in=3, replacement=preview),
+        ] = False,
     ) -> None:
         """Run it.
 
@@ -48,6 +59,8 @@ def _svc() -> App:
             Run nothing.
         legacy
             An old name.
+        look
+            Look first.
         """
 
     return app
@@ -106,8 +119,27 @@ def test_nothing_after_the_separator_warns() -> None:
     assert _json_notices(["svc", "run", "--", "--dry-run"]) == []
 
 
-def test_help_does_not_warn() -> None:
-    assert _json_notices(["svc", "run", "--dry-run", "--help"]) == []
+@pytest.mark.parametrize("flag", ["--help", "--version"])
+def test_help_and_version_do_not_warn(flag: str) -> None:
+    assert _json_notices(["svc", "run", "--dry-run", flag]) == []
+
+
+def test_the_selected_command_ends_with_the_run() -> None:
+    _json_notices(["svc", "run", "--dry-run"])
+    assert _SELECTED_COMMAND.get() is None
+
+
+def test_a_command_replacement_reads_the_same_everywhere() -> None:
+    (notice,) = _json_notices(["svc", "run", "--look"])
+    assert notice["replacement"] == "untaped svc preview"
+    help_text = CliInvoker().invoke(_root().meta, ["--deprecated", "svc", "run", "--help"]).stdout
+    assert "Deprecated: removed in untaped-svc 3.0; use untaped svc preview." in help_text
+    root = _root()
+    lines = {str(line) for line in subtree_lines(root, "svc", None)}
+    assert (
+        "cli untaped svc run --look switch  [deprecated, removed in 3.0; use untaped svc preview]"
+        in lines
+    )
 
 
 def test_the_panel_is_hidden_without_deprecated() -> None:

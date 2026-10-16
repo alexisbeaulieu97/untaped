@@ -50,8 +50,9 @@ error (`lint.unwarned-parameter` reports a function without the decorator).
 
 A deprecated flag sits in `DEPRECATED_OPTIONS`, a panel `--help` lists only
 under `--deprecated`, where its help is its `Deprecated:` line;
-`untaped lint` reports a marked flag outside it, or an unmarked one inside it
-(`lint.deprecated-option-panel`). Any spelling of it warns (`--dry-run`,
+`untaped lint` reports a marked flag outside it or with `show=False`, an
+unmarked one inside it, and a mark on a positional or a flattened dataclass,
+which only a keyword-only option can carry (`lint.deprecated-option-panel`). Any spelling of it warns (`--dry-run`,
 `--no-dry-run`, `--dry-run=false`, a short flag), up to a `--`.
 
 The replacement is what to use instead: a command's function or app (the

@@ -25,11 +25,13 @@ from untaped.profile_resolver import profile_scope
 from untaped.stability import (
     Alias,
     Deprecated,
+    command_selection,
     deprecated_aliases,
     enable_show_deprecated,
     mark_of,
     marked_options,
     notify_deprecation,
+    option_name,
     path_owner,
     replacement_text,
     reset_show_deprecated,
@@ -223,6 +225,16 @@ def _dispatch_with_root_options(
     errors surface before the command body runs, so a retry never repeats
     side effects.
     """
+    with command_selection():
+        return _dispatch(app, command_tokens, root_options, applied_tokens)
+
+
+def _dispatch(
+    app: App,
+    command_tokens: list[str],
+    root_options: dict[str, _RootOption],
+    applied_tokens: list[tuple[_RootOption, object]],
+) -> object:
     command_tokens = _apply_help_root_options(command_tokens, root_options, applied_tokens)
     remaining = canonical_command_tokens(
         app, _consume_path_root_options(app, command_tokens, root_options, applied_tokens)
@@ -293,7 +305,7 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
         current = current[token]
         chain.append(((*path, token), current))
     path = ("untaped", *(chain[-1][0] if chain else ()))
-    select_command(current, path)
+    select_command(app, current, path)
     if not consumed:
         _rewrite_option_aliases(current, path, rewritten, index)
     if not any(token in _HELP_OR_VERSION for token in _before_separator(rewritten)):
@@ -338,7 +350,7 @@ def _warn_deprecated_options(
     for argument, mark in marked:
         if used.isdisjoint(argument.names):
             continue
-        from untaped.surface._cli import option_identity, option_name  # noqa: PLC0415
+        from untaped.surface._cli import option_identity  # noqa: PLC0415 - only when warning
 
         notify_deprecation(
             option_identity(f"cli {' '.join(path)}", argument),
