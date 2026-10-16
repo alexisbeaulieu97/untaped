@@ -5,32 +5,28 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from cyclopts import Parameter
 
 from untaped.sdk import (
-    AbsolutePath,
     BatchOutcome,
     ColumnsOption,
     Diagnostics,
     DryRunOption,
     Failure,
     FormatOption,
-    OutcomeRecord,
     ParallelOption,
     StdinOption,
-    TargetRecord,
     UntapedError,
     UsageError,
     YesOption,
     batch_apply,
     clamp_parallel,
-    echo,
+    emit,
     finish,
     parse_kv_pairs,
     read_stdin,
-    render_rows,
     ui_context,
     writes,
 )
@@ -63,25 +59,9 @@ from untaped_recipe.infrastructure.backup import BackupDraft
 from untaped_recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
 from untaped_recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped_recipe.infrastructure.pack_store import PackLibrary
+from untaped_recipe.records import ApplyOutcome
 
 _diag = Diagnostics()
-
-
-class ApplyOutcomeRecord(OutcomeRecord, TargetRecord):
-    """One target's ``recipe apply`` result (kind ``recipe.apply_outcome``).
-
-    ``action`` is ``planned`` (preview), ``applied``, ``unchanged``,
-    ``skipped`` (a validate hook marked the target not applicable),
-    ``cancelled`` (confirmation declined) or ``failed``. A failed row says
-    why in ``detail`` (for humans) and ``error`` (category, system, message).
-    """
-
-    target_path: AbsolutePath
-    files_changed: int
-    warnings: list[str]
-    detail: str | None
-    inputs: dict[str, object]
-    recipe: str
 
 
 @dataclass(frozen=True)
@@ -244,25 +224,16 @@ def apply_command(
             preview=dry_run or check,
         )
         if fmt == "table":
-            # Human view: key=value pairs and joined warnings instead of reprs.
-            # Structured formats keep the real mapping and list.
-            rows = [
-                {
-                    **row,
-                    "warnings": "; ".join(_strings(row["warnings"])),
-                    "inputs": _inputs_cell(row["inputs"]),
-                }
-                for row in rows
-            ]
-        rendered = render_rows(
-            rows,
-            fmt=fmt,
-            columns=columns,
-            kind="recipe.apply_outcome",
-            table_columns=["target_path", "action", "files_changed", "warnings", "detail"],
-        )
-        if rendered:
-            echo(rendered)
+            # Human view: key=value pairs and joined warnings instead of reprs,
+            # so a view of the records, not the records (it carries no kind).
+            emit(
+                [_table_row(row.model_dump(mode="json")) for row in rows],
+                fmt=fmt,
+                columns=columns,
+                table_columns=ApplyOutcome.table_columns,
+            )
+        else:
+            emit(rows, fmt=fmt, columns=columns)
         _render_result_summary(context.plans, outcome, check=check, dry_run=dry_run)
         if outcome.cancelled:
             finish(outcome.outcome)
@@ -414,8 +385,8 @@ def _outcome_rows(
     *,
     recipe_ref: str,
     preview: bool,
-) -> list[dict[str, object]]:
-    rendered: list[dict[str, object]] = []
+) -> list[ApplyOutcome]:
+    rendered: list[ApplyOutcome] = []
     for plan in plans:
         plan_id = id(plan)
         if plan.status == "skipped":
@@ -511,26 +482,22 @@ def _render_result_summary(
     )
 
 
-def _inputs_cell(inputs: object) -> str:
-    if not isinstance(inputs, dict) or not inputs:
-        return ""
-    return ", ".join(f"{key}={value}" for key, value in inputs.items())
-
-
-def _strings(value: object) -> list[str]:
-    return [str(item) for item in value] if isinstance(value, list) else []
+def _table_row(row: dict[str, Any]) -> dict[str, object]:
+    """An outcome's table view: warnings joined, inputs as ``key=value`` pairs."""
+    inputs = ", ".join(f"{key}={value}" for key, value in row["inputs"].items())
+    return row | {"warnings": "; ".join(row["warnings"]), "inputs": inputs}
 
 
 def _row(
     plan: TargetPlan, *, action: str, recipe_ref: str, failure: Exception | None = None
-) -> dict[str, object]:
+) -> ApplyOutcome:
     """One outcome row; a planning failure or a write ``failure`` fills ``detail`` and ``error``."""
     detail = plan.error or None
     if failure is not None:
         detail = str(failure)
     elif plan.status == "error":
         failure = plan.failure or RecipeError(plan.error)
-    return ApplyOutcomeRecord(
+    return ApplyOutcome(
         target_path=_absolute(plan.target),
         action=action,
         files_changed=plan.files_changed,
@@ -539,7 +506,7 @@ def _row(
         error=None if failure is None else Failure.from_exception(failure, message=detail),
         inputs=dict(plan.display_inputs),
         recipe=recipe_ref,
-    ).model_dump(mode="json")
+    )
 
 
 def _describe(plan: TargetPlan) -> dict[str, object]:

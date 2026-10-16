@@ -45,6 +45,7 @@ SprintResult.goal
 SprintResult.origin_board_id
 ProfileOutcome.previous_name  # profile rename/copy rows
 ProfileOutcome.copied_from
+Pack.manifest_name  # recipe.pack
 
 GitHostRecord.helpers_first  # git.host rows
 

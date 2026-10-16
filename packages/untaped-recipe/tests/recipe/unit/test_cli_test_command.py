@@ -72,7 +72,14 @@ def test_test_pack_runs_cases_and_exits_zero_on_pass(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
-        {"pack": "demo", "recipe": "emit", "case": "basic", "status": "pass", "detail": ""}
+        {
+            "pack": "demo",
+            "recipe": "emit",
+            "case": "basic",
+            "status": "pass",
+            "detail": "",
+            "error": None,
+        }
     ]
     assert "Recipe tests: 1 passed, 0 failed, 0 errored" in result.stderr
 

@@ -15,9 +15,8 @@ from untaped.sdk import (
     FormatOption,
     UntapedError,
     UsageError,
-    echo,
+    emit,
     finish,
-    render_rows,
     unified_diff_text,
 )
 from untaped_recipe.application.harness import (
@@ -45,6 +44,7 @@ from untaped_recipe.errors import RecipeError
 from untaped_recipe.infrastructure import HookExecutor, HookResolver
 from untaped_recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped_recipe.infrastructure.pack_store import PackLibrary
+from untaped_recipe.records import GoldenCase
 
 _diag = Diagnostics()
 
@@ -83,22 +83,15 @@ def test_command(
         root = library_dir()
         selection = _select(root, ref_text)
         results = _execute(root, selection, update=update)
-        rows = [_row(result) for result in results]
-        # The table names the pack only when cases from several packs ran.
-        pack = ["pack"] if len({result.pack for result in results}) > 1 else []
-        rendered = (
-            render_rows(
-                rows,
+        if results:
+            # The table names the pack only when cases from several packs ran.
+            pack = ("pack",) if len({result.pack for result in results}) > 1 else ()
+            emit(
+                [_row(result) for result in results],
                 fmt=fmt,
                 columns=columns,
-                kind="recipe.test",
-                table_columns=[*pack, "recipe", "case", "status", "detail"],
+                table_columns=[*pack, *GoldenCase.table_columns],
             )
-            if rows
-            else ""
-        )
-        if rendered:
-            echo(rendered)
         if not update:
             _render_diffs(results)
         _render_summary(selection, results, update=update)
@@ -189,24 +182,23 @@ def _execute(root: Path, selection: _Selection, *, update: bool) -> list[CaseRes
     return results
 
 
-def _row(result: CaseResult) -> dict[str, object]:
+def _row(result: CaseResult) -> GoldenCase:
     """One case row; an ``error`` case also carries a structured ``error``."""
-    row: dict[str, object] = {
-        "pack": result.pack,
-        "recipe": result.recipe,
-        "case": result.case,
-        "status": result.status,
-        "detail": result.detail,
-    }
+    error = None
     if result.status == "error":
         # A plain exception (or none) is an invalid case or pack file.
         failure = result.failure
         if not isinstance(failure, UntapedError):
             failure = RecipeError(result.detail)
-        row["error"] = Failure.from_exception(failure, message=result.detail).model_dump(
-            mode="json"
-        )
-    return row
+        error = Failure.from_exception(failure, message=result.detail)
+    return GoldenCase(
+        pack=result.pack,
+        recipe=result.recipe,
+        case=result.case,
+        status=result.status,
+        detail=result.detail,
+        error=error,
+    )
 
 
 def _render_diffs(results: list[CaseResult]) -> None:

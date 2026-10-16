@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.sdk import Diagnostics, plural, render_rows, unified_diff_text
+from untaped.sdk import Diagnostics, plural, ui_context, unified_diff_text
 from untaped_recipe.application.inputs import has_sensitive_inputs
 from untaped_recipe.domain.plan import FileChange, TargetPlan, is_binary_content
 from untaped_recipe.domain.recipe import Recipe
@@ -154,11 +154,40 @@ def _preview_groups(
 
 
 def _render_stderr_table(rows: list[dict[str, object]], *, columns: list[str]) -> None:
+    """Print ``rows`` to stderr as aligned columns, or ``key: value`` lines.
+
+    A preview is text a person reads before the question, not records, so it
+    is the same whatever ``--format`` asks of stdout, and ``--quiet`` keeps
+    it. With ``ui.hide_empty_columns`` (the default) a column empty on every
+    row is left out; ``ui.collection_view: list`` shows each row as
+    ``key: value`` lines.
+    """
     if not rows:
         return
-    rendered = render_rows(rows, fmt="table", columns=columns)
-    if rendered:
-        _diag.info(rendered, unmuted=True)
+    theme = ui_context(strict=False).theme
+    if theme.hide_empty_columns:
+        # As in any table, unless every column is empty.
+        shown = [column for column in columns if any(_cell(row.get(column)) for row in rows)]
+        columns = shown or columns
+    cells = [[_cell(row.get(column)) for column in columns] for row in rows]
+    if theme.collection_view == "list":
+        blocks = (
+            "\n".join(f"{name}: {value}" for name, value in zip(columns, line, strict=True))
+            for line in cells
+        )
+        _diag.info("\n\n".join(blocks), unmuted=True)
+        return
+    lines = [columns, *cells]
+    widths = [max(len(line[index]) for line in lines) for index in range(len(columns))]
+    text = (
+        "  ".join(cell.ljust(width) for cell, width in zip(line, widths, strict=True)).rstrip()
+        for line in lines
+    )
+    _diag.info("\n".join(text), unmuted=True)
+
+
+def _cell(value: object) -> str:
+    return "" if value is None else str(value)
 
 
 def _display_change_path(change: FileChange) -> Path:

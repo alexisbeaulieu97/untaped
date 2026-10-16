@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeGuard
 
 from cyclopts import Parameter
-from pydantic import BaseModel, ConfigDict
 
 from untaped.sdk import (
     ColumnsOption,
@@ -15,17 +14,14 @@ from untaped.sdk import (
     DryRunOption,
     Failure,
     FormatOption,
-    OutcomeRecord,
     UntapedError,
     UsageError,
-    UtcTimestamp,
     YesOption,
     batch_apply,
     echo,
     emit,
     finish,
     plural,
-    render_rows,
     ui_context,
     writes,
 )
@@ -43,32 +39,9 @@ from untaped_recipe.infrastructure.backup import (
     prune_selection,
     read_metadata,
 )
+from untaped_recipe.records import Backup, PruneOutcome, RestoreOutcome
 
 _diag = Diagnostics()
-
-
-class BackupPruneRecord(OutcomeRecord):
-    """One ``backups prune`` row (kind ``recipe.prune_outcome``).
-
-    ``action`` is ``planned`` (``--dry-run``), ``deleted`` or ``failed`` (with
-    ``detail`` and ``error``).
-    """
-
-    id: str
-    size_bytes: int
-    detail: str | None = None
-
-
-class BackupRestoreRecord(OutcomeRecord):
-    """The ``backups restore`` row (kind ``recipe.restore_outcome``).
-
-    ``files`` counts the bundle's files. ``action`` is ``planned``
-    (``--dry-run``), ``restored`` or ``failed`` (with ``detail`` and ``error``).
-    """
-
-    id: str
-    files: int
-    detail: str | None = None
 
 
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
@@ -78,39 +51,41 @@ def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) 
             [_backup_row(bundle) for bundle in BackupStore(library_dir() / "backups").list()],
             fmt=fmt,
             columns=columns,
-            kind="recipe.backup",
-            table_columns=["id", "created_at", "recipe"],
         )
 
 
-class BackupListRecord(BaseModel):
-    """One ``backups list`` row (kind ``recipe.backup``).
+def _backup_row(bundle: BackupBundle, metadata: dict[str, object] | None = None) -> Backup:
+    """One bundle; unreadable metadata warns and leaves ``recipe`` empty.
 
-    ``created_at`` comes from the bundle id; ``recipe`` from its metadata
-    (``None`` when that cannot be read).
+    With its ``metadata`` (``backups get``) the row also carries the
+    bundle's ``inputs`` and ``files``.
     """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    id: str
-    created_at: UtcTimestamp | None
-    recipe: str | None
-    path: str
-
-
-def _backup_row(bundle: BackupBundle) -> BackupListRecord:
-    """One ``backups list`` row; unreadable metadata warns and leaves ``recipe`` empty."""
-    try:
-        recipe = read_metadata(bundle).get("recipe")
-    except ValueError as exc:
-        _diag.warning(str(exc))
-        recipe = None
-    return BackupListRecord(
-        id=bundle.id,
-        created_at=bundle_created_at(bundle),
-        recipe=recipe if isinstance(recipe, str) else None,
-        path=str(bundle.path),
+    if metadata is None:
+        try:
+            recipe = read_metadata(bundle).get("recipe")
+        except ValueError as exc:
+            _diag.warning(str(exc))
+            recipe = None
+        inputs = files = None
+    else:
+        recipe = metadata.get("recipe")
+        inputs = metadata.get("inputs")
+        files = metadata.get("files")
+    return Backup.model_validate(
+        {
+            "id": bundle.id,
+            "created_at": bundle_created_at(bundle),
+            "recipe": recipe if isinstance(recipe, str) else None,
+            "path": str(bundle.path),
+            "inputs": inputs if isinstance(inputs, dict) else None,
+            "files": files if _entries(files) else None,
+        }
     )
+
+
+def _entries(files: object) -> TypeGuard[list[dict[str, object]]]:
+    """Whether ``files`` is a list of file entries (a mapping each)."""
+    return isinstance(files, list) and all(isinstance(entry, dict) for entry in files)
 
 
 def get_command(
@@ -122,26 +97,18 @@ def get_command(
 ) -> None:
     """Show backup metadata."""
     with report_config_errors():
-        metadata = BackupStore(library_dir() / "backups").metadata(backup_id)
+        bundle = BackupStore(library_dir() / "backups").resolve(backup_id)
+        record = _backup_row(bundle, read_metadata(bundle))
         if fmt != "table":
-            emit(metadata, fmt=fmt, columns=columns, kind="recipe.backup")
+            emit(record, fmt=fmt, columns=columns)
             return
         # Table view: one line per file instead of a raw list repr; structured
-        # formats keep the full metadata mapping.
-        files = metadata.get("files")
-        emit(
-            {key: value for key, value in metadata.items() if key != "files"},
-            fmt=fmt,
-            columns=columns,
-            kind="recipe.backup",
-        )
-        if isinstance(files, list) and files:
+        # formats keep the whole record.
+        emit(record.model_dump(mode="json", exclude={"files"}), fmt=fmt, columns=columns)
+        if record.files:
             echo("files:")
-            for entry in files:
-                if isinstance(entry, dict):
-                    echo(f"  - {entry.get('target', '')}/{entry.get('relative_path', '')}")
-                else:
-                    echo(f"  - {entry}")
+            for entry in record.files:
+                echo(f"  - {entry.get('target', '')}/{entry.get('relative_path', '')}")
 
 
 @writes
@@ -197,12 +164,12 @@ def restore_command(
             finish(outcome)
         if fmt != "table":
             failed = {bundle_id: exc for bundle_id, exc in outcome.failures}
-            row = BackupRestoreRecord(
+            row = RestoreOutcome(
                 id=resolved_id,
                 files=len(items),
                 **_outcome_fields(failed.get(resolved_id), dry_run=dry_run, done="restored"),
             )
-            emit(row, fmt=fmt, columns=columns, kind="recipe.restore_outcome")
+            emit(row, fmt=fmt, columns=columns)
         if not outcome.any_failed and outcome.results:
             _diag.success(f"restored {resolved_id}")
         finish(outcome)
@@ -269,16 +236,14 @@ def prune_command(
             finish(outcome)
         failed = {bundle.id: exc for bundle, exc in outcome.failures}
         rows = [
-            BackupPruneRecord(
+            PruneOutcome(
                 id=bundle.id,
                 size_bytes=sizes[bundle.id],
                 **_outcome_fields(failed.get(bundle.id), dry_run=dry_run, done="deleted"),
-            ).model_dump()
+            )
             for bundle in pruned
         ]
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.prune_outcome")
-        if rendered:
-            echo(rendered)
+        emit(rows, fmt=fmt, columns=columns)
         if dry_run:
             _diag.info(
                 f"would prune {len(pruned)} of {plural(len(bundles), 'backup')}, "
