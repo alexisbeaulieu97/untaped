@@ -19,6 +19,7 @@ its ``target`` is the identity of the item it names, wherever that lives.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -47,6 +48,9 @@ class Reference(_Model):
     target: IdentityRef
     """The kind and name it names, in the scope it is looked up in (an empty name: unset)."""
     resolution: Resolution
+    location: DocumentLocation | ResourceLocation | None = None
+    """Where the item it names was read, when the loader resolved it to one item (a live
+    reference, by id); :meth:`AwxResources.find` then needs no name."""
 
 
 @experimental
@@ -108,41 +112,56 @@ class AwxResources(Record, kind="awx.resources"):
     """Whether the controller was searched: every run but ``--offline`` and the repo reader."""
     unreadable: tuple[Unreadable, ...] = ()
 
-    _index: tuple[tuple[Linted, ...], dict[tuple[str, str], list[Linted]]] | None = PrivateAttr(
-        default=None
-    )
+    _index: _Index | None = PrivateAttr(default=None)
 
     def of(self, kind: str) -> Iterator[Linted]:
         """The items of ``kind``, in snapshot order."""
         return (item for item in self.items if item.resource.kind == kind)
 
-    def find(self, ref: IdentityRef) -> Linted | None:
-        """The one item ``ref`` names: kind and name equal, organization and parent where set.
+    def find(self, ref: Reference | IdentityRef) -> Linted | None:
+        """The one item ``ref`` names.
 
-        ``None`` when none does, or when several do: a rule never judges an
-        arbitrary namesake (``apply`` refuses the ambiguity).
+        A :class:`Reference` with a ``location`` names the item read there. Else
+        its target (or an :class:`IdentityRef`) names the item whose kind and
+        name are equal, and organization and parent where set; ``None`` when
+        none does, or when several do: a rule never judges an arbitrary
+        namesake (``apply`` refuses the ambiguity).
         """
+        if isinstance(ref, Reference):
+            if ref.location is not None:
+                return self._indexed().by_location.get(ref.location)
+            ref = ref.target
         found = [
             item
-            for item in self._by_name().get((ref.kind, ref.name), ())
+            for item in self._indexed().by_name.get((ref.kind, ref.name), ())
             if (ref.organization is None or organization_of(item) == ref.organization)
             and (ref.parent is None or _same(item.resource.metadata.parent, ref.parent))
         ]
         return found[0] if len(found) == 1 else None
 
-    def _by_name(self) -> dict[tuple[str, str], list[Linted]]:
-        """The items by kind and name, built for the ``items`` this instance holds now.
+    def _indexed(self) -> _Index:
+        """The items by name and by location, built for the ``items`` this instance holds now.
 
         Keyed on the tuple itself, so a copy with other items (``model_copy``)
         never reads the original's index.
         """
-        if self._index is None or self._index[0] is not self.items:
-            by_name: dict[tuple[str, str], list[Linted]] = {}
-            for item in self.items:
-                key = (item.resource.kind, item.resource.metadata.name)
-                by_name.setdefault(key, []).append(item)
-            self._index = (self.items, by_name)
-        return self._index[1]
+        if self._index is None or self._index.items is not self.items:
+            self._index = _Index.of(self.items)
+        return self._index
+
+
+@dataclass(frozen=True)
+class _Index:
+    items: tuple[Linted, ...]
+    by_name: dict[tuple[str, str], list[Linted]]
+    by_location: dict[DocumentLocation | ResourceLocation, Linted]
+
+    @classmethod
+    def of(cls, items: tuple[Linted, ...]) -> _Index:
+        by_name: dict[tuple[str, str], list[Linted]] = {}
+        for item in items:
+            by_name.setdefault((item.resource.kind, item.resource.metadata.name), []).append(item)
+        return cls(items, by_name, {item.location: item for item in items})
 
 
 def organization_of(item: Linted) -> str | None:

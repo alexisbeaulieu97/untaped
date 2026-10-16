@@ -21,6 +21,8 @@ from untaped_lint.api import Finding, Rules, rule
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
+_PLATFORM_SUMMARY = {"organization": {"id": 1, "name": "Platform"}}
+
 
 @pytest.fixture(autouse=True)
 def _outside_this_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -291,6 +293,98 @@ def test_a_kind_the_token_cannot_list_is_named_from_summary_fields(fake_aap: Any
     messages = [row["message"] for row in _rows(result) if row["target"].endswith("/deploy-web")]
     assert "project 'web' was not checked: the token cannot list Project records" in messages
     assert "GET /api/v2/projects/10/" not in _requests(fake_aap)
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_hidden_record_is_named_by_its_referrers_summary_and_read_once_at_most(
+    fake_aap: Any,
+) -> None:
+    """A project out of the token's sight, five templates on it: its name, one read at most."""
+    seed_controller(fake_aap)
+    fake_aap.detail_errors[("projects", 11)] = 403
+    for index, summary in enumerate([{"id": 11, "name": "hidden"}] + [None] * 4):
+        fields = {**_PLATFORM_SUMMARY, **({"project": summary} if summary else {})}
+        fake_aap.seed(
+            "job_templates", id=150 + index, name=f"t{index}", organization=1, project=11,
+            inventory=20, playbook="site.yml", summary_fields=fields,
+        )  # fmt: skip
+    result = _lint()
+    assert _requests(fake_aap).count("GET /api/v2/projects/11/") == 0  # a summary names it
+    messages = {
+        row["target"]: row["message"]
+        for row in _rows(result)
+        if row["rule"] == "awx.unresolved-reference"
+    }
+    assert messages["JobTemplate/Platform/t0"] == (
+        "project 'hidden' was not checked: the token cannot read that Project"
+    )
+    assert messages["JobTemplate/Platform/t4"] == messages["JobTemplate/Platform/t0"]
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_hidden_record_no_summary_names_is_read_once(fake_aap: Any) -> None:
+    seed_controller(fake_aap)
+    fake_aap.detail_errors[("projects", 11)] = 403
+    for index in range(5):
+        fake_aap.seed(
+            "job_templates", id=150 + index, name=f"t{index}", organization=1, project=11,
+            inventory=20, playbook="site.yml", summary_fields=_PLATFORM_SUMMARY,
+        )  # fmt: skip
+    result = _lint()
+    assert _requests(fake_aap).count("GET /api/v2/projects/11/") == 1
+    assert "project '#11' was not checked: the token cannot read that Project" in {
+        row["message"] for row in _rows(result)
+    }
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_schedule_parent_the_token_cannot_read_says_its_template(fake_aap: Any) -> None:
+    seed_controller(fake_aap)
+    fake_aap.detail_errors[("unified_job_templates", 160)] = 403
+    fake_aap.seed(
+        "schedules", id=401, name="weekly", unified_job_template=160,
+        rrule="DTSTART:20260101T000000Z RRULE:FREQ=WEEKLY", summary_fields={},
+    )  # fmt: skip
+    (row,) = [row for row in _rows(_lint()) if row["location"]["id"] == "schedules/401"]
+    assert row["message"] == "parent '#160' was not checked: the token cannot read its template"
+    assert row["hint"] == "lint with a token that can read the template"
+
+
+@pytest.mark.usefixtures("composed")
+def test_an_unlisted_kinds_summary_never_makes_an_identity(fake_aap: Any) -> None:
+    """A summary carries no organization: a node's prompted inventory keeps its real one."""
+    seed_controller(fake_aap)
+    template = fake_aap.store["job_templates"][100]
+    template["summary_fields"] = {
+        **template["summary_fields"],
+        "inventory": {"id": 20, "name": "prod"},
+    }
+    fake_aap.store["workflow_nodes"][210]["inventory"] = 20
+    fake_aap.list_errors["inventories"] = 403
+    _lint()
+    stored = AwxResources.model_validate_json(_snapshot_file().read_text(encoding="utf-8"))
+    (release,) = [item for item in stored.items if item.resource.metadata.name == "release"]
+    (node,) = [node for node in release.resource.spec["nodes"] if node["id"] == "deploy"]
+    assert node["prompts"]["inventory"] == "prod"  # in the workflow's organization, not null
+
+
+@pytest.mark.usefixtures("composed")
+def test_an_organization_less_parent_is_its_own_not_any_namesakes(fake_aap: Any) -> None:
+    """Two workflows ``release``, one in no organization: its schedule is still judged."""
+    seed_controller(fake_aap)
+    fake_aap.seed(
+        "workflow_job_templates", id=201, name="release", organization=None,
+        ask_limit_on_launch=False,
+    )  # fmt: skip
+    fake_aap.seed(
+        "schedules", id=402, name="hourly", unified_job_template=201, limit="web1",
+        rrule="DTSTART:20260101T000000Z RRULE:FREQ=HOURLY",
+        summary_fields={"unified_job_template": {
+            "id": 201, "name": "release", "unified_job_type": "workflow_job",
+        }},
+    )  # fmt: skip
+    found = [row for row in _rows(_lint()) if row["location"]["id"] == "schedules/402"]
+    assert [row["rule"] for row in found] == ["awx.ignored-launch-field"]
 
 
 def _across_organizations(fake: Any) -> None:

@@ -6,15 +6,15 @@ with the rows, so the second, which turns each row into the document
 read per reference. Every kind is read, ``export``'s read-only ones too: a
 rule may judge what ``apply`` cannot write.
 
-A foreign key resolves by the id the controller holds
-(:func:`~untaped_awx.application.lint.resolution.id_references`); a
-schedule's parent and a workflow node's references, which export names with
-their organization, resolve by name among the items.
+A foreign key and a schedule's parent resolve by the id the controller
+holds (:func:`~untaped_awx.application.lint.resolution.id_references`), to
+the location of the item they name; a workflow node's references, which
+export names with their organization, resolve by name among the items.
 
 A kind the token may not list is left out: its references are
-``unresolved``, not ``absent``. Its names come from the rows'
-``summary_fields`` where AWX embeds them; a record the token can neither
-list nor read is named ``#<id>``, and references to it are ``unresolved``.
+``unresolved``, not ``absent``. A record no listed row holds is named from
+the rows' ``summary_fields`` where AWX embeds it, else ``#<id>`` when the
+token cannot read it either; references to it are ``unresolved``.
 Each document's secret-named variables are redacted before it joins the
 snapshot, since the snapshot is cached on disk.
 """
@@ -74,9 +74,7 @@ def load_controller(
         fk.seed(kind, rows)
         listed.append((spec, rows))
     loaded = tuple(spec.kind for spec, _rows in listed)
-    for kind, summaries in _summaries(listed, unlisted=set(kinds) - set(loaded)).items():
-        fk.seed(kind, summaries)
-    readable = _Readable(fk)
+    readable = _Readable(fk, named=_summary_names(listed))
     save = SaveResource(client, readable, nodes=nodes)
     total = sum(len(rows) for _spec, rows in listed)
     read: list[tuple[ResourceSpec, ResourceSnapshot]] = []
@@ -88,32 +86,51 @@ def load_controller(
             read.append((spec, save.snapshot_from_record(spec, row)))
     progress.update(None, done=total, total=total)
     resources = [redact_variables(snapshot.resource) for _spec, snapshot in read]
-    identities = {
-        (spec.kind, int(snapshot.record["id"])): _identity(resource)
+    located = [
+        (spec, snapshot, resource, ResourceLocation(id=path_of(spec, int(snapshot.record["id"]))))
         for (spec, snapshot), resource in zip(read, resources, strict=True)
+    ]
+    identities = {
+        (spec.kind, int(snapshot.record["id"])): (_identity(resource), location)
+        for spec, snapshot, resource, location in located
     }
     base = OfflineBase(loaded, hidden=readable.hidden)
     references = SnapshotReferences(resources, catalog=catalog, base=base)
     items = tuple(
         Linted(
             origin="controller",
-            location=ResourceLocation(id=path_of(spec, int(snapshot.record["id"]))),
+            location=location,
             resource=resource,
             references=(
-                *id_references(spec, resource, snapshot.fk_ids, listed=identities),
-                *references.of(resource, skip=_keys(spec)),
+                *id_references(
+                    spec,
+                    resource,
+                    snapshot.fk_ids,
+                    parent_id=_parent_id(spec, snapshot.record),
+                    listed=identities,
+                ),
+                *references.of(resource, skip=_keys(spec, snapshot.record)),
                 *opaque_references(snapshot.opaque_nodes),
             ),
             controller=_facts(spec, snapshot.record, playbooks),
         )
-        for (spec, snapshot), resource in zip(read, resources, strict=True)
+        for spec, snapshot, resource, location in located
     )
     return AwxResources(items=items, kinds=kind_facts(catalog), loaded=loaded, online=True)
 
 
-def _keys(spec: ResourceSpec) -> frozenset[str]:
-    """The foreign keys :func:`id_references` resolves: every one but a polymorphic parent."""
-    return frozenset(ref.field for ref in spec.fk_refs if not ref.polymorphic)
+def _parent_id(spec: ResourceSpec, record: Mapping[str, Any]) -> int | None:
+    """A schedule's parent's id: AWX's ``unified_job_template``; ``None`` for other kinds."""
+    if not any(ref.polymorphic for ref in spec.fk_refs):
+        return None
+    value = record.get("unified_job_template")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _keys(spec: ResourceSpec, record: Mapping[str, Any]) -> frozenset[str]:
+    """The keys :func:`id_references` resolves: every foreign key, the parent by its id."""
+    by_id = _parent_id(spec, record) is not None
+    return frozenset(ref.field for ref in spec.fk_refs if by_id or not ref.polymorphic)
 
 
 def _identity(resource: Resource) -> IdentityRef:
@@ -127,23 +144,33 @@ def _identity(resource: Resource) -> IdentityRef:
     )
 
 
-def _summaries(
-    listed: Iterable[tuple[ResourceSpec, list[dict[str, Any]]]], *, unlisted: set[str]
-) -> dict[str, list[dict[str, Any]]]:
-    """The ``{id, name}`` rows' ``summary_fields`` embed for each kind the token cannot list."""
-    found: dict[str, dict[int, dict[str, Any]]] = {}
-    for spec, rows in listed:
-        keys = [ref for ref in spec.fk_refs if ref.kind in unlisted and not ref.polymorphic]
+def _summary_names(
+    listed: Iterable[tuple[ResourceSpec, list[dict[str, Any]]]],
+) -> dict[tuple[str, int], str]:
+    """The names rows' ``summary_fields`` give records no listed row holds, by kind and id.
+
+    AWX embeds ``{id, name}`` for what a row references; for a record the
+    token cannot list (its kind refused, or that record out of its sight)
+    that is the only name to be had. Names only: a summary carries no
+    organization, so it never stands for an identity.
+    """
+    rows_of = [(spec, rows) for spec, rows in listed]
+    held = {(spec.kind, row.get("id")) for spec, rows in rows_of for row in rows}
+    names: dict[tuple[str, int], str] = {}
+    for spec, rows in rows_of:
+        keys = [ref for ref in spec.fk_refs if ref.kind is not None and not ref.polymorphic]
         for row in rows:
             summaries = row.get("summary_fields")
-            if not keys or not isinstance(summaries, Mapping):
+            if not isinstance(summaries, Mapping):
                 continue
             for ref in keys:
                 value = summaries.get(ref.field)
                 for each in value if isinstance(value, list) else [value]:
                     if isinstance(each, Mapping) and _named(each):
-                        found.setdefault(str(ref.kind), {}).setdefault(each["id"], dict(each))
-    return {kind: list(rows.values()) for kind, rows in found.items()}
+                        key = (str(ref.kind), int(each["id"]))
+                        if key not in held:
+                            names.setdefault(key, str(each["name"]))
+    return names
 
 
 def _named(value: Mapping[str, Any]) -> bool:
@@ -158,30 +185,38 @@ class _Readable:
     """The resolver export names references through, a record the token cannot read kept.
 
     AWX refuses a record's detail to a token that may not read it (403); export
-    would fail on the whole run. Here it names that record ``#<id>`` and
-    remembers it in :attr:`hidden`, so a reference to it is ``unresolved``.
+    would fail on the whole run. Here such a record is named by its referrer's
+    ``summary_fields`` (``named``) or ``#<id>``, asked for once at most, and
+    remembered in :attr:`hidden`, so a reference to it is ``unresolved``.
     """
 
-    def __init__(self, fk: FkResolver) -> None:
+    def __init__(self, fk: FkResolver, *, named: Mapping[tuple[str, int], str]) -> None:
         self._fk = fk
+        self._named = named
+        self._refused: set[tuple[str, int]] = set()
         self.hidden: set[tuple[str, str]] = set()
 
     def _unread(self, kind: str, id_: int) -> str:
-        name = f"#{id_}"
+        name = self._named.get((kind, id_), f"#{id_}")
         self.hidden.add((kind, name))
         return name
 
     def id_to_name(self, kind: str, id_: int) -> str:
+        if (kind, id_) in self._named or (kind, id_) in self._refused:
+            return self._unread(kind, id_)
         try:
             return self._fk.id_to_name(kind, id_)
         except PermissionDeniedError:
+            self._refused.add((kind, id_))
             return self._unread(kind, id_)
 
     def id_to_identity(self, kind: str, id_: int) -> IdentityRef:
-        try:
-            return self._fk.id_to_identity(kind, id_)
-        except PermissionDeniedError:
-            return IdentityRef(kind=kind, name=self._unread(kind, id_))
+        if (kind, id_) not in self._refused:
+            try:
+                return self._fk.id_to_identity(kind, id_)
+            except PermissionDeniedError:
+                self._refused.add((kind, id_))
+        return IdentityRef(kind=kind, name=self._unread(kind, id_))
 
     def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> PlannedId:
         return self._fk.name_to_id(kind, name, scope=scope)

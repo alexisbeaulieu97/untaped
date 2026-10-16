@@ -19,8 +19,9 @@ The awx rules are exported as the constants ``finding()`` takes. The
 snapshot, its views, the rules and the helpers are experimental (each carries
 the mark); ``Resource`` and ``Metadata``, the apply document, are not. A
 reference's ``target`` is read by its fields (``kind``, ``name``,
-``organization``, ``parent``) and handed to ``AwxResources.find``; its model
-is not exported, so its lookup helpers stay awx's.
+``organization``, ``parent``), and the reference is handed to
+``AwxResources.find``; the target's model is not exported, so its lookup
+helpers stay awx's.
 The closed :data:`__all__` keeps the boundary explicit; everything else
 under ``untaped_awx`` is private to awx.
 """

@@ -5,9 +5,9 @@ snapshot's own items first (:class:`PlanningFkResolver` over their planned
 targets), then in a base. :class:`OfflineBase` is the base that searches
 nothing past the items: ``--offline`` and the repository reader use it. A
 document batch linted online uses the live resolver instead. The controller
-snapshot resolves its foreign keys by id (:func:`id_references`), and only
-a schedule's parent and its workflow nodes' references, which export names
-with their organization, by name over :class:`OfflineBase`.
+snapshot resolves its foreign keys and a schedule's parent by id
+(:func:`id_references`), and only its workflow nodes' references, which
+export names with their organization, by name over :class:`OfflineBase`.
 
 What a lookup raises becomes the reference's :data:`Resolution`: a match, or
 several (ambiguity is ``apply``'s error, not a missing resource), is
@@ -28,6 +28,7 @@ from untaped_awx.application.resources.mutation_planning import (
 from untaped_awx.application.resources.ports import Catalog, FkResolver
 from untaped_awx.application.resources.references import ReferenceSite, references_of
 from untaped_awx.domain import IdentityRef, Resource, ResourceSpec
+from untaped_awx.domain.kinds import UNIFIED_TEMPLATE_KINDS
 from untaped_awx.domain.lint.resources import Reference, Resolution
 from untaped_awx.domain.workflow_graph import NameRef, NodeRun
 from untaped_awx.errors import (
@@ -37,6 +38,7 @@ from untaped_awx.errors import (
     PermissionDeniedError,
     ResourceNotFoundError,
 )
+from untaped_lint.api import ResourceLocation
 
 _REQUIRED: dict[str, tuple[str, ...]] = {"JobTemplate": ("project", "inventory")}
 """Kind → the references a launch cannot do without (an ``inventory`` can be asked for)."""
@@ -142,24 +144,37 @@ class SnapshotReferences:
         return Reference(field=site.field, target=target, resolution=resolution)
 
 
+type Listed = Mapping[tuple[str, int], tuple[IdentityRef, ResourceLocation]]
+"""``(kind, id)`` → the identity and location of the listed item with that id."""
+
+
 def id_references(
     spec: ResourceSpec,
     resource: Resource,
     fk_ids: Mapping[str, Any],
     *,
-    listed: Mapping[tuple[str, int], IdentityRef],
+    parent_id: int | None = None,
+    listed: Listed,
 ) -> Iterator[Reference]:
-    """A live resource's foreign keys, each resolved by the id the controller holds.
+    """A live resource's foreign keys and parent, each resolved by the id the controller holds.
 
     A name would mislead here: export writes a key by its bare name and
     ``apply`` would look it up in the referrer's organization, so a project
     in another organization, or a credential in none, would read as missing.
-    An id ``listed`` holds is ``resolved``, its target the identity of the
-    item it names; any other id (a kind the token cannot list, a record it
-    cannot see) is ``unresolved``. An empty key is :func:`empty_references`'.
+    An id ``listed`` holds is ``resolved``, its target and location those of
+    the item it names (``find`` reads the location, so an organization-less
+    item is never taken for any organization's); any other id (a kind the
+    token cannot list, a record it cannot see) is ``unresolved``. A
+    schedule's parent resolves by ``parent_id``. An empty key is
+    :func:`empty_references`'.
     """
     for ref in spec.fk_refs:
-        if ref.polymorphic or ref.kind is None or ref.field not in resource.spec:
+        if ref.polymorphic:
+            parent = resource.metadata.parent
+            if parent is not None and parent_id is not None:
+                yield _by_id(ref.field, parent.kind, parent_id, parent.name, listed=listed)
+            continue
+        if ref.kind is None or ref.field not in resource.spec:
             continue
         held = fk_ids.get(ref.field)
         ids = held if isinstance(held, list) else [held]
@@ -168,13 +183,23 @@ def id_references(
         for position, id_ in enumerate(ids):
             if not isinstance(id_, int) or isinstance(id_, bool):
                 continue
-            identity = listed.get((ref.kind, id_))
-            if identity is not None:
-                yield Reference(field=ref.field, target=identity, resolution="resolved")
-                continue
             name = _name(names[position]) if position < len(names) else f"#{id_}"
-            target = IdentityRef(kind=ref.kind, name=name)
-            yield Reference(field=ref.field, target=target, resolution="unresolved")
+            yield _by_id(ref.field, ref.kind, id_, name, listed=listed)
+
+
+def _by_id(field: str, kind: str, id_: int, name: str, *, listed: Listed) -> Reference:
+    """The reference ``field`` makes to ``kind`` ``id_`` (written ``name``), by ``listed``.
+
+    A schedule's parent of a kind export could not tell (``UnifiedJobTemplate``)
+    is found among the unified template kinds, which share AWX's ids.
+    """
+    kinds = UNIFIED_TEMPLATE_KINDS if kind == "UnifiedJobTemplate" else (kind,)
+    found = next((listed[(each, id_)] for each in kinds if (each, id_) in listed), None)
+    if found is None:
+        target = IdentityRef(kind=kind, name=name)
+        return Reference(field=field, target=target, resolution="unresolved")
+    identity, location = found
+    return Reference(field=field, target=identity, resolution="resolved", location=location)
 
 
 def empty_references(spec: ResourceSpec, resource: Resource) -> Iterator[Reference]:

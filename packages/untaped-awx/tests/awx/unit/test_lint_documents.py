@@ -257,3 +257,19 @@ def test_find_names_no_item_when_several_answer() -> None:
     both = resources(_PROJECT, _PROJECT.replace("Platform", "Finance"))
     assert both.find(IdentityRef(kind="Project", name="web")) is None
     assert both.find(IdentityRef(kind="Project", name="web", organization="Finance")) is not None
+
+
+def test_a_reference_with_a_location_finds_the_item_read_there() -> None:
+    """A live reference names its item by location: no namesake can make it ambiguous."""
+    from untaped_awx.api import Reference
+    from untaped_lint.api import ResourceLocation
+
+    both = resources(_PROJECT, _PROJECT.replace("Platform", "Finance"))
+    second = both.items[1].model_copy(update={"location": ResourceLocation(id="projects/2")})
+    live = both.model_copy(update={"items": (both.items[0], second)})
+    unscoped = IdentityRef(kind="Project", name="web")
+    located = Reference(
+        field="project", target=unscoped, resolution="resolved", location=second.location
+    )
+    assert live.find(located) is second
+    assert live.find(Reference(field="project", target=unscoped, resolution="resolved")) is None

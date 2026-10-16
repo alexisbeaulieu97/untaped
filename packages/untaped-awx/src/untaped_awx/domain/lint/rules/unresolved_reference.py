@@ -48,6 +48,8 @@ def _why(resources: AwxResources, ref: Reference) -> tuple[str, str]:
         if facts is None or not facts.read_only:
             check += ", or add its document"
         return f"no {kind} documents, offline", check
+    if kind == "UnifiedJobTemplate":  # a schedule's parent the token could not read
+        return "the token cannot read its template", "lint with a token that can read the template"
     hint = f"lint with a token that can read {kind} records"
     if searched:
         return f"the token cannot read that {kind}", hint

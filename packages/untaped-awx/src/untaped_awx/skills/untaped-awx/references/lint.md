@@ -25,12 +25,13 @@ Without FILES the controller is read once into a snapshot kept for an hour
 snapshot redacts secret-named launch and inventory variables before it is
 kept.
 
-On the controller a foreign key resolves by the id AWX holds, so a project
-in another organization or a credential in none is found. A kind the token
-cannot list is skipped with a warning and references to it are
-`unresolved`; its names come from the rows' `summary_fields` where AWX
-embeds them, and a record the token can neither list nor read is named
-`#<id>` (`project '#10' was not checked`).
+On the controller a foreign key, and a schedule's parent, resolve by the id
+AWX holds, so a project in another organization or a credential in none is
+found. A kind the token cannot list is skipped with a warning and
+references to it are `unresolved`. A record no listed row holds is named
+from its referrer's `summary_fields` where AWX embeds it, else `#<id>` when
+the token cannot read it either (`project '#10' was not checked`); it is
+asked for once at most.
 
 ## Reading a finding
 
@@ -144,7 +145,8 @@ def has_credential(resources: AwxResources) -> Iterator[Finding]:
 Each item is a `Linted`: the apply document (`resource`), where it was read
 (`origin`, `location`), its `references` (each `resolved`, `absent` or
 `unresolved`) and, from the controller, `controller` facts (`status`,
-`total_hosts`, `playbooks`). `resources.find(reference.target)` gives the
-item a resolved reference names, or `None` when no item or several do (a
-rule never judges an arbitrary namesake). Test a rule with
+`total_hosts`, `playbooks`). `resources.find(reference)` gives the item a
+resolved reference names: on the controller by the reference's `location`
+(it was resolved by id), else by its target, `None` when no item or several
+do (a rule never judges an arbitrary namesake). Test a rule with
 `untaped_awx.testing.resources(yaml_text)` and `untaped_lint.testing.run_rule`.

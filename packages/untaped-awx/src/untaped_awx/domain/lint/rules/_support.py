@@ -31,7 +31,7 @@ def referenced(resources: AwxResources, item: Linted, field: str) -> Linted | No
     found = reference(item, field)
     if found is None or found.resolution != "resolved":
         return None
-    return resources.find(found.target)
+    return resources.find(found)
 
 
 def is_set(value: Any) -> bool:
