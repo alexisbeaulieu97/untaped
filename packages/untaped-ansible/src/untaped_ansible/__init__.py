@@ -17,6 +17,7 @@ from untaped.sdk import (
     delete_migration,
     move_migration,
     old_dirs,
+    other_layouts_migration,
     setting_guard,
     shown_path,
 )
@@ -119,6 +120,7 @@ SPEC = PluginSpec(
             guard=_index_guard,
             replaceable=_empty_index,
         ),
+        other_layouts_migration(INDEX_STORE, guard=_INDEX_PATH_GUARD),
         delete_migration(
             "ansible.cache",
             "10.x git cache",

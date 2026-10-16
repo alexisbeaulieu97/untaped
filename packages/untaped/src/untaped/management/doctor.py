@@ -25,10 +25,10 @@ import os
 import re
 import shlex
 import stat
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from cyclopts import App, Parameter
 from pydantic import BaseModel, ValidationError
@@ -99,6 +99,9 @@ from untaped.skills import SkillState, outdated_skills, project_root
 from untaped.stability import owner, removal_text
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
 from untaped.token_store import pass_problem
+
+if TYPE_CHECKING:
+    from untaped.refs import Reference
 
 _diag = Diagnostics()
 
@@ -363,6 +366,7 @@ def collect_doctor_rows(
     rows.extend(_contract_rows(result, profile, plugins))
     rows.append(_skills_row(shell, result))
     if plugins is None:
+        rows.append(_references_row(shell, result))
         rows.append(_stores_row(shell, result))
         rows.append(_migrations_row(shell, result))
     for record in result.quarantine:
@@ -534,7 +538,7 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
         for item in scan_keys(raw, profile_section_models())
         if item.kind == "deleted"
     ]
-    parts = ([f"ignored: {', '.join(unknown)}"] if unknown else []) + deleted
+    parts = ([f"ignored: {', '.join(unknown)}{_other_readers()}"] if unknown else []) + deleted
     if not parts:
         return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
     fix = None
@@ -543,6 +547,16 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
     return _row(
         "unknown-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=bool(deleted)
     )
+
+
+def _other_readers() -> str:
+    """`` (another untaped here may read them: …)`` when other installs are registered."""
+    from untaped.refs import other_installs  # noqa: PLC0415 - reads refs/ only here
+
+    others = other_installs()
+    if not others:
+        return ""
+    return f" (another untaped here may read them: {', '.join(ref.describe() for ref in others)})"
 
 
 def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
@@ -617,35 +631,128 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 
 
 def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
-    """Each composed store's layout and file; warn while another layout is left on disk."""
-    from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
+    """Each composed store's layouts on disk and who holds each.
 
-    title = "stores keep one layout each"
+    Green while every layout on disk is held or will go at the next complete
+    fill; yellow for one the cleanup cannot remove, with the reason.
+    """
+    from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
+    from untaped.refs import read_references, this_install  # noqa: PLC0415
+    from untaped.store import kept_reason, survey  # noqa: PLC0415
+
+    title = "stores keep one layout each, or every layout is held"
     stores = [store for registered in result.plugins for store in registered.spec.stores]
     if not stores:
         return _row("stores", shell.name, _PASS, title, "no plugin declares a store")
+    references = read_references()
+    me = this_install()
     parts: list[str] = []
-    others = False
+    reasons: list[str] = []
     for store in stores:
         try:
-            path, found = store.path(), store.other_paths()
+            path, layouts = store.path(), survey(store, references)
         except Exception as exc:
             parts.append(f"{store.qualified}: could not find its files: {exc}")
-            others = True
+            reasons.append("files")
             continue
-        if path.exists():
-            text = f"layout {store.layout} at {shown_path(path)} ({size_text(dir_bytes(path))})"
+        texts: list[str] = []
+        if not any(layout.own for layout in layouts):
+            texts.append(f"layout {store.layout} at {shown_path(path)}, not created yet")
+        for layout in layouts:
+            size = size_text(dir_bytes(layout.path))
+            where = f"layout {layout.layout} at {shown_path(layout.path)} ({size})"
+            if layout.awaiting:
+                where = f"{shown_path(layout.path)} ({size}) is renamed to layout {layout.layout}"
+                where += " on its next open"
+            reason = kept_reason(store, layout, references)
+            if layout.holders:
+                where += ", held by " + ", ".join(
+                    "this install" if me and ref.holder == me.holder else ref.describe()
+                    for ref in layout.holders
+                )
+            elif not layout.own:
+                where += ", held by nobody"
+                where += f": {reason}" if reason else " (removed at the next complete fill)"
+            elif layout.lock == "damaged" and reason:
+                where += f": {reason}"
+            if reason:
+                reasons.append(reason)
+            texts.append(where)
+        parts.append(f"{store.qualified}: {'; '.join(texts)}")
+    if not reasons:
+        return _row("stores", shell.name, _PASS, title, "; ".join(parts))
+    fix = None
+    if any(reason.startswith("no registered install") for reason in reasons):
+        fix, automatic = command_argv("setup register", profile=selected_profile()), True
+    elif any(not reason.startswith("its in-use lock") for reason in reasons if reason != "files"):
+        fix, automatic = command_argv("setup migrate-dirs", profile=selected_profile()), False
+    else:
+        automatic = False
+    return _row("stores", shell.name, _WARN, title, "; ".join(parts), fix, automatic=automatic)
+
+
+def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+    """Every install (and plugin object) holding store layouts, and whether this one does."""
+    from untaped.refs import environment, install_holder, read_references  # noqa: PLC0415
+
+    title = "install references"
+    references = read_references()
+    env = environment()
+    mine = install_holder(env) if env is not None else None
+    parts: list[str] = []
+    warn = False
+    registered = False
+    for ref in references:
+        if ref.opaque is not None:
+            warn = True
+            parts.append(
+                f"{shown_path(ref.file)}: {ref.opaque}; upgrade this install to prune"
+                if "newer" in ref.opaque
+                else f"{shown_path(ref.file)}: {ref.opaque}, so nothing is pruned; delete it"
+            )
+            continue
+        text = ref.describe() if ref.kind == "install" else f"{ref.holder} (plugin {ref.plugin})"
+        if ref.holder == mine:
+            registered = True
+            text += " (this install)"
+        if not ref.live:
+            text += (
+                f": no untaped there any more; `untaped setup register --remove` from it, "
+                f"or `untaped setup migrate-dirs`, removes {shown_path(ref.file)}"
+            )
+        elif ref.pre_upgrade:
+            text += ": reference from before an upgrade; run any command from that install"
+            text += " to refresh it"
+        parts.append(text)
+    fix = None
+    if env is None:
+        parts.append("this run is from a source tree: it cannot be registered")
+    elif not registered:
+        if _other_layouts(result, references):
+            warn = True
+            parts.insert(0, "this install is not registered: nothing cleans up old store layouts")
+            fix = command_argv("setup register", profile=selected_profile())
         else:
-            text = f"layout {store.layout} at {shown_path(path)}, not created yet"
-        for layout, other in found:
-            size = size_text(dir_bytes(other))
-            if store.adopts and layout == store.layout and not path.exists():
-                text += f"; {shown_path(other)} ({size}) is renamed to it on its next open"
+            parts.insert(0, "this install: not registered")
+    detail = "; ".join(parts) or "no install is registered"
+    return _row(
+        "references", shell.name, _WARN if warn else _PASS, title, detail, fix, automatic=True
+    )
+
+
+def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -> bool:
+    """Whether any composed store has a layout on disk besides its own."""
+    from untaped.store import survey  # noqa: PLC0415 - runs only in doctor
+
+    for registered in result.plugins:
+        for store in registered.spec.stores:
+            try:
+                layouts = survey(store, references)
+            except Exception:  # noqa: S112 - the stores row names a store it cannot find
                 continue
-            others = True
-            text += f"; also layout {layout} at {shown_path(other)} ({size})"
-        parts.append(f"{store.qualified}: {text}")
-    return _row("stores", shell.name, _WARN if others else _PASS, title, "; ".join(parts))
+            if any(not layout.own for layout in layouts):
+                return True
+    return False
 
 
 def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:

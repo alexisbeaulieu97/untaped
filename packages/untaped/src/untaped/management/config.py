@@ -465,7 +465,7 @@ def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> 
             _diag.info("no renamed, retired or deleted keys in the config")
         else:
             if dry_run:
-                _diag.info(f"would {_migration_summary(rows, past=False)}")
+                _diag.info(f"would {_migration_summary(rows, past=False)}{_other_readers()}")
             else:
                 _diag.success(_migration_summary(rows, past=True))
         if dry_run:
@@ -474,6 +474,19 @@ def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> 
 
 
 _MIGRATION_OUTCOME = "untaped.config_migration_outcome"
+
+
+def _other_readers() -> str:
+    """``; 2 other registered installs …``: who else may still read the old keys."""
+    from untaped.refs import other_installs  # noqa: PLC0415 - reads refs/ only here
+
+    count = len(other_installs())
+    if not count:
+        return ""
+    return (
+        f"; {plural(count, 'other registered install')} on this machine may read this config: "
+        "migrate once every install is upgraded"
+    )
 
 
 def _migration_summary(rows: list[dict[str, str]], *, past: bool) -> str:

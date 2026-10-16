@@ -196,6 +196,17 @@ def holders(target: str) -> list[str]:
     ]
 
 
+def other_installs() -> list[Reference]:
+    """The live registered installs other than this one (they may read the same config)."""
+    env = environment()
+    mine = install_holder(env) if env is not None else None
+    return [
+        ref
+        for ref in read_references()
+        if ref.opaque is None and ref.kind == INSTALL and ref.holder != mine and ref.live
+    ]
+
+
 def composed_targets() -> tuple[str, ...] | None:
     """``<plugin>.<store>@<layout>`` for every store this run's composition declares.
 

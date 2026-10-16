@@ -1,7 +1,7 @@
 """``untaped setup plan``: what a profile still needs, as rows an agent can act on.
 
 Read-only and non-interactive. One ``untaped.setup_step`` row per step, in
-order: the profile itself, then each service's ``base_url`` and token (or
+order: this install's registration (``untaped setup register``), the profile itself, then each service's ``base_url`` and token (or
 its invalid settings), then (with ``--online``) each online check. A row's
 ``run`` is the complete argv to run after ``untaped`` (a ``<NAME>`` token
 is a value to ask the user for); ``by`` says who runs it: ``user`` for
@@ -22,7 +22,7 @@ from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
 from untaped.management.setup_state import ServiceState, service_states, service_store
-from untaped.messages import command_argv, command_line, split_profile
+from untaped.messages import command_argv, command_line, shown_path, split_profile
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
@@ -48,7 +48,7 @@ def plan_rows(
 ) -> list[Row]:
     """Every setup step for ``services`` in ``profile``, in the order to run them."""
     exists = _profile_exists(profile)
-    rows = [_profile_row(shell, profile, exists=exists)]
+    rows = [_install_row(shell, profile), _profile_row(shell, profile, exists=exists)]
     states = service_states(services, profile, read_config_dict())
     store = service_store(services)
     ready: list[str] = []
@@ -110,6 +110,23 @@ def _row(
         "run": run or [],
         "by": by,
     }
+
+
+def _install_row(shell: ApplicationSpec, profile: str) -> Row:
+    """Whether this install is registered, so the cleanup of store layouts keeps what it uses."""
+    from untaped.refs import environment, this_install  # noqa: PLC0415 - off the startup path
+
+    env = environment()
+    if env is None:
+        detail = "run from a source tree: only an installed untaped can be registered"
+        return _row("install", shell.name, "skipped", detail)
+    ref = this_install()
+    if ref is not None:
+        return _row(
+            "install", shell.name, "done", f"registered: untaped {ref.version} at {shown_path(env)}"
+        )
+    detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
+    return _row("install", shell.name, "todo", detail, command_argv("setup register", profile=profile))
 
 
 def _profile_row(shell: ApplicationSpec, profile: str, *, exists: bool) -> Row:

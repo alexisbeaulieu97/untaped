@@ -109,6 +109,7 @@ from untaped.migrations import (
     dir_bytes,
     move_migration,
     old_dirs,
+    other_layouts_migration,
     setting_guard,
     unsafe_dir,
 )
@@ -168,6 +169,7 @@ from untaped.stdin import (
     read_stdin_input,
     resolve_text_input,
 )
+from untaped.refs import holders
 from untaped.store import Store
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
@@ -270,6 +272,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "dir_bytes",
     "move_migration",
     "old_dirs",
+    "other_layouts_migration",
     "plugin_dir",
     "setting_guard",
     "unsafe_dir",
@@ -382,6 +385,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Served",
     "Store",
     "code_version",
+    "holders",
     "refresh_option",
     # prompts and ui
     "NO_PROGRESS",
