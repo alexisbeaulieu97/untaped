@@ -198,8 +198,10 @@ class _OtherLayouts:
         """Why the row keeps ``path`` rather than offer to delete it, or ``None``."""
         if path.is_symlink():
             return f"a symlink to {shown_path(os.path.realpath(path))}: it stays"
-        if reason.code == "kept":
+        if reason.code in ("kept", "keep-failed"):
             return reason.text
+        if not reason.unheld:
+            return f"who holds it is unknown: {reason.text}"
         return _unsafe(path, plugins=False)
 
     def preview(self, _ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:

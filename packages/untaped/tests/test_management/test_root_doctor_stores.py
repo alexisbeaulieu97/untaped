@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from untaped import bootstrap, refs
+from untaped.errors import ConfigError
 from untaped.management.doctor import collect_doctor_rows
 from untaped.plugins.registry import PluginSpec
 from untaped.store import Store
@@ -198,7 +199,10 @@ def test_an_unlistable_refs_folder_warns_in_both_rows(
     )
     stores = _row(_store(tmp_path / "data.db"))
     assert stores["status"] == "warn"
-    assert "a reference this untaped cannot read pauses cleanup" in str(stores["detail"])
+    detail = str(stores["detail"])
+    assert "layout 3 at" in detail and "holders unknown: the install references in" in detail
+    assert stores["fix"] is None  # neither register nor migrate-dirs: check the folder
+    assert "not registered" not in str(references["detail"])
 
 
 def test_a_layout_the_store_keeps_passes_with_why(tmp_path: Path) -> None:
@@ -211,3 +215,19 @@ def test_a_layout_the_store_keeps_passes_with_why(tmp_path: Path) -> None:
     assert row["status"] == "pass"
     assert "layout 3 at" in str(row["detail"])
     assert str(row["detail"]).endswith("held by nobody: a profile")
+
+
+def test_a_keep_check_that_fails_warns(tmp_path: Path) -> None:
+    def broken(_path: Path) -> str | None:
+        raise RuntimeError("no config")
+
+    (tmp_path / "data.v3.db").write_bytes(b"x")
+    store = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=4, keep=broken)
+    row = _row(store)
+    assert row["status"] == "warn"
+    assert "its keep check failed (RuntimeError: no config)" in str(row["detail"])
+
+
+def test_keep_must_be_a_function() -> None:
+    with pytest.raises(ConfigError, match="keep must be a function of a path"):
+        Store("acme", "data", base=lambda: Path("x.db"), keep="x")  # type: ignore[arg-type]

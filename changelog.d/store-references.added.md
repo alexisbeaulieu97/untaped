@@ -10,9 +10,9 @@ lists registration as its first step (`--check` does not count it), and the
 and its `stores` row now says what holds each layout and why one is kept.
 `untaped setup migrate-dirs` offers what the cleanup leaves: the layouts
 nobody holds, as `ansible.index-layouts`, and the references of installs that
-are gone, as `untaped.references`. `config migrate --dry-run` and doctor's
-unknown-keys row name the other registered installs that may still read the
-keys. For plugins, experimental: `Store(keep=)` for the layouts a setting
-points at, `holders()`, `other_layouts_migration()`, and
+are gone, as `untaped.references`. `config migrate` and doctor's unknown-keys
+row name the other registered installs that may still read the keys. For
+plugins, experimental: `Store(keep=)` for the layouts a setting points at,
+`holders()`, `other_layouts_migration()`, and
 `untaped.testing.write_reference`. How it works is in
 [configuration.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/configuration.md#several-versions-on-one-machine).

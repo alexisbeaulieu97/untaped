@@ -207,6 +207,14 @@ def test_leaving_without_saving_changes_nothing(_isolated_config: Path) -> None:
     assert not _isolated_config.exists()
 
 
+def test_registering_alone_is_a_change(_isolated_config: Path) -> None:
+    result = _setup(_scripted("up", "enter", "enter", "esc"))
+
+    assert result.exit_code == 0, result.output
+    assert "registered this install" in result.stderr
+    assert "nothing saved" not in result.stderr
+
+
 def test_ctrl_c_after_a_save_prints_what_was_saved_and_exits_130(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

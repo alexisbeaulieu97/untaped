@@ -210,7 +210,8 @@ def _run(
         _NOTES[kind](text)
     profile = outcome.profile
     if not outcome.touched:
-        _diag.info("nothing saved; no changes made")
+        if not outcome.registered:
+            _diag.info("nothing saved; no changes made")
     else:
         rows = selected_check_rows(shell, result, profile, frozenset(outcome.touched))
         try:

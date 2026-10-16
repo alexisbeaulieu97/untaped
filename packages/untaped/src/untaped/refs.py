@@ -199,15 +199,19 @@ def read_reference(file: Path) -> Reference:
 def holders(target: str) -> list[str]:
     """The live holders that name ``target`` (``<plugin>.<store>@<layout>`` or ``…#<item>``).
 
-    What a resource asks before it removes something. An opaque reference
-    is not listed: it cannot be read, and :meth:`~untaped.store.Store.prune`
-    stops when it meets one.
+    What a resource asks before it removes something. Raises
+    :class:`ConfigError` when a reference cannot be read (a newer untaped's,
+    a damaged one, or a ``refs/`` folder that cannot be listed): who holds
+    ``target`` is then unknown, never "nobody".
     """
-    return [
-        ref.holder
-        for ref in read_references()
-        if ref.opaque is None and target in ref.targets and ref.live
-    ]
+    found = read_references()
+    unknown = next((ref for ref in found if ref.opaque is not None), None)
+    if unknown is not None:
+        raise ConfigError(
+            f"cannot tell who holds {target}: {unknown.file} is {unknown.opaque}",
+            hint="upgrade this install, or fix or remove that file",
+        )
+    return [ref.holder for ref in found if target in ref.targets and ref.live]
 
 
 def other_installs() -> list[Reference]:

@@ -98,6 +98,8 @@ class Store:
             raise ConfigError(f"store {plugin}.{name}: layout must be an integer from 1")
         if bare is not None and not _positive(bare):
             raise ConfigError(f"store {plugin}.{name}: bare must be an integer from 1")
+        if keep is not None and not callable(keep):
+            raise ConfigError(f"store {plugin}.{name}: keep must be a function of a path")
         self.plugin = plugin
         self.name = name
         self.base = base
@@ -131,12 +133,16 @@ class Store:
         A ``keep`` that raises keeps the path: a check that cannot answer
         never lets the cleanup remove anything.
         """
+        return self._keep_check(path)[0]
+
+    def _keep_check(self, path: Path) -> tuple[str | None, bool]:
+        """:meth:`kept`'s answer, and whether it is the check's failure rather than its answer."""
         if self.keep is None:
-            return None
+            return None, False
         try:
-            return self.keep(path)
+            return self.keep(path), False
         except Exception as exc:  # a plugin's check that fails keeps, never removes
-            return f"its keep check failed ({type(exc).__name__}: {exc})"
+            return f"its keep check failed ({type(exc).__name__}: {exc})", True
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Store):
@@ -325,8 +331,11 @@ def _lock_path(path: Path, layout: int, *, bare: bool) -> Path:
 
 LockState = Literal["free", "busy", "refused", "damaged"]
 #: Why the cleanup keeps a layout nobody holds: a damaged in-use lock, the store's
-#: ``keep``, a reference it cannot read, no registered install, a refused or busy lock.
-KeptCode = Literal["damaged", "kept", "opaque", "unregistered", "refused", "busy"]
+#: ``keep`` (or its failure), a ``refs/`` folder or a reference it cannot read, no
+#: registered install, a refused or busy lock.
+KeptCode = Literal[
+    "damaged", "kept", "keep-failed", "unknown", "opaque", "unregistered", "refused", "busy"
+]
 
 
 @dataclass(frozen=True)
@@ -353,6 +362,8 @@ class Kept:
 
     ``code`` is for code to branch on; ``text`` is the sentence a row shows.
     ``warns``: whether it is a problem, not a choice (the store's ``keep``).
+    ``unheld``: whether nothing holds it for sure; while a reference cannot be
+    read, who holds it is unknown.
     """
 
     code: KeptCode
@@ -361,6 +372,10 @@ class Kept:
     @property
     def warns(self) -> bool:
         return self.code != "kept"
+
+    @property
+    def unheld(self) -> bool:
+        return self.code not in ("unknown", "opaque")
 
 
 def survey(store: Store, references: Sequence[Reference]) -> list[Layout]:
@@ -427,9 +442,18 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
         )
     if layout.own or layout.holders:
         return None
-    kept = store.kept(layout.path)
+    kept, failed = store._keep_check(layout.path)
     if kept is not None:
-        return Kept("kept", kept)
+        return Kept("keep-failed" if failed else "kept", kept)
+    from untaped.refs import refs_dir  # noqa: PLC0415 - refs imports the registry
+
+    folder = refs_dir()
+    if any(ref.opaque is not None and ref.file == folder for ref in references):
+        return Kept(
+            "unknown",
+            f"the install references in {shown_path(folder)} cannot be read, so who holds it "
+            "is unknown and cleanup pauses; check that folder's permissions",
+        )
     if any(ref.opaque is not None for ref in references):
         return Kept("opaque", "a reference this untaped cannot read pauses cleanup")
     if not any(

@@ -151,7 +151,8 @@ def test_an_unreadable_or_newer_reference_is_opaque(content: str, why: str) -> N
     [ref] = refs.read_references()
     assert ref.opaque is not None and why in ref.opaque
     assert ref.live  # it pauses pruning
-    assert refs.holders("acme.data@1") == []
+    with pytest.raises(ConfigError, match=r"cannot tell who holds acme\.data@1"):
+        refs.holders("acme.data@1")  # unknown, never "nobody"
 
 
 def test_a_missing_folder_has_no_references() -> None:

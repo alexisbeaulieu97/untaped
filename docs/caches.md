@@ -193,7 +193,8 @@ the layouts its plugins' stores use. A target is written
 the install is the only holder in 11.1, and it holds layouts. An install refreshes its own reference whenever a
 command opens a store after its plugins or their layouts changed, so an
 upgrade needs nothing more. `holders(target)` (experimental) names the
-references that keep a target. A reference is *live* while its folder still
+references that keep a target, and raises while a reference cannot be read
+(who holds it is unknown then, never nobody). A reference is *live* while its folder still
 holds an untaped install; one written by a newer untaped, or one this untaped
 cannot read, is kept as if live and pauses all cleanup until this install is
 upgraded.

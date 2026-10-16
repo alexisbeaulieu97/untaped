@@ -141,14 +141,15 @@ install and the layouts it uses in `~/.untaped/refs/`, and from then on a
 registered install removes the layouts no registered install holds, after its
 next complete refresh, with an info line for each. `untaped setup plan` lists
 registration as its first step (`--check` does not count it), and the first
-row of the `untaped setup` screen registers this install. Before removing an install, run `untaped setup register --remove` from
-it, so the others may clean up after it; an install deleted without that is
+row of the `untaped setup` screen registers this install. Before removing an
+install, run `untaped setup register --remove` from it, so the others may
+clean up after it; an install deleted without that is
 noticed (its folder no longer holds untaped), and `untaped setup migrate-dirs`
 removes its reference. `untaped doctor` lists every registered install and,
 for each store, the layouts on disk and what holds them.
 
-`untaped config migrate --dry-run` and `doctor`'s unknown-keys row name the
-other registered installs, since an older install may still read the keys a
+`untaped config migrate` (with or without `--dry-run`) and `doctor`'s
+unknown-keys row name the other registered installs, since an older install may still read the keys a
 migration would rewrite: migrate once every install is upgraded.
 
 ## Profiles

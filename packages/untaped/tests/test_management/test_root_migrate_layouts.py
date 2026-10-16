@@ -8,6 +8,7 @@ reference file is core's ``untaped.references`` row.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 
@@ -189,4 +190,27 @@ def test_applying_checks_again_what_holds_each_layout(tmp_path: Path) -> None:
     applied = migration.apply(PluginContext(settings=None), MigrationOptions())
 
     assert [outcome.action for outcome in applied] == ["unchanged"]
+    assert old.exists()
+
+
+def test_an_unlistable_refs_folder_keeps_every_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = tmp_path / "tool"
+    (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
+    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+    old = _layout(4)
+    real = Path.iterdir
+
+    def iterdir(self: Path) -> Iterator[Path]:
+        if self == refs.refs_dir():
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    rows = json.loads(_cli("--dry-run").stdout)
+    [row] = [row for row in rows if row["id"] == "acme.data-layouts"]
+    assert row["action"] == "keep"
+    assert row["detail"].startswith("kept: who holds it is unknown: the install references in")
+    assert _cli("--yes").exit_code == 0
     assert old.exists()

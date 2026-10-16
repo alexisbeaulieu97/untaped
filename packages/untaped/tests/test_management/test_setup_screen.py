@@ -972,7 +972,7 @@ def test_the_screen_is_usable_on_a_narrow_terminal(
     run = drive_screen(_build(), ["enter", "tab", Resize(60, 24)], size=(100, 30))
 
     assert all(len(line) <= 100 for line in run.frames[-1].splitlines())
-    assert "Plugins" in run.frame and "wiz" in run.frame
+    assert "Setup" in run.frame and "wiz" in run.frame
 
 
 def test_scripted_keys_run_the_screen_end_to_end(_isolated_config: Path) -> None:

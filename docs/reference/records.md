@@ -45,7 +45,8 @@ warns or fails afterwards, `failed`, `skipped` for a fix that needs you,
 A `doctor_check` row's `fix`, and a `setup_step` row's `run`, is the argv to
 run after `untaped`, `--profile NAME` first; a `<NAME>` token is a value to
 supply, and `fix` is null on a passing row. A `doctor_check` row's
-`automatic` is true when its fix needs no value and no input. A
+`automatic` is true when its fix is safe to run unattended (no value, no
+input, and nothing a person should decide, such as registering an install). A
 `setup_step` row also has `step` (`install` for this install's registration,
 `profile`, `<service>.base_url`,
 `<service>.token`, `<service>.settings` when the service's settings are

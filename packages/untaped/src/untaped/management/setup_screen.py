@@ -122,13 +122,14 @@ class SetupResult:
 
     ``notes`` are what the saves had to say, printed after the screen closes.
     ``interrupted`` is ctrl-c, which ``setup`` reports as exit 130 after printing
-    the rest.
+    the rest. ``registered``: this install was registered from its row.
     """
 
     profile: str
     touched: tuple[str, ...]
     notes: tuple[Note, ...]
     interrupted: bool = False
+    registered: bool = False
 
 
 @dataclass(frozen=True)
@@ -202,6 +203,8 @@ class SetupModel:
     saved: tuple[tuple[str, str], ...] = ()
     """``(profile, plugin)`` for every write that finished."""
     notes: tuple[Note, ...] = ()
+    registered: bool = False
+    """Whether this run registered this install (its row's ``Register``)."""
 
     @property
     def name(self) -> str:
@@ -375,7 +378,7 @@ class _Setup:
             left,
             model.forms[model.name],
             focus=0 if model.focus == "list" else 1,
-            left_title="Plugins",
+            left_title="Setup",
             right_title=model.name,
         )
         return Group(header, field, panes.view(inner, focused=model.focus != "profile"))
@@ -734,6 +737,7 @@ class _Setup:
             rows=_status(model.rows, INSTALL_ROW, "registered"),
             forms={**model.forms, INSTALL_ROW: _install_form()},
             notes=(*model.notes, note),
+            registered=True,
             focus="list",
         )
         return self._after(done)
@@ -742,15 +746,14 @@ class _Setup:
         text = str(error).strip() or type(error).__name__
         if model.phase == "registering":
             form = model.forms[INSTALL_ROW].with_error(f"could not register this install: {text}")
+            refused: Note = ("warning", f"could not register this install: {text}")
             failed = replace(
                 model,
                 phase="idle",
                 rows=_status(model.rows, INSTALL_ROW, "not registered"),
                 forms={**model.forms, INSTALL_ROW: form},
+                notes=(*model.notes, refused),  # printed at exit, wherever the cursor went
             )
-            if model.leaving is not None:
-                refused: Note = ("warning", f"could not register this install: {text}")
-                failed = replace(failed, notes=(*failed.notes, refused))
             return self._after(failed)
         if model.phase == "loading":
             return replace(model, phase="idle", profile=model.profile.with_error(text)), []
@@ -993,7 +996,8 @@ def _result(model: SetupModel, *, interrupted: bool) -> SetupResult:
         if other != profile
     ]
     touched = tuple(by_profile.get(profile, ()))
-    return SetupResult(profile, touched, (*model.notes, *others), interrupted)
+    notes = (*model.notes, *others)
+    return SetupResult(profile, touched, notes, interrupted, registered=model.registered)
 
 
 def _check_hint(profile: str) -> str:

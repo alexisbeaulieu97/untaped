@@ -686,6 +686,8 @@ def _layout_text(
             "this install" if me and ref.holder == me.holder else ref.describe()
             for ref in layout.holders
         )
+    elif not layout.own and reason is not None and not reason.unheld:
+        text += ", holders unknown"
     elif not layout.own:
         text += ", held by nobody"
         if not reason:
@@ -700,7 +702,7 @@ def _stores_fix(reasons: set[str]) -> list[str] | None:
     """
     if "unregistered" in reasons:
         return command_argv("setup register", profile=selected_profile())
-    if reasons & {"opaque", "refused", "busy"}:
+    if reasons & {"refused", "busy"}:
         return command_argv("setup migrate-dirs", profile=selected_profile())
     return None
 
@@ -748,7 +750,7 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     fix = None
     if env is None:
         parts.append("this run is from a source tree: it cannot be registered")
-    elif not registered:
+    elif not registered and not any(ref.file == refs_dir() for ref in references):
         if _other_layouts(result, references):
             warn = True
             parts.insert(0, "this install is not registered: nothing cleans up old store layouts")
