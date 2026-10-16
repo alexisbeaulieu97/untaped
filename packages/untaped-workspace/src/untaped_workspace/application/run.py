@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure
 from untaped_workspace.domain.models import CommandResult, RepoSpec
-from untaped_workspace.domain.records import RunAction, RunOutcome
 from untaped_workspace.errors import WorkspaceError
+from untaped_workspace.records import RunAction, RunOutcome
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import CommandRunner

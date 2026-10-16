@@ -17,7 +17,6 @@ from untaped_workspace.domain.models import (
     StoreUse,
     WorkspaceRecord,
 )
-from untaped_workspace.domain.records import RemoveOutcome, StatusRow
 from untaped_workspace.domain.safety import (
     branch_work,
     releasable_branches,
@@ -25,6 +24,7 @@ from untaped_workspace.domain.safety import (
 )
 from untaped_workspace.errors import GitError, WorkspaceNotFoundError
 from untaped_workspace.infrastructure import StateWorkspaceStore
+from untaped_workspace.records import RemoveOutcome, StatusRow
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 API = "https://git.example/acme/api.git"

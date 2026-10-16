@@ -8,10 +8,11 @@ from pathlib import Path
 
 import pytest
 
+from untaped.sdk import kind_of
 from untaped.testing import CliInvoker
 from untaped.testing.git import GitRemote
 from untaped_workspace.cli import app
-from untaped_workspace.cli.common import run_argv
+from untaped_workspace.cli.common import RUN_STDIN_RECORDS, run_argv
 
 pytestmark = pytest.mark.usefixtures("workspace_env", "composed")
 run = CliInvoker().invoke
@@ -252,6 +253,34 @@ def test_stdin_record_without_repo_or_dir_is_usage(two: Path) -> None:
     result = run(app, ["run", "J-2", "true", "--stdin"], input=line)
     assert result.exit_code == 2
     assert "record has no repo or dir" in result.output
+
+
+def test_stdin_reads_run_outcome_rows(ws: Path) -> None:
+    piped = _pipe("run", "J-1", "true")
+    result = run(app, ["run", "J-1", "touch RAN", "--stdin", "--format", "json"], input=piped)
+    assert result.exit_code == 0, result.output
+    assert [r["dir"] for r in _rows(result)] == ["api"]
+    assert (ws / "api" / "RAN").exists()
+
+
+def test_stdin_reads_repo_outcome_rows(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
+    piped = _pipe("create", "J-4", "--repo", make_upstream("api").url)
+    result = run(app, ["run", "J-4", "touch RAN", "--stdin", "--format", "json"], input=piped)
+    assert result.exit_code == 0, result.output
+    assert [r["dir"] for r in _rows(result)] == ["api"]
+    assert (workspace_env / "J-4" / "api" / "RAN").exists()
+
+
+def test_stdin_record_of_another_kind_is_usage_naming_the_accepted_ones(ws: Path) -> None:
+    envelope = json.loads(_pipe("status", "J-1").splitlines()[0])
+    envelope["kind"] = "acme.widget"
+    result = run(app, ["run", "J-1", "true", "--stdin"], input=json.dumps(envelope) + "\n")
+    assert result.exit_code == 2
+    assert "acme.widget" in result.output
+    for model in RUN_STDIN_RECORDS:
+        assert str(kind_of(model)) in result.output
 
 
 def test_stdin_script_temp_file_is_removed(ws: Path) -> None:

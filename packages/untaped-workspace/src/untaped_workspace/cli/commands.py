@@ -61,28 +61,22 @@ from untaped_workspace.cli.common import (
 )
 from untaped_workspace.cli.picker import choose_repos
 from untaped_workspace.domain.models import ArchivedRecord, WorkspaceRecord
-from untaped_workspace.domain.records import (
+from untaped_workspace.domain.safety import archive_hint
+from untaped_workspace.errors import WorkspaceError
+from untaped_workspace.infrastructure import StateWorkspaceStore, SubprocessRunner
+from untaped_workspace.records import (
     ArchiveOutcome,
     RepoOutcome,
     RunOutcome,
     StatusRow,
     WorkspaceRow,
 )
-from untaped_workspace.domain.safety import archive_hint
-from untaped_workspace.errors import WorkspaceError
-from untaped_workspace.infrastructure import StateWorkspaceStore, SubprocessRunner
 from untaped_workspace.settings import WorkspaceSettings
 
 app = create_app(
     name="workspace",
     help="Create, archive and remove task workspaces (git worktrees of several repos).",
 )
-
-REPO_OUTCOME = "workspace.repo_outcome"
-ARCHIVE_OUTCOME = "workspace.archive_outcome"
-REMOVE = "workspace.remove_outcome"
-RUN_OUTCOME = "workspace.run_outcome"
-RESOLVE_OUTCOME = "workspace.resolve_outcome"
 
 _diag = Diagnostics()
 
@@ -205,9 +199,7 @@ def list_command(
         store = StateWorkspaceStore()
         records: Sequence[WorkspaceRecord] = store.archived() if archived else store.active()
         rows = [_workspace_row(record, root) for record in records]
-        emit(
-            rows, fmt=fmt, columns=columns, kind="workspace.workspace", empty="No workspaces found."
-        )
+        emit(rows, fmt=fmt, columns=columns, empty="No workspaces found.")
 
 
 def status_command(
@@ -240,7 +232,7 @@ def status_command(
             rows = [
                 row for record in records for row in status(record, fetch=fetch, progress=progress)
             ]
-        emit(rows, fmt=fmt, columns=columns, kind="workspace.status", empty="No repos found.")
+        emit(rows, fmt=fmt, columns=columns, empty="No repos found.")
         for row in rows:
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.workspace}/{row.dir}")
@@ -281,7 +273,7 @@ def resolve_command(
             workspaces_dir=root,
         )
         rows = resolve(record.name)
-        emit(rows, fmt=fmt, columns=columns, kind=RESOLVE_OUTCOME, empty="No repos found.")
+        emit(rows, fmt=fmt, columns=columns, empty="No repos found.")
         for row in rows:
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.workspace}/{row.dir}")
@@ -334,7 +326,7 @@ def archive_command(
             if blocked:
                 _confirm_discard(record.name, blocked, yes=yes)
             outcomes = archive(record, force=force)
-        emit(outcomes, fmt=fmt, columns=columns, kind=ARCHIVE_OUTCOME)
+        emit(outcomes, fmt=fmt, columns=columns)
         for row in outcomes:
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.workspace}/{row.repo}")
@@ -386,7 +378,7 @@ def remove_command(
         )
         with remove.hold(name) as plan:  # from the check through the removal
             if dry_run or (plan.blocked and not force):
-                emit(remove.preview(plan, force=force), fmt=fmt, columns=columns, kind=REMOVE)
+                emit(remove.preview(plan, force=force), fmt=fmt, columns=columns)
                 if dry_run:
                     return
                 raise WorkspaceError(
@@ -395,7 +387,7 @@ def remove_command(
                 )
             _confirm_remove(plan, force=force, yes=yes)
             outcomes = remove(plan, force=force)
-        emit(outcomes, fmt=fmt, columns=columns, kind=REMOVE)
+        emit(outcomes, fmt=fmt, columns=columns)
         for row in outcomes:
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.workspace}/{row.repo}")
@@ -507,7 +499,7 @@ def run_command(
                 )
                 rows = run(targets, argv)
         if not human:
-            emit(rows, fmt=fmt, columns=columns, kind=RUN_OUTCOME)
+            emit(rows, fmt=fmt, columns=columns)
         elif rows:
             _show_run_summary(rows)
     finish(any(row.failed for row in rows))
@@ -595,10 +587,10 @@ def _show_provisioned(
     for warning in warnings:
         _diag.warning(warning)
     if fmt != "table":
-        emit(rows, fmt=fmt, columns=columns, kind=REPO_OUTCOME)
+        emit(rows, fmt=fmt, columns=columns)
     else:
         if failed or not ui.quiet:
-            emit(rows, fmt=fmt, columns=columns, kind=REPO_OUTCOME)
+            emit(rows, fmt=fmt, columns=columns)
         ready = sum(1 for row in rows if not row.failed)
         _diag.success(f"workspace {q(name)}: {plural(ready, 'repo')} ready")
         echo(str(workspace_dir(settings, name)))
@@ -632,7 +624,7 @@ def _show_plan(
         )
         for row in rows
     ]
-    emit(plan, fmt=fmt, columns=columns, kind=ARCHIVE_OUTCOME)
+    emit(plan, fmt=fmt, columns=columns)
 
 
 def _confirm_discard(name: str, blocked: Sequence[StatusRow], *, yes: bool) -> None:
