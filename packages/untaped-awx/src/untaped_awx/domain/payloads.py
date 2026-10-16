@@ -1,7 +1,7 @@
 """Typed wrappers at the AWX use-case boundary.
 
 Three thin Pydantic models replace ``dict[str, Any]`` at the Protocols
-declared in :mod:`untaped_awx.application.ports`:
+declared in :mod:`untaped_awx.application.resources.ports`:
 
 - :class:`ServerRecord` — what AWX returns. Always has ``id``; ``name``
   is the canonical identity field for most kinds. Other fields are kept
