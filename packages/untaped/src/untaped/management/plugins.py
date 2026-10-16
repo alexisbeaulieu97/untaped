@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from cyclopts import App, Parameter
 
@@ -53,9 +53,6 @@ from untaped.records import Record, record_kinds, record_model
 from untaped.settings import ExtensionSettings
 from untaped.stability import deprecated
 from untaped.theme import OutputFormat
-
-if TYPE_CHECKING:
-    pass
 
 _diag = Diagnostics()
 

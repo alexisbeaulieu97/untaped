@@ -66,3 +66,15 @@ def test_rank_refuses_an_owner_that_owns_no_contract() -> None:
         rank("demo.source", "repos", ["github"])
     with pytest.raises(UsageError, match=r"name the contract as OWNER\.CONTRACT"):
         rank("demo", "repos", [])
+
+
+def test_unset_works_on_the_named_profile(_config: Path) -> None:
+    _config.write_text(
+        "profiles:\n  default:\n    demo: {page_size: 1}\n  work:\n    demo: {page_size: 2}\n",
+        encoding="utf-8",
+    )
+    change = UnsetSetting(SettingsFileRepository())("demo.page_size", profile="work")
+    assert change.outcome.profile == "work"
+    profiles = read_config_dict(_config)["profiles"]
+    assert profiles["default"] == {"demo": {"page_size": 1}}
+    assert not profiles["work"].get("demo")

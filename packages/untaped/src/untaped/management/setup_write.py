@@ -34,7 +34,7 @@ from untaped.profile.use_cases import CreateProfile
 from untaped.profile_resolver import DEFAULT_PROFILE
 from untaped.token_store import TokenStore, entry_name, preset_entry
 
-__all__ = ["Candidate", "Note", "overlay_values", "write_candidate"]
+__all__ = ["Candidate", "overlay_values", "write_candidate"]
 
 type Checked = Literal["passed", "unchecked", "failed"]
 """What the check said about the candidate: it passed, there was none to run, or the user

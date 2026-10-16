@@ -58,7 +58,7 @@ from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 _diag = Diagnostics()
-#: How a screen's note prints, by its level.
+
 OnlyOption = Annotated[
     list[str] | None,
     Parameter(
