@@ -21,6 +21,9 @@ A cache (``untaped.sdk.Cache``) reads its ages from the wall clock; under
 :func:`cache_clock` it reads the test's instead, which moves only on
 ``advance(timedelta)``, so "a rerun an hour later" is one call. The two
 clocks are independent.
+
+:func:`write_reference` writes another install's reference in
+``~/.untaped/refs/``, so a test can say what holds a store's layouts.
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ from untaped.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
+from untaped.refs import write_reference
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.stability import apply_marks, deprecated
 from untaped.testing.contracts import assert_fills, compose_with
@@ -94,6 +98,7 @@ __all__ = [
     "invoke_root",
     "plugin_candidate",
     "progress_clock",
+    "write_reference",
 ]
 
 

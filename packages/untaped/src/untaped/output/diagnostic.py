@@ -658,6 +658,23 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         )
 
 
+class Pruned(Diagnostic, kind="untaped.pruned"):
+    """A store layout nothing holds, removed after a complete fill: an ``info`` line, unmuted.
+
+    ``store`` is ``<plugin>.<name>``, ``layout`` the removed layout's number,
+    ``path`` where it was, ``bytes`` what it freed (its sidecars and its
+    caches' sidecar folders included). Built by
+    :meth:`untaped.store.Store.prune`.
+    """
+
+    level: ClassVar[Level] = "info"
+
+    store: str
+    layout: int
+    path: str
+    bytes: int
+
+
 class DeprecationNotice(Diagnostic, kind="untaped.deprecation"):
     """A deprecated thing was used: a ``warning``, never counted; the sentence is ``message``.
 
@@ -828,6 +845,7 @@ __all__ = [
     "Failure",
     "Level",
     "Message",
+    "Pruned",
     "StaleData",
     "UtcTimestamp",
     "WireModel",

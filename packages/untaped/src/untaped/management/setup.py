@@ -16,7 +16,9 @@ naming ``setup plan``, before it reads the config or the password store.
 
 ``setup plan`` (:mod:`untaped.management.setup_plan`) is its read-only,
 non-interactive face for agents and scripts; both read service state
-through :mod:`untaped.management.setup_state`. ``setup migrate-dirs``
+through :mod:`untaped.management.setup_state`. ``setup register``
+(:mod:`untaped.management.register`) registers this install, so the
+cleanup of store layouts keeps what it uses. ``setup migrate-dirs``
 (:mod:`untaped.management.migrate_dirs`) moves or deletes what older
 versions left, from every plugin's ``migrations``.
 """
@@ -89,7 +91,19 @@ DissociateOption = Annotated[
 ]
 CheckOption = Annotated[
     bool,
-    Parameter(name="--check", negative="", help="Exit 3 when a step is still todo or failed."),
+    Parameter(
+        name="--check",
+        negative="",
+        help="Exit 3 when a step is still todo or failed (registering this install aside).",
+    ),
+]
+RemoveOption = Annotated[
+    bool,
+    Parameter(
+        name="--remove",
+        negative="",
+        help="Unregister this install: other installs may then remove the layouts it used.",
+    ),
 ]
 
 
@@ -121,6 +135,22 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
             rows = plan_rows(shell, result, services, profile, online=online)
             emit_plan(rows, profile=profile, fmt=fmt, columns=columns)
         finish(False, predicate_hit=check and pending(rows))
+
+    @app.command(name="register")
+    @writes
+    def register_command(
+        *, remove: RemoveOption = False, fmt: FormatOption = "table", columns: ColumnsOption = None
+    ) -> None:
+        """Register this install, so cleanup keeps the store layouts it uses.
+
+        Once per install: its later runs keep the registration current, and
+        its complete fills remove the layouts no registered install uses.
+        """
+        # Imported here: the registry stays off the startup path.
+        from untaped.management.register import run_register  # noqa: PLC0415
+
+        with report_errors():
+            run_register(remove=remove, fmt=fmt, columns=columns)
 
     @app.command(name="migrate-dirs")
     @writes(destructive=True)
@@ -180,7 +210,8 @@ def _run(
         _NOTES[kind](text)
     profile = outcome.profile
     if not outcome.touched:
-        _diag.info("nothing saved; no changes made")
+        if not outcome.registered:
+            _diag.info("nothing saved; no changes made")
     else:
         rows = selected_check_rows(shell, result, profile, frozenset(outcome.touched))
         try:

@@ -33,6 +33,7 @@ EXPECTED_ALL = [
     "invoke_root",
     "plugin_candidate",
     "progress_clock",
+    "write_reference",
 ]
 
 

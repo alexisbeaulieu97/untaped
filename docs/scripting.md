@@ -127,6 +127,7 @@ a kind's fields, and a plugin may add kinds of its own. Ignore a `level` or
 | `untaped.deprecation` | `warning` | Something deprecated was used, and the release that removes it (never counted) |
 | `untaped.debug` | `debug` | A log line, with `--verbose` only |
 | `untaped.progress` | `progress` | A step of a long operation; never counted |
+| `untaped.pruned` | `info` | A store layout nobody held was removed (`store`, `layout`, `path`, `bytes`); `--quiet` keeps it |
 
 | Field | On | Meaning |
 |---|---|---|

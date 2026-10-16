@@ -105,12 +105,13 @@ def _configure(path: Path, wiz: str, profile: str = "default") -> None:
 def test_an_empty_config_lists_every_step_with_its_command() -> None:
     rows = _plan()
     assert [row["step"] for row in rows] == [
+        "install",
         "profile",
         "wiz.base_url",
         "wiz.token",
         "wiz.online.api",
     ]
-    assert rows[0] == {
+    assert _step(rows, "profile") == {
         "step": "profile",
         "plugin": "untaped",
         "state": "done",
@@ -133,6 +134,27 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
         *("wiz.token_command", "<COMMAND>"),
     ]
     assert _step(rows, "wiz.online.api")["state"] == "skipped"
+
+
+def test_the_first_step_registers_this_install() -> None:
+    install = _step(_plan(), "install")
+    assert (install["state"], install["by"], install["plugin"]) == ("todo", "agent", "untaped")
+    assert install["run"] == ["--profile", "default", "setup", "register"]
+    assert "so cleanup keeps the store layouts it uses" in install["detail"]
+
+    assert _cli("setup", "register").exit_code == 0
+    install = _step(_plan(), "install")
+    assert (install["state"], install["run"]) == ("done", [])
+    assert install["detail"].startswith("registered: untaped ")
+
+
+def test_a_source_tree_cannot_register(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped import refs
+
+    monkeypatch.setattr(refs, "environment", lambda: None)
+    install = _step(_plan(), "install")
+    assert (install["state"], install["run"]) == ("skipped", [])
+    assert "source tree" in install["detail"]
 
 
 def test_with_a_password_store_the_token_step_is_auth_set(
@@ -209,8 +231,9 @@ def test_no_step_ever_stores_a_token_in_the_config(
 
 def test_a_missing_profile_is_created_first_and_every_step_targets_it() -> None:
     rows = _plan(profile="work")
-    assert rows[0]["state"] == "todo"
-    assert rows[0]["run"] == ["profile", "create", "work"]
+    profile = _step(rows, "profile")
+    assert profile["state"] == "todo"
+    assert profile["run"] == ["profile", "create", "work"]
     assert _step(rows, "wiz.base_url")["run"][:2] == ["--profile", "work"]
     assert _step(rows, "wiz.online.api")["state"] == "skipped"
 
@@ -229,7 +252,7 @@ def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> Non
 def test_only_narrows_and_orders_the_services() -> None:
     hub = make_spec("hub", settings=HubProfile)
     rows = _plan("--only", "hub,wiz", specs=(_wiz(), hub))
-    assert [row["plugin"] for row in rows[1:]] == ["hub", "hub", "wiz", "wiz", "wiz"]
+    assert [row["plugin"] for row in rows[2:]] == ["hub", "hub", "wiz", "wiz", "wiz"]
     assert {row["plugin"] for row in _plan("--only", "hub", specs=(_wiz(), hub))} == {
         "untaped",
         "hub",
@@ -270,6 +293,8 @@ def test_online_skips_services_that_are_not_ready() -> None:
 def test_check_exits_3_while_a_step_is_pending(_isolated_config: Path) -> None:
     assert _cli("setup", "plan", "--check", "--format", "json").exit_code == 3
     _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
+    # an unregistered install is advice, not a pending step: --check answers as before
+    assert _step(_plan(), "install")["state"] == "todo"
     assert _cli("setup", "plan", "--check", "--format", "json").exit_code == 0
     assert _cli("setup", "plan", "--check", "--online", "--format", "json").exit_code == 0
     FAIL.append(True)
@@ -340,7 +365,7 @@ def test_plan_setup_screen_and_doctor_agree(
     )
     assert setup.exit_code == 0, setup.output
     # The screen lists the service as configured exactly when the plan and doctor do.
-    (row,) = backend.ran[0].init()[0].rows
+    (_install, row) = backend.ran[0].init()[0].rows
     assert (row.status != "not configured") is configured
 
 
@@ -350,6 +375,7 @@ def test_an_env_configured_service_completes_the_plan(monkeypatch: pytest.Monkey
     rows = _plan()
     assert _step(rows, "wiz.base_url")["state"] == "done"
     assert _step(rows, "wiz.token")["state"] == "done"
+    assert _cli("setup", "register").exit_code == 0
     assert _cli("setup", "plan", "--online", "--check", "--format", "json").exit_code == 0
 
 

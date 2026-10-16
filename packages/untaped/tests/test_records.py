@@ -30,6 +30,7 @@ from untaped.output.diagnostic import (
     DeprecationNotice,
     Message,
     Progress,
+    Pruned,
     StaleData,
     WireModel,
 )
@@ -480,6 +481,7 @@ def _samples() -> dict[str, WireModel]:
     from untaped.management.plugin_check import PluginCheckRow
     from untaped.management.plugin_new import ScaffoldOutcome
     from untaped.management.plugins import ContractRow
+    from untaped.management.register import RegisterOutcome
     from untaped.plugin_records import Plugin
     from untaped.plugins.registry import MigrationOutcome
     from untaped.profile.models import ProfileOutcome, ProfileRow
@@ -506,6 +508,22 @@ def _samples() -> dict[str, WireModel]:
             now=datetime(2026, 10, 10, tzinfo=UTC),
             max_age=timedelta(hours=1),
             error=Failure.from_exception(ConfigError("x")),
+        ),
+        Pruned(
+            message=(
+                "removed layout 4 of store hello.shelf at /x/shelf.v4.db (1 B): nothing holds it"
+            ),
+            store="hello.shelf",
+            layout=4,
+            path="/x/shelf.v4.db",
+            bytes=1,
+        ),
+        RegisterOutcome(
+            action="registered",
+            holder="install:3f9a1c2e8b7d",
+            environment="/x/site-packages",
+            version="11.1.0",
+            layouts=["hello.shelf@4"],
         ),
         DeprecationNotice(
             id="cli untaped hello old",

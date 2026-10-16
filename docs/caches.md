@@ -159,7 +159,7 @@ release of the major reads waives it with `# untaped: allow store-format`.
 Composition quarantines a plugin that lists another plugin's store
 (`foreign-store`) or the same name twice (`duplicate-store`), and
 `untaped doctor`'s `stores` row shows each store's layout and file, and
-warns while another layout is left on disk.
+every other layout on disk with what holds it (below).
 
 A cache that describes a store follows it, `Cache(..., store=CATALOGUE)`: its
 sidecars live in `caches/<name>.v<layout>/`, so a key is never fresh over
@@ -182,6 +182,51 @@ additive changed an existing table or added a column an older writer cannot
 insert without (not null, no default). Review watches `pins.json`: a
 released pin is appended once and never edited, since editing a file and its
 pin together passes the check.
+
+### Who holds a layout, and cleanup
+
+Each install of untaped that runs `untaped setup register` writes a
+*reference* in `~/.untaped/refs/`: where it is installed, its version, and
+the layouts its plugins' stores use. A target is written
+`<plugin>.<store>@<layout>` for a layout (`acme.catalogue@2`) or
+`<plugin>.<store>#<item>` for one item of a store that keeps one per item;
+the install is the only holder in 11.1, and it holds layouts. An install refreshes its own reference whenever a
+command opens a store after its plugins or their layouts changed, so an
+upgrade needs nothing more. `holders(target)` (experimental) names the
+references that keep a target, and raises while a reference cannot be read
+(who holds it is unknown then, never nobody). A reference is *live* while its folder still
+holds an untaped install; one written by a newer untaped, or one this untaped
+cannot read, is kept as if live and pauses all cleanup until this install is
+upgraded.
+
+Cleanup is automatic. After a fill completes (a cache that follows the store
+refreshed with no error, nothing partial), a registered install removes every
+other layout of that store that no live reference holds and no running
+untaped has open: it takes the layout's in-use lock alone, without waiting,
+moves the layout aside with its SQLite sidecars, its caches' folders and its
+lock, then deletes it. Each removal is an info line of kind `untaped.pruned`
+(`store`, `layout`, `path`, `bytes`) that `--quiet` does not hide. An
+unregistered install, or one run from a source tree, never removes anything,
+and neither does any install while `refs/` cannot be read.
+
+A layout a setting may point at, such as an index path a profile sets to an
+older layout's file, is that profile's data. `Store(..., keep=…)` says so: a
+function of a layout's path returning why it stays, or `None`;
+`setting_guard("acme", "catalogue_path")` keeps every path any profile or the
+environment sets that key to. The cleanup never removes what `keep` names, and
+a `keep` that raises keeps the path too.
+
+What the cleanup will not remove on its own (no registered install keeps the
+store, a running untaped has it open, a damaged in-use lock, a reference it
+cannot read) the `stores` row names with its reason. For the layouts nobody
+holds, a store's plugin adds `other_layouts_migration(STORE)` (experimental)
+to its `migrations`: `untaped setup migrate-dirs` then offers each one as a
+`<plugin>.<store>-layouts` delete row with that reason. It keeps a symlink,
+anything `keep` names, and every layout while `refs/` or a reference cannot
+be read, since who holds it is unknown then. The references of installs that
+are gone are core's `untaped.references` row, and `untaped doctor`'s
+`references` row lists every reference. In tests,
+`untaped.testing.write_reference` writes another install's reference.
 
 ## Status rows and tests
 
