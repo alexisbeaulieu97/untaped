@@ -334,8 +334,9 @@ class Cache:
     sidecars to a :class:`~untaped.store.Store`'s layout: they live under
     ``caches/<name>.v<layout>/``, so a key is never fresh over another
     layout's file (a store that adopts its bare file renames ``caches/<name>/``
-    with it). Two declarations with the same values (the
-    same ``version`` callable) are equal.
+    with it), and a complete fill (no error, not partial) ends with
+    :meth:`Store.prune() <untaped.store.Store.prune>`. Two declarations with
+    the same values (the same ``version`` callable) are equal.
     """
 
     __slots__ = (
@@ -570,7 +571,7 @@ class Cache:
                 filled[key] = result
                 if progress is NO_PROGRESS:
                     task.update(result.summary)  # the done line carries it
-                return self._save(
+                saved = self._save(
                     paths,
                     key,
                     Freshness(
@@ -581,6 +582,10 @@ class Cache:
                         version=version,
                     ),
                 )
+            if self.store is not None and saved.error is None:
+                # a complete fill: this layout has data, so the ones nothing holds may go
+                self.store.prune()
+            return saved
         except UntapedError as exc:
             # the task closed `failed` on the way out, before the warning _serve emits
             if exc is not failure or freshness.refreshed_at is None:

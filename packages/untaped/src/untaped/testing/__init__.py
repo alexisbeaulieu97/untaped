@@ -54,6 +54,7 @@ from untaped.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
+from untaped.refs import write_reference
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.stability import apply_marks, deprecated
 from untaped.testing.contracts import assert_fills, compose_with
@@ -94,6 +95,7 @@ __all__ = [
     "invoke_root",
     "plugin_candidate",
     "progress_clock",
+    "write_reference",
 ]
 
 
