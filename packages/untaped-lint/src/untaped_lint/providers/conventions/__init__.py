@@ -23,6 +23,7 @@ from untaped_lint.infrastructure.files import SourceFile, source_files
 from untaped_lint.providers.conventions.blob_reader import blob_reader_violations
 from untaped_lint.providers.conventions.layering import layering_violations
 from untaped_lint.providers.conventions.messages import message_violations
+from untaped_lint.providers.conventions.store_format import store_format_violations
 from untaped_lint.providers.conventions.structure import structure_source_violations
 from untaped_lint.providers.conventions.terminal_boundary import terminal_boundary_violations
 from untaped_lint.records import FileLocation, Finding, Rule, Severity
@@ -63,7 +64,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("settings-naming", "error", "Setting names follow the naming rules (_dir, _path, parallel)."),
     ("settings-renames", "error", "Renamed setting keys are declared consistently."),
     ("import-boundary", "error", "A plugin imports core and other plugins only by public modules."),
-    # The file rules: stderr wording, structure, layering and boundaries, read from files.
+    # The file rules: stderr wording, structure, layering, boundaries and stores, read from files.
     ("echo-error", "error", "Errors are raised as UntapedError, never echoed."),
     ("echo-warning", "error", "Warnings go through ctx.diag.warning, never echo."),
     ("echo-failed", "error", "Per-item failures go through ctx.diag.failure, never echo."),
@@ -84,6 +85,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("settings", "error", "Only the cli layer resolves settings."),
     ("terminal-boundary", "error", "No prompt_toolkit import: build screens with the SDK."),
     ("blob-reader", "error", "Repo store blobs are read through store.prefetched(...).run()."),
+    ("store-format", "error", "A database under plugin_dir() is opened through a Store."),
     ("unreadable-file", "error", "Every Python file of a plugin is UTF-8 and parses."),
     # The contract checks and the plugin itself.
     ("plugin-not-installed", "error", "A plugin its pyproject.toml declares is installed."),
@@ -165,6 +167,7 @@ def file_lines(
             *layering_violations(package, source_dir, files),
             *terminal_boundary_violations(source_dir, files),
             *blob_reader_violations(package, source_dir, files),
+            *store_format_violations(plugin, source_dir, files),
         ]
     except UnreadableSourceError as exc:
         where = _relative(exc.path, source_dir.parent)
