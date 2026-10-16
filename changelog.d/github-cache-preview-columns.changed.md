@@ -1,3 +1,3 @@
-`untaped github cache delete --dry-run` and `cache prune --dry-run` show the
-cached repo table's usual columns plus `disk_bytes` (what each repo would
-free) instead of every field; `--columns` and the JSON output are unchanged.
+`untaped github cache delete --dry-run` and `cache prune --dry-run` show
+`full_name`, `ref`, `status`, `fetched_at`, `path` and `disk_bytes` instead of
+every field; `--columns +name`/`-name` edit those, and JSON is unchanged.
