@@ -1,9 +1,13 @@
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Annotated, ClassVar
 
 import pytest
 from pydantic import BaseModel, SecretStr
 
 from untaped.config import GetSetting, SettingsFileRepository
+from untaped.config_schema import Choices
+from untaped.deprecated_keys import Renamed
 from untaped.errors import ConfigError
 from untaped.settings import (
     get_settings,
@@ -235,7 +239,31 @@ def test_list_names_leaves_a_name_its_defaults_lack_unset(_isolate_settings: Pat
 
     names = {item.name: item for item in ListNames(SettingsFileRepository())("ui.color_roles")}
 
-    assert (names["success"].value, names["success"].source) == (None, "theme")
+    assert (names["header"].value, names["header"].source) == (None, "theme")
+    assert (names["success"].value, names["success"].source) == ("green", "theme")
+
+
+class MarksPlugin(BaseModel):
+    renamed_keys: ClassVar[Mapping[str, object]] = {"old_marks": Renamed("marks", removed_in=12)}
+
+    marks: Annotated[dict[str, str], Choices(lambda: ("a", "b"), "marks")] = {}
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [("UNTAPED_MARKS__OLD_MARKS__A", "E"), ("UNTAPED_MARKS", '{"old_marks": {"a": "E"}}')],
+)
+def test_list_names_shows_a_value_an_old_spelling_sets(
+    monkeypatch: pytest.MonkeyPatch, variable: str, value: str
+) -> None:
+    from untaped.config.use_cases import ListNames
+
+    register_profile_settings("marks", MarksPlugin)
+    monkeypatch.setenv(variable, value)
+
+    names = {item.name: item for item in ListNames(SettingsFileRepository())("marks.marks")}
+
+    assert names["a"].value == "E" and names["a"].variable is not None
 
 
 @pytest.mark.parametrize(

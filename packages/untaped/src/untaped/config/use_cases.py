@@ -316,7 +316,8 @@ class ListNames:
             variable = self._repo.env_var_setting((*descriptor.path, name))
             profile = provenance.get((*descriptor.path, name))
             if variable is None and name in current and profile is None:
-                variable = self._repo.env_var_supplying(descriptor)  # an old spelling's
+                # No profile and no current spelling holds it: an old spelling's variable.
+                variable = self._repo.env_var_supplying(descriptor) or "environment"
             if variable is not None and name in current:
                 return str(current[name]), variable, variable
             if name in current and profile is not None and profile != under:
