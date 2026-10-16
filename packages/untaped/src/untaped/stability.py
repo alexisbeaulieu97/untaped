@@ -30,7 +30,6 @@ every use and, on a settings field, becomes pydantic field deprecation.
 from __future__ import annotations
 
 import re
-import sys
 import typing
 import warnings
 import weakref
@@ -937,12 +936,7 @@ def deprecated_behaviour(
     replacement="untaped auth migrate")``. List it on the owning spec's
     ``deprecations``; a plugin's ``removed_in`` is its own major.
     """
-    behaviour = DeprecatedBehaviour(
-        name, Deprecated(replacement=replacement, removed_in=removed_in)
-    )
-    module = sys._getframe(1).f_globals.get("__name__", "")
-    _DECLARED_IN[id(behaviour)] = (behaviour, str(module).partition(".")[0])
-    return behaviour
+    return DeprecatedBehaviour(name, Deprecated(replacement=replacement, removed_in=removed_in))
 
 
 # Plugin name → the ``deprecations`` callable of its spec, bound by the
@@ -950,9 +944,6 @@ def deprecated_behaviour(
 # spec module never imports its behaviours to compose. Core's are the rest.
 _LISTINGS: dict[str, Callable[[], Sequence[DeprecatedBehaviour]]] = {}
 _BEHAVIOUR_OWNERS: dict[int, tuple[DeprecatedBehaviour, str | None]] = {}
-# Each behaviour → the top package that declared it (the object is kept, so ids stay unique).
-_DECLARED_IN: dict[int, tuple[DeprecatedBehaviour, str]] = {}
-_PLUGIN_PACKAGE = "untaped_"
 
 
 def bind_behaviours(listings: Mapping[str, Callable[[], Sequence[DeprecatedBehaviour]]]) -> None:
@@ -963,34 +954,29 @@ def bind_behaviours(listings: Mapping[str, Callable[[], Sequence[DeprecatedBehav
 
 
 def behaviour_owner(behaviour: DeprecatedBehaviour) -> str | None:
-    """The plugin that owns ``behaviour``, or ``None`` for core's.
+    """The plugin whose spec lists ``behaviour``, or ``None`` for core's.
 
-    One declared in core's ``untaped`` package is core's, whoever lists it.
-    Otherwise it is the plugin whose spec lists it; one nobody lists (or
-    outside a composition) is the plugin its ``untaped_<name>`` package names,
-    the rule every plugin's package follows, and core's for any other package.
+    Bound by the composition's listings: core's own come first (so no plugin
+    can claim one), then each plugin's. One nobody lists, or used outside a
+    composition, reads as core's; ``tests/repo`` keeps this workspace's
+    behaviours listed.
     """
     key = id(behaviour)
     if key not in _BEHAVIOUR_OWNERS:
-        package = _DECLARED_IN.get(key, (behaviour, ""))[1]
+        from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415 - bootstrap imports this module
+
         found: str | None = None
-        if package != _ROOT_NAME:
+        if not any(item is behaviour for item in SHELL_SPEC.deprecations()):
             listers = (n for n, items in _listed() if any(item is behaviour for item in items))
             found = next(listers, None)
-            if found is None and package.startswith(_PLUGIN_PACKAGE):
-                found = package.removeprefix(_PLUGIN_PACKAGE).replace("_", "-")
         _BEHAVIOUR_OWNERS[key] = (behaviour, found)
     return _BEHAVIOUR_OWNERS[key][1]
 
 
 def _distribution(behaviour: DeprecatedBehaviour) -> str | None:
-    """The distribution whose major ``behaviour`` names; ``None`` for core's.
-
-    The composed plugin's, else ``untaped-<plugin>`` (the distribution every
-    plugin is named after).
-    """
+    """The distribution whose major ``behaviour`` names; ``None`` for core's."""
     plugin = behaviour_owner(behaviour)
-    return None if plugin is None else owner(plugin) or f"untaped-{plugin}"
+    return None if plugin is None else owner(plugin)
 
 
 def _listed() -> Iterator[tuple[str, list[DeprecatedBehaviour]]]:

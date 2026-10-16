@@ -32,7 +32,8 @@ and let it build the sentence: `ROW_KIND.notify("a row without a declared kind",
 key=...)` warns once per `key` on the command's stderr, `ROW_KIND.warn(...)`
 raises an `UntapedDeprecationWarning` from a Python API, and
 `ROW_KIND.sentence(...)` returns the text for a row of your own. Each takes
-`replacement=` for one site, `None` for none.
+`replacement=` for one site, `None` for none. A behaviour no spec lists reads
+as untaped's own, so list every one.
 
 The replacement is what to use instead: a command's function or app (the
 path follows a rename), or text such as a command (`"untaped acme set"`), a

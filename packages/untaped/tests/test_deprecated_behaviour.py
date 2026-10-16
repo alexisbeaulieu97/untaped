@@ -114,23 +114,6 @@ def test_a_behaviour_nobody_lists_reads_as_core_s() -> None:
     assert UNLISTED.sentence("x") == "x is deprecated and will be removed in 3.0"
 
 
-def _declared_in(module: str) -> DeprecatedBehaviour:
-    namespace = {"__name__": module, "deprecated_behaviour": deprecated_behaviour}
-    exec('B = deprecated_behaviour("row-kind", removed_in=3)', namespace)
-    behaviour = namespace["B"]
-    assert isinstance(behaviour, DeprecatedBehaviour)
-    return behaviour
-
-
-def test_an_unlisted_plugin_behaviour_is_its_package_s_plugin() -> None:
-    behaviour = _declared_in("untaped_acme_tools.api")
-    _compose(_spec(ROW_KIND))
-    assert behaviour.id == "behaviour acme-tools.row-kind"
-    assert behaviour.sentence("x") == (
-        "x is deprecated and will be removed in untaped-acme-tools 3.0"
-    )
-
-
 def test_a_core_behaviour_stays_core_s_and_no_plugin_may_list_it() -> None:
     spec = _spec(PLAINTEXT_TOKEN, name="hijack")
     _compose(spec)
