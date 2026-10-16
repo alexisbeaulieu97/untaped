@@ -61,7 +61,8 @@ def test_root_config_lists_every_package() -> None:
         "scripts/gen_config_reference.py",
         "scripts/release.py",
     ]
-    assert sorted(config["tool"]["mypy"]["files"]) == sorted([*src, *scripts])
+    # This repository's own lint rules (.untaped/lint) are type-checked like shipped code.
+    assert sorted(config["tool"]["mypy"]["files"]) == sorted([*src, *scripts, ".untaped/lint"])
     vulture = config["tool"]["vulture"]["paths"]
     assert sorted(vulture) == sorted([*src, "scripts/vulture_allowlist.py"])
     assert sorted(config["tool"]["mypy"]["mypy_path"]) == src

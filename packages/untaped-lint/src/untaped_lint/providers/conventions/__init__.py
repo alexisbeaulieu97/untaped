@@ -86,7 +86,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("terminal-boundary", "error", "No prompt_toolkit import: build screens with the SDK."),
     ("blob-reader", "error", "Repo store blobs are read through store.prefetched(...).run()."),
     ("store-format", "error", "A database under plugin_dir() is opened through a Store."),
-    ("unreadable-file", "error", "Every Python file of a plugin is UTF-8 and parses."),
+    ("unreadable-file", "error", "Every file a rule reads is UTF-8; a plugin's Python parses."),
     # The contract checks and the plugin itself.
     ("plugin-not-installed", "error", "A plugin its pyproject.toml declares is installed."),
     ("registration", "error", "The registry accepts every offer a plugin makes."),
@@ -105,6 +105,8 @@ RULES: tuple[Rule, ...] = tuple(
     for id_, severity, summary in _TABLE
 )
 _BY_ID = {rule.id: rule for rule in RULES}
+UNREADABLE = _BY_ID["unreadable-file"]
+"""Also a ``Tree``'s: a file a rule asked for that isn't UTF-8."""
 
 _FILE_WHERE = re.compile(r"^(?P<path>[^\s:]+\.py)(?::(?P<line>\d+))?$")
 _DRIFT = "owner-schema-drift: "

@@ -18,6 +18,7 @@ EXPECTED_ALL = [
     "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
+    "allowed_names",
     "allows",
     "assert_destructive_contract",
     "assert_fills",

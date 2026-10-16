@@ -1,31 +1,52 @@
 """One lint run: Conventions first, then every provider, answers turned into rows.
 
 ``untaped.plugin`` subjects go to :class:`Conventions` directly, before any
-``gather``: it composes, which no contract method may. Then the providers'
-rule tables are gathered once, ids prefixed with each provider's plugin, and
-each subject is asked of the providers whose rules read its kind. A provider
-that did not check never reads as a pass: each failure, invalid row, raise or
-skip other than ``not-configured`` is one failure row.
+``gather``: it composes, which no contract method may. Then the repository's
+own rule modules (``.untaped/lint.yml``) are composed as one plugin per key,
+the providers' rule tables are gathered once, ids prefixed with each
+provider's plugin, the ``readers:`` turn files into subjects, and each
+subject is asked of the providers whose rules read its kind; the
+repository's ``Tree`` is built only when a rule reads it. A provider that did
+not check never reads as a pass: each failure, invalid row, raise or skip
+other than ``not-configured`` is one failure row.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from pydantic import ValidationError
 
-from untaped.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather
-from untaped.sdk import ErrorCategory, Failure, Plugin, kind_of, plural
-from untaped.testing import PluginCandidate
-from untaped_lint.application.rules import Linter
+from untaped.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather, providing
+from untaped.sdk import ConfigError, ErrorCategory, Failure, Plugin, kind_of, plural
+from untaped.testing import PluginCandidate, allowed_names
+from untaped_lint.application.modules import RULE_IMPORTS, TREE_KIND, Loaded, load
+from untaped_lint.application.repo_file import RepoFile
+from untaped_lint.application.rules import Linter, TreeReader
 from untaped_lint.application.subjects import PLUGIN_KIND
+from untaped_lint.application.tree_paths import tree_paths
+from untaped_lint.domain.glob import matches
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import Resolver, Selection, Suppression
-from untaped_lint.providers.conventions import KEY, UNCHECKED, Conventions
-from untaped_lint.records import Finding, Rule, Subject, public
+from untaped_lint.providers.conventions import KEY, UNCHECKED, UNREADABLE, Conventions
+from untaped_lint.records import (
+    FileLocation,
+    Finding,
+    Rule,
+    Subject,
+    Tree,
+    public,
+    unreadable_files,
+)
 
 _RULES_HINT = "untaped lint rules"
+_NOTHING = (
+    "nothing to lint here: run it in a plugin repository, a repository with "
+    ".untaped/lint.yml, or pipe records with --stdin"
+)
 _RULE_KIND = kind_of(Rule) or "lint.rule"
 
 
@@ -51,9 +72,16 @@ class _Providers:
     readers: dict[str, list[str]] = field(default_factory=dict)
 
 
-def loaded_rules(report: Report | None = None) -> dict[str, Rule]:
-    """Every rule a run would load, by public id: Conventions' then each provider's."""
-    return _load(report if report is not None else Report()).rules
+def loaded_rules(
+    report: Report | None = None,
+    *,
+    repo: RepoFile | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
+) -> dict[str, Rule]:
+    """Every rule a run would load, by public id: lint's own, the repository's, each provider's."""
+    report = report if report is not None else Report()
+    with _composed(repo, report, candidates) as (providers, _):
+        return providers.rules
 
 
 def run(
@@ -62,36 +90,38 @@ def run(
     *,
     findings: Iterable[Finding] = (),
     candidates: Sequence[PluginCandidate] | None = None,
+    repo: RepoFile | None = None,
+    tree_root: Path | None = None,
 ) -> Report:
     """Lint ``subjects``; ``findings`` are ones already made (public ids), selected likewise.
 
-    ``candidates`` replaces entry-point discovery for the plugin checks.
+    ``candidates`` replaces entry-point discovery. ``repo`` is the
+    repository's lint file, if any; ``tree_root`` is where the ``Tree`` (and
+    the readers' files) come from, when the run lints a directory.
     """
     report = Report()
     subjects = list(subjects)
-    raw = list(findings)
-    for subject in subjects:
-        if subject.kind == PLUGIN_KIND:
-            try:
-                plugin = Plugin.model_validate(subject.record)
-            except ValidationError as exc:
-                report.failures.append(_invalid_plugin(subject, exc))
-                continue
-            raw.extend(
-                public(KEY, each) for each in Conventions().findings(plugin, candidates=candidates)
-            )
-    providers = _load(report)
-    unread: set[str] = set()
-    for subject in subjects:
-        readers = providers.readers.get(subject.kind, [])
-        if readers:
-            raw.extend(_ask(subject, readers, providers, report))
-        elif subject.kind != PLUGIN_KIND and subject.kind not in unread:
-            unread.add(subject.kind)
-            report.warnings.append(
-                f"no installed rule reads {subject.kind} records; see `{_RULES_HINT}`"
-            )
+    raw = [*findings, *_conventions(subjects, report, candidates)]
+    marked: list[tuple[Finding, Path]] = []
+    with _composed(repo, report, candidates) as (providers, loaded):
+        if repo is not None:
+            marked.extend((public(KEY, each), repo.root) for each in loaded.findings)
+        tree = None
+        if tree_root is not None and (TREE_KIND in providers.readers or (repo and repo.readers)):
+            tree = _tree(tree_root, repo)
+        with unreadable_files() as skipped:
+            if tree is not None and repo is not None:
+                subjects.extend(_read(tree, repo, report))
+            raw.extend(_dispatch(subjects, providers, report))
+            if tree is not None and TREE_KIND in providers.readers:
+                asked = _ask(_subject(tree), providers.readers[TREE_KIND], providers, report)
+                marked.extend((each, Path(tree.root)) for each in asked)
+        if tree is not None:
+            marked.extend((_unreadable(path), Path(tree.root)) for path in sorted(skipped))
+    if not subjects and tree is None and not raw and not marked:
+        report.warnings.append(_NOTHING)
     resolver = Resolver(providers.rules)
+    raw.extend(each for each, root in marked if not _allowed(each, root, resolver))
     selection = Selection.build(
         resolver,
         select=options.select,
@@ -106,12 +136,124 @@ def run(
     return report
 
 
+def _conventions(
+    subjects: list[Subject], report: Report, candidates: Sequence[PluginCandidate] | None
+) -> list[Finding]:
+    """Conventions' findings for each ``untaped.plugin`` subject, before anything is gathered."""
+    found: list[Finding] = []
+    for subject in subjects:
+        if subject.kind != PLUGIN_KIND:
+            continue
+        try:
+            plugin = Plugin.model_validate(subject.record)
+        except ValidationError as exc:
+            report.failures.append(_invalid_plugin(subject, exc))
+            continue
+        found.extend(
+            public(KEY, each) for each in Conventions().findings(plugin, candidates=candidates)
+        )
+    return found
+
+
+def _dispatch(subjects: list[Subject], providers: _Providers, report: Report) -> list[Finding]:
+    """Each subject asked of the providers reading its kind; a kind nobody reads warns once."""
+    found: list[Finding] = []
+    unread: set[str] = set()
+    for subject in subjects:
+        readers = providers.readers.get(subject.kind, [])
+        if readers:
+            found.extend(_ask(subject, readers, providers, report))
+        elif subject.kind != PLUGIN_KIND and subject.kind not in unread:
+            unread.add(subject.kind)
+            report.warnings.append(
+                f"no installed rule reads {subject.kind} records; see `{_RULES_HINT}`"
+            )
+    return found
+
+
+@contextmanager
+def _composed(
+    repo: RepoFile | None, report: Report, candidates: Sequence[PluginCandidate] | None
+) -> Iterator[tuple[_Providers, Loaded]]:
+    """The repository's rule hosts composed beside the installed providers, rules loaded."""
+    loaded = load(repo) if repo is not None else Loaded()
+    report.failures.extend(loaded.failures)
+    offered = {key: [host] for key, host in loaded.hosts.items()}
+    composing = providing(KEY, offered, candidates=candidates) if offered else nullcontext()
+    with composing:
+        yield _load(report), loaded
+
+
+def _tree(root: Path, repo: RepoFile | None) -> Tree:
+    left_out = repo.left_out() if repo is not None else ()
+    paths = tuple(
+        path for path in tree_paths(root) if not any(matches(pattern, path) for pattern in left_out)
+    )
+    return Tree(root=root.resolve(), paths=paths)
+
+
+def _subject(record: Tree) -> Subject:
+    return Subject(kind=TREE_KIND, record=record.model_dump(mode="json"))
+
+
+def _read(tree: Tree, repo: RepoFile, report: Report) -> list[Subject]:
+    """The subjects each ``readers:`` entry reads from the files its globs match."""
+    found: list[Subject] = []
+    for key, globs in repo.readers.items():
+        narrowed = tree.model_copy(
+            update={"paths": tuple(p for p in tree.paths if any(matches(g, p) for g in globs))}
+        )
+        try:
+            answers = gather(TreeReader.read, plugins=[key])(narrowed)
+        except NoProviderReady:
+            raise ConfigError(
+                f"{repo.path}: readers.{key}: no installed plugin {key!r} reads files into "
+                f"subjects; install untaped[{key}]"
+            ) from None
+        for answer in answers:
+            if not isinstance(answer, Ok):
+                _not_checked(answer, report, rules=None)
+                continue
+            for row in answer.invalid:
+                report.failures.append(_failure(answer.plugin, "invalid-item", row))
+            found.extend(answer.value)
+    return found
+
+
+def _unreadable(path: str) -> Finding:
+    return public(
+        KEY,
+        Finding(
+            rule=UNREADABLE.id,
+            severity=UNREADABLE.severity,
+            target=path,
+            message="this file is not UTF-8, so no rule read it",
+            location=FileLocation(path=path),
+        ),
+    )
+
+
+def _allowed(finding: Finding, root: Path, resolver: Resolver) -> bool:
+    """Whether the source line of ``finding`` carries ``# untaped: allow`` for its rule."""
+    location = finding.location
+    if not isinstance(location, FileLocation) or location.line is None:
+        return False
+    try:
+        lines = (root / location.path).read_text(encoding="utf-8").splitlines()
+    except OSError, UnicodeDecodeError:
+        return False
+    if not 1 <= location.line <= len(lines):
+        return False
+    names = allowed_names(lines[location.line - 1])
+    return any(finding.rule in resolver.resolve(name) for name in sorted(names))
+
+
 def _load(report: Report) -> _Providers:
     own = Source(plugin=KEY, kind=_RULE_KIND)
     providers = _Providers(
         rules={
             f"{KEY}.{rule.id}": rule.model_copy(update={"source": own})
-            for rule in Conventions().rules()
+            for rule in (*Conventions().rules(), RULE_IMPORTS)
         }
     )
     try:

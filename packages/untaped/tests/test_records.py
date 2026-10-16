@@ -603,7 +603,14 @@ def _samples() -> dict[str, WireModel]:
             )
         )
     if "untaped_lint" in _SHIPPED:
-        from untaped_lint.records import FileLocation, Finding, Rule, Subject
+        from untaped_lint.records import (
+            FileLocation,
+            Finding,
+            Rule,
+            ScaffoldOutcome,
+            Subject,
+            Tree,
+        )
 
         rows += [
             Rule(id="no-print", reads="untaped.plugin", severity="error", summary="No print."),
@@ -616,6 +623,8 @@ def _samples() -> dict[str, WireModel]:
                 error=Failure.from_exception(ConfigError("x")),
             ),
             Subject(kind="untaped.plugin", record={"name": "acme", "tags": [1, None]}),
+            Tree(root="/repo", paths=("README.md", "src/a.py")),
+            ScaffoldOutcome(action="created", target_path="/repo/.untaped/lint/no_print.py"),
         ]
     return {str(kind_of(type(row))): row for row in rows}
 
