@@ -28,10 +28,12 @@ from untaped.stability import (
     deprecated_aliases,
     enable_show_deprecated,
     mark_of,
+    marked_options,
     notify_deprecation,
     path_owner,
     replacement_text,
     reset_show_deprecated,
+    select_command,
 )
 from untaped.verbose import enable as _enable_verbose
 from untaped.verbose import reset as _reset_verbose
@@ -290,11 +292,14 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
         token = rewritten[index] = name
         current = current[token]
         chain.append(((*path, token), current))
+    path = ("untaped", *(chain[-1][0] if chain else ()))
+    select_command(current, path)
     if not consumed:
-        path = ("untaped", *(chain[-1][0] if chain else ()))
         _rewrite_option_aliases(current, path, rewritten, index)
     if not any(token in _HELP_OR_VERSION for token in _before_separator(rewritten)):
         _warn_deprecated_command(app, chain)
+        if not consumed:
+            _warn_deprecated_options(app, current, path, rewritten[index:])
     return rewritten
 
 
@@ -315,6 +320,33 @@ def _rewrite_option_aliases(
         if name in options:
             _warn_alias(path, name, options[name], command=False)
             tokens[position] = f"{options[name].new}{separator}{value}"
+
+
+def _warn_deprecated_options(
+    root: App, command: App, path: tuple[str, ...], tokens: Sequence[str]
+) -> None:
+    """Warn for each deprecated option of ``command`` that ``tokens`` use (up to a ``--``).
+
+    Any spelling cyclopts accepts counts (``--dry-run``, ``--no-dry-run``,
+    ``--dry-run=false``, a short flag); the warning names the one its surface line goes under,
+    with the command's full path, as an alias's warning does.
+    """
+    marked = marked_options(command)
+    if not marked:
+        return
+    used = {token.partition("=")[0] for token in _before_separator(tokens)}
+    for argument, mark in marked:
+        if used.isdisjoint(argument.names):
+            continue
+        from untaped.surface._cli import option_identity, option_name  # noqa: PLC0415
+
+        notify_deprecation(
+            option_identity(f"cli {' '.join(path)}", argument),
+            f"`{' '.join(path)} {option_name(argument)}`",
+            removed_in=mark.removed_in,
+            owner=path_owner(path),
+            replacement=replacement_text(mark, root),
+        )
 
 
 def _warn_alias(path: tuple[str, ...], old: str, alias: Alias, *, command: bool) -> None:

@@ -210,9 +210,74 @@ class _DeprecatedGroup(Group):
         return show_deprecated()
 
 
+# The command whose help is being printed, as the root's token rewrite selected it: the
+# Deprecated options panel reads its marks to write each option's line.
+_SELECTED_COMMAND: ContextVar[tuple[App, tuple[str, ...]] | None] = ContextVar(
+    "untaped_selected_command", default=None
+)
+
+
+def select_command(command: App, path: tuple[str, ...]) -> None:
+    """Record ``command`` (at ``path``, ``("untaped", "awx", ...)``) as this invocation's."""
+    _SELECTED_COMMAND.set((command, path))
+
+
+def _deprecated_options_help(console: Any, options: Any, panel: Any) -> None:
+    """The Deprecated options panel: each option's help is its mark's ``Deprecated:`` line."""
+    from cyclopts.help import DefaultFormatter  # noqa: PLC0415 - help only
+
+    selected = _SELECTED_COMMAND.get()
+    lines: dict[str, str] = {}
+    if selected is not None:
+        command, path = selected
+        for argument, mark in marked_options(command):
+            line = deprecated_line(
+                _unquoted(replacement_text(mark, None)),
+                removal_text(mark.removed_in, path_owner(path)),
+            )
+            lines.update(dict.fromkeys(argument.names, line))
+    entries = []
+    for entry in panel.entries:
+        found = next((lines[name] for name in entry.all_options if name in lines), None)
+        entries.append(entry if found is None else entry.copy(description=found))
+    DefaultFormatter()(console, options, panel.copy(entries=entries))
+
+
+def _unquoted(text: str | None) -> str | None:
+    return None if text is None else text.replace("`", "")
+
+
 # The order of all core panels is untaped.help_panels'.
 EXPERIMENTAL_GROUP = Group("Experimental", sort_key=100)
 DEPRECATED_GROUP = _DeprecatedGroup("Deprecated", sort_key=200)
+DEPRECATED_OPTIONS = _DeprecatedGroup(
+    "Deprecated options", sort_key=250, help_formatter=_deprecated_options_help
+)
+"""The panel of a command's deprecated options, listed only under ``--deprecated``.
+
+A flag deprecated with no new spelling joins it beside its mark:
+``dry_run: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS), deprecated(removed_in=12,
+replacement="--limit 1 --yes")] = False``. The root warns when any of its spellings is used.
+"""
+
+
+def marked_options(command: App) -> list[tuple[Any, Deprecated]]:
+    """Each option of ``command``'s function marked ``deprecated(...)``, with its mark.
+
+    Positional parameters are never options, so a mark on one is not listed.
+    """
+    function = command.default_command
+    if function is None:
+        return []
+    marks = parameter_marks(function)
+    if not marks:
+        return []
+    return [
+        (argument, marks[argument.field_info.name])
+        for argument in command.assemble_argument_collection(parse_docstring=False)
+        if argument.field_info.name in marks
+        and argument.field_info.kind is inspect.Parameter.KEYWORD_ONLY
+    ]
 
 
 def panel_for(stability: Stability) -> Group:

@@ -161,17 +161,17 @@ def panel_violations(app: App) -> Iterator[tuple[str, str]]:
 
 
 def _named_groups(app: App) -> Iterator[Group | str]:
-    yield from _as_groups(app.group)
+    yield from as_groups(app.group)
     # Apps inherit their parent's group_* defaults; only what they list counts.
     if next(_subcommands(app), None) is not None:
-        yield from _as_groups(app.group_commands)
+        yield from as_groups(app.group_commands)
     if app.default_command is not None:
         for argument in app.assemble_argument_collection(parse_docstring=True):
             if argument.show and argument.parse:  # a hidden option lists in no panel
-                yield from _as_groups(argument.parameter.group)
+                yield from as_groups(argument.parameter.group)
 
 
-def _as_groups(value: Group | str | Iterable[Group | str] | None) -> Iterator[Group | str]:
+def as_groups(value: Group | str | Iterable[Group | str] | None) -> Iterator[Group | str]:
     if value is None:
         return
     if isinstance(value, Group | str):

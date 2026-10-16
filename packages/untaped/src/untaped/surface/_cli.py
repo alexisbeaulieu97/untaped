@@ -6,8 +6,8 @@ carries what a caller must pass (required positionals in order, then required
 options sorted); every optional positional, option, alias, negative flag and
 choice has a line of its own, so adding one adds a line. Flattened dataclass
 parameters are containers: their fields are the options. Hidden commands and
-parameters are skipped unless deprecated (a hidden flag whose help starts
-``Deprecated:`` counts) or listed in
+parameters are skipped unless deprecated (an option marked ``deprecated(...)``
+in its annotation counts) or listed in
 :data:`~untaped.surface._lists.WRITTEN_OUTSIDE`. Defaults are the declared
 ones, never a value settings would supply at run time.
 """
@@ -20,8 +20,8 @@ from typing import Any
 
 from cyclopts import App
 
-from untaped.stability import children, deprecated_aliases, mark_of
-from untaped.surface._lines import DEPRECATED, DeprecatedMark, Line, LineMark
+from untaped.stability import children, deprecated_aliases, mark_of, marked_options
+from untaped.surface._lines import DeprecatedMark, Line, LineMark
 from untaped.surface._lists import WRITTEN_OUTSIDE
 from untaped.surface._sdk import SurfaceError, line_mark
 from untaped.surface._types import choice_text, default_text
@@ -112,8 +112,9 @@ def _command(app: App, path: tuple[str, ...], mark: LineMark | None) -> Iterator
     positionals: list[str] = []
     required: list[str] = []
     position = 0
-    for argument in _arguments(app, " ".join(path)):
-        own: LineMark | None = DEPRECATED if _hand_deprecated(argument) else mark
+    marked = {argument.field_info.name: option for argument, option in marked_options(app)}
+    for argument in _arguments(app, " ".join(path), frozenset(marked)):
+        own = line_mark(marked.get(argument.field_info.name)) or mark
         if argument.field_info.kind in _POSITIONAL:
             position += 1
             main = _positional_name(argument)
@@ -134,7 +135,7 @@ def _command(app: App, path: tuple[str, ...], mark: LineMark | None) -> Iterator
     yield Line(" ".join([subject, *positionals, *sorted(required)]), mark)
 
 
-def _arguments(app: App, where: str) -> Iterator[Any]:
+def _arguments(app: App, where: str, marked: frozenset[str]) -> Iterator[Any]:
     for argument in app.assemble_argument_collection(parse_docstring=False):
         if argument.children:
             continue  # a flattened dataclass: its fields are the options
@@ -143,20 +144,12 @@ def _arguments(app: App, where: str) -> Iterator[Any]:
             raise SurfaceError(f"{where}: **kwargs parameters have no command-line spelling")
         visible = (
             argument.show
-            or _hand_deprecated(argument)
+            or argument.field_info.name in marked
             or any(f"{where} {name}" in WRITTEN_OUTSIDE for name in argument.names)
         )
         if not visible or not argument.parse:
             continue
         yield argument
-
-
-def _hand_deprecated(argument: Any) -> bool:
-    """A flag deprecated without a new spelling: hidden, its help starting ``Deprecated:``."""
-    hand_typed = (argument.parameter.help or "").startswith(
-        "Deprecated:"  # untaped: allow hand-typed-deprecation
-    )
-    return not argument.show and hand_typed
 
 
 def _positional_name(argument: Any) -> str:
@@ -187,15 +180,25 @@ def _is_switch(argument: Any) -> bool:
 
 
 def _option(subject: str, argument: Any, mark: LineMark | None) -> Iterator[Line]:
-    names = _positive_names(argument)
-    main = names[0]
+    main = _positive_names(argument)[0]
+    yield Line(option_identity(subject, argument), mark)
+    yield from _spellings(f"{subject} {main}", argument, mark, main=main)
+
+
+def option_name(argument: Any) -> str:
+    """The spelling an option's line goes under: its first long positive name."""
+    return _positive_names(argument)[0]
+
+
+def option_identity(subject: str, argument: Any) -> str:
+    """The identity of an optional option's line: ``cli untaped awx test run --dry-run switch``."""
+    main = option_name(argument)
     default = argument.field_info.default
     if _is_switch(argument):
         shape = "switch" if default is False else f"switch default={_default(default)}"
     else:
         shape = f"{'VALUE...' if _many(argument) else 'VALUE'} default={_default(default)}"
-    yield Line(f"{subject} {main} {shape}", mark)
-    yield from _spellings(f"{subject} {main}", argument, mark, main=main)
+    return f"{subject} {main} {shape}"
 
 
 def _spellings(prefix: str, argument: Any, mark: LineMark | None, *, main: str) -> Iterator[Line]:

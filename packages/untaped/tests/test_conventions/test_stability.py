@@ -16,7 +16,14 @@ from untaped import bootstrap
 from untaped.cli import create_app
 from untaped.conventions.stability import stability_violations
 from untaped.plugins.registry import PluginSpec
-from untaped.stability import Deprecated, Experimental, deprecated, experimental, marks
+from untaped.stability import (
+    DEPRECATED_OPTIONS,
+    Deprecated,
+    Experimental,
+    deprecated,
+    experimental,
+    marks,
+)
 from untaped.testing import plugin_candidate
 
 
@@ -75,7 +82,33 @@ def test_a_clean_experimental_plugin_has_no_violations() -> None:
     assert _violations(_app, stability=experimental) == []
 
 
-def test_hand_typed_mark_in_help_docstring_and_visible_parameter_help() -> None:
+def test_a_deprecated_option_and_its_panel_go_together() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+
+        @app.command(name="run")
+        def run(
+            *,
+            kept: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS, negative="")] = False,
+            loose: Annotated[bool, deprecated(removed_in=3), Parameter(negative="")] = False,
+            placed: Annotated[
+                bool, Parameter(group=DEPRECATED_OPTIONS, negative=""), deprecated(removed_in=3)
+            ] = False,
+        ) -> None:
+            """Run it."""
+
+        return app
+
+    assert _violations(factory) == [
+        "svc run::deprecated-option-panel::--kept is in DEPRECATED_OPTIONS without a "
+        "deprecated(removed_in=...) mark",
+        "svc run::deprecated-option-panel::--loose carries a deprecated(...) mark, so it belongs "
+        "in DEPRECATED_OPTIONS, which hides it until --deprecated: "
+        "Parameter(group=DEPRECATED_OPTIONS)",
+    ]
+
+
+def test_hand_typed_mark_in_help_docstring_and_parameter_help_hidden_or_not() -> None:
     def factory() -> App:
         app = create_app(name="svc", help="Experimental: may change.")
 
@@ -97,12 +130,13 @@ def test_hand_typed_mark_in_help_docstring_and_visible_parameter_help() -> None:
             *,
             old: Annotated[bool, Parameter(help="Deprecated: use --new.", show=False)] = False,
         ) -> None:
-            """Hidden flag is exempt."""
+            """A hidden flag takes a mark too."""
 
         return app
 
     assert _violations(factory) == [
         "svc doc::hand-typed-mark::docstring",
+        "svc hidden::hand-typed-mark::--old help",
         "svc param::hand-typed-mark::--flag help",
         "svc::hand-typed-mark::help",
     ]

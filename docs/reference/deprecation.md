@@ -14,6 +14,7 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 |---|---|
 | A command, group or plugin | `@deprecated(removed_in=3, replacement=set_command)` on the command, `create_app(..., stability=deprecated(removed_in=3))` on a group, `PluginSpec(..., stability=deprecated(removed_in=3))` on a plugin |
 | A renamed command or flag | `deprecated_alias(parent_app, "me", "whoami", removed_in=3)`; a flag: `deprecated_alias(command_app, "--old", "--new", removed_in=3)` |
+| A flag with no new spelling | `dry_run: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS), deprecated(removed_in=3, replacement="--limit 1 --yes")] = False` on the command |
 | A setting | `old: Annotated[bool, deprecated(removed_in=3, replacement="acme.mode")] = False` |
 | A renamed setting key | `renamed_keys = {"old_key": Renamed("new_key", removed_in=3)}` on the section's model |
 | A cache setting's old key | `Cache(..., renamed_from=("stale_after_seconds",), removed_in=3)` |
@@ -46,6 +47,12 @@ reports either one alone and a mark on an `@overload` item. A marked parameter
 warns through `@deprecated_parameters` whenever it is passed, its default
 value included, since the major that removes it makes any spelling of it an
 error (`lint.unwarned-parameter` reports a function without the decorator).
+
+A deprecated flag sits in `DEPRECATED_OPTIONS`, a panel `--help` lists only
+under `--deprecated`, where its help is its `Deprecated:` line;
+`untaped lint` reports a marked flag outside it, or an unmarked one inside it
+(`lint.deprecated-option-panel`). Any spelling of it warns (`--dry-run`,
+`--no-dry-run`, `--dry-run=false`, a short flag), up to a `--`.
 
 The replacement is what to use instead: a command's function or app (the
 path follows a rename), or text such as a command (`"untaped acme set"`), a

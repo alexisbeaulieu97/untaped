@@ -157,6 +157,7 @@ from untaped.refs import holders
 from untaped.settings import HttpSettings, get_config_section
 from untaped.skills import project_root
 from untaped.stability import (
+    DEPRECATED_OPTIONS,
     Deprecated,
     DeprecatedBehaviour,
     UntapedDeprecationWarning,
@@ -410,6 +411,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "executable_check",
     "online_check",
     # conventions
+    "DEPRECATED_OPTIONS",
     "Deprecated",
     "DeprecatedBehaviour",
     "ExitCode",

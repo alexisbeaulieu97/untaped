@@ -82,16 +82,12 @@ def test_a_planted_prose_line_fails_and_a_fenced_one_passes() -> None:
     assert prose_versions(text) == ["It is kept until 12.0."]
 
 
-#: Where core still allows a hand-typed sentence: the hidden-flag help, until #557 marks flags.
-ALLOWED_MARKERS = frozenset({CORE / "surface" / "_cli.py"})
-
-
 def test_core_allows_no_hand_typed_sentence() -> None:
     marker = "untaped: allow hand-typed-deprecation"
     found = [
         str(file.path.relative_to(REPO_ROOT))
         for file in source_files(CORE)
-        if file.path not in ALLOWED_MARKERS and any(marker in line for line in file.lines)
+        if any(marker in line for line in file.lines)
     ]
     assert not found, (
         "core builds every deprecation sentence from a mark, so it needs no allow marker; "
