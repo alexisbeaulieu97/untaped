@@ -43,7 +43,7 @@ from untaped.settings import (
     section_model,
     validate_disjoint_settings_sections,
 )
-from untaped.stability import Stability, check_stability, mark_errors
+from untaped.stability import DeprecatedBehaviour, Stability, check_stability, mark_errors
 from untaped.store import Store
 
 if TYPE_CHECKING:
@@ -243,9 +243,13 @@ def check_plugin_name(name: str) -> None:
         )
 
 
+def _no_deprecations() -> Sequence[DeprecatedBehaviour]:
+    return ()
+
+
 @dataclass(frozen=True)
 class ApplicationSpec:
-    """The root application."""
+    """The root application; ``deprecations`` lists core's deprecated behaviours."""
 
     name: str
     app_factory: Callable[[], App]
@@ -254,10 +258,13 @@ class ApplicationSpec:
     state: type[BaseModel] | None = None
     skills: tuple[SkillAsset, ...] = ()
     doctor_checks: tuple[DoctorCheck, ...] = ()
+    deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
 
     def __post_init__(self) -> None:
         if not self.name.strip() or not self.section.strip():
             raise ConfigError("shell name and section must not be empty")
+        if not callable(self.deprecations):
+            raise ConfigError("shell deprecations must be a function")
         _check_model(self.settings, "settings", "shell")
         _check_model(self.state, "state", "shell")
         key_mappings(self.settings)  # a broken shell declaration is a core bug
@@ -294,6 +301,11 @@ class PluginSpec:
     functions with a local import, so nothing under them is imported until a
     contract is first asked for (``untaped.contracts``).
 
+    ``deprecations`` returns the plugin's deprecated behaviours
+    (:func:`~untaped.stability.deprecated_behaviour`), a function with a local
+    import for the same reason: each gets a ``behaviour`` line in the public
+    surface, and its warnings name this plugin's distribution.
+
     ``caches`` are the :class:`~untaped.cache.Cache` objects the plugin
     keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``.
     ``stores`` are the :class:`~untaped.store.Store` objects it keeps, each
@@ -315,6 +327,7 @@ class PluginSpec:
     migrations: tuple[DirMigration, ...] = ()
     caches: tuple[Cache, ...] = ()
     stores: tuple[Store, ...] = ()
+    deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
 
     def __post_init__(self) -> None:
         check_plugin_name(self.name)
@@ -334,12 +347,7 @@ class PluginSpec:
             raise ConfigError(
                 f"plugin {self.name!r} help describes commands it has no app_factory for"
             )
-        if not callable(self.contracts):
-            raise ConfigError(f"plugin {self.name!r} contracts must be a function")
-        for owner, providers in self.provides.items():
-            check_plugin_name(owner)
-            if not callable(providers):
-                raise ConfigError(f"plugin {self.name!r} provides[{owner!r}] must be a function")
+        _check_listings(self)
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
         object.__setattr__(self, "migrations", tuple(self.migrations))
@@ -352,6 +360,17 @@ class PluginSpec:
             if not isinstance(store, Store):
                 raise ConfigError(f"plugin {self.name!r} stores holds {store!r}, not a Store")
         object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
+
+
+def _check_listings(spec: PluginSpec) -> None:
+    """``contracts``, ``deprecations`` and each ``provides`` entry are functions."""
+    for listing in ("contracts", "deprecations"):
+        if not callable(getattr(spec, listing)):
+            raise ConfigError(f"plugin {spec.name!r} {listing} must be a function")
+    for owner, providers in spec.provides.items():
+        check_plugin_name(owner)
+        if not callable(providers):
+            raise ConfigError(f"plugin {spec.name!r} provides[{owner!r}] must be a function")
 
 
 class _NoSettings(BaseModel):

@@ -20,6 +20,10 @@ Checks every command of a subtree against ``docs/plugins.md``:
 - ``mark-on-spec`` — a plugin's top app carries a mark of its own, which a
   lazy mount cannot see (mark the ``PluginSpec`` instead).
 
+A deprecated behaviour (``<plugin>.<name>``) is checked for ``nested-mark``
+(under its deprecated plugin) and ``bad-replacement`` (its text), the
+checked plugin's or, with no plugin, core's.
+
 A group named after a stability panel is ``reserved-panel``, one of the help
 tree's rules (:mod:`untaped.conventions.help_tree`).
 
@@ -98,7 +102,8 @@ def stability_violations(
                 found.append(f"{where}::wrong-deprecated::{path[-1]} uses warnings.deprecated")
     every = marks(root, result)
     found.extend(_setting_violations(root, result, settings, every))
-    for mark in (mark for mark in every if mark.target != "setting"):
+    found.extend(_behaviour_violations(root, result, spec, every))
+    for mark in (mark for mark in every if mark.target not in ("setting", "behaviour")):
         if mark.where.split()[0] in wanted:
             found.extend(f"{mark.where}::nested-mark::{d}" for d in _nested(mark, every))
             if isinstance(mark.stability, Deprecated):
@@ -134,6 +139,25 @@ def _setting_violations(
         elif isinstance(above, Experimental) and isinstance(mark.stability, Experimental):
             yield f"{mark.where}::nested-mark::experimental under experimental {section}"
         if isinstance(mark.stability, Deprecated) and isinstance(mark.stability.replacement, str):
+            yield from (
+                f"{mark.where}::bad-replacement::{detail}"
+                for detail in _bad_text(root, mark.stability.replacement, None)
+            )
+
+
+def _behaviour_violations(
+    root: App, result: CompositionResult, spec: PluginSpec | None, every: list[Mark]
+) -> Iterator[str]:
+    """The rules for the checked plugin's deprecated behaviours (core's when ``spec`` is None)."""
+    owner = "untaped" if spec is None else spec.name
+    plugin = {plugin.spec.name: plugin.spec.stability for plugin in result.plugins}
+    for mark in every:
+        if mark.target != "behaviour" or mark.where.partition(".")[0] != owner:
+            continue
+        if isinstance(plugin.get(owner), Deprecated):
+            yield f"{mark.where}::nested-mark::deprecated under deprecated {owner}"
+        if isinstance(mark.stability, Deprecated) and isinstance(mark.stability.replacement, str):
+            # A behaviour names its replacement as text only, so its own commands are fine.
             yield from (
                 f"{mark.where}::bad-replacement::{detail}"
                 for detail in _bad_text(root, mark.stability.replacement, None)

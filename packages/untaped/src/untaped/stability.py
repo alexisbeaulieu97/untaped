@@ -20,6 +20,8 @@ help line, the run-time warning and the conventions checks:
 - the removal version every deprecation names (``removed_in``), whose text
   :func:`removal_text` renders, and the one emitter of a deprecation on the
   sink, :func:`notify_deprecation`.
+- deprecated behaviours (:func:`deprecated_behaviour`), which have no object
+  to mark, so they carry a name and are listed on their spec.
 
 Neither marker is, or subclasses, ``warnings.deprecated``: that one warns on
 every use and, on a settings field, becomes pydantic field deprecation.
@@ -29,8 +31,9 @@ from __future__ import annotations
 
 import re
 import typing
+import warnings
 import weakref
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -41,6 +44,7 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from untaped.config_schema import unwrap_optional
+from untaped.errors import ConfigError
 from untaped.messages import (
     EXPERIMENTAL_LINE,
     deprecated_ignored_message,
@@ -417,7 +421,7 @@ def _apply(
 # --- the query ---------------------------------------------------------------
 
 
-type MarkTarget = Literal["plugin", "group", "command", "setting"]
+type MarkTarget = Literal["plugin", "group", "command", "setting", "behaviour"]
 
 
 @dataclass(frozen=True)
@@ -425,7 +429,8 @@ class Mark:
     """One mark: where it sits, what it marks, and what it says."""
 
     where: str
-    """The command path (``awx test``), plugin name or setting key (``awx.test_parallel``)."""
+    """The command path (``awx test``), plugin name, setting key (``awx.test_parallel``) or
+    behaviour (``untaped.plaintext-token``, ``<plugin>.<name>`` for a plugin's)."""
     target: MarkTarget
     stability: Stability
     replacement: str | None
@@ -433,7 +438,7 @@ class Mark:
 
 
 def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> list[Mark]:
-    """Every mark in the composition: plugin specs, groups, commands and settings.
+    """Every mark in the composition: plugin specs, groups, commands, settings and behaviours.
 
     Takes the composition, not only the app, because a spec mark is not on a
     lazy app. A setting is recorded only for a mark of its own field; one
@@ -450,6 +455,41 @@ def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> lis
     plugins = frozenset(plugin.spec.name for plugin in result.plugins)
     _collect(root, root, (), plugins, found, resolve=resolve)
     found.extend(_setting_marks(root))
+    found.extend(
+        _record(f"{owner_name}.{behaviour.name}", "behaviour", behaviour.mark, root)
+        for owner_name, behaviour in listed_behaviours(result)
+    )
+    return found
+
+
+def listed_behaviours(result: CompositionResult) -> list[tuple[str, DeprecatedBehaviour]]:
+    """``(owner, behaviour)`` for core's behaviours (owner ``untaped``), then each plugin's.
+
+    Calls each spec's ``deprecations``, importing what it lists (checkers and
+    generators only, never the CLI path).
+    """
+    from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415 - bootstrap imports this module
+
+    listings = [(_CORE_OWNER, SHELL_SPEC.deprecations)]
+    listings.extend((plugin.spec.name, plugin.spec.deprecations) for plugin in result.plugins)
+    found: list[tuple[str, DeprecatedBehaviour]] = []
+    owners: dict[int, str] = {}
+    for name, listing in listings:
+        seen: set[str] = set()
+        for item in listing():
+            if not isinstance(item, DeprecatedBehaviour):
+                raise ConfigError(
+                    f"{name} deprecations lists {item!r}, not a deprecated_behaviour(...)"
+                )
+            if item.name in seen:
+                raise ConfigError(f"{name} deprecations lists {item.name!r} twice")
+            if id(item) in owners:
+                raise ConfigError(
+                    f"{name} deprecations lists {item.name!r}, which {owners[id(item)]} owns"
+                )
+            seen.add(item.name)
+            owners[id(item)] = name
+            found.append((name, item))
     return found
 
 
@@ -773,3 +813,180 @@ def notify_deprecation(
             replacement=None if replacement is None else replacement.replace("`", ""),
         )
     )
+
+
+# --- deprecated behaviours ---------------------------------------------------
+
+_BEHAVIOUR_NAME = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+_CORE_OWNER = _ROOT_NAME
+
+
+class _Default:
+    """The behaviour's own replacement, where ``replacement=None`` would mean none."""
+
+    def __repr__(self) -> str:
+        return "<the behaviour's replacement>"
+
+
+_OWN = _Default()
+
+
+@dataclass(frozen=True)
+class DeprecatedBehaviour:
+    """A deprecated behaviour: a promise with no object to mark, so it carries a name.
+
+    Declare it with :func:`deprecated_behaviour` and list it on the spec of
+    the plugin that owns it (``PluginSpec(deprecations=lambda: (ROW_KIND,))``);
+    the surface writes ``behaviour <plugin>.<name>`` for it, so the release
+    check holds it to its date. A site never types the words: it names the
+    subject and calls :meth:`sentence`, :meth:`notify` or :meth:`warn`.
+    """
+
+    name: str
+    mark: Deprecated
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not _BEHAVIOUR_NAME.fullmatch(self.name):
+            raise TypeError(
+                f"a deprecated behaviour's name is kebab-case (plaintext-token), not {self.name!r}"
+            )
+        if not isinstance(self.mark, Deprecated) or callable(self.mark.replacement):
+            raise TypeError("a deprecated behaviour's replacement is text or None")
+        if self.mark.removed_in is None:
+            raise TypeError("a deprecated behaviour names the major that removes it: removed_in=12")
+
+    @property
+    def replacement(self) -> str | None:
+        """The replacement as warnings show it (a command or key backticked), or ``None``."""
+        return replacement_text(self.mark, None)
+
+    @property
+    def id(self) -> str:
+        """Its surface identity: ``behaviour <plugin>.<name>``, with ``untaped`` for core's.
+
+        The plugin is the one whose spec lists it (:func:`behaviour_owner`).
+        """
+        return f"behaviour {behaviour_owner(self) or _CORE_OWNER}.{self.name}"
+
+    def _shown(self, replacement: str | None | _Default) -> str | None:
+        if isinstance(replacement, _Default):
+            return self.replacement
+        if replacement is None:
+            return None
+        return replacement_text(Deprecated(replacement=replacement), None)
+
+    def sentence(self, subject: str, *, replacement: str | None | _Default = _OWN) -> str:
+        """``<subject> is deprecated and will be removed in <version>[; use <replacement>]``.
+
+        ``subject`` names the support that goes away ("support for a plain-text
+        awx.token in config.yml"). ``replacement`` overrides the behaviour's own
+        for one site (text, or ``None`` for none: a row that shows its fix already).
+        """
+        removal = removal_text(self.mark.removed_in, _distribution(self))
+        return deprecated_message(subject, self._shown(replacement), removal)
+
+    def notify(
+        self,
+        subject: str,
+        *,
+        key: str,
+        hint: str | None = None,
+        replacement: str | None | _Default = _OWN,
+    ) -> None:
+        """Warn once per ``key`` on the sink, as an ``untaped.deprecation`` record.
+
+        ``key`` is this behaviour's own (two sites passing one key share one
+        warning); ``hint`` is the follow-up (:func:`~untaped.messages.run_hint`),
+        its own line and its own field under JSON.
+        """
+        notify_deprecation(
+            self.id,
+            subject,
+            removed_in=self.mark.removed_in,
+            owner=_distribution(self),
+            replacement=self._shown(replacement),
+            key=f"{self.id} {key}",
+            hint=hint,
+        )
+
+    def warn(
+        self, subject: str, *, stacklevel: int = 2, replacement: str | None | _Default = _OWN
+    ) -> None:
+        """Warn with an :class:`UntapedDeprecationWarning`, for a behaviour of a Python API.
+
+        ``stacklevel`` counts from the caller of ``warn``, as ``warnings.warn``'s does.
+        """
+        shown = self._shown(replacement)
+        warning = UntapedDeprecationWarning(
+            self.sentence(subject, replacement=replacement),
+            id=self.id,
+            removed_in=self.mark.removed_in,
+            distribution=_distribution(self),
+            replacement=None if shown is None else shown.replace("`", ""),
+        )
+        warnings.warn(warning, stacklevel=stacklevel + 1)  # untaped: allow warnings-warn
+
+
+def deprecated_behaviour(
+    name: str, *, removed_in: int, replacement: str | None = None
+) -> DeprecatedBehaviour:
+    """Declare a deprecated behaviour: ``name`` (kebab-case), its removal major and replacement.
+
+    ``PLAINTEXT_TOKEN = deprecated_behaviour("plaintext-token", removed_in=12,
+    replacement="untaped auth migrate")``. List it on the owning spec's
+    ``deprecations``; a plugin's ``removed_in`` is its own major.
+    """
+    return DeprecatedBehaviour(name, Deprecated(replacement=replacement, removed_in=removed_in))
+
+
+# Plugin name → the ``deprecations`` callable of its spec, bound by the
+# composition and called only when a behaviour first asks who lists it, so a
+# spec module never imports its behaviours to compose. Core's are the rest.
+_LISTINGS: dict[str, Callable[[], Sequence[DeprecatedBehaviour]]] = {}
+_BEHAVIOUR_OWNERS: dict[int, tuple[DeprecatedBehaviour, str | None]] = {}
+
+
+def bind_behaviours(listings: Mapping[str, Callable[[], Sequence[DeprecatedBehaviour]]]) -> None:
+    """Record each composed plugin's ``deprecations`` (plugin name → its callable), anew."""
+    _LISTINGS.clear()
+    _LISTINGS.update(listings)
+    _BEHAVIOUR_OWNERS.clear()
+
+
+def behaviour_owner(behaviour: DeprecatedBehaviour) -> str | None:
+    """The plugin whose spec lists ``behaviour``, or ``None`` for core's.
+
+    Bound by the composition's listings: core's own come first (so no plugin
+    can claim one), then each plugin's. One nobody lists, or used outside a
+    composition, reads as core's; ``tests/repo`` keeps this workspace's
+    behaviours listed.
+    """
+    key = id(behaviour)
+    if key not in _BEHAVIOUR_OWNERS:
+        from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415 - bootstrap imports this module
+
+        found: str | None = None
+        if not any(item is behaviour for item in SHELL_SPEC.deprecations()):
+            listers = (n for n, items in _listed() if any(item is behaviour for item in items))
+            found = next(listers, None)
+        _BEHAVIOUR_OWNERS[key] = (behaviour, found)
+    return _BEHAVIOUR_OWNERS[key][1]
+
+
+def _distribution(behaviour: DeprecatedBehaviour) -> str | None:
+    """The distribution whose major ``behaviour`` names; ``None`` for core's."""
+    plugin = behaviour_owner(behaviour)
+    return None if plugin is None else owner(plugin)
+
+
+def _listed() -> Iterator[tuple[str, list[DeprecatedBehaviour]]]:
+    """Each composed plugin's listed behaviours; a listing that fails to load lists none.
+
+    Asked while warning, so a broken plugin listing never turns a warning into a crash.
+    """
+    for name, listing in _LISTINGS.items():
+        try:
+            items = list(listing())
+        except Exception:
+            continue
+        yield name, [item for item in items if isinstance(item, DeprecatedBehaviour)]

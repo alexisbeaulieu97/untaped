@@ -177,6 +177,10 @@ def test_a_plaintext_token_fails_and_moves_with_auth_migrate(
     # `auth migrate` moves the token inside its own process: no secret reaches the agent.
     assert (token["state"], token["by"]) == ("failed", "agent")
     assert token["run"] == ["--profile", "default", "auth", "migrate"]
+    assert token["detail"] == (
+        "support for a plain-text wiz.token in profile default is deprecated and will be"
+        " removed in 12.0; move it to pass"
+    )
     for fmt in ("json", "yaml", "table", "pipe"):
         assert "s3cret" not in _cli("setup", "plan", "--format", fmt).output
 

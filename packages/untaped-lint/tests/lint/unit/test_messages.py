@@ -102,5 +102,6 @@ def test_an_allow_marker_on_any_line_of_a_string_passes(tmp_path: Path) -> None:
     found = message_violations(package, list(source_files(package)))
     assert found == [
         "pkg/m.py::hand-typed-deprecation::y is deprecated: build it from the mark: "
-        "deprecated(removed_in=…), deprecated_alias(…, removed_in=…), Renamed(…, removed_in=…)"
+        "deprecated(removed_in=…), deprecated_alias(…, removed_in=…), Renamed(…, removed_in=…), "
+        "deprecated_behaviour(…, removed_in=…)"
     ]

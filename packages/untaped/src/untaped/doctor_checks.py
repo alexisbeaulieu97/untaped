@@ -16,7 +16,9 @@ from collections.abc import Callable, Iterator
 from pydantic import BaseModel
 
 from untaped.auth import (
+    PLAINTEXT_TOKEN,
     describe_token_source,
+    plaintext_subject,
     takes_token_command,
     token_alternatives,
     token_instead,
@@ -79,26 +81,20 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
                 ),
             )
         if _stored_token(section):
-            plaintext = (
-                f"{base_url}; {section}.token is stored in plain text in "
-                f"{resolve_config_path().name}"
-            )
+            subject = plaintext_subject(section, resolve_config_path().name)
             if takes_token_command(type(settings)):
+                # The row's fix line names `auth migrate`, so the sentence names no replacement.
                 return DoctorResult(
                     id=check_id,
                     ok=True,
                     warn=True,
-                    detail=plaintext,
+                    detail=f"{base_url}; {PLAINTEXT_TOKEN.sentence(subject, replacement=None)}",
                     fix="auth migrate",
                     automatic=True,
                 )
             alternatives = token_instead(settings, section=section)
-            return DoctorResult(
-                id=check_id,
-                ok=True,
-                warn=True,
-                detail=f"{plaintext}; use {alternatives} instead",
-            )
+            sentence = PLAINTEXT_TOKEN.sentence(subject, replacement=alternatives)
+            return DoctorResult(id=check_id, ok=True, warn=True, detail=f"{base_url}; {sentence}")
         return DoctorResult(id=check_id, ok=True, detail=f"{base_url}; token from {source}")
 
     return DoctorCheck(id=check_id, title=f"{section} connection settings", run=run)
