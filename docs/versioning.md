@@ -102,6 +102,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - A command that goes away with no successor is marked deprecated: it is
   listed by `untaped --deprecated --help`, ends its `--help` with a line
   naming the release that removes it, and warns on every run until then.
+- A flag that goes away with no new spelling is marked deprecated the same
+  way: `untaped <command> --deprecated --help` lists it under Deprecated
+  options with that line, and using it warns until then.
 - A renamed command or flag keeps working as a hidden, deprecated alias until
   the major its warning names, and the warning names the new spelling.
 - A renamed setting's old name, and its `UNTAPED_*` variable, keeps working

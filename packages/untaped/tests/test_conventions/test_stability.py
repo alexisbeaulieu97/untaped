@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Annotated
 
 import pytest
@@ -16,7 +16,14 @@ from untaped import bootstrap
 from untaped.cli import create_app
 from untaped.conventions.stability import stability_violations
 from untaped.plugins.registry import PluginSpec
-from untaped.stability import Deprecated, Experimental, deprecated, experimental, marks
+from untaped.stability import (
+    DEPRECATED_OPTIONS,
+    Deprecated,
+    Experimental,
+    deprecated,
+    experimental,
+    marks,
+)
 from untaped.testing import plugin_candidate
 
 
@@ -75,7 +82,140 @@ def test_a_clean_experimental_plugin_has_no_violations() -> None:
     assert _violations(_app, stability=experimental) == []
 
 
-def test_hand_typed_mark_in_help_docstring_and_visible_parameter_help() -> None:
+def test_a_deprecated_option_and_its_panel_go_together() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+
+        @app.command(name="run")
+        def run(
+            *,
+            kept: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS, negative="")] = False,
+            loose: Annotated[bool, deprecated(removed_in=3), Parameter(negative="")] = False,
+            placed: Annotated[
+                bool, Parameter(group=DEPRECATED_OPTIONS, negative=""), deprecated(removed_in=3)
+            ] = False,
+        ) -> None:
+            """Run it."""
+
+        return app
+
+    assert _violations(factory) == [
+        "svc run::deprecated-option-panel::--kept is in DEPRECATED_OPTIONS without a "
+        "deprecated(removed_in=...) mark",
+        "svc run::deprecated-option-panel::--loose carries a deprecated(...) mark, so it belongs "
+        "in DEPRECATED_OPTIONS, which hides it until --deprecated: "
+        "Parameter(group=DEPRECATED_OPTIONS)",
+    ]
+
+
+@dataclass
+class _Flags:
+    fast: bool = False
+
+
+@dataclass
+class _Fields:
+    gone: Annotated[bool, deprecated(removed_in=3)] = False
+    tucked: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS)] = False
+    optional: Annotated[int, deprecated(removed_in=3)] | None = None
+    kept: bool = False
+
+
+def test_a_flattened_field_can_t_be_deprecated() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+
+        @app.command(name="run")
+        def run(*, fields: Annotated[_Fields | None, Parameter(name="*")] = None) -> None:
+            """Run it."""
+
+        return app
+
+    message = (
+        "is a field of a dataclass or model parameter, which a deprecated(...) mark or "
+        "DEPRECATED_OPTIONS can't deprecate: make it a keyword-only option of the command"
+    )
+    assert _violations(factory) == [
+        f"svc run::deprecated-option-panel::--gone {message}",
+        f"svc run::deprecated-option-panel::--optional {message}",
+        f"svc run::deprecated-option-panel::--tucked {message}",
+    ]
+
+
+def test_a_mark_the_option_mechanism_ignores_or_hides_is_reported() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+
+        @app.command(name="run")
+        def run(
+            mode: Annotated[str, Parameter(group=DEPRECATED_OPTIONS), deprecated(removed_in=3)],
+            *,
+            flags: Annotated[
+                _Flags | None,
+                Parameter(name="*", group=DEPRECATED_OPTIONS),
+                deprecated(removed_in=3),
+            ] = None,
+            hidden: Annotated[
+                bool,
+                Parameter(group=DEPRECATED_OPTIONS, negative="", show=False),
+                deprecated(removed_in=3),
+            ] = False,
+        ) -> None:
+            """Run it."""
+
+        return app
+
+    rows = [row for row in _violations(factory) if "::deprecated-option-panel::" in row]
+    assert rows == [
+        "svc run::deprecated-option-panel::--hidden has show=False, which keeps it out of "
+        "DEPRECATED_OPTIONS even under --deprecated; the panel already hides it, so drop "
+        "show=False",
+        "svc run::deprecated-option-panel::--mode's deprecated(...) mark has no effect: only a "
+        "keyword-only option (after *) that is not a flattened dataclass can be deprecated",
+        "svc run::deprecated-option-panel::flags's deprecated(...) mark has no effect: only a "
+        "keyword-only option (after *) that is not a flattened dataclass can be deprecated",
+    ]
+
+
+def test_an_option_s_replacement_and_nesting_are_checked() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+
+        @app.command(name="old")
+        @deprecated(removed_in=3)
+        def old(
+            *,
+            under: Annotated[
+                bool, Parameter(group=DEPRECATED_OPTIONS, negative=""), deprecated(removed_in=3)
+            ] = False,
+        ) -> None:
+            """Old."""
+
+        @app.command(name="run")
+        def run(
+            *,
+            nowhere: Annotated[
+                bool,
+                Parameter(group=DEPRECATED_OPTIONS, negative=""),
+                deprecated(removed_in=3, replacement="untaped svc nope"),
+            ] = False,
+            flagged: Annotated[
+                bool,
+                Parameter(group=DEPRECATED_OPTIONS, negative=""),
+                deprecated(removed_in=3, replacement="--limit 1 --yes"),
+            ] = False,
+        ) -> None:
+            """Run it."""
+
+        return app
+
+    assert _violations(factory) == [
+        "svc old --under::nested-mark::deprecated under deprecated svc old",
+        "svc run --nowhere::bad-replacement::`untaped svc nope` does not resolve to a command",
+    ]
+
+
+def test_hand_typed_mark_in_help_docstring_and_parameter_help_hidden_or_not() -> None:
     def factory() -> App:
         app = create_app(name="svc", help="Experimental: may change.")
 
@@ -97,12 +237,13 @@ def test_hand_typed_mark_in_help_docstring_and_visible_parameter_help() -> None:
             *,
             old: Annotated[bool, Parameter(help="Deprecated: use --new.", show=False)] = False,
         ) -> None:
-            """Hidden flag is exempt."""
+            """A hidden flag takes a mark too."""
 
         return app
 
     assert _violations(factory) == [
         "svc doc::hand-typed-mark::docstring",
+        "svc hidden::hand-typed-mark::--old help",
         "svc param::hand-typed-mark::--flag help",
         "svc::hand-typed-mark::help",
     ]

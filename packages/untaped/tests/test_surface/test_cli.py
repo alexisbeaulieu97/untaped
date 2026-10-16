@@ -9,7 +9,13 @@ import pytest
 from cyclopts import App, Parameter
 
 from untaped.bootstrap import build_root_app, kept_composition
-from untaped.stability import apply_marks, deprecated_alias, experimental
+from untaped.stability import (
+    DEPRECATED_OPTIONS,
+    apply_marks,
+    deprecated,
+    deprecated_alias,
+    experimental,
+)
 from untaped.surface import DeprecatedMark
 from untaped.surface._cli import cli_lines, subtree_lines
 
@@ -41,7 +47,9 @@ def _root() -> App:
         stdin: bool = False,
         secret: Annotated[str | None, Parameter(show=False)] = None,
         legacy: Annotated[
-            bool, Parameter(negative="", show=False, help="Deprecated: does nothing now.")
+            bool,
+            Parameter(negative="", group=DEPRECATED_OPTIONS),
+            deprecated(removed_in=12, replacement="--format json"),
         ] = False,
     ) -> None:
         """Required and repeatable positionals, options of every shape."""
@@ -73,6 +81,9 @@ def _root() -> App:
     return root
 
 
+LEGACY = "cli untaped demo get --legacy switch  [deprecated, removed in 12.0; use --format json]"
+
+
 @pytest.fixture(scope="module")
 def lines() -> set[str]:
     return {str(line) for line in subtree_lines(_root(), "demo", None)}
@@ -90,7 +101,7 @@ def test_a_command_with_every_option_shape(lines: set[str]) -> None:
         "cli untaped demo get --format alias=-f",
         "cli untaped demo get --format choice=json",
         "cli untaped demo get --format choice=table",
-        "cli untaped demo get --legacy switch  [deprecated]",
+        LEGACY,
         "cli untaped demo get --refresh negative=--cached",
         "cli untaped demo get --refresh switch default=true",
         "cli untaped demo get --stdin negative=--no-stdin",
@@ -131,14 +142,19 @@ def test_marks_aliases_and_hidden_commands(lines: set[str]) -> None:
     assert not [line for line in lines if "secret" in line]
 
 
-def test_a_flag_deprecated_by_its_help_keeps_its_line_marked(lines: set[str]) -> None:
-    # Hidden, so otherwise skipped: deprecating a flag in a minor must not read as removing it.
-    assert "cli untaped demo get --legacy switch  [deprecated]" in lines
+def test_a_deprecated_flag_keeps_its_line_marked(lines: set[str]) -> None:
+    # Hidden until --deprecated, so otherwise skipped: deprecating a flag in a minor must not
+    # read as removing it.
+    assert LEGACY in lines
 
 
 def test_a_plugin_mark_reaches_every_line() -> None:
     lines = subtree_lines(_root(), "demo", "experimental")
-    assert {line.mark for line in lines} == {"experimental", DeprecatedMark()}
+    assert {line.mark for line in lines} == {
+        "experimental",
+        DeprecatedMark(),
+        DeprecatedMark(removed_in=12, use="--format json"),
+    }
 
 
 def test_the_root_lists_its_options_and_cyclopts_built_ins() -> None:

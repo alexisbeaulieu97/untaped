@@ -4611,6 +4611,7 @@ sdk untaped.sdk.Cycle.view(focused=) default=false  [experimental]
 sdk untaped.sdk.Cycle.view(frame)  [experimental]
 sdk untaped.sdk.Cycle.view(width=) default=None  [experimental]
 sdk untaped.sdk.Cycle.with_error(text)  [experimental]
+sdk untaped.sdk.DEPRECATED_OPTIONS
 sdk untaped.sdk.Debug(*, message, logger)
 sdk untaped.sdk.Debug(hint=) default=None
 sdk untaped.sdk.Debug.__init_subclass__(kind=) default=None

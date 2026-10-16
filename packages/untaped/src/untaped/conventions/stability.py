@@ -3,15 +3,19 @@
 Checks every command of a subtree against ``docs/plugins.md``:
 
 - ``hand-typed-mark`` — an ``Experimental:`` or ``Deprecated:`` line in an app
-  help, a command docstring, a visible parameter's help or a settings field's
-  description (core writes the line from the mark; a hidden option's help is
-  exempt);
+  help, a command docstring, a parameter's help (a hidden one's too) or a
+  settings field's description (core writes the line from the mark);
+- ``deprecated-option-panel`` — an option marked ``deprecated(...)`` outside
+  ``DEPRECATED_OPTIONS`` (which hides it until ``--deprecated``) or with
+  ``show=False`` (which keeps it out of that panel), an unmarked option inside
+  it, or a mark (or the panel) on a parameter that is not an option (a
+  positional, a flattened dataclass or one of its fields), which nothing reads;
 - ``wrong-deprecated`` — a command function carries Python's
   ``warnings.deprecated`` (cyclopts would print its text), or a settings field
   pydantic's ``deprecated=``, where untaped's ``deprecated(...)`` alone belongs;
   an SDK callable is the other way round and carries both (below);
-- ``nested-mark`` — a mark under a mark that makes it redundant or
-  contradictory: experimental under experimental, or anything under
+- ``nested-mark`` — a mark (a deprecated option's too) under a mark that makes
+  it redundant or contradictory: experimental under experimental, or anything under
   deprecated (deprecated under experimental is allowed); a settings field
   sits under its plugin;
 - ``bad-replacement`` — a ``deprecated`` replacement that is not mounted, is
@@ -53,19 +57,22 @@ from collections.abc import Callable, Iterable, Iterator
 from types import ModuleType
 from typing import Any
 
-from cyclopts import App
+from cyclopts import App, Parameter
 
 from untaped._root_options import resolve_command
 from untaped.config_schema import walk_settings
+from untaped.conventions.help_tree import as_groups
 from untaped.plugins.registry import CompositionResult, PluginSpec
 from untaped.settings import get_profile_settings_model, profile_section_models
 from untaped.stability import (
     COMMAND_TEXT,
+    DEPRECATED_OPTIONS,
     KEY_TEXT,
     Deprecated,
     Experimental,
     Mark,
     Stability,
+    annotation_metadata,
     app_mark,
     children,
     class_mark,
@@ -74,7 +81,9 @@ from untaped.stability import (
     field_descriptions,
     function_mark,
     mark_of,
+    marked_options,
     marks,
+    parameter_marks,
     pydantic_deprecated_fields,
     read_parameter_marks,
     replacement_path,
@@ -120,6 +129,9 @@ def stability_violations(
         for path, app in [((top,), subtree), *_walk(subtree, (top,))]:
             where = " ".join(path)
             found.extend(f"{where}::hand-typed-mark::{detail}" for detail in _hand_typed(app))
+            found.extend(
+                f"{where}::deprecated-option-panel::{detail}" for detail in _option_panel(app)
+            )
             if getattr(app.default_command, "__deprecated__", None) is not None:
                 found.append(
                     f"{where}::wrong-deprecated::{path[-1]} carries warnings.deprecated, whose "
@@ -210,6 +222,55 @@ def _nested(mark: Mark, every: list[Mark]) -> Iterator[str]:
             yield f"experimental under experimental {above.where}"
 
 
+def _option_panel(app: App) -> Iterator[str]:
+    """A deprecated option and ``DEPRECATED_OPTIONS`` go together, and the panel shows it."""
+    if app.default_command is None:
+        return
+    marked = parameter_marks(app.default_command)
+    options = {argument.field_info.name for argument, _ in marked_options(app)}
+    for argument in app.assemble_argument_collection(parse_docstring=False):
+        if argument.keys:
+            if _field_deprecated(argument.field_info.annotation):
+                yield (
+                    f"{argument.names[0]} is a field of a dataclass or model parameter, which a "
+                    "deprecated(...) mark or DEPRECATED_OPTIONS can't deprecate: make it a "
+                    "keyword-only option of the command"
+                )
+            continue
+        field = argument.field_info.name
+        name = argument.names[0] if argument.names and not argument.children else field
+        inside = any(group is DEPRECATED_OPTIONS for group in as_groups(argument.parameter.group))
+        if field in marked and field not in options:
+            yield (
+                f"{name}'s deprecated(...) mark has no effect: only a keyword-only option "
+                "(after *) that is not a flattened dataclass can be deprecated"
+            )
+        elif field in options and not inside:
+            yield (
+                f"{name} carries a deprecated(...) mark, so it belongs in DEPRECATED_OPTIONS, "
+                "which hides it until --deprecated: Parameter(group=DEPRECATED_OPTIONS)"
+            )
+        elif field in options and argument.parameter.show is False:
+            yield (
+                f"{name} has show=False, which keeps it out of DEPRECATED_OPTIONS even under "
+                "--deprecated; the panel already hides it, so drop show=False"
+            )
+        elif inside and field not in marked:
+            yield f"{name} is in DEPRECATED_OPTIONS without a deprecated(removed_in=...) mark"
+
+
+def _field_deprecated(annotation: object) -> bool:
+    """Whether a field's own annotation carries a mark or ``DEPRECATED_OPTIONS``."""
+    for item in annotation_metadata(annotation):
+        if isinstance(item, Deprecated):
+            return True
+        if isinstance(item, Parameter) and any(
+            group is DEPRECATED_OPTIONS for group in as_groups(item.group)
+        ):
+            return True
+    return False
+
+
 def _hand_typed(app: App) -> Iterator[str]:
     if app.default_command is None:
         if isinstance(app.help, str) and _HAND_TYPED.search(app.help):
@@ -220,7 +281,7 @@ def _hand_typed(app: App) -> Iterator[str]:
     if docstring and _HAND_TYPED.search(docstring):
         yield "docstring"
     for argument in app.assemble_argument_collection(parse_docstring=True):
-        if argument.show and argument.parse:
+        if argument.parse:
             text = argument.parameter.help
             if text and _HAND_TYPED.search(text):
                 yield f"{argument.names[0] if argument.names else argument.field_info.name} help"

@@ -7,8 +7,9 @@ order below holds on every screen:
 
 - Commands: cyclopts' unkeyed default panel, which sorts before any keyed one;
 - Plugins (50): every unmarked plugin's root command;
-- Experimental (100) and Deprecated (200): marked commands, from
-  :mod:`untaped.stability`, which keeps them because the Deprecated panel's
+- Experimental (100) and Deprecated (200): marked commands, and Deprecated
+  options (250): a command's options marked ``deprecated(...)``, all from
+  :mod:`untaped.stability`, which keeps them because the deprecated panels'
   visibility is the ``--deprecated`` flag's;
 - Global options (300): the root options (``--profile``, ``--verbose``,
   ``--quiet``, ``--deprecated``) on every screen, plus root's own ``--help``,
@@ -19,11 +20,17 @@ from __future__ import annotations
 
 from cyclopts import Group
 
-from untaped.stability import DEPRECATED_GROUP, EXPERIMENTAL_GROUP
+from untaped.stability import DEPRECATED_GROUP, DEPRECATED_OPTIONS, EXPERIMENTAL_GROUP
 
 PLUGINS_GROUP = Group("Plugins", sort_key=50)
 GLOBAL_OPTIONS_GROUP = Group("Global options", sort_key=300)
-CORE_PANELS = (PLUGINS_GROUP, EXPERIMENTAL_GROUP, DEPRECATED_GROUP, GLOBAL_OPTIONS_GROUP)
+CORE_PANELS = (
+    PLUGINS_GROUP,
+    EXPERIMENTAL_GROUP,
+    DEPRECATED_GROUP,
+    DEPRECATED_OPTIONS,
+    GLOBAL_OPTIONS_GROUP,
+)
 RESERVED_PANELS = frozenset(group.name for group in CORE_PANELS)
 #: A plugin's own panels take sort keys below this, so they list before core's
 #: keyed panels and Global options stays last.
