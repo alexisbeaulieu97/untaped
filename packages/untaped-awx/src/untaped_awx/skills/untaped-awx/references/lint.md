@@ -25,9 +25,10 @@ Without FILES the controller is read once into a snapshot kept for an hour
 snapshot redacts secret-named launch and inventory variables before it is
 kept.
 
-On the controller a foreign key, and a schedule's parent, resolve by the id
-AWX holds, so a project in another organization or a credential in none is
-found. A kind the token cannot list is skipped with a warning and
+On the controller every reference resolves by the id AWX holds (a foreign
+key, a schedule's parent, what a workflow node runs and prompts with), so a
+project in another organization, or a credential or template in none, is
+found and never confused with a namesake. A kind the token cannot list is skipped with a warning and
 references to it are `unresolved`. A record no listed row holds is named
 from its referrer's `summary_fields` where AWX embeds it, else `#<id>` when
 the token cannot read it either (`project '#10' was not checked`); it is
@@ -52,8 +53,10 @@ Each row is a `lint.finding`: `rule` (`awx.missing-reference`),
   controller (`job_templates/14`).
 - `fix`, when set, is the argv after `untaped` that fixes it:
   `["awx", "job-templates", "patch", "deploy-web", "--organization",
-  "Platform", "--set", "ask_limit_on_launch=true"]`. It is a write: show it
-  to the user, then run it with `--dry-run` first like any patch.
+  "Platform", "--set", "ask_limit_on_launch=true"]`; a resource in no
+  organization is patched by id (`patch 102 --by-id`), since its name alone
+  would select any organization's namesake too. It is a write: show it to
+  the user, then run it with `--dry-run` first like any patch.
 
 ## Rules
 
@@ -146,7 +149,8 @@ Each item is a `Linted`: the apply document (`resource`), where it was read
 (`origin`, `location`), its `references` (each `resolved`, `absent` or
 `unresolved`) and, from the controller, `controller` facts (`status`,
 `total_hosts`, `playbooks`). `resources.find(reference)` gives the item a
-resolved reference names: on the controller by the reference's `location`
-(it was resolved by id), else by its target, `None` when no item or several
-do (a rule never judges an arbitrary namesake). Test a rule with
+`resolved` reference names, else `None`. A live reference carries the
+`location` of the item it was resolved to by id, and is found there; a
+document's is found by its target, `None` when no item or several answer
+(a rule never judges an arbitrary namesake). Test a rule with
 `untaped_awx.testing.resources(yaml_text)` and `untaped_lint.testing.run_rule`.
