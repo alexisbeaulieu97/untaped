@@ -143,6 +143,7 @@ awx.job_template` lists the typed fields "plus any others" (`additionalPropertie
 | `awx test validate --source-ref` | `awx.provision_outcome` |
 | `awx test prune` | `awx.prune_outcome` |
 | `awx ping` | `awx.status` |
+| `awx lint` | `lint.finding` ([lint](#lint)) |
 
 | Consumer | Reads | Field used |
 |---|---|---|
@@ -151,6 +152,11 @@ awx.job_template` lists the typed fields "plus any others" (`additionalPropertie
 | `awx jobs get/events/logs/wait/cancel/relaunch --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`, `awx.relaunch_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
 | `awx unified-templates get --stdin` | `awx.unified_template`; or ID lines | `id` |
 | `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines (ID lines with `--by-id`) | `id` of a record; a line is a name, or an ID with `--by-id` |
+
+`awx lint`'s rules read one `awx.resources` record (the documents or the
+controller's resources it lints, with each reference and what it resolved
+to), which the run builds and never prints; a repository's own rules read it
+through `untaped_awx.api`.
 
 `awx jobs events` and `awx jobs logs` with several ids print one json or yaml
 array covering every job; the `job` field says which job a row belongs to.

@@ -4,9 +4,10 @@ Install it as part of `untaped`: `uv tool install 'untaped[awx]'` or `pip instal
 To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
 `untaped awx` reads and changes Ansible Automation Platform (AAP) or AWX
-resources by name, launches and follows jobs, and tests playbook changes with
-declarative suites. It is for people and agents who manage a shared
-controller from the command line or from CI. `awx test` is
+resources by name, lints them, launches and follows jobs, and tests playbook
+changes with declarative suites. It is for people and agents who manage a
+shared controller from the command line or from CI. `awx lint` and `awx test`
+are
 [experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/versioning.md#experimental)
 and may change in a minor release.
 
@@ -53,6 +54,27 @@ untaped --profile staging awx export --kind job-templates --out-dir exported \
 Exports are portable YAML that reference other resources by name. `apply`
 creates or updates them in dependency order, so you can keep configuration
 in git, copy it between controllers, and gate CI on `apply --check`.
+
+## Lint resources
+
+```bash
+untaped awx lint ./awx-specs --offline
+untaped awx lint --organization Platform --format json
+```
+
+```text
+LOCATION           SEVERITY  RULE                      TARGET                          MESSAGE
+templates.yml#2    error     awx.missing-reference     JobTemplate/Platform/deploy-web project 'web' is not in the batch
+job_templates/14   error     awx.playbook-missing      JobTemplate/Platform/deploy-web playbook 'deploy.yml' is not in Project 'web' at its last sync
+lint: 2 errors
+```
+
+With files, `lint` checks apply documents before you apply them, resolving
+references in the batch (`--offline`) or on the controller too; without, it
+checks what the controller holds, from a snapshot kept for an hour. Findings
+share `untaped lint`'s ids, `--ignore` and exit codes (3 on an error), and a
+repository can lint its documents offline with `untaped lint`. The skill
+lists the rules.
 
 ## Launch and follow jobs
 
