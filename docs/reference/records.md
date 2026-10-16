@@ -155,6 +155,7 @@ NDJSON.
 |---|---|
 | `ansible deps` | `ansible.dependency` (with the ROLE ref it was reached from, `root_ref`) |
 | `ansible impact` | `ansible.dependent` (with `root_ref`) |
+| `ansible impact --uses` | `ansible.variable_use_hit` (with the `dependent` it was found in) |
 | `ansible find` | `ansible.dependency_match` (with the input record's `input_kind`, `input_id`, `input_name`) |
 | `ansible source-alias list` | `ansible.source_alias` |
 | `ansible source-alias set`, `source-alias remove` | `ansible.source_alias_outcome` |

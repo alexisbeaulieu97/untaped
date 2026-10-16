@@ -11,6 +11,7 @@ import pytest
 
 from untaped.sdk import Filled, Store, code_version
 from untaped.testing import assert_schema_pinned
+from untaped_ansible import settings
 from untaped_ansible.infrastructure import open_index
 from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE, SCHEMA_SQL, SCHEMA_VERSION
 from untaped_ansible.settings import INDEX, INDEX_STORE, AnsibleSettings, default_index_path
@@ -56,6 +57,17 @@ def test_a_key_filled_by_another_parser_is_outdated(monkeypatch: pytest.MonkeyPa
 
     other = code_version("untaped_ansible.domain.parser", extra=("an edited parser",))
     monkeypatch.setattr(INDEX, "version", lambda: other)
+    assert INDEX.freshness("source:prod").outdated is True
+
+
+def test_a_key_filled_by_another_analyser_is_outdated(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fill(_key: str, _progress: object) -> Filled:
+        return Filled()
+
+    INDEX.serve({"source:prod": "source prod"}, refresh=True, fill=fill, read=lambda: None)
+    assert INDEX.freshness("source:prod").outdated is False
+    monkeypatch.setattr(settings, "analyser_version", lambda: "an edited analyser")
+
     assert INDEX.freshness("source:prod").outdated is True
 
 

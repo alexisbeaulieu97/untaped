@@ -9,6 +9,9 @@ answers for the GitHub host), so nothing here sees a token, a depth or a filter.
 
 Dependency files are read through one ``prefetched()`` handle per repo: one
 blob fetch for every changed ref's files, then one local ``cat-file --batch``.
+The files the variable analysis reads are listed from each commit's tree and
+fetched by blob id (:meth:`GitSourceStore.read_blobs`), only those not
+analysed yet.
 """
 
 from __future__ import annotations
@@ -138,6 +141,31 @@ class GitSourceStore:
             sha: {path: contents[blob] for path, blob in blobs.items()}
             for sha, blobs in blobs_at.items()
         }
+
+    def list_files(self, url: str, sha: str) -> list[tuple[str, str]]:
+        """Every file of the commit ``sha``, as ``(path, blob)``: one local tree listing."""
+        return [
+            (entry.path, entry.oid)
+            for entry in self._store(url).ls_tree(sha)
+            if entry.type == "blob"
+        ]
+
+    def read_blobs(self, url: str, blobs: Sequence[str]) -> dict[str, str]:
+        """``blob → content``: the missing ones fetched by id, then one ``cat-file --batch``.
+
+        The ids travel on stdin both ways, so a repo with thousands of files
+        never grows an argv.
+        """
+        wanted = list(dict.fromkeys(blobs))
+        if not wanted:
+            return {}
+        handle = self._store(url).prefetched(blobs=wanted)
+        result = handle.run(
+            ["cat-file", "--batch"],
+            stdin="".join(f"{blob}\n" for blob in wanted).encode(),
+            timeout=DEFAULT_TIMEOUT + PER_FILE_READ_TIMEOUT * len(wanted),
+        )
+        return _parse_cat_file_batch(result.stdout, wanted)
 
     def _store(self, url: str) -> RepoStore:
         from untaped_ansible import SPEC  # noqa: PLC0415  # the package imports this module

@@ -42,7 +42,8 @@ from untaped_ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped_ansible.domain.repo_targets import remote_url_for
-from untaped_ansible.settings import SourceDefinition
+from untaped_ansible.domain.variable_models import AnalysedFile, CommitListing
+from untaped_ansible.settings import SourceDefinition, analyser_version, parser_version
 from untaped_github.api import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
@@ -50,13 +51,6 @@ from untaped_github.api import (
 )
 
 ProbeMode = Literal["all", "default_branch"]
-
-# Version of what a ref snapshot stores: dependency-file parsing, identity
-# resolution and the resulting edge shape. It is folded into the dependency
-# paths fingerprint, so bumping it makes the next refresh re-parse every ref
-# instead of reusing a snapshot parsed by older code. Bump it whenever a
-# change can yield different edges for the same file content.
-PARSER_VERSION = 1
 
 
 class RefreshResult(Filled):
@@ -95,6 +89,8 @@ class _RepoRefreshResult:
     repo_metadata: SourceRepoMetadata
     ignored_collections: frozenset[str]
     skipped_files: tuple[SkippedDependencyFile, ...]
+    analysed: tuple[AnalysedFile, ...] = ()
+    listings: tuple[CommitListing, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -186,6 +182,7 @@ class RefreshGitSourceIndex:
         probe_kinds = self._probe_kinds(source)
         probe_mode = self._probe_mode(source)
         probe_fallbacks: dict[str, str] = {}
+        analyser = analyser_version()
 
         for batch_index, batch in enumerate(
             batched(pending_repos, self._repo_batch_size, strict=False)
@@ -218,12 +215,15 @@ class RefreshGitSourceIndex:
             batch_touches: list[RefScanTouch] = []
             batch_repo_metadata: list[SourceRepoMetadata] = []
             batch_statuses: dict[str, str] = {}
+            batch_analysed: list[AnalysedFile] = []
+            batch_listings: list[CommitListing] = []
 
             for full_name, outcome in self._refresh_repos(
                 tasks,
                 source_key=source_key,
                 paths=paths,
                 checked_at=checked_at,
+                analyser=analyser,
             ):
                 if isinstance(outcome, RepoFailure):
                     batch_failures[full_name] = outcome
@@ -236,6 +236,8 @@ class RefreshGitSourceIndex:
                 batch_scans.extend(outcome.scans)
                 batch_touches.extend(outcome.touches)
                 batch_repo_metadata.append(outcome.repo_metadata)
+                batch_analysed.extend(outcome.analysed)
+                batch_listings.extend(outcome.listings)
 
             failures.update(batch_failures)
 
@@ -252,6 +254,9 @@ class RefreshGitSourceIndex:
                     processed_repos=frozenset(batch_statuses),
                     source_fingerprint=source_fingerprint,
                     progress_statuses=batch_statuses,
+                    analysed=tuple(batch_analysed),
+                    listings=tuple(batch_listings),
+                    analyser=analyser,
                 )
 
             repos_left = len(pending_repos) - (batch_index + 1) * self._repo_batch_size
@@ -355,6 +360,7 @@ class RefreshGitSourceIndex:
         source_key: str,
         paths: list[str],
         checked_at: datetime,
+        analyser: str,
     ) -> Iterable[tuple[str, _RepoRefreshResult | RepoFailure]]:
         """Run per-repo fetch/parse workers; collect results or failures."""
         paths_fingerprint = _dependency_paths_fingerprint(paths)
@@ -373,6 +379,7 @@ class RefreshGitSourceIndex:
                     paths_fingerprint=paths_fingerprint,
                     aliases_fingerprint=aliases_fingerprint,
                     checked_at=checked_at,
+                    analyser=analyser,
                 )
             except UntapedError as exc:  # the repo store's or the index's (no HTTP here)
                 return RepoFailure(
@@ -464,6 +471,7 @@ class RefreshGitSourceIndex:
         paths_fingerprint: str,
         aliases_fingerprint: str,
         checked_at: datetime,
+        analyser: str,
     ) -> _RepoRefreshResult:
         repo = task.repo
         selected: set[tuple[str, str, str]] = set()
@@ -500,7 +508,13 @@ class RefreshGitSourceIndex:
             source_repo=repo.full_name,
             default_branch=task.default_branch,
         )
-        if not changed_refs:
+        # A ref whose dependencies did not change can still lack its variable
+        # analysis (new in this release, or made by another analyser version).
+        unanalysed = self._index.commits_needing_analysis(
+            repo.full_name, {ref.sha for ref in task.refs}, analyser=analyser
+        )
+        fetched = [ref for ref in task.refs if ref in changed_refs or ref.sha in unanalysed]
+        if not fetched:
             return _RepoRefreshResult(
                 selected=frozenset(selected),
                 scans=(),
@@ -510,8 +524,18 @@ class RefreshGitSourceIndex:
                 skipped_files=(),
             )
 
-        self._git.fetch(clone_url, changed_refs)
-        files_by_sha = self._git.read_files(clone_url, [ref.sha for ref in changed_refs], paths)
+        self._git.fetch(clone_url, fetched)
+        analysed, listings, analysis_skipped = self._analyse_variables(
+            clone_url,
+            repo=repo.full_name,
+            refs=[ref for ref in task.refs if ref.sha in unanalysed],
+            analyser=analyser,
+        )
+        files_by_sha = (
+            self._git.read_files(clone_url, [ref.sha for ref in changed_refs], paths)
+            if changed_refs
+            else {}
+        )
         parsed_by_sha = {
             sha: _parse_dependency_files(contents, paths) for sha, contents in files_by_sha.items()
         }
@@ -552,14 +576,71 @@ class RefreshGitSourceIndex:
                 )
             )
 
+        # A dependency file the parser already skipped says so once, not twice.
+        parsed_skips = {(item.ref, item.source_path) for item in repo_skipped_files}
+        analysis_skipped = [
+            item for item in analysis_skipped if (item.ref, item.source_path) not in parsed_skips
+        ]
         return _RepoRefreshResult(
             selected=frozenset(selected),
             scans=tuple(pending_scans),
             touches=tuple(pending_touches),
             repo_metadata=repo_metadata,
             ignored_collections=frozenset(ignored_collections),
-            skipped_files=_dedupe_skipped_files(repo_skipped_files),
+            skipped_files=_dedupe_skipped_files([*repo_skipped_files, *analysis_skipped]),
+            analysed=analysed,
+            listings=listings,
         )
+
+    def _analyse_variables(
+        self, url: str, *, repo: str, refs: list[GitRef], analyser: str
+    ) -> tuple[tuple[AnalysedFile, ...], tuple[CommitListing, ...], list[SkippedDependencyFile]]:
+        """Analyse the selected files of each of ``refs``' commits not analysed yet.
+
+        Files are keyed by content and path, so a file shared by several
+        commits (or analysed by an earlier refresh at this analyser version)
+        is read and analysed once.
+        """
+        from untaped_ansible.domain.variables import analyse, selected  # noqa: PLC0415  # Jinja2
+
+        shas = list(dict.fromkeys(ref.sha for ref in refs))
+        listings = tuple(
+            CommitListing(
+                repo=repo,
+                sha=sha,
+                files=tuple(
+                    (path, blob) for path, blob in self._git.list_files(url, sha) if selected(path)
+                ),
+            )
+            for sha in shas
+        )
+        wanted = {(blob, path) for listing in listings for path, blob in listing.files}
+        unknown = sorted(wanted - self._index.analysed_files(wanted, analyser=analyser))
+        contents = self._git.read_blobs(url, [blob for blob, _ in unknown])
+        analysed = tuple(
+            AnalysedFile(blob=blob, path=path, analysis=analyse(path, contents[blob]))
+            for blob, path in unknown
+        )
+        reasons = {
+            (item.blob, item.path): item.analysis.skipped
+            for item in analysed
+            if item.analysis.skipped is not None
+        }
+        # Each skipped file content is reported once, at the first ref holding it.
+        skipped: dict[tuple[str, str], SkippedDependencyFile] = {}
+        ref_at = {sha: next(ref.name for ref in refs if ref.sha == sha) for sha in shas}
+        for listing in listings:
+            for path, blob in listing.files:
+                reason = reasons.get((blob, path))
+                if reason is not None and (blob, path) not in skipped:
+                    skipped[(blob, path)] = SkippedDependencyFile(
+                        repo=repo,
+                        ref=ref_at[listing.sha],
+                        source_path=path,
+                        reason=reason,
+                        analysis=True,
+                    )
+        return analysed, listings, list(skipped.values())
 
     def _expand_repos(self, source: SourceDefinition) -> list[ProbeTarget]:
         """Expand explicit repos, orgs, and teams into candidates.
@@ -672,7 +753,7 @@ def repo_candidate(row: dict[str, object], *, fallback: str | None) -> ProbeTarg
 
 def _dependency_paths_fingerprint(paths: list[str]) -> str:
     """Fingerprint of which dependency files are read and how they are parsed."""
-    inputs = {"paths": paths, "parser_version": PARSER_VERSION}
+    inputs = {"paths": paths, "parser_version": parser_version()}
     payload = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
 

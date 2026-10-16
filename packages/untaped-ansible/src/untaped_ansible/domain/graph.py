@@ -26,6 +26,9 @@ class GraphNode(BaseModel):
     ref: str | None = None
     ref_kind: str | None = Field(default=None, exclude=True)
     default_branch: str | None = Field(default=None, exclude=True)
+    shas: frozenset[str] = Field(default=frozenset(), exclude=True)
+    """The commits the node's indexed edges were read at: one per source that
+    holds the ref, so two when two sources indexed it at different commits."""
     unresolved: str | None = None
     stopped: StopReason | None = None
     """Why the graph did not read this node's own edges: ``depth`` when

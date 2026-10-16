@@ -40,7 +40,7 @@ from untaped_ansible.domain.payloads import (
 )
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex
-from untaped_ansible.infrastructure.sqlite_schema import SCHEMA_VERSION
+from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE
 from untaped_ansible.settings import INDEX
 
 _PROD = {"sources": [{"name": "prod", "repos": ["acme/site"]}]}
@@ -574,7 +574,7 @@ def test_a_rebuilt_index_is_refreshed_not_served_empty(
     _use_config(tmp_path, monkeypatch, _PROD)
     assert _repos(_impact()) == ["acme/site"]
     with sqlite3.connect(tmp_path / "index.sqlite3") as db:
-        db.execute(f"pragma user_version = {SCHEMA_VERSION - 1}")
+        db.execute(f"pragma user_version = {ADDITIVE_SINCE - 1}")
 
     result = _impact()
 
