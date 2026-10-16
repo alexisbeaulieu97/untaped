@@ -906,13 +906,22 @@ source = { editable = "packages/untaped-awx" }
 dependencies = [
     { name = "jinja2" },
     { name = "untaped" },
+    { name = "untaped-lint" },
+]
+
+[package.optional-dependencies]
+lint = [
+    { name = "untaped-lint" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-lint", editable = "packages/untaped-lint" },
+    { name = "untaped-lint", marker = "extra == 'lint'", editable = "packages/untaped-lint" },
 ]
+provides-extras = ["lint"]
 
 [[package]]
 name = "untaped-dotfiles"
