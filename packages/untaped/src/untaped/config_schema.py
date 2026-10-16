@@ -45,6 +45,13 @@ class Choices:
     noun: str = "name"
     """Singular noun for what is unknown (``UI theme``)."""
 
+    defaults: Callable[[Any], Mapping[str, str]] | None = None
+    """For a mapping: each name's value while the mapping doesn't set it, given the validated
+    model that holds the field (``ui.symbols`` reads the chosen theme's symbols)."""
+
+    defaults_label: str = "default"
+    """Where :attr:`defaults` come from, as a source is shown (``theme``)."""
+
     def names(self) -> tuple[str, ...]:
         """The accepted names, in declared order."""
         return tuple(self.source())

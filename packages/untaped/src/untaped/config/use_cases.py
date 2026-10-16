@@ -267,6 +267,95 @@ def _check_rankable(owner_name: str, name: str, method: str, plugins: list[str])
     ]
 
 
+@dataclass(frozen=True)
+class NamedValue:
+    """One name of a mapping that declares its names (``ui.symbols``), and its value's source."""
+
+    name: str
+    value: str
+    source: str
+    """The profile (``profile:work``) or variable setting it, else its defaults' (``theme``)."""
+    declared: bool = True
+    """Whether the field's :class:`~untaped.config_schema.Choices` names it."""
+
+
+class ListNames:
+    """Each name a declared-name mapping accepts, with its effective value and source.
+
+    A name the mapping sets shows that value and the profile or variable
+    setting it; any other declared name shows the default its
+    :class:`~untaped.config_schema.Choices` gives. Names the mapping sets
+    that aren't declared follow, so a stray one can be seen and removed.
+    """
+
+    def __init__(self, repo: SettingsReader) -> None:
+        self._repo = repo
+
+    def __call__(self, key: str, *, under: str | None = None) -> tuple[NamedValue, ...]:
+        """The names of ``key``; raises :class:`ConfigError` for a key that declares none.
+
+        With ``under`` (a profile), a name that profile sets shows what it
+        inherits instead: the ``default`` profile's value, else the default.
+        """
+        descriptor = self._repo.descriptor(key)
+        choices = descriptor.choices
+        if choices is None or not descriptor.is_collection:
+            raise ConfigError(f"{key} declares no names", category="invalid")
+        current = self._repo.setting_value(descriptor) or {}
+        holder = self._repo.holder_value(descriptor)
+        defaults = choices.defaults(holder) if choices.defaults is not None else {}
+        variable = self._repo.env_var_supplying(descriptor)
+        from_variable = _object_names(self._repo.env_value_for(descriptor))
+        provenance = self._repo.provenance()
+        below = self._below(descriptor, under) if under is not None else {}
+        declared = choices.names()
+
+        def found(name: str) -> tuple[str, str]:
+            fallback = (str(defaults.get(name, "")), choices.defaults_label)
+            if name not in current:
+                return fallback
+            if variable is not None and (from_variable is None or name in from_variable):
+                return str(current[name]), variable
+            profile = provenance.get((*descriptor.path, name))
+            if under is not None and profile == under:
+                return (
+                    (str(below[name]), _profile_label(DEFAULT_PROFILE))
+                    if name in below
+                    else (fallback)
+                )
+            return str(current[name]), _profile_label(profile) if profile else "default"
+
+        names = (*declared, *(name for name in current if name not in declared))
+        return tuple(NamedValue(name, *found(name), name in declared) for name in names)
+
+    def _below(self, descriptor: FieldDescriptor, profile: str) -> dict[str, Any]:
+        """The mapping as the ``default`` profile sets it, beneath ``profile`` (none for itself)."""
+        data = self._repo.profile_data(DEFAULT_PROFILE) if profile != DEFAULT_PROFILE else None
+        section, *rest = descriptor.path
+        model = self._repo.section_model(section)
+        value: Any = (data or {}).get(section)
+        if model is not None and isinstance(value, dict):
+            value = rename_keys(model, value)[0]
+        for part in rest:
+            value = value.get(part) if isinstance(value, dict) else None
+        return value if isinstance(value, dict) else {}
+
+
+def _profile_label(profile: str) -> str:
+    return Source(kind="profile", profile=profile).label
+
+
+def _object_names(text: str | None) -> frozenset[str] | None:
+    """The names a variable's JSON object sets, merged over the profiles' (``None``: can't tell)."""
+    if text is None:
+        return frozenset()
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return None
+    return frozenset(parsed) if isinstance(parsed, dict) else None
+
+
 class GetSetting:
     """Return the effective display entry for a single scalar setting."""
 

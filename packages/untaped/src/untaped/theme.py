@@ -202,10 +202,24 @@ class UiSettings(BaseModel):
             "theme turns it off); a column named in `--columns` always shows."
         ),
     )
-    symbols: Annotated[dict[str, str], Choices(lambda: SYMBOL_NAMES, "symbols")] = Field(
-        default_factory=dict, description="Symbol overrides merged over the theme's symbols."
-    )
-    color_roles: Annotated[dict[str, str], Choices(lambda: ROLE_NAMES, "color roles")] = Field(
+    symbols: Annotated[
+        dict[str, str],
+        Choices(
+            lambda: SYMBOL_NAMES,
+            "symbols",
+            defaults=lambda ui: _chosen_theme(ui).symbols,
+            defaults_label="theme",
+        ),
+    ] = Field(default_factory=dict, description="Symbol overrides merged over the theme's symbols.")
+    color_roles: Annotated[
+        dict[str, str],
+        Choices(
+            lambda: ROLE_NAMES,
+            "color roles",
+            defaults=lambda ui: _chosen_theme(ui).color_roles,
+            defaults_label="theme",
+        ),
+    ] = Field(
         default_factory=dict, description="Color-role overrides merged over the theme's colors."
     )
 
@@ -328,6 +342,11 @@ def resolve_theme(settings: UiSettings | None = None) -> ThemeSpec:
     """Resolve the active built-in theme plus user overrides."""
     ui_settings = settings or UiSettings()
     return ui_settings.apply_to(_theme_named(ui_settings.theme))
+
+
+def _chosen_theme(ui: UiSettings) -> ThemeSpec:
+    """The theme ``ui`` names, before its overrides; the default one for a name not built in."""
+    return BUILTIN_THEMES.get(ui.theme, BUILTIN_THEMES["default"])
 
 
 def _theme_named(name: str) -> ThemeSpec:

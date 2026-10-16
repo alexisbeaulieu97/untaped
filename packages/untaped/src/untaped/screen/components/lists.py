@@ -9,7 +9,8 @@ thousands draws as fast as a short one. ``Tree`` is rows that expand into
 their children, windowed the same way. ``Tags`` is the chosen items as
 removable badges with a search list to add more, for a choice among too many
 items to show. ``ListEditor`` is an ordered list of strings to add to, edit,
-remove from and reorder.
+remove from and reorder; ``MapEditor`` sets or clears the value of each of a
+fixed set of names.
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked, rank
 from untaped.stability import experimental
 
-__all__ = ["ListEditor", "SearchList", "Tags", "Tree", "TreeRow"]
+__all__ = ["ListEditor", "MapEditor", "MapEntry", "SearchList", "Tags", "Tree", "TreeRow"]
 
 #: The most list rows a ``SearchList`` shows at once, and the fewest it is squeezed to.
 MAX_ROWS = 10
@@ -589,6 +590,11 @@ class ListEditor:
         object.__setattr__(self, "cursor", max(0, min(self.cursor, len(self.items) + 1)))
 
     @property
+    def rows(self) -> int:
+        """The rows it shows when nothing is windowed: the items, ``+ add`` and ``done``."""
+        return len(self.items) + 2
+
+    @property
     def value(self) -> tuple[str, ...]:
         """The items, in order, an open item as enter would keep it (so ctrl-s keeps it too)."""
         return self.items if self.editing is None else self._kept(self.editing.text).items
@@ -713,4 +719,159 @@ class ListEditor:
             trail="moving" if here and self.moving else "",
             trail_style=role_style(frame, "screen.highlight"),
             base=role_style(frame, "screen.highlight") if here else None,
+        )
+
+
+@dataclass(frozen=True)
+class MapEntry:
+    """One name a :class:`MapEditor` shows: its value while the map doesn't set it, and why."""
+
+    name: str
+    value: str
+    source: str
+    known: bool = True
+    """``False`` for a name the map sets but doesn't accept; it shows ``unknown``."""
+
+
+@dataclass(frozen=True)
+class MapEditor:
+    """A fixed set of names, each with its value, in a labelled box: set or clear each one.
+
+    The rows are the names, then ``done``. ``own`` is what this map sets
+    itself (the rest is inherited); ``value`` is ``own`` after the edits, an
+    open value as enter would keep it. Enter on a name edits its value in
+    place, enter again keeps it (an emptied value clears the name, and an
+    inherited value kept unchanged stays inherited), esc drops the edit.
+    ``delete`` or ``backspace`` clears a name the map sets, so it shows what
+    it inherits again. Enter on ``done`` is left to the screen,
+    which writes the map as ctrl-s does. A name set here shows ``own_source``.
+    """
+
+    label: str
+    entries: tuple[MapEntry, ...]
+    own: tuple[tuple[str, str], ...] = ()
+    own_source: str = ""
+    cursor: int = 0
+    editing: EditBuffer | None = None
+    help: str = ""
+    error: str = ""
+    window_rows: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cursor", max(0, min(self.cursor, len(self.entries))))
+
+    @property
+    def rows(self) -> int:
+        """The rows it shows when nothing is windowed: the names and ``done``."""
+        return len(self.entries) + 1
+
+    @property
+    def value(self) -> dict[str, str]:
+        """What this map sets, an open value as enter would keep it."""
+        return dict((self if self.editing is None else self._kept(self.editing.text)).own)
+
+    def with_error(self, text: str) -> Self:
+        """This map showing ``text`` as its error (empty clears it)."""
+        return replace(self, error=text)
+
+    def validate(self) -> str:
+        """Always fine: each value is the model's to check when the map is written."""
+        return ""
+
+    def update(self, message: object) -> tuple[Self, list[Cmd]]:
+        """Edit the open value, or act on the name under the cursor."""
+        if self.editing is not None:
+            return self._edit(self.editing, message), []
+        if not isinstance(message, Key):
+            return self, []
+        at, count = self.cursor, len(self.entries)
+        moved = moved_to(message.name, at, count + 1)
+        if moved is not None:
+            return (replace(self, cursor=moved) if moved != at else self), []
+        if at == count:
+            return self, []
+        name = self.entries[at].name
+        if message.name == "enter":
+            text = dict(self.own).get(name, self.entries[at].value)
+            return replace(self, editing=EditBuffer(text, len(text)), error=""), []
+        if message.name in ("delete", "backspace") and name in dict(self.own):
+            return self._set(name, None), []
+        return self, []
+
+    def _edit(self, buffer: EditBuffer, message: object) -> Self:
+        match message:
+            case Key("enter"):
+                return self._kept(buffer.text)
+            case Key("esc"):
+                return replace(self, editing=None)
+            case Key(name):
+                edited = buffer.key(name)
+            case Paste(text):
+                edited = buffer.paste(text)
+            case _:
+                return self
+        return self if edited is None else replace(self, editing=edited, error="")
+
+    def _kept(self, text: str) -> Self:
+        entry = self.entries[self.cursor]
+        if entry.name not in dict(self.own) and text == entry.value:
+            return replace(self, editing=None)  # the inherited value, kept as it was: not copied
+        return self._set(entry.name, text if text.strip() else None)
+
+    def _set(self, name: str, value: str | None) -> Self:
+        own = {key: text for key, text in self.own if key != name}
+        if value is not None:
+            own[name] = value
+        ordered = tuple(
+            (entry.name, own[entry.name]) for entry in self.entries if entry.name in own
+        )
+        return replace(self, own=ordered, editing=None, error="")
+
+    def view(
+        self, frame: Frame, *, focused: bool = False, width: int | None = None
+    ) -> RenderableType:
+        """The box: one row per name (name, value, source), then ``done``."""
+        inner = inner_width(frame, width)
+        size = self.window_rows or max(MIN_ROWS, min(MAX_ROWS, frame.height - _CHROME))
+        indexes = tuple(range(len(self.entries) + 1))
+        _, shown = window(indexes, self.cursor, size)
+        name_width = min(max((cell_len(e.name) for e in self.entries), default=0), inner // 2)
+        rows = [self._row(frame, inner, index, name_width, focused=focused) for index in shown]
+        return field_box(
+            frame, self.label, Group(*rows), focused=focused, error=self.error, help=self.help,
+            width=width,
+        )  # fmt: skip
+
+    def _row(self, frame: Frame, inner: int, index: int, name_width: int, *, focused: bool) -> Text:
+        here = focused and index == self.cursor
+        highlight = role_style(frame, "screen.highlight")
+        if index == len(self.entries):
+            style = highlight if here else role_style(frame, "screen.muted")
+            return option_row(
+                frame, inner, label="done", label_style=style, base=highlight if here else None
+            )
+        entry = self.entries[index]
+        own = dict(self.own)
+        name = fit_text(Text(entry.name), name_width, frame.ellipsis()).plain.ljust(name_width)
+        if here and self.editing is not None:
+            line = Text(f"{name}  ", style=role_style(frame, "screen.value"))
+            buffer = self.editing
+            line.append_text(
+                text_line(
+                    frame, max(inner - name_width - 2, 1), buffer.text, buffer.cursor, focused=True
+                )
+            )
+            return line
+        value = own.get(entry.name, entry.value) or "none"
+        source = self.own_source if entry.name in own else entry.source
+        trail = source if entry.known else f"unknown  {source}"
+        style = highlight if here else role_style(frame, "screen.value")
+        return option_row(
+            frame,
+            inner,
+            label=f"{name}  {value}",
+            label_style=style,
+            trail=trail,
+            trail_style=highlight if here else role_style(frame, "screen.muted"),
+            base=highlight if here else None,
         )

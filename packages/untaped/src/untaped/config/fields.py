@@ -26,16 +26,17 @@ from typing import Literal, get_args, get_origin
 from pydantic import SecretStr
 from pydantic_core import to_jsonable_python
 
+from untaped.config.use_cases import NamedValue
 from untaped.config_schema import FieldDescriptor
 from untaped.screen.components.choices import Check, Cycle, ListItem, Select, SingleList
 from untaped.screen.components.fields import Field
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
-from untaped.screen.components.lists import ListEditor
+from untaped.screen.components.lists import ListEditor, MapEditor, MapEntry
 
-__all__ = ["editor", "written"]
+__all__ = ["editor", "reads_names", "written"]
 
 type Shape = Literal[
-    "check", "cycle", "number", "path", "choice", "secret", "text", "list", "argv", "json"
+    "check", "cycle", "number", "path", "choice", "secret", "text", "list", "argv", "names", "json"
 ]
 
 #: The most choices drawn inline; more open as a ``Select``.
@@ -48,16 +49,34 @@ EMPTY_KEEPS = "empty keeps it; delete on its row unsets it"
 LIST_HELP = "enter edit · delete remove · m move · done or ctrl-s writes"
 ARGV_HELP = "the command as you would type it; empty unsets it"
 JSON_HELP = "JSON, as config set takes it; empty unsets it"
+NAMES_HELP = "enter edit · delete clears · empty clears · done or ctrl-s writes"
 
 
-def editor(descriptor: FieldDescriptor, value: object, *, label: str, raw: bool = False) -> Field:
+def reads_names(descriptor: FieldDescriptor) -> bool:
+    """Whether ``descriptor``'s editor opens on its names (``ListNames``), not on its value."""
+    return _shape(descriptor) == "names"
+
+
+def editor(
+    descriptor: FieldDescriptor,
+    value: object,
+    *,
+    label: str,
+    raw: bool = False,
+    own: object = None,
+    own_source: str = "",
+) -> Field:
     """The component that edits ``descriptor``, holding ``value``.
 
     ``raw`` is a value its section failed to validate (as the row shows it):
     it opens as text, or as JSON for a list or map, as ``config set`` takes
-    it, whatever the field's shape.
+    it, whatever the field's shape. A map that declares its names opens on
+    them (``value`` is what ``ListNames`` gives), editing ``own``, what the
+    profile itself sets; a name set there shows ``own_source``.
     """
     shape = _raw_shape(descriptor) if raw else _shape(descriptor)
+    if shape == "names":
+        return _names(value, own, label=label, own_source=own_source)
     if shape in ("list", "argv", "json"):
         return _collection(shape, value, label=label, raw=raw)
     shown = "" if value is None else str(value)
@@ -91,6 +110,9 @@ def written(descriptor: FieldDescriptor, component: Field, *, raw: bool = False)
         case "list":
             assert isinstance(value, tuple)
             return json.dumps(list(value))
+        case "names":
+            assert isinstance(value, dict)
+            return json.dumps(value) if value else None
         case "argv":
             return json.dumps(shlex.split(str(value))) if str(value).strip() else None
         case "check" | "cycle":
@@ -112,7 +134,9 @@ def _shape(descriptor: FieldDescriptor) -> Shape:
     if get_origin(annotation) is list and get_args(annotation) == (str,):
         return "list"
     if descriptor.is_collection:
-        return "json"
+        return (
+            "names" if descriptor.choices is not None and get_origin(annotation) is dict else "json"
+        )
     if annotation is bool:
         return "cycle" if descriptor.optional else "check"
     if annotation in (int, float):
@@ -141,6 +165,19 @@ def _collection(shape: Shape, value: object, *, label: str, raw: bool) -> Field:
         return TextInput(label, shlex.join(strings), help=ARGV_HELP, validator=_argv_error)
     text = "" if value is None else str(value) if raw else _json(value)
     return TextInput(label, text, help=JSON_HELP)
+
+
+def _names(value: object, own: object, *, label: str, own_source: str) -> Field:
+    """The editor of a map that declares its names: a row per name, editing what ``own`` sets."""
+    names = value if isinstance(value, tuple) else ()
+    entries = tuple(
+        MapEntry(item.name, item.value, item.source, item.declared)
+        for item in names
+        if isinstance(item, NamedValue)
+    )
+    mine = own if isinstance(own, dict) else {}
+    ordered = tuple((entry.name, str(mine[entry.name])) for entry in entries if entry.name in mine)
+    return MapEditor(label, entries, ordered, own_source=own_source, help=NAMES_HELP)
 
 
 def _raw_shape(descriptor: FieldDescriptor) -> Shape:

@@ -82,11 +82,19 @@ class SettingsFileRepository:
         Validates only the leaf's top-level section; raises ``ConfigError``
         when that section is invalid.
         """
+        holder = self.holder_value(descriptor)
+        return None if holder is None else getattr(holder, descriptor.path[-1], None)
+
+    def holder_value(self, descriptor: FieldDescriptor) -> Any:
+        """The validated model that holds one leaf: its section, or a model nested in it.
+
+        Raises ``ConfigError`` when the leaf's section is invalid.
+        """
         section = descriptor.path[0]
         if section not in self._sections:
             self._sections[section] = load_settings_section(section, self._settings_cls)
         cursor: Any = self._sections[section]
-        for segment in descriptor.path[1:]:
+        for segment in descriptor.path[1:-1]:
             cursor = getattr(cursor, segment, None)
             if cursor is None:
                 return None

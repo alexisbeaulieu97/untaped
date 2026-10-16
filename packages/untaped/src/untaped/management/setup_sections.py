@@ -26,10 +26,10 @@ from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.config.fields import editor, written
-from untaped.config.models import SettingEntry, setting_entry_row
+from untaped.config.fields import editor, reads_names, written
+from untaped.config.models import SettingEntry, Source, setting_entry_row
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import GetSetting, ListSettings, Note, SetSetting
+from untaped.config.use_cases import GetSetting, ListNames, ListSettings, Note, SetSetting
 from untaped.config_schema import FieldDescriptor, bounds_text
 from untaped.errors import ConfigError
 from untaped.management.setup_state import (
@@ -44,7 +44,7 @@ from untaped.plugins.registry import PluginSpec
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
 from untaped.screen.components.draw import note_lines, option_row, role_style
 from untaped.screen.components.fields import Field
-from untaped.screen.components.lists import ListEditor
+from untaped.screen.components.lists import ListEditor, MapEditor
 from untaped.screen.core import Cmd, Frame, Key
 from untaped.screen.fit import fit_text
 from untaped.settings import section_stabilities
@@ -194,10 +194,14 @@ def _row(
             f"Read-only here (deprecated); `{command}` sets it"
             + (", delete unsets it." if own else ".")
         )
+    value = "" if shown.value is None else str(shown.value)
+    if not raw and reads_names(descriptor) and isinstance(entry.value, dict):
+        count = len(entry.value)
+        value = f"{count} override{'' if count == 1 else 's'}" if count else "no overrides"
     return SettingRow(
         key=entry.key,
         label=".".join(descriptor.path[1:]),
-        value="" if shown.value is None else str(shown.value),
+        value=value,
         source=entry.source.variable or shown.source,
         marks=() if shown.stability == "stable" else (shown.stability,),
         help=tuple(help),
@@ -230,6 +234,8 @@ def open_command(profile: str, row: SettingRow) -> Cmd:
             if raw:
                 return FieldOpened(key, value, expected)
             descriptor = repo.descriptor(key)
+            if reads_names(descriptor):
+                return FieldOpened(key, ListNames(repo)(key, under=profile), expected)
             current = (
                 None if descriptor.is_secret else GetSetting(repo)(key, reveal_secrets=True).value
             )
@@ -365,13 +371,13 @@ class SectionPane:
         inner = width or frame.width  # the pane's own border already frames the rows
         editing = self.editing
         below = _BELOW
-        if isinstance(editing, ListEditor):
+        if isinstance(editing, ListEditor | MapEditor):
             # The editor takes the room it needs, down to one row of settings above it.
             chrome = (2 if frame.box() is None else 3) + note_lines(
                 editing.error or editing.help, inner
             )
             chrome += note_lines(self.error, inner)
-            items = min(len(editing.items) + 2, max(3, frame.height - 1 - chrome))
+            items = min(editing.rows, max(3, frame.height - 1 - chrome))
             editing = replace(editing, window_rows=items)
             below = items + chrome
         size = max(1 if below > _BELOW else 3, frame.height - below)
@@ -442,5 +448,12 @@ def field_for(pane: SectionPane, message: FieldOpened) -> SectionPane:
     row = pane.row
     if row is None or row.key != message.key or row.descriptor is None:
         return pane
-    component = editor(row.descriptor, message.value, label=row.label, raw=row.raw)
+    component = editor(
+        row.descriptor,
+        message.value,
+        label=row.label,
+        raw=row.raw,
+        own=message.expected,
+        own_source=Source(kind="profile", profile=pane.profile).label,
+    )
     return pane.opened(component, message.expected)

@@ -8,6 +8,7 @@ settings cover each shape. The mapping cases build each shape's field directly.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
@@ -19,7 +20,7 @@ from screen.support import FakeHost
 from test_management.support import WizProfile, compose, make_spec, write_config
 from untaped.config.fields import editor, written
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import SetSetting
+from untaped.config.use_cases import NamedValue, SetSetting
 from untaped.config_file import read_config_dict
 from untaped.config_schema import Argv, Choices, FieldDescriptor, walk_settings
 from untaped.deprecated_keys import Renamed
@@ -28,7 +29,7 @@ from untaped.management.setup_state import setup_sections, setup_services
 from untaped.plugins.registry import PluginSpec
 from untaped.screen.components.choices import Check, Cycle, Select, SingleList
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
-from untaped.screen.components.lists import ListEditor
+from untaped.screen.components.lists import ListEditor, MapEditor
 from untaped.screen.core import Frame, Screen
 from untaped.screen.runtime import Runtime
 from untaped.stability import deprecated, experimental
@@ -533,6 +534,7 @@ class Shapes(BaseModel):
     items: list[str] = []
     argv: Annotated[list[str] | None, Argv()] = None
     table: dict[str, int] = {}
+    marks: Annotated[dict[str, str], Choices(lambda: ("a", "b"), "marks")] = {}
 
 
 def _descriptor(name: str) -> FieldDescriptor:
@@ -571,6 +573,18 @@ def test_a_list_opens_its_items_an_argv_a_command_line_and_a_map_its_json() -> N
     assert items.value == ("a", "b")
     assert argv.value == "pass show 'my token'"
     assert table.value == '{"a": 1}'
+
+
+def test_a_map_that_declares_its_names_edits_the_profiles_own_names() -> None:
+    names = (NamedValue("a", "1", "default"), NamedValue("b", "2", "profile:default"))
+    marks = editor(_descriptor("marks"), names, label="marks", own={"b": "3"}, own_source="p:x")
+    assert isinstance(marks, MapEditor)
+    cleared = replace(marks, own=())
+
+    assert marks.value == {"b": "3"}
+    assert [entry.name for entry in marks.entries] == ["a", "b"]
+    assert written(_descriptor("marks"), marks) == '{"b": "3"}'
+    assert written(_descriptor("marks"), cleared) is None  # no names left: unset
 
 
 def test_a_token_command_is_declared_a_command() -> None:
@@ -643,3 +657,85 @@ def test_a_secret_field_starts_empty_and_writes_what_is_typed() -> None:
 
     typed = SecretInput("secret", value=SecretStr("s3cr3t"))
     assert written(_descriptor("secret"), typed) == "s3cr3t"
+
+
+# --- maps that declare their names ------------------------------------------------
+
+_SYMBOLS = (
+    "profiles:\n  default:\n    ui: {symbols: {error: X}}\n"
+    "  work:\n    ui: {symbols: {success: S}}\nactive: work\n"
+)
+
+
+def _ui(profile: str = "work") -> Screen[SetupModel, SetupResult]:
+    return _build(profile=profile, only=["ui"])
+
+
+def _to_symbols(profile: str = "work") -> list[ScreenKey]:
+    """The keys from the list into the open ``ui.symbols`` editor."""
+    model, _ = _ui(profile).init()
+    section = next(i for i, row in enumerate(model.rows) if row.name == "ui")
+    keys: list[ScreenKey] = [*(["down"] * (section - model.selected)), "enter"]
+    rows = drive_screen(_ui(profile), keys).model.panes["ui"].rows
+    index = next(i for i, row in enumerate(rows) if row.label == "symbols")
+    return [*keys, *(["down"] * index), "enter"]
+
+
+def _ui_data(path: Path, profile: str = "work") -> object:
+    return read_config_dict(path)["profiles"][profile].get("ui")
+
+
+def test_a_map_row_counts_its_overrides(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _SYMBOLS)
+
+    run = drive_screen(_ui(), _to_symbols()[:-1], size=(140, 40))
+
+    row = next(row for row in run.model.panes["ui"].rows if row.label == "symbols")
+    assert row.value == "2 overrides"
+
+
+def test_a_symbol_is_edited_in_place_and_the_profiles_own_map_written(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, _SYMBOLS)
+    # ``warning`` (second) takes ``!``; enter on ``done`` writes the map.
+    keys = [*_to_symbols(), "down", "enter", "ctrl-u", "!", "enter", "end", "enter"]
+
+    run = drive_screen(_ui(), keys, size=(140, 40))
+
+    assert _ui_data(_isolated_config) == {"symbols": {"success": "S", "warning": "!"}}
+    assert run.model.written == (("work", "ui.symbols"),)
+
+
+def test_an_override_cleared_shows_what_it_inherits_and_the_last_one_unsets(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, _SYMBOLS.replace("success: S", "success: S, error: E"))
+    to_error = [*_to_symbols(), "down", "down"]
+
+    cleared = drive_screen(_ui(), [*to_error, "delete"], size=(140, 40))
+    drive_screen(_ui(), [*to_error, "delete", "home", "delete", "ctrl-s"])
+
+    assert "profile:default" in cleared.frame  # ``error`` is the default profile's X again
+    assert _ui_data(_isolated_config) is None  # unset, so the profile inherits the whole map
+
+
+def test_an_inherited_value_opened_and_kept_is_not_copied(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _SYMBOLS)
+    keys = [*_to_symbols(), "down", "down", "enter", "enter", "end"]
+
+    run = drive_screen(_ui(), keys, size=(140, 40))
+
+    assert "enter close" in run.frame.splitlines()[-1]
+    assert run.model.panes["ui"].editing is not None
+    assert run.model.panes["ui"].editing.value == {"success": "S"}
+
+
+def test_a_map_editor_footer_offers_edit_then_keep(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _SYMBOLS)
+
+    on_name = drive_screen(_ui(), _to_symbols(), size=(140, 40))
+    editing = drive_screen(_ui(), [*_to_symbols(), "enter"], size=(140, 40))
+
+    assert "enter edit" in on_name.frame.splitlines()[-1]
+    assert "enter keep" in editing.frame.splitlines()[-1]

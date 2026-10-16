@@ -142,3 +142,66 @@ def test_get_secrets_follow_the_reveal_gate(
 def test_get_unknown_profile_setting_is_rejected(_isolate_settings: Path) -> None:
     with pytest.raises(ConfigError, match="unknown setting"):
         GetSetting(SettingsFileRepository())("plugins.tool.spec")
+
+
+_SYMBOLS = (
+    "profiles:\n  default:\n    ui: {theme: plain, symbols: {error: X, bogus: y}}\n"
+    "  work:\n    ui: {symbols: {success: S}}\nactive: work\n"
+)
+
+
+def test_list_names_gives_each_declared_name_its_value_and_source(_isolate_settings: Path) -> None:
+    from untaped.config.use_cases import ListNames
+    from untaped.theme import BUILTIN_THEMES, SYMBOL_NAMES
+
+    _isolate_settings.write_text(_SYMBOLS)
+
+    names = {item.name: item for item in ListNames(SettingsFileRepository())("ui.symbols")}
+
+    assert list(names)[: len(SYMBOL_NAMES)] == list(SYMBOL_NAMES)
+    assert (names["success"].value, names["success"].source) == ("S", "profile:work")
+    assert (names["error"].value, names["error"].source) == ("X", "profile:default")
+    plain = BUILTIN_THEMES["plain"].symbols["warning"]  # the theme the profiles chose
+    assert (names["warning"].value, names["warning"].source) == (plain, "theme")
+    assert (names["bogus"].source, names["bogus"].declared) == ("profile:default", False)
+
+
+def test_list_names_says_which_names_a_variable_sets(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.config.use_cases import ListNames
+
+    _isolate_settings.write_text(_SYMBOLS)
+    monkeypatch.setenv("UNTAPED_UI__SYMBOLS", '{"info": "i"}')
+
+    names = {item.name: item for item in ListNames(SettingsFileRepository())("ui.symbols")}
+
+    assert (names["info"].value, names["info"].source) == ("i", "UNTAPED_UI__SYMBOLS")
+    assert names["success"].source == "profile:work"  # the variable is merged over the profiles
+
+
+def test_list_names_refuses_a_key_that_declares_none() -> None:
+    from untaped.config.use_cases import ListNames
+
+    with pytest.raises(ConfigError, match="declares no names"):
+        ListNames(SettingsFileRepository())("ui.theme")
+
+
+def test_list_names_under_a_profile_shows_what_its_own_names_inherit(
+    _isolate_settings: Path,
+) -> None:
+    from untaped.config.use_cases import ListNames
+    from untaped.theme import BUILTIN_THEMES
+
+    _isolate_settings.write_text(
+        "profiles:\n  default:\n    ui: {symbols: {error: X}}\n"
+        "  work:\n    ui: {symbols: {success: S, error: E}}\nactive: work\n"
+    )
+
+    names = {
+        item.name: item for item in ListNames(SettingsFileRepository())("ui.symbols", under="work")
+    }
+
+    assert (names["error"].value, names["error"].source) == ("X", "profile:default")
+    theme = BUILTIN_THEMES["default"].symbols["success"]
+    assert (names["success"].value, names["success"].source) == (theme, "theme")

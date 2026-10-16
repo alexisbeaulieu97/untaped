@@ -92,7 +92,7 @@ from untaped.screen.components.draw import role_style
 from untaped.screen.components.form import Form, Submitted
 from untaped.screen.components.inputs import COMPLETION_ROWS, TextInput
 from untaped.screen.components.layout import Panes
-from untaped.screen.components.lists import ListEditor
+from untaped.screen.components.lists import ListEditor, MapEditor
 from untaped.screen.core import (
     Activate,
     Back,
@@ -355,7 +355,7 @@ def _enter_label(model: SetupModel) -> str | None:
     pane = model.pane
     if model.focus == "form" or pane is None:
         return None
-    if isinstance(pane.editing, ListEditor):
+    if isinstance(pane.editing, ListEditor | MapEditor):
         return _list_enter(pane.editing, changed=pane.to_write() != pane.initial)
     if pane.editing is not None:
         return "write"
@@ -367,21 +367,21 @@ def _enter_label(model: SetupModel) -> str | None:
     return "edit" if row.descriptor is not None else None
 
 
-def _list_enter(editor: ListEditor, *, changed: bool) -> str:
-    """Enter in a list editor: keep the open item, put the moved one down, or act on the row.
+def _list_enter(editor: ListEditor | MapEditor, *, changed: bool) -> str:
+    """Enter in a list or map editor: keep the open value, put the moved item down, or act on
+    the row.
 
-    On ``done`` it writes the list, or just closes the editor when nothing changed.
+    On ``done`` it writes, or just closes the editor when nothing changed.
     """
     if editor.editing is not None:
         return "keep"
+    if editor.cursor == editor.rows - 1:
+        return "write" if changed else "close"
+    if isinstance(editor, MapEditor):
+        return "edit"
     if editor.moving:
         return "put down"
-    count = len(editor.items)
-    if editor.cursor < count:
-        return "edit"
-    if editor.cursor == count:
-        return "add"
-    return "write" if changed else "close"
+    return "edit" if editor.cursor < len(editor.items) else "add"
 
 
 def _save_label(model: SetupModel) -> str | None:
