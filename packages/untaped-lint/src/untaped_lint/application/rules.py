@@ -13,6 +13,7 @@ from __future__ import annotations
 import inspect
 from abc import abstractmethod
 from collections.abc import Callable, Iterable, Iterator
+from types import ModuleType
 from typing import ClassVar, cast
 
 from pydantic import ValidationError
@@ -20,7 +21,7 @@ from pydantic import ValidationError
 from untaped.contracts import Contract, listing
 from untaped.sdk import Failure, Record, experimental, kind_of
 from untaped_lint.application.ports import RuleFunction
-from untaped_lint.records import Finding, Location, Rule, Severity, Subject
+from untaped_lint.records import Finding, Location, Rule, Severity, Subject, Tree
 
 #: Marks a provider base's own helper, so doctor's unused-method check skips it
 #: (``untaped.contracts`` reads the same attribute).
@@ -39,6 +40,20 @@ class Linter(Contract):
     @abstractmethod
     def findings(self, subject: Subject) -> list[Finding]:
         """The findings of the rules that read ``subject.kind``, rule ids bare."""
+
+
+@experimental
+class TreeReader(Contract):
+    """Files of a kind read into subjects: what a ``readers:`` entry of the repo file runs."""
+
+    @listing
+    @abstractmethod
+    def read(self, tree: Tree) -> list[Subject]:
+        """The subjects the files of ``tree`` hold (already narrowed to the entry's globs).
+
+        A file the reader can't read is carried in a subject for the owner's
+        own rule to report, never raised.
+        """
 
 
 def rule(
@@ -102,6 +117,20 @@ class Rules(Linter):
     """
 
     RULES: ClassVar[tuple[RuleFunction, ...]] = ()
+
+    @classmethod
+    def from_module(cls, *modules: ModuleType) -> Rules:
+        """A host for the ``@rule`` functions ``modules`` define (not ones they import)."""
+        functions = tuple(
+            cast("RuleFunction", value)
+            for module in modules
+            for value in vars(module).values()
+            if inspect.isfunction(value)
+            and value.__module__ == module.__name__
+            and isinstance(getattr(value, "rule", None), Rule)
+        )
+        host = type("ModuleRules", (cls,), {"RULES": functions, "__module__": cls.__module__})
+        return cast("Rules", host())
 
     def rules(self) -> list[Rule]:
         return [function.rule for function in self._functions()]

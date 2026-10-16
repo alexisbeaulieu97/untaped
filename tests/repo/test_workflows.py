@@ -559,6 +559,12 @@ def test_pr_workflow_checks_the_pull_request_body_and_changelog() -> None:
     assert draft["env"] == {"PR_NUMBER": "${{ github.event.pull_request.number }}"}
 
 
+def test_ci_runs_this_repositorys_own_lint_rules() -> None:
+    # .untaped/lint.yml carries conventions that lived in prose; the step is what enforces them.
+    gate = _steps("ci.yml", "lint-and-test")
+    _find(gate, run="uv run untaped lint")
+
+
 def test_ci_derives_the_changelog_draft_on_main() -> None:
     steps = _steps("ci.yml", "lint-and-test")
     draft = steps[_find(steps, run="uv run python scripts/changelog.py draft")]

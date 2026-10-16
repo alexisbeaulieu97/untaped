@@ -4,16 +4,38 @@ Every kind is declared once, on its model. A provider declares a rule's id
 bare (``default-branch``); the engine prefixes it with the provider's plugin
 (``acme.default-branch``), so nobody types a public id in source. A
 ``Subject`` is what ``Linter.findings`` receives: one kind and that record's
-dump, built by the engine and never emitted as a row.
+dump, built by the engine and never emitted as a row. A ``Tree`` is the
+subject lint builds itself: the files of a repository, read through
+``tree.files(*globs)``.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, ClassVar, Literal
+import ast
+import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
+from functools import cached_property
+from pathlib import Path
+from typing import Annotated, Any, ClassVar, Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from untaped.sdk import Failure, Issued, Record, Source, kind_of
+from untaped.sdk import (
+    AbsolutePath,
+    Failure,
+    Issued,
+    OutcomeRecord,
+    Plugin,
+    Record,
+    Source,
+    TargetRecord,
+    kind_of,
+)
+from untaped_lint.domain.glob import matches
 
 type Severity = Literal["error", "warning"]
 """The diagnostic level words: an error fails the run (exit 3), a warning doesn't."""
@@ -89,6 +111,92 @@ class Subject(Record, kind="lint.subject"):
 
     kind: str
     record: dict[str, JsonValue]
+
+
+class Tree(Record, kind="lint.tree"):
+    """The files of a repository: tracked plus untracked-not-ignored, minus ``exclude:``.
+
+    A rule reading ``Tree`` asks for files by glob (``*`` stops at ``/``,
+    ``**`` crosses it). A file that isn't UTF-8 is never handed to a rule:
+    lint reports it once as ``lint.unreadable-file``.
+    """
+
+    root: AbsolutePath
+    paths: tuple[str, ...]
+    """Relative to ``root``, ``/``-separated, sorted."""
+
+    def files(self, *globs: str) -> Iterator[File]:
+        """Each file whose path matches one of ``globs`` (every file with none), in order."""
+        for path in self.paths:
+            if globs and not any(matches(pattern, path) for pattern in globs):
+                continue
+            try:
+                text = (Path(self.root) / path).read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                _skipped(path)
+                continue
+            except FileNotFoundError:  # removed since the tree was listed
+                continue
+            yield File(path=path, text=text)
+
+
+@dataclass(frozen=True)
+class File:
+    """One file of a :class:`Tree`: its path from the root and its text."""
+
+    path: str
+    text: str
+
+    @cached_property
+    def lines(self) -> list[str]:
+        return self.text.splitlines()
+
+    def json(self) -> Any:
+        """The file parsed as JSON; a parse error is the rule's raise."""
+        return json.loads(self.text)
+
+    def yaml(self) -> Any:
+        """The file's one YAML document (``yaml.safe_load``); a parse error is the rule's raise."""
+        return yaml.safe_load(self.text)
+
+    def python(self) -> ast.Module:
+        """The file's syntax tree; a syntax error is the rule's raise."""
+        return ast.parse(self.text, filename=self.path)
+
+
+_UNREADABLE: ContextVar[set[str] | None] = ContextVar("untaped_lint_unreadable", default=None)
+
+
+def _skipped(path: str) -> None:
+    seen = _UNREADABLE.get()
+    if seen is not None:
+        seen.add(path)
+
+
+@contextmanager
+def unreadable_files() -> Iterator[set[str]]:
+    """Collect the paths ``Tree.files`` skipped as not UTF-8 while the block runs.
+
+    The engine wraps its dispatch in it; provider calls copy the context, so
+    the one set is shared with every rule run in the block.
+    """
+    seen: set[str] = set()
+    token = _UNREADABLE.set(seen)
+    try:
+        yield seen
+    finally:
+        _UNREADABLE.reset(token)
+
+
+class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="lint.scaffold_outcome"):
+    """One file ``lint new`` wrote (``created``, ``updated``) or would write (``planned``)."""
+
+    table_columns: ClassVar[tuple[str, ...]] = ("action", "target_path")
+
+
+def target_of(item: File | Plugin) -> str:
+    """A finding's target for the subjects lint owns: a file's path, a plugin's name."""
+    return item.path if isinstance(item, File) else item.name
 
 
 def location_text(location: Location | None) -> str:

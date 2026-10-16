@@ -42,17 +42,31 @@ def lint(
     ``[`` or ``?`` is never read as a pattern). ``findings`` are ones the
     caller already made, with public ids, reported and selected like the rest.
     """
+    repo = config.repo
+    in_file = (
+        ()
+        if repo is None
+        else tuple(parse_suppression(each, option=f"{repo.path} ignore:") for each in repo.ignore)
+    )
     options = Options(
         select=tuple(parse_rule(each, option="--select") for each in select),
         ignore=(
             *(parse_suppression(each, option="lint.ignore") for each in config.ignore),
+            *in_file,
             *(parse_suppression(each, option="--ignore") for each in ignore),
         ),
         paths=tuple(paths),
         only=tuple(only),
         exact=tuple(exact),
     )
-    report = run(subjects, options, findings=findings, candidates=candidates)
+    report = run(
+        subjects,
+        options,
+        findings=findings,
+        candidates=candidates,
+        repo=repo,
+        tree_root=config.tree_root,
+    )
     for warning in report.warnings:
         _diag.warning(warning)
     for failure in report.failures:

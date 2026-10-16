@@ -79,8 +79,10 @@ no_implicit_optional = true
 plugins = ["pydantic.mypy"]
 # Report first-party calls of SDK helpers marked ``warnings.deprecated``.
 enable_error_code = ["deprecated"]
-# Type-check every package's src/ and the scripts; tests are validated by running them.
+# Type-check every package's src/, this repository's lint rules and the scripts; tests are
+# validated by running them.
 files = [
+    ".untaped/lint",
     "packages/untaped/src",
     "packages/untaped-ansible/src",
     "packages/untaped-awx/src",

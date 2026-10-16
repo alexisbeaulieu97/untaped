@@ -14,6 +14,14 @@ _NAME = r"[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)?"
 _MARKER = re.compile(rf"#\s*untaped:\s*allow\s+({_NAME}(?:\s*,\s*{_NAME})*)")
 
 
+def allowed_names(line: str) -> frozenset[str]:
+    """The rule names ``line``'s marker allows, as written (bare or ``<key>.<id>``)."""
+    match = _MARKER.search(line)
+    if match is None:
+        return frozenset()
+    return frozenset(name.strip() for name in match.group(1).split(","))
+
+
 def allowed(source_lines: list[str], lineno: int, rule: str) -> bool:
     """Whether line ``lineno`` (1-based) of ``source_lines`` allows ``rule``.
 
@@ -22,8 +30,5 @@ def allowed(source_lines: list[str], lineno: int, rule: str) -> bool:
     """
     if not 1 <= lineno <= len(source_lines):
         return False
-    match = _MARKER.search(source_lines[lineno - 1])
-    if match is None:
-        return False
-    names = {name.strip() for name in match.group(1).split(",")}
+    names = allowed_names(source_lines[lineno - 1])
     return rule in names or f"lint.{rule}" in names

@@ -1,0 +1,7 @@
+# This repository's own conventions, as rules `untaped lint` runs at the root.
+# Each rule module in .untaped/lint/ imports only untaped_lint.api; see docs/lint.md.
+version: 1
+name: house
+linters:
+  house:
+    rules: .untaped/lint
