@@ -267,6 +267,78 @@ def _check_rankable(owner_name: str, name: str, method: str, plugins: list[str])
     ]
 
 
+@dataclass(frozen=True)
+class NamedValue:
+    """One name of a mapping that declares its names (``ui.symbols``), and its value's source."""
+
+    name: str
+    value: str | None
+    """``None`` when nothing sets the name, not even its defaults."""
+    source: str
+    """The profile (``profile:work``) or variable setting it, else its defaults' (``theme``)."""
+    declared: bool = True
+    """Whether the field's :class:`~untaped.config_schema.Choices` names it."""
+    variable: str | None = None
+    """The variable setting it, which wins over any profile's value."""
+
+
+class ListNames:
+    """Each name a declared-name mapping accepts, with its effective value and source.
+
+    A name the mapping sets shows that value and the profile or variable
+    setting it; any other declared name shows the default its
+    :class:`~untaped.config_schema.Choices` gives. Names the mapping sets
+    that aren't declared follow, so a stray one can be seen and removed.
+    """
+
+    def __init__(self, repo: SettingsReader) -> None:
+        self._repo = repo
+
+    def __call__(self, key: str, *, under: str | None = None) -> tuple[NamedValue, ...]:
+        """The names of ``key``; raises :class:`ConfigError` for a key that declares none.
+
+        With ``under`` (a profile), a name that profile sets shows what it
+        inherits instead (a variable setting it still wins).
+        """
+        descriptor = self._repo.descriptor(key)
+        choices = descriptor.choices
+        if choices is None or not descriptor.is_collection:
+            raise ConfigError(f"{key} declares no names", category="invalid")
+        current = self._repo.setting_value(descriptor) or {}
+        holder = self._repo.holder_value(descriptor)
+        defaults = choices.defaults(holder) if choices.defaults is not None else {}
+        provenance = self._repo.provenance()
+        inherited = self._repo.inherited_value(descriptor, under) if under is not None else None
+        below = inherited if isinstance(inherited, dict) else {}
+        declared = choices.names()
+
+        def found(name: str) -> tuple[str | None, str, str | None]:
+            variable = self._repo.env_var_setting((*descriptor.path, name))
+            profile = provenance.get((*descriptor.path, name))
+            if variable is None and name in current and profile is None:
+                # No profile and no current spelling holds it: an old spelling's variable.
+                variable = self._repo.env_var_supplying(descriptor) or "environment"
+            if variable is not None and name in current:
+                return str(current[name]), variable, variable
+            if name in current and profile is not None and profile != under:
+                return str(current[name]), _profile_label(profile), None
+            if name in below:
+                return str(below[name]), _profile_label(DEFAULT_PROFILE), None
+            default = defaults.get(name)
+            return (None if default is None else str(default)), choices.defaults_label, None
+
+        names = (*declared, *(name for name in current if name not in declared))
+        rows = []
+        for name in names:
+            value, source, variable = found(name)
+            rows.append(NamedValue(name, value, source, name in declared, variable))
+        return tuple(rows)
+
+
+def _profile_label(profile: str) -> str:
+    return Source(kind="profile", profile=profile).label
+
+
 class GetSetting:
     """Return the effective display entry for a single scalar setting."""
 

@@ -1,9 +1,9 @@
-"""``ListEditor``: an ordered list of strings to add to, edit, remove from and reorder."""
+"""``ListEditor`` (an ordered list of strings) and ``MapEditor`` (a value per name)."""
 
 from __future__ import annotations
 
 from screen.gallery import field_of, lines, run_solo
-from untaped.screen.components.lists import ListEditor
+from untaped.screen.components.lists import ListEditor, MapEditor, MapEntry
 from untaped.screen.core import Key, Paste
 
 
@@ -116,3 +116,84 @@ def test_a_long_list_shows_a_window_around_the_cursor() -> None:
     run = run_solo(_list(*items), "end", size=(60, 16))
 
     assert "done" in run.frame and "org00" not in run.frame
+
+
+# ``MapEditor``: a fixed set of names, each set here or inherited.
+
+
+def _map(own: dict[str, str] | None = None, **kwargs: object) -> MapEditor:
+    entries = (
+        MapEntry("ok", "✓", "theme"),
+        MapEntry("fail", "✗", "theme"),
+    )
+    return MapEditor(
+        "Symbols",
+        entries,
+        tuple((own or {}).items()),
+        "profile:work",
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def test_each_name_shows_its_value_and_source_then_done() -> None:
+    body = run_solo(_map({"fail": "x"})).frame
+
+    assert "✓" in body and "theme" in body
+    assert "x" in body and "profile:work" in body
+    assert "done" in body
+
+
+def test_enter_edits_a_name_in_place_and_enter_keeps_it() -> None:
+    run = run_solo(_map(), "enter", "backspace", "y", "enter")
+
+    assert field_of(run).value == {"ok": "y"}
+    assert field_of(run).editing is None
+
+
+def test_an_inherited_value_is_not_copied_until_it_is_changed() -> None:
+    assert field_of(run_solo(_map(), "enter", "esc")).value == {}
+    assert field_of(run_solo(_map(), "enter", "enter")).value == {}
+
+
+def test_delete_clears_the_name_and_an_emptied_value_is_kept_blank() -> None:
+    deleted = run_solo(_map({"ok": "y", "fail": "n"}), "down", "delete")
+    emptied = run_solo(_map({"ok": "y"}), "enter", "ctrl-u", "enter")
+
+    assert field_of(deleted).value == {"ok": "y"}
+    assert field_of(emptied).value == {"ok": ""}
+    assert "(blank)" in emptied.frame
+
+
+def test_a_value_the_map_sets_says_what_wins_over_it() -> None:
+    editor = MapEditor(
+        "Symbols", (MapEntry("ok", "V", "UNTAPED_UI__SYMBOLS", wins="UNTAPED_UI__SYMBOLS"),),
+        (("ok", "S"),), "profile:work",
+    )  # fmt: skip
+
+    assert "profile:work, UNTAPED_UI__SYMBOLS wins" in run_solo(editor).frame
+
+
+def test_an_open_value_counts_as_kept() -> None:
+    assert field_of(run_solo(_map(), "enter", "!")).value == {"ok": "✓!"}
+
+
+def test_a_name_the_map_does_not_accept_says_unknown() -> None:
+    editor = MapEditor("Symbols", (MapEntry("stray", "?", "profile:work", known=False),))
+
+    assert "unknown" in run_solo(editor).frame
+
+
+def test_enter_on_done_and_esc_are_left_to_the_screen_for_a_map() -> None:
+    done = _map(cursor=2)
+
+    assert done.rows == 3
+    assert done.update(Key("enter"))[0] is done
+    assert done.update(Key("esc"))[0] is done
+
+
+def test_an_unset_name_says_so_and_kept_empty_is_set_blank() -> None:
+    editor = MapEditor("Colors", (MapEntry("success", None, "theme"),), (), "profile:work")
+
+    assert "unset" in run_solo(editor).frame
+    assert field_of(run_solo(editor, "enter", "esc")).value == {}
+    assert field_of(run_solo(editor, "enter", "enter")).value == {"success": ""}

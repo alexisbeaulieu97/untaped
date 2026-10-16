@@ -626,6 +626,36 @@ def env_sets_key(section: str, key: str) -> bool:
     return not isinstance(data, dict) or key in data
 
 
+def env_var_setting(path: tuple[str, ...]) -> str | None:
+    """The set ``UNTAPED_*`` variable that supplies the leaf at ``path``, if any.
+
+    The deepest one wins: the leaf's own variable, else an ancestor's JSON
+    object that holds it; an ancestor whose value (or a level inside it)
+    isn't a JSON object counts, since it cannot be told apart. Old spellings
+    are not checked; ``env_var_supplying`` finds a field's.
+    """
+    for depth in range(len(path), 0, -1):
+        name = env_var_name(path[:depth])
+        value = next((text for key, text in os.environ.items() if key.upper() == name), None)
+        if value is None:
+            continue
+        if depth == len(path):
+            return name
+        try:
+            data: Any = json.loads(value)
+        except ValueError:
+            return name
+        for part in path[depth:]:
+            if not isinstance(data, dict):
+                return name
+            if part not in data:
+                break
+            data = data[part]
+        else:
+            return name
+    return None
+
+
 @dataclass(frozen=True)
 class RetiredVariable:
     """A set ``UNTAPED_*`` variable naming a key that is no longer read."""

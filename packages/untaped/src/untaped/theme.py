@@ -8,6 +8,7 @@ terminal rendering (or interactive prompt) stack into every import path.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
@@ -53,6 +54,12 @@ SCREEN_SYMBOLS: dict[str, str] = {
     "heading": "\u25c6",
     "dash": "\u2014",
 }
+
+#: The ``success``/``warning``/``error`` colors a theme that leaves them out gets
+#: (the default one); a theme setting a role to ``""`` turns its color off.
+STATUS_COLORS: Mapping[str, str] = MappingProxyType(
+    {"error": "red", "warning": "yellow", "success": "green"}
+)
 
 #: ASCII fallbacks the ``plain`` theme layers over :data:`SCREEN_SYMBOLS`
 #: (``ellipsis`` is the one token wider than a cell).
@@ -202,10 +209,24 @@ class UiSettings(BaseModel):
             "theme turns it off); a column named in `--columns` always shows."
         ),
     )
-    symbols: Annotated[dict[str, str], Choices(lambda: SYMBOL_NAMES, "symbols")] = Field(
-        default_factory=dict, description="Symbol overrides merged over the theme's symbols."
-    )
-    color_roles: Annotated[dict[str, str], Choices(lambda: ROLE_NAMES, "color roles")] = Field(
+    symbols: Annotated[
+        dict[str, str],
+        Choices(
+            lambda: SYMBOL_NAMES,
+            "symbols",
+            defaults=lambda ui: _chosen_theme(ui).symbols,
+            defaults_label="theme",
+        ),
+    ] = Field(default_factory=dict, description="Symbol overrides merged over the theme's symbols.")
+    color_roles: Annotated[
+        dict[str, str],
+        Choices(
+            lambda: ROLE_NAMES,
+            "color roles",
+            defaults=lambda ui: _theme_colors(ui),
+            defaults_label="theme",
+        ),
+    ] = Field(
         default_factory=dict, description="Color-role overrides merged over the theme's colors."
     )
 
@@ -328,6 +349,16 @@ def resolve_theme(settings: UiSettings | None = None) -> ThemeSpec:
     """Resolve the active built-in theme plus user overrides."""
     ui_settings = settings or UiSettings()
     return ui_settings.apply_to(_theme_named(ui_settings.theme))
+
+
+def _theme_colors(ui: UiSettings) -> dict[str, str]:
+    """The chosen theme's color roles, with the status colors it leaves out."""
+    return {**STATUS_COLORS, **_chosen_theme(ui).color_roles}
+
+
+def _chosen_theme(ui: UiSettings) -> ThemeSpec:
+    """The theme ``ui`` names, before its overrides; the default one for a name not built in."""
+    return BUILTIN_THEMES.get(ui.theme, BUILTIN_THEMES["default"])
 
 
 def _theme_named(name: str) -> ThemeSpec:

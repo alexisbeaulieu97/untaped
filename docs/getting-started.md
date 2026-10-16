@@ -53,7 +53,12 @@ A list of names opens a list editor: enter edits an item or adds one on
 `+ add`, `delete` removes one, `m` then up or down moves one, and enter on
 `done` (or ctrl-s) writes the whole list, an empty one included. A setting
 that holds a command to run is one line, as you would type it in a shell.
-Any other list or map is one line of JSON, as `config set` takes it.
+A map of known names, such as `ui.symbols` or `ui.color_roles`, lists every
+name with its value and where it comes from (a profile, a variable, or the
+theme): enter edits a value in place (an empty one too), `delete` clears
+the profile's own one so the name inherits again, and enter on `done` (or
+ctrl-s) writes the names the profile sets. Any other list or map is one line
+of JSON, as `config set` takes it.
 
 A service's first row is its connection. Enter opens its form: the base URL
 and how to get the token (tabs): store it with your password store (as

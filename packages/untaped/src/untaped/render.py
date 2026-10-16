@@ -29,7 +29,7 @@ from rich.table import Table
 from rich.text import Text
 
 from untaped.pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
-from untaped.theme import DEFAULT_SYMBOLS, BorderStyle, OutputFormat, ThemeSpec
+from untaped.theme import DEFAULT_SYMBOLS, STATUS_COLORS, BorderStyle, OutputFormat, ThemeSpec
 
 MessageKind = Literal["success", "warning", "error", "info"]
 
@@ -504,8 +504,6 @@ _STATUS_ROLES: dict[str, str] = {
         "success",
     ),
 }
-#: Used when the theme leaves a status role uncolored (the default theme).
-_STATUS_FALLBACK = {"error": "red", "warning": "yellow", "success": "green"}
 
 
 def _status_style(theme: ThemeSpec, column: str, value: Any, *, colorize: bool) -> str | None:
@@ -520,7 +518,7 @@ def status_role_style(theme: ThemeSpec, role: str) -> str | None:
 
     A role the theme sets to ``""`` turns the color off.
     """
-    style = theme.color_roles.get(role, _STATUS_FALLBACK[role])
+    style = theme.color_roles.get(role, STATUS_COLORS[role])
     return style or None
 
 

@@ -20,16 +20,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Self
 
 from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.config.fields import editor, written
-from untaped.config.models import SettingEntry, setting_entry_row
+from untaped.config.fields import editor, opened_value, summary, written
+from untaped.config.models import SettingEntry, Source, setting_entry_row
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import GetSetting, ListSettings, Note, SetSetting
+from untaped.config.use_cases import ListSettings, Note, SetSetting
 from untaped.config_schema import FieldDescriptor, bounds_text
 from untaped.errors import ConfigError
 from untaped.management.setup_state import (
@@ -44,7 +45,7 @@ from untaped.plugins.registry import PluginSpec
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
 from untaped.screen.components.draw import note_lines, option_row, role_style
 from untaped.screen.components.fields import Field
-from untaped.screen.components.lists import ListEditor
+from untaped.screen.components.lists import ListEditor, MapEditor
 from untaped.screen.core import Cmd, Frame, Key
 from untaped.screen.fit import fit_text
 from untaped.settings import section_stabilities
@@ -160,7 +161,10 @@ def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
                 and entry.source.kind == "env"
                 and repo.own_value(entry.key, profile=profile) is not None
             )
-            row = _row(entry, descriptor, variable, own=own, raw=raw)
+            # Read only for a shape that shows it; a missing profile owns nothing.
+            mine = partial(repo.own_value, entry.key, profile=profile)
+            shown_as = None if raw else summary(descriptor, mine)
+            row = _row(entry, descriptor, variable, own=own, raw=raw, summary=shown_as)
             rows.setdefault(section, []).append(row)
     shown = {name: tuple(each) for name, each in rows.items()}
     return Listing(exists, shown, listing.errors, read_states(dict(services), profile))
@@ -173,7 +177,13 @@ def section_mark(section: str) -> str:
 
 
 def _row(
-    entry: SettingEntry, descriptor: FieldDescriptor, variable: str, *, own: bool, raw: bool
+    entry: SettingEntry,
+    descriptor: FieldDescriptor,
+    variable: str,
+    *,
+    own: bool,
+    raw: bool,
+    summary: str | None = None,
 ) -> SettingRow:
     shown = setting_entry_row(entry, human=True)
     help: list[str] = []
@@ -194,10 +204,11 @@ def _row(
             f"Read-only here (deprecated); `{command}` sets it"
             + (", delete unsets it." if own else ".")
         )
+    value = summary if summary is not None else "" if shown.value is None else str(shown.value)
     return SettingRow(
         key=entry.key,
         label=".".join(descriptor.path[1:]),
-        value="" if shown.value is None else str(shown.value),
+        value=value,
         source=entry.source.variable or shown.source,
         marks=() if shown.stability == "stable" else (shown.stability,),
         help=tuple(help),
@@ -229,10 +240,7 @@ def open_command(profile: str, row: SettingRow) -> Cmd:
             expected = SetSetting(repo).current(key, profile=profile)
             if raw:
                 return FieldOpened(key, value, expected)
-            descriptor = repo.descriptor(key)
-            current = (
-                None if descriptor.is_secret else GetSetting(repo)(key, reveal_secrets=True).value
-            )
+            current = opened_value(repo, repo.descriptor(key), profile=profile)
             return FieldOpened(key, current, expected)
 
     return Cmd(open_field, name="open_field")
@@ -365,13 +373,13 @@ class SectionPane:
         inner = width or frame.width  # the pane's own border already frames the rows
         editing = self.editing
         below = _BELOW
-        if isinstance(editing, ListEditor):
+        if isinstance(editing, ListEditor | MapEditor):
             # The editor takes the room it needs, down to one row of settings above it.
             chrome = (2 if frame.box() is None else 3) + note_lines(
                 editing.error or editing.help, inner
             )
             chrome += note_lines(self.error, inner)
-            items = min(len(editing.items) + 2, max(3, frame.height - 1 - chrome))
+            items = min(editing.rows, max(3, frame.height - 1 - chrome))
             editing = replace(editing, window_rows=items)
             below = items + chrome
         size = max(1 if below > _BELOW else 3, frame.height - below)
@@ -442,5 +450,12 @@ def field_for(pane: SectionPane, message: FieldOpened) -> SectionPane:
     row = pane.row
     if row is None or row.key != message.key or row.descriptor is None:
         return pane
-    component = editor(row.descriptor, message.value, label=row.label, raw=row.raw)
+    component = editor(
+        row.descriptor,
+        message.value,
+        label=row.label,
+        raw=row.raw,
+        own=message.expected,
+        own_source=Source(kind="profile", profile=pane.profile).label,
+    )
     return pane.opened(component, message.expected)
