@@ -13,6 +13,7 @@ from untaped.sdk import (
     ColumnsOption,
     Diagnostics,
     UsageError,
+    check_columns,
     echo,
     emit,
     finish,
@@ -147,6 +148,8 @@ def run_command(
             ) from exc
         if verb == "validate" and diff:
             raise UsageError("validate hooks do not accept --file or content options")
+        if fmt is not None or verb == "validate":  # a transform prints content otherwise
+            check_columns(HookRun, columns=columns, fmt=fmt or "table")
         RunHook.validate_context(
             kind=verb,
             target=target,

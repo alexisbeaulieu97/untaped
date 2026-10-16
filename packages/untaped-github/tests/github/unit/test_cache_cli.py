@@ -287,6 +287,24 @@ def test_cache_delete_repo_conforms_to_destructive_contract(source_repo: SourceR
     )
 
 
+@pytest.mark.parametrize("command", ["delete", "prune"])
+def test_cache_delete_and_prune_refuse_an_unknown_column_before_deleting(
+    source_repo: SourceRepo, command: str
+) -> None:
+    listings = _populate(source_repo, "acme/old")
+    target = ["acme/old"] if command == "delete" else ["--org", "acme"]
+
+    result = _cache(
+        ["cache", command, *target, "--yes", "--format", "json", "-c", "full_name,nope"],
+        org={"acme": [{**listings["acme/old"], "archived": True}]},
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "unknown column 'nope'" in result.stderr
+    assert result.stdout == ""
+    assert _cached() == ["acme/old"]
+
+
 def test_cache_prune_deletes_departed_and_archived_repos(source_repo: SourceRepo) -> None:
     listings = _populate(source_repo, "acme/api", "acme/old", "acme/worker")
     live = {"acme": [listings["acme/api"], {**listings["acme/old"], "archived": True}]}
@@ -348,6 +366,20 @@ def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None
     assert (Path(row["path"]) / "README.md").is_file()
     assert Path(row["path"]).is_relative_to(Path.home() / ".untaped/plugins/github/worktrees")
     assert next(iter(row)) == "target_path" and row["target_path"] == row["path"]
+
+
+def test_cache_worktree_refuses_an_unknown_column_before_materializing(
+    source_repo: SourceRepo,
+) -> None:
+    _populate(source_repo, "acme/api")
+
+    result = CliInvoker().invoke(
+        app, ["cache", "worktree", "acme/api", "--format", "json", "-c", "path,nope"]
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "unknown column 'nope'" in result.stderr
+    assert not (Path.home() / ".untaped/plugins/github/worktrees").exists()
 
 
 def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo) -> None:

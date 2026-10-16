@@ -248,6 +248,22 @@ def test_update_writes_goldens_into_installed_pack(tmp_path: Path) -> None:
     assert json.loads(rerun.stdout)[0]["status"] == "pass"
 
 
+def test_update_refuses_an_unknown_column_before_writing_goldens(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="demo")
+    (source / "tests" / "emit" / "basic" / "given").mkdir(parents=True)
+    _install(source)
+
+    result = CliInvoker().invoke(
+        app, ["test", "demo", "--update", "--format", "json", "-c", "status,nope"]
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "unknown column 'nope'" in result.stderr
+    golden = library_dir() / "packs" / "demo" / "tests" / "emit" / "basic" / "expected"
+    assert not golden.exists()
+
+
 def test_update_rejects_expect_error_cases(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_pack(source, manifest_name="demo")

@@ -154,35 +154,40 @@ def test_sweep_pipe_records_per_show_mode(
         assert envelopes[0]["record"]["clone_url"] == source.as_uri()
 
 
-@pytest.mark.parametrize("show", ["files", "matches"])
-def test_sweep_unknown_column_on_file_and_match_rows_is_a_usage_error(
-    source_repo: SourceRepo, show: str
+@pytest.mark.parametrize("grep", ["needle", "absent"], ids=["rows", "no-rows"])
+@pytest.mark.parametrize(
+    ("show", "fmt"),
+    [("files", "json"), ("matches", "json"), ("matches", "table"), ("repos", "json")],
+)
+def test_sweep_refuses_an_unknown_column_before_fetching(
+    source_repo: SourceRepo, show: str, fmt: str, grep: str
 ) -> None:
+    """The sweep syncs repos into the corpus, so the column check comes first."""
     source = source_repo("api", {"a.py": "needle\n"})
 
-    result, _ = _sweep(
-        ["--org", "acme", "--grep", "needle", "--show", show, "-f", "json", "-c", "bogus"],
+    result, requested = _sweep(
+        ["--org", "acme", "--grep", grep, "--show", show, "-f", fmt, "-c", "bogus"],
         org=[_repo("acme/api", source)],
     )
 
     assert result.exit_code == 2, result.output
-    assert "valid columns:" in result.stderr
+    assert "unknown column 'bogus'; valid columns:" in result.stderr
+    assert requested == []
+    assert result.stdout == ""
 
 
-@pytest.mark.parametrize("show", ["files", "matches"])
-def test_sweep_columns_on_no_file_or_match_rows_is_an_empty_answer(
-    source_repo: SourceRepo, show: str
-) -> None:
-    """With no row there is no record to check a column against (as ``--columns '?'``)."""
+def test_sweep_repo_table_only_warns_of_an_unknown_column(source_repo: SourceRepo) -> None:
+    """Its rows are display dicts, a count column per predicate, so they stay lenient."""
     source = source_repo("api", {"a.py": "needle\n"})
 
     result, _ = _sweep(
-        ["--org", "acme", "--grep", "absent", "--show", show, "-f", "json", "-c", "bogus"],
+        ["--org", "acme", "--grep", "needle", "-c", "full_name,bogus"],
         org=[_repo("acme/api", source)],
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == []
+    assert "acme/api" in result.stdout
+    assert "warning: unknown column 'bogus'" in result.stderr
 
 
 def test_sweep_table_columns_follow_predicates_refs_and_owners(
