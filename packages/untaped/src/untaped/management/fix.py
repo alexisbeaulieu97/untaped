@@ -37,6 +37,7 @@ from untaped.management.doctor import (
     placeholders,
     run_line,
 )
+from untaped.management.records import FixOutcome
 from untaped.messages import command_argv, not_found, run_hint, split_profile, summary
 from untaped.output.diagnostic import Failure
 from untaped.output.policy import DIAGNOSTICS_ENV, is_verbose
@@ -48,7 +49,6 @@ from untaped.ui import ui_context
 
 _diag = Diagnostics()
 
-KIND = "untaped.fix_outcome"
 _ACTIONS = ("fixed", "partial", "failed", "skipped", "planned")
 _FORMAT_FLAGS = ("--format", "-f")
 
@@ -328,10 +328,12 @@ def _emit(rows: list[Row], *, fmt: OutputFormat, columns: list[str] | None, prof
         if rows:
             emit_fix_list(rows, run_line=lambda argv: run_line(argv, profile))
         return
-    shown = rows
     if fmt == "table":
+        # A table shows ``fix`` as the line to type, so it is a view, not the record.
         shown = [{**row, "fix": run_line(row["fix"], profile)} for row in rows]
-    emit_isolated(shown, fmt=fmt, columns=columns, kind=KIND)
+        emit_isolated(shown, fmt=fmt, columns=columns)
+    else:
+        emit_isolated([FixOutcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
 
 
 def _exit_unhealthy(rows: list[dict[str, object]], profile: str) -> None:
@@ -341,4 +343,4 @@ def _exit_unhealthy(rows: list[dict[str, object]], profile: str) -> None:
         raise SystemExit(ExitCode.FAILURE)
 
 
-__all__ = ["KIND", "ChildRun", "run_fixes"]
+__all__ = ["ChildRun", "run_fixes"]

@@ -43,7 +43,7 @@ from rich.console import Console
 from untaped.cache import installed_utcnow
 from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
-from untaped.management.plugin_check import PluginCheckRow
+from untaped.management.records import PluginCheckRow
 from untaped.output.sink import current_clock, installed_clock, recording, tick
 from untaped.plugins.registry import PluginCandidate
 from untaped.prompts import (

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import textwrap
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rich.text import Text
 
@@ -26,6 +26,9 @@ from untaped.output.sink import Diagnostics
 from untaped.render import output_width, status_role_style
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 _UNICODE_GLYPHS = {
     "pass": "✓",
@@ -61,26 +64,17 @@ _GLYPH_ROLES = {
 
 
 def emit_isolated(
-    rows: Sequence[dict[str, object]],
+    rows: Sequence[BaseModel] | Sequence[dict[str, object]],
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
-    kind: str | None = None,
-    table_columns: list[str] | None = None,
 ) -> None:
     """Render row data without letting invalid settings block the output.
 
     Settings are broken is often what the caller reports, so a ``table``
     falls back to the default theme instead of failing the listing.
     """
-    emit_with(
-        rows,
-        ui=ui_context(strict=False),
-        fmt=fmt,
-        columns=columns,
-        kind=kind,
-        table_columns=table_columns,
-    )
+    emit_with(rows, ui=ui_context(strict=False), fmt=fmt, columns=columns)
 
 
 def emit_check_list(

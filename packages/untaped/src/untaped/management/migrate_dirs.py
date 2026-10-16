@@ -24,6 +24,7 @@ from typing import Any
 from untaped.cli import emit, report_declined
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
+from untaped.management.records import MigrationPreviewRow
 from untaped.messages import plural, shown_path
 from untaped.migrations import overlapping
 from untaped.output.diagnostic import Failure
@@ -48,7 +49,6 @@ _diag = Diagnostics()
 MIGRATE_COMMAND = "setup migrate-dirs"
 #: Preview actions that change something on disk.
 _CHANGES = frozenset({"move", "delete"})
-_ROW_KIND = "untaped.migration_row"
 
 
 @dataclass(frozen=True)
@@ -261,12 +261,11 @@ def _shown(records: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
 def _emit_preview(
     records: list[dict[str, object]], *, fmt: OutputFormat, columns: list[str] | None
 ) -> None:
+    rows = _shown(records) if fmt == "table" else records
     emit(
-        _shown(records) if fmt == "table" else records,
+        [MigrationPreviewRow.model_validate(row) for row in rows],
         fmt=fmt,
         columns=columns,
-        kind=_ROW_KIND,
-        table_columns=("id", "action", "source", "destination", "detail"),
         empty=False,
     )
 

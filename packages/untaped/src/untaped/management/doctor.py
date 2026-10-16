@@ -48,6 +48,7 @@ from untaped.deprecated_keys import key_mappings, scan_keys
 from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_check_list, emit_isolated
+from untaped.management.records import DoctorCheckRow
 from untaped.management.skills import composed_skills
 from untaped.messages import (
     command_argv,
@@ -205,9 +206,12 @@ def report_check_rows(
     if fmt == "table" and columns is None:
         emit_check_list(rows, run_line=lambda argv: run_line(argv, profile))
         _diag.info("")
+    elif fmt == "table":
+        # A table shows ``fix`` as the line to type, so it is a view, not the record.
+        emit_isolated([_table_row(row, profile) for row in rows], fmt=fmt, columns=columns)
     else:
-        shown = [_table_row(row, profile) for row in rows] if fmt == "table" else rows
-        emit_isolated(shown, fmt=fmt, columns=columns, kind="untaped.doctor_check")
+        records = [DoctorCheckRow.model_validate(row) for row in rows]
+        emit_isolated(records, fmt=fmt, columns=columns)
     counts = {status: sum(row["status"] == status for row in rows) for status in _STATUSES}
     _diag.info(summary(op, counts))
     fix_hint = _fix_hint(rows, profile)

@@ -40,6 +40,7 @@ from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, KeyUse, key_ma
 from untaped.errors import ConfigError
 from untaped.management.config_editor import run_config_editor
 from untaped.management.config_prompting import resolve_set_value
+from untaped.management.records import ConfigMigrationOutcome
 from untaped.messages import hint, plural, run_hint
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
@@ -470,10 +471,7 @@ def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> 
                 _diag.success(_migration_summary(rows, past=True))
         if dry_run:
             rows = [{**row, "action": "planned"} for row in rows]
-        emit(rows, fmt=fmt, columns=columns, kind=_MIGRATION_OUTCOME)
-
-
-_MIGRATION_OUTCOME = "untaped.config_migration_outcome"
+        emit([ConfigMigrationOutcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
 
 
 def _migration_summary(rows: list[dict[str, str]], *, past: bool) -> str:

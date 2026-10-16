@@ -21,6 +21,7 @@ from untaped.auth import takes_token_command, token_env_names, token_instead
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
+from untaped.management.records import SetupStep
 from untaped.management.setup_state import ServiceState, service_states, service_store
 from untaped.messages import command_argv, command_line, split_profile
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
@@ -31,11 +32,9 @@ from untaped.theme import OutputFormat
 Row = dict[str, object]
 State = Literal["done", "todo", "failed", "skipped"]
 
-KIND = "untaped.setup_step"
 #: The interactive command and its non-interactive face, as a run without a terminal names them.
 SETUP_COMMAND = "untaped setup"
 SETUP_ALTERNATIVE = "untaped setup plan --format json"
-TABLE_COLUMNS = ["step", "state", "by", "detail", "run"]
 
 
 def plan_rows(
@@ -78,14 +77,15 @@ def emit_plan(
 ) -> None:
     """Print the rows; a table shows each ``run`` as the command line to type."""
     if fmt != "table":
-        emit(rows, fmt=fmt, columns=columns, kind=KIND)
+        emit([SetupStep.model_validate(row) for row in rows], fmt=fmt, columns=columns)
         return
     shown = [_table_row(row, profile) for row in rows]
     # A profile that does not exist yet has no `ui` settings to theme the table
     # with; it would inherit default's.
     scope = DEFAULT_PROFILE if not _profile_exists(profile) else profile
     with profile_scope(scope):
-        emit(shown, fmt=fmt, columns=columns, kind=KIND, table_columns=TABLE_COLUMNS)
+        # A table shows ``run`` as the line to type, so it is a view, not the record.
+        emit(shown, fmt=fmt, columns=columns, table_columns=SetupStep.table_columns)
 
 
 def _table_row(row: Row, profile: str) -> Row:
@@ -236,4 +236,4 @@ def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
     return "user" if secret else "agent"
 
 
-__all__ = ["KIND", "SETUP_ALTERNATIVE", "SETUP_COMMAND", "emit_plan", "pending", "plan_rows"]
+__all__ = ["SETUP_ALTERNATIVE", "SETUP_COMMAND", "emit_plan", "pending", "plan_rows"]

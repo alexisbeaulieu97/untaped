@@ -14,7 +14,7 @@ instructions.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -34,6 +34,7 @@ from untaped.cli import (
     writes,
 )
 from untaped.errors import ConfigError, UntapedError, UsageError
+from untaped.management.records import InstalledSkillRow, SkillOutcome, SkillRow
 from untaped.messages import not_found, plural, run_hint
 from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
@@ -68,8 +69,6 @@ from untaped.ui import ui_context
 
 _diag = Diagnostics()
 
-_INSTALLED_KIND = "untaped.installed_skill"
-_OUTCOME_KIND = "untaped.skill_outcome"
 
 CheckOption = Annotated[
     bool,
@@ -173,7 +172,6 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
                 [_installed_row(item) for item in found],
                 fmt=fmt,
                 columns=columns,
-                kind=_INSTALLED_KIND,
                 empty="No installed skills found.",
             )
         finish(False, predicate_hit=check and any(_stale(item) for item in found))
@@ -294,14 +292,14 @@ def _stale(item: InstalledSkill) -> bool:
     return item.state is not SkillState.current
 
 
-def _installed_row(item: InstalledSkill) -> dict[str, object]:
-    return {
-        "name": item.name,
-        "target": item.target,
-        "scope": item.scope.value,
-        "state": item.state.value,
-        "target_path": str(item.path),
-    }
+def _installed_row(item: InstalledSkill) -> InstalledSkillRow:
+    return InstalledSkillRow(
+        name=item.name,
+        target=item.target,
+        scope=item.scope.value,
+        state=item.state.value,
+        target_path=item.path,
+    )
 
 
 def _found(
@@ -376,7 +374,7 @@ def _update(
                 failed = True
                 continue
             rows.append(_outcome_row(item, "updated"))
-        emit(rows, fmt=fmt, columns=columns, kind=_OUTCOME_KIND, empty="No outdated skills found.")
+        emit(_outcomes(rows), fmt=fmt, columns=columns, empty="No outdated skills found.")
         updated = sum(1 for row in rows if row["action"] == "updated")
         if updated:
             _diag.success(f"updated {plural(updated, 'skill')}")
@@ -425,7 +423,7 @@ def _remove(
             if dry_run
             else [_outcome_row(item, "deleted") for item, _ in outcome.results]
         )
-        emit(rows, fmt=fmt, columns=columns, kind=_OUTCOME_KIND, empty="No installed skills found.")
+        emit(_outcomes(rows), fmt=fmt, columns=columns, empty="No installed skills found.")
         if outcome.results:
             _diag.success(f"removed {plural(len(outcome.results), 'skill')}")
     finish(outcome)
@@ -439,6 +437,10 @@ def _outcome_row(item: InstalledSkill, action: str) -> dict[str, object]:
         "target_path": str(item.path),
         "action": action,
     }
+
+
+def _outcomes(rows: Sequence[Mapping[str, object]]) -> list[SkillOutcome]:
+    return [SkillOutcome.model_validate(row) for row in rows]
 
 
 def _failed_row(item: InstalledSkill, error: Failure) -> dict[str, object]:
@@ -463,7 +465,7 @@ def _list(
     columns: list[str] | None,
 ) -> None:
     with report_errors():
-        emit(skill_rows(skills), fmt=fmt, columns=columns, kind="untaped.skill")
+        emit([SkillRow.model_validate(row) for row in skill_rows(skills)], fmt=fmt, columns=columns)
 
 
 def _install(

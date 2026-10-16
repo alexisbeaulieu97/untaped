@@ -14,6 +14,7 @@ import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import Annotated, Any, Literal
 
 from cyclopts import App, Parameter
@@ -32,6 +33,7 @@ from untaped.cli import (
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, most_severe
+from untaped.management.records import AuthOutcome, TokenSource
 from untaped.messages import hint, plural, run_hint
 from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
@@ -282,10 +284,9 @@ def _set(
     )
     _warn_env_override(section)
     emit(
-        {"section": section, "profile": profile, "store": where, "action": "stored"},
+        AuthOutcome(section=section, profile=profile, store=where, action="stored"),
         fmt=fmt,
         columns=columns,
-        kind=_AUTH_OUTCOME,
     )
 
 
@@ -326,7 +327,7 @@ def _unset(
     own = (active_settings_layout().profile_data(raw, profile) or {}).get(section)
     argv = own.get("token_command") if isinstance(own, dict) else None
     ui = ui_context(strict=False)
-    row = {"section": section, "profile": profile, "store": None, "action": "unchanged"}
+    row = AuthOutcome(section=section, profile=profile, store=None, action="unchanged")
     if not argv:
         _, provenance = resolve_profiles(raw, active_override=profile)
         holder = provenance.get((section, "token_command"))
@@ -338,7 +339,7 @@ def _unset(
             _diag.hint(run_hint(f"--profile {holder} auth unset {section}"))
         else:
             _diag.info(f"{section}.token_command is not set in profile {profile}")
-        emit(row, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
+        emit(row, fmt=fmt, columns=columns)
         return
     preset = preset_entry(argv)
     if preset is None:
@@ -348,9 +349,9 @@ def _unset(
             category="invalid",
         )
     where = preset[0].describe(preset[1])
-    row["store"] = where
+    row = row.model_copy(update={"store": where})
     if dry_run:
-        emit({**row, "action": "planned"}, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
+        emit(row.model_copy(update={"action": "planned"}), fmt=fmt, columns=columns)
         return
     ui.confirm_or_cancel(
         f"Delete the {section} token from {where} and unset {section}.token_command "
@@ -366,7 +367,7 @@ def _unset(
         )
     else:
         _diag.success(f"deleted the {section} token from {where} (profile {profile})")
-    emit({**row, "action": deleted}, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
+    emit(row.model_copy(update={"action": deleted}), fmt=fmt, columns=columns)
 
 
 def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -> None:
@@ -374,7 +375,7 @@ def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -
     layout = active_settings_layout()
     profiles = layout.profile_names(raw) or [DEFAULT_PROFILE]
     sections = _token_sections(result).values()
-    rows: list[dict[str, object]] = []
+    rows: list[TokenSource] = []
     for profile in profiles:
         effective, provenance = resolve_profiles(raw, active_override=profile)
         for spec in sections:
@@ -386,10 +387,10 @@ def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -
                 key is None or provenance.get((spec.section, key)) != profile
             ):
                 continue
-            rows.append({"profile": profile, "section": spec.section, "source": source})
+            rows.append(TokenSource(profile=profile, section=spec.section, source=source))
     stores = ", ".join(store.name for store in usable_stores()) or "none"
     _diag.info(f"token stores usable here: {stores}")
-    emit(rows, fmt=fmt, columns=columns, kind="untaped.token_source")
+    emit(rows, fmt=fmt, columns=columns)
 
 
 def _source(spec: _TokenSection, node: dict[str, Any]) -> tuple[str, str | None]:
@@ -430,7 +431,7 @@ def _migrate(
     ]
     if not pending:
         _diag.info("no plaintext tokens in the config; nothing to move")
-        emit([], fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
+        emit([], fmt=fmt, columns=columns)
         return
     chosen = pick_store(store)
     if chosen is None:
@@ -441,7 +442,7 @@ def _migrate(
     if not dry_run:
         chosen.preflight()
     rows, failures = _move_all(pending, chosen, dry_run=dry_run)
-    emit(rows, fmt=fmt, columns=columns, kind=_AUTH_OUTCOME)
+    emit(rows, fmt=fmt, columns=columns)
     if failures:
         worst = most_severe(failures)
         raise ConfigError(
@@ -456,31 +457,26 @@ def _migrate(
 
 def _move_all(
     pending: Sequence[tuple[str, str, str]], store: TokenStore, *, dry_run: bool
-) -> tuple[list[dict[str, object]], list[ConfigError]]:
+) -> tuple[list[AuthOutcome], list[ConfigError]]:
     """Move each token; also the failures, each already a ``failed`` row."""
     repo = SettingsFileRepository()
-    rows: list[dict[str, object]] = []
+    rows: list[AuthOutcome] = []
     failures: list[ConfigError] = []
     for profile, section, token in pending:
-        row: dict[str, object] = {"section": section, "profile": profile}
+        moved = partial(AuthOutcome, section=section, profile=profile)
         try:
             entry = entry_name(profile, section)
             if dry_run:
-                rows.append({**row, "store": store.describe(entry), "action": "planned"})
+                rows.append(moved(store=store.describe(entry), action="planned"))
                 continue
             where = save_token(repo, section, profile, token, store)
         except ConfigError as exc:
             failures.append(exc)
-            error = Failure.from_exception(exc).model_dump(mode="json")
-            rows.append(
-                {**row, "store": None, "action": "failed", "detail": str(exc), "error": error}
-            )
+            error = Failure.from_exception(exc)
+            rows.append(moved(store=None, action="failed", detail=str(exc), error=error))
             continue
-        rows.append({**row, "store": where, "action": "moved"})
+        rows.append(moved(store=where, action="moved"))
     return rows, failures
-
-
-_AUTH_OUTCOME = "untaped.auth_outcome"
 
 
 __all__ = [

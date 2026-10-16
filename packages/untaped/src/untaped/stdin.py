@@ -7,10 +7,11 @@ import sys
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
 from untaped.errors import ConfigError, UsageError
 from untaped.messages import q
-from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.output.diagnostic import WireModel, kind_of
+from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.render import stream_is_tty
 
 

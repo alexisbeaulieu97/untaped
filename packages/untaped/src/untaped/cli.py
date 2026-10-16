@@ -692,8 +692,17 @@ def _model_schema(
     for item in items:
         model = type(item)
         assert issubclass(model, BaseModel)
-        names.update(dict.fromkeys([*model.model_fields, *model.model_computed_fields]))
+        names.update(dict.fromkeys([*_dumped_names(model), *model.model_computed_fields]))
     return list(names)
+
+
+def _dumped_names(model: type[BaseModel]) -> list[str]:
+    """``model``'s field names as its dump writes them (an alias where it dumps by alias)."""
+    if not model.model_config.get("serialize_by_alias"):
+        return list(model.model_fields)
+    return [
+        info.serialization_alias or info.alias or name for name, info in model.model_fields.items()
+    ]
 
 
 def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:

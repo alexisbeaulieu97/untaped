@@ -296,11 +296,11 @@ def test_two_models_declaring_one_kind_is_duplicate_kind() -> None:
 
 
 def test_a_plugin_package_declares_kinds_under_its_own_name() -> None:
-    class _Own(Record, kind="acme-tools.gadget"):
+    class _Own(Record, kind="acme-tools.kit_part"):
         __module__ = "untaped_acme_tools.records"
         name: str
 
-    assert record_model("acme-tools.gadget") is _Own
+    assert record_model("acme-tools.kit_part") is _Own
 
 
 @pytest.mark.parametrize(
@@ -514,9 +514,21 @@ def _import_every_shipped_module() -> None:
 
 def _samples() -> dict[str, WireModel]:
     from untaped.config.models import SettingOutcome, SettingRow
-    from untaped.management.plugin_check import PluginCheckRow
-    from untaped.management.plugin_new import ScaffoldOutcome
     from untaped.management.plugins import ContractRow
+    from untaped.management.records import (
+        AuthOutcome,
+        ConfigMigrationOutcome,
+        DoctorCheckRow,
+        FixOutcome,
+        InstalledSkillRow,
+        MigrationPreviewRow,
+        PluginCheckRow,
+        ScaffoldOutcome,
+        SetupStep,
+        SkillOutcome,
+        SkillRow,
+        TokenSource,
+    )
     from untaped.plugin_records import Plugin
     from untaped.plugins.registry import MigrationOutcome
     from untaped.profile.models import ProfileOutcome, ProfileRow
@@ -569,6 +581,45 @@ def _samples() -> dict[str, WireModel]:
         ),
         ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),
         MigrationOutcome(id="github.cache", action="moved", detail="3 repos"),
+        AuthOutcome(
+            section="github",
+            profile="default",
+            store=None,
+            action="failed",
+            detail="x",
+            error=Failure.from_exception(ConfigError("x")),
+        ),
+        TokenSource(profile="default", section="github", source="$GITHUB_TOKEN"),
+        ConfigMigrationOutcome.model_validate(
+            {"profile": "default", "from": "a.b", "to": "a.c", "action": "renamed", "detail": ""}
+        ),
+        DoctorCheckRow(
+            check="config",
+            plugin="untaped",
+            status="warn",
+            title="t",
+            detail="d",
+            fix=["config", "migrate"],
+            automatic=True,
+        ),
+        FixOutcome(fix=["config", "migrate"], checks=["config"], action="fixed", detail="d"),
+        MigrationPreviewRow(id="github.cache", action="move", source="/a", destination="/b"),
+        SetupStep(step="profile", plugin="untaped", state="todo", detail="d", run=[], by="agent"),
+        SkillRow(name="untaped-hello", description="d", source="/s"),
+        InstalledSkillRow(
+            name="untaped-hello",
+            target="claude",
+            scope="user",
+            state="current",
+            target_path=Path("/h/.claude/skills/untaped-hello"),
+        ),
+        SkillOutcome(
+            name="untaped-hello",
+            target="claude",
+            scope="user",
+            target_path=Path("/h/.claude/skills/untaped-hello"),
+            action="updated",
+        ),
         Plugin(
             name="acme",
             status="ready",
