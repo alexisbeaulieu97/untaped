@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import subprocess
 from datetime import datetime
@@ -16,6 +15,7 @@ import yaml
 import untaped_recipe.infrastructure.file_writer as file_writer_module
 import untaped_recipe.infrastructure.pack_store as pack_store_module
 from untaped import bootstrap
+from untaped.records import record_kinds
 from untaped.settings import get_settings
 from untaped.testing import (
     CliInvoker,
@@ -3248,6 +3248,9 @@ def test_backups_list_rows_carry_the_creation_time_and_recipe(tmp_path: Path) ->
             "created_at": created_at,
             "recipe": "demo",
             "path": str(bundle.path),
+            # One recipe.backup schema: what only ``backups get`` reads is null here.
+            "inputs": None,
+            "files": None,
         }
     ]
     assert _default_columns(columns.stderr) == {"id", "created_at", "recipe"}
@@ -3297,7 +3300,10 @@ def test_backup_commands_show_list_and_restore(tmp_path: Path) -> None:
     assert "[{" not in shown.stdout
     shown_json = invoker.invoke(app, ["backups", "get", bundle.id, "--format", "json"])
     assert shown_json.exit_code == 0, shown_json.output
-    assert json.loads(shown_json.stdout)["id"] == bundle.id
+    shown_record = json.loads(shown_json.stdout)
+    assert list(shown_record) == ["id", "created_at", "recipe", "path", "inputs", "files"]
+    assert (shown_record["id"], shown_record["path"]) == (bundle.id, str(bundle.path))
+    assert [entry["target"] for entry in shown_record["files"]] == [str(config.parent)]
 
     refused = invoker.invoke(app, ["backups", "restore", bundle.id])
     assert refused.exit_code != 0
@@ -3942,7 +3948,7 @@ def test_apply_explicit_and_yaml_paths_load_from_disk(
     assert yaml_suffix.exit_code == 0, yaml_suffix.output
 
 
-def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
+def test_recipe_declares_the_surviving_pack_unification_kinds() -> None:
     allowed = {
         "recipe.add_outcome",
         "recipe.sync_outcome",
@@ -3958,12 +3964,21 @@ def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
         "recipe.check",
         "recipe.test",
     }
-    cli_dir = Path(__file__).parents[3] / "src/untaped_recipe/cli"
-    found: set[str] = set()
-    for path in cli_dir.glob("*.py"):
-        found.update(re.findall(r'kind="(recipe\.[^"]+)"', path.read_text(encoding="utf-8")))
 
-    assert found == allowed
+    declared = {
+        kind
+        for kind, model in record_kinds().items()
+        if model.__module__.startswith("untaped_recipe.")
+    }
+
+    assert declared == allowed
+
+
+def test_an_unknown_column_on_recipe_records_is_a_usage_error(tmp_path: Path) -> None:
+    result = CliInvoker().invoke(app, ["hooks", "list", "--format", "json", "--columns", "nope"])
+
+    assert result.exit_code == 2
+    assert "unknown column 'nope'" in result.stderr
 
 
 def _install_good_and_broken_packs(tmp_path: Path) -> None:
@@ -4104,12 +4119,44 @@ def test_unified_list_recipes_hooks_and_packs(tmp_path: Path) -> None:
             "pack": "ansible",
             "name": "playbook",
             "ref": "ansible/playbook",
+            # One recipe.recipe schema: what only ``recipe get`` reads is null here.
+            "description": None,
+            "inputs": None,
+            "steps": None,
+            "hooks": None,
             "path": str(library_dir() / "packs" / "ansible" / "recipes/playbook/recipe.yml"),
         }
     ]
     # Library hooks list before the built-ins.
     assert [row["ref"] for row in json.loads(hooks.stdout)] == ["ansible/check", "yaml_edit"]
     assert json.loads(packs.stdout)[0]["name"] == "ansible"
+
+
+def test_packs_list_and_get_name_an_aliased_packs_project_and_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="upstream", recipes={"ci": "recipes/ci.yml"})
+    _install_pack(source, name="acme")
+
+    listed = CliInvoker().invoke(app, ["packs", "list", "--format", "json"])
+    shown = CliInvoker().invoke(app, ["packs", "get", "acme", "--format", "json"])
+
+    assert listed.exit_code == 0, listed.output
+    assert shown.exit_code == 0, shown.output
+    row, detail = json.loads(listed.stdout)[0], json.loads(shown.stdout)
+    assert row == {
+        "name": "acme",
+        "project": "untaped-recipe-upstream",
+        "version": "0.1.0",
+        "path": str(library_dir() / "packs" / "acme"),
+        "source": str(source),
+        "rev": "",
+        "commit": "",
+        "recipes": 1,
+        "hooks": 0,
+        "manifest_name": "upstream",
+    }
+    # One recipe.pack schema: get differs only in summarising recipes and hooks.
+    assert detail == row | {"recipes": [{"name": "ci", "description": ""}], "hooks": []}
 
 
 def test_list_hooks_shows_builtins_even_on_empty_library(tmp_path: Path) -> None:
@@ -4123,6 +4170,7 @@ def test_list_hooks_shows_builtins_even_on_empty_library(tmp_path: Path) -> None
             "name": "yaml_edit",
             "ref": "yaml_edit",
             "module": "untaped_recipe.builtins.hooks.yaml_edit",
+            "exports": None,
             "path": rows[0]["path"],
         }
     ]

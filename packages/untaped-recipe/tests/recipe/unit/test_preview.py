@@ -187,3 +187,19 @@ def test_diff_preview_ignores_preview_row_limit(
     assert "one.txt" in stderr
     assert "two.txt" in stderr
     assert "showing first" not in stderr
+
+
+def test_table_preview_leaves_out_a_column_empty_on_every_row(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    failed = tmp_path / "failed"
+
+    render_preview(
+        _recipe(),
+        [TargetPlan(target=failed, status="error", error="")],
+        preview="table",
+    )
+
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[1:] == ["target", str(failed)]

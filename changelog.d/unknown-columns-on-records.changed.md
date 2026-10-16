@@ -7,3 +7,6 @@ commands, on `github cache`, on `github sweep`'s repo rows and its
 `remove`; it used to only warn. `doctor`'s, `doctor fix`'s and `setup plan`'s
 tables, which show a command to type, and the table of `github sweep`'s repo
 rows still only warn.
+The same holds for `untaped recipe` `apply`, `list`, `get`, `validate`,
+`test`, `packs`, `hooks`, `backups get` and `backups prune`; the tables of
+`apply`, `get` and `backups get`, which reshape a field, still only warn.
