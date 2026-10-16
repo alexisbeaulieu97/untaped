@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
@@ -115,12 +116,48 @@ def default_index_path() -> Path:
 INDEX_STORE = Store("ansible", "index", base=default_index_path, layout=4, bare=4)
 
 
-def _parser_version() -> str:
-    return code_version("untaped_ansible.domain.parser", distributions=("untaped-ansible",))
+def parser_version() -> str:
+    """The version of what a ref's dependency edges are made by: the parser and identity code.
+
+    Folded into the dependency paths fingerprint, so an edit to either module
+    (or a PyYAML upgrade) re-parses every ref: there is no number to forget
+    to bump.
+    """
+    return ":".join(
+        (
+            code_version(
+                "untaped_ansible.domain.parser", distributions=("PyYAML",), extra=(_libyaml(),)
+            ),
+            code_version("untaped_ansible.domain.identity"),
+        )
+    )
 
 
-#: The dependency index: each source's refs and edges, refreshed past a day,
-#: and again when the parser that filled a source changed.
+def analyser_version() -> str:
+    """The version of the variable analysis: its module, jinja2 and PyYAML (with libyaml or not).
+
+    The module imports nothing first-party (a test holds it), so its own
+    text and those libraries are everything that decides its facts.
+    """
+    return code_version(
+        "untaped_ansible.domain.variables",
+        distributions=("jinja2", "PyYAML"),
+        extra=(_libyaml(),),
+    )
+
+
+def _libyaml() -> str:
+    """Whether PyYAML's C loader is present, found without importing it."""
+    return f"libyaml={importlib.util.find_spec('yaml._yaml') is not None}"
+
+
+def _index_version() -> str:
+    return f"{parser_version()}:{analyser_version()}"
+
+
+#: The dependency index: each source's refs, edges and variable facts,
+#: refreshed past a day, and again when the code that filled a source
+#: (the dependency parser or the variable analysis) changed.
 INDEX = Cache(
     "ansible",
     "index",
@@ -128,7 +165,7 @@ INDEX = Cache(
     max_age=timedelta(days=1),
     renamed_from=("stale_after_seconds",),
     removed_in=12,
-    version=_parser_version,
+    version=_index_version,
     store=INDEX_STORE,
 )
 

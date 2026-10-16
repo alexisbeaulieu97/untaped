@@ -12,8 +12,10 @@ from untaped_ansible.errors import DependencyIndexError
 # Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
 # case-insensitive, and repo joins compare these keys with BINARY collation so
 # they can use the indexes (``collate nocase`` joins forced full scans). The
-# ``*_repo`` columns keep the display casing.
-SCHEMA_VERSION = 4
+# ``*_repo`` columns keep the display casing. Version 5 added the four
+# ``variable_*`` tables (variable facts per analysed file, which files each
+# commit has, and which commits were analysed), only adding to version 4.
+SCHEMA_VERSION = 5
 #: The oldest schema version this one only adds to (new tables or columns,
 #: never a change to an existing one). Stamped in ``schema_meta`` beside
 #: ``user_version``: a reader whose ``SCHEMA_VERSION`` is at least a newer
@@ -108,6 +110,44 @@ create index if not exists idx_source_repo_metadata_source
     on source_repo_metadata(source_key, source_repo_key);
 create index if not exists idx_source_refresh_progress_source
     on source_refresh_progress(source_key, source_fingerprint, source_repo);
+
+create table if not exists variable_files (
+    id integer primary key,
+    blob text not null,
+    path text not null,
+    analyser text not null,
+    skipped text,
+    unique(blob, path)
+);
+
+create table if not exists variable_facts (
+    file_id integer not null references variable_files(id),
+    name text not null,
+    how integer not null,
+    line integer not null,
+    key_path text not null
+);
+
+create table if not exists variable_listing (
+    source_repo_key text not null,
+    source_sha text not null,
+    file_id integer not null references variable_files(id),
+    primary key (source_repo_key, source_sha, file_id)
+);
+
+create table if not exists variable_commits (
+    source_repo_key text not null,
+    source_sha text not null,
+    analyser text not null,
+    primary key (source_repo_key, source_sha)
+);
+
+create index if not exists idx_variable_facts_name
+    on variable_facts(name, file_id);
+create index if not exists idx_variable_facts_file
+    on variable_facts(file_id);
+create index if not exists idx_variable_listing_file
+    on variable_listing(file_id);
 """
 
 
@@ -115,7 +155,9 @@ def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], N
     """Create dependency index tables on a fresh database.
 
     Databases stamped with the current ``SCHEMA_VERSION`` pass through
-    (one from before ``schema_meta`` gets its stamp). An older (or
+    (one from before ``schema_meta`` gets its stamp). An older one this
+    version only adds to (its version is at least ``ADDITIVE_SINCE``) gets
+    the new tables in place, keeping its rows; any other older (or
     unstamped) database is a stale cache: its tables are dropped and
     recreated empty, with a ``warn`` to refresh saved sources. A database
     written by a newer untaped release opens when its ``additive_since`` is
@@ -138,6 +180,11 @@ def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], N
             f"{path} and re-run 'untaped ansible source refresh <name>'",
             category="config",
         )
+    if ADDITIVE_SINCE <= version < SCHEMA_VERSION:
+        # Every statement is ``if not exists``, so the bootstrap itself is the
+        # upgrade; two processes running it at once both end at this version.
+        _bootstrap(db)
+        return
     if version != 0 or _has_tables(db):
         _drop_tables(db)
         warn(
@@ -145,11 +192,18 @@ def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], N
             f"{version}, expected {SCHEMA_VERSION}); re-run "
             "'untaped ansible source refresh <name>' for each saved source",
         )
-    # Table creation and the version stamp must be one atomic unit: a crash
-    # between them would leave a version-0 database that already has tables,
-    # which the check above rejects as outdated. ``user_version`` is
-    # transactional in SQLite, so wrapping the script in begin/commit makes
-    # the whole bootstrap all-or-nothing.
+    _bootstrap(db)
+
+
+def _bootstrap(db: sqlite3.Connection) -> None:
+    """Create every missing table and stamp this version, atomically.
+
+    Table creation and the version stamp must be one atomic unit: a crash
+    between them would leave a version-0 database that already has tables,
+    which :func:`ensure_schema` rejects as outdated. ``user_version`` is
+    transactional in SQLite, so wrapping the script in begin/commit makes
+    the whole bootstrap all-or-nothing.
+    """
     db.executescript(
         f"begin;\n{SCHEMA_SQL}\n{_STAMP_SQL}\npragma user_version = {SCHEMA_VERSION};\ncommit;"
     )

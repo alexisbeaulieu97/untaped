@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
@@ -89,8 +89,27 @@ class IncrementalDependencyIndexWriter(Protocol):
         processed_repos: frozenset[str] = frozenset(),
         source_fingerprint: str | None = None,
         progress_statuses: dict[str, str] | None = None,
+        analysed: tuple[payloads.AnalysedFile, ...] = (),
+        listings: tuple[payloads.CommitListing, ...] = (),
+        analyser: str | None = None,
     ) -> None:
-        """Commit processed repos and progress without updating source-wide freshness."""
+        """Commit processed repos and progress without updating source-wide freshness.
+
+        ``analysed`` and ``listings`` record the variable analysis at
+        ``analyser`` in the same write.
+        """
+        ...
+
+    def commits_needing_analysis(
+        self, repo: str, shas: Collection[str], *, analyser: str
+    ) -> set[str]:
+        """The commits of ``shas`` with no listing recorded at ``analyser``."""
+        ...
+
+    def analysed_files(
+        self, files: Collection[tuple[str, str]], *, analyser: str
+    ) -> set[tuple[str, str]]:
+        """The ``(blob, path)`` pairs of ``files`` already analysed at ``analyser``."""
         ...
 
     def complete_source_ref_refresh(
@@ -180,6 +199,14 @@ class GitCache(Protocol):
         self, url: str, shas: Sequence[str], paths: Sequence[str]
     ) -> dict[str, dict[str, str]]:
         """``sha → path → content`` for the ``paths`` present at each of ``shas``."""
+        ...
+
+    def list_files(self, url: str, sha: str) -> list[tuple[str, str]]:
+        """Every file of the commit ``sha`` in ``url``'s store repo, as ``(path, blob)``."""
+        ...
+
+    def read_blobs(self, url: str, blobs: Sequence[str]) -> dict[str, str]:
+        """``blob → content`` of ``blobs``, fetched by id into ``url``'s store repo first."""
         ...
 
 

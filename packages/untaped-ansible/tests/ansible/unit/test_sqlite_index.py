@@ -681,6 +681,42 @@ def test_a_newer_index_that_only_added_is_read_and_refreshed_in_place(tmp_path) 
     assert index.dependencies("acme/site", "develop", source_key="source:prod")
 
 
+def _master(db_path: Path) -> list[tuple[str, str, str]]:
+    with closing(sqlite3.connect(db_path)) as db:
+        rows = db.execute(
+            "select type, name, sql from sqlite_master where name not like 'sqlite_%'"
+        ).fetchall()
+    return sorted((str(kind), str(name), str(sql)) for kind, name, sql in rows)
+
+
+def test_an_index_this_version_only_adds_to_gains_the_new_tables_and_keeps_its_rows(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    v4 = (Path(__file__).parent / "index_schema" / "v4.sql").read_text(encoding="utf-8")
+    with closing(sqlite3.connect(db_path)) as db:
+        db.executescript(
+            f"begin;\n{v4}\ncreate table schema_meta (\n    id integer primary key check (id = 1),"
+            "\n    additive_since integer not null\n);\n"
+            "insert into schema_meta values (1, 4);\npragma user_version = 4;\ncommit;"
+        )
+    _commit(SqliteDependencyIndex(tmp_path / "fresh.sqlite3"), scans=())
+    with closing(sqlite3.connect(db_path)) as db:
+        db.execute(
+            "insert into source_repo_metadata "
+            "values ('source:prod', 'acme/site', 'acme/site', 'main')"
+        )
+        db.commit()
+
+    SqliteDependencyIndex(db_path).status("source:prod")
+
+    # Changing an existing table is not additive: raise ADDITIVE_SINCE then.
+    assert _master(db_path) == _master(tmp_path / "fresh.sqlite3")
+    assert _rows(db_path, "source_repo_metadata") == 1
+    assert _count(db_path, "pragma user_version") == SCHEMA_VERSION
+    assert _count(db_path, "select additive_since from schema_meta") == ADDITIVE_SINCE
+
+
 def test_a_newer_index_that_changed_a_table_is_refused(tmp_path) -> None:
     db_path = tmp_path / "index.sqlite3"
     _commit(SqliteDependencyIndex(db_path), scans=(_scan(),))

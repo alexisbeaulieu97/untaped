@@ -569,6 +569,21 @@ def _samples() -> dict[str, WireModel]:
             CorpusRepoResult(full_name="acme/api", ref="main", path="/s/acme/api.git"),
             RepoSweepOutcome(full_name="acme/api", hits={"a.yml": 2}, owners=("@acme/team",)),
         ]
+    if "untaped_ansible" in _SHIPPED:
+        from untaped_ansible.domain.variable_queries import Dependent, VariableUseHit
+
+        rows.append(
+            VariableUseHit(
+                variable="port",
+                repo="acme/web",
+                ref=None,
+                file="site.yml",
+                line=3,
+                key_path=[0, "ansible.builtin.set_fact", "port"],
+                how="sets",
+                dependent=Dependent(repo="acme/web", ref=None, path=["acme/web", "acme/role"]),
+            )
+        )
     if "untaped_lint" in _SHIPPED:
         from untaped_lint.records import FileLocation, Finding, Rule, Subject
 

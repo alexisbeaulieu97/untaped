@@ -55,6 +55,17 @@ from cached data, and marks where the walk stopped. A source older than
 `--cached` reads only what is cached. Inline selectors such as
 `--org` answer a one-off question without saving a source.
 
+## Find which dependents use a variable
+
+```bash
+untaped ansible impact acme/base-role --uses base_port
+```
+
+One row per place a dependent defines, sets or reads `base_port`, with the
+file, line and YAML key path, read at the commit the source indexed. A
+refresh analyses each repo's YAML files and templates once per file
+version, beside its dependency files.
+
 ## Find which roots contain a repository
 
 ```bash

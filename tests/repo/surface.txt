@@ -256,6 +256,7 @@ cli untaped ansible impact --repo VALUE... default=unset
 cli untaped ansible impact --source VALUE... default=unset
 cli untaped ansible impact --target-repo VALUE default=unset
 cli untaped ansible impact --team VALUE... default=unset
+cli untaped ansible impact --uses VALUE... default=unset
 cli untaped ansible impact ROLE
 cli untaped ansible source
 cli untaped ansible source get --columns VALUE... default=unset

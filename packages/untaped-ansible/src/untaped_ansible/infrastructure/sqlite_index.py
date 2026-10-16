@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from itertools import batched
@@ -13,7 +14,10 @@ from threading import Lock
 from untaped.sdk import Diagnostics
 from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.domain.payloads import (
+    AnalysedFile,
     CachedRef,
+    CommitFacts,
+    CommitListing,
     IndexedDependency,
     RefScan,
     RefScanMetadata,
@@ -21,6 +25,7 @@ from untaped_ansible.domain.payloads import (
     SourceIndexStatus,
     SourceRepoMetadata,
 )
+from untaped_ansible.domain.variables import How, VariableFact
 from untaped_ansible.errors import DependencyIndexError
 from untaped_ansible.infrastructure.sqlite_rows import (
     dump_dt,
@@ -109,13 +114,25 @@ class SqliteDependencyIndex:
         processed_repos: frozenset[str] = frozenset(),
         source_fingerprint: str | None = None,
         progress_statuses: dict[str, str] | None = None,
+        analysed: tuple[AnalysedFile, ...] = (),
+        listings: tuple[CommitListing, ...] = (),
+        analyser: str | None = None,
     ) -> None:
-        """Commit processed repos without marking the whole source fresh."""
+        """Commit processed repos without marking the whole source fresh.
+
+        ``analysed`` files and the commits' ``listings`` are the variable
+        analysis made at ``analyser``, written in the same transaction as the
+        scans, so a commit is never marked analysed without its scan.
+        """
         if progress_statuses and source_fingerprint is None:
             raise ValueError("source_fingerprint is required when progress_statuses are provided")
+        if (analysed or listings) and analyser is None:
+            raise ValueError("analyser is required when an analysis is recorded")
         with self._db() as db:
             _replace_ref_scans(db, scans)
             _touch_ref_scans(db, touches)
+            if analyser is not None:
+                _record_analysis(db, analysed, listings, analyser=analyser)
             _prune_source_refs_for_repos(db, source_key, keep, processed_repos)
             _upsert_source_repo_metadata(db, repo_metadata)
             if source_fingerprint is not None and progress_statuses:
@@ -165,6 +182,147 @@ class SqliteDependencyIndex:
         """Clear resumable refresh state for a source."""
         with self._db() as db:
             db.execute("delete from source_refresh_progress where source_key = ?", (source_key,))
+
+    def commits_needing_analysis(
+        self, repo: str, shas: Collection[str], *, analyser: str
+    ) -> set[str]:
+        """The commits of ``shas`` with no listing recorded at ``analyser``."""
+        wanted = sorted(set(shas))
+        done: set[str] = set()
+        with self._db() as db:
+            for chunk in batched(wanted, 500, strict=False):
+                marks = ",".join("?" for _ in chunk)
+                rows = db.execute(
+                    f"""
+                    select source_sha from variable_commits
+                    where source_repo_key = ? and analyser = ? and source_sha in ({marks})
+                    """,
+                    (repo_key(repo), analyser, *chunk),
+                ).fetchall()
+                done.update(str(row["source_sha"]) for row in rows)
+        return set(wanted) - done
+
+    def analysed_files(
+        self, files: Collection[tuple[str, str]], *, analyser: str
+    ) -> set[tuple[str, str]]:
+        """The ``(blob, path)`` pairs of ``files`` already analysed at ``analyser``."""
+        wanted = sorted(set(files))
+        found: set[tuple[str, str]] = set()
+        with self._db() as db:
+            for chunk in batched(wanted, 400, strict=False):
+                values = ",".join("(?, ?)" for _ in chunk)
+                rows = db.execute(
+                    f"""
+                    with requested(blob, path) as (values {values})
+                    select files.blob, files.path from variable_files as files
+                    join requested on requested.blob = files.blob and requested.path = files.path
+                    where files.analyser = ?
+                    """,
+                    [*(value for pair in chunk for value in pair), analyser],
+                ).fetchall()
+                found.update((str(row["blob"]), str(row["path"])) for row in rows)
+        return found
+
+    def variable_facts(
+        self, commits: Collection[tuple[str, str]], names: Collection[str]
+    ) -> CommitFacts:
+        """The facts naming any of ``names`` at each ``(repo, sha)`` of ``commits``.
+
+        A commit counts as analysed when any analysis recorded its listing,
+        at this analyser version or an older one (``--cached`` serves an
+        outdated analysis; a refresh replaces it).
+        """
+        wanted = sorted(set(commits))
+        by_key: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for repo, sha in wanted:
+            by_key.setdefault((repo_key(repo), sha), []).append((repo, sha))
+        facts: dict[tuple[str, str], list[VariableFact]] = {}
+        skipped: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        analysed: set[tuple[str, str]] = set()
+        asked = sorted(set(names))
+        with self._db() as db:
+            for chunk in batched(list(by_key), 400, strict=False):
+                values = ",".join("(?, ?)" for _ in chunk)
+                params = [value for pair in chunk for value in pair]
+                requested = f"with requested(repo, sha) as (values {values})"
+                for row in db.execute(
+                    f"""
+                    {requested}
+                    select requested.repo, requested.sha from requested
+                    join variable_commits as commits
+                      on commits.source_repo_key = requested.repo
+                     and commits.source_sha = requested.sha
+                    """,
+                    params,
+                ):
+                    analysed.add((str(row["repo"]), str(row["sha"])))
+                for row in db.execute(
+                    f"""
+                    {requested}
+                    select requested.repo, requested.sha, files.path, files.skipped
+                    from requested
+                    join variable_listing as listing
+                      on listing.source_repo_key = requested.repo
+                     and listing.source_sha = requested.sha
+                    join variable_files as files on files.id = listing.file_id
+                    where files.skipped is not null
+                    order by files.path
+                    """,
+                    params,
+                ):
+                    for commit in by_key[(str(row["repo"]), str(row["sha"]))]:
+                        skipped.setdefault(commit, []).append(
+                            (str(row["path"]), str(row["skipped"]))
+                        )
+                if not asked:
+                    continue
+                marks = ",".join("?" for _ in asked)
+                for row in db.execute(
+                    f"""
+                    {requested}
+                    select requested.repo, requested.sha, files.path,
+                           facts.name, facts.how, facts.line, facts.key_path
+                    from requested
+                    join variable_listing as listing
+                      on listing.source_repo_key = requested.repo
+                     and listing.source_sha = requested.sha
+                    join variable_facts as facts on facts.file_id = listing.file_id
+                    join variable_files as files on files.id = facts.file_id
+                    where facts.name in ({marks})
+                    order by files.path, facts.line, facts.rowid
+                    """,
+                    [*params, *asked],
+                ):
+                    fact = VariableFact(
+                        name=str(row["name"]),
+                        file=str(row["path"]),
+                        line=int(row["line"]),
+                        key_path=json.loads(row["key_path"]),
+                        how=_HOWS[int(row["how"])],
+                    )
+                    for commit in by_key[(str(row["repo"]), str(row["sha"]))]:
+                        facts.setdefault(commit, []).append(fact)
+        unanalysed = {
+            commit for key, asked_as in by_key.items() if key not in analysed for commit in asked_as
+        }
+        return CommitFacts(facts=facts, unanalysed=frozenset(unanalysed), skipped=skipped)
+
+    def ref_shas(self, source_keys: Collection[str], repo: str, ref: str | None) -> set[str]:
+        """The commits ``repo`` is indexed at under ``source_keys``: at ``ref``, else every ref."""
+        keys = sorted(set(source_keys))
+        if not keys:
+            return set()
+        marks = ",".join("?" for _ in keys)
+        ref_clause = "" if ref is None else "and source_ref = ?"
+        with self._db() as db:
+            rows = db.execute(
+                f"""
+                select distinct source_sha from source_ref_scans
+                where source_key in ({marks}) and source_repo_key = ? {ref_clause}
+                """,
+                [*keys, repo_key(repo), *([] if ref is None else [ref])],
+            ).fetchall()
+        return {str(row["source_sha"]) for row in rows if row["source_sha"]}
 
     def dependencies(
         self,
@@ -793,6 +951,116 @@ def _mark_refresh_progress(
     )
 
 
+_HOWS: tuple[How, ...] = ("defines", "sets", "reads")
+"""How each ``variable_facts.how`` integer reads: its index in this tuple."""
+
+
+def _record_analysis(
+    db: sqlite3.Connection,
+    analysed: tuple[AnalysedFile, ...],
+    listings: tuple[CommitListing, ...],
+    *,
+    analyser: str,
+) -> None:
+    """Store ``analysed`` files (replacing older facts of each) and mark ``listings`` analysed."""
+    ids: dict[tuple[str, str], int] = {}
+    for item in analysed:
+        row = db.execute(
+            """
+            insert into variable_files(blob, path, analyser, skipped) values (?, ?, ?, ?)
+            on conflict(blob, path) do update set
+                analyser = excluded.analyser, skipped = excluded.skipped
+            returning id
+            """,
+            (item.blob, item.path, analyser, item.analysis.skipped),
+        ).fetchone()
+        file_id = int(row["id"])
+        ids[(item.blob, item.path)] = file_id
+        db.execute("delete from variable_facts where file_id = ?", (file_id,))
+        db.executemany(
+            """
+            insert into variable_facts(file_id, name, how, line, key_path)
+            values (?, ?, ?, ?, ?)
+            """,
+            [
+                (file_id, fact.name, _HOWS.index(fact.how), fact.line, json.dumps(fact.key_path))
+                for fact in item.analysis.facts
+            ],
+        )
+    known = {(blob, path) for listing in listings for path, blob in listing.files} - set(ids)
+    for chunk in batched(sorted(known), 400, strict=False):
+        values = ",".join("(?, ?)" for _ in chunk)
+        for row in db.execute(
+            f"""
+            with requested(blob, path) as (values {values})
+            select files.id, files.blob, files.path from variable_files as files
+            join requested on requested.blob = files.blob and requested.path = files.path
+            """,
+            [value for pair in chunk for value in pair],
+        ):
+            ids[(str(row["blob"]), str(row["path"]))] = int(row["id"])
+    for listing in listings:
+        key = repo_key(listing.repo)
+        missing = [path for path, blob in listing.files if (blob, path) not in ids]
+        if missing:
+            raise ValueError(f"{listing.repo}@{listing.sha}: {missing[0]} was never analysed")
+        db.execute(
+            "delete from variable_listing where source_repo_key = ? and source_sha = ?",
+            (key, listing.sha),
+        )
+        db.executemany(
+            """
+            insert or ignore into variable_listing(source_repo_key, source_sha, file_id)
+            values (?, ?, ?)
+            """,
+            [(key, listing.sha, ids[(blob, path)]) for path, blob in listing.files],
+        )
+        db.execute(
+            """
+            insert into variable_commits(source_repo_key, source_sha, analyser) values (?, ?, ?)
+            on conflict(source_repo_key, source_sha) do update set analyser = excluded.analyser
+            """,
+            (key, listing.sha, analyser),
+        )
+
+
+def _delete_orphan_variable_facts(db: sqlite3.Connection) -> None:
+    """Drop the analysis of commits no ref scan points at, then files no commit lists.
+
+    Foreign keys are off (an older writer replaces rows it knows), so facts
+    are deleted by file id rather than by cascade.
+    """
+    # Commits are few (one per indexed ref); listings, many, go by their key.
+    commits = db.execute(
+        """
+        select source_repo_key, source_sha from variable_commits as commits
+        where not exists (
+            select 1 from source_ref_scans as scans
+            where scans.source_repo_key = commits.source_repo_key
+              and scans.source_sha = commits.source_sha
+        )
+        """
+    ).fetchall()
+    for statement in (
+        "delete from variable_listing where source_repo_key = ? and source_sha = ?",
+        "delete from variable_commits where source_repo_key = ? and source_sha = ?",
+    ):
+        db.executemany(statement, [(row[0], row[1]) for row in commits])
+    orphans = [
+        int(row[0])
+        for row in db.execute(
+            """
+            select id from variable_files
+            where not exists (select 1 from variable_listing where file_id = variable_files.id)
+            """
+        )
+    ]
+    for chunk in batched(orphans, 500, strict=False):
+        marks = ",".join("?" for _ in chunk)
+        db.execute(f"delete from variable_facts where file_id in ({marks})", chunk)
+        db.execute(f"delete from variable_files where id in ({marks})", chunk)
+
+
 def _delete_orphan_snapshots(db: sqlite3.Connection) -> None:
     db.execute(
         """
@@ -810,6 +1078,7 @@ def _delete_orphan_snapshots(db: sqlite3.Connection) -> None:
         )
         """
     )
+    _delete_orphan_variable_facts(db)
 
 
 def _optional_str(value: object) -> str | None:

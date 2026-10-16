@@ -10,6 +10,8 @@ source-data flags of :class:`GraphSourceOptions` and fall back to
 
 from __future__ import annotations
 
+import keyword
+import re
 import shlex
 from collections.abc import Callable, Iterable
 from contextlib import ExitStack
@@ -33,6 +35,7 @@ from untaped.sdk import (
     clamp_parallel,
     echo,
     emit,
+    finish,
     get_config_section,
     not_found,
     plural,
@@ -41,6 +44,7 @@ from untaped.sdk import (
     read_stdin_input,
     refresh_option,
     report_errors,
+    run_hint,
 )
 from untaped_ansible.application.graph import BuildGraph, GraphRequest
 from untaped_ansible.application.ports import DependencyIndex
@@ -75,6 +79,15 @@ from untaped_ansible.domain.renderers import (
     render_graph,
     tree_lines,
 )
+from untaped_ansible.domain.variable_queries import (
+    VariableUseHit,
+    defines_any,
+    dependent_uses,
+    render_key_path,
+    skipped_files,
+    unanalysed,
+)
+from untaped_ansible.domain.variables import defines, selected
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
     AliasRepository,
@@ -317,6 +330,21 @@ def impact_command(
     ] = None,
     target_repo: TargetRepoOption = None,
     depth: DepthOption = None,
+    uses: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--uses",
+            consume_multiple=False,
+            negative="",
+            help=(
+                "Keep the dependents that use this variable, one row per place: defines (a "
+                "top-level key under defaults/ or vars/, or an argument_specs option), sets "
+                "(any other YAML key of that name, register or loop_var; a module argument of "
+                "that name counts too) or reads (a Jinja expression). Repeat for any of "
+                "several. INI inventories and CI config are not read."
+            ),
+        ),
+    ] = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     options: GraphSourceOptions = _SOURCE_DEFAULTS,
@@ -327,12 +355,27 @@ def impact_command(
     ansible.default_source), refreshed first when older than its max age.
     Each row carries the ref it declares, its
     shortest path to ROLE and the ROLE ref it was reached from.
+    With --uses, each row is instead one place a dependent defines, sets or
+    reads a variable, read at the commit the source indexed.
 
     For example:
 
         untaped ansible impact acme/base --source platform
         untaped ansible impact acme/base --ref main --format pipe
+        untaped ansible impact acme/base --uses base_port --format json
     """
+    if uses:
+        _emit_uses(
+            role,
+            ref=ref,
+            target_repo=target_repo,
+            depth=depth,
+            names=_variable_names(uses),
+            fmt=fmt,
+            columns=columns,
+            options=options,
+        )
+        return
     _emit_reach(
         role,
         command="impact",
@@ -552,6 +595,152 @@ def _emit_reach(
             kind=kind,
             empty=f"No {noun} found{_within(depth_limit)}.",
         )
+
+
+def _emit_uses(
+    target: str,
+    *,
+    ref: str | None,
+    target_repo: str | None,
+    depth: str | None,
+    names: list[str],
+    fmt: FormatOption,
+    columns: list[str] | None,
+    options: GraphSourceOptions,
+) -> None:
+    """Print one row per place a dependent of ``target`` defines, sets or reads one of ``names``.
+
+    A dependent the index holds no analysis for is a failure line (exit 1),
+    never an absence of uses.
+    """
+    depth_limit = _parse_depth(depth or "unlimited")
+    with report_errors(), ExitStack() as stack:
+        env = _graph_env(
+            stack, options, command="impact", depth=depth_limit, live=False, all_refs=False
+        )
+        repo = _require_repo(env, target, target_repo=target_repo)
+
+        def read() -> _Reached:
+            graph = _target_graph(
+                env, target=target, ref=ref, target_repo=repo, direction="impact"
+            ).graph
+            return _Reached(graph, [hit.node for hit in reach(graph, "impacts")])
+
+        graph, rows = _answer(env, options, "impact", read, empty=lambda reached: not reached.rows)
+        _report_warnings(graph.warnings)
+        _report_depth_stops(graph, depth_limit)
+        commits = {(row.repo, sha) for row in rows if row.repo is not None for sha in row.shas}
+        facts = env.sqlite_index.variable_facts(commits, names)
+        _hint_undefined(env, target=target, repo=repo, ref=ref, names=names)
+        skipped = skipped_files(rows, facts)
+        if skipped:
+            _diag.warning(
+                f"{plural(len(skipped), 'file')} in the dependents could not be read for "
+                f"variables: {'; '.join(skipped)}"
+            )
+        emit(
+            _table_keys(dependent_uses(rows, facts, names), fmt),
+            fmt=fmt,
+            columns=columns,
+            empty=f"No dependents use {' or '.join(names)}{_within(depth_limit)}.",
+        )
+        missing = unanalysed(rows, facts)
+        if missing:
+            _report_unanalysed(env, missing, [row for row in rows if row.repo is not None])
+        finish(bool(missing))
+
+
+_VARIABLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _variable_names(values: list[str]) -> list[str]:
+    """``values`` deduplicated, each checked to be a valid Ansible variable name."""
+    for value in values:
+        if not _VARIABLE_NAME.fullmatch(value) or keyword.iskeyword(value):
+            raise_usage(f"--uses takes a variable name, not {q(value)}")
+    return list(dict.fromkeys(values))
+
+
+def _hint_undefined(
+    env: _GraphEnv, *, target: str, repo: str, ref: str | None, names: list[str]
+) -> None:
+    """Hint when ROLE (indexed, or a local checkout) defines none of ``names``: a typo, likely.
+
+    Silent when what ROLE defines is unknown (not indexed, or not analysed).
+    """
+    label = f"{repo}@{ref}" if ref else repo
+    local = Path(target).expanduser()
+    if local.is_dir():
+        defined = defines(_role_variable_files(local)) & set(names)
+        label = target
+    else:
+        shas = env.sqlite_index.ref_shas(
+            [selection.key for selection in env.graph_source.selections], repo, ref
+        )
+        found = env.sqlite_index.variable_facts({(repo, sha) for sha in shas}, names)
+        if not shas or found.unanalysed:
+            return
+        facts = [fact for commit_facts in found.facts.values() for fact in commit_facts]
+        defined = {name for name in names if defines_any(facts, [name])}
+    if not defined:
+        _diag.hint(
+            f"{label} defines no variable {' or '.join(names)} (defaults, vars, argument_specs)"
+        )
+
+
+def _role_variable_files(root: Path) -> dict[str, str]:
+    """The files of a local checkout that can define variables, relative path → text."""
+    files: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        parts = relative.parts
+        if ".git" in parts or not {"defaults", "vars", "meta"} & set(parts) or not path.is_file():
+            continue
+        name = relative.as_posix()
+        if selected(name) == "yaml":
+            try:
+                files[name] = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+    return files
+
+
+def _report_unanalysed(env: _GraphEnv, missing: list[str], rows: list[ReachedNode]) -> None:
+    """One failure naming the dependents with no variable facts, and how to fill them in."""
+    shown = ", ".join(missing[:5])
+    more = f" and {len(missing) - 5} more" if len(missing) > 5 else ""
+    _diag.failure(
+        AnsibleError(
+            f"{plural(len(missing), 'dependent')} without variable facts, so their uses are "
+            f"unknown: {shown}{more} (their last refresh failed or did not reach them)",
+            category="not_found",
+        )
+    )
+    selections = env.graph_source.selections
+    if not env.graph_source.saved:
+        _diag.hint("re-run this command with --refresh")
+        return
+    holding = env.sqlite_index.selecting_sources(selection.key for selection in selections)
+    labels = {f"{row.repo}@{row.ref}" if row.ref else str(row.repo): row for row in rows}
+    involved = {
+        key
+        for label in missing
+        if (row := labels.get(label)) is not None and row.repo is not None
+        for key in holding.get(repo_key(row.repo), set())
+    }
+    for selection in selections:
+        if selection.key in involved or not involved:
+            _diag.hint(run_hint(f"ansible source refresh {shlex.quote(selection.label)}"))
+
+
+def _table_keys(hits: list[VariableUseHit], fmt: FormatOption) -> list[VariableUseHit]:
+    """``hits`` with each key path rendered dotted in a table (one segment); others keep it."""
+    if fmt != "table":
+        return hits
+    return [
+        hit.model_copy(update={"key_path": [render_key_path(hit.key_path)] if hit.key_path else []})
+        for hit in hits
+    ]
 
 
 def _table_paths[R: (ReachedNode, DependencyMatch)](rows: list[R], fmt: FormatOption) -> list[R]:
