@@ -13,51 +13,31 @@ the edge that reached it, verbatim.
 from __future__ import annotations
 
 from collections import deque
-from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from untaped_ansible.domain.graph import (
     DependencyGraph,
     EdgeRelation,
     GraphEdge,
     GraphNode,
-    StopReason,
     walk_root_ids,
 )
-
-
-class ReachedNode(BaseModel):
-    """One node reached from a root; ``deps`` and ``impact`` write it as their records.
-
-    ``path`` reads in dependency order (each label requires the next): from
-    the root for ``requires`` walks, towards the root for ``impacts`` walks.
-    ``root_ref`` is the ref of the root it was reached from.
-    """
-
-    model_config = ConfigDict(frozen=True)
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "ref", "stopped", "declared_in", "path")
-
-    repo: str | None
-    ref: str | None
-    unresolved: str | None
-    declared_ref: str | None
-    declared_in: str | None
-    depth: int
-    path: list[str]
-    root_ref: str | None
-    stopped: StopReason | None
-    shas: frozenset[str] = Field(default=frozenset(), exclude=True)
-    """The commits the row's repo was indexed at (see :attr:`GraphNode.shas`)."""
+from untaped_ansible.records import ReachedRow
 
 
 class Reach(BaseModel):
-    """A reached node plus the root it was reached from."""
+    """A reached node's row, the root it was reached from and the commits it was indexed at.
+
+    ``shas`` are the commits of the row's repo (see :attr:`GraphNode.shas`):
+    never on the wire, so they sit beside the row, not in it.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     root: GraphNode
-    node: ReachedNode
+    row: ReachedRow
+    shas: frozenset[str] = frozenset()
 
 
 def reach(graph: DependencyGraph, relation: EdgeRelation) -> list[Reach]:
@@ -88,7 +68,7 @@ def reach(graph: DependencyGraph, relation: EdgeRelation) -> list[Reach]:
                 hits.append(
                     Reach(
                         root=root,
-                        node=ReachedNode(
+                        row=ReachedRow(
                             repo=node.repo,
                             ref=node.ref,
                             unresolved=node.unresolved,
@@ -98,11 +78,11 @@ def reach(graph: DependencyGraph, relation: EdgeRelation) -> list[Reach]:
                             path=path[::-1] if upstream else path,
                             root_ref=root.ref,
                             stopped=node.stopped,
-                            shas=node.shas,
                         ),
+                        shas=node.shas,
                     )
                 )
     return hits
 
 
-__all__ = ["Reach", "ReachedNode", "reach"]
+__all__ = ["Reach", "reach"]

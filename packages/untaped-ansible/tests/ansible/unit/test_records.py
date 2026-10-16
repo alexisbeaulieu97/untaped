@@ -167,3 +167,34 @@ def test_source_get_writes_an_unset_ref_scan_default_as_null(
         "ref_patterns": [],
         "ref_scan_default": None,
     }
+
+
+@pytest.mark.parametrize(
+    ("argv", "valid"),
+    [
+        (
+            ["source", "list", "--columns", "name,bogus"],
+            "name, orgs, teams, repos, dependency_paths, ref_kinds, ref_patterns, ref_scan_default",
+        ),
+        (["source-alias", "list", "--columns", "bogus"], "alias, repo"),
+        (
+            ["source-alias", "set", "common", "acme/common", "--columns", "bogus"],
+            "action, error, alias, repo",
+        ),
+    ],
+    ids=["source list", "source-alias list", "source-alias set"],
+)
+def test_an_unknown_column_is_a_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str], valid: str
+) -> None:
+    cfg = tmp_path / "config.yml"
+    profile = {"ansible": {"index_path": str(tmp_path / "index.sqlite3")}}
+    cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
+    state = {"sources": [{"name": "prod", "orgs": ["acme"]}], "aliases": {"common": "acme/c"}}
+    (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = invoke_cli(app, argv)
+
+    assert result.exit_code == 2
+    assert f"unknown column 'bogus'; valid columns: {valid}" in result.stderr

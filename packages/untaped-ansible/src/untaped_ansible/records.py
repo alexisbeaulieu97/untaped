@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from typing import ClassVar, Literal
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import FreshnessRecord, OutcomeRecord, Record, UtcTimestamp
 from untaped_ansible.domain.graph import StopReason
+from untaped_ansible.domain.variable_models import How
 
 
 class Source(Record, kind="ansible.source"):
@@ -140,9 +141,45 @@ class ReachedDependent(ReachedRow, kind="ansible.dependent"):
     """A repository that depends on the root, directly or not (``impact``); the path ends there."""
 
 
+class Dependent(BaseModel):
+    """The dependent a hit was found in: its repo and ref, and its path to the role."""
+
+    model_config = ConfigDict(frozen=True)
+
+    repo: str
+    ref: str | None
+    path: list[str]
+
+
+class VariableUse(Record):
+    """Where one variable is defined, set or read in one repo at one ref.
+
+    Kind-less until ``vars where`` registers ``ansible.variable_use``.
+    ``key_path`` is the YAML key path as segments (``int`` for list items),
+    empty for a read in a template file.
+    """
+
+    variable: str
+    repo: str
+    ref: str | None
+    file: str
+    line: int
+    key_path: list[str | int]
+    how: How
+
+
+class VariableUseHit(VariableUse, kind="ansible.variable_use_hit"):
+    """A :class:`VariableUse` in a dependent of the role ``impact --uses`` was asked about."""
+
+    table_columns: ClassVar[tuple[str, ...]] = ("repo", "ref", "file", "line", "key_path", "how")
+
+    dependent: Dependent
+
+
 __all__ = [
     "AliasOutcome",
     "DependencyMatch",
+    "Dependent",
     "ReachedDependency",
     "ReachedDependent",
     "ReachedRow",
@@ -150,4 +187,6 @@ __all__ = [
     "SourceAlias",
     "SourceOutcome",
     "SourceStatus",
+    "VariableUse",
+    "VariableUseHit",
 ]

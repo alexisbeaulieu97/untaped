@@ -775,16 +775,17 @@ def _samples() -> dict[str, WireModel]:
             ),
         ]
     if "untaped_ansible" in _SHIPPED:
-        from untaped_ansible.domain.variable_queries import Dependent, VariableUseHit
         from untaped_ansible.records import (
             AliasOutcome,
             DependencyMatch,
+            Dependent,
             ReachedDependency,
             ReachedDependent,
             Source,
             SourceAlias,
             SourceOutcome,
             SourceStatus,
+            VariableUseHit,
         )
 
         reached = {

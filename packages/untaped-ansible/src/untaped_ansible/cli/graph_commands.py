@@ -73,7 +73,7 @@ from untaped_ansible.domain.identity import IdentityResolver, repo_key
 from untaped_ansible.domain.models import DependencyDeclaration, ParseWarning
 from untaped_ansible.domain.parser import parse_dependency_file
 from untaped_ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
-from untaped_ansible.domain.reach import ReachedNode, reach
+from untaped_ansible.domain.reach import Reach, reach
 from untaped_ansible.domain.renderers import (
     GraphFormat,
     plain_text,
@@ -81,7 +81,6 @@ from untaped_ansible.domain.renderers import (
     tree_lines,
 )
 from untaped_ansible.domain.variable_queries import (
-    VariableUseHit,
     dependent_uses,
     render_key_path,
     skipped_files,
@@ -104,6 +103,7 @@ from untaped_ansible.records import (
     ReachedDependency,
     ReachedDependent,
     ReachedRow,
+    VariableUseHit,
 )
 from untaped_ansible.settings import INDEX, AnsibleSettings, SourceDefinition
 from untaped_github.api import GithubClient, GithubSettings, github_web_host
@@ -587,13 +587,13 @@ def _emit_reach(
             graph = _target_graph(
                 env, target=target, ref=ref, target_repo=repo, direction=command
             ).graph
-            return _Reached(graph, [hit.node for hit in reach(graph, relation)])
+            return _Reached(graph, reach(graph, relation))
 
         graph, rows = _answer(env, options, command, read, empty=lambda reached: not reached.rows)
         _report_warnings(graph.warnings)
         _report_depth_stops(graph, depth_limit)
         emit(
-            _table_paths([model.model_validate(row.model_dump()) for row in rows], fmt),
+            _table_paths([model(**hit.row.model_dump()) for hit in rows], fmt),
             fmt=fmt,
             columns=columns,
             empty=f"No {noun} found{_within(depth_limit)}.",
@@ -627,12 +627,14 @@ def _emit_uses(
             graph = _target_graph(
                 env, target=target, ref=ref, target_repo=repo, direction="impact"
             ).graph
-            return _Reached(graph, [hit.node for hit in reach(graph, "impacts")])
+            return _Reached(graph, reach(graph, "impacts"))
 
         graph, rows = _answer(env, options, "impact", read, empty=lambda reached: not reached.rows)
         _report_warnings(graph.warnings)
         _report_depth_stops(graph, depth_limit)
-        commits = {(row.repo, sha) for row in rows if row.repo is not None for sha in row.shas}
+        commits = {
+            (hit.row.repo, sha) for hit in rows if hit.row.repo is not None for sha in hit.shas
+        }
         facts = env.sqlite_index.variable_facts(commits, names)
         _hint_undefined(env, target=target, repo=repo, ref=ref, names=names)
         skipped = skipped_files(rows, facts)
@@ -652,7 +654,7 @@ def _emit_uses(
             table_columns=(("variable", *VariableUseHit.table_columns) if len(names) > 1 else None),
         )
         if missing:
-            _report_unanalysed(env, missing, [row for row in rows if row.repo is not None])
+            _report_unanalysed(env, missing, [hit.row for hit in rows if hit.row.repo is not None])
         finish(bool(missing))
 
 
@@ -726,7 +728,7 @@ def _role_variable_files(root: Path) -> dict[str, str]:
 _UNWALKED = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox"})
 
 
-def _report_unanalysed(env: _GraphEnv, missing: list[str], rows: list[ReachedNode]) -> None:
+def _report_unanalysed(env: _GraphEnv, missing: list[str], rows: list[ReachedRow]) -> None:
     """One failure naming the dependents with no variable facts, and how to fill them in."""
     shown = ", ".join(missing[:5])
     more = f" and {len(missing) - 5} more" if len(missing) > 5 else ""
@@ -1101,7 +1103,7 @@ class _Reached(NamedTuple):
     """What ``deps`` or ``impact`` read: the graph, and the rows it reached."""
 
     graph: DependencyGraph
-    rows: list[ReachedNode]
+    rows: list[Reach]
 
 
 @dataclass

@@ -30,16 +30,16 @@ def find_matches(
         DependencyMatch(
             root_repo=hit.root.repo or hit.root.label,
             root_ref=hit.root.ref,
-            repo=hit.node.repo,
-            declared_ref=hit.node.declared_ref,
-            declared_in=hit.node.declared_in,
-            path=hit.node.path,
+            repo=hit.row.repo,
+            declared_ref=hit.row.declared_ref,
+            declared_in=hit.row.declared_in,
+            path=hit.row.path,
             input_kind=identity.kind,
             input_id=identity.id,
             input_name=identity.name,
         )
         for hit in reach(graph, "requires")
-        if hit.node.repo is not None and repo_key(hit.node.repo) in wanted_keys
+        if hit.row.repo is not None and repo_key(hit.row.repo) in wanted_keys
     ]
 
 
