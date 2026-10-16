@@ -732,9 +732,10 @@ def test_run_refuses_an_unknown_column_before_launching_anything(
 ) -> None:
     """A typo'd ``--columns`` fails up front, never after the jobs ran and their rows are lost."""
     _seed_jt(fake_aap)
-    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-c", "resutl,+result"])
-    assert result.exit_code == 2, result.output
-    assert "unknown column 'resutl'; valid columns: suite, case, result" in result.stderr
+    for typo in ("resutl", "+resutl"):
+        result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-c", typo])
+        assert result.exit_code == 2, result.output
+        assert "unknown column 'resutl'; valid columns: suite, case, result" in result.stderr
     assert fake_aap.actions_called == []
     assert (
         cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-c", "failure.system"]).exit_code

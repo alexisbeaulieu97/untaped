@@ -29,6 +29,7 @@ from untaped.sdk import (
     YesOption,
     attribution,
     batch_apply,
+    check_columns,
     create_app,
     echo,
     emit,
@@ -49,7 +50,6 @@ from untaped.sdk import (
     writes,
 )
 from untaped_awx.cli.context import AwxContext, open_context
-from untaped_awx.cli.names import column_names
 from untaped_awx.cli.options import OrganizationOption
 from untaped_awx.domain.case_failure import CaseFailure
 from untaped_awx.domain.records import ProvisionOutcome, PruneOutcome, SuiteCase
@@ -352,7 +352,7 @@ def run_command(
 
     if compare is not None and baseline is not None:
         raise_usage("--compare and --baseline cannot be combined")
-    _check_result_columns(columns)
+    check_columns(CaseResult, columns=columns, fmt=fmt)  # before anything launches
     _check_run_flags(
         source_ref,
         scm_branch=scm_branch,
@@ -463,24 +463,6 @@ def _report_results(
     for item, failure in deciding:
         _diag.failure(failure, item=item)
     return bool(deciding)
-
-
-def _check_result_columns(columns: list[str] | None) -> None:
-    """Refuse an unknown ``--columns`` name before a run launches anything (exit 2).
-
-    Results are records, so writing them would refuse it too, once the jobs
-    had run and their rows were lost.
-    """
-    known = list(CaseResult.model_fields)
-    unknown = [
-        name for name in column_names(columns) if name != "?" and name.split(".", 1)[0] not in known
-    ]
-    if unknown:
-        shown = ", ".join(repr(name) for name in unknown)
-        raise_usage(
-            f"unknown column{'s' if len(unknown) > 1 else ''} {shown}; "
-            f"valid columns: {', '.join(known)}"
-        )
 
 
 def _refuse_scm_branch_with_source_ref(source_ref: str | None, scm_branch: str | None) -> None:
