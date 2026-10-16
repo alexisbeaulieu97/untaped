@@ -48,6 +48,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, SecretStr
 
+from untaped.config_schema import Argv
 from untaped.errors import ConfigError
 from untaped.settings import env_var_name, resolve_config_path
 from untaped.stability import deprecated_behaviour
@@ -77,7 +78,7 @@ def _check_argv(value: list[str] | None) -> list[str] | None:
     return value
 
 
-TokenCommand = Annotated[list[str] | None, AfterValidator(_check_argv)]
+TokenCommand = Annotated[list[str] | None, Argv(), AfterValidator(_check_argv)]
 """Field type for ``<section>.token_command``: an argv list, run without a shell."""
 
 

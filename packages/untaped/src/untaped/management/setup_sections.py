@@ -42,8 +42,9 @@ from untaped.management.setup_write import write_setting
 from untaped.messages import command_line
 from untaped.plugins.registry import PluginSpec
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
-from untaped.screen.components.draw import option_row, role_style
+from untaped.screen.components.draw import note_lines, option_row, role_style
 from untaped.screen.components.fields import Field
+from untaped.screen.components.lists import ListEditor
 from untaped.screen.core import Cmd, Frame, Key
 from untaped.screen.fit import fit_text
 from untaped.settings import section_stabilities
@@ -186,12 +187,12 @@ def _row(
         help.append(f"{entry.source.variable} is set: it wins over the profile until it is unset.")
     if shown.note:
         help.append(shown.note)
-    editable = shown.stability != "deprecated" and (raw or not descriptor.is_collection)
+    editable = shown.stability != "deprecated"
     if not editable:
-        why = "deprecated" if shown.stability == "deprecated" else "a list or map"
         command = command_line(f"config set {entry.key}")
         help.append(
-            f"Read-only here ({why}); `{command}` sets it" + (", delete unsets it." if own else ".")
+            f"Read-only here (deprecated); `{command}` sets it"
+            + (", delete unsets it." if own else ".")
         )
     return SettingRow(
         key=entry.key,
@@ -362,7 +363,18 @@ class SectionPane:
     ) -> RenderableType:
         """The rows (a window around the cursor), then the field, the question or the help."""
         inner = width or frame.width  # the pane's own border already frames the rows
-        size = max(3, frame.height - _BELOW)
+        editing = self.editing
+        below = _BELOW
+        if isinstance(editing, ListEditor):
+            # The editor takes the room it needs, down to one row of settings above it.
+            chrome = (2 if frame.box() is None else 3) + note_lines(
+                editing.error or editing.help, inner
+            )
+            chrome += note_lines(self.error, inner)
+            items = min(len(editing.items) + 2, max(3, frame.height - 1 - chrome))
+            editing = replace(editing, window_rows=items)
+            below = items + chrome
+        size = max(1 if below > _BELOW else 3, frame.height - below)
         start = max(0, min(self.cursor - size // 2, len(self.rows) - size))
         shown = self.rows[start : start + size]
         key_width = min(
@@ -378,8 +390,8 @@ class SectionPane:
             lines.append(Text(self.error, style=role_style(frame, "screen.error")))
         lines.append(Text())
         row = self.row
-        if self.editing is not None:
-            lines.append(self.editing.view(frame, focused=focused, width=width))
+        if editing is not None:
+            lines.append(editing.view(frame, focused=focused, width=width))
         elif self.confirm and row is not None:
             question = (
                 f"Unset {row.label} in profile {self.profile}? y unsets it, any key keeps it."
@@ -431,6 +443,4 @@ def field_for(pane: SectionPane, message: FieldOpened) -> SectionPane:
     if row is None or row.key != message.key or row.descriptor is None:
         return pane
     component = editor(row.descriptor, message.value, label=row.label, raw=row.raw)
-    if component is None:
-        return pane
     return pane.opened(component, message.expected)

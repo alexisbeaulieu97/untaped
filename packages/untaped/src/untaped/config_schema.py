@@ -70,6 +70,15 @@ class Choices:
         return f"unknown {self.noun} {shown}. Valid {self.label}: {valid}"
 
 
+@dataclass(frozen=True)
+class Argv:
+    """``Annotated`` marker: a ``list[str]`` that is a command's argv, run without a shell.
+
+    An editor shows it as one shell-quoted line (``config set`` still takes
+    JSON); checking the argv stays the field's own validator.
+    """
+
+
 def field_choices(field: FieldInfo) -> Choices | None:
     """The field's :class:`Choices` marker, if it has one."""
     return next((item for item in field.metadata if isinstance(item, Choices)), None)
@@ -105,6 +114,9 @@ class FieldDescriptor:
 
     bounds: tuple[annotated_types.BaseMetadata, ...] = ()
     """The field's numeric bounds (``Gt``, ``Ge``, ``Lt``, ``Le``), read for help text only."""
+
+    argv: bool = False
+    """Whether the field carries the :class:`Argv` marker: a command's argv."""
 
     @property
     def key(self) -> str:
@@ -162,6 +174,7 @@ def walk_settings(
                 description=field.description,
                 choices=field_choices(field),
                 bounds=tuple(item for item in field.metadata if isinstance(item, _BOUNDS)),
+                argv=any(isinstance(item, Argv) for item in field.metadata),
             )
         )
     return entries

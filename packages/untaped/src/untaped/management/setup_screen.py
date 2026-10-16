@@ -92,6 +92,7 @@ from untaped.screen.components.draw import role_style
 from untaped.screen.components.form import Form, Submitted
 from untaped.screen.components.inputs import COMPLETION_ROWS, TextInput
 from untaped.screen.components.layout import Panes
+from untaped.screen.components.lists import ListEditor
 from untaped.screen.core import (
     Activate,
     Back,
@@ -354,6 +355,8 @@ def _enter_label(model: SetupModel) -> str | None:
     pane = model.pane
     if model.focus == "form" or pane is None:
         return None
+    if isinstance(pane.editing, ListEditor):
+        return _list_enter(pane.editing, changed=pane.to_write() != pane.initial)
     if pane.editing is not None:
         return "write"
     row = pane.row
@@ -362,6 +365,23 @@ def _enter_label(model: SetupModel) -> str | None:
     if not row.key:
         return "open"
     return "edit" if row.descriptor is not None else None
+
+
+def _list_enter(editor: ListEditor, *, changed: bool) -> str:
+    """Enter in a list editor: keep the open item, put the moved one down, or act on the row.
+
+    On ``done`` it writes the list, or just closes the editor when nothing changed.
+    """
+    if editor.editing is not None:
+        return "keep"
+    if editor.moving:
+        return "put down"
+    count = len(editor.items)
+    if editor.cursor < count:
+        return "edit"
+    if editor.cursor == count:
+        return "add"
+    return "write" if changed else "close"
 
 
 def _save_label(model: SetupModel) -> str | None:
