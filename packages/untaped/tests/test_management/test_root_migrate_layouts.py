@@ -214,3 +214,44 @@ def test_an_unlistable_refs_folder_keeps_every_layout(
     assert row["detail"].startswith("kept: who holds it is unknown: the install references in")
     assert _cli("--yes").exit_code == 0
     assert old.exists()
+
+
+@pytest.mark.parametrize("unknown", ["folder", "newer"])
+def test_a_damaged_lock_never_hides_unknown_holders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unknown: str
+) -> None:
+    other = tmp_path / "tool"
+    (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
+    old = _layout(4)
+    Path(f"{old}.inuse").write_bytes(b"not a database")
+    if unknown == "newer":  # a newer untaped's reference, which may name layout 4
+        refs.refs_dir().mkdir(parents=True)
+        (refs.refs_dir() / "install-future.json").write_text('{"untaped": "99", "holder": "x"}')
+    else:  # a live install's reference names layout 4, in a folder this run cannot list
+        write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+        real = Path.iterdir
+
+        def iterdir(self: Path) -> Iterator[Path]:
+            if self == refs.refs_dir():
+                raise PermissionError(13, "Permission denied")
+            return real(self)
+
+        monkeypatch.setattr(Path, "iterdir", iterdir)
+    [row] = [
+        row for row in json.loads(_cli("--dry-run").stdout) if row["id"] == "acme.data-layouts"
+    ]
+    assert row["action"] == "keep" and "who holds it is unknown" in row["detail"]
+    assert _cli("--yes").exit_code == 0
+    assert old.exists()
+
+
+def test_a_damaged_lock_never_hides_what_keep_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    old = _layout(4)
+    Path(f"{old}.inuse").write_bytes(b"not a database")
+    store = Store("acme", "data", base=_base, layout=5, keep=lambda _: "a profile points here")
+    [row] = [
+        row
+        for row in json.loads(_cli("--dry-run", spec=_spec(store)).stdout)
+        if row["id"] == "acme.data-layouts"
+    ]
+    assert (row["action"], row["detail"]) == ("keep", "kept: a profile points here")

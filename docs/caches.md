@@ -221,9 +221,9 @@ store, a running untaped has it open, a damaged in-use lock, a reference it
 cannot read) the `stores` row names with its reason. For the layouts nobody
 holds, a store's plugin adds `other_layouts_migration(STORE)` (experimental)
 to its `migrations`: `untaped setup migrate-dirs` then offers each one as a
-`<plugin>.<store>-layouts` delete row with that reason, keeping a symlink and
-anything `keep` names. The
-references of installs that are gone are core's `untaped.references` row, and
+`<plugin>.<store>-layouts` delete row with that reason. It keeps a symlink,
+anything `keep` names, and every layout while `refs/` or a reference cannot
+be read, since who holds it is unknown then. The references of installs that are gone are core's `untaped.references` row, and
 `untaped doctor`'s `references` row lists every reference. In tests,
 `untaped.testing.write_reference` writes another install's reference.
 

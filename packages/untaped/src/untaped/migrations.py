@@ -155,10 +155,11 @@ def other_layouts_migration(store: Store) -> DirMigration:
     One ``delete`` row per layout of ``store`` on disk that no live
     reference holds and that the cleanup will not remove on its own, with
     the reason in its detail (no registered install, a running process has
-    it open, a lock this filesystem refuses, a reference this untaped cannot
-    read, a damaged in-use lock); a layout the next complete fill removes is
-    not listed. A symlink, a path :func:`unsafe_dir` refuses (the plugins'
-    folder aside) or one the store's ``keep`` names is a ``keep`` row.
+    it open, a lock this filesystem refuses, a damaged in-use lock); a
+    layout the next complete fill removes is not listed. A symlink, a path
+    :func:`unsafe_dir` refuses (the plugins' folder aside), one the store's
+    ``keep`` names, and every layout while ``refs/`` or a reference cannot
+    be read (who holds it is unknown) is a ``keep`` row.
     Applying takes the references' lock, checks again what holds each
     layout, and removes it the way the cleanup does: renamed aside under its
     exclusive lock (a running untaped that has it open fails the row), then

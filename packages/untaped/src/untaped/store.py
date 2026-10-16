@@ -433,20 +433,12 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
     """
     from untaped.messages import shown_path  # noqa: PLC0415 - no cycle
 
-    if layout.lock == "damaged":
-        lock = _inuse_file(_lock_path(layout.path, layout.layout, bare=layout.bare))
-        return Kept(
-            "damaged",
-            f"its in-use lock {shown_path(lock)} is damaged, so the layout is neither protected "
-            "nor ever adopted or removed; delete that file while no untaped runs",
-        )
+    damaged = _damaged(layout)
     if layout.own or layout.holders:
-        return None
-    kept, failed = store._keep_check(layout.path)
-    if kept is not None:
-        return Kept("keep-failed" if failed else "kept", kept)
+        return damaged
     from untaped.refs import refs_dir  # noqa: PLC0415 - refs imports the registry
 
+    # Who holds it first: while that is unknown, nothing else may call it unheld.
     folder = refs_dir()
     if any(ref.opaque is not None and ref.file == folder for ref in references):
         return Kept(
@@ -456,6 +448,11 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
         )
     if any(ref.opaque is not None for ref in references):
         return Kept("opaque", "a reference this untaped cannot read pauses cleanup")
+    kept, failed = store._keep_check(layout.path)
+    if kept is not None:  # before the damaged lock: what keep names is never offered for removal
+        return Kept("keep-failed" if failed else "kept", kept)
+    if damaged is not None:
+        return damaged
     if not any(
         ref.opaque is None and ref.live and ref.kind == "install" and ref.layouts(store.qualified)
         for ref in references
@@ -466,6 +463,20 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
     if layout.lock == "busy":
         return Kept("busy", "a running untaped has it open")
     return None
+
+
+def _damaged(layout: Layout) -> Kept | None:
+    """``layout``'s damaged in-use lock as a reason, or ``None``."""
+    from untaped.messages import shown_path  # noqa: PLC0415 - no cycle
+
+    if layout.lock != "damaged":
+        return None
+    lock = _inuse_file(_lock_path(layout.path, layout.layout, bare=layout.bare))
+    return Kept(
+        "damaged",
+        f"its in-use lock {shown_path(lock)} is damaged, so the layout is neither protected "
+        "nor ever adopted or removed; delete that file while no untaped runs",
+    )
 
 
 def _probe(path: Path) -> LockState:
