@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable, Mapping, Sequence
-from itertools import pairwise
 from typing import Any
 
 import yaml
@@ -20,6 +18,7 @@ from untaped_awx.application.selection import (
 )
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.launch_prompts import PROMPT_FLAGS
+from untaped_awx.domain.secret_names import redact_secret_names
 from untaped_awx.errors import LaunchPromptError
 
 _CLI_FLAGS: dict[str, str] = {
@@ -181,31 +180,6 @@ def _is_template_value(field: str, supplied: Any, current: Any) -> bool:
     return bool(supplied == current)
 
 
-_SECRET_WORDS = frozenset({"pass", "passwd", "password", "passphrase", "pwd", "secret", "token"})
-_SECRET_PAIRS = frozenset({"apikey", "accesskey", "privatekey", "secretkey", "sshkey"})
-_WORD = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
-
-
-def looks_secret(name: str) -> bool:
-    """Whether a variable name reads as a secret, in any case or separator style.
-
-    Its words (split on ``_``, ``-``, ``.`` and camelCase) are checked:
-    ``pass``/``password``/``passphrase``/``pwd``/``secret``/``token``, any
-    word ending in ``password``/``passphrase``/``secret``/``token``
-    (``dbpassword``), or two adjacent words forming ``api_key``,
-    ``access_key``, ``private_key``, ``secret_key`` or ``ssh_key`` (also
-    written as one word).
-    """
-    words = [word.lower() for word in _WORD.findall(name)]
-    candidates = [*words, *(a + b for a, b in pairwise(words))]
-    return any(
-        word in _SECRET_WORDS
-        or word in _SECRET_PAIRS
-        or word.endswith(("password", "passphrase", "secret", "token"))
-        for word in candidates
-    )
-
-
 class TemplateReads:
     """Memoized GETs of each target template's ``launch/`` and ``survey_spec/`` endpoints.
 
@@ -239,7 +213,7 @@ def launch_payload_preview(
 
     A variable is secret when the template's enabled survey asks for it as a
     ``password`` (``read`` GETs the template's sub-endpoints), or when its
-    name, at any depth, :func:`looks_secret`.
+    name, at any depth, :func:`~untaped_awx.domain.secret_names.looks_secret`.
     """
     preview = dict(payload)
     extra_vars = preview.get("extra_vars")
@@ -247,9 +221,9 @@ def launch_payload_preview(
         extra_vars = json.loads(extra_vars)
     if isinstance(extra_vars, dict):
         passwords = _survey_passwords(read)
+        named = redact_secret_names("", extra_vars, replacement=REDACTED)
         preview["extra_vars"] = {
-            key: REDACTED if key in passwords else _redact_secret_names(key, value)
-            for key, value in extra_vars.items()
+            key: REDACTED if key in passwords else value for key, value in named.items()
         }
     return preview
 
@@ -265,16 +239,6 @@ def _survey_passwords(read: Callable[[str], Mapping[str, Any]]) -> set[str]:
         for question in questions or []
         if isinstance(question, Mapping) and question.get("type") == "password"
     }
-
-
-def _redact_secret_names(key: str, value: Any) -> Any:
-    if looks_secret(key):
-        return REDACTED
-    if isinstance(value, dict):
-        return {k: _redact_secret_names(str(k), v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_redact_secret_names("", v) for v in value]
-    return value
 
 
 def extra_var_names(value: Any) -> set[str]:

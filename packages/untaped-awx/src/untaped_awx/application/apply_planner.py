@@ -23,6 +23,7 @@ from untaped.sdk import plural
 from untaped_awx.application.mutation_refs import PlannedId
 from untaped_awx.application.ports import FkResolver
 from untaped_awx.domain import FkRef, IdentityRef, Resource, ResourceSpec
+from untaped_awx.domain.spec import unrecognized_names
 from untaped_awx.errors import BadRequestError
 
 
@@ -34,7 +35,7 @@ def unrecognized_fields(spec: ResourceSpec, names: Iterable[str]) -> list[str]:
     so a hand-typed typo or a field this tool has no metadata for stays visible
     rather than silently no-op'ing on the server.
     """
-    return sorted(name for name in names if name not in spec.known_fields)
+    return unrecognized_names(names, spec.known_fields)
 
 
 def unrecognized_warning(spec: ResourceSpec, names: Iterable[str]) -> str | None:

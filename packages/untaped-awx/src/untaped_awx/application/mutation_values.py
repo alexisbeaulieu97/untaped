@@ -7,14 +7,13 @@ import json
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-import yaml
-
 from untaped.sdk import UntapedError
-from untaped_awx.application.secret_paths import (
+from untaped_awx.domain import ApplyOutcome, FieldChange, ResourceSpec
+from untaped_awx.domain.secret_paths import (
     replace_at,
     values_at,
 )
-from untaped_awx.domain import ApplyOutcome, FieldChange, ResourceSpec
+from untaped_awx.domain.structured_text import parse_structured_text
 
 REDACTED = "<redacted>"
 
@@ -28,8 +27,8 @@ def semantic_equal(
 ) -> bool:
     """Compare user-owned values exactly, with explicit enrichment allowance."""
     if structured_text:
-        left = _parse_structured_string(left)
-        right = _parse_structured_string(right)
+        left = parse_structured_text(left)
+        right = parse_structured_text(right)
     if allow_server_enrichment and isinstance(left, Mapping) and isinstance(right, Mapping):
         if not left:
             # An empty request is a clear (``survey_spec: {}``), not a subset.
@@ -102,19 +101,6 @@ __all__ = [
     "redact_value",
     "semantic_equal",
 ]
-
-
-def _parse_structured_string(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    for parser in (json.loads, yaml.safe_load):
-        try:
-            parsed = parser(value)
-        except ValueError, yaml.YAMLError:
-            continue
-        if isinstance(parsed, dict | list):
-            return parsed
-    return value
 
 
 def error_text(error: BaseException) -> str:

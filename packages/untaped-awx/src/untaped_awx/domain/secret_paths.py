@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from typing import Any
 
-from untaped_awx.domain import ResourceSpec
+from untaped_awx.domain.spec import ResourceSpec
 
 PLACEHOLDER = "$encrypted$"
 

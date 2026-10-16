@@ -17,11 +17,11 @@ from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE, Fiel
 from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.apply_verifier import ApplyVerifier
 from untaped_awx.application.ports import RawHttpResourceClient
-from untaped_awx.application.secret_paths import (
+from untaped_awx.domain import FieldChange, Resource, ResourceSpec
+from untaped_awx.domain.secret_paths import (
     covered_by,
     strip_encrypted_in_place,
 )
-from untaped_awx.domain import FieldChange, Resource, ResourceSpec
 from untaped_awx.errors import AwxApiError, BadRequestError
 
 
