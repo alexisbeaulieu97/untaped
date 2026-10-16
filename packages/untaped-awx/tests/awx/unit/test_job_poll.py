@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from untaped_awx.domain import Job
-from untaped_awx.domain.job import poll_until_terminal
+from untaped_awx.domain.jobs.job import poll_until_terminal
 
 
 def _job(status: str) -> Job:

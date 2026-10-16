@@ -8,7 +8,8 @@ import pytest
 
 from untaped.sdk import ConfigError, ErrorCategory, Failure, HttpTransportError
 from untaped_awx.domain import Job
-from untaped_awx.domain.case_failure import (
+from untaped_awx.domain.jobs.job import HostSummary, JobEvent
+from untaped_awx.domain.suites.case_failure import (
     CaseFailure,
     FailedTask,
     FailureEvidence,
@@ -25,8 +26,7 @@ from untaped_awx.domain.case_failure import (
     unhandled,
     workflow_failure,
 )
-from untaped_awx.domain.job import HostSummary, JobEvent
-from untaped_awx.domain.workflow_run import RunNode
+from untaped_awx.domain.suites.workflow_run import RunNode
 from untaped_awx.errors import (
     LaunchPromptError,
     PendingApprovalError,

@@ -16,8 +16,8 @@ from untaped.sdk import (
     finish,
     plural,
 )
-from untaped_awx.application.mutation_engine import BatchMutationEngine
-from untaped_awx.application.mutation_types import MutationPlan
+from untaped_awx.application.resources.mutation_engine import BatchMutationEngine
+from untaped_awx.application.resources.mutation_types import MutationPlan
 from untaped_awx.application.scheduling import MAX_PARALLEL
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.cli.format import (
@@ -34,7 +34,7 @@ from untaped_awx.cli.options import (
 )
 from untaped_awx.domain import ApplyOutcome
 from untaped_awx.domain.outcomes import UNFINISHED_ACTIONS
-from untaped_awx.domain.records import ApplyOutcomeRow
+from untaped_awx.records import ApplyOutcomeRow
 
 
 def validate_controls(

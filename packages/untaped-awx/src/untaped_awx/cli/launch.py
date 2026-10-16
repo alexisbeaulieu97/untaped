@@ -24,7 +24,7 @@ from untaped.sdk import (
     report_errors,
     writes,
 )
-from untaped_awx.application.ports import FkResolver
+from untaped_awx.application.resources.ports import FkResolver
 from untaped_awx.cli._action_runner import (
     run_action_selection,
     validate_wait_flags,
@@ -49,7 +49,7 @@ from untaped_awx.cli.options import (
     YesOption,
 )
 from untaped_awx.errors import ResourceNotFoundError, default_organization_note
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def _add_launch(app: App, spec: AwxResourceSpec) -> None:

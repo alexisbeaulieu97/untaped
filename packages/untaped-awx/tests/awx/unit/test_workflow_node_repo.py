@@ -10,8 +10,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any, cast
 
-from untaped_awx.application.ports import RawHttpResourceClient
-from untaped_awx.infrastructure.workflow_node_repo import HttpWorkflowNodeRepository
+from untaped_awx.application.resources.ports import RawHttpResourceClient
+from untaped_awx.infrastructure.resources.workflow_node_repo import HttpWorkflowNodeRepository
 
 
 class _FakeClient:

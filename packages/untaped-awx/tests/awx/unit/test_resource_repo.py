@@ -8,8 +8,8 @@ import respx
 
 from untaped_awx.errors import AmbiguousIdentityError, AwxApiError, BadRequestError
 from untaped_awx.infrastructure import AwxClient
-from untaped_awx.infrastructure.resource_repo import ResourceRepository
-from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
+from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 from untaped_awx.settings import AwxSettings
 
 

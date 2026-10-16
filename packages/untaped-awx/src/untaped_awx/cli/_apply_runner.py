@@ -17,7 +17,7 @@ from untaped_awx.cli._mutation_runner import (
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.domain import Resource
 from untaped_awx.infrastructure.git_source import GitSource
-from untaped_awx.infrastructure.yaml_io import (
+from untaped_awx.infrastructure.resources.yaml_io import (
     read_resource_files,
     read_resource_files_at,
     read_resource_text,

@@ -14,8 +14,8 @@ from untaped_awx.domain import (
     WritePayload,
 )
 from untaped_awx.domain.outcomes import DeleteReceipt
-from untaped_awx.infrastructure.specs import PROJECT_SPEC
-from untaped_awx.infrastructure.strategies import DefaultApplyStrategy
+from untaped_awx.infrastructure.resources.specs import PROJECT_SPEC
+from untaped_awx.infrastructure.resources.strategies import DefaultApplyStrategy
 
 
 class _Catalog:

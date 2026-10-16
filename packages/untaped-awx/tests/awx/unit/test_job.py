@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from untaped_awx.domain import Job, JobEvent
-from untaped_awx.domain.job import HostSummary, host_summaries
+from untaped_awx.domain.jobs.job import HostSummary, host_summaries
 
 
 @pytest.mark.parametrize(

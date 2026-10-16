@@ -9,8 +9,8 @@ import pytest
 
 from untaped.sdk import ConfigError
 from untaped_awx.domain import Resource
-from untaped_awx.domain.suite import Case, Suite, TemplateBinding, select_cases
-from untaped_awx.domain.temporary_set import (
+from untaped_awx.domain.suites.suite import Case, Suite, TemplateBinding, select_cases
+from untaped_awx.domain.suites.temporary_set import (
     Marker,
     leftover,
     parse_age,
@@ -288,7 +288,7 @@ def test_provisioning_stops_at_the_first_failed_copy() -> None:
     """All or nothing: copies made after a failure would only be torn down."""
     from typing import cast
 
-    from untaped_awx.application.mutation_engine import BatchMutationEngine
+    from untaped_awx.application.resources.mutation_engine import BatchMutationEngine
     from untaped_awx.application.suites.temporary_set import TemporarySets
     from untaped_awx.domain import BatchResult
 

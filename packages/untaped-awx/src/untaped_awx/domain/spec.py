@@ -3,7 +3,7 @@
 A :class:`ResourceSpec` is the **domain** view of a kind: identity,
 foreign-key references, secret paths, fidelity, available actions. It
 carries no transport detail (URL paths, HTTP verbs, CLI names) — those
-live in :class:`untaped_awx.infrastructure.spec.AwxResourceSpec`, which
+live in :class:`untaped_awx.infrastructure.resources.spec.AwxResourceSpec`, which
 extends ``ResourceSpec`` with the additional fields the framework needs
 to actually talk to AWX and wire CLI commands.
 

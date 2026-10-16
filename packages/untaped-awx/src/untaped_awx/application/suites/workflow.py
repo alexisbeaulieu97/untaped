@@ -31,7 +31,8 @@ from untaped_awx.application.suites.ports import (
     NodeReader,
 )
 from untaped_awx.domain import Job
-from untaped_awx.domain.case_failure import (
+from untaped_awx.domain.jobs.job import HostSummary
+from untaped_awx.domain.suites.case_failure import (
     APPROVALS_HINT,
     EXPECTATION,
     SUITE,
@@ -39,9 +40,8 @@ from untaped_awx.domain.case_failure import (
     FailedTask,
     failure,
 )
-from untaped_awx.domain.job import HostSummary
-from untaped_awx.domain.suite import Approvals, ExpectationResult, NodeExpectation
-from untaped_awx.domain.workflow_run import (
+from untaped_awx.domain.suites.suite import Approvals, ExpectationResult, NodeExpectation
+from untaped_awx.domain.suites.workflow_run import (
     APPROVAL,
     MAX_NESTING,
     WORKFLOW_JOB,

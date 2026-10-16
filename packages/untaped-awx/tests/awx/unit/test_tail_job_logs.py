@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from untaped_awx.application.tail_job_logs import TailJobLogs
+from untaped_awx.application.jobs.tail_job_logs import TailJobLogs
 from untaped_awx.domain import Job, JobEvent
 
 

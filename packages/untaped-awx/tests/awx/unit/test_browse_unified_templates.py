@@ -12,7 +12,7 @@ from collections.abc import Iterable, Iterator
 from typing import Any, cast
 
 from untaped_awx.application import GetUnifiedTemplate
-from untaped_awx.application.ports import UnifiedTemplateRepository
+from untaped_awx.application.resources.ports import UnifiedTemplateRepository
 
 
 class _FakeUjtRepo:

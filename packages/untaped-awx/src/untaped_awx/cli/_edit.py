@@ -12,7 +12,7 @@ from untaped_awx.cli._mutation_runner import CONTROL_DEFAULTS, WriteControls
 from untaped_awx.cli._selection import SELECTION_DEFAULTS, SelectionOptions
 from untaped_awx.cli.context import open_context
 from untaped_awx.cli.options import NamesArgument
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def _add_edit(app: App, spec: AwxResourceSpec) -> None:

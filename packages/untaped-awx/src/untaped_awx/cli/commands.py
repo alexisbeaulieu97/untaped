@@ -53,10 +53,10 @@ from untaped_awx.cli.unified_templates_commands import app as unified_templates_
 from untaped_awx.cli.usage_commands import register_usage_command
 from untaped_awx.cli.workflow_node_commands import register_nodes_command
 from untaped_awx.domain import Job, JobEvent
-from untaped_awx.domain.job import JOB_ROUTES
-from untaped_awx.domain.records import JobEventRow, JobLogLine, JobRecord
-from untaped_awx.domain.suite import Suite
-from untaped_awx.infrastructure.specs import ALL_SPECS
+from untaped_awx.domain.jobs.job import JOB_ROUTES
+from untaped_awx.domain.suites.suite import Suite
+from untaped_awx.infrastructure.resources.specs import ALL_SPECS
+from untaped_awx.records import JobEventRow, JobLogLine, JobRecord
 
 app = create_app(
     name="awx",

@@ -45,8 +45,8 @@ from untaped.sdk import (
 )
 from untaped_awx.application import GetUnifiedTemplate
 from untaped_awx.cli.context import open_context
-from untaped_awx.domain.records import UnifiedTemplate
 from untaped_awx.errors import AwxError
+from untaped_awx.records import UnifiedTemplate
 
 app = create_app(
     name="unified-templates",

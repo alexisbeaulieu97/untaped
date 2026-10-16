@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import OutcomeRecord, UtcTimestamp
+from untaped.sdk import OutcomeRecord
 from untaped_awx.domain.envelope import Resource
 
 ApplyAction = Literal[
@@ -94,39 +94,6 @@ class SaveOutcome(BaseModel):
     detail: str | None = None
 
 
-class JobCancelOutcome(OutcomeRecord, kind="awx.cancel_outcome"):
-    """One ``jobs cancel`` row: the execution, its status when read, and the result.
-
-    ``action`` is ``planned``, ``skipped`` (already finished),
-    ``cancel_requested`` (AWX accepted the request; the job stops
-    asynchronously) or ``failed``.
-    """
-
-    id: int
-    kind: str
-    name: str | None = None
-    status: str | None = None
-    action: str
-    detail: str | None = None
-
-
-class JobRelaunchOutcome(OutcomeRecord, kind="awx.relaunch_outcome"):
-    """One ``jobs relaunch`` row: the new execution (``id``) and the job it repeats.
-
-    ``action`` is ``planned``, ``relaunched`` or ``failed``; ``hosts`` is
-    ``all`` or ``failed``.
-    """
-
-    id: int | None = None
-    kind: str
-    name: str | None = None
-    status: str | None = None
-    target_id: int
-    hosts: str = "all"
-    action: str
-    detail: str | None = None
-
-
 class CopyOutcome(OutcomeRecord, kind="awx.copy_outcome"):
     """One ``copy`` row: the new resource (``id``, ``name``) and its source.
 
@@ -169,32 +136,6 @@ RESOURCE_OUTCOMES: dict[str, type[OutcomeRecord]] = {
 A kind offering the command also accepts these records wherever it selects
 from ``--stdin``, so a copy pipes straight into ``patch``.
 """
-
-
-class TemporaryCopyOutcome(OutcomeRecord):
-    """One copy of an ``awx test`` temporary set: ``planned`` (``validate --source-ref``),
-    ``deleted``, ``failed`` or ``kept`` (a run's teardown, ``test prune``).
-
-    ``kind`` is the resource kind (``JobTemplate``); ``template`` is the name
-    it was copied from, and ``run_id``, ``ref``, ``sha`` and ``created_at``
-    come from its description marker. A planned copy names the spec it is
-    read from (``path``) and the launch prompts it enables for its cases
-    (``prompts``).
-    """
-
-    id: int | None = None
-    name: str
-    kind: str
-    template: str
-    organization: str | None = None
-    run_id: str
-    ref: str
-    sha: str
-    created_at: UtcTimestamp
-    path: str | None = None
-    prompts: list[str] = Field(default_factory=list)
-    action: str
-    detail: str | None = None
 
 
 class DeleteReceipt(BaseModel):

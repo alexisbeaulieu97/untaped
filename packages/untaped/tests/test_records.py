@@ -1032,21 +1032,22 @@ def _samples() -> dict[str, WireModel]:
 
 def _awx_samples() -> list[WireModel]:
     from untaped.sdk import ErrorCategory
-    from untaped_awx.domain.case_failure import failure
-    from untaped_awx.domain.outcomes import (
-        CopyOutcome,
-        JobCancelOutcome,
-        JobRelaunchOutcome,
-        RenameOutcome,
-    )
+    from untaped_awx.domain.outcomes import CopyOutcome, RenameOutcome
     from untaped_awx.domain.ping import PingStatus
-    from untaped_awx.domain.records import (
+    from untaped_awx.domain.suites.case_failure import failure
+    from untaped_awx.domain.suites.suite import CaseResult, ExpectationResult
+    from untaped_awx.domain.workflow_node import WorkflowNode
+    from untaped_awx.domain.workflow_usage import WorkflowUsage
+    from untaped_awx.infrastructure.resources.specs import ALL_SPECS
+    from untaped_awx.records import (
         ApplyOutcomeRow,
         DeleteOutcome,
         Document,
+        JobCancelOutcome,
         JobEventRow,
         JobLogLine,
         JobRecord,
+        JobRelaunchOutcome,
         LaunchOutcome,
         MembershipOutcome,
         ProvisionOutcome,
@@ -1055,10 +1056,6 @@ def _awx_samples() -> list[WireModel]:
         SyncOutcome,
         UnifiedTemplate,
     )
-    from untaped_awx.domain.suite import CaseResult, ExpectationResult
-    from untaped_awx.domain.workflow_node import WorkflowNode
-    from untaped_awx.domain.workflow_usage import WorkflowUsage
-    from untaped_awx.infrastructure.specs import ALL_SPECS
 
     answer = {"id": 1, "name": "deploy", "related": {"jobs": "/1/jobs/"}, "summary": None}
     started = {

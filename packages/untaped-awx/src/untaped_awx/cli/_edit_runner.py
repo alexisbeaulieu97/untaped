@@ -17,9 +17,9 @@ from untaped.sdk import (
     atomic_write,
     run_editor,
 )
-from untaped_awx.application.edit_resources import EditResources
-from untaped_awx.application.save_resource import SaveResource
-from untaped_awx.application.selection import SelectedResource
+from untaped_awx.application.resources.edit_resources import EditResources
+from untaped_awx.application.resources.save_resource import SaveResource
+from untaped_awx.application.resources.selection import SelectedResource
 from untaped_awx.cli._apply_runner import build_mutation_engine
 from untaped_awx.cli._mutation_runner import (
     WriteControls,

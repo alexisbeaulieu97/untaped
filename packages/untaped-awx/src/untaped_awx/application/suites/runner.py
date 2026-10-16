@@ -9,7 +9,7 @@ events, which makes the case an error). An ``idempotent`` case that passed is
 launched again with the same payload (on the commit the first job ran), and
 the rerun must succeed without changing anything. A case that does not pass carries a
 :class:`CaseFailure`: the system responsible, decided by the rules in
-:mod:`untaped_awx.domain.case_failure` from the job, its
+:mod:`untaped_awx.domain.suites.case_failure` from the job, its
 explanation and its failed tasks (from job events), and, with ``evidence``,
 what shows it: the failed tasks and log tail of the responsible execution (the
 project or inventory update that failed first, else the job; a tail reads only
@@ -56,8 +56,8 @@ from untaped.sdk import (
     UntapedError,
     bounded_map,
 )
-from untaped_awx.application.abandon_jobs import AbandonJobs
-from untaped_awx.application.ports import Canceller
+from untaped_awx.application.jobs.abandon_jobs import AbandonJobs
+from untaped_awx.application.jobs.ports import Canceller
 from untaped_awx.application.suites.ports import (
     ApprovalDecider,
     EventReader,
@@ -80,7 +80,13 @@ from untaped_awx.application.suites.workflow import (
     status_only_failure,
 )
 from untaped_awx.domain import Job, ResourceSpec
-from untaped_awx.domain.case_failure import (
+from untaped_awx.domain.jobs.job import (
+    JOB_ROUTES,
+    HostSummary,
+    by_host,
+    host_summaries,
+)
+from untaped_awx.domain.suites.case_failure import (
     CONTROLLER,
     EXPECTATION,
     FAILED_TASK_EVENTS,
@@ -104,16 +110,10 @@ from untaped_awx.domain.case_failure import (
     unproven,
     workflow_failure,
 )
-from untaped_awx.domain.case_failure import (
+from untaped_awx.domain.suites.case_failure import (
     failure as make_failure,
 )
-from untaped_awx.domain.job import (
-    JOB_ROUTES,
-    HostSummary,
-    by_host,
-    host_summaries,
-)
-from untaped_awx.domain.suite import (
+from untaped_awx.domain.suites.suite import (
     WORKFLOW_TEMPLATE,
     Approvals,
     Baseline,
@@ -131,8 +131,8 @@ from untaped_awx.domain.suite import (
     outranks_failure,
     select_cases,
 )
-from untaped_awx.domain.suite_baseline import saved_baselines
-from untaped_awx.domain.workflow_run import (
+from untaped_awx.domain.suites.suite_baseline import saved_baselines
+from untaped_awx.domain.suites.workflow_run import (
     APPROVAL,
     MAX_NESTING,
     NEVER_RAN,

@@ -9,7 +9,7 @@ import pytest
 
 from untaped.sdk import ConfigError, UsageError
 from untaped_awx.application.suites.ports import Prompt
-from untaped_awx.domain.suite import VariableSpec
+from untaped_awx.domain.suites.suite import VariableSpec
 from untaped_awx.infrastructure.suites.vars_resolver import resolve_variables
 
 

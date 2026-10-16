@@ -19,9 +19,10 @@ from untaped.output import diagnostic
 from untaped.sdk import Failure, kind_of
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
-from untaped_awx.domain.job import JobEvent
+from untaped_awx.domain.jobs.job import JobEvent
 from untaped_awx.domain.kinds import snake_kind
-from untaped_awx.domain.records import (
+from untaped_awx.infrastructure.resources.specs import ALL_SPECS
+from untaped_awx.records import (
     ApplyOutcomeRow,
     AwxResource,
     DeleteOutcome,
@@ -35,7 +36,6 @@ from untaped_awx.domain.records import (
     SuiteCase,
     SyncOutcome,
 )
-from untaped_awx.infrastructure.specs import ALL_SPECS
 
 # ---- the catalog ----------------------------------------------------------
 

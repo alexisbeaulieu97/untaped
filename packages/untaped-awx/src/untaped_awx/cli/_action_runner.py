@@ -20,25 +20,25 @@ from untaped.sdk import (
     run_hint,
 )
 from untaped_awx.application import RunAction
-from untaped_awx.application.abandon_jobs import AbandonJobs
-from untaped_awx.application.mutation_values import redact_error
-from untaped_awx.application.prepare_actions import (
+from untaped_awx.application.jobs.abandon_jobs import AbandonJobs
+from untaped_awx.application.jobs.prepare_actions import (
     TemplateReads,
     launch_payload_preview,
     prepare_action_targets,
 )
-from untaped_awx.application.selected_actions import (
+from untaped_awx.application.jobs.selected_actions import (
     ActionsInterruptedError,
     SelectedActionOutcome,
     run_selected_actions,
 )
-from untaped_awx.application.selection import SelectedResource
+from untaped_awx.application.resources.mutation_values import redact_error
+from untaped_awx.application.resources.selection import SelectedResource
 from untaped_awx.cli._mutation_runner import confirm_batch
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.cli.format import format_scope, format_value
 from untaped_awx.cli.parallel import drain_parallel, wait_parallel
 from untaped_awx.domain import Job, ResourceSpec
-from untaped_awx.domain.job import still_running_detail
+from untaped_awx.domain.jobs.job import still_running_detail
 from untaped_awx.errors import ActionResponseError, LaunchPromptError
 
 

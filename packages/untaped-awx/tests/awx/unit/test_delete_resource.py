@@ -12,11 +12,11 @@ from typing import cast, get_type_hints
 import pytest
 
 from untaped_awx.application import DeleteResource
-from untaped_awx.application.ports import ResourceClient
+from untaped_awx.application.resources.ports import ResourceClient
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.outcomes import DeleteReceipt
 from untaped_awx.errors import ConflictError, ResourceNotFoundError
-from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 
 
 class _StubClient:

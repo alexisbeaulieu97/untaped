@@ -7,9 +7,9 @@ from typing import Any, cast
 
 import pytest
 
-import untaped_awx.domain.job as job_module
+import untaped_awx.domain.jobs.job as job_module
 from untaped_awx.application import WatchJob
-from untaped_awx.application.ports import RawHttpResourceClient
+from untaped_awx.application.resources.ports import RawHttpResourceClient
 from untaped_awx.domain import Job
 
 

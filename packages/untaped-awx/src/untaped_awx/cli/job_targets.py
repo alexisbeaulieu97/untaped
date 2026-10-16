@@ -7,9 +7,8 @@ from typing import Annotated, Literal
 from cyclopts import Parameter
 
 from untaped.sdk import ConfigError, Record, read_identifiers, read_stdin_input
-from untaped_awx.domain.job import JOB_ROUTES
-from untaped_awx.domain.outcomes import JobRelaunchOutcome
-from untaped_awx.domain.records import JobRecord, LaunchOutcome, SyncOutcome
+from untaped_awx.domain.jobs.job import JOB_ROUTES
+from untaped_awx.records import JobRecord, JobRelaunchOutcome, LaunchOutcome, SyncOutcome
 
 JOB_KIND_HELP = (
     "Execution kind. Defaults to 'job' (a JobTemplate run). Other values: "

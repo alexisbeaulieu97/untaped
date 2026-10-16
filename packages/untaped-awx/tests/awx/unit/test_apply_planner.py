@@ -12,12 +12,16 @@ from typing import Any, cast
 
 import pytest
 
-from untaped_awx.application.apply_planner import ApplyPlanner, scope_for, unrecognized_warning
-from untaped_awx.application.ports import FkResolver
+from untaped_awx.application.resources.apply_planner import (
+    ApplyPlanner,
+    scope_for,
+    unrecognized_warning,
+)
+from untaped_awx.application.resources.ports import FkResolver
 from untaped_awx.domain import FkRef, Metadata, Resource
 from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.errors import BadRequestError
-from untaped_awx.infrastructure.specs import (
+from untaped_awx.infrastructure.resources.specs import (
     GROUP_SPEC,
     JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,

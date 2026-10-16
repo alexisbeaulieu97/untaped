@@ -51,9 +51,8 @@ from untaped.sdk import (
 )
 from untaped_awx.cli.context import AwxContext, open_context
 from untaped_awx.cli.options import OrganizationOption
-from untaped_awx.domain.case_failure import CaseFailure
-from untaped_awx.domain.records import ProvisionOutcome, PruneOutcome, SuiteCase
-from untaped_awx.domain.suite import (
+from untaped_awx.domain.suites.case_failure import CaseFailure
+from untaped_awx.domain.suites.suite import (
     JOB_TEMPLATE,
     WORKFLOW_TEMPLATE,
     Baseline,
@@ -65,20 +64,21 @@ from untaped_awx.domain.suite import (
     TemplateBinding,
     select_cases,
 )
-from untaped_awx.domain.suite_baseline import saved_baselines
-from untaped_awx.domain.suite_starter import suite_slug
+from untaped_awx.domain.suites.suite_baseline import saved_baselines
+from untaped_awx.domain.suites.suite_starter import suite_slug
 from untaped_awx.errors import AwxApiError
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.suites.filesystem import (
     DEFAULT_SUITE_DIR,
     refuse_existing,
     suites_under,
     write_new_text,
 )
+from untaped_awx.records import ProvisionOutcome, PruneOutcome, SuiteCase
 
 if TYPE_CHECKING:
     from untaped_awx.application.suites.ports import Filesystem
-    from untaped_awx.domain.temporary_set import TemporarySet
+    from untaped_awx.domain.suites.temporary_set import TemporarySet
 
 app = create_app(
     name="test",
@@ -348,7 +348,7 @@ def run_command(
     from untaped_awx.cli import _temporary_sets as copies  # noqa: PLC0415
     from untaped_awx.cli._action_runner import report_interrupted  # noqa: PLC0415
     from untaped_awx.infrastructure import git_head  # noqa: PLC0415
-    from untaped_awx.infrastructure.web_ui import job_ui_url  # noqa: PLC0415
+    from untaped_awx.infrastructure.jobs.web_ui import job_ui_url  # noqa: PLC0415
 
     if compare is not None and baseline is not None:
         raise_usage("--compare and --baseline cannot be combined")
@@ -800,7 +800,7 @@ def prune_command(
     description carries the matching `untaped-test run=…` marker.
     """
     from untaped_awx.cli import _temporary_sets as copies  # noqa: PLC0415
-    from untaped_awx.domain.temporary_set import parse_age  # noqa: PLC0415
+    from untaped_awx.domain.suites.temporary_set import parse_age  # noqa: PLC0415
 
     try:
         age = parse_age(older_than)

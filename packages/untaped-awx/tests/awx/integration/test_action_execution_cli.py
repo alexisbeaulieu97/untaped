@@ -122,7 +122,7 @@ def test_follow_pending_to_terminal_uses_only_supported_routes(
     status: str,
     also_wait: bool,
 ) -> None:
-    from untaped_awx.infrastructure.job_monitor import PollingJobMonitor
+    from untaped_awx.infrastructure.jobs.job_monitor import PollingJobMonitor
 
     seed_templates(fake_aap)
     fake_aap.seed("workflow_job_templates", id=60, name="workflow", organization=1)

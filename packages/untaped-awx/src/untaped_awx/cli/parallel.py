@@ -15,10 +15,11 @@ from collections.abc import Callable
 
 from untaped.sdk import UntapedError, bounded_map
 from untaped_awx.application import WatchJob
-from untaped_awx.application.ports import JobMonitor, RawHttpResourceClient
+from untaped_awx.application.jobs.ports import JobMonitor
+from untaped_awx.application.resources.ports import RawHttpResourceClient
 from untaped_awx.application.scheduling import MAX_PARALLEL, idle
 from untaped_awx.domain import Job
-from untaped_awx.domain.job import JOB_ROUTES
+from untaped_awx.domain.jobs.job import JOB_ROUTES
 
 
 def drain_parallel_with_worker(

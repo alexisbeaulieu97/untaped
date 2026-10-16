@@ -10,10 +10,10 @@ from untaped_awx.application.suites.resolver import (
     KNOWN_LAUNCH_FIELDS,
     ResolveCasePayload,
 )
-from untaped_awx.domain.suite import Case, RefSentinel
+from untaped_awx.domain.suites.suite import Case, RefSentinel
 from untaped_awx.errors import ResourceNotFoundError
 from untaped_awx.infrastructure import AwxResourceCatalog
-from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 
 
 class StubFkResolver:

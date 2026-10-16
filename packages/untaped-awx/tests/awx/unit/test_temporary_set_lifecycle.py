@@ -8,8 +8,8 @@ from typing import Any, cast
 import pytest
 
 from untaped.sdk import HttpTransportError
-from untaped_awx.application.mutation_engine import BatchMutationEngine
-from untaped_awx.application.ports import FkResolver, ResourceClient
+from untaped_awx.application.resources.mutation_engine import BatchMutationEngine
+from untaped_awx.application.resources.ports import FkResolver, ResourceClient
 from untaped_awx.application.suites.preflight import refused
 from untaped_awx.application.suites.temporary_set import (
     TEARDOWN_DELAY,
@@ -18,7 +18,7 @@ from untaped_awx.application.suites.temporary_set import (
     preflight_copy,
 )
 from untaped_awx.domain import Resource, ResourceSpec
-from untaped_awx.domain.temporary_set import Marker, TemporaryTemplate
+from untaped_awx.domain.suites.temporary_set import Marker, TemporaryTemplate
 from untaped_awx.domain.workflow_graph import parse_workflow_nodes
 from untaped_awx.errors import (
     ConflictError,

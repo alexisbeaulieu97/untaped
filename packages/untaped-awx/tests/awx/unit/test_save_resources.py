@@ -8,10 +8,10 @@ from typing import Any, cast
 import pytest
 
 from untaped.sdk import ConfigError
-from untaped_awx.application.ports import Catalog, FkResolver, ResourceClient
-from untaped_awx.application.save_resources import SaveResources
+from untaped_awx.application.resources.ports import Catalog, FkResolver, ResourceClient
+from untaped_awx.application.resources.save_resources import SaveResources
 from untaped_awx.domain import ResourceSpec, ServerRecord
-from untaped_awx.infrastructure.specs import (
+from untaped_awx.infrastructure.resources.specs import (
     CREDENTIAL_SPEC,
     HOST_SPEC,
     JOB_TEMPLATE_SPEC,

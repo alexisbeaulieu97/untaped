@@ -6,9 +6,9 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE
+from untaped_awx.application.resources.apply_field_diff import PRESERVED_SECRET_NOTE
 from untaped_awx.domain import ApplyOutcome, FieldChange, IdentityRef
-from untaped_awx.domain.records import ApplyOutcomeRow
+from untaped_awx.records import ApplyOutcomeRow
 
 
 def outcome_rows(outcomes: list[ApplyOutcome]) -> list[ApplyOutcomeRow]:

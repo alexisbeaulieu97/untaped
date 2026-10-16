@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from untaped_awx.domain import Job
-from untaped_awx.infrastructure.web_ui import job_ui_url
+from untaped_awx.infrastructure.jobs.web_ui import job_ui_url
 from untaped_awx.settings import AwxSettings
 
 

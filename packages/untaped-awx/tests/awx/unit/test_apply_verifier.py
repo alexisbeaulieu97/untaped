@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from untaped_awx.application.apply_verifier import ApplyVerifier
-from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped_awx.application.resources.apply_verifier import ApplyVerifier
+from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 
 
 def test_verifier_accepts_reflected_structures_and_secret_paths() -> None:
@@ -170,7 +170,7 @@ def test_verifier_currently_requires_none_keys_to_be_present() -> None:
 
 
 def test_empty_enriched_mapping_requests_a_clear() -> None:
-    from untaped_awx.application.mutation_values import semantic_equal
+    from untaped_awx.application.resources.mutation_values import semantic_equal
 
     assert semantic_equal({}, {}, allow_server_enrichment=True)
     assert not semantic_equal({}, {"spec": []}, allow_server_enrichment=True)

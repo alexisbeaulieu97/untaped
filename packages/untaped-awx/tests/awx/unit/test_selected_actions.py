@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from untaped_awx.application.selected_actions import run_selected_actions
-from untaped_awx.application.selection import SelectedResource
+from untaped_awx.application.jobs.selected_actions import run_selected_actions
+from untaped_awx.application.resources.selection import SelectedResource
 
 
 def targets(count: int) -> list[SelectedResource]:

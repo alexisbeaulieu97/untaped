@@ -70,9 +70,9 @@ GitRemote.packs_requested
 # awx ports and readers whose first caller is awx lint (#630).
 ProjectPlaybooks.playbooks
 ResourceRepository.playbooks
-read_resource_documents  # awx infrastructure.yaml_io
+read_resource_documents  # awx infrastructure.resources.yaml_io
 
-# Read through getattr over a field table (awx application.workflow_graph).
+# Read through getattr over a field table (awx application.resources.workflow_graph).
 NodeRun.inventory_source
 NodeRun.system_job_template
 NodePrompts.instance_groups

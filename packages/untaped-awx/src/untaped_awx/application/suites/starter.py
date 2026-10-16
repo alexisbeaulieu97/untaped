@@ -7,8 +7,8 @@ from typing import Any
 
 from untaped_awx.application.suites.preflight import PreflightLaunch
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.domain.suite import WORKFLOW_TEMPLATE
-from untaped_awx.domain.suite_starter import starter_suite
+from untaped_awx.domain.suites.suite import WORKFLOW_TEMPLATE
+from untaped_awx.domain.suites.suite_starter import starter_suite
 
 
 class StarterSuite:

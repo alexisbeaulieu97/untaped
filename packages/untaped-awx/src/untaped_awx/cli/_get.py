@@ -11,9 +11,9 @@ from untaped.sdk import (
     raise_usage,
     report_errors,
 )
-from untaped_awx.application.mutation_values import redact_value
-from untaped_awx.application.template_scm import SCM_FIELDS
-from untaped_awx.application.template_scm import with_scm as add_scm_fields
+from untaped_awx.application.resources.mutation_values import redact_value
+from untaped_awx.application.resources.template_scm import SCM_FIELDS
+from untaped_awx.application.resources.template_scm import with_scm as add_scm_fields
 from untaped_awx.cli._selection import select_resources
 from untaped_awx.cli.context import open_context
 from untaped_awx.cli.names import name_fks
@@ -31,7 +31,7 @@ from untaped_awx.cli.options import (
     StdinOption,
     offers_with_scm,
 )
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def _add_get(app: App, spec: AwxResourceSpec) -> None:

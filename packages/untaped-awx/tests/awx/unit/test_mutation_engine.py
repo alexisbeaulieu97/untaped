@@ -8,20 +8,20 @@ from typing import Any, cast, get_type_hints
 import pytest
 
 from awx.unit.support import _Catalog, _Client, _Fk, _MembershipClient, _Strategies
-from untaped_awx.application.mutation_engine import (
+from untaped_awx.application.resources.mutation_engine import (
     BatchMutationEngine,
     MutationConflictError,
 )
-from untaped_awx.application.mutation_planning import PlanningFkResolver
-from untaped_awx.application.mutation_types import DeferredReference
-from untaped_awx.application.ports import (
+from untaped_awx.application.resources.mutation_planning import PlanningFkResolver
+from untaped_awx.application.resources.mutation_types import DeferredReference
+from untaped_awx.application.resources.ports import (
     Catalog,
     FkResolver,
     RawHttpResourceClient,
     StrategyResolver,
 )
 from untaped_awx.domain import FkRef, Metadata, Resource, ResourceSpec, ServerRecord
-from untaped_awx.infrastructure.specs import PROJECT_SPEC
+from untaped_awx.infrastructure.resources.specs import PROJECT_SPEC
 
 
 def _engine(client: _Client) -> BatchMutationEngine:
@@ -62,7 +62,7 @@ def test_prepare_rejects_create_for_patch_mode() -> None:
 
 
 def test_secret_values_are_redacted_in_plan_presentation() -> None:
-    from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+    from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 
     client = _Client([{"id": 7, "name": "one", "organization": 1, "host_config_key": "old"}])
     engine = BatchMutationEngine(
@@ -213,8 +213,8 @@ def test_prepare_rejects_placeholder_create_before_any_write() -> None:
 
 
 def _group_engine(client: _MembershipClient) -> BatchMutationEngine:
-    from untaped_awx.infrastructure.specs import GROUP_SPEC
-    from untaped_awx.infrastructure.strategy_resolver import StaticStrategyResolver
+    from untaped_awx.infrastructure.resources.specs import GROUP_SPEC
+    from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
 
     return BatchMutationEngine(
         cast(RawHttpResourceClient, client),
@@ -247,8 +247,8 @@ def test_group_membership_cycles_are_not_body_dependencies() -> None:
 
 
 def test_nested_create_uses_frozen_parent_id() -> None:
-    from untaped_awx.infrastructure.specs import GROUP_SPEC
-    from untaped_awx.infrastructure.strategy_resolver import StaticStrategyResolver
+    from untaped_awx.infrastructure.resources.specs import GROUP_SPEC
+    from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
 
     fk = _Fk({("Inventory", "prod"): 30})
     client = _MembershipClient([])
@@ -330,7 +330,7 @@ def test_body_replacements_must_converge_exactly(desired: Any, observed: Any) ->
 
 
 def test_selected_target_is_fixed_by_id_even_with_same_named_other_record() -> None:
-    from untaped_awx.application.selection import SelectedResource
+    from untaped_awx.application.resources.selection import SelectedResource
 
     spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
     client = _Client(
@@ -359,7 +359,7 @@ def test_selected_target_is_fixed_by_id_even_with_same_named_other_record() -> N
 
 
 def test_selected_kind_change_is_rejected_before_writes() -> None:
-    from untaped_awx.application.selection import SelectedResource
+    from untaped_awx.application.resources.selection import SelectedResource
     from untaped_awx.errors import BadRequestError
 
     spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
@@ -768,7 +768,7 @@ def test_preflight_watches_nested_parent_drift_for_whole_batch() -> None:
 
 
 def test_distinct_selected_ids_with_duplicate_names_are_independent() -> None:
-    from untaped_awx.application.selection import SelectedResource
+    from untaped_awx.application.resources.selection import SelectedResource
 
     spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
     client = _Client([{"id": i, "name": "same", "description": "old"} for i in (1, 2)])
@@ -860,10 +860,10 @@ def test_editor_preserves_membership_ids_for_ambiguous_unchanged_labels(
     )
     import yaml
 
-    from untaped_awx.application.edit_resources import EditResources
-    from untaped_awx.application.ports import ResourceClient
-    from untaped_awx.application.save_resource import SaveResource
-    from untaped_awx.application.selection import SelectedResource
+    from untaped_awx.application.resources.edit_resources import EditResources
+    from untaped_awx.application.resources.ports import ResourceClient
+    from untaped_awx.application.resources.save_resource import SaveResource
+    from untaped_awx.application.resources.selection import SelectedResource
 
     selected = SelectedResource("Item", 1, "item", {}, client.records[1])
     batch = EditResources(
@@ -916,10 +916,10 @@ def test_ordered_membership_interleaves_created_reference_before_retained_tail()
 
 
 def test_editor_return_values_cannot_mutate_original_snapshot() -> None:
-    from untaped_awx.application.edit_resources import EditResources
-    from untaped_awx.application.ports import ResourceClient
-    from untaped_awx.application.save_resource import SaveResource
-    from untaped_awx.application.selection import SelectedResource
+    from untaped_awx.application.resources.edit_resources import EditResources
+    from untaped_awx.application.resources.ports import ResourceClient
+    from untaped_awx.application.resources.save_resource import SaveResource
+    from untaped_awx.application.resources.selection import SelectedResource
 
     spec = ResourceSpec(kind="Item", identity_keys=("name",), canonical_fields=("description",))
     record = {"id": 1, "name": "original", "description": "old"}

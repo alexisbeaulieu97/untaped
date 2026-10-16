@@ -10,11 +10,11 @@ from typing import Any, cast
 
 import pytest
 
-from untaped_awx.application.ports import ResourceClient
+from untaped_awx.application.resources.ports import ResourceClient
 from untaped_awx.domain import IdentityRef, ResourceSpec
 from untaped_awx.errors import AwxApiError, ResourceNotFoundError
 from untaped_awx.infrastructure import AwxResourceCatalog
-from untaped_awx.infrastructure.fk_resolver import HttpFkResolver
+from untaped_awx.infrastructure.resources.fk_resolver import HttpFkResolver
 
 
 class _StubRepo:

@@ -4,7 +4,7 @@ One home for the transforms between a PascalCase kind (``JobTemplate``) and
 the snake_case ``type`` AWX reports (``job_template``), plus the kinds behind
 AWX's polymorphic ``unified_job_templates`` view. A kind's ``--format pipe``
 record kind (``awx.job_template``) is its record model's
-(``ResourceSpec.record``), declared once in :mod:`untaped_awx.domain.records`.
+(``ResourceSpec.record``), declared once in :mod:`untaped_awx.records`.
 """
 
 from __future__ import annotations

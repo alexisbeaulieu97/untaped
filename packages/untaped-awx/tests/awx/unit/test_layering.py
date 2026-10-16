@@ -10,7 +10,7 @@ import ast
 from pathlib import Path
 
 from untaped_awx.domain.spec import ResourceSpec
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 APPLICATION_DIR = Path(__file__).resolve().parents[3] / "src/untaped_awx/application"
 
