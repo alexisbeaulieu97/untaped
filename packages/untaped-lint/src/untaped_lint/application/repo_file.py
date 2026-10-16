@@ -89,7 +89,6 @@ class RepoFile:
         fixtures = (
             f"{directory.relative_to(self.root).as_posix()}/{FIXTURES}/**"
             for directory in self.rules.values()
-            if directory.is_relative_to(self.root)
         )
         return (*self.exclude, *fixtures)
 
@@ -116,7 +115,8 @@ def root_of(path: Path) -> Path:
 def read(path: Path, *, installed: Iterable[str] = ()) -> RepoFile:
     """Read and check the repo file at ``path``; ``installed`` are the plugin names in use.
 
-    An unreadable or invalid file is a :class:`ConfigError` (exit 1); a key
+    An unreadable or invalid file (a ``rules:`` directory outside the root,
+    a malformed ``ignore:`` entry) is a :class:`ConfigError` (exit 1); a key
     that is misspelled, reserved or an installed plugin's name is a
     :class:`UsageError` (exit 2), before anything is composed.
     """
@@ -130,15 +130,28 @@ def read(path: Path, *, installed: Iterable[str] = ()) -> RepoFile:
     held = set(installed)
     for key in (model.name, *model.linters):
         check_key(key, path, held)
+    for key in model.readers:
+        _check_spelling(key, path)
     for each in model.ignore:
-        parse_suppression(each, option=f"{path} ignore:")
+        try:
+            parse_suppression(each, option=f"{path} ignore:")
+        except UsageError as exc:
+            raise ConfigError(str(exc), category="invalid") from None
     root = root_of(path)
+    rules = {key: (root / entry.rules).resolve() for key, entry in model.linters.items()}
+    for key, directory in rules.items():
+        if not directory.is_relative_to(root):
+            raise ConfigError(
+                f"{path}: linters.{key}.rules: {directory} is outside {root}; a repository's "
+                "rule modules live in the repository",
+                category="invalid",
+            )
     return RepoFile(
         path=path.resolve(),
         root=root,
         name=model.name,
         exclude=tuple(model.exclude),
-        rules={key: (root / entry.rules).resolve() for key, entry in model.linters.items()},
+        rules=rules,
         readers={key: tuple(globs) for key, globs in model.readers.items()},
         ignore=tuple(model.ignore),
     )
@@ -146,11 +159,7 @@ def read(path: Path, *, installed: Iterable[str] = ()) -> RepoFile:
 
 def check_key(key: str, path: Path, held: set[str]) -> None:
     """Refuse a key misspelled, reserved, or held by an installed plugin (``held``)."""
-    if not _KEY.match(key):
-        raise UsageError(
-            f"{path}: {key!r} is not a key: lowercase words joined by single hyphens, "
-            "as a plugin name"
-        )
+    _check_spelling(key, path)
     if key == RESERVED:
         raise UsageError(
             f"{path}: {key!r} is core's prefix; name the repository's rules another key"
@@ -159,4 +168,12 @@ def check_key(key: str, path: Path, held: set[str]) -> None:
         raise UsageError(
             f"{path}: {key!r} is the name of an installed plugin; name the repository's rules "
             "another key"
+        )
+
+
+def _check_spelling(key: str, path: Path) -> None:
+    if not _KEY.match(key):
+        raise UsageError(
+            f"{path}: {key!r} is not a key: lowercase words joined by single hyphens, "
+            "as a plugin name"
         )

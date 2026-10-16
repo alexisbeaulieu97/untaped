@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
+import atexit
 import re
+import shutil
 import tempfile
 from collections.abc import Iterable, Mapping, Sequence
 from importlib import metadata
@@ -48,10 +50,14 @@ def subject(record: Record) -> Subject:
 def tree(files: Mapping[str, str], *, root: Path | None = None) -> Subject:
     """A ``Tree`` subject holding ``files`` (path to text), written under ``root``.
 
-    ``root`` defaults to a new temporary directory; a ``bytes``-like text
+    ``root`` defaults to a new temporary directory, removed at exit; a ``bytes`` text
     can't be given, so write an undecodable file yourself and list it.
     """
-    base = Path(tempfile.mkdtemp(prefix="untaped-lint-")) if root is None else root
+    if root is None:
+        base = Path(tempfile.mkdtemp(prefix="untaped-lint-"))
+        atexit.register(shutil.rmtree, base, ignore_errors=True)
+    else:
+        base = root
     for path, text in files.items():
         target = base / path
         target.parent.mkdir(parents=True, exist_ok=True)

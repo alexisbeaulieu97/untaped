@@ -72,7 +72,7 @@ def load(repo: RepoFile) -> Loaded:
                 loaded.failures.append(_failure(key, relative, exc))
                 continue
             loaded.findings.extend(rule_import_findings(tree, relative))
-            module = _import(key, path, relative, loaded)
+            module = _import(key, path, tree, relative, loaded)
             if module is not None:
                 modules.append(module)
         loaded.hosts[key] = Rules.from_module(*modules)
@@ -107,6 +107,8 @@ def _imported(node: ast.AST) -> list[str]:
     if isinstance(node, ast.ImportFrom):
         if node.level:
             return ["." * node.level + (node.module or "")]
+        if _PLUGIN_PACKAGE.match(node.module or ""):  # from untaped_lint import api
+            return [f"{node.module}.{alias.name}" for alias in node.names]
         return [node.module or ""]
     return []
 
@@ -120,17 +122,18 @@ def _allowed(target: str) -> bool:
     return target == "untaped_lint.api" or bool(_API.match(target))
 
 
-def _import(key: str, path: Path, relative: str, loaded: Loaded) -> ModuleType | None:
+def _import(
+    key: str, path: Path, tree: ast.Module, relative: str, loaded: Loaded
+) -> ModuleType | None:
+    """Run the source just checked, never a ``__pycache__`` beside it, and write none."""
     name = f"{_MODULE_PREFIX}.{key.replace('-', '_')}.{path.stem}"
     spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:  # pragma: no cover - a .py path always has one
+    if spec is None:  # pragma: no cover - a .py path always has one
         return None
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
-    writes_bytecode = sys.dont_write_bytecode
-    sys.dont_write_bytecode = True  # no __pycache__ left in the repository's rules directory
     try:
-        spec.loader.exec_module(module)
+        exec(compile(tree, str(path), "exec"), module.__dict__)  # the checkout's own rules
     except ModuleNotFoundError as exc:
         sys.modules.pop(name, None)
         top = (exc.name or "").split(".", 1)[0]
@@ -142,12 +145,10 @@ def _import(key: str, path: Path, relative: str, loaded: Loaded) -> ModuleType |
             ) from None
         loaded.failures.append(_failure(key, relative, exc))
         return None
-    except Exception as exc:  # a module that raises loses its own rules, not the run
+    except (Exception, SystemExit) as exc:  # a module that raises loses its own rules, not the run
         sys.modules.pop(name, None)
         loaded.failures.append(_failure(key, relative, exc))
         return None
-    finally:
-        sys.dont_write_bytecode = writes_bytecode
     return module
 
 

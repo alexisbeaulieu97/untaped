@@ -48,6 +48,10 @@ _NOTHING = (
     "nothing to lint here: run it in a plugin repository, a repository with "
     ".untaped/lint.yml, or pipe records with --stdin"
 )
+_NO_TREE_RULE = (
+    "nothing to lint here: no installed rule reads the repository's files; "
+    "write one with `untaped lint new`"
+)
 _RULE_KIND = declared_kind(Rule)
 
 
@@ -120,7 +124,7 @@ def run(
         if tree is not None:
             marked.extend((_unreadable(path), Path(tree.root)) for path in sorted(skipped))
     if not subjects and tree is None and not raw and not marked:
-        report.warnings.append(_NOTHING)
+        report.warnings.append(_NOTHING if repo is None else _NO_TREE_RULE)
     resolver = Resolver(providers.rules)
     raw.extend(each for each, root in marked if not _allowed(each, root, resolver))
     selection = Selection.build(
@@ -208,8 +212,9 @@ def _read(tree: Tree, repo: RepoFile, report: Report) -> list[Subject]:
             answers = gather(TreeReader.read, plugins=[key])(narrowed)
         except NoProviderReady:
             raise ConfigError(
-                f"{repo.path}: readers.{key}: no installed plugin {key!r} reads files into "
-                f"subjects; install untaped[{key}]"
+                f"{repo.path}: readers.{key}: no plugin {key!r} reads files into subjects; "
+                f"install untaped[{key}], or name a plugin that fills TreeReader "
+                f"(`untaped plugin list` shows what is installed)"
             ) from None
         for answer in answers:
             if not isinstance(answer, Ok):

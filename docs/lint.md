@@ -46,7 +46,7 @@ name: house                    # the key of this repository's own rules: house.n
 exclude: ["vendor/**"]         # left out, on top of what git ignores
 linters:
   house:
-    rules: .untaped/lint       # every *.py directly in it is a rule module
+    rules: .untaped/lint       # a directory in the repository: each *.py directly in it
 readers:
   awx: ["specs/**/*.yml"]      # a plugin reads these files into its own records
 ignore:

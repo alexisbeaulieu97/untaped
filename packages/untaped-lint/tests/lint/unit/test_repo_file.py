@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import py_compile
+import sys
 from pathlib import Path
 from textwrap import dedent
 
@@ -129,6 +132,16 @@ def test_the_files_ignore_applies(tmp_path: Path) -> None:
     assert [each.target for each in report.findings] == ["src/b.py"]
 
 
+def test_a_file_whose_rules_read_no_files_says_so(tmp_path: Path) -> None:
+    root = _repo(tmp_path, "version: 1\nname: house\n", {})
+    with compose_with("lint"):
+        report = run(root=root)
+    assert report.warnings == [
+        "nothing to lint here: no installed rule reads the repository's files; "
+        "write one with `untaped lint new`"
+    ]
+
+
 # --- the allow marker --------------------------------------------------------
 
 
@@ -197,6 +210,42 @@ def test_a_module_importing_a_plugin_that_is_not_installed_fails_the_load(
         run(root=root)
 
 
+def test_the_allowed_apis_may_be_imported_as_from_package_import_api(tmp_path: Path) -> None:
+    module = "from untaped_lint import api\nfrom untaped_lint import records\n"
+    root = _house(tmp_path, **{".untaped/lint/spelled.py": module})
+    with compose_with("lint"):
+        report = run(root=root)
+    assert [(each.rule, getattr(each.location, "line", None)) for each in report.findings] == [
+        ("lint.rule-imports", 2)
+    ]
+
+
+def test_the_source_checked_is_the_source_run_never_a_stale_pyc(tmp_path: Path) -> None:
+    root = _house(tmp_path)
+    planted = root / ".untaped" / "lint" / "planted.py"
+    planted.write_text("import os\nos.environ['UNTAPED_LINT_PLANTED'] = 'ran'\n")
+    cache = planted.parent / "__pycache__" / f"planted.{sys.implementation.cache_tag}.pyc"
+    py_compile.compile(
+        str(planted),
+        cfile=str(cache),
+        invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+    )
+    planted.write_text('"""Harmless."""\n')
+    with compose_with("lint"):
+        report = run(root=root)
+    assert "UNTAPED_LINT_PLANTED" not in os.environ
+    assert not report.failures
+    assert sorted(path.name for path in cache.parent.iterdir()) == [cache.name]
+
+
+def test_a_module_that_exits_on_import_is_a_failure_row(tmp_path: Path) -> None:
+    root = _house(tmp_path, **{".untaped/lint/quits.py": "import sys\nsys.exit(7)\n"})
+    with compose_with("lint"):
+        report = run(root=root)
+    (failure,) = report.failures
+    assert "quits.py" in failure.message
+
+
 def test_a_module_that_raises_is_a_failure_row_and_the_others_still_run(tmp_path: Path) -> None:
     root = _house(
         tmp_path,
@@ -237,12 +286,25 @@ def test_a_key_that_could_shadow_a_plugin_is_a_usage_error(
         ("version: 1\nname: house\nlinters:\n  ruff:\n    run: [ruff]\n", "run: entries"),
         ("version: 1\nname: house\nignore: ['Bad Id']\n", "ignore"),
         ("version: 1\nname: house\nlinters:\n  house:\n    rules: missing\n", "not a directory"),
+        ("version: 1\nname: house\nlinters:\n  house:\n    rules: ../shared\n", "outside"),
+        ("version: 1\nname: house\nlinters:\n  house:\n    rules: /tmp\n", "outside"),
     ],
 )
-def test_an_invalid_file_names_the_problem(tmp_path: Path, lint_yml: str, message: str) -> None:
-    root = _repo(tmp_path, lint_yml, {})
-    with compose_with("lint"), pytest.raises((ConfigError, UsageError), match=message):
+def test_an_invalid_file_is_a_config_error_naming_the_problem(
+    tmp_path: Path, lint_yml: str, message: str
+) -> None:
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "repo").mkdir()
+    root = _repo(tmp_path / "repo", lint_yml, {})
+    with compose_with("lint"), pytest.raises(ConfigError, match=message) as raised:
         run(root=root)
+    assert raised.type is ConfigError
+
+
+def test_a_readers_key_is_spelled_as_a_plugin_name(tmp_path: Path) -> None:
+    path = _repo(tmp_path, "version: 1\nname: house\nreaders:\n  Not A Key: ['*']\n", {})
+    with pytest.raises(UsageError, match="'Not A Key' is not a key"):
+        repo_file.read(path / ".untaped" / "lint.yml")
 
 
 # --- testing helpers -----------------------------------------------------------

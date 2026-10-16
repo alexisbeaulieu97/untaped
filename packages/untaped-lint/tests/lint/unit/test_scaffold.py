@@ -131,3 +131,59 @@ def test_the_key_and_id_are_checked(tmp_path: Path) -> None:
     scaffold(root, "no-print", key="house")
     with pytest.raises(UntapedError, match="already exists"):
         scaffold(root, "no-print")
+
+
+@pytest.mark.parametrize(
+    "linters",
+    [
+        "linters:   # ours\n  shop:\n    rules: .untaped/shop\n",
+        "linters:\n    shop:\n        rules: .untaped/shop\n",
+        "linters:\n  # first\n  shop:\n    rules: .untaped/shop\nignore: []\n",
+    ],
+)
+def test_the_entry_keeps_every_existing_linter_whatever_the_layout(
+    tmp_path: Path, linters: str
+) -> None:
+    root = _checkout(tmp_path, pytest_config=True)
+    (root / ".untaped" / "shop").mkdir(parents=True)
+    lint_yml = root / ".untaped" / "lint.yml"
+    lint_yml.write_text(f"version: 1\nname: house\n{linters}", encoding="utf-8")
+    scaffold(root, "no-print")
+    assert yaml.safe_load(lint_yml.read_text())["linters"] == {
+        "house": {"rules": ".untaped/lint"},
+        "shop": {"rules": ".untaped/shop"},
+    }
+
+
+def test_a_layout_it_cannot_extend_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
+    root = _checkout(tmp_path, pytest_config=True)
+    (root / ".untaped" / "shop").mkdir(parents=True)
+    lint_yml = root / ".untaped" / "lint.yml"
+    original = "version: 1\nname: house\nlinters: {shop: {rules: .untaped/shop}}\n"
+    lint_yml.write_text(original, encoding="utf-8")
+    with pytest.raises(UntapedError, match="add it yourself"):
+        scaffold(root, "no-print")
+    assert lint_yml.read_text() == original
+    assert not (root / ".untaped" / "lint").exists()
+
+
+def test_an_existing_test_is_never_overwritten(tmp_path: Path) -> None:
+    root = _checkout(tmp_path, pytest_config=True)
+    test = root / "tests" / "lint" / "test_no_print.py"
+    test.parent.mkdir(parents=True)
+    test.write_text("ours\n", encoding="utf-8")
+    with pytest.raises(UntapedError, match="already exists"):
+        scaffold(root, "no-print", key="house")
+    assert test.read_text() == "ours\n"
+    assert not (root / ".untaped").exists()
+
+
+def test_from_a_subdirectory_it_uses_the_lint_file_found_walking_up(tmp_path: Path) -> None:
+    root = _checkout(tmp_path, pytest_config=True)
+    sub = root / "sub"
+    (sub / ".untaped").mkdir(parents=True)
+    (sub / ".untaped" / "lint.yml").write_text("version: 1\nname: house\n", encoding="utf-8")
+    (sub / "deep").mkdir()
+    outcome = scaffold(sub / "deep", "no-print")
+    assert _written(sub, outcome)[-1] == ".untaped/lint.yml"
+    assert not (root / ".untaped").exists()

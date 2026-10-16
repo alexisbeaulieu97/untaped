@@ -18,7 +18,9 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import ErrorCategory, UntapedError, UsageError
+import yaml
+
+from untaped.sdk import ErrorCategory, UntapedError, UsageError, project_root
 from untaped_lint.application import repo_file
 from untaped_lint.records import RULE_ID, ScaffoldOutcome
 
@@ -46,7 +48,7 @@ def scaffold(
     if not _ID.match(rule_id):
         raise UsageError(f"{rule_id!r} is not a rule id: lowercase words joined by hyphens")
     found = repo_file.find(start)
-    root = repo_file.root_of(found) if found is not None else start.resolve()
+    root = repo_file.root_of(found) if found is not None else project_root(start)
     lint_file = found or root / repo_file.RELATIVE
     current = repo_file.read(found, installed=installed or ()) if found is not None else None
     key = key or (current.name if current is not None else None)
@@ -59,12 +61,6 @@ def scaffold(
         current.rules[key] if current is not None and key in current.rules else root / _RULES_DIR
     )
     module = rules_dir / f"{_python_name(rule_id)}.py"
-    if module.exists():
-        raise UntapedError(
-            f"{module} already exists; pick another rule id",
-            category=ErrorCategory.CONFLICT,
-            system="local",
-        )
     files: dict[Path, str] = {module: _module(rule_id, key)}
     done = Scaffolded()
     public = f"{key}.{rule_id}"
@@ -85,13 +81,20 @@ def scaffold(
                 f"(cd {(fixtures / kind).relative_to(root).as_posix()} && "
                 f"untaped lint --config {config} --select {public})"
             )
+    taken = [path for path in files if path.exists()]
+    if taken:
+        raise UntapedError(
+            f"{taken[0]} already exists; pick another rule id",
+            category=ErrorCategory.CONFLICT,
+            system="local",
+        )
+    entry = _linters_entry(lint_file, current, key, rules_dir, root)
     action = "planned" if dry_run else "created"
     for path, text in files.items():
         if not dry_run:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
         done.files.append(ScaffoldOutcome(action=action, target_path=path))
-    entry = _linters_entry(lint_file, current, key, rules_dir, root)
     if entry is not None:
         text, created = entry
         if not dry_run:
@@ -129,22 +132,51 @@ def _linters_entry(
     rules_dir: Path,
     root: Path,
 ) -> tuple[str, bool] | None:
-    """The lint file's new text and whether it is new, or ``None`` when nothing changes."""
+    """The lint file's new text and whether it is new, or ``None`` when nothing changes.
+
+    The entry goes in as text, so the file keeps its comments and order; a
+    result that doesn't parse back to the same linters plus this one (a flow
+    mapping, an unusual layout) is refused rather than written.
+    """
     relative = rules_dir.relative_to(root).as_posix()
-    block = f"  {key}:\n    rules: {relative}\n"
     if current is None:
-        return f"version: 1\nname: {key}\nlinters:\n{block}", True
+        return f"version: 1\nname: {key}\nlinters:\n  {key}:\n    rules: {relative}\n", True
     if key in current.rules:
         return None
     text = lint_file.read_text(encoding="utf-8")
+    before = yaml.safe_load(text).get("linters")
     lines = text.splitlines(keepends=True)
-    for index, line in enumerate(lines):
-        if line.rstrip() == "linters:":
-            lines.insert(index + 1, block)
-            return "".join(lines), False
-    if not text.endswith("\n"):
-        text += "\n"
-    return f"{text}linters:\n{block}", False
+    heading = next((n for n, line in enumerate(lines) if _LINTERS.match(line)), None)
+    if heading is not None:
+        indent = _indent(lines[heading + 1 :])
+        lines.insert(heading + 1, f"{indent}{key}:\n{indent * 2}rules: {relative}\n")
+        updated = "".join(lines)
+    elif before is None:
+        ending = "" if text.endswith("\n") else "\n"
+        updated = f"{text}{ending}linters:\n  {key}:\n    rules: {relative}\n"
+    else:
+        updated = text
+    after = yaml.safe_load(updated).get("linters")
+    if after != {**(before or {}), key: {"rules": relative}}:
+        raise UntapedError(
+            f"{lint_file}: can't add linters.{key} to this layout; add it yourself: "
+            f"linters: {{{key}: {{rules: {relative}}}}}",
+            category=ErrorCategory.CONFLICT,
+            system="local",
+        )
+    return updated, False
+
+
+_LINTERS = re.compile(r"^linters:[ \t]*(#.*)?$")
+
+
+def _indent(lines: list[str]) -> str:
+    """The indentation of the first entry under ``linters:``, two spaces when there is none."""
+    for line in lines:
+        if line.strip() and not line.lstrip().startswith("#"):
+            stripped = line.lstrip(" ")
+            return " " * (len(line) - len(stripped)) if len(stripped) < len(line) else "  "
+    return "  "
 
 
 def _module(rule_id: str, key: str) -> str:
