@@ -82,7 +82,7 @@ def test_command(
         if update and ref_text is None:
             raise UsageError("--update requires an explicit pack or recipe argument")
         # Cases run hooks and --update writes goldens before the rows print.
-        check_columns(GoldenCase, columns, fmt=fmt)
+        check_columns(GoldenCase, columns=columns, fmt=fmt)
         root = library_dir()
         selection = _select(root, ref_text)
         results = _execute(root, selection, update=update)

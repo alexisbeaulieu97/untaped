@@ -13,6 +13,7 @@ from untaped.sdk import (
     StdinOption,
     UsageError,
     app_context,
+    check_columns,
     clamp_parallel,
     emit,
     finish,
@@ -31,7 +32,7 @@ from untaped_github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
-from untaped_github.records import SweepFile
+from untaped_github.records import RepoSweepOutcome, SweepFile, SweepMatch
 from untaped_github.settings import GithubSettings
 
 if TYPE_CHECKING:
@@ -40,7 +41,6 @@ if TYPE_CHECKING:
     from untaped.sdk import Diagnostics
     from untaped_github.application import GitCorpus, SweepReport
     from untaped_github.domain import SweepQuery
-    from untaped_github.records import RepoSweepOutcome, SweepMatch
 
 
 def sweep_command(
@@ -195,6 +195,7 @@ def sweep_command(
             query.validate()
         except ValueError as exc:
             raise UsageError(str(exc)) from exc
+        _check_sweep_columns(show, columns=columns, fmt=fmt)
         workers = clamp_parallel(
             parallel if parallel is not None else settings.sweep.parallel,
             cap=32,
@@ -254,6 +255,19 @@ def sweep_command(
             predicate_hit=(strict and bool(report.unscanned))
             or (fail_on_match and bool(report.rows)),
         )
+
+
+def _check_sweep_columns(show: str, *, columns: list[str] | None, fmt: OutputFormat) -> None:
+    """Refuse an unknown ``--columns`` name before the sweep fetches anything.
+
+    The repo table emits display dicts (a column per predicate) and only warns.
+    """
+    if show == "files":
+        check_columns(SweepFile, columns=columns, fmt=fmt)
+    elif show == "matches":
+        check_columns(SweepMatch, columns=columns, fmt=fmt)
+    elif fmt != "table":
+        check_columns(RepoSweepOutcome, columns=columns, fmt=fmt)
 
 
 def _scope(

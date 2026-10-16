@@ -191,6 +191,24 @@ def test_status_fetch_failure_is_per_repo(make_upstream: Callable[..., GitRemote
     assert "error" not in rows[1]
 
 
+def test_status_fetch_refuses_an_unknown_column_before_fetching(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
+    api = make_upstream("api")
+    run(app, ["create", "J-1", "--repo", api.url])
+    repo = workspace_env / "J-1" / "api"
+    before = git(repo, "for-each-ref")
+    api.commit("new.txt", "upstream moved\n")
+
+    refused = run(app, ["status", "J-1", "--fetch", "--format", "json", "-c", "dir,nope"])
+
+    assert refused.exit_code == 2, refused.output
+    assert "unknown column 'nope'" in refused.stderr
+    assert git(repo, "for-each-ref") == before
+    assert run(app, ["status", "J-1", "--fetch"]).exit_code == 0
+    assert git(repo, "for-each-ref") != before  # the probe sees a fetch
+
+
 class _ProbingBackend(ScriptedPromptBackend):
     """Confirms; first tries the workspace lock, as a concurrent ``add`` would."""
 

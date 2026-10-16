@@ -510,7 +510,7 @@ def _column_names(columns: list[str]) -> list[str]:
     return names
 
 
-def check_columns(model: type[BaseModel], columns: list[str] | None, *, fmt: OutputFormat) -> None:
+def check_columns(model: type[BaseModel], *, columns: list[str] | None, fmt: OutputFormat) -> None:
     """Refuse a ``--columns`` name no ``model`` field has, before the command acts.
 
     :func:`emit` checks columns only when it renders. A command whose rows

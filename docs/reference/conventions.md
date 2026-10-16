@@ -167,7 +167,8 @@ free, but a command that writes declares it with `@writes`, or
 
 - Destructive batches go through `batch_apply(..., destructive=True,
   assume_yes=yes)`. It previews, then confirms. On a decline it sets
-  `outcome.cancelled`; `finish(outcome)` prints the decline line and exits 1.
+  `outcome.cancelled`, and `finish(outcome)` prints the decline line and
+  exits 1.
 - Single confirmations use `ui.confirm_or_cancel(message, assume_yes=yes,
   refusal="<verb> requires --yes when not interactive", preview=...)`, which
   raises `OperationCancelledError` on a decline (`ui.confirm_action` returns
@@ -196,9 +197,8 @@ free, but a command that writes declares it with `@writes`, or
   command; a single record shows every field.
 - Never pass defaults as `columns=` (`columns or DEFAULTS`):
   `--columns +name/-name` edits the defaults, and a named column is always
-  shown, even when empty. An unknown name only warns on `OutcomeRecord` rows,
-  which follow the change or its plan; a command whose other rows follow a
-  side effect calls `check_columns` first.
+  shown, even when empty. An unknown name only warns on `OutcomeRecord` rows;
+  a command whose other rows follow a side effect calls `check_columns` first.
 - Declare a record's kind on its class, `class Widget(Record,
   kind="acme-tools.widget")`, in a `records` module your app imports:
   `<plugin>.<noun>` (another prefix is `foreign-kind`), `<plugin>.<verb>_outcome`

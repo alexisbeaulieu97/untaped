@@ -107,7 +107,7 @@ def subscribe_command(
     picks them. A registered checkout is fetched but never pulled.
     """
     with report_errors():
-        check_columns(ItemRow, columns, fmt=fmt)
+        check_columns(ItemRow, columns=columns, fmt=fmt)
         svc = services()
         subscribe = SubscribeRepo(
             svc.store, svc.git, svc.inventory, repos_dir=svc.repos_dir, now=utc_now

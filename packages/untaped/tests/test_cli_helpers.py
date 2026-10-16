@@ -644,7 +644,7 @@ def test_check_columns_refuses_an_unknown_name_before_the_command_acts(
     columns: list[str], capsys: pytest.CaptureFixture[str]
 ) -> None:
     with pytest.raises(SystemExit) as excinfo:
-        check_columns(_Widget, columns, fmt="json")
+        check_columns(_Widget, columns=columns, fmt="json")
     assert excinfo.value.code == 2
     assert "unknown column 'nope'; valid columns: name, value" in capsys.readouterr().err
 
@@ -665,7 +665,7 @@ def test_check_columns_passes_known_names_and_what_emit_does_not_check(
     fmt: Literal["json", "raw", "table", "pipe"],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    check_columns(_Widget, columns, fmt=fmt)
+    check_columns(_Widget, columns=columns, fmt=fmt)
     assert capsys.readouterr().err == ""
 
 
@@ -673,7 +673,7 @@ def test_check_columns_refuses_names_mixed_with_edits(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as excinfo:
-        check_columns(_Widget, ["name,+value"], fmt="table")
+        check_columns(_Widget, columns=["name,+value"], fmt="table")
     assert excinfo.value.code == 2
     assert "error: --columns takes either column names" in capsys.readouterr().err
 

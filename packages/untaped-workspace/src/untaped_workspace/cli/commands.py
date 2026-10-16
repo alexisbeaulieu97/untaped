@@ -26,6 +26,7 @@ from untaped.sdk import (
     StdinOption,
     UsageError,
     YesOption,
+    check_columns,
     create_app,
     echo,
     emit,
@@ -224,6 +225,7 @@ def status_command(
     with report_errors():
         if all_workspaces and name is not None:
             raise UsageError("--all cannot be combined with a workspace name")
+        check_columns(StatusRow, columns=columns, fmt=fmt)  # before --fetch fetches
         settings = workspace_settings()
         records = StateWorkspaceStore().active() if all_workspaces else [locate(settings, name)]
         status = status_reader(settings, git_worktrees())
