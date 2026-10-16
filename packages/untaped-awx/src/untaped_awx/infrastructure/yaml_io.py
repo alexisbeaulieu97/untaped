@@ -138,8 +138,7 @@ def _documents(text: str, *, source: str) -> Iterator[tuple[int, Resource | Conf
 def _invalid(message: str, *, cause: Exception | None = None) -> ConfigError:
     """An ``invalid`` input error, chained to ``cause`` as ``raise ... from cause`` would."""
     error = ConfigError(message, category="invalid")
-    error.__cause__ = cause
-    error.__suppress_context__ = True
+    error.__cause__ = cause  # also sets __suppress_context__, as ``from`` does
     return error
 
 
