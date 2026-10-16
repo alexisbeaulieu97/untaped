@@ -31,7 +31,7 @@ from untaped_awx.cli.options import (
     SearchOption,
     StdinOption,
 )
-from untaped_awx.cli.pipe import selection_pipe_kinds
+from untaped_awx.cli.pipe import selection_records
 from untaped_awx.domain import ResourceSpec
 
 
@@ -128,7 +128,7 @@ def select_resources(
     pipe: tuple[PipeEnvelope, ...] | None = None
     effective_by_id = by_id
     if stdin:
-        piped = read_stdin_input(accept_kinds=selection_pipe_kinds(spec))
+        piped = read_stdin_input(accepts=selection_records(spec))
         if piped.records is not None:
             pipe = piped.records
             effective_by_id = False

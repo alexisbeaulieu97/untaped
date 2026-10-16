@@ -30,6 +30,7 @@ from untaped_awx.cli.options import (
     ParallelOption,
     YesOption,
 )
+from untaped_awx.domain.records import DeleteOutcome
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -107,11 +108,5 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         elif outcome.detail:
                             ctx.diag.warning(f"{label}: {outcome.detail}")
                     failed = any(outcome.action != "completed" for outcome in outcomes)
-                emit(
-                    rows,
-                    fmt=fmt,
-                    columns=columns,
-                    table_columns=("id", "name", "action", "detail"),
-                    kind="awx.delete_outcome",
-                )
+                emit([DeleteOutcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
                 finish(failed)

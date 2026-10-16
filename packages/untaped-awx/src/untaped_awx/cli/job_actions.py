@@ -89,7 +89,6 @@ def register_job_actions(jobs_app: App) -> None:
                 fmt=fmt,
                 columns=columns,
                 table_columns=_CANCEL_COLUMNS,
-                kind="awx.cancel_outcome",
             )
         finish(any(row.failed for row in rows))
 
@@ -149,7 +148,6 @@ def register_job_actions(jobs_app: App) -> None:
                 fmt=fmt,
                 columns=columns,
                 table_columns=_RELAUNCH_COLUMNS,
-                kind="awx.relaunch_outcome",
             )
         finish(any(row.failed for row in rows))
 

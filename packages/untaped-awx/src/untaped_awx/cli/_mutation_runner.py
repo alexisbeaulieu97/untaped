@@ -21,7 +21,6 @@ from untaped_awx.application.mutation_types import MutationPlan
 from untaped_awx.application.scheduling import MAX_PARALLEL
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.cli.format import (
-    OUTCOME_TABLE_COLUMNS,
     format_scope,
     format_value,
     outcome_rows,
@@ -35,6 +34,7 @@ from untaped_awx.cli.options import (
 )
 from untaped_awx.domain import ApplyOutcome
 from untaped_awx.domain.outcomes import UNFINISHED_ACTIONS
+from untaped_awx.domain.records import ApplyOutcomeRow
 
 
 def validate_controls(
@@ -113,8 +113,7 @@ def emit_outcomes(
         outcome_rows(outcomes),
         fmt=fmt,
         columns=columns,
-        table_columns=[c for c in OUTCOME_TABLE_COLUMNS if not (per_kind and c == "kind")],
-        kind="awx.apply_outcome",
+        table_columns=[c for c in ApplyOutcomeRow.table_columns if not (per_kind and c == "kind")],
     )
     finish(
         any(

@@ -53,10 +53,9 @@ from untaped_awx.cli.options import (
     scope_parameter,
 )
 from untaped_awx.domain import FkRef
+from untaped_awx.domain.records import MembershipOutcome
 from untaped_awx.errors import BadRequestError
 from untaped_awx.infrastructure.spec import AwxResourceSpec
-
-_TABLE_COLUMNS = ("id", "name", "action", "associate", "disassociate", "detail")
 
 
 def register_membership_subapp(parent_app: App, spec: AwxResourceSpec, ref: FkRef) -> None:
@@ -209,13 +208,7 @@ def _add_membership_verb(
                         row["error"] = error.model_dump(mode="json")
                         ctx.diag.failure(error, item=f"{spec.kind}/{selected_parent.name}")
                         failed = True
-                emit(
-                    [row],
-                    fmt=fmt,
-                    columns=columns,
-                    table_columns=_TABLE_COLUMNS,
-                    kind="awx.membership_outcome",
-                )
+                emit([MembershipOutcome.model_validate(row)], fmt=fmt, columns=columns)
                 finish(failed)
 
 

@@ -45,6 +45,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "FormatOption",
         "Issued",
         "Message",
+        "NOT_COUNTED",
         "OutcomeRecord",
         "OutputFormat",
         "PipeEnvelope",

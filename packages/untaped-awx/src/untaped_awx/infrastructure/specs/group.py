@@ -15,11 +15,13 @@ declaring both directions would produce ambiguous round-trips.
 from __future__ import annotations
 
 from untaped_awx.domain import FkRef
+from untaped_awx.domain.records import Group
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 GROUP_SPEC = AwxResourceSpec(
     kind="Group",
+    record=Group,
     cli_name="groups",
     api_path="groups",
     structured_text_fields=("variables",),

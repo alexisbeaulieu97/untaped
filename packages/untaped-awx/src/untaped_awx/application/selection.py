@@ -12,14 +12,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from untaped.sdk import ConfigError, PipeEnvelope, UsageError
+from untaped.sdk import ConfigError, PipeEnvelope, UsageError, kind_of, record_model
 from untaped_awx.application.ports import Catalog, ResourceClient
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.domain.kinds import (
-    RESOURCE_OUTCOME_PIPE_KINDS,
-    pipe_kind,
-    unified_template_kind,
-)
+from untaped_awx.domain.kinds import unified_template_kind
+from untaped_awx.domain.outcomes import RESOURCE_OUTCOMES
 from untaped_awx.domain.payloads import as_dict
 from untaped_awx.errors import (
     BadRequestError,
@@ -140,20 +137,22 @@ class SelectionResolver:
         envelopes: tuple[PipeEnvelope, ...],
         scope: dict[str, str],
     ) -> tuple[SelectedResource, ...]:
-        expected_kind = pipe_kind(spec.kind)
+        expected = spec.require_record()
+        outcomes = set(RESOURCE_OUTCOMES.values())
         selected: list[SelectedResource] = []
         for envelope in envelopes:
-            if envelope.kind in RESOURCE_OUTCOME_PIPE_KINDS.values():
+            piped = None if envelope.kind is None else record_model(envelope.kind)
+            if piped in outcomes:
                 if envelope.record.get("kind") != spec.kind:
                     raise ConfigError(
                         f"pipe record line {envelope.lineno} is a {envelope.kind!r} for "
                         f"{envelope.record.get('kind')!r}; expected {spec.kind!r}",
                         category="invalid",
                     )
-            elif envelope.kind != expected_kind:
+            elif piped is not expected:
                 raise ConfigError(
                     f"pipe record line {envelope.lineno} has kind {envelope.kind!r}; "
-                    f"expected {expected_kind!r}",
+                    f"expected {kind_of(expected)!r}",
                     category="invalid",
                 )
             record = as_dict(self._client.get(spec, pipe_record_id(envelope)))

@@ -6,8 +6,10 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
-from untaped.sdk import ConfigError, read_identifiers, read_stdin_input
+from untaped.sdk import ConfigError, Record, read_identifiers, read_stdin_input
 from untaped_awx.domain.job import JOB_ROUTES
+from untaped_awx.domain.outcomes import JobRelaunchOutcome
+from untaped_awx.domain.records import JobRecord, LaunchOutcome, SyncOutcome
 
 JOB_KIND_HELP = (
     "Execution kind. Defaults to 'job' (a JobTemplate run). Other values: "
@@ -16,10 +18,13 @@ JOB_KIND_HELP = (
 )
 
 
-JOB_PIPE_KINDS = frozenset(
-    {"awx.job", "awx.launch_outcome", "awx.sync_outcome", "awx.relaunch_outcome"}
+JOB_PIPE_RECORDS: tuple[type[Record], ...] = (
+    JobRecord,
+    LaunchOutcome,
+    SyncOutcome,
+    JobRelaunchOutcome,
 )
-"""Pipe kinds that carry an execution id: job records and launch/sync/relaunch results."""
+"""Records that carry an execution id: jobs and launch/sync/relaunch results."""
 
 JobIdsArgument = Annotated[list[str] | None, Parameter(help="AWX job ids.")]
 
@@ -41,7 +46,7 @@ def job_targets(job_ids: list[str] | None, *, stdin: bool) -> tuple[list[str], d
     ``jobs/``. Bare identifiers get no entry: callers fall back to ``--kind``.
     """
     if stdin and not job_ids:
-        piped = read_stdin_input(accept_kinds=JOB_PIPE_KINDS)
+        piped = read_stdin_input(accepts=JOB_PIPE_RECORDS)
         if piped.records is None:
             return list(piped.values), {}
         ids: list[str] = []
@@ -57,7 +62,7 @@ def job_targets(job_ids: list[str] | None, *, stdin: bool) -> tuple[list[str], d
                 kinds[ident] = record_kind
         return ids, kinds
     ids = read_identifiers(
-        list(job_ids or []), stdin=stdin, id_field="id", accept_kinds=JOB_PIPE_KINDS
+        list(job_ids or []), stdin=stdin, id_field="id", accepts=JOB_PIPE_RECORDS
     )
     return ids, {}
 

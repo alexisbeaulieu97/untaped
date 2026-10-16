@@ -61,6 +61,6 @@ def _add_rename(app: App, spec: AwxResourceSpec) -> None:
             outcome = plan.outcome(spec, action="planned")
             if confirm_batch(ctx, count=1, verb="rename", yes=yes, dry_run=dry_run):
                 outcome = renamer(spec, plan)
-            emit(outcome, fmt=fmt, columns=columns, kind="awx.rename_outcome")
+            emit(outcome, fmt=fmt, columns=columns)
             if outcome.failed:
                 raise BadRequestError(f"{spec.kind}#{outcome.id}: {outcome.detail}")

@@ -42,9 +42,11 @@ from typing import (
     Any,
     ClassVar,
     Final,
+    ForwardRef,
     Literal,
     Self,
     TypeAliasType,
+    evaluate_forward_ref,
     get_args,
     get_origin,
 )
@@ -294,9 +296,10 @@ def _check_round_trip(model: type[BaseModel], seen: set[Any], where: str | None 
     forward reference (nothing could check it), secrets (``SecretStr``,
     ``SecretBytes``, ``Secret``), ``Field(exclude=True)``, an ``exclude_if``
     other than "omit when ``None``", a key the dump uses that validation does
-    not accept, a computed field (``extra="forbid"`` rejects it on read), and
+    not accept, a computed field (``extra="forbid"`` rejects it on read),
     ``field_serializer``, ``model_serializer`` or
-    ``PlainSerializer``/``WrapSerializer`` other than core's own. ``where``
+    ``PlainSerializer``/``WrapSerializer`` other than core's own, and, with
+    ``extra="allow"``, extras not typed ``dict[str, JsonValue]``. ``where``
     names the field a nested model sits in.
     """
     if model in seen:
@@ -314,6 +317,12 @@ def _check_round_trip(model: type[BaseModel], seen: set[Any], where: str | None 
     if computed := model.model_computed_fields:
         raise _lossy(prefix, f"computed field {', '.join(sorted(computed))} does not read back")
     config = model.model_config
+    if config.get("extra") == "allow" and _extras_type(model) != dict[str, JsonValue]:
+        raise _lossy(
+            prefix,
+            'extra="allow" keeps fields no type checks; declare '
+            "__pydantic_extra__: dict[str, JsonValue] = Field(init=False) so they are JSON values",
+        )
     by_alias = bool(config.get("serialize_by_alias"))
     by_name = bool(config.get("validate_by_name") or config.get("populate_by_name"))
     reads_alias = config.get("validate_by_alias") is not False
@@ -323,6 +332,24 @@ def _check_round_trip(model: type[BaseModel], seen: set[Any], where: str | None 
         for meta in info.metadata:
             _check_serializer(field, meta)
         _check_type(field, info.annotation, seen)
+
+
+def _extras_type(model: type[BaseModel]) -> object:
+    """The type ``model`` declares for its extras (``None``: none, or one that can't resolve)."""
+    for klass in model.__mro__:
+        own = annotationlib.get_annotations(klass, format=annotationlib.Format.FORWARDREF)
+        if "__pydantic_extra__" not in own:
+            continue
+        declared = own["__pydantic_extra__"]
+        if isinstance(declared, str):  # ``from __future__ import annotations``
+            declared = ForwardRef(declared, module=klass.__module__)
+        if isinstance(declared, ForwardRef):
+            try:
+                return evaluate_forward_ref(declared, owner=klass)
+            except NameError:
+                return None
+        return declared
+    return None
 
 
 def _check_field(
@@ -403,6 +430,12 @@ class WireModel(BaseModel):
     other than core's omit-when-``None``, an alias validation does not accept,
     computed fields, custom serializers and forward references not yet
     defined. The class definition raises ``TypeError`` naming the field.
+
+    A record passing a service's answer through sets ``extra="allow"``: it
+    types the fields untaped reads and keeps every other one, typed
+    ``__pydantic_extra__: dict[str, JsonValue]``. Its dump is the row it
+    was given, its typed fields first: a declared field the row left out
+    stays out.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -438,8 +471,21 @@ class WireModel(BaseModel):
         data = handler(self)
         if not isinstance(data, dict):
             return data
+        if type(self).model_config.get("extra") == "allow":
+            data = _given(self, data)
         ordered = {name: data[name] for name in _field_order(type(self)) if name in data}
         return ordered | data
+
+
+def _given(model: WireModel, data: dict[str, Any]) -> dict[str, Any]:
+    """An ``extra="allow"`` row's dump less the declared fields it was never given.
+
+    So dumping a validated answer writes back the fields it had: an absent
+    field stays absent rather than becoming ``null``.
+    """
+    names = dumped_names(type(model))
+    given = {names.get(name, name) for name in model.model_fields_set}
+    return {key: value for key, value in data.items() if key in given}
 
 
 #: The base's own serializer (field order), the one ``model_serializer`` allowed.
@@ -594,7 +640,7 @@ NOT_COUNTED: Final = _NotCounted()
 
 A row counts toward the exit code through every top-level ``Failure`` it
 holds, except one marked with this (a cache's last refresh error on a
-status row).
+status row, a test case's failure that the run reports itself).
 """
 
 

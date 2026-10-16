@@ -130,7 +130,7 @@ def test_a_failed_update_is_blamed_even_when_the_case_expected_a_failure() -> No
     [
         (
             _update("failed", kind="inventory_update"),
-            ("awx.inventory", "config", False),
+            ("awx.inventories", "config", False),
             "inventory update 812 for 'acme' failed",
         ),
         (

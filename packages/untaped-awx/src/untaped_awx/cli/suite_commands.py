@@ -36,19 +36,23 @@ from untaped.sdk import (
     experimental,
     finish,
     git_toplevel,
+    kind_of,
     parse_envelope_line,
     parse_kv_pairs,
     plural,
     q,
     raise_usage,
+    record_model,
     report_errors,
     run_hint,
     summary,
     writes,
 )
 from untaped_awx.cli.context import AwxContext, open_context
+from untaped_awx.cli.names import column_names
 from untaped_awx.cli.options import OrganizationOption
 from untaped_awx.domain.case_failure import CaseFailure
+from untaped_awx.domain.records import ProvisionOutcome, PruneOutcome, SuiteCase
 from untaped_awx.domain.suite import (
     JOB_TEMPLATE,
     WORKFLOW_TEMPLATE,
@@ -88,8 +92,6 @@ _diag = Diagnostics()
 # Heavy imports (jinja2, yaml, the loader/runner) are deferred to subcommand
 # bodies — ``awx ping`` and ``awx --help`` shouldn't pay for them.
 
-_RESULT_KIND = "awx.test_result"
-
 _RESULT_TABLE_COLUMNS = [
     "suite",
     "case",
@@ -103,8 +105,6 @@ _RESULT_TABLE_COLUMNS = [
     "job_url",
 ]
 """``change`` (against a baseline) and a failure's columns show only when a row has them."""
-
-_CASE_TABLE_COLUMNS = ["suite", "case", "job_template", "workflow_template"]
 
 _PATHS_ARG = Annotated[
     list[Path] | None,
@@ -157,11 +157,6 @@ _SOURCE_REF_OPT = Annotated[
         "the commit; any other template must prompt for scm_branch.",
     ),
 ]
-
-_PROVISION_KIND = "awx.provision_outcome"
-_PRUNE_KIND = "awx.prune_outcome"
-_PROVISION_COLUMNS = ["kind", "name", "template", "prompts", "path"]
-_PRUNE_COLUMNS = ["kind", "id", "name", "ref", "created_at", "action"]
 
 
 # ---- shared helpers ------------------------------------------------------
@@ -357,6 +352,7 @@ def run_command(
 
     if compare is not None and baseline is not None:
         raise_usage("--compare and --baseline cannot be combined")
+    _check_result_columns(columns)
     _check_run_flags(
         source_ref,
         scm_branch=scm_branch,
@@ -460,19 +456,31 @@ def _report_results(
             if result.failure is not None:
                 _show_failure(result, result.failure)
 
-    emit(
-        [result.model_dump(mode="json") for result in outcome.results],
-        fmt=fmt,
-        columns=columns,
-        table_columns=_RESULT_TABLE_COLUMNS,
-        kind=_RESULT_KIND,
-    )
+    emit(list(outcome.results), fmt=fmt, columns=columns, table_columns=_RESULT_TABLE_COLUMNS)
     for line in _summary(outcome):
         _diag.info(line)
     deciding = outcome.deciding()
     for item, failure in deciding:
         _diag.failure(failure, item=item)
     return bool(deciding)
+
+
+def _check_result_columns(columns: list[str] | None) -> None:
+    """Refuse an unknown ``--columns`` name before a run launches anything (exit 2).
+
+    Results are records, so writing them would refuse it too, once the jobs
+    had run and their rows were lost.
+    """
+    known = list(CaseResult.model_fields)
+    unknown = [
+        name for name in column_names(columns) if name != "?" and name.split(".", 1)[0] not in known
+    ]
+    if unknown:
+        shown = ", ".join(repr(name) for name in unknown)
+        raise_usage(
+            f"unknown column{'s' if len(unknown) > 1 else ''} {shown}; "
+            f"valid columns: {', '.join(known)}"
+        )
 
 
 def _refuse_scm_branch_with_source_ref(source_ref: str | None, scm_branch: str | None) -> None:
@@ -577,10 +585,10 @@ def _saved_rows(text: str) -> Any:
     for lineno, line in enumerate(text.splitlines(), start=1):
         if line.strip():
             envelope = parse_envelope_line(lineno, line)
-            if envelope.kind is not None and envelope.kind != _RESULT_KIND:
+            if envelope.kind is not None and record_model(envelope.kind) is not CaseResult:
                 raise ValueError(
                     f"line {lineno}: record kind {q(envelope.kind)} is not accepted here; "
-                    f"expected {q(_RESULT_KIND)}"
+                    f"expected {q(str(kind_of(CaseResult)))}"
                 )
             rows.append(envelope.record)
     return rows
@@ -613,13 +621,7 @@ def list_command(
         )
 
     rows = [case_row(path, suite, case) for path, suite in loaded.items() for case in suite.cases]
-    emit(
-        rows,
-        fmt=fmt,
-        columns=columns,
-        table_columns=_CASE_TABLE_COLUMNS,
-        kind="awx.test_case",
-    )
+    emit(rows, fmt=fmt, columns=columns)
 
 
 # ---- validate ------------------------------------------------------------
@@ -768,11 +770,14 @@ def _validate(
 
     if temp is not None:
         emit(
-            [planned_outcome(template, temp.marker).model_dump() for template in temp.templates],
+            [
+                ProvisionOutcome.model_validate(
+                    planned_outcome(template, temp.marker), from_attributes=True
+                )
+                for template in temp.templates
+            ],
             fmt=fmt,
             columns=columns,
-            table_columns=_PROVISION_COLUMNS,
-            kind=_PROVISION_KIND,
             empty="No temporary copies planned.",
         )
     finish(any_errors)
@@ -844,11 +849,9 @@ def prune_command(
             info = Failure.from_exception(error)
             rows.append(copy.outcome("failed", detail=info.message, error=info))
     emit(
-        [row.model_dump() for row in rows],
+        [PruneOutcome.model_validate(row, from_attributes=True) for row in rows],
         fmt=fmt,
         columns=columns,
-        table_columns=_PRUNE_COLUMNS,
-        kind=_PRUNE_KIND,
         empty="No temporary copies found.",
     )
     finish(outcome)
@@ -908,19 +911,19 @@ def init_command(
     _diag.hint(run_hint(f"awx test validate {shlex.quote(str(path))}"))
 
 
-def case_row(path: Path, suite: Suite, case_name: str) -> dict[str, Any]:
-    """One ``awx.test_case`` row, whatever the format."""
+def case_row(path: Path, suite: Suite, case_name: str) -> SuiteCase:
+    """One case's row, whatever the format."""
     # ``suite`` first: under ``--format raw`` the first key is what
     # pipelines feed back into the next command (xargs identifier
     # semantics); pinned by tests/awx/unit/test_format_raw_first_key.py.
-    return {
-        "suite": suite.name,
-        "case": case_name,
-        "job_template": suite.job_template,
-        "workflow_template": suite.workflow_template,
-        "organization": suite.organization,
-        "path": str(path),
-        "variables": {
+    return SuiteCase(
+        suite=suite.name,
+        case=case_name,
+        job_template=suite.job_template,
+        workflow_template=suite.workflow_template,
+        organization=suite.organization,
+        path=str(path),
+        variables={
             name: spec.model_dump(exclude_none=True) for name, spec in suite.variables.items()
         },
-    }
+    )

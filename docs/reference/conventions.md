@@ -199,13 +199,13 @@ free, but a command that writes declares it with `@writes`, or
   `--columns +name/-name` edits the defaults, and a named column is always
   shown, even when empty. An unknown name only warns on `OutcomeRecord` rows;
   a command whose other rows follow a side effect calls `check_columns` first.
-- Declare a record's kind on its class, `class Widget(Record,
-  kind="acme-tools.widget")`, in a `records` module your app imports:
-  `<plugin>.<noun>` (another prefix is `foreign-kind`), `<plugin>.<verb>_outcome`
-  for mutations, `.summary` the only third segment. One model per kind; `emit`
-  reads it from the rows. Elsewhere name the model (`kind_of(Widget)`), never
-  the string, so a rename misses no line. Fields must survive a JSON round
-  trip (`Record`'s docstring says which fail). A document is no row: `emit_document`.
+- Declare a record's kind on its class, `class Widget(Record, kind="acme-tools.widget")`, in a
+  `records` module your app imports: `<plugin>.<noun>` (another prefix is `foreign-kind`),
+  `<plugin>.<verb>_outcome` for mutations, `.summary` the only third segment. One model per kind;
+  `emit` reads it from the rows. Elsewhere name the model (`kind_of(Widget)`), never the string, so
+  a rename misses no line. Fields must survive a JSON round trip (`Record`'s docstring says which
+  fail). A document is no row: `emit_document`. Records refuse undeclared fields; `extra="ignore"`
+  keeps a service answer's typed part, `"allow"` all of it (extras `JsonValue`, base fields first).
 - Fields are snake_case, with `id` and then `name` first. `url` is the web
   URL and `api_url` is the API link.
 - A record's own fields come before the fields it inherits from the bases

@@ -1,4 +1,4 @@
-"""Kind spelling transforms shared by selection, save, pipes, and strategies."""
+"""Kind spelling transforms shared by selection, save and strategies."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import pytest
 
 from untaped_awx.domain.kinds import (
     UNIFIED_TEMPLATE_KINDS,
-    pipe_kind,
     snake_kind,
     type_matches_kind,
     unified_template_kind,
@@ -24,7 +23,6 @@ from untaped_awx.domain.kinds import (
 )
 def test_snake_kind_is_acronym_aware(kind: str, snake: str) -> None:
     assert snake_kind(kind) == snake
-    assert pipe_kind(kind) == f"awx.{snake}"
 
 
 def test_type_matches_kind_ignores_case_and_underscores() -> None:

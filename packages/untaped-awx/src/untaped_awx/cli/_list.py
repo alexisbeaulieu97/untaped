@@ -31,7 +31,6 @@ from untaped_awx.cli.options import (
     StdinOption,
     offers_with_scm,
 )
-from untaped_awx.cli.pipe import pipe_kind_for_spec
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -136,12 +135,14 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             columns=columns,
             defaults=shown,
         )
-        records = [redact_value(record, spec.secret_paths, skip_empty=True) for record in records]
+        model = spec.require_record()
         emit(
-            records,
+            [
+                model.model_validate(redact_value(record, spec.secret_paths, skip_empty=True))
+                for record in records
+            ],
             fmt=fmt,
             columns=columns or (list(shown) if fmt == "raw" else None),
             table_columns=default_cols,
-            kind=pipe_kind_for_spec(spec),
             empty=False,
         )

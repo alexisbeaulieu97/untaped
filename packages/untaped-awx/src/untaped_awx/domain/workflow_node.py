@@ -18,7 +18,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+
+from untaped.sdk import Record
 
 WorkflowNodeType = Literal[
     "job_template",
@@ -52,7 +54,9 @@ def normalise_unified_job_type(raw: str | None) -> WorkflowNodeType | None:
     return _JOB_TYPE_TO_TEMPLATE_TYPE.get(raw)
 
 
-class WorkflowNode(BaseModel):
+class WorkflowNode(Record, kind="awx.workflow_node"):
+    """One node of a workflow (``nodes``), flattened from AWX's row."""
+
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     id: int

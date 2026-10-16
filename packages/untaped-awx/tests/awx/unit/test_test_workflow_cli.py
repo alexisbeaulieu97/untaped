@@ -557,7 +557,7 @@ def test_a_node_waiting_for_all_its_parents_runs_only_when_all_succeed(
     ("kind", "store", "system", "code"),
     [
         ("project", "projects", "awx.scm", 1),
-        ("inventory_source", "inventory_sources", "awx.inventory", 4),
+        ("inventory_source", "inventory_sources", "awx.inventories", 4),
     ],
 )
 def test_a_node_that_runs_an_update_is_blamed_on_the_update(

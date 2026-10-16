@@ -7,11 +7,13 @@ through AWX's node endpoints; see ``domain.workflow_graph`` for its format.
 from __future__ import annotations
 
 from untaped_awx.domain import ActionSpec, FkRef
+from untaped_awx.domain.records import LaunchOutcome, WorkflowJobTemplate
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="WorkflowJobTemplate",
+    record=WorkflowJobTemplate,
     cli_name="workflow-templates",
     api_path="workflow_job_templates",
     structured_text_fields=("extra_vars",),
@@ -68,6 +70,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     actions=(
         ActionSpec(
             name="launch",
+            outcome=LaunchOutcome,
             path="launch",
             returns=frozenset({"workflow_job"}),
             accepts=frozenset(

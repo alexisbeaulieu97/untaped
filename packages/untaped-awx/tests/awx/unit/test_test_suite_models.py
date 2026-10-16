@@ -84,6 +84,7 @@ def test_status_defaults_to_expecting_success() -> None:
         "expected": "successful",
         "actual": "failed",
         "passed": False,
+        "node": None,
     }
 
 
@@ -99,12 +100,13 @@ def test_log_checks_report_the_line_that_decided_them() -> None:
     )
     log = ["TASK [x]", "fatal: [web1]: FAILED! => msg: boom", "web1 : ok=1 changed=2"]
     assert expect.needs_log
-    assert [c.model_dump() for c in expect.log.evaluate(log)] == [
+    assert [c.model_dump(exclude={"node"}) for c in expect.log.evaluate(log)] == [
         {"check": "log.contains", "expected": "msg: boom", "actual": log[1], "passed": True},
         {"check": "log.contains", "expected": "absent", "actual": None, "passed": False},
         {"check": "log.not_contains", "expected": "fatal:", "actual": log[1], "passed": False},
         {"check": "log.matches", "expected": r"changed=\d+", "actual": log[2], "passed": True},
     ]
+    assert {c.node for c in expect.log.evaluate(log)} == {None}
     assert not Expectation().needs_log
 
 
@@ -351,5 +353,5 @@ def test_a_node_check_names_its_node() -> None:
 
     assert check.describe_failure() == "node deploy: expected status successful, got never_ran"
     assert check.model_dump()["node"] == "deploy"
-    # A job case's checks carry no node key at all.
-    assert "node" not in Expectation().check_status("successful").model_dump()
+    # A job case's checks name no node.
+    assert Expectation().check_status("successful").model_dump()["node"] is None

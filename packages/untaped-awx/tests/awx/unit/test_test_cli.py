@@ -727,14 +727,19 @@ def test_run_table_hides_evidence_columns(
     assert sum(path.endswith("/job_host_summaries/") for path in paths) == 1
 
 
-def test_run_reports_results_despite_an_unknown_column(
+def test_run_refuses_an_unknown_column_before_launching_anything(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
-    """Jobs already ran: a typo'd ``--columns`` must not swallow their results."""
+    """A typo'd ``--columns`` fails up front, never after the jobs ran and their rows are lost."""
     _seed_jt(fake_aap)
-    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-c", "resutl,result"])
-    assert result.exit_code == 0, result.output
-    assert "pass" in result.stdout
+    result = cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-c", "resutl,+result"])
+    assert result.exit_code == 2, result.output
+    assert "unknown column 'resutl'; valid columns: suite, case, result" in result.stderr
+    assert fake_aap.actions_called == []
+    assert (
+        cli.invoke(app, ["test", "run", str(_smoke(tmp_path)), "-c", "failure.system"]).exit_code
+        == 0
+    )
 
 
 # ---- failed tasks, --scm-branch ------------------------------------------
@@ -844,7 +849,7 @@ def _dependency_failed(fake: FakeAap, kind: str, update_id: int) -> None:
 
 @pytest.mark.parametrize(
     ("kind", "system", "exit_code"),
-    [("project_update", "awx.scm", 1), ("inventory_update", "awx.inventory", 4)],
+    [("project_update", "awx.scm", 1), ("inventory_update", "awx.inventories", 4)],
 )
 def test_run_blames_the_update_that_failed_before_the_job(
     cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path, kind: str, system: str, exit_code: int
@@ -1084,7 +1089,7 @@ def test_run_exits_with_the_most_severe_case(
     assert result.exit_code == 4, result.output
     # Cases may launch in parallel, so which case got which job varies.
     systems = sorted(row["failure"]["system"] for row in json.loads(result.stdout))
-    assert systems == ["awx.hosts", "awx.inventory", "awx.playbook"]
+    assert systems == ["awx.hosts", "awx.inventories", "awx.playbook"]
 
 
 def test_run_cuts_host_summaries_above_500_hosts(
@@ -1411,6 +1416,21 @@ def test_compare_marks_each_change_and_fails_only_on_a_regression(
 
     assert result.exit_code == 0, result.output
     assert [row["change"] for row in json.loads(result.stdout)] == ["pass", "still_failing"]
+
+
+def test_an_excused_still_failing_case_exits_zero_though_its_row_names_a_failure(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    suite = _write(tmp_path / "s.yml", _suite_text("s"))
+    saved = _baseline(cli, fake_aap, suite, tmp_path / "base.json", "successful", "failed")
+
+    _outcomes(fake_aap, [{"status": "successful"}, {"status": "failed"}])
+    result = _run(cli, str(suite), "--compare", str(saved), "-f", "json")
+
+    assert result.exit_code == 0, result.output
+    _, full = json.loads(result.stdout)
+    assert (full["change"], full["failure"]["system"]) == ("still_failing", "awx.playbook")
 
 
 def test_compare_reads_pipe_output_and_reports_removed_cases_in_the_table(

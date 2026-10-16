@@ -7,7 +7,7 @@ import json
 import pkgutil
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import pytest
 from pydantic import (
@@ -15,6 +15,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    JsonValue,
     PlainSerializer,
     Secret,
     SecretStr,
@@ -1024,7 +1025,151 @@ def _samples() -> dict[str, WireModel]:
             Tree(root="/repo", paths=("README.md", "src/a.py")),
             ScaffoldOutcome(action="created", target_path="/repo/.untaped/lint/no_print.py"),
         ]
+    if "untaped_awx" in _SHIPPED:
+        rows += _awx_samples()
     return {str(kind_of(type(row))): row for row in rows}
+
+
+def _awx_samples() -> list[WireModel]:
+    from untaped.sdk import ErrorCategory
+    from untaped_awx.domain.case_failure import failure
+    from untaped_awx.domain.outcomes import (
+        CopyOutcome,
+        JobCancelOutcome,
+        JobRelaunchOutcome,
+        RenameOutcome,
+    )
+    from untaped_awx.domain.ping import PingStatus
+    from untaped_awx.domain.records import (
+        ApplyOutcomeRow,
+        DeleteOutcome,
+        Document,
+        JobEventRow,
+        JobLogLine,
+        JobRecord,
+        LaunchOutcome,
+        MembershipOutcome,
+        ProvisionOutcome,
+        PruneOutcome,
+        SuiteCase,
+        SyncOutcome,
+        UnifiedTemplate,
+    )
+    from untaped_awx.domain.suite import CaseResult, ExpectationResult
+    from untaped_awx.domain.workflow_node import WorkflowNode
+    from untaped_awx.domain.workflow_usage import WorkflowUsage
+    from untaped_awx.infrastructure.specs import ALL_SPECS
+
+    answer = {"id": 1, "name": "deploy", "related": {"jobs": "/1/jobs/"}, "summary": None}
+    started = {
+        "id": 2,
+        "kind": "job",
+        "target_id": 1,
+        "target_kind": "JobTemplate",
+        "target_name": "deploy",
+        "scope": {"organization": "Default"},
+        "action": "completed",
+        "status": "successful",
+        "failed": False,
+        "started_at": "2026-10-10T00:00:00Z",
+    }
+    copy = {
+        "name": "deploy-tmp",
+        "kind": "JobTemplate",
+        "template": "deploy",
+        "run_id": "r1",
+        "ref": "main",
+        "sha": "0" * 40,
+        "created_at": "2026-10-10T00:00:00Z",
+        "action": "planned",
+    }
+    return [
+        *(spec.require_record().model_validate(answer) for spec in ALL_SPECS),
+        JobRecord.model_validate({"id": 2, "kind": "job", "status": "new", "elapsed": 1.5}),
+        UnifiedTemplate.model_validate({**answer, "type": "job_template"}),
+        JobEventRow(
+            job=2,
+            counter=1,
+            event="runner_on_ok",
+            task="install",
+            host=3,
+            host_name="web-01",
+            role=None,
+            play="site",
+            changed=True,
+            failed=False,
+            created=None,
+            stdout="ok",
+        ),
+        JobLogLine(job=2, line="ok"),
+        LaunchOutcome.model_validate(started),
+        SyncOutcome.model_validate({**started, "kind": "project_update", "payload": {"a": [1]}}),
+        ApplyOutcomeRow(
+            id=1,
+            kind="Project",
+            scope={},
+            identity={"name": "playbooks"},
+            partial=False,
+            unverified=False,
+            name="playbooks",
+            action="updated",
+            fields_changed=["description"],
+            preserved_secrets=[],
+            dropped_undeclared_secrets=[],
+            dropped_secrets=[],
+            detail="",
+        ),
+        DeleteOutcome(id=1, kind="Project", name="playbooks", scope={}, action="deleted"),
+        MembershipOutcome(
+            id=1,
+            kind="Inventory",
+            name="prod",
+            scope={},
+            action="updated",
+            field="hosts",
+            associate=[2],
+            disassociate=[],
+        ),
+        Document.model_validate(
+            {
+                "kind": "Project",
+                "apiVersion": "untaped.awx/v1",
+                "metadata": {"name": "playbooks", "organization": "Default"},
+                "spec": {"scm_type": "git"},
+            }
+        ),
+        SuiteCase(
+            suite="smoke",
+            case="ok",
+            job_template="deploy",
+            workflow_template=None,
+            organization="Default",
+            path="tests/smoke.yml",
+            variables={"port": {"default": 80}},
+        ),
+        ProvisionOutcome.model_validate({**copy, "prompts": ["inventory"]}),
+        PruneOutcome.model_validate({**copy, "id": 9, "action": "deleted"}),
+        PingStatus(version="24.0.0", active_node="awx-1"),
+        WorkflowNode(id=5, workflow_job_template=4, unified_job_template=1, name="deploy"),
+        WorkflowUsage(id=4, name="pipeline", node_count=2),
+        JobCancelOutcome(id=2, kind="job", action="canceled"),
+        JobRelaunchOutcome(id=3, kind="job", target_id=2, action="completed"),
+        CopyOutcome(name="deploy-2", source_id=1, kind="JobTemplate", action="planned"),
+        RenameOutcome(id=1, name="deploy-2", old_name="deploy", kind="JobTemplate", action="done"),
+        CaseResult(
+            suite="smoke",
+            case="ok",
+            result="fail",
+            job_id=2,
+            started_at="2026-10-10T00:00:00Z",
+            failure=failure("awx.playbook", ErrorCategory.INVALID, "a task failed"),
+            expectations=(
+                ExpectationResult(
+                    check="status", expected="successful", actual="failed", passed=False
+                ),
+            ),
+        ),
+    ]
 
 
 def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:
@@ -1058,3 +1203,58 @@ def test_a_core_model_writes_its_old_row_keys_in_their_order(kind: str) -> None:
     sample = _samples()[kind]
 
     assert list(json.loads(sample.model_dump_json())) == _ROW_KEYS[kind]
+
+
+class _Answered(Record, kind="acme-tools.answered"):
+    """A service's row passed through: two typed fields, every other one kept."""
+
+    model_config = ConfigDict(extra="allow")
+    __pydantic_extra__: dict[str, JsonValue] = Field(init=False)
+
+    id: int
+    name: str
+    organization: int | str | None = None
+
+
+def test_an_open_record_dumps_the_row_it_was_given_typed_fields_first() -> None:
+    row = {"type": "thing", "id": 7, "related": {"a": [1]}, "name": "n", "url": None}
+
+    answered = _Answered.model_validate(row)
+
+    assert answered.organization is None
+    assert answered.model_dump(mode="json") == row
+    assert list(answered.model_dump(mode="json")) == ["id", "name", "type", "related", "url"]
+    _assert_round_trips(answered)
+
+
+def test_an_open_record_writes_a_field_set_later_and_one_built_in_python() -> None:
+    answered = _Answered.model_validate({"name": "n", "id": 1})
+
+    assert answered.model_copy(update={"organization": "Default"}).model_dump() == {
+        "id": 1,
+        "name": "n",
+        "organization": "Default",
+    }
+    assert _Answered(id=2, name="m", extra=[1]).model_dump() == {"id": 2, "name": "m", "extra": [1]}
+    assert _Answered(id=2, name="m", organization=None).model_dump() == {
+        "id": 2,
+        "name": "m",
+        "organization": None,
+    }
+
+
+def test_an_open_record_keeps_only_json_values() -> None:
+    with pytest.raises(ValidationError):
+        _Answered.model_validate({"id": 1, "name": "n", "when": object()})
+
+
+@pytest.mark.parametrize("extras", [None, dict[str, Any]])
+def test_an_open_record_without_json_typed_extras_fails_at_definition(extras: object) -> None:
+    annotations: dict[str, object] = {"id": int}
+    namespace: dict[str, object] = {"model_config": ConfigDict(extra="allow")}
+    if extras is not None:
+        annotations["__pydantic_extra__"] = extras
+        namespace["__pydantic_extra__"] = Field(init=False)
+    namespace["__annotations__"] = annotations
+    with pytest.raises(TypeError, match=r'_Open: extra="allow" keeps fields no type checks'):
+        type("_Open", (Record,), namespace)

@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
+from untaped_awx.domain.records import LaunchOutcome
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -56,6 +57,7 @@ def test_non_polymorphic_fk_ref_requires_kind() -> None:
 def test_action_spec_accepts_set_is_frozen() -> None:
     a = ActionSpec(
         name="launch",
+        outcome=LaunchOutcome,
         path="launch",
         accepts=frozenset({"extra_vars", "limit"}),
     )

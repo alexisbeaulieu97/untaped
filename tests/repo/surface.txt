@@ -4979,6 +4979,7 @@ sdk untaped.sdk.MultiList.view(frame)  [experimental]
 sdk untaped.sdk.MultiList.view(width=) default=None  [experimental]
 sdk untaped.sdk.MultiList.window_rows  [experimental]
 sdk untaped.sdk.MultiList.with_error(text)  [experimental]
+sdk untaped.sdk.NOT_COUNTED
 sdk untaped.sdk.NO_PROGRESS
 sdk untaped.sdk.NeverRefreshed(cache, key, label)
 sdk untaped.sdk.NeverRefreshed.category class
