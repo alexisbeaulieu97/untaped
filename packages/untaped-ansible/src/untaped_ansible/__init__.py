@@ -41,6 +41,20 @@ def _index_moves() -> Sequence[tuple[Path, Path]]:
     return [(Path("~/.untaped/ansible-index.sqlite3").expanduser(), INDEX_STORE.path())]
 
 
+_INDEX_PATH_GUARD = setting_guard("ansible", "index_path")
+
+
+def _index_guard(path: Path) -> str | None:
+    """Keep the 10.x index while a profile names it, or while 11.0's index awaits its rename."""
+    bare = AnsibleSettings.model_fields["index_path"].default.expanduser()
+    if bare.exists() and not INDEX_STORE.path().exists():
+        return (
+            f"11.0's newer index at {shown_path(bare)} becomes "
+            f"{shown_path(INDEX_STORE.path())} at the next ansible command"
+        )
+    return _INDEX_PATH_GUARD(path)
+
+
 def _empty_index(path: Path) -> bool:
     """Whether the index at ``path`` holds no refreshed source (a command opened it, no more)."""
     from untaped_ansible.infrastructure.sqlite_schema import holds_no_source  # noqa: PLC0415
@@ -96,7 +110,7 @@ SPEC = PluginSpec(
             _index_moves,
             detail="saved sources keep their refreshed data",
             sidecars=("-journal", "-wal", "-shm"),  # a hot journal travels with its database
-            guard=setting_guard("ansible", "index_path"),
+            guard=_index_guard,
             replaceable=_empty_index,
         ),
         delete_migration(

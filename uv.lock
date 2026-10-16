@@ -849,7 +849,7 @@ workspace = [
 [package.metadata]
 requires-dist = [
     { name = "cyclopts", specifier = ">=4.16.0,<5" },
-    { name = "filelock", specifier = ">=3.29.7,<4" },
+    { name = "filelock", specifier = ">=3.32.5,<4" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "packaging", specifier = ">=26.2,<27" },
     { name = "prompt-toolkit", specifier = ">=3.0.52" },

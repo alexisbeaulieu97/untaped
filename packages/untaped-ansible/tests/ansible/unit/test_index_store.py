@@ -7,7 +7,9 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from untaped.sdk import Store, code_version
+import pytest
+
+from untaped.sdk import Filled, Store, code_version
 from untaped.testing import assert_schema_pinned
 from untaped_ansible.infrastructure import open_index
 from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE, SCHEMA_SQL, SCHEMA_VERSION
@@ -45,10 +47,16 @@ def test_the_layout_is_the_oldest_schema_this_reader_opens() -> None:
     assert INDEX.store is INDEX_STORE
 
 
-def test_the_index_is_refilled_when_its_parser_changes() -> None:
-    assert INDEX.version is not None
-    expected = code_version("untaped_ansible.domain.parser", distributions=("untaped-ansible",))
-    assert INDEX.version() == expected
+def test_a_key_filled_by_another_parser_is_outdated(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fill(_key: str, _progress: object) -> Filled:
+        return Filled()
+
+    INDEX.serve({"source:prod": "source prod"}, refresh=True, fill=fill, read=lambda: None)
+    assert INDEX.freshness("source:prod").outdated is False
+
+    other = code_version("untaped_ansible.domain.parser", extra=("an edited parser",))
+    monkeypatch.setattr(INDEX, "version", lambda: other)
+    assert INDEX.freshness("source:prod").outdated is True
 
 
 def test_the_default_index_is_its_layout_file_beside_the_setting() -> None:
@@ -57,23 +65,19 @@ def test_the_default_index_is_its_layout_file_beside_the_setting() -> None:
     assert INDEX_STORE.path() == _plugin() / "index.v4.sqlite3"
 
 
-def test_the_first_open_adopts_the_11_0_index_with_its_journal_and_sidecars() -> None:
+def test_the_first_open_adopts_the_11_0_index_and_its_sidecars() -> None:
     bare = _plugin() / "index.sqlite3"
     _sqlite(bare, "11.0")
-    Path(f"{bare}-journal").write_bytes(b"journal")
     sidecars = _plugin() / "caches" / "index" / "default"
     sidecars.mkdir(parents=True)
     (sidecars / "source_prod.json").write_text("{}", encoding="utf-8")
 
     index = open_index(AnsibleSettings())
-    INDEX.freshness("source:prod")  # the cache's first use moves its sidecars
 
     layout = _plugin() / "index.v4.sqlite3"
     assert index._path == layout
-    assert Path(f"{layout}-journal").read_bytes() == b"journal"
-    Path(f"{layout}-journal").unlink()  # not a real journal: SQLite would read it
     assert _mark(layout) == "11.0"
-    assert not bare.exists() and not Path(f"{bare}-journal").exists()
+    assert not bare.exists()
     assert (_plugin() / "caches" / "index.v4" / "default" / "source_prod.json").is_file()
     assert not (_plugin() / "caches" / "index").exists()
     assert (_plugin() / "index.v4.sqlite3.inuse").exists()

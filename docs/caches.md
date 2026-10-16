@@ -163,11 +163,11 @@ another layout's file. An answer cache (`@cached`) follows no store.
 
 A store that predates 11.1 declares what its bare file holds: `bare=4` says a
 file at `base` itself, with no layout in its name, was written at layout 4.
-The first `open()` at that layout renames it (and its SQLite `-journal`,
-`-wal` and `-shm`, and the cache's `caches/<name>/`) to the layout's name:
-same bytes, no rebuild. While another process has it open, `open()` returns
-the bare path and a later open renames it. A store born in 11.1 or later
-leaves `bare` unset.
+The first `open()` at that layout renames it to the layout's name, then the
+folders of the caches that follow the store: same bytes, no rebuild. While
+another process has it open, or a SQLite `-journal` or `-wal` sits beside it,
+`open()` returns the bare path and a later open renames it. A store born in
+11.1 or later leaves `bare` unset.
 
 A SQLite store whose schema grows inside one layout pins its history with
 `untaped.testing.assert_schema_pinned(ddl, version=, additive_since=,
@@ -175,7 +175,9 @@ pins=)`: a folder of `v<N>.sql` files, one per released schema, and a
 `pins.json` of their hashes. It fails when the DDL changed without a new
 version, when a released file was edited, and when a version claimed as
 additive changed an existing table or added a column an older writer cannot
-insert without (not null, no default).
+insert without (not null, no default). Review watches `pins.json`: a
+released pin is appended once and never edited, since editing a file and its
+pin together passes the check.
 
 ## Status rows and tests
 

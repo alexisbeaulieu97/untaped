@@ -9,7 +9,7 @@ authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14.1"
 dependencies = [
     "cyclopts>=4.16.0,<5",
-    "filelock>=3.29.7,<4",
+    "filelock>=3.32.5,<4",
     "httpx>=0.28.1",
     "packaging>=26.2,<27",
     "prompt-toolkit>=3.0.52",

@@ -107,3 +107,13 @@ def test_a_profile_still_naming_the_old_index_keeps_it(monkeypatch: pytest.Monke
 
     (keep,) = _index_row().preview(CTX, OPTIONS)
     assert keep.action == "keep" and "ansible.index_path" in keep.detail
+
+
+def test_an_11_0_index_awaiting_its_rename_keeps_the_10x_one() -> None:
+    old = _old_index()
+    _commit(SqliteDependencyIndex(_new().with_name("index.sqlite3")), scans=(_scan(),))
+
+    (keep,) = _index_row().preview(CTX, OPTIONS)
+    assert keep.action == "keep" and "becomes" in keep.detail
+    assert [o.action for o in _index_row().apply(CTX, OPTIONS)] == ["unchanged"]
+    assert old.is_file()

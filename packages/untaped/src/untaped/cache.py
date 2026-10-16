@@ -39,7 +39,6 @@ import importlib.metadata
 import importlib.util
 import json
 import logging
-import os
 import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
@@ -334,8 +333,8 @@ class Cache:
     another version is refreshed like an expired one. ``store`` ties the
     sidecars to a :class:`~untaped.store.Store`'s layout: they live under
     ``caches/<name>.v<layout>/``, so a key is never fresh over another
-    layout's file (a store that adopts its bare file adopts ``caches/<name>/``
-    on first use the same way). Two declarations with the same values (the
+    layout's file (a store that adopts its bare file renames ``caches/<name>/``
+    with it). Two declarations with the same values (the
     same ``version`` callable) are equal.
     """
 
@@ -390,6 +389,8 @@ class Cache:
                 f"cache {plugin}.{name}: store {store.qualified} belongs to another plugin"
             )
         self.store = store
+        if store is not None:
+            store._follow(name)  # its folder moves with the store's bare file
 
     def _identity(
         self,
@@ -711,28 +712,8 @@ class Cache:
         from untaped.plugins.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
         from untaped.profile_resolver import selected_profile  # noqa: PLC0415 - no cycle
 
-        caches = named_plugin_dir(self.plugin) / "caches"
-        return self._layout_folder(caches) / _segment(selected_profile())
-
-    def _layout_folder(self, caches: Path) -> Path:
-        """``caches/<name>/``, or ``caches/<name>.v<layout>/`` under a store.
-
-        A store that adopts its bare file adopts ``caches/<name>/`` too: the
-        first use renames it, so its keys stay as fresh as they were.
-        """
-        if self.store is None:
-            return caches / self.name
-        folder = caches / f"{self.name}.v{self.store.layout}"
-        bare = caches / self.name
-        if self.store.adopts and not folder.exists() and bare.is_dir() and not bare.is_symlink():
-            from untaped.migrations import move_group  # noqa: PLC0415 - imports the registry
-
-            try:
-                move_group(bare, folder, rename=os.rename)
-            except OSError:
-                # Another process renamed it first, or made the new folder meanwhile.
-                _LOG.debug("could not rename %s to %s", bare, folder, exc_info=True)
-        return folder
+        folder = self.name if self.store is None else f"{self.name}.v{self.store.layout}"
+        return named_plugin_dir(self.plugin) / "caches" / folder / _segment(selected_profile())
 
     @staticmethod
     def _key_paths(folder: Path, key: str) -> _KeyPaths:

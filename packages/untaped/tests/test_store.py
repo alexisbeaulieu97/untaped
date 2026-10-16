@@ -193,14 +193,30 @@ def test_the_lock_survives_garbage_collection(tmp_path: Path, lock_kind: str) ->
 def test_open_adopts_a_bare_file_of_its_own_layout(tmp_path: Path, lock_kind: str) -> None:
     base = tmp_path / "index.sqlite3"
     base.write_bytes(b"layout 4")
-    (tmp_path / "index.sqlite3-journal").write_bytes(b"journal")
 
     opened = _store(base, layout=4, bare=4).open()
 
     assert opened == tmp_path / "index.v4.sqlite3"
     assert opened.read_bytes() == b"layout 4"
-    assert (tmp_path / "index.v4.sqlite3-journal").read_bytes() == b"journal"
-    assert not base.exists() and not (tmp_path / "index.sqlite3-journal").exists()
+    assert not base.exists()
+
+
+@pytest.mark.parametrize("journal", ["-journal", "-wal"])
+def test_a_writer_mid_transaction_keeps_the_bare_file(
+    tmp_path: Path, lock_kind: str, journal: str
+) -> None:
+    """An 11.0 writer holds no lock: its journal says it is mid-transaction."""
+    base = tmp_path / "index.sqlite3"
+    base.write_bytes(b"layout 4")
+    Path(f"{base}{journal}").write_bytes(b"journal")
+    store = _store(base, layout=4, bare=4)
+
+    assert store.open() == base
+    assert Path(f"{base}{journal}").read_bytes() == b"journal"
+    assert not (tmp_path / "index.v4.sqlite3").exists()
+    _forget_opened()
+    Path(f"{base}{journal}").unlink()  # the transaction ended (reading it settles a crash's)
+    assert store.open() == tmp_path / "index.v4.sqlite3"
 
 
 def test_a_busy_layout_opens_the_bare_file_and_adopts_it_later(
@@ -259,24 +275,44 @@ def test_a_failed_rename_opens_the_bare_file(
     assert base.read_bytes() == b"layout 4"
 
 
-def test_a_rename_failing_after_the_journal_moved_puts_the_journal_back(
+def test_an_adoption_by_another_process_while_waiting_returns_the_layout(
     tmp_path: Path, lock_kind: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The exclusive side was busy because another process was renaming the bare file."""
     base = tmp_path / "index.sqlite3"
     base.write_bytes(b"layout 4")
-    (tmp_path / "index.sqlite3-journal").write_bytes(b"journal")
-    real = store_module.os.rename
+    target = tmp_path / "index.v4.sqlite3"
 
-    def refuse_the_file(old: Path, new: Path) -> None:
-        if Path(old) == base:
-            raise PermissionError("in use")
-        real(old, new)
+    def adopted_elsewhere(*_args: object) -> bool:
+        base.rename(target)  # the other process won the lock and renamed
+        return False
 
-    monkeypatch.setattr(store_module.os, "rename", refuse_the_file)
+    monkeypatch.setattr(store_module, "_adopt", adopted_elsewhere)
 
-    assert _store(base, layout=4, bare=4).open() == base
-    assert (tmp_path / "index.sqlite3-journal").read_bytes() == b"journal"
-    assert not (tmp_path / "index.v4.sqlite3-journal").exists()
+    assert _store(base, layout=4, bare=4).open() == target
+
+
+def test_the_inuse_file_outlives_its_readers(tmp_path: Path, lock_kind: str) -> None:
+    opened = _store(tmp_path / "x.db").open()
+    _forget_opened()
+    inuse = Path(f"{opened}.inuse") if lock_kind == "sqlite" else Path(f"{opened}.inuse.d")
+    assert inuse.exists()
+
+
+def test_a_damaged_inuse_file_leaves_the_layout_unprotected(tmp_path: Path) -> None:
+    store = _store(tmp_path / "x.db")
+    Path(f"{store.path()}.inuse").write_bytes(b"not a database, truncated by a full disk")
+
+    assert store.open() == store.path()
+
+
+def test_the_fallback_is_chosen_where_filelock_has_no_read_write_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import filelock
+
+    monkeypatch.setattr(filelock, "ReadWriteLock", None)
+    assert isinstance(_in_use(tmp_path / "x.db"), _FileInUse)
 
 
 def test_without_bare_nothing_is_adopted(tmp_path: Path, lock_kind: str) -> None:
@@ -322,24 +358,39 @@ def test_a_cache_following_a_store_keeps_its_sidecars_per_layout(tmp_path: Path)
     assert cache != Cache("acme", "data", label="data", max_age=timedelta(hours=1))
 
 
-def test_a_cache_adopts_its_bare_folder_with_its_store(tmp_path: Path) -> None:
+def test_a_cache_folder_moves_with_its_stores_bare_file(tmp_path: Path) -> None:
     data = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=4, bare=4)
-    cache = Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
+    Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
+    (tmp_path / "data.db").write_bytes(b"layout 4")
     (_caches() / "data" / "default").mkdir(parents=True)
     (_caches() / "data" / "default" / "k.json").write_text("{}", encoding="utf-8")
 
-    cache.freshness("k")
+    data.open()
 
     assert (_caches() / "data.v4" / "default" / "k.json").is_file()
     assert not (_caches() / "data").exists()
 
 
-def test_a_cache_at_another_layout_leaves_the_bare_folder(tmp_path: Path) -> None:
-    data = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=5, bare=4)
-    cache = Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
+def test_a_cache_folder_stays_when_its_file_does(tmp_path: Path) -> None:
+    data = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=4, bare=4)
+    Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
+    (tmp_path / "data.db").write_bytes(b"layout 4")
+    (tmp_path / "data.db-journal").write_bytes(b"mid-transaction")
     (_caches() / "data" / "default").mkdir(parents=True)
 
-    cache.freshness("k")
+    data.open()
+
+    assert (_caches() / "data" / "default").is_dir()
+    assert not (_caches() / "data.v4").exists()
+
+
+def test_a_cache_at_another_layout_leaves_the_bare_folder(tmp_path: Path) -> None:
+    data = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=5, bare=4)
+    Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
+    (tmp_path / "data.db").write_bytes(b"layout 4")
+    (_caches() / "data" / "default").mkdir(parents=True)
+
+    data.open()
 
     assert (_caches() / "data" / "default").is_dir()
     assert not (_caches() / "data.v5").exists()
