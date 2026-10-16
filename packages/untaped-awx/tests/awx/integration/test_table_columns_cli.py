@@ -336,3 +336,17 @@ def test_jobs_logs_follow_lists_columns_once_without_following(fake_aap: Any) ->
     assert result.stdout == ""
     assert result.stderr.count("available columns") == 1
     assert "  line" in result.stderr
+
+
+@pytest.mark.parametrize("follow", [[], ["--follow", "--format", "json"]])
+@pytest.mark.parametrize(("command", "default"), [("events", "  counter *"), ("logs", "  line *")])
+def test_jobs_events_and_logs_list_their_defaults_on_a_job_with_no_rows(
+    fake_aap: Any, follow: list[str], command: str, default: str
+) -> None:
+    fake_aap.seed("jobs", id=42, **{**_JOB, "status": "successful"})
+
+    result = _run("jobs", command, "42", *follow, "--columns", "?")
+
+    assert result.stdout == ""
+    assert "available columns (* = shown by default):" in result.stderr
+    assert default in result.stderr

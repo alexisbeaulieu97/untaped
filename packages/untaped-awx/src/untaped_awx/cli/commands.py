@@ -418,7 +418,8 @@ def jobs_events(
 
         drained, any_failed = resolve_each(ids, _events_for_id)
         if one_document and drained:
-            emit(rows, fmt=fmt, columns=cols)
+            # Named, so ``-c ?`` lists the defaults on a job with no events yet.
+            emit(rows, fmt=fmt, columns=cols, table_columns=JobEventRow.table_columns)
     finish(any_failed)
 
 
@@ -456,7 +457,12 @@ def _emit_events(
         # One-shot drain: collect everything then format as a single
         # table / json document so columns line up and yaml stays a
         # well-formed list.
-        emit([_event_row(ev, job_id) for ev in events], fmt=fmt, columns=cols)
+        emit(
+            [_event_row(ev, job_id) for ev in events],
+            fmt=fmt,
+            columns=cols,
+            table_columns=JobEventRow.table_columns,
+        )
         return
     if fmt == "table":
         # Table mode under --follow renders each event as a colored
@@ -492,7 +498,12 @@ def _emit_log_lines(
     ``cols=None`` means the whole ``{job, line}`` row, less ``job`` in a table.
     """
     if not follow:
-        emit([_log_row(line, job_id) for line in lines], fmt=fmt, columns=cols)
+        emit(
+            [_log_row(line, job_id) for line in lines],
+            fmt=fmt,
+            columns=cols,
+            table_columns=JobLogLine.table_columns,
+        )
         return
     # JSON streams as NDJSON (one bare object per line, no enclosing
     # array brackets) to match ``jobs events --follow --format json``
@@ -596,7 +607,8 @@ def jobs_logs(
 
         drained, any_failed = resolve_each(ids, _logs_for_id)
         if one_document and drained:
-            emit(rows, fmt=fmt, columns=cols)
+            # Named, so ``-c ?`` lists the defaults on a job with no lines yet.
+            emit(rows, fmt=fmt, columns=cols, table_columns=JobLogLine.table_columns)
     finish(any_failed)
 
 
