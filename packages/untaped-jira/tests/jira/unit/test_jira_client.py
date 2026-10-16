@@ -11,7 +11,7 @@ import respx
 from pydantic import SecretStr, ValidationError
 
 from untaped.sdk import ConfigError, HttpStatusError, get_config_section
-from untaped_jira.domain.models import ISSUE_DETAIL_FIELDS
+from untaped_jira.domain.parse import ISSUE_DETAIL_FIELDS
 from untaped_jira.errors import JiraError
 from untaped_jira.infrastructure import JiraClient
 from untaped_jira.settings import JiraSettings

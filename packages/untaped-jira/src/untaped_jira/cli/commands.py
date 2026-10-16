@@ -37,7 +37,6 @@ from untaped.sdk import (
 )
 from untaped_jira.cli._client import current_jira_settings, open_client
 from untaped_jira.domain import (
-    IssueOutcome,
     JiraIssueSearchFilters,
     browse_url,
     build_assignee_payload,
@@ -50,10 +49,10 @@ from untaped_jira.domain import (
     validate_project_key,
 )
 from untaped_jira.errors import JiraError
+from untaped_jira.records import Issue, IssueOutcome
 
 if TYPE_CHECKING:
     from untaped.sdk import OutputFormat
-    from untaped_jira.domain import IssueDetailResult
     from untaped_jira.infrastructure import JiraClient
 
 # One write request as previewed: method, path and its readable change lines.
@@ -145,9 +144,8 @@ TRANSITION_OUTCOME_COLUMNS = ["key", "transition_id", "action"]
 PROJECT_TABLE_COLUMNS = ["key", "name", "project_type_key"]
 BOARD_TABLE_COLUMNS = ["id", "name", "type"]
 SPRINT_TABLE_COLUMNS = ["id", "name", "state", "start_at", "end_at", "goal"]
-# Pipe records that carry an issue ``key`` a consumer can act on.
-ISSUE_KINDS = frozenset({"jira.issue", "jira.issue_outcome"})
-OUTCOME_KIND = "jira.issue_outcome"
+# Piped records that carry an issue ``key`` a consumer can act on.
+ISSUE_RECORDS = (Issue, IssueOutcome)
 
 _diag = Diagnostics()
 
@@ -176,7 +174,7 @@ def whoami_command(
     with report_errors():
         with open_client() as client, _diag.progress("Fetching authenticated user"):
             row = WhoAmI(client)()
-        emit(row, fmt=fmt, columns=columns, kind="jira.user")
+        emit(row, fmt=fmt, columns=columns)
 
 
 @issues_app.command(name="get")
@@ -200,7 +198,7 @@ def issue_get_command(
         resolved = [
             validate_issue_key(key)
             for key in read_identifiers(
-                list(keys or []), stdin=stdin, id_field="key", accept_kinds=ISSUE_KINDS
+                list(keys or []), stdin=stdin, id_field="key", accepts=ISSUE_RECORDS
             )
         ]
         single = not stdin and len(resolved) == 1
@@ -215,7 +213,6 @@ def issue_get_command(
                 _detail_view(rows[0]),
                 fmt=fmt,
                 columns=columns,
-                kind="jira.issue",
                 table_columns=ISSUE_DETAIL_COLUMNS,
             )
         else:
@@ -223,7 +220,6 @@ def issue_get_command(
                 rows[0] if single else rows,
                 fmt=fmt,
                 columns=columns,
-                kind="jira.issue",
                 table_columns=ISSUE_TABLE_COLUMNS,
             )
         if comments and fmt == "table":
@@ -231,19 +227,18 @@ def issue_get_command(
                 [comment for row in rows for comment in row.comments or []],
                 fmt=fmt,
                 table_columns=COMMENT_TABLE_COLUMNS if single else ISSUES_COMMENT_TABLE_COLUMNS,
-                kind="jira.comment",
                 empty="No comments found.",
             )
         finish(any_failed)
 
 
-def _detail_view(row: IssueDetailResult) -> dict[str, object]:
+def _detail_view(row: Issue) -> dict[str, object]:
     """The detail table's record: one readable line per link instead of raw dicts."""
     return {
         **row.model_dump(mode="json"),
         "links": "\n".join(
             f"{link.relation or link.type} {link.key} ({link.status}): {link.summary}"
-            for link in row.links
+            for link in row.links or ()
         ),
     }
 
@@ -269,7 +264,6 @@ def comment_list_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="jira.comment",
             empty="No comments found.",
             table_columns=COMMENT_TABLE_COLUMNS,
         )
@@ -311,7 +305,6 @@ def issue_search_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="jira.issue",
             empty="No issues match the query.",
             table_columns=ISSUE_TABLE_COLUMNS,
         )
@@ -352,7 +345,6 @@ def issue_assigned_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="jira.issue",
             empty="No issues assigned to you.",
             table_columns=ASSIGNED_TABLE_COLUMNS,
         )
@@ -421,7 +413,7 @@ def _send(
                 show(client)
         else:
             _show(preview)
-        emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+        emit(planned, fmt=fmt, columns=columns)
         return
     policy = current_jira_settings().confirm
     with open_client() as client:
@@ -435,7 +427,7 @@ def _send(
             )
         with _diag.progress(progress):
             row = send(client)
-    emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+    emit(row, fmt=fmt, columns=columns)
 
 
 @issues_app.command(name="create")
@@ -643,7 +635,6 @@ def issue_transitions_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="jira.transition",
             empty="No transitions available for this issue.",
             table_columns=TRANSITION_TABLE_COLUMNS,
         )
@@ -682,7 +673,7 @@ def issue_transition_command(
         resolved = [
             validate_issue_key(key)
             for key in read_identifiers(
-                list(keys or []), stdin=stdin, id_field="key", accept_kinds=ISSUE_KINDS
+                list(keys or []), stdin=stdin, id_field="key", accepts=ISSUE_RECORDS
             )
         ]
         settings = current_jira_settings()
@@ -747,7 +738,6 @@ def issue_transition_command(
             rows[0] if single and rows else rows,
             fmt=fmt,
             columns=columns,
-            kind=OUTCOME_KIND,
             table_columns=None if single else TRANSITION_OUTCOME_COLUMNS,
         )
         finish(resolve_failed or outcome.any_failed)
@@ -812,7 +802,6 @@ def project_list_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="jira.project",
             empty="No projects are visible to you.",
             table_columns=PROJECT_TABLE_COLUMNS,
         )
@@ -834,7 +823,7 @@ def project_get_command(
         key = validate_project_key(key)
         with open_client() as client, _diag.progress("Fetching project"):
             row = GetProject(client)(key)
-        emit(row, fmt=fmt, columns=columns, kind="jira.project")
+        emit(row, fmt=fmt, columns=columns)
 
 
 @boards_app.command(name="list")
@@ -869,7 +858,6 @@ def board_list_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="jira.board",
             empty="No boards match the filter.",
             table_columns=BOARD_TABLE_COLUMNS,
         )
@@ -903,7 +891,6 @@ def sprint_list_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="jira.sprint",
             empty="No sprints found for this board.",
             table_columns=SPRINT_TABLE_COLUMNS,
         )
