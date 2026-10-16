@@ -55,6 +55,7 @@ class KnobsProfile(BaseModel):
         default=False, description="The old switch."
     )
     sweep: KnobsSweep = Field(default_factory=KnobsSweep)
+    secret: SecretStr | None = Field(default=None, description="A secret.")
 
 
 def _knobs() -> PluginSpec:
@@ -115,6 +116,7 @@ def test_rows_say_where_each_value_comes_from(
         ("tags", "[]", "default"),
         ("probe", "2", "default"),
         ("sweep.parallel", "4", "default"),
+        ("secret", "", "unset"),
     ]  # the deprecated `legacy` is listed only once it is set
     assert run.model.panes["knobs"].rows[4].marks == ("experimental",)
     # The help under the rows: the description (as plain text), bounds, default and variable.
@@ -346,7 +348,6 @@ def test_quitting_reports_each_written_key() -> None:
 def test_a_field_written_back_untouched_writes_nothing(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, variable: str | None, down: int
 ) -> None:
-    write_config(_isolated_config, _WORK)
     if variable is not None:
         monkeypatch.setenv("UNTAPED_KNOBS__SIZE", variable)
     write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
@@ -358,6 +359,18 @@ def test_a_field_written_back_untouched_writes_nothing(
     assert _isolated_config.read_text(encoding="utf-8") == before
     assert run.result is not None
     assert run.result.written == () and run.result.notes == ()
+
+
+def test_an_empty_secret_field_keeps_the_stored_secret(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {secret: s3cr3t}\n")
+    before = _isolated_config.read_text(encoding="utf-8")
+
+    keys = [*_to("knobs"), "end", "enter", "enter"]
+    run = drive_screen(_build(), keys)
+
+    assert run.commands_run == ("open_field",)
+    assert _isolated_config.read_text(encoding="utf-8") == before
+    assert run.model.panes["knobs"].editing is None
 
 
 @pytest.mark.parametrize("typed", ["0", ""], ids=["invalid", "empty"])

@@ -43,7 +43,10 @@ its value and where it comes from (`profile:work`, `profile:default`,
 under the rows is the focused setting's description, its bounds, its built-in
 default and its variable. Enter opens a setting's field and enter writes it,
 exactly as `config set` would, with the same error when the value is invalid;
-esc closes it unchanged, and an empty field unsets the setting. `delete` (or
+esc closes it unchanged, and an empty field unsets the setting. A secret's
+field opens empty, so leaving it empty keeps the secret. Writing back the
+value a field opened with changes nothing, so an inherited or default value
+stays inherited; `config set` writes it into the profile. `delete` (or
 `backspace`) unsets a setting the profile sets, once you answer `y`. Lists
 and maps show read-only for now: set them with `config set`.
 
