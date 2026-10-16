@@ -249,8 +249,10 @@ files, the selected profile, every section, unknown keys, renamed, retired or
 deprecated keys in any profile, a `pass` token command that gpg cannot serve
 here, installed skills and each plugin's own checks. `--online` also
 authenticates against each configured service. A failed check makes it exit
-nonzero; a `warn` row does not. To write a profile's service settings
-interactively, see [Getting started](./getting-started.md#set-up-your-services).
+nonzero; a `warn` row does not. To browse and write a profile's settings
+interactively, its services' URLs and tokens included, see
+[Getting started](./getting-started.md#set-up-your-services): `untaped setup`
+writes each setting through the same code as `config set`.
 
 ## TLS and shared UI settings
 

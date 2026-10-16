@@ -62,7 +62,7 @@ def _setup(backend: ScriptedPromptBackend | None, *args: str, terminal: bool = T
 
 def _keys(url: str, *, token: str | None = None, right: int = 0) -> list[ScreenKey]:
     """List -> form: the URL, the token tab (``right`` steps in), its field, then save."""
-    keys: list[ScreenKey] = ["enter", "ctrl-u", Paste(url), "tab", *(["right"] * right)]
+    keys: list[ScreenKey] = ["enter", "enter", "ctrl-u", Paste(url), "tab", *(["right"] * right)]
     if token is not None:
         keys += ["tab", Paste(token)]
     return [*keys, "enter"]
@@ -123,7 +123,7 @@ def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    backend = _scripted(*_keys("https://wiz", token=" tok "), "esc")
+    backend = _scripted(*_keys("https://wiz", token=" tok "), "esc", "esc")
 
     result = _setup(backend)
 
@@ -152,7 +152,9 @@ def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
 
 def test_setup_ends_with_the_checklist(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
-    backend = _scripted("enter", "ctrl-u", Paste("https://wiz"), "tab", "right", "enter", "esc")
+    backend = _scripted(
+        "enter", "enter", "ctrl-u", Paste("https://wiz"), "tab", "right", "enter", "esc", "esc"
+    )
     root = bootstrap.build_root_app(candidates=(plugin_candidate(_wiz_spec()),))
 
     result = invoke_cli(
@@ -172,7 +174,7 @@ def test_a_failed_check_saved_anyway_fails_setup_and_names_the_fix(
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
     # The check fails; tab goes to the buttons and enter saves anyway.
-    backend = _scripted(*_keys("https://wiz", token="bad"), "tab", "enter", "esc")
+    backend = _scripted(*_keys("https://wiz", token="bad"), "tab", "enter", "esc", "esc")
 
     result = _setup(backend)
 
@@ -188,7 +190,7 @@ def test_a_failed_check_cancelled_writes_nothing(
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
-    backend = _scripted(*_keys("https://wiz", token="bad"), "tab", "right", "enter", "esc")
+    backend = _scripted(*_keys("https://wiz", token="bad"), "tab", "right", "enter", "esc", "esc")
 
     result = _setup(backend)
 
@@ -264,11 +266,11 @@ def test_only_lists_just_those_services(_isolated_config: Path) -> None:
     assert [row.name for row in model.rows] == ["this install", "wiz"]
 
 
-def test_only_rejects_a_name_that_is_not_a_service(_isolated_config: Path) -> None:
-    result = _setup(ScriptedPromptBackend(), "--only", "plain")
+def test_only_rejects_a_name_that_is_not_a_section(_isolated_config: Path) -> None:
+    result = _setup(ScriptedPromptBackend(), "--only", "nope")
 
     assert result.exit_code == 2
-    assert "service not found: 'plain'; known: wiz" in result.stderr
+    assert "section not found: 'nope'" in result.stderr
 
 
 # --- post-processing of the screen's result ---------------------------------------
@@ -329,3 +331,30 @@ def test_rows_cover_only_the_touched_plugins(_isolated_config: Path) -> None:
     )
 
     assert {row["plugin"] for row in json.loads(result.stdout)} == {"wiz"}
+
+
+def test_written_keys_print_with_no_doctor_rows(_isolated_config: Path) -> None:
+    line = "set plain.token in profile default (config: x)"
+    done = SetupResult("default", (), (("success", line),), written=("plain.token",))
+
+    result = _setup(ScriptedPromptBackend(screens=[done]))
+
+    assert result.exit_code == 0, result.output
+    assert line in result.stderr
+    assert "nothing saved" not in result.stderr
+    assert result.stdout == ""
+
+
+def test_setup_opens_without_a_service(_isolated_config: Path) -> None:
+    plain = make_spec("plain", settings=ExtProfile)
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(plain),))
+    backend = _scripted("esc")
+
+    result = invoke_cli(
+        root.meta, ["setup"], interactive=True, prompt_backend=backend, terminal=True
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "nothing saved; no changes made" in result.stderr
+    model, _ = backend.ran[0].init()
+    assert "plain" in [row.name for row in model.rows]

@@ -78,3 +78,24 @@ def test_unset_works_on_the_named_profile(_config: Path) -> None:
     profiles = read_config_dict(_config)["profiles"]
     assert profiles["default"] == {"demo": {"page_size": 1}}
     assert not profiles["work"].get("demo")
+
+
+def test_set_refuses_a_value_changed_since_it_was_read(_config: Path) -> None:
+    _config.write_text("profiles:\n  default:\n    demo: {page_size: 5}\n", encoding="utf-8")
+    use_case = SetSetting(SettingsFileRepository())
+    expected = use_case.current("demo.page_size", profile="default")
+    assert expected == 5
+    use_case("demo.page_size", "6", profile="default")  # another writer
+
+    with pytest.raises(ConfigError, match="changed in profile default while it was open") as exc:
+        use_case("demo.page_size", "7", profile="default", expected=expected)
+
+    assert exc.value.category == "conflict"
+    assert read_config_dict(_config)["profiles"]["default"]["demo"] == {"page_size": 6}
+    use_case("demo.page_size", "8", profile="default", expected=6)  # read again: it writes
+    assert read_config_dict(_config)["profiles"]["default"]["demo"] == {"page_size": 8}
+
+
+def test_current_is_none_for_a_profile_that_does_not_exist(_config: Path) -> None:
+    _config.write_text("profiles:\n  default: {}\n", encoding="utf-8")
+    assert SetSetting(SettingsFileRepository()).current("demo.page_size", profile="new") is None
