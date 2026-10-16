@@ -66,7 +66,7 @@ DEPRECATION_SHAPES = re.compile(
 
 _DEPRECATION_HINT = (
     "build it from the mark: deprecated(removed_in=…), deprecated_alias(…, removed_in=…), "
-    "Renamed(…, removed_in=…)"
+    "Renamed(…, removed_in=…), deprecated_behaviour(…, removed_in=…)"
 )
 
 

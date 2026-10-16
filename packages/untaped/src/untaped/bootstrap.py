@@ -82,7 +82,14 @@ from untaped.settings import (
 )
 from untaped.shell_settings import ShellProfileSettings
 from untaped.skills import InstallableSkill
-from untaped.stability import apply_marks, bind_owners, mark_app, panel_for
+from untaped.stability import (
+    DeprecatedBehaviour,
+    apply_marks,
+    bind_behaviours,
+    bind_owners,
+    mark_app,
+    panel_for,
+)
 from untaped.verbose import reset as _reset_verbose
 
 #: Unified executable name; also the identity reported before dispatch selects
@@ -98,6 +105,12 @@ SHELL_DISTRIBUTION = "untaped"
 
 def _shell_app() -> App:
     return App(name=SHELL_NAME, help="Unified untaped developer CLI.")
+
+
+def _shell_deprecations() -> Sequence[DeprecatedBehaviour]:
+    from untaped.auth import PLAINTEXT_TOKEN  # noqa: PLC0415 - off the composition path
+
+    return (PLAINTEXT_TOKEN,)
 
 
 #: The root application. A singleton so repeated
@@ -120,6 +133,7 @@ SHELL_SPEC = ApplicationSpec(
             ),
         ),
     ),
+    deprecations=_shell_deprecations,
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -134,9 +148,11 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
     Runs after validation succeeds, so a plugin that fails any check
     registers nothing, and again whenever the registry is rebuilt for the
     remembered composition (:func:`_reregister`). Each plugin's distribution
-    is bound as the owner its deprecations name.
+    is bound as the owner its deprecations name, and its listed behaviours
+    as its own (read only when one of them first warns).
     """
     bind_owners({plugin.spec.name: plugin.plugin_ref.distribution for plugin in result.plugins})
+    bind_behaviours({plugin.spec.name: plugin.spec.deprecations for plugin in result.plugins})
     register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
     if SHELL_SPEC.state is not None:
         register_state_settings(SHELL_SPEC.section, SHELL_SPEC.state)
@@ -230,6 +246,7 @@ def _reregister() -> None:
         _register_shell_and_plugins(_COMPOSED_RESULT)
     else:
         bind_owners({})
+        bind_behaviours({})
 
 
 def composition() -> CompositionResult:

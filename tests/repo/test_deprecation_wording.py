@@ -43,8 +43,9 @@ def test_core_types_no_deprecation_sentence() -> None:
     found = core_violations()
     assert not found, (
         "every deprecation is a promise with a date, so its sentence comes from its mark "
-        "(deprecated(removed_in=…), deprecated_alias(…, removed_in=…), Renamed(…, removed_in=…)) "
-        "or untaped.messages:\n" + "\n".join(f"  {line}" for line in found)
+        "(deprecated(removed_in=…), deprecated_alias(…, removed_in=…), Renamed(…, removed_in=…), "
+        "deprecated_behaviour(…, removed_in=…)) or untaped.messages:\n"
+        + "\n".join(f"  {line}" for line in found)
     )
 
 
@@ -69,7 +70,7 @@ def test_a_planted_sentence_fails(tmp_path: Path) -> None:
     assert core_violations(package) == [
         "untaped/m.py::hand-typed-deprecation::x is deprecated and will be removed in 12.0: "
         "build it from the mark: deprecated(removed_in=…), deprecated_alias(…, removed_in=…), "
-        "Renamed(…, removed_in=…)"
+        "Renamed(…, removed_in=…), deprecated_behaviour(…, removed_in=…)"
     ]
 
 
@@ -79,3 +80,21 @@ def test_a_planted_prose_line_fails_and_a_fenced_one_passes() -> None:
         "It is kept until 12.0.\n"
     )
     assert prose_versions(text) == ["It is kept until 12.0."]
+
+
+#: Where core still allows a hand-typed sentence: the hidden-flag help, until #557 marks flags.
+ALLOWED_MARKERS = frozenset({CORE / "surface" / "_cli.py"})
+
+
+def test_core_allows_no_hand_typed_sentence() -> None:
+    marker = "untaped: allow hand-typed-deprecation"
+    found = [
+        str(file.path.relative_to(REPO_ROOT))
+        for file in source_files(CORE)
+        if file.path not in ALLOWED_MARKERS and any(marker in line for line in file.lines)
+    ]
+    assert not found, (
+        "core builds every deprecation sentence from a mark, so it needs no allow marker; "
+        "a behaviour uses deprecated_behaviour(...).sentence or .notify:\n"
+        + "\n".join(f"  {path}" for path in found)
+    )

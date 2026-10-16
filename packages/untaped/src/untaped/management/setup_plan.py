@@ -17,7 +17,13 @@ from __future__ import annotations
 import shlex
 import shutil
 
-from untaped.auth import takes_token_command, token_env_names, token_instead
+from untaped.auth import (
+    PLAINTEXT_TOKEN,
+    plaintext_subject,
+    takes_token_command,
+    token_env_names,
+    token_instead,
+)
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
@@ -172,7 +178,9 @@ def _token_row(
     settings = settings_model(spec).model_construct()
     if state.plaintext is not None or state.inherited_token:
         holder = profile if state.plaintext is not None else DEFAULT_PROFILE
-        detail = f"{section}.token is stored in plain text in profile {holder}"
+        # Each branch names its own way out, so the sentence names none.
+        subject = plaintext_subject(section, f"profile {holder}")
+        detail = PLAINTEXT_TOKEN.sentence(subject, replacement=None)
         if takes_command and store_name is not None:
             # `auth migrate` moves every profile's plaintext tokens.
             run = command_argv("auth migrate", profile=profile)

@@ -1,4 +1,5 @@
 # untaped surface 2
+behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
 cfg ansible.caches.index.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
@@ -4602,6 +4603,19 @@ sdk untaped.sdk.Deprecated(removed_in=) default=None
 sdk untaped.sdk.Deprecated(replacement=) default=None callback(*)
 sdk untaped.sdk.Deprecated.removed_in
 sdk untaped.sdk.Deprecated.replacement
+sdk untaped.sdk.DeprecatedBehaviour(name, mark)
+sdk untaped.sdk.DeprecatedBehaviour.id
+sdk untaped.sdk.DeprecatedBehaviour.mark
+sdk untaped.sdk.DeprecatedBehaviour.name
+sdk untaped.sdk.DeprecatedBehaviour.notify(hint=) default=None
+sdk untaped.sdk.DeprecatedBehaviour.notify(replacement=) default=<computed>
+sdk untaped.sdk.DeprecatedBehaviour.notify(subject, *, key)
+sdk untaped.sdk.DeprecatedBehaviour.replacement
+sdk untaped.sdk.DeprecatedBehaviour.sentence(replacement=) default=<computed>
+sdk untaped.sdk.DeprecatedBehaviour.sentence(subject)
+sdk untaped.sdk.DeprecatedBehaviour.warn(replacement=) default=<computed>
+sdk untaped.sdk.DeprecatedBehaviour.warn(stacklevel=) default=2
+sdk untaped.sdk.DeprecatedBehaviour.warn(subject)
 sdk untaped.sdk.Diagnostic(*, message)
 sdk untaped.sdk.Diagnostic(hint=) default=None
 sdk untaped.sdk.Diagnostic.__init_subclass__(kind=) default=None
@@ -5139,6 +5153,7 @@ sdk untaped.sdk.PluginContext.settings
 sdk untaped.sdk.PluginSpec(app_factory@2=) default=None callback(0)
 sdk untaped.sdk.PluginSpec(caches@12=) default=[]
 sdk untaped.sdk.PluginSpec(contracts@9=) default=<computed> callback(0)
+sdk untaped.sdk.PluginSpec(deprecations@14=) default=<computed> callback(0)
 sdk untaped.sdk.PluginSpec(doctor_checks@6=) default=[]
 sdk untaped.sdk.PluginSpec(help@7=) default=None
 sdk untaped.sdk.PluginSpec(migrations@11=) default=[]
@@ -5152,6 +5167,7 @@ sdk untaped.sdk.PluginSpec(stores@13=) default=[]
 sdk untaped.sdk.PluginSpec.app_factory
 sdk untaped.sdk.PluginSpec.caches
 sdk untaped.sdk.PluginSpec.contracts()
+sdk untaped.sdk.PluginSpec.deprecations()
 sdk untaped.sdk.PluginSpec.doctor_checks
 sdk untaped.sdk.PluginSpec.help
 sdk untaped.sdk.PluginSpec.migrations
@@ -5665,6 +5681,8 @@ sdk untaped.sdk.deprecated(removed_in=) default=None
 sdk untaped.sdk.deprecated(replacement=) default=None callback(*)
 sdk untaped.sdk.deprecated_alias(app, old, new)
 sdk untaped.sdk.deprecated_alias(removed_in=) default=None
+sdk untaped.sdk.deprecated_behaviour(name, *, removed_in)
+sdk untaped.sdk.deprecated_behaviour(replacement=) default=None
 sdk untaped.sdk.dir_bytes(path)
 sdk untaped.sdk.echo()
 sdk untaped.sdk.echo(err=) default=false
