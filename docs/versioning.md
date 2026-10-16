@@ -67,6 +67,10 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - `awx test`: its commands, the suite file format, the `awx.test_case` and
   `awx.test_result` records, and the `awx.test_timeout_seconds` and
   `awx.test_parallel` settings with their environment variables.
+- `awx lint`: its options, the `awx.resources` record and the rule ids awx
+  declares, `untaped_awx.api` (the snapshot models, the document views, the
+  rule constants, `target_of` and `location_of`; `Resource`, `Metadata` and
+  `IdentityRef` excepted) and `untaped_awx.testing`.
 - `workspace`: its commands, record kinds, the `workspace.*` settings, and the
   `UNTAPED_*` variables `workspace run` sets.
 - `dotfiles`: its commands, the `dotfiles.yml` manifest, its record kinds,

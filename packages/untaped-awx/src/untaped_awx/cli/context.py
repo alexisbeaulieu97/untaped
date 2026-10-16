@@ -77,6 +77,11 @@ class AwxContext:
         return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout, warn=self._warn)
 
     @property
+    def profile(self) -> str:
+        """The profile this run acts on; a store kept per profile names its file by it."""
+        return self._context.profile
+
+    @property
     def diag(self) -> Diagnostics:
         """The stderr handle for messages, failures and progress."""
         return self._context.diag
