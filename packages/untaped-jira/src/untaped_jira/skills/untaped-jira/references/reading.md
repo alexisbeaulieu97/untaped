@@ -15,10 +15,12 @@
 
 ## What comes back
 
-- Search rows hold the fields most triage needs; `--columns '?'` lists them.
-  `url` opens in a browser; `api_url` is the REST address.
-- `issues get` adds the detail fields. `comments` is `null` unless
-  `--comments` fetched them.
+- Search rows fill the fields most triage needs, `key` to `priority`;
+  `--columns '?'` lists every field. `url` opens in a browser; `api_url` is
+  the REST address.
+- `issues get` also fills the detail fields, `reporter` to `links`; search
+  rows leave them `null`. `comments` is `null` unless `--comments` fetched
+  them.
 - Timestamps are UTC, as `2026-01-02T03:04:05.123000Z` in JSON, YAML and
   pipe, and to the second in tables.
 - One issue renders as a key: value view in a table and as a single JSON

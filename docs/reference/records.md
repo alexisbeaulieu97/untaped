@@ -95,7 +95,7 @@ a step that asks for or reveals a token, else `agent`.
 | Command | Writes |
 |---|---|
 | `jira whoami` | `jira.user` |
-| `jira issues get`, `issues search`, `issues assigned` | `jira.issue` |
+| `jira issues get`, `issues search`, `issues assigned` | `jira.issue` (`search` and `assigned` fill `key` to `priority` and leave the detail fields, `reporter` to `comments`, `null`; `comments` is `null` unless `get --comments` fetched them) |
 | `jira issues create`, `patch`, `comment`, `transition`, `links create` | `jira.issue_outcome` |
 | `jira issues comments list` | `jira.comment` |
 | `jira issues transitions` | `jira.transition` |

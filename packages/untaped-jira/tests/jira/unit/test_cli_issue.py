@@ -97,6 +97,7 @@ def test_issue_get_shows_detail_fields() -> None:
 
 
 def test_issue_search_rows_stay_lean() -> None:
+    """Search fetches only the row fields; the detail fields ``issues get`` fills are null."""
     with respx.mock(base_url=BASE) as mock:
         route = mock.post("/rest/api/2/search").mock(return_value=_search("ABC-1"))
         result = CliInvoker().invoke(
@@ -105,17 +106,8 @@ def test_issue_search_rows_stay_lean() -> None:
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
-    assert set(row) == {
-        "key",
-        "summary",
-        "status",
-        "assignee",
-        "updated_at",
-        "url",
-        "api_url",
-        "issue_type",
-        "priority",
-    }
+    detail = ["reporter", "labels", "created_at", "resolution", "description", "links", "comments"]
+    assert {name: row[name] for name in detail} == dict.fromkeys(detail)
     body = json.loads(route.calls[0].request.content)
     assert body["fields"] == ["summary", "status", "assignee", "updated", "issuetype", "priority"]
 
