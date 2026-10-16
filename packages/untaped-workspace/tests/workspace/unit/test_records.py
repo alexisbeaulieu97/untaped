@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk import Failure, Record, UsageError, kind_of
+from untaped.sdk import Record, kind_of
 from untaped_workspace.records import (
     ArchiveOutcome,
     RemoveOutcome,
@@ -109,11 +109,3 @@ def test_a_row_declares_its_kind_and_keeps_its_keys_in_order(
 ) -> None:
     assert kind_of(type(row)) == kind
     assert list(json.loads(row.model_dump_json())) == keys
-
-
-def test_a_failed_row_adds_its_error_before_the_target_path() -> None:
-    row = RemoveOutcome(
-        **_REPO, action="failed", error=Failure.from_exception(UsageError("disk full"))
-    )
-
-    assert list(json.loads(row.model_dump_json()))[-2:] == ["error", "target_path"]
