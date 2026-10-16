@@ -307,14 +307,17 @@ def test_a_list_a_variable_sets_opens_with_its_items(monkeypatch: pytest.MonkeyP
     assert isinstance(editing, ListEditor) and editing.value == ("from-env",)
 
 
-@pytest.mark.parametrize(("width", "height"), [(58, 12), (78, 12), (58, 10), (40, 16)])
+@pytest.mark.parametrize(
+    ("width", "height", "error"),
+    [(58, 12, ""), (78, 12, ""), (58, 10, ""), (40, 16, ""), (58, 14, "x " * 60)],
+)
 def test_an_open_list_editor_fits_its_pane_with_its_help(
-    _isolated_config: Path, width: int, height: int
+    _isolated_config: Path, width: int, height: int, error: str
 ) -> None:
     tags = ", ".join(f"t{index}" for index in range(20))
     write_config(_isolated_config, f"profiles:\n  default:\n    knobs: {{tags: [{tags}]}}\n")
     run = drive_screen(_build(), [*_to("knobs"), "down", "down", "down", "enter"])
-    pane = run.model.panes["knobs"]
+    pane = run.model.panes["knobs"].with_error(error)
 
     frame = Frame(width, height, BUILTIN_THEMES["default"])
     drawn = Console(width=width, record=True).render_lines(

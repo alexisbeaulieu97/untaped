@@ -622,7 +622,8 @@ class ListEditor:
             case Key(name):
                 edited = buffer.key(name)
             case Paste(text) if self.cursor == len(self.items) and "\n" in text.strip():
-                return self._pasted(text)
+                before, after = buffer.text[: buffer.cursor], buffer.text[buffer.cursor :]
+                return self._pasted(before + text + after)
             case Paste(text):
                 edited = buffer.paste(text)
             case _:
@@ -632,11 +633,15 @@ class ListEditor:
         return replace(self, editing=edited, error="")
 
     def _pasted(self, text: str) -> Self:
-        """Lines pasted into a new item: one item each, blank lines left out."""
-        lines = tuple(line.strip() for line in text.splitlines() if line.strip())
-        refused = next((e for e in map(self.validator or (lambda _: ""), lines) if e), "")
-        if refused:
-            return replace(self, error=refused)
+        """Lines pasted into a new item (with what was typed there): one item each, blanks left out.
+
+        A refused line keeps them all out, and its error names it.
+        """
+        lines = tuple(line for line in text.splitlines() if line.strip())
+        check = self.validator or (lambda _: "")
+        refused = next(((line, error) for line in lines if (error := check(line))), None)
+        if refused is not None:
+            return replace(self, error=f"{refused[0]!r}: {refused[1]}")
         items = (*self.items, *lines)
         return replace(self, items=items, cursor=len(items), editing=None, error="")
 

@@ -42,7 +42,7 @@ from untaped.management.setup_write import write_setting
 from untaped.messages import command_line
 from untaped.plugins.registry import PluginSpec
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
-from untaped.screen.components.draw import option_row, role_style
+from untaped.screen.components.draw import note_lines, option_row, role_style
 from untaped.screen.components.fields import Field
 from untaped.screen.components.lists import ListEditor
 from untaped.screen.core import Cmd, Frame, Key
@@ -367,10 +367,10 @@ class SectionPane:
         below = _BELOW
         if isinstance(editing, ListEditor):
             # The editor takes the room it needs, down to one row of settings above it.
-            chrome = (2 if frame.box() is None else 3) + _note_lines(
+            chrome = (2 if frame.box() is None else 3) + note_lines(
                 editing.error or editing.help, inner
             )
-            chrome += _note_lines(self.error, inner)
+            chrome += note_lines(self.error, inner)
             items = min(len(editing.items) + 2, max(3, frame.height - 1 - chrome))
             editing = replace(editing, window_rows=items)
             below = items + chrome
@@ -424,18 +424,6 @@ class SectionPane:
         if cell_len(row.value) > inner - key_width - 2 - trail:
             lines.insert(0, Text(row.value, style=role_style(frame, "screen.value")))
         return lines
-
-
-def _note_lines(text: str, width: int) -> int:
-    """The lines ``text`` wraps to ``width`` cells wide (none when empty)."""
-    lines, used = 0, width
-    for word in text.split():
-        cells = cell_len(word)
-        if used + 1 + cells > width:  # a word wraps as a whole, as rich wraps it
-            lines, used = lines + 1 + (cells - 1) // max(width, 1), cells % max(width, 1)
-        else:
-            used += 1 + cells
-    return lines
 
 
 def _moved(name: str, cursor: int, count: int) -> int:

@@ -94,6 +94,16 @@ def test_lines_pasted_into_a_new_item_become_one_item_each() -> None:
     assert field_of(run).editing is None
 
 
+def test_a_paste_keeps_what_was_typed_and_names_a_refused_line() -> None:
+    typed = run_solo(_list(), "enter", "x", Paste("b\nc"))
+    refusing = _list(validator=lambda text: "no spaces" if " " in text else "")
+    refused = run_solo(refusing, "enter", Paste("b\nc d"))
+
+    assert field_of(typed).value == ("xb", "c")
+    assert field_of(refused).value == ()
+    assert field_of(refused).error == "'c d': no spaces"
+
+
 def test_enter_on_done_and_esc_are_left_to_the_screen() -> None:
     done = _list("a", cursor=2)
 
