@@ -7,11 +7,12 @@ terminal rendering (or interactive prompt) stack into every import path.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Literal
+from collections.abc import Callable, Mapping
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
+from untaped.config_schema import Choices, field_choices
 from untaped.errors import ConfigError
 
 BorderStyle = Literal["rounded", "square", "ascii", "none"]
@@ -171,42 +172,60 @@ class UiSettings(BaseModel):
     option (``UNTAPED_FORMAT`` wins over it; an explicit flag wins over both).
     """
 
-    theme: str = "default"
-    format: OutputFormat | None = None
-    border: BorderStyle | None = None
-    density: Density | None = None
-    collection_view: CollectionView | None = None
-    detail_view: DetailView | None = None
-    hide_empty_columns: bool | None = None
-    symbols: dict[str, str] = Field(default_factory=dict)
-    color_roles: dict[str, str] = Field(default_factory=dict)
+    theme: Annotated[str, Choices(lambda: BUILTIN_THEMES, "themes", noun="UI theme")] = Field(
+        default="default", description="Built-in theme."
+    )
+    format: OutputFormat | None = Field(
+        default=None,
+        description=(
+            "Default `--format` for commands whose default is `table`. "
+            "`UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both."
+        ),
+    )
+    border: BorderStyle | None = Field(
+        default=None, description="Table border style; overrides the theme."
+    )
+    density: Density | None = Field(default=None, description="Table density; overrides the theme.")
+    collection_view: CollectionView | None = Field(
+        default=None, description="How lists render in `table` format; overrides the theme."
+    )
+    detail_view: DetailView | None = Field(
+        default=None,
+        description="How a single record renders in `table` format; overrides the theme.",
+    )
+    hide_empty_columns: bool | None = Field(
+        default=None,
+        description=(
+            "Leave out `table` columns that are empty on every row (on unless the "
+            "theme turns it off); a column named in `--columns` always shows."
+        ),
+    )
+    symbols: Annotated[dict[str, str], Choices(lambda: SYMBOL_NAMES, "symbols")] = Field(
+        default_factory=dict, description="Symbol overrides merged over the theme's symbols."
+    )
+    color_roles: Annotated[dict[str, str], Choices(lambda: ROLE_NAMES, "color roles")] = Field(
+        default_factory=dict, description="Color-role overrides merged over the theme's colors."
+    )
 
-    @field_validator("symbols")
+    @field_validator("*")
     @classmethod
-    def _declared_symbols_on_write(
-        cls, value: dict[str, str], info: ValidationInfo
-    ) -> dict[str, str]:
-        _reject_undeclared_on_write(info, "symbols", value, SYMBOL_NAMES)
-        return value
+    def _declared_names_on_write(cls, value: object, info: ValidationInfo) -> object:
+        """Refuse a name outside a field's :class:`Choices`, on write only.
 
-    @field_validator("color_roles")
-    @classmethod
-    def _declared_roles_on_write(
-        cls, value: dict[str, str], info: ValidationInfo
-    ) -> dict[str, str]:
-        _reject_undeclared_on_write(info, "color_roles", value, ROLE_NAMES)
-        return value
-
-    @field_validator("theme")
-    @classmethod
-    def _known_theme_on_write(cls, value: str, info: ValidationInfo) -> str:
+        Loading stays lenient (doctor reports a stray). With a written key in
+        the context, only that key is checked, so a stray already on disk never
+        blocks writing another ``ui`` key.
+        """
         context = info.context
-        if (
-            isinstance(context, dict)
-            and context.get(CONFIG_WRITE_CONTEXT)
-            and value not in BUILTIN_THEMES
-        ):
-            raise ValueError(f"unknown UI theme {value!r}; valid themes: {_valid_themes()}")
+        choices = field_choices(cls.model_fields[info.field_name or ""])
+        if choices is None or not (isinstance(context, dict) and context.get(CONFIG_WRITE_CONTEXT)):
+            return value
+        written = context.get(CONFIG_WRITTEN_KEY_CONTEXT)
+        if written is not None and written != f"ui.{info.field_name}":
+            return value
+        refusal = choices.refusal(value)
+        if refusal is not None:
+            raise ValueError(refusal)
         return value
 
     def apply_to(self, theme: ThemeSpec) -> ThemeSpec:
@@ -281,45 +300,22 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
 }
 
 
-def _undeclared(names: Iterable[str], declared: Sequence[str]) -> list[str]:
-    return sorted(name for name in names if name not in declared)
-
-
-_TOKEN_LABELS = {"symbols": "symbols", "color_roles": "color roles"}
-
-
-def _undeclared_message(
-    field: str, names: list[str], declared: Sequence[str], *, prefix: bool
-) -> str:
-    stray = ", ".join(f"ui.{field}.{name}" if prefix else name for name in names)
-    return f"unknown name {stray}. Valid {_TOKEN_LABELS[field]}: {', '.join(sorted(declared))}"
-
-
-def _reject_undeclared_on_write(
-    info: ValidationInfo, field: str, value: Mapping[str, str], declared: Sequence[str]
-) -> None:
-    context = info.context
-    if not (isinstance(context, dict) and context.get(CONFIG_WRITE_CONTEXT)):
-        return
-    written = context.get(CONFIG_WRITTEN_KEY_CONTEXT)
-    if written is not None and written != f"ui.{field}":
-        return
-    names = _undeclared(value, declared)
-    if names:
-        raise ValueError(_undeclared_message(field, names, declared, prefix=False))
-
-
 def check_declared_tokens(ui: UiSettings) -> None:
-    """Raise :class:`ConfigError` naming any ``ui.symbols``/``ui.color_roles`` stray.
+    """Raise :class:`ConfigError` naming any stray key of a mapping with :class:`Choices`.
 
-    The message lists the valid names. ``doctor`` calls it; ``config set``
-    reaches the same rule through :class:`UiSettings`'s write-time validators.
+    That is ``ui.symbols`` and ``ui.color_roles``; the message lists the valid
+    names. ``doctor`` calls it; ``config set`` reaches the same rule through
+    :class:`UiSettings`' write-time validator.
     """
     problems = []
-    for field, declared in (("symbols", SYMBOL_NAMES), ("color_roles", ROLE_NAMES)):
-        names = _undeclared(getattr(ui, field), declared)
-        if names:
-            problems.append(_undeclared_message(field, names, declared, prefix=True))
+    for name, field in UiSettings.model_fields.items():
+        choices = field_choices(field)
+        value = getattr(ui, name)
+        if choices is None or not isinstance(value, Mapping):
+            continue
+        refusal = choices.refusal(value, prefix=f"ui.{name}")
+        if refusal is not None:
+            problems.append(refusal)
     if problems:
         raise ConfigError("; ".join(problems))
 

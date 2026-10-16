@@ -12,7 +12,6 @@ from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
 from untaped.prompts import PromptChoice
 from untaped.stdin import read_stdin_text
-from untaped.theme import BUILTIN_THEMES
 from untaped.ui import ui_context
 
 
@@ -54,8 +53,11 @@ def _prompt_value(full_key: str, repo: SettingsReader) -> str:
     if descriptor.is_secret:
         return ui.secret(message)
     default = _prompt_default(full_key, descriptor, repo)
-    if full_key == "ui.theme":
-        return ui.select(message, _theme_choices(), default=default, search=True)
+    if descriptor.choices is not None and descriptor.annotation is str:
+        names = [
+            PromptChoice(value=name, label=name) for name in sorted(descriptor.choices.names())
+        ]
+        return ui.select(message, names, default=default, search=True)
     literal_values = _literal_values(descriptor)
     if literal_values:
         return str(
@@ -101,10 +103,6 @@ def _literal_values(descriptor: FieldDescriptor) -> list[object]:
     if get_origin(descriptor.annotation) is Literal:
         return list(get_args(descriptor.annotation))
     return []
-
-
-def _theme_choices() -> list[PromptChoice[str]]:
-    return [PromptChoice(value=name, label=name) for name in sorted(BUILTIN_THEMES)]
 
 
 def _default_choice(default: str | None, choices: Sequence[object]) -> object | None:

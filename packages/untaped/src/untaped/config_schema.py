@@ -11,14 +11,65 @@ from __future__ import annotations
 import copy
 import types
 import typing
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, SecretStr
+from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from untaped.redaction import redact_url_password
+
+
+@dataclass(frozen=True)
+class Choices:
+    """``Annotated`` marker: the names a setting accepts, for a set its type can't carry.
+
+    On a ``str`` field the value must be one of them (``ui.theme``); on a
+    mapping, its keys (``ui.symbols``). A ``Literal`` needs no marker. The
+    field's write-time validator is the only reader that enforces it; doctor,
+    the config reference and ``config set --prompt`` read the same names, so
+    none of them keeps its own list.
+    """
+
+    source: Callable[[], Iterable[str]]
+    """Returns the names; called on each read, so it may name things defined later."""
+
+    label: str
+    """Plural noun for messages and docs (``themes``, ``color roles``)."""
+
+    noun: str = "name"
+    """Singular noun for an unknown ``str`` value (``UI theme``)."""
+
+    def names(self) -> tuple[str, ...]:
+        """The accepted names, in declared order."""
+        return tuple(self.source())
+
+    def refusal(self, value: object, *, prefix: str | None = None) -> str | None:
+        """Why ``value`` is refused, listing the accepted names; ``None`` when accepted.
+
+        ``value`` is a string, or a mapping whose keys are checked; ``prefix``
+        (``ui.symbols``) qualifies each stray key.
+        """
+        names = self.names()
+        valid = ", ".join(sorted(names))
+        if not isinstance(value, Mapping):
+            return (
+                None
+                if value in names
+                else f"unknown {self.noun} {value!r}; valid {self.label}: {valid}"
+            )
+        stray = sorted(str(key) for key in value if key not in names)
+        if not stray:
+            return None
+        shown = ", ".join(f"{prefix}.{name}" if prefix else name for name in stray)
+        return f"unknown name {shown}. Valid {self.label}: {valid}"
+
+
+def field_choices(field: FieldInfo) -> Choices | None:
+    """The field's :class:`Choices` marker, if it has one."""
+    return next((item for item in field.metadata if isinstance(item, Choices)), None)
 
 
 @dataclass(frozen=True)
@@ -45,6 +96,9 @@ class FieldDescriptor:
 
     description: str | None = None
     """The field's ``description`` (``FieldInfo.description``), ``None`` when it has none."""
+
+    choices: Choices | None = None
+    """The field's :class:`Choices` marker, when it accepts a declared set of names."""
 
     @property
     def key(self) -> str:
@@ -100,6 +154,7 @@ def walk_settings(
                 is_secret=annotation is SecretStr,
                 optional=_is_optional(field.annotation),
                 description=field.description,
+                choices=field_choices(field),
             )
         )
     return entries

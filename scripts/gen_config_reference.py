@@ -3,8 +3,9 @@
 The page lists every setting of the root app (``http.*``, ``ui.*``,
 ``skills.*``) and of each first-party plugin's settings model, plus each
 plugin's state model. Types, defaults and environment variables come from
-the Pydantic models; a description comes from ``Field(description=...)`` when
-the model declares one, else from :data:`DESCRIPTIONS` below.
+the Pydantic models, and each description from the field's
+``Field(description=...)``, followed by its :class:`~untaped.config_schema.Choices`
+names when it has them.
 
 Usage::
 
@@ -26,131 +27,14 @@ from packaging.utils import canonicalize_name
 from pydantic import BaseModel, SecretStr
 from release import packages
 
-from untaped.theme import ROLE_NAMES, SYMBOL_NAMES
-
 if TYPE_CHECKING:
+    from untaped.config_schema import Choices
     from untaped.plugins.registry import PluginCandidate
     from untaped.stability import Stability
     from untaped.surface._settings import Section
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
-
-#: Descriptions for settings whose model field has no ``description``.
-DESCRIPTIONS: dict[str, str] = {
-    "http.ca_bundle": "PEM file of extra CA certificates to trust instead of the OS trust store.",
-    "http.verify_ssl": "Verify TLS certificates. `false` disables all certificate checks.",
-    "http.verify_hostname": "Check the certificate host name. `false` keeps chain validation.",
-    "http.timeout_seconds": "HTTP request timeout in seconds.",
-    "http.proxy": "Proxy URL for HTTP clients, and for Git fetches from the GitHub host. "
-    "When unset, standard proxy variables (and, for Git, your Git config) apply.",
-    "ui.format": "Default `--format` for commands whose default is `table`. "
-    "`UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both.",
-    "ui.theme": "Built-in theme: `default`, `plain`, `compact`, `high-contrast`, `quiet`, "
-    "`classic`.",
-    "ui.border": "Table border style; overrides the theme.",
-    "ui.density": "Table density; overrides the theme.",
-    "ui.collection_view": "How lists render in `table` format; overrides the theme.",
-    "ui.detail_view": "How a single record renders in `table` format; overrides the theme.",
-    "ui.hide_empty_columns": "Leave out `table` columns that are empty on every row "
-    "(on unless the theme turns it off); a column named in `--columns` always shows.",
-    "ui.symbols": "Symbol overrides merged over the theme's symbols. Names: "
-    + ", ".join(f"`{name}`" for name in SYMBOL_NAMES)
-    + ".",
-    "ui.color_roles": "Color-role overrides merged over the theme's colors. Names: "
-    + ", ".join(f"`{name}`" for name in ROLE_NAMES)
-    + ".",
-    "skills.updates": "What each run does when installed agent skills differ from this "
-    "version: `warn` (print a warning), `auto` (update them in place), or `off`.",
-    "workspace.workspaces_dir": "Parent directory of every workspace (`<workspaces_dir>/NAME`).",
-    "workspace.parallel": "Default workers for `create`/`add`/`run` and for status/archive "
-    "checks. Unset means `min(8, 2 * CPUs)`; "
-    "values above `2 * CPUs` are clamped.",
-    "workspace.branch_template": "Branch name for writable repos; `{name}` is the workspace name.",
-    "workspace.active": "Active workspaces. Managed by `workspace` commands.",
-    "workspace.archived": "Archived workspaces. Managed by `workspace` commands.",
-    "github.base_url": "GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",
-    "github.token": "GitHub token for API calls and Git fetches. Falls back to "
-    "`token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`.",
-    "github.token_command": "Command (argv list, no shell) that prints the token; "
-    "used when `github.token` is unset.",
-    "github.default_org": "Org scope for `repos list`, `search` (repos, code, issues), "
-    "`sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, "
-    "search uses `@me`.",
-    "github.git_protocol": "How `sweep`, `cache sync`, workspace and `ansible source refresh` "
-    "fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`).",
-    "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
-    "this that GitHub reports as pushed since.",
-    "github.sweep.parallel": "Default `sweep --parallel` and `cache sync --parallel` Git workers.",
-    "github.inventory.orgs": "Orgs whose repositories github lists for workspace (repo names, "
-    "the picker). With no orgs or teams, `github.default_org`.",
-    "github.inventory.teams": "Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else "
-    "in `github.default_org`) whose repositories github lists for workspace.",
-    "jira.base_url": "Jira Data Center URL, for example `https://jira.example.com`.",
-    "jira.token": "Jira personal access token. Falls back to `token_command`, then "
-    "`JIRA_API_TOKEN`.",
-    "jira.token_command": "Command (argv list, no shell) that prints the token; "
-    "used when `jira.token` is unset.",
-    "jira.api_prefix": "Jira platform REST prefix.",
-    "jira.agile_prefix": "Jira Software (boards, sprints) REST prefix.",
-    "jira.assigned_jql": "Base JQL for `issues assigned`, and for `issues search` with no query.",
-    "jira.default_project": "Project key `issues create` uses when `--project` is omitted.",
-    "jira.default_board_id": "Board `sprints list` uses when `--board-id` is omitted.",
-    "jira.page_size": "Results requested per Jira API page.",
-    "jira.confirm": "Which writes ask first: `always`, `destructive` (patches that replace or "
-    "remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt.",
-    "awx.base_url": "AWX/AAP URL, for example `https://aap.example.com`.",
-    "awx.token": "AWX/AAP API token. Falls back to `token_command`, then "
-    "`CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`.",
-    "awx.token_command": "Command (argv list, no shell) that prints the token; "
-    "used when `awx.token` is unset.",
-    "awx.api_prefix": "API prefix. Standalone AWX usually uses `/api/v2/`.",
-    "awx.default_organization": "Organization that scopes name lookups and `apply` documents "
-    "without one.",
-    "awx.page_size": "Results requested per AWX API page.",
-    "awx.test_timeout_seconds": "Seconds a `test run` case waits before its job is cancelled, "
-    "unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it.",
-    "awx.test_parallel": "Default `test run --parallel`.",
-    "ansible.index_path": (
-        "SQLite cache of refreshed source data. At this default the file is "
-        "`index.v<layout>.sqlite3` beside it, one per layout; a path you set is used as it is."
-    ),
-    "ansible.default_source": "Saved source `deps`, `impact`, `find` and `graph` use when "
-    "no `--source` or inline selector is given.",
-    "ansible.ref_scan_default": "Refs a source scans: `all` refs or each repo's default branch.",
-    "ansible.source_refresh_backend": "Ref probe backend for source refresh.",
-    "ansible.git_fetch_parallel": "Default `--parallel` of a source refresh.",
-    "ansible.probe_parallel": "Concurrent ref probes during source refresh.",
-    "ansible.source_refresh_repo_batch_size": "Repos committed per source refresh batch.",
-    "ansible.source_refresh_rate_limit_floor": "Stop a refresh (resumable) when the GraphQL "
-    "budget drops below this.",
-    "ansible.dependency_paths": "Dependency files scanned in each repo.",
-    "ansible.sources": "Saved sources. Managed by `ansible source` commands.",
-    "ansible.aliases": "Role or Galaxy name to `owner/repo` aliases. Managed by "
-    "`ansible source-alias` commands.",
-    "dotfiles.repos_dir": "Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`).",
-    "dotfiles.kept_dir": "Where `apply`, `sync` and `remove` keep local files they replace, "
-    "under `<repo>/<item>/<timestamp>/`.",
-    "dotfiles.state_dir": "Holds `status.json`, `attention` and the advisory lock.",
-    "dotfiles.tags": "This machine's tags, matched against `only` and `unless` in manifests.",
-    "dotfiles.os": "This machine's OS for `os` filters; detected when unset.",
-    "git.store_dir": "Root of the repo store: one shared bare repository per remote, "
-    "under `<store_dir>/<host>/<path>.git`.",
-    "git.untaped_helper_only": "In untaped's worktrees, ask only untaped for a host's "
-    "credentials, instead of your own Git credential helpers first.",
-    "dotfiles.repos": "Subscribed repos. Managed by `dotfiles subscribe`/`unsubscribe`.",
-    "dotfiles.items": "Enabled items with their policy and skips. Managed by `dotfiles enable`/"
-    "`disable`.",
-    "dotfiles.applied": "One record per path the tool placed. Managed by `dotfiles apply`, "
-    "`sync` and `remove`.",
-    "recipe.library_dir": "Directory holding installed recipe packs.",
-    "recipe.hook_timeout_seconds": "Per-hook request timeout; `0` disables it.",
-    "recipe.hook_startup_timeout_seconds": "Timeout for preparing a hook environment.",
-    "recipe.backup_keep": "`backups prune` keeps this many newest bundles by default.",
-    "recipe.backup_max_age_days": "`backups prune` deletes bundles older than this by default.",
-    "recipe.preview_max_rows": "Preview rows before `apply` collapses per-file rows; `0` is "
-    "unlimited.",
-}
 
 _HEADER = """\
 <!-- Generated by scripts/gen_config_reference.py. Do not edit by hand. -->
@@ -259,14 +143,8 @@ def collect_sections() -> list[Section]:
 
 
 def missing_descriptions() -> list[str]:
-    """Settings keys that have neither a field description nor a fallback."""
+    """Settings keys whose field has no ``description``."""
     return [row.key for row in _all_rows() if not row.description]
-
-
-def unknown_descriptions() -> list[str]:
-    """Fallback description keys that name no current setting."""
-    known = {row.key for row in _all_rows()}
-    return sorted(set(DESCRIPTIONS) - known)
 
 
 def _all_rows() -> list[Row]:
@@ -284,12 +162,25 @@ def _section_rows(section: Section) -> list[Row]:
             leaf.key,
             leaf.annotation,
             leaf.default,
-            leaf.description or DESCRIPTIONS.get(leaf.key),
+            _with_choices(
+                leaf.description,
+                leaf.choices,
+                mapping=leaf.annotation is dict or get_origin(leaf.annotation) is dict,
+            ),
             optional=leaf.optional,
             mark=leaf.mark,
         )
         for leaf in setting_leaves(section)
     ]
+
+
+def _with_choices(description: str | None, choices: Choices | None, *, mapping: bool) -> str | None:
+    """``description``, then the names a :class:`Choices` field accepts (a mapping's keys)."""
+    if description is None or choices is None:
+        return description
+    lead = "Names" if mapping else "One of"
+    names = ", ".join(f"`{name}`" for name in choices.names())
+    return f"{description} {lead}: {names}."
 
 
 def _description(row: Row) -> str:

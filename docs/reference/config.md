@@ -22,7 +22,7 @@ overridden for one process with the environment variable shown.
 | `http.verify_hostname` | boolean | `true` | `UNTAPED_HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. |
 | `http.timeout_seconds` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. |
 | `http.proxy` | string (optional) | unset | `UNTAPED_HTTP__PROXY` | Proxy URL for HTTP clients, and for Git fetches from the GitHub host. When unset, standard proxy variables (and, for Git, your Git config) apply. |
-| `ui.theme` | string | `default` | `UNTAPED_UI__THEME` | Built-in theme: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
+| `ui.theme` | string | `default` | `UNTAPED_UI__THEME` | Built-in theme. One of: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
 | `ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
 | `ui.border` | `rounded` \| `square` \| `ascii` \| `none` (optional) | unset | `UNTAPED_UI__BORDER` | Table border style; overrides the theme. |
 | `ui.density` | `normal` \| `compact` (optional) | unset | `UNTAPED_UI__DENSITY` | Table density; overrides the theme. |

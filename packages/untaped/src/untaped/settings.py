@@ -66,17 +66,42 @@ class HttpSettings(BaseModel):
 
     retired_keys: ClassVar[Mapping[str, str]] = {"timeout": "timeout_seconds"}
 
-    ca_bundle: Path | None = None  # untaped: allow settings-naming
-    verify_ssl: bool = True
-    verify_hostname: bool = True
-    timeout_seconds: float = Field(default=30.0, gt=0)
-    proxy: str | None = None
+    ca_bundle: Path | None = Field(  # untaped: allow settings-naming
+        default=None,
+        description="PEM file of extra CA certificates to trust instead of the OS trust store.",
+    )
+    verify_ssl: bool = Field(
+        default=True,
+        description="Verify TLS certificates. `false` disables all certificate checks.",
+    )
+    verify_hostname: bool = Field(
+        default=True,
+        description="Check the certificate host name. `false` keeps chain validation.",
+    )
+    timeout_seconds: float = Field(
+        default=30.0, gt=0, description="HTTP request timeout in seconds."
+    )
+    proxy: str | None = Field(
+        default=None,
+        description=(
+            "Proxy URL for HTTP clients, and for Git fetches from the GitHub host. "
+            "When unset, standard proxy variables (and, for Git, your Git config) "
+            "apply."
+        ),
+    )
 
 
 class SkillsSettings(BaseModel):
     """What every run does about installed agent skills that are out of date (per-profile)."""
 
-    updates: Literal["warn", "auto", "off"] = "warn"
+    updates: Literal["warn", "auto", "off"] = Field(
+        default="warn",
+        description=(
+            "What each run does when installed agent skills differ from this "
+            "version: `warn` (print a warning), `auto` (update them in place), or "
+            "`off`."
+        ),
+    )
 
 
 class _ConfigRegistry:
