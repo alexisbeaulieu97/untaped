@@ -16,8 +16,12 @@ before handing the dict to httpx.
 
 Fields a spec lists in ``sub_document_fields`` (a template's
 ``survey_spec``) live behind ``<id>/<field>/`` rather than on the record:
-``get`` fills them in, and ``create``/``update`` route them to that
-endpoint after the record write.
+``get`` fills them in (``sub_documents`` reads them alone, for a caller
+holding a list row), and ``create``/``update`` route them to that endpoint
+after the record write.
+
+``playbooks`` reads ``projects/<id>/playbooks/``, which answers a bare list
+rather than a record or a page.
 
 The application :class:`ResourceClient` Protocol takes domain
 :class:`ResourceSpec` arguments. This adapter narrows to
@@ -112,8 +116,22 @@ class ResourceRepository:
                 if proxy.get("id") != id_:
                     raise BadRequestError("constructed inventory hydration changed requested ID")
                 raw = {**raw, **proxy}
-            raw.update(self._read_sub_documents(spec, id_))
+            raw.update(self.sub_documents(spec, id_))
         return ServerRecord(**raw)
+
+    def sub_documents(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+        """Each ``spec.sub_document_fields`` value from ``<id>/<field>/``, never the record."""
+        with map_awx_errors():
+            return {
+                field: self._client.get_json(f"{awx_relationship_path(spec)}/{id_}/{field}/")
+                for field in spec.sub_document_fields
+            }
+
+    def playbooks(self, project_id: int) -> tuple[str, ...]:
+        """``projects/<id>/playbooks/``: the playbooks AWX found in the project's last sync."""
+        with map_awx_errors():
+            found = self._client.get_json(f"projects/{project_id}/playbooks/")
+        return tuple(str(playbook) for playbook in found)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         """Return the unique record matching ``params`` or ``None``.
@@ -176,13 +194,6 @@ class ResourceRepository:
             raw = self._client.request_json("PATCH", f"{awx_api_path(spec)}/{id_}/", json=body)
             raw.update(self._write_sub_documents(spec, id_, documents))
         return ServerRecord(**raw)
-
-    def _read_sub_documents(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
-        """Fetch each ``spec.sub_document_fields`` value from ``<id>/<field>/``."""
-        return {
-            field: self._client.get_json(f"{awx_relationship_path(spec)}/{id_}/{field}/")
-            for field in spec.sub_document_fields
-        }
 
     def _write_sub_documents(
         self, spec: ResourceSpec, id_: int, documents: dict[str, Any]

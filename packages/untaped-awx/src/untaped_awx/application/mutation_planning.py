@@ -143,6 +143,9 @@ class PlanningFkResolver:
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
         self._base.prefetch(plan)
 
+    def seed(self, kind: str, records: Iterable[Mapping[str, Any]]) -> None:
+        self._base.seed(kind, records)
+
 
 class MutationPlanner:
     """Turn documents into a :class:`MutationPlan` without issuing a write."""

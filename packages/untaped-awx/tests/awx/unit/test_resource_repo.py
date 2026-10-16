@@ -1,4 +1,4 @@
-"""Unit tests for ResourceRepository's identity-lookup contract."""
+"""Unit tests for ResourceRepository: identity lookups, sub-documents and project playbooks."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from untaped_awx.errors import AmbiguousIdentityError
+from untaped_awx.errors import AmbiguousIdentityError, AwxApiError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.resource_repo import ResourceRepository
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
@@ -210,3 +210,34 @@ def test_writes_route_survey_to_its_endpoint(awx_config: AwxSettings) -> None:
     assert post_survey.call_count == 1
     assert clear.call_count == 1
     assert created.model_dump()["survey_spec"] == survey
+
+
+def test_sub_documents_reads_no_record(awx_config: AwxSettings) -> None:
+    """A list row's survey is read from its endpoint alone; the record is not read again."""
+    with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
+        detail = mock.get("/api/v2/job_templates/7/").mock(
+            return_value=httpx.Response(200, json={"id": 7, "name": "deploy"})
+        )
+        mock.get("/api/v2/job_templates/7/survey_spec/").mock(
+            return_value=httpx.Response(200, json={"name": "s", "spec": []})
+        )
+        with AwxClient(awx_config) as awx:
+            documents = ResourceRepository(awx).sub_documents(JOB_TEMPLATE_SPEC, 7)
+    assert documents == {"survey_spec": {"name": "s", "spec": []}}
+    assert detail.call_count == 0
+
+
+def test_playbooks_returns_a_tuple(awx_config: AwxSettings) -> None:
+    """AWX answers ``projects/<id>/playbooks/`` with a bare list of paths."""
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/projects/3/playbooks/").mock(
+            return_value=httpx.Response(200, json=["site.yml", "roles/deploy.yml"])
+        )
+        mock.get("/api/v2/projects/4/playbooks/").mock(
+            return_value=httpx.Response(404, json={"detail": "Not found."})
+        )
+        with AwxClient(awx_config) as awx:
+            repo = ResourceRepository(awx)
+            assert repo.playbooks(3) == ("site.yml", "roles/deploy.yml")
+            with pytest.raises(AwxApiError):
+                repo.playbooks(4)

@@ -14,6 +14,10 @@ For bulk apply / save flows, callers can warm the cache via
 injected ``warn`` hook and fall back to per-record lookups so the
 degradation is visible without breaking the apply.
 
+A caller that already listed every record of a kind hands the rows to
+:meth:`seed` instead, so naming them later (``id_to_name``,
+``id_to_identity``) reads no record.
+
 Thread-safety: the two caches are guarded by ``self._cache_lock``
 across the read+repo-call+write window so concurrent workers racing
 on the same ``(kind, name, scope)`` cache miss collapse into one repo
@@ -30,7 +34,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from untaped_awx.domain import IdentityRef
-from untaped_awx.domain.kinds import unified_template_kind
+from untaped_awx.domain.kinds import UNIFIED_TEMPLATE_KINDS, unified_template_kind
 from untaped_awx.errors import (
     AmbiguousIdentityError,
     AwxApiError,
@@ -85,6 +89,59 @@ class HttpFkResolver:
                 if isinstance(id_, int) and not isinstance(id_, bool) and isinstance(name, str):
                     self._id_cache.setdefault(("Organization", id_), name)
                     self._name_cache.setdefault(("Organization", name, frozenset()), id_)
+
+    def seed(self, kind: str, records: Iterable[Mapping[str, Any]]) -> None:
+        """Learn names and identities from ``kind`` rows the caller listed.
+
+        Every row's name is cached, and the organizations their
+        ``summary_fields`` name (:meth:`remember_summaries`). A row's identity
+        is cached as :meth:`id_to_identity` would build it, when the row and
+        the cache already hold it: its organization's name must be known, and
+        an inventory child's inventory seeded first. A unified job template
+        kind (they share AWX's id space) is cached under
+        ``UnifiedJobTemplate`` too, the kind a schedule names its parent by.
+        """
+        rows = list(records)
+        self.remember_summaries(rows)
+        spec = self._catalog.get(kind)
+        named = [
+            row
+            for row in rows
+            if isinstance(row.get("id"), int)
+            and not isinstance(row.get("id"), bool)
+            and isinstance(row.get("name"), str)
+        ]
+        with self._cache_lock:
+            for row in named:
+                self._id_cache.setdefault((kind, row["id"]), row["name"])
+        for row in named:
+            identity = self._row_identity(spec, row)
+            if identity is None:
+                continue
+            self._identity_cache.setdefault((kind, row["id"]), identity)
+            if kind in UNIFIED_TEMPLATE_KINDS:
+                self._identity_cache.setdefault(("UnifiedJobTemplate", row["id"]), identity)
+
+    def _row_identity(self, spec: AwxResourceSpec, row: Mapping[str, Any]) -> IdentityRef | None:
+        """:meth:`_read_identity` from a listed ``row``; ``None`` when that would need a read."""
+        if spec.apply_strategy == "inventory_child":
+            inventory_id = row.get("inventory")
+            if not isinstance(inventory_id, int):
+                return None
+            parent = self._identity_cache.get(("Inventory", inventory_id))
+            if parent is None:
+                return None
+            return IdentityRef(
+                kind=spec.kind, name=row["name"], parent=parent.model_copy(deep=True)
+            )
+        organization = None
+        org_id = row.get("organization")
+        if "organization" in spec.identity_keys and isinstance(org_id, int):
+            with self._cache_lock:
+                organization = self._id_cache.get(("Organization", org_id))
+            if organization is None:
+                return None
+        return IdentityRef(kind=spec.kind, name=row["name"], organization=organization)
 
     def name_to_id(
         self,

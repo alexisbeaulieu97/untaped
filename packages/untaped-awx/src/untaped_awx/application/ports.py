@@ -9,7 +9,7 @@ together at the CLI composition root.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -80,6 +80,14 @@ class ResourceClient(Protocol):
     ) -> Iterator[dict[str, Any]]: ...
 
     def get(self, spec: ResourceSpec, id_: int) -> ServerRecord: ...
+
+    def sub_documents(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+        """Each ``spec.sub_document_fields`` value of record ``id_``, from its own endpoint.
+
+        The record itself is not read: a caller holding a list row adds these
+        to it instead of reading the record again.
+        """
+        ...
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         """Return the unique record matching ``params`` or ``None``.
@@ -265,6 +273,23 @@ class FkResolver(Protocol):
         Failures are best-effort and do not interrupt the caller —
         per-record lookups will still happen on cache miss.
         """
+        ...
+
+    def seed(self, kind: str, records: Iterable[Mapping[str, Any]]) -> None:
+        """Learn the names (and identities) of ``kind`` records the caller already listed.
+
+        Later :meth:`id_to_name` and :meth:`id_to_identity` calls for them,
+        and for the organizations their ``summary_fields`` name, read no
+        record. Nothing is learned that would need a read to be sure of.
+        """
+        ...
+
+
+class ProjectPlaybooks(Protocol):
+    """The playbooks AWX found in a project's last sync."""
+
+    def playbooks(self, project_id: int) -> tuple[str, ...]:
+        """``projects/<id>/playbooks/``: playbook paths relative to the project root."""
         ...
 
 
@@ -524,6 +549,7 @@ __all__ = [
     "Catalog",
     "FkResolver",
     "JobMonitor",
+    "ProjectPlaybooks",
     "RawHttpResourceClient",
     "ResourceClient",
     "ResourceDocumentReader",
