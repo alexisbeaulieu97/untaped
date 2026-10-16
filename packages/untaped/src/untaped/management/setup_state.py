@@ -15,40 +15,63 @@ from typing import Any
 from pydantic import BaseModel
 
 from untaped.auth import describe_token_source, takes_token_command
+from untaped.config_file import read_config_dict
 from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import inherited_from_default, plaintext_token
 from untaped.messages import not_found
 from untaped.plugins.registry import CompositionResult, PluginSpec, settings_model
+from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE
-from untaped.settings import active_settings_layout, check_settings_field
+from untaped.settings import (
+    active_settings_layout,
+    check_settings_field,
+    profile_section_models,
+)
 from untaped.token_store import TokenStore, pick_store
 
 _SERVICE_FIELDS = frozenset({"base_url", "token"})
+#: The keys of a service's connection: its URL, its token and the token's command.
+_CONNECTION_FIELDS = ("base_url", "token", "token_command")
+
+
+def setup_sections(only: list[str] | None = None) -> tuple[str, ...]:
+    """The profile's settings sections ``setup`` lists, narrowed to ``only`` (comma-separated).
+
+    Every section, in the settings model's order, without ``only``. Raises
+    :class:`UsageError` for an ``only`` name that is not a section.
+    """
+    sections = tuple(profile_section_models())
+    if not only:
+        return sections
+    names = [part.strip() for entry in only for part in entry.split(",") if part.strip()]
+    for name in names:
+        if name not in sections:
+            raise UsageError(not_found("section", name, known=sections))
+    return tuple(dict.fromkeys(names))
 
 
 def setup_services(
     result: CompositionResult, only: list[str] | None = None
 ) -> dict[str, PluginSpec]:
-    """The composed services by name, narrowed to ``only`` (comma-separated entries).
+    """The composed services by name (empty when none), narrowed to the sections in ``only``.
 
-    Raises :class:`ConfigError` when no plugin is a service and
-    :class:`UsageError` for an ``only`` name that is not one.
+    Raises :class:`UsageError` for an ``only`` name that is not a section.
     """
     services = {
         registered.spec.name: registered.spec
         for registered in result.plugins
         if settings_model(registered.spec).model_fields.keys() >= _SERVICE_FIELDS
     }
-    if not services:
-        raise ConfigError("no composed plugin takes a base URL and token to set up")
     if not only:
         return services
-    names = [part.strip() for entry in only for part in entry.split(",") if part.strip()]
-    for name in names:
-        if name not in services:
-            raise UsageError(not_found("service", name, known=services))
-    return {name: services[name] for name in dict.fromkeys(names)}
+    return {name: services[name] for name in setup_sections(only) if name in services}
+
+
+def connection_keys(spec: PluginSpec) -> frozenset[str]:
+    """The keys of ``spec``'s connection, which setup edits together as one row."""
+    fields = settings_model(spec).model_fields
+    return frozenset(f"{spec.name}.{name}" for name in _CONNECTION_FIELDS if name in fields)
 
 
 def profile_view(raw: dict[str, Any], profile: str) -> dict[str, Any]:
@@ -137,6 +160,16 @@ def service_states(
     }
 
 
+def read_states(services: dict[str, PluginSpec], profile: str) -> dict[str, ServiceState]:
+    """Every service's state in ``profile``, read from the config file now."""
+    return service_states(services, profile, read_config_dict())
+
+
+def profile_exists(profile: str) -> bool:
+    """Whether ``profile`` exists (``default`` always does)."""
+    return profile == DEFAULT_PROFILE or ProfileFileRepository().read(profile) is not None
+
+
 def service_store(services: dict[str, PluginSpec]) -> TokenStore | None:
     """The store a token goes to, probed once per run; ``None`` when no service takes a command.
 
@@ -149,9 +182,13 @@ def service_store(services: dict[str, PluginSpec]) -> TokenStore | None:
 
 __all__ = [
     "ServiceState",
+    "connection_keys",
+    "profile_exists",
     "profile_view",
+    "read_states",
     "service_state",
     "service_states",
     "service_store",
+    "setup_sections",
     "setup_services",
 ]

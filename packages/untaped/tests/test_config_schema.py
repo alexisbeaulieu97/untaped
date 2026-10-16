@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, SecretStr
 from untaped.config_schema import (
     Choices,
     FieldDescriptor,
+    bounds_text,
     find_descriptor,
     redact_secrets,
     secret_field_paths,
@@ -228,3 +229,28 @@ def test_choices_reach_the_descriptor_and_name_the_strays() -> None:
     assert names.refusal({"x": "1", "y": "2", "w": "3"}, prefix="ui.names") == (
         "unknown name ui.names.w, ui.names.y. Valid names: x"
     )
+
+
+class _Bounded(BaseModel):
+    above: int = Field(default=1, gt=0)
+    span: int = Field(default=8, ge=1, le=32)
+    floor: float = Field(default=0, ge=0)
+    capped: int | None = Field(default=None, le=5)
+    window: int = Field(default=5, gt=0, lt=10)
+    free: int = 3
+
+
+@pytest.mark.parametrize(
+    ("key", "text"),
+    [
+        ("above", "Above 0."),
+        ("span", "1 to 32."),
+        ("floor", "0 or more."),
+        ("capped", "At most 5."),
+        ("window", "Above 0 and below 10."),
+        ("free", None),
+    ],
+)
+def test_bounds_read_as_a_sentence(key: str, text: str | None) -> None:
+    leaves = {d.key: d for d in walk_settings(_Bounded)}
+    assert bounds_text(leaves[key]) == text

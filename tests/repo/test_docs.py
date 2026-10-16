@@ -158,7 +158,7 @@ def test_config_reference_lists_each_cache_setting_and_its_rename(
     assert (
         "| `hello.caches.motd.max_age_seconds` | integer | `3600` | "
         "`UNTAPED_HELLO__CACHES__MOTD__MAX_AGE_SECONDS` | Seconds the message of the day is "
-        "served before untaped checks upstream; 0 checks every time. |"
+        "served before untaped checks upstream; 0 checks every time. 0 or more. |"
     ) in page
     assert (
         "| `hello.motd_seconds` | `UNTAPED_HELLO__MOTD_SECONDS` | "

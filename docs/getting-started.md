@@ -35,23 +35,41 @@ untaped doctor --online
 ## Set up your services
 
 `untaped setup` is one full-screen screen for one profile, in a terminal. The
-services (`awx`, `github`, `jira`) are listed on the left with their status;
-the selected one's form is on the right: the base URL and how to get the
-token (tabs): store it with your password store (as `untaped auth set` does),
-move a plaintext one there, give a command that prints it (`token_command`),
-use an environment variable, or keep the current one. Saving checks the
-service online with what you typed before anything is written; if the check
-fails, the reason is shown under the form and you can fix the values, or
-`Save anyway`. An exported `UNTAPED_<SECTION>__TOKEN` (for example
-`UNTAPED_GITHUB__TOKEN`) wins over the token you type in that check, as it does
-in `doctor`. Esc leaves the screen; ctrl-c leaves it too and exits 130.
-Naming a new profile in the profile field creates it on its first save.
-Afterwards `setup` prints what it wrote and the doctor checks of the services
-you configured, and exits 1 if one fails.
+left lists every settings section: the services (`awx`, `github`, `jira`)
+first, with their status, then `http`, `ui`, `skills` and the other plugins'
+sections. The right lists the selected section's settings, one row each, with
+its value and where it comes from (`profile:work`, `profile:default`,
+`default` for the built-in value, or the environment variable that sets it);
+under the rows is the focused setting's description, its bounds, its built-in
+default and its variable. Enter opens a setting's field and enter writes it,
+exactly as `config set` would, with the same error when the value is invalid;
+esc closes it unchanged, and an empty field unsets the setting. A secret's
+field opens empty, so leaving it empty keeps the secret. Writing back the
+value a field opened with changes nothing, so an inherited or default value
+stays inherited; `config set` writes it into the profile. `delete` (or
+`backspace`) unsets a setting the profile sets, once you answer `y`. Lists
+and maps show read-only for now: set them with `config set`.
+
+A service's first row is its connection. Enter opens its form: the base URL
+and how to get the token (tabs): store it with your password store (as
+`untaped auth set` does), move a plaintext one there, give a command that
+prints it (`token_command`), use an environment variable, or keep the current
+one. Saving checks the service online with what you typed before anything is
+written; if the check fails, the reason is shown under the form and you can fix
+the values, or `Save anyway`. An exported `UNTAPED_<SECTION>__TOKEN` (for
+example `UNTAPED_GITHUB__TOKEN`) wins over the token you type in that check, as
+it does in `doctor`.
+
+Esc leaves the screen; ctrl-c leaves it too and exits 130. Naming a new
+profile in the profile field shows `default`'s values and creates the profile
+on its first write. Afterwards `setup` prints a line for each setting it wrote,
+then the doctor checks of the services whose connection you saved, and exits 1
+if one fails.
 
 ```bash
 untaped setup
-untaped --profile work setup --only awx,jira   # these services only
+untaped --profile work setup --only awx,jira   # these sections only
+untaped setup --only ui
 ```
 
 To script the same settings, use `config set` as below.

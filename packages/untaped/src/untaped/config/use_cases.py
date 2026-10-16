@@ -58,18 +58,40 @@ class SetSetting:
     def __init__(self, repo: SettingsWriter) -> None:
         self._repo = repo
 
+    def current(self, key: str, *, profile: str | None = None) -> Any:
+        """``key``'s raw value in ``profile``'s own data, which a later ``expected`` names."""
+        return self._repo.own_value(key, profile=profile)
+
     def __call__(
-        self, key: str, value: str, *, profile: str | None = None, dry_run: bool = False
+        self,
+        key: str,
+        value: str,
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        expected: Any = _UNRESOLVED,
     ) -> SettingChange:
         """Set ``key`` to the raw ``value`` (as ``config set`` takes it) in ``profile``.
 
         ``profile`` defaults to the active one. Writing a key removes its old
-        spellings in that profile. Raises :class:`ConfigError` when the value
-        is invalid; nothing is written then.
+        spellings in that profile. ``expected`` (from :meth:`current`) refuses
+        the write when the profile's own value changed since it was read, as
+        ``config edit`` refuses a file changed under it. Raises
+        :class:`ConfigError` when the value is invalid or changed; nothing is
+        written then.
         """
         removed: list[str] = []
-        target = self._repo.set_value(
-            key, value, profile=profile, dry_run=dry_run, on_spelling_removed=removed.append
+
+        def update(target: str, current: Any) -> str:
+            if expected is not _UNRESOLVED and current != expected:
+                raise ConfigError(
+                    f"{key} changed in profile {target} while it was open; nothing was written",
+                    category="conflict",
+                )
+            return value
+
+        target = self._repo.update_value(
+            key, update, profile=profile, dry_run=dry_run, on_spelling_removed=removed.append
         )
         if dry_run:
             return SettingChange(SettingOutcome(key=key, profile=target, action="planned"))
@@ -370,9 +392,9 @@ def setting_entry_for_descriptor(
     if current is _UNRESOLVED:
         current = repo.setting_value(descriptor)
     resolved_provenance = repo.provenance() if provenance is None else provenance
-    in_env = repo.env_value_for(descriptor) is not None
+    variable = repo.env_var_supplying(descriptor)
     source = _resolve_source(
-        in_env,
+        variable,
         _provenance_for(resolved_provenance, descriptor),
         descriptor,
         current,
@@ -449,13 +471,13 @@ def _provenance_for(
 
 
 def _resolve_source(
-    in_env: bool,
+    variable: str | None,
     profile_name: str | None,
     descriptor: FieldDescriptor,
     current: Any,
 ) -> Source:
-    if in_env:
-        return Source(kind="env")
+    if variable is not None:
+        return Source(kind="env", variable=variable)
     if profile_name is not None:
         return Source(kind="profile", profile=profile_name)
     if current is None and not (descriptor.has_default and descriptor.default is not None):

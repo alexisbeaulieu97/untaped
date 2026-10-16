@@ -20,7 +20,7 @@ overridden for one process with the environment variable shown.
 | `http.ca_bundle` | path (optional) | unset | `UNTAPED_HTTP__CA_BUNDLE` | PEM file of extra CA certificates to trust instead of the OS trust store. |
 | `http.verify_ssl` | boolean | `true` | `UNTAPED_HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks. |
 | `http.verify_hostname` | boolean | `true` | `UNTAPED_HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. |
-| `http.timeout_seconds` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. |
+| `http.timeout_seconds` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. Above 0. |
 | `http.proxy` | string (optional) | unset | `UNTAPED_HTTP__PROXY` | Proxy URL for HTTP clients, and for Git fetches from the GitHub host. When unset, standard proxy variables (and, for Git, your Git config) apply. |
 | `ui.theme` | string | `default` | `UNTAPED_UI__THEME` | Built-in theme. One of: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
 | `ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
@@ -41,12 +41,12 @@ overridden for one process with the environment variable shown.
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
-| `ansible.git_fetch_parallel` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_PARALLEL` | Default `--parallel` of a source refresh. |
-| `ansible.probe_parallel` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_PARALLEL` | Concurrent ref probes during source refresh. |
-| `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. |
-| `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. |
+| `ansible.git_fetch_parallel` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_PARALLEL` | Default `--parallel` of a source refresh. 1 to 32. |
+| `ansible.probe_parallel` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_PARALLEL` | Concurrent ref probes during source refresh. 1 to 32. |
+| `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. 1 or more. |
+| `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. 0 or more. |
 | `ansible.dependency_paths` | list | `roles/requirements.yml`; `roles/requirements.yaml`; `requirements.yml`; `requirements.yaml`; `meta/requirements.yml`; `meta/requirements.yaml`; `meta/main.yml`; `meta/main.yaml` | `UNTAPED_ANSIBLE__DEPENDENCY_PATHS` | Dependency files scanned in each repo. |
-| `ansible.caches.index.max_age_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__CACHES__INDEX__MAX_AGE_SECONDS` | Seconds source data is served before untaped checks upstream; 0 checks every time. |
+| `ansible.caches.index.max_age_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__CACHES__INDEX__MAX_AGE_SECONDS` | Seconds source data is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `ansible` state
 
@@ -64,9 +64,9 @@ overridden for one process with the environment variable shown.
 | `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `awx.token` is unset. |
 | `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
-| `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. |
-| `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. Experimental: may change in a minor release. |
-| `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. Experimental: may change in a minor release. |
+| `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. Above 0. |
+| `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. Above 0. Experimental: may change in a minor release. |
+| `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. Above 0. Experimental: may change in a minor release. |
 
 ## `dotfiles`
 
@@ -102,8 +102,8 @@ overridden for one process with the environment variable shown.
 | `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `github.token` is unset. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
 | `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep`, `cache sync`, workspace and `ansible source refresh` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`). |
-| `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
-| `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
+| `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. 0 or more. |
+| `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists for workspace (repo names, the picker). With no orgs or teams, `github.default_org`. |
 | `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists for workspace. |
 
@@ -119,7 +119,7 @@ overridden for one process with the environment variable shown.
 | `jira.assigned_jql` | string | `assignee = currentUser() AND resolution = Unresolved` | `UNTAPED_JIRA__ASSIGNED_JQL` | Base JQL for `issues assigned`, and for `issues search` with no query. |
 | `jira.default_project` | string (optional) | unset | `UNTAPED_JIRA__DEFAULT_PROJECT` | Project key `issues create` uses when `--project` is omitted. |
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
-| `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. |
+| `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. Above 0. |
 | `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
 
 ## `lint`
@@ -133,20 +133,20 @@ overridden for one process with the environment variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `recipe.library_dir` | path | `~/.untaped/plugins/recipe/library` | `UNTAPED_RECIPE__LIBRARY_DIR` | Directory holding installed recipe packs. |
-| `recipe.hook_timeout_seconds` | number | `60` | `UNTAPED_RECIPE__HOOK_TIMEOUT_SECONDS` | Per-hook request timeout; `0` disables it. |
-| `recipe.hook_startup_timeout_seconds` | number | `300` | `UNTAPED_RECIPE__HOOK_STARTUP_TIMEOUT_SECONDS` | Timeout for preparing a hook environment. |
-| `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backups prune` keeps this many newest bundles by default. |
-| `recipe.backup_max_age_days` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_MAX_AGE_DAYS` | `backups prune` deletes bundles older than this by default. |
-| `recipe.preview_max_rows` | integer | `50` | `UNTAPED_RECIPE__PREVIEW_MAX_ROWS` | Preview rows before `apply` collapses per-file rows; `0` is unlimited. |
+| `recipe.hook_timeout_seconds` | number | `60` | `UNTAPED_RECIPE__HOOK_TIMEOUT_SECONDS` | Per-hook request timeout; `0` disables it. 0 or more. |
+| `recipe.hook_startup_timeout_seconds` | number | `300` | `UNTAPED_RECIPE__HOOK_STARTUP_TIMEOUT_SECONDS` | Timeout for preparing a hook environment. 0 or more. |
+| `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backups prune` keeps this many newest bundles by default. 1 or more. |
+| `recipe.backup_max_age_days` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_MAX_AGE_DAYS` | `backups prune` deletes bundles older than this by default. 1 or more. |
+| `recipe.preview_max_rows` | integer | `50` | `UNTAPED_RECIPE__PREVIEW_MAX_ROWS` | Preview rows before `apply` collapses per-file rows; `0` is unlimited. 0 or more. |
 
 ## `workspace`
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). Experimental: may change in a minor release. |
-| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. Experimental: may change in a minor release. |
+| `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. 1 or more. Experimental: may change in a minor release. |
 | `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. Experimental: may change in a minor release. |
-| `workspace.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. Experimental: may change in a minor release. |
+| `workspace.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. 0 or more. Experimental: may change in a minor release. |
 
 ## `workspace` state
 
