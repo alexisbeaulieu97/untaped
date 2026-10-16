@@ -381,14 +381,14 @@ def test_plugin_schema_finds_a_kind_only_a_plugin_app_declares() -> None:
 
 
 def test_plugin_schema_loads_contract_offers_to_find_a_kind(tmp_path: Path) -> None:
-    (tmp_path / "untaped_gadgets_records.py").write_text(
+    (tmp_path / "untaped_gadgets.py").write_text(
         "from untaped.contracts import Record\n\n\n"
         'class Gadget(Record, kind="gadgets.gadget"):\n'
         "    name: str\n"
     )
 
     def offers() -> tuple[Contract, ...]:
-        import untaped_gadgets_records  # noqa: F401 - the lazy import under test
+        import untaped_gadgets  # noqa: F401 - the lazy import under test
 
         return ()
 

@@ -16,7 +16,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.sdk import Plugin, UsageError, kind_of
+from untaped.sdk import Plugin, UsageError
 from untaped.testing import PluginCandidate, PluginCheckRow, check_plugin
 from untaped_lint.errors import UnreadableSourceError
 from untaped_lint.infrastructure.files import SourceFile, source_files
@@ -26,12 +26,12 @@ from untaped_lint.providers.conventions.messages import message_violations
 from untaped_lint.providers.conventions.store_format import store_format_violations
 from untaped_lint.providers.conventions.structure import structure_source_violations
 from untaped_lint.providers.conventions.terminal_boundary import terminal_boundary_violations
-from untaped_lint.records import FileLocation, Finding, Rule, Severity
+from untaped_lint.records import FileLocation, Finding, Rule, Severity, declared_kind
 
 KEY = "lint"
 """The key of every Conventions id: ``lint.error-case``."""
 
-_PLUGIN = kind_of(Plugin) or "untaped.plugin"
+_PLUGIN = declared_kind(Plugin)
 
 _TABLE: tuple[tuple[str, Severity, str], ...] = (
     # The composed checks: names, requirements, the help tree, marks, structure, imports.

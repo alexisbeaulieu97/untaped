@@ -21,7 +21,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from untaped.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather, providing
-from untaped.sdk import ConfigError, ErrorCategory, Failure, Plugin, kind_of, plural
+from untaped.sdk import ConfigError, ErrorCategory, Failure, Plugin, plural
 from untaped.testing import PluginCandidate, allowed_names
 from untaped_lint.application.modules import RULE_IMPORTS, TREE_KIND, Loaded, load
 from untaped_lint.application.repo_file import RepoFile
@@ -38,6 +38,7 @@ from untaped_lint.records import (
     Rule,
     Subject,
     Tree,
+    declared_kind,
     public,
     unreadable_files,
 )
@@ -47,7 +48,7 @@ _NOTHING = (
     "nothing to lint here: run it in a plugin repository, a repository with "
     ".untaped/lint.yml, or pipe records with --stdin"
 )
-_RULE_KIND = kind_of(Rule) or "lint.rule"
+_RULE_KIND = declared_kind(Rule)
 
 
 @dataclass(frozen=True)

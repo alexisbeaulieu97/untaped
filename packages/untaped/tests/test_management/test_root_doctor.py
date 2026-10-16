@@ -245,6 +245,33 @@ def test_id_mismatch_and_bad_return_are_failed_rows(_isolated_config: Path) -> N
     assert "ext.b" in result.stdout
 
 
+def test_a_detail_that_is_not_a_string_fails_its_row_under_json(_isolated_config: Path) -> None:
+    from untaped.plugins.registry import DoctorCheck, DoctorResult
+
+    def _none_detail(ctx: object) -> DoctorResult:
+        return DoctorResult(id="ext.a", ok=False, detail=None)  # type: ignore[arg-type]
+
+    def _int_detail(ctx: object) -> DoctorResult:
+        return DoctorResult(id="ext.b", ok=True, detail=3)  # type: ignore[arg-type]
+
+    app = _doctor_app(
+        make_spec(
+            "ext",
+            doctor_checks=(
+                DoctorCheck(id="ext.a", title="t", run=_none_detail),  # type: ignore[arg-type]
+                DoctorCheck(id="ext.b", title="t", run=_int_detail),  # type: ignore[arg-type]
+            ),
+        )
+    )
+    result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+
+    rows = {row["check"]: row for row in json.loads(result.stdout)}
+    assert result.exit_code == 1
+    assert (rows["ext.a"]["status"], rows["ext.a"]["detail"]) == ("fail", "")
+    assert rows["ext.b"]["status"] == "fail"
+    assert rows["ext.b"]["detail"] == "check returned detail of type int, expected str"
+
+
 # ── Jira isolation: invalid settings fail their rows only ────────────────────
 
 

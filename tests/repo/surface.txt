@@ -5695,6 +5695,7 @@ sdk untaped.sdk.emit(empty=) default=None
 sdk untaped.sdk.emit(kind=) default=None
 sdk untaped.sdk.emit(records, *, fmt)
 sdk untaped.sdk.emit(table_columns=) default=None
+sdk untaped.sdk.emit_document(data, *, fmt)
 sdk untaped.sdk.executable_check(check_id, program, *, purpose)
 sdk untaped.sdk.existing_file(type_, value)
 sdk untaped.sdk.experimental
@@ -5752,11 +5753,13 @@ sdk untaped.sdk.project_root(start)
 sdk untaped.sdk.q(value)
 sdk untaped.sdk.raise_usage(message)
 sdk untaped.sdk.read_identifiers(accept_kinds=) default=None
+sdk untaped.sdk.read_identifiers(accepts=) default=None
 sdk untaped.sdk.read_identifiers(id_field=) default=None
 sdk untaped.sdk.read_identifiers(positional, *, stdin)
 sdk untaped.sdk.read_stdin()
 sdk untaped.sdk.read_stdin_input()
 sdk untaped.sdk.read_stdin_input(accept_kinds=) default=None
+sdk untaped.sdk.read_stdin_input(accepts=) default=None
 sdk untaped.sdk.read_stdin_input(allow_empty=) default=false
 sdk untaped.sdk.read_stdin_input(what=) default=identifiers
 sdk untaped.sdk.read_structured_file(flag=) default=None
@@ -5965,6 +5968,7 @@ sdk untaped.testing.invoke_cli(interactive=) default=false
 sdk untaped.testing.invoke_cli(prompt_backend=) default=None
 sdk untaped.testing.invoke_cli(terminal=) default=false
 sdk untaped.testing.invoke_root(argv)
+sdk untaped.testing.invoke_root(input=) default=None
 sdk untaped.testing.plugin_candidate(distribution=) default=None
 sdk untaped.testing.plugin_candidate(requires_dist=) default=[]
 sdk untaped.testing.plugin_candidate(spec)

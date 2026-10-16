@@ -29,12 +29,13 @@ import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from importlib import import_module
 from importlib.util import find_spec
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
 from untaped.errors import ExitCode, UsageError, first_validation_error
 from untaped.management._render import emit_check_list, emit_isolated
+from untaped.management.records import PluginCheckRow
 from untaped.messages import not_found, plural, summary
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
@@ -46,7 +47,6 @@ from untaped.plugins.registry import (
     PluginSpec,
     owns_contracts,
 )
-from untaped.records import CheckRecord, kind_of
 from untaped.settings import get_settings
 from untaped.theme import OutputFormat
 
@@ -54,20 +54,6 @@ if TYPE_CHECKING:
     from untaped.contracts._registry import Provider
 
 _diag = Diagnostics()
-
-
-class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
-    """One finding of ``untaped plugin check``."""
-
-    table_columns: ClassVar[tuple[str, ...]] = ("plugin", "check", "title", "status", "detail")
-
-    plugin: str
-    check: str
-    """``conventions``, ``registration``, ``conformance``, ``live``, ``fills``, ``schema``,
-    ``contracts`` or ``migrations``."""
-    title: str
-    """What it is about: a convention rule, ``owner.contract`` or ``owner.contract.method``."""
-    detail: str = ""
 
 
 type _Violations = Callable[..., list[str]]
@@ -106,12 +92,11 @@ def report_check_rows(
     rows: Sequence[PluginCheckRow], *, fmt: OutputFormat, columns: list[str] | None
 ) -> None:
     """Show the findings (a checklist by plugin in a table) and a footer; exit 1 on a failure."""
-    data: list[dict[str, object]] = [row.model_dump(mode="json") for row in rows]
     if fmt == "table" and columns is None:
-        emit_check_list(data, run_line=" ".join)
+        emit_check_list([row.model_dump(mode="json") for row in rows], run_line=" ".join)
         _diag.info("")
     else:
-        emit_isolated(data, fmt=fmt, columns=columns, kind=kind_of(PluginCheckRow))
+        emit_isolated(rows, fmt=fmt, columns=columns)
     counts = {status: sum(row.status == status for row in rows) for status in _STATUSES}
     _diag.info(summary("plugin check", counts))
     if counts["fail"]:

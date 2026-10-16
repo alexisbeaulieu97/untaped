@@ -31,13 +31,14 @@ from importlib.metadata import metadata
 from pathlib import Path
 from textwrap import dedent, indent
 from types import ModuleType
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from untaped.errors import ConfigError, ErrorCategory, UntapedError, UsageError
+from untaped.management.records import ScaffoldOutcome
 from untaped.messages import not_found
 from untaped.plugins.registry import (
     CompositionResult,
@@ -47,19 +48,12 @@ from untaped.plugins.registry import (
     range_text,
     reserved_as,
 )
-from untaped.records import OutcomeRecord, TargetRecord
 
 if TYPE_CHECKING:
     from untaped.contracts._declare import ContractInfo
 
 #: The build backend of every package in this repository, and of the scaffold.
 BUILD_SYSTEM = 'requires = ["uv_build>=0.11.8,<0.12.0"]\nbuild-backend = "uv_build"'
-
-
-class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="untaped.scaffold_outcome"):
-    """One file ``plugin new`` wrote (``created``) or would write (``planned``)."""
-
-    table_columns: ClassVar[tuple[str, ...]] = ("action", "target_path")
 
 
 def scaffold(

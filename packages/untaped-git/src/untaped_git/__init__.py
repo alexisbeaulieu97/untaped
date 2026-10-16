@@ -70,7 +70,7 @@ SPEC = PluginSpec(
     ),
     doctor_checks=(
         DoctorCheck(id="git.version", title="git version", run=_git_version),
-        DoctorCheck(id="git.store", title="git store", run=_git_store),
+        DoctorCheck(id="git.repo-store", title="git store", run=_git_store),
     ),
     contracts=_contracts,
 )

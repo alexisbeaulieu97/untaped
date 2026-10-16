@@ -319,6 +319,22 @@ def test_rows_with_nothing_to_move_are_shown_without_asking() -> None:
     assert "nothing to move or delete" in result.stderr
 
 
+class _NotedRow(MigrationRow):
+    note: str = "plugin's own"
+
+
+def test_a_row_subclass_previews_with_the_base_fields() -> None:
+    def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
+        return [_NotedRow(action="keep", source="/somewhere", detail="kept")]
+
+    specs = (_spec("alpha", replace(_move_row("alpha"), preview=preview)),)
+    result = _run("--format", "json", specs=specs)
+
+    assert result.exit_code == 0, result.stderr
+    [row] = json.loads(result.stdout)
+    assert (row["action"], "note" in row) == ("keep", False)
+
+
 def test_an_apply_returning_the_wrong_type_is_a_failed_outcome() -> None:
     _plant()
 

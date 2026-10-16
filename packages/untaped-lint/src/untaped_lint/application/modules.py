@@ -22,12 +22,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
-from untaped.sdk import ConfigError, ErrorCategory, Failure, kind_of
+from untaped.sdk import ConfigError, ErrorCategory, Failure
 from untaped_lint.application.repo_file import RepoFile
 from untaped_lint.application.rules import Rules
-from untaped_lint.records import FileLocation, Finding, Rule, Tree
+from untaped_lint.records import FileLocation, Finding, Rule, Tree, declared_kind
 
-TREE_KIND = kind_of(Tree) or "lint.tree"
+TREE_KIND = declared_kind(Tree)
 RULE_IMPORTS = Rule(
     id="rule-imports",
     reads=TREE_KIND,

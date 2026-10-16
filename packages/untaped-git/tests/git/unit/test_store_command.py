@@ -1,4 +1,4 @@
-"""`untaped git store` and the `git.store` doctor row read the store from disk."""
+"""`untaped git store` and the `git.repo-store` doctor row read the store from disk."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _repo(root: Path, name: str, *, config: str = "") -> Path:
 def _store_row() -> dict[str, object]:
     result = CliInvoker().invoke(_root(), ["doctor", "--format", "json"])  # type: ignore[arg-type]
     rows = {str(row["check"]): row for row in json.loads(result.stdout)}
-    return rows["git.store"]
+    return rows["git.repo-store"]
 
 
 def test_a_healthy_store_passes(store: Path) -> None:
