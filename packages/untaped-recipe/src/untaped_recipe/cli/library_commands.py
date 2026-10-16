@@ -34,7 +34,6 @@ from untaped.sdk import (
     writes,
 )
 from untaped_recipe.application.check_pack import check_library, check_ref
-from untaped_recipe.application.files import read_recipe_file
 from untaped_recipe.application.resolution import find_library_recipe
 from untaped_recipe.builtins.registry import BUILTIN_HOOKS
 from untaped_recipe.cli.common import (
@@ -43,10 +42,9 @@ from untaped_recipe.cli.common import (
     report_config_errors,
 )
 from untaped_recipe.cli.detail import (
-    BUILTIN_PACK,
-    hook_detail,
-    pack_detail,
-    recipe_detail,
+    hook_record,
+    pack_record,
+    recipe_record,
     table_recipe_detail,
 )
 from untaped_recipe.domain.hook_project import hook_module_file
@@ -67,7 +65,7 @@ from untaped_recipe.errors import (
     RecipeError,
     RecipeNotFoundError,
 )
-from untaped_recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
+from untaped_recipe.infrastructure.pack_files import read_pack_manifest
 from untaped_recipe.infrastructure.pack_inspector import PackInspector
 from untaped_recipe.infrastructure.pack_store import (
     PackLibrary,
@@ -408,7 +406,9 @@ def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) 
     """List installed recipes."""
     _list_rows(
         lambda installed: [
-            _recipe_row(pack, name, entry) for pack in installed for name, entry in _recipes(pack)
+            recipe_record(pack, name, detail=False)
+            for pack in installed
+            for name in sorted(pack.manifest.recipes)
         ],
         fmt=fmt,
         columns=columns,
@@ -418,7 +418,7 @@ def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) 
 def list_packs_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List installed packs."""
     _list_rows(
-        lambda installed: [_pack_row(pack) for pack in installed],
+        lambda installed: [pack_record(pack, detail=False) for pack in installed],
         fmt=fmt,
         columns=columns,
     )
@@ -428,8 +428,12 @@ def list_hooks_command(*, fmt: FormatOption = "table", columns: ColumnsOption = 
     """List installed hooks, then the built-in ones."""
     _list_rows(
         lambda installed: [
-            *(_hook_row(pack, name, entry) for pack in installed for name, entry in _hooks(pack)),
-            *(_builtin_hook_row(name) for name in sorted(BUILTIN_HOOKS)),
+            *(
+                hook_record(pack, name, detail=False)
+                for pack in installed
+                for name in sorted(pack.manifest.hooks)
+            ),
+            *(hook_record(None, name, detail=False) for name in sorted(BUILTIN_HOOKS)),
         ],
         fmt=fmt,
         columns=columns,
@@ -466,9 +470,8 @@ def get_command(
     """Show an installed recipe."""
     with report_config_errors():
         library = PackLibrary(library_dir=library_dir())
-        pack, name, recipe = _find_recipe(library, ref_text, verb="get")
-        recipe_path = pack.root / recipe.path
-        detail = recipe_detail(pack.name, name, read_recipe_file(recipe_path), recipe_path)
+        pack, name, _entry = _find_recipe(library, ref_text, verb="get")
+        detail = recipe_record(pack, name, detail=True)
         # A table shows the steps as one line, so it is a view, not the record.
         emit(
             table_recipe_detail(detail) if fmt == "table" else detail,
@@ -487,7 +490,7 @@ def get_pack_command(
     """Show an installed pack."""
     with report_config_errors():
         pack = _find_pack(PackLibrary(library_dir=library_dir()), name)
-        emit(pack_detail(pack), fmt=fmt, columns=columns)
+        emit(pack_record(pack, detail=True), fmt=fmt, columns=columns)
 
 
 def get_hook_command(
@@ -500,24 +503,7 @@ def get_hook_command(
     """Show an installed or built-in hook."""
     with report_config_errors():
         target = _find_hook(PackLibrary(library_dir=library_dir()), ref_text)
-        if target.pack is None or target.hook is None:
-            builtin = BUILTIN_HOOKS[target.name]
-            detail = hook_detail(
-                None,
-                target.name,
-                HookEntry(module=builtin.module.__name__),
-                builtin.exports,
-                Path(builtin.module.__file__ or ""),
-            )
-        else:
-            module_file = hook_module_file(target.pack.root, target.hook.module)
-            detail = hook_detail(
-                target.pack.name,
-                target.name,
-                target.hook,
-                hook_exports(module_file),
-                module_file,
-            )
+        detail = hook_record(target.pack, target.name, detail=True)
         emit(detail, fmt=fmt, columns=columns)
 
 
@@ -706,52 +692,6 @@ def _find_hook(library: PackLibrary, ref_text: str) -> _ResolvedHook:
             return _ResolvedHook(name=ref_text)
         raise
     return _ResolvedHook(name=ref.name, pack=pack, hook=hook)
-
-
-def _recipes(pack: InstalledPack) -> list[tuple[str, RecipeEntry]]:
-    return sorted(pack.manifest.recipes.items())
-
-
-def _hooks(pack: InstalledPack) -> list[tuple[str, HookEntry]]:
-    return sorted(pack.manifest.hooks.items())
-
-
-def _pack_row(pack: InstalledPack) -> Pack:
-    return Pack(
-        name=pack.name,
-        project=pack.manifest.project_name,
-        version=pack.installed_version,
-        path=str(pack.root),
-        source=pack.source,
-        rev=pack.rev,
-        commit=pack.commit,
-        recipes=len(pack.manifest.recipes),
-        hooks=len(pack.manifest.hooks),
-        manifest_name=pack.manifest.name if pack.manifest.name != pack.name else None,
-    )
-
-
-def _recipe_row(pack: InstalledPack, name: str, entry: RecipeEntry) -> InstalledRecipe:
-    return InstalledRecipe(
-        pack=pack.name, name=name, ref=f"{pack.name}/{name}", path=str(pack.root / entry.path)
-    )
-
-
-def _hook_row(pack: InstalledPack, name: str, entry: HookEntry) -> Hook:
-    return Hook(
-        pack=pack.name,
-        name=name,
-        ref=f"{pack.name}/{name}",
-        module=entry.module,
-        path=str(hook_module_file(pack.root, entry.module)),
-    )
-
-
-def _builtin_hook_row(name: str) -> Hook:
-    module = BUILTIN_HOOKS[name].module
-    return Hook(
-        pack=BUILTIN_PACK, name=name, ref=name, module=module.__name__, path=module.__file__ or ""
-    )
 
 
 def _render_pack_add_preview(

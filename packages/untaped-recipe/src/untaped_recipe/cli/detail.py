@@ -1,12 +1,17 @@
-"""The detail records of ``recipe get``, ``packs get`` and ``hooks get``."""
+"""The records of recipes, packs and hooks, for ``list`` and ``get`` alike.
+
+One builder per record, so a ``list`` row and a ``get`` detail of the same
+kind cannot drift apart: ``detail`` adds what only ``get`` reads.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from untaped_recipe.application.files import read_recipe_file
+from untaped_recipe.builtins.registry import BUILTIN_HOOKS
 from untaped_recipe.domain.hook_project import hook_module_file
-from untaped_recipe.domain.pack import HookEntry, InstalledPack
+from untaped_recipe.domain.pack import InstalledPack
 from untaped_recipe.domain.recipe import (
     CopyStep,
     Recipe,
@@ -30,57 +35,17 @@ BUILTIN_PACK = "(builtin)"
 """The ``pack`` of a built-in hook's row."""
 
 
-def recipe_detail(pack: str, name: str, recipe: Recipe, path: Path) -> InstalledRecipe:
-    """The ``recipe get`` record: the recipe's inputs, steps and hooks."""
-    return InstalledRecipe(
-        pack=pack,
-        name=name,
-        ref=f"{pack}/{name}",
-        description=recipe.description,
-        inputs=[
-            RecipeInput(
-                name=input_name,
-                type=spec.type,
-                required=spec.required,
-                default=spec.default,
-                description=spec.description,
-                sensitive=spec.sensitive,
-            )
-            for input_name, spec in sorted(recipe.inputs.items())
-        ],
-        steps=[_step_detail(step) for step in recipe.steps],
-        hooks=sorted(
-            {step.hook for step in recipe.steps if isinstance(step, TransformStep | ValidateStep)}
-        ),
-        path=str(path),
-    )
+def pack_record(pack: InstalledPack, *, detail: bool) -> Pack:
+    """An installed pack's row: counts for ``packs list``, summaries for ``packs get``.
 
-
-def hook_detail(
-    pack: str | None,
-    name: str,
-    entry: HookEntry,
-    exports: frozenset[str],
-    module_file: Path,
-) -> Hook:
-    """The ``hooks get`` record of a pack's hook, or a built-in's (``pack`` ``None``)."""
-    return Hook(
-        pack=pack or BUILTIN_PACK,
-        name=name,
-        ref=name if pack is None else f"{pack}/{name}",
-        module=entry.module,
-        exports=sorted(exports),
-        path=str(module_file),
-    )
-
-
-def pack_detail(pack: InstalledPack) -> Pack:
-    """The ``packs get`` record: each recipe's summary line and each hook's exports."""
+    ``detail`` reads each recipe file and scans each hook module; its
+    ``version`` is the library copy's manifest version, else the installed one.
+    """
     manifest, root = pack.manifest, pack.root
     return Pack(
         name=pack.name,
         project=manifest.project_name,
-        version=manifest.version,
+        version=manifest.version if detail else pack.installed_version,
         path=str(root),
         source=pack.source,
         rev=pack.rev,
@@ -91,15 +56,82 @@ def pack_detail(pack: InstalledPack) -> Pack:
                 description=_first_line(read_recipe_file(root / entry.path).description),
             )
             for name, entry in sorted(manifest.recipes.items())
-        ],
+        ]
+        if detail
+        else len(manifest.recipes),
         hooks=[
             PackHook(
                 name=name,
                 exports=sorted(hook_exports(hook_module_file(root, entry.module))),
             )
             for name, entry in sorted(manifest.hooks.items())
-        ],
+        ]
+        if detail
+        else len(manifest.hooks),
         manifest_name=manifest.name if manifest.name != pack.name else None,
+    )
+
+
+def recipe_record(pack: InstalledPack, name: str, *, detail: bool) -> InstalledRecipe:
+    """One of ``pack``'s recipes; ``detail`` (``recipe get``) reads its file."""
+    path = pack.root / pack.manifest.recipes[name].path
+    recipe = read_recipe_file(path) if detail else None
+    return InstalledRecipe(
+        pack=pack.name,
+        name=name,
+        ref=_ref(pack.name, name),
+        description=None if recipe is None else recipe.description,
+        inputs=None if recipe is None else _inputs(recipe),
+        steps=None if recipe is None else [_step_detail(step) for step in recipe.steps],
+        hooks=None if recipe is None else _hooks(recipe),
+        path=str(path),
+    )
+
+
+def hook_record(pack: InstalledPack | None, name: str, *, detail: bool) -> Hook:
+    """One of ``pack``'s hooks, or a built-in (``pack`` ``None``); ``detail`` adds exports."""
+    exports: frozenset[str] | None
+    if pack is None:
+        builtin = BUILTIN_HOOKS[name]
+        module, path = builtin.module.__name__, builtin.module.__file__ or ""
+        exports = builtin.exports if detail else None
+    else:
+        module = pack.manifest.hooks[name].module
+        module_file = hook_module_file(pack.root, module)
+        path = str(module_file)
+        exports = hook_exports(module_file) if detail else None
+    return Hook(
+        pack=BUILTIN_PACK if pack is None else pack.name,
+        name=name,
+        ref=_ref(None if pack is None else pack.name, name),
+        module=module,
+        exports=None if exports is None else sorted(exports),
+        path=path,
+    )
+
+
+def _ref(pack: str | None, name: str) -> str:
+    """A recipe's or hook's ``PACK/NAME`` ref; a built-in hook's is its name."""
+    return name if pack is None else f"{pack}/{name}"
+
+
+def _inputs(recipe: Recipe) -> list[RecipeInput]:
+    return [
+        RecipeInput(
+            name=name,
+            type=spec.type,
+            required=spec.required,
+            default=spec.default,
+            description=spec.description,
+            sensitive=spec.sensitive,
+        )
+        for name, spec in sorted(recipe.inputs.items())
+    ]
+
+
+def _hooks(recipe: Recipe) -> list[str]:
+    return sorted(
+        {step.hook for step in recipe.steps if isinstance(step, TransformStep | ValidateStep)}
     )
 
 

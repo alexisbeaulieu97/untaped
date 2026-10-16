@@ -158,12 +158,19 @@ def _render_stderr_table(rows: list[dict[str, object]], *, columns: list[str]) -
 
     A preview is text a person reads before the question, not records, so it
     is the same whatever ``--format`` asks of stdout, and ``--quiet`` keeps
-    it. ``ui.collection_view: list`` shows each row as ``key: value`` lines.
+    it. With ``ui.hide_empty_columns`` (the default) a column empty on every
+    row is left out; ``ui.collection_view: list`` shows each row as
+    ``key: value`` lines.
     """
     if not rows:
         return
+    theme = ui_context(strict=False).theme
+    if theme.hide_empty_columns:
+        # As in any table, unless every column is empty.
+        shown = [column for column in columns if any(_cell(row.get(column)) for row in rows)]
+        columns = shown or columns
     cells = [[_cell(row.get(column)) for column in columns] for row in rows]
-    if ui_context(strict=False).theme.collection_view == "list":
+    if theme.collection_view == "list":
         blocks = (
             "\n".join(f"{name}: {value}" for name, value in zip(columns, line, strict=True))
             for line in cells

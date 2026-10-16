@@ -4132,6 +4132,33 @@ def test_unified_list_recipes_hooks_and_packs(tmp_path: Path) -> None:
     assert json.loads(packs.stdout)[0]["name"] == "ansible"
 
 
+def test_packs_list_and_get_name_an_aliased_packs_project_and_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="upstream", recipes={"ci": "recipes/ci.yml"})
+    _install_pack(source, name="acme")
+
+    listed = CliInvoker().invoke(app, ["packs", "list", "--format", "json"])
+    shown = CliInvoker().invoke(app, ["packs", "get", "acme", "--format", "json"])
+
+    assert listed.exit_code == 0, listed.output
+    assert shown.exit_code == 0, shown.output
+    row, detail = json.loads(listed.stdout)[0], json.loads(shown.stdout)
+    assert row == {
+        "name": "acme",
+        "project": "untaped-recipe-upstream",
+        "version": "0.1.0",
+        "path": str(library_dir() / "packs" / "acme"),
+        "source": str(source),
+        "rev": "",
+        "commit": "",
+        "recipes": 1,
+        "hooks": 0,
+        "manifest_name": "upstream",
+    }
+    # One recipe.pack schema: get differs only in summarising recipes and hooks.
+    assert detail == row | {"recipes": [{"name": "ci", "description": ""}], "hooks": []}
+
+
 def test_list_hooks_shows_builtins_even_on_empty_library(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["hooks", "list", "--format", "json"])
 

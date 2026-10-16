@@ -97,9 +97,8 @@ def get_command(
 ) -> None:
     """Show backup metadata."""
     with report_config_errors():
-        store = BackupStore(library_dir() / "backups")
-        bundle = store.resolve(backup_id)
-        record = _backup_row(bundle, store.metadata(bundle.id))
+        bundle = BackupStore(library_dir() / "backups").resolve(backup_id)
+        record = _backup_row(bundle, read_metadata(bundle))
         if fmt != "table":
             emit(record, fmt=fmt, columns=columns)
             return

@@ -1,9 +1,9 @@
-"""Recipe's record models keep the keys, in order, of the rows they replaced.
+"""A snapshot of the key order each recipe record writes on the wire.
 
-Each kind was a dict row (or an undeclared model) before it declared a model;
-``-f json``, ``-f yaml`` and ``-f pipe`` must write the same keys in the same
-order. Where a ``list`` row and a ``get`` detail share a kind, the model is
-both, so each form's keys appear in order, with the other form's as null.
+``-f json``, ``-f yaml`` and ``-f pipe`` write a record's keys in this
+order, so changing it changes what scripts read. Where a ``list`` row and a
+``get`` detail share a kind, one model is both, and each form's sample
+lists the same keys.
 """
 
 from __future__ import annotations
@@ -57,8 +57,8 @@ _PACK_KEYS = [
 _RECIPE_KEYS = ["pack", "name", "ref", "description", "inputs", "steps", "hooks", "path"]
 _HOOK_RUN_KEYS = ["hook", "kind", "target", "file", "status", "content", "diff", "message"]
 
-#: (sample, the keys it writes in order): its old row's keys, plus, as null,
-#: the fields another form of the same kind (``list`` or ``get``) fills.
+#: (sample, the keys it writes, in wire order). Fields a form does not fill
+#: are written as null, so they are listed too.
 _CASES: list[tuple[BaseModel, list[str]]] = [
     (
         ApplyOutcome(
