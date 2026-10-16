@@ -34,7 +34,6 @@ from untaped_awx.application.resources.save_resources import (
 from untaped_awx.cli.context import AwxContext, open_context
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.lint.resources import AwxResources, subject_of
-from untaped_awx.domain.lint.targets import target_of
 from untaped_awx.infrastructure.lint import snapshot_store
 from untaped_awx.infrastructure.lint.documents import documents_of, file_texts
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
@@ -74,7 +73,7 @@ def run_lint(
     catalog = AwxResourceCatalog()
     spec = _kind(catalog, query.kind)
     _check_filters(catalog, spec, query.filters)
-    exact: list[str] = []
+    locations: list[str] = []
     with report_errors():
         if files and offline:
             resources = load_documents(documents_of(file_texts(files)), catalog=catalog)
@@ -87,8 +86,8 @@ def run_lint(
                     resources = _snapshot(ctx, refresh=refresh)
                     _warn_unlisted(ctx, catalog, resources)
                     if query.queried:
-                        exact = _matching(ctx, resources, spec, query)
-                        if not exact:
+                        locations = _matching(ctx, resources, spec, query)
+                        if not locations:
                             ctx.diag.warning(
                                 "no resource matches --filter/--search; nothing to report"
                             )
@@ -98,8 +97,8 @@ def run_lint(
             config=lint_config(Path.cwd(), tree=False),
             select=select,
             ignore=ignore,
-            only=_only(spec, query.organization),
-            exact=exact,
+            only=_only(spec, query.organization, resources),
+            locations=locations,
             strict=strict,
             fmt=fmt,
             columns=columns,
@@ -129,19 +128,33 @@ def _check_filters(catalog: Catalog, spec: ResourceSpec | None, filters: dict[st
         raise_usage(f"--filter: {field!r} is not a field of {where}")
 
 
-def _only(spec: ResourceSpec | None, organization: str | None) -> list[str]:
-    """The target glob ``--kind``/``--organization`` select: ``Kind/Org/**`` with ``*`` unset."""
+def _only(
+    spec: ResourceSpec | None, organization: str | None, resources: AwxResources
+) -> list[str]:
+    """The target globs ``--kind``/``--organization`` select: ``Kind/Org/**`` with ``*`` unset.
+
+    A document that could not be read has no kind or organization to narrow
+    by (its target is its path), so it is always reported: a narrowed run
+    never passes over a file it could not read.
+    """
     if spec is None and organization is None:
         return []
     kind = glob.escape(spec.kind) if spec is not None else "*"
     scope = glob.escape(organization) if organization is not None else "*"
-    return [f"{kind}/{scope}/**"]
+    unread = sorted({glob.escape(each.path) for each in resources.unreadable})
+    return [f"{kind}/{scope}/**", *unread]
 
 
 def _snapshot(ctx: AwxContext, *, refresh: bool | None) -> AwxResources:
     """The controller's snapshot, filled when ``awx.caches.resources`` says it is due."""
     base_url = str(ctx.settings.base_url)
-    path = snapshot_store.store_path(plugin_dir(SPEC), profile=ctx.profile, base_url=base_url)
+    token = ctx.settings.token
+    path = snapshot_store.store_path(
+        plugin_dir(SPEC),
+        profile=ctx.profile,
+        base_url=base_url,
+        token=token.get_secret_value() if token is not None else "",
+    )
     if not path.exists() and RESOURCES.freshness(base_url).refreshed_at is not None:
         RESOURCES.forget(base_url)  # the data went away: what the sidecar says no longer holds
     served = RESOURCES.serve(
@@ -183,11 +196,12 @@ def _warn_unlisted(ctx: AwxContext, catalog: Catalog, resources: AwxResources) -
 def _matching(
     ctx: AwxContext, resources: AwxResources, spec: ResourceSpec | None, query: Query
 ) -> list[str]:
-    """The targets of the snapshot's resources the controller lists for the query.
+    """The locations of the snapshot's resources the controller lists for the query.
 
     One listing per kind: ``--kind``'s, else every kind that has the filtered
     fields, of those the token could list. ``--organization`` scopes each
-    listing as ``export`` does.
+    listing as ``export`` does. Locations, not targets: two schedules of one
+    name under two templates share a target, never a location.
     """
     kinds = [spec.kind] if spec is not None else ctx.catalog.kinds()
     specs = [ctx.catalog.get(kind) for kind in kinds if kind in resources.loaded]
@@ -201,9 +215,8 @@ def _matching(
         if query.search is not None:
             params["search"] = query.search
         paths.update(_path_of(each, int(row["id"])) for row in ctx.repo.list(each, params=params))
-    return sorted(
-        {target_of(item) for item in resources.items if getattr(item.location, "id", None) in paths}
-    )
+    held = {getattr(item.location, "id", None) for item in resources.items}
+    return sorted(paths & held)
 
 
 __all__ = ["Query", "run_lint"]

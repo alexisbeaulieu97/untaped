@@ -75,8 +75,9 @@ def _resources_version() -> str:
     """The version of what a controller snapshot holds: its model and the code that fills it.
 
     A snapshot filled by other code is outdated, so an edit to the loader, its
-    resolution or the snapshot's model (or an upgrade of either distribution)
-    reads the controller again on the next run.
+    resolution, its redaction, the export it builds on or the snapshot's model
+    (or an upgrade of either distribution) reads the controller again on the
+    next run.
     """
     return ":".join(
         (
@@ -85,6 +86,9 @@ def _resources_version() -> str:
             ),
             code_version("untaped_awx.application.lint.controller"),
             code_version("untaped_awx.application.lint.resolution"),
+            code_version("untaped_awx.domain.lint.secrets"),
+            code_version("untaped_awx.application.resources.save_resource"),
+            code_version("untaped_awx.application.resources.references"),
         )
     )
 

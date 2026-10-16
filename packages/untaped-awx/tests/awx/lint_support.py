@@ -140,6 +140,7 @@ def seed_controller(fake: Any) -> None:
         identifier="deploy",
         workflow_job_template=200,
         unified_job_template=100,
+        extra_data={"vault_password": "opensesame"},
         summary_fields={"unified_job_template": {"id": 100, "unified_job_type": "job"}},
     )
     fake.seed(

@@ -59,8 +59,10 @@ def _files(tmp_path: Path, **texts: str) -> Path:
     return folder
 
 
-def _snapshot_file() -> Path:
-    return store_path(plugin_dir(SPEC), profile="default", base_url="https://aap.example.com")
+def _snapshot_file(token: str = "secret") -> Path:
+    return store_path(
+        plugin_dir(SPEC), profile="default", base_url="https://aap.example.com", token=token
+    )
 
 
 # --- FILES --offline --------------------------------------------------------------
@@ -104,6 +106,16 @@ def test_ignore_and_strict_are_lints_own_spellings(tmp_path: Path) -> None:
     ]  # fmt: skip
     assert _lint(folder, "--offline", *only_warning).exit_code == 0
     assert _lint(folder, "--offline", *only_warning, "--strict").exit_code == 3
+
+
+@pytest.mark.usefixtures("composed")
+def test_narrowing_never_hides_a_document_it_could_not_read(tmp_path: Path) -> None:
+    """S3: an unreadable document has no kind to narrow by; it is reported anyway."""
+    folder = _files(tmp_path, clean=CLEAN, broken="kind: JobTemplate\nmetadata: [\n")
+    for narrowing in (["--kind", "projects"], ["--org", "Finance"]):
+        result = _lint(str(folder), "--offline", *narrowing)
+        assert result.exit_code == 3, result.output
+        assert _found(result) == [("awx.invalid-document", str(folder / "broken.yml"))]
 
 
 @pytest.mark.usefixtures("composed")
@@ -173,6 +185,7 @@ def test_the_snapshot_is_redacted_owner_only_and_served_from_the_cache(fake_aap:
     snapshot = _snapshot_file()
     text = snapshot.read_text(encoding="utf-8")
     assert "hunter2" not in text  # a template's launch variable
+    assert "opensesame" not in text  # a workflow node's prompts.extra_vars
     assert "swordfish" not in text  # an inventory's variable
     assert "ansible_user" in text  # what is not secret-named stays
     assert "$encrypted$" in text
@@ -200,9 +213,41 @@ def test_a_snapshot_file_gone_from_under_its_sidecar_is_read_again(fake_aap: Any
 def test_cached_with_nothing_kept_fails_without_asking(fake_aap: Any) -> None:
     seed_controller(fake_aap)
     result = _lint("--cached")
-    assert result.exit_code != 0
+    assert result.exit_code == 1, result.output
     assert _requests(fake_aap) == []
     assert "controller resources" in result.stderr
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_code_version_change_reads_the_controller_again(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S22: a snapshot another version of the loader filled is read again."""
+    from untaped_awx.settings import RESOURCES
+
+    seed_controller(fake_aap)
+    _lint()
+    before = len(fake_aap.router.calls)
+    _lint()
+    assert len(fake_aap.router.calls) == before
+    monkeypatch.setattr(RESOURCES, "version", lambda: "another")
+    _lint()
+    assert len(fake_aap.router.calls) > before
+
+
+@pytest.mark.usefixtures("composed")
+def test_another_token_never_reads_this_tokens_snapshot(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N1: the store's name digests the token, so a changed token reads the controller again."""
+    seed_controller(fake_aap)
+    _lint()
+    before = len(fake_aap.router.calls)
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "rotated")
+    assert _lint().exit_code == 3
+    assert len(fake_aap.router.calls) > before
+    assert _snapshot_file("rotated").exists() and _snapshot_file("secret").exists()
+    assert "rotated" not in _snapshot_file("rotated").name
 
 
 @pytest.mark.usefixtures("composed")
@@ -216,6 +261,142 @@ def test_a_kind_the_token_cannot_list_is_unresolved_not_absent(fake_aap: Any) ->
     assert ("awx.playbook-missing", "JobTemplate/Platform/deploy-web") not in found
     searched = _lint("--search", "deploy")  # lists only the kinds the token could list
     assert ("awx.unresolved-reference", "JobTemplate/Platform/deploy-web") in _found(searched)
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_record_the_token_can_neither_list_nor_read_is_unresolved(fake_aap: Any) -> None:
+    """S1: export would fail on the project's detail; lint names it ``#10`` and goes on."""
+    seed_controller(fake_aap)
+    fake_aap.list_errors["projects"] = 403
+    fake_aap.detail_errors[("projects", 10)] = 403
+    result = _lint()
+    assert result.exit_code == 3, result.output
+    messages = [
+        row["message"] for row in _rows(result) if row["rule"] == "awx.unresolved-reference"
+    ]
+    assert "project '#10' was not checked: the token cannot list Project records" in messages
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_kind_the_token_cannot_list_is_named_from_summary_fields(fake_aap: Any) -> None:
+    seed_controller(fake_aap)
+    template = fake_aap.store["job_templates"][100]
+    template["summary_fields"] = {
+        **template["summary_fields"],
+        "project": {"id": 10, "name": "web"},
+    }
+    fake_aap.list_errors["projects"] = 403
+    fake_aap.detail_errors[("projects", 10)] = 403
+    result = _lint()
+    messages = [row["message"] for row in _rows(result) if row["target"].endswith("/deploy-web")]
+    assert "project 'web' was not checked: the token cannot list Project records" in messages
+    assert "GET /api/v2/projects/10/" not in _requests(fake_aap)
+
+
+def _across_organizations(fake: Any) -> None:
+    """``deploy`` in Platform runs project ``web`` of Shared with credential ``mine`` of none."""
+    fake.seed("organizations", id=1, name="Platform")
+    fake.seed("organizations", id=2, name="Shared")
+    platform = {"organization": {"id": 1, "name": "Platform"}}
+    fake.seed(
+        "projects", id=10, name="web", organization=2, status="successful", scm_type="git",
+        scm_url="https://git.example.com/web.git", allow_override=False,
+        summary_fields={"organization": {"id": 2, "name": "Shared"}},
+    )  # fmt: skip
+    fake.playbooks[10] = ["site.yml"]
+    fake.seed(
+        "inventories", id=20, name="prod", organization=1, kind="", total_hosts=2,
+        summary_fields=platform,
+    )  # fmt: skip
+    fake.seed("credentials", id=30, name="mine", organization=None)
+    fake.seed(
+        "job_templates", id=100, name="deploy", organization=1, project=10, inventory=20,
+        playbook="site.yml", summary_fields=platform,
+    )  # fmt: skip
+    fake.memberships[("job_templates", 100, "credentials")] = {30}
+
+
+@pytest.mark.usefixtures("composed")
+def test_live_references_resolve_by_id_across_organizations(fake_aap: Any) -> None:
+    """B1: a project in another organization and a credential in none are not missing."""
+    _across_organizations(fake_aap)
+    result = _lint()
+    assert result.exit_code == 0, result.output
+    assert _rows(result) == []
+
+
+@pytest.mark.usefixtures("composed")
+def test_rules_still_judge_a_project_in_another_organization(fake_aap: Any) -> None:
+    _across_organizations(fake_aap)
+    fake_aap.store["job_templates"][100].update(playbook="deploy.yml", scm_branch="feature")
+    assert _found(_lint()) == [
+        ("awx.branch-override-ignored", "JobTemplate/Platform/deploy"),
+        ("awx.playbook-missing", "JobTemplate/Platform/deploy"),
+    ]
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_fix_applies_with_yes(fake_aap: Any) -> None:
+    seed_controller(fake_aap)
+    rows = _rows(_lint())
+    fix = next(row["fix"] for row in rows if row["rule"] == "awx.ignored-launch-field")
+    applied = invoke_cli(app, [*fix[1:], "--yes"])
+    assert applied.exit_code == 0, applied.output
+    assert fake_aap.store["job_templates"][100]["ask_limit_on_launch"] is True
+    assert "awx.ignored-launch-field" not in {rule for rule, _ in _found(_lint("--refresh"))}
+
+
+@pytest.mark.usefixtures("composed")
+def test_kind_narrows_the_report_never_the_load(fake_aap: Any) -> None:
+    """S14: the same requests, and the same snapshot, with and without --kind."""
+    seed_controller(fake_aap)
+    _lint("--refresh")
+    full = _requests(fake_aap)
+    snapshot = _snapshot_file().read_text(encoding="utf-8")
+    narrowed = _lint("--refresh", "--kind", "job-templates")
+    assert _requests(fake_aap)[len(full) :] == full
+    assert _snapshot_file().read_text(encoding="utf-8") == snapshot
+    assert {target for _, target in _found(narrowed)} == {
+        "JobTemplate/Platform/deploy-web",
+        "JobTemplate/Platform/orphan",
+    }
+
+
+def _namesake_schedules(fake: Any) -> None:
+    """Templates ``a`` and ``b`` each with a schedule ``nightly`` setting a limit they ignore."""
+    fake.seed("organizations", id=1, name="Platform")
+    platform = {"organization": {"id": 1, "name": "Platform"}}
+    fake.seed(
+        "projects", id=10, name="web", organization=1, status="successful", scm_type="git",
+        scm_url="https://git.example.com/web.git", summary_fields=platform,
+    )  # fmt: skip
+    fake.playbooks[10] = ["site.yml"]
+    fake.seed(
+        "inventories", id=20, name="prod", organization=1, kind="", total_hosts=2,
+        summary_fields=platform,
+    )  # fmt: skip
+    for id_, name in ((100, "a"), (101, "b")):
+        fake.seed(
+            "job_templates", id=id_, name=name, organization=1, project=10, inventory=20,
+            playbook="site.yml", ask_limit_on_launch=False, summary_fields=platform,
+        )  # fmt: skip
+        fake.seed(
+            "schedules", id=id_ + 300, name="nightly", unified_job_template=id_,
+            rrule="DTSTART:20260101T000000Z RRULE:FREQ=DAILY", limit="web1",
+            summary_fields={"unified_job_template": {
+                "id": id_, "name": name, "unified_job_type": "job",
+                "organization_name": "Platform",
+            }},
+        )  # fmt: skip
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_query_reports_the_resources_it_matched_not_their_namesakes(fake_aap: Any) -> None:
+    """S2: both schedules' target is Schedule/Platform/nightly; only one was matched."""
+    _namesake_schedules(fake_aap)
+    assert len(_rows(_lint())) == 2
+    result = _lint("--kind", "schedules", "--filter", "unified_job_template=100")
+    assert [row["location"]["id"] for row in _rows(result)] == ["schedules/400"]
 
 
 @pytest.mark.usefixtures("composed")
@@ -289,6 +470,72 @@ def _vault_credential(resources: AwxResources) -> Iterator[Finding]:
 
 class _HouseRules(Rules):
     RULES = (_vault_credential,)
+
+
+@rule("boom", reads=AwxResources, severity="error", summary="Raises.")
+def _boom(resources: AwxResources) -> Iterator[Finding]:
+    raise RuntimeError("cannot judge")
+    yield  # pragma: no cover - a generator
+
+
+class _Raising(Rules):
+    RULES = (_boom,)
+
+
+def test_a_third_party_rule_that_raises_exits_1_and_awx_still_reports(tmp_path: Path) -> None:
+    with compose_with("awx", "lint", provides={"house": [_Raising()]}):
+        result = _lint(str(_files(tmp_path, templates=DOCUMENTS)), "--offline")
+    assert result.exit_code == 1, result.output
+    assert len(_found(result)) == 3  # awx's rows still print
+    assert "house.boom" in result.stderr
+
+
+@rule("rewrite", reads=AwxResources, severity="warning", summary="Mutates what it reads.")
+def _rewrite(resources: AwxResources) -> Iterator[Finding]:
+    for item in resources.items:
+        item.resource.spec["project"] = "elsewhere"
+    return iter(())
+
+
+@rule("project", reads=AwxResources, severity="warning", summary="Says each project.")
+def _project(resources: AwxResources) -> Iterator[Finding]:
+    from untaped_awx.api import location_of, target_of
+    from untaped_lint.api import finding
+
+    for item in resources.of("JobTemplate"):
+        project = item.resource.spec.get("project")
+        yield finding(_project, target_of(item), f"project {project}", location=location_of(item))
+
+
+class _Rewriting(Rules):
+    RULES = (_rewrite,)
+
+
+class _Reading(Rules):
+    RULES = (_project,)
+
+
+def test_a_provider_mutating_its_subject_leaks_nothing(tmp_path: Path) -> None:
+    """S35: what one provider does to the snapshot, no other provider or awx sees."""
+    providers = {"aaa": [_Rewriting()], "zzz": [_Reading()]}
+    with compose_with("awx", "lint", provides=providers):
+        result = _lint(str(_files(tmp_path, clean=CLEAN)), "--offline")
+    assert result.exit_code == 0, result.output
+    assert [row["message"] for row in _rows(result)] == ["project web"]
+
+
+def test_a_quarantined_awx_has_no_rules_to_run_and_exits_4(tmp_path: Path) -> None:
+    """S26: awx's lint offer raises and no other provider has rules."""
+    import dataclasses
+
+    def broken() -> tuple[()]:
+        raise RuntimeError("cannot offer")
+
+    spec = dataclasses.replace(SPEC, provides={"lint": broken})
+    with compose_with(spec, "lint"):
+        result = _lint(str(_files(tmp_path, clean=CLEAN)), "--offline")
+    assert result.exit_code == 4, result.output
+    assert "awx's rules did not run: quarantined" in result.stderr
 
 
 def test_another_plugins_rules_read_the_awx_subject(tmp_path: Path) -> None:
