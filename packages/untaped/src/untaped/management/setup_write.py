@@ -24,6 +24,7 @@ from pydantic import SecretStr
 
 from untaped.auth import token_env_names
 from untaped.config.repository import SettingsFileRepository
+from untaped.config.use_cases import Note
 from untaped.errors import ConfigError
 from untaped.management.auth import delete_stored_token, save_token
 from untaped.management.setup_state import ServiceState
@@ -31,13 +32,9 @@ from untaped.plugins.registry import PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
 from untaped.profile_resolver import DEFAULT_PROFILE
-from untaped.render import MessageKind
 from untaped.token_store import TokenStore, entry_name, preset_entry
 
-__all__ = ["Candidate", "Note", "overlay_values", "write_candidate"]
-
-type Note = tuple[MessageKind, str]
-"""A line about a write, kept to print after the screen closes."""
+__all__ = ["Candidate", "overlay_values", "write_candidate"]
 
 type Checked = Literal["passed", "unchecked", "failed"]
 """What the check said about the candidate: it passed, there was none to run, or the user

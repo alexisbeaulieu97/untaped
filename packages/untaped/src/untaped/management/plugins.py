@@ -20,10 +20,9 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from cyclopts import App, Parameter
-from pydantic import TypeAdapter, ValidationError
 
 from untaped.cli import (
     ColumnsOption,
@@ -35,10 +34,11 @@ from untaped.cli import (
     report_errors,
     writes,
 )
-from untaped.config.models import SettingOutcome
 from untaped.config.repository import SettingsFileRepository
-from untaped.errors import ConfigError, UsageError, first_validation_error
+from untaped.config.use_cases import RankProviders
+from untaped.errors import ConfigError, UsageError
 from untaped.management._render import emit_isolated
+from untaped.management.notes import print_notes
 from untaped.messages import not_found, run_hint
 from untaped.output.diagnostic import WireModel
 from untaped.output.sink import Diagnostics
@@ -50,12 +50,9 @@ from untaped.plugins.registry import (
     run_deferred_factory,
 )
 from untaped.records import Record, record_kinds, record_model
-from untaped.settings import ContractName, ExtensionSettings
+from untaped.settings import ExtensionSettings
 from untaped.stability import deprecated
 from untaped.theme import OutputFormat
-
-if TYPE_CHECKING:
-    from untaped.contracts._declare import ContractInfo
 
 _diag = Diagnostics()
 
@@ -122,8 +119,11 @@ def build_root_plugin_app(
         removes the method's ranking.
         """
         with report_errors():
-            outcome = _rank(result, contract, method, list(plugins), dry_run=dry_run)
-            emit(outcome, fmt=fmt, columns=columns)
+            owners = [each.spec.name for each in result.plugins if owns_contracts(each.spec)]
+            rank = RankProviders(SettingsFileRepository(), owners)
+            change = rank(contract, method, list(plugins), dry_run=dry_run)
+            print_notes(change.notes)
+            emit(change.outcome, fmt=fmt, columns=columns)
 
     @app.command(name="new")
     @writes
@@ -259,114 +259,6 @@ def _contract_rows() -> list[ContractRow]:
                     )
                 )
     return rows
-
-
-_EXTENSIONS = TypeAdapter(dict[ContractName, ExtensionSettings])
-
-
-def _rank(
-    result: CompositionResult, contract: str, method: str, plugins: list[str], *, dry_run: bool
-) -> SettingOutcome:
-    """Write ``plugins`` as the ranking of ``contract`` (``owner.contract``) ``method``.
-
-    No plugins removes the ranking. Only the owner must exist then: removing
-    is how doctor repairs a ranking of a contract or method that doesn't.
-    """
-    owner, _, name = contract.partition(".")
-    if not owner or not name:
-        raise UsageError(f"name the contract as OWNER.CONTRACT, not {contract!r}")
-    try:
-        _EXTENSIONS.validate_python({name: {"rank": {method: plugins}}})
-    except ValidationError as exc:
-        raise UsageError(f"invalid ranking: {first_validation_error(exc)}") from None
-    owners = sorted(each.spec.name for each in result.plugins if owns_contracts(each.spec))
-    if owner not in owners:
-        raise UsageError(
-            f"{owner!r} owns no contract (contract owners: {', '.join(owners) or 'none'})",
-            hint=run_hint("plugin list --contracts"),
-        )
-    if plugins:
-        _check_rankable(owner, name, method, plugins)
-    changed = False
-
-    def update(_target: str, current: Any) -> str | None:
-        nonlocal changed
-        extensions = _ranked(_mapping(current), name, method, plugins)
-        changed = extensions != current and bool(extensions or current)
-        return json.dumps(extensions) if extensions else None
-
-    key = f"{owner}.extensions"
-    path = f"{key}.{name}.rank.{method}"
-    profile = SettingsFileRepository().update_value(key, update, dry_run=dry_run)
-    if not changed:
-        _diag.info(f"{path} unchanged in profile {profile}")
-        action = "unchanged"
-    elif dry_run:
-        action = "planned"
-    else:
-        done = f"ranked {' > '.join(plugins)}" if plugins else "removed the ranking"
-        _diag.success(f"{done} for {owner}.{name} {method} (profile {profile})")
-        action = "updated" if plugins else "deleted"
-    return SettingOutcome(key=key, profile=profile, action=action)
-
-
-def _mapping(value: Any) -> dict[str, Any]:
-    """``value`` as a mapping to edit; anything else (``null``, a stray list) starts empty."""
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _ranked(
-    extensions: dict[str, Any], name: str, method: str, plugins: list[str]
-) -> dict[str, Any]:
-    """``extensions`` with ``name``'s ``method`` ranked as ``plugins`` (none: unranked).
-
-    A malformed contract or ``rank`` value is replaced, so ranking repairs it;
-    an emptied contract entry is dropped.
-    """
-    entry = _mapping(extensions.get(name))
-    ranks = _mapping(entry.get("rank"))
-    if plugins:
-        ranks[method] = plugins
-    else:
-        ranks.pop(method, None)
-    if ranks:
-        entry["rank"] = ranks
-    else:
-        entry.pop("rank", None)
-    if entry:
-        extensions[name] = entry
-    else:
-        extensions.pop(name, None)
-    return extensions
-
-
-def _check_rankable(owner: str, name: str, method: str, plugins: list[str]) -> None:
-    """Refuse a contract or method that doesn't exist; warn about a plugin that doesn't fill it."""
-    from untaped.contracts._registry import (  # noqa: PLC0415 - only when ranking
-        method_providers,
-        owned_contracts,
-    )
-
-    owned = owned_contracts()
-    if owner not in owned:
-        raise ConfigError(
-            f"{owner}'s contracts couldn't be read", system=owner, hint=run_hint("doctor")
-        )
-    info: ContractInfo | None = next((each for each in owned[owner] if each.name == name), None)
-    if info is None:
-        known = ", ".join(sorted(each.name for each in owned[owner]))
-        raise UsageError(f"{owner} declares no contract {name!r} (it declares {known})")
-    rankable = [each for each, declared in info.methods.items() if not declared.bridge]
-    if method not in rankable:
-        what = "is a bridge, which is never ranked" if method in info.methods else "isn't a method"
-        raise UsageError(f"{owner}.{name} {method} {what} (ranked methods: {', '.join(rankable)})")
-    filling = set(method_providers(info, method, ()))
-    for plugin in plugins:
-        if plugin not in filling:
-            _diag.warning(
-                f"{plugin} doesn't fill {owner}.{name} {method} here; the ranking keeps it "
-                "for when it does",
-            )
 
 
 def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from pydantic import BaseModel
@@ -27,4 +28,35 @@ class SettingsReader(Protocol):
     def profile_names(self) -> list[str]: ...
 
 
-__all__ = ["SettingsReader"]
+class SettingsWriter(Protocol):
+    """Write-side surface the config use cases change settings through."""
+
+    def set_value(
+        self,
+        key: str,
+        raw_value: str,
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        on_spelling_removed: Callable[[str], None] | None = None,
+    ) -> str: ...
+    def update_value(
+        self,
+        key: str,
+        update: Callable[[str, Any], str | None],
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        on_spelling_removed: Callable[[str], None] | None = None,
+    ) -> str: ...
+    def unset_value(
+        self,
+        key: str,
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        on_spelling_removed: Callable[[str], None] | None = None,
+    ) -> tuple[bool, str]: ...
+
+
+__all__ = ["SettingsReader", "SettingsWriter"]

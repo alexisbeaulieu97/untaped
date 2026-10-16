@@ -45,12 +45,13 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from untaped.auth import CommandToken, forget_token_command, takes_token_command, token_env_names
+from untaped.config.use_cases import Note
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
 from untaped.management.doctor import online_probe_rows
 from untaped.management.setup_plan import SETUP_ALTERNATIVE, SETUP_COMMAND
 from untaped.management.setup_state import ServiceState, service_states
-from untaped.management.setup_write import Candidate, Note, overlay_values, write_candidate
+from untaped.management.setup_write import Candidate, overlay_values, write_candidate
 from untaped.messages import hint, shown_path
 from untaped.plugins.registry import CompositionResult, PluginSpec, settings_model
 from untaped.profile_resolver import DEFAULT_PROFILE
