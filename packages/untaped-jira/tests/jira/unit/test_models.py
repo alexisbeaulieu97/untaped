@@ -1,10 +1,10 @@
-"""Tests for how Jira row models flatten raw REST payloads."""
+"""Tests for how raw Jira REST payloads flatten into records."""
 
 from __future__ import annotations
 
 import pytest
 
-from untaped_jira.domain import IssueDetailResult, SprintResult
+from untaped_jira.domain import parse_issue, parse_sprint
 
 
 def _issue(**fields: object) -> dict[str, object]:
@@ -55,7 +55,7 @@ def test_detail_flattens_api_v3_adf_description_to_plain_text() -> None:
         ],
     }
 
-    row = IssueDetailResult.model_validate(_issue(description=adf))
+    row = parse_issue(_issue(description=adf), detail=True)
 
     assert row.description == (
         "Deploy fails on step 3.\nSee\nlogs.\n@sam see https://x by 1717200000"
@@ -69,17 +69,18 @@ def test_detail_flattens_api_v3_adf_description_to_plain_text() -> None:
 def test_detail_text_fields_are_strings_and_odd_objects_dump_as_json(
     value: object, expected: str
 ) -> None:
-    row = IssueDetailResult.model_validate(_issue(description=value, summary=value))
+    row = parse_issue(_issue(description=value, summary=value), detail=True)
 
     assert row.description == expected
     assert row.summary == expected
 
 
 def test_timestamps_normalize_to_utc_and_bad_ones_become_none() -> None:
-    row = IssueDetailResult.model_validate(
-        _issue(updated="2026-06-05T10:00:00.000-0400", created={"iso": "2026-01-01"})
+    row = parse_issue(
+        _issue(updated="2026-06-05T10:00:00.000-0400", created={"iso": "2026-01-01"}),
+        detail=True,
     )
-    garbled = IssueDetailResult.model_validate(_issue(created="not a date"))
+    garbled = parse_issue(_issue(created="not a date"), detail=True)
 
     assert row.model_dump(mode="json")["updated_at"] == "2026-06-05T14:00:00Z"
     assert row.created_at is None
@@ -87,7 +88,7 @@ def test_timestamps_normalize_to_utc_and_bad_ones_become_none() -> None:
 
 
 def test_sprint_rows_use_snake_case_and_utc_timestamps() -> None:
-    row = SprintResult.model_validate(
+    row = parse_sprint(
         {
             "id": 20,
             "name": "Sprint 20",
@@ -107,3 +108,13 @@ def test_sprint_rows_use_snake_case_and_utc_timestamps() -> None:
         "goal": None,
         "origin_board_id": 7,
     }
+
+
+def test_malformed_links_are_skipped() -> None:
+    inward = {"type": {"name": "Blocks", "inward": "is blocked by"}, "inwardIssue": {"key": "B-1"}}
+
+    row = parse_issue(_issue(issuelinks=["junk", {"type": "odd"}, inward]), detail=True)
+
+    assert [(link.key, link.direction, link.relation) for link in row.links or []] == [
+        ("B-1", "inward", "is blocked by")
+    ]

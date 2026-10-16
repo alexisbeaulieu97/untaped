@@ -14,25 +14,33 @@ from untaped_jira.application.ports import (
     JiraTransitionService,
 )
 from untaped_jira.domain import (
-    BoardResult,
-    CommentResult,
-    IssueDetailResult,
-    IssueOutcome,
-    IssueResult,
     JiraIssueSearchFilters,
-    JiraUser,
-    ProjectResult,
-    SprintResult,
-    TransitionResult,
     browse_url,
     build_link_payload,
     build_transition_payload,
     change_line,
+    parse_board,
+    parse_comment,
+    parse_issue,
+    parse_project,
+    parse_sprint,
+    parse_transition,
+    parse_user,
     payload_changes,
     referenced_fields,
     transition_changes,
 )
 from untaped_jira.errors import JiraError, JiraTransitionError
+from untaped_jira.records import (
+    Board,
+    Comment,
+    Issue,
+    IssueOutcome,
+    Project,
+    Sprint,
+    Transition,
+    User,
+)
 
 
 class WhoAmI:
@@ -41,8 +49,8 @@ class WhoAmI:
     def __init__(self, client: JiraMeService) -> None:
         self._client = client
 
-    def __call__(self) -> JiraUser:
-        return JiraUser.model_validate(self._client.me())
+    def __call__(self) -> User:
+        return parse_user(self._client.me())
 
 
 class GetIssue:
@@ -52,8 +60,8 @@ class GetIssue:
         self._client = client
         self._comments = comments
 
-    def __call__(self, issue_key: str) -> IssueDetailResult:
-        issue = IssueDetailResult.model_validate(self._client.get_issue(issue_key))
+    def __call__(self, issue_key: str) -> Issue:
+        issue = parse_issue(self._client.get_issue(issue_key), detail=True)
         if not self._comments:
             return issue
         return issue.model_copy(update={"comments": ListComments(self._client)(issue.key)})
@@ -65,9 +73,9 @@ class ListComments:
     def __init__(self, client: JiraIssueReader) -> None:
         self._client = client
 
-    def __call__(self, issue_key: str, *, limit: int | None = None) -> list[CommentResult]:
+    def __call__(self, issue_key: str, *, limit: int | None = None) -> list[Comment]:
         return [
-            CommentResult.model_validate({**comment, "issue_key": issue_key})
+            parse_comment(comment, issue_key=issue_key)
             for comment in self._client.list_comments(issue_key, limit=limit)
         ]
 
@@ -78,9 +86,9 @@ class SearchIssues:
     def __init__(self, client: JiraIssueReader) -> None:
         self._client = client
 
-    def __call__(self, filters: JiraIssueSearchFilters, *, limit: int | None) -> list[IssueResult]:
+    def __call__(self, filters: JiraIssueSearchFilters, *, limit: int | None) -> list[Issue]:
         return [
-            IssueResult.model_validate(issue)
+            parse_issue(issue)
             for issue in self._client.search_issues(filters.to_jql(), limit=limit)
         ]
 
@@ -211,10 +219,9 @@ class ListTransitions:
     def __init__(self, client: JiraTransitionService) -> None:
         self._client = client
 
-    def __call__(self, issue_key: str) -> list[TransitionResult]:
+    def __call__(self, issue_key: str) -> list[Transition]:
         return [
-            TransitionResult.model_validate(transition)
-            for transition in self._client.list_transitions(issue_key)
+            parse_transition(transition) for transition in self._client.list_transitions(issue_key)
         ]
 
 
@@ -333,8 +340,8 @@ class ListProjects:
     def __init__(self, client: JiraLookupService) -> None:
         self._client = client
 
-    def __call__(self) -> list[ProjectResult]:
-        return [ProjectResult.model_validate(project) for project in self._client.list_projects()]
+    def __call__(self) -> list[Project]:
+        return [parse_project(project) for project in self._client.list_projects()]
 
 
 class GetProject:
@@ -343,8 +350,8 @@ class GetProject:
     def __init__(self, client: JiraLookupService) -> None:
         self._client = client
 
-    def __call__(self, project_key: str) -> ProjectResult:
-        return ProjectResult.model_validate(self._client.get_project(project_key))
+    def __call__(self, project_key: str) -> Project:
+        return parse_project(self._client.get_project(project_key))
 
 
 class ListBoards:
@@ -360,9 +367,9 @@ class ListBoards:
         name: str | None,
         board_type: str | None,
         limit: int | None,
-    ) -> list[BoardResult]:
+    ) -> list[Board]:
         return [
-            BoardResult.model_validate(board)
+            parse_board(board)
             for board in self._client.list_boards(
                 project_key_or_id=project_key_or_id,
                 name=name,
@@ -385,13 +392,13 @@ class ListSprints:
         board_id: int | None,
         state: str | None,
         limit: int | None,
-    ) -> list[SprintResult]:
+    ) -> list[Sprint]:
         resolved_board_id = board_id or self._default_board_id
         if resolved_board_id is None:
             raise UsageError(
                 "board id is required (pass --board-id or configure jira.default_board_id)"
             )
         return [
-            SprintResult.model_validate(sprint)
+            parse_sprint(sprint)
             for sprint in self._client.list_sprints(resolved_board_id, state=state, limit=limit)
         ]

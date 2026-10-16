@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import quote
 
 from untaped.sdk import HttpSettings, RetryPolicy, connected_client, paginate_offset
-from untaped_jira.domain.models import ISSUE_DETAIL_FIELDS, ISSUE_ROW_FIELDS
+from untaped_jira.domain.parse import ISSUE_DETAIL_FIELDS, ISSUE_ROW_FIELDS
 from untaped_jira.infrastructure.errors import map_jira_errors
 from untaped_jira.settings import JiraSettings
 
