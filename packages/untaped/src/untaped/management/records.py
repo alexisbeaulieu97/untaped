@@ -3,9 +3,11 @@
 They live in one module that building the root app imports, so every kind
 core declares is registered before any command runs (``plugin schema``
 finds each one). A command builds these models where it makes a row, or
-validates them at emit when its rows are built as dicts elsewhere (doctor's
-and setup's, which ``doctor fix`` and the setup screen read, ``config
-migrate``'s and ``skills list``'s). Field order and which fields an output
+validates its rows at emit when they are dicts other code builds or reads
+(doctor's, which ``doctor fix`` and the setup screen read; ``setup
+plan``'s; ``config migrate``'s; ``skills list``'s). A table that writes a
+row's command for people to type (doctor's, ``doctor fix``'s, ``setup
+plan``'s) shows a dict view instead. Field order and which fields an output
 omits match the dict rows these replaced.
 """
 
