@@ -338,11 +338,51 @@ def test_quitting_reports_each_written_key() -> None:
     assert any(text.startswith("set knobs.size in profile default") for _, text in run.result.notes)
 
 
-def test_a_write_that_changes_nothing_is_not_reported() -> None:
-    run = drive_screen(_build(), [*_to("knobs"), "down", "enter", "enter", "esc", "esc"])
+@pytest.mark.parametrize(
+    ("variable", "down"),
+    [(None, 0), ("33", 0), (None, 1)],
+    ids=["default", "variable", "unset"],
+)
+def test_a_field_written_back_untouched_writes_nothing(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, variable: str | None, down: int
+) -> None:
+    write_config(_isolated_config, _WORK)
+    if variable is not None:
+        monkeypatch.setenv("UNTAPED_KNOBS__SIZE", variable)
+    write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
+    before = _isolated_config.read_text(encoding="utf-8")
+    keys = [*_to("knobs", profile="work"), *(["down"] * down), "enter", "enter", "esc", "esc"]
 
+    run = drive_screen(_build(profile="work"), keys)
+
+    assert _isolated_config.read_text(encoding="utf-8") == before
     assert run.result is not None
-    assert run.result.written == ()
+    assert run.result.written == () and run.result.notes == ()
+
+
+@pytest.mark.parametrize("typed", ["0", ""], ids=["invalid", "empty"])
+def test_a_write_that_fails_or_unsets_leaves_a_new_profile_uncreated(
+    _isolated_config: Path, typed: str
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {size: 80}\n")
+    keys = [*_to("knobs", profile="fresh"), "enter", "ctrl-u", *typed, "enter"]
+
+    run = drive_screen(_build(profile="fresh"), keys)
+
+    assert "fresh" not in read_config_dict(_isolated_config)["profiles"]
+    assert run.model.written == () and run.model.notes == ()
+
+
+def test_delete_unsets_the_profiles_value_under_a_variable(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _WORK)
+    monkeypatch.setenv("UNTAPED_KNOBS__SIZE", "33")
+
+    run = drive_screen(_build(profile="work"), [*_to("knobs", profile="work"), "delete", "y"])
+
+    assert _knobs_data(_isolated_config) is None
+    assert run.model.written == (("work", "knobs.size"),)
 
 
 # --- the field of each shape ------------------------------------------------------

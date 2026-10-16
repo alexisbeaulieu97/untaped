@@ -20,8 +20,10 @@ from untaped.settings import get_profile_settings_model
 
 SRC = PACKAGES / "untaped" / "src" / "untaped"
 SCREEN = ("management/setup_screen.py", "management/setup_sections.py")
-#: The connection form names its own fields until the model declares its connection.
+#: The connection form, and the keys its row hides, name their own fields until the model
+#: declares its connection.
 CONNECTION = "management/setup_connection.py"
+CONNECTION_KEYS = "management/setup_state.py"
 ALLOWED_CONFIG = frozenset(
     {
         "untaped.config.use_cases",
@@ -48,6 +50,10 @@ ALLOWED_NAMES: dict[str, dict[str, str]] = {
     CONNECTION: {
         "base_url": "the connection form's URL field, until the model declares its connection",
         "token": "the connection form's token field, until the model declares its connection",
+    },
+    CONNECTION_KEYS: {
+        name: "a connection key its row hides, until the model declares its connection"
+        for name in ("base_url", "token", "token_command")
     },
 }
 
@@ -143,7 +149,7 @@ def test_only_the_repositories_and_the_editor_write_the_config_file() -> None:
 def test_the_screen_names_no_setting() -> None:
     settings = _setting_names()
     found: list[str] = []
-    for name in (*SCREEN, CONNECTION):
+    for name in (*SCREEN, CONNECTION, CONNECTION_KEYS):
         allowed = ALLOWED_NAMES.get(name, {})
         found += [
             f"{name}: {text!r}"

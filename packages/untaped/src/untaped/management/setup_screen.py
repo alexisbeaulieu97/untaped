@@ -743,6 +743,9 @@ class _Setup:
         if refused is not None:
             return _with_pane(model, model.name, refused), []
         value = pane.to_write()
+        if value == pane.initial:
+            # Untouched: writing it would pin an inherited or default value here.
+            return _with_pane(model, model.name, pane.closed()), []
         cmd = write_command(model.current, row.key, value, pane.expected, self.services)
         return replace(model, phase="writing"), [cmd]
 
@@ -773,8 +776,9 @@ class _Setup:
             return self._after(done)
         if pane is not None:
             done = _with_pane(done, section, pane.closed())
-        written = ((model.current, message.key),) if message.changed else ()
-        done = replace(done, written=(*done.written, *written), notes=(*done.notes, *message.notes))
+        if message.changed:
+            written = (*done.written, (model.current, message.key))
+            done = replace(done, written=written, notes=(*done.notes, *message.notes))
         return self._after(done)
 
     def _relisted(self, model: SetupModel, listing: Listing) -> SetupModel:

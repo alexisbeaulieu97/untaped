@@ -25,11 +25,12 @@ from typing import Literal
 from pydantic import SecretStr
 
 from untaped.auth import token_env_names
+from untaped.config.models import SettingOutcome
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import Note, SetSetting, SettingChange, UnsetSetting
 from untaped.errors import ConfigError
 from untaped.management.auth import delete_stored_token, save_token
-from untaped.management.setup_state import ServiceState
+from untaped.management.setup_state import ServiceState, profile_exists
 from untaped.plugins.registry import PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
@@ -132,10 +133,9 @@ def write_candidate(
 
 def ensure_profile(profile: str) -> list[Note]:
     """Create ``profile`` when it does not exist yet (``default`` always does); its note."""
-    profiles = ProfileFileRepository()
-    if profile == DEFAULT_PROFILE or profiles.read(profile) is not None:
+    if profile_exists(profile):
         return []
-    CreateProfile(profiles)(profile)
+    CreateProfile(ProfileFileRepository())(profile)
     return [("success", f"created profile: {profile}")]
 
 
@@ -143,15 +143,20 @@ def write_setting(key: str, value: str | None, *, profile: str, expected: object
     """Set ``key`` to ``value`` in ``profile`` as ``config set`` does (``None`` unsets it).
 
     ``expected`` is the profile's own value when the field opened: a write
-    over a value changed since is refused. The profile is created first when
-    it does not exist yet; its note comes first.
+    over a value changed since is refused. A profile that does not exist yet
+    is created by its first valid write (its note comes first); a value it
+    would refuse, or an unset, leaves it uncreated.
     """
-    created = ensure_profile(profile)
     repo = SettingsFileRepository()
     if value is None:
-        change = UnsetSetting(repo)(key, profile=profile)
-    else:
-        change = SetSetting(repo)(key, value, profile=profile, expected=expected)
+        if not profile_exists(profile):
+            return SettingChange(SettingOutcome(key=key, profile=profile, action="unchanged"))
+        return UnsetSetting(repo)(key, profile=profile)
+    if not profile_exists(profile):
+        # A new profile resolves as ``default`` does, so check the value there first.
+        SetSetting(repo)(key, value, profile=DEFAULT_PROFILE, dry_run=True)
+    created = ensure_profile(profile)
+    change = SetSetting(repo)(key, value, profile=profile, expected=expected)
     return replace(change, notes=(*created, *change.notes))
 
 

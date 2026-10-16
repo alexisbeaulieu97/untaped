@@ -153,7 +153,13 @@ def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
             section = descriptor.path[0]
             raw = section in listing.errors
             variable = repo.env_var_for(descriptor)
-            row = _row(entry, descriptor, variable, own=entry.source.profile == profile, raw=raw)
+            # A variable hides whether the profile sets the key too; ask the profile.
+            own = entry.source.profile == profile or (
+                exists
+                and entry.source.kind == "env"
+                and repo.own_value(entry.key, profile=profile) is not None
+            )
+            row = _row(entry, descriptor, variable, own=own, raw=raw)
             rows.setdefault(section, []).append(row)
     shown = {name: tuple(each) for name, each in rows.items()}
     return Listing(exists, shown, listing.errors, read_states(dict(services), profile))
@@ -274,6 +280,8 @@ class SectionPane:
     """The open field."""
     expected: object = None
     """The profile's own value of the open field's key when it opened."""
+    initial: str | None = None
+    """What the open field would write as it opened: writing it back changes nothing."""
     confirm: bool = False
     error: str = ""
     """The section's own error (it fails validation)."""
@@ -302,11 +310,12 @@ class SectionPane:
 
     def opened(self, component: Field, expected: object) -> Self:
         """This pane with ``component`` open under the rows."""
-        return replace(self, editing=component, expected=expected, confirm=False)
+        opened = replace(self, editing=component, expected=expected, confirm=False)
+        return replace(opened, initial=opened.to_write())
 
     def closed(self) -> Self:
         """This pane with no field open and no question asked."""
-        return replace(self, editing=None, expected=None, confirm=False)
+        return replace(self, editing=None, expected=None, initial=None, confirm=False)
 
     def with_rows(self, rows: tuple[SettingRow, ...], error: str) -> Self:
         """This pane over re-read ``rows``, its cursor kept on the same key."""

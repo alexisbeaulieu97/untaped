@@ -8,7 +8,8 @@ their shape (a number field takes only a number); every other check is the
 model's, so an edit fails with the same message as ``config set``.
 
 An empty field, or a choice of ``unset``, unsets the key in the profile, so
-the row shows what it then inherits. Lists and maps have no editor yet
+the row shows what it then inherits; a secret is the exception: it opens
+empty, so empty keeps it (``delete`` on its row unsets it). Lists and maps have no editor yet
 (:func:`editor` returns ``None``); ``config set`` edits them.
 """
 
@@ -33,6 +34,8 @@ INLINE_CHOICES = 4
 #: The choice that unsets an optional choice field.
 UNSET = ListItem("", "unset")
 EMPTY_UNSETS = "empty unsets it"
+#: A secret opens empty, so empty leaves it as it is; ``delete`` on its row unsets it.
+EMPTY_KEEPS = "empty keeps it; delete on its row unsets it"
 
 
 def editor(
@@ -65,7 +68,7 @@ def editor(
                 return SingleList(label, items, value=shown)
             return Select(label, items, value=shown)
         case "secret":
-            return SecretInput(label, help=EMPTY_UNSETS)
+            return SecretInput(label, help=EMPTY_KEEPS)
         case "text":
             return TextInput(label, shown, help=EMPTY_UNSETS)
 
