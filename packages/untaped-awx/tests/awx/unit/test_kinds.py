@@ -36,6 +36,6 @@ def test_unified_template_kind_round_trips_awx_type(kind: str) -> None:
     assert unified_template_kind(snake_kind(kind)) == kind
 
 
-@pytest.mark.parametrize("awx_type", [None, "", "job", "inventory", "system_job_template"])
+@pytest.mark.parametrize("awx_type", [None, "", "job", "inventory", "system_job"])
 def test_unified_template_kind_rejects_other_types(awx_type: str | None) -> None:
     assert unified_template_kind(awx_type) is None

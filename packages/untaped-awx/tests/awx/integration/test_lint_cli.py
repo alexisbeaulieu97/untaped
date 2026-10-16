@@ -17,7 +17,7 @@ from untaped_awx.api import AwxResources
 from untaped_awx.cli import app
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.infrastructure.lint.snapshot_store import store_path
-from untaped_lint.api import Finding, Rules, rule
+from untaped_lint.api import Finding, ResourceLocation, Rules, rule
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -385,6 +385,34 @@ def test_an_organization_less_parent_is_its_own_not_any_namesakes(fake_aap: Any)
     )  # fmt: skip
     found = [row for row in _rows(_lint()) if row["location"]["id"] == "schedules/402"]
     assert [row["rule"] for row in found] == ["awx.ignored-launch-field"]
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_management_job_schedule_is_read_as_its_system_job_template(fake_aap: Any) -> None:
+    """AWX's stock cleanup schedules hang off a system job template, global and named alone."""
+    seed_controller(fake_aap)
+    fake_aap.seed(
+        "system_job_templates", id=500, name="Cleanup Job Details", job_type="cleanup_jobs"
+    )
+    fake_aap.seed(
+        "schedules", id=403, name="Cleanup Job Schedule", unified_job_template=500,
+        rrule="DTSTART:20260101T000000Z RRULE:FREQ=WEEKLY", extra_data={"days": "120"},
+        summary_fields={"unified_job_template": {
+            "id": 500, "name": "Cleanup Job Details", "unified_job_type": "system_job",
+        }},
+    )  # fmt: skip
+    result = _lint()
+    assert result.exit_code == 3, result.output  # seed_controller's findings, nothing worse
+    assert not [row for row in _rows(result) if row["location"]["id"] == "schedules/403"]
+    stored = AwxResources.model_validate_json(_snapshot_file().read_text(encoding="utf-8"))
+    (schedule,) = [item for item in stored.items if item.location.id == "schedules/403"]  # type: ignore[union-attr]
+    assert schedule.resource.metadata.parent is not None
+    assert schedule.resource.metadata.parent.kind == "SystemJobTemplate"
+    (parent,) = schedule.references
+    assert (parent.resolution, parent.location) == (
+        "resolved",
+        ResourceLocation(id="system_job_templates/500"),
+    )
 
 
 def _across_organizations(fake: Any) -> None:

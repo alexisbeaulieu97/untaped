@@ -16,8 +16,13 @@ UNIFIED_TEMPLATE_KINDS: tuple[str, ...] = (
     "WorkflowJobTemplate",
     "Project",
     "InventorySource",
+    "SystemJobTemplate",
 )
-"""Kinds AWX exposes through ``unified_job_templates`` (schedule parents)."""
+"""Kinds AWX exposes through ``unified_job_templates`` (schedule parents).
+
+``SystemJobTemplate`` is AWX's management jobs (its stock cleanup jobs carry
+schedules); it is global, named by its name alone.
+"""
 
 # PascalCase -> snake, acronym-aware: ``JobTemplate`` -> ``job_template``,
 # ``HTTPRequest`` -> ``http_request`` (a naive split-before-every-capital
