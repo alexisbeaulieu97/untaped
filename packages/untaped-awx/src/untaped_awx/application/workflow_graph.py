@@ -228,7 +228,9 @@ def resolve_graph(
     for node in nodes:
         prompts = node.prompts
         fields: dict[str, Any] = {
-            name: _resolve(kind, value, default=default, fk=fk) if value is not None else None
+            name: resolve_reference(kind, value, default=default, fk=fk)
+            if value is not None
+            else None
             for name, kind in PROMPT_REFERENCES.items()
             for value in [getattr(prompts, name)]
         }
@@ -238,12 +240,12 @@ def resolve_graph(
         states.append(
             NodeState(
                 identifier=node.id,
-                run=_resolve_run(node.run, default=default, fk=fk),
+                run=resolve_run(node.run, default=default, fk=fk),
                 approval=node.approval.model_dump() if node.approval is not None else None,
                 fields=fields,
                 members={
                     relation: tuple(
-                        _resolve(kind, value, default=default, fk=fk)
+                        resolve_reference(kind, value, default=default, fk=fk)
                         for value in getattr(prompts, relation) or ()
                     )
                     for relation, kind in PROMPT_MEMBERS.items()
@@ -387,7 +389,7 @@ def _export_run(
     return NodeRun(**values)
 
 
-def _resolve_run(
+def resolve_run(
     run: NodeRun | None, *, default: dict[str, str] | None, fk: FkResolver
 ) -> tuple[str, PlannedId] | None:
     if run is None:
@@ -406,7 +408,7 @@ def _resolve_run(
     return run.kind, fk.name_to_id(run.kind, run.name, scope=scope)
 
 
-def _resolve(
+def resolve_reference(
     kind: str, value: Reference, *, default: dict[str, str] | None, fk: FkResolver
 ) -> PlannedId:
     if isinstance(value, NameRef):
@@ -424,4 +426,6 @@ __all__ = [
     "members_of",
     "read_graph",
     "resolve_graph",
+    "resolve_reference",
+    "resolve_run",
 ]

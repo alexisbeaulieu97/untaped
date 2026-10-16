@@ -9,9 +9,9 @@ strategies use to ``find_existing``.
 :func:`scope_for` is the FK-lookup-scope helper used by every caller in
 the apply pipeline that resolves FK names: the planner itself,
 ``MembershipReconciler.plan`` (``apply_membership.py``), and
-``apply_prefetch.prefetch_plan`` (bulk warm-up). Pure module-level function
-— sharing it keeps the prefetch path's cache buckets aligned with what
-the apply path actually queries.
+``references.references_of`` (behind ``apply_prefetch.prefetch_plan``'s bulk
+warm-up). Pure module-level function — sharing it keeps the prefetch path's
+cache buckets aligned with what the apply path actually queries.
 """
 
 from __future__ import annotations
@@ -199,11 +199,11 @@ def resolve_fk_value(
 def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
     """Return the FK lookup scope for ``ref`` against ``resource``.
 
-    Centralised so the apply path and ``apply_prefetch.prefetch_plan``
-    (bulk warm-up) read the same semantics — otherwise prefetch warms
-    the wrong cache buckets for inventory-child kinds
-    (``hosts``/``children``) whose scope lives on ``metadata.parent``
-    rather than in the body.
+    Centralised so the apply path and ``references_of`` (behind
+    ``apply_prefetch.prefetch_plan``'s bulk warm-up) read the same
+    semantics — otherwise prefetch warms the wrong cache buckets for
+    inventory-child kinds (``hosts``/``children``) whose scope lives on
+    ``metadata.parent`` rather than in the body.
     """
     if ref.scope_field is None:
         return None
