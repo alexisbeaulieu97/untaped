@@ -330,11 +330,11 @@ def _lock_path(path: Path, layout: int, *, bare: bool) -> Path:
 
 
 LockState = Literal["free", "busy", "refused", "damaged"]
-#: Why the cleanup keeps a layout nobody holds: a damaged in-use lock, the store's
-#: ``keep`` (or its failure), a ``refs/`` folder or a reference it cannot read, no
-#: registered install, a refused or busy lock.
+#: Why the cleanup keeps a layout nobody holds, in the order it asks: a ``refs/``
+#: folder or a reference it cannot read, the store's ``keep`` (or its failure), a
+#: damaged in-use lock, no registered install, a refused or busy lock.
 KeptCode = Literal[
-    "damaged", "kept", "keep-failed", "unknown", "opaque", "unregistered", "refused", "busy"
+    "unknown", "opaque", "kept", "keep-failed", "damaged", "unregistered", "refused", "busy"
 ]
 
 
@@ -428,8 +428,9 @@ def _layout_state(
 def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -> Kept | None:
     """Why the cleanup has not removed ``layout`` and will not on its own, or ``None``.
 
-    ``None`` for a held layout, this code's own, and an unheld one the next
-    complete fill of a registered install removes.
+    A held layout or this code's own returns only its damaged lock, if it
+    has one; ``None`` also for an unheld one the next complete fill of a
+    registered install removes.
     """
     from untaped.messages import shown_path  # noqa: PLC0415 - no cycle
 

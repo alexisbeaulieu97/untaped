@@ -102,7 +102,7 @@ from untaped.token_store import pass_problem
 
 if TYPE_CHECKING:
     from untaped.refs import Reference
-    from untaped.store import Kept, Layout, Store
+    from untaped.store import Layout, Store
 
 _diag = Diagnostics()
 
@@ -656,10 +656,9 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         if not any(layout.own for layout in layouts):
             texts.append(f"layout {store.layout} at {shown_path(path)}, not created yet")
         for layout in layouts:
-            text, kept = _layout_text(store, layout, references)
+            text, warns = _layout_text(store, layout, references)
             texts.append(text)
-            if kept is not None and kept.warns:
-                reasons.add(kept.code)
+            reasons |= warns
         parts.append(f"{store.qualified}: {'; '.join(texts)}")
     if not reasons:
         return _row("stores", shell.name, _PASS, title, "; ".join(parts))
@@ -668,11 +667,15 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 
 def _layout_text(
     store: Store, layout: Layout, references: Sequence[Reference]
-) -> tuple[str, Kept | None]:
-    """One layout as the ``stores`` row says it, and why the cleanup keeps it (if it does)."""
+) -> tuple[str, set[str]]:
+    """One layout as the ``stores`` row says it, and the codes of what it warns about.
+
+    A damaged in-use lock is said even when ``keep`` or unknown holders are
+    the reason the cleanup keeps the layout.
+    """
     from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
     from untaped.refs import this_install  # noqa: PLC0415
-    from untaped.store import kept_reason  # noqa: PLC0415
+    from untaped.store import _damaged, kept_reason  # noqa: PLC0415
 
     size = size_text(dir_bytes(layout.path))
     text = f"layout {layout.layout} at {shown_path(layout.path)} ({size})"
@@ -692,7 +695,13 @@ def _layout_text(
         text += ", held by nobody"
         if not reason:
             text += " (removed at the next complete fill)"
-    return (f"{text}: {reason.text}" if reason else text), reason
+    found = [reason] if reason else []
+    damaged = _damaged(layout)
+    if damaged is not None and reason is not None and reason.code != "damaged":
+        found.append(damaged)
+    if found:
+        text += ": " + ", and ".join(kept.text for kept in found)
+    return text, {kept.code for kept in found if kept.warns}
 
 
 def _stores_fix(reasons: set[str]) -> list[str] | None:

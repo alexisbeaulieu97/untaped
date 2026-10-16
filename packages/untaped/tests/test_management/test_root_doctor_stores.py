@@ -217,6 +217,20 @@ def test_a_layout_the_store_keeps_passes_with_why(tmp_path: Path) -> None:
     assert str(row["detail"]).endswith("held by nobody: a profile")
 
 
+def test_a_kept_layout_still_names_its_damaged_lock(tmp_path: Path) -> None:
+    refs.register(["acme.data@4"])
+    old = tmp_path / "data.v3.db"
+    old.write_bytes(b"x")
+    Path(f"{old}.inuse").write_bytes(b"garbage, not a database")
+    store = Store(
+        "acme", "data", base=lambda: tmp_path / "data.db", layout=4, keep=lambda _: "a profile"
+    )
+    row = _row(store)
+    assert row["status"] == "warn"
+    detail = str(row["detail"])
+    assert f"held by nobody: a profile, and its in-use lock {old}.inuse is damaged" in detail
+
+
 def test_a_keep_check_that_fails_warns(tmp_path: Path) -> None:
     def broken(_path: Path) -> str | None:
         raise RuntimeError("no config")
