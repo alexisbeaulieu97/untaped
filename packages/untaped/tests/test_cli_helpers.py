@@ -10,18 +10,22 @@ from typing import Any, Literal
 import pytest
 import yaml
 from cyclopts import App
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import Field as PydanticField
 
 from untaped.cli import run_cyclopts_app
 from untaped.output.policy import enable_quiet, reset_quiet
 from untaped.output.sink import diagnostics_scope
 from untaped.sdk import (
+    ColumnsOption,
+    FormatOption,
     HttpError,
     HttpTransportError,
     OutcomeRecord,
     Record,
     UntapedError,
     UtcTimestamp,
+    check_columns,
     clamp_parallel,
     create_app,
     emit,
@@ -605,6 +609,76 @@ def test_emit_unknown_model_column_is_a_usage_error(
     assert "name, value" in captured.err
 
 
+class _Created(OutcomeRecord):
+    id: str
+
+
+@pytest.mark.parametrize("single", [False, True])
+def test_unknown_column_on_rows_reporting_a_change_warns_and_still_writes_them(
+    single: bool,
+) -> None:
+    """The change happened before ``emit`` runs: exit 2 would claim it did not.
+
+    Exit 2 means "found before any side effect", and refusing would also drop
+    the rows saying what was done.
+    """
+    app = create_app(name="test")
+    done: list[str] = []
+
+    @app.default
+    def create(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+        done.append("a")
+        row = _Created(id="a", action="created")
+        emit(row if single else [row], fmt=fmt, columns=columns)
+
+    result = CliInvoker().invoke(app, ["--format", "json", "-c", "id,nope"])
+
+    assert result.exit_code == 0
+    assert done == ["a"]
+    rows = json.loads(result.stdout)
+    assert (rows if single else rows[0]) == {"id": "a", "nope": None}
+    assert "warning: unknown column 'nope'; valid columns:" in result.stderr
+
+
+@pytest.mark.parametrize("columns", [["name,nope"], ["+nope"], ["-name", "-nope"]])
+def test_check_columns_refuses_an_unknown_name_before_the_command_acts(
+    columns: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        check_columns(_Widget, columns=columns, fmt="json")
+    assert excinfo.value.code == 2
+    assert "unknown column 'nope'; valid columns: name, value" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("columns", "fmt"),
+    [
+        (None, "json"),
+        (["name,value"], "raw"),
+        (["+value"], "table"),
+        (["?"], "table"),
+        (["nope"], "pipe"),
+    ],
+    ids=["none", "names", "edit", "question-mark", "pipe"],
+)
+def test_check_columns_passes_known_names_and_what_emit_does_not_check(
+    columns: list[str] | None,
+    fmt: Literal["json", "raw", "table", "pipe"],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    check_columns(_Widget, columns=columns, fmt=fmt)
+    assert capsys.readouterr().err == ""
+
+
+def test_check_columns_refuses_names_mixed_with_edits(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        check_columns(_Widget, columns=["name,+value"], fmt="table")
+    assert excinfo.value.code == 2
+    assert "error: --columns takes either column names" in capsys.readouterr().err
+
+
 def test_emit_unknown_mapping_column_warns_but_renders(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -613,6 +687,23 @@ def test_emit_unknown_mapping_column_warns_but_renders(
     captured = capsys.readouterr()
     assert captured.out == "a\t\n"
     assert "warning: unknown column 'nmae'; valid columns: name, value" in captured.err
+
+
+class _Answer(Record, kind="acme-tools.answer"):
+    model_config = ConfigDict(extra="allow")
+    __pydantic_extra__: dict[str, JsonValue] = PydanticField(init=False)
+
+    id: int
+
+
+def test_emit_unknown_column_on_an_open_record_warns_but_renders(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A record passing a service's answer through has an open schema, as a mapping row has."""
+    emit([_Answer.model_validate({"id": 1, "name": "a"})], fmt="raw", columns=["name", "nmae"])
+    captured = capsys.readouterr()
+    assert captured.out == "a\t\n"
+    assert "warning: unknown column 'nmae'; valid columns: id, name" in captured.err
 
 
 def test_emit_column_names_containing_dots_match_whole_keys(

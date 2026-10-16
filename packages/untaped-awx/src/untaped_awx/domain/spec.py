@@ -13,10 +13,12 @@ exercised against any kind without depending on AWX-specific transport.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
+
+from untaped.sdk import OutcomeRecord, Record
 
 Fidelity = Literal["full", "partial", "read_only"]
 """Restore-fidelity tier per kind, surfaced on save."""
@@ -109,6 +111,8 @@ class ActionSpec(BaseModel):
     """Allowed execution kinds. Only singleton sets can default an omitted response type."""
     accepts: frozenset[str] = frozenset()
     """Optional payload fields the CLI factory exposes as flags."""
+    outcome: type[OutcomeRecord]
+    """The record each target's run is written as (``LaunchOutcome``)."""
 
 
 class DerivedField(BaseModel):
@@ -131,6 +135,12 @@ class ResourceSpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: str
+    record: type[Record] | None = None
+    """The record ``list`` and ``get`` write this kind's rows as (``JobTemplate``).
+
+    Every catalog spec names one; a spec built only to look a kind up (a
+    foreign key's) has none.
+    """
     identity_keys: tuple[str, ...]
     canonical_fields: tuple[str, ...]
     """Fields the tool curates for a kind.
@@ -209,6 +219,12 @@ class ResourceSpec(BaseModel):
             raise ValueError(f"optional_secret_paths not in secret_paths: {sorted(extra)}")
         return self
 
+    def require_record(self) -> type[Record]:
+        """:attr:`record`; a ``TypeError`` for a spec that names none (a programming error)."""
+        if self.record is None:
+            raise TypeError(f"the {self.kind} spec names no record model")
+        return self.record
+
     def derived_in(self, body: Mapping[str, Any]) -> frozenset[str]:
         """Fields of ``body`` the server derives, so documents never carry them."""
         return frozenset(d.field for d in self.derived_fields if body.get(d.unless_empty))
@@ -249,3 +265,9 @@ class ResourceSpec(BaseModel):
     def lacks_sub_documents(self, record: Mapping[str, Any]) -> bool:
         """Whether ``record`` (e.g. a list row) is missing a sub-document field."""
         return any(field not in record for field in self.sub_document_fields)
+
+
+def unrecognized_names(names: Iterable[str], known: Iterable[str]) -> list[str]:
+    """The ``names`` not in ``known`` (a spec's :attr:`ResourceSpec.known_fields`), sorted."""
+    known = frozenset(known)
+    return sorted(name for name in names if name not in known)

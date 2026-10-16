@@ -22,7 +22,7 @@ The rules are pure and the first match wins:
   the run, failed with a controller explanation (the reaper) or with events
   not yet readable; a check needed its events while AWX was still saving
   them; or it never left ``pending``/``waiting`` before the timeout.
-- ``awx.scm`` / ``awx.inventory``: AWX names a failed project or inventory
+- ``awx.scm`` / ``awx.inventories``: AWX names a failed project or inventory
   update in ``Previous Task Failed: {…}``, even when the case expected the
   job to fail (a ref not overridable, found before launching, is
   ``awx.scm`` too).
@@ -50,7 +50,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from untaped.sdk import ErrorCategory, Failure, UntapedError, q
 from untaped_awx.domain.job import HostSummary, Job, JobEvent
@@ -60,7 +60,7 @@ SUITE = "awx.suite"
 CREDENTIALS = "awx.credentials"
 CONTROLLER = "awx.controller"
 SCM = "awx.scm"
-INVENTORY = "awx.inventory"
+INVENTORIES = "awx.inventories"
 HOSTS = "awx.hosts"
 PLAYBOOK = "awx.playbook"
 EXPECTATION = "awx.expectation"
@@ -83,7 +83,7 @@ _MAX_TRACEBACK = 2000
 _UPDATES: dict[str, tuple[str, ErrorCategory]] = {
     "project_update": (SCM, ErrorCategory.FAILED),
     # A broken inventory source is the environment, not the change.
-    "inventory_update": (INVENTORY, ErrorCategory.CONFIG),
+    "inventory_update": (INVENTORIES, ErrorCategory.CONFIG),
 }
 UPDATE_KINDS = frozenset(_UPDATES)
 """Execution kinds of the updates a job waits for (a workflow node may run one itself)."""
@@ -131,8 +131,21 @@ class FailedTask(BaseModel):
     msg: str | None
     stderr: str | None
     """The end of the module's stderr (where errors usually are)."""
-    unsure: bool = Field(default=False, exclude=True)
-    """Its host's summary cannot show that no ``rescue`` (or ``ignore_unreachable``) handled it."""
+    _unsure: bool = PrivateAttr(default=False)
+
+    @property
+    def unsure(self) -> bool:
+        """Its host's summary cannot show that no ``rescue`` (or ``ignore_unreachable``) handled it.
+
+        Never written: a reader of the results has the summaries itself.
+        """
+        return self._unsure
+
+    def marked_unsure(self) -> FailedTask:
+        """This task, marked :attr:`unsure`."""
+        task = self.model_copy()
+        task._unsure = True
+        return task
 
     @classmethod
     def from_event(cls, event: JobEvent) -> FailedTask:
@@ -359,7 +372,7 @@ def unhandled(
         else:
             unsure.update(indexes)
     return tuple(
-        task.model_copy(update={"unsure": True}) if index in unsure else task
+        task.marked_unsure() if index in unsure else task
         for index, task in enumerate(tasks)
         if index not in handled
     )

@@ -4,11 +4,13 @@ project/inventory/credentials. Headline kind for ``launch``."""
 from __future__ import annotations
 
 from untaped_awx.domain import ActionSpec, FkRef
+from untaped_awx.domain.records import JobTemplate, LaunchOutcome
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="JobTemplate",
+    record=JobTemplate,
     cli_name="job-templates",
     api_path="job_templates",
     structured_text_fields=("extra_vars",),
@@ -122,6 +124,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         # on membership so every kind's launch surface stays honest.
         ActionSpec(
             name="launch",
+            outcome=LaunchOutcome,
             path="launch",
             returns=frozenset({"job", "workflow_job"}),
             accepts=frozenset(

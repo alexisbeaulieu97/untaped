@@ -1,0 +1,12 @@
+kind: Host
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: web-02
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  enabled: false
+  variables: |
+    ansible_host: 10.0.0.2

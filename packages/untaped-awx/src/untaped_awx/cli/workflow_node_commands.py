@@ -149,13 +149,11 @@ def register_nodes_command(parent: App) -> None:
                     any_failed = True
         if type_ is not None:
             nodes = [n for n in nodes if n.type == type_]
-        rows = [n.model_dump() for n in nodes]
         emit(
-            rows,
+            nodes,
             fmt=fmt,
             columns=columns or (_DEFAULT_COLUMNS if fmt == "raw" else None),
             table_columns=_DEFAULT_COLUMNS,
-            kind="awx.workflow_node",
             empty="No workflow nodes found.",
         )
         finish(any_failed)

@@ -69,4 +69,4 @@ def _add_copy(app: App, spec: AwxResourceSpec) -> None:
             )
             if confirm_batch(ctx, count=1, verb="copy", yes=yes, dry_run=dry_run):
                 outcome = copier(spec, plan)
-            emit(outcome, fmt=fmt, columns=columns, kind="awx.copy_outcome")
+            emit(outcome, fmt=fmt, columns=columns)

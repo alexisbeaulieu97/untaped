@@ -1,11 +1,14 @@
 """Serialise / deserialise :class:`Resource` envelopes from YAML files.
 
 Single-doc and multi-doc YAML are both supported. ``read_resource_files``
-also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds;
-``read_resource_files_at`` does the same at a git commit, and
-``read_resource_text`` parses documents already read (piped on stdin).
+also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds
+(``resource_paths``); ``read_resource_files_at`` does the same at a git commit,
+and ``read_resource_text`` parses documents already read (piped on stdin).
 A missing or invalid input file is a :class:`ConfigError` whose category
 (``not_found`` / ``invalid``) exits ``1``: the input, not the setup, is wrong.
+``read_resource_documents`` reads the same documents one at a time and
+reports each bad one by its position instead of raising, for callers that
+read on past one.
 
 Documents are read as plain export documents, with no templating, because
 export → commit → apply must round-trip: the file ``export`` writes is the
@@ -16,6 +19,7 @@ written in the file.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -26,11 +30,11 @@ from untaped_awx.domain import Resource
 from untaped_awx.infrastructure.git_source import GitSource
 
 
-def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:
-    """Yield each :class:`Resource` in ``path`` paired with its source file.
+def resource_paths(path: Path) -> list[Path]:
+    """The files ``path`` names: itself, or each ``*.yml``/``*.yaml`` under a directory, sorted.
 
-    ``path`` may be a single ``.yml`` (one or many docs) or a directory
-    walked recursively for ``*.yml`` and ``*.yaml``. Empty docs are skipped.
+    A missing path, or a directory with no such file, is a ``not_found``
+    :class:`ConfigError`.
     """
     p = path.expanduser()
     if not p.exists():
@@ -38,7 +42,16 @@ def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:
     files = sorted([*p.rglob("*.yml"), *p.rglob("*.yaml")]) if p.is_dir() else [p]
     if p.is_dir() and not files:
         raise ConfigError(f"no .yml/.yaml files found under {p}", category="not_found")
-    for f in files:
+    return files
+
+
+def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:
+    """Yield each :class:`Resource` in ``path`` paired with its source file.
+
+    ``path`` may be a single ``.yml`` (one or many docs) or a directory
+    walked recursively for ``*.yml`` and ``*.yaml``. Empty docs are skipped.
+    """
+    for f in resource_paths(path):
         for resource in _read_file(f):
             yield f, resource
 
@@ -70,20 +83,63 @@ def _read_file(path: Path) -> Iterator[Resource]:
 
 
 def read_resource_text(text: str, *, source: str) -> Iterator[Resource]:
-    """Yield each :class:`Resource` in YAML ``text``; errors name ``source``."""
-    try:
-        docs = list(yaml.safe_load_all(text))
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"invalid YAML in {source}: {exc}", category="invalid") from exc
-    for doc in docs:
+    """Yield each :class:`Resource` in YAML ``text``; errors name ``source``.
+
+    Every document is read first: a YAML syntax error raises ahead of any
+    invalid document, then the first invalid document raises, each chained to
+    its cause.
+    """
+    documents = [document for _index, document in _documents(text, source=source)]
+    errors = [document for document in documents if isinstance(document, ConfigError)]
+    syntax = [error for error in errors if isinstance(error.__cause__, yaml.YAMLError)]
+    if syntax or errors:
+        raise (syntax or errors)[0]
+    yield from (document for document in documents if isinstance(document, Resource))
+
+
+def read_resource_documents(text: str, *, source: str) -> Iterator[tuple[int, Resource | str]]:
+    """Each document of YAML ``text`` by its position: a :class:`Resource` or an error message.
+
+    ``index`` counts every document from 1, empty ones included (they yield
+    nothing), so ``3`` is the third ``---`` section. A document that is not a
+    mapping or not a valid resource yields its message and reading goes on; a
+    YAML syntax error yields its message and ends the text, since nothing past
+    it can be read. Documents are read one at a time, as they are asked for.
+    Messages name ``source``.
+    """
+    for index, document in _documents(text, source=source):
+        yield index, str(document) if isinstance(document, ConfigError) else document
+
+
+def _documents(text: str, *, source: str) -> Iterator[tuple[int, Resource | ConfigError]]:
+    """:func:`read_resource_documents` with each error as the ``invalid`` error it raises."""
+    documents = yaml.safe_load_all(text)
+    for index in itertools.count(1):
+        try:
+            doc = next(documents)
+        except StopIteration:
+            return
+        except yaml.YAMLError as exc:
+            yield index, _invalid(f"invalid YAML in {source}: {exc}", cause=exc)
+            return
         if doc is None:
             continue
         if not isinstance(doc, dict):
-            raise ConfigError(f"{source}: each YAML doc must be a mapping", category="invalid")
+            yield index, _invalid(f"{source}: each YAML doc must be a mapping")
+            continue
         try:
-            yield Resource.model_validate(doc)
+            resource = Resource.model_validate(doc)
         except Exception as exc:
-            raise ConfigError(f"{source}: {exc}", category="invalid") from exc
+            yield index, _invalid(f"{source}: {exc}", cause=exc)
+        else:
+            yield index, resource
+
+
+def _invalid(message: str, *, cause: Exception | None = None) -> ConfigError:
+    """An ``invalid`` input error, chained to ``cause`` as ``raise ... from cause`` would."""
+    error = ConfigError(message, category="invalid")
+    error.__cause__ = cause  # also sets __suppress_context__, as ``from`` does
+    return error
 
 
 class _DocumentDumper(yaml.SafeDumper):

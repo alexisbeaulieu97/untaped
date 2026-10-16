@@ -41,6 +41,7 @@ from untaped.cli import (  # type: ignore[deprecated]
     ParallelOption,
     StdinOption,
     YesOption,
+    check_columns,
     clamp_parallel,
     create_app,
     echo,
@@ -123,6 +124,7 @@ from untaped.output import (
     Progress,
     StaleData,
 )
+from untaped.output.diagnostic import NOT_COUNTED
 from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult, PickSetting
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
@@ -296,6 +298,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "FormatOption",
     "Issued",
     "Message",
+    "NOT_COUNTED",
     "OutcomeRecord",
     "OutputFormat",
     "PipeEnvelope",
@@ -306,6 +309,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "TableGlyph",
     "TargetRecord",
     "UtcTimestamp",
+    "check_columns",
     "echo",
     "emit",
     "emit_document",

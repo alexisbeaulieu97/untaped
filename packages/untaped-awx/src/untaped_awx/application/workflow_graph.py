@@ -21,10 +21,10 @@ from typing import Any
 
 import yaml
 
-from untaped_awx.application.apply_planner import resolve_fk_value
 from untaped_awx.application.mutation_refs import PlannedId
 from untaped_awx.application.mutation_values import semantic_equal
 from untaped_awx.application.ports import FkResolver, WorkflowNodeRepository
+from untaped_awx.domain import IdentityRef
 from untaped_awx.domain.workflow_graph import (
     EDGE_RELATIONS,
     GLOBAL_RUN_KINDS,
@@ -39,7 +39,7 @@ from untaped_awx.domain.workflow_graph import (
     Reference,
     WorkflowNodeSpec,
 )
-from untaped_awx.errors import AwxApiError
+from untaped_awx.errors import AwxApiError, BadRequestError
 
 NODE_FIELDS: tuple[str, ...] = (
     *PROMPT_REFERENCES,
@@ -387,31 +387,61 @@ def _export_run(
     return NodeRun(**values)
 
 
+def node_lookup_scope(
+    kind: str, value: NodeRun | Reference, *, default: dict[str, str] | None
+) -> dict[str, str] | None:
+    """The scope apply looks up a node's run or prompt ``value`` (naming ``kind``) in.
+
+    ``default`` is the workflow's organization. A run takes its own
+    ``organization`` over it (an explicit null: none), a management job has no
+    scope, and an inventory source is found through its inventory. A prompt
+    names a ``{name, organization}`` reference in that organization, and a bare
+    name in the workflow's only for an organization-scoped kind. ``None``:
+    unscoped.
+    """
+    if isinstance(value, NodeRun):
+        if kind in GLOBAL_RUN_KINDS:
+            return None
+        organization = (
+            None
+            if value.global_template
+            else value.organization or (default or {}).get("organization")
+        )
+        if kind == "InventorySource":
+            inventory = IdentityRef(
+                kind="Inventory", name=str(value.inventory), organization=organization
+            )
+            return _ancestry_scope(IdentityRef(kind=kind, name=value.name, parent=inventory))
+        return {"organization": organization} if organization else None
+    if isinstance(value, NameRef):
+        return _ancestry_scope(
+            IdentityRef(kind=kind, name=value.name, organization=value.organization)
+        )
+    return default if kind in _ORG_SCOPED else None
+
+
+def _ancestry_scope(reference: IdentityRef) -> dict[str, str] | None:
+    try:
+        scope = reference.lookup_scope()
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
+    return scope or None
+
+
 def _resolve_run(
     run: NodeRun | None, *, default: dict[str, str] | None, fk: FkResolver
 ) -> tuple[str, PlannedId] | None:
     if run is None:
         return None
-    if run.kind in GLOBAL_RUN_KINDS:
-        return run.kind, fk.name_to_id(run.kind, run.name, scope=None)
-    organization = (
-        None if run.global_template else run.organization or (default or {}).get("organization")
-    )
-    if run.kind == "InventorySource":
-        parent = {"kind": "Inventory", "name": run.inventory, "organization": organization}
-        return run.kind, resolve_fk_value(
-            run.kind, {"name": run.name, "parent": parent}, scope=None, fk=fk
-        )
-    scope = {"organization": organization} if organization else None
+    scope = node_lookup_scope(run.kind, run, default=default)
     return run.kind, fk.name_to_id(run.kind, run.name, scope=scope)
 
 
 def _resolve(
     kind: str, value: Reference, *, default: dict[str, str] | None, fk: FkResolver
 ) -> PlannedId:
-    if isinstance(value, NameRef):
-        return resolve_fk_value(kind, value.model_dump(), scope=None, fk=fk)
-    return fk.name_to_id(kind, value, scope=default if kind in _ORG_SCOPED else None)
+    name = value.name if isinstance(value, NameRef) else value
+    return fk.name_to_id(kind, name, scope=node_lookup_scope(kind, value, default=default))
 
 
 __all__ = [
@@ -422,6 +452,7 @@ __all__ = [
     "export_graph",
     "extra_data_equal",
     "members_of",
+    "node_lookup_scope",
     "read_graph",
     "resolve_graph",
 ]

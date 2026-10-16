@@ -197,14 +197,15 @@ free, but a command that writes declares it with `@writes`, or
   command; a single record shows every field.
 - Never pass defaults as `columns=` (`columns or DEFAULTS`):
   `--columns +name/-name` edits the defaults, and a named column is always
-  shown, even when empty.
-- Declare a record's kind on its class, `class Widget(Record,
-  kind="acme-tools.widget")`, in a `records` module your app imports:
-  `<plugin>.<noun>` (another prefix is `foreign-kind`), `<plugin>.<verb>_outcome`
-  for mutations, `.summary` the only third segment. One model per kind; `emit`
-  reads it from the rows. Elsewhere name the model (`kind_of(Widget)`), never
-  the string, so a rename misses no line. Fields must survive a JSON round
-  trip (`Record`'s docstring says which fail). A document is no row: `emit_document`.
+  shown, even when empty. An unknown name only warns on `OutcomeRecord` rows;
+  a command whose other rows follow a side effect calls `check_columns` first.
+- Declare a record's kind on its class, `class Widget(Record, kind="acme-tools.widget")`, in a
+  `records` module your app imports: `<plugin>.<noun>` (another prefix is `foreign-kind`),
+  `<plugin>.<verb>_outcome` for mutations, `.summary` the only third segment. One model per kind;
+  `emit` reads it from the rows. Elsewhere name the model (`kind_of(Widget)`), never the string, so
+  a rename misses no line. Fields must survive a JSON round trip (`Record`'s docstring says which
+  fail). A document is no row: `emit_document`. Records refuse undeclared fields; `extra="ignore"`
+  keeps a service answer's typed part, `"allow"` all of it (extras `JsonValue`, base fields first).
 - Fields are snake_case, with `id` and then `name` first. `url` is the web
   URL and `api_url` is the API link.
 - A record's own fields come before the fields it inherits from the bases
@@ -308,13 +309,12 @@ from untaped.sdk import read_identifiers
 identifiers = read_identifiers([], stdin=True, id_field="id", accepts=(Item,))
 ```
 
-For whole records, `read_stdin_input(accepts=...)` returns the bare
-values or the parsed envelopes (a `StdinInput`). `read_identifiers` and
-`read_stdin_input` raise on empty stdin.
-When an empty pipe (a filter that matched nothing) should do nothing, pass
-`read_stdin_input(allow_empty=True)`: it returns no values, which the command
-must treat as "nothing to do", never as "everything". A terminal stdin with
-nothing piped still raises.
+For whole records, `read_stdin_input(accepts=...)` returns the bare values or
+the parsed envelopes (a `StdinInput`). `read_identifiers` and
+`read_stdin_input` raise on empty stdin. When an empty pipe (a filter that
+matched nothing) should do nothing, pass `read_stdin_input(allow_empty=True)`:
+it returns no values, which the command must treat as "nothing to do", never
+as "everything". A terminal stdin with nothing piped still raises.
 
 A plugin joins pipelines with the first-party plugins:
 

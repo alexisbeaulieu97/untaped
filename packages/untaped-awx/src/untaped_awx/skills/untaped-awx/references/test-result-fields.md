@@ -114,8 +114,8 @@ One entry per node of the workflow, in AWX's order:
 
 One entry per check, in this order: `status`, each `log.contains`,
 `log.not_contains` and `log.matches` entry, `changed`, each `hosts` bound,
-each node's checks for a workflow case (with a `node` key), each
-`failed_tasks` entry, and last `idempotent`.
+each node's checks for a workflow case (`node` names the node; `null` on
+the case's own checks), each `failed_tasks` entry, and last `idempotent`.
 
 - `check`: `status`, `log.contains`, `log.not_contains`, `log.matches`,
   `changed`, `hosts`, `failed_tasks` or `idempotent`.

@@ -8,36 +8,30 @@ from typing import Any
 
 from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE
 from untaped_awx.domain import ApplyOutcome, FieldChange, IdentityRef
-
-OUTCOME_TABLE_COLUMNS = ("id", "name", "kind", "action", "fields_changed", "detail")
-"""A mutation table's defaults; ``scope``, ``identity`` and the flags stay in the record."""
+from untaped_awx.domain.records import ApplyOutcomeRow
 
 
-def outcome_rows(outcomes: list[ApplyOutcome]) -> list[dict[str, Any]]:
+def outcome_rows(outcomes: list[ApplyOutcome]) -> list[ApplyOutcomeRow]:
     """Summary rows for every output format; a failed row keeps its ``error``."""
-    rows: list[dict[str, Any]] = []
-    for o in outcomes:
-        data = o.model_dump(mode="json")
-        error = {"error": data["error"]} if "error" in data else {}
-        rows.append(
-            {
-                "id": o.id,
-                "kind": o.kind,
-                "scope": data["scope"],
-                "identity": data["identity"],
-                "partial": o.partial,
-                "unverified": o.unverified,
-                "name": o.name,
-                "action": o.action,
-                "fields_changed": _changed_fields(o.changes),
-                "preserved_secrets": list(o.preserved_secrets),
-                "dropped_undeclared_secrets": list(o.dropped_undeclared_secrets),
-                "dropped_secrets": list(o.dropped_secrets),
-                "detail": o.detail or "",
-                **error,
-            }
+    return [
+        ApplyOutcomeRow(
+            id=o.id,
+            kind=o.kind,
+            scope=o.scope,
+            identity=o.identity,
+            partial=o.partial,
+            unverified=o.unverified,
+            name=o.name,
+            action=o.action,
+            fields_changed=_changed_fields(o.changes),
+            preserved_secrets=list(o.preserved_secrets),
+            dropped_undeclared_secrets=list(o.dropped_undeclared_secrets),
+            dropped_secrets=list(o.dropped_secrets),
+            detail=o.detail or "",
+            error=o.error,
         )
-    return rows
+        for o in outcomes
+    ]
 
 
 _SCOPE_LABELS = {"organization": "org", "inventory__organization": "inventory_org"}

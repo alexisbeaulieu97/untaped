@@ -48,7 +48,7 @@ code first:
 - 2: a usage error (an unknown flag, a missing path, no suite files, a
   missing required `--var`).
 - 4: fix the environment, not your change: `awx.credentials` (token,
-  permission, credential lookup), `awx.inventory` (a failed source sync),
+  permission, credential lookup), `awx.inventories` (a failed source sync),
   `git` (HEAD not pushed, or an unusable checkout) or `local` (missing
   settings such as `awx.base_url`).
 - 5: temporary, retry later: `awx.controller` or `awx.hosts`.
@@ -71,7 +71,7 @@ act. The first row that matches decides:
 | `awx.suite` | AWX refused the launch as the case asked it: an unknown name, an ignored field, a missing survey variable | `invalid`, `not_found` (1) | Fix the suite or enable the prompt on the template, then `untaped awx test validate`. |
 | `awx.credentials` | AWX rejected the token or a permission, or a credential lookup ended the job (or its update) in `error` | `auth`, `permission` (4) | Fix the token (`untaped awx ping`) or the credential in AWX; leave the playbook alone. |
 | `awx.scm` | A `project_update` failed (see below) | `failed` (1); `invalid` before launching | Push the branch (`git push -u origin HEAD`) or fix the ref; read `evidence.related` and its log tail. |
-| `awx.inventory` | AWX names a failed `inventory_update` in the job's explanation | `config` (4) | The inventory source is broken: read its log (`untaped awx jobs logs ID --kind inventory_update`). |
+| `awx.inventories` | AWX names a failed `inventory_update` in the job's explanation | `config` (4) | The inventory source is broken: read its log (`untaped awx jobs logs ID --kind inventory_update`). |
 | `awx.controller` | AWX itself failed (see below) | usually `unavailable` (5); a job AWX no longer finds is `not_found` (1) | Retry later; `evidence.job_explanation` and `evidence.result_traceback` say what AWX saw. |
 | `awx.expectation` | The job ran as intended but an expectation did not hold (see below) | `failed` (1) | Compare `expectations` with what the job did; fix the change or the case. |
 | `awx.hosts` | The job failed and every failed task is an unreachable host | `unavailable` (5) | Retry once the hosts in `evidence.unreachable_hosts` are reachable. |
@@ -160,7 +160,7 @@ Approvals:
 - AWX refusing to approve (a missing Approve role, see
   [agent-profile.md](agent-profile.md)): `awx.credentials` (exit 4).
 - A node that ran a project or inventory update itself and failed is
-  `awx.scm` or `awx.inventory`, whatever the case expects.
+  `awx.scm` or `awx.inventories`, whatever the case expects.
 
 ## Comparing with a baseline
 

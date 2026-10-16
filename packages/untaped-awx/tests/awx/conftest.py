@@ -1134,6 +1134,7 @@ _AWX_FK_PLURAL: dict[str, str] = {
 # ``self.store["children"]``.
 _SUB_PATH_STORE: dict[tuple[str, str], str] = {
     ("groups", "children"): "groups",
+    ("inventories", "input_inventories"): "inventories",
     ("workflow_jobs", "workflow_nodes"): "workflow_job_nodes",
     ("project_updates", "events"): "project_update_events",
     ("inventory_updates", "events"): "inventory_update_events",

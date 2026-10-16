@@ -45,6 +45,9 @@ class _FakeClient:
     def get(self, *a: Any, **kw: Any) -> Any:  # pragma: no cover
         return None
 
+    def sub_documents(self, *a: Any, **kw: Any) -> dict[str, Any]:  # pragma: no cover
+        return {}
+
     def find(self, *a: Any, **kw: Any) -> Any:  # pragma: no cover
         return None
 

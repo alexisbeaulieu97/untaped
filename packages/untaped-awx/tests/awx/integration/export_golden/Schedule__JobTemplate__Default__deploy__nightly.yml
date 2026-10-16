@@ -1,0 +1,15 @@
+kind: Schedule
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: nightly
+  parent:
+    kind: JobTemplate
+    name: deploy
+    organization: Default
+spec:
+  rrule: DTSTART:20260101T000000Z RRULE:FREQ=DAILY
+  enabled: true
+  extra_data:
+    version: 5
+    db_password: $encrypted$
+  inventory: staging

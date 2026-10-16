@@ -1,0 +1,25 @@
+kind: JobTemplate
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: survey-off
+  organization: Default
+spec:
+  playbook: site.yml
+  survey_enabled: false
+  survey_spec:
+    name: ''
+    description: ''
+    spec:
+    - variable: version
+      type: text
+      required: true
+      default: ''
+    - variable: db_password
+      type: password
+      required: false
+      default: $encrypted$
+  project: playbooks
+  inventory: staging
+  credentials: []
+  labels: []
+  instance_groups: []

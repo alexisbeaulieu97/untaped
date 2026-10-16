@@ -1,3 +1,5 @@
+"""HttpFkResolver: names to ids and back, its caches, prefetch and seeding."""
+
 from __future__ import annotations
 
 import threading
@@ -9,7 +11,7 @@ from typing import Any, cast
 import pytest
 
 from untaped_awx.application.ports import ResourceClient
-from untaped_awx.domain import ResourceSpec
+from untaped_awx.domain import IdentityRef, ResourceSpec
 from untaped_awx.errors import AwxApiError, ResourceNotFoundError
 from untaped_awx.infrastructure import AwxResourceCatalog
 from untaped_awx.infrastructure.fk_resolver import HttpFkResolver
@@ -424,3 +426,58 @@ def test_integer_fk_validation_proves_kind_and_scope_without_name_lookup() -> No
         fk.validate_id("Project", 2, scope={"organization": "Right"})
     with pytest.raises(ResourceNotFoundError):
         fk.validate_id("Inventory", 1)
+
+
+def test_seed_names_identities_and_unified_ids() -> None:
+    """Listed rows name themselves later, under their kind and the unified view, unread."""
+    repo = _StubRepo({})
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    default = {"organization": {"id": 1, "name": "Default"}}
+
+    fk.seed("Inventory", [{"id": 20, "name": "prod", "organization": 1, "summary_fields": default}])
+    fk.seed(
+        "JobTemplate",
+        [
+            {"id": 100, "name": "deploy", "organization": 1},
+            {"id": 101, "name": "orphan", "organization": None},
+            {"id": 102, "name": "elsewhere", "organization": 9},
+        ],
+    )
+    fk.seed(
+        "InventorySource",
+        [
+            {"id": 30, "name": "from-git", "inventory": 20},
+            {"id": 31, "name": "stray", "inventory": 99},
+        ],
+    )
+
+    prod = IdentityRef(kind="Inventory", name="prod", organization="Default")
+    deploy = IdentityRef(kind="JobTemplate", name="deploy", organization="Default")
+    assert fk.id_to_name("Organization", 1) == "Default"
+    assert fk.id_to_name("JobTemplate", 102) == "elsewhere"
+    assert fk.id_to_identity("Inventory", 20) == prod
+    assert fk.id_to_identity("JobTemplate", 100) == deploy
+    assert fk.id_to_identity("UnifiedJobTemplate", 100) == deploy
+    assert fk.id_to_identity("JobTemplate", 101) == IdentityRef(kind="JobTemplate", name="orphan")
+    assert fk.id_to_identity("UnifiedJobTemplate", 30) == IdentityRef(
+        kind="InventorySource", name="from-git", parent=prod
+    )
+    assert repo.get_calls == []
+
+    # Ancestry no listed row names (organization 9, inventory 99) is read when asked.
+    repo.store.update(
+        Organization=[{"id": 9, "name": "Ops"}],
+        Inventory=[{"id": 99, "name": "edge", "organization": 9}],
+        JobTemplate=[{"id": 102, "name": "elsewhere", "organization": 9}],
+        InventorySource=[{"id": 31, "name": "stray", "inventory": 99}],
+    )
+    assert fk.id_to_identity("JobTemplate", 102).organization == "Ops"
+    assert fk.id_to_identity("InventorySource", 31).parent == IdentityRef(
+        kind="Inventory", name="edge", organization="Ops"
+    )
+    assert repo.get_calls == [
+        ("JobTemplate", 102),
+        ("Organization", 9),
+        ("InventorySource", 31),
+        ("Inventory", 99),
+    ]

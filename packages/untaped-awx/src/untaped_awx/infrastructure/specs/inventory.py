@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from untaped_awx.domain import ActionSpec, FkRef
+from untaped_awx.domain.records import Inventory, SyncOutcome
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 INVENTORY_SPEC = AwxResourceSpec(
     kind="Inventory",
+    record=Inventory,
     cli_name="inventories",
     api_path="inventories",
     relationship_api_path="inventories",
@@ -56,6 +58,7 @@ INVENTORY_SPEC = AwxResourceSpec(
     actions=(
         ActionSpec(
             name="sync",
+            outcome=SyncOutcome,
             path=None,
             returns=frozenset({"inventory_update"}),
             expand_to="InventorySource",

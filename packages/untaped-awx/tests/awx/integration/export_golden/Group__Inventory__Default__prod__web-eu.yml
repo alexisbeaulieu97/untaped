@@ -1,0 +1,12 @@
+kind: Group
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: web-eu
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  description: EU web
+  hosts: []
+  children: []

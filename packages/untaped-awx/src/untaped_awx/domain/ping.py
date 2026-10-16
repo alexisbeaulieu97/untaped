@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
+
+from untaped.sdk import Record
 
 
-class PingStatus(BaseModel):
+class PingStatus(Record, kind="awx.status"):
     """Health status returned by AAP's ``/api/v2/ping/`` endpoint."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     version: str
     active_node: str

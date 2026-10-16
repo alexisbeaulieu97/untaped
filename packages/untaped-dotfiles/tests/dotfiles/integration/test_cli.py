@@ -101,6 +101,17 @@ def test_subscribe_refuses_a_bad_manifest_and_leaves_no_clone(
     assert run(app, ["repos", "--format", "json"]).stdout.strip() in ("", "[]")
 
 
+def test_subscribe_refuses_an_unknown_column_before_cloning(
+    make_upstream: Upstream, tmp_path: Path
+) -> None:
+    bare, _ = make_upstream()
+    result = run(app, ["subscribe", str(bare), "--format", "json", "-c", "name,nope"])
+    assert result.exit_code == 2, result.output
+    assert "unknown column 'nope'" in result.stderr
+    assert not (tmp_path / "repos" / "dotfiles").exists()
+    assert run(app, ["repos", "--format", "json"]).stdout.strip() in ("", "[]")
+
+
 def test_subscribe_with_a_tag_as_ref_is_refused_and_leaves_no_clone(
     make_upstream: Upstream, tmp_path: Path
 ) -> None:

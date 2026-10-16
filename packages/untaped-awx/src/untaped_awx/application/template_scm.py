@@ -13,19 +13,11 @@ from typing import Any
 
 from untaped_awx.application.ports import Catalog, ResourceClient
 from untaped_awx.domain.payloads import as_dict
+from untaped_awx.domain.scm import effective_scm_ref
 from untaped_awx.errors import AwxApiError
 
 SCM_FIELDS: tuple[str, ...] = ("scm_url", "effective_scm_ref", "project_allow_override")
 """Fields :func:`with_scm` adds to every record, in this order."""
-
-
-def effective_scm_ref(template: Mapping[str, Any], project: Mapping[str, Any]) -> str | None:
-    """The ref a job of ``template`` checks out from ``project``."""
-    own = template.get("scm_branch")
-    if own and project.get("allow_override"):
-        return str(own)
-    ref = project.get("scm_branch")
-    return None if ref is None else str(ref)
 
 
 def with_scm(
@@ -64,4 +56,4 @@ def with_scm(
     return rows
 
 
-__all__ = ["SCM_FIELDS", "effective_scm_ref", "with_scm"]
+__all__ = ["SCM_FIELDS", "with_scm"]

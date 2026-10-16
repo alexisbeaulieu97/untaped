@@ -1,7 +1,7 @@
 """Decide which top-level fields are safe to omit from a PATCH.
 
 Second pass over secrets in the apply pipeline. After
-:func:`untaped_awx.application.secret_paths.strip_encrypted_in_place` has
+:func:`untaped_awx.domain.secret_paths.strip_encrypted_in_place` has
 removed ``$encrypted$`` placeholders from the user's write payload,
 :class:`SecretPreservationPolicy` compares the stripped subtree against
 the existing record's subtree (with the same paths removed) to decide
@@ -20,7 +20,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from untaped_awx.application.secret_paths import remove_at
+from untaped_awx.domain.secret_paths import remove_at
 
 
 class SecretPreservationPolicy:

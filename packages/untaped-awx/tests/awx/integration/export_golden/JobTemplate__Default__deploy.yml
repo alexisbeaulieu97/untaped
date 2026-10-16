@@ -1,0 +1,41 @@
+kind: JobTemplate
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: deploy
+  organization: Default
+spec:
+  description: Deploy the app
+  job_type: run
+  playbook: deploy.yml
+  scm_branch: ''
+  forks: 5
+  extra_vars: |
+    ---
+    version: 3
+    password: hunter2
+  host_config_key: $encrypted$
+  ask_inventory_on_launch: true
+  survey_enabled: true
+  survey_spec:
+    name: ''
+    description: ''
+    spec:
+    - variable: version
+      type: text
+      required: true
+      default: ''
+    - variable: db_password
+      type: password
+      required: false
+      default: $encrypted$
+  execution_environment: ee-default
+  project: playbooks
+  inventory: prod
+  credentials:
+  - ssh
+  - vault
+  labels:
+  - prod
+  instance_groups:
+  - default
+  - fallback

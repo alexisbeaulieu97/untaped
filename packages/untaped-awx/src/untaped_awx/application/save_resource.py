@@ -45,7 +45,8 @@ class ResourceSnapshot:
     """Complete body baseline, portable projection, FK IDs, and original member rows.
 
     The editor defensively copies this snapshot before launching its process;
-    save callers use only the portable resource.
+    save callers use only the portable resource. ``opaque_nodes`` names the
+    workflow nodes the export left out (it runs nothing untaped can name).
     """
 
     resource: Resource
@@ -53,6 +54,7 @@ class ResourceSnapshot:
     read_only_fields: tuple[str, ...]
     fk_ids: dict[str, Any]
     memberships: dict[str, tuple[dict[str, Any], ...]]
+    opaque_nodes: tuple[str, ...] = ()
 
 
 class SaveResource:
@@ -95,10 +97,7 @@ class SaveResource:
 
     def snapshot_from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> ResourceSnapshot:
         """Capture display labels and their original IDs without a second member read."""
-        if is_constructed_inventory(spec.kind, record) or (
-            spec.lacks_sub_documents(record) and isinstance(record.get("id"), int)
-        ):
-            record = self._client.get(spec, int(record["id"])).model_dump()
+        record = self._complete(spec, record)
         fk_ids = {
             ref.field: copy.deepcopy(record[ref.field])
             for ref in spec.fk_refs
@@ -141,10 +140,13 @@ class SaveResource:
                         str(m["name"]) for m in members if isinstance(m.get("name"), str)
                     ]
         metadata = self.metadata_from_record(spec, record)
+        opaque_nodes: tuple[str, ...] = ()
         if spec.node_field and self._nodes is not None and isinstance(record_id, int):
             label = f"{spec.kind} {metadata.name!r}"
+            states = read_graph(self._nodes, record_id)
+            opaque_nodes = tuple(state.identifier for state in states if state.opaque)
             graph = export_graph(
-                read_graph(self._nodes, record_id),
+                states,
                 organization=metadata.organization,
                 fk=self._fk,
                 warn=lambda message: self._warn(f"{label}: {message}"),
@@ -169,7 +171,22 @@ class SaveResource:
             ),
             fk_ids=fk_ids,
             memberships=memberships,
+            opaque_nodes=opaque_nodes,
         )
+
+    def _complete(self, spec: ResourceSpec, record: dict[str, Any]) -> dict[str, Any]:
+        """``record`` with what a list row lacks.
+
+        A row's sub-documents (a template's survey) are read on their own and
+        added to it, not by reading the record again; only a constructed
+        inventory is read again, since ``get`` hydrates its source settings
+        from another route.
+        """
+        if is_constructed_inventory(spec.kind, record):
+            return self._client.get(spec, int(record["id"])).model_dump()
+        if spec.lacks_sub_documents(record) and isinstance(record.get("id"), int):
+            return {**record, **self._client.sub_documents(spec, int(record["id"]))}
+        return record
 
     def _build_spec_body(self, spec: ResourceSpec, record: dict[str, Any]) -> dict[str, Any]:
         body: dict[str, Any] = {}

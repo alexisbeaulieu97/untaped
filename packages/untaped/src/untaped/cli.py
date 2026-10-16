@@ -30,7 +30,13 @@ from untaped.output.sink import (
     exit_on_counted_failure,
     failure_exit_code,
 )
-from untaped.records import TableGlyph, check_data_kind, kind_of, table_columns_of
+from untaped.records import (
+    OutcomeRecord,
+    TableGlyph,
+    check_data_kind,
+    kind_of,
+    table_columns_of,
+)
 from untaped.render import column_value, render_document
 from untaped.stability import (
     Stability,
@@ -396,6 +402,7 @@ def render_rows(
         kind=kind,
         table_columns=table_columns,
         schema=None,
+        strict=False,
         glyphs=None,
         ui=None,
     )
@@ -411,13 +418,15 @@ def _render(
     kind: str | None,
     table_columns: Sequence[str] | None,
     schema: Sequence[str] | None,
+    strict: bool,
     glyphs: Sequence[Mapping[str, TableGlyph]] | None,
     ui: UiContext | None,
 ) -> str:
     """Render ``rows`` as a collection, or its one row as a detail view (``single``).
 
     ``glyphs`` holds each row's :class:`TableGlyph` fields, applied in a
-    ``table`` only, after empty columns are hidden.
+    ``table`` only, after empty columns are hidden. ``schema`` and ``strict``
+    check ``columns`` as :func:`_check_columns` says.
     """
     if columns == ["?"]:
         known = schema or _row_keys(rows) or table_columns or ()
@@ -426,7 +435,7 @@ def _render(
     # Before a table's list view trims each row to its shown keys, ``error`` included.
     count_row_failures(rows)
     selection, named = _selected_columns(
-        columns, rows, fmt=fmt, schema=schema, table_columns=table_columns
+        columns, rows, fmt=fmt, schema=schema, strict=strict, table_columns=table_columns
     )
     if fmt == "table":
         ui = ui or ui_context()
@@ -452,6 +461,7 @@ def _selected_columns(
     *,
     fmt: OutputFormat,
     schema: Sequence[str] | None,
+    strict: bool,
     table_columns: Sequence[str] | None,
 ) -> tuple[list[str] | None, frozenset[str]]:
     """The columns to render (``None``: the whole record) and those the user named.
@@ -467,14 +477,11 @@ def _selected_columns(
         return default, frozenset()
     if fmt == "raw" and table_columns:
         default = list(table_columns)  # edits start from the defaults in raw too
-    names = [part.strip() for entry in columns for part in entry.split(",") if part.strip()]
+    names = _column_names(columns)
     edits = [name for name in names if name[0] in "+-"]
-    if edits and len(edits) != len(names):
-        raise_usage(
-            "--columns takes either column names or +name/-name edits of the defaults, "
-            f"not both: {', '.join(names)}"
-        )
-    _check_columns([name.lstrip("+-") for name in names], rows, fmt=fmt, schema=schema)
+    _check_columns(
+        [name.lstrip("+-") for name in names], rows, fmt=fmt, schema=schema, strict=strict
+    )
     if not edits:
         return names or None, frozenset(names)
     added = [name[1:] for name in edits if name[0] == "+"]
@@ -491,20 +498,49 @@ def _selected_columns(
     return selection, frozenset(added)
 
 
+def _column_names(columns: list[str]) -> list[str]:
+    """The names ``--columns`` gives, split on commas; names and edits never mix."""
+    names = [part.strip() for entry in columns for part in entry.split(",") if part.strip()]
+    edits = [name for name in names if name[0] in "+-"]
+    if edits and len(edits) != len(names):
+        raise_usage(
+            "--columns takes either column names or +name/-name edits of the defaults, "
+            f"not both: {', '.join(names)}"
+        )
+    return names
+
+
+def check_columns(model: type[BaseModel], *, columns: list[str] | None, fmt: OutputFormat) -> None:
+    """Refuse a ``--columns`` name no ``model`` field has, before the command acts.
+
+    :func:`emit` checks columns only when it renders. A command whose rows
+    follow a side effect but are not :class:`~untaped.records.OutcomeRecord`
+    rows (which only warn) calls this first, so the usage error (exit 2) comes
+    before anything changed, as the exit code promises. ``+name``/``-name``
+    edits are checked by name; ``pipe`` and ``--columns ?`` are left alone.
+    """
+    if columns is None or columns == ["?"] or fmt == "pipe":
+        return
+    names = [name.lstrip("+-") for name in _column_names(columns)]
+    _check_columns(names, [], fmt=fmt, schema=_model_fields(model), strict=True)
+
+
 def _check_columns(
     names: Sequence[str],
     rows: Sequence[Mapping[str, object]],
     *,
     fmt: OutputFormat,
     schema: Sequence[str] | None,
+    strict: bool,
 ) -> None:
     """Check ``--columns`` names against the record fields.
 
-    With a known ``schema`` (pydantic records) a name whose first dotted
-    segment is not a field is a usage error (exit 2) listing the valid
-    columns. Plain mapping rows can be sparse (an API may omit a field on
-    some records), so a name absent from every row only warns. ``pipe``
-    ignores columns and is never checked.
+    A name whose first dotted segment is not one of the ``schema`` fields
+    (pydantic records), or else of any row's keys, is unknown. It is a usage
+    error (exit 2) listing the valid columns when ``strict``, else a warning:
+    plain mapping rows can be sparse (an API may omit a field on some
+    records), and rows reporting a change come after it (see :func:`emit`).
+    ``pipe`` ignores columns and is never checked.
     """
     if fmt == "pipe" or (schema is None and not rows):
         return
@@ -517,7 +553,7 @@ def _check_columns(
         f"unknown column{plural} {', '.join(repr(name) for name in unknown)}; "
         f"valid columns: {', '.join(known)}"
     )
-    if schema is not None:
+    if strict:
         raise_usage(message)
     Diagnostics().warning(message)
 
@@ -611,6 +647,12 @@ def emit(
     declares is an error. Without ``table_columns``, a collection of
     records shows their type's ``table_columns``; a table shows a field's
     :class:`~untaped.records.TableGlyph` instead of its value.
+
+    An unknown ``columns`` name on pydantic rows is a usage error (exit 2)
+    listing the valid columns. On mapping rows, and on any
+    :class:`~untaped.records.OutcomeRecord` row, it only warns and the rows
+    still print: outcome rows come after the change they report, and exit 2
+    means nothing ran (a ``--dry-run`` plan warns alike, as its run would).
     """
     emit_with(
         records,
@@ -646,6 +688,7 @@ def emit_with(
     kind = _rows_kind(items, kind)
     if table_columns is None and not single:
         table_columns = _record_table_columns(items)
+    schema = _model_schema(records)
     rendered = _render(
         [_as_row(item) for item in items],
         single=single,
@@ -654,7 +697,8 @@ def emit_with(
         empty=empty,
         kind=kind,
         table_columns=table_columns,
-        schema=_model_schema(records),
+        schema=schema,
+        strict=schema is not None and not _reports_change(items),
         glyphs=_row_glyphs(items) if fmt == "table" else None,
         ui=ui,
     )
@@ -690,19 +734,35 @@ def _rows_kind(items: Sequence[BaseModel | Mapping[str, object]], kind: str | No
     return declared.pop() if declared else None
 
 
+def _reports_change(items: Sequence[BaseModel | Mapping[str, object]]) -> bool:
+    """Whether a row is an :class:`OutcomeRecord`: what a mutation did, after it ran."""
+    return any(isinstance(item, OutcomeRecord) for item in items)
+
+
 def _model_schema(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
 ) -> list[str] | None:
-    """Field names when every record is a pydantic model (a known schema)."""
+    """Field names when every record is a pydantic model (a known schema).
+
+    A model with ``extra="allow"`` passes a service's answer through, so its
+    schema is open, as a mapping row's is (``None``).
+    """
     items = [records] if isinstance(records, BaseModel | Mapping) else list(records)
-    if not items or not all(isinstance(item, BaseModel) for item in items):
+    if not items or not all(
+        isinstance(item, BaseModel) and item.model_config.get("extra") != "allow" for item in items
+    ):
         return None
     names: dict[str, None] = {}
     for item in items:
         model = type(item)
         assert issubclass(model, BaseModel)
-        names.update(dict.fromkeys([*dumped_names(model).values(), *model.model_computed_fields]))
+        names.update(dict.fromkeys(_model_fields(model)))
     return list(names)
+
+
+def _model_fields(model: type[BaseModel]) -> list[str]:
+    """The columns ``model`` rows have: their dumped field names, then computed fields."""
+    return [*dumped_names(model).values(), *model.model_computed_fields]
 
 
 def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:

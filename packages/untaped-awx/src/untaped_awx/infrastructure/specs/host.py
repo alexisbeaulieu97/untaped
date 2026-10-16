@@ -9,11 +9,13 @@ URL rather than carried in the body.
 
 from __future__ import annotations
 
+from untaped_awx.domain.records import Host
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 HOST_SPEC = AwxResourceSpec(
     kind="Host",
+    record=Host,
     cli_name="hosts",
     api_path="hosts",
     structured_text_fields=("variables",),

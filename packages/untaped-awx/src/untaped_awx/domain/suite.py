@@ -35,7 +35,15 @@ from pydantic import (
 )
 from pydantic.config import JsonDict
 
-from untaped.sdk import ConfigError, ErrorCategory, ExitCode, UtcTimestamp, q
+from untaped.sdk import (
+    NOT_COUNTED,
+    ConfigError,
+    ErrorCategory,
+    ExitCode,
+    Record,
+    UtcTimestamp,
+    q,
+)
 from untaped_awx.domain.case_failure import (
     SUITE,
     CaseFailure,
@@ -189,8 +197,8 @@ class ExpectationResult(BaseModel):
     bound, or a named host has no summary.
     """
     passed: bool
-    node: str | None = Field(default=None, exclude_if=lambda node: node is None)
-    """The workflow node whose job the check read (left out: the case's own job)."""
+    node: str | None = None
+    """The workflow node whose job the check read (``None``: the case's own job)."""
 
     def describe_failure(self) -> str:
         described = self._describe()
@@ -752,7 +760,7 @@ class Baseline(BaseModel):
     """``failure.evidence.node`` of the baseline row (``None``: not a workflow node's failure)."""
 
 
-class CaseResult(BaseModel):
+class CaseResult(Record, kind="awx.test_result"):
     """One row of the test report."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -768,8 +776,12 @@ class CaseResult(BaseModel):
     duration_s: float | None = None
     started_at: UtcTimestamp | None = None
     finished_at: UtcTimestamp | None = None
-    failure: CaseFailure | None = None
-    """Why a case did not pass: the responsible system, category, summary and evidence."""
+    failure: Annotated[CaseFailure | None, NOT_COUNTED] = None
+    """Why a case did not pass: the responsible system, category, summary and evidence.
+
+    Not counted by the row: the run reports the failures that decide its exit
+    (a baseline excuses a ``still_failing`` one).
+    """
     expectations: tuple[ExpectationResult, ...] = ()
     hosts: dict[str, HostSummary] | None = None
     """Each host's PLAY RECAP counters (``None``: not read)."""

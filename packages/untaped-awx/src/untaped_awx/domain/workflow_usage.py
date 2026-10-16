@@ -14,10 +14,14 @@ queried at that step.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
+
+from untaped.sdk import Record
 
 
-class WorkflowUsage(BaseModel):
+class WorkflowUsage(Record, kind="awx.template_usage"):
+    """One workflow that runs a queried template (``usage``)."""
+
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     id: int

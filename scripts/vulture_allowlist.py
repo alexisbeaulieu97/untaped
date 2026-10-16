@@ -25,6 +25,14 @@ PingStatus.install_uuid
 WorkflowNode.workflow_job_template  # awx workflow-nodes rows
 WorkflowNode.summary_fields
 WorkflowUsage.node_count  # a default column
+Project.scm_url  # awx catalog rows: AWX's fields, typed for plugin schema
+Project.allow_override
+JobTemplate.scm_url  # job-templates list/get --with-scm
+JobTemplate.project_allow_override
+ActionOutcome.target_kind  # awx.launch_outcome / awx.sync_outcome
+ActionOutcome.target_name
+ActionOutcome.job_failed  # dumped as `failed`
+ApplyOutcomeRow.fields_changed  # awx.apply_outcome
 RepoRecord.subscribed_at  # dotfiles state.yml
 AppliedRecord.source_commit
 AppliedRecord.applied_at
@@ -58,6 +66,11 @@ GitRemote.delete_branch
 GitRemote.refuse_by_oid
 GitRemote.drop_pack
 GitRemote.packs_requested
+
+# awx ports and readers whose first caller is awx lint (#630).
+ProjectPlaybooks.playbooks
+ResourceRepository.playbooks
+read_resource_documents  # awx infrastructure.yaml_io
 
 # Read through getattr over a field table (awx application.workflow_graph).
 NodeRun.inventory_source

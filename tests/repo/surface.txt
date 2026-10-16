@@ -4980,6 +4980,7 @@ sdk untaped.sdk.MultiList.view(frame)  [experimental]
 sdk untaped.sdk.MultiList.view(width=) default=None  [experimental]
 sdk untaped.sdk.MultiList.window_rows  [experimental]
 sdk untaped.sdk.MultiList.with_error(text)  [experimental]
+sdk untaped.sdk.NOT_COUNTED
 sdk untaped.sdk.NO_PROGRESS
 sdk untaped.sdk.NeverRefreshed(cache, key, label)
 sdk untaped.sdk.NeverRefreshed.category class
@@ -5679,6 +5680,7 @@ sdk untaped.sdk.batch_apply(render_generic_preview=) default=true
 sdk untaped.sdk.bounded_map(fn, items, *, concurrency, on_each) callback(fn, 1) callback(on_each, 2)
 sdk untaped.sdk.bounded_map(on_abort=) default=None callback(0)
 sdk untaped.sdk.bounded_map(while_running=) default=None callback(0)
+sdk untaped.sdk.check_columns(model, *, columns, fmt)
 sdk untaped.sdk.clamp_parallel(requested, *, cap, policy)
 sdk untaped.sdk.code_version(distributions=) default=[]
 sdk untaped.sdk.code_version(extra=) default=[]

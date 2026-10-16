@@ -34,7 +34,6 @@ from untaped.sdk import (
     FormatOption,
     LimitOption,
     create_app,
-    echo,
     emit,
     finish,
     not_found,
@@ -42,11 +41,11 @@ from untaped.sdk import (
     q,
     raise_usage,
     read_identifiers,
-    render_rows,
     report_errors,
 )
 from untaped_awx.application import GetUnifiedTemplate
 from untaped_awx.cli.context import open_context
+from untaped_awx.domain.records import UnifiedTemplate
 from untaped_awx.errors import AwxError
 
 app = create_app(
@@ -100,16 +99,13 @@ def list_command(
         filters["type"] = type_
     with report_errors(), open_context() as ctx, ctx.diag.progress("Loading templates"):
         records = list(ctx.ujts.list(params=filters, limit=limit))
-    rendered = render_rows(
-        records,
+    emit(
+        [UnifiedTemplate.model_validate(record) for record in records],
         fmt=fmt,
         columns=columns or (_DEFAULT_LIST_COLUMNS if fmt == "raw" else None),
         table_columns=_DEFAULT_LIST_COLUMNS,
-        kind="awx.unified_template",
         empty="No templates found. Try a different --type or --filter.",
     )
-    if rendered:
-        echo(rendered)
 
 
 @app.command(name="get")
@@ -137,7 +133,7 @@ def get_command(
     missing: list[str] = []
     with report_errors(), open_context() as ctx:
         identifiers = read_identifiers(
-            list(ids or []), stdin=stdin, id_field="id", accept_kinds={"awx.unified_template"}
+            list(ids or []), stdin=stdin, id_field="id", accepts=(UnifiedTemplate,)
         )
         for raw in identifiers:
             if not raw.isdecimal():
@@ -162,10 +158,9 @@ def get_command(
         )
     if records:
         emit(
-            records,
+            [UnifiedTemplate.model_validate(record) for record in records],
             fmt=fmt,
             columns=columns,
             table_columns=_DEFAULT_LIST_COLUMNS,
-            kind="awx.unified_template",
         )
     finish(bool(missing))

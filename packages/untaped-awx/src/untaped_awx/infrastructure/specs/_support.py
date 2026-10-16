@@ -7,6 +7,14 @@ These specs declare just enough for ``name → id`` resolution and
 from __future__ import annotations
 
 from untaped_awx.domain import FkRef
+from untaped_awx.domain.records import (
+    CredentialType,
+    ExecutionEnvironment,
+    InstanceGroup,
+    Label,
+    Organization,
+    SystemJobTemplate,
+)
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 UNIVERSAL_READ_ONLY: tuple[str, ...] = (
@@ -28,6 +36,7 @@ least these; ``test_catalog`` pins that invariant.
 
 ORGANIZATION_SPEC = AwxResourceSpec(
     kind="Organization",
+    record=Organization,
     cli_name="organizations",
     api_path="organizations",
     identity_keys=("name",),
@@ -42,6 +51,7 @@ ORGANIZATION_SPEC = AwxResourceSpec(
 
 CREDENTIAL_TYPE_SPEC = AwxResourceSpec(
     kind="CredentialType",
+    record=CredentialType,
     cli_name="credential-types",
     api_path="credential_types",
     identity_keys=("name",),  # CredentialTypes are global (no organization)
@@ -66,6 +76,7 @@ CREDENTIAL_TYPE_SPEC = AwxResourceSpec(
 
 EXECUTION_ENVIRONMENT_SPEC = AwxResourceSpec(
     kind="ExecutionEnvironment",
+    record=ExecutionEnvironment,
     cli_name="execution-environments",
     api_path="execution_environments",
     identity_keys=("name",),
@@ -80,6 +91,7 @@ EXECUTION_ENVIRONMENT_SPEC = AwxResourceSpec(
 
 LABEL_SPEC = AwxResourceSpec(
     kind="Label",
+    record=Label,
     cli_name="labels",
     api_path="labels",
     identity_keys=("name", "organization"),
@@ -95,6 +107,7 @@ LABEL_SPEC = AwxResourceSpec(
 
 INSTANCE_GROUP_SPEC = AwxResourceSpec(
     kind="InstanceGroup",
+    record=InstanceGroup,
     cli_name="instance-groups",
     api_path="instance_groups",
     identity_keys=("name",),  # globally unique in AWX
@@ -109,6 +122,7 @@ INSTANCE_GROUP_SPEC = AwxResourceSpec(
 
 SYSTEM_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="SystemJobTemplate",
+    record=SystemJobTemplate,
     cli_name="system-job-templates",
     api_path="system_job_templates",
     identity_keys=("name",),  # management jobs are global

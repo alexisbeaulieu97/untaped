@@ -2510,6 +2510,32 @@ def test_hook_run_transform_diff_and_structured_output(tmp_path: Path) -> None:
     assert "args" not in row
 
 
+def test_hook_run_refuses_an_unknown_column_before_running_the_hook(tmp_path: Path) -> None:
+    hook_project = tmp_path / "hooks"
+    _write_hook_project(
+        hook_project,
+        public_name="ready",
+        module_name="ready",
+        code=(
+            "import pathlib\n\n"
+            "def validate(*, inputs, target, args, helpers):\n"
+            "    pathlib.Path(str(target), 'ran').write_text('x')\n"
+            "    return helpers.pass_()\n"
+        ),
+    )
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(
+        app,
+        ["hooks", "run", "ready", *_ctx(hook_project, target), "-f", "json", "-c", "status,nope"],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "unknown column 'nope'" in result.stderr
+    assert not (target / "ran").exists()
+
+
 def test_hook_run_validate_records_and_fail_exit(tmp_path: Path) -> None:
     hook_project = tmp_path / "hooks"
     _write_hook_project(

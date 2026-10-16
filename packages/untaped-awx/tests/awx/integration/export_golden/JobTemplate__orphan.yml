@@ -1,0 +1,11 @@
+kind: JobTemplate
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: orphan
+  organization: null
+spec:
+  playbook: ping.yml
+  survey_spec: {}
+  credentials: []
+  labels: []
+  instance_groups: []

@@ -94,7 +94,7 @@ class SaveOutcome(BaseModel):
     detail: str | None = None
 
 
-class JobCancelOutcome(OutcomeRecord):
+class JobCancelOutcome(OutcomeRecord, kind="awx.cancel_outcome"):
     """One ``jobs cancel`` row: the execution, its status when read, and the result.
 
     ``action`` is ``planned``, ``skipped`` (already finished),
@@ -110,7 +110,7 @@ class JobCancelOutcome(OutcomeRecord):
     detail: str | None = None
 
 
-class JobRelaunchOutcome(OutcomeRecord):
+class JobRelaunchOutcome(OutcomeRecord, kind="awx.relaunch_outcome"):
     """One ``jobs relaunch`` row: the new execution (``id``) and the job it repeats.
 
     ``action`` is ``planned``, ``relaunched`` or ``failed``; ``hosts`` is
@@ -127,7 +127,7 @@ class JobRelaunchOutcome(OutcomeRecord):
     detail: str | None = None
 
 
-class CopyOutcome(OutcomeRecord):
+class CopyOutcome(OutcomeRecord, kind="awx.copy_outcome"):
     """One ``copy`` row: the new resource (``id``, ``name``) and its source.
 
     ``kind`` is the resource kind (``JobTemplate``), so ``patch --stdin`` on
@@ -144,7 +144,7 @@ class CopyOutcome(OutcomeRecord):
     detail: str | None = None
 
 
-class RenameOutcome(OutcomeRecord):
+class RenameOutcome(OutcomeRecord, kind="awx.rename_outcome"):
     """One ``rename`` row: the resource (``id``), its new and previous names.
 
     ``kind`` is the resource kind (``JobTemplate``), so ``patch --stdin`` on
@@ -158,6 +158,17 @@ class RenameOutcome(OutcomeRecord):
     kind: str
     action: str
     detail: str | None = None
+
+
+RESOURCE_OUTCOMES: dict[str, type[OutcomeRecord]] = {
+    "copy": CopyOutcome,
+    "rename": RenameOutcome,
+}
+"""Command -> the outcome naming one resource by ``id`` plus its ``kind``.
+
+A kind offering the command also accepts these records wherever it selects
+from ``--stdin``, so a copy pipes straight into ``patch``.
+"""
 
 
 class TemporaryCopyOutcome(OutcomeRecord):

@@ -1,0 +1,20 @@
+kind: Inventory
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: combined
+  organization: Default
+spec:
+  kind: constructed
+  source_vars: |
+    plugin: constructed
+  update_cache_timeout: 60
+  limit: web*
+  verbosity: 1
+  input_inventories:
+  - kind: Inventory
+    name: prod
+    organization: Default
+  - kind: Inventory
+    name: staging
+    organization: Default
+  instance_groups: []

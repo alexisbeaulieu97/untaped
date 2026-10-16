@@ -10,6 +10,7 @@ from untaped_awx.application import SaveResource, SaveResources
 from untaped_awx.application.selection import SelectedResource
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.domain import ResourceSpec
+from untaped_awx.domain.records import Document
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.yaml_io import dump_resource
 
@@ -40,13 +41,11 @@ def run_save_selection(
         if text:
             echo(text)
     else:
-        envelopes = [resource.model_dump(exclude_none=True) for resource in resources]
-        emit(
-            envelopes[0] if len(envelopes) == 1 else envelopes,
-            fmt=fmt,
-            columns=columns,
-            kind="awx.document",
-        )
+        documents = [
+            Document.model_validate(resource.model_dump(mode="json", exclude_none=True))
+            for resource in resources
+        ]
+        emit(documents[0] if len(documents) == 1 else documents, fmt=fmt, columns=columns)
 
 
 def run_save_batch(
