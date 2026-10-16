@@ -182,9 +182,7 @@ def test_a_plugin_holder_without_an_anchor_keeps_the_layout(
     assert old.exists()
 
 
-def test_a_reference_from_a_newer_untaped_stops_pruning(
-    base: Path, composed: list[str]
-) -> None:
+def test_a_reference_from_a_newer_untaped_stops_pruning(base: Path, composed: list[str]) -> None:
     _registered(composed)
     folder = refs.refs_dir()
     (folder / "install-future.json").write_text('{"untaped": "2", "holder": "install:f"}')
@@ -425,26 +423,26 @@ def cached_store(base: Path, composed: list[str]) -> tuple[Store, Cache, Path]:
 
 
 def test_a_complete_fill_prunes(cached_store: tuple[Store, Cache, Path]) -> None:
-    _store_, cache, old = cached_store
+    _, cache, old = cached_store
     _serve(cache)
     assert not old.exists()
 
 
 def test_a_partial_fill_prunes_nothing(cached_store: tuple[Store, Cache, Path]) -> None:
-    _store_, cache, old = cached_store
+    _, cache, old = cached_store
     _serve(cache, fill_result=Filled(partial=Failure.plain("3 repos left out")))
     assert old.exists()
 
 
 def test_a_failed_fill_prunes_nothing(cached_store: tuple[Store, Cache, Path]) -> None:
-    _store_, cache, old = cached_store
+    _, cache, old = cached_store
     with pytest.raises(UntapedError):
         _serve(cache, error=True)
     assert old.exists()
 
 
 def test_a_cached_read_prunes_nothing(cached_store: tuple[Store, Cache, Path]) -> None:
-    _store_, cache, old = cached_store
+    _, cache, old = cached_store
     cache.seed("k", refreshed_at=datetime.now(UTC))
     with diagnostics_scope():
         cache.serve({"k": "key"}, refresh=False, fill=lambda *_: Filled(), read=lambda: None)

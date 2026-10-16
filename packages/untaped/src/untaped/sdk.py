@@ -152,6 +152,7 @@ from untaped.records import (
     kind_of,
     record_model,
 )
+from untaped.refs import holders
 from untaped.settings import HttpSettings, get_config_section
 from untaped.skills import project_root
 from untaped.stability import (
@@ -169,7 +170,6 @@ from untaped.stdin import (
     read_stdin_input,
     resolve_text_input,
 )
-from untaped.refs import holders
 from untaped.store import Store
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context

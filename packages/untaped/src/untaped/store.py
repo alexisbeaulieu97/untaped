@@ -31,8 +31,8 @@ import threading
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
 from untaped.errors import ConfigError
@@ -341,7 +341,13 @@ def survey(store: Store, references: Sequence[Reference]) -> list[Layout]:
         awaiting = path == base and store.adopts and layout == store.layout and not _there(own)
         found.append(
             _layout_state(
-                store, layout, path, references, own=awaiting, removable=removable, awaiting=awaiting
+                store,
+                layout,
+                path,
+                references,
+                own=awaiting,
+                removable=removable,
+                awaiting=awaiting,
             )
         )
     return found
@@ -643,7 +649,7 @@ class _SqliteInUse:
             try:
                 self._lock().acquire_read(timeout=_WAIT)
             except (TimeoutError, OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
-                # A filesystem or a damaged .inuse that refuses the lock: the layout runs unprotected.
+                # A filesystem or damaged .inuse that refuses the lock: the layout runs unprotected.
                 _LOG.debug("could not hold the in-use lock %s: %s", self._path, exc)
                 return
             if before is not None and _inode(self._path) == before:

@@ -74,6 +74,25 @@ def test_dry_run_plans_and_writes_nothing(_isolated_config: Path) -> None:
     assert _isolated_config.read_text() == ROUND_TRIP
 
 
+def test_the_preview_counts_the_other_registered_installs(
+    _isolated_config: Path, tmp_path: Path
+) -> None:
+    from untaped.testing import write_reference
+
+    write_config(_isolated_config, ROUND_TRIP)
+    other = tmp_path / "checkout"
+    (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
+    write_reference("install:aaaaaaaaaaaa", [], anchor=other, version="11.1.0")
+    write_reference("install:bbbbbbbbbbbb", [], anchor=tmp_path / "gone", version="11.0.0")
+
+    result = _migrate("--dry-run", "--format", "json")
+
+    assert (
+        "would rename 4 keys; 1 other registered install on this machine may read this config: "
+        "migrate once every install is upgraded"
+    ) in result.stderr
+
+
 def test_apply_renames_every_profile_and_keeps_comments_and_order(_isolated_config: Path) -> None:
     write_config(_isolated_config, ROUND_TRIP)
 

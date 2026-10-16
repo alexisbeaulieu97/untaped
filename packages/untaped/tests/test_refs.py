@@ -180,9 +180,7 @@ def test_a_registered_install_refreshes_on_its_first_store_open(
     assert json.loads(ref.file.read_text())["targets"] == ["acme.data@2"]
 
 
-def test_the_refresh_runs_once_per_process(
-    site: Path, composed: list[str], tmp_path: Path
-) -> None:
+def test_the_refresh_runs_once_per_process(site: Path, composed: list[str], tmp_path: Path) -> None:
     ref = refs.register(["acme.data@1"])
     refs.refresh()
     composed[:] = ["acme.data@9"]

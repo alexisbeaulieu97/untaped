@@ -5946,10 +5946,10 @@ sdk untaped.testing.plugin_candidate(distribution=) default=None
 sdk untaped.testing.plugin_candidate(requires_dist=) default=[]
 sdk untaped.testing.plugin_candidate(spec)
 sdk untaped.testing.progress_clock()
-sdk untaped.testing.write_reference(anchor=) default=None
-sdk untaped.testing.write_reference(holder, targets)
-sdk untaped.testing.write_reference(plugin=) default=None
-sdk untaped.testing.write_reference(version=) default=None
+sdk untaped.testing.write_reference(anchor=) default=None  [experimental]
+sdk untaped.testing.write_reference(holder, targets)  [experimental]
+sdk untaped.testing.write_reference(plugin=) default=None  [experimental]
+sdk untaped.testing.write_reference(version=) default=None  [experimental]
 sdk untaped_git.api.Adopted(repo, action)
 sdk untaped_git.api.Adopted.action
 sdk untaped_git.api.Adopted.repo

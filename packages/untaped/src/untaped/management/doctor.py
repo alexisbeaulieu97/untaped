@@ -102,6 +102,7 @@ from untaped.token_store import pass_problem
 
 if TYPE_CHECKING:
     from untaped.refs import Reference
+    from untaped.store import Layout, Store
 
 _diag = Diagnostics()
 
@@ -636,16 +637,14 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     Green while every layout on disk is held or will go at the next complete
     fill; yellow for one the cleanup cannot remove, with the reason.
     """
-    from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
-    from untaped.refs import read_references, this_install  # noqa: PLC0415
-    from untaped.store import kept_reason, survey  # noqa: PLC0415
+    from untaped.refs import read_references  # noqa: PLC0415 - runs only in doctor
+    from untaped.store import survey  # noqa: PLC0415
 
     title = "stores keep one layout each, or every layout is held"
     stores = [store for registered in result.plugins for store in registered.spec.stores]
     if not stores:
         return _row("stores", shell.name, _PASS, title, "no plugin declares a store")
     references = read_references()
-    me = this_install()
     parts: list[str] = []
     reasons: list[str] = []
     for store in stores:
@@ -659,36 +658,50 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         if not any(layout.own for layout in layouts):
             texts.append(f"layout {store.layout} at {shown_path(path)}, not created yet")
         for layout in layouts:
-            size = size_text(dir_bytes(layout.path))
-            where = f"layout {layout.layout} at {shown_path(layout.path)} ({size})"
-            if layout.awaiting:
-                where = f"{shown_path(layout.path)} ({size}) is renamed to layout {layout.layout}"
-                where += " on its next open"
-            reason = kept_reason(store, layout, references)
-            if layout.holders:
-                where += ", held by " + ", ".join(
-                    "this install" if me and ref.holder == me.holder else ref.describe()
-                    for ref in layout.holders
-                )
-            elif not layout.own:
-                where += ", held by nobody"
-                where += f": {reason}" if reason else " (removed at the next complete fill)"
-            elif layout.lock == "damaged" and reason:
-                where += f": {reason}"
-            if reason:
-                reasons.append(reason)
-            texts.append(where)
+            text, reason = _layout_text(store, layout, references)
+            texts.append(text)
+            reasons += [reason] if reason else []
         parts.append(f"{store.qualified}: {'; '.join(texts)}")
     if not reasons:
         return _row("stores", shell.name, _PASS, title, "; ".join(parts))
-    fix = None
-    if any(reason.startswith("no registered install") for reason in reasons):
-        fix, automatic = command_argv("setup register", profile=selected_profile()), True
-    elif any(not reason.startswith("its in-use lock") for reason in reasons if reason != "files"):
-        fix, automatic = command_argv("setup migrate-dirs", profile=selected_profile()), False
-    else:
-        automatic = False
+    fix, automatic = _stores_fix(reasons)
     return _row("stores", shell.name, _WARN, title, "; ".join(parts), fix, automatic=automatic)
+
+
+def _layout_text(
+    store: Store, layout: Layout, references: Sequence[Reference]
+) -> tuple[str, str | None]:
+    """One layout as the ``stores`` row says it, and why the cleanup keeps it (if it does)."""
+    from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
+    from untaped.refs import this_install  # noqa: PLC0415
+    from untaped.store import kept_reason  # noqa: PLC0415
+
+    size = size_text(dir_bytes(layout.path))
+    text = f"layout {layout.layout} at {shown_path(layout.path)} ({size})"
+    if layout.awaiting:
+        text = f"{shown_path(layout.path)} ({size}) is renamed to layout {layout.layout}"
+        text += " on its next open"
+    reason = kept_reason(store, layout, references)
+    me = this_install()
+    if layout.holders:
+        text += ", held by " + ", ".join(
+            "this install" if me and ref.holder == me.holder else ref.describe()
+            for ref in layout.holders
+        )
+    elif not layout.own:
+        text += ", held by nobody"
+        if not reason:
+            text += " (removed at the next complete fill)"
+    return (f"{text}: {reason}" if reason else text), reason
+
+
+def _stores_fix(reasons: Sequence[str]) -> tuple[list[str] | None, bool]:
+    """The ``stores`` row's fix for what keeps its layouts: register, migrate-dirs, or none."""
+    if any(reason.startswith("no registered install") for reason in reasons):
+        return command_argv("setup register", profile=selected_profile()), True
+    if any(not reason.startswith("its in-use lock") for reason in reasons if reason != "files"):
+        return command_argv("setup migrate-dirs", profile=selected_profile()), False
+    return None, False
 
 
 def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
@@ -717,8 +730,8 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
             text += " (this install)"
         if not ref.live:
             text += (
-                f": no untaped there any more; `untaped setup register --remove` from it, "
-                f"or `untaped setup migrate-dirs`, removes {shown_path(ref.file)}"
+                f": no untaped there any more; `untaped setup migrate-dirs` "
+                f"removes {shown_path(ref.file)}"
             )
         elif ref.pre_upgrade:
             text += ": reference from before an upgrade; run any command from that install"
@@ -748,7 +761,7 @@ def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -
         for store in registered.spec.stores:
             try:
                 layouts = survey(store, references)
-            except Exception:  # noqa: S112 - the stores row names a store it cannot find
+            except Exception:
                 continue
             if any(not layout.own for layout in layouts):
                 return True

@@ -21,6 +21,9 @@ A cache (``untaped.sdk.Cache``) reads its ages from the wall clock; under
 :func:`cache_clock` it reads the test's instead, which moves only on
 ``advance(timedelta)``, so "a rerun an hour later" is one call. The two
 clocks are independent.
+
+:func:`write_reference` writes another install's reference in
+``~/.untaped/refs/``, so a test can say what holds a store's layouts.
 """
 
 from __future__ import annotations

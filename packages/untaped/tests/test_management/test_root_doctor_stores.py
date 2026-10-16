@@ -71,7 +71,7 @@ def test_two_held_layouts_pass(tmp_path: Path) -> None:
     write_reference("install:aaaaaaaaaaaa", ["acme.data@3"], anchor=checkout, version="11.1.0")
     row = _row(_store(tmp_path / "data.db"))
     assert row["status"] == "pass"
-    assert f"(1 B), held by this install;" in str(row["detail"])
+    assert "(1 B), held by this install;" in str(row["detail"])
     assert f"(3 B), held by untaped 11.1.0 at {checkout}" in str(row["detail"])
 
 

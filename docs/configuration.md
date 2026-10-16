@@ -37,7 +37,8 @@ Two installs that share one config file can disagree about a renamed setting:
 writes keep keys a version does not know, but an install older than the
 rename ignores the new key and uses the default. Run `config migrate` once every install
 is upgraded, or give the second install its own `UNTAPED_CONFIG` (its state
-follows it); `untaped doctor` reports keys the running version ignores.
+follows it); `untaped doctor` reports keys the running version ignores, and
+names the other installs [registered](#several-versions-on-one-machine) here.
 
 ### File format
 
@@ -126,6 +127,29 @@ order, quoting and indentation.
 A setting's value comes from the first of these that has it: its
 `UNTAPED_<SECTION>__<FIELD>` variable (for example `UNTAPED_GITHUB__TOKEN`),
 the active profile, `profiles.default`, the built-in default.
+
+## Several versions on one machine
+
+Installs of different untaped versions (a tool, a development checkout, a
+one-off `uvx` run) can share one `~/.untaped`. Settings and state are read by
+all of them; data a plugin can rebuild, such as the ansible dependency index,
+is kept per layout so no install opens a file another one wrote in a shape it
+cannot read (see [Stores](./caches.md#stores)).
+
+Run `untaped setup register` once from each install you keep. It records the
+install and the layouts it uses in `~/.untaped/refs/`, and from then on a
+registered install removes the layouts no registered install holds, after its
+next complete refresh, with an info line for each. `untaped setup plan` lists
+registration as its first step, and `untaped setup`'s screen registers with
+ctrl-r. Before removing an install, run `untaped setup register --remove` from
+it, so the others may clean up after it; an install deleted without that is
+noticed (its folder no longer holds untaped), and `untaped setup migrate-dirs`
+removes its reference. `untaped doctor` lists every registered install and,
+for each store, the layouts on disk and what holds them.
+
+`untaped config migrate --dry-run` and `doctor`'s unknown-keys row name the
+other registered installs, since an older install may still read the keys a
+migration would rewrite: migrate once every install is upgraded.
 
 ## Profiles
 

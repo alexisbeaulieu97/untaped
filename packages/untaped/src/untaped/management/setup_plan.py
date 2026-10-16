@@ -1,8 +1,9 @@
 """``untaped setup plan``: what a profile still needs, as rows an agent can act on.
 
 Read-only and non-interactive. One ``untaped.setup_step`` row per step, in
-order: this install's registration (``untaped setup register``), the profile itself, then each service's ``base_url`` and token (or
-its invalid settings), then (with ``--online``) each online check. A row's
+order: this install's registration (``untaped setup register``), the
+profile itself, then each service's ``base_url`` and token (or its invalid
+settings), then (with ``--online``) each online check. A row's
 ``run`` is the complete argv to run after ``untaped`` (a ``<NAME>`` token
 is a value to ask the user for); ``by`` says who runs it: ``user`` for
 a step that asks for or reveals a token, so a token never passes through
@@ -126,7 +127,9 @@ def _install_row(shell: ApplicationSpec, profile: str) -> Row:
             "install", shell.name, "done", f"registered: untaped {ref.version} at {shown_path(env)}"
         )
     detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
-    return _row("install", shell.name, "todo", detail, command_argv("setup register", profile=profile))
+    return _row(
+        "install", shell.name, "todo", detail, command_argv("setup register", profile=profile)
+    )
 
 
 def _profile_row(shell: ApplicationSpec, profile: str, *, exists: bool) -> Row:

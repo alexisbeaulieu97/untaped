@@ -75,6 +75,22 @@ def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
     )
 
 
+def test_unknown_keys_name_the_other_registered_installs(
+    _isolated_config: Path, tmp_path: Path
+) -> None:
+    from untaped.testing import write_reference
+
+    write_config(_isolated_config, "profiles:\n  default:\n    acme: {parallel: 4}\n")
+    other = tmp_path / "checkout"
+    (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
+    write_reference("install:aaaaaaaaaaaa", [], anchor=other, version="11.1.0")
+    row = _row(_rows(), "unknown-keys")
+    assert row["detail"] == (
+        "ignored: profiles.default.acme (another untaped here may read them: "
+        f"untaped 11.1.0 at {other})"
+    )
+
+
 def test_an_unknown_ui_symbol_name_fails_the_ui_row(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {zzz: y}\n")
     row = _row(_rows(exit_code=1), "settings", "validate ui")

@@ -22,7 +22,8 @@ command runs and needs at least one row, so use it on a read command or add
 | `doctor`, `setup` | `untaped.doctor_check` |
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
-| `setup migrate-dirs` | `untaped.migration` (`id` of the plugin's migration, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`, and `error` on a failed row); with `--dry-run`, or when no row would move or delete anything, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep`, `then` or `failed`, `source`, `destination`, `detail`, `bytes`, and `error` on a failed row) |
+| `setup register` | `untaped.register_outcome` (`holder`, `environment`, `version`, `layouts`, `action` `registered`, `unchanged`, `removed` or `gone`) |
+| `setup migrate-dirs` | `untaped.migration` (`id` of the migration, core's `untaped.references` or a plugin's, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`, and `error` on a failed row); with `--dry-run`, or when no row would move or delete anything, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep`, `then` or `failed`, `source`, `destination`, `detail`, `bytes`, and `error` on a failed row) |
 | `plugin list` | `untaped.plugin` (`name`, `status`, `distribution`, `version`; a ready plugin's `package`, `source_dir` and, from a checkout, `tests_dir`) |
 | `plugin list --contracts` | `untaped.contract` |
 | `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |
@@ -45,7 +46,8 @@ A `doctor_check` row's `fix`, and a `setup_step` row's `run`, is the argv to
 run after `untaped`, `--profile NAME` first; a `<NAME>` token is a value to
 supply, and `fix` is null on a passing row. A `doctor_check` row's
 `automatic` is true when its fix needs no value and no input. A
-`setup_step` row also has `step` (`profile`, `<service>.base_url`,
+`setup_step` row also has `step` (`install` for this install's registration,
+`profile`, `<service>.base_url`,
 `<service>.token`, `<service>.settings` when the service's settings are
 invalid, and `<service>.online.<check>` for each online check, such as
 `awx.online.api`),

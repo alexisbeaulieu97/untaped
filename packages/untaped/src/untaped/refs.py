@@ -304,6 +304,7 @@ def locked() -> Iterator[None]:
         yield
 
 
+@experimental
 def write_reference(
     holder: str,
     targets: Sequence[str],
@@ -312,7 +313,12 @@ def write_reference(
     plugin: str | None = None,
     version: str | None = None,
 ) -> Path:
-    """Write one holder's reference file whole (``untaped.testing`` builds others with it)."""
+    """Write one holder's reference file whole, ``refs/<kind>-<name>.json``; return its path.
+
+    ``untaped.testing`` exports it to fake another holder in the hermetic
+    home: an ``anchor`` is live while it holds an ``untaped-*.dist-info``
+    folder, and a holder without one lives until its file is removed.
+    """
     data: dict[str, object] = {"untaped": FORMAT, "holder": holder}
     if anchor is not None:
         data["anchor"] = str(anchor)
@@ -338,7 +344,7 @@ def _version() -> str | None:
 
 
 def _installed_versions(anchor: Path) -> set[str]:
-    """The untaped versions whose ``dist-info`` sits in ``anchor`` (none: not an install any more)."""
+    """The untaped versions whose ``dist-info`` sits in ``anchor`` (none: no install there)."""
     try:
         return {
             entry.name.removeprefix("untaped-").removesuffix(".dist-info")

@@ -14,6 +14,10 @@ A Command token source is run first, on every check, as a suspend command, so a
 process cache for the background check. Leaving the profile field loads the
 profile typed there, so the field and the forms never disagree.
 
+The header says whether this install is registered (``untaped setup
+register``); while it is not, ctrl-r on the list registers it, so the cleanup of store
+layouts keeps the ones it uses.
+
 What a save has to say (a profile created, a token replaced or to export)
 comes back as notes, which the command prints after the screen closes with the
 doctor rows of what was configured (:class:`SetupResult`). Esc and ctrl-c on
@@ -79,7 +83,9 @@ from untaped.token_store import TokenStore, preset_entry
 __all__ = ["SetupModel", "SetupResult", "setup_screen"]
 
 type Focus = Literal["profile", "list", "form"]
-type Phase = Literal["idle", "loading", "probing", "saving"]
+type Phase = Literal["idle", "loading", "probing", "saving", "registering"]
+#: This install's registration, as the header shows it.
+type Install = Literal["registered", "not registered", "source tree"]
 
 _TAB_LABELS = {
     "keep": "Keep",
@@ -154,6 +160,18 @@ class Saved:
 
 
 @dataclass(frozen=True)
+class RegisterInstall:
+    """Ctrl-r: register this install (``untaped setup register``)."""
+
+
+@dataclass(frozen=True)
+class Registered:
+    """The registration finished; ``text`` is what it wrote."""
+
+    text: str
+
+
+@dataclass(frozen=True)
 class ProfileLoaded:
     """The states of every plugin in ``profile``, read for the profile field."""
 
@@ -184,6 +202,8 @@ class SetupModel:
     saved: tuple[tuple[str, str], ...] = ()
     """``(profile, plugin)`` for every write that finished."""
     notes: tuple[Note, ...] = ()
+    install: Install = "not registered"
+    """Whether this install is registered, so the cleanup of store layouts keeps what it uses."""
 
     @property
     def name(self) -> str:
@@ -220,10 +240,31 @@ def setup_screen(
             Binding("down", "next", None, when=lambda model: model.focus == "list"),
             Binding("left", "previous choice", None, when=lambda model: model.focus == "form"),
             Binding("right", "next choice", None, when=lambda model: model.focus == "form"),
+            Binding("ctrl-r", "register", RegisterInstall(), when=_can_register),
         ),
         shared_labels=_SHARED_LABELS,
         layout="full",
     )
+
+
+def _can_register(model: SetupModel) -> bool:
+    return model.install == "not registered" and model.phase == "idle" and model.focus == "list"
+
+
+def _install_state() -> Install:
+    from untaped.refs import environment, this_install  # noqa: PLC0415 - off the startup path
+
+    if environment() is None:
+        return "source tree"
+    return "registered" if this_install() is not None else "not registered"
+
+
+def _register() -> object:
+    from untaped.refs import composed_targets, register  # noqa: PLC0415
+
+    ref = register(composed_targets() or ())
+    held = ", ".join(ref.targets) or "no stores"
+    return Registered(f"registered this install, untaped {ref.version} ({held})")
 
 
 def _tab_label(model: SetupModel) -> str | None:
@@ -285,6 +326,7 @@ class _Setup:
             states=self.states,
             forms=self._forms(self.states, self.profile),
             config_path=str(resolve_config_path()),
+            install=_install_state(),
         )
         return model, []
 
@@ -293,6 +335,9 @@ class _Setup:
         header = Text()
         header.append(" untaped setup ", style=role_style(frame, "screen.highlight"))
         header.append(f"  config {model.config_path}", style=muted)
+        header.append(f"  this install: {model.install}", style=muted)
+        if model.install == "not registered":
+            header.append(" (ctrl-r registers it)", style=role_style(frame, "screen.accent"))
         field_width = min(frame.width, 40)
         field = model.profile.view(frame, focused=model.focus == "profile", width=field_width)
         used = 1 + _field_rows(frame, model.profile, focused=model.focus == "profile")
@@ -360,6 +405,16 @@ class _Setup:
                 return self._saved(model, message)
             case ProfileLoaded(profile=profile, states=states):
                 return self._loaded(model, profile, states)
+            case RegisterInstall():
+                if not _can_register(model):
+                    return model, []
+                return replace(model, phase="registering"), [
+                    Cmd(_register, write=True, name="register")
+                ]
+            case Registered(text=text):
+                note: Note = ("success", text)
+                done = replace(model, phase="idle", install="registered")
+                return self._after(replace(done, notes=(*model.notes, note)))
             case CmdError(error=error):
                 return self._failed(model, error)
         return model, []
@@ -438,7 +493,7 @@ class _Setup:
         self, model: SetupModel, how: Literal["quit", "interrupt"]
     ) -> tuple[SetupModel, list[Cmd]]:
         """End the screen with the result, once a running save has finished."""
-        if model.phase == "saving":
+        if model.phase in ("saving", "registering"):
             return replace(model, leaving=how), []
         return model, [Cmd.send(Quit(_result(model, interrupted=how == "interrupt")))]
 
@@ -638,6 +693,9 @@ class _Setup:
 
     def _failed(self, model: SetupModel, error: BaseException) -> tuple[SetupModel, list[Cmd]]:
         text = str(error).strip() or type(error).__name__
+        if model.phase == "registering":
+            refused: Note = ("warning", f"could not register this install: {text}")
+            return self._after(replace(model, phase="idle", notes=(*model.notes, refused)))
         if model.phase == "loading":
             return replace(model, phase="idle", profile=model.profile.with_error(text)), []
         candidate = model.pending

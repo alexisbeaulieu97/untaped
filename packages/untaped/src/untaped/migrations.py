@@ -160,31 +160,49 @@ def other_layouts_migration(
     through the store's own path, rename aside under its exclusive lock
     (a busy one fails the row), and checks again that nothing holds it.
     """
-    from untaped.refs import read_references  # noqa: PLC0415 - no cycle
-    from untaped.store import kept_reason, survey  # noqa: PLC0415 - no cycle
+    rows = _OtherLayouts(store, guard)
+    title = f"other layouts of the {store.qualified} store"
+    return DirMigration(id=rows.id, title=title, preview=rows.preview, apply=rows.apply)
 
-    migration_id = f"{store.qualified}-layouts"
 
-    def left() -> list[tuple[Layout, str]]:
+@dataclass(frozen=True)
+class _OtherLayouts:
+    """What :func:`other_layouts_migration` previews and applies for one store."""
+
+    store: Store
+    guard: Callable[[Path], str | None] | None
+
+    @property
+    def id(self) -> str:
+        return f"{self.store.qualified}-layouts"
+
+    def left(self) -> list[tuple[Layout, str]]:
+        """Each unheld layout the cleanup will not remove on its own, with why."""
+        from untaped.refs import read_references  # noqa: PLC0415 - no cycle
+        from untaped.store import kept_reason, survey  # noqa: PLC0415 - no cycle
+
         references = read_references()
         found = []
-        for layout in survey(store, references):
+        for layout in survey(self.store, references):
             if layout.own or layout.holders:
                 continue
-            reason = kept_reason(store, layout, references)
+            reason = kept_reason(self.store, layout, references)
             if reason is not None:
                 found.append((layout, reason))
         return found
 
-    def refused(path: Path) -> str | None:
+    def refused(self, path: Path) -> str | None:
         if path.is_symlink():
             return f"a symlink to {shown_path(os.path.realpath(path))}: it stays"
-        return unsafe_dir(path, plugins=False) or (guard(path) if guard is not None else None)
+        unsafe = unsafe_dir(path, plugins=False)
+        if unsafe is not None or self.guard is None:
+            return unsafe
+        return self.guard(path)
 
-    def preview(_ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
+    def preview(self, _ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
         rows = []
-        for layout, reason in left():
-            why = refused(layout.path)
+        for layout, reason in self.left():
+            why = self.refused(layout.path)
             if why is not None:
                 text = f"kept: {why}"
                 rows.append(MigrationRow(action="keep", source=str(layout.path), detail=text))
@@ -196,28 +214,25 @@ def other_layouts_migration(
             )
         return rows
 
-    def apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
-        todo = [layout for layout, _reason in left() if refused(layout.path) is None]
+    def apply(self, _ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
+        todo = [layout for layout, _reason in self.left() if self.refused(layout.path) is None]
         if not todo:
-            return [MigrationOutcome(id=migration_id, action="unchanged", detail="nothing left")]
+            return [MigrationOutcome(id=self.id, action="unchanged", detail="nothing left")]
         done: list[str] = []
         problems: list[str] = []
         for layout in todo:
-            aside = store._set_aside(layout.layout, layout.path, unlocked=True)
+            aside = self.store._set_aside(layout.layout, layout.path, unlocked=True)
             if aside is None:
                 problems.append(f"{shown_path(layout.path)} is open in a running untaped")
                 continue
             problems += aside.delete()
             done.append(f"layout {layout.layout} at {shown_path(layout.path)}")
         if not problems:
-            return [MigrationOutcome(id=migration_id, action="deleted", detail=_deleted(done))]
+            return [MigrationOutcome(id=self.id, action="deleted", detail=_deleted(done))]
         if not done:
-            return [MigrationOutcome(id=migration_id, action="failed", detail="; ".join(problems))]
+            return [MigrationOutcome(id=self.id, action="failed", detail="; ".join(problems))]
         detail = "; ".join([_deleted(done), *problems])
-        return [MigrationOutcome(id=migration_id, action="partial", detail=detail)]
-
-    title = f"other layouts of the {store.qualified} store"
-    return DirMigration(id=migration_id, title=title, preview=preview, apply=apply)
+        return [MigrationOutcome(id=self.id, action="partial", detail=detail)]
 
 
 def references_migration() -> DirMigration:

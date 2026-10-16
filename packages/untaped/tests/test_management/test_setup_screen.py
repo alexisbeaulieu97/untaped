@@ -32,8 +32,10 @@ from test_management.support import (
     wiz_api_check,
     write_config,
 )
+from untaped import refs
 from untaped.app_context import app_context
 from untaped.config_file import read_config_dict
+from untaped.errors import ConfigError
 from untaped.management.setup_screen import (
     SetupModel,
     SetupResult,
@@ -1172,3 +1174,41 @@ def test_a_retry_runs_the_token_command_again(tmp_path: Path) -> None:
     assert runs.read_text() == "xx"
     assert run.commands_run == ("prime", "probe", "prime", "probe")
     clear_token_cache()
+
+
+# --- this install ----------------------------------------------------------------
+
+
+def test_ctrl_r_registers_this_install_and_the_header_says_so() -> None:
+    before = drive_screen(_build(), [], size=(120, 30))
+    assert "this install: not registered (ctrl-r registers it)" in _flat(before.frame)
+    assert "ctrl-r register" in before.frame.splitlines()[-1]
+
+    run = drive_screen(_build(), ["ctrl-r", "esc"], size=(120, 30))
+
+    assert refs.this_install() is not None
+    assert any(text.startswith("registered this install") for _, text in _result(run).notes)
+    after = drive_screen(_build(), [], size=(120, 30))
+    assert "this install: registered" in _flat(after.frame)
+    assert "ctrl-r" not in after.frame.splitlines()[-1]
+
+
+def test_ctrl_r_in_a_form_does_nothing() -> None:
+    drive_screen(_build(), ["enter", "ctrl-r", "esc", "esc"], size=(120, 30))
+    assert refs.this_install() is None
+
+
+def test_a_failed_registration_is_a_warning_note(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(_targets: object) -> object:
+        raise ConfigError("refs/ is read-only")
+
+    monkeypatch.setattr(refs, "register", refuse)
+    run = drive_screen(_build(), ["ctrl-r", "esc"], size=(120, 30))
+    assert ("warning", "could not register this install: refs/ is read-only") in _result(run).notes
+
+
+def test_a_source_tree_says_so_and_offers_no_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(refs, "environment", lambda: None)
+    run = drive_screen(_build(), [], size=(120, 30))
+    assert "this install: source tree" in _flat(run.frame)
+    assert "ctrl-r" not in _flat(run.frame)

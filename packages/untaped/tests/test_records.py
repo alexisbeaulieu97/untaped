@@ -479,9 +479,9 @@ def _import_every_shipped_module() -> None:
 def _samples() -> dict[str, WireModel]:
     from untaped.config.models import SettingOutcome, SettingRow
     from untaped.management.plugin_check import PluginCheckRow
-    from untaped.management.register import RegisterOutcome
     from untaped.management.plugin_new import ScaffoldOutcome
     from untaped.management.plugins import ContractRow
+    from untaped.management.register import RegisterOutcome
     from untaped.plugin_records import Plugin
     from untaped.plugins.registry import MigrationOutcome
     from untaped.profile.models import ProfileOutcome, ProfileRow
@@ -510,7 +510,9 @@ def _samples() -> dict[str, WireModel]:
             error=Failure.from_exception(ConfigError("x")),
         ),
         Pruned(
-            message="removed layout 4 of store hello.shelf at /x/shelf.v4.db (1 B): nothing holds it",
+            message=(
+                "removed layout 4 of store hello.shelf at /x/shelf.v4.db (1 B): nothing holds it"
+            ),
             store="hello.shelf",
             layout=4,
             path="/x/shelf.v4.db",
