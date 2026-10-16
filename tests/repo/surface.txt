@@ -5394,11 +5394,14 @@ sdk untaped.sdk.StdinInput.records
 sdk untaped.sdk.StdinInput.values
 sdk untaped.sdk.StdinOption
 sdk untaped.sdk.Store(bare=) default=None  [experimental]
+sdk untaped.sdk.Store(keep=) default=None callback(1)  [experimental]
 sdk untaped.sdk.Store(layout=) default=1  [experimental]
 sdk untaped.sdk.Store(plugin, name, *, base) callback(base, 0)  [experimental]
 sdk untaped.sdk.Store.adopts  [experimental]
 sdk untaped.sdk.Store.bare  [experimental]
 sdk untaped.sdk.Store.base  [experimental]
+sdk untaped.sdk.Store.keep  [experimental]
+sdk untaped.sdk.Store.kept(path)  [experimental]
 sdk untaped.sdk.Store.layout  [experimental]
 sdk untaped.sdk.Store.name  [experimental]
 sdk untaped.sdk.Store.open()  [experimental]
@@ -5698,7 +5701,6 @@ sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.old_dirs(default, section, key)
 sdk untaped.sdk.online_check(check_id, *, section, probe) callback(probe, 0)
 sdk untaped.sdk.online_check(title=) default=None
-sdk untaped.sdk.other_layouts_migration(guard=) default=None callback(1)  [experimental]
 sdk untaped.sdk.other_layouts_migration(store)  [experimental]
 sdk untaped.sdk.paginate_link(http, path)
 sdk untaped.sdk.paginate_link(item_key=) default=None
@@ -5793,7 +5795,6 @@ sdk untaped.sdk.ui_context(strict=) default=true
 sdk untaped.sdk.ui_context(theme=) default=None
 sdk untaped.sdk.unified_diff_text(before, after, *, path)
 sdk untaped.sdk.unsafe_dir(path)
-sdk untaped.sdk.unsafe_dir(plugins=) default=true
 sdk untaped.sdk.writes()
 sdk untaped.sdk.writes(destructive=) default=false
 sdk untaped.sdk.writes(func@1/=) default=None

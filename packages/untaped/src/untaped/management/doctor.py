@@ -102,7 +102,7 @@ from untaped.token_store import pass_problem
 
 if TYPE_CHECKING:
     from untaped.refs import Reference
-    from untaped.store import Layout, Store
+    from untaped.store import Kept, Layout, Store
 
 _diag = Diagnostics()
 
@@ -552,12 +552,10 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
 
 def _other_readers() -> str:
     """`` (another untaped here may read them: …)`` when other installs are registered."""
-    from untaped.refs import other_installs  # noqa: PLC0415 - reads refs/ only here
+    from untaped.refs import others_text  # noqa: PLC0415 - reads refs/ only here
 
-    others = other_installs()
-    if not others:
-        return ""
-    return f" (another untaped here may read them: {', '.join(ref.describe() for ref in others)})"
+    others = others_text()
+    return f" (another untaped here may read them: {others})" if others else ""
 
 
 def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
@@ -646,31 +644,31 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         return _row("stores", shell.name, _PASS, title, "no plugin declares a store")
     references = read_references()
     parts: list[str] = []
-    reasons: list[str] = []
+    reasons: set[str] = set()
     for store in stores:
         try:
             path, layouts = store.path(), survey(store, references)
         except Exception as exc:
             parts.append(f"{store.qualified}: could not find its files: {exc}")
-            reasons.append("files")
+            reasons.add("files")
             continue
         texts: list[str] = []
         if not any(layout.own for layout in layouts):
             texts.append(f"layout {store.layout} at {shown_path(path)}, not created yet")
         for layout in layouts:
-            text, reason = _layout_text(store, layout, references)
+            text, kept = _layout_text(store, layout, references)
             texts.append(text)
-            reasons += [reason] if reason else []
+            if kept is not None and kept.warns:
+                reasons.add(kept.code)
         parts.append(f"{store.qualified}: {'; '.join(texts)}")
     if not reasons:
         return _row("stores", shell.name, _PASS, title, "; ".join(parts))
-    fix, automatic = _stores_fix(reasons)
-    return _row("stores", shell.name, _WARN, title, "; ".join(parts), fix, automatic=automatic)
+    return _row("stores", shell.name, _WARN, title, "; ".join(parts), _stores_fix(reasons))
 
 
 def _layout_text(
     store: Store, layout: Layout, references: Sequence[Reference]
-) -> tuple[str, str | None]:
+) -> tuple[str, Kept | None]:
     """One layout as the ``stores`` row says it, and why the cleanup keeps it (if it does)."""
     from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
     from untaped.refs import this_install  # noqa: PLC0415
@@ -692,21 +690,29 @@ def _layout_text(
         text += ", held by nobody"
         if not reason:
             text += " (removed at the next complete fill)"
-    return (f"{text}: {reason}" if reason else text), reason
+    return (f"{text}: {reason.text}" if reason else text), reason
 
 
-def _stores_fix(reasons: Sequence[str]) -> tuple[list[str] | None, bool]:
-    """The ``stores`` row's fix for what keeps its layouts: register, migrate-dirs, or none."""
-    if any(reason.startswith("no registered install") for reason in reasons):
-        return command_argv("setup register", profile=selected_profile()), True
-    if any(not reason.startswith("its in-use lock") for reason in reasons if reason != "files"):
-        return command_argv("setup migrate-dirs", profile=selected_profile()), False
-    return None, False
+def _stores_fix(reasons: set[str]) -> list[str] | None:
+    """The ``stores`` row's fix for what keeps its layouts: register, migrate-dirs, or none.
+
+    Never automatic: registering is a deliberate step, and migrate-dirs asks.
+    """
+    if "unregistered" in reasons:
+        return command_argv("setup register", profile=selected_profile())
+    if reasons & {"opaque", "refused", "busy"}:
+        return command_argv("setup migrate-dirs", profile=selected_profile())
+    return None
 
 
 def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
     """Every install (and plugin object) holding store layouts, and whether this one does."""
-    from untaped.refs import environment, install_holder, read_references  # noqa: PLC0415
+    from untaped.refs import (  # noqa: PLC0415 - runs only in doctor
+        environment,
+        install_holder,
+        read_references,
+        refs_dir,
+    )
 
     title = "install references"
     references = read_references()
@@ -718,11 +724,13 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     for ref in references:
         if ref.opaque is not None:
             warn = True
-            parts.append(
-                f"{shown_path(ref.file)}: {ref.opaque}; upgrade this install to prune"
-                if "newer" in ref.opaque
-                else f"{shown_path(ref.file)}: {ref.opaque}, so nothing is pruned; delete it"
-            )
+            if "newer" in ref.opaque:
+                advice = "; upgrade this install to prune"
+            elif ref.file == refs_dir():
+                advice = ", so nothing is pruned; check its permissions"
+            else:
+                advice = ", so nothing is pruned; delete it"
+            parts.append(f"{shown_path(ref.file)}: {ref.opaque}{advice}")
             continue
         text = ref.describe() if ref.kind == "install" else f"{ref.holder} (plugin {ref.plugin})"
         if ref.holder == mine:
@@ -748,9 +756,9 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
         else:
             parts.insert(0, "this install: not registered")
     detail = "; ".join(parts) or "no install is registered"
-    return _row(
-        "references", shell.name, _WARN if warn else _PASS, title, detail, fix, automatic=True
-    )
+    # Never automatic: a lasting registration is a deliberate step (a one-off `uvx` run's
+    # environment would otherwise pin layouts until its installer's cache is cleared).
+    return _row("references", shell.name, _WARN if warn else _PASS, title, detail, fix)
 
 
 def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -> bool:

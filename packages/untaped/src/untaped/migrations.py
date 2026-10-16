@@ -44,7 +44,7 @@ from untaped.stability import experimental
 from untaped.store import Store
 
 if TYPE_CHECKING:
-    from untaped.store import Layout
+    from untaped.store import Kept, Layout
 
 
 def dir_bytes(path: Path) -> int:
@@ -119,16 +119,20 @@ def overlapping(left: Path, right: Path) -> bool:
     return a == b or a.is_relative_to(b) or b.is_relative_to(a)
 
 
-def unsafe_dir(path: Path, *, plugins: bool = True) -> str | None:
+def unsafe_dir(path: Path) -> str | None:
     """Why ``path`` must never be deleted or moved whole, or ``None``.
 
     It holds the home directory, untaped's default config directory or the
     directory of the active config or state file (``UNTAPED_CONFIG``,
-    ``UNTAPED_STATE``), overlaps the install references (``~/.untaped/refs``)
-    or, unless ``plugins`` is false (a store's own layout, which lives
-    there), overlaps the plugins' own data (``~/.untaped/plugins``); a
-    symlink is judged by what it points to.
+    ``UNTAPED_STATE``), or overlaps the install references
+    (``~/.untaped/refs``) or the plugins' own data (``~/.untaped/plugins``);
+    a symlink is judged by what it points to.
     """
+    return _unsafe(path, plugins=True)
+
+
+def _unsafe(path: Path, *, plugins: bool) -> str | None:
+    """:func:`unsafe_dir`, with ``plugins=False`` for a store's layout (which lives there)."""
     real = _real(path)
     untaped = Path(DEFAULT_CONFIG_PATH).expanduser().parent
     if _real(Path.home()).is_relative_to(real):
@@ -145,22 +149,22 @@ def unsafe_dir(path: Path, *, plugins: bool = True) -> str | None:
 
 
 @experimental
-def other_layouts_migration(
-    store: Store, *, guard: Callable[[Path], str | None] | None = None
-) -> DirMigration:
+def other_layouts_migration(store: Store) -> DirMigration:
     """The ``<plugin>.<store>-layouts`` row: every other layout the cleanup has left.
 
     One ``delete`` row per layout of ``store`` on disk that no live
     reference holds and that the cleanup will not remove on its own, with
     the reason in its detail (no registered install, a running process has
     it open, a lock this filesystem refuses, a reference this untaped cannot
-    read); a layout the next complete fill removes is not listed. A symlink,
-    a path :func:`unsafe_dir` refuses (the plugins' folder aside) or one
-    ``guard`` returns a reason for is a ``keep`` row. Applying removes each
-    through the store's own path, rename aside under its exclusive lock
-    (a busy one fails the row), and checks again that nothing holds it.
+    read, a damaged in-use lock); a layout the next complete fill removes is
+    not listed. A symlink, a path :func:`unsafe_dir` refuses (the plugins'
+    folder aside) or one the store's ``keep`` names is a ``keep`` row.
+    Applying takes the references' lock, checks again what holds each
+    layout, and removes it the way the cleanup does: renamed aside under its
+    exclusive lock (a running untaped that has it open fails the row), then
+    deleted.
     """
-    rows = _OtherLayouts(store, guard)
+    rows = _OtherLayouts(store)
     title = f"other layouts of the {store.qualified} store"
     return DirMigration(id=rows.id, title=title, preview=rows.preview, apply=rows.apply)
 
@@ -170,13 +174,12 @@ class _OtherLayouts:
     """What :func:`other_layouts_migration` previews and applies for one store."""
 
     store: Store
-    guard: Callable[[Path], str | None] | None
 
     @property
     def id(self) -> str:
         return f"{self.store.qualified}-layouts"
 
-    def left(self) -> list[tuple[Layout, str]]:
+    def left(self) -> list[tuple[Layout, Kept]]:
         """Each unheld layout the cleanup will not remove on its own, with why."""
         from untaped.refs import read_references  # noqa: PLC0415 - no cycle
         from untaped.store import kept_reason, survey  # noqa: PLC0415 - no cycle
@@ -191,47 +194,57 @@ class _OtherLayouts:
                 found.append((layout, reason))
         return found
 
-    def refused(self, path: Path) -> str | None:
+    def refused(self, path: Path, reason: Kept) -> str | None:
+        """Why the row keeps ``path`` rather than offer to delete it, or ``None``."""
         if path.is_symlink():
             return f"a symlink to {shown_path(os.path.realpath(path))}: it stays"
-        unsafe = unsafe_dir(path, plugins=False)
-        if unsafe is not None or self.guard is None:
-            return unsafe
-        return self.guard(path)
+        if reason.code == "kept":
+            return reason.text
+        return _unsafe(path, plugins=False)
 
     def preview(self, _ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
         rows = []
         for layout, reason in self.left():
-            why = self.refused(layout.path)
+            why = self.refused(layout.path, reason)
             if why is not None:
                 text = f"kept: {why}"
                 rows.append(MigrationRow(action="keep", source=str(layout.path), detail=text))
                 continue
             size = dir_bytes(layout.path) if options.measure else 0
-            detail = f"layout {layout.layout}, held by nobody: {reason}"
+            detail = f"layout {layout.layout}, held by nobody: {reason.text}"
             rows.append(
                 MigrationRow(action="delete", source=str(layout.path), detail=detail, bytes=size)
             )
         return rows
 
     def apply(self, _ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
-        todo = [layout for layout, _reason in self.left() if self.refused(layout.path) is None]
+        from untaped.refs import locked  # noqa: PLC0415 - no cycle
+        from untaped.store import _Aside  # noqa: PLC0415 - no cycle
+
+        done: list[_Aside] = []
+        problems: list[str] = []
+        with locked():  # a `setup register` landing now is seen, or waits
+            todo = [
+                layout
+                for layout, reason in self.left()
+                if self.refused(layout.path, reason) is None
+            ]
+            for layout in todo:
+                aside = self.store._set_aside(layout.layout, layout.path, unlocked=True)
+                if isinstance(aside, str):
+                    problems.append(f"{shown_path(layout.path)} {aside}")
+                else:
+                    done.append(aside)
         if not todo:
             return [MigrationOutcome(id=self.id, action="unchanged", detail="nothing left")]
-        done: list[str] = []
-        problems: list[str] = []
-        for layout in todo:
-            aside = self.store._set_aside(layout.layout, layout.path, unlocked=True)
-            if aside is None:
-                problems.append(f"{shown_path(layout.path)} is open in a running untaped")
-                continue
+        for aside in done:
             problems += aside.delete()
-            done.append(f"layout {layout.layout} at {shown_path(layout.path)}")
+        removed = [f"layout {aside.layout} at {shown_path(aside.path)}" for aside in done]
         if not problems:
-            return [MigrationOutcome(id=self.id, action="deleted", detail=_deleted(done))]
+            return [MigrationOutcome(id=self.id, action="deleted", detail=_deleted(removed))]
         if not done:
             return [MigrationOutcome(id=self.id, action="failed", detail="; ".join(problems))]
-        detail = "; ".join([_deleted(done), *problems])
+        detail = "; ".join([_deleted(removed), *problems])
         return [MigrationOutcome(id=self.id, action="partial", detail=detail)]
 
 

@@ -74,8 +74,9 @@ def test_dry_run_plans_and_writes_nothing(_isolated_config: Path) -> None:
     assert _isolated_config.read_text() == ROUND_TRIP
 
 
-def test_the_preview_counts_the_other_registered_installs(
-    _isolated_config: Path, tmp_path: Path
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_preview_and_apply_name_the_other_registered_installs(
+    _isolated_config: Path, tmp_path: Path, dry_run: bool
 ) -> None:
     from untaped.testing import write_reference
 
@@ -85,12 +86,14 @@ def test_the_preview_counts_the_other_registered_installs(
     write_reference("install:aaaaaaaaaaaa", [], anchor=other, version="11.1.0")
     write_reference("install:bbbbbbbbbbbb", [], anchor=tmp_path / "gone", version="11.0.0")
 
-    result = _migrate("--dry-run", "--format", "json")
+    result = _migrate(*(["--dry-run"] if dry_run else []), "--format", "json")
 
+    assert result.exit_code == 0, result.stderr
     assert (
-        "would rename 4 keys; 1 other registered install on this machine may read this config: "
+        f"other untaped installs here may still read the old keys (untaped 11.1.0 at {other}): "
         "migrate once every install is upgraded"
     ) in result.stderr
+    assert "11.0.0" not in result.stderr  # an install that is gone reads nothing
 
 
 def test_apply_renames_every_profile_and_keeps_comments_and_order(_isolated_config: Path) -> None:

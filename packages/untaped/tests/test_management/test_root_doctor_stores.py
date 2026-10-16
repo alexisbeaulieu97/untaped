@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
 
 from untaped import bootstrap, refs
 from untaped.management.doctor import collect_doctor_rows
@@ -60,7 +63,7 @@ def test_another_layout_nobody_holds_on_an_unregistered_machine_warns(tmp_path: 
         "no registered install keeps this store, so nothing cleans up"
     )
     assert row["fix"] == ["--profile", "default", "setup", "register"]
-    assert row["automatic"] is True
+    assert row["automatic"] is False  # a lasting registration is a deliberate step
 
 
 def test_two_held_layouts_pass(tmp_path: Path) -> None:
@@ -173,3 +176,38 @@ def test_a_newer_reference_warns(tmp_path: Path) -> None:
     row = _row(_store(tmp_path / "data.db"), check="references")
     assert row["status"] == "warn"
     assert "written by a newer untaped; upgrade this install to prune" in str(row["detail"])
+
+
+def test_an_unlistable_refs_folder_warns_in_both_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    refs.register(["acme.data@4"])
+    (tmp_path / "data.v3.db").write_bytes(b"x")
+    real = Path.iterdir
+
+    def iterdir(self: Path) -> Iterator[Path]:
+        if self == refs.refs_dir():
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    references = _row(_store(tmp_path / "data.db"), check="references")
+    assert references["status"] == "warn"
+    assert "the folder cannot be read (Permission denied), so nothing is pruned" in str(
+        references["detail"]
+    )
+    stores = _row(_store(tmp_path / "data.db"))
+    assert stores["status"] == "warn"
+    assert "a reference this untaped cannot read pauses cleanup" in str(stores["detail"])
+
+
+def test_a_layout_the_store_keeps_passes_with_why(tmp_path: Path) -> None:
+    refs.register(["acme.data@4"])
+    (tmp_path / "data.v3.db").write_bytes(b"x")
+    store = Store(
+        "acme", "data", base=lambda: tmp_path / "data.db", layout=4, keep=lambda _: "a profile"
+    )
+    row = _row(store)
+    assert row["status"] == "pass"
+    assert "layout 3 at" in str(row["detail"])
+    assert str(row["detail"]).endswith("held by nobody: a profile")

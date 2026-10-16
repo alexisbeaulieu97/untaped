@@ -253,7 +253,7 @@ def test_only_lists_just_those_services(_isolated_config: Path) -> None:
 
     screen = backend.ran[0]
     model, _ = screen.init()
-    assert [row.name for row in model.rows] == ["wiz"]
+    assert [row.name for row in model.rows] == ["this install", "wiz"]
 
 
 def test_only_rejects_a_name_that_is_not_a_service(_isolated_config: Path) -> None:

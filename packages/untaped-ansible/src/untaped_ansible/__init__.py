@@ -18,12 +18,12 @@ from untaped.sdk import (
     move_migration,
     old_dirs,
     other_layouts_migration,
-    setting_guard,
     shown_path,
 )
 from untaped_ansible.doctor import DOCTOR_CHECKS
 from untaped_ansible.settings import (
     INDEX,
+    INDEX_PATH_GUARD,
     INDEX_STORE,
     AnsibleSettings,
     AnsibleState,
@@ -48,9 +48,6 @@ def _index_moves() -> Sequence[tuple[Path, Path]]:
     return [(Path("~/.untaped/ansible-index.sqlite3").expanduser(), INDEX_STORE.path())]
 
 
-_INDEX_PATH_GUARD = setting_guard("ansible", "index_path")
-
-
 def _index_guard(path: Path) -> str | None:
     """Keep the 10.x index while a profile names it, or while 11.0's index awaits its rename."""
     bare = default_index_path()
@@ -59,7 +56,7 @@ def _index_guard(path: Path) -> str | None:
             f"11.0's newer index at {shown_path(bare)} becomes "
             f"{shown_path(INDEX_STORE.path())} at the next ansible command"
         )
-    return _INDEX_PATH_GUARD(path)
+    return INDEX_PATH_GUARD(path)
 
 
 def _empty_index(path: Path) -> bool:
@@ -120,7 +117,7 @@ SPEC = PluginSpec(
             guard=_index_guard,
             replaceable=_empty_index,
         ),
-        other_layouts_migration(INDEX_STORE, guard=_INDEX_PATH_GUARD),
+        other_layouts_migration(INDEX_STORE),
         delete_migration(
             "ansible.cache",
             "10.x git cache",

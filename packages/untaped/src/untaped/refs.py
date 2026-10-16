@@ -29,9 +29,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
+from typing import Literal
 
 from untaped.errors import ConfigError
-from untaped.fs import atomic_write
+from untaped.fs import atomic_write, file_lock
 from untaped.settings import DEFAULT_CONFIG_PATH
 from untaped.stability import experimental
 
@@ -72,10 +73,14 @@ class Reference:
 
     @property
     def live(self) -> bool:
-        """Whether it still counts: opaque, anchorless, or its anchor still holds untaped."""
+        """Whether it still counts: opaque, anchorless, or its anchor still holds untaped.
+
+        An anchor that exists but cannot be listed counts as live.
+        """
         if self.opaque is not None or self.anchor is None:
             return True
-        return bool(_installed_versions(self.anchor))
+        versions = _installed_versions(self.anchor)
+        return versions is None or bool(versions)
 
     @property
     def pre_upgrade(self) -> bool:
@@ -83,7 +88,7 @@ class Reference:
         if self.anchor is None or self.opaque is not None or self.version is None:
             return False
         versions = _installed_versions(self.anchor)
-        return bool(versions) and self.version not in versions
+        return bool(versions) and versions is not None and self.version not in versions
 
     def layouts(self, store: str) -> set[int]:
         """The layouts of ``store`` (``<plugin>.<store>``) this reference names."""
@@ -142,15 +147,24 @@ def this_install() -> Reference | None:
 
 
 def read_references() -> list[Reference]:
-    """Every reference file, by name; an unreadable one is opaque, never skipped."""
+    """Every reference file, by name; an unreadable one is opaque, never skipped.
+
+    No ``refs/`` folder means no references. A folder that cannot be listed
+    is one opaque reference for the folder itself, so the cleanup stops
+    rather than take every layout for unheld.
+    """
+    folder = refs_dir()
     try:
         files = sorted(
             entry
-            for entry in refs_dir().iterdir()
+            for entry in folder.iterdir()
             if entry.suffix == ".json" and not entry.name.startswith(".")
         )
-    except OSError:
+    except FileNotFoundError:
         return []
+    except OSError as exc:
+        why = f"the folder cannot be read ({exc.strerror or exc.__class__.__name__})"
+        return [Reference(folder, opaque=why)]
     return [read_reference(file) for file in files]
 
 
@@ -227,6 +241,15 @@ def composed_targets() -> tuple[str, ...] | None:
     )
 
 
+def others_text() -> str:
+    """The other live installs, as rows name them (``untaped 11.0.2 at ~/…``); ``""`` for none.
+
+    What ``doctor`` and ``config migrate`` name as other readers of the
+    config: an older install may still read keys a migration rewrites.
+    """
+    return ", ".join(ref.describe() for ref in other_installs())
+
+
 def register(targets: Sequence[str]) -> Reference:
     """Write this install's reference naming ``targets``; raise when it has no environment."""
     env = environment()
@@ -242,6 +265,25 @@ def register(targets: Sequence[str]) -> Reference:
     return read_reference(reference_file(holder))
 
 
+#: Whether this install is registered (``source tree``: it cannot be).
+type InstallState = Literal["registered", "not registered", "source tree"]
+
+
+def install_state() -> InstallState:
+    """This install's registration, as ``setup plan`` and the setup screen show it."""
+    if environment() is None:
+        return "source tree"
+    return "registered" if this_install() is not None else "not registered"
+
+
+def register_this_install() -> tuple[Reference, bool]:
+    """Register this install for every store this run composes; whether that changed the file."""
+    before = this_install()
+    ref = register(composed_targets() or ())
+    same = before is not None and (before.version, before.targets) == (ref.version, ref.targets)
+    return ref, not same
+
+
 def unregister() -> Reference | None:
     """Remove this install's reference; the reference removed, or ``None`` when there was none."""
     env = environment()
@@ -252,7 +294,10 @@ def unregister() -> Reference | None:
         if not file.is_file():
             return None
         found = read_reference(file)
-        file.unlink()
+        try:
+            file.unlink()
+        except OSError as exc:
+            raise ConfigError(f"could not remove {file}: {exc.strerror or exc}") from exc
     return found
 
 
@@ -270,7 +315,7 @@ def refresh() -> None:
         _refreshed = True
     try:
         _refresh()
-    except (OSError, TimeoutError, ConfigError) as exc:
+    except (OSError, ConfigError) as exc:
         _LOG.debug("could not refresh this install's reference: %s", exc)
 
 
@@ -295,12 +340,23 @@ def _refresh() -> None:
 
 @contextmanager
 def locked() -> Iterator[None]:
-    """Hold ``refs/.lock`` for the block (every writer and every pruner takes it)."""
-    from filelock import FileLock  # noqa: PLC0415
+    """Hold ``refs/.lock`` for the block (every writer and every pruner takes it).
 
+    Raises :class:`ConfigError` when the folder cannot be made or the lock
+    cannot be taken (busy past the wait, or refused).
+    """
     folder = refs_dir()
-    folder.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(folder / _LOCK), timeout=_WAIT):
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigError(f"could not create {folder}: {exc.strerror or exc}") from exc
+    with file_lock(
+        folder / _LOCK,
+        timeout=_WAIT,
+        error=ConfigError,
+        busy=f"another untaped is changing the install references in {folder}; try again",
+        failed=f"could not lock the install references in {folder}",
+    ):
         yield
 
 
@@ -333,7 +389,12 @@ def write_reference(
 
 
 def _write(holder: str, env: Path, targets: Sequence[str]) -> None:
-    write_reference(holder, targets, anchor=env, version=_version())
+    try:
+        write_reference(holder, targets, anchor=env, version=_version())
+    except OSError as exc:
+        raise ConfigError(
+            f"could not write {reference_file(holder)}: {exc.strerror or exc}"
+        ) from exc
 
 
 def _version() -> str | None:
@@ -343,15 +404,24 @@ def _version() -> str | None:
         return None
 
 
-def _installed_versions(anchor: Path) -> set[str]:
-    """The untaped versions whose ``dist-info`` sits in ``anchor`` (none: no install there)."""
+def _installed_versions(anchor: Path) -> set[str] | None:
+    """The untaped versions whose ``dist-info`` sits in ``anchor``; ``None`` when unknowable.
+
+    An empty set means no install there (the folder is gone, or holds no
+    untaped); a folder that exists but cannot be listed is ``None``.
+    """
     try:
-        return {
-            entry.name.removeprefix("untaped-").removesuffix(".dist-info")
-            for entry in anchor.glob("untaped-*.dist-info")
-        }
-    except OSError:
+        with os.scandir(anchor) as entries:
+            names = [entry.name for entry in entries]
+    except FileNotFoundError, NotADirectoryError:
         return set()
+    except OSError:
+        return None
+    return {
+        name.removeprefix("untaped-").removesuffix(".dist-info")
+        for name in names
+        if name.startswith("untaped-") and name.endswith(".dist-info")
+    }
 
 
 def _text(value: object) -> str:

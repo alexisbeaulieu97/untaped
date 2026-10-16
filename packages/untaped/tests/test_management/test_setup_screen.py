@@ -37,6 +37,7 @@ from untaped.app_context import app_context
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
 from untaped.management.setup_screen import (
+    CapRow,
     SetupModel,
     SetupResult,
     _token_choices,
@@ -1122,7 +1123,7 @@ def test_save_anyway_does_nothing_unless_this_plugin_failed_and_nothing_runs(
     assert _pressed_save_anyway(busy, screen) == (busy, [])
     # ... and not for a plugin that did not fail (a stale button), even though a candidate
     # is pending: here wiz failed, legacy is selected.
-    other = replace(failed, selected=0)
+    other = replace(failed, selected=1)  # row 0 is this install
     assert other.name == "legacy" and other.pending is not None and "legacy" not in other.failed
     assert _pressed_save_anyway(other, screen) == (other, [])
     nothing = replace(failed, failed={})
@@ -1179,36 +1180,53 @@ def test_a_retry_runs_the_token_command_again(tmp_path: Path) -> None:
 # --- this install ----------------------------------------------------------------
 
 
-def test_ctrl_r_registers_this_install_and_the_header_says_so() -> None:
-    before = drive_screen(_build(), [], size=(120, 30))
-    assert "this install: not registered (ctrl-r registers it)" in _flat(before.frame)
-    assert "ctrl-r register" in before.frame.splitlines()[-1]
+def _about(model: SetupModel) -> str:
+    """The text of this install's form."""
+    return str(dict(model.forms["this install"].fields)["about"].text)  # type: ignore[attr-defined]
 
-    run = drive_screen(_build(), ["ctrl-r", "esc"], size=(120, 30))
+
+def test_the_first_row_is_this_install_and_the_cursor_starts_on_a_plugin() -> None:
+    run = drive_screen(_build(), [], size=(120, 30))
+    assert run.model.rows[0] == CapRow("this install", "not registered")
+    assert run.model.name == "wiz"
+
+
+def test_register_on_the_install_row_registers_and_says_so() -> None:
+    opened = drive_screen(_build(), ["up", "enter"], size=(120, 30))
+    assert "Register" in opened.frame
+    assert "so its runs remove the store layouts" in _about(opened.model)
+    assert "ctrl-s register" in opened.frame.splitlines()[-1]
+
+    run = drive_screen(_build(), ["up", "enter", "enter", "esc"], size=(120, 30))
 
     assert refs.this_install() is not None
     assert any(text.startswith("registered this install") for _, text in _result(run).notes)
-    after = drive_screen(_build(), [], size=(120, 30))
-    assert "this install: registered" in _flat(after.frame)
-    assert "ctrl-r" not in after.frame.splitlines()[-1]
+    after = drive_screen(_build(), ["up", "enter"], size=(120, 30))
+    assert after.model.rows[0].status == "registered"
+    assert _about(after.model).startswith("Registered: untaped")
+    assert "ctrl-s" not in after.frame.splitlines()[-1]
 
 
-def test_ctrl_r_in_a_form_does_nothing() -> None:
-    drive_screen(_build(), ["enter", "ctrl-r", "esc", "esc"], size=(120, 30))
+def test_enter_on_the_list_only_opens_the_row() -> None:
+    drive_screen(_build(), ["up", "enter", "esc", "esc"], size=(120, 30))
     assert refs.this_install() is None
 
 
-def test_a_failed_registration_is_a_warning_note(monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(_targets: object) -> object:
+def test_a_failed_registration_shows_under_the_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse() -> object:
         raise ConfigError("refs/ is read-only")
 
-    monkeypatch.setattr(refs, "register", refuse)
-    run = drive_screen(_build(), ["ctrl-r", "esc"], size=(120, 30))
-    assert ("warning", "could not register this install: refs/ is read-only") in _result(run).notes
+    monkeypatch.setattr(refs, "register_this_install", refuse)
+    run = drive_screen(_build(), ["up", "enter", "enter"], size=(120, 30))
+    assert run.model.rows[0].status == "not registered"
+    assert run.model.forms["this install"].error == (
+        "could not register this install: refs/ is read-only"
+    )
 
 
-def test_a_source_tree_says_so_and_offers_no_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_source_tree_says_so_and_offers_no_button(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(refs, "environment", lambda: None)
-    run = drive_screen(_build(), [], size=(120, 30))
-    assert "this install: source tree" in _flat(run.frame)
-    assert "ctrl-r" not in _flat(run.frame)
+    run = drive_screen(_build(), ["up", "enter"], size=(120, 30))
+    assert run.model.rows[0].status == "source tree"
+    assert "only an installed untaped can be registered" in _about(run.model)
+    assert "Register" not in run.frame

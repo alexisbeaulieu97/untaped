@@ -70,8 +70,12 @@ def _profile_exists(profile: str) -> bool:
 
 
 def pending(rows: list[Row]) -> bool:
-    """Whether any step still needs doing (``todo`` or ``failed``)."""
-    return any(row["state"] in ("todo", "failed") for row in rows)
+    """Whether any step still needs doing (``todo`` or ``failed``).
+
+    The ``install`` step never counts: registering is advice, so ``--check``
+    still answers whether the services are set up.
+    """
+    return any(row["state"] in ("todo", "failed") and row["step"] != "install" for row in rows)
 
 
 def emit_plan(
@@ -115,17 +119,16 @@ def _row(
 
 def _install_row(shell: ApplicationSpec, profile: str) -> Row:
     """Whether this install is registered, so the cleanup of store layouts keeps what it uses."""
-    from untaped.refs import environment, this_install  # noqa: PLC0415 - off the startup path
+    from untaped.refs import environment, install_state, this_install  # noqa: PLC0415
 
+    state = install_state()
+    ref = this_install()
     env = environment()
-    if env is None:
+    if state == "source tree" or env is None:
         detail = "run from a source tree: only an installed untaped can be registered"
         return _row("install", shell.name, "skipped", detail)
-    ref = this_install()
-    if ref is not None:
-        return _row(
-            "install", shell.name, "done", f"registered: untaped {ref.version} at {shown_path(env)}"
-        )
+    if state == "registered" and ref is not None:
+        return _row("install", shell.name, "done", f"registered: {ref.describe()}")
     detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
     return _row(
         "install", shell.name, "todo", detail, command_argv("setup register", profile=profile)

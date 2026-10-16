@@ -293,8 +293,8 @@ def test_online_skips_services_that_are_not_ready() -> None:
 def test_check_exits_3_while_a_step_is_pending(_isolated_config: Path) -> None:
     assert _cli("setup", "plan", "--check", "--format", "json").exit_code == 3
     _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
-    assert _cli("setup", "plan", "--check", "--format", "json").exit_code == 3  # not registered
-    assert _cli("setup", "register").exit_code == 0
+    # an unregistered install is advice, not a pending step: --check answers as before
+    assert _step(_plan(), "install")["state"] == "todo"
     assert _cli("setup", "plan", "--check", "--format", "json").exit_code == 0
     assert _cli("setup", "plan", "--check", "--online", "--format", "json").exit_code == 0
     FAIL.append(True)
@@ -365,7 +365,7 @@ def test_plan_setup_screen_and_doctor_agree(
     )
     assert setup.exit_code == 0, setup.output
     # The screen lists the service as configured exactly when the plan and doctor do.
-    (row,) = backend.ran[0].init()[0].rows
+    (_install, row) = backend.ran[0].init()[0].rows
     assert (row.status != "not configured") is configured
 
 

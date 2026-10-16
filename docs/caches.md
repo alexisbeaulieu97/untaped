@@ -201,15 +201,23 @@ untaped has open: it takes the layout's in-use lock alone, without waiting,
 moves the layout aside with its SQLite sidecars, its caches' folders and its
 lock, then deletes it. Each removal is an info line of kind `untaped.pruned`
 (`store`, `layout`, `path`, `bytes`) that `--quiet` does not hide. An
-unregistered install, or one run from a source tree, never removes anything.
+unregistered install, or one run from a source tree, never removes anything,
+and neither does any install while `refs/` cannot be read.
+
+A layout a setting may point at, such as an index path a profile sets to an
+older layout's file, is that profile's data. `Store(..., keep=…)` says so: a
+function of a layout's path returning why it stays, or `None`;
+`setting_guard("acme", "catalogue_path")` keeps every path any profile or the
+environment sets that key to. The cleanup never removes what `keep` names, and
+a `keep` that raises keeps the path too.
 
 What the cleanup will not remove on its own (no registered install keeps the
 store, a running untaped has it open, a damaged in-use lock, a reference it
 cannot read) the `stores` row names with its reason. For the layouts nobody
-holds, a store's plugin adds `other_layouts_migration(STORE, guard=…)`
-(experimental) to its `migrations`: `untaped setup migrate-dirs` then offers
-each one as a `<plugin>.<store>-layouts` delete row with that reason, keeping
-a symlink and anything the guard names (a path a setting points at). The
+holds, a store's plugin adds `other_layouts_migration(STORE)` (experimental)
+to its `migrations`: `untaped setup migrate-dirs` then offers each one as a
+`<plugin>.<store>-layouts` delete row with that reason, keeping a symlink and
+anything `keep` names. The
 references of installs that are gone are core's `untaped.references` row, and
 `untaped doctor`'s `references` row lists every reference. In tests,
 `untaped.testing.write_reference` writes another install's reference.

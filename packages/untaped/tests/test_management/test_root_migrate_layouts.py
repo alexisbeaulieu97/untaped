@@ -16,7 +16,12 @@ import pytest
 from test_management.support import make_spec
 from untaped import bootstrap, refs
 from untaped.migrations import other_layouts_migration, setting_guard
-from untaped.plugins.registry import PluginSpec, named_plugin_dir
+from untaped.plugins.registry import (
+    MigrationOptions,
+    PluginContext,
+    PluginSpec,
+    named_plugin_dir,
+)
 from untaped.store import Store, layout_path
 from untaped.testing import CliResult, invoke_cli, plugin_candidate, write_reference
 
@@ -30,9 +35,9 @@ def _base() -> Path:
 STORE = Store("acme", "data", base=_base, layout=5)
 
 
-def _spec(**guard: object) -> PluginSpec:
-    migration = other_layouts_migration(STORE, **guard)  # type: ignore[arg-type]
-    return replace(make_spec("acme"), stores=(STORE,), migrations=(migration,))
+def _spec(store: Store = STORE) -> PluginSpec:
+    migration = other_layouts_migration(store)
+    return replace(make_spec("acme"), stores=(store,), migrations=(migration,))
 
 
 def _cli(*args: str, spec: PluginSpec | None = None) -> CliResult:
@@ -102,7 +107,7 @@ def test_a_layout_a_running_process_has_open_is_listed_and_fails_to_apply() -> N
     result = _cli("--yes")
     outcome = next(row for row in json.loads(result.stdout) if row["id"] == "acme.data-layouts")
     assert outcome["action"] == "failed"
-    assert "is open in a running untaped" in outcome["detail"]
+    assert outcome["detail"] == "~/.untaped/plugins/acme/data.v4.db is open in a running untaped"
     assert old.exists()
 
 
@@ -120,7 +125,8 @@ def test_a_damaged_lock_does_not_stop_a_person_who_chose_to_remove_it() -> None:
 def test_a_layout_a_profile_points_at_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
     old = _layout(4)
     monkeypatch.setenv("UNTAPED_ACME__INDEX_PATH", str(old))
-    spec = _spec(guard=setting_guard("acme", "index_path"))
+    store = Store("acme", "data", base=_base, layout=5, keep=setting_guard("acme", "index_path"))
+    spec = _spec(store)
     rows = json.loads(_cli("--dry-run", spec=spec).stdout)
     [row] = [row for row in rows if row["id"] == "acme.data-layouts"]
     assert row["action"] == "keep"
@@ -168,3 +174,19 @@ def test_a_live_reference_is_no_row(tmp_path: Path) -> None:
     write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=alive, version="11.1.0")
     rows = json.loads(_cli("--dry-run").stdout)
     assert [row for row in rows if row["id"] == "untaped.references"] == []
+
+
+def test_applying_checks_again_what_holds_each_layout(tmp_path: Path) -> None:
+    """A registration landing after the preview is seen at apply: nothing is removed."""
+    old = _layout(4)
+    preview = json.loads(_cli("--dry-run").stdout)
+    assert [row["action"] for row in preview if row["id"] == "acme.data-layouts"] == ["delete"]
+    other = tmp_path / "tool"
+    (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
+    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+
+    migration = other_layouts_migration(STORE)
+    applied = migration.apply(PluginContext(settings=None), MigrationOptions())
+
+    assert [outcome.action for outcome in applied] == ["unchanged"]
+    assert old.exists()

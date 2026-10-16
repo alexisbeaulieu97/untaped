@@ -171,6 +171,21 @@ def test_a_set_index_path_never_prunes_the_default_place(tmp_path: Path) -> None
     assert _mark(newer) == "layout 5"
 
 
+def test_a_layout_a_profile_points_index_path_at_is_never_pruned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Another profile's index stays, while a run on the default path fills and prunes."""
+    from untaped import refs
+
+    refs.register(["ansible.index@4"])
+    pinned = _plugin() / "index.v3.sqlite3"
+    _sqlite(pinned, "a profile's own index")
+    monkeypatch.setenv("UNTAPED_ANSIBLE__INDEX_PATH", str(pinned))  # what the guard reads
+    open_index(AnsibleSettings())  # this run's own settings: the default path
+    _fill_index()
+    assert _mark(pinned) == "a profile's own index"
+
+
 def test_the_index_offers_its_leftover_layouts_to_migrate_dirs() -> None:
     from untaped_ansible import SPEC
 

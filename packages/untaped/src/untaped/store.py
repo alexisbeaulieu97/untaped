@@ -51,7 +51,8 @@ SQLITE_SIDECARS = ("-journal", "-wal", "-shm")
 #: Seconds :meth:`Store.open` waits while another process moves the layout.
 _WAIT = 60.0
 #: How often :meth:`Store.open` retakes a lock whose file was moved aside while it waited.
-_RETRIES = 3
+_RETRIES = 10
+_REFUSED = "has an in-use lock this filesystem refuses"
 #: The first bytes of a SQLite database: an ``.inuse`` file without them is damaged.
 _SQLITE_HEADER = b"SQLite format 3\x00"
 
@@ -65,11 +66,14 @@ class Store:
     each time it is needed, never at import. ``layout`` is the oldest layout
     this code's reader still opens (an integer from 1). ``bare`` is set only
     by a store that predates 11.1: the layout a file at ``base`` itself, with
-    no layout in its name, was written at. Two declarations with the same
-    values (the same ``base`` callable) are equal.
+    no layout in its name, was written at. ``keep`` says why another
+    layout's path must stay whatever holds it (a setting that points there,
+    such as :func:`~untaped.migrations.setting_guard`), or ``None``; the
+    cleanup, ``doctor`` and ``setup migrate-dirs`` all ask it. Two
+    declarations with the same values (the same callables) are equal.
     """
 
-    __slots__ = ("_caches", "bare", "base", "layout", "name", "plugin")
+    __slots__ = ("_caches", "bare", "base", "keep", "layout", "name", "plugin")
 
     def __init__(
         self,
@@ -79,6 +83,7 @@ class Store:
         base: Callable[[], Path],
         layout: int = 1,
         bare: int | None = None,
+        keep: Callable[[Path], str | None] | None = None,
     ) -> None:
         from untaped.plugins.registry import check_plugin_name  # noqa: PLC0415 - no cycle
 
@@ -98,6 +103,7 @@ class Store:
         self.base = base
         self.layout = layout
         self.bare = bare
+        self.keep = keep
         self._caches: set[str] = set()
 
     def _follow(self, cache: str) -> None:
@@ -116,8 +122,21 @@ class Store:
         end = "" if layout is None else f".v{layout}"
         return [caches / f"{name}{end}" for name in sorted(self._caches)]
 
-    def _identity(self) -> tuple[str, str, Callable[[], Path], int, int | None]:
-        return (self.plugin, self.name, self.base, self.layout, self.bare)
+    def _identity(self) -> tuple[object, ...]:
+        return (self.plugin, self.name, self.base, self.layout, self.bare, self.keep)
+
+    def kept(self, path: Path) -> str | None:
+        """Why the layout at ``path`` stays whatever holds it (``keep``), or ``None``.
+
+        A ``keep`` that raises keeps the path: a check that cannot answer
+        never lets the cleanup remove anything.
+        """
+        if self.keep is None:
+            return None
+        try:
+            return self.keep(path)
+        except Exception as exc:  # a plugin's check that fails keeps, never removes
+            return f"its keep check failed ({type(exc).__name__}: {exc})"
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Store):
@@ -234,9 +253,9 @@ class Store:
                 removed = [
                     aside
                     for layout, path in self._candidates(held)
-                    if (aside := self._set_aside(layout, path)) is not None
+                    if isinstance(aside := self._set_aside(layout, path), _Aside)
                 ]
-        except (OSError, TimeoutError) as exc:
+        except (OSError, ConfigError) as exc:
             _LOG.debug("could not prune %s: %s", self.qualified, exc)
             return
         for aside in removed:
@@ -247,11 +266,14 @@ class Store:
 
         A bare file is one once its layout's named file exists (a pre-11.1
         run rebuilt it after the adoption) or when nothing holds its layout;
-        while it awaits this code's own adoption, never.
+        while it awaits this code's own adoption, never. A path ``keep``
+        names never is.
         """
         base = self._base_path()
         found: list[tuple[int, Path]] = []
         for layout, path in self.other_paths():
+            if self.kept(path) is not None:
+                continue
             if path == base:
                 adopted = _there(layout_path(base, layout))
                 if adopted or (layout != self.layout and layout not in held):
@@ -260,8 +282,8 @@ class Store:
                 found.append((layout, path))
         return found
 
-    def _set_aside(self, layout: int, path: Path, *, unlocked: bool = False) -> _Aside | None:
-        """Rename the layout at ``path`` and what travels with it aside; ``None`` when busy.
+    def _set_aside(self, layout: int, path: Path, *, unlocked: bool = False) -> _Aside | str:
+        """Rename the layout at ``path`` and what travels with it aside, or say why it stays.
 
         ``unlocked``: a person chose to remove it after a preview, so a lock
         this filesystem refuses (or a damaged one) does not stop it; a busy
@@ -272,7 +294,7 @@ class Store:
         lock = _in_use(lock_path)
         with lock.exclusive() as owned:
             if not owned and not (unlocked and (lock.refused or damaged_lock(lock_path))):
-                return None
+                return "is open in a running untaped" if not lock.refused else _REFUSED
             companions = [
                 *(Path(f"{path}{end}") for end in SQLITE_SIDECARS),
                 *self._layout_folders(None if bare else layout),
@@ -281,7 +303,7 @@ class Store:
             ]
             aside = _Aside(self.qualified, layout, path, bare=bare)
             if not aside.move(path):
-                return None  # open elsewhere (Windows; a process that takes no lock)
+                return "could not be moved aside (open elsewhere, or not writable)"
             for companion in companions:
                 if _there(companion):
                     aside.move(companion)
@@ -302,6 +324,9 @@ def _lock_path(path: Path, layout: int, *, bare: bool) -> Path:
 
 
 LockState = Literal["free", "busy", "refused", "damaged"]
+#: Why the cleanup keeps a layout nobody holds: a damaged in-use lock, the store's
+#: ``keep``, a reference it cannot read, no registered install, a refused or busy lock.
+KeptCode = Literal["damaged", "kept", "opaque", "unregistered", "refused", "busy"]
 
 
 @dataclass(frozen=True)
@@ -309,9 +334,8 @@ class Layout:
     """One layout of a store on disk, as ``doctor`` and ``setup migrate-dirs`` describe it.
 
     ``own``: this code's layout, or the bare file it adopts on its next open
-    (``awaiting``). ``holders``: the live references that name it.
-    ``removable``: what the automation would remove at the next complete
-    fill, before its lock is tried; ``lock`` is that lock's state now.
+    (``awaiting``). ``holders``: the live references that name it. ``lock``:
+    its in-use lock's state now.
     """
 
     layout: int
@@ -320,8 +344,23 @@ class Layout:
     awaiting: bool
     bare: bool
     holders: tuple[Reference, ...]
-    removable: bool
     lock: LockState
+
+
+@dataclass(frozen=True)
+class Kept:
+    """Why the cleanup has not removed a layout and will not on its own.
+
+    ``code`` is for code to branch on; ``text`` is the sentence a row shows.
+    ``warns``: whether it is a problem, not a choice (the store's ``keep``).
+    """
+
+    code: KeptCode
+    text: str
+
+    @property
+    def warns(self) -> bool:
+        return self.code != "kept"
 
 
 def survey(store: Store, references: Sequence[Reference]) -> list[Layout]:
@@ -330,25 +369,15 @@ def survey(store: Store, references: Sequence[Reference]) -> list[Layout]:
     Reads only: a lock is tried without waiting and only when its file
     exists (a missing one is free).
     """
-    held = _held(store, references)
-    removable = {path for _layout, path in store._candidates(held)}
     base = store._base_path()
     own = store.path()
     found: list[Layout] = []
     if _there(own):
-        found.append(_layout_state(store, store.layout, own, references, own=True, removable=set()))
+        found.append(_layout_state(store, store.layout, own, references, own=True))
     for layout, path in store.other_paths():
         awaiting = path == base and store.adopts and layout == store.layout and not _there(own)
         found.append(
-            _layout_state(
-                store,
-                layout,
-                path,
-                references,
-                own=awaiting,
-                removable=removable,
-                awaiting=awaiting,
-            )
+            _layout_state(store, layout, path, references, own=awaiting, awaiting=awaiting)
         )
     return found
 
@@ -360,7 +389,6 @@ def _layout_state(
     references: Sequence[Reference],
     *,
     own: bool,
-    removable: set[Path],
     awaiting: bool = False,
 ) -> Layout:
     bare = path == store._base_path()
@@ -378,12 +406,11 @@ def _layout_state(
         awaiting=awaiting,
         bare=bare,
         holders=holders,
-        removable=path in removable,
         lock=_probe(_lock_path(path, layout, bare=bare)),
     )
 
 
-def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -> str | None:
+def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -> Kept | None:
     """Why the cleanup has not removed ``layout`` and will not on its own, or ``None``.
 
     ``None`` for a held layout, this code's own, and an unheld one the next
@@ -393,23 +420,27 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
 
     if layout.lock == "damaged":
         lock = _inuse_file(_lock_path(layout.path, layout.layout, bare=layout.bare))
-        return (
+        return Kept(
+            "damaged",
             f"its in-use lock {shown_path(lock)} is damaged, so the layout is neither protected "
-            "nor ever adopted or removed; delete that file while no untaped runs"
+            "nor ever adopted or removed; delete that file while no untaped runs",
         )
     if layout.own or layout.holders:
         return None
+    kept = store.kept(layout.path)
+    if kept is not None:
+        return Kept("kept", kept)
     if any(ref.opaque is not None for ref in references):
-        return "a reference this untaped cannot read pauses cleanup"
+        return Kept("opaque", "a reference this untaped cannot read pauses cleanup")
     if not any(
         ref.opaque is None and ref.live and ref.kind == "install" and ref.layouts(store.qualified)
         for ref in references
     ):
-        return "no registered install keeps this store, so nothing cleans up"
+        return Kept("unregistered", "no registered install keeps this store, so nothing cleans up")
     if layout.lock == "refused":
-        return "this filesystem refuses its in-use lock, so cleanup skips it"
+        return Kept("refused", "this filesystem refuses its in-use lock, so cleanup skips it")
     if layout.lock == "busy":
-        return "a running untaped has it open"
+        return Kept("busy", "a running untaped has it open")
     return None
 
 
@@ -445,25 +476,23 @@ class _Aside:
 
     def move(self, path: Path) -> bool:
         """Rename ``path`` to ``<name>.removing-<random>`` beside it; whether it moved."""
-        from untaped.migrations import dir_bytes  # noqa: PLC0415 - migrations imports the registry
-
-        size = dir_bytes(path)
         aside = path.with_name(f"{path.name}.removing-{uuid.uuid4().hex[:8]}")
         try:
             os.rename(path, aside)
         except OSError:
             _LOG.debug("could not move %s aside", path, exc_info=True)
             return False
-        self.bytes += size
         self.moved.append(aside)
         return True
 
     def delete(self) -> list[str]:
-        """Delete the renamed paths; why each that would not go stayed."""
+        """Measure, then delete the renamed paths, outside every lock; why each that stayed."""
         from untaped.messages import shown_path  # noqa: PLC0415 - no cycle
+        from untaped.migrations import dir_bytes  # noqa: PLC0415 - migrations imports the registry
 
         failed: list[str] = []
         for path in self.moved:
+            self.bytes += dir_bytes(path)
             try:
                 if path.is_dir() and not path.is_symlink():
                     shutil.rmtree(path)
@@ -645,9 +674,11 @@ class _SqliteInUse:
         if self._held:
             return
         for _attempt in range(_RETRIES):
-            before = _inode(self._path)
             try:
-                self._lock().acquire_read(timeout=_WAIT)
+                lock = self._lock()
+                self._path.touch()  # there before the stat (an empty file is a database to SQLite)
+                before = _inode(self._path)
+                lock.acquire_read(timeout=_WAIT)
             except (TimeoutError, OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
                 # A filesystem or damaged .inuse that refuses the lock: the layout runs unprotected.
                 _LOG.debug("could not hold the in-use lock %s: %s", self._path, exc)
@@ -655,8 +686,8 @@ class _SqliteInUse:
             if before is not None and _inode(self._path) == before:
                 self._held = True
                 return
-            # new, or moved aside by a pruner while this waited: take it again on the file there
-            self._lock().release(force=True)
+            # moved aside by a pruner while this waited: each acquire connects to the path anew
+            lock.release(force=True)
         _LOG.debug("the in-use lock %s kept moving; the layout runs unprotected", self._path)
 
     def release(self) -> None:

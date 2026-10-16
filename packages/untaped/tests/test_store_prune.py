@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import io
+import json
 import os
 import subprocess
 import sys
 import textwrap
 from collections.abc import Iterator
+from contextlib import redirect_stderr
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -123,18 +126,23 @@ def test_a_newer_layout_nothing_holds_goes_too(base: Path, composed: list[str]) 
     assert line.layout == 6 and not newer.exists()
 
 
-def test_the_line_survives_quiet(base: Path, composed: list[str]) -> None:
+def test_the_line_survives_quiet(
+    base: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     _registered(composed)
     _layout(base, 4)
     store = _store(base)
     store.open()
+    stream = io.StringIO()
     token = enable_quiet()
     try:
-        with diagnostics_scope():
+        with redirect_stderr(stream), diagnostics_scope():
             store.prune()
     finally:
         reset_quiet(token)
-    assert not store_module.layout_path(base, 4).exists()
+    [line] = [json.loads(text) for text in stream.getvalue().splitlines()]
+    assert (line["kind"], line["layout"]) == ("untaped.pruned", 4)
 
 
 # --- holders ---------------------------------------------------------------------
@@ -295,31 +303,126 @@ def test_a_removal_that_fails_is_a_warning(
     assert levels == ["info", "warning"]
 
 
+@pytest.mark.parametrize("lock_there", [True, False])
 def test_an_opener_waiting_while_its_lock_moved_aside_takes_the_new_one(
-    base: Path, lock_kind: str
+    base: Path, monkeypatch: pytest.MonkeyPatch, lock_there: bool
 ) -> None:
+    """A pruner moved ``.inuse`` aside while this opener waited: it holds the file there now.
+
+    Checked from another process, since this one's own exclusive try is busy whenever it
+    reads any lock.
+    """
+    from filelock import ReadWriteLock
+
+    monkeypatch.setattr(store_module, "_FACTORY", _SqliteInUse)
     store = _store(base, layout=4)
     target = store.path()
     target.parent.mkdir(parents=True)
-    lock = store_module._in_use(target)
+    target.write_bytes(b"x")
+    inuse = Path(f"{target}.inuse")
+    if lock_there:
+        _SqliteInUse(target)._lock()  # an .inuse left by an earlier run
+    real = ReadWriteLock.acquire_read
     calls = 0
-    inode = store_module._inode
 
-    def moving(path: Path) -> tuple[int, int] | None:
+    def acquire_read(self: ReadWriteLock, *args: object, **kwargs: object) -> object:
         nonlocal calls
         calls += 1
-        found = inode(path)
-        return None if calls == 2 and found is not None else found  # moved once, mid-wait
+        proxy = real(self, *args, **kwargs)  # type: ignore[arg-type]
+        if calls == 1:
+            os.rename(inuse, inuse.with_name(f"{inuse.name}.removing-x"))  # mid-wait
+        return proxy
 
-    store_module._inode = moving  # type: ignore[assignment]
+    monkeypatch.setattr(ReadWriteLock, "acquire_read", acquire_read)
     try:
         store.open()
+        assert calls == 2  # took it again, on the file at the path
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            from untaped.store import _SqliteInUse
+            with _SqliteInUse(Path({str(target)!r})).exclusive() as owned:
+                print(owned)
+            """
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, check=True
+        )
+        assert out.stdout.strip() == "False"
     finally:
-        store_module._inode = inode  # type: ignore[assignment]
-    assert calls >= 3  # took it again
-    with store_module._in_use(target).exclusive() as owned:
-        assert owned is False
-    del lock
+        _forget_opened()
+
+
+def test_a_layout_the_store_keeps_stays(base: Path, composed: list[str]) -> None:
+    _registered(composed)
+    old = _layout(base, 4)
+    seen: list[Path] = []
+
+    def keep(path: Path) -> str | None:
+        seen.append(path)
+        return "a profile points there"
+
+    store = Store("acme", "data", base=lambda: base, layout=5, keep=keep)
+    store.open()
+    assert _prune(store) == []
+    assert old.exists() and seen == [old]
+
+
+def test_a_keep_check_that_raises_keeps(base: Path, composed: list[str]) -> None:
+    _registered(composed)
+    old = _layout(base, 4)
+
+    def broken(_path: Path) -> str | None:
+        raise RuntimeError("no config")
+
+    store = Store("acme", "data", base=lambda: base, layout=5, keep=broken)
+    store.open()
+    assert _prune(store) == []
+    assert old.exists()
+    assert store.kept(old) == "its keep check failed (RuntimeError: no config)"
+
+
+def test_an_unlistable_refs_folder_stops_the_cleanup(
+    base: Path, composed: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_reference(
+        "install:aaaaaaaaaaaa", ["acme.data@4"], anchor=_install(tmp_path / "t"), version="11.1.0"
+    )
+    _registered(composed)
+    held = _layout(base, 4)
+    store = _store(base)
+    store.open()
+    real = Path.iterdir
+
+    def iterdir(self: Path) -> Iterator[Path]:
+        if self == refs.refs_dir():
+            raise OSError(24, "Too many open files")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    assert _prune(store) == []
+    assert held.exists()
+
+
+def test_an_anchor_that_cannot_be_listed_counts_as_live(
+    base: Path, composed: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    anchor = _install(tmp_path / "t")
+    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=anchor, version="11.1.0")
+    _registered(composed)
+    held = _layout(base, 4)
+    store = _store(base)
+    store.open()
+    real = os.scandir
+
+    def scandir(path: object) -> object:
+        if Path(str(path)) == anchor:
+            raise PermissionError(13, "Permission denied")
+        return real(path)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    assert _prune(store) == []
+    assert held.exists()
 
 
 # --- the bare file -----------------------------------------------------------------

@@ -91,7 +91,11 @@ DissociateOption = Annotated[
 ]
 CheckOption = Annotated[
     bool,
-    Parameter(name="--check", negative="", help="Exit 3 when a step is still todo or failed."),
+    Parameter(
+        name="--check",
+        negative="",
+        help="Exit 3 when a step is still todo or failed (registering this install aside).",
+    ),
 ]
 RemoveOption = Annotated[
     bool,
