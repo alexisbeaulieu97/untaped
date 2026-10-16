@@ -731,6 +731,8 @@ class MapEntry:
     source: str
     known: bool = True
     """``False`` for a name the map sets but doesn't accept; it shows ``unknown``."""
+    wins: str = ""
+    """What sets the name over the map (a variable): shown beside a value the map sets."""
 
 
 @dataclass(frozen=True)
@@ -740,10 +742,10 @@ class MapEditor:
     The rows are the names, then ``done``. ``own`` is what this map sets
     itself (the rest is inherited); ``value`` is ``own`` after the edits, an
     open value as enter would keep it. Enter on a name edits its value in
-    place, enter again keeps it (an emptied value clears the name, and an
-    inherited value kept unchanged stays inherited), esc drops the edit.
-    ``delete`` or ``backspace`` clears a name the map sets, so it shows what
-    it inherits again. Enter on ``done`` is left to the screen,
+    place, enter again keeps it (an empty value too; an inherited value kept
+    unchanged stays inherited), esc drops the edit. ``delete`` or
+    ``backspace`` clears a name the map sets, so it shows what it inherits
+    again. Enter on ``done`` is left to the screen,
     which writes the map as ctrl-s does. A name set here shows ``own_source``.
     """
 
@@ -816,7 +818,7 @@ class MapEditor:
         entry = self.entries[self.cursor]
         if entry.name not in dict(self.own) and text == entry.value:
             return replace(self, editing=None)  # the inherited value, kept as it was: not copied
-        return self._set(entry.name, text if text.strip() else None)
+        return self._set(entry.name, text)
 
     def _set(self, name: str, value: str | None) -> Self:
         own = {key: text for key, text in self.own if key != name}
@@ -862,8 +864,10 @@ class MapEditor:
                 )
             )
             return line
-        value = own.get(entry.name, entry.value) or "none"
-        source = self.own_source if entry.name in own else entry.source
+        value = own.get(entry.name, entry.value) or "(blank)"
+        source = entry.source
+        if entry.name in own:
+            source = f"{self.own_source}, {entry.wins} wins" if entry.wins else self.own_source
         trail = source if entry.known else f"unknown  {source}"
         style = highlight if here else role_style(frame, "screen.value")
         return option_row(

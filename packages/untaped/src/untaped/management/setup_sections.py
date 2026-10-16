@@ -26,10 +26,10 @@ from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.config.fields import editor, reads_names, written
+from untaped.config.fields import editor, opened_value, summary, written
 from untaped.config.models import SettingEntry, Source, setting_entry_row
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import GetSetting, ListNames, ListSettings, Note, SetSetting
+from untaped.config.use_cases import ListSettings, Note, SetSetting
 from untaped.config_schema import FieldDescriptor, bounds_text
 from untaped.errors import ConfigError
 from untaped.management.setup_state import (
@@ -160,7 +160,9 @@ def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
                 and entry.source.kind == "env"
                 and repo.own_value(entry.key, profile=profile) is not None
             )
-            row = _row(entry, descriptor, variable, own=own, raw=raw)
+            mine = repo.own_value(entry.key, profile=profile) if exists else None
+            shown_as = None if raw else summary(descriptor, mine)
+            row = _row(entry, descriptor, variable, own=own, raw=raw, summary=shown_as)
             rows.setdefault(section, []).append(row)
     shown = {name: tuple(each) for name, each in rows.items()}
     return Listing(exists, shown, listing.errors, read_states(dict(services), profile))
@@ -173,7 +175,13 @@ def section_mark(section: str) -> str:
 
 
 def _row(
-    entry: SettingEntry, descriptor: FieldDescriptor, variable: str, *, own: bool, raw: bool
+    entry: SettingEntry,
+    descriptor: FieldDescriptor,
+    variable: str,
+    *,
+    own: bool,
+    raw: bool,
+    summary: str | None = None,
 ) -> SettingRow:
     shown = setting_entry_row(entry, human=True)
     help: list[str] = []
@@ -194,10 +202,7 @@ def _row(
             f"Read-only here (deprecated); `{command}` sets it"
             + (", delete unsets it." if own else ".")
         )
-    value = "" if shown.value is None else str(shown.value)
-    if not raw and reads_names(descriptor) and isinstance(entry.value, dict):
-        count = len(entry.value)
-        value = f"{count} override{'' if count == 1 else 's'}" if count else "no overrides"
+    value = summary if summary is not None else "" if shown.value is None else str(shown.value)
     return SettingRow(
         key=entry.key,
         label=".".join(descriptor.path[1:]),
@@ -233,12 +238,7 @@ def open_command(profile: str, row: SettingRow) -> Cmd:
             expected = SetSetting(repo).current(key, profile=profile)
             if raw:
                 return FieldOpened(key, value, expected)
-            descriptor = repo.descriptor(key)
-            if reads_names(descriptor):
-                return FieldOpened(key, ListNames(repo)(key, under=profile), expected)
-            current = (
-                None if descriptor.is_secret else GetSetting(repo)(key, reveal_secrets=True).value
-            )
+            current = opened_value(repo, repo.descriptor(key), profile=profile)
             return FieldOpened(key, current, expected)
 
     return Cmd(open_field, name="open_field")

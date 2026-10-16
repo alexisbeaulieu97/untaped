@@ -155,12 +155,22 @@ def test_an_inherited_value_is_not_copied_until_it_is_changed() -> None:
     assert field_of(run_solo(_map(), "enter", "enter")).value == {}
 
 
-def test_an_emptied_value_or_delete_clears_the_name() -> None:
-    emptied = run_solo(_map({"ok": "y"}), "enter", "ctrl-u", "enter")
+def test_delete_clears_the_name_and_an_emptied_value_is_kept_blank() -> None:
     deleted = run_solo(_map({"ok": "y", "fail": "n"}), "down", "delete")
+    emptied = run_solo(_map({"ok": "y"}), "enter", "ctrl-u", "enter")
 
-    assert field_of(emptied).value == {}
     assert field_of(deleted).value == {"ok": "y"}
+    assert field_of(emptied).value == {"ok": ""}
+    assert "(blank)" in emptied.frame
+
+
+def test_a_value_the_map_sets_says_what_wins_over_it() -> None:
+    editor = MapEditor(
+        "Symbols", (MapEntry("ok", "V", "UNTAPED_UI__SYMBOLS", wins="UNTAPED_UI__SYMBOLS"),),
+        (("ok", "S"),), "profile:work",
+    )  # fmt: skip
+
+    assert "profile:work, UNTAPED_UI__SYMBOLS wins" in run_solo(editor).frame
 
 
 def test_an_open_value_counts_as_kept() -> None:

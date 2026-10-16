@@ -54,6 +54,15 @@ class ProfilesSettingsLayout:
         """Return the effective settings values for the active (or given) profile."""
         return self.resolve(raw, profile=profile).effective
 
+    def inherited(self, raw: dict[str, Any], profile: str) -> dict[str, Any]:
+        """Return the effective values ``profile`` inherits: ``default``'s, nothing for itself."""
+        profiles = raw.get("profiles")
+        if profile == DEFAULT_PROFILE or not isinstance(profiles, dict):
+            return {}
+        if DEFAULT_PROFILE not in profiles:
+            return {}
+        return self.effective(raw, profile=DEFAULT_PROFILE)
+
     def provenance(self, raw: dict[str, Any]) -> dict[tuple[str, ...], str]:
         """Return ``leaf path -> profile name`` for every value in ``effective``."""
         return self.resolve(raw).provenance

@@ -277,6 +277,8 @@ class NamedValue:
     """The profile (``profile:work``) or variable setting it, else its defaults' (``theme``)."""
     declared: bool = True
     """Whether the field's :class:`~untaped.config_schema.Choices` names it."""
+    variable: str | None = None
+    """The variable setting it, which wins over any profile's value."""
 
 
 class ListNames:
@@ -295,7 +297,7 @@ class ListNames:
         """The names of ``key``; raises :class:`ConfigError` for a key that declares none.
 
         With ``under`` (a profile), a name that profile sets shows what it
-        inherits instead: the ``default`` profile's value, else the default.
+        inherits instead (a variable setting it still wins).
         """
         descriptor = self._repo.descriptor(key)
         choices = descriptor.choices
@@ -304,56 +306,32 @@ class ListNames:
         current = self._repo.setting_value(descriptor) or {}
         holder = self._repo.holder_value(descriptor)
         defaults = choices.defaults(holder) if choices.defaults is not None else {}
-        variable = self._repo.env_var_supplying(descriptor)
-        from_variable = _object_names(self._repo.env_value_for(descriptor))
         provenance = self._repo.provenance()
-        below = self._below(descriptor, under) if under is not None else {}
+        inherited = self._repo.inherited_value(descriptor, under) if under is not None else None
+        below = inherited if isinstance(inherited, dict) else {}
         declared = choices.names()
 
-        def found(name: str) -> tuple[str, str]:
-            fallback = (str(defaults.get(name, "")), choices.defaults_label)
-            if name not in current:
-                return fallback
-            if variable is not None and (from_variable is None or name in from_variable):
-                return str(current[name]), variable
+        def found(name: str) -> tuple[str, str, str | None]:
+            variable = self._repo.env_var_setting((*descriptor.path, name))
+            if variable is not None and name in current:
+                return str(current[name]), variable, variable
             profile = provenance.get((*descriptor.path, name))
-            if under is not None and profile == under:
-                return (
-                    (str(below[name]), _profile_label(DEFAULT_PROFILE))
-                    if name in below
-                    else (fallback)
-                )
-            return str(current[name]), _profile_label(profile) if profile else "default"
+            if name in current and profile is not None and profile != under:
+                return str(current[name]), _profile_label(profile), None
+            if name in below:
+                return str(below[name]), _profile_label(DEFAULT_PROFILE), None
+            return str(defaults.get(name, "")), choices.defaults_label, None
 
         names = (*declared, *(name for name in current if name not in declared))
-        return tuple(NamedValue(name, *found(name), name in declared) for name in names)
-
-    def _below(self, descriptor: FieldDescriptor, profile: str) -> dict[str, Any]:
-        """The mapping as the ``default`` profile sets it, beneath ``profile`` (none for itself)."""
-        data = self._repo.profile_data(DEFAULT_PROFILE) if profile != DEFAULT_PROFILE else None
-        section, *rest = descriptor.path
-        model = self._repo.section_model(section)
-        value: Any = (data or {}).get(section)
-        if model is not None and isinstance(value, dict):
-            value = rename_keys(model, value)[0]
-        for part in rest:
-            value = value.get(part) if isinstance(value, dict) else None
-        return value if isinstance(value, dict) else {}
+        rows = []
+        for name in names:
+            value, source, variable = found(name)
+            rows.append(NamedValue(name, value, source, name in declared, variable))
+        return tuple(rows)
 
 
 def _profile_label(profile: str) -> str:
     return Source(kind="profile", profile=profile).label
-
-
-def _object_names(text: str | None) -> frozenset[str] | None:
-    """The names a variable's JSON object sets, merged over the profiles' (``None``: can't tell)."""
-    if text is None:
-        return frozenset()
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        return None
-    return frozenset(parsed) if isinstance(parsed, dict) else None
 
 
 class GetSetting:

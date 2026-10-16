@@ -205,3 +205,24 @@ def test_list_names_under_a_profile_shows_what_its_own_names_inherit(
     assert (names["error"].value, names["error"].source) == ("X", "profile:default")
     theme = BUILTIN_THEMES["default"].symbols["success"]
     assert (names["success"].value, names["success"].source) == (theme, "theme")
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [("UNTAPED_UI__SYMBOLS__SUCCESS", "W"), ("UNTAPED_UI", '{"symbols": {"success": "W"}}')],
+)
+def test_list_names_finds_a_variable_at_any_depth(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch, variable: str, value: str
+) -> None:
+    from untaped.config.use_cases import ListNames
+
+    _isolate_settings.write_text(_SYMBOLS)
+    monkeypatch.setenv(variable, value)
+
+    names = {
+        item.name: item for item in ListNames(SettingsFileRepository())("ui.symbols", under="work")
+    }
+
+    assert (names["success"].value, names["success"].source) == ("W", variable)
+    assert names["success"].variable == variable  # it wins over the profile's own ``S``
+    assert names["error"].source == "profile:default"

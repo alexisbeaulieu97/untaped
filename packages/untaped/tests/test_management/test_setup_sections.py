@@ -691,7 +691,7 @@ def test_a_map_row_counts_its_overrides(_isolated_config: Path) -> None:
     run = drive_screen(_ui(), _to_symbols()[:-1], size=(140, 40))
 
     row = next(row for row in run.model.panes["ui"].rows if row.label == "symbols")
-    assert row.value == "2 overrides"
+    assert row.value == "1 override"  # the profile's own; ``error`` is the default profile's
 
 
 def test_a_symbol_is_edited_in_place_and_the_profiles_own_map_written(
@@ -739,3 +739,25 @@ def test_a_map_editor_footer_offers_edit_then_keep(_isolated_config: Path) -> No
 
     assert "enter edit" in on_name.frame.splitlines()[-1]
     assert "enter keep" in editing.frame.splitlines()[-1]
+
+
+def test_a_map_changed_while_its_editor_was_open_is_not_overwritten(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, _SYMBOLS)
+    host = FakeHost()
+    runtime = Runtime(_ui(), host, theme=BUILTIN_THEMES["default"], size=(140, 40))
+    runtime.start()
+    for key in _to_symbols():
+        runtime.send(_message(key))
+    host.run_jobs()
+    host.deliver()  # the editor is open, holding {success: S}
+
+    SetSetting(SettingsFileRepository())("ui.symbols", '{"info": "i"}', profile="work")
+    for key in ["down", "enter", "!", "enter", "ctrl-s"]:
+        runtime.send(_message(key))
+    host.run_jobs()
+    host.deliver()
+
+    assert _ui_data(_isolated_config) == {"symbols": {"info": "i"}}
+    assert "ui.symbols changed in profile work while it was open" in runtime.model.panes["ui"].error

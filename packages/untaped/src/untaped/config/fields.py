@@ -12,8 +12,11 @@ the row shows what it then inherits; a secret is the exception: it opens
 empty, so empty keeps it (``delete`` on its row unsets it). A list of
 strings opens the list editor and is written whole, an empty list included
 (it overrides an inherited one; ``delete`` unsets). A command's argv
-(:class:`~untaped.config_schema.Argv`) is one shell-quoted line. Any other
-list or map is one line of JSON, as ``config set`` takes it.
+(:class:`~untaped.config_schema.Argv`) is one shell-quoted line. A map whose
+:class:`~untaped.config_schema.Choices` declares its names opens on those
+names (:func:`opened_value` reads them), each set or cleared in place, and
+its row counts the profile's own (:func:`summary`). Any other list or map is
+one line of JSON, as ``config set`` takes it.
 """
 
 from __future__ import annotations
@@ -26,14 +29,15 @@ from typing import Literal, get_args, get_origin
 from pydantic import SecretStr
 from pydantic_core import to_jsonable_python
 
-from untaped.config.use_cases import NamedValue
+from untaped.config.ports import SettingsReader
+from untaped.config.use_cases import GetSetting, ListNames, NamedValue
 from untaped.config_schema import FieldDescriptor
 from untaped.screen.components.choices import Check, Cycle, ListItem, Select, SingleList
 from untaped.screen.components.fields import Field
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
 from untaped.screen.components.lists import ListEditor, MapEditor, MapEntry
 
-__all__ = ["editor", "reads_names", "written"]
+__all__ = ["editor", "opened_value", "summary", "written"]
 
 type Shape = Literal[
     "check", "cycle", "number", "path", "choice", "secret", "text", "list", "argv", "names", "json"
@@ -49,12 +53,30 @@ EMPTY_KEEPS = "empty keeps it; delete on its row unsets it"
 LIST_HELP = "enter edit · delete remove · m move · done or ctrl-s writes"
 ARGV_HELP = "the command as you would type it; empty unsets it"
 JSON_HELP = "JSON, as config set takes it; empty unsets it"
-NAMES_HELP = "enter edit · delete clears · empty clears · done or ctrl-s writes"
+NAMES_HELP = "enter edit · delete clears · done or ctrl-s writes"
 
 
-def reads_names(descriptor: FieldDescriptor) -> bool:
-    """Whether ``descriptor``'s editor opens on its names (``ListNames``), not on its value."""
-    return _shape(descriptor) == "names"
+def opened_value(repo: SettingsReader, descriptor: FieldDescriptor, *, profile: str) -> object:
+    """What ``descriptor``'s editor opens on, read through ``repo`` as ``profile`` sees it.
+
+    A map that declares its names opens on them, each showing what it is
+    when ``profile`` doesn't set it; a secret opens empty; any other field on
+    its effective value.
+    """
+    if _shape(descriptor) == "names":
+        return ListNames(repo)(descriptor.key, under=profile)
+    if descriptor.is_secret:
+        return None
+    return GetSetting(repo)(descriptor.key, reveal_secrets=True).value
+
+
+def summary(descriptor: FieldDescriptor, own: object) -> str | None:
+    """How a row shows ``descriptor`` when its value doesn't fit one line: a map of names
+    counts what the profile sets itself (``own``); ``None`` for every other shape."""
+    if _shape(descriptor) != "names":
+        return None
+    count = len(own) if isinstance(own, dict) else 0
+    return f"{count} override{'' if count == 1 else 's'}" if count else "no overrides"
 
 
 def editor(
@@ -171,7 +193,7 @@ def _names(value: object, own: object, *, label: str, own_source: str) -> Field:
     """The editor of a map that declares its names: a row per name, editing what ``own`` sets."""
     names = value if isinstance(value, tuple) else ()
     entries = tuple(
-        MapEntry(item.name, item.value, item.source, item.declared)
+        MapEntry(item.name, item.value, item.source, item.declared, item.variable or "")
         for item in names
         if isinstance(item, NamedValue)
     )

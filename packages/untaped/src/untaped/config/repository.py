@@ -35,6 +35,7 @@ from untaped.settings import (
     Settings,
     active_settings_layout,
     env_var_name,
+    env_var_setting,
     get_profile_settings_model,
     load_settings_section,
     model_sections,
@@ -135,6 +136,16 @@ class SettingsFileRepository:
     def env_value_for(self, descriptor: FieldDescriptor) -> str | None:
         name = self.env_var_supplying(descriptor)
         return None if name is None else os.environ.get(name)
+
+    def env_var_setting(self, path: tuple[str, ...]) -> str | None:
+        """The set variable that supplies the leaf at ``path`` (deeper than a field)."""
+        return env_var_setting(path)
+
+    def inherited_value(self, descriptor: FieldDescriptor, profile: str) -> Any:
+        """``descriptor``'s value as ``profile`` inherits it from the profiles beneath it."""
+        return _at_path(
+            active_settings_layout().inherited(self.yaml_dict(), profile), descriptor.path
+        )
 
     def env_var_supplying(self, descriptor: FieldDescriptor) -> str | None:
         """The set ``UNTAPED_*`` variable for ``descriptor``: its own, else an old spelling's."""
