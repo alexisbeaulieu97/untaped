@@ -403,6 +403,21 @@ def test_nesting_too_deep_is_skipped_not_raised() -> None:
 
 
 @pytest.mark.parametrize(
+    ("error", "reason"),
+    [(ValueError(), "ValueError"), (ValueError("two\nlines"), "two lines")],
+)
+def test_an_unexpected_error_is_a_one_line_skip(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, reason: str
+) -> None:
+    def fail(path: str, text: str) -> None:
+        raise error
+
+    monkeypatch.setattr(variables, "_analyse_yaml", fail)
+
+    assert analyse("t.yml", "a: 1\n").skipped == f"could not be read: {reason}"
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "",
