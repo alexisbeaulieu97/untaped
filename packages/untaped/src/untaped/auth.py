@@ -27,10 +27,11 @@ fail instead (``--pinentry-mode=error``, see :func:`pass_gpg_options`),
 unless the user chose a pinentry mode themselves, and the error says how to
 unlock the store from a terminal.
 
-A token stored in plain text in the config file is deprecated and will be
-removed in 12.0: using one warns once per section per process and points at
+Support for a token stored in plain text in the config file is the
+deprecated behaviour :data:`PLAINTEXT_TOKEN`, which names its removal
+version: using one warns once per section per process and points at
 ``untaped auth migrate``.
-"""  # untaped: allow hand-typed-deprecation
+"""
 
 from __future__ import annotations
 
@@ -48,13 +49,24 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, SecretStr
 
 from untaped.errors import ConfigError
-from untaped.settings import env_var_name
+from untaped.settings import env_var_name, resolve_config_path
+from untaped.stability import deprecated_behaviour
 
 _LOG = logging.getLogger("untaped.auth")
 _TIMEOUT_SECONDS = 60.0
 _MASK = "**********"
 _NO_PINENTRY = "--pinentry-mode=error"
 _cache: dict[tuple[str, ...], str] = {}
+
+PLAINTEXT_TOKEN = deprecated_behaviour(
+    "plaintext-token", removed_in=12, replacement="untaped auth migrate"
+)
+"""Support for ``<section>.token`` stored in plain text in ``config.yml`` (removal: #670)."""
+
+
+def plaintext_subject(section: str, where: str) -> str:
+    """How every site names what goes: ``support for a plain-text awx.token in config.yml``."""
+    return f"support for a plain-text {section}.token in {where}"
 
 
 def _check_argv(value: list[str] | None) -> list[str] | None:
@@ -368,13 +380,10 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
         return
     if not takes_token_command(type(settings)) or token_override_env(section) is not None:
         return
-    from untaped.deprecated_keys import warn_once  # noqa: PLC0415 - keep auth imports light
-    from untaped.messages import run_hint  # noqa: PLC0415
+    from untaped.messages import run_hint  # noqa: PLC0415 - keep auth imports light
 
-    warn_once(
-        f"{section}.token is stored in plain text"  # untaped: allow hand-typed-deprecation
-        " in the config file, which is deprecated"
-        " and will be removed in 12.0",
+    PLAINTEXT_TOKEN.notify(
+        plaintext_subject(section, resolve_config_path().name),
         key=f"plaintext {section}.token",
         hint=run_hint("auth migrate"),
     )
@@ -457,6 +466,7 @@ def _pass_unlock(argv: Sequence[str]) -> str | None:
 
 __all__ = [
     "PASS_GPG_HINT",
+    "PLAINTEXT_TOKEN",
     "TRUST_HINT",
     "CommandToken",
     "TokenCommand",
@@ -471,6 +481,7 @@ __all__ = [
     "locked_without_terminal",
     "pass_gpg_env",
     "pass_gpg_options",
+    "plaintext_subject",
     "resolve_token",
     "run_command",
     "takes_token_command",

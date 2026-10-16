@@ -155,9 +155,11 @@ from untaped.settings import HttpSettings, get_config_section
 from untaped.skills import project_root
 from untaped.stability import (
     Deprecated,
+    DeprecatedBehaviour,
     UntapedDeprecationWarning,
     deprecated,
     deprecated_alias,
+    deprecated_behaviour,
     experimental,
 )
 from untaped.state import StateCollection, StateMap
@@ -402,12 +404,14 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "online_check",
     # conventions
     "Deprecated",
+    "DeprecatedBehaviour",
     "ExitCode",
     "Renamed",
     "Retired",
     "UntapedDeprecationWarning",
     "deprecated",
     "deprecated_alias",
+    "deprecated_behaviour",
     "experimental",
     "plural",
     "q",

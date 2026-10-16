@@ -22,6 +22,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
+from untaped.auth import PLAINTEXT_TOKEN, plaintext_subject
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -40,7 +41,7 @@ from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, KeyUse, key_ma
 from untaped.errors import ConfigError
 from untaped.management.config_editor import run_config_editor
 from untaped.management.config_prompting import resolve_set_value
-from untaped.messages import hint, plural, run_hint
+from untaped.messages import hint, plural
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
 from untaped.settings import (
@@ -423,10 +424,10 @@ def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
     section, rest = _split_first(key)
     scope = ctx.sections.get(section)
     if rest == "token" and scope is not None and "token_command" in scope.settings_fields:
-        _diag.warning(
-            f"storing {key} in plain text in config.yml"  # untaped: allow hand-typed-deprecation
-            " is deprecated and will be removed in 12.0",
-            hint=run_hint(f"auth set {section}"),
+        PLAINTEXT_TOKEN.notify(
+            plaintext_subject(section, resolve_config_path().name),
+            key=f"plaintext {section}.token",
+            replacement=f"untaped auth set {section}",
         )
 
 

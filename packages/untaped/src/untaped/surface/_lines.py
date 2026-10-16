@@ -90,7 +90,7 @@ class Line:
 
     @property
     def area(self) -> str:
-        """The first word: ``cli``, ``cfg``, ``state``, ``sdk``, ``contract`` or ``convention``."""
+        """The first word: ``cli``, ``cfg``, ``state``, ``sdk``, ``contract``, ``behaviour``…"""
         return self.text.partition(" ")[0]
 
     @property
