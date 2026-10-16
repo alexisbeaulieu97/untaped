@@ -382,10 +382,11 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
         return
     from untaped.messages import run_hint  # noqa: PLC0415 - keep auth imports light
 
+    config_name = resolve_config_path().name
     PLAINTEXT_TOKEN.notify(
-        plaintext_subject(section, resolve_config_path().name),
-        key=f"plaintext {section}.token",
-        hint=run_hint("auth migrate"),
+        plaintext_subject(section, config_name),
+        key=section,
+        hint=f"{run_hint('auth migrate')} to move it out of {config_name}",
     )
 
 

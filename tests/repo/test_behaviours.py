@@ -25,15 +25,18 @@ def declared(packages: Path) -> set[str]:
         owner = package.name.removeprefix("untaped-")
         for path in sorted((package / "src").rglob("*.py")):
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-                if (
-                    isinstance(node, ast.Call)
-                    and _name(node.func) == "deprecated_behaviour"
-                    and node.args
-                    and isinstance(node.args[0], ast.Constant)
-                    and isinstance(node.args[0].value, str)
-                ):
-                    found.add(f"behaviour {owner}.{node.args[0].value}")
+                if isinstance(node, ast.Call) and _name(node.func) == "deprecated_behaviour":
+                    name = _first_argument(node)
+                    if name is not None:
+                        found.add(f"behaviour {owner}.{name}")
     return found
+
+
+def _first_argument(call: ast.Call) -> str | None:
+    """The literal name a ``deprecated_behaviour`` call passes, by position or by keyword."""
+    given = next((kw.value for kw in call.keywords if kw.arg == "name"), None)
+    node = call.args[0] if call.args else given
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
 
 def _name(func: ast.expr) -> str | None:
@@ -67,6 +70,7 @@ def test_a_planted_declaration_is_found(tmp_path: Path) -> None:
     (source / "m.py").write_text(
         "from untaped.sdk import deprecated_behaviour\n"
         'ROW_KIND = deprecated_behaviour("row-kind", removed_in=3)\n'
+        'OTHER = deprecated_behaviour(name="other", removed_in=3)\n'
     )
-    assert declared(tmp_path) == {"behaviour acme.row-kind"}
+    assert declared(tmp_path) == {"behaviour acme.row-kind", "behaviour acme.other"}
     assert "behaviour acme.row-kind" not in listed()

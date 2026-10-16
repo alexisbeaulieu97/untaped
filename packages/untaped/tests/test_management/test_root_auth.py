@@ -958,7 +958,7 @@ def test_the_plaintext_token_warning_carries_its_hint(
             "support for a plain-text svc.token in config.yml is deprecated and will be removed"
             " in 12.0; use `untaped auth migrate`"
         ),
-        "hint": "run `untaped auth migrate`",
+        "hint": "run `untaped auth migrate` to move it out of config.yml",
         "id": "behaviour untaped.plaintext-token",
         "removed_in": 12,
         "distribution": None,

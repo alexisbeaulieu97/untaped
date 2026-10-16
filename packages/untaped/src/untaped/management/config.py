@@ -426,7 +426,7 @@ def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
     if rest == "token" and scope is not None and "token_command" in scope.settings_fields:
         PLAINTEXT_TOKEN.notify(
             plaintext_subject(section, resolve_config_path().name),
-            key=f"plaintext {section}.token",
+            key=section,
             replacement=f"untaped auth set {section}",
         )
 

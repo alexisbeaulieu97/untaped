@@ -6,6 +6,7 @@ import inspect
 import json
 import warnings
 from collections.abc import Sequence
+from dataclasses import replace
 
 import pytest
 from cyclopts import App
@@ -76,6 +77,8 @@ def test_a_behaviour_s_replacement_is_text() -> None:
 def test_a_spec_s_deprecations_is_a_function(value: object) -> None:
     with pytest.raises(ConfigError, match="deprecations must be a function"):
         PluginSpec(name="svc", deprecations=value)  # type: ignore[arg-type]
+    with pytest.raises(ConfigError, match="shell deprecations must be a function"):
+        replace(bootstrap.SHELL_SPEC, deprecations=value)  # type: ignore[arg-type]
 
 
 # --- the sentence and its owner ------------------------------------------------------------
@@ -109,6 +112,31 @@ def test_a_behaviour_nobody_lists_reads_as_core_s() -> None:
     _compose(_spec(ROW_KIND))
     assert UNLISTED.id == "behaviour untaped.unlisted"
     assert UNLISTED.sentence("x") == "x is deprecated and will be removed in 3.0"
+
+
+def _declared_in(module: str) -> DeprecatedBehaviour:
+    namespace = {"__name__": module, "deprecated_behaviour": deprecated_behaviour}
+    exec('B = deprecated_behaviour("row-kind", removed_in=3)', namespace)
+    behaviour = namespace["B"]
+    assert isinstance(behaviour, DeprecatedBehaviour)
+    return behaviour
+
+
+def test_an_unlisted_plugin_behaviour_is_its_package_s_plugin() -> None:
+    behaviour = _declared_in("untaped_acme_tools.api")
+    _compose(_spec(ROW_KIND))
+    assert behaviour.id == "behaviour acme-tools.row-kind"
+    assert behaviour.sentence("x") == (
+        "x is deprecated and will be removed in untaped-acme-tools 3.0"
+    )
+
+
+def test_a_core_behaviour_stays_core_s_and_no_plugin_may_list_it() -> None:
+    spec = _spec(PLAINTEXT_TOKEN, name="hijack")
+    _compose(spec)
+    assert PLAINTEXT_TOKEN.id == "behaviour untaped.plaintext-token"
+    with pytest.raises(ConfigError, match="'plaintext-token', which untaped owns"):
+        plugin_lines(spec)
 
 
 def test_a_listing_that_fails_never_fails_the_warning() -> None:
@@ -157,6 +185,22 @@ def test_notify_warns_once_per_key_as_its_record(monkeypatch: pytest.MonkeyPatch
 def _api() -> None:
     """A Python API whose behaviour is deprecated: the warning points at its caller."""
     ROW_KIND.warn("a row without a declared kind", replacement="untaped svc set")
+
+
+def test_each_behaviour_keeps_its_own_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    _compose(_spec(ROW_KIND))
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    forget_notices()
+    app = App(name="w")
+
+    @app.default
+    def run() -> None:
+        ROW_KIND.notify("a row", key="same")
+        UNLISTED.notify("a thing", key="same")
+
+    result = invoke_cli(app, [])
+    ids = [json.loads(line)["id"] for line in result.stderr.splitlines()]
+    assert ids == ["behaviour svc.row-kind", "behaviour untaped.unlisted"]
 
 
 def test_warn_raises_an_untaped_deprecation_warning_at_the_api_s_caller() -> None:
@@ -222,6 +266,17 @@ def test_a_behaviour_under_a_deprecated_plugin_is_nested() -> None:
     root = _compose(spec)
     found = stability_violations(root, bootstrap.composition(), ["svc"], spec=spec)
     assert "svc.row-kind::nested-mark::deprecated under deprecated svc" in found
+
+
+def test_core_s_behaviours_are_checked_with_core(monkeypatch: pytest.MonkeyPatch) -> None:
+    gone = deprecated_behaviour("gone", removed_in=12, replacement="untaped auth nowhere")
+    shell = replace(bootstrap.SHELL_SPEC, deprecations=lambda: (gone,))
+    monkeypatch.setattr(bootstrap, "SHELL_SPEC", shell)
+    root = _compose()
+    found = stability_violations(root, bootstrap.composition(), [], sections=["shell"])
+    assert found == [
+        "untaped.gone::bad-replacement::`untaped auth nowhere` does not resolve to a command"
+    ]
 
 
 def test_a_behaviour_s_replacement_must_resolve() -> None:
