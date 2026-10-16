@@ -152,7 +152,10 @@ alone. Open the store through `open()` every time, before the file exists.
 
 A store holds only data you can recompute: never settings, state, or anything
 a user typed. Keying it by profile, when a setting changes what it holds, is
-yours to do inside it. Composition quarantines a plugin that lists another
+yours to do inside it. `untaped lint` reports `lint.store-format` where a
+plugin passes a `plugin_dir(...)` path straight to `sqlite3.connect`,
+`shelve.open` or `dbm.open`; a file whose layout every release of the major
+reads waives it with `# untaped: allow store-format`. Composition quarantines a plugin that lists another
 plugin's store (`foreign-store`) or the same name twice (`duplicate-store`),
 and `untaped doctor`'s `stores` row shows each store's layout and file, and
 warns while another layout is left on disk.
