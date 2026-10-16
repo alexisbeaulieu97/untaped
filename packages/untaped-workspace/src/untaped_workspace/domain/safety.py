@@ -14,7 +14,7 @@ from collections.abc import Sequence
 
 from untaped.sdk import plural
 from untaped_workspace.domain.models import LocalBranch, WorktreeStatus
-from untaped_workspace.domain.records import StatusRow
+from untaped_workspace.records import StatusRow
 
 UNCOMMITTED = "uncommitted changes"
 NOT_STORED = "repo missing from the repo store; local work cannot be checked"

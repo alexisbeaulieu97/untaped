@@ -7,6 +7,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import untaped_workspace.records  # noqa: F401  # registers the record kinds before any command runs
 from untaped.sdk import (
     DirMigration,
     MigrationOptions,

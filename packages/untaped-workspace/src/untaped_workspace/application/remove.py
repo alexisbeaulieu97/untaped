@@ -39,7 +39,6 @@ from untaped.sdk import Failure, UntapedError, not_found, plural
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.naming import repo_key, workspace_key
-from untaped_workspace.domain.records import RemoveOutcome
 from untaped_workspace.domain.safety import (
     archive_hint,
     branch_work,
@@ -47,6 +46,7 @@ from untaped_workspace.domain.safety import (
     unpushed_branch_blocker,
 )
 from untaped_workspace.errors import WorkspaceNotFoundError
+from untaped_workspace.records import RemoveOutcome
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import GitWorktrees, WorkspaceStore
@@ -56,7 +56,7 @@ if TYPE_CHECKING:
         RepoSpec,
         WorkspaceRecord,
     )
-    from untaped_workspace.domain.records import StatusRow
+    from untaped_workspace.records import StatusRow
 
 type Key = tuple[str, ...]
 
