@@ -198,3 +198,48 @@ def test_a_narrowed_run_still_reports_an_unreadable_file(install: Install) -> No
     with compose_with("lint"):
         report = run([subject(_plugin(site))], select=["lint.print"], candidates=_DEMO)
     assert [each.rule for each in report.findings] == ["lint.unreadable-file"]
+
+
+_API = '''
+    """Demo's Python API."""
+
+    import warnings
+    from typing import Annotated, overload
+
+    from untaped.sdk import deprecated
+
+    __all__ = ["drifted", "emit", "pick"]
+
+
+    @deprecated(removed_in=3)
+    @warnings.deprecated("drifted is deprecated")
+    def drifted() -> None:
+        """Its literal is not its mark's sentence."""
+
+
+    def emit(kind: Annotated[str, deprecated(removed_in=3)] = "") -> None:
+        """A marked parameter nothing warns about."""
+
+
+    @overload
+    @deprecated(removed_in=3)
+    def pick(x: int) -> int: ...
+    @overload
+    def pick(x: str) -> str: ...
+    def pick(x):
+        """A mark on an overload."""
+        return x
+    '''
+
+
+def test_the_deprecation_rules_run_as_lint_ids(install: Install) -> None:
+    site = install({**_PLUGIN, "demo_plugin/api.py": _API})
+    rules = ["lint.deprecation-text", "lint.unwarned-parameter", "lint.mark-on-overload"]
+    with compose_with("lint"):
+        report = run([subject(_plugin(site))], select=rules, candidates=_DEMO)
+    assert sorted(each.rule for each in report.findings) == [
+        "lint.deprecation-text",
+        "lint.mark-on-overload",
+        "lint.unwarned-parameter",
+        "lint.unwarned-parameter",
+    ]

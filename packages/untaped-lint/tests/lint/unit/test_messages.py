@@ -43,6 +43,8 @@ warnings.warn("soon", category=PendingDeprecationWarning)
         (13, "echo-failed"),
         (14, "warnings-warn"),
         (15, "warnings-warn"),
+        (16, "warnings-warn"),
+        (17, "warnings-warn"),
     ]
 
 

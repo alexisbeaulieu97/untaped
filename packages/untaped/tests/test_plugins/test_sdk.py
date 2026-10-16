@@ -174,6 +174,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "deprecated",
         "deprecated_alias",
         "deprecated_behaviour",
+        "deprecated_parameters",
         "experimental",
         "plural",
         "q",

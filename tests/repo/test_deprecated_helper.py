@@ -1,8 +1,8 @@
 """First-party code writes stderr through ``ctx.diag``, never the deprecated helpers.
 
 ``UiContext.message``, ``.success`` and ``.progress``, ``report_error``,
-``report_row_errors``, and ``echo``/``UiContext.styled`` with ``err=True`` are
-deprecated until 12.0. No shipped module outside ``untaped/output/`` calls
+``report_row_errors``, and ``echo``/``UiContext.styled``'s ``err=`` are
+deprecated (their marks name the release). No shipped module outside ``untaped/output/`` calls
 them: a call is flagged by name, and ``success``/``progress`` only when the
 receiver is not a ``Diagnostics`` handle (``diag``, ``_diag``, ``<x>.diag``,
 ``Diagnostics()``) or core's sink (``current_sink()``), since they have
@@ -43,12 +43,8 @@ def _is_handle(receiver: ast.expr) -> bool:
 
 
 def _err(call: ast.Call) -> bool:
-    """Whether ``call`` passes ``err=`` with anything but the literal ``False``."""
-    return any(
-        each.arg == "err"
-        and not (isinstance(each.value, ast.Constant) and each.value.value is False)
-        for each in call.keywords
-    )
+    """Whether ``call`` passes ``err=``, which warns whatever its value."""
+    return any(each.arg == "err" for each in call.keywords)
 
 
 def _flagged(node: ast.expr) -> bool:
@@ -125,8 +121,9 @@ report_error(e)
 report_row_errors(rows, item=f)
 partial(ctx.progress_ui().message, "warning")
 echo("x", err=flag)
+echo(x, err=False)
 """
-    assert helper_calls(bad) == list(range(1, 12))
+    assert helper_calls(bad) == list(range(1, 13))
 
 
 def test_the_check_leaves_the_handle_alone() -> None:
@@ -139,7 +136,6 @@ diag.success(x)
 exc.message
 ui.styled(t)
 echo(x)
-echo(x, err=False)
 partial(diag.warning)
 """
     assert helper_calls(good) == []

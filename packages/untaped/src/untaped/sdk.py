@@ -163,6 +163,7 @@ from untaped.stability import (
     deprecated,
     deprecated_alias,
     deprecated_behaviour,
+    deprecated_parameters,
     experimental,
 )
 from untaped.state import StateCollection, StateMap
@@ -418,6 +419,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "deprecated",
     "deprecated_alias",
     "deprecated_behaviour",
+    "deprecated_parameters",
     "experimental",
     "plural",
     "q",
