@@ -238,6 +238,17 @@ def test_the_source_checked_is_the_source_run_never_a_stale_pyc(tmp_path: Path) 
     assert sorted(path.name for path in cache.parent.iterdir()) == [cache.name]
 
 
+def test_a_module_runs_as_python_would_import_it_without_lints_future_flags(
+    tmp_path: Path,
+) -> None:
+    module = "def annotated(x: int) -> None: ...\n"
+    root = _house(tmp_path, **{".untaped/lint/plain.py": module})
+    with compose_with("lint"):
+        run(root=root)
+    loaded = sys.modules["untaped_lint_repo_rules.house.plain"]
+    assert loaded.annotated.__annotations__ == {"x": int, "return": None}
+
+
 def test_a_module_that_exits_on_import_is_a_failure_row(tmp_path: Path) -> None:
     root = _house(tmp_path, **{".untaped/lint/quits.py": "import sys\nsys.exit(7)\n"})
     with compose_with("lint"):

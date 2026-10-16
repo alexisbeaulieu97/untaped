@@ -133,7 +133,7 @@ def _import(
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     try:
-        exec(compile(tree, str(path), "exec"), module.__dict__)  # the checkout's own rules
+        exec(compile(tree, str(path), "exec", dont_inherit=True), module.__dict__)  # as written
     except ModuleNotFoundError as exc:
         sys.modules.pop(name, None)
         top = (exc.name or "").split(".", 1)[0]
