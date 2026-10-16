@@ -95,7 +95,7 @@ def parse_comment(data: Mapping[str, Any], *, issue_key: str) -> Comment:
     )
 
 
-def parse_link(link: Any) -> IssueLink | None:
+def _link(link: Any) -> IssueLink | None:
     """A link row from one raw ``issuelinks`` entry; ``None`` if malformed."""
     if not isinstance(link, dict):
         return None
@@ -154,7 +154,7 @@ def _present(data: Mapping[str, Any], **names: str) -> dict[str, Any]:
 def _links(value: Any) -> list[IssueLink]:
     if not isinstance(value, list):
         return []
-    return [link for raw in value if (link := parse_link(raw)) is not None]
+    return [link for raw in value if (link := _link(raw)) is not None]
 
 
 _ADF_INLINE_TYPES = frozenset(

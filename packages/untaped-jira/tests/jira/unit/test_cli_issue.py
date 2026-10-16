@@ -96,7 +96,7 @@ def test_issue_get_shows_detail_fields() -> None:
     assert "resolution" in requested
 
 
-def test_issue_search_rows_stay_lean() -> None:
+def test_issue_search_fetches_only_row_fields_and_nulls_the_rest() -> None:
     """Search fetches only the row fields; the detail fields ``issues get`` fills are null."""
     with respx.mock(base_url=BASE) as mock:
         route = mock.post("/rest/api/2/search").mock(return_value=_search("ABC-1"))

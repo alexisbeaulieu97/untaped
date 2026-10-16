@@ -1,7 +1,8 @@
 """The records ``untaped jira`` writes, each declaring its kind on the model.
 
-The app imports this module, so ``untaped plugin schema jira.issue`` finds
-every jira kind before any command runs. Everything else names the model:
+The app factory imports this module (through the CLI), so ``untaped plugin
+schema jira.issue`` finds every jira kind before any command runs.
+Everything else names the model:
 ``accepts=(Issue, IssueOutcome)``, ``kind_of(Issue)``. Turning a Jira REST
 payload into one of these is :mod:`untaped_jira.domain.parse`'s job; the
 models hold only what goes on the wire, in the order it is written.

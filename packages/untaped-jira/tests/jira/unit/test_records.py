@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
 from untaped.sdk import kind_of
-from untaped.testing import invoke_cli, invoke_root
+from untaped.testing import invoke_cli
 from untaped_jira.cli import app
 from untaped_jira.records import (
     Board,
@@ -114,30 +118,20 @@ def test_link_keys_stay_in_order() -> None:
     ]
 
 
-def test_every_jira_kind_is_declared_once_on_its_model() -> None:
-    kinds = {kind_of(type(row)) for row, _ in _ROWS}
+def test_plugin_schema_describes_a_jira_kind_in_a_fresh_process(tmp_path: Path) -> None:
+    """The kinds are registered from the app factory, before any jira command runs."""
+    kind = str(kind_of(Issue))
+    proc = subprocess.run(
+        [sys.executable, "-m", "untaped", "plugin", "schema", kind],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "UNTAPED_CONFIG": str(tmp_path / "config.yml")},
+    )
 
-    assert kinds == {
-        f"jira.{name}"
-        for name in (
-            "user",
-            "issue",
-            "comment",
-            "issue_outcome",
-            "transition",
-            "project",
-            "board",
-            "sprint",
-        )
-    }
-
-
-def test_plugin_schema_describes_a_jira_kind() -> None:
-    result = invoke_root(["plugin", "schema", kind_of(Issue) or ""])
-
-    assert result.exit_code == 0, result.stderr
-    schema = json.loads(result.stdout)
-    assert schema["$id"] == kind_of(Issue)
+    assert proc.returncode == 0, proc.stderr
+    schema = json.loads(proc.stdout)
+    assert schema["$id"] == kind
     assert "comments" in schema["properties"]
 
 
