@@ -298,7 +298,7 @@ def _file_records(rows: tuple[SweepMatch, ...]) -> list[SweepFile]:
         refs.setdefault(key, {}).update(dict.fromkeys(row.refs))
         hits[key] = hits.get(key, 0) + 1
     return [
-        SweepFile(repo=key[0], path=key[1], refs=list(refs[key]), hits=hits[key]) for key in refs
+        SweepFile(repo=key[0], path=key[1], refs=tuple(refs[key]), hits=hits[key]) for key in refs
     ]
 
 

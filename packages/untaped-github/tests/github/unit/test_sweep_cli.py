@@ -154,6 +154,37 @@ def test_sweep_pipe_records_per_show_mode(
         assert envelopes[0]["record"]["clone_url"] == source.as_uri()
 
 
+@pytest.mark.parametrize("show", ["files", "matches"])
+def test_sweep_unknown_column_on_file_and_match_rows_is_a_usage_error(
+    source_repo: SourceRepo, show: str
+) -> None:
+    source = source_repo("api", {"a.py": "needle\n"})
+
+    result, _ = _sweep(
+        ["--org", "acme", "--grep", "needle", "--show", show, "-f", "json", "-c", "bogus"],
+        org=[_repo("acme/api", source)],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "valid columns:" in result.stderr
+
+
+@pytest.mark.parametrize("show", ["files", "matches"])
+def test_sweep_columns_on_no_file_or_match_rows_is_an_empty_answer(
+    source_repo: SourceRepo, show: str
+) -> None:
+    """With no row there is no record to check a column against (as ``--columns '?'``)."""
+    source = source_repo("api", {"a.py": "needle\n"})
+
+    result, _ = _sweep(
+        ["--org", "acme", "--grep", "absent", "--show", show, "-f", "json", "-c", "bogus"],
+        org=[_repo("acme/api", source)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == []
+
+
 def test_sweep_table_columns_follow_predicates_refs_and_owners(
     source_repo: SourceRepo, git: Callable[..., str], commit_file: Callable[..., None]
 ) -> None:

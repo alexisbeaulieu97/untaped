@@ -138,7 +138,7 @@ def repos_command(
     """Search repositories (``GET /search/repositories``)."""
     from untaped_github.application import SearchRepos  # noqa: PLC0415
     from untaped_github.domain import RepoSearchFilters  # noqa: PLC0415
-    from untaped_github.domain.models import REPO_HIT_COLUMNS  # noqa: PLC0415
+    from untaped_github.records import REPO_HIT_COLUMNS  # noqa: PLC0415
 
     with report_errors():
         repos = _repo_scopes(repo, stdin=stdin)

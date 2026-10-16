@@ -761,7 +761,7 @@ def _samples() -> dict[str, WireModel]:
             CodeResult(name="a.yml", path="ci/a.yml", sha="0" * 40, repo="acme/api", url=url),
             IssueResult(number=1, id=2, title="t", state="open", url=url, user_login=None),
             UserResult(id=1, login="octo", type="User", url="https://github.com/octo"),
-            SweepFile(repo="acme/api", path="a.yml", refs=["main"], hits=2),
+            SweepFile(repo="acme/api", path="a.yml", refs=("main",), hits=2),
             SweepMatch(repo="acme/api", refs=("main",), path="a.yml", line=3, text="x: 1"),
             CorpusSyncOutcome(
                 repo="acme/api",

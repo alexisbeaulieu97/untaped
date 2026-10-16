@@ -14,10 +14,6 @@ BatchRepoRefsFailureKind = Literal["server_error", "transport"]
 """Retryable per-repo failure class from a batched GraphQL ref probe."""
 
 
-#: The columns ``search repos`` shows by default.
-REPO_HIT_COLUMNS = ("full_name", "description", "language", "stargazers_count", "updated_at")
-
-
 class RepoRef(BaseModel):
     """One branch or tag head from the GraphQL batched ref probe.
 

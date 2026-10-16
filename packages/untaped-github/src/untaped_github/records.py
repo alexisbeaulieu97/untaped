@@ -4,8 +4,7 @@ They live in one module the plugin's spec imports, so every kind github
 declares is registered once the plugin is composed: ``plugin schema``
 describes each one, and a piped github row resolves to its model before
 any github command runs. The module holds models only, to keep that import
-cheap. Field order and which fields an output omits match the rows these
-models replaced.
+cheap. A model's fields, in order, are its rows' keys on the wire.
 """
 
 from __future__ import annotations
@@ -99,6 +98,10 @@ class GithubRepo(Record, kind="github.repo"):
         return name
 
 
+#: The columns ``search repos`` shows by default.
+REPO_HIT_COLUMNS = ("full_name", "description", "language", "stargazers_count", "updated_at")
+
+
 class CorpusRepoResult(GithubRepo, kind="github.corpus_repo"):
     """One repository row in the local scan corpus.
 
@@ -147,7 +150,7 @@ class SweepFile(Record, kind="github.sweep_file"):
 
     repo: str
     path: str
-    refs: list[str]
+    refs: tuple[str, ...]
     hits: int
 
 
@@ -287,6 +290,7 @@ class UserResult(Record, kind="github.user_hit"):
 
 
 __all__ = [
+    "REPO_HIT_COLUMNS",
     "CodeResult",
     "CorpusRepoResult",
     "CorpusSyncOutcome",

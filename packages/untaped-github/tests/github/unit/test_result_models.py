@@ -157,9 +157,8 @@ def test_corpus_and_sweep_rows_are_github_repos_of_their_own_kind() -> None:
 
 _URL = "https://github.com/acme/api"
 
-#: Each kind github declared a model for in #611, a row of it, and the keys,
-#: in order, its rows had before: a model keeps its row's wire order and
-#: leaves out what the row left out (``error`` on a row that did not fail).
+#: Each github kind, a row of it, and its wire keys in order: a row that did
+#: not fail leaves out ``error``.
 _ROW_KEYS: list[tuple[str, BaseModel, list[str]]] = [
     (
         "github.user",
@@ -183,7 +182,7 @@ _ROW_KEYS: list[tuple[str, BaseModel, list[str]]] = [
     ),
     (
         "github.sweep_file",
-        SweepFile(repo="acme/api", path="a.yml", refs=["main"], hits=2),
+        SweepFile(repo="acme/api", path="a.yml", refs=("main",), hits=2),
         ["repo", "path", "refs", "hits"],
     ),
     (
