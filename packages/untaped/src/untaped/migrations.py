@@ -303,18 +303,35 @@ class _Move:
         )
 
     def apply(self, source: Path, destination: Path) -> None:
-        """Replace what a command left at ``destination``, then move the group, sidecars first.
-
-        A crash between two moves leaves the source's file in place and its
-        moved sidecars at the destination, so the next run moves the rest.
-        """
+        """Replace what a command left at ``destination``, then move the group, sidecars first."""
         if _there(destination):
             for path in self.group(destination):
                 _remove(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        for old, new in zip(self.group(source), self.group(destination), strict=True):
-            if _there(old):
-                shutil.move(old, new)
+        move_group(source, destination, self.sidecars)
+
+
+def move_group(
+    source: Path,
+    destination: Path,
+    sidecars: Sequence[str] = (),
+    *,
+    rename: Callable[[Path, Path], object] = shutil.move,
+) -> None:
+    """Move ``source`` to ``destination`` with its sidecars, sidecars first.
+
+    Each suffix in ``sidecars`` names a file beside ``source`` that travels
+    with it (``-journal`` beside a SQLite file), moved only when it exists.
+    ``rename`` moves one path: :func:`shutil.move` copies across
+    filesystems; :func:`os.rename` never copies, so a file another process
+    has open is either renamed whole or raises. A crash between two moves
+    leaves the source's file in place and its moved sidecars at the
+    destination, so the next run moves the rest.
+    """
+    for end in (*sidecars, ""):
+        old = source.with_name(source.name + end)
+        if _there(old):
+            rename(old, destination.with_name(destination.name + end))
 
 
 def _remove(path: Path) -> None:

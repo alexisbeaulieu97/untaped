@@ -17,7 +17,7 @@ from untaped_ansible.infrastructure.overlay_index import (
     NullDependencyIndex,
     OverlayDependencyIndex,
 )
-from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
+from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex, open_index
 
 __all__ = [
     "AliasRepository",
@@ -32,4 +32,5 @@ __all__ = [
     "SourceRepository",
     "SqliteDependencyIndex",
     "local_remote_url",
+    "open_index",
 ]

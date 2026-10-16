@@ -111,7 +111,10 @@ DESCRIPTIONS: dict[str, str] = {
     "awx.test_timeout_seconds": "Seconds a `test run` case waits before its job is cancelled, "
     "unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it.",
     "awx.test_parallel": "Default `test run --parallel`.",
-    "ansible.index_path": "SQLite cache of refreshed source data.",
+    "ansible.index_path": (
+        "SQLite cache of refreshed source data. At this default the file is "
+        "`index.v<layout>.sqlite3` beside it, one per layout; a path you set is used as it is."
+    ),
     "ansible.default_source": "Saved source `deps`, `impact`, `find` and `graph` use when "
     "no `--source` or inline selector is given.",
     "ansible.ref_scan_default": "Refs a source scans: `all` refs or each repo's default branch.",

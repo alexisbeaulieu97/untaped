@@ -17,7 +17,8 @@ option that sets it; ``gather`` opens one for every provider call it makes
 (:func:`call_state`), which ``serve()`` reads when its own is ``None``.
 
 Layout: what the cache knows about a key (:class:`Freshness`) lives in a
-sidecar, ``<plugin dir>/caches/<name>/<profile>/<segment>.json``, written
+sidecar, ``<plugin dir>/caches/<name>/<profile>/<segment>.json``
+(``caches/<name>.v<layout>/`` when the cache follows a store), written
 atomically; ``<segment>.lock`` beside it is held while the key is filled, and
 only then. Readers never take it. The lock is not re-entrant: a fill never
 serves its own cache. Nested caches lock outer, then inner; the repo store's
@@ -38,6 +39,7 @@ import importlib.metadata
 import importlib.util
 import json
 import logging
+import os
 import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
@@ -60,6 +62,7 @@ from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.output.sink import current_sink
 from untaped.records import Record, UtcTimestamp
 from untaped.settings import load_settings_section, registered_profile_model
+from untaped.store import Store
 from untaped.upstream import fail_fast, full_retries
 
 _LOG = logging.getLogger("untaped.cache")
@@ -328,8 +331,12 @@ class Cache:
     ``version`` returns the version of the code that fills the
     cache (usually :func:`code_version`); it is called each time the cache
     is read (once per :meth:`serve`), never at import, and a key filled at
-    another version is refreshed like an expired one. Two declarations with the same values
-    (the same ``version`` callable) are equal.
+    another version is refreshed like an expired one. ``store`` ties the
+    sidecars to a :class:`~untaped.store.Store`'s layout: they live under
+    ``caches/<name>.v<layout>/``, so a key is never fresh over another
+    layout's file (a store that adopts its bare file adopts ``caches/<name>/``
+    on first use the same way). Two declarations with the same values (the
+    same ``version`` callable) are equal.
     """
 
     __slots__ = (
@@ -339,6 +346,7 @@ class Cache:
         "plugin",
         "removed_in",
         "renamed_from",
+        "store",
         "version",
     )
 
@@ -352,6 +360,7 @@ class Cache:
         renamed_from: Sequence[str] = (),
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
+        store: Store | None = None,
     ) -> None:
         from untaped.plugins.registry import check_plugin_name  # noqa: PLC0415 - no cycle
         from untaped.stability import check_removed_in  # noqa: PLC0415 - no cycle
@@ -374,10 +383,26 @@ class Cache:
             )
         self.removed_in = removed_in
         self.version = version
+        if store is not None and not isinstance(store, Store):
+            raise ConfigError(f"cache {plugin}.{name}: store takes a Store, not {store!r}")
+        if store is not None and store.plugin != plugin:
+            raise ConfigError(
+                f"cache {plugin}.{name}: store {store.qualified} belongs to another plugin"
+            )
+        self.store = store
 
     def _identity(
         self,
-    ) -> tuple[str, str, str, timedelta, tuple[str, ...], int | None, Callable[[], str] | None]:
+    ) -> tuple[
+        str,
+        str,
+        str,
+        timedelta,
+        tuple[str, ...],
+        int | None,
+        Callable[[], str] | None,
+        Store | None,
+    ]:
         return (
             self.plugin,
             self.name,
@@ -386,6 +411,7 @@ class Cache:
             self.renamed_from,
             self.removed_in,
             self.version,
+            self.store,
         )
 
     def __eq__(self, other: object) -> bool:
@@ -685,7 +711,28 @@ class Cache:
         from untaped.plugins.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
         from untaped.profile_resolver import selected_profile  # noqa: PLC0415 - no cycle
 
-        return named_plugin_dir(self.plugin) / "caches" / self.name / _segment(selected_profile())
+        caches = named_plugin_dir(self.plugin) / "caches"
+        return self._layout_folder(caches) / _segment(selected_profile())
+
+    def _layout_folder(self, caches: Path) -> Path:
+        """``caches/<name>/``, or ``caches/<name>.v<layout>/`` under a store.
+
+        A store that adopts its bare file adopts ``caches/<name>/`` too: the
+        first use renames it, so its keys stay as fresh as they were.
+        """
+        if self.store is None:
+            return caches / self.name
+        folder = caches / f"{self.name}.v{self.store.layout}"
+        bare = caches / self.name
+        if self.store.adopts and not folder.exists() and bare.is_dir() and not bare.is_symlink():
+            from untaped.migrations import move_group  # noqa: PLC0415 - imports the registry
+
+            try:
+                move_group(bare, folder, rename=os.rename)
+            except OSError:
+                # Another process renamed it first, or made the new folder meanwhile.
+                _LOG.debug("could not rename %s to %s", bare, folder, exc_info=True)
+        return folder
 
     @staticmethod
     def _key_paths(folder: Path, key: str) -> _KeyPaths:

@@ -21,7 +21,7 @@ from untaped.sdk import (
     shown_path,
 )
 from untaped_ansible.doctor import DOCTOR_CHECKS
-from untaped_ansible.settings import INDEX, AnsibleSettings, AnsibleState
+from untaped_ansible.settings import INDEX, INDEX_STORE, AnsibleSettings, AnsibleState
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -37,9 +37,8 @@ def build_app() -> App:
 
 
 def _index_moves() -> Sequence[tuple[Path, Path]]:
-    """10.x's index into ``plugin_dir``, where ``ansible.index_path`` now defaults."""
-    new: Path = AnsibleSettings.model_fields["index_path"].default
-    return [(Path("~/.untaped/ansible-index.sqlite3").expanduser(), new.expanduser())]
+    """10.x's index into ``plugin_dir``, as the index store's layout beside the default path."""
+    return [(Path("~/.untaped/ansible-index.sqlite3").expanduser(), INDEX_STORE.path())]
 
 
 def _empty_index(path: Path) -> bool:
@@ -89,6 +88,7 @@ SPEC = PluginSpec(
     ),
     doctor_checks=DOCTOR_CHECKS,
     caches=(INDEX,),
+    stores=(INDEX_STORE,),
     migrations=(
         move_migration(
             "ansible.index",

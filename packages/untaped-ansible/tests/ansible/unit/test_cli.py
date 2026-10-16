@@ -17,9 +17,9 @@ import pytest
 import respx
 import yaml
 
-from untaped.sdk import Failure, Progress, StaleData
+from untaped.sdk import Failure, Filled, Progress, ProgressHandle, StaleData
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, CliResult, progress_clock
+from untaped.testing import CliInvoker, CliResult, cache_clock, progress_clock
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli import app, refresh
 from untaped_ansible.domain.payloads import (
@@ -32,6 +32,7 @@ from untaped_ansible.domain.payloads import (
 )
 from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure import GithubRefProbe, GitSourceStore, SqliteDependencyIndex
+from untaped_ansible.settings import INDEX
 
 _REQS = "roles/requirements.yml"
 _TEMPLATED = "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
@@ -201,9 +202,31 @@ def _seed(
     scanned_at: datetime | None = None,
     repo_metadata: tuple[SourceRepoMetadata, ...] = (),
 ) -> None:
-    _seed_index(
-        _index(tmp_path), source_key, edges, scanned_at=scanned_at, repo_metadata=repo_metadata
+    """Index ``edges`` under ``source_key`` as a refresh by this code at ``scanned_at``."""
+    at = scanned_at or datetime.now(UTC)
+    _record_refresh(
+        source_key,
+        at,
+        lambda: _seed_index(
+            _index(tmp_path), source_key, edges, scanned_at=at, repo_metadata=repo_metadata
+        ),
     )
+
+
+def _record_refresh(key: str, at: datetime, seed: Callable[[], None]) -> None:
+    """Run ``seed`` as the fill of a refresh of ``key`` completed at ``at``.
+
+    The index cache is versioned by the parser's code: a key it never
+    filled (seeded from the index's rows alone) reads as made by another
+    version and is refreshed, so a test of ages fills it as a refresh would.
+    """
+
+    def fill(_key: str, _progress: ProgressHandle) -> Filled:
+        seed()
+        return Filled()
+
+    with cache_clock(at):
+        INDEX.serve({key: key}, refresh=True, fill=fill, read=lambda: None)
 
 
 def _fake_refresh(
@@ -2614,23 +2637,23 @@ def _seed_chain(tmp_path: Path, monkeypatch) -> None:
     chain = ["acme/r1", "acme/r2", "acme/r3", "acme/r4"]
     requires = dict(pairwise(chain))
     now = datetime.now(UTC)
-    _commit_scans(
-        _index(tmp_path),
+    scans = tuple(
+        _scan(
+            "source:platform",
+            repo,
+            "main",
+            ref_kind="heads",
+            now=now,
+            dependencies=(
+                (_edge(repo, requires[repo], version="main"),) if repo in requires else ()
+            ),
+        )
+        for repo in chain
+    )
+    _record_refresh(
         "source:platform",
-        tuple(
-            _scan(
-                "source:platform",
-                repo,
-                "main",
-                ref_kind="heads",
-                now=now,
-                dependencies=(
-                    (_edge(repo, requires[repo], version="main"),) if repo in requires else ()
-                ),
-            )
-            for repo in chain
-        ),
-        scanned_at=now,
+        now,
+        lambda: _commit_scans(_index(tmp_path), "source:platform", scans, scanned_at=now),
     )
     _use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
 

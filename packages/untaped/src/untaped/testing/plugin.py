@@ -21,6 +21,7 @@ from untaped.auth import clear_token_cache
 from untaped.deprecated_keys import reset_key_warnings
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.settings import get_settings, reset_config_registry
+from untaped.store import _forget_opened
 from untaped.testing import no_terminal
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
@@ -69,6 +70,7 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
             yield
         finally:
             reset_terminal_override(terminal_token)
+            _forget_opened()  # the store layouts this test held lived under its HOME
     get_settings.cache_clear()
 
 

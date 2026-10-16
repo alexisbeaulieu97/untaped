@@ -119,6 +119,64 @@ release is refreshed on its first read. Two installs at different versions
 that share a profile (a release and a development checkout) refill each
 other's keys on every read. Without `version=` nothing changes.
 
+## Stores
+
+Two installs of untaped can share one `~/.untaped`: a tool and a development
+checkout, or one-off runs of other versions. A file your plugin keeps under
+`plugin_dir(SPEC)` is shared by all of them, so it must be readable by every
+release of the current major, or be a *store*: a file or folder kept apart per
+layout. A layout is the oldest layout of the data your reader still opens.
+Bump it for a change an older reader cannot open (a column that changes
+meaning, a dropped table); new tables or columns an older reader ignores do
+not bump it, and a change of content is `version=`, not a layout.
+
+```python
+from untaped.sdk import Store, plugin_dir
+
+CATALOGUE = Store("acme", "catalogue", base=lambda: plugin_dir(SPEC) / "catalogue.sqlite3", layout=2)
+SPEC = PluginSpec(name="acme", ..., stores=(CATALOGUE,))
+
+def connect() -> sqlite3.Connection:
+    return sqlite3.connect(CATALOGUE.open())     # catalogue.v2.sqlite3
+```
+
+`base` returns the path every layout is named beside: layout `N` is
+`<stem>.vN<suffix>` (`catalogue.v2.sqlite3`; a folder `catalogue` is
+`catalogue.v2`), the first layout included, so two releases at different
+layouts never open each other's file. `path()` names this layout and touches
+nothing (status rows, `--dry-run` and previews use it); `other_paths()` lists
+every other layout on disk with its number. `open()` creates the base's folder
+and holds the layout's in-use lock, `<layout path>.inuse`, until the process
+exits: every reader shares it, and only whoever moves a layout takes it
+alone. Open the store through `open()` every time, before the file exists.
+
+A store holds only data you can recompute: never settings, state, or anything
+a user typed. Keying it by profile, when a setting changes what it holds, is
+yours to do inside it. Composition quarantines a plugin that lists another
+plugin's store (`foreign-store`) or the same name twice (`duplicate-store`),
+and `untaped doctor`'s `stores` row shows each store's layout and file, and
+warns while another layout is left on disk.
+
+A cache that describes a store follows it, `Cache(..., store=CATALOGUE)`: its
+sidecars live in `caches/<name>.v<layout>/`, so a key is never fresh over
+another layout's file. An answer cache (`@cached`) follows no store.
+
+A store that predates 11.1 declares what its bare file holds: `bare=4` says a
+file at `base` itself, with no layout in its name, was written at layout 4.
+The first `open()` at that layout renames it (and its SQLite `-journal`,
+`-wal` and `-shm`, and the cache's `caches/<name>/`) to the layout's name:
+same bytes, no rebuild. While another process has it open, `open()` returns
+the bare path and a later open renames it. A store born in 11.1 or later
+leaves `bare` unset.
+
+A SQLite store whose schema grows inside one layout pins its history with
+`untaped.testing.assert_schema_pinned(ddl, version=, additive_since=,
+pins=)`: a folder of `v<N>.sql` files, one per released schema, and a
+`pins.json` of their hashes. It fails when the DDL changed without a new
+version, when a released file was edited, and when a version claimed as
+additive changed an existing table or added a column an older writer cannot
+insert without (not null, no default).
+
 ## Status rows and tests
 
 For a command that reports a cache's state, subclass `FreshnessRecord` and

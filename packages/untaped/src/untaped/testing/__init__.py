@@ -57,6 +57,7 @@ from untaped.prompts import (
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.stability import apply_marks, deprecated
 from untaped.testing.contracts import assert_fills, compose_with
+from untaped.testing.schema import assert_schema_pinned
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
 from untaped.testing.surface import assert_surface
 
@@ -81,6 +82,7 @@ __all__ = [
     "allows",
     "assert_destructive_contract",
     "assert_fills",
+    "assert_schema_pinned",
     "assert_surface",
     "cache_clock",
     "check_conventions",

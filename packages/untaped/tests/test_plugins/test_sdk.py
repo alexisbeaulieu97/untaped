@@ -135,13 +135,14 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "same_origin",
         "yaml_mapping_indent",
     ),
-    "caches": (
+    "caches and stores": (
         "Cache",
         "Filled",
         "Freshness",
         "FreshnessRecord",
         "NeverRefreshed",
         "Served",
+        "Store",
         "code_version",
         "refresh_option",
     ),

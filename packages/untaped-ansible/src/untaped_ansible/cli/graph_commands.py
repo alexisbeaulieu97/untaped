@@ -85,6 +85,7 @@ from untaped_ansible.infrastructure import (
     SourceRepository,
     SqliteDependencyIndex,
     local_remote_url,
+    open_index,
 )
 from untaped_ansible.settings import INDEX, AnsibleSettings, SourceDefinition
 from untaped_github.api import GithubClient, GithubSettings, github_web_host
@@ -651,7 +652,7 @@ def _graph_env(
             "--all-refs reads cached source data; select one with --source NAME "
             "(or set ansible.default_source)"
         )
-    sqlite_index = SqliteDependencyIndex(settings.index_path)
+    sqlite_index = open_index(settings)
     index = _dependency_index_for_graph_source(sqlite_index, graph_source)
     return _GraphEnv(
         command=command,

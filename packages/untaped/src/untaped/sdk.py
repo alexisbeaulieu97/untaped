@@ -4,7 +4,7 @@ Every plugin — first-party or third-party — imports untaped helpers
 from this module only. It carries the composition set and the supported runtime helpers (output,
 errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, UI, batch,
 concurrency, shared options, message wording, record bases, token sources,
-caches and doctor-check factories).
+caches, stores and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks are a major release.
 
 The screen names (``Screen``, ``Cmd``, ``Key``, the components such as ``TextInput``,
@@ -168,6 +168,7 @@ from untaped.stdin import (
     read_stdin_input,
     resolve_text_input,
 )
+from untaped.store import Store
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
 from untaped.yaml_roundtrip import yaml_mapping_indent
@@ -372,13 +373,14 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "safe_path_segment",
     "same_origin",
     "yaml_mapping_indent",
-    # caches
+    # caches and stores
     "Cache",
     "Filled",
     "Freshness",
     "FreshnessRecord",
     "NeverRefreshed",
     "Served",
+    "Store",
     "code_version",
     "refresh_option",
     # prompts and ui

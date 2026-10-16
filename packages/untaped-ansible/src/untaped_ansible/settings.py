@@ -9,7 +9,7 @@ from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from untaped.sdk import Cache, Retired
+from untaped.sdk import Cache, Retired, Store, code_version
 from untaped_github.api import normalize_team_scopes
 
 DEFAULT_DEPENDENCY_PATHS = (
@@ -100,7 +100,27 @@ class AnsibleState(BaseModel):
     aliases: dict[str, str] = Field(default_factory=dict)
 
 
-#: The dependency index: each source's refs and edges, refreshed past a day.
+def default_index_path() -> Path:
+    """``ansible.index_path``'s declared default: the base the index's layouts sit beside."""
+    default: Path = AnsibleSettings.model_fields["index_path"].default
+    return default.expanduser()
+
+
+#: The dependency index file at the default path, one file per layout
+#: (``index.v4.sqlite3``). The layout is ``sqlite_schema.ADDITIVE_SINCE``
+#: (a test holds them equal; importing the schema here would load the
+#: plugin's infrastructure at startup), not the schema version: an additive
+#: schema change keeps sharing the layout's file. ``bare=4``: 11.0 kept
+#: layout 4 at ``index.sqlite3``, renamed on first open.
+INDEX_STORE = Store("ansible", "index", base=default_index_path, layout=4, bare=4)
+
+
+def _parser_version() -> str:
+    return code_version("untaped_ansible.domain.parser", distributions=("untaped-ansible",))
+
+
+#: The dependency index: each source's refs and edges, refreshed past a day,
+#: and again when the parser that filled a source changed.
 INDEX = Cache(
     "ansible",
     "index",
@@ -108,6 +128,8 @@ INDEX = Cache(
     max_age=timedelta(days=1),
     renamed_from=("stale_after_seconds",),
     removed_in=12,
+    version=_parser_version,
+    store=INDEX_STORE,
 )
 
 

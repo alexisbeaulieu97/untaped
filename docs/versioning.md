@@ -81,6 +81,10 @@ command) is marked with `@experimental` in the code and listed here, not in a
   repo store.
 - `untaped.testing.assert_surface` and the line format of the
   `surface.txt` it writes.
+- Stores: `Store` in `untaped.sdk`, the `stores=` and `store=` parameters
+  that take one, and `untaped.testing.assert_schema_pinned`. The files a
+  store names are stable from the start: users keep them. See
+  [Stores](./caches.md#stores).
 - Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,
   `Footer` and the message classes `Key`, `Paste`, `Resize`, `CmdError`,
   `Quit`, `Cancel`, `Back`, `Interrupt`, `NextField`, `PrevField`, `Activate`,
@@ -109,6 +113,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
   release: a changed default, a removed command or flag, a changed positional
   argument, a removed setting, and a renamed or removed environment variable,
   record kind or record field.
+  A file a setting's default names may still move in a minor when the
+  default's value is unchanged and the move is a lossless rename (a store's
+  bare file renamed to its layout's name), with a changelog entry.
 - Breaking changes are collected into the next major release, whose changelog
   opens with an upgrade section listing them.
 

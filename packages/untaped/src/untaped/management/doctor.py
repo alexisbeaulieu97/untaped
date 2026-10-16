@@ -55,6 +55,8 @@ from untaped.messages import (
     plural,
     removal_phrase,
     run_hint,
+    shown_path,
+    size_text,
     split_profile,
     summary,
 )
@@ -361,6 +363,7 @@ def collect_doctor_rows(
     rows.extend(_contract_rows(result, profile, plugins))
     rows.append(_skills_row(shell, result))
     if plugins is None:
+        rows.append(_stores_row(shell, result))
         rows.append(_migrations_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
@@ -611,6 +614,38 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         )
     detail = "; ".join(parts)
     return _row("skills", shell.name, _WARN, title, detail, fix, automatic=True)
+
+
+def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+    """Each composed store's layout and file; warn while another layout is left on disk."""
+    from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
+
+    title = "stores keep one layout each"
+    stores = [store for registered in result.plugins for store in registered.spec.stores]
+    if not stores:
+        return _row("stores", shell.name, _PASS, title, "no plugin declares a store")
+    parts: list[str] = []
+    others = False
+    for store in stores:
+        try:
+            path, found = store.path(), store.other_paths()
+        except Exception as exc:
+            parts.append(f"{store.qualified}: could not find its files: {exc}")
+            others = True
+            continue
+        if path.exists():
+            text = f"layout {store.layout} at {shown_path(path)} ({size_text(dir_bytes(path))})"
+        else:
+            text = f"layout {store.layout} at {shown_path(path)}, not created yet"
+        for layout, other in found:
+            size = size_text(dir_bytes(other))
+            if store.adopts and layout == store.layout and not path.exists():
+                text += f"; {shown_path(other)} ({size}) is renamed to it on its next open"
+                continue
+            others = True
+            text += f"; also layout {layout} at {shown_path(other)} ({size})"
+        parts.append(f"{store.qualified}: {text}")
+    return _row("stores", shell.name, _WARN if others else _PASS, title, "; ".join(parts))
 
 
 def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
