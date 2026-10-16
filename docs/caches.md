@@ -165,9 +165,9 @@ A store that predates 11.1 declares what its bare file holds: `bare=4` says a
 file at `base` itself, with no layout in its name, was written at layout 4.
 The first `open()` at that layout renames it to the layout's name, then the
 folders of the caches that follow the store: same bytes, no rebuild. While
-another process has it open, or a SQLite `-journal` or `-wal` sits beside it,
-`open()` returns the bare path and a later open renames it. A store born in
-11.1 or later leaves `bare` unset.
+another process has it open, or a SQLite `-journal`, `-wal` or `-shm` sits
+beside it, `open()` returns the bare path and a later open renames it. A
+store born in 11.1 or later leaves `bare` unset.
 
 A SQLite store whose schema grows inside one layout pins its history with
 `untaped.testing.assert_schema_pinned(ddl, version=, additive_since=,

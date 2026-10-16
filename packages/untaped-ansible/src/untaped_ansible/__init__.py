@@ -21,7 +21,13 @@ from untaped.sdk import (
     shown_path,
 )
 from untaped_ansible.doctor import DOCTOR_CHECKS
-from untaped_ansible.settings import INDEX, INDEX_STORE, AnsibleSettings, AnsibleState
+from untaped_ansible.settings import (
+    INDEX,
+    INDEX_STORE,
+    AnsibleSettings,
+    AnsibleState,
+    default_index_path,
+)
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -46,7 +52,7 @@ _INDEX_PATH_GUARD = setting_guard("ansible", "index_path")
 
 def _index_guard(path: Path) -> str | None:
     """Keep the 10.x index while a profile names it, or while 11.0's index awaits its rename."""
-    bare = AnsibleSettings.model_fields["index_path"].default.expanduser()
+    bare = default_index_path()
     if bare.exists() and not INDEX_STORE.path().exists():
         return (
             f"11.0's newer index at {shown_path(bare)} becomes "

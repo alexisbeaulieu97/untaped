@@ -203,7 +203,7 @@ def _there(path: Path) -> bool:
 def _adopt(store: Store, in_use: _InUse, base: Path, target: Path) -> bool:
     """Rename the bare file to ``target`` under the exclusive lock; whether it is there now.
 
-    A SQLite ``-journal`` or ``-wal`` beside the bare file means a writer is
+    A SQLite ``-journal``, ``-wal`` or ``-shm`` beside the bare file means a writer is
     in a transaction (or crashed in one): the file is read where it is, and
     reading it settles the journal, so a later open renames it. The folders
     of the caches that follow the store move with the file, under the same
@@ -276,7 +276,7 @@ class _SqliteInUse:
             return
         try:
             self._lock().acquire_read(timeout=_WAIT)
-        except (TimeoutError, OSError, sqlite3.Error) as exc:
+        except (TimeoutError, OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
             # A filesystem or a damaged .inuse that refuses the lock: the layout runs unprotected.
             _LOG.debug("could not hold the in-use lock %s: %s", self._path, exc)
             return
