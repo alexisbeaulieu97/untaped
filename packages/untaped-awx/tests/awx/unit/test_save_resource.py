@@ -6,9 +6,13 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 from untaped_awx.application import SaveResource
-from untaped_awx.application.ports import FkResolver, ResourceClient, WorkflowNodeRepository
+from untaped_awx.application.resources.ports import (
+    FkResolver,
+    ResourceClient,
+    WorkflowNodeRepository,
+)
 from untaped_awx.domain import ResourceSpec, ServerRecord
-from untaped_awx.infrastructure.specs import (
+from untaped_awx.infrastructure.resources.specs import (
     INVENTORY_SPEC,
     JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,

@@ -13,7 +13,7 @@ This test catches that regression at unit-test time.
 from __future__ import annotations
 
 from untaped_awx.cli.factory import ACTION_BUILDERS
-from untaped_awx.infrastructure.specs import ALL_SPECS
+from untaped_awx.infrastructure.resources.specs import ALL_SPECS
 
 
 def test_every_actionspec_name_has_a_builder() -> None:

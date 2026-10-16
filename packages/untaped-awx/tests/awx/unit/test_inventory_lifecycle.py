@@ -8,29 +8,29 @@ import httpx
 import pytest
 import respx
 
-from untaped_awx.application.apply_ordering import topological_sort
-from untaped_awx.application.apply_verifier import ApplyVerifier
-from untaped_awx.application.delete_resource import DeleteResource
-from untaped_awx.application.mutation_engine import (
+from untaped_awx.application.resources.apply_ordering import topological_sort
+from untaped_awx.application.resources.apply_verifier import ApplyVerifier
+from untaped_awx.application.resources.delete_resource import DeleteResource
+from untaped_awx.application.resources.mutation_engine import (
     BatchMutationEngine,
     MutationConflictError,
 )
-from untaped_awx.application.mutation_values import semantic_equal
-from untaped_awx.application.save_resource import SaveResource
-from untaped_awx.application.save_resources import resource_filename
+from untaped_awx.application.resources.mutation_values import semantic_equal
+from untaped_awx.application.resources.save_resource import SaveResource
+from untaped_awx.application.resources.save_resources import resource_filename
 from untaped_awx.domain import IdentityRef, Metadata, Resource
 from untaped_awx.errors import BadRequestError
 from untaped_awx.infrastructure import AwxClient
-from untaped_awx.infrastructure.catalog import AwxResourceCatalog
-from untaped_awx.infrastructure.fk_resolver import HttpFkResolver
-from untaped_awx.infrastructure.resource_repo import ResourceRepository
-from untaped_awx.infrastructure.specs import (
+from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
+from untaped_awx.infrastructure.resources.fk_resolver import HttpFkResolver
+from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
+from untaped_awx.infrastructure.resources.specs import (
     INVENTORY_SOURCE_SPEC,
     INVENTORY_SPEC,
     JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
 )
-from untaped_awx.infrastructure.strategy_resolver import StaticStrategyResolver
+from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
 from untaped_awx.settings import AwxSettings
 
 
@@ -737,8 +737,8 @@ def test_constructed_editor_retains_full_display_snapshot_and_aborts_batch(
 ) -> None:
     import yaml
 
-    from untaped_awx.application.edit_resources import EditResources
-    from untaped_awx.application.selection import SelectedResource
+    from untaped_awx.application.resources.edit_resources import EditResources
+    from untaped_awx.application.resources.selection import SelectedResource
 
     state, engine, repo, fk = controller
     state.records["inventories"][10].update(
@@ -784,7 +784,7 @@ def test_constructed_editor_retains_full_display_snapshot_and_aborts_batch(
     "value", ["external", 21, {"name": "external"}, {"name": "external", "organization": "other"}]
 )
 def test_fk_representations_cannot_escape_required_scope(controller: Any, value: Any) -> None:
-    from untaped_awx.application.apply_planner import resolve_fk_value
+    from untaped_awx.application.resources.apply_planner import resolve_fk_value
     from untaped_awx.errors import AwxApiError
 
     state, _, _, fk = controller
@@ -796,7 +796,7 @@ def test_fk_representations_cannot_escape_required_scope(controller: Any, value:
 
 @pytest.mark.parametrize("kind", ["Host", "Group"])
 def test_mapping_child_reference_uses_inventory_ancestry(controller: Any, kind: str) -> None:
-    from untaped_awx.application.apply_planner import resolve_fk_value
+    from untaped_awx.application.resources.apply_planner import resolve_fk_value
     from untaped_awx.errors import AwxApiError
 
     state, _, _, fk = controller
@@ -957,8 +957,8 @@ def test_explicit_strategy_readonly_fields_reject_batch(
 def test_generated_source_editor_omits_readonly_type_but_edits_cache(controller: Any) -> None:
     import yaml
 
-    from untaped_awx.application.edit_resources import EditResources
-    from untaped_awx.application.selection import SelectedResource
+    from untaped_awx.application.resources.edit_resources import EditResources
+    from untaped_awx.application.resources.selection import SelectedResource
 
     state, engine, repo, fk = controller
     state.records["inventories"][10]["kind"] = "constructed"
@@ -1074,7 +1074,7 @@ def test_deferred_constructed_input_inventory_remains_intentionally_cross_org(
 def test_unsupported_or_conflicting_child_ancestry_is_never_dropped(
     controller: Any, reference: Any
 ) -> None:
-    from untaped_awx.application.apply_planner import resolve_fk_value
+    from untaped_awx.application.resources.apply_planner import resolve_fk_value
 
     state, _, _, fk = controller
     state.records["hosts"][20] = {"id": 20, "name": "same", "inventory": 10}
@@ -1110,7 +1110,7 @@ def test_apply_import_still_drops_known_readonly_fields(controller: Any) -> None
 def test_mapping_fk_refines_required_scope_without_global_ambiguity(
     controller: Any, kind: str, collection: str, explicit: bool
 ) -> None:
-    from untaped_awx.application.apply_planner import resolve_fk_value
+    from untaped_awx.application.resources.apply_planner import resolve_fk_value
 
     state, _, _, fk = controller
     state.records[collection][20] = {"id": 20, "name": "same", "organization": 1}

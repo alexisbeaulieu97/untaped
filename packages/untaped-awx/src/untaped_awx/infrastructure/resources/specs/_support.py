@@ -1,0 +1,136 @@
+"""FK-only specs: looked up via :class:`FkResolver`, never saved or applied.
+
+These specs declare just enough for ``name → id`` resolution and
+``list/get`` browsing; untaped does not manage these kinds' records.
+"""
+
+from __future__ import annotations
+
+from untaped_awx.domain import FkRef
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
+from untaped_awx.records import (
+    CredentialType,
+    ExecutionEnvironment,
+    InstanceGroup,
+    Label,
+    Organization,
+    SystemJobTemplate,
+)
+
+UNIVERSAL_READ_ONLY: tuple[str, ...] = (
+    "id",
+    "url",
+    "type",
+    "related",
+    "summary_fields",
+    "created",
+    "modified",
+)
+"""AWX's server-managed fields present on every resource.
+
+Under the passthrough apply model (``ApplyPlanner.plan_payload``) read-only
+stripping is load-bearing — it's what keeps a stray ``id``/``summary_fields``
+(e.g. from a get-export) out of a PATCH. Every mutable spec must declare at
+least these; ``test_catalog`` pins that invariant.
+"""
+
+ORGANIZATION_SPEC = AwxResourceSpec(
+    kind="Organization",
+    record=Organization,
+    cli_name="organizations",
+    api_path="organizations",
+    identity_keys=("name",),
+    canonical_fields=("description",),
+    read_only_fields=UNIVERSAL_READ_ONLY,
+    list_columns=("id", "name"),
+    commands=("list", "get"),
+    fidelity="read_only",
+    fidelity_note="untaped does not save or apply organizations",
+)
+
+
+CREDENTIAL_TYPE_SPEC = AwxResourceSpec(
+    kind="CredentialType",
+    record=CredentialType,
+    cli_name="credential-types",
+    api_path="credential_types",
+    identity_keys=("name",),  # CredentialTypes are global (no organization)
+    canonical_fields=("description", "kind", "inputs", "injectors"),
+    read_only_fields=(
+        *UNIVERSAL_READ_ONLY,
+        "managed",
+        "namespace",
+    ),
+    list_columns=("id", "name", "kind"),
+    commands=("list", "get"),
+    fidelity="read_only",
+    fidelity_note="untaped does not save or apply credential types",
+)
+
+
+# Catalog-only stubs that exist purely so :class:`FkResolver` can map a
+# ``name`` to an ``id`` for launch-time foreign keys (referenced by
+# ``launch_fk_refs`` on :data:`JOB_TEMPLATE_SPEC` and friends). They have
+# no CLI sub-app — ``commands=()`` keeps the resource-app factory from
+# generating ``list``/``get``/``save``/``apply``.
+
+EXECUTION_ENVIRONMENT_SPEC = AwxResourceSpec(
+    kind="ExecutionEnvironment",
+    record=ExecutionEnvironment,
+    cli_name="execution-environments",
+    api_path="execution_environments",
+    identity_keys=("name",),
+    canonical_fields=("description", "image"),
+    read_only_fields=UNIVERSAL_READ_ONLY,
+    list_columns=("id", "name", "image"),
+    commands=(),
+    fidelity="read_only",
+    fidelity_note="untaped does not save or apply execution environments",
+)
+
+
+LABEL_SPEC = AwxResourceSpec(
+    kind="Label",
+    record=Label,
+    cli_name="labels",
+    api_path="labels",
+    identity_keys=("name", "organization"),
+    canonical_fields=("name",),
+    read_only_fields=UNIVERSAL_READ_ONLY,
+    fk_refs=(FkRef(field="organization", kind="Organization"),),
+    list_columns=("id", "name", "organization"),
+    commands=(),
+    fidelity="read_only",
+    fidelity_note="untaped does not save or apply labels",
+)
+
+
+INSTANCE_GROUP_SPEC = AwxResourceSpec(
+    kind="InstanceGroup",
+    record=InstanceGroup,
+    cli_name="instance-groups",
+    api_path="instance_groups",
+    identity_keys=("name",),  # globally unique in AWX
+    canonical_fields=("name",),
+    read_only_fields=UNIVERSAL_READ_ONLY,
+    list_columns=("id", "name"),
+    commands=(),
+    fidelity="read_only",
+    fidelity_note="untaped does not save or apply instance groups",
+)
+
+
+SYSTEM_JOB_TEMPLATE_SPEC = AwxResourceSpec(
+    kind="SystemJobTemplate",
+    record=SystemJobTemplate,
+    cli_name="system-job-templates",
+    api_path="system_job_templates",
+    identity_keys=("name",),  # management jobs are global
+    canonical_fields=("name",),
+    read_only_fields=UNIVERSAL_READ_ONLY,
+    list_columns=("id", "name"),
+    commands=(),
+    fidelity="read_only",
+    fidelity_note="management jobs are built into AWX",
+)
+"""Named by workflow nodes that run a management job (``run.system_job_template``)."""

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from untaped_awx.application.apply_prefetch import prefetch_plan
+from untaped_awx.application.resources.apply_prefetch import prefetch_plan
 from untaped_awx.domain import Resource
-from untaped_awx.infrastructure.catalog import AwxResourceCatalog
+from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
 
 _PROD = {"kind": "Inventory", "name": "prod", "organization": "Default"}
 

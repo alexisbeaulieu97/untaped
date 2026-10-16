@@ -8,13 +8,13 @@ from typing import Any, cast
 import pytest
 
 from untaped.sdk import ConfigError, UsageError, parse_envelope_line
-from untaped_awx.application.ports import Catalog, ResourceClient
-from untaped_awx.application.selection import (
+from untaped_awx.application.resources.ports import Catalog, ResourceClient
+from untaped_awx.application.resources.selection import (
     SelectionRequest,
     SelectionResolver,
 )
 from untaped_awx.domain import ResourceSpec, ServerRecord
-from untaped_awx.infrastructure.specs import PROJECT_SPEC
+from untaped_awx.infrastructure.resources.specs import PROJECT_SPEC
 
 
 class _Client:
@@ -184,8 +184,8 @@ def test_explicit_empty_pipe_is_empty_mutation_selection() -> None:
 
 
 def test_nested_scope_follows_numeric_parent_ids_and_builds_name_filters() -> None:
-    from untaped_awx.infrastructure.catalog import AwxResourceCatalog
-    from untaped_awx.infrastructure.specs import HOST_SPEC
+    from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
+    from untaped_awx.infrastructure.resources.specs import HOST_SPEC
 
     class Scoped(_Client):
         def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:

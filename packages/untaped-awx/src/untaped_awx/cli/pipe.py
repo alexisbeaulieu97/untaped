@@ -10,7 +10,7 @@ from __future__ import annotations
 from untaped.sdk import Record
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.outcomes import RESOURCE_OUTCOMES
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def selection_records(spec: ResourceSpec) -> tuple[type[Record], ...]:

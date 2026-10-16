@@ -11,10 +11,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any, cast
 
-from untaped_awx.application.ports import RawHttpResourceClient
+from untaped_awx.application.resources.ports import RawHttpResourceClient
 from untaped_awx.domain import Job
 from untaped_awx.domain.outcomes import DeleteReceipt
-from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
+from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
 
 
 class _FakeClient:

@@ -13,7 +13,7 @@ import yaml
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app
 from untaped_awx.cli.context import AwxContext
-from untaped_awx.domain.workflow_run import MAX_NESTING
+from untaped_awx.domain.suites.workflow_run import MAX_NESTING
 
 if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides 'tests'
     from awx.conftest import FakeAap

@@ -40,7 +40,7 @@ from repo.support import FENCE, FIRST_PARTY, REPO_ROOT
 from untaped.bootstrap import SHELL_SPEC, build_root_app
 from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.sdk import SkillAsset
-from untaped_awx.domain.suite_starter import starter_suite
+from untaped_awx.domain.suites.suite_starter import starter_suite
 
 #: The shell's own skill, then each first-party plugin's.
 SKILL_NAMES = ("untaped", *(f"untaped-{name}" for name in FIRST_PARTY))

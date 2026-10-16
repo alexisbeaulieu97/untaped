@@ -13,11 +13,11 @@ from functools import partial
 from typing import Any
 
 from untaped.sdk import ConfigError
-from untaped_awx.application.ports import Catalog
+from untaped_awx.application.resources.ports import Catalog
 from untaped_awx.application.suites.ports import FkLookup
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.spec import FkRef
-from untaped_awx.domain.suite import WORKFLOW_TEMPLATE, Case, RefSentinel
+from untaped_awx.domain.suites.suite import WORKFLOW_TEMPLATE, Case, RefSentinel
 
 # v2.x AWX launch endpoint payload fields. Anything outside this set
 # (and not a declared FK) gets an "unknown launch field" warning so users

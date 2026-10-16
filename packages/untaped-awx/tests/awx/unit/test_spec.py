@@ -6,8 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
-from untaped_awx.domain.records import LaunchOutcome
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
+from untaped_awx.records import LaunchOutcome
 
 
 def test_minimal_domain_spec() -> None:

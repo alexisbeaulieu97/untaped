@@ -14,7 +14,7 @@ from untaped.sdk import (
     raise_usage,
     read_stdin_input,
 )
-from untaped_awx.application.selection import (
+from untaped_awx.application.resources.selection import (
     SelectedResource,
     SelectionRequest,
     SelectionResolver,

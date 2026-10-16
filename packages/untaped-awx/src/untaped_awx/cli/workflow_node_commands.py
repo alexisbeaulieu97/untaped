@@ -27,7 +27,7 @@ from untaped_awx.cli.context import open_context, scope_for_command
 from untaped_awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
 from untaped_awx.cli.template_targets import template_targets
 from untaped_awx.domain import WorkflowNode, WorkflowNodeType
-from untaped_awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
+from untaped_awx.infrastructure.resources.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
 _DEFAULT_COLUMNS = ["id", "name", "type", "depth"]
 

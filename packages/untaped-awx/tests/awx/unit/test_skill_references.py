@@ -33,8 +33,7 @@ from untaped_awx.application.suites.resolver import (
     WORKFLOW_LAUNCH_FIELDS,
     ResolveCasePayload,
 )
-from untaped_awx.domain.outcomes import TemporaryCopyOutcome
-from untaped_awx.domain.suite import (
+from untaped_awx.domain.suites.suite import (
     Approvals,
     CaseResult,
     CaseStatus,
@@ -42,9 +41,10 @@ from untaped_awx.domain.suite import (
     NodeStatus,
     Suite,
 )
+from untaped_awx.domain.suites.temporary_set import TemporaryCopyOutcome
 from untaped_awx.domain.workflow_graph import WorkflowNodeSpec
-from untaped_awx.infrastructure.catalog import AwxResourceCatalog
-from untaped_awx.infrastructure.specs import (
+from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
+from untaped_awx.infrastructure.resources.specs import (
     JOB_TEMPLATE_SPEC,
     WORKFLOW_JOB_TEMPLATE_SPEC,
 )

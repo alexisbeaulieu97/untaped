@@ -27,7 +27,7 @@ from untaped_awx.cli._sync import _add_sync
 from untaped_awx.cli.launch import _add_launch
 from untaped_awx.cli.membership_commands import register_membership_subapp
 from untaped_awx.cli.options import scope_parameter
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def make_resource_app(spec: AwxResourceSpec) -> App:

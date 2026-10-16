@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from untaped.sdk import ConfigError
 from untaped_awx.domain import Metadata, Resource
-from untaped_awx.infrastructure.yaml_io import (
+from untaped_awx.infrastructure.resources.yaml_io import (
     dump_resource,
     read_resource_documents,
     read_resource_files,

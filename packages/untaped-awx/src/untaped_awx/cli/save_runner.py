@@ -7,12 +7,12 @@ from pathlib import Path
 
 from untaped.sdk import OutputFormat, UntapedError, atomic_write, echo, emit
 from untaped_awx.application import SaveResource, SaveResources
-from untaped_awx.application.selection import SelectedResource
+from untaped_awx.application.resources.selection import SelectedResource
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.domain.records import Document
 from untaped_awx.errors import AwxApiError
-from untaped_awx.infrastructure.yaml_io import dump_resource
+from untaped_awx.infrastructure.resources.yaml_io import dump_resource
+from untaped_awx.records import Document
 
 
 def run_save_selection(

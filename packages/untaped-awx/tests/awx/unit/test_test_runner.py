@@ -20,8 +20,8 @@ from untaped_awx.application.suites.ports import (
 from untaped_awx.application.suites.resolver import ResolveCasePayload
 from untaped_awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
 from untaped_awx.domain import Job, JobEvent
-from untaped_awx.domain.case_failure import CaseFailure, FailureEvidence
-from untaped_awx.domain.suite import (
+from untaped_awx.domain.suites.case_failure import CaseFailure, FailureEvidence
+from untaped_awx.domain.suites.suite import (
     Baseline,
     Case,
     Suite,
@@ -30,7 +30,7 @@ from untaped_awx.domain.suite import (
 )
 from untaped_awx.errors import ActionResponseError, LaunchPromptError
 from untaped_awx.infrastructure import AwxResourceCatalog
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def _ignore(_message: str) -> None:

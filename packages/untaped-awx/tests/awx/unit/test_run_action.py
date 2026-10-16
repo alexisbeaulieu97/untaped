@@ -7,10 +7,10 @@ from typing import Any, cast
 import pytest
 
 from untaped_awx.application import RunAction
-from untaped_awx.application.ports import ResourceClient
+from untaped_awx.application.resources.ports import ResourceClient
 from untaped_awx.domain import ActionPayload, ResourceSpec, ServerRecord
 from untaped_awx.errors import AwxApiError
-from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 
 
 class _StubClient:
@@ -92,7 +92,7 @@ def test_fixed_action_uses_declared_result_kind_without_response_type(
     action: str,
     result_kind: str,
 ) -> None:
-    from untaped_awx.infrastructure.specs import ALL_SPECS
+    from untaped_awx.infrastructure.resources.specs import ALL_SPECS
 
     spec = next(s for s in ALL_SPECS if s.kind == kind)
     client = _StubClient(find_result={"id": 999}, action_result={"id": 101, "status": "pending"})

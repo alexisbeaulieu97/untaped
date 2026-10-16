@@ -12,7 +12,7 @@ from untaped_awx.cli.context import AwxContext
 from untaped_awx.cli.save_runner import run_save_batch
 from untaped_awx.domain import ResourceSpec, ServerRecord
 from untaped_awx.errors import AwxApiError
-from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC, PROJECT_SPEC
+from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC, PROJECT_SPEC
 
 
 class _Catalog:

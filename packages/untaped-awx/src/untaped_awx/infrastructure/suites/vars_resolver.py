@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from untaped.sdk import ConfigError, UsageError, plural, read_structured_file
-from untaped_awx.domain.suite import VariableSpec
+from untaped_awx.domain.suites.suite import VariableSpec
 
 if TYPE_CHECKING:
     from untaped_awx.application.suites.ports import Prompt

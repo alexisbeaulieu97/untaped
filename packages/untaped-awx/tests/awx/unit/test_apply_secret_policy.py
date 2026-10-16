@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
+from untaped_awx.application.resources.apply_secret_policy import SecretPreservationPolicy
 
 _SURVEY = [
     {"variable": "v1", "default": "$encrypted$"},

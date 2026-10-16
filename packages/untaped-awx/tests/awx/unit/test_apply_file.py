@@ -10,7 +10,7 @@ import pytest
 
 from awx.unit.support import _Catalog, _Client, _Fk, _Strategies
 from untaped_awx.application import BatchMutationEngine, prepare_apply_file
-from untaped_awx.application.ports import (
+from untaped_awx.application.resources.ports import (
     Catalog,
     FkResolver,
     RawHttpResourceClient,
@@ -123,10 +123,10 @@ def test_parallel_rejects_zero(tmp_path: Path) -> None:
 def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
     """Cycles in the spec dependency graph must surface as a clear
     error rather than silently dropping kinds from the apply order."""
-    from untaped_awx.application.apply_ordering import topological_sort
+    from untaped_awx.application.resources.apply_ordering import topological_sort
     from untaped_awx.domain import FkRef
     from untaped_awx.domain.envelope import Metadata
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
+    from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
     spec_a = AwxResourceSpec(
         kind="A",
@@ -165,9 +165,9 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
 
 def test_workflow_node_references_order_the_kinds_they_run() -> None:
     """A workflow applies after the templates its nodes run, whatever the catalog order."""
-    from untaped_awx.application.apply_ordering import topological_sort
+    from untaped_awx.application.resources.apply_ordering import topological_sort
     from untaped_awx.domain.envelope import Metadata
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
+    from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
     specs = {
         kind: AwxResourceSpec(

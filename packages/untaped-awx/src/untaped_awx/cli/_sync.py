@@ -24,7 +24,7 @@ from untaped_awx.cli.options import (
     WaitTimeoutOption,
     YesOption,
 )
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def _add_sync(app: App, spec: AwxResourceSpec) -> None:

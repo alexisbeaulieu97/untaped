@@ -7,7 +7,7 @@ import yaml
 from jinja2 import UndefinedError
 
 from untaped.sdk import ConfigError
-from untaped_awx.domain.suite import RefSentinel
+from untaped_awx.domain.suites.suite import RefSentinel
 from untaped_awx.infrastructure.suites.parser import (
     build_jinja_env,
     load_yaml_with_refs,

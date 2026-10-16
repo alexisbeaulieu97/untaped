@@ -7,10 +7,10 @@ from typing import Any, cast
 import pytest
 
 from awx.unit.support import _MembershipClient
-from untaped_awx.application.manage_membership import ManageMembership
-from untaped_awx.application.ports import ResourceClient
+from untaped_awx.application.resources.manage_membership import ManageMembership
+from untaped_awx.application.resources.ports import ResourceClient
 from untaped_awx.errors import BadRequestError
-from untaped_awx.infrastructure.specs import GROUP_SPEC
+from untaped_awx.infrastructure.resources.specs import GROUP_SPEC
 
 
 def _hosts_ref() -> Any:

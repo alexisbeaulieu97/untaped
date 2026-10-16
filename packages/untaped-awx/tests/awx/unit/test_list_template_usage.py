@@ -6,9 +6,9 @@ from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 from untaped_awx.application import ListTemplateUsage
-from untaped_awx.application.ports import ResourceClient, WorkflowNodeRepository
+from untaped_awx.application.resources.ports import ResourceClient, WorkflowNodeRepository
 from untaped_awx.domain import ResourceSpec, ServerRecord
-from untaped_awx.infrastructure.specs.job_template import JOB_TEMPLATE_SPEC
+from untaped_awx.infrastructure.resources.specs.job_template import JOB_TEMPLATE_SPEC
 
 
 class _StubNodes:

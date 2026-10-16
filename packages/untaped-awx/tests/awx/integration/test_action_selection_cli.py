@@ -772,7 +772,7 @@ def test_ctrl_c_during_submission_with_cancel_cancels_executions_already_submitt
 
 
 def _cancel_raises_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
-    from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
+    from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
 
     def interrupt(self: Any, *, kind: str, job_id: int) -> None:
         raise KeyboardInterrupt
@@ -844,7 +844,7 @@ def test_ctrl_c_while_cancelling_before_the_wait_names_the_executions(
 def test_job_that_ends_before_its_cancel_reports_its_final_status(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
+    from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
 
     seed(fake_aap)
     fake_aap.next_action_status = "running"
@@ -922,7 +922,7 @@ def test_cancel_cancels_an_abandoned_execution_while_others_still_run(
     """``deploy``'s cancel must not wait for ``other``'s watch to end."""
 
     from untaped_awx.application import RunAction
-    from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
+    from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
 
     seed(fake_aap)
     fake_aap.seed("job_templates", id=51, name="other", organization=1)

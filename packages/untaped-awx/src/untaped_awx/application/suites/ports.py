@@ -9,7 +9,7 @@ except ``Launcher`` / ``Watcher`` (which reuse the existing
 ``workflow_nodes`` and ``decide_approval``), ``LaunchCheck``
 (:class:`PreflightLaunch`) and ``FkPrefetcher`` /
 ``FkLookup`` (narrow views of :class:`FkResolver`, implemented by
-:mod:`untaped_awx.infrastructure.fk_resolver`).
+:mod:`untaped_awx.infrastructure.resources.fk_resolver`).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from untaped_awx.domain import Job, JobEvent, ResourceSpec
-from untaped_awx.domain.suite import VariableSpec
+from untaped_awx.domain.suites.suite import VariableSpec
 
 
 class Filesystem(Protocol):

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from untaped_awx.infrastructure.spec import AwxResourceSpec
-from untaped_awx.infrastructure.specs import GROUP_SPEC, HOST_SPEC
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.specs import GROUP_SPEC, HOST_SPEC
 
 
 @pytest.mark.parametrize("spec", [HOST_SPEC, GROUP_SPEC], ids=["Host", "Group"])

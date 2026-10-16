@@ -11,16 +11,16 @@ from functools import cache
 from typing import Any
 
 from untaped.sdk import ConfigError, UntapedError, attribution, most_severe
-from untaped_awx.application.ports import Catalog, ResourceClient
-from untaped_awx.application.prepare_actions import preflight_launch
-from untaped_awx.application.selection import (
+from untaped_awx.application.jobs.prepare_actions import preflight_launch
+from untaped_awx.application.resources.ports import Catalog, ResourceClient
+from untaped_awx.application.resources.selection import (
     SelectedResource,
     SelectionRequest,
     SelectionResolver,
 )
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.domain.case_failure import failure_system
-from untaped_awx.domain.workflow_run import (
+from untaped_awx.domain.suites.case_failure import failure_system
+from untaped_awx.domain.suites.workflow_run import (
     MAX_NESTING,
     WORKFLOW_JOB,
     TemplateNode,
