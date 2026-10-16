@@ -47,8 +47,13 @@ esc closes it unchanged, and an empty field unsets the setting. A secret's
 field opens empty, so leaving it empty keeps the secret. Writing back the
 value a field opened with changes nothing, so an inherited or default value
 stays inherited; `config set` writes it into the profile. `delete` (or
-`backspace`) unsets a setting the profile sets, once you answer `y`. Lists
-and maps show read-only for now: set them with `config set`.
+`backspace`) unsets a setting the profile sets, once you answer `y`.
+
+A list of names opens a list editor: enter edits an item or adds one on
+`+ add`, `delete` removes one, `m` then up or down moves one, and enter on
+`done` (or ctrl-s) writes the whole list, an empty one included. A setting
+that holds a command to run is one line, as you would type it in a shell.
+Any other list or map is one line of JSON, as `config set` takes it.
 
 A service's first row is its connection. Enter opens its form: the base URL
 and how to get the token (tabs): store it with your password store (as

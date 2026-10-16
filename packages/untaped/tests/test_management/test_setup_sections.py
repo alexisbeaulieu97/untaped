@@ -20,13 +20,14 @@ from untaped.config.fields import editor, written
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import SetSetting
 from untaped.config_file import read_config_dict
-from untaped.config_schema import Choices, FieldDescriptor, walk_settings
+from untaped.config_schema import Argv, Choices, FieldDescriptor, walk_settings
 from untaped.deprecated_keys import Renamed
 from untaped.management.setup_screen import SetupModel, SetupResult, setup_screen
 from untaped.management.setup_state import setup_sections, setup_services
 from untaped.plugins.registry import PluginSpec
 from untaped.screen.components.choices import Check, Cycle, Select, SingleList
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
+from untaped.screen.components.lists import ListEditor
 from untaped.screen.core import Screen
 from untaped.screen.runtime import Runtime
 from untaped.stability import deprecated, experimental
@@ -248,6 +249,48 @@ def test_delete_does_nothing_on_a_row_the_profile_does_not_set() -> None:
     assert run.model.panes["knobs"].confirm is False
 
 
+def test_a_list_is_edited_in_its_editor_and_written_whole(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [a, b, c]}\n")
+    to_tags = [*_to("knobs"), "down", "down", "down", "enter"]
+
+    # Remove ``b``, move ``a`` below ``c``, add ``d``, then enter on ``done``.
+    keys = [*to_tags, "down", "delete", "up", "m", "down", "enter", "down", "enter", "d", "enter"]
+    run = drive_screen(_build(), [*keys, "down", "enter"], size=(140, 40))
+
+    moving = drive_screen(_build(), [*to_tags, "m"])
+    assert "enter put down" in moving.frame.splitlines()[-1]
+    assert _knobs_data(_isolated_config, "default") == {"tags": ["c", "a", "d"]}
+    assert run.model.written == (("default", "knobs.tags"),)
+    assert run.model.panes["knobs"].editing is None
+
+    drive_screen(_build(), [*to_tags, "delete", "ctrl-s"])  # ctrl-s writes as ``done`` does
+
+    assert _knobs_data(_isolated_config, "default") == {"tags": ["a", "d"]}
+
+
+def test_a_list_editor_keeps_delete_and_esc_while_an_item_is_open(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [ab]}\n")
+    keys = [*_to("knobs"), "down", "down", "down", "enter", "enter", "backspace", "esc"]
+
+    run = drive_screen(_build(), keys)
+
+    pane = run.model.panes["knobs"]
+    assert pane.editing is not None and pane.editing.value == ("ab",)  # only the edit dropped
+    assert pane.confirm is False
+
+
+def test_an_empty_list_overrides_an_inherited_one(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    knobs: {tags: [a]}\n  work: {}\n",
+    )
+    keys = [*_to("knobs", profile="work"), "down", "down", "down", "enter", "delete", "ctrl-s"]
+
+    drive_screen(_build(profile="work"), keys)
+
+    assert _knobs_data(_isolated_config) == {"tags": []}
+
+
 def test_a_renamed_key_in_use_is_written_under_its_new_name(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    knobs: {old_size: 70}\n")
 
@@ -310,6 +353,31 @@ def test_a_value_changed_while_its_field_was_open_is_not_overwritten(
     pane = runtime.model.panes["knobs"]
     assert "knobs.size changed in profile work while it was open" in pane.error
     assert _rows(runtime.model)[0] == ("size", "51", "profile:work")  # re-read
+    assert runtime.model.written == ()
+
+
+def test_a_list_changed_while_its_editor_was_open_is_not_overwritten(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [a]}\n")
+    host = FakeHost()
+    runtime = Runtime(_build(), host, theme=BUILTIN_THEMES["default"], size=(140, 30))
+    runtime.start()
+    for key in [*_to("knobs"), "down", "down", "down", "enter"]:
+        runtime.send(_message(key))
+    host.run_jobs()
+    host.deliver()  # the editor is open, holding [a]
+
+    SetSetting(SettingsFileRepository())("knobs.tags", '["x"]')  # another writer
+    for key in ["down", "enter", "b", "enter", "ctrl-s"]:
+        runtime.send(_message(key))
+    host.run_jobs()
+    host.deliver()
+
+    assert _knobs_data(_isolated_config, "default") == {"tags": ["x"]}
+    assert "knobs.tags changed in profile default while it was open" in (
+        runtime.model.panes["knobs"].error
+    )
     assert runtime.model.written == ()
 
 
@@ -414,6 +482,8 @@ class Shapes(BaseModel):
     named: Annotated[str, Choices(lambda: ("one", "two"), "names")] = "one"
     secret: SecretStr | None = None
     items: list[str] = []
+    argv: Annotated[list[str] | None, Argv()] = None
+    table: dict[str, int] = {}
 
 
 def _descriptor(name: str) -> FieldDescriptor:
@@ -433,6 +503,9 @@ def _descriptor(name: str) -> FieldDescriptor:
         ("many", "a", Select),
         ("named", "one", SingleList),
         ("secret", None, SecretInput),
+        ("items", ["a"], ListEditor),
+        ("argv", ["gh", "auth", "token"], TextInput),
+        ("table", {"a": 1}, TextInput),
     ],
 )
 def test_each_shape_gets_its_field(name: str, value: object, kind: type) -> None:
@@ -441,8 +514,30 @@ def test_each_shape_gets_its_field(name: str, value: object, kind: type) -> None
     assert isinstance(component, kind)
 
 
-def test_a_list_or_map_has_no_field_yet() -> None:
-    assert editor(_descriptor("items"), [], label="items") is None
+def test_a_list_opens_its_items_an_argv_a_command_line_and_a_map_its_json() -> None:
+    items = editor(_descriptor("items"), ["a", "b"], label="items")
+    argv = editor(_descriptor("argv"), ["pass", "show", "my token"], label="argv")
+    table = editor(_descriptor("table"), {"a": 1}, label="table")
+
+    assert items.value == ("a", "b")
+    assert argv.value == "pass show 'my token'"
+    assert table.value == '{"a": 1}'
+
+
+def test_a_malformed_command_line_is_the_fields_own_error() -> None:
+    argv = editor(_descriptor("argv"), None, label="argv")
+    assert isinstance(argv, TextInput)
+
+    assert argv.validator is not None
+    assert argv.validator("gh 'auth").startswith("not a command line")
+    assert argv.validator("gh auth token") == ""
+
+
+def test_a_collection_its_section_failed_to_validate_opens_as_json() -> None:
+    component = editor(_descriptor("items"), '["a", 1]', label="items", raw=True)
+
+    assert isinstance(component, TextInput) and component.value == '["a", 1]'
+    assert written(_descriptor("items"), component, raw=True) == '["a", 1]'
 
 
 @pytest.mark.parametrize(
@@ -456,6 +551,11 @@ def test_a_list_or_map_has_no_field_yet() -> None:
         ("where", "~/x", "~/x"),
         ("pick", "b", "b"),
         ("optional_pick", "", None),  # the ``unset`` choice
+        ("items", ["a", "b"], '["a", "b"]'),
+        ("items", [], "[]"),  # an empty list is written, overriding an inherited one
+        ("argv", ["gh", "auth x"], '["gh", "auth x"]'),
+        ("argv", None, None),  # an empty command line unsets
+        ("table", {"a": 1}, '{"a": 1}'),
     ],
 )
 def test_a_field_writes_what_config_set_takes(name: str, value: object, expected: object) -> None:
