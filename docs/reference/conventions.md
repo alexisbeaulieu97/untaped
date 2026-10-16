@@ -114,7 +114,7 @@ the helpers do this for you, so never print a JSON line yourself.
 `ctx.diag` replaces the deprecated stderr helpers; never `echo()` an `error:`, `warning:`
 or `failed:` line. `-q` mutes `info`, `success` and progress; `unmuted=True` is for a preview before
 a prompt, a stream the user asked to watch or output a flag asks for. Never `print()`, `warnings.warn()`
-(take a `warn` callback; a `DeprecationWarning` for a Python API is the exception) or your own `Console`.
+(take a `warn` callback; a deprecated Python API warns through its [mark](deprecation.md)) or your own `Console`.
 
 **Typed diagnostics.** Each stderr line has a `kind`. To add one, subclass
 `Message` or `Failure` with `kind="<plugin>.<name>"` (add fields, never

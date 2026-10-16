@@ -43,6 +43,7 @@ from untaped_recipe.infrastructure.hook_executor import HookExecutor
 from untaped_recipe.infrastructure.hook_resolver import HookResolver
 from untaped_recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped_recipe.infrastructure.pack_files import read_hook_project
+from untaped_recipe.records import HookRun
 
 HookRunFormat = Literal["json", "yaml", "table", "pipe"]
 
@@ -230,17 +231,16 @@ def _run_transform(
         else None
     )
     if fmt is not None:
-        record: dict[str, object] = {
-            "hook": execution.hook,
-            "kind": "transform",
-            "target": str(execution.target),
-            "file": str(execution.relative_file),
-            "status": "ok",
-            "content": execution.content,
-        }
-        if diff_text is not None:
-            record["diff"] = diff_text
-        emit(record, fmt=fmt, columns=columns, kind="recipe.hook_run")
+        record = HookRun(
+            hook=execution.hook,
+            kind="transform",
+            target=str(execution.target),
+            file=str(execution.relative_file),
+            status="ok",
+            content=execution.content,
+            diff=diff_text,
+        )
+        emit(record, fmt=fmt, columns=columns)
         return
     echo(diff_text if diff_text is not None else execution.content, nl=False)
 
@@ -254,7 +254,7 @@ def _run_validate(
     _print_hook_diagnostics(execution.diagnostics)
     _print_hook_warnings(execution.warnings)
     record = _validate_record(execution.hook, target=execution.target, verdict=execution.verdict)
-    emit(record, fmt=fmt or "table", columns=columns, kind="recipe.hook_run")
+    emit(record, fmt=fmt or "table", columns=columns)
     finish(execution.verdict.failed)
 
 
@@ -325,14 +325,14 @@ def _render_hook_run_context(
     _diag.info(f"args: {_json_context(args)}")
 
 
-def _validate_record(hook: str, *, target: Path, verdict: Verdict) -> dict[str, object]:
-    return {
-        "hook": hook,
-        "kind": "validate",
-        "target": str(target),
-        "status": verdict.status,
-        "message": verdict.message,
-    }
+def _validate_record(hook: str, *, target: Path, verdict: Verdict) -> HookRun:
+    return HookRun(
+        hook=hook,
+        kind="validate",
+        target=str(target),
+        status=verdict.status,
+        message=verdict.message,
+    )
 
 
 def _json_context(value: dict[str, object]) -> str:

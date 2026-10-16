@@ -12,6 +12,9 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# Composing the plugin registers its record kinds, so ``plugin schema`` and a
+# piped github row find their models before any github command runs.
+import untaped_github.records  # noqa: F401
 from untaped.sdk import (
     DirMigration,
     MigrationOptions,

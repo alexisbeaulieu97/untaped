@@ -27,13 +27,10 @@ from untaped_github.domain import (
     CorpusFailure,
     CorpusFreshness,
     CorpusRepoTarget,
-    CorpusSyncOutcome,
-    GithubRepo,
     GrepHit,
     GrepSpec,
     RefEvaluation,
     RefSelector,
-    RepoSweepOutcome,
     SweepQuery,
     archived_allows,
     covers,
@@ -44,6 +41,7 @@ from untaped_github.domain import (
 )
 from untaped_github.domain.errors import is_global_github_failure
 from untaped_github.errors import GitCorpusError
+from untaped_github.records import CorpusSyncOutcome, GithubRepo, RepoSweepOutcome, SweepMatch
 
 InventoryResolver = Callable[[RepositoryInventoryScope], tuple[GithubRepo, ...]]
 # Parallel per-repo API lookups; kept low to stay clear of GitHub's secondary rate limits.
@@ -78,17 +76,6 @@ class CorpusSyncOptions:
     max_age_seconds: int
     parallel: int
     stdin_items: tuple[GithubRepo, ...] = ()
-
-
-@dataclass(frozen=True)
-class SweepMatch:
-    """One deduped content match, possibly reachable from multiple refs."""
-
-    repo: str
-    refs: tuple[str, ...]
-    path: str
-    line: int
-    text: str
 
 
 @dataclass(frozen=True)

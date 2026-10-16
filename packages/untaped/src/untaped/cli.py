@@ -19,7 +19,6 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
-from untaped.messages import deprecated_message
 from untaped.output.diagnostic import Failure, dumped_names
 from untaped.output.policy import current_policy, note_format, note_theme
 from untaped.output.sink import (
@@ -33,7 +32,13 @@ from untaped.output.sink import (
 )
 from untaped.records import TableGlyph, check_data_kind, kind_of, table_columns_of
 from untaped.render import column_value, render_document
-from untaped.stability import Stability, check_stability, mark_app
+from untaped.stability import (
+    Stability,
+    check_stability,
+    deprecated,
+    deprecated_parameters,
+    mark_app,
+)
 from untaped.theme import OutputFormat, ThemeSpec, resolve_theme_or_default
 from untaped.ui import UiContext, ui_context
 
@@ -237,10 +242,13 @@ def create_app(*, name: str, help: str = "", stability: Stability | None = None)
     return app
 
 
-_ECHO_ERR = deprecated_message("echo(…, err=True)", "ctx.diag")
-
-
-def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
+@deprecated_parameters
+def echo(
+    message: object = "",
+    *,
+    err: Annotated[bool, deprecated(removed_in=12, replacement="ctx.diag")] = False,
+    nl: bool = True,
+) -> None:
     """Print a CLI message to stdout or stderr.
 
     ``err=True``: deprecated, and its warning names the release that removes
@@ -252,16 +260,16 @@ def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
     """
     end = "\n" if nl else ""
     if err:
-        warnings.warn(_ECHO_ERR, DeprecationWarning, stacklevel=2)
         current_sink().echo(str(message), end=end)
         return
     print(message, end=end)
 
 
-# Literal messages, so mypy reports the calls (``deprecated_message``'s wording).
+# untaped's mark dates each on the surface; the literal under it is what mypy reports
+# (the mark's sentence, kept equal by ``deprecation_text_violations``).
+@deprecated(removed_in=12, replacement=Diagnostics.failure)
 @warnings.deprecated(
-    "report_error is deprecated and will be removed in the next major release; "
-    "use ctx.diag.failure(exc, item=…)"
+    "report_error is deprecated and will be removed in 12.0; use `Diagnostics.failure`"
 )
 def report_error(
     exc: UntapedError | Failure,
@@ -289,8 +297,9 @@ class _FailableRow(Protocol):
     def error(self) -> Failure | None: ...
 
 
+@deprecated(removed_in=12, replacement="ctx.diag.failure(row.error, item=…) for each row")
 @warnings.deprecated(
-    "report_row_errors is deprecated and will be removed in the next major release; "
+    "report_row_errors is deprecated and will be removed in 12.0; "
     "use ctx.diag.failure(row.error, item=…) for each row"
 )
 def report_row_errors[RowT: _FailableRow](

@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
-from untaped.sdk import CheckRecord, UntapedError
+from untaped.sdk import UntapedError
 from untaped_recipe.application.files import read_recipe_file
 from untaped_recipe.application.harness import orphaned_test_dirs
 from untaped_recipe.application.inputs import validate_recipe_input_sources
@@ -27,25 +26,7 @@ from untaped_recipe.domain.recipe import (
     ValidateStep,
 )
 from untaped_recipe.errors import RecipeNotFoundError
-
-CheckedType = Literal["pack", "recipe", "hook"]
-"""What a ``recipe validate`` row checked."""
-
-
-class LibraryCheckRecord(CheckRecord):
-    """One ``recipe validate`` row (kind ``recipe.check``).
-
-    ``name`` is the pack name, the ``PACK/RECIPE`` ref, or the built-in hook
-    name, and ``type`` says which, so a listing mixing packs and recipes keeps
-    one identifying column. ``status`` is ``pass`` or ``fail``; ``detail``
-    says why a check failed.
-    """
-
-    name: str
-    type: CheckedType
-    status: Literal["pass", "fail"]
-    path: str
-    detail: str | None = None
+from untaped_recipe.records import LibraryCheck
 
 
 def check_ref(
@@ -53,7 +34,7 @@ def check_ref(
     *,
     library: PackLibraryPort,
     inspector: PackInspectorPort,
-) -> LibraryCheckRecord:
+) -> LibraryCheck:
     """Check one installed pack, recipe ref, or explicit path."""
     if is_explicit_recipe_path(ref_text):
         path = Path(ref_text).expanduser()
@@ -74,7 +55,7 @@ def check_ref(
         if "/" not in ref_text:
             builtin = BUILTIN_HOOKS.get(ref_text)
             if builtin is not None:
-                return LibraryCheckRecord(
+                return LibraryCheck(
                     name=ref_text,
                     type="hook",
                     status="pass",
@@ -88,7 +69,7 @@ def check_library(
     *,
     library: PackLibraryPort,
     inspector: PackInspectorPort,
-) -> list[LibraryCheckRecord]:
+) -> list[LibraryCheck]:
     """Check every installed pack plus index/directory reconciliation."""
     rows = [
         _failed_pack(name, library.packs_dir / name, problem)
@@ -103,11 +84,11 @@ def check_library(
     return rows
 
 
-def _failed_pack(name: str, path: Path, detail: str) -> LibraryCheckRecord:
-    return LibraryCheckRecord(name=name, type="pack", status="fail", path=str(path), detail=detail)
+def _failed_pack(name: str, path: Path, detail: str) -> LibraryCheck:
+    return LibraryCheck(name=name, type="pack", status="fail", path=str(path), detail=detail)
 
 
-def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> LibraryCheckRecord:
+def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> LibraryCheck:
     try:
         inspector.check_hook_project(pack.root, pack.manifest)
         for recipe_name, recipe in sorted(pack.manifest.recipes.items()):
@@ -121,7 +102,7 @@ def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> LibraryChe
             raise ValueError("tests directory names no known recipe: " + ", ".join(orphans))
     except (UntapedError, ValueError, OSError) as exc:
         return _failed_pack(pack.name, pack.root, str(exc))
-    return LibraryCheckRecord(name=pack.name, type="pack", status="pass", path=str(pack.root))
+    return LibraryCheck(name=pack.name, type="pack", status="pass", path=str(pack.root))
 
 
 def _check_recipe(
@@ -129,7 +110,7 @@ def _check_recipe(
     recipe_ref: str,
     local_hook_project: Path | None,
     inspector: PackInspectorPort,
-) -> LibraryCheckRecord:
+) -> LibraryCheck:
     try:
         recipe = read_recipe_file(recipe_path)
         validate_recipe_input_sources(recipe)
@@ -137,10 +118,10 @@ def _check_recipe(
         _check_local_hook_project(local_hook_project, inspector)
         _check_hooks(recipe, local_hook_project, inspector)
     except (UntapedError, ValueError, OSError) as exc:
-        return LibraryCheckRecord(
+        return LibraryCheck(
             name=recipe_ref, type="recipe", status="fail", path=str(recipe_path), detail=str(exc)
         )
-    return LibraryCheckRecord(name=recipe_ref, type="recipe", status="pass", path=str(recipe_path))
+    return LibraryCheck(name=recipe_ref, type="recipe", status="pass", path=str(recipe_path))
 
 
 def _check_assets(recipe: Recipe, recipe_dir: Path) -> None:

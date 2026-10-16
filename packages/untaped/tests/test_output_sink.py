@@ -485,7 +485,7 @@ def test_the_fix_relay_writes_through_the_sink_around_the_spinner() -> None:
 
 def test_an_echoed_error_line_counts() -> None:
     with (
-        pytest.warns(DeprecationWarning, match="ctx.diag"),
+        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
         redirect_stderr(io.StringIO()),
         diagnostics_scope(),
     ):

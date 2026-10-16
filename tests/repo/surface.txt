@@ -5598,12 +5598,12 @@ sdk untaped.sdk.UiContext.confirm_or_cancel(refusal=) default="confirmation requ
 sdk untaped.sdk.UiContext.detail(columns=) default=None
 sdk untaped.sdk.UiContext.detail(kind=) default=None
 sdk untaped.sdk.UiContext.detail(record, *, fmt)
-sdk untaped.sdk.UiContext.message(kind, text)  [deprecated]
+sdk untaped.sdk.UiContext.message(kind, text)  [deprecated, removed in 12.0; use ctx.diag.info, .success or .warning, or ctx.diag.failure(Failure.plain(text))]
 sdk untaped.sdk.UiContext.multiselect(defaults=) default=None
 sdk untaped.sdk.UiContext.multiselect(message, choices)
 sdk untaped.sdk.UiContext.multiselect(min_count=) default=0
 sdk untaped.sdk.UiContext.pick_many(request)
-sdk untaped.sdk.UiContext.progress(label)  [deprecated]
+sdk untaped.sdk.UiContext.progress(label)  [deprecated, removed in 12.0; use Diagnostics.progress]
 sdk untaped.sdk.UiContext.prompt_backend
 sdk untaped.sdk.UiContext.require_screen_terminal(*, command, alternative)  [experimental]
 sdk untaped.sdk.UiContext.run(screen)  [experimental]
@@ -5613,11 +5613,11 @@ sdk untaped.sdk.UiContext.secret(required=) default=true
 sdk untaped.sdk.UiContext.select(default=) default=None
 sdk untaped.sdk.UiContext.select(message, choices)
 sdk untaped.sdk.UiContext.select(search=) default=false
-sdk untaped.sdk.UiContext.styled(err=) default=false
+sdk untaped.sdk.UiContext.styled(err=) default=false  [deprecated, removed in 12.0; use ctx.diag.info(text, unmuted=True), or ctx.diag.relay for another tool's output]
 sdk untaped.sdk.UiContext.styled(tail=) default=""
 sdk untaped.sdk.UiContext.styled(text)
 sdk untaped.sdk.UiContext.styled(truncate=) default=false
-sdk untaped.sdk.UiContext.success(text)  [deprecated]
+sdk untaped.sdk.UiContext.success(text)  [deprecated, removed in 12.0; use Diagnostics.success]
 sdk untaped.sdk.UiContext.terminal()
 sdk untaped.sdk.UiContext.terminal(refusal=) default="interactive input requires a terminal"
 sdk untaped.sdk.UiContext.text(default=) default=None
@@ -5703,9 +5703,10 @@ sdk untaped.sdk.deprecated_alias(app, old, new)
 sdk untaped.sdk.deprecated_alias(removed_in=) default=None
 sdk untaped.sdk.deprecated_behaviour(name, *, removed_in)
 sdk untaped.sdk.deprecated_behaviour(replacement=) default=None
+sdk untaped.sdk.deprecated_parameters(function, /)
 sdk untaped.sdk.dir_bytes(path)
 sdk untaped.sdk.echo()
-sdk untaped.sdk.echo(err=) default=false
+sdk untaped.sdk.echo(err=) default=false  [deprecated, removed in 12.0; use ctx.diag]
 sdk untaped.sdk.echo(message@1=) default=""
 sdk untaped.sdk.echo(nl=) default=true
 sdk untaped.sdk.emit(columns=) default=None
@@ -5791,10 +5792,10 @@ sdk untaped.sdk.render_rows(empty=) default=None
 sdk untaped.sdk.render_rows(kind=) default=None
 sdk untaped.sdk.render_rows(rows, *, fmt)
 sdk untaped.sdk.render_rows(table_columns=) default=None
-sdk untaped.sdk.report_error(exc)  [deprecated]
-sdk untaped.sdk.report_error(item=) default=None  [deprecated]
+sdk untaped.sdk.report_error(exc)  [deprecated, removed in 12.0; use Diagnostics.failure]
+sdk untaped.sdk.report_error(item=) default=None  [deprecated, removed in 12.0; use Diagnostics.failure]
 sdk untaped.sdk.report_errors()
-sdk untaped.sdk.report_row_errors(rows, *, item) callback(item, 1)  [deprecated]
+sdk untaped.sdk.report_row_errors(rows, *, item) callback(item, 1)  [deprecated, removed in 12.0; use ctx.diag.failure(row.error, item=…) for each row]
 sdk untaped.sdk.resolve_each(ids, fn) callback(fn, 1)
 sdk untaped.sdk.resolve_text_input(*, value, file)
 sdk untaped.sdk.resolve_text_input(what=) default=body

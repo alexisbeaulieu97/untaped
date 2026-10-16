@@ -21,16 +21,15 @@ from untaped.sdk import (
     report_errors,
     writes,
 )
-from untaped_ansible.domain.payloads import AliasOutcome
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import AliasRepository, SourceRepository
+from untaped_ansible.records import AliasOutcome, SourceAlias
 from untaped_ansible.settings import is_repo_name
 
 app = create_app(
     name="source-alias", help="Map role or Galaxy names in requirements files to GitHub repos."
 )
 
-_KIND = "ansible.source_alias_outcome"
 _diag = Diagnostics()
 
 
@@ -54,10 +53,9 @@ def alias_set_command(
         if action != "unchanged":
             aliases.set(alias, repo)
         emit(
-            AliasOutcome(action=action, alias=alias, repo=repo).model_dump(mode="json"),
+            AliasOutcome(action=action, alias=alias, repo=repo),
             fmt=fmt,
             columns=columns,
-            kind=_KIND,
         )
         if action != "unchanged":
             _warn_saved_sources_need_refresh()
@@ -67,15 +65,14 @@ def alias_set_command(
 def alias_list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List source aliases."""
     with report_errors():
-        rows: list[dict[str, object]] = [
-            {"alias": alias, "repo": repo}
+        rows = [
+            SourceAlias(alias=alias, repo=repo)
             for alias, repo in sorted(AliasRepository().entries().items())
         ]
         emit(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="ansible.source_alias",
             empty="No source aliases configured. Map one with "
             "`untaped ansible source-alias set NAME OWNER/REPO`.",
         )
@@ -109,12 +106,9 @@ def alias_remove_command(
             )
             aliases.remove(alias)
         emit(
-            AliasOutcome(
-                action="planned" if dry_run else "deleted", alias=alias, repo=repo
-            ).model_dump(mode="json"),
+            AliasOutcome(action="planned" if dry_run else "deleted", alias=alias, repo=repo),
             fmt=fmt,
             columns=columns,
-            kind=_KIND,
         )
         if not dry_run:
             _warn_saved_sources_need_refresh()

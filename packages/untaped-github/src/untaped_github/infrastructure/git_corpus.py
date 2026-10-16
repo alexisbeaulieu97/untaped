@@ -48,17 +48,16 @@ from untaped_git.api import Removed, RepoStore, ls_remote, store_key
 from untaped_github import SPEC
 from untaped_github.domain import (
     CorpusFreshness,
-    CorpusRepoResult,
     CorpusRepoTarget,
     GrepHit,
     GrepSpec,
     LocalRef,
     RefProfile,
     RefSelector,
-    WorktreeResult,
     profile_join,
 )
 from untaped_github.errors import GitCorpusError
+from untaped_github.records import CorpusRepoResult, WorktreeResult
 
 DEFAULT_TIMEOUT = 60.0
 _PLAIN_ROOTS = ("refs/heads/", "refs/tags/")

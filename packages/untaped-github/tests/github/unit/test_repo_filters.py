@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from untaped_github.domain.models import GithubRepo
 from untaped_github.domain.repo_filters import compile_repo_pattern
+from untaped_github.records import GithubRepo
 
 REPOS = ["acme/api-service", "beta/API-service", "acme/worker", "acme/display", "other/play-api"]
 

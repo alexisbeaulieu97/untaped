@@ -59,6 +59,7 @@ __all__ = [
     "generate",
     "parse",
     "plugin_lines",
+    "plugin_sdk_modules",
     "postponements",
     "removed",
     "render",
@@ -135,11 +136,16 @@ def _plugin_modules(spec: PluginSpec, target: object, tree: App) -> dict[str, Li
     package = candidate_package(target)
     if package is None:
         return {}
-    found: dict[str, LineMark | None] = {}
-    for module in (f"{package}.api", f"{package}.testing"):
-        if importlib.util.find_spec(module) is not None:
-            found[module] = line_mark(spec.stability, tree)
-    return found
+    return dict.fromkeys(plugin_sdk_modules(package), line_mark(spec.stability, tree))
+
+
+def plugin_sdk_modules(package: str) -> list[str]:
+    """``<package>.api`` and ``<package>.testing``, those that exist: a plugin's Python API."""
+    return [
+        module
+        for module in (f"{package}.api", f"{package}.testing")
+        if importlib.util.find_spec(module) is not None
+    ]
 
 
 def _owned(

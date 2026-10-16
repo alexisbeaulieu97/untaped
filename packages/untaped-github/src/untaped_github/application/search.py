@@ -11,17 +11,14 @@ from untaped.sdk import HttpStatusError, UntapedError, attribution
 from untaped_github.application.ports import GithubSearchService, GithubTeamService
 from untaped_github.application.scopes import TeamScope
 from untaped_github.domain import (
-    CodeResult,
     CodeSearchFilters,
-    GithubRepo,
-    IssueResult,
     IssueSearchFilters,
     RepoSearchFilters,
-    UserResult,
     UserSearchFilters,
 )
 from untaped_github.domain.errors import is_rate_limited
 from untaped_github.domain.queries import ScopedQueryBase, tokenize_search_query
+from untaped_github.records import CodeResult, GithubRepo, IssueResult, UserResult
 
 WarnFn = Callable[[str], None]
 

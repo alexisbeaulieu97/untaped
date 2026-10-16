@@ -21,7 +21,6 @@ from untaped_git.api import Prefetched, RepoStore
 from untaped_github import SPEC
 from untaped_github.domain import (
     CorpusFreshness,
-    CorpusRepoResult,
     CorpusRepoTarget,
     GrepHit,
     GrepSpec,
@@ -30,6 +29,7 @@ from untaped_github.domain import (
 )
 from untaped_github.errors import GitCorpusError
 from untaped_github.infrastructure.git_corpus import GitCorpusCache, prefetch_paths
+from untaped_github.records import CorpusRepoResult
 
 Git = Callable[..., str]
 Commit = Callable[..., None]

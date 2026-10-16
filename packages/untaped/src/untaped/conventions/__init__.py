@@ -25,7 +25,11 @@ from untaped.bootstrap import build_root_app, composition
 from untaped.conventions.help_tree import help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.source import SourceFile, UnreadableSource, source_files
-from untaped.conventions.stability import stability_violations
+from untaped.conventions.stability import (
+    deprecation_text_violations,
+    stability_violations,
+    undated_violations,
+)
 from untaped.conventions.structure import structure_class_violations
 from untaped.plugins.registry import (
     PluginCandidate,
@@ -125,6 +129,8 @@ def _core_lines(checked: _Checked) -> list[str]:
         *_provides_violations(spec, checked.own, checked.candidates),
         *help_tree_violations(checked.root, commands),
         *stability_violations(checked.root, composition(), commands, spec=spec),
+        *undated_violations(spec),
+        *_sdk_deprecations(checked.package),
         *structure_class_violations(spec, checked.package, checked.source_dir),
         *import_boundary_violations(
             checked.package,
@@ -133,6 +139,17 @@ def _core_lines(checked: _Checked) -> list[str]:
             plugin_packages=plugin_packages,
             declared=declared,
         ),
+    ]
+
+
+def _sdk_deprecations(package: str) -> list[str]:
+    """``deprecation_text_violations`` of the plugin's ``api`` and ``testing`` modules."""
+    from untaped.surface import plugin_sdk_modules  # noqa: PLC0415 - surface imports this
+
+    return [
+        line
+        for path in plugin_sdk_modules(package)
+        for line in deprecation_text_violations(importlib.import_module(path))
     ]
 
 

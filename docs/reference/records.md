@@ -162,7 +162,7 @@ NDJSON.
 | `ansible find` | `ansible.dependency_match` (with the input record's `input_kind`, `input_id`, `input_name`) |
 | `ansible source-alias list` | `ansible.source_alias` |
 | `ansible source-alias set`, `source-alias remove` | `ansible.source_alias_outcome` |
-| `ansible source list`, `source get` | `ansible.source` |
+| `ansible source list`, `source get` | `ansible.source` (`ref_scan_default` `null` when the source leaves it to the `ansible.ref_scan_default` setting) |
 | `ansible source status` | `ansible.source_status` |
 | `ansible source set`, `source patch`, `source remove` | `ansible.source_outcome` |
 
@@ -190,6 +190,14 @@ output.
 | `recipe backups list/get` | `recipe.backup` |
 | `recipe backups restore` | `recipe.restore_outcome` |
 | `recipe backups prune` | `recipe.prune_outcome` |
+
+A `list` command and its `get` write one kind with one set of fields: `get`
+fills what only it reads (a recipe's `description`, `inputs`, `steps` and
+`hooks`; a hook's `exports`; a backup's `inputs` and `files`), and `list`
+writes those as null. A `recipe.pack` row's `recipes` and `hooks` are counts
+from `packs list` and `{name, description}` and `{name, exports}` lists from
+`packs get`. A `recipe.hook_run` row holds a transform's `file`, `content`
+and `diff`, or a validate's `message`, with the other's fields null.
 
 `recipe packs sync --stdin` and `recipe packs remove --stdin` read pack
 names, or `recipe.pack` records from `recipe packs list --format pipe`.

@@ -6,7 +6,7 @@ import sys
 import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, Annotated, TextIO
 
 from untaped.errors import (
     ConfigError,
@@ -14,11 +14,11 @@ from untaped.errors import (
     PromptInterruptedError,
     UsageError,
 )
-from untaped.messages import deprecated_message, plural
+from untaped.messages import plural
 from untaped.output.diagnostic import Failure, Message
 from untaped.output.policy import is_quiet, is_verbose
 from untaped.output.progress import ProgressHandle
-from untaped.output.sink import count_row_failures, current_sink
+from untaped.output.sink import Diagnostics, count_row_failures, current_sink
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -37,7 +37,7 @@ from untaped.render import (
     should_colorize,
     stream_is_tty,
 )
-from untaped.stability import experimental
+from untaped.stability import deprecated, deprecated_parameters, experimental
 from untaped.theme import (
     BUILTIN_THEMES,
     OutputFormat,
@@ -50,12 +50,6 @@ if TYPE_CHECKING:
 
     from untaped.picker import PickRequest, PickResult
     from untaped.screen.core import Screen
-
-
-_STYLED_ERR = deprecated_message(
-    "UiContext.styled(…, err=True)",
-    "ctx.diag.info(text, unmuted=True), or ctx.diag.relay for another tool's output",
-)
 
 
 class UiContext:
@@ -164,10 +158,15 @@ class UiContext:
             kind=kind,
         )
 
-    # A literal message, so mypy reports the call (``deprecated_message``'s wording).
+    # untaped's mark dates each on the surface; the literal under it is what mypy
+    # reports (the mark's sentence, kept equal by ``deprecation_text_violations``).
+    @deprecated(
+        removed_in=12,
+        replacement="ctx.diag.info, .success or .warning, or ctx.diag.failure(Failure.plain(text))",
+    )
     @warnings.deprecated(
-        "UiContext.message is deprecated and will be removed in the next major release; "
-        "use ctx.diag.info, .success or .warning, or ctx.diag.failure(Failure.plain(text))"
+        "UiContext.message is deprecated and will be removed in 12.0; use ctx.diag.info, "
+        ".success or .warning, or ctx.diag.failure(Failure.plain(text))"
     )
     def message(self, kind: MessageKind, text: str) -> None:
         """Print a ``success``/``info``/``warning``/``error`` line to stderr.
@@ -193,16 +192,29 @@ class UiContext:
 
         current_sink().emit(diagnostic, rendered=rendered)
 
+    @deprecated(removed_in=12, replacement=Diagnostics.success)
     @warnings.deprecated(
-        "UiContext.success is deprecated and will be removed in the next major release; "
-        "use ctx.diag.success"
+        "UiContext.success is deprecated and will be removed in 12.0; use `Diagnostics.success`"
     )
     def success(self, text: str) -> None:
         """Print a success line to stderr (muted by ``--quiet``); deprecated: ``ctx.diag``."""
         self._emit_message("success", text)
 
+    @deprecated_parameters
     def styled(
-        self, text: Text | str, *, err: bool = False, tail: str = "", truncate: bool = False
+        self,
+        text: Text | str,
+        *,
+        err: Annotated[
+            bool,
+            deprecated(
+                removed_in=12,
+                replacement="ctx.diag.info(text, unmuted=True), or ctx.diag.relay for "
+                "another tool's output",
+            ),
+        ] = False,
+        tail: str = "",
+        truncate: bool = False,
     ) -> None:
         """Print a Rich-styled line to stdout, or to stderr with ``err``.
 
@@ -228,15 +240,14 @@ class UiContext:
             return styled + trailing + tail
 
         if err:
-            warnings.warn(_STYLED_ERR, DeprecationWarning, stacklevel=2)
             message = Message(level="info", message=plain + tail)
             current_sink().emit(message, rendered=rendered, unmuted=True)
             return
         print(rendered(should_colorize(self.stdout)), file=self.stdout, flush=True)
 
+    @deprecated(removed_in=12, replacement=Diagnostics.progress)
     @warnings.deprecated(
-        "UiContext.progress is deprecated and will be removed in the next major release; "
-        "use ctx.diag.progress"
+        "UiContext.progress is deprecated and will be removed in 12.0; use `Diagnostics.progress`"
     )
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
         """Report progress for a blocking operation on stderr (deprecated: ``ctx.diag``).

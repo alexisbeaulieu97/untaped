@@ -15,8 +15,7 @@ from untaped.sdk import (
 )
 from untaped_github.application.scopes import TeamScope, normalize_team_scopes
 from untaped_github.domain import ArchivedMode
-from untaped_github.domain.models import CorpusRepoResult, GithubRepo
-from untaped_github.domain.sweep import RepoSweepOutcome
+from untaped_github.records import CorpusRepoResult, GithubRepo, RepoSweepOutcome
 from untaped_github.settings import GithubSettings
 
 REPO_RECORDS = (GithubRepo, RepoSweepOutcome, CorpusRepoResult)

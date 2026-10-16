@@ -135,7 +135,10 @@ def test_wrong_deprecated_is_a_python_deprecation_on_a_command() -> None:
 
         return app
 
-    assert _violations(factory) == ["svc old::wrong-deprecated::old uses warnings.deprecated"]
+    assert _violations(factory) == [
+        "svc old::wrong-deprecated::old carries warnings.deprecated, whose text cyclopts would "
+        "print; a command takes untaped's @deprecated(...) alone"
+    ]
 
 
 def test_nested_marks_under_experimental_and_deprecated() -> None:

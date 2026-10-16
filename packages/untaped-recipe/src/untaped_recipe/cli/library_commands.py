@@ -16,14 +16,12 @@ from untaped.sdk import (
     DryRunOption,
     Failure,
     FormatOption,
-    OutcomeRecord,
     OutputFormat,
     StdinOption,
     UntapedError,
     UsageError,
     YesOption,
     batch_apply,
-    echo,
     emit,
     finish,
     hint,
@@ -31,13 +29,11 @@ from untaped.sdk import (
     plural,
     q,
     read_identifiers,
-    render_rows,
     run_editor,
     ui_context,
     writes,
 )
 from untaped_recipe.application.check_pack import check_library, check_ref
-from untaped_recipe.application.files import read_recipe_file
 from untaped_recipe.application.resolution import find_library_recipe
 from untaped_recipe.builtins.registry import BUILTIN_HOOKS
 from untaped_recipe.cli.common import (
@@ -46,9 +42,9 @@ from untaped_recipe.cli.common import (
     report_config_errors,
 )
 from untaped_recipe.cli.detail import (
-    hook_detail,
-    pack_detail,
-    recipe_detail,
+    hook_record,
+    pack_record,
+    recipe_record,
     table_recipe_detail,
 )
 from untaped_recipe.domain.hook_project import hook_module_file
@@ -69,7 +65,7 @@ from untaped_recipe.errors import (
     RecipeError,
     RecipeNotFoundError,
 )
-from untaped_recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
+from untaped_recipe.infrastructure.pack_files import read_pack_manifest
 from untaped_recipe.infrastructure.pack_inspector import PackInspector
 from untaped_recipe.infrastructure.pack_store import (
     PackLibrary,
@@ -81,6 +77,14 @@ from untaped_recipe.infrastructure.pack_store import (
     pack_content_hash,
     validate_pack,
 )
+from untaped_recipe.records import (
+    AddOutcome,
+    Hook,
+    InstalledRecipe,
+    Pack,
+    RemoveOutcome,
+    SyncOutcome,
+)
 
 _diag = Diagnostics()
 
@@ -88,24 +92,6 @@ _EMPTY_LIBRARY_HINT = (
     "no packs installed; scaffold one with `untaped recipe packs init NAME` "
     "or install one with `untaped recipe packs add PATH|GIT_URL`"
 )
-
-
-class PackOutcomeRecord(OutcomeRecord):
-    """An installed pack's ``add``/``sync``/``remove`` result.
-
-    Kinds ``recipe.add_outcome`` (``action``: ``created``/``updated``),
-    ``recipe.sync_outcome`` (``updated``/``unchanged``, or ``planned`` with
-    --dry-run) and ``recipe.remove_outcome`` (``removed``, or ``planned``).
-    A pack that could not be fetched, installed or removed is ``failed``,
-    with ``detail`` and ``error``. ``commit`` is the resolved commit of a git
-    source (``rev`` is the one asked for).
-    """
-
-    name: str
-    source: str | None = None
-    rev: str | None = None
-    commit: str | None = None
-    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -190,14 +176,14 @@ def add_command(
             force=force,
             discard_edits=discard_edits,
         )
-        record = PackOutcomeRecord(
+        record = AddOutcome(
             name=installed_name,
             action="updated" if replaced else "created",
             source=source,
             rev=rev,
             commit=commit,
         )
-        emit(record.model_dump(), fmt=fmt, columns=columns, kind="recipe.add_outcome")
+        emit(record, fmt=fmt, columns=columns)
 
 
 @writes
@@ -262,7 +248,7 @@ def sync_command(
             verb="sync",
             noun="pack",
             label=lambda plan: plan.pack.name,
-            describe=lambda plan: _sync_row(plan, action="planned"),
+            describe=lambda plan: _sync_row(plan, action="planned").model_dump(mode="json"),
             ui=ui_context(strict=False),
             destructive=True,
             assume_yes=yes,
@@ -280,14 +266,12 @@ def sync_command(
         failed.update((plan.pack.name, exc) for plan, exc in outcome.failures)
         by_name = {plan.pack.name: plan for plan in plans}
         rows = [
-            _pack_outcome(name, pack, action="failed", error=failed[name])
+            _pack_outcome(SyncOutcome, name, pack, action="failed", error=failed[name])
             if name in failed
             else _sync_row(by_name[name], action=_sync_action(by_name[name], dry_run=dry_run))
             for name, pack in selected.items()
         ]
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.sync_outcome")
-        if rendered:
-            echo(rendered)
+        emit(rows, fmt=fmt, columns=columns)
         finish(bool(failed))
 
 
@@ -384,29 +368,30 @@ def _fetch_for_sync(
     )
 
 
-def _sync_row(plan: _SyncPlan, *, action: str) -> dict[str, object]:
-    return PackOutcomeRecord(
+def _sync_row(plan: _SyncPlan, *, action: str) -> SyncOutcome:
+    return SyncOutcome(
         name=plan.pack.name,
         action=action,
         source=plan.pack.source,
         rev=plan.pack.rev or None,
         commit=plan.commit,
-    ).model_dump()
+    )
 
 
-def _pack_outcome(
+def _pack_outcome[T: (SyncOutcome, RemoveOutcome)](
+    model: type[T],
     name: str,
     pack: InstalledPack | None,
     *,
     action: str,
     error: UntapedError | None = None,
-) -> dict[str, object]:
+) -> T:
     """A row with ``pack``'s recorded source, rev and commit (none for an unloadable pack).
 
     A failed row's ``error`` was already reported (and counted) on stderr.
     """
     info = None if error is None else Failure.from_exception(error)
-    return PackOutcomeRecord(
+    return model(
         name=name,
         action=action,
         source=(pack.source or None) if pack else None,
@@ -414,30 +399,28 @@ def _pack_outcome(
         commit=(pack.commit or None) if pack else None,
         detail=None if info is None else info.message,
         error=info,
-    ).model_dump()
+    )
 
 
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List installed recipes."""
     _list_rows(
         lambda installed: [
-            _recipe_row(pack, name, entry) for pack in installed for name, entry in _recipes(pack)
+            recipe_record(pack, name, detail=False)
+            for pack in installed
+            for name in sorted(pack.manifest.recipes)
         ],
-        kind="recipe.recipe",
         fmt=fmt,
         columns=columns,
-        table_columns=["pack", "name"],
     )
 
 
 def list_packs_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List installed packs."""
     _list_rows(
-        lambda installed: [_pack_row(pack) for pack in installed],
-        kind="recipe.pack",
+        lambda installed: [pack_record(pack, detail=False) for pack in installed],
         fmt=fmt,
         columns=columns,
-        table_columns=["name", "version", "source", "rev", "recipes", "hooks"],
     )
 
 
@@ -445,37 +428,33 @@ def list_hooks_command(*, fmt: FormatOption = "table", columns: ColumnsOption = 
     """List installed hooks, then the built-in ones."""
     _list_rows(
         lambda installed: [
-            *(_hook_row(pack, name, entry) for pack in installed for name, entry in _hooks(pack)),
-            *(_builtin_hook_row(name) for name in sorted(BUILTIN_HOOKS)),
+            *(
+                hook_record(pack, name, detail=False)
+                for pack in installed
+                for name in sorted(pack.manifest.hooks)
+            ),
+            *(hook_record(None, name, detail=False) for name in sorted(BUILTIN_HOOKS)),
         ],
-        kind="recipe.hook",
         fmt=fmt,
         columns=columns,
-        table_columns=["pack", "name", "module"],
         hint_when_empty=not BUILTIN_HOOKS,
     )
 
 
 def _list_rows(
-    rows_of: Callable[[list[InstalledPack]], list[dict[str, object]]],
+    rows_of: Callable[[list[InstalledPack]], Sequence[Pack | InstalledRecipe | Hook]],
     *,
-    kind: str,
     fmt: OutputFormat,
     columns: list[str] | None,
-    table_columns: list[str],
     hint_when_empty: bool = True,
 ) -> None:
-    """Render one row kind for every loadable installed pack, warning about the rest."""
+    """Emit one row kind for every loadable installed pack, warning about the rest."""
     with report_config_errors():
         library = PackLibrary(library_dir=library_dir())
         installed = library.packs()
         for name, error in library.load_errors().items():
             _diag.warning(f"skipping pack '{name}': {error}")
-        rendered = render_rows(
-            rows_of(installed), fmt=fmt, columns=columns, kind=kind, table_columns=table_columns
-        )
-        if rendered:
-            echo(rendered)
+        emit(rows_of(installed), fmt=fmt, columns=columns)
         # The hint is human guidance: structured formats stay machine-clean.
         if fmt == "table" and not installed and hint_when_empty:
             _diag.info(_EMPTY_LIBRARY_HINT)
@@ -491,14 +470,13 @@ def get_command(
     """Show an installed recipe."""
     with report_config_errors():
         library = PackLibrary(library_dir=library_dir())
-        pack, name, recipe = _find_recipe(library, ref_text, verb="get")
-        recipe_path = pack.root / recipe.path
-        detail = recipe_detail(f"{pack.name}/{name}", read_recipe_file(recipe_path), recipe_path)
+        pack, name, _entry = _find_recipe(library, ref_text, verb="get")
+        detail = recipe_record(pack, name, detail=True)
+        # A table shows the steps as one line, so it is a view, not the record.
         emit(
             table_recipe_detail(detail) if fmt == "table" else detail,
             fmt=fmt,
             columns=columns,
-            kind="recipe.recipe",
         )
 
 
@@ -512,12 +490,7 @@ def get_pack_command(
     """Show an installed pack."""
     with report_config_errors():
         pack = _find_pack(PackLibrary(library_dir=library_dir()), name)
-        emit(
-            pack_detail(pack.name, pack.manifest, pack.root),
-            fmt=fmt,
-            columns=columns,
-            kind="recipe.pack",
-        )
+        emit(pack_record(pack, detail=True), fmt=fmt, columns=columns)
 
 
 def get_hook_command(
@@ -530,23 +503,8 @@ def get_hook_command(
     """Show an installed or built-in hook."""
     with report_config_errors():
         target = _find_hook(PackLibrary(library_dir=library_dir()), ref_text)
-        if target.pack is None or target.hook is None:
-            builtin = BUILTIN_HOOKS[target.name]
-            detail = hook_detail(
-                target.name,
-                HookEntry(module=builtin.module.__name__),
-                builtin.exports,
-                Path(builtin.module.__file__ or ""),
-            )
-        else:
-            module_file = hook_module_file(target.pack.root, target.hook.module)
-            detail = hook_detail(
-                f"{target.pack.name}/{target.name}",
-                target.hook,
-                hook_exports(module_file),
-                module_file,
-            )
-        emit(detail, fmt=fmt, columns=columns, kind="recipe.hook")
+        detail = hook_record(target.pack, target.name, detail=True)
+        emit(detail, fmt=fmt, columns=columns)
 
 
 def validate_command(
@@ -569,11 +527,7 @@ def validate_command(
             if ref_text is None
             else [check_ref(ref_text, library=library, inspector=inspector)]
         )
-        rendered = render_rows(
-            [row.model_dump() for row in rows], fmt=fmt, columns=columns, kind="recipe.check"
-        )
-        if rendered:
-            echo(rendered)
+        emit(rows, fmt=fmt, columns=columns)
         if ref_text is None and not rows:
             _diag.info(_EMPTY_LIBRARY_HINT)
         finish(any(row.status == "fail" for row in rows))
@@ -637,14 +591,18 @@ def remove_command(
         if outcome.cancelled:
             finish(outcome)
         if dry_run:
-            rows = [_pack_outcome(name, installed.get(name), action="planned") for name in selected]
+            rows = [
+                _pack_outcome(RemoveOutcome, name, installed.get(name), action="planned")
+                for name in selected
+            ]
         else:
             rows = [
-                _pack_outcome(name, installed.get(name), action="removed")
+                _pack_outcome(RemoveOutcome, name, installed.get(name), action="removed")
                 for name, _ in outcome.results
             ]
             rows.extend(
                 _pack_outcome(
+                    RemoveOutcome,
                     name,
                     installed.get(name),
                     action="partial" if isinstance(exc, PartialRemovalError) else "failed",
@@ -652,15 +610,13 @@ def remove_command(
                 )
                 for name, exc in outcome.failures
             )
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.remove_outcome")
-        if rendered:
-            echo(rendered)
+        emit(rows, fmt=fmt, columns=columns)
         finish(outcome)
 
 
 def _pack_names(names: list[str] | None, *, stdin: bool) -> list[str]:
     """Pack names from positionals or stdin (bare names or ``recipe.pack`` records)."""
-    return read_identifiers(names or [], stdin=stdin, id_field="name", accept_kinds={"recipe.pack"})
+    return read_identifiers(names or [], stdin=stdin, id_field="name", accepts=(Pack,))
 
 
 def edit_command(
@@ -736,57 +692,6 @@ def _find_hook(library: PackLibrary, ref_text: str) -> _ResolvedHook:
             return _ResolvedHook(name=ref_text)
         raise
     return _ResolvedHook(name=ref.name, pack=pack, hook=hook)
-
-
-def _recipes(pack: InstalledPack) -> list[tuple[str, RecipeEntry]]:
-    return sorted(pack.manifest.recipes.items())
-
-
-def _hooks(pack: InstalledPack) -> list[tuple[str, HookEntry]]:
-    return sorted(pack.manifest.hooks.items())
-
-
-def _pack_row(pack: InstalledPack) -> dict[str, object]:
-    return {
-        "name": pack.name,
-        "version": pack.installed_version,
-        "path": str(pack.root),
-        "source": pack.source,
-        "rev": pack.rev,
-        "commit": pack.commit,
-        "recipes": len(pack.manifest.recipes),
-        "hooks": len(pack.manifest.hooks),
-    }
-
-
-def _recipe_row(pack: InstalledPack, name: str, entry: RecipeEntry) -> dict[str, object]:
-    return {
-        "pack": pack.name,
-        "name": name,
-        "ref": f"{pack.name}/{name}",
-        "path": str(pack.root / entry.path),
-    }
-
-
-def _hook_row(pack: InstalledPack, name: str, entry: HookEntry) -> dict[str, object]:
-    return {
-        "pack": pack.name,
-        "name": name,
-        "ref": f"{pack.name}/{name}",
-        "module": entry.module,
-        "path": str(hook_module_file(pack.root, entry.module)),
-    }
-
-
-def _builtin_hook_row(name: str) -> dict[str, object]:
-    module = BUILTIN_HOOKS[name].module
-    return {
-        "pack": "(builtin)",
-        "name": name,
-        "ref": name,
-        "module": module.__name__,
-        "path": module.__file__ or "",
-    }
 
 
 def _render_pack_add_preview(

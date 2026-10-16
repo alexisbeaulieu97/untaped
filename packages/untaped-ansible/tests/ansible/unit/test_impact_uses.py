@@ -11,12 +11,14 @@ import pytest
 
 from ansible.unit.test_cli import _record_refresh, _run, _seed_index, _use_config
 from untaped.testing import CliResult
+from untaped_ansible.domain.graph import GraphNode
 from untaped_ansible.domain.payloads import IndexedDependency
-from untaped_ansible.domain.reach import ReachedNode
+from untaped_ansible.domain.reach import Reach
 from untaped_ansible.domain.variable_models import AnalysedFile, CommitFacts, CommitListing
 from untaped_ansible.domain.variable_queries import render_key_path, unanalysed
 from untaped_ansible.domain.variables import analyse, selected
 from untaped_ansible.infrastructure import SqliteDependencyIndex
+from untaped_ansible.records import ReachedRow
 from untaped_ansible.settings import analyser_version
 
 _ROLE = "acme/haku-role"
@@ -420,10 +422,14 @@ def test_a_local_role_walk_leaves_out_vendored_directories(
 
 
 def test_a_dependent_with_no_indexed_commit_counts_as_unanalysed() -> None:
-    def node(repo: str, shas: frozenset[str]) -> ReachedNode:
-        return ReachedNode(
-            repo=repo, ref="main", unresolved=None, declared_ref=None, declared_in=None,
-            depth=1, path=[repo], root_ref="main", stopped=None, shas=shas,
+    def node(repo: str, shas: frozenset[str]) -> Reach:
+        return Reach(
+            root=GraphNode(id="root", label="acme/role@main", repo="acme/role", ref="main"),
+            row=ReachedRow(
+                repo=repo, ref="main", unresolved=None, declared_ref=None, declared_in=None,
+                depth=1, path=[repo], root_ref="main", stopped=None,
+            ),
+            shas=shas,
         )  # fmt: skip
 
     facts = CommitFacts(facts={}, unanalysed=frozenset(), skipped={})

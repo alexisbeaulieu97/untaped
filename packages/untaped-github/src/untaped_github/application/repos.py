@@ -11,8 +11,9 @@ from untaped_github.application.inventory import (
 )
 from untaped_github.application.ports import GithubRepositoryInventoryService
 from untaped_github.application.scopes import TeamScope
-from untaped_github.domain import ArchivedMode, GithubRepo, archived_allows
+from untaped_github.domain import ArchivedMode, archived_allows
 from untaped_github.domain.repo_filters import compile_repo_pattern
+from untaped_github.records import GithubRepo
 
 
 @dataclass(frozen=True)

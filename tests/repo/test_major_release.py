@@ -9,7 +9,7 @@ being released.
    first PR after a release finds a leftover, and a major's release PR is the
    backstop. ``scripts/gen_surface.py --due`` lists what the next major removes.
 2. **Dated.** Every deprecated line of this workspace names its removal
-   version (the six SDK lines in :data:`UNDATED` until #676 dates them).
+   version.
 3. **Kept as promised.** Against the newest final release's file, a date it
    showed never falls, and a line it dated never loses its mark while it
    stays. While a major is being released, something deprecated since that
@@ -32,18 +32,6 @@ from packaging.version import Version
 from repo.support import REPO_ROOT, SURFACE_FILE, git, reachable_tags, release_baseline
 from untaped.git import GitCommandError
 from untaped.surface import DeprecatedMark, Line, parse, postponements
-
-#: Deprecated SDK lines released undated in 11.0; #676 dates them and deletes this.
-UNDATED = frozenset(
-    {
-        "sdk untaped.sdk.UiContext.message(kind, text)",
-        "sdk untaped.sdk.UiContext.progress(label)",
-        "sdk untaped.sdk.UiContext.success(text)",
-        "sdk untaped.sdk.report_error(exc)",
-        "sdk untaped.sdk.report_error(item=) default=None",
-        "sdk untaped.sdk.report_row_errors(rows, *, item) callback(item, 1)",
-    }
-)
 
 POSTPONE = (
     "Remove each in a prep PR (`scripts/gen_surface.py --due` lists them), or postpone it on "
@@ -76,14 +64,12 @@ def overdue(
     )
 
 
-def undated(current: Sequence[Line], allowed: frozenset[str] = UNDATED) -> list[Line]:
-    """Rule 2: deprecated lines without a removal version, the allowlist aside."""
+def undated(current: Sequence[Line]) -> list[Line]:
+    """Rule 2: deprecated lines without a removal version."""
     return sorted(
         line
         for line in current
-        if (mark := line.deprecation) is not None
-        and mark.removed_in is None
-        and line.identity not in allowed
+        if (mark := line.deprecation) is not None and mark.removed_in is None
     )
 
 
@@ -179,11 +165,6 @@ def test_promises_are_kept() -> None:
     assert not found, "\n".join(found)
 
 
-def test_the_undated_allowlist_is_still_needed() -> None:
-    present = {line.identity for line in _current() if line.deprecation is not None}
-    assert present >= UNDATED, f"dated or gone, drop from UNDATED: {sorted(UNDATED - present)}"
-
-
 # --- the rules over small line sets ------------------------------------------------------
 
 
@@ -230,13 +211,13 @@ def test_overdue_skips_undated_experimental_and_stable_lines() -> None:
     assert overdue(lines, 12) == [lines[3]]
 
 
-def test_an_undated_line_fails_unless_allowed() -> None:
+def test_an_undated_line_fails() -> None:
     lines = [
         Line("sdk untaped.sdk.report_error(exc)", DeprecatedMark()),
         Line("sdk untaped.sdk.other(x)", DeprecatedMark(None, "y")),
         Line("sdk untaped.sdk.dated(x)", DeprecatedMark(12)),
     ]
-    assert undated(lines) == [lines[1]]
+    assert undated(lines) == sorted(lines[:2])
 
 
 def _promises(baseline: list[Line], current: list[Line], version: str = "11.3.0") -> list[str]:

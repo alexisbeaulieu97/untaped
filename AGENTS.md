@@ -22,6 +22,12 @@ bug often says something about the design, and so does a change that only fits
 by being bolted on. The task is why we're in the code, not the limit of what
 we notice.
 
+Whoever owns a capability does its wiring and offers it through a small
+interface; its consumers know as little as possible about how it's wired.
+untaped owns the CLI, so it wires commands, help and agent support from what
+plugins declare (plugins still build commands with Cyclopts for now). A
+plugin owning a contract wires it, and plugins filling it just provide data.
+
 ## Agent-only notes
 
 - Tasks, roadmap and priorities live in this repository's GitHub issues. Do
