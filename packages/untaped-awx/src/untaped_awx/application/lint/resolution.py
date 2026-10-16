@@ -5,9 +5,10 @@ snapshot's own items first (:class:`PlanningFkResolver` over their planned
 targets), then in a base. :class:`OfflineBase` is the base that searches
 nothing past the items: ``--offline`` and the repository reader use it. A
 document batch linted online uses the live resolver instead. The controller
-snapshot resolves its foreign keys and a schedule's parent by id
-(:func:`id_references`), and only its workflow nodes' references, which
-export names with their organization, by name over :class:`OfflineBase`.
+snapshot resolves every reference by id (:func:`id_references`): foreign
+keys, a schedule's parent and what workflow nodes run and prompt with;
+name resolution over :class:`OfflineBase` is left for a reference export
+wrote that holds no id.
 
 What a lookup raises becomes the reference's :data:`Resolution`: a match, or
 several (ambiguity is ``apply``'s error, not a missing resource), is
@@ -154,9 +155,14 @@ def id_references(
     fk_ids: Mapping[str, Any],
     *,
     parent_id: int | None = None,
+    node_ids: Mapping[str, Sequence[tuple[str, int]]] | None = None,
     listed: Listed,
 ) -> Iterator[Reference]:
-    """A live resource's foreign keys and parent, each resolved by the id the controller holds.
+    """A live resource's references, each resolved by the id the controller holds.
+
+    Its foreign keys, a schedule's parent (``parent_id``) and what its
+    workflow nodes run and prompt with (``node_ids``, keyed by reference
+    field).
 
     A name would mislead here: export writes a key by its bare name and
     ``apply`` would look it up in the referrer's organization, so a project
@@ -164,9 +170,8 @@ def id_references(
     An id ``listed`` holds is ``resolved``, its target and location those of
     the item it names (``find`` reads the location, so an organization-less
     item is never taken for any organization's); any other id (a kind the
-    token cannot list, a record it cannot see) is ``unresolved``. A
-    schedule's parent resolves by ``parent_id``. An empty key is
-    :func:`empty_references`'.
+    token cannot list, a record it cannot see) is ``unresolved``, named as
+    export wrote it. An empty key is :func:`empty_references`'.
     """
     for ref in spec.fk_refs:
         if ref.polymorphic:
@@ -185,6 +190,26 @@ def id_references(
                 continue
             name = _name(names[position]) if position < len(names) else f"#{id_}"
             yield _by_id(ref.field, ref.kind, id_, name, listed=listed)
+    if node_ids:
+        written = _node_names(spec, resource)
+        for field, pairs in node_ids.items():
+            names = written.get(field, [])
+            for position, (kind, id_) in enumerate(pairs):
+                name = names[position] if position < len(names) else f"#{id_}"
+                yield _by_id(field, kind, id_, name, listed=listed)
+
+
+def _node_names(spec: ResourceSpec, resource: Resource) -> dict[str, list[str]]:
+    """The names export wrote for each workflow node reference, by reference field."""
+    try:
+        sites = references_of(spec, resource)
+    except BadRequestError:
+        return {}
+    names: dict[str, list[str]] = {}
+    for site in sites:
+        if site.field.startswith("nodes["):
+            names.setdefault(site.field, []).append(_name(site.value))
+    return names
 
 
 def _by_id(field: str, kind: str, id_: int, name: str, *, listed: Listed) -> Reference:

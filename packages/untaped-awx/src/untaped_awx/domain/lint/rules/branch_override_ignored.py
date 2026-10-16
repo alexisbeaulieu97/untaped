@@ -39,7 +39,6 @@ def branch_override_ignored(resources: AwxResources) -> Iterator[Finding]:
         if runs == own:
             continue
         ran = f"its branch {runs!r}" if runs else "its default branch"
-        metadata = project.resource.metadata
         yield report(
             branch_override_ignored,
             item,
@@ -47,8 +46,6 @@ def branch_override_ignored(resources: AwxResources) -> Iterator[Finding]:
             f"so jobs run {ran}",
             hint=f"set allow_override: true on {described(project)}, or remove scm_branch",
             fix=(
-                patch_fix("Project", metadata.name, metadata.organization, "allow_override=true")
-                if item.origin == "controller"
-                else None
+                patch_fix(project, "allow_override=true") if item.origin == "controller" else None
             ),
         )

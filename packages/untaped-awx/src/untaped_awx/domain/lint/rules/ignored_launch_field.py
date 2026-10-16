@@ -119,9 +119,7 @@ def _judged(
         )
     fix = None
     if item.origin == "controller" and template.resource.kind in PATCH_GROUPS:
-        metadata = template.resource.metadata
-        kind = template.resource.kind
-        fix = patch_fix(kind, metadata.name, metadata.organization, f"{flag}=true")
+        fix = patch_fix(template, f"{flag}=true")
     yield report(
         ignored_launch_field,
         item,

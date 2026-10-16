@@ -6,10 +6,10 @@ with the rows, so the second, which turns each row into the document
 read per reference. Every kind is read, ``export``'s read-only ones too: a
 rule may judge what ``apply`` cannot write.
 
-A foreign key and a schedule's parent resolve by the id the controller
-holds (:func:`~untaped_awx.application.lint.resolution.id_references`), to
-the location of the item they name; a workflow node's references, which
-export names with their organization, resolve by name among the items.
+Every reference resolves by the id the controller holds
+(:func:`~untaped_awx.application.lint.resolution.id_references`), to the
+location of the item it names: foreign keys, a schedule's parent, and what
+a workflow node runs and prompts with (export's node graph keeps the ids).
 
 A kind the token may not list is left out: its references are
 ``unresolved``, not ``absent``. A record no listed row holds is named from
@@ -107,9 +107,12 @@ def load_controller(
                     resource,
                     snapshot.fk_ids,
                     parent_id=_parent_id(spec, snapshot.record),
+                    node_ids=snapshot.node_ids,
                     listed=identities,
                 ),
-                *references.of(resource, skip=_keys(spec, snapshot.record)),
+                *references.of(
+                    resource, skip=_keys(spec, snapshot.record) | snapshot.node_ids.keys()
+                ),
                 *opaque_references(snapshot.opaque_nodes),
             ),
             controller=_facts(spec, snapshot.record, playbooks),

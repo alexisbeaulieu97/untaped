@@ -121,13 +121,16 @@ class AwxResources(Record, kind="awx.resources"):
     def find(self, ref: Reference | IdentityRef) -> Linted | None:
         """The one item ``ref`` names.
 
-        A :class:`Reference` with a ``location`` names the item read there. Else
-        its target (or an :class:`IdentityRef`) names the item whose kind and
+        A :class:`Reference` names an item only when ``resolved``: the item read
+        at its ``location`` when it has one. Else its target (or an
+        :class:`IdentityRef`) names the item whose kind and
         name are equal, and organization and parent where set; ``None`` when
         none does, or when several do: a rule never judges an arbitrary
         namesake (``apply`` refuses the ambiguity).
         """
         if isinstance(ref, Reference):
+            if ref.resolution != "resolved":
+                return None
             if ref.location is not None:
                 return self._indexed().by_location.get(ref.location)
             ref = ref.target

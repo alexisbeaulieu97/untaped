@@ -415,6 +415,61 @@ def test_a_management_job_schedule_is_read_as_its_system_job_template(fake_aap: 
     )
 
 
+@pytest.mark.usefixtures("composed")
+def test_a_node_prompting_a_hidden_record_is_not_taken_for_its_namesake(fake_aap: Any) -> None:
+    """Hidden inventory 21 is called ``prod`` like visible inventory 20: the node's is 21."""
+    seed_controller(fake_aap)
+    fake_aap.detail_errors[("inventories", 21)] = 403
+    fake_aap.seed(
+        "job_templates", id=150, name="elsewhere", organization=1, project=10, inventory=21,
+        playbook="site.yml",
+        summary_fields={**_PLATFORM_SUMMARY, "inventory": {"id": 21, "name": "prod"}},
+    )  # fmt: skip
+    fake_aap.store["workflow_nodes"][210]["inventory"] = 21
+    _lint()
+    stored = AwxResources.model_validate_json(_snapshot_file().read_text(encoding="utf-8"))
+    (release,) = [item for item in stored.items if item.resource.metadata.name == "release"]
+    (prompted,) = [ref for ref in release.references if ref.field.endswith(".prompts.inventory")]
+    assert (prompted.resolution, prompted.location) == ("unresolved", None)
+    assert stored.find(prompted) is None
+
+
+@pytest.mark.usefixtures("composed")
+def test_a_node_running_an_organization_less_template_judges_that_template(
+    fake_aap: Any,
+) -> None:
+    """The node runs org-less ``deploy-web``, not Platform's: its prompt is judged against it."""
+    seed_controller(fake_aap)
+    fake_aap.seed(
+        "job_templates", id=102, name="deploy-web", organization=None, project=10, inventory=20,
+        playbook="site.yml", ask_limit_on_launch=False,
+    )  # fmt: skip
+    node = fake_aap.store["workflow_nodes"][210]
+    node.update(
+        unified_job_template=102,
+        limit="web1",
+        summary_fields={"unified_job_template": {"id": 102, "unified_job_type": "job"}},
+    )
+    rows = [
+        row
+        for row in _rows(_lint())
+        if row["rule"] == "awx.ignored-launch-field" and row["target"].startswith("Workflow")
+    ]
+    assert [row["message"] for row in rows] == [
+        "nodes[deploy].prompts.limit is set, but JobTemplate 'deploy-web' ignores it: "
+        "ask_limit_on_launch is false"
+    ]
+    # In no organization, the template is patched by id: its name would select Platform's too.
+    (fix,) = [row["fix"] for row in rows]
+    assert fix == [
+        "awx", "job-templates", "patch", "102", "--by-id", "--set", "ask_limit_on_launch=true",
+    ]  # fmt: skip
+    applied = invoke_cli(app, [*fix[1:], "--yes"])
+    assert applied.exit_code == 0, applied.output
+    assert fake_aap.store["job_templates"][102]["ask_limit_on_launch"] is True
+    assert fake_aap.store["job_templates"][100]["ask_limit_on_launch"] is False
+
+
 def _across_organizations(fake: Any) -> None:
     """``deploy`` in Platform runs project ``web`` of Shared with credential ``mine`` of none."""
     fake.seed("organizations", id=1, name="Platform")
