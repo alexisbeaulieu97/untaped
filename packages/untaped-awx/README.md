@@ -64,7 +64,9 @@ untaped awx lint --organization Platform   # what the controller holds
 
 On a template naming a project the files lack, and a schedule setting a
 limit its template ignores, the first reports two rows (`--format json` for
-every field) and ends with the summary `lint: 2 errors, 0 warnings`, exit 3:
+every field) and ends with the summary `lint: 2 errors, 0 warnings`, exit 3.
+The rows, trimmed here to their location, rule and message (the table also
+shows each one's severity and target):
 
 ```text
 awx-specs/templates.yml#2  awx.missing-reference     project 'web' is not in the batch
