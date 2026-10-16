@@ -1,7 +1,7 @@
 """The records the dotfiles commands emit, each declaring its ``dotfiles.*`` kind.
 
-The plugin's spec imports this module, so every kind registers before any
-command runs (``plugin schema`` finds each one). It holds models only, to
+The app factory imports this module (through its commands), so every kind
+registers before any command runs (``plugin schema`` finds each one). It holds models only, to
 keep the plugin's load cheap.
 """
 

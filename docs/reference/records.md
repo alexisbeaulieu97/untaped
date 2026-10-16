@@ -216,10 +216,6 @@ untaped workspace status NAME --format pipe \
 | `dotfiles sync` | `dotfiles.sync_outcome` |
 | `dotfiles remove` | `dotfiles.remove_outcome` |
 
-`dotfiles apply` and `dotfiles remove` show their plan on stderr as text
-before they ask, whatever `--format` is; the records go to stdout once they
-run (`--dry-run` prints the `planned` records instead of asking).
-
 `dotfiles diff` prints a unified diff, not records. `dotfiles status` (run
 without ITEM or `--repo`) and `dotfiles sync` (and, after their changes,
 `dotfiles apply` and `dotfiles remove`) write two files under
