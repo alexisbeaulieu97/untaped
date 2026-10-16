@@ -10,8 +10,10 @@ report, never raised.
 
 A reference is ``resolved``; ``absent`` when its kind was searched in this
 origin and the name is not there (what ``apply`` would fail on); or
-``unresolved`` when its kind was not searched (``--offline`` with no
-document of that kind), which is not an error.
+``unresolved`` when it could not be checked (``--offline`` with no document
+of its kind, an id offline, a record the token cannot read), which is not
+an error. A live reference is resolved by the id the controller holds, so
+its ``target`` is the identity of the item it names, wherever that lives.
 """
 
 from __future__ import annotations
@@ -68,6 +70,8 @@ class KindFacts(_Model):
     """Every field untaped knows for the kind, sorted."""
     secret_paths: tuple[str, ...]
     """The kind's secret-path patterns (``survey_spec.spec.*[type=password].default``)."""
+    read_only: bool = False
+    """Whether ``apply`` refuses the kind's documents (``Credential``): export leaves it out."""
 
 
 @experimental
@@ -104,27 +108,41 @@ class AwxResources(Record, kind="awx.resources"):
     """Whether the controller was searched: every run but ``--offline`` and the repo reader."""
     unreadable: tuple[Unreadable, ...] = ()
 
-    _by_name: dict[tuple[str, str], list[Linted]] = PrivateAttr(default_factory=dict)
-
-    def model_post_init(self, context: object, /) -> None:
-        for item in self.items:
-            key = (item.resource.kind, item.resource.metadata.name)
-            self._by_name.setdefault(key, []).append(item)
+    _index: tuple[tuple[Linted, ...], dict[tuple[str, str], list[Linted]]] | None = PrivateAttr(
+        default=None
+    )
 
     def of(self, kind: str) -> Iterator[Linted]:
         """The items of ``kind``, in snapshot order."""
         return (item for item in self.items if item.resource.kind == kind)
 
     def find(self, ref: IdentityRef) -> Linted | None:
-        """The first item ``ref`` names: kind and name equal, organization and parent where set."""
-        for item in self._by_name.get((ref.kind, ref.name), ()):
-            metadata = item.resource.metadata
-            if ref.organization is not None and organization_of(item) != ref.organization:
-                continue
-            if ref.parent is not None and not _same(metadata.parent, ref.parent):
-                continue
-            return item
-        return None
+        """The one item ``ref`` names: kind and name equal, organization and parent where set.
+
+        ``None`` when none does, or when several do: a rule never judges an
+        arbitrary namesake (``apply`` refuses the ambiguity).
+        """
+        found = [
+            item
+            for item in self._by_name().get((ref.kind, ref.name), ())
+            if (ref.organization is None or organization_of(item) == ref.organization)
+            and (ref.parent is None or _same(item.resource.metadata.parent, ref.parent))
+        ]
+        return found[0] if len(found) == 1 else None
+
+    def _by_name(self) -> dict[tuple[str, str], list[Linted]]:
+        """The items by kind and name, built for the ``items`` this instance holds now.
+
+        Keyed on the tuple itself, so a copy with other items (``model_copy``)
+        never reads the original's index.
+        """
+        if self._index is None or self._index[0] is not self.items:
+            by_name: dict[tuple[str, str], list[Linted]] = {}
+            for item in self.items:
+                key = (item.resource.kind, item.resource.metadata.name)
+                by_name.setdefault(key, []).append(item)
+            self._index = (self.items, by_name)
+        return self._index[1]
 
 
 def organization_of(item: Linted) -> str | None:

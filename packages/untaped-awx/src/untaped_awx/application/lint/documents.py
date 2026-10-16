@@ -32,7 +32,8 @@ def load_documents(
     Without ``live`` (``--offline``) a reference resolves in the batch only,
     and a kind with no document in the batch is not searched. With it, a
     reference the batch lacks is looked up on the controller, after one
-    prefetch of every lookup the batch makes.
+    prefetch of every lookup the batch makes; a kind the token may not list
+    is left out of ``loaded``.
     """
     read: list[tuple[str, int, Resource]] = []
     unreadable: list[Unreadable] = []
@@ -53,7 +54,6 @@ def load_documents(
         base: FkResolver = OfflineBase(loaded)
     else:
         live.prefetch(prefetch_plan(resources, catalog=catalog))
-        loaded = catalog.kinds()
         base = live
     references = SnapshotReferences(resources, catalog=catalog, base=base)
     items = tuple(
@@ -65,6 +65,8 @@ def load_documents(
         )
         for label, index, resource in read
     )
+    if live is not None:  # every kind was searched, but those the token may not list
+        loaded = tuple(kind for kind in catalog.kinds() if kind not in references.denied)
     return AwxResources(
         items=items,
         kinds=kind_facts(catalog),

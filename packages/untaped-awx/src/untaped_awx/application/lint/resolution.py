@@ -1,10 +1,13 @@
 """What each reference of a lint snapshot resolves to, in apply's order.
 
-A reference is looked up as ``apply`` would: among the snapshot's own items
-first (:class:`PlanningFkResolver` over their planned targets), then in a
-base. :class:`OfflineBase` is the base that searches nothing past the items:
-``--offline``, the repository reader and the controller snapshot use it. A
-document batch linted online uses the live resolver instead.
+A document's reference is looked up as ``apply`` would: among the
+snapshot's own items first (:class:`PlanningFkResolver` over their planned
+targets), then in a base. :class:`OfflineBase` is the base that searches
+nothing past the items: ``--offline`` and the repository reader use it. A
+document batch linted online uses the live resolver instead. The controller
+snapshot resolves its foreign keys by id (:func:`id_references`), and only
+a schedule's parent and its workflow nodes' references, which export names
+with their organization, by name over :class:`OfflineBase`.
 
 What a lookup raises becomes the reference's :data:`Resolution`: a match, or
 several (ambiguity is ``apply``'s error, not a missing resource), is
@@ -14,7 +17,7 @@ searched, or one the token cannot read, is ``unresolved``.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Container, Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
 from untaped_awx.application.resources.apply_planner import ApplyPlanner
@@ -47,14 +50,17 @@ class OfflineBase:
     """A resolver that knows nothing past the snapshot's items.
 
     A kind in ``searched`` was read whole, so a name the items lack is not
-    there (``absent``); any other kind, or an id, was not searched.
+    there (``absent``); any other kind, or an id, was not searched. A name in
+    ``hidden`` stands for a record the token could not read (the controller
+    loader names it ``#<id>``): it was not searched either.
     """
 
-    def __init__(self, searched: Iterable[str]) -> None:
+    def __init__(self, searched: Iterable[str], *, hidden: Iterable[tuple[str, str]] = ()) -> None:
         self._searched = frozenset(searched)
+        self._hidden = frozenset(hidden)
 
     def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> int:
-        if kind in self._searched:
+        if kind in self._searched and (kind, name) not in self._hidden:
             raise ResourceNotFoundError(kind, {"name": name, **(scope or {})})
         raise _NotSearchedError(kind)
 
@@ -91,15 +97,24 @@ class SnapshotReferences:
         ]
         self._fk = PlanningFkResolver(base, targets)
         self._catalog = catalog
+        self.denied: set[str] = set()
+        """The kinds a lookup was refused for (403): the token cannot list them."""
 
-    def of(self, resource: Resource) -> tuple[Reference, ...]:
-        """Each reference ``resource`` makes, with what its lookup found."""
+    def of(self, resource: Resource, *, skip: Container[str] = ()) -> tuple[Reference, ...]:
+        """Each reference ``resource`` makes, with what its lookup found.
+
+        ``skip`` names fields the caller resolves itself (the controller
+        loader, by id); their empty values still count (P8).
+        """
         spec = self._catalog.get(resource.kind)
         try:
             sites = references_of(spec, resource)
         except BadRequestError:
             sites = ()  # an ancestry apply refuses before any lookup; nothing to look up
-        return (*(self._resolve(site) for site in sites), *empty_references(spec, resource))
+        return (
+            *(self._resolve(site) for site in sites if site.field not in skip),
+            *empty_references(spec, resource),
+        )
 
     def _resolve(self, site: ReferenceSite) -> Reference:
         try:
@@ -115,7 +130,10 @@ class SnapshotReferences:
                 self._fk.name_to_id(target.kind, target.name, scope=scope)
         except AmbiguousIdentityError:
             resolution = "resolved"
-        except _NotSearchedError, PermissionDeniedError:
+        except _NotSearchedError:
+            resolution = "unresolved"
+        except PermissionDeniedError:
+            self.denied.add(target.kind)
             resolution = "unresolved"
         except ResourceNotFoundError, BadRequestError:
             resolution = "absent"
@@ -124,19 +142,56 @@ class SnapshotReferences:
         return Reference(field=site.field, target=target, resolution=resolution)
 
 
+def id_references(
+    spec: ResourceSpec,
+    resource: Resource,
+    fk_ids: Mapping[str, Any],
+    *,
+    listed: Mapping[tuple[str, int], IdentityRef],
+) -> Iterator[Reference]:
+    """A live resource's foreign keys, each resolved by the id the controller holds.
+
+    A name would mislead here: export writes a key by its bare name and
+    ``apply`` would look it up in the referrer's organization, so a project
+    in another organization, or a credential in none, would read as missing.
+    An id ``listed`` holds is ``resolved``, its target the identity of the
+    item it names; any other id (a kind the token cannot list, a record it
+    cannot see) is ``unresolved``. An empty key is :func:`empty_references`'.
+    """
+    for ref in spec.fk_refs:
+        if ref.polymorphic or ref.kind is None or ref.field not in resource.spec:
+            continue
+        held = fk_ids.get(ref.field)
+        ids = held if isinstance(held, list) else [held]
+        written = resource.spec[ref.field]
+        names = written if isinstance(written, list) else [written]
+        for position, id_ in enumerate(ids):
+            if not isinstance(id_, int) or isinstance(id_, bool):
+                continue
+            identity = listed.get((ref.kind, id_))
+            if identity is not None:
+                yield Reference(field=ref.field, target=identity, resolution="resolved")
+                continue
+            name = _name(names[position]) if position < len(names) else f"#{id_}"
+            target = IdentityRef(kind=ref.kind, name=name)
+            yield Reference(field=ref.field, target=target, resolution="unresolved")
+
+
 def empty_references(spec: ResourceSpec, resource: Resource) -> Iterator[Reference]:
     """The required references ``resource`` writes as ``null``: each ``absent``, unnamed.
 
     A field the document leaves out is not empty: ``apply`` keeps what the
-    controller has. An ``inventory`` the template asks for on launch may be
-    empty.
+    controller has. An empty ``inventory`` counts only beside
+    ``ask_inventory_on_launch: false``: a template that asks for one on
+    launch may have none, and a partial document that leaves the flag out
+    may be asking.
     """
     body = resource.spec
     kinds = {ref.field: ref.kind for ref in spec.fk_refs if ref.kind is not None}
     for field in _REQUIRED.get(resource.kind, ()):
         if field not in body or body[field] is not None:
             continue
-        if field == "inventory" and body.get("ask_inventory_on_launch") is True:
+        if field == "inventory" and body.get("ask_inventory_on_launch") is not False:
             continue
         target = IdentityRef(kind=kinds[field], name="")
         yield Reference(field=field, target=target, resolution="absent")
@@ -181,4 +236,10 @@ def _name(value: Any) -> str:
     return str(value)
 
 
-__all__ = ["OfflineBase", "SnapshotReferences", "empty_references", "opaque_references"]
+__all__ = [
+    "OfflineBase",
+    "SnapshotReferences",
+    "empty_references",
+    "id_references",
+    "opaque_references",
+]

@@ -7,8 +7,9 @@ from typing import Any
 
 import pytest
 
-from untaped_awx.api import AwxResources, IdentityRef, Linted
+from untaped_awx.api import AwxResources, Linted
 from untaped_awx.application.lint.documents import load_documents
+from untaped_awx.domain import IdentityRef
 from untaped_awx.errors import PermissionDeniedError, ResourceNotFoundError
 from untaped_awx.infrastructure.lint.documents import NOT_TEXT, documents_of
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
@@ -80,7 +81,9 @@ def test_each_member_of_a_multi_reference_is_its_own_reference() -> None:
 
 
 def test_required_references_written_as_null_are_absent_and_unnamed() -> None:
-    snapshot = resources(_template(project="null", inventory="null"))
+    snapshot = resources(
+        _template(project="null", inventory="null", ask_inventory_on_launch="false")
+    )
     references = _item(snapshot, "JobTemplate", "deploy").references
     assert [
         (ref.field, ref.target.kind, ref.target.name, ref.resolution) for ref in references
@@ -221,7 +224,8 @@ def test_online_the_controller_answers_what_the_batch_lacks() -> None:
         "credentials": "unresolved",
     }
     assert snapshot.online is True
-    assert snapshot.loaded == AwxResourceCatalog().kinds()
+    kinds = AwxResourceCatalog().kinds()
+    assert snapshot.loaded == tuple(kind for kind in kinds if kind != "Credential")  # 403
     assert live.prefetched and "Inventory" in live.prefetched[0]
 
 
@@ -233,3 +237,23 @@ def test_a_quoted_number_is_a_name_and_a_written_scope_is_searched(value: str) -
 
 def test_an_id_cannot_be_checked_offline() -> None:
     assert _states(resources(_template(project="14"), _PROJECT)) == {"project": "unresolved"}
+
+
+# --- find --------------------------------------------------------------------------
+
+
+def test_find_reads_the_items_a_copy_holds_not_the_originals() -> None:
+    """N2: the name index belongs to the items it was built from."""
+    snapshot = resources(_PROJECT)
+    target = IdentityRef(kind="Project", name="web", organization="Platform")
+    assert snapshot.find(target) is not None
+    assert snapshot.model_copy(update={"items": ()}).find(target) is None
+    other = resources(_PROJECT.replace("name: web", "name: api"))
+    assert snapshot.model_copy(update={"items": other.items}).find(target) is None
+
+
+def test_find_names_no_item_when_several_answer() -> None:
+    """N8: an org-less reference to a name two organizations hold judges neither."""
+    both = resources(_PROJECT, _PROJECT.replace("Platform", "Finance"))
+    assert both.find(IdentityRef(kind="Project", name="web")) is None
+    assert both.find(IdentityRef(kind="Project", name="web", organization="Finance")) is not None

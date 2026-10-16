@@ -1,11 +1,16 @@
-"""``awx.unresolved-reference``: a reference that was not checked this run."""
+"""``awx.unresolved-reference``: a reference that was not checked this run.
+
+Why it was not is read from the snapshot: offline, a kind with no document
+in the batch, or an id (only the controller knows ids); online, a kind the
+token cannot list, or a record it cannot read.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 
 from untaped.sdk import experimental
-from untaped_awx.domain.lint.resources import AwxResources
+from untaped_awx.domain.lint.resources import AwxResources, Reference
 from untaped_awx.domain.lint.rules._support import report
 from untaped_lint.api import Finding, rule
 
@@ -15,23 +20,35 @@ from untaped_lint.api import Finding, rule
     "unresolved-reference",
     reads=AwxResources,
     severity="warning",
-    summary="A reference the run could not check: offline with no document of its kind.",
+    summary="A reference the run could not check: offline, or one the token cannot read.",
 )
 def unresolved_reference(resources: AwxResources) -> Iterator[Finding]:
     for item in resources.items:
         for ref in item.references:
             if ref.resolution != "unresolved":
                 continue
-            target = ref.target
-            if not resources.online:
-                why = f"no {target.kind} documents, offline"
-                hint = "lint without --offline to check it on the controller, or add its document"
-            else:
-                why = f"the token cannot read {target.kind} records"
-                hint = f"lint with a token that can read {target.kind} records"
+            why, hint = _why(resources, ref)
             yield report(
                 unresolved_reference,
                 item,
-                f"{ref.field} {target.name!r} was not checked: {why}",
+                f"{ref.field} {ref.target.name!r} was not checked: {why}",
                 hint=hint,
             )
+
+
+def _why(resources: AwxResources, ref: Reference) -> tuple[str, str]:
+    """Why ``ref`` went unchecked, and what would check it."""
+    kind = ref.target.kind
+    searched = kind in resources.loaded
+    if not resources.online:
+        check = "lint without --offline to check it on the controller"
+        if searched:
+            return "an id is checked on the controller only, offline", check
+        facts = resources.kinds.get(kind)
+        if facts is None or not facts.read_only:
+            check += ", or add its document"
+        return f"no {kind} documents, offline", check
+    hint = f"lint with a token that can read {kind} records"
+    if searched:
+        return f"the token cannot read that {kind}", hint
+    return f"the token cannot list {kind} records", hint
