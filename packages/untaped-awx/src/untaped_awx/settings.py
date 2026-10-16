@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import timedelta
 from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from untaped.sdk import TokenCommand, TokenSources, experimental
+from untaped.sdk import Cache, TokenCommand, TokenSources, code_version, experimental
 
 
 class AwxSettings(BaseModel):
@@ -70,4 +71,33 @@ class AwxSettings(BaseModel):
         return v.rstrip("/") + "/"
 
 
-__all__ = ["AwxSettings"]
+def _resources_version() -> str:
+    """The version of what a controller snapshot holds: its model and the code that fills it.
+
+    A snapshot filled by other code is outdated, so an edit to the loader, its
+    resolution or the snapshot's model (or an upgrade of either distribution)
+    reads the controller again on the next run.
+    """
+    return ":".join(
+        (
+            code_version(
+                "untaped_awx.domain.lint.resources", distributions=("untaped-awx", "untaped-lint")
+            ),
+            code_version("untaped_awx.application.lint.controller"),
+            code_version("untaped_awx.application.lint.resolution"),
+        )
+    )
+
+
+#: The controller snapshot ``awx lint`` reads without FILES: every resource
+#: the profile's token can read, per controller, refreshed past an hour.
+RESOURCES = Cache(
+    "awx",
+    "resources",
+    label="controller resources",
+    max_age=timedelta(hours=1),
+    version=_resources_version,
+)
+
+
+__all__ = ["RESOURCES", "AwxSettings"]

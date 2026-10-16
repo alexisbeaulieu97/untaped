@@ -64,10 +64,10 @@ class SaveResources:
                     else "read-only kind",
                 )
                 continue
-            server_filters = _server_filters_for_spec(
+            server_filters = server_filters_for_spec(
                 spec, filters=filters, organization=organization
             )
-            incompatible = _filter_field_not_on_spec(server_filters, spec)
+            incompatible = filter_field_not_on_spec(server_filters, spec)
             if incompatible is not None:
                 yield SaveOutcome(
                     kind=spec.kind,
@@ -104,7 +104,7 @@ class SaveResources:
             return [self._catalog.get(kind)]
 
 
-def _filter_field_not_on_spec(filters: dict[str, str], spec: ResourceSpec) -> str | None:
+def filter_field_not_on_spec(filters: dict[str, str], spec: ResourceSpec) -> str | None:
     """Return a filter field that is not represented in the domain spec."""
     fields = spec.known_fields
     for key in filters:
@@ -114,7 +114,7 @@ def _filter_field_not_on_spec(filters: dict[str, str], spec: ResourceSpec) -> st
     return None
 
 
-def _server_filters_for_spec(
+def server_filters_for_spec(
     spec: ResourceSpec,
     *,
     filters: dict[str, str],

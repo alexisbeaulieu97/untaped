@@ -463,9 +463,9 @@ class MutationPlanner:
         seen: dict[tuple[str, Any], int] = {}
         for index, resource in enumerate(docs):
             spec = self._catalog.get(resource.kind)
-            identity = self._planner.plan_identity(spec, resource)
+            target = planned_target(index, resource, spec=spec, planner=self._planner)
             if selected is None:
-                key = (resource.kind, _freeze(identity))
+                key = (resource.kind, _freeze(target.identity))
             else:
                 item = selected[index]
                 fixed_id = item.id if isinstance(item, SelectedResource) else record_id_of(item)
@@ -478,15 +478,20 @@ class MutationPlanner:
                     f"at documents {seen[key] + 1} and {index + 1}"
                 )
             seen[key] = index
-            targets.append(
-                PlannedTarget(
-                    index=index,
-                    kind=resource.kind,
-                    identity=identity,
-                    token=f"planned:{index}",
-                )
-            )
+            targets.append(target)
         return targets
+
+
+def planned_target(
+    index: int, resource: Resource, *, spec: ResourceSpec, planner: ApplyPlanner
+) -> PlannedTarget:
+    """Document ``index``'s target as planning starts: its identity and token, no id yet."""
+    return PlannedTarget(
+        index=index,
+        kind=resource.kind,
+        identity=planner.plan_identity(spec, resource),
+        token=f"planned:{index}",
+    )
 
 
 def record_id_of(record: Mapping[str, Any]) -> int | None:
@@ -667,6 +672,7 @@ __all__ = [
     "MutationPlanner",
     "PlannedTarget",
     "PlanningFkResolver",
+    "planned_target",
     "record_id_of",
     "scope_from_identity",
 ]
