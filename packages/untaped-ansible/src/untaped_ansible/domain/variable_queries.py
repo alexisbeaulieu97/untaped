@@ -1,8 +1,8 @@
 """Which dependents use a variable: the reached rows joined with the variable facts.
 
-Pure over :class:`~untaped_ansible.domain.reach.ReachedNode` rows and the
+Pure over :class:`~untaped_ansible.domain.reach.Reach` hits and the
 :class:`~untaped_ansible.domain.variable_models.CommitFacts` read at their commits.
-Facts are read at the commit each row's repo was indexed at (``shas``), so a
+Facts are read at the commit each hit's repo was indexed at (``shas``), so a
 row never mixes the graph of one commit with the files of another.
 """
 
@@ -10,53 +10,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Collection, Iterable
-from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict
-
-from untaped.sdk import Record
 from untaped_ansible.domain.identity import repo_key
-from untaped_ansible.domain.reach import ReachedNode
+from untaped_ansible.domain.reach import Reach
 from untaped_ansible.domain.variable_models import CommitFacts, How, VariableFact
-
-
-class Dependent(BaseModel):
-    """The dependent a hit was found in: its repo and ref, and its path to the role."""
-
-    model_config = ConfigDict(frozen=True)
-
-    repo: str
-    ref: str | None
-    path: list[str]
-
-
-class VariableUse(Record):
-    """Where one variable is defined, set or read in one repo at one ref.
-
-    Kind-less until ``vars where`` registers ``ansible.variable_use``.
-    ``key_path`` is the YAML key path as segments (``int`` for list items),
-    empty for a read in a template file.
-    """
-
-    variable: str
-    repo: str
-    ref: str | None
-    file: str
-    line: int
-    key_path: list[str | int]
-    how: How
-
-
-class VariableUseHit(VariableUse, kind="ansible.variable_use_hit"):
-    """A :class:`VariableUse` in a dependent of the role ``impact --uses`` was asked about."""
-
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "ref", "file", "line", "key_path", "how")
-
-    dependent: Dependent
+from untaped_ansible.records import Dependent, ReachedRow, VariableUseHit
 
 
 def dependent_uses(
-    reached: Iterable[ReachedNode], facts: CommitFacts, names: Collection[str]
+    reached: Iterable[Reach], facts: CommitFacts, names: Collection[str]
 ) -> list[VariableUseHit]:
     """One row per fact naming one of ``names`` in each reached dependent.
 
@@ -66,10 +28,11 @@ def dependent_uses(
     """
     wanted = set(names)
     hits: dict[tuple[str, str | None, str, int, str, str, How], VariableUseHit] = {}
-    for node in reached:
+    for hit in reached:
+        node = hit.row
         if node.repo is None:
             continue
-        for sha in sorted(node.shas):
+        for sha in sorted(hit.shas):
             for fact in facts.facts.get((node.repo, sha), ()):
                 if fact.name not in wanted:
                     continue
@@ -86,28 +49,29 @@ def dependent_uses(
     return [hits[key] for key in sorted(hits, key=_sort_key)]
 
 
-def unanalysed(reached: Iterable[ReachedNode], facts: CommitFacts) -> list[str]:
+def unanalysed(reached: Iterable[Reach], facts: CommitFacts) -> list[str]:
     """``repo@ref`` of each reached dependent with a commit no analysis covers, sorted.
 
     A dependent with no commit at all (its edges carry none) is unanalysed too.
     """
     return sorted(
         {
-            _label(node)
-            for node in reached
-            if node.repo is not None
-            and (not node.shas or any((node.repo, sha) in facts.unanalysed for sha in node.shas))
+            _label(hit.row)
+            for hit in reached
+            if hit.row.repo is not None
+            and (not hit.shas or any((hit.row.repo, sha) in facts.unanalysed for sha in hit.shas))
         }
     )
 
 
-def skipped_files(reached: Iterable[ReachedNode], facts: CommitFacts) -> list[str]:
+def skipped_files(reached: Iterable[Reach], facts: CommitFacts) -> list[str]:
     """``repo@ref path: reason`` of each file the analysis skipped in a reached dependent."""
     lines: dict[str, None] = {}
-    for node in reached:
+    for hit in reached:
+        node = hit.row
         if node.repo is None:
             continue
-        for sha in sorted(node.shas):
+        for sha in sorted(hit.shas):
             for path, reason in facts.skipped.get((node.repo, sha), ()):
                 lines.setdefault(f"{_label(node)} {path}: {reason}", None)
     return sorted(lines)
@@ -130,7 +94,7 @@ def render_key_path(key_path: list[str | int]) -> str:
     return rendered
 
 
-def _hit(node: ReachedNode, fact: VariableFact) -> VariableUseHit:
+def _hit(node: ReachedRow, fact: VariableFact) -> VariableUseHit:
     assert node.repo is not None
     return VariableUseHit(
         variable=fact.name,
@@ -151,14 +115,11 @@ def _sort_key(
     return (repo, ref or "", file, line, path, name, how)
 
 
-def _label(node: ReachedNode) -> str:
+def _label(node: ReachedRow) -> str:
     return f"{node.repo}@{node.ref}" if node.ref else str(node.repo)
 
 
 __all__ = [
-    "Dependent",
-    "VariableUse",
-    "VariableUseHit",
     "dependent_uses",
     "render_key_path",
     "skipped_files",
