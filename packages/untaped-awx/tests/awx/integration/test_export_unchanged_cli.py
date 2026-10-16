@@ -3,6 +3,10 @@
 The golden files under ``export_golden/`` pin export's output before the
 controller reads behind ``snapshot_from_record`` change shape (fewer requests
 for the same document), so a cut that loses a field fails here.
+
+FakeAap serves one row shape for a list and for a detail read, so a field
+AWX's list serializer leaves out would only show up against a real
+controller; this test cannot catch it.
 """
 
 from __future__ import annotations
