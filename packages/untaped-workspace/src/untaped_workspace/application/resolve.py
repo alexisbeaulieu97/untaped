@@ -16,7 +16,7 @@ from untaped.sdk import Failure, UntapedError
 from untaped_workspace.application.locate import active_workspace, workspace_root
 from untaped_workspace.domain.models import RepoSpec
 from untaped_workspace.domain.naming import repo_key
-from untaped_workspace.domain.records import ResolveAction, ResolveOutcome
+from untaped_workspace.records import ResolveAction, ResolveOutcome
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import GitWorktrees, RepoCatalog, WorkspaceStore

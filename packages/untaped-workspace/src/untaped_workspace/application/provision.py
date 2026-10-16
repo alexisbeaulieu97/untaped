@@ -29,9 +29,9 @@ from untaped_workspace.domain.naming import (
     repo_key,
     validate_workspace_name,
 )
-from untaped_workspace.domain.records import RepoOutcome
 from untaped_workspace.domain.repo import Repo
 from untaped_workspace.errors import WorkspaceError
+from untaped_workspace.records import RepoOutcome
 
 if TYPE_CHECKING:
     from untaped.sdk import ProgressHandle

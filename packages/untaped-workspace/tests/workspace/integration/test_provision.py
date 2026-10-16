@@ -15,10 +15,10 @@ from untaped.testing.git import GitRemote
 from untaped_workspace.api import Repo
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.domain.models import Checkout, RepoArg
-from untaped_workspace.domain.records import RepoOutcome
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
 from untaped_workspace.infrastructure.catalog import RepoSources
+from untaped_workspace.records import RepoOutcome
 
 #: The store asks the plugins filling ``GitHost`` (none here) for the https remotes, and a
 #: name asks the plugins filling ``RepoSource`` (none here either).

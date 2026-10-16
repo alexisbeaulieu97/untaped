@@ -15,8 +15,8 @@ from untaped_workspace.domain.naming import (
     repo_identity,
     validate_workspace_name,
 )
-from untaped_workspace.domain.records import RepoOutcome, StatusRow
 from untaped_workspace.domain.safety import NOT_STORED, SUBMODULES, archive_blockers, archive_hint
+from untaped_workspace.records import RepoOutcome, StatusRow
 
 
 @pytest.mark.parametrize("name", ["JIRA-1234", "feature_x", "a.b"])

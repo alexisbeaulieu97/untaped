@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, UntapedError
 from untaped_workspace.application.locate import active_workspace, workspace_root
-from untaped_workspace.domain.records import ArchiveOutcome
+from untaped_workspace.records import ArchiveOutcome
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import GitWorktrees, WorkspaceStore

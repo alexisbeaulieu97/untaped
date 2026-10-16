@@ -27,6 +27,7 @@ from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.application.status import WorkspaceStatus
 from untaped_workspace.domain.models import RepoArg, RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
+from untaped_workspace.records import RepoOutcome, RunOutcome, StatusRow
 from untaped_workspace.settings import WorkspaceSettings
 
 NO_REPOS_HINT = "pass --repo OWNER/NAME (repeatable) or --stdin; the repo picker needs a terminal"
@@ -194,8 +195,8 @@ def _text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-RUN_STDIN_KINDS = frozenset({"workspace.status", "workspace.repo_outcome", "workspace.run_outcome"})
-"""Pipe kinds ``run --stdin`` reads repos from."""
+RUN_STDIN_RECORDS = (StatusRow, RepoOutcome, RunOutcome)
+"""The records ``run --stdin`` reads repos from."""
 
 
 def select_run_repos(
@@ -240,7 +241,7 @@ def _named_repos(specs: Sequence[RepoSpec], names: Sequence[str]) -> set[RepoSpe
 
 def _stdin_repo_names(workspace: str) -> list[str]:
     """Repo names piped on stdin; records naming another ``workspace`` are skipped."""
-    data = read_stdin_input(accept_kinds=RUN_STDIN_KINDS, what="repos", allow_empty=True)
+    data = read_stdin_input(accepts=RUN_STDIN_RECORDS, what="repos", allow_empty=True)
     if data.records is None:
         return list(data.values)
     names: list[str] = []

@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import NO_PROGRESS, Failure, ProgressHandle, UntapedError, bounded_map
 from untaped_workspace.application.locate import workspace_root
-from untaped_workspace.domain.records import StatusRow
 from untaped_workspace.domain.safety import NOT_STORED, UNREADABLE, archive_blockers
+from untaped_workspace.records import StatusRow
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import GitWorktrees
