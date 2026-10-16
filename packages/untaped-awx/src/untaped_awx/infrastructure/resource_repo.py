@@ -131,6 +131,10 @@ class ResourceRepository:
         """``projects/<id>/playbooks/``: the playbooks AWX found in the project's last sync."""
         with map_awx_errors():
             found = self._client.get_json(f"projects/{project_id}/playbooks/")
+        if not isinstance(found, list):
+            raise BadRequestError(
+                f"projects/{project_id}/playbooks/ answered {type(found).__name__}, not a list"
+            )
         return tuple(str(playbook) for playbook in found)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:

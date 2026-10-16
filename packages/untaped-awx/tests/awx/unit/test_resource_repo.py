@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from untaped_awx.errors import AmbiguousIdentityError, AwxApiError
+from untaped_awx.errors import AmbiguousIdentityError, AwxApiError, BadRequestError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.resource_repo import ResourceRepository
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
@@ -241,3 +241,13 @@ def test_playbooks_returns_a_tuple(awx_config: AwxSettings) -> None:
             assert repo.playbooks(3) == ("site.yml", "roles/deploy.yml")
             with pytest.raises(AwxApiError):
                 repo.playbooks(4)
+
+
+def test_playbooks_rejects_an_answer_that_is_not_a_list(awx_config: AwxSettings) -> None:
+    """A record where the list should be is an unexpected shape, not a list of its keys."""
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/projects/3/playbooks/").mock(
+            return_value=httpx.Response(200, json={"site.yml": "x"})
+        )
+        with AwxClient(awx_config) as awx, pytest.raises(BadRequestError, match="not a list"):
+            ResourceRepository(awx).playbooks(3)
