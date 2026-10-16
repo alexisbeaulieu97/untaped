@@ -6,9 +6,9 @@ also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds
 and ``read_resource_text`` parses documents already read (piped on stdin).
 A missing or invalid input file is a :class:`ConfigError` whose category
 (``not_found`` / ``invalid``) exits ``1``: the input, not the setup, is wrong.
-``read_resource_documents`` is the per-document reader under it: it reports
-each bad document by its position instead of raising, for callers that read
-on past one.
+``read_resource_documents`` reads the same documents one at a time and
+reports each bad one by its position instead of raising, for callers that
+read on past one.
 
 Documents are read as plain export documents, with no templating, because
 export → commit → apply must round-trip: the file ``export`` writes is the
@@ -85,12 +85,16 @@ def _read_file(path: Path) -> Iterator[Resource]:
 def read_resource_text(text: str, *, source: str) -> Iterator[Resource]:
     """Yield each :class:`Resource` in YAML ``text``; errors name ``source``.
 
-    The first bad document raises its :func:`read_resource_documents` message.
+    Every document is read first: a YAML syntax error raises ahead of any
+    invalid document, then the first invalid document raises, each chained to
+    its cause.
     """
-    for _index, document in read_resource_documents(text, source=source):
-        if isinstance(document, str):
-            raise ConfigError(document, category="invalid")
-        yield document
+    documents = [document for _index, document in _documents(text, source=source)]
+    errors = [document for document in documents if isinstance(document, ConfigError)]
+    syntax = [error for error in errors if isinstance(error.__cause__, yaml.YAMLError)]
+    if syntax or errors:
+        raise (syntax or errors)[0]
+    yield from (document for document in documents if isinstance(document, Resource))
 
 
 def read_resource_documents(text: str, *, source: str) -> Iterator[tuple[int, Resource | str]]:
@@ -100,8 +104,15 @@ def read_resource_documents(text: str, *, source: str) -> Iterator[tuple[int, Re
     nothing), so ``3`` is the third ``---`` section. A document that is not a
     mapping or not a valid resource yields its message and reading goes on; a
     YAML syntax error yields its message and ends the text, since nothing past
-    it can be read. Messages name ``source``.
+    it can be read. Documents are read one at a time, as they are asked for.
+    Messages name ``source``.
     """
+    for index, document in _documents(text, source=source):
+        yield index, str(document) if isinstance(document, ConfigError) else document
+
+
+def _documents(text: str, *, source: str) -> Iterator[tuple[int, Resource | ConfigError]]:
+    """:func:`read_resource_documents` with each error as the ``invalid`` error it raises."""
     documents = yaml.safe_load_all(text)
     for index in itertools.count(1):
         try:
@@ -109,19 +120,27 @@ def read_resource_documents(text: str, *, source: str) -> Iterator[tuple[int, Re
         except StopIteration:
             return
         except yaml.YAMLError as exc:
-            yield index, f"invalid YAML in {source}: {exc}"
+            yield index, _invalid(f"invalid YAML in {source}: {exc}", cause=exc)
             return
         if doc is None:
             continue
         if not isinstance(doc, dict):
-            yield index, f"{source}: each YAML doc must be a mapping"
+            yield index, _invalid(f"{source}: each YAML doc must be a mapping")
             continue
         try:
             resource = Resource.model_validate(doc)
         except Exception as exc:
-            yield index, f"{source}: {exc}"
+            yield index, _invalid(f"{source}: {exc}", cause=exc)
         else:
             yield index, resource
+
+
+def _invalid(message: str, *, cause: Exception | None = None) -> ConfigError:
+    """An ``invalid`` input error, chained to ``cause`` as ``raise ... from cause`` would."""
+    error = ConfigError(message, category="invalid")
+    error.__cause__ = cause
+    error.__suppress_context__ = True
+    return error
 
 
 class _DocumentDumper(yaml.SafeDumper):

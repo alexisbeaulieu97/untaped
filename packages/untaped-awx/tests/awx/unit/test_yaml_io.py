@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
+from pydantic import ValidationError
 
 from untaped.sdk import ConfigError
 from untaped_awx.domain import Metadata, Resource
@@ -205,14 +207,32 @@ def test_read_resource_documents_stops_a_file_at_its_yaml_error() -> None:
     assert second[0] == 2 and second[1].startswith("error: invalid YAML in specs.yml: ")
 
 
-def test_read_resource_text_raises_the_first_bad_document() -> None:
-    text = "---\n".join([_DOC % "a", "- not a mapping\n", "kind: [unclosed\n"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "- 1\n---\nkind: [\n",
+        "kind: Project\nstatus: x\n---\nkind: [\n",
+    ],
+    ids=["after-a-non-mapping", "after-an-invalid-resource"],
+)
+def test_read_resource_text_raises_a_syntax_error_first(text: str) -> None:
+    """Every document is read before any is validated, so the YAML error wins."""
+    with pytest.raises(ConfigError) as info:
+        list(read_resource_text(text, source="<stdin>"))
+
+    assert str(info.value).startswith("invalid YAML in <stdin>: ")
+    assert info.value.category == "invalid"
+    assert isinstance(info.value.__cause__, yaml.YAMLError)
+
+
+def test_read_resource_text_raises_the_first_invalid_document() -> None:
+    text = "---\n".join([_DOC % "a", "kind: Project\nstatus: x\n", "- not a mapping\n"])
 
     with pytest.raises(ConfigError) as info:
         list(read_resource_text(text, source="specs.yml"))
 
-    assert str(info.value) == "specs.yml: each YAML doc must be a mapping"
-    assert info.value.category == "invalid"
+    assert str(info.value).startswith("specs.yml: ")
+    assert isinstance(info.value.__cause__, ValidationError)
 
 
 def test_resource_paths_lists_a_directory_sorted(tmp_path: Path) -> None:
