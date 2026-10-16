@@ -17,6 +17,7 @@ from untaped.screen.components.box import field_box
 from untaped.screen.components.draw import (
     divider,
     inner_width,
+    note_lines,
     option_row,
     role_style,
     text_line,
@@ -390,3 +391,10 @@ def test_marks_beyond_the_label_or_cut_off_by_the_ellipsis_style_nothing_else() 
     short = option_row(DEFAULT, 5, label="acme/api-gateway", label_style=Style.null(), marks={10})
     assert short.cell_len == 5
     assert not [span for span in short.spans if span.style == _MATCH]
+
+
+def test_a_note_counts_the_lines_rich_wraps_it_to() -> None:
+    assert note_lines("", 10) == 0
+    assert note_lines("xxxxxxxxxx y", 10) == 2  # a word that fills the line pushes the next down
+    assert note_lines("a\nb", 10) == 2
+    assert note_lines("enter edit · delete remove · m move · done or ctrl-s writes", 58) == 2
