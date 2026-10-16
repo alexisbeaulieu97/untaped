@@ -200,11 +200,11 @@ free, but a command that writes declares it with `@writes`, or
   shown, even when empty.
 - Declare a record's kind on its class, `class Widget(Record,
   kind="acme-tools.widget")`, in a `records` module your app imports:
-  `<plugin>.<noun>` (any other prefix is `foreign-kind`), `<plugin>.<verb>_outcome`
+  `<plugin>.<noun>` (another prefix is `foreign-kind`), `<plugin>.<verb>_outcome`
   for mutations, `.summary` the only third segment. One model per kind; `emit`
-  reads it from the rows. Elsewhere name the model, never the string
-  (`kind_of(Widget)`), so a rename misses no line. Fields must survive a JSON
-  round trip (the `Record` docstring says which fail). A document is no row: `emit_document`.
+  reads it from the rows. Elsewhere name the model (`kind_of(Widget)`), never
+  the string, so a rename misses no line. Fields must survive a JSON round
+  trip (`Record`'s docstring says which fail). A document is no row: `emit_document`.
 - Fields are snake_case, with `id` and then `name` first. `url` is the web
   URL and `api_url` is the API link.
 - A record's own fields come before the fields it inherits from the bases

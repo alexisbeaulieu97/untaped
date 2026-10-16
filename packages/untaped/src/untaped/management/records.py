@@ -2,11 +2,10 @@
 
 They live in one module that building the root app imports, so every kind
 core declares is registered before any command runs (``plugin schema``
-finds each one). A command builds these models where it makes a row.
-Doctor's and setup's rows stay dicts until they are emitted, because
-``doctor fix`` and the setup screen read them as dicts too; they are
-validated into ``DoctorCheckRow`` and ``SetupStep`` at emit. Field order
-and which fields an output omits match the dict rows these replaced.
+finds each one). A command either builds these models where it makes a
+row or, where other code reads its rows as dicts (doctor's rows feed
+``doctor fix``, setup's the setup screen), validates them at emit. Field
+order and which fields an output omits match the dict rows these replaced.
 """
 
 from __future__ import annotations
