@@ -391,10 +391,15 @@ def _parameter_violations(
             yield "undated-deprecation", f"{name}=: {_UNDATED}"
     if marked and not warns_parameters(declared):
         names = ", ".join(f"{name}=" for name in sorted(marked))
+        fix = (
+            "write the __init__ yourself, under @deprecated_parameters"
+            # A dataclass's generated __init__ has no source to decorate.
+            if getattr(getattr(function, "__code__", None), "co_filename", "") == "<string>"
+            else "add @deprecated_parameters to the function"
+        )
         yield (
             "unwarned-parameter",
-            f"{names} is marked deprecated but nothing warns when it is passed; "
-            "add @deprecated_parameters to the function",
+            f"{names} is marked deprecated but nothing warns when it is passed; {fix}",
         )
 
 

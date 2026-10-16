@@ -84,7 +84,7 @@ def _marked(annotation: ast.expr) -> bool:
             annotation = ast.parse(annotation.value, mode="eval").body
         except SyntaxError:
             return False
-    for node in ast.walk(annotation):
+    for node in _union_members(annotation):
         if not (
             isinstance(node, ast.Subscript)
             and _name(node.value) == "Annotated"
@@ -97,3 +97,16 @@ def _marked(annotation: ast.expr) -> bool:
         ):
             return True
     return False
+
+
+def _union_members(node: ast.expr) -> Iterator[ast.expr]:
+    """``node``, or each member of the union it spells (``X | None``, ``Optional[X]``)."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        yield from _union_members(node.left)
+        yield from _union_members(node.right)
+    elif isinstance(node, ast.Subscript) and _name(node.value) in ("Optional", "Union"):
+        members = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        for member in members:
+            yield from _union_members(member)
+    else:
+        yield node

@@ -34,6 +34,7 @@ import ast
 import functools
 import inspect
 import re
+import types
 import typing
 import warnings
 import weakref
@@ -80,7 +81,9 @@ def descriptor_function(obj: object) -> object:
     """The function under a ``classmethod``, ``staticmethod``, ``property`` or bound method."""
     if isinstance(obj, property):
         return obj.fget if obj.fget is not None else obj
-    return getattr(obj, "__func__", obj)
+    if isinstance(obj, classmethod | staticmethod | types.MethodType):
+        return obj.__func__
+    return obj
 
 
 @dataclass(frozen=True)
@@ -900,11 +903,13 @@ def deprecated_parameters[F: Callable[..., Any]](function: F, /) -> F:
     def warn_for(args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
         nonlocal marked, signature, by_keyword_only
         if marked is None:
-            signature = inspect.signature(function)
+            signature = inspect.signature(
+                function, annotation_format=annotationlib.Format.FORWARDREF
+            )
             marked = parameter_marks(function)
             keyword_only = inspect.Parameter.KEYWORD_ONLY
             by_keyword_only = all(signature.parameters[n].kind is keyword_only for n in marked)
-        if not marked or ((by_keyword_only or not args) and not kwargs.keys() & marked.keys()):
+        if not marked or (by_keyword_only and not kwargs.keys() & marked.keys()):
             return
         try:
             bound = typing.cast(inspect.Signature, signature).bind_partial(*args, **kwargs)
@@ -983,6 +988,11 @@ def read_parameter_marks(
             ),
             None,
         )
+        # Read as FORWARDREF, a name the module lacks comes back unresolved, not as an error.
+        unresolved: object = None if mark is None else mark.replacement
+        if isinstance(unresolved, annotationlib.ForwardRef):
+            problems.append(f"replacement={unresolved.__forward_arg__} is not defined")
+            mark = None
         if mark is not None:
             marks[name] = mark
         elif problems:
@@ -993,31 +1003,34 @@ def read_parameter_marks(
 def _metadata(
     annotation: object, namespace: Mapping[str, Any], problems: list[str]
 ) -> list[object]:
-    """The ``Annotated`` metadata in ``annotation`` (a type or its source text), unions included.
+    """The ``Annotated`` metadata in ``annotation`` (a type or its source text), a union's too.
 
-    A string's metadata that holds ``deprecated`` and fails to evaluate adds its
-    error to ``problems``.
+    A string's ``deprecated(...)`` that fails to evaluate adds its error to ``problems``.
     """
     if isinstance(annotation, annotationlib.ForwardRef):
         annotation = annotation.__forward_arg__
     if not isinstance(annotation, str):
         metadata = list(getattr(annotation, "__metadata__", ()))
-        for argument in () if metadata else typing.get_args(annotation):
-            metadata.extend(_metadata(argument, namespace, problems))
+        if not metadata and isinstance(annotation, types.UnionType):
+            for argument in typing.get_args(annotation):
+                metadata.extend(_metadata(argument, namespace, problems))
         return metadata
-    if "deprecated" not in annotation:
-        return []
+    return _text_metadata(annotation, namespace, problems) if "deprecated" in annotation else []
+
+
+def _text_metadata(
+    annotation: str, namespace: Mapping[str, Any], problems: list[str]
+) -> list[object]:
+    """The evaluated ``Annotated`` metadata of an annotation's source text."""
     try:
-        tree = ast.parse(annotation, mode="eval")
+        tree = ast.parse(annotation, mode="eval").body
     except SyntaxError:
         return []
     found: list[object] = []
-    for node in ast.walk(tree):
+    for node in _union_members(tree):
         if not (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Tuple)):
             continue
-        outer = node.value
-        name = outer.id if isinstance(outer, ast.Name) else getattr(outer, "attr", None)
-        if name != "Annotated":
+        if _last_name(node.value) != "Annotated":
             continue
         for element in node.slice.elts[1:]:
             try:
@@ -1025,9 +1038,28 @@ def _metadata(
                     eval(compile(ast.Expression(element), "<annotation>", "eval"), dict(namespace))
                 )
             except Exception as exc:  # reported by the checks, never at a call
-                if "deprecated" in ast.unparse(element):
+                if isinstance(element, ast.Call) and _last_name(element.func) == "deprecated":
                     problems.append(f"{ast.unparse(element)}: {type(exc).__name__}: {exc}")
     return found
+
+
+def _union_members(node: ast.expr) -> Iterator[ast.expr]:
+    """``node``, or each member of the union it spells (``X | None``, ``Optional[X]``)."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        yield from _union_members(node.left)
+        yield from _union_members(node.right)
+    elif isinstance(node, ast.Subscript) and _last_name(node.value) in ("Optional", "Union"):
+        members = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        for member in members:
+            yield from _union_members(member)
+    else:
+        yield node
+
+
+def _last_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return node.id if isinstance(node, ast.Name) else None
 
 
 # --- deprecated behaviours ---------------------------------------------------

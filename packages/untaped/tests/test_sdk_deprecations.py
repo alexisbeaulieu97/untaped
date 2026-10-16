@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Annotated
 import pytest
 
 from untaped.cli import echo, report_error
+from untaped.conventions.stability import deprecation_text_violations
 from untaped.output.sink import Diagnostics
 from untaped.stability import (
     UntapedDeprecationWarning,
@@ -19,6 +20,7 @@ from untaped.stability import (
     deprecation_sentence,
     function_mark,
     parameter_marks,
+    read_parameter_marks,
     sdk_replacement_text,
     warns_parameters,
 )
@@ -199,3 +201,42 @@ def test_a_call_that_does_not_bind_raises_python_s_own_error() -> None:
 def test_the_decorator_above_a_descriptor_says_where_it_goes() -> None:
     with pytest.raises(TypeError, match="put @deprecated_parameters under @classmethod"):
         deprecated_parameters(classmethod(lambda cls: None))  # type: ignore[arg-type]
+
+
+# --- lazily evaluated annotations (a module without the future import) ----------------------
+
+
+def test_a_hint_only_type_checkers_import_never_raises_at_a_call() -> None:
+    import lazy_annotations_sample as lazy
+
+    (shown,) = _caught(lambda: lazy.hinted(x=1))
+    assert str(shown.message).startswith("hinted(x=) is deprecated")
+    assert _caught(lambda: lazy.hinted(y=None)) == []
+
+
+def test_a_marked_var_keyword_warns_and_an_element_mark_is_not_the_parameter_s() -> None:
+    import lazy_annotations_sample as lazy
+
+    (shown,) = _caught(lambda: lazy.extra(a=1))
+    assert str(shown.message).startswith("extra(kwargs=) is deprecated")
+    assert _caught(lambda: lazy.element([1])) == []
+
+
+def test_what_a_lazy_module_can_t_resolve_is_reported() -> None:
+    import lazy_annotations_sample as lazy
+
+    found = deprecation_text_violations(lazy)
+    assert found == [
+        "lazy_annotations_sample.Settings.__init__::unwarned-parameter::flag= is marked "
+        "deprecated but nothing warns when it is passed; write the __init__ yourself, under "
+        "@deprecated_parameters",
+        "lazy_annotations_sample.unresolved::unwarned-parameter::x=: its deprecated(...) mark "
+        "can't be evaluated where the function is defined, so it never warns "
+        "(replacement=helper is not defined); name only module-level objects in it",
+    ]
+
+
+def test_other_metadata_that_fails_to_evaluate_is_not_a_mark() -> None:
+    def documented(x: Annotated[int, Doc("deprecated soon")] = 0) -> None: ...  # type: ignore[name-defined]  # noqa: F821
+
+    assert read_parameter_marks(documented) == ({}, {})
