@@ -57,7 +57,7 @@ class ControllerFacts(_Model):
     total_hosts: int | None = None
     """An inventory's host count."""
     playbooks: tuple[str, ...] | None = None
-    """A project's playbooks at its last sync; ``None`` when they could not be read."""
+    """A successful project's playbooks at that sync; ``None`` when not read."""
 
 
 @experimental

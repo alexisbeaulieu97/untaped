@@ -100,7 +100,7 @@ def _facts(
     failed = record.get("last_job_failed")
     hosts = record.get("total_hosts")
     found: tuple[str, ...] | None = None
-    if spec.kind == "Project":
+    if spec.kind == "Project" and status == "successful":  # what playbook-missing reads
         try:
             found = playbooks.playbooks(int(record["id"]))
         except AwxApiError:

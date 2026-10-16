@@ -58,14 +58,16 @@ in git, copy it between controllers, and gate CI on `apply --check`.
 ## Lint resources
 
 ```bash
-untaped awx lint ./awx-specs --offline
-untaped awx lint --organization Platform --format json
+untaped awx lint ./awx-specs --offline     # the documents alone
+untaped awx lint --organization Platform   # what the controller holds
 ```
 
+The first prints:
+
 ```text
-LOCATION           SEVERITY  RULE                      TARGET                          MESSAGE
-templates.yml#2    error     awx.missing-reference     JobTemplate/Platform/deploy-web project 'web' is not in the batch
-job_templates/14   error     awx.playbook-missing      JobTemplate/Platform/deploy-web playbook 'deploy.yml' is not in Project 'web' at its last sync
+location                  severity  rule                      target                           message
+awx-specs/templates.yml#2 error     awx.missing-reference     JobTemplate/Platform/deploy-web  project 'web' is not in the batch
+awx-specs/templates.yml#4 error     awx.ignored-launch-field  Schedule/Platform/nightly        limit is set, but JobTemplate 'deploy-api' ignores it: ask_limit_on_launch is false
 lint: 2 errors
 ```
 
