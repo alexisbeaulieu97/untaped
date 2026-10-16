@@ -3,8 +3,9 @@
 They live in one module the plugin's spec imports, so every kind github
 declares is registered once the plugin is composed: ``plugin schema``
 describes each one, and a piped github row resolves to its model before
-any github command runs. The module holds models only, to keep that import
-cheap. A model's fields, in order, are its rows' keys on the wire.
+any github command runs. The module holds models and their default columns
+only, to keep that import cheap. A model's fields, in order, are its rows'
+keys on the wire.
 """
 
 from __future__ import annotations
