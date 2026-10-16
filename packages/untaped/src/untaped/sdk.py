@@ -45,6 +45,7 @@ from untaped.cli import (  # type: ignore[deprecated]
     create_app,
     echo,
     emit,
+    emit_document,
     existing_file,
     parse_json_pairs,
     parse_kv_pairs,
@@ -109,6 +110,7 @@ from untaped.migrations import (
     dir_bytes,
     move_migration,
     old_dirs,
+    other_layouts_migration,
     setting_guard,
     unsafe_dir,
 )
@@ -151,6 +153,7 @@ from untaped.records import (
     kind_of,
     record_model,
 )
+from untaped.refs import holders
 from untaped.settings import HttpSettings, get_config_section
 from untaped.skills import project_root
 from untaped.stability import (
@@ -272,6 +275,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "dir_bytes",
     "move_migration",
     "old_dirs",
+    "other_layouts_migration",
     "plugin_dir",
     "setting_guard",
     "unsafe_dir",
@@ -302,6 +306,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "UtcTimestamp",
     "echo",
     "emit",
+    "emit_document",
     "finish",
     "is_envelope_line",
     "kind_of",
@@ -384,6 +389,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Served",
     "Store",
     "code_version",
+    "holders",
     "refresh_option",
     # prompts and ui
     "NO_PROGRESS",

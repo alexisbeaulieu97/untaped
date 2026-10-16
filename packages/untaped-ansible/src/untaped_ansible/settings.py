@@ -10,7 +10,7 @@ from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from untaped.sdk import Cache, Retired, Store, code_version
+from untaped.sdk import Cache, Retired, Store, code_version, setting_guard
 from untaped_github.api import normalize_team_scopes
 
 DEFAULT_DEPENDENCY_PATHS = (
@@ -112,8 +112,12 @@ def default_index_path() -> Path:
 #: (a test holds them equal; importing the schema here would load the
 #: plugin's infrastructure at startup), not the schema version: an additive
 #: schema change keeps sharing the layout's file. ``bare=4``: 11.0 kept
-#: layout 4 at ``index.sqlite3``, renamed on first open.
-INDEX_STORE = Store("ansible", "index", base=default_index_path, layout=4, bare=4)
+#: layout 4 at ``index.sqlite3``, renamed on first open. A layout any
+#: profile points ``ansible.index_path`` at is that profile's index: it stays.
+INDEX_PATH_GUARD = setting_guard("ansible", "index_path")
+INDEX_STORE = Store(
+    "ansible", "index", base=default_index_path, layout=4, bare=4, keep=INDEX_PATH_GUARD
+)
 
 
 def parser_version() -> str:

@@ -5,7 +5,7 @@ import sys
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 import yaml
@@ -25,6 +25,7 @@ from untaped.sdk import (
     clamp_parallel,
     create_app,
     emit,
+    emit_document,
     parse_json_pairs,
     parse_kv_pairs,
     render_rows,
@@ -410,6 +411,23 @@ def test_emit_yaml_mapping_with_unknown_values_falls_back_to_str(
         "color": "red",
         "tags": ["a"],
     }
+
+
+_DOCUMENT = {
+    "name": "stage",
+    "data": {"when": datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC), "path": Path("/tmp/x")},
+    "empty": {},
+}
+
+
+@pytest.mark.parametrize("fmt", ["json", "yaml"])
+def test_a_document_prints_as_emit_printed_a_single_mapping(
+    fmt: Literal["json", "yaml"], capsys: pytest.CaptureFixture[str]
+) -> None:
+    emit(_DOCUMENT, fmt=fmt)
+    before = capsys.readouterr().out
+    emit_document(_DOCUMENT, fmt=fmt)
+    assert capsys.readouterr().out == before
 
 
 def test_emit_single_pipe_emits_one_envelope(capsys: pytest.CaptureFixture[str]) -> None:

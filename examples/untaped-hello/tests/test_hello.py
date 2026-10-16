@@ -8,7 +8,9 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-from untaped.sdk import Progress, StaleData
+from untaped_hello.records import Salutation
+
+from untaped.sdk import Progress, StaleData, kind_of
 from untaped.testing import cache_clock, invoke_root
 from untaped_lint.testing import assert_clean
 
@@ -44,6 +46,25 @@ def test_hello_greets_with_a_configured_greeting() -> None:
     result = invoke_root(["hello", "greet"])
     assert result.exit_code == 0
     assert result.stdout.strip() == "hi"
+
+
+def test_hello_say_pipes_its_greetings_back_in_by_their_model() -> None:
+    piped = invoke_root(["hello", "say", "ada", "grace", "--format", "pipe"])
+    assert piped.exit_code == 0, piped.stderr
+    assert {json.loads(line)["kind"] for line in piped.stdout.splitlines()} == {kind_of(Salutation)}
+
+    again = invoke_root(["hello", "say", "--stdin", "--format", "json"], input=piped.stdout)
+    assert again.exit_code == 0, again.stderr
+    assert [row["name"] for row in json.loads(again.stdout)] == ["ada", "grace"]
+
+
+def test_hello_say_refuses_records_of_another_kind() -> None:
+    plugins = invoke_root(["plugin", "list", "--format", "pipe"]).stdout
+
+    result = invoke_root(["hello", "say", "--stdin"], input=plugins)
+
+    assert result.exit_code == 2
+    assert f"expected '{kind_of(Salutation)}'" in result.stderr
 
 
 def test_hello_moves_its_old_greetings_with_migrate_dirs() -> None:

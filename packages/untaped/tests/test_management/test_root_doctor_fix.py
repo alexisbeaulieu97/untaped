@@ -296,7 +296,7 @@ def test_rows_are_matched_by_plugin_check_and_title(monkeypatch: pytest.MonkeyPa
     ]
     one = fix._Fix(argv=("x",), keys=tuple(covered["rows"]), checks=("svc.a",), automatic=True)
     run = ChildRun(code=0, rows=[], diagnostics=[])
-    assert fix._outcome(one, None, run, rows, dry_run=False)["action"] == "fixed"  # type: ignore[arg-type]
+    assert fix._outcome(one, None, run, rows, dry_run=False).action == "fixed"  # type: ignore[arg-type]
 
 
 # ── modes ────────────────────────────────────────────────────────────────────

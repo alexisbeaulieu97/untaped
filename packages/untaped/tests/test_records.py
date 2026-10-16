@@ -30,6 +30,7 @@ from untaped.output.diagnostic import (
     DeprecationNotice,
     Message,
     Progress,
+    Pruned,
     StaleData,
     WireModel,
 )
@@ -43,6 +44,7 @@ from untaped.records import (
     CheckRecord,
     DuplicateKindError,
     Failure,
+    ForeignKindError,
     OutcomeRecord,
     Record,
     TargetRecord,
@@ -294,6 +296,58 @@ def test_two_models_declaring_one_kind_is_duplicate_kind() -> None:
     assert record_model("acme-tools.widget") is _Widget
 
 
+def test_a_plugin_package_declares_kinds_under_its_own_name() -> None:
+    class _Own(Record, kind="acme-tools.kit_part"):
+        __module__ = "untaped_acme_tools.records"
+        name: str
+
+    assert record_model("acme-tools.kit_part") is _Own
+
+
+@pytest.mark.parametrize(
+    ("module", "kind", "declarer", "fixes"),
+    [
+        (
+            "untaped_acme_tools.records",
+            "acme.gizmo",
+            "plugin 'acme-tools'",
+            "name it acme-tools.gizmo, or ship it in the package untaped_acme",
+        ),
+        (
+            "untaped_awx.records",
+            "untaped.gizmo",
+            "plugin 'awx'",
+            "name it awx.gizmo, or ship it in the package untaped",
+        ),
+        (
+            "untaped.records_extra",
+            "acme-tools.gizmo",
+            "core",
+            "name it untaped.gizmo, or ship it in the package untaped_acme_tools",
+        ),
+    ],
+)
+def test_a_kind_under_another_plugins_name_is_foreign_kind(
+    module: str, kind: str, declarer: str, fixes: str
+) -> None:
+    with pytest.raises(ForeignKindError, match=f"belongs to {declarer}; ") as caught:
+
+        class _Foreign(Record, kind=kind):
+            __module__ = module
+            name: str
+
+    assert str(caught.value).endswith(fixes)
+    assert caught.value.reason == "foreign-kind"
+    assert record_model(kind) is None
+
+
+def test_a_model_outside_plugin_packages_is_nobodys() -> None:
+    class _Anywhere(Record, kind="forge.gizmo"):
+        name: str
+
+    assert record_model("forge.gizmo") is _Anywhere
+
+
 def test_the_same_class_defined_again_replaces_itself() -> None:
     def define() -> type[Record]:
         class _Reloaded(Record, kind="acme-tools.reloaded"):
@@ -477,9 +531,22 @@ def _import_every_shipped_module() -> None:
 
 def _samples() -> dict[str, WireModel]:
     from untaped.config.models import SettingOutcome, SettingRow
-    from untaped.management.plugin_check import PluginCheckRow
-    from untaped.management.plugin_new import ScaffoldOutcome
     from untaped.management.plugins import ContractRow
+    from untaped.management.records import (
+        AuthOutcome,
+        ConfigMigrationOutcome,
+        DoctorCheckRow,
+        FixOutcome,
+        InstalledSkillRow,
+        MigrationPreviewRow,
+        PluginCheckRow,
+        RegisterOutcome,
+        ScaffoldOutcome,
+        SetupStep,
+        SkillOutcome,
+        SkillRow,
+        TokenSource,
+    )
     from untaped.plugin_records import Plugin
     from untaped.plugins.registry import MigrationOutcome
     from untaped.profile.models import ProfileOutcome, ProfileRow
@@ -507,6 +574,22 @@ def _samples() -> dict[str, WireModel]:
             max_age=timedelta(hours=1),
             error=Failure.from_exception(ConfigError("x")),
         ),
+        Pruned(
+            message=(
+                "removed layout 4 of store hello.shelf at /x/shelf.v4.db (1 B): nothing holds it"
+            ),
+            store="hello.shelf",
+            layout=4,
+            path="/x/shelf.v4.db",
+            bytes=1,
+        ),
+        RegisterOutcome(
+            action="registered",
+            holder="install:3f9a1c2e8b7d",
+            environment="/x/site-packages",
+            version="11.1.0",
+            layouts=["hello.shelf@4"],
+        ),
         DeprecationNotice(
             id="cli untaped hello old",
             removed_in=12,
@@ -532,6 +615,45 @@ def _samples() -> dict[str, WireModel]:
         ),
         ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),
         MigrationOutcome(id="github.cache", action="moved", detail="3 repos"),
+        AuthOutcome(
+            section="github",
+            profile="default",
+            store=None,
+            action="failed",
+            detail="x",
+            error=Failure.from_exception(ConfigError("x")),
+        ),
+        TokenSource(profile="default", section="github", source="$GITHUB_TOKEN"),
+        ConfigMigrationOutcome.model_validate(
+            {"profile": "default", "from": "a.b", "to": "a.c", "action": "renamed", "detail": ""}
+        ),
+        DoctorCheckRow(
+            check="config",
+            plugin="untaped",
+            status="warn",
+            title="t",
+            detail="d",
+            fix=["config", "migrate"],
+            automatic=True,
+        ),
+        FixOutcome(fix=["config", "migrate"], checks=["config"], action="fixed", detail="d"),
+        MigrationPreviewRow(id="github.cache", action="move", source="/a", destination="/b"),
+        SetupStep(step="profile", plugin="untaped", state="todo", detail="d", run=[], by="agent"),
+        SkillRow(name="untaped-hello", description="d", source="/s"),
+        InstalledSkillRow(
+            name="untaped-hello",
+            target="claude",
+            scope="user",
+            state="current",
+            target_path=Path("/h/.claude/skills/untaped-hello"),
+        ),
+        SkillOutcome(
+            name="untaped-hello",
+            target="claude",
+            scope="user",
+            target_path=Path("/h/.claude/skills/untaped-hello"),
+            action="updated",
+        ),
         Plugin(
             name="acme",
             status="ready",
@@ -610,3 +732,26 @@ def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:
     assert set(samples) == shipped, "give every kind a package declares a sample here"
     for sample in samples.values():
         _assert_round_trips(sample)
+
+
+#: The keys, in order, of the dict rows core's management commands wrote
+#: before each declared a model: a model keeps its row's wire order.
+_ROW_KEYS = {
+    "untaped.auth_outcome": ["section", "profile", "store", "action", "detail", "error"],
+    "untaped.token_source": ["profile", "section", "source"],
+    "untaped.config_migration_outcome": ["profile", "from", "to", "action", "detail"],
+    "untaped.doctor_check": ["check", "plugin", "status", "title", "detail", "fix", "automatic"],
+    "untaped.fix_outcome": ["fix", "checks", "action", "detail"],
+    "untaped.migration_row": ["id", "action", "source", "destination", "detail"],
+    "untaped.setup_step": ["step", "plugin", "state", "detail", "run", "by"],
+    "untaped.skill": ["name", "description", "source"],
+    "untaped.installed_skill": ["name", "target", "scope", "state", "target_path"],
+    "untaped.skill_outcome": ["name", "target", "scope", "target_path", "action"],
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_ROW_KEYS))
+def test_a_core_model_writes_its_old_row_keys_in_their_order(kind: str) -> None:
+    sample = _samples()[kind]
+
+    assert list(json.loads(sample.model_dump_json())) == _ROW_KEYS[kind]

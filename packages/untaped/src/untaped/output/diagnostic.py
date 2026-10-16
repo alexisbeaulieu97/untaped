@@ -140,8 +140,22 @@ def check_data_kind(kind: str) -> None:
         )
 
 
-class DuplicateKindError(ValueError):
+class KindError(ValueError):
+    """A kind declaration composition refuses; ``reason`` is its quarantine reason."""
+
+    reason: ClassVar[str]
+
+
+class DuplicateKindError(KindError):
     """Two models declare the same kind (reason ``duplicate-kind``)."""
+
+    reason = "duplicate-kind"
+
+
+class ForeignKindError(KindError):
+    """A model declares a kind under another plugin's name (reason ``foreign-kind``)."""
+
+    reason = "foreign-kind"
 
 
 _MODELS: dict[str, type[WireModel]] = {}
@@ -171,6 +185,7 @@ def _register(kind: str, model: type[WireModel]) -> None:
     """Map ``kind`` to ``model``; another model already declaring it is ``duplicate-kind``.
 
     The same class defined again (a module imported twice) replaces itself.
+    A plugin's model declaring a kind under another name is ``foreign-kind``.
     """
     held = _MODELS.get(kind)
     if held is not None and (held.__module__, held.__qualname__) != (
@@ -182,13 +197,64 @@ def _register(kind: str, model: type[WireModel]) -> None:
             f"{held.__module__}.{held.__qualname__} and {model.__module__}.{model.__qualname__}; "
             "each kind has exactly one schema, so give one of them another kind"
         )
+    _check_owner(kind, model)
     _MODELS[kind] = model
     _KINDS[model] = kind
 
 
+def _declaring_plugin(module: str) -> str | None:
+    """The plugin whose import package holds ``module`` (``None``: no plugin's).
+
+    ``untaped_acme_tools`` is ``acme-tools`` and ``untaped`` is core: plugin
+    names have no ``_``, so the mapping is unambiguous.
+    """
+    package = module.partition(".")[0]
+    if package == "untaped":
+        return "untaped"
+    if package.startswith("untaped_"):
+        return package.removeprefix("untaped_").replace("_", "-")
+    return None
+
+
+def _check_owner(kind: str, model: type[WireModel]) -> None:
+    """A plugin's model declares kinds under its own name only (``foreign-kind``).
+
+    The plugin is read from the model's import package, since a plugin's
+    name and its package are one name. A model outside ``untaped`` and
+    ``untaped_*`` packages (a test module) is not checked.
+
+    The plugin is quarantined only when composing it registers the model:
+    a model in a module that only a command body imports registers when
+    that command runs, so a foreign or duplicate kind there is a traceback
+    instead. Declare models in a module the spec or app factory imports.
+    """
+    owner = _declaring_plugin(model.__module__)
+    prefix = kind.partition(".")[0]
+    if owner is None or prefix == owner:
+        return
+    noun = kind.partition(".")[2]
+    declarer = "core" if owner == "untaped" else f"plugin {owner!r}"
+    # The package can be what is misnamed: a plugin's package is its name read with ``_``.
+    package = "untaped" if prefix == "untaped" else f"untaped_{prefix.replace('-', '_')}"
+    raise ForeignKindError(
+        f"{model.__module__}.{model.__qualname__} declares kind {kind!r}, but its package "
+        f"belongs to {declarer}; a kind starts with its declaring plugin's name, "
+        f"so name it {owner}.{noun}, or ship it in the package {package}"
+    )
+
+
+def dumped_names(model: type[BaseModel]) -> dict[str, str]:
+    """Each field's key in ``model``'s dump: its serialization alias where it dumps by alias."""
+    by_alias = bool(model.model_config.get("serialize_by_alias"))
+    return {
+        name: (info.serialization_alias if by_alias else None) or name
+        for name, info in model.model_fields.items()
+    }
+
+
 @cache
 def _field_order(model: type[WireModel]) -> tuple[str, ...]:
-    """Field names by declaring class, most derived first, then the model's own reordering.
+    """Dumped keys by declaring class, most derived first, then the model's own reordering.
 
     Pydantic lists inherited fields first; wire models want their own fields
     (including re-declared base fields) ahead of the base-class ones.
@@ -201,7 +267,8 @@ def _field_order(model: type[WireModel]) -> tuple[str, ...]:
             if name in model.model_fields:
                 order.setdefault(name)
                 declared_by.setdefault(name, klass)
-    return tuple(model._reorder(list(order), declared_by))
+    keys = dumped_names(model)
+    return tuple(keys[name] for name in model._reorder(list(order), declared_by))
 
 
 def _is_none(value: object) -> bool:
@@ -658,6 +725,23 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         )
 
 
+class Pruned(Diagnostic, kind="untaped.pruned"):
+    """A store layout nothing holds, removed after a complete fill: an ``info`` line, unmuted.
+
+    ``store`` is ``<plugin>.<name>``, ``layout`` the removed layout's number,
+    ``path`` where it was, ``bytes`` what it freed (its sidecars and its
+    caches' sidecar folders included). Built by
+    :meth:`untaped.store.Store.prune`.
+    """
+
+    level: ClassVar[Level] = "info"
+
+    store: str
+    layout: int
+    path: str
+    bytes: int
+
+
 class DeprecationNotice(Diagnostic, kind="untaped.deprecation"):
     """A deprecated thing was used: a ``warning``, never counted; the sentence is ``message``.
 
@@ -826,13 +910,17 @@ __all__ = [
     "Diagnostic",
     "DuplicateKindError",
     "Failure",
+    "ForeignKindError",
+    "KindError",
     "Level",
     "Message",
+    "Pruned",
     "StaleData",
     "UtcTimestamp",
     "WireModel",
     "attribute",
     "check_data_kind",
+    "dumped_names",
     "error_message",
     "format_error",
     "format_utc",

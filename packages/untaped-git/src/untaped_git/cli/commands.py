@@ -23,9 +23,6 @@ app = create_app(
     help="Credentials for Git hosts, and the repo store other plugins keep repositories in.",
 )
 
-HOST = "git.host"
-STORE = "git.store"
-
 
 @app.command(name="credential")
 def credential_command(
@@ -80,7 +77,7 @@ def hosts_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
             ),
             missing_helper=missing_helper(root),
         )
-        emit(rows, fmt=fmt, columns=columns, kind=HOST)
+        emit(rows, fmt=fmt, columns=columns)
 
 
 @app.command(name="store")
@@ -107,7 +104,7 @@ def store_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
             for line in report_lines(report):
                 echo(line)
             return
-        emit(report, fmt=fmt, columns=columns, kind=STORE)
+        emit(report, fmt=fmt, columns=columns)
 
 
 def _read_fields() -> dict[str, str]:

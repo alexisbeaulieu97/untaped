@@ -199,10 +199,12 @@ free, but a command that writes declares it with `@writes`, or
   `--columns +name/-name` edits the defaults, and a named column is always
   shown, even when empty.
 - Declare a record's kind on its class, `class Widget(Record,
-  kind="acme-tools.widget")`: `<plugin>.<noun>`, `<plugin>.<verb>_outcome` for
-  mutations, `.summary` the only third segment, `untaped.*` for root commands.
-  One model per kind; `emit` reads it from the rows. Fields must survive a
-  JSON round trip (the `Record` docstring says which fail).
+  kind="acme-tools.widget")`, in a `records` module your app imports:
+  `<plugin>.<noun>` (another prefix is `foreign-kind`), `<plugin>.<verb>_outcome`
+  for mutations, `.summary` the only third segment. One model per kind; `emit`
+  reads it from the rows. Elsewhere name the model (`kind_of(Widget)`), never
+  the string, so a rename misses no line. Fields must survive a JSON round
+  trip (`Record`'s docstring says which fail). A document is no row: `emit_document`.
 - Fields are snake_case, with `id` and then `name` first. `url` is the web
   URL and `api_url` is the API link.
 - A record's own fields come before the fields it inherits from the bases
@@ -297,16 +299,16 @@ def items_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
 ```
 
 For a `--stdin` command, `read_identifiers()` reads bare identifiers or a
-pipe stream. Declare the kinds you understand with `accept_kinds`, so a record
+pipe stream. Pass the record models you understand to `accepts`, so a record
 of any other kind exits 2 instead of being misread:
 
 ```python
 from untaped.sdk import read_identifiers
 
-identifiers = read_identifiers([], stdin=True, id_field="full_name", accept_kinds={"github.repo"})
+identifiers = read_identifiers([], stdin=True, id_field="id", accepts=(Item,))
 ```
 
-For whole records, `read_stdin_input(accept_kinds=...)` returns the bare
+For whole records, `read_stdin_input(accepts=...)` returns the bare
 values or the parsed envelopes (a `StdinInput`). `read_identifiers` and
 `read_stdin_input` raise on empty stdin.
 When an empty pipe (a filter that matched nothing) should do nothing, pass

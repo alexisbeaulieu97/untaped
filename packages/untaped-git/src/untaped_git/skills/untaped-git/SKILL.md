@@ -14,7 +14,7 @@ from.
 ## Setup
 
 - Git 2.29 or newer; `untaped doctor` checks it (`git.version`) and the
-  store (`git.store`: paused maintenance, interrupted releases).
+  store (`git.repo-store`: paused maintenance, interrupted releases).
 - Settings live under `profiles.<name>.git`: `store_dir` (the repo store,
   default `~/.untaped/plugins/git/store`) and `untaped_helper_only`.
 

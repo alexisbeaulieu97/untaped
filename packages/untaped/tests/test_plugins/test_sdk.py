@@ -24,6 +24,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "dir_bytes",
         "move_migration",
         "old_dirs",
+        "other_layouts_migration",
         "plugin_dir",
         "setting_guard",
         "unsafe_dir",
@@ -56,6 +57,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "UtcTimestamp",
         "echo",
         "emit",
+        "emit_document",
         "finish",
         "is_envelope_line",
         "kind_of",
@@ -144,6 +146,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Served",
         "Store",
         "code_version",
+        "holders",
         "refresh_option",
     ),
     "prompts and ui": (

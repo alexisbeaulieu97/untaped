@@ -7,6 +7,7 @@ import pytest
 
 from untaped.errors import ConfigError, UsageError
 from untaped.pipe import PIPE_MARKER_KEY
+from untaped.records import Record, kind_of
 from untaped.stdin import (
     StdinInput,
     read_identifiers,
@@ -127,6 +128,57 @@ def test_read_identifiers_rejects_other_kinds_as_usage_error() -> None:
 def test_read_stdin_input_checks_accepted_kinds() -> None:
     with _feed(_env({"id": 1}, kind="github.repo") + "\n"), pytest.raises(UsageError):
         read_stdin_input(accept_kinds={"workspace.repo"})
+
+
+class _Run(Record, kind="forge.run"):
+    id: int
+
+
+class _RunOutcome(Record, kind="forge.run_outcome"):
+    id: int
+
+
+class _Plain(Record):
+    id: int
+
+
+def test_accepts_takes_the_models_whose_kinds_a_command_reads() -> None:
+    payload = "".join(
+        _env({"id": n}, kind=kind) + "\n"
+        for n, kind in [(1, kind_of(_Run)), (2, kind_of(_RunOutcome)), (3, None)]
+    )
+    with _feed(payload):
+        ids = read_identifiers([], stdin=True, id_field="id", accepts=(_Run, _RunOutcome))
+    assert ids == ["1", "2", "3"]
+
+
+def test_accepts_rejects_another_kind_naming_the_accepted_kinds() -> None:
+    with (
+        _feed(_env({"id": 7}, kind="forge.host") + "\n"),
+        pytest.raises(
+            UsageError,
+            match=(
+                r"line 1: record kind 'forge\.host' is not accepted here; "
+                r"expected 'forge\.run', 'forge\.run_outcome'"
+            ),
+        ),
+    ):
+        read_stdin_input(accepts=(_RunOutcome, _Run))
+
+
+def test_accepts_refuses_a_model_without_a_kind() -> None:
+    with pytest.raises(TypeError, match=r"declare a kind; .*_Plain declares none"):
+        read_stdin_input(accepts=(_Plain,))
+
+
+def test_accepts_is_checked_when_identifiers_come_from_arguments() -> None:
+    with pytest.raises(TypeError, match=r"_Plain declares none"):
+        read_identifiers(["a"], stdin=False, accepts=(_Plain,))
+
+
+def test_accepts_and_accept_kinds_are_one_or_the_other() -> None:
+    with pytest.raises(TypeError, match="not both"):
+        read_identifiers([], stdin=True, accepts=(_Run,), accept_kinds={"forge.run"})
 
 
 def test_read_stdin_input_returns_bare_values_or_records() -> None:

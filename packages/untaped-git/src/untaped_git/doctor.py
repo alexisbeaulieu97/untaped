@@ -34,7 +34,7 @@ def version_check(_ctx: PluginContext) -> DoctorResult:
 
 
 def store_check(_ctx: PluginContext) -> DoctorResult:
-    """``git.store``: warns about paused maintenance and interrupted releases; never fails.
+    """``git.repo-store``: warns about paused maintenance and interrupted releases; never fails.
 
     No fix: nothing untaped runs clears a ``gc.log`` (git retries after a
     day), and an interrupted release finishes on the repo's next use.
@@ -62,4 +62,4 @@ def store_check(_ctx: PluginContext) -> DoctorResult:
     )
 
 
-_STORE_ID = "git.store"
+_STORE_ID = "git.repo-store"

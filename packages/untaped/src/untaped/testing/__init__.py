@@ -21,6 +21,9 @@ A cache (``untaped.sdk.Cache``) reads its ages from the wall clock; under
 :func:`cache_clock` it reads the test's instead, which moves only on
 ``advance(timedelta)``, so "a rerun an hour later" is one call. The two
 clocks are independent.
+
+:func:`write_reference` writes another install's reference in
+``~/.untaped/refs/``, so a test can say what holds a store's layouts.
 """
 
 from __future__ import annotations
@@ -43,7 +46,7 @@ from rich.console import Console
 from untaped.cache import installed_utcnow
 from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
-from untaped.management.plugin_check import PluginCheckRow
+from untaped.management.records import PluginCheckRow
 from untaped.output.sink import current_clock, installed_clock, recording, tick
 from untaped.plugins.registry import PluginCandidate
 from untaped.prompts import (
@@ -54,6 +57,7 @@ from untaped.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
+from untaped.refs import write_reference
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.stability import apply_marks, deprecated
 from untaped.testing.contracts import assert_fills, compose_with
@@ -94,6 +98,7 @@ __all__ = [
     "invoke_root",
     "plugin_candidate",
     "progress_clock",
+    "write_reference",
 ]
 
 
@@ -274,16 +279,17 @@ def invoke_cli(
     )
 
 
-def invoke_root(argv: Sequence[str]) -> CliResult:
+def invoke_root(argv: Sequence[str], *, input: str | None = None) -> CliResult:
     """Run ``untaped *argv`` in-process, composed from the installed providers.
 
     The supported way for a plugin's tests to drive the real root: the root
     is composed through entry-point discovery, as the ``untaped`` script does,
-    and ``argv`` is invoked on it with captured output.
+    and ``argv`` is invoked on it with captured output. ``input`` is what is
+    piped on stdin (another command's ``--format pipe`` output, say).
     """
     from untaped.bootstrap import build_root_app  # noqa: PLC0415
 
-    return CliInvoker().invoke(build_root_app().meta, list(argv))
+    return CliInvoker().invoke(build_root_app().meta, list(argv), input=input)
 
 
 def no_terminal() -> TextIO:

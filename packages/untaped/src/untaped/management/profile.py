@@ -20,6 +20,7 @@ from untaped.cli import (
     create_app,
     echo,
     emit,
+    emit_document,
     report_errors,
     writes,
 )
@@ -151,9 +152,9 @@ def _show_command(
                 "raw": raw,
                 "data": data,
             }
-            emit(envelope, fmt="json")
+            emit_document(envelope, fmt="json")
         else:
-            emit(data, fmt="yaml")
+            emit_document(data, fmt="yaml")
 
 
 def _use_command(

@@ -25,10 +25,10 @@ import os
 import re
 import shlex
 import stat
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from cyclopts import App, Parameter
 from pydantic import BaseModel, ValidationError
@@ -48,6 +48,7 @@ from untaped.deprecated_keys import key_mappings, scan_keys
 from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_check_list, emit_isolated
+from untaped.management.records import DoctorCheckRow
 from untaped.management.skills import composed_skills
 from untaped.messages import (
     command_argv,
@@ -99,6 +100,10 @@ from untaped.skills import SkillState, outdated_skills, project_root
 from untaped.stability import owner, removal_text
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
 from untaped.token_store import pass_problem
+
+if TYPE_CHECKING:
+    from untaped.refs import Reference
+    from untaped.store import Layout, Store
 
 _diag = Diagnostics()
 
@@ -205,9 +210,12 @@ def report_check_rows(
     if fmt == "table" and columns is None:
         emit_check_list(rows, run_line=lambda argv: run_line(argv, profile))
         _diag.info("")
+    elif fmt == "table":
+        # A table shows ``fix`` as the line to type, so it is a view, not the record.
+        emit_isolated([_table_row(row, profile) for row in rows], fmt=fmt, columns=columns)
     else:
-        shown = [_table_row(row, profile) for row in rows] if fmt == "table" else rows
-        emit_isolated(shown, fmt=fmt, columns=columns, kind="untaped.doctor_check")
+        records = [DoctorCheckRow.model_validate(row) for row in rows]
+        emit_isolated(records, fmt=fmt, columns=columns)
     counts = {status: sum(row["status"] == status for row in rows) for status in _STATUSES}
     _diag.info(summary(op, counts))
     fix_hint = _fix_hint(rows, profile)
@@ -363,6 +371,7 @@ def collect_doctor_rows(
     rows.extend(_contract_rows(result, profile, plugins))
     rows.append(_skills_row(shell, result))
     if plugins is None:
+        rows.append(_references_row(shell, result))
         rows.append(_stores_row(shell, result))
         rows.append(_migrations_row(shell, result))
     for record in result.quarantine:
@@ -534,7 +543,7 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
         for item in scan_keys(raw, profile_section_models())
         if item.kind == "deleted"
     ]
-    parts = ([f"ignored: {', '.join(unknown)}"] if unknown else []) + deleted
+    parts = ([f"ignored: {', '.join(unknown)}{_other_readers()}"] if unknown else []) + deleted
     if not parts:
         return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
     fix = None
@@ -543,6 +552,14 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
     return _row(
         "unknown-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=bool(deleted)
     )
+
+
+def _other_readers() -> str:
+    """`` (another untaped here may read them: …)`` when other installs are registered."""
+    from untaped.refs import others_text  # noqa: PLC0415 - reads refs/ only here
+
+    others = others_text()
+    return f" (another untaped here may read them: {others})" if others else ""
 
 
 def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
@@ -617,35 +634,161 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 
 
 def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
-    """Each composed store's layout and file; warn while another layout is left on disk."""
-    from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
+    """Each composed store's layouts on disk and who holds each.
 
-    title = "stores keep one layout each"
+    Green while every layout on disk is held or will go at the next complete
+    fill; yellow for one the cleanup cannot remove, with the reason.
+    """
+    from untaped.refs import read_references  # noqa: PLC0415 - runs only in doctor
+    from untaped.store import survey  # noqa: PLC0415
+
+    title = "stores keep one layout each, or every layout is held"
     stores = [store for registered in result.plugins for store in registered.spec.stores]
     if not stores:
         return _row("stores", shell.name, _PASS, title, "no plugin declares a store")
+    references = read_references()
     parts: list[str] = []
-    others = False
+    reasons: set[str] = set()
     for store in stores:
         try:
-            path, found = store.path(), store.other_paths()
+            path, layouts = store.path(), survey(store, references)
         except Exception as exc:
             parts.append(f"{store.qualified}: could not find its files: {exc}")
-            others = True
+            reasons.add("files")
             continue
-        if path.exists():
-            text = f"layout {store.layout} at {shown_path(path)} ({size_text(dir_bytes(path))})"
+        texts: list[str] = []
+        if not any(layout.own for layout in layouts):
+            texts.append(f"layout {store.layout} at {shown_path(path)}, not created yet")
+        for layout in layouts:
+            text, warns = _layout_text(store, layout, references)
+            texts.append(text)
+            reasons |= warns
+        parts.append(f"{store.qualified}: {'; '.join(texts)}")
+    if not reasons:
+        return _row("stores", shell.name, _PASS, title, "; ".join(parts))
+    return _row("stores", shell.name, _WARN, title, "; ".join(parts), _stores_fix(reasons))
+
+
+def _layout_text(
+    store: Store, layout: Layout, references: Sequence[Reference]
+) -> tuple[str, set[str]]:
+    """One layout as the ``stores`` row says it, and the codes of what it warns about.
+
+    A damaged in-use lock is said even when ``keep`` or unknown holders are
+    the reason the cleanup keeps the layout.
+    """
+    from untaped.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
+    from untaped.refs import this_install  # noqa: PLC0415
+    from untaped.store import _damaged, kept_reason  # noqa: PLC0415
+
+    size = size_text(dir_bytes(layout.path))
+    text = f"layout {layout.layout} at {shown_path(layout.path)} ({size})"
+    if layout.awaiting:
+        text = f"{shown_path(layout.path)} ({size}) is renamed to layout {layout.layout}"
+        text += " on its next open"
+    reason = kept_reason(store, layout, references)
+    me = this_install()
+    if layout.holders:
+        text += ", held by " + ", ".join(
+            "this install" if me and ref.holder == me.holder else ref.describe()
+            for ref in layout.holders
+        )
+    elif not layout.own and reason is not None and not reason.unheld:
+        text += ", holders unknown"
+    elif not layout.own:
+        text += ", held by nobody"
+        if not reason:
+            text += " (removed at the next complete fill)"
+    found = [reason] if reason else []
+    damaged = _damaged(layout)
+    if damaged is not None and reason is not None and reason.code != "damaged":
+        found.append(damaged)
+    if found:
+        text += ": " + ", and ".join(kept.text for kept in found)
+    return text, {kept.code for kept in found if kept.warns}
+
+
+def _stores_fix(reasons: set[str]) -> list[str] | None:
+    """The ``stores`` row's fix for what keeps its layouts: register, migrate-dirs, or none.
+
+    Never automatic: registering is a deliberate step, and migrate-dirs asks.
+    """
+    if "unregistered" in reasons:
+        return command_argv("setup register", profile=selected_profile())
+    if reasons & {"refused", "busy"}:
+        return command_argv("setup migrate-dirs", profile=selected_profile())
+    return None
+
+
+def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+    """Every install (and plugin object) holding store layouts, and whether this one does."""
+    from untaped.refs import (  # noqa: PLC0415 - runs only in doctor
+        environment,
+        install_holder,
+        read_references,
+        refs_dir,
+    )
+
+    title = "install references"
+    references = read_references()
+    env = environment()
+    mine = install_holder(env) if env is not None else None
+    parts: list[str] = []
+    warn = False
+    registered = False
+    for ref in references:
+        if ref.opaque is not None:
+            warn = True
+            if "newer" in ref.opaque:
+                advice = "; upgrade this install to prune"
+            elif ref.file == refs_dir():
+                advice = ", so nothing is pruned; check its permissions"
+            else:
+                advice = ", so nothing is pruned; delete it"
+            parts.append(f"{shown_path(ref.file)}: {ref.opaque}{advice}")
+            continue
+        text = ref.describe() if ref.kind == "install" else f"{ref.holder} (plugin {ref.plugin})"
+        if ref.holder == mine:
+            registered = True
+            text += " (this install)"
+        if not ref.live:
+            text += (
+                f": no untaped there any more; `untaped setup migrate-dirs` "
+                f"removes {shown_path(ref.file)}"
+            )
+        elif ref.pre_upgrade:
+            text += ": reference from before an upgrade; run any command from that install"
+            text += " to refresh it"
+        parts.append(text)
+    fix = None
+    if env is None:
+        parts.append("this run is from a source tree: it cannot be registered")
+    elif not registered and not any(ref.file == refs_dir() for ref in references):
+        if _other_layouts(result, references):
+            warn = True
+            parts.insert(0, "this install is not registered: nothing cleans up old store layouts")
+            fix = command_argv("setup register", profile=selected_profile())
         else:
-            text = f"layout {store.layout} at {shown_path(path)}, not created yet"
-        for layout, other in found:
-            size = size_text(dir_bytes(other))
-            if store.adopts and layout == store.layout and not path.exists():
-                text += f"; {shown_path(other)} ({size}) is renamed to it on its next open"
+            parts.insert(0, "this install: not registered")
+    detail = "; ".join(parts) or "no install is registered"
+    # Never automatic: a lasting registration is a deliberate step (a one-off `uvx` run's
+    # environment would otherwise pin layouts until its installer's cache is cleared).
+    return _row("references", shell.name, _WARN if warn else _PASS, title, detail, fix)
+
+
+def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -> bool:
+    """Whether any composed store has a layout on disk besides its own."""
+    from untaped.store import survey  # noqa: PLC0415 - runs only in doctor
+
+    for registered in result.plugins:
+        for store in registered.spec.stores:
+            try:
+                layouts = survey(store, references)
+            except Exception:
                 continue
-            others = True
-            text += f"; also layout {layout} at {shown_path(other)} ({size})"
-        parts.append(f"{store.qualified}: {text}")
-    return _row("stores", shell.name, _WARN if others else _PASS, title, "; ".join(parts))
+            if any(not layout.own for layout in layouts):
+                return True
+    return False
 
 
 def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
@@ -827,6 +970,15 @@ def _run_check(
             check_item.title,
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
         )
+    returned: object = outcome.detail  # an unvalidated dataclass field: may be anything
+    if not isinstance(returned, str | None):
+        return _row(
+            check_item.id,
+            scope.plugin,
+            _FAIL,
+            check_item.title,
+            f"check returned detail of type {type(returned).__name__}, expected str",
+        )
     fix = None
     # A passing row drops its fix, but an automatic one is still validated.
     if outcome.fix and (not outcome.ok or outcome.warn or outcome.automatic):
@@ -843,7 +995,7 @@ def _run_check(
     if outcome.ok and not outcome.warn:
         return _row(check_item.id, scope.plugin, _PASS, title, outcome.detail or "OK")
     status = _FAIL if not outcome.ok else _WARN
-    detail = outcome.detail
+    detail = outcome.detail or ""
     return _row(
         check_item.id, scope.plugin, status, title, detail, fix, automatic=outcome.automatic
     )

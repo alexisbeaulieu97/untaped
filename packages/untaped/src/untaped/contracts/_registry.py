@@ -41,7 +41,7 @@ from untaped.plugins.registry import (
     range_text,
 )
 from untaped.profile_resolver import selected_profile
-from untaped.records import DuplicateKindError
+from untaped.records import KindError
 from untaped.settings import (
     ExtensionSettings,
     active_settings_layout,
@@ -58,6 +58,7 @@ PROVIDER_REASONS = frozenset(
         "owner-not-installed",
         "owner-out-of-range",
         "duplicate-kind",
+        "foreign-kind",
         "unresolved-item-type",
         "missing-bridge",
         "unserialisable-signature",
@@ -236,8 +237,8 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[Provider | Quara
         return whole("owner-out-of-range", out_of_range)
     try:
         values = tuple(spec.provides[owner]())
-    except DuplicateKindError as exc:
-        return whole("duplicate-kind", str(exc))
+    except KindError as exc:
+        return whole(exc.reason, str(exc))
     except ContractError as exc:
         return whole(exc.reason, str(exc))
     except Exception as exc:

@@ -25,7 +25,7 @@ from untaped.sdk import (
 )
 from untaped_github.cli._client import open_client
 from untaped_github.cli.scopes import (
-    REPO_KINDS,
+    REPO_RECORDS,
     ArchivedOption,
     OrgOption,
     RepoOption,
@@ -80,9 +80,7 @@ def _repo_scopes(values: list[str] | None, *, stdin: bool) -> tuple[str, ...]:
     """Merge explicit ``--repo`` values with optional stdin repo scopes."""
     repos = list(values or ())
     if stdin:
-        repos.extend(
-            read_identifiers([], stdin=True, id_field="full_name", accept_kinds=REPO_KINDS)
-        )
+        repos.extend(read_identifiers([], stdin=True, id_field="full_name", accepts=REPO_RECORDS))
     return tuple(repos)
 
 
@@ -173,7 +171,6 @@ def repos_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="github.repo",
             table_columns=REPO_HIT_COLUMNS,
             empty="No repositories found. Broaden your query or remove scope filters.",
         )

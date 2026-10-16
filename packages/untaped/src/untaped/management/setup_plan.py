@@ -1,8 +1,9 @@
 """``untaped setup plan``: what a profile still needs, as rows an agent can act on.
 
 Read-only and non-interactive. One ``untaped.setup_step`` row per step, in
-order: the profile itself, then each service's ``base_url`` and token (or
-its invalid settings), then (with ``--online``) each online check. A row's
+order: this install's registration (``untaped setup register``), the
+profile itself, then each service's ``base_url`` and token (or its invalid
+settings), then (with ``--online``) each online check. A row's
 ``run`` is the complete argv to run after ``untaped`` (a ``<NAME>`` token
 is a value to ask the user for); ``by`` says who runs it: ``user`` for
 a step that asks for or reveals a token, so a token never passes through
@@ -15,7 +16,6 @@ from __future__ import annotations
 
 import shlex
 import shutil
-from typing import Literal
 
 from untaped.auth import (
     PLAINTEXT_TOKEN,
@@ -27,21 +27,19 @@ from untaped.auth import (
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
+from untaped.management.records import SetupActor, SetupState, SetupStep
 from untaped.management.setup_state import ServiceState, service_states, service_store
-from untaped.messages import command_argv, command_line, split_profile
+from untaped.messages import command_argv, command_line, shown_path, split_profile
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
 from untaped.theme import OutputFormat
 
 Row = dict[str, object]
-State = Literal["done", "todo", "failed", "skipped"]
 
-KIND = "untaped.setup_step"
 #: The interactive command and its non-interactive face, as a run without a terminal names them.
 SETUP_COMMAND = "untaped setup"
 SETUP_ALTERNATIVE = "untaped setup plan --format json"
-TABLE_COLUMNS = ["step", "state", "by", "detail", "run"]
 
 
 def plan_rows(
@@ -54,7 +52,7 @@ def plan_rows(
 ) -> list[Row]:
     """Every setup step for ``services`` in ``profile``, in the order to run them."""
     exists = _profile_exists(profile)
-    rows = [_profile_row(shell, profile, exists=exists)]
+    rows = [_install_row(shell, profile), _profile_row(shell, profile, exists=exists)]
     states = service_states(services, profile, read_config_dict())
     store = service_store(services)
     ready: list[str] = []
@@ -75,8 +73,12 @@ def _profile_exists(profile: str) -> bool:
 
 
 def pending(rows: list[Row]) -> bool:
-    """Whether any step still needs doing (``todo`` or ``failed``)."""
-    return any(row["state"] in ("todo", "failed") for row in rows)
+    """Whether any step still needs doing (``todo`` or ``failed``).
+
+    The ``install`` step never counts: registering is advice, so ``--check``
+    still answers whether the services are set up.
+    """
+    return any(row["state"] in ("todo", "failed") and row["step"] != "install" for row in rows)
 
 
 def emit_plan(
@@ -84,14 +86,15 @@ def emit_plan(
 ) -> None:
     """Print the rows; a table shows each ``run`` as the command line to type."""
     if fmt != "table":
-        emit(rows, fmt=fmt, columns=columns, kind=KIND)
+        emit([SetupStep.model_validate(row) for row in rows], fmt=fmt, columns=columns)
         return
     shown = [_table_row(row, profile) for row in rows]
     # A profile that does not exist yet has no `ui` settings to theme the table
     # with; it would inherit default's.
     scope = DEFAULT_PROFILE if not _profile_exists(profile) else profile
     with profile_scope(scope):
-        emit(shown, fmt=fmt, columns=columns, kind=KIND, table_columns=TABLE_COLUMNS)
+        # A table shows ``run`` as the line to type, so it is a view, not the record.
+        emit(shown, fmt=fmt, columns=columns, table_columns=SetupStep.table_columns)
 
 
 def _table_row(row: Row, profile: str) -> Row:
@@ -102,11 +105,11 @@ def _table_row(row: Row, profile: str) -> Row:
 def _row(
     step: str,
     plugin: str,
-    state: State,
+    state: SetupState,
     detail: str,
     run: list[str] | None = None,
     *,
-    by: Literal["agent", "user"] = "agent",
+    by: SetupActor = "agent",
 ) -> Row:
     return {
         "step": step,
@@ -116,6 +119,24 @@ def _row(
         "run": run or [],
         "by": by,
     }
+
+
+def _install_row(shell: ApplicationSpec, profile: str) -> Row:
+    """Whether this install is registered, so the cleanup of store layouts keeps what it uses."""
+    from untaped.refs import environment, install_state, this_install  # noqa: PLC0415
+
+    state = install_state()
+    ref = this_install()
+    env = environment()
+    if state == "source tree" or env is None:
+        detail = "run from a source tree: only an installed untaped can be registered"
+        return _row("install", shell.name, "skipped", detail)
+    if state == "registered" and ref is not None:
+        return _row("install", shell.name, "done", f"registered: {ref.describe()}")
+    detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
+    return _row(
+        "install", shell.name, "todo", detail, command_argv("setup register", profile=profile)
+    )
 
 
 def _profile_row(shell: ApplicationSpec, profile: str, *, exists: bool) -> Row:
@@ -230,7 +251,7 @@ def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
     )
 
 
-def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
+def _by(run: list[str] | None, *, automatic: bool) -> SetupActor:
     """Who runs a fix: an automatic one is the agent's.
 
     Any other fix that writes a token (``auth …``, ``….token``) is the user's.
@@ -244,4 +265,4 @@ def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
     return "user" if secret else "agent"
 
 
-__all__ = ["KIND", "SETUP_ALTERNATIVE", "SETUP_COMMAND", "emit_plan", "pending", "plan_rows"]
+__all__ = ["SETUP_ALTERNATIVE", "SETUP_COMMAND", "emit_plan", "pending", "plan_rows"]

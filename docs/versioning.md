@@ -81,8 +81,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
   repo store.
 - `untaped.testing.assert_surface` and the line format of the
   `surface.txt` it writes.
-- Stores: `Store` in `untaped.sdk`, the `stores=` and `store=` parameters
-  that take one, and `untaped.testing.assert_schema_pinned`. The files a
+- Stores: `Store`, `holders` and `other_layouts_migration` in `untaped.sdk`,
+  the `stores=` and `store=` parameters that take one, and
+  `untaped.testing.assert_schema_pinned` and `write_reference`. The files a
   store names are stable from the start: users keep them. See
   [Stores](./caches.md#stores).
 - Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,

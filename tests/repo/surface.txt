@@ -4063,6 +4063,17 @@ cli untaped setup plan --format choice=table
 cli untaped setup plan --format choice=yaml
 cli untaped setup plan --online switch
 cli untaped setup plan --only VALUE... default=unset
+cli untaped setup register
+cli untaped setup register --columns VALUE... default=unset
+cli untaped setup register --columns alias=-c
+cli untaped setup register --format VALUE default=table
+cli untaped setup register --format alias=-f
+cli untaped setup register --format choice=json
+cli untaped setup register --format choice=pipe
+cli untaped setup register --format choice=raw
+cli untaped setup register --format choice=table
+cli untaped setup register --format choice=yaml
+cli untaped setup register --remove switch
 cli untaped skills
 cli untaped skills install
 cli untaped skills install --all switch
@@ -5400,17 +5411,21 @@ sdk untaped.sdk.StdinInput.records
 sdk untaped.sdk.StdinInput.values
 sdk untaped.sdk.StdinOption
 sdk untaped.sdk.Store(bare=) default=None  [experimental]
+sdk untaped.sdk.Store(keep=) default=None callback(1)  [experimental]
 sdk untaped.sdk.Store(layout=) default=1  [experimental]
 sdk untaped.sdk.Store(plugin, name, *, base) callback(base, 0)  [experimental]
 sdk untaped.sdk.Store.adopts  [experimental]
 sdk untaped.sdk.Store.bare  [experimental]
 sdk untaped.sdk.Store.base  [experimental]
+sdk untaped.sdk.Store.keep  [experimental]
+sdk untaped.sdk.Store.kept(path)  [experimental]
 sdk untaped.sdk.Store.layout  [experimental]
 sdk untaped.sdk.Store.name  [experimental]
 sdk untaped.sdk.Store.open()  [experimental]
 sdk untaped.sdk.Store.other_paths()  [experimental]
 sdk untaped.sdk.Store.path()  [experimental]
 sdk untaped.sdk.Store.plugin  [experimental]
+sdk untaped.sdk.Store.prune()  [experimental]
 sdk untaped.sdk.Store.qualified  [experimental]
 sdk untaped.sdk.Submit()  [experimental]
 sdk untaped.sdk.Submitted(values)  [experimental]
@@ -5678,6 +5693,7 @@ sdk untaped.sdk.emit(empty=) default=None
 sdk untaped.sdk.emit(kind=) default=None
 sdk untaped.sdk.emit(records, *, fmt)
 sdk untaped.sdk.emit(table_columns=) default=None
+sdk untaped.sdk.emit_document(data, *, fmt)
 sdk untaped.sdk.executable_check(check_id, program, *, purpose)
 sdk untaped.sdk.existing_file(type_, value)
 sdk untaped.sdk.experimental
@@ -5690,6 +5706,7 @@ sdk untaped.sdk.git_toplevel(git=) default=git
 sdk untaped.sdk.git_toplevel(path)
 sdk untaped.sdk.git_toplevel(timeout=) default=30.0
 sdk untaped.sdk.hint(command)
+sdk untaped.sdk.holders(target)  [experimental]
 sdk untaped.sdk.installed_plugins()
 sdk untaped.sdk.is_envelope_line(obj)
 sdk untaped.sdk.kind_of(model)
@@ -5704,6 +5721,7 @@ sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.old_dirs(default, section, key)
 sdk untaped.sdk.online_check(check_id, *, section, probe) callback(probe, 0)
 sdk untaped.sdk.online_check(title=) default=None
+sdk untaped.sdk.other_layouts_migration(store)  [experimental]
 sdk untaped.sdk.paginate_link(http, path)
 sdk untaped.sdk.paginate_link(item_key=) default=None
 sdk untaped.sdk.paginate_link(limit=) default=None
@@ -5733,11 +5751,13 @@ sdk untaped.sdk.project_root(start)
 sdk untaped.sdk.q(value)
 sdk untaped.sdk.raise_usage(message)
 sdk untaped.sdk.read_identifiers(accept_kinds=) default=None
+sdk untaped.sdk.read_identifiers(accepts=) default=None
 sdk untaped.sdk.read_identifiers(id_field=) default=None
 sdk untaped.sdk.read_identifiers(positional, *, stdin)
 sdk untaped.sdk.read_stdin()
 sdk untaped.sdk.read_stdin_input()
 sdk untaped.sdk.read_stdin_input(accept_kinds=) default=None
+sdk untaped.sdk.read_stdin_input(accepts=) default=None
 sdk untaped.sdk.read_stdin_input(allow_empty=) default=false
 sdk untaped.sdk.read_stdin_input(what=) default=identifiers
 sdk untaped.sdk.read_structured_file(flag=) default=None
@@ -5945,10 +5965,15 @@ sdk untaped.testing.invoke_cli(interactive=) default=false
 sdk untaped.testing.invoke_cli(prompt_backend=) default=None
 sdk untaped.testing.invoke_cli(terminal=) default=false
 sdk untaped.testing.invoke_root(argv)
+sdk untaped.testing.invoke_root(input=) default=None
 sdk untaped.testing.plugin_candidate(distribution=) default=None
 sdk untaped.testing.plugin_candidate(requires_dist=) default=[]
 sdk untaped.testing.plugin_candidate(spec)
 sdk untaped.testing.progress_clock()
+sdk untaped.testing.write_reference(anchor=) default=None  [experimental]
+sdk untaped.testing.write_reference(holder, targets)  [experimental]
+sdk untaped.testing.write_reference(plugin=) default=None  [experimental]
+sdk untaped.testing.write_reference(version=) default=None  [experimental]
 sdk untaped_git.api.Adopted(repo, action)
 sdk untaped_git.api.Adopted.action
 sdk untaped_git.api.Adopted.repo

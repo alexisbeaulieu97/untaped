@@ -1,9 +1,11 @@
 """``untaped setup migrate-dirs``: move or delete the directories older versions left.
 
-Core owns no layout. Each plugin contributes its own rows through
-``PluginSpec.migrations`` (:class:`~untaped.plugins.registry.DirMigration`):
-a ``preview`` that reads and an ``apply`` that changes. This command previews
-every composed plugin's migrations in registry order (by plugin name), shows
+Core owns no layout; its one row offers the reference files of installs that
+are gone (:func:`~untaped.migrations.references_migration`). Each plugin
+contributes its own rows through ``PluginSpec.migrations``
+(:class:`~untaped.plugins.registry.DirMigration`): a ``preview`` that reads
+and an ``apply`` that changes. This command previews core's row, then every
+composed plugin's migrations in registry order (by plugin name), shows
 them as one table, confirms (``--yes`` skips it; with no terminal it exits 2),
 then applies them in the same order and reports one ``untaped.migration``
 outcome per migration. A migration that fails is a ``failed`` row naming its
@@ -24,8 +26,9 @@ from typing import Any
 from untaped.cli import emit, report_declined
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
+from untaped.management.records import MigrationPreviewRow
 from untaped.messages import plural, shown_path
-from untaped.migrations import overlapping
+from untaped.migrations import overlapping, references_migration
 from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
@@ -48,7 +51,8 @@ _diag = Diagnostics()
 MIGRATE_COMMAND = "setup migrate-dirs"
 #: Preview actions that change something on disk.
 _CHANGES = frozenset({"move", "delete"})
-_ROW_KIND = "untaped.migration_row"
+#: The context key of core's own migrations (the references of installs that are gone).
+_CORE = "untaped"
 
 
 @dataclass(frozen=True)
@@ -83,16 +87,25 @@ def plan(result: CompositionResult, options: MigrationOptions) -> list[Planned]:
     """Every composed migration's preview, in registry order; a preview that raises is kept."""
     contexts = _contexts(result)
     planned: list[Planned] = []
-    for registered in result.plugins:
-        spec = registered.spec
-        for migration in spec.migrations:
-            try:
-                rows = tuple(_rows(migration.preview(contexts[spec.name], options)))
-            except Exception as exc:  # a plugin's bug is its row's failure, not the command's
-                planned.append(Planned(spec.name, migration, error=_raised(exc)))
-                continue
-            planned.append(Planned(spec.name, migration, rows))
+    for plugin, migration in _migrations(result):
+        try:
+            rows = tuple(_rows(migration.preview(contexts[plugin], options)))
+        except Exception as exc:  # a plugin's bug is its row's failure, not the command's
+            planned.append(Planned(plugin, migration, error=_raised(exc)))
+            continue
+        planned.append(Planned(plugin, migration, rows))
     return _clashes(planned)
+
+
+def _migrations(result: CompositionResult) -> list[tuple[str, DirMigration]]:
+    """Core's own migration first (only while a reference is dead), then each plugin's."""
+    from untaped.refs import read_references  # noqa: PLC0415 - reads refs/ only here
+
+    dead = any(ref.opaque is None and not ref.live for ref in read_references())
+    found = [(_CORE, references_migration())] if dead else []
+    for registered in result.plugins:
+        found += [(registered.spec.name, migration) for migration in registered.spec.migrations]
+    return found
 
 
 def _clashes(planned: list[Planned]) -> list[Planned]:
@@ -137,21 +150,25 @@ def _paths(rows: Sequence[MigrationRow]) -> list[Path]:
     return paths
 
 
-def preview_records(planned: Sequence[Planned]) -> list[dict[str, object]]:
+def preview_records(planned: Sequence[Planned]) -> list[MigrationPreviewRow]:
     """The preview as rows: the migration's id beside each of its rows."""
-    records: list[dict[str, object]] = []
+    records: list[MigrationPreviewRow] = []
     for item in planned:
+        migration_id = item.migration.id
         if item.error is not None:
             records.append(
-                {
-                    "id": item.migration.id,
-                    "action": "failed",
-                    "detail": item.error.message,
-                    "error": item.error.model_dump(mode="json"),
-                }
+                MigrationPreviewRow(
+                    id=migration_id, action="failed", detail=item.error.message, error=item.error
+                )
             )
             continue
-        records.extend({"id": item.migration.id, **row.model_dump()} for row in item.rows)
+        # A plugin's row may subclass MigrationRow; the preview carries the base fields.
+        records.extend(
+            MigrationPreviewRow(
+                id=migration_id, **{name: getattr(row, name) for name in MigrationRow.model_fields}
+            )
+            for row in item.rows
+        )
     return records
 
 
@@ -247,36 +264,32 @@ def _declined() -> bool:
     return True
 
 
-def _shown(records: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+def _shown(records: Sequence[MigrationPreviewRow]) -> list[MigrationPreviewRow]:
     """Records with home-relative paths written ``~/…``, for people (JSON keeps them whole)."""
     return [
-        {
-            key: shown_path(str(value)) if key in ("source", "destination") and value else value
-            for key, value in record.items()
-        }
+        record.model_copy(
+            update={
+                key: shown_path(value)
+                for key in ("source", "destination")
+                if (value := getattr(record, key))
+            }
+        )
         for record in records
     ]
 
 
 def _emit_preview(
-    records: list[dict[str, object]], *, fmt: OutputFormat, columns: list[str] | None
+    records: list[MigrationPreviewRow], *, fmt: OutputFormat, columns: list[str] | None
 ) -> None:
-    emit(
-        _shown(records) if fmt == "table" else records,
-        fmt=fmt,
-        columns=columns,
-        kind=_ROW_KIND,
-        table_columns=("id", "action", "source", "destination", "detail"),
-        empty=False,
-    )
+    emit(_shown(records) if fmt == "table" else records, fmt=fmt, columns=columns, empty=False)
 
 
-def _preview_lines(records: Sequence[Mapping[str, object]]) -> list[str]:
+def _preview_lines(records: Sequence[MigrationPreviewRow]) -> list[str]:
     lines = []
     for record in _shown(records):
-        source, destination = record.get("source") or "", record.get("destination") or ""
-        where = f"{source} → {destination}" if destination else str(source)
-        parts = [str(record["action"]), where, str(record.get("detail") or "")]
+        source, destination = record.source or "", record.destination or ""
+        where = f"{source} → {destination}" if destination else source
+        parts = [record.action, where, record.detail]
         lines.append("  ".join(part for part in parts if part))
     return lines
 
@@ -287,10 +300,11 @@ def _contexts(result: CompositionResult) -> dict[str, PluginContext]:
         effective: Mapping[str, Any] | None = active_settings_layout().effective(read_config_dict())
     except ConfigError:
         effective = None
-    return {
+    contexts = {
         registered.spec.name: PluginContext(settings=_settings(registered.spec, effective))
         for registered in result.plugins
     }
+    return {_CORE: PluginContext(settings=None), **contexts}
 
 
 def _settings(spec: PluginSpec, effective: Mapping[str, Any] | None) -> Any:

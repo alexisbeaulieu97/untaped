@@ -34,6 +34,8 @@ from untaped_github.cli.scopes import (
 from untaped_github.settings import GithubSettings
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from untaped.sdk import Diagnostics
     from untaped_github.application import GitCorpus, SweepMatch, SweepReport
     from untaped_github.domain import RepoSweepOutcome, SweepQuery
@@ -246,7 +248,6 @@ def sweep_command(
                 fmt=fmt,
                 columns=columns,
                 table_columns=_default_columns(query=query, owners=owners, fmt=fmt),
-                kind="github.sweep_repo",
                 empty="No matching repositories found.",
             )
         _footer(report, ctx.diag)
@@ -318,11 +319,11 @@ def _file_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
 
 def _display_rows(
     rows: tuple[RepoSweepOutcome, ...], *, query: SweepQuery, fmt: OutputFormat
-) -> list[dict[str, object]]:
-    """Table rows: a count column per predicate after ``full_name``, lists joined by commas."""
-    records = [row.model_dump(mode="json") for row in rows]
+) -> Sequence[RepoSweepOutcome] | list[dict[str, object]]:
+    """The records; in a table, a count column per predicate after ``full_name``, lists joined."""
     if fmt != "table":
-        return records
+        return rows
+    records = [row.model_dump(mode="json") for row in rows]
     labels = query.labels()
     display: list[dict[str, object]] = []
     for row, record in zip(rows, records, strict=True):
