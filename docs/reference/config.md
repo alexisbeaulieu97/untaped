@@ -67,6 +67,7 @@ overridden for one process with the environment variable shown.
 | `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. |
 | `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. Experimental: may change in a minor release. |
 | `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. Experimental: may change in a minor release. |
+| `awx.caches.resources.max_age_seconds` | integer | `3600` | `UNTAPED_AWX__CACHES__RESOURCES__MAX_AGE_SECONDS` | Seconds controller resources is served before untaped checks upstream; 0 checks every time. |
 
 ## `dotfiles`
 
