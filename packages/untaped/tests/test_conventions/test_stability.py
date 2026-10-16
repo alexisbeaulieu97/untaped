@@ -117,6 +117,7 @@ class _Flags:
 class _Fields:
     gone: Annotated[bool, deprecated(removed_in=3)] = False
     tucked: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS)] = False
+    optional: Annotated[int, deprecated(removed_in=3)] | None = None
     kept: bool = False
 
 
@@ -131,11 +132,12 @@ def test_a_flattened_field_can_t_be_deprecated() -> None:
         return app
 
     message = (
-        "is a flattened dataclass's field, which a deprecated(...) mark or "
+        "is a field of a dataclass or model parameter, which a deprecated(...) mark or "
         "DEPRECATED_OPTIONS can't deprecate: make it a keyword-only option of the command"
     )
     assert _violations(factory) == [
         f"svc run::deprecated-option-panel::--gone {message}",
+        f"svc run::deprecated-option-panel::--optional {message}",
         f"svc run::deprecated-option-panel::--tucked {message}",
     ]
 

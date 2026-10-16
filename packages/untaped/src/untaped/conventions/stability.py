@@ -53,7 +53,6 @@ from __future__ import annotations
 
 import inspect
 import re
-import typing
 from collections.abc import Callable, Iterable, Iterator
 from types import ModuleType
 from typing import Any
@@ -73,6 +72,7 @@ from untaped.stability import (
     Experimental,
     Mark,
     Stability,
+    annotation_metadata,
     app_mark,
     children,
     class_mark,
@@ -232,7 +232,7 @@ def _option_panel(app: App) -> Iterator[str]:
         if argument.keys:
             if _field_deprecated(argument.field_info.annotation):
                 yield (
-                    f"{argument.names[0]} is a flattened dataclass's field, which a "
+                    f"{argument.names[0]} is a field of a dataclass or model parameter, which a "
                     "deprecated(...) mark or DEPRECATED_OPTIONS can't deprecate: make it a "
                     "keyword-only option of the command"
                 )
@@ -260,10 +260,8 @@ def _option_panel(app: App) -> Iterator[str]:
 
 
 def _field_deprecated(annotation: object) -> bool:
-    """Whether a dataclass field's own annotation carries a mark or ``DEPRECATED_OPTIONS``."""
-    if typing.get_origin(annotation) is not typing.Annotated:
-        return False
-    for item in annotation.__metadata__:  # type: ignore[attr-defined]
+    """Whether a field's own annotation carries a mark or ``DEPRECATED_OPTIONS``."""
+    for item in annotation_metadata(annotation):
         if isinstance(item, Deprecated):
             return True
         if isinstance(item, Parameter) and any(

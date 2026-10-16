@@ -1085,6 +1085,11 @@ def read_parameter_marks(
     return marks, failures
 
 
+def annotation_metadata(annotation: object) -> list[object]:
+    """The ``Annotated`` metadata of a resolved type, a union member's too."""
+    return _metadata(annotation, {}, [])
+
+
 def _metadata(
     annotation: object, namespace: Mapping[str, Any], problems: list[str]
 ) -> list[object]:
