@@ -72,11 +72,37 @@ def test_workflow_nodes_reference_what_they_run_and_prompt_with() -> None:
             "nodes[deploy].prompts.inventory",
             "Inventory",
             NameRef(name="edge", organization="Ops"),
-            _DEFAULT,
+            {"organization": "Ops"},
         ),
         ReferenceSite("nodes[deploy].prompts.credentials", "Credential", "ssh", _DEFAULT),
         ReferenceSite("nodes[deploy].prompts.credentials", "Credential", "vault", _DEFAULT),
     )
+
+
+def test_node_sites_take_the_scope_apply_resolves_them_in() -> None:
+    """Only org-scoped prompt kinds use the workflow's organization; runs follow their own."""
+    nodes = [
+        {
+            "id": "deploy",
+            "run": {"job_template": "deploy", "organization": "Ops"},
+            "prompts": {"execution_environment": "ee", "instance_groups": ["default"]},
+        },
+        {"id": "shared", "run": {"job_template": "shared", "organization": None}},
+        {"id": "cleanup", "run": {"system_job_template": "Cleanup Job Details"}},
+        {"id": "sync", "run": {"inventory_source": "from-git", "inventory": "prod"}},
+    ]
+    doc = _doc("WorkflowJobTemplate", {"name": "release", "organization": "Default"}, nodes=nodes)
+
+    scopes = {site.field: site.scope for site in references_of(WORKFLOW_JOB_TEMPLATE_SPEC, doc)}
+
+    assert scopes == {
+        "nodes[deploy].run": {"organization": "Ops"},
+        "nodes[deploy].prompts.execution_environment": None,
+        "nodes[deploy].prompts.instance_groups": None,
+        "nodes[shared].run": None,
+        "nodes[cleanup].run": None,
+        "nodes[sync].run": {"inventory": "prod", "inventory__organization": "Default"},
+    }
 
 
 def test_an_invalid_node_graph_references_nothing() -> None:
