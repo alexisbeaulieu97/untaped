@@ -8,7 +8,7 @@ import pytest
 
 from untaped_awx.cli.names import flatten_fks
 from untaped_awx.domain import FkRef
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 _PROJECT = FkRef(field="project", kind="Project")
 _CREDENTIALS = FkRef(field="credentials", kind="Credential", multi=True)

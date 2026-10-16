@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from untaped_awx.domain.case_failure import FailedTask
-from untaped_awx.domain.job import HostSummary
-from untaped_awx.domain.suite import CaseResult, Expectation, Suite, idempotence
+from untaped_awx.domain.jobs.job import HostSummary
+from untaped_awx.domain.suites.case_failure import FailedTask
+from untaped_awx.domain.suites.suite import CaseResult, Expectation, Suite, idempotence
 
 
 def _expect(body: dict[str, Any]) -> Expectation:

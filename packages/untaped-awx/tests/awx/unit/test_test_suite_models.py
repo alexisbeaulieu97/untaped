@@ -9,8 +9,8 @@ from pydantic import ValidationError
 
 from untaped.sdk import ErrorCategory
 from untaped_awx.domain import JobEvent
-from untaped_awx.domain.case_failure import FailedTask, failure
-from untaped_awx.domain.suite import (
+from untaped_awx.domain.suites.case_failure import FailedTask, failure
+from untaped_awx.domain.suites.suite import (
     Case,
     CaseResult,
     Expectation,

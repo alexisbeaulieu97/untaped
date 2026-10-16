@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped_awx.domain.workflow_run import (
+from untaped_awx.domain.suites.workflow_run import (
     RunNode,
     TemplateNode,
     approval_labels,

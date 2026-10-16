@@ -20,15 +20,15 @@ from untaped.sdk import AppContext, UsageError, app_context
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.errors import WaitCancelledError
 from untaped_awx.infrastructure import AwxClient, AwxResourceCatalog
-from untaped_awx.infrastructure.fk_resolver import HttpFkResolver
-from untaped_awx.infrastructure.job_monitor import PollingJobMonitor
-from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
-from untaped_awx.infrastructure.resource_repo import ResourceRepository
-from untaped_awx.infrastructure.strategy_resolver import StaticStrategyResolver
-from untaped_awx.infrastructure.unified_template_repo import (
+from untaped_awx.infrastructure.jobs.job_monitor import PollingJobMonitor
+from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
+from untaped_awx.infrastructure.resources.fk_resolver import HttpFkResolver
+from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
+from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
+from untaped_awx.infrastructure.resources.unified_template_repo import (
     HttpUnifiedTemplateRepository,
 )
-from untaped_awx.infrastructure.workflow_node_repo import HttpWorkflowNodeRepository
+from untaped_awx.infrastructure.resources.workflow_node_repo import HttpWorkflowNodeRepository
 from untaped_awx.settings import AwxSettings
 
 if TYPE_CHECKING:

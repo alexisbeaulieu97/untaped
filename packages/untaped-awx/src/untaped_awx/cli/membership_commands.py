@@ -34,7 +34,7 @@ from untaped.sdk import (
     writes,
 )
 from untaped_awx.application import ManageMembership
-from untaped_awx.application.mutation_values import redact_error
+from untaped_awx.application.resources.mutation_values import redact_error
 from untaped_awx.cli._mutation_runner import confirm_batch, validate_controls
 from untaped_awx.cli._selection import select_resources
 from untaped_awx.cli.context import AwxContext, open_context
@@ -53,9 +53,9 @@ from untaped_awx.cli.options import (
     scope_parameter,
 )
 from untaped_awx.domain import FkRef
-from untaped_awx.domain.records import MembershipOutcome
 from untaped_awx.errors import BadRequestError
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
+from untaped_awx.records import MembershipOutcome
 
 
 def register_membership_subapp(parent_app: App, spec: AwxResourceSpec, ref: FkRef) -> None:

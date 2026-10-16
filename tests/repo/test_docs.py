@@ -593,7 +593,7 @@ def _docstring(path: Path) -> str:
 def test_rationale_lives_beside_the_code_it_protects() -> None:
     assert not (REPO_ROOT / ".planning" / "decisions").exists()
     awx = PACKAGES / "untaped-awx/src/untaped_awx"
-    assert "round-trip" in _docstring(awx / "infrastructure/yaml_io.py")
+    assert "round-trip" in _docstring(awx / "infrastructure/resources/yaml_io.py")
     workspace = PACKAGES / "untaped-workspace/src/untaped_workspace"
     assert "load-bearing" in _docstring(workspace / "infrastructure/git_worktrees.py")
     provision = _docstring(workspace / "application/provision.py")

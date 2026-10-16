@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from untaped.sdk import read_identifiers, read_stdin_input
-from untaped_awx.application.selection import pipe_record_id
+from untaped_awx.application.resources.selection import pipe_record_id
 from untaped_awx.domain import ResourceSpec
 
 

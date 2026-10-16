@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped_awx.application.references import ReferenceSite, references_of
+from untaped_awx.application.resources.references import ReferenceSite, references_of
 from untaped_awx.domain import Resource
 from untaped_awx.domain.workflow_graph import NameRef, NodeRun
-from untaped_awx.infrastructure.specs import (
+from untaped_awx.infrastructure.resources.specs import (
     JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
     WORKFLOW_JOB_TEMPLATE_SPEC,

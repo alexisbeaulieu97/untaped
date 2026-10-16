@@ -13,10 +13,10 @@ from typing import Any, cast
 
 import pytest
 
-from untaped_awx.application.ports import RawHttpResourceClient
+from untaped_awx.application.resources.ports import RawHttpResourceClient
 from untaped_awx.domain import Job
 from untaped_awx.errors import AwxApiError
-from untaped_awx.infrastructure.job_monitor import PollingJobMonitor
+from untaped_awx.infrastructure.jobs.job_monitor import PollingJobMonitor
 
 
 class _FakeClient:

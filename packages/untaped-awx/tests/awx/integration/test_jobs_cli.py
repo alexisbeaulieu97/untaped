@@ -10,7 +10,7 @@ import yaml
 
 from untaped.testing import CliInvoker
 from untaped_awx.cli import app, parallel
-from untaped_awx.infrastructure.job_monitor import PollingJobMonitor
+from untaped_awx.infrastructure.jobs.job_monitor import PollingJobMonitor
 
 
 def _seed_running_job(fake: Any, *, job_id: int = 42) -> None:

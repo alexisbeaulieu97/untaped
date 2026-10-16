@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from untaped_awx.domain.envelope import API_VERSION, IdentityRef, Metadata, Resource
-from untaped_awx.domain.job import Job, JobEvent
+from untaped_awx.domain.jobs.job import Job, JobEvent
 from untaped_awx.domain.outcomes import (
     ApplyOutcome,
     BatchResult,

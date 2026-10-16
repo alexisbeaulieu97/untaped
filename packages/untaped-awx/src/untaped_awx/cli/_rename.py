@@ -14,7 +14,7 @@ from untaped.sdk import (
     report_errors,
     writes,
 )
-from untaped_awx.application.rename_resource import RenameResource
+from untaped_awx.application.resources.rename_resource import RenameResource
 from untaped_awx.cli._mutation_runner import confirm_batch
 from untaped_awx.cli._selection import select_resources
 from untaped_awx.cli.context import open_context
@@ -26,7 +26,7 @@ from untaped_awx.cli.options import (
     YesOption,
 )
 from untaped_awx.errors import BadRequestError
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def _add_rename(app: App, spec: AwxResourceSpec) -> None:

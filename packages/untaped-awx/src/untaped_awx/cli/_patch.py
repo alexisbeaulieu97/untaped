@@ -10,7 +10,7 @@ from cyclopts import App, Parameter
 
 from untaped.sdk import UsageError, plural, raise_usage, report_errors, writes
 from untaped_awx.application import SaveResource
-from untaped_awx.application.apply_planner import unrecognized_fields
+from untaped_awx.application.resources.apply_planner import unrecognized_fields
 from untaped_awx.cli._apply_runner import build_mutation_engine
 from untaped_awx.cli._mutation_runner import (
     CONTROL_DEFAULTS,
@@ -22,7 +22,7 @@ from untaped_awx.cli.context import open_context
 from untaped_awx.cli.options import NamesArgument
 from untaped_awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped_awx.domain import Resource
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def _add_patch(app: App, spec: AwxResourceSpec) -> None:

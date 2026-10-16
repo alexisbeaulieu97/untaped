@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
+    from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def name_fks(

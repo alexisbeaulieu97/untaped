@@ -73,7 +73,7 @@ def test_value_filtered_wildcard_matches_only_slots_holding_that_value() -> None
 
 def test_strip_keeps_plain_survey_defaults_and_names_the_filtered_path() -> None:
     from untaped_awx.domain.secret_paths import strip_encrypted_in_place
-    from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+    from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 
     payload: dict[str, Any] = {
         "survey_spec": {

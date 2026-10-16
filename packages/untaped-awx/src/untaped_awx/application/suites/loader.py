@@ -20,7 +20,7 @@ from untaped_awx.application.suites.ports import (
     Prompt,
     VarsResolver,
 )
-from untaped_awx.domain.suite import Suite, VariableSpec
+from untaped_awx.domain.suites.suite import Suite, VariableSpec
 
 
 class LoadTestSuite:

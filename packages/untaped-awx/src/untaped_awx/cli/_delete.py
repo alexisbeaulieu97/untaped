@@ -13,8 +13,8 @@ from untaped.sdk import (
     writes,
 )
 from untaped_awx.application import DeleteResource
-from untaped_awx.application.mutation_values import redact_error
-from untaped_awx.application.selected_actions import run_selected_actions
+from untaped_awx.application.jobs.selected_actions import run_selected_actions
+from untaped_awx.application.resources.mutation_values import redact_error
 from untaped_awx.cli._mutation_runner import confirm_batch, validate_controls
 from untaped_awx.cli._selection import (
     SELECTION_DEFAULTS,
@@ -30,8 +30,8 @@ from untaped_awx.cli.options import (
     ParallelOption,
     YesOption,
 )
-from untaped_awx.domain.records import DeleteOutcome
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
+from untaped_awx.records import DeleteOutcome
 
 
 def _add_delete(app: App, spec: AwxResourceSpec) -> None:

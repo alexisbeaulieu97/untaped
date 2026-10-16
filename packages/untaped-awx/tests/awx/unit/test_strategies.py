@@ -4,14 +4,14 @@ from typing import Any, cast
 
 import pytest
 
-from untaped_awx.application.ports import FkResolver, RawHttpResourceClient
+from untaped_awx.application.resources.ports import FkResolver, RawHttpResourceClient
 from untaped_awx.domain import IdentityRef, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequestError
-from untaped_awx.infrastructure.specs import (
+from untaped_awx.infrastructure.resources.specs import (
     JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
 )
-from untaped_awx.infrastructure.strategies import (
+from untaped_awx.infrastructure.resources.strategies import (
     DefaultApplyStrategy,
     ScheduleApplyStrategy,
 )

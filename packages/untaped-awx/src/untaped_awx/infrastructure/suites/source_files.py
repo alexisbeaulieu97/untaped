@@ -17,14 +17,14 @@ from pathlib import Path, PurePosixPath
 
 from untaped.sdk import ConfigError, ErrorCategory
 from untaped_awx.domain import Resource
-from untaped_awx.domain.temporary_set import TEMPLATE_KINDS
+from untaped_awx.domain.suites.temporary_set import TEMPLATE_KINDS
 from untaped_awx.infrastructure.git_source import GitSource
+from untaped_awx.infrastructure.resources.yaml_io import read_resource_files_at
 from untaped_awx.infrastructure.suites.filesystem import (
     is_hidden,
     is_suite_text,
     kind_marker,
 )
-from untaped_awx.infrastructure.yaml_io import read_resource_files_at
 
 SPEC_ROOT = Path(".untaped/awx")
 """Where a repository keeps its specs and suites, at its root."""

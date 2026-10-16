@@ -46,30 +46,30 @@ from untaped.sdk import (
     UntapedError,
     q,
 )
-from untaped_awx.application.apply_file import prepare_documents
-from untaped_awx.application.mutation_engine import BatchMutationEngine
-from untaped_awx.application.mutation_types import MutationPlan
-from untaped_awx.application.ports import Catalog, FkResolver, ResourceClient
-from untaped_awx.application.prepare_actions import extra_var_names
+from untaped_awx.application.jobs.prepare_actions import extra_var_names
+from untaped_awx.application.resources.apply_file import prepare_documents
+from untaped_awx.application.resources.mutation_engine import BatchMutationEngine
+from untaped_awx.application.resources.mutation_types import MutationPlan
+from untaped_awx.application.resources.ports import Catalog, FkResolver, ResourceClient
 from untaped_awx.application.suites.preflight import PreflightLaunch, refused
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.domain.case_failure import SCM
-from untaped_awx.domain.outcomes import TemporaryCopyOutcome
-from untaped_awx.domain.suite import (
+from untaped_awx.domain.suites.case_failure import SCM
+from untaped_awx.domain.suites.suite import (
     JOB_TEMPLATE,
     WORKFLOW_TEMPLATE,
     TemplateBinding,
 )
-from untaped_awx.domain.temporary_set import (
+from untaped_awx.domain.suites.temporary_set import (
     TAG,
     TEMPLATE_KINDS,
     Marker,
+    TemporaryCopyOutcome,
     TemporarySet,
     TemporaryTemplate,
     leftover,
     source_name,
 )
-from untaped_awx.domain.workflow_run import MAX_NESTING, WORKFLOW_JOB
+from untaped_awx.domain.suites.workflow_run import MAX_NESTING, WORKFLOW_JOB
 from untaped_awx.errors import (
     AwxError,
     BadRequestError,

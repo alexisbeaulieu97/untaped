@@ -10,7 +10,7 @@ import pytest
 
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli import app
-from untaped_awx.domain.temporary_set import Marker
+from untaped_awx.domain.suites.temporary_set import Marker
 
 if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides 'tests'
     from awx.conftest import FakeAap

@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 
 from untaped.sdk import ErrorCategory
-from untaped_awx.domain.case_failure import CaseFailure, failure, in_node
-from untaped_awx.domain.suite import Baseline, CaseResult, SuiteRunOutcome
-from untaped_awx.domain.suite_baseline import saved_baselines
+from untaped_awx.domain.suites.case_failure import CaseFailure, failure, in_node
+from untaped_awx.domain.suites.suite import Baseline, CaseResult, SuiteRunOutcome
+from untaped_awx.domain.suites.suite_baseline import saved_baselines
 
 _SYSTEMS = {
     ErrorCategory.FAILED: "awx.playbook",

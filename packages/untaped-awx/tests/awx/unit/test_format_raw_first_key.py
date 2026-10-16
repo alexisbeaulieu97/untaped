@@ -13,10 +13,10 @@ import pytest
 
 from untaped_awx.cli.suite_commands import case_row
 from untaped_awx.domain import WorkflowNode
-from untaped_awx.domain.records import JobEventRow, JobRecord
-from untaped_awx.domain.suite import CaseResult, Suite
-from untaped_awx.infrastructure.spec import AwxResourceSpec
-from untaped_awx.infrastructure.specs import ALL_SPECS
+from untaped_awx.domain.suites.suite import CaseResult, Suite
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
+from untaped_awx.infrastructure.resources.specs import ALL_SPECS
+from untaped_awx.records import JobEventRow, JobRecord
 
 _SUITE = Suite.model_validate(
     {"name": "suite-a", "jobTemplate": "jt", "cases": {"c1": {"launch": {}}}}

@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 
 from awx.unit.support import SingleApply
-from untaped_awx.application.ports import (
+from untaped_awx.application.resources.ports import (
     Catalog,
     FkResolver,
     RawHttpResourceClient,
@@ -18,14 +18,14 @@ from untaped_awx.domain import Metadata, Resource, ResourceSpec
 from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.domain.outcomes import DeleteReceipt
 from untaped_awx.errors import AwxApiError, BadRequestError
-from untaped_awx.infrastructure.specs import (
+from untaped_awx.infrastructure.resources.specs import (
     CREDENTIAL_SPEC,
     GROUP_SPEC,
     JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
     SCHEDULE_SPEC,
 )
-from untaped_awx.infrastructure.strategies import DefaultApplyStrategy
+from untaped_awx.infrastructure.resources.strategies import DefaultApplyStrategy
 
 # ----- Stubs -----
 

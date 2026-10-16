@@ -27,7 +27,7 @@ from untaped.sdk import (
     resolve_each,
     writes,
 )
-from untaped_awx.application.mutation_values import error_text
+from untaped_awx.application.resources.mutation_values import error_text
 from untaped_awx.cli.context import AwxContext, open_context
 from untaped_awx.cli.job_targets import (
     JobIdsArgument,
@@ -37,8 +37,8 @@ from untaped_awx.cli.job_targets import (
     job_targets,
 )
 from untaped_awx.cli.options import DryRunOption, YesOption
-from untaped_awx.domain.job import JOB_ROUTES, TERMINAL_STATUSES
-from untaped_awx.domain.outcomes import JobCancelOutcome, JobRelaunchOutcome
+from untaped_awx.domain.jobs.job import JOB_ROUTES, TERMINAL_STATUSES
+from untaped_awx.records import JobCancelOutcome, JobRelaunchOutcome
 
 _CANCEL_COLUMNS = ("id", "name", "action", "detail")
 """A cancel row's ``status`` is the one read before the request, so the table leaves it out."""

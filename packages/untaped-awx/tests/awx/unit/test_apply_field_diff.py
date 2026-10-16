@@ -7,7 +7,7 @@ preview diff. No I/O, no Protocols.
 
 from __future__ import annotations
 
-from untaped_awx.application.apply_field_diff import FieldDiff
+from untaped_awx.application.resources.apply_field_diff import FieldDiff
 from untaped_awx.domain import FieldChange
 
 
