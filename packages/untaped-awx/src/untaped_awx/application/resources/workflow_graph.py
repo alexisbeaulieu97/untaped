@@ -392,11 +392,13 @@ def node_ids(states: Iterable[NodeState]) -> dict[str, tuple[tuple[str, int], ..
 
     ``nodes[<identifier>].run`` and ``nodes[<identifier>].prompts.<field>`` (as
     :func:`~untaped_awx.application.resources.references.references_of` names
-    them) → ``(kind, id)`` in export order. An opaque node and an approval run
-    nothing a reference names.
+    them) → ``(kind, id)`` in export order. An opaque node (export leaves it
+    out) names nothing, and an approval runs nothing.
     """
     found: dict[str, tuple[tuple[str, int], ...]] = {}
     for state in states:
+        if state.opaque:
+            continue
         prefix = f"nodes[{state.identifier}]"
         if state.run is not None and isinstance(state.run[1], int):
             found[f"{prefix}.run"] = ((state.run[0], state.run[1]),)
