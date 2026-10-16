@@ -685,7 +685,7 @@ def test_a_failed_job_passes_when_failure_is_expected() -> None:
     [row] = runner([_case_suite({"expect": {"status": "failed"}})]).results
     assert row.result == "pass"
     assert [check.model_dump() for check in row.expectations] == [
-        {"check": "status", "expected": "failed", "actual": "failed", "passed": True}
+        {"check": "status", "expected": "failed", "actual": "failed", "passed": True, "node": None}
     ]
     assert row.failure is None
     # no log checks and nothing failed: nothing read
@@ -1478,6 +1478,7 @@ def test_a_negative_case_passes_only_when_its_failed_tasks_match() -> None:
         "expected": "task 'Dep', msg 'one of'",
         "actual": "[web1] Deploy: env must be one of",
         "passed": True,
+        "node": None,
     }
     assert (hosts.read, len(events.calls)) == ([5], 1)
 
@@ -1543,6 +1544,7 @@ def test_an_idempotent_case_relaunches_the_same_payload_and_passes_unchanged() -
         "expected": "successful, 0 changed",
         "actual": "successful, 0 changed",
         "passed": True,
+        "node": None,
     }
     assert hosts.read == [6]  # only the rerun's changes matter
 
@@ -1950,6 +1952,7 @@ def test_an_idempotent_rerun_awx_is_still_saving_is_not_proven_unchanged() -> No
         "expected": "successful, 0 changed",
         "actual": "successful",
         "passed": False,
+        "node": None,
     }
 
 

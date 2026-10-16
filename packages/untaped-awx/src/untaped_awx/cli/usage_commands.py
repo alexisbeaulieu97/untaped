@@ -136,13 +136,11 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                 except UntapedError as exc:
                     ctx.diag.failure(exc, item=target)
                     any_failed = True
-        rows = [u.model_dump() for u in usages]
         emit(
-            rows,
+            usages,
             fmt=fmt,
             columns=columns or (_DEFAULT_COLUMNS if fmt == "raw" else None),
             table_columns=_DEFAULT_COLUMNS,
-            kind="awx.template_usage",
             empty="No containing workflows found.",
         )
         finish(any_failed)

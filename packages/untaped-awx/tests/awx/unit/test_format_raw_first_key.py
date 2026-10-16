@@ -12,8 +12,10 @@ from pathlib import Path
 import pytest
 
 from untaped_awx.cli.suite_commands import case_row
-from untaped_awx.domain import Job, JobEvent, WorkflowNode
+from untaped_awx.domain import WorkflowNode
+from untaped_awx.domain.records import JobEventRow, JobRecord
 from untaped_awx.domain.suite import CaseResult, Suite
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs import ALL_SPECS
 
 _SUITE = Suite.model_validate(
@@ -24,13 +26,13 @@ _SUITE = Suite.model_validate(
 @pytest.mark.parametrize(
     ("row_keys", "expected"),
     [
-        (lambda: Job.model_fields, "id"),
-        (lambda: JobEvent.model_fields, "counter"),
+        (lambda: JobRecord.model_validate({"type": "job", "id": 1}).model_dump(), "id"),
+        (lambda: JobEventRow.model_fields, "job"),
         (lambda: WorkflowNode.model_fields, "id"),
         (lambda: CaseResult.model_fields, "suite"),
-        (lambda: case_row(Path("s.yml"), _SUITE, "c1"), "suite"),
+        (lambda: case_row(Path("s.yml"), _SUITE, "c1").model_dump(), "suite"),
     ],
-    ids=["Job", "JobEvent", "WorkflowNode", "CaseResult", "case_row"],
+    ids=["JobRecord", "JobEventRow", "WorkflowNode", "CaseResult", "case_row"],
 )
 def test_row_source_first_key(row_keys: Callable[[], Mapping[str, object]], expected: str) -> None:
     assert next(iter(row_keys())) == expected
@@ -39,3 +41,12 @@ def test_row_source_first_key(row_keys: Callable[[], Mapping[str, object]], expe
 def test_awx_resource_spec_list_columns_leads_with_id() -> None:
     """Every spec-driven ``list`` (catalog-only stubs included) leads with ``id``."""
     assert [spec.kind for spec in ALL_SPECS if spec.list_columns[:1] != ("id",)] == []
+
+
+@pytest.mark.parametrize("spec", ALL_SPECS, ids=lambda spec: spec.kind)
+def test_a_catalog_row_leads_with_id_whatever_its_model_types(spec: AwxResourceSpec) -> None:
+    """AWX's row starts ``id, type, …``: its record writes ``id`` first, then the typed fields."""
+    row = {"type": "x", "organization": 1, "inventory": 2, "name": "n", "id": 7, "url": "/"}
+    model = spec.require_record()
+
+    assert next(iter(model.model_validate(row).model_dump())) == "id"

@@ -31,7 +31,6 @@ from untaped_awx.cli.options import (
     StdinOption,
     offers_with_scm,
 )
-from untaped_awx.cli.pipe import pipe_kind_for_spec
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -111,17 +110,15 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
                 columns=columns,
                 defaults=default_cols if table else (),
             )
-            records = [
-                redact_value(record, spec.secret_paths, skip_empty=True) for record in records
-            ]
+            model = spec.require_record()
             emit(
-                records,
+                [
+                    model.model_validate(redact_value(record, spec.secret_paths, skip_empty=True))
+                    for record in records
+                ],
                 fmt=fmt,
                 columns=columns,
                 table_columns=default_cols,
-                kind=pipe_kind_for_spec(spec),
             )
         if not records:
-            emit(
-                [], fmt=fmt, kind=pipe_kind_for_spec(spec), empty=f"No matching {spec.kind} found."
-            )
+            emit([], fmt=fmt, empty=f"No matching {spec.kind} found.")

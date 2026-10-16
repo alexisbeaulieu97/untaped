@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from untaped_awx.domain import ActionSpec, DerivedField, FkRef
+from untaped_awx.domain.records import Project, SyncOutcome
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 PROJECT_SPEC = AwxResourceSpec(
     kind="Project",
+    record=Project,
     cli_name="projects",
     api_path="projects",
     identity_keys=("name", "organization"),
@@ -52,7 +54,11 @@ PROJECT_SPEC = AwxResourceSpec(
         # The project's default execution environment (global, no org scope).
         FkRef(field="default_environment", kind="ExecutionEnvironment"),
     ),
-    actions=(ActionSpec(name="sync", path="update", returns=frozenset({"project_update"})),),
+    actions=(
+        ActionSpec(
+            name="sync", outcome=SyncOutcome, path="update", returns=frozenset({"project_update"})
+        ),
+    ),
     list_columns=("id", "name", "status"),
     commands=("list", "get", "save", "apply", "delete"),
     fidelity="full",

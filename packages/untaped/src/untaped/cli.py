@@ -742,9 +742,15 @@ def _reports_change(items: Sequence[BaseModel | Mapping[str, object]]) -> bool:
 def _model_schema(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
 ) -> list[str] | None:
-    """Field names when every record is a pydantic model (a known schema)."""
+    """Field names when every record is a pydantic model (a known schema).
+
+    A model with ``extra="allow"`` passes a service's answer through, so its
+    schema is open, as a mapping row's is (``None``).
+    """
     items = [records] if isinstance(records, BaseModel | Mapping) else list(records)
-    if not items or not all(isinstance(item, BaseModel) for item in items):
+    if not items or not all(
+        isinstance(item, BaseModel) and item.model_config.get("extra") != "allow" for item in items
+    ):
         return None
     names: dict[str, None] = {}
     for item in items:

@@ -10,7 +10,8 @@ from typing import Any, Literal
 import pytest
 import yaml
 from cyclopts import App
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import Field as PydanticField
 
 from untaped.cli import run_cyclopts_app
 from untaped.output.policy import enable_quiet, reset_quiet
@@ -686,6 +687,23 @@ def test_emit_unknown_mapping_column_warns_but_renders(
     captured = capsys.readouterr()
     assert captured.out == "a\t\n"
     assert "warning: unknown column 'nmae'; valid columns: name, value" in captured.err
+
+
+class _Answer(Record, kind="acme-tools.answer"):
+    model_config = ConfigDict(extra="allow")
+    __pydantic_extra__: dict[str, JsonValue] = PydanticField(init=False)
+
+    id: int
+
+
+def test_emit_unknown_column_on_an_open_record_warns_but_renders(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A record passing a service's answer through has an open schema, as a mapping row has."""
+    emit([_Answer.model_validate({"id": 1, "name": "a"})], fmt="raw", columns=["name", "nmae"])
+    captured = capsys.readouterr()
+    assert captured.out == "a\t\n"
+    assert "warning: unknown column 'nmae'; valid columns: id, name" in captured.err
 
 
 def test_emit_column_names_containing_dots_match_whole_keys(

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from untaped.sdk import read_identifiers, read_stdin_input
 from untaped_awx.application.selection import pipe_record_id
-from untaped_awx.cli.pipe import pipe_kind_for_spec
 from untaped_awx.domain import ResourceSpec
 
 
@@ -22,7 +21,7 @@ def template_targets(
         return [
             (target, by_id) for target in read_identifiers(list(identifiers or []), stdin=stdin)
         ]
-    piped = read_stdin_input(accept_kinds={pipe_kind_for_spec(spec)})
+    piped = read_stdin_input(accepts=(spec.require_record(),))
     if piped.records is None:
         return [(value, by_id) for value in piped.values]
     return [(str(pipe_record_id(envelope)), True) for envelope in piped.records]

@@ -152,6 +152,15 @@ def test_nothing_to_prune(aap: FakeAap) -> None:
     assert "No temporary copies found." in result.stderr
 
 
+def test_nothing_to_prune_still_lists_the_default_columns(aap: FakeAap) -> None:
+    result = CliInvoker().invoke(app, ["test", "prune", "--yes", "-c", "?"])
+
+    assert result.exit_code == 0, result.stderr
+    assert "available columns (* = shown by default):" in result.stderr
+    for name in ("kind", "id", "name", "ref", "created_at", "action"):
+        assert f"  {name} *" in result.stderr
+
+
 def test_a_bad_age_is_a_usage_error(aap: FakeAap) -> None:
     result = _prune("--older-than", "2 hours")
 

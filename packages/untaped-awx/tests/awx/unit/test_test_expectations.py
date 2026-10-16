@@ -150,6 +150,7 @@ def test_changed_bounds_the_total_over_every_host() -> None:
         "expected": "<= 3",
         "actual": "3",
         "passed": True,
+        "node": None,
     }
     assert not broken.passed
     assert broken.describe_failure() == "expected <= 0 changed tasks, got 3"
@@ -257,6 +258,7 @@ def test_the_idempotence_check_comes_from_the_rerun() -> None:
         "expected": "successful, 0 changed",
         "actual": "successful, 0 changed",
         "passed": True,
+        "node": None,
     }
     assert (broken.actual, broken.passed) == ("successful, 3 changed", False)
     assert broken.describe_failure() == "not idempotent: the rerun ended successful, 3 changed"

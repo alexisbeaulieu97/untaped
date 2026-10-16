@@ -9,11 +9,13 @@ for create and PATCHes the global ``/schedules/<id>/`` for update.
 from __future__ import annotations
 
 from untaped_awx.domain import FkRef
+from untaped_awx.domain.records import Schedule
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 SCHEDULE_SPEC = AwxResourceSpec(
     kind="Schedule",
+    record=Schedule,
     cli_name="schedules",
     api_path="schedules",
     identity_keys=("name",),  # uniqueness is name-within-parent; parent is in metadata.parent

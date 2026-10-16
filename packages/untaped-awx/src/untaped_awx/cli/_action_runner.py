@@ -12,6 +12,7 @@ from untaped.sdk import (
     Diagnostics,
     Failure,
     FormatOption,
+    OutcomeRecord,
     UntapedError,
     emit,
     finish,
@@ -70,7 +71,9 @@ def run_action_selection(
     """
     reads = TemplateReads(ctx.repo, spec)
     spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload, reads=reads)
-    result_kinds = next(a.returns for a in spec.actions if a.name == action)
+    action_spec = next(a for a in spec.actions if a.name == action)
+    outcome_model = action_spec.outcome
+    result_kinds = action_spec.returns
     result_kind = next(iter(result_kinds)) if len(result_kinds) == 1 else None
     rows: list[dict[str, Any]] = [
         {
@@ -87,7 +90,7 @@ def run_action_selection(
     if dry_run:
         _preview_payloads(rows, targets, payload, reads, fmt=fmt)
     if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
-        _emit_rows(rows, action=action, fmt=fmt, columns=columns)
+        _emit_rows(rows, outcome=outcome_model, fmt=fmt, columns=columns)
         return
 
     def safe_error(exc: Exception, target: SelectedResource) -> str:
@@ -130,7 +133,7 @@ def run_action_selection(
     _report_rows(ctx, rows)
     for kind, ids in unfinished.items():
         ctx.diag.hint(run_hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"))
-    _emit_rows(rows, action=action, fmt=fmt, columns=columns)
+    _emit_rows(rows, outcome=outcome_model, fmt=fmt, columns=columns)
     finish(any(row["action"] != "completed" for row in rows))
 
 
@@ -148,19 +151,18 @@ def _report_rows(ctx: AwxContext, rows: list[dict[str, Any]]) -> None:
             ctx.diag.warning(f"{row['target_name']}: {row['detail']}")
 
 
-_TABLE_COLUMNS = ("target_name", "id", "status", "action", "detail", "payload")
-"""A row's target, its execution and what became of it (``payload`` under ``--dry-run``)."""
-
-
 def _emit_rows(
-    rows: list[dict[str, Any]], *, action: str, fmt: FormatOption, columns: ColumnsOption
+    rows: list[dict[str, Any]],
+    *,
+    outcome: type[OutcomeRecord],
+    fmt: FormatOption,
+    columns: ColumnsOption,
 ) -> None:
     emit(
-        rows,
+        [outcome.model_validate(row) for row in rows],
         fmt=fmt,
         columns=columns,
-        table_columns=_TABLE_COLUMNS,
-        kind=f"awx.{action}_outcome",
+        table_columns=outcome.table_columns,
     )
 
 

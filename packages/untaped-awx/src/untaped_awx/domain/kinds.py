@@ -1,9 +1,10 @@
-"""Spellings of AWX resource kinds: PascalCase kinds, AWX ``type`` strings, pipe hints.
+"""Spellings of AWX resource kinds: PascalCase kinds and AWX ``type`` strings.
 
-One home for the transforms between a PascalCase kind (``JobTemplate``), the
-snake_case ``type`` AWX reports (``job_template``), and the ``--format pipe``
-kind hint (``awx.job_template``), plus the kinds behind AWX's polymorphic
-``unified_job_templates`` view.
+One home for the transforms between a PascalCase kind (``JobTemplate``) and
+the snake_case ``type`` AWX reports (``job_template``), plus the kinds behind
+AWX's polymorphic ``unified_job_templates`` view. A kind's ``--format pipe``
+record kind (``awx.job_template``) is its record model's
+(``ResourceSpec.record``), declared once in :mod:`untaped_awx.domain.records`.
 """
 
 from __future__ import annotations
@@ -30,22 +31,6 @@ def snake_kind(kind: str) -> str:
     return _CAMEL_RUN.sub(r"\1_\2", _CAMEL_TAIL.sub(r"\1_\2", kind)).lower()
 
 
-RESOURCE_OUTCOME_PIPE_KINDS: dict[str, str] = {
-    "copy": "awx.copy_outcome",
-    "rename": "awx.rename_outcome",
-}
-"""Command -> outcome pipe kind naming one resource by ``id`` plus its ``kind``.
-
-A kind offering the command also accepts these records wherever it selects
-from ``--stdin``, so a copy pipes straight into ``patch``.
-"""
-
-
-def pipe_kind(kind: str) -> str:
-    """The ``awx.<snake_kind>`` ``--format pipe`` hint for ``kind``."""
-    return f"awx.{snake_kind(kind)}"
-
-
 def type_matches_kind(awx_type: str, kind: str) -> bool:
     """Whether an AWX ``type`` (``job_template``) names ``kind`` (``JobTemplate``)."""
     return awx_type.replace("_", "").casefold() == kind.casefold()
@@ -62,7 +47,6 @@ def unified_template_kind(awx_type: str | None) -> str | None:
 
 __all__ = [
     "UNIFIED_TEMPLATE_KINDS",
-    "pipe_kind",
     "snake_kind",
     "type_matches_kind",
     "unified_template_kind",

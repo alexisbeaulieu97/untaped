@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from untaped_awx.domain import ActionSpec, FkRef
+from untaped_awx.domain.records import InventorySource, SyncOutcome
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY
 
 INVENTORY_SOURCE_SPEC = AwxResourceSpec(
     kind="InventorySource",
+    record=InventorySource,
     cli_name="inventory-sources",
     api_path="inventory_sources",
     identity_keys=("name",),
@@ -55,7 +57,11 @@ INVENTORY_SOURCE_SPEC = AwxResourceSpec(
     ),
     apply_strategy="inventory_child",
     parent_field="inventory",
-    actions=(ActionSpec(name="sync", path="update", returns=frozenset({"inventory_update"})),),
+    actions=(
+        ActionSpec(
+            name="sync", outcome=SyncOutcome, path="update", returns=frozenset({"inventory_update"})
+        ),
+    ),
     commands=("list", "get", "save", "apply", "delete"),
     list_columns=("id", "name", "source", "status", "inventory"),
 )

@@ -303,14 +303,50 @@ def test_jobs_events_follow_json_lists_columns_once_and_streams_nothing(fake_aap
     assert result.stderr.count("available columns") == 1
 
 
-def test_jobs_events_follow_json_warns_once_about_an_unknown_column(fake_aap: Any) -> None:
+def test_jobs_events_follow_json_refuses_an_unknown_column(fake_aap: Any) -> None:
     _seed_events(fake_aap)
     fake_aap.seed("job_events", id=2, job=42, counter=2, event="runner_on_ok")
 
-    result = _run("jobs", "events", "42", "--follow", "--format", "json", "-c", "counter,nope")
+    result = CliInvoker().invoke(
+        app, ["jobs", "events", "42", "--follow", "--format", "json", "-c", "counter,nope"]
+    )
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert result.stderr.count("unknown column 'nope'") == 1
+
+
+def test_jobs_events_follow_json_streams_the_columns_asked_for(fake_aap: Any) -> None:
+    _seed_events(fake_aap)
+    fake_aap.seed("job_events", id=2, job=42, counter=2, event="runner_on_ok")
+
+    result = _run("jobs", "events", "42", "--follow", "--format", "json", "-c", "job,counter")
 
     assert [json.loads(line) for line in result.stdout.splitlines()] == [
-        {"counter": 1, "nope": None},
-        {"counter": 2, "nope": None},
+        {"job": 42, "counter": 1},
+        {"job": 42, "counter": 2},
     ]
-    assert result.stderr.count("unknown column 'nope'") == 1
+
+
+def test_jobs_logs_follow_lists_columns_once_without_following(fake_aap: Any) -> None:
+    fake_aap.seed("jobs", id=42, **{**_JOB, "status": "successful"}, stdout="line-0\nline-1\n")
+
+    result = _run("jobs", "logs", "42", "--follow", "--format", "json", "--columns", "?")
+
+    assert result.stdout == ""
+    assert result.stderr.count("available columns") == 1
+    assert "  line" in result.stderr
+
+
+@pytest.mark.parametrize("follow", [[], ["--follow", "--format", "json"]])
+@pytest.mark.parametrize(("command", "default"), [("events", "  counter *"), ("logs", "  line *")])
+def test_jobs_events_and_logs_list_their_defaults_on_a_job_with_no_rows(
+    fake_aap: Any, follow: list[str], command: str, default: str
+) -> None:
+    fake_aap.seed("jobs", id=42, **{**_JOB, "status": "successful"})
+
+    result = _run("jobs", command, "42", *follow, "--columns", "?")
+
+    assert result.stdout == ""
+    assert "available columns (* = shown by default):" in result.stderr
+    assert default in result.stderr
