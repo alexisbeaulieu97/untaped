@@ -28,10 +28,14 @@ from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
 from untaped.management.records import SetupActor, SetupState, SetupStep
-from untaped.management.setup_state import ServiceState, service_states, service_store
+from untaped.management.setup_state import (
+    ServiceState,
+    profile_exists,
+    service_states,
+    service_store,
+)
 from untaped.messages import command_argv, command_line, shown_path, split_profile
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
-from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
 from untaped.theme import OutputFormat
 
@@ -51,7 +55,7 @@ def plan_rows(
     online: bool,
 ) -> list[Row]:
     """Every setup step for ``services`` in ``profile``, in the order to run them."""
-    exists = _profile_exists(profile)
+    exists = profile_exists(profile)
     rows = [_install_row(shell, profile), _profile_row(shell, profile, exists=exists)]
     states = service_states(services, profile, read_config_dict())
     store = service_store(services)
@@ -65,11 +69,6 @@ def plan_rows(
     for spec in services.values():
         rows.extend(_online_rows(spec, checks, online=online, ready=spec.name in ready))
     return rows
-
-
-def _profile_exists(profile: str) -> bool:
-    """Whether ``profile`` exists (``default`` always does)."""
-    return profile == DEFAULT_PROFILE or ProfileFileRepository().read(profile) is not None
 
 
 def pending(rows: list[Row]) -> bool:
@@ -91,7 +90,7 @@ def emit_plan(
     shown = [_table_row(row, profile) for row in rows]
     # A profile that does not exist yet has no `ui` settings to theme the table
     # with; it would inherit default's.
-    scope = DEFAULT_PROFILE if not _profile_exists(profile) else profile
+    scope = DEFAULT_PROFILE if not profile_exists(profile) else profile
     with profile_scope(scope):
         # A table shows ``run`` as the line to type, so it is a view, not the record.
         emit(shown, fmt=fmt, columns=columns, table_columns=SetupStep.table_columns)

@@ -30,6 +30,7 @@ from untaped.deprecated_keys import (
     profile_sections,
 )
 from untaped.errors import ConfigError, first_validation_error
+from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
 from untaped.settings import (
     Settings,
     active_settings_layout,
@@ -247,15 +248,7 @@ class SettingsFileRepository:
             nonlocal resolved
             target_data, resolved = active_settings_layout().write_profile(data, profile)
             olds = self._old_paths(descriptor)
-            current = next(
-                (
-                    value
-                    for value in (_at_path(target_data, path) for path in [descriptor.path, *olds])
-                    if value is not None
-                ),
-                None,
-            )
-            raw_value = update(resolved, current)
+            raw_value = update(resolved, self._own(target_data, descriptor))
             if raw_value is None:
                 unset_at_path(target_data, descriptor.path)
             else:
@@ -274,6 +267,25 @@ class SettingsFileRepository:
         # ``write_profile`` (always a profile name).
         assert resolved is not None
         return resolved
+
+    def own_value(self, key: str, *, profile: str | None = None) -> Any:
+        """``key``'s raw value in ``profile``'s own data, as :meth:`update_value` passes it.
+
+        ``profile`` defaults to the one a write targets; ``None`` when the key
+        (or the profile) is not set.
+        """
+        descriptor = self.descriptor(key)
+        raw = self.yaml_dict()
+        name = profile or effective_active_profile_name(raw) or DEFAULT_PROFILE
+        return self._own(self.profile_data(name) or {}, descriptor)
+
+    def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:
+        """The key's raw value in one profile's ``data``: its own spelling, else an old one."""
+        paths = [descriptor.path, *self._old_paths(descriptor)]
+        return next(
+            (value for value in (_at_path(data, path) for path in paths) if value is not None),
+            None,
+        )
 
     def unset_value(
         self,

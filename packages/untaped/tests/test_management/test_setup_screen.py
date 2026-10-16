@@ -36,14 +36,18 @@ from untaped import refs
 from untaped.app_context import app_context
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
+from untaped.management.setup_connection import token_choices as _token_choices
 from untaped.management.setup_screen import (
     CapRow,
     SetupModel,
     SetupResult,
-    _token_choices,
     setup_screen,
 )
-from untaped.management.setup_state import ServiceState, service_states, setup_services
+from untaped.management.setup_state import (
+    ServiceState,
+    setup_sections,
+    setup_services,
+)
 from untaped.plugins.registry import PluginSpec
 from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
@@ -92,9 +96,9 @@ def _build(
     return setup_screen(
         result,
         services,
+        sections=setup_sections(only),
         profile=profile,
         store=pick_store(),
-        states=service_states(services, profile, raw),
         profiles=sorted(raw.get("profiles") or ()),
     )
 
@@ -107,8 +111,9 @@ def _keys(
     command: str | None = None,
     submit: bool = True,
 ) -> list[ScreenKey]:
-    """List -> form: the URL, the token tab (``right`` steps in), its field, then enter."""
-    keys: list[ScreenKey] = ["enter"]
+    """List -> rows -> connection form: the URL, the token tab (``right`` steps in), its field,
+    then enter."""
+    keys: list[ScreenKey] = ["enter", "enter"]
     if url is not None:
         keys += ["ctrl-u", Paste(url)]
     keys += ["tab", *(["right"] * right)]
@@ -163,7 +168,7 @@ def test_check_passes_then_writes_a_stored_token(
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
 
-    run = drive_screen(_build(), [*_keys("https://wiz", token=" tok "), "esc"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token=" tok "), "esc", "esc"])
 
     assert _wiz_section(_isolated_config) == {
         "base_url": "https://wiz",
@@ -184,7 +189,7 @@ def test_check_passes_then_moves_the_plaintext_token(
         "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n      token: old\n",
     )
 
-    run = drive_screen(_build(), [*_keys(), "esc"])
+    run = drive_screen(_build(), [*_keys(), "esc", "esc"])
 
     assert _wiz_section(_isolated_config) == {
         "base_url": "https://wiz",
@@ -198,7 +203,7 @@ def test_check_passes_then_moves_the_plaintext_token(
 def test_check_passes_then_writes_a_typed_token_for_a_model_without_a_command(
     _isolated_config: Path,
 ) -> None:
-    run = drive_screen(_build(_legacy()), [*_keys("https://legacy", token="tok"), "esc"])
+    run = drive_screen(_build(_legacy()), [*_keys("https://legacy", token="tok"), "esc", "esc"])
 
     section = read_config_dict(_isolated_config)["profiles"]["default"]["legacy"]
     assert section == {"base_url": "https://legacy", "token": "tok"}
@@ -211,7 +216,7 @@ def test_check_passes_then_writes_a_command(_isolated_config: Path, tmp_path: Pa
 
     # No store is installed: the tabs are Command and Env, so the command is the first.
     run = drive_screen(
-        _build(), [*_keys("https://wiz", command=f"{program} --flag 'two words'"), "esc"]
+        _build(), [*_keys("https://wiz", command=f"{program} --flag 'two words'"), "esc", "esc"]
     )
 
     assert _wiz_section(_isolated_config) == {
@@ -223,7 +228,7 @@ def test_check_passes_then_writes_a_command(_isolated_config: Path, tmp_path: Pa
 
 
 def test_check_passes_then_writes_the_env_choice(_isolated_config: Path) -> None:
-    run = drive_screen(_build(_envy()), [*_keys("https://envy", right=1), "esc"])
+    run = drive_screen(_build(_envy()), [*_keys("https://envy", right=1), "esc", "esc"])
 
     assert read_config_dict(_isolated_config)["profiles"]["default"]["envy"] == {
         "base_url": "https://envy"
@@ -239,7 +244,7 @@ def test_check_passes_then_keeps_the_current_token(_isolated_config: Path) -> No
         "profiles:\n  default:\n    wiz:\n      base_url: https://old\n      token: kept\n",
     )
 
-    run = drive_screen(_build(), [*_keys("https://new"), "esc"])
+    run = drive_screen(_build(), [*_keys("https://new"), "esc", "esc"])
 
     assert _wiz_section(_isolated_config) == {"base_url": "https://new", "token": "kept"}
     assert _result(run).touched == ("wiz",)
@@ -256,7 +261,7 @@ def test_using_the_env_var_drops_the_profiles_stored_token(
     _seed(stores, tmp_path, {"untaped/default/envy": "tok"})
 
     # keep, store, command, env: the env tab is the fourth.
-    run = drive_screen(_build(_envy()), [*_keys("https://envy", right=3), "esc"])
+    run = drive_screen(_build(_envy()), [*_keys("https://envy", right=3), "esc", "esc"])
 
     assert read_config_dict(_isolated_config)["profiles"]["default"]["envy"] == {
         "base_url": "https://envy"
@@ -277,7 +282,9 @@ def test_a_new_command_deletes_the_replaced_stored_token(
     )
     _seed(stores, tmp_path, {"untaped/default/envy": "tok"})
 
-    run = drive_screen(_build(_envy()), [*_keys("https://envy", right=2, command=program), "esc"])
+    run = drive_screen(
+        _build(_envy()), [*_keys("https://envy", right=2, command=program), "esc", "esc"]
+    )
 
     assert stores.entries() == {}
     section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
@@ -298,7 +305,9 @@ def test_an_unreachable_replaced_store_only_warns(
     stores.state.write_text('{"default/envy": "old"}')
     monkeypatch.setenv("STUB_MODE", "no-service")  # secret-tool goes away: pass takes over
 
-    run = drive_screen(_build(_envy()), [*_keys("https://envy", right=1, token="new"), "esc"])
+    run = drive_screen(
+        _build(_envy()), [*_keys("https://envy", right=1, token="new"), "esc", "esc"]
+    )
 
     notes = _result(run).notes
     assert any(
@@ -337,7 +346,7 @@ def test_save_anyway_writes(
     FAIL.append(True)
 
     # After the failed check the focus is on the token field: tab goes to the buttons.
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "enter", "esc"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "enter", "esc", "esc"])
 
     assert run.commands_run == ("probe", "save")
     assert stores.entries() == {"untaped/default/wiz": "bad"}
@@ -360,7 +369,7 @@ def test_a_failed_check_is_forgotten_when_the_values_change(
     assert "Save" in flat
 
 
-def test_cancel_forgets_the_failed_check_and_returns_to_the_list(
+def test_cancel_forgets_the_failed_check_and_returns_to_the_rows(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
@@ -368,7 +377,7 @@ def test_cancel_forgets_the_failed_check_and_returns_to_the_list(
 
     run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "right", "enter"])
 
-    assert run.model.focus == "list"
+    assert run.model.focus == "section"
     assert run.model.failed == {}
     assert "Save anyway" not in _flat(run.frame)
     assert not _isolated_config.exists()
@@ -553,7 +562,7 @@ def test_a_second_form_cannot_start_a_check_while_one_runs(
     _send(runtime, _keys("https://legacy", token="tok"))
     assert runtime.model.phase == "probing"
 
-    _send(runtime, ["esc", "down", *_keys("https://wiz", token="x")])
+    _send(runtime, ["esc", "esc", "down", *_keys("https://wiz", token="x")])
 
     assert host.spawned == ["background"]  # the second form never started a check
     assert runtime.model.phase == "probing"
@@ -580,7 +589,7 @@ def test_quitting_during_a_save_leaves_a_complete_write(
     assert runtime.model.phase == "saving"
     assert host.spawned[-1] == "write"  # held: it has not run
 
-    _send(runtime, ["esc", quit_key])
+    _send(runtime, ["esc", "esc", quit_key])  # out of the form, the rows, then quit
     assert runtime.outcome is None  # the screen waits for the write
     assert host.finishes == 0
     host.run_jobs()
@@ -610,7 +619,7 @@ def test_a_write_that_fails_while_quitting_is_reported_not_lost(
     host.deliver()
     assert runtime.model.phase == "saving"
 
-    _send(runtime, ["esc", "esc"])
+    _send(runtime, ["esc", "esc", "esc"])
     host.run_jobs()
     host.deliver()
 
@@ -663,7 +672,14 @@ def test_new_profile_is_created_once(_isolated_config: Path) -> None:
 
     run = drive_screen(
         screen,
-        [*_keys("https://envy", right=1), "down", *_keys("https://legacy", token="t"), "esc"],
+        [
+            *_keys("https://envy", right=1),
+            "esc",
+            "down",
+            *_keys("https://legacy", token="t"),
+            "esc",
+            "esc",
+        ],
     )
 
     result = _result(run)
@@ -733,26 +749,22 @@ def test_open_profile_completions_keep_the_frame_on_screen(_isolated_config: Pat
     lines = run.frame.splitlines()
     assert "p0" in run.frame
     assert len(lines) <= 24
-    assert lines[-2].startswith("╰"), run.frame  # the panes keep their bottom border
+    assert any(line.startswith("╰") and "╯╰" in line for line in lines), run.frame  # both panes
     assert "? help" in lines[-1]
 
 
 # --- what the screen shows -------------------------------------------------------
 
 
-def test_a_status_per_state() -> None:
+def test_a_status_per_state(_isolated_config: Path) -> None:
     specs = [make_spec(name, settings=WizProfile) for name in ("ready", "bare", "fresh", "broken")]
-    result = compose(*specs)
-    services = setup_services(result)
-    states = {
-        "ready": ServiceState("https://r", "ready.token", True),
-        "bare": ServiceState("https://b", None, True),
-        "fresh": ServiceState(None, None, False),
-        "broken": ServiceState(None, None, False, invalid="bad value"),
-    }
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    ready: {base_url: https://r, token: t}\n"
+        "    bare: {base_url: https://b}\n    broken: {base_url: [1, 2]}\n",
+    )
 
-    screen = setup_screen(result, services, profile="default", store=None, states=states)
-    frame = drive_screen(screen).frame
+    frame = drive_screen(_build(*specs)).frame
 
     for name, status in (
         ("ready", "configured"),
@@ -761,6 +773,9 @@ def test_a_status_per_state() -> None:
         ("broken", "invalid settings"),
     ):
         assert re.search(rf"{name}\s+{status}", frame), frame
+    # Those that still need something come first, in the order the services are listed.
+    names = [row.name for row in drive_screen(_build(*specs)).model.rows[1:5]]
+    assert names == ["bare", "broken", "fresh", "ready"]
 
 
 def test_progress_statuses_use_the_ellipsis_token(
@@ -788,7 +803,7 @@ def test_inherited_token_note_shows_in_the_tab(
         "profiles:\n  default:\n    wiz:\n      token: shared\n  prod: {}\nactive: default\n",
     )
 
-    run = drive_screen(_build(profile="prod"), ["enter", "tab"], size=(220, 40))
+    run = drive_screen(_build(profile="prod"), ["enter", "enter", "tab"], size=(220, 40))
 
     flat = _flat(run.frame)
     assert "would leave it in charge, so only keeping the current token is offered" in flat
@@ -823,7 +838,7 @@ def test_tabs_offer_the_same_choices_as_before(
 
 
 def test_without_a_store_the_tabs_never_offer_plain_text() -> None:
-    run = drive_screen(_build(_envy()), ["enter", "tab"], size=(110, 32))
+    run = drive_screen(_build(_envy()), ["enter", "enter", "tab"], size=(110, 32))
 
     flat = _flat(run.frame)
     assert "Command" in flat and "Env" in flat
@@ -833,7 +848,7 @@ def test_without_a_store_the_tabs_never_offer_plain_text() -> None:
 def test_the_tab_labels_name_the_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
 
-    run = drive_screen(_build(), ["enter", "tab"])
+    run = drive_screen(_build(), ["enter", "enter", "tab"])
 
     assert re.search(r"pass\s+Command\s+Env", run.frame)
 
@@ -861,11 +876,10 @@ def test_token_never_in_a_frame(
     else:
         keys = _keys("https://wiz", right=1, command=_token_program(tmp_path, token=SECRET))
 
-    # Both screens are built first: the run migrates a plaintext token, and the second screen
-    # must still start from the original config (the token in the model's states).
-    finishing, unfinished = _build(spec), _build(spec)
-    run = drive_screen(finishing, keys)
-    failing = drive_screen(unfinished, keys[:-1])  # typed, not submitted
+    # The unfinished run goes first: the finished one migrates a plaintext token, and the
+    # unfinished one must start from the original config (the token in the model's states).
+    failing = drive_screen(_build(spec), keys[:-1])  # typed, not submitted
+    run = drive_screen(_build(spec), keys)
 
     if branch == "move":
         # The precondition: the model does hold the plaintext, so only its repr keeps it out.
@@ -976,7 +990,7 @@ def test_the_screen_is_usable_on_a_narrow_terminal(
 
 
 def test_scripted_keys_run_the_screen_end_to_end(_isolated_config: Path) -> None:
-    keys = ScreenKeys(*_keys("https://legacy", token="tok"), "esc")
+    keys = ScreenKeys(*_keys("https://legacy", token="tok"), "esc", "esc")
 
     run = drive_screen(_build(_legacy()), keys)
 
@@ -1025,7 +1039,15 @@ def test_saving_after_leaving_the_profile_field_writes_the_typed_profile(
 
     run = drive_screen(
         _build(_legacy()),
-        ["shift-tab", "ctrl-u", Paste("prod"), "tab", *_keys("https://legacy", token="t"), "esc"],
+        [
+            "shift-tab",
+            "ctrl-u",
+            Paste("prod"),
+            "tab",
+            *_keys("https://legacy", token="t"),
+            "esc",
+            "esc",
+        ],
     )
 
     assert _result(run).profile == "prod"
@@ -1071,9 +1093,12 @@ def test_save_anyway_survives_another_plugin_saving(
         "down",
         *_keys("https://wiz", token="bad"),  # wiz fails its check
         "esc",
+        "esc",
         "up",
         *_keys("https://envy", right=2),  # envy saves (it has no online check): the Env tab
+        "esc",
         "down",
+        "enter",
         "enter",  # back in wiz's form, on the token field it failed on
         "tab",  # the buttons: Save anyway
         "enter",
@@ -1137,14 +1162,16 @@ def test_save_anyway_does_nothing_unless_this_plugin_failed_and_nothing_runs(
 @pytest.mark.parametrize("width", [100, 80, 60])
 def test_the_footer_names_what_the_keys_do_and_keeps_back_and_help(width: int) -> None:
     on_list = drive_screen(_build(), [], size=(width, 30))
-    in_form = drive_screen(_build(), ["enter"], size=(width, 30))
+    in_rows = drive_screen(_build(), ["enter"], size=(width, 30))
+    in_form = drive_screen(_build(), ["enter", "enter"], size=(width, 30))
     in_profile = drive_screen(_build(), ["shift-tab"], size=(width, 30))
 
-    for run in (on_list, in_form, in_profile):
+    for run in (on_list, in_rows, in_form, in_profile):
         assert run.frame.splitlines()[-1].rstrip().endswith("esc back · ? help"), run.frame
     if width >= 100:
         assert "enter open" in on_list.frame.splitlines()[-1]
-        assert "ctrl-s save" in on_list.frame.splitlines()[-1]
+        assert "enter open" in in_rows.frame.splitlines()[-1]  # the connection row
+        assert "ctrl-s" not in on_list.frame.splitlines()[-1]  # rows write a field at a time
     if width >= 80:
         assert "ctrl-s save" in in_form.frame.splitlines()[-1]
         assert "enter load" in in_profile.frame.splitlines()[-1]

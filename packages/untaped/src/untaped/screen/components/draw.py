@@ -10,10 +10,12 @@ row of text is cut or padded to the cells it has. The caret is the
 
 from __future__ import annotations
 
+import io
 from collections.abc import Collection, Sequence
 from dataclasses import replace
 
 from rich.cells import cell_len
+from rich.console import Console
 from rich.errors import StyleSyntaxError
 from rich.style import Style
 from rich.text import Text
@@ -25,6 +27,7 @@ __all__ = [
     "DIM",
     "divider",
     "inner_width",
+    "note_lines",
     "option_row",
     "role_style",
     "text_line",
@@ -204,3 +207,11 @@ def _kept_chars(visible: str, inner: int, ellipsis: str) -> int:
         used += cell_len(visible[kept])
         kept += 1
     return kept
+
+
+def note_lines(text: str, width: int) -> int:
+    """The lines ``text`` takes wrapped ``width`` cells wide, as a note under a box draws it."""
+    if not text:
+        return 0
+    console = Console(width=max(width, 1), file=io.StringIO(), color_system=None)
+    return len(console.render_lines(Text(text), pad=False))

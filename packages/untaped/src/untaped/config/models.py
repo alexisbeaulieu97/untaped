@@ -34,6 +34,8 @@ class Source:
 
     kind: Literal["profile", "env", "default", "unset"]
     profile: str | None = None
+    variable: str | None = None
+    """For ``env``: the variable's name (``UNTAPED_AWX__PAGE_SIZE``). ``label`` stays ``env``."""
 
     @property
     def label(self) -> str:

@@ -1,26 +1,270 @@
-"""Use cases for the root config command group."""
+"""Use cases for the root config command group.
+
+The reads (:class:`GetSetting`, :class:`ListSettings`) and the writes
+(:class:`SetSetting`, :class:`UnsetSetting`, :class:`RankProviders`) are
+what every front shares: ``config``, ``plugin rank`` and the setup screen
+call the same code, so they cannot disagree about what a write does. A
+write prints nothing; it returns its outcome record and the lines a front
+prints about it (:data:`Note`).
+"""
 
 from __future__ import annotations
 
-from collections.abc import Container
-from typing import Any
+import json
+from collections.abc import Collection, Container
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from pydantic import TypeAdapter, ValidationError
 
 from untaped.config.models import (
     OldSpelling,
     SettingEntry,
+    SettingOutcome,
     Source,
     display_default,
     display_value,
 )
-from untaped.config.ports import SettingsReader
+from untaped.config.ports import SettingsReader, SettingsWriter
 from untaped.config_schema import FieldDescriptor
 from untaped.deprecated_keys import rename_keys
-from untaped.errors import ConfigError
-from untaped.messages import removal_phrase
+from untaped.errors import ConfigError, UsageError, first_validation_error
+from untaped.messages import removal_phrase, run_hint
 from untaped.profile_resolver import DEFAULT_PROFILE
+from untaped.settings import ContractName, ExtensionSettings, resolve_config_path
 from untaped.stability import Deprecated, owner, removal_text, replacement_text, stability_name
 
+if TYPE_CHECKING:
+    from untaped.contracts._declare import ContractInfo
+    from untaped.render import MessageKind
+
 _UNRESOLVED: Any = object()
+
+type Note = tuple[MessageKind, str]
+"""A line about a write, for the front to print (at once, or when a screen closes)."""
+
+
+@dataclass(frozen=True)
+class SettingChange:
+    """What a config write did: its outcome record and the lines to print about it."""
+
+    outcome: SettingOutcome
+    notes: tuple[Note, ...] = ()
+
+
+class SetSetting:
+    """Write one setting's value in a profile, validated as its section is."""
+
+    def __init__(self, repo: SettingsWriter) -> None:
+        self._repo = repo
+
+    def current(self, key: str, *, profile: str | None = None) -> Any:
+        """``key``'s raw value in ``profile``'s own data, which a later ``expected`` names."""
+        return self._repo.own_value(key, profile=profile)
+
+    def __call__(
+        self,
+        key: str,
+        value: str,
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        expected: Any = _UNRESOLVED,
+    ) -> SettingChange:
+        """Set ``key`` to the raw ``value`` (as ``config set`` takes it) in ``profile``.
+
+        ``profile`` defaults to the active one. Writing a key removes its old
+        spellings in that profile. ``expected`` (from :meth:`current`) refuses
+        the write when the profile's own value changed since it was read, as
+        ``config edit`` refuses a file changed under it. Raises
+        :class:`ConfigError` when the value is invalid or changed; nothing is
+        written then.
+        """
+        removed: list[str] = []
+
+        def update(target: str, current: Any) -> str:
+            if expected is not _UNRESOLVED and current != expected:
+                raise ConfigError(
+                    f"{key} changed in profile {target} while it was open; nothing was written",
+                    category="conflict",
+                )
+            return value
+
+        target = self._repo.update_value(
+            key, update, profile=profile, dry_run=dry_run, on_spelling_removed=removed.append
+        )
+        if dry_run:
+            return SettingChange(SettingOutcome(key=key, profile=target, action="planned"))
+        line = f"set {key} in profile {target}{_removed_note(removed)}"
+        return SettingChange(
+            SettingOutcome(key=key, profile=target, action="updated"),
+            (("success", f"{line} (config: {resolve_config_path()})"),),
+        )
+
+
+class UnsetSetting:
+    """Remove one setting, and its old spellings, from a profile."""
+
+    def __init__(self, repo: SettingsWriter) -> None:
+        self._repo = repo
+
+    def __call__(
+        self, key: str, *, profile: str | None = None, dry_run: bool = False
+    ) -> SettingChange:
+        """Unset ``key`` in ``profile`` (the active one by default); a key not set is unchanged."""
+        spellings: list[str] = []
+        removed, target = self._repo.unset_value(
+            key, profile=profile, dry_run=dry_run, on_spelling_removed=spellings.append
+        )
+        where = f"in profile {target}"
+        notes: tuple[Note, ...] = ()
+        if not removed:
+            notes = (("info", f"{key} was not set {where}"),)
+        elif not dry_run:
+            notes = (("success", f"unset {key} {where}{_removed_note(spellings)}"),)
+        action = "unchanged" if not removed else "planned" if dry_run else "deleted"
+        return SettingChange(SettingOutcome(key=key, profile=target, action=action), notes)
+
+
+_EXTENSIONS = TypeAdapter(dict[ContractName, ExtensionSettings])
+
+
+class RankProviders:
+    """Order the providers of a contract method in a profile's ``<owner>.extensions``.
+
+    ``owners`` are the composed plugins that own contracts. The contract and
+    method must exist; a provider that doesn't fill the method is kept, with
+    a warning, for when it does.
+    """
+
+    def __init__(self, repo: SettingsWriter, owners: Collection[str]) -> None:
+        self._repo = repo
+        self._owners = owners
+
+    def __call__(
+        self,
+        contract: str,
+        method: str,
+        plugins: list[str],
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+    ) -> SettingChange:
+        """Write ``plugins`` as the ranking of ``contract`` (``OWNER.CONTRACT``) ``method``.
+
+        No plugins removes the ranking. Only the owner must exist then:
+        removing is how doctor repairs a ranking of a contract or method that
+        doesn't. Raises :class:`UsageError` for a name that doesn't exist.
+        """
+        owner_name, _, name = contract.partition(".")
+        if not owner_name or not name:
+            raise UsageError(f"name the contract as OWNER.CONTRACT, not {contract!r}")
+        try:
+            _EXTENSIONS.validate_python({name: {"rank": {method: plugins}}})
+        except ValidationError as exc:
+            raise UsageError(f"invalid ranking: {first_validation_error(exc)}") from None
+        if owner_name not in self._owners:
+            owners = ", ".join(sorted(self._owners)) or "none"
+            raise UsageError(
+                f"{owner_name!r} owns no contract (contract owners: {owners})",
+                hint=run_hint("plugin list --contracts"),
+            )
+        notes: list[Note] = []
+        if plugins:
+            notes.extend(_check_rankable(owner_name, name, method, plugins))
+        changed = False
+
+        def update(_target: str, current: Any) -> str | None:
+            nonlocal changed
+            extensions = _ranked(_mapping(current), name, method, plugins)
+            changed = extensions != current and bool(extensions or current)
+            return json.dumps(extensions) if extensions else None
+
+        key = f"{owner_name}.extensions"
+        path = f"{key}.{name}.rank.{method}"
+        target = self._repo.update_value(key, update, profile=profile, dry_run=dry_run)
+        if not changed:
+            notes.append(("info", f"{path} unchanged in profile {target}"))
+            action = "unchanged"
+        elif dry_run:
+            action = "planned"
+        else:
+            done = f"ranked {' > '.join(plugins)}" if plugins else "removed the ranking"
+            notes.append(("success", f"{done} for {owner_name}.{name} {method} (profile {target})"))
+            action = "updated" if plugins else "deleted"
+        return SettingChange(SettingOutcome(key=key, profile=target, action=action), tuple(notes))
+
+
+def _removed_note(spellings: list[str]) -> str:
+    return f"; removed {', '.join(spellings)}" if spellings else ""
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    """``value`` as a mapping to edit; anything else (``null``, a stray list) starts empty."""
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _ranked(
+    extensions: dict[str, Any], name: str, method: str, plugins: list[str]
+) -> dict[str, Any]:
+    """``extensions`` with ``name``'s ``method`` ranked as ``plugins`` (none: unranked).
+
+    A malformed contract or ``rank`` value is replaced, so ranking repairs it;
+    an emptied contract entry is dropped.
+    """
+    entry = _mapping(extensions.get(name))
+    ranks = _mapping(entry.get("rank"))
+    if plugins:
+        ranks[method] = plugins
+    else:
+        ranks.pop(method, None)
+    if ranks:
+        entry["rank"] = ranks
+    else:
+        entry.pop("rank", None)
+    if entry:
+        extensions[name] = entry
+    else:
+        extensions.pop(name, None)
+    return extensions
+
+
+def _check_rankable(owner_name: str, name: str, method: str, plugins: list[str]) -> list[Note]:
+    """Refuse a contract or method that doesn't exist; warn about a plugin that doesn't fill it."""
+    from untaped.contracts._registry import (  # noqa: PLC0415 - only when ranking
+        method_providers,
+        owned_contracts,
+    )
+
+    owned = owned_contracts()
+    if owner_name not in owned:
+        raise ConfigError(
+            f"{owner_name}'s contracts couldn't be read",
+            system=owner_name,
+            hint=run_hint("doctor"),
+        )
+    info: ContractInfo | None = next(
+        (each for each in owned[owner_name] if each.name == name), None
+    )
+    if info is None:
+        known = ", ".join(sorted(each.name for each in owned[owner_name]))
+        raise UsageError(f"{owner_name} declares no contract {name!r} (it declares {known})")
+    rankable = [each for each, declared in info.methods.items() if not declared.bridge]
+    if method not in rankable:
+        what = "is a bridge, which is never ranked" if method in info.methods else "isn't a method"
+        raise UsageError(
+            f"{owner_name}.{name} {method} {what} (ranked methods: {', '.join(rankable)})"
+        )
+    filling = set(method_providers(info, method, ()))
+    return [
+        (
+            "warning",
+            f"{plugin} doesn't fill {owner_name}.{name} {method} here; the ranking keeps it "
+            "for when it does",
+        )
+        for plugin in plugins
+        if plugin not in filling
+    ]
 
 
 class GetSetting:
@@ -148,9 +392,9 @@ def setting_entry_for_descriptor(
     if current is _UNRESOLVED:
         current = repo.setting_value(descriptor)
     resolved_provenance = repo.provenance() if provenance is None else provenance
-    in_env = repo.env_value_for(descriptor) is not None
+    variable = repo.env_var_supplying(descriptor)
     source = _resolve_source(
-        in_env,
+        variable,
         _provenance_for(resolved_provenance, descriptor),
         descriptor,
         current,
@@ -227,13 +471,13 @@ def _provenance_for(
 
 
 def _resolve_source(
-    in_env: bool,
+    variable: str | None,
     profile_name: str | None,
     descriptor: FieldDescriptor,
     current: Any,
 ) -> Source:
-    if in_env:
-        return Source(kind="env")
+    if variable is not None:
+        return Source(kind="env", variable=variable)
     if profile_name is not None:
         return Source(kind="profile", profile=profile_name)
     if current is None and not (descriptor.has_default and descriptor.default is not None):

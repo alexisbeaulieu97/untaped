@@ -1,4 +1,4 @@
-"""The long lists: ``SearchList``, ``Tree`` and ``Tags``.
+"""The long lists: ``SearchList``, ``Tree``, ``Tags`` and ``ListEditor``.
 
 ``SearchList`` is a labelled box holding a search line, a window of rows and
 a count line. Typing edits the query without a prefix key, the rows are the
@@ -8,12 +8,13 @@ bold and underline, and only the rows in the window are built, so a list of
 thousands draws as fast as a short one. ``Tree`` is rows that expand into
 their children, windowed the same way. ``Tags`` is the chosen items as
 removable badges with a search list to add more, for a choice among too many
-items to show.
+items to show. ``ListEditor`` is an ordered list of strings to add to, edit,
+remove from and reorder.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from itertools import chain
@@ -47,7 +48,7 @@ from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked, rank
 from untaped.stability import experimental
 
-__all__ = ["SearchList", "Tags", "Tree", "TreeRow"]
+__all__ = ["ListEditor", "SearchList", "Tags", "Tree", "TreeRow"]
 
 #: The most list rows a ``SearchList`` shows at once, and the fewest it is squeezed to.
 MAX_ROWS = 10
@@ -555,3 +556,161 @@ class Tags:
             lines[-1].append(f" {frame.ellipsis()}", style=role_style(frame, "screen.muted"))
             lines[-1] = fit_text(lines[-1], inner, frame.ellipsis())
         return lines
+
+
+@dataclass(frozen=True)
+class ListEditor:
+    """An ordered list of strings in a labelled box: add, edit, remove and move its items.
+
+    The rows are the items, then ``+ add``, then ``done``. Enter on an item
+    edits it in place and enter again keeps the edit (an emptied item is
+    removed), esc drops it; enter on ``+ add`` opens an empty item at the end.
+    ``delete`` or ``backspace`` removes the item under the cursor; ``m`` picks
+    it up, up and down carry it, and enter or esc puts it down. Enter on
+    ``done`` is left to the screen, which commits the list as ctrl-s does.
+    ``value`` is the items, in order, with an open item as enter would keep it,
+    so ctrl-s keeps it too. Lines pasted into a new item become one item each.
+    ``validator`` checks one item when it is kept; its error shows and the item
+    stays open.
+    """
+
+    label: str
+    items: tuple[str, ...] = ()
+    cursor: int = 0
+    editing: EditBuffer | None = None
+    """The open item's text; at ``len(items)`` it is a new one."""
+    moving: bool = False
+    help: str = ""
+    error: str = ""
+    validator: Callable[[str], str] | None = None
+    window_rows: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "cursor", max(0, min(self.cursor, len(self.items) + 1)))
+
+    @property
+    def value(self) -> tuple[str, ...]:
+        """The items, in order, an open item as enter would keep it (so ctrl-s keeps it too)."""
+        return self.items if self.editing is None else self._kept(self.editing.text).items
+
+    def with_error(self, text: str) -> Self:
+        """This list showing ``text`` as its error (empty clears it)."""
+        return replace(self, error=text)
+
+    def validate(self) -> str:
+        """The open item's own error (empty when it is fine); each kept item passed its check."""
+        if self.editing is None or self.validator is None or not self.editing.text.strip():
+            return ""
+        return self.validator(self.editing.text)
+
+    def update(self, message: object) -> tuple[Self, list[Cmd]]:
+        """Edit the open item, carry the picked-up one, or act on the row under the cursor."""
+        if self.editing is not None:
+            return self._edit(self.editing, message), []
+        if not isinstance(message, Key):
+            return self, []
+        if self.moving:
+            return self._move(message.name), []
+        return self._act(message.name), []
+
+    def _edit(self, buffer: EditBuffer, message: object) -> Self:
+        match message:
+            case Key("enter"):
+                return self._kept(buffer.text)
+            case Key("esc"):
+                return replace(self, editing=None, error="")
+            case Key(name):
+                edited = buffer.key(name)
+            case Paste(text) if self.cursor == len(self.items) and "\n" in text.strip():
+                before, after = buffer.text[: buffer.cursor], buffer.text[buffer.cursor :]
+                return self._pasted(before + text + after)
+            case Paste(text):
+                edited = buffer.paste(text)
+            case _:
+                return self
+        if edited is None:
+            return self
+        return replace(self, editing=edited, error="")
+
+    def _pasted(self, text: str) -> Self:
+        """Lines pasted into a new item (with what was typed there): one item each, blanks left out.
+
+        A refused line keeps them all out, and its error names it.
+        """
+        lines = tuple(line for line in text.splitlines() if line.strip())
+        check = self.validator or (lambda _: "")
+        refused = next(((line, error) for line in lines if (error := check(line))), None)
+        if refused is not None:
+            return replace(self, error=f"{refused[0]!r}: {refused[1]}")
+        items = (*self.items, *lines)
+        return replace(self, items=items, cursor=len(items), editing=None, error="")
+
+    def _kept(self, text: str) -> Self:
+        at = self.cursor
+        if not text.strip():
+            items = self.items[:at] + self.items[at + 1 :]
+            return replace(self, items=items, editing=None, error="")
+        error = self.validator(text) if self.validator is not None else ""
+        if error:
+            return replace(self, error=error)
+        items = (*self.items[:at], text, *self.items[at + 1 :])
+        cursor = at + 1 if at == len(self.items) else at
+        return replace(self, items=items, cursor=cursor, editing=None, error="")
+
+    def _move(self, name: str) -> Self:
+        at = self.cursor
+        if name in ("enter", "esc", "m"):
+            return replace(self, moving=False)
+        step = {"up": -1, "down": 1}.get(name)
+        if step is None or not 0 <= at + step < len(self.items):
+            return self
+        items = list(self.items)
+        items[at], items[at + step] = items[at + step], items[at]
+        return replace(self, items=tuple(items), cursor=at + step)
+
+    def _act(self, name: str) -> Self:
+        at, count = self.cursor, len(self.items)
+        moved = moved_to(name, at, count + 2)
+        if moved is not None:
+            return replace(self, cursor=moved) if moved != at else self
+        if name == "enter" and at <= count:
+            text = self.items[at] if at < count else ""
+            return replace(self, editing=EditBuffer(text, len(text)), error="")
+        if at < count and name in ("delete", "backspace"):
+            return replace(self, items=self.items[:at] + self.items[at + 1 :], error="")
+        if at < count and name == "m" and count > 1:
+            return replace(self, moving=True)
+        return self
+
+    def view(
+        self, frame: Frame, *, focused: bool = False, width: int | None = None
+    ) -> RenderableType:
+        """The box: one row per item, ``+ add`` and ``done``, a window around the cursor."""
+        inner = inner_width(frame, width)
+        labels = (*self.items, "+ add", "done")
+        size = self.window_rows or max(MIN_ROWS, min(MAX_ROWS, frame.height - _CHROME))
+        start, shown = window(labels, self.cursor, size)
+        rows = [
+            self._row(frame, inner, start + offset, label, focused=focused)
+            for offset, label in enumerate(shown)
+        ]
+        return field_box(
+            frame, self.label, Group(*rows), focused=focused, error=self.error, help=self.help,
+            width=width,
+        )  # fmt: skip
+
+    def _row(self, frame: Frame, inner: int, index: int, label: str, *, focused: bool) -> Text:
+        here = focused and index == self.cursor
+        if here and self.editing is not None:
+            return text_line(frame, inner, self.editing.text, self.editing.cursor, focused=True)
+        item = index < len(self.items)
+        style = role_style(frame, "screen.value" if item else "screen.muted")
+        return option_row(
+            frame,
+            inner,
+            label=label,
+            label_style=role_style(frame, "screen.highlight") if here else style,
+            trail="moving" if here and self.moving else "",
+            trail_style=role_style(frame, "screen.highlight"),
+            base=role_style(frame, "screen.highlight") if here else None,
+        )

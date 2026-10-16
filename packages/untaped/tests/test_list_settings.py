@@ -66,7 +66,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "profiles:\n  default:\n    skills:\n      updates: auto\n",
             "off",
             "skills.updates",
-            Source(kind="env"),
+            Source(kind="env", variable="UNTAPED_SKILLS__UPDATES"),
             "off",
         ),
     ],

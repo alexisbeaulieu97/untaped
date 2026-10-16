@@ -5,7 +5,7 @@ The page lists every setting of the root app (``http.*``, ``ui.*``,
 plugin's state model. Types, defaults and environment variables come from
 the Pydantic models, and each description from the field's
 ``Field(description=...)``, followed by its :class:`~untaped.config_schema.Choices`
-names when it has them.
+names and its bounds when it has them.
 
 Usage::
 
@@ -162,10 +162,13 @@ def _section_rows(section: Section) -> list[Row]:
             leaf.key,
             leaf.annotation,
             leaf.default,
-            _with_choices(
-                leaf.description,
-                leaf.choices,
-                mapping=leaf.annotation is dict or get_origin(leaf.annotation) is dict,
+            _with_bounds(
+                _with_choices(
+                    leaf.description,
+                    leaf.choices,
+                    mapping=leaf.annotation is dict or get_origin(leaf.annotation) is dict,
+                ),
+                leaf.bounds,
             ),
             optional=leaf.optional,
             mark=leaf.mark,
@@ -181,6 +184,13 @@ def _with_choices(description: str | None, choices: Choices | None, *, mapping: 
     lead = "Names" if mapping else "One of"
     names = ", ".join(f"`{name}`" for name in choices.names())
     return f"{description} {lead}: {names}."
+
+
+def _with_bounds(description: str | None, bounds: str | None) -> str | None:
+    """``description``, then the field's bounds (``Above 0.``), as the setup screen shows them."""
+    if description is None or bounds is None:
+        return description
+    return f"{description} {bounds}"
 
 
 def _description(row: Row) -> str:

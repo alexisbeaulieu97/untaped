@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, get_args, get_origin
 
+import annotated_types
 from pydantic import BaseModel, SecretStr
 from pydantic_core import PydanticUndefined
 
@@ -69,6 +70,15 @@ class Choices:
         return f"unknown {self.noun} {shown}. Valid {self.label}: {valid}"
 
 
+@dataclass(frozen=True)
+class Argv:
+    """``Annotated`` marker: a ``list[str]`` that is a command's argv, run without a shell.
+
+    An editor shows it as one shell-quoted line (``config set`` still takes
+    JSON); checking the argv stays the field's own validator.
+    """
+
+
 def field_choices(field: FieldInfo) -> Choices | None:
     """The field's :class:`Choices` marker, if it has one."""
     return next((item for item in field.metadata if isinstance(item, Choices)), None)
@@ -101,6 +111,12 @@ class FieldDescriptor:
 
     choices: Choices | None = None
     """The field's :class:`Choices` marker, when it accepts a declared set of names."""
+
+    bounds: tuple[annotated_types.BaseMetadata, ...] = ()
+    """The field's numeric bounds (``Gt``, ``Ge``, ``Lt``, ``Le``), read for help text only."""
+
+    argv: bool = False
+    """Whether the field carries the :class:`Argv` marker: a command's argv."""
 
     @property
     def key(self) -> str:
@@ -157,9 +173,39 @@ def walk_settings(
                 optional=_is_optional(field.annotation),
                 description=field.description,
                 choices=field_choices(field),
+                bounds=tuple(item for item in field.metadata if isinstance(item, _BOUNDS)),
+                argv=any(isinstance(item, Argv) for item in field.metadata),
             )
         )
     return entries
+
+
+_BOUNDS = (annotated_types.Gt, annotated_types.Ge, annotated_types.Lt, annotated_types.Le)
+
+
+def bounds_text(descriptor: FieldDescriptor) -> str | None:
+    """The field's bounds as a sentence (``Above 0.``, ``1 to 32.``); ``None`` when it has none.
+
+    For help text (the setup screen, the config reference): the model's
+    validation is what enforces them.
+    """
+    gt = ge = lt = le = None
+    for item in descriptor.bounds:
+        match item:
+            case annotated_types.Gt(gt=value):
+                gt = value
+            case annotated_types.Ge(ge=value):
+                ge = value
+            case annotated_types.Lt(lt=value):
+                lt = value
+            case annotated_types.Le(le=value):
+                le = value
+    if ge is not None and le is not None:
+        return f"{ge} to {le}."
+    low = f"above {gt}" if gt is not None else None if ge is None else f"{ge} or more"
+    high = f"below {lt}" if lt is not None else None if le is None else f"at most {le}"
+    text = " and ".join(part for part in (low, high) if part)
+    return f"{text[0].upper()}{text[1:]}." if text else None
 
 
 def find_descriptor(descriptors: list[FieldDescriptor], key: str) -> FieldDescriptor | None:

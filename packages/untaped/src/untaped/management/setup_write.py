@@ -1,11 +1,13 @@
-"""What ``untaped setup`` writes for one service once its check passed (or the user said so).
+"""What ``untaped setup`` writes: a service's connection, or one setting from its row.
 
-:func:`write_candidate` writes one service: create the profile once, set
-``base_url``, then the branch the user chose for the token (``store``,
-``move``, ``enter``, ``command``, ``env`` or ``keep``), retiring the entry a
-replaced preset command read. It runs as the screen's write command, so it
-prints nothing: its lines come back as notes for the screen to print after it
-closes.
+:func:`write_setting` writes one setting through the use case ``config set``
+runs (creating the profile first when it is new). :func:`write_candidate`
+writes one service's connection once its check passed (or the user said so):
+create the profile once, set ``base_url``, then the branch the user chose for
+the token (``store``, ``move``, ``enter``, ``command``, ``env`` or ``keep``),
+retiring the entry a replaced preset command read. Both run as the screen's
+write commands, so they print nothing: their lines come back as notes for the
+screen to print after it closes.
 
 :class:`Candidate` is what the user asked for, in one place: the check reads it
 as overlay values (:func:`overlay_values`) and the write reads it as branches,
@@ -17,27 +19,25 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from pydantic import SecretStr
 
 from untaped.auth import token_env_names
+from untaped.config.models import SettingOutcome
 from untaped.config.repository import SettingsFileRepository
+from untaped.config.use_cases import Note, SetSetting, SettingChange, UnsetSetting
 from untaped.errors import ConfigError
 from untaped.management.auth import delete_stored_token, save_token
-from untaped.management.setup_state import ServiceState
+from untaped.management.setup_state import ServiceState, profile_exists
 from untaped.plugins.registry import PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
 from untaped.profile_resolver import DEFAULT_PROFILE
-from untaped.render import MessageKind
 from untaped.token_store import TokenStore, entry_name, preset_entry
 
-__all__ = ["Candidate", "Note", "overlay_values", "write_candidate"]
-
-type Note = tuple[MessageKind, str]
-"""A line about a write, kept to print after the screen closes."""
+__all__ = ["Candidate", "ensure_profile", "overlay_values", "write_candidate", "write_setting"]
 
 type Checked = Literal["passed", "unchecked", "failed"]
 """What the check said about the candidate: it passed, there was none to run, or the user
@@ -103,10 +103,7 @@ def write_candidate(
     section, profile, how = spec.name, candidate.profile, candidate.how
     if how in ("store", "move"):
         preflight()
-    profiles = ProfileFileRepository()
-    if profile != DEFAULT_PROFILE and profiles.read(profile) is None:
-        CreateProfile(profiles)(profile)
-        notes.append(("success", f"created profile: {profile}"))
+    notes.extend(ensure_profile(profile))
     repo = SettingsFileRepository()
     argv = list(candidate.argv) if candidate.argv is not None else None
     repo.set_value(f"{section}.base_url", candidate.url, profile=profile)
@@ -132,6 +129,35 @@ def write_candidate(
     if how != "keep":
         notes.extend(_retire(section, current.own_command, argv))
     return notes
+
+
+def ensure_profile(profile: str) -> list[Note]:
+    """Create ``profile`` when it does not exist yet (``default`` always does); its note."""
+    if profile_exists(profile):
+        return []
+    CreateProfile(ProfileFileRepository())(profile)
+    return [("success", f"created profile: {profile}")]
+
+
+def write_setting(key: str, value: str | None, *, profile: str, expected: object) -> SettingChange:
+    """Set ``key`` to ``value`` in ``profile`` as ``config set`` does (``None`` unsets it).
+
+    ``expected`` is the profile's own value when the field opened: a write
+    over a value changed since is refused. A profile that does not exist yet
+    is created by its first valid write (its note comes first); a value it
+    would refuse, or an unset, leaves it uncreated.
+    """
+    repo = SettingsFileRepository()
+    if value is None:
+        if not profile_exists(profile):
+            return SettingChange(SettingOutcome(key=key, profile=profile, action="unchanged"))
+        return UnsetSetting(repo)(key, profile=profile)
+    if not profile_exists(profile):
+        # A new profile resolves as ``default`` does, so check the value there first.
+        SetSetting(repo)(key, value, profile=DEFAULT_PROFILE, dry_run=True)
+    created = ensure_profile(profile)
+    change = SetSetting(repo)(key, value, profile=profile, expected=expected)
+    return replace(change, notes=(*created, *change.notes))
 
 
 def _typed(token: SecretStr | None) -> str | None:

@@ -266,7 +266,7 @@ def test_only_narrows_and_orders_the_services() -> None:
 def test_an_unknown_only_name_is_a_usage_error() -> None:
     result = _cli("setup", "plan", "--only", "nope")
     assert result.exit_code == 2
-    assert "service not found: 'nope'; known: wiz" in result.stderr
+    assert "section not found: 'nope'" in result.stderr
 
 
 def test_online_runs_the_services_own_online_check(_isolated_config: Path) -> None:
@@ -369,7 +369,7 @@ def test_plan_setup_screen_and_doctor_agree(
     )
     assert setup.exit_code == 0, setup.output
     # The screen lists the service as configured exactly when the plan and doctor do.
-    (_install, row) = backend.ran[0].init()[0].rows
+    row = next(row for row in backend.ran[0].init()[0].rows if row.name == "wiz")
     assert (row.status != "not configured") is configured
 
 
@@ -544,3 +544,9 @@ def test_without_a_service_there_is_nothing_to_plan() -> None:
     result = _cli("setup", "plan", specs=(make_spec("plain"),))
     assert result.exit_code == 4
     assert "no composed plugin takes a base URL and token" in result.stderr
+
+
+def test_only_naming_no_service_has_nothing_to_plan() -> None:
+    result = _cli("setup", "plan", "--only", "ui")
+    assert result.exit_code == 4
+    assert "none of the named sections is a service" in result.stderr

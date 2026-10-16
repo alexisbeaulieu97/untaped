@@ -209,8 +209,13 @@ views.
 leaves them unset). `allow_empty` lets it confirm with nothing selected; a
 request that has a title still requires one.
 
-`untaped setup` is built from the same components. A command that builds its
-screen only after reading config or probing a store asks
+`untaped setup` is built from the same components; each setting's field is
+picked from the shape of its type (a `Check` for a `bool`, a `NumberInput` for
+a number, a `SingleList` or `Select` for a `Literal`, a list editor for a
+`list[str]`), never from its key, so
+a plugin's settings need no screen code: the help under a setting's row is its
+`Field(description=...)` and its bounds (`gt=0` reads "Above 0."). A command
+that builds its screen only after reading config or probing a store asks
 `ui.require_screen_terminal(command=..., alternative=...)` first, so a run
 without a terminal exits 2 having touched nothing.
 

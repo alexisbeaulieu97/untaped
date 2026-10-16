@@ -1,67 +1,98 @@
 """The ``untaped setup`` screen: its model, update and view.
 
-Two panes under a profile field: the plugins setup configures (those
-whose settings model has ``base_url`` and ``token``) with a status each, and the
-selected one's form (base URL, a token source as tabs, buttons). Saving checks
-before it writes: the form's values become a :class:`Candidate`, the
-plugin's online checks run against them inside a settings overlay (nothing
-is stored yet, :func:`untaped.management.doctor.online_probe_rows`), and only a
-pass runs the write, as a write command, so quitting never leaves it half done.
-A failed check shows its reason under the form and offers ``Save anyway``, for
-that plugin until its form changes or saves (each plugin keeps its own).
-A Command token source is run first, on every check, as a suspend command, so a
-``pass`` or ``op`` prompt gets the real terminal; its token then sits in the
-process cache for the background check. Leaving the profile field loads the
-profile typed there, so the field and the forms never disagree.
+Two panes under a profile field. The left lists this install, then every
+settings section: the services first (those that still need something above
+the configured ones, each with a status), then core's sections and the other
+plugins' (each with its plugin's stability mark, or ``invalid settings``); the
+order is fixed when the screen opens, so a saved service does not jump. The
+right shows the selected section's settings
+(:mod:`untaped.management.setup_sections`): enter opens a row's field and
+writes it as ``config set`` does, ``delete`` unsets it. What the section
+names, the screen does not know: rows come from the config use cases, fields
+from each setting's shape.
+
+A service's first row is its connection: enter opens its form (base URL, a
+token source as tabs, buttons; :mod:`untaped.management.setup_connection`).
+Saving it checks before it writes: the form's values become a
+:class:`Candidate`, the plugin's online checks run against them inside a
+settings overlay (nothing is stored yet,
+:func:`untaped.management.doctor.online_probe_rows`), and only a pass runs the
+write, as a write command, so quitting never leaves it half done. A failed
+check shows its reason under the form and offers ``Save anyway``, for that
+plugin until its form changes or saves (each plugin keeps its own). A Command
+token source is run first, on every check, as a suspend command, so a ``pass``
+or ``op`` prompt gets the real terminal; its token then sits in the process
+cache for the background check. Leaving the profile field loads the profile
+typed there, so the field and the rows never disagree; a profile that does
+not exist yet shows ``default``'s values, and its first write creates it.
 
 The list's first row is this install: whether it is registered (``untaped
 setup register``), so the cleanup of store layouts keeps the ones it uses;
 its form's ``Register`` button registers it. The cursor starts on the first
-plugin.
+section.
 
-What a save has to say (a profile created, a token replaced or to export)
-comes back as notes, which the command prints after the screen closes with the
-doctor rows of what was configured (:class:`SetupResult`). Esc and ctrl-c on
-the list end the screen with that result (ctrl-c flagged ``interrupted``,
-which ``setup`` turns into exit 130); neither is a cancel. A quit while a save
-runs waits for it, so the result always says what was written.
+What a write has to say (a key set, a profile created, a token replaced or to
+export) comes back as notes, which the command prints after the screen closes
+with the doctor rows of the services whose connection was saved
+(:class:`SetupResult`). Esc and ctrl-c on the list end the screen with that
+result (ctrl-c flagged ``interrupted``, which ``setup`` turns into exit 130);
+neither is a cancel. A quit while a write runs waits for it, so the result
+always says what was written.
 
 The typed token lives in a ``SecretInput`` and a ``Candidate`` as a ``SecretStr``
 and in no frame, repr or message of this module's own. The model never holds the
 plain text of a token the profile already stores (``ServiceState.plaintext`` is
-left out of its repr).
+left out of its repr), nor a secret setting's value (rows show it masked).
 """
 
 from __future__ import annotations
 
-import shlex
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cache
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import SecretStr
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.auth import CommandToken, forget_token_command, takes_token_command, token_env_names
-from untaped.config_file import read_config_dict
+from untaped.auth import CommandToken, forget_token_command
+from untaped.config.use_cases import Note
 from untaped.errors import ConfigError
 from untaped.management.doctor import online_probe_rows
+from untaped.management.setup_connection import (
+    anyway_buttons,
+    candidate,
+    connection_form,
+    reset,
+    with_buttons,
+)
 from untaped.management.setup_plan import SETUP_ALTERNATIVE, SETUP_COMMAND
-from untaped.management.setup_state import ServiceState, service_states
-from untaped.management.setup_write import Candidate, Note, overlay_values, write_candidate
+from untaped.management.setup_sections import (
+    CONNECTION,
+    FieldOpened,
+    Listing,
+    SectionPane,
+    SettingRow,
+    UnsetAsked,
+    Written,
+    connection_row,
+    field_for,
+    open_command,
+    read_listing,
+    section_mark,
+    write_command,
+)
+from untaped.management.setup_state import ServiceState
+from untaped.management.setup_write import Candidate, overlay_values, write_candidate
 from untaped.messages import hint, shown_path
-from untaped.plugins.registry import CompositionResult, PluginSpec, settings_model
-from untaped.profile_resolver import DEFAULT_PROFILE
-from untaped.prompts import PromptChoice
+from untaped.plugins.registry import CompositionResult, PluginSpec
 from untaped.screen.components.buttons import Button, Buttons, Pressed
 from untaped.screen.components.choices import ListItem, SingleList
 from untaped.screen.components.draw import role_style
 from untaped.screen.components.form import Form, Submitted
-from untaped.screen.components.inputs import COMPLETION_ROWS, SecretInput, TextInput
+from untaped.screen.components.inputs import COMPLETION_ROWS, TextInput
 from untaped.screen.components.layout import Panes
-from untaped.screen.components.tabs import Tab, Tabs
+from untaped.screen.components.lists import ListEditor
 from untaped.screen.core import (
     Activate,
     Back,
@@ -79,22 +110,17 @@ from untaped.screen.core import (
     Submit,
 )
 from untaped.settings import resolve_config_path
-from untaped.token_store import TokenStore, preset_entry
+from untaped.token_store import TokenStore
 
 __all__ = ["SetupModel", "SetupResult", "setup_screen"]
 
-type Focus = Literal["profile", "list", "form"]
-type Phase = Literal["idle", "loading", "probing", "saving", "registering"]
-#: The list row of this install's registration; never a plugin name (it has a space).
+type Focus = Literal["profile", "list", "section", "form"]
+"""``section``: the selected section's rows; ``form``: a connection's or this install's form."""
+type Phase = Literal["idle", "loading", "probing", "saving", "registering", "opening", "writing"]
+#: The list row of this install's registration; never a section name (it has a space).
 INSTALL_ROW = "this install"
-
-_TAB_LABELS = {
-    "keep": "Keep",
-    "move": "Move",
-    "command": "Command",
-    "env": "Env",
-    "enter": "Enter",
-}
+#: What the profile field says under it while the profile does not exist yet.
+NEW_PROFILE = "new profile: its first write creates it"
 
 #: The role each status is drawn in; ``checking`` and ``saving`` take the ellipsis token.
 _STATUS_ROLES = {
@@ -112,15 +138,20 @@ _STATUS_ROLES = {
     "not registered": "screen.accent",
     "source tree": "screen.muted",
     "registering": "screen.accent",
+    "experimental": "screen.muted",
+    "deprecated": "screen.accent",
+    "": "screen.muted",
 }
 _PROGRESS = ("checking", "saving", "registering")
 
 
 @dataclass(frozen=True)
 class SetupResult:
-    """What the screen did: for ``profile``, the plugins written and the lines to print.
+    """What the screen did: for ``profile``, the services saved and the lines to print.
 
-    ``notes`` are what the saves had to say, printed after the screen closes.
+    ``touched`` are the services whose connection was saved, whose doctor rows
+    ``setup`` prints; ``written`` every key written or unset on its own.
+    ``notes`` are what the writes had to say, printed after the screen closes.
     ``interrupted`` is ctrl-c, which ``setup`` reports as exit 130 after printing
     the rest. ``registered``: this install was registered from its row.
     """
@@ -130,11 +161,12 @@ class SetupResult:
     notes: tuple[Note, ...]
     interrupted: bool = False
     registered: bool = False
+    written: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class CapRow:
-    """One plugin on the left: its name and status (a key of the status table)."""
+    """One row on the left: a section's name (or this install) and its status."""
 
     name: str
     status: str
@@ -157,12 +189,12 @@ class Primed:
 
 @dataclass(frozen=True)
 class Saved:
-    """The write for ``name`` finished; ``state`` is what the profile resolves to now."""
+    """The connection write for ``name`` finished; ``listing`` is what ``profile`` shows now."""
 
     name: str
     profile: str
     notes: tuple[Note, ...]
-    state: ServiceState | None
+    listing: Listing | None
 
 
 @dataclass(frozen=True)
@@ -174,10 +206,10 @@ class Registered:
 
 @dataclass(frozen=True)
 class ProfileLoaded:
-    """The states of every plugin in ``profile``, read for the profile field."""
+    """What ``profile`` shows, read for the profile field."""
 
     profile: str
-    states: Mapping[str, ServiceState]
+    listing: Listing
 
 
 @dataclass(frozen=True)
@@ -185,11 +217,14 @@ class SetupModel:
     """Everything the screen shows and every decision it holds."""
 
     profile: TextInput
-    """The profile field (what is typed; ``current`` is the profile the forms are for)."""
+    """The profile field (what is typed; ``current`` is the profile the rows are for)."""
     current: str
     rows: tuple[CapRow, ...]
     states: Mapping[str, ServiceState]
     forms: Mapping[str, Form]
+    """This install's form and each service's connection form."""
+    panes: Mapping[str, SectionPane]
+    """Each listed section's rows."""
     config_path: str = ""
     selected: int = 0
     focus: Focus = "list"
@@ -199,36 +234,42 @@ class SetupModel:
     failed: Mapping[str, Candidate] = field(default_factory=dict)
     """Per plugin, the candidate whose check failed: its form offers ``Save anyway``."""
     leaving: Literal["quit", "interrupt"] | None = None
-    """A quit asked for while a save runs: it ends the screen once the write finished."""
+    """A quit asked for while a write runs: it ends the screen once the write finished."""
     saved: tuple[tuple[str, str], ...] = ()
-    """``(profile, plugin)`` for every write that finished."""
+    """``(profile, plugin)`` for every connection write that finished."""
+    written: tuple[tuple[str, str], ...] = ()
+    """``(profile, key)`` for every key written or unset from a section's rows."""
     notes: tuple[Note, ...] = ()
     registered: bool = False
     """Whether this run registered this install (its row's ``Register``)."""
 
     @property
     def name(self) -> str:
-        """The selected row: a plugin, or :data:`INSTALL_ROW`."""
+        """The selected row: a section, or :data:`INSTALL_ROW`."""
         return self.rows[self.selected].name
+
+    @property
+    def pane(self) -> SectionPane | None:
+        """The selected section's rows (``None`` on this install's row)."""
+        return self.panes.get(self.name)
 
 
 def setup_screen(
     result: CompositionResult,
     services: Mapping[str, PluginSpec],
     *,
+    sections: Sequence[str],
     profile: str,
     store: TokenStore | None,
-    states: Mapping[str, ServiceState],
     profiles: Sequence[str] = (),
 ) -> Screen[SetupModel, SetupResult]:
-    """The setup screen for ``services`` in ``profile``.
+    """The setup screen for ``sections`` (``services`` among them) in ``profile``.
 
-    ``states`` is each service's state in ``profile``, read before the screen
-    opens; ``store`` the token store picked once for the run (``None`` when none
+    ``store`` is the token store picked once for the run (``None`` when none
     works or no service takes a command); ``profiles`` the names the profile
     field completes.
     """
-    app = _Setup(result, dict(services), store, tuple(profiles), profile, states)
+    app = _Setup(result, dict(services), tuple(sections), store, tuple(profiles), profile)
     return Screen(
         init=app.init,
         update=app.update,
@@ -237,8 +278,9 @@ def setup_screen(
         command=SETUP_COMMAND,
         alternative=SETUP_ALTERNATIVE,
         keys=(
-            Binding("up", "previous", None, when=lambda model: model.focus == "list"),
-            Binding("down", "next", None, when=lambda model: model.focus == "list"),
+            Binding("up", "previous", None, when=_moving),
+            Binding("down", "next", None, when=_moving),
+            Binding("delete", "unset", None, when=_unsettable),
             Binding("left", "previous choice", None, when=lambda model: model.focus == "form"),
             Binding("right", "next choice", None, when=lambda model: model.focus == "form"),
         ),
@@ -277,18 +319,73 @@ def _install_form() -> Form:
     return Form((("about", _Note(text)), ("buttons", buttons)), focus=1)
 
 
+def _browsing(model: SetupModel) -> bool:
+    """Whether the keyboard is on a section's rows, with no field open and nothing asked."""
+    pane = model.pane
+    return (
+        model.focus == "section" and pane is not None and pane.editing is None and not pane.confirm
+    )
+
+
+def _moving(model: SetupModel) -> bool:
+    """Whether up and down move a cursor: the list's, or a section's rows'."""
+    return model.focus == "list" or _browsing(model)
+
+
+def _unsettable(model: SetupModel) -> bool:
+    """Whether ``delete`` asks to unset the focused row (the profile sets it)."""
+    pane = model.pane
+    row = None if pane is None else pane.row
+    return _browsing(model) and row is not None and row.own and bool(row.key)
+
+
 def _tab_label(model: SetupModel) -> str | None:
-    """Tab walks the profile field, the list and the form; in the form it is the default."""
-    return {"profile": "list", "list": "form", "form": None}[model.focus]
+    """Tab walks the profile field, the list and the section; in a form it is the default."""
+    if model.focus == "list":
+        return "form" if model.name == INSTALL_ROW else "settings"
+    return "list" if model.focus == "profile" else None
 
 
 def _enter_label(model: SetupModel) -> str | None:
-    """Enter loads the profile or opens a form; in a form it is the field's (or button's) own."""
-    return {"profile": "load", "list": "open", "form": None}[model.focus]
+    """Enter loads the profile, opens a section, or opens and writes a row's field."""
+    if model.focus == "profile":
+        return "load"
+    if model.focus == "list":
+        return "open"
+    pane = model.pane
+    if model.focus == "form" or pane is None:
+        return None
+    if isinstance(pane.editing, ListEditor):
+        return _list_enter(pane.editing, changed=pane.to_write() != pane.initial)
+    if pane.editing is not None:
+        return "write"
+    row = pane.row
+    if row is None or pane.confirm:
+        return None
+    if not row.key:
+        return "open"
+    return "edit" if row.descriptor is not None else None
+
+
+def _list_enter(editor: ListEditor, *, changed: bool) -> str:
+    """Enter in a list editor: keep the open item, put the moved one down, or act on the row.
+
+    On ``done`` it writes the list, or just closes the editor when nothing changed.
+    """
+    if editor.editing is not None:
+        return "keep"
+    if editor.moving:
+        return "put down"
+    count = len(editor.items)
+    if editor.cursor < count:
+        return "edit"
+    if editor.cursor == count:
+        return "add"
+    return "write" if changed else "close"
 
 
 def _save_label(model: SetupModel) -> str | None:
-    """Ctrl-s saves the form (checking first); in the profile field it loads, so not offered.
+    """Ctrl-s saves a form (checking first) or writes the open field.
 
     On this install's row it registers, while there is something to register.
     """
@@ -296,7 +393,10 @@ def _save_label(model: SetupModel) -> str | None:
         return None
     if model.name == INSTALL_ROW:
         return "register" if _registrable(model) else None
-    return "save"
+    if model.focus == "form":
+        return "save"
+    pane = model.pane
+    return "write" if model.focus == "section" and pane and pane.editing is not None else None
 
 
 def _registrable(model: SetupModel) -> bool:
@@ -323,19 +423,21 @@ class _Setup:
         self,
         result: CompositionResult,
         services: dict[str, PluginSpec],
+        sections: tuple[str, ...],
         store: TokenStore | None,
         profiles: tuple[str, ...],
         profile: str,
-        states: Mapping[str, ServiceState],
     ) -> None:
         self.result = result
         self.services = services
+        self.sections = sections
         self.store = store
         self.profiles = profiles
         self.profile = profile
-        self.states = states
+        self.plugins = frozenset(registered.spec.name for registered in result.plugins)
         # Tested once, just before the first token goes to the store.
         self.preflight = cache(store.preflight) if store is not None else _no_preflight
+        self.order: tuple[str, ...] = ()
 
     # --- init and view --------------------------------------------------------
 
@@ -347,15 +449,21 @@ class _Setup:
         )
         from untaped.refs import install_state  # noqa: PLC0415 - off the startup path
 
-        rows = (CapRow(INSTALL_ROW, install_state()), *self._rows(self.states))
+        listing = read_listing(self.profile, self.services)
+        self.order = self._order(listing)
+        rows = (
+            CapRow(INSTALL_ROW, install_state()),
+            *(CapRow(name, self._status(name, listing)) for name in self.order),
+        )
         model = SetupModel(
-            profile=field,
+            profile=_profile_field(field, listing),
             current=self.profile,
             rows=rows,
-            states=self.states,
-            forms={INSTALL_ROW: _install_form(), **self._forms(self.states, self.profile)},
+            states=listing.states,
+            forms={INSTALL_ROW: _install_form(), **self._forms(listing.states, self.profile)},
+            panes=self._panes(listing, self.profile),
             config_path=str(resolve_config_path()),
-            selected=1 if self.services else 0,
+            selected=1 if self.order else 0,
         )
         return model, []
 
@@ -373,13 +481,21 @@ class _Setup:
             tuple(self._item(frame, row) for row in model.rows),
             value=model.name,
             cursor=model.selected,
+            window_rows=max(3, inner.height - 2),  # the pane's height, less its border
         )
+        right: Form | SectionPane | _Note
+        title = model.name
+        if model.name == INSTALL_ROW or model.focus == "form":
+            right = model.forms[model.name]
+            title = model.name if model.name == INSTALL_ROW else f"{model.name} {CONNECTION}"
+        else:
+            right = model.pane or _Note("Nothing to set in this section.")
         panes = Panes(
             left,
-            model.forms[model.name],
+            right,
             focus=0 if model.focus == "list" else 1,
             left_title="Setup",
-            right_title=model.name,
+            right_title=title,
         )
         return Group(header, field, panes.view(inner, focused=model.focus != "profile"))
 
@@ -417,7 +533,7 @@ class _Setup:
                 return self._leave(model, "interrupt")
 
     def _answer(self, model: SetupModel, message: object) -> tuple[SetupModel, list[Cmd]]:
-        """The form's submit, a button, or what a command brought back."""
+        """A form's submit, a button, a row's answer, or what a command brought back."""
         match message:
             case Submitted() if model.name == INSTALL_ROW:
                 return self._register(model)
@@ -431,10 +547,12 @@ class _Setup:
                 return self._probed(model, name, rows)
             case Saved():
                 return self._saved(model, message)
-            case ProfileLoaded(profile=profile, states=states):
-                return self._loaded(model, profile, states)
+            case ProfileLoaded(profile=profile, listing=listing):
+                return self._loaded(model, profile, listing)
             case Registered(text=text):
                 return self._registered(model, text)
+            case FieldOpened() | UnsetAsked() | Written():
+                return self._row_answer(model, message)
             case CmdError(error=error):
                 return self._failed(model, error)
         return model, []
@@ -444,7 +562,7 @@ class _Setup:
     def _edit(self, model: SetupModel, message: Key | Paste) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "profile":
             if model.phase != "idle":
-                return model, []  # the field and the forms must agree: no typing mid-load or save
+                return model, []  # the field and the rows must agree: no typing mid-load or save
             field, cmds = model.profile.update(message)
             return (model if field is model.profile else replace(model, profile=field)), cmds
         if model.focus == "list":
@@ -457,7 +575,19 @@ class _Setup:
             if moved.cursor == model.selected:
                 return model, []
             return replace(model, selected=moved.cursor or 0), []
+        if model.focus == "section":
+            return self._in_pane(model, message)
         return self._in_form(model, message)
+
+    def _in_pane(self, model: SetupModel, message: object) -> tuple[SetupModel, list[Cmd]]:
+        """Give ``message`` to the selected section's rows (not while a read or write runs)."""
+        pane = model.pane
+        if pane is None or model.phase != "idle":
+            return model, []
+        updated, cmds = pane.update(message)
+        if updated is pane and not cmds:
+            return model, []
+        return _with_pane(model, model.name, updated), cmds
 
     def _in_form(self, model: SetupModel, message: object) -> tuple[SetupModel, list[Cmd]]:
         """Give ``message`` to the selected form (not while a check or a save runs)."""
@@ -469,7 +599,7 @@ class _Setup:
             return model, []
         if model.name in model.failed and updated.value != form.value:
             # The values changed: the failed check no longer says anything about them.
-            updated = _reset(updated.with_error(""))
+            updated = reset(updated.with_error(""))
             model = replace(model, failed=_without(model.failed, model.name))
         return replace(model, forms={**model.forms, model.name: updated}), list(cmds)
 
@@ -477,15 +607,19 @@ class _Setup:
         if model.focus == "profile":
             return self._leave_profile(model, "list")
         if model.focus == "list":
-            return replace(model, focus="form"), []
+            return replace(model, focus=_opened_focus(model)), []
+        if model.focus == "section":
+            return model, []
         return self._in_form(model, NextField())
 
     def _previous(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "form":
             moved, cmds = self._in_form(model, PrevField())
             if moved is model and not cmds:
-                return replace(model, focus="list"), []  # the form was at its first field
+                return replace(model, focus=_closed_focus(model)), []  # at its first field
             return moved, cmds
+        if model.focus == "section":
+            return replace(model, focus="list"), []
         if model.focus == "list":
             return replace(model, focus="profile"), []
         return self._leave_profile(model, "profile")
@@ -494,26 +628,38 @@ class _Setup:
         if model.focus == "profile":
             return self._load(model)
         if model.focus == "list":
-            return replace(model, focus="form"), []
+            return replace(model, focus=_opened_focus(model)), []
+        if model.focus == "section":
+            return self._open(model)
         return self._in_form(model, Activate())
 
     def _submit(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "profile":
             # A typed profile is loaded first (as on enter); saving is a second ctrl-s, once
-            # the forms are the new profile's.
+            # the rows are the new profile's.
             return self._leave_profile(model, "profile")
+        if model.focus == "section":
+            pane = model.pane
+            return self._write(model) if pane and pane.editing is not None else (model, [])
+        if model.name != INSTALL_ROW and model.focus == "list":
+            return model, []  # a section is written a field at a time, from its rows
         return self._in_form(replace(model, focus="form"), Submit())
 
     def _back(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "form":
+            return replace(model, focus=_closed_focus(model)), []
+        if model.focus == "section":
+            pane = model.pane
+            if pane is not None and (pane.editing is not None or pane.confirm):
+                return _with_pane(model, model.name, pane.closed()), []
             return replace(model, focus="list"), []
         return self._leave(model, "quit")
 
     def _leave(
         self, model: SetupModel, how: Literal["quit", "interrupt"]
     ) -> tuple[SetupModel, list[Cmd]]:
-        """End the screen with the result, once a running save has finished."""
-        if model.phase in ("saving", "registering"):
+        """End the screen with the result, once a running write has finished."""
+        if model.phase in ("saving", "registering", "writing"):
             return replace(model, leaving=how), []
         return model, [Cmd.send(Quit(_result(model, interrupted=how == "interrupt")))]
 
@@ -522,7 +668,7 @@ class _Setup:
     def _leave_profile(self, model: SetupModel, then: Focus) -> tuple[SetupModel, list[Cmd]]:
         """The profile field loses the keyboard: what is typed there is loaded, as on enter.
 
-        The field and the forms never disagree: a name that differs from ``current`` loads (and
+        The field and the rows never disagree: a name that differs from ``current`` loads (and
         focuses the list once loaded); the same name just moves the focus to ``then``.
         """
         loaded, cmds = self._load(model)
@@ -539,22 +685,28 @@ class _Setup:
         services = self.services
 
         def load_profile() -> object:
-            return ProfileLoaded(name, service_states(services, name, read_config_dict()))
+            return ProfileLoaded(name, read_listing(name, services))
 
         return replace(model, phase="loading"), [Cmd(load_profile, name="load_profile")]
 
     def _loaded(
-        self, model: SetupModel, profile: str, states: Mapping[str, ServiceState]
+        self, model: SetupModel, profile: str, listing: Listing
     ) -> tuple[SetupModel, list[Cmd]]:
         if model.phase != "loading":
             return model, []
+        rows = tuple(CapRow(name, self._status(name, listing)) for name in self.order)
         return (
             replace(
                 model,
+                profile=_profile_field(model.profile, listing),
                 current=profile,
-                rows=(model.rows[0], *self._rows(states)),
-                states=states,
-                forms={INSTALL_ROW: model.forms[INSTALL_ROW], **self._forms(states, profile)},
+                rows=(model.rows[0], *rows),
+                states=listing.states,
+                forms={
+                    INSTALL_ROW: model.forms[INSTALL_ROW],
+                    **self._forms(listing.states, profile),
+                },
+                panes=self._panes(listing, profile),
                 phase="idle",
                 pending=None,
                 failed={},
@@ -562,6 +714,119 @@ class _Setup:
             ),
             [],
         )
+
+    # --- a section's rows -----------------------------------------------------
+
+    def _row_answer(
+        self, model: SetupModel, message: FieldOpened | UnsetAsked | Written
+    ) -> tuple[SetupModel, list[Cmd]]:
+        """A row's field was read, its unset confirmed, or its write finished."""
+        match message:
+            case FieldOpened():
+                return self._opened(model, message)
+            case UnsetAsked(key=key):
+                return self._unset(model, key)
+            case Written():
+                return self._written(model, message)
+
+    def _open(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
+        """Enter on a row: write its open field, open the connection's form, or read its field."""
+        pane = model.pane
+        if pane is None or model.phase != "idle" or pane.confirm:
+            return model, []
+        if pane.editing is not None:
+            return self._write(model)
+        row = pane.row
+        if row is None:
+            return model, []
+        if not row.key:
+            return replace(model, focus="form"), []  # the connection row
+        if row.descriptor is None:
+            return model, []  # read-only
+        return replace(model, phase="opening"), [open_command(model.current, row)]
+
+    def _opened(self, model: SetupModel, message: FieldOpened) -> tuple[SetupModel, list[Cmd]]:
+        if model.phase != "opening":
+            return model, []
+        section = _section(message.key)
+        pane = model.panes.get(section)
+        opened = model if pane is None else _with_pane(model, section, field_for(pane, message))
+        return replace(opened, phase="idle"), []
+
+    def _write(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
+        """Write the open field, as ``config set`` would; its own check first."""
+        pane = model.pane
+        row = None if pane is None else pane.row
+        if pane is None or row is None or model.phase != "idle":
+            return model, []
+        refused = pane.checked()
+        if refused is not None:
+            return _with_pane(model, model.name, refused), []
+        value = pane.to_write()
+        if value == pane.initial:
+            # Untouched: writing it would pin an inherited or default value here.
+            return _with_pane(model, model.name, pane.closed()), []
+        cmd = write_command(model.current, row.key, value, pane.expected, self.services)
+        return replace(model, phase="writing"), [cmd]
+
+    def _unset(self, model: SetupModel, key: str) -> tuple[SetupModel, list[Cmd]]:
+        if model.phase != "idle":
+            return model, []
+        cmd = write_command(model.current, key, None, None, self.services)
+        return replace(model, phase="writing"), [cmd]
+
+    def _written(self, model: SetupModel, message: Written) -> tuple[SetupModel, list[Cmd]]:
+        if model.phase != "writing":
+            return model, []
+        section = _section(message.key)
+        done = replace(model, phase="idle")
+        if message.listing is not None:
+            done = self._relisted(done, message.listing)
+        pane = done.panes.get(section)
+        if message.error:
+            if pane is not None:
+                if pane.editing is not None and message.listing is None:
+                    pane = replace(pane, editing=pane.editing.with_error(message.error))
+                else:
+                    pane = pane.closed().with_error(message.error)
+                done = _with_pane(done, section, pane)
+            if done.leaving is not None:
+                note: Note = ("warning", f"could not write {message.key}: {message.error}")
+                done = replace(done, notes=(*done.notes, note))
+            return self._after(done)
+        if pane is not None:
+            done = _with_pane(done, section, pane.closed())
+        if message.changed:
+            written = (*done.written, (model.current, message.key))
+            done = replace(done, written=written, notes=(*done.notes, *message.notes))
+        return self._after(done)
+
+    def _relisted(self, model: SetupModel, listing: Listing) -> SetupModel:
+        """``model`` over re-read ``listing``: rows, statuses and states; open fields stay."""
+        rows = tuple(
+            row if row.name == INSTALL_ROW else replace(row, status=self._restatus(row, listing))
+            for row in model.rows
+        )
+        panes = {
+            name: pane.with_rows(self._rows_of(name, listing), listing.errors.get(name, ""))
+            for name, pane in model.panes.items()
+        }
+        return replace(
+            model,
+            rows=rows,
+            states=listing.states,
+            panes=panes,
+            profile=_profile_field(model.profile, listing),
+        )
+
+    def _restatus(self, row: CapRow, listing: Listing) -> str:
+        """A row's status after a write: a service's stays, unless its validity changed."""
+        state = listing.states.get(row.name)
+        if state is None:
+            return self._status(row.name, listing)
+        if state.invalid is not None or row.status == "invalid settings":
+            return _initial_status(state)
+        return row.status
 
     # --- save -----------------------------------------------------------------
 
@@ -574,14 +839,14 @@ class _Setup:
         name = model.name
         spec = self.services[name]
         try:
-            candidate = _candidate(spec, model.current, values)
+            asked = candidate(spec, model.current, values)
         except ConfigError as exc:
             return self._fail(model, name, str(exc)), []
 
         def prime() -> object:
             # Runs with the real terminal; the token is cached for the probe.
             section = spec.name
-            argv = list(candidate.argv or ())
+            argv = list(asked.argv or ())
             forget_token_command(argv)  # every check runs the command, a retry included
             try:
                 CommandToken(argv, section=section).get_secret_value()
@@ -592,25 +857,25 @@ class _Setup:
         checking = replace(
             model,
             phase="probing",
-            pending=candidate,
+            pending=asked,
             failed=_without(model.failed, name),
             rows=_status(model.rows, name, "checking"),
-            forms={**model.forms, name: _reset(model.forms[name].with_error(""))},
+            forms={**model.forms, name: reset(model.forms[name].with_error(""))},
         )
-        if candidate.how == "command":
+        if asked.how == "command":
             return checking, [Cmd(prime, suspend=True, name="prime")]
-        return checking, [self._probe(candidate, model.states[name])]
+        return checking, [self._probe(asked, model.states[name])]
 
     def _primed(self, model: SetupModel, name: str) -> tuple[SetupModel, list[Cmd]]:
-        candidate = model.pending
-        if model.phase != "probing" or candidate is None or candidate.name != name:
+        asked = model.pending
+        if model.phase != "probing" or asked is None or asked.name != name:
             return model, []
-        return model, [self._probe(candidate, model.states[name])]
+        return model, [self._probe(asked, model.states[name])]
 
-    def _probe(self, candidate: Candidate, state: ServiceState) -> Cmd:
-        """The background check of ``candidate``: the plugin's online checks over its values."""
-        overlay = overlay_values(candidate, state)
-        result, name, profile = self.result, candidate.name, candidate.profile
+    def _probe(self, asked: Candidate, state: ServiceState) -> Cmd:
+        """The background check of ``asked``: the plugin's online checks over its values."""
+        overlay = overlay_values(asked, state)
+        result, name, profile = self.result, asked.name, asked.profile
 
         def probe() -> object:
             rows = online_probe_rows(result, profile, name, overlay)
@@ -621,15 +886,15 @@ class _Setup:
     def _probed(
         self, model: SetupModel, name: str, rows: tuple[tuple[str, str], ...]
     ) -> tuple[SetupModel, list[Cmd]]:
-        candidate = model.pending
-        if model.phase != "probing" or candidate is None or candidate.name != name:
+        asked = model.pending
+        if model.phase != "probing" or asked is None or asked.name != name:
             return model, []
         failing = [detail for status, detail in rows if status == "fail"]
         if not failing:
-            return self._write(model, replace(candidate, checked="passed" if rows else "unchecked"))
+            return self._save(model, replace(asked, checked="passed" if rows else "unchecked"))
         form = model.forms[name].with_error(failing[0] or "the check failed")
-        form = _with_buttons(form, _anyway_buttons())
-        failed = replace(candidate, checked="failed")
+        form = with_buttons(form, anyway_buttons())
+        failed = replace(asked, checked="failed")
         return (
             replace(
                 model,
@@ -638,7 +903,7 @@ class _Setup:
                 failed={**model.failed, name: failed},
                 rows=_status(model.rows, name, "failed"),
                 forms={**model.forms, name: form},
-                selected=self._index(name),
+                selected=_index(model.rows, name),
                 focus="form",
             ),
             [],
@@ -650,37 +915,38 @@ class _Setup:
         if button == "save":
             return model, [Cmd.send(Submit())]
         if button == "save_anyway":
-            candidate = model.failed.get(model.name)
-            if model.phase != "idle" or candidate is None:
+            asked = model.failed.get(model.name)
+            if model.phase != "idle" or asked is None:
                 return model, []
-            return self._write(model, candidate)
-        # Cancel: forget the failed check and go back to the list.
-        form = _reset(model.forms[model.name].with_error(""))
+            return self._save(model, asked)
+        # Cancel: forget the failed check and go back to the section's rows.
+        form = reset(model.forms[model.name].with_error(""))
         return replace(
             model,
             forms={**model.forms, model.name: form},
             failed=_without(model.failed, model.name),
-            focus="list",
+            focus=_closed_focus(model),
         ), []
 
-    def _write(self, model: SetupModel, candidate: Candidate) -> tuple[SetupModel, list[Cmd]]:
-        name = candidate.name
-        spec, state, store, preflight = (
+    def _save(self, model: SetupModel, asked: Candidate) -> tuple[SetupModel, list[Cmd]]:
+        name = asked.name
+        spec, state, store, preflight, services = (
             self.services[name],
             model.states[name],
             self.store,
             self.preflight,
+            self.services,
         )
 
         def save() -> object:
-            notes = write_candidate(spec, candidate, state, store, preflight)
-            return Saved(name, candidate.profile, tuple(notes), _refreshed(spec, candidate.profile))
+            notes = write_candidate(spec, asked, state, store, preflight)
+            return Saved(name, asked.profile, tuple(notes), _listing(asked.profile, services))
 
         return (
             replace(
                 model,
                 phase="saving",
-                pending=candidate,
+                pending=asked,
                 failed=_without(model.failed, name),
                 rows=_status(model.rows, name, "saving"),
             ),
@@ -688,28 +954,28 @@ class _Setup:
         )
 
     def _saved(self, model: SetupModel, message: Saved) -> tuple[SetupModel, list[Cmd]]:
-        candidate = model.pending
-        if model.phase != "saving" or candidate is None or candidate.name != message.name:
+        asked = model.pending
+        if model.phase != "saving" or asked is None or asked.name != message.name:
             return model, []
         name = message.name
-        states = model.states if message.state is None else {**model.states, name: message.state}
         status = {"passed": "ok", "unchecked": "saved", "failed": "saved, check failed"}[
-            candidate.checked
+            asked.checked
         ]
+        done = replace(model, phase="idle", rows=_status(model.rows, name, status))
+        if message.listing is not None:
+            done = self._relisted(done, message.listing)
+        state = done.states[name]
         done = replace(
-            model,
-            phase="idle",
+            done,
             pending=None,
             failed=_without(model.failed, name),
-            rows=_status(model.rows, name, status),
-            states=states,
             forms={
-                **model.forms,
-                name: self._form(self.services[name], states[name], model.current),
+                **done.forms,
+                name: connection_form(self.services[name], state, self.store, model.current),
             },
             saved=(*model.saved, (message.profile, name)),
             notes=(*model.notes, *message.notes),
-            focus="list",
+            focus="section",
         )
         return self._after(done)
 
@@ -757,85 +1023,82 @@ class _Setup:
             return self._after(failed)
         if model.phase == "loading":
             return replace(model, phase="idle", profile=model.profile.with_error(text)), []
-        candidate = model.pending
-        if model.phase not in ("probing", "saving") or candidate is None:
+        if model.phase in ("opening", "writing"):
+            pane = model.pane
+            stopped = replace(model, phase="idle")
+            if pane is not None:
+                stopped = _with_pane(stopped, model.name, pane.with_error(text))
+            return self._after(stopped)
+        asked = model.pending
+        if model.phase not in ("probing", "saving") or asked is None:
             return model, []
         wrote = model.phase == "saving"
-        failed = replace(self._fail(model, candidate.name, text), phase="idle", pending=None)
+        failed = replace(self._fail(model, asked.name, text), phase="idle", pending=None)
         if wrote and model.leaving is not None:
-            note: Note = ("warning", f"could not save {candidate.name}: {text}")
+            note: Note = ("warning", f"could not save {asked.name}: {text}")
             failed = replace(failed, notes=(*failed.notes, note))
         return self._after(failed)
 
     def _fail(self, model: SetupModel, name: str, text: str) -> SetupModel:
-        form = _reset(model.forms[name].with_error(text))
+        form = reset(model.forms[name].with_error(text))
         return replace(
             model,
             failed=_without(model.failed, name),
             rows=_status(model.rows, name, "failed"),
             forms={**model.forms, name: form},
-            selected=self._index(name),
+            selected=_index(model.rows, name),
             focus="form",
         )
 
-    def _index(self, name: str) -> int:
-        return 1 + list(self.services).index(name)  # this install's row comes first
-
     def _after(self, model: SetupModel) -> tuple[SetupModel, list[Cmd]]:
-        """A save is over: end the screen now if a quit was waiting for it."""
+        """A write is over: end the screen now if a quit was waiting for it."""
         if model.leaving is None:
             return model, []
         return model, [Cmd.send(Quit(_result(model, interrupted=model.leaving == "interrupt")))]
 
     # --- building -------------------------------------------------------------
 
-    def _rows(self, states: Mapping[str, ServiceState]) -> tuple[CapRow, ...]:
-        return tuple(CapRow(name, _initial_status(states[name])) for name in self.services)
+    def _order(self, listing: Listing) -> tuple[str, ...]:
+        """The sections on the left, fixed for the run.
+
+        The services that still need something, the configured ones, core's
+        sections, then the other plugins' alphabetically; a section with no
+        row to show (only unset deprecated settings) is left out.
+        """
+        services = [name for name in self.services if name in self.sections]
+        needs = [name for name in services if self._status(name, listing) != "configured"]
+        configured = [name for name in services if name not in needs]
+        others = [
+            name for name in self.sections if name not in self.services and name in listing.rows
+        ]
+        core = [name for name in others if name not in self.plugins]
+        plugins = sorted(name for name in others if name in self.plugins)
+        return (*needs, *configured, *core, *plugins)
+
+    def _status(self, name: str, listing: Listing) -> str:
+        state = listing.states.get(name)
+        if state is not None:
+            return _initial_status(state)
+        return "invalid settings" if name in listing.errors else section_mark(name)
+
+    def _rows_of(self, name: str, listing: Listing) -> tuple[SettingRow, ...]:
+        rows = listing.rows.get(name, ())
+        state = listing.states.get(name)
+        return rows if state is None else (connection_row(state), *rows)
+
+    def _panes(self, listing: Listing, profile: str) -> dict[str, SectionPane]:
+        return {
+            name: SectionPane(
+                name, profile, self._rows_of(name, listing), error=listing.errors.get(name, "")
+            )
+            for name in self.order
+        }
 
     def _forms(self, states: Mapping[str, ServiceState], profile: str) -> dict[str, Form]:
         return {
-            name: self._form(spec, states[name], profile) for name, spec in self.services.items()
+            name: connection_form(spec, states[name], self.store, profile)
+            for name, spec in self.services.items()
         }
-
-    def _form(self, spec: PluginSpec, state: ServiceState, profile: str) -> Form:
-        has_command = takes_token_command(settings_model(spec))
-        choices = _token_choices(spec, state, self.store, has_command=has_command)
-        tabs = tuple(
-            self._tab(spec, state, choice, profile, has_command=has_command) for choice in choices
-        )
-        return Form(
-            (
-                ("base_url", TextInput("Base URL", state.base_url or "", validator=_url_error)),
-                ("token", Tabs("Token source", tabs, active=choices[0].value)),
-                ("buttons", _save_buttons()),
-            )
-        )
-
-    def _tab(
-        self,
-        spec: PluginSpec,
-        state: ServiceState,
-        choice: PromptChoice[str],
-        profile: str,
-        *,
-        has_command: bool,
-    ) -> Tab:
-        how = choice.value
-        label = self.store.name if how == "store" and self.store is not None else _TAB_LABELS[how]
-        note = choice.label
-        if how == "keep" and has_command and state.inherited_token:
-            note += (
-                f"\n{spec.name}.token is set in profile {DEFAULT_PROFILE}: switching "
-                f"profile {profile} to a stored token or a command would leave it in charge, so "
-                f"only keeping the current token is offered\n{hint('auth migrate')}"
-            )
-        fields: tuple[tuple[str, Any], ...] = ()
-        if how in ("store", "enter"):
-            fields = (("token", SecretInput("Token", validator=_token_error)),)
-        elif how == "command":
-            validator = _command_validator(spec.name)
-            fields = (("command", TextInput("Command", validator=validator)),)
-        return Tab(how, label, fields, note)
 
 
 # --- helpers -------------------------------------------------------------------
@@ -871,6 +1134,43 @@ def _no_preflight() -> None:
     """Nothing to test: no store was picked."""
 
 
+def _section(key: str) -> str:
+    """The section a key belongs to: its first segment."""
+    return key.partition(".")[0]
+
+
+def _listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing | None:
+    """What ``profile`` shows now, or ``None`` when the config cannot be read."""
+    try:
+        return read_listing(profile, services)
+    except ConfigError:
+        return None
+
+
+def _profile_field(field: TextInput, listing: Listing) -> TextInput:
+    """The profile field saying, under it, whether its profile is still to be created."""
+    help = "" if listing.exists else NEW_PROFILE
+    return field if field.help == help else replace(field, help=help)
+
+
+def _opened_focus(model: SetupModel) -> Focus:
+    """Where enter or tab on the list goes: this install's form, or the section's rows."""
+    return "form" if model.name == INSTALL_ROW else "section"
+
+
+def _closed_focus(model: SetupModel) -> Focus:
+    """Where leaving a form goes: back to the list from this install, else to the rows."""
+    return "list" if model.name == INSTALL_ROW else "section"
+
+
+def _with_pane(model: SetupModel, name: str, pane: SectionPane) -> SetupModel:
+    return replace(model, panes={**model.panes, name: pane})
+
+
+def _index(rows: tuple[CapRow, ...], name: str) -> int:
+    return next(index for index, row in enumerate(rows) if row.name == name)
+
+
 def _initial_status(state: ServiceState) -> str:
     if state.invalid is not None:
         return "invalid settings"
@@ -881,7 +1181,7 @@ def _initial_status(state: ServiceState) -> str:
 
 def _without(failed: Mapping[str, Candidate], name: str) -> dict[str, Candidate]:
     """``failed`` without ``name``: that plugin's failed check no longer applies."""
-    return {key: candidate for key, candidate in failed.items() if key != name}
+    return {key: asked for key, asked in failed.items() if key != name}
 
 
 def _status(rows: tuple[CapRow, ...], name: str, status: str) -> tuple[CapRow, ...]:
@@ -894,100 +1194,18 @@ def _field_rows(frame: Frame, field: TextInput, *, focused: bool) -> int:
     While it is focused and completing, the candidates count too, under a rule when boxed.
     """
     boxed = frame.box() is not None
-    rows = (3 if boxed else 2) + (1 if field.error else 0)
+    rows = (3 if boxed else 2) + (1 if field.error or field.help else 0)
     if focused and field.completing:
         rows += min(COMPLETION_ROWS, len(field.matches)) + (1 if boxed else 0)
     return rows
-
-
-def _save_buttons() -> Buttons:
-    return Buttons((Button("save", "Save", "primary"), Button("cancel", "Cancel", "ghost")))
-
-
-def _anyway_buttons() -> Buttons:
-    return Buttons(
-        (Button("save_anyway", "Save anyway", "primary"), Button("cancel", "Cancel", "ghost"))
-    )
-
-
-def _with_buttons(form: Form, buttons: Buttons) -> Form:
-    fields = tuple((name, buttons if name == "buttons" else field) for name, field in form.fields)
-    return replace(form, fields=fields)
-
-
-def _reset(form: Form) -> Form:
-    """``form`` with ``Save`` and ``Cancel`` as its buttons again."""
-    return _with_buttons(form, _save_buttons())
-
-
-def _url_error(text: str) -> str:
-    return "" if text.strip() else "Enter a base URL."
-
-
-def _token_error(token: SecretStr) -> str:
-    return "" if token.get_secret_value().strip() else "Enter a token."
-
-
-def _command_validator(name: str) -> Callable[[str], str]:
-    def validate(text: str) -> str:
-        try:
-            _token_command(name, text)
-        except ConfigError as exc:
-            return str(exc)
-        return ""
-
-    return validate
-
-
-def _token_command(name: str, text: str) -> list[str]:
-    """The token command's argv; an empty or malformed one is refused before anything is written."""
-    try:
-        argv = shlex.split(text)
-    except ValueError as exc:
-        raise ConfigError(f"invalid {name} token command: {exc}", category="invalid") from exc
-    if not argv:
-        raise ConfigError(f"{name} token command is empty", category="invalid")
-    return argv
-
-
-def _candidate(spec: PluginSpec, profile: str, values: Mapping[str, object]) -> Candidate:
-    """The form's validated values as what the user asked for."""
-    tab = values["token"]
-    assert isinstance(tab, dict)
-    how = str(tab["tab"])
-    token = None
-    argv = None
-    if how in ("store", "enter"):
-        typed = tab["token"]
-        assert isinstance(typed, SecretStr)
-        token = SecretStr(typed.get_secret_value().strip())
-    elif how == "command":
-        argv = tuple(_token_command(spec.name, str(tab["command"])))
-    return Candidate(
-        spec.name,
-        spec.name,
-        profile,
-        how,
-        str(values["base_url"]).strip(),
-        token,
-        argv,
-    )
-
-
-def _refreshed(spec: PluginSpec, profile: str) -> ServiceState | None:
-    """What ``profile`` resolves to now for ``spec``, or ``None`` when it cannot be read."""
-    try:
-        return service_states({spec.name: spec}, profile, read_config_dict())[spec.name]
-    except ConfigError:
-        return None
 
 
 def _result(model: SetupModel, *, interrupted: bool) -> SetupResult:
     """What was written, for the profile written last (earlier profiles become a note)."""
     profile = model.saved[-1][0] if model.saved else model.current
     by_profile: dict[str, list[str]] = {}
-    for written, name in model.saved:
-        names = by_profile.setdefault(written, [])
+    for saved, name in model.saved:
+        names = by_profile.setdefault(saved, [])
         if name not in names:
             names.append(name)
     others: list[Note] = [
@@ -997,45 +1215,11 @@ def _result(model: SetupModel, *, interrupted: bool) -> SetupResult:
     ]
     touched = tuple(by_profile.get(profile, ()))
     notes = (*model.notes, *others)
-    return SetupResult(profile, touched, notes, interrupted, registered=model.registered)
+    written = tuple(dict.fromkeys(key for _, key in model.written))
+    return SetupResult(
+        profile, touched, notes, interrupted, registered=model.registered, written=written
+    )
 
 
 def _check_hint(profile: str) -> str:
     return hint(f"--profile {profile} doctor --online")
-
-
-def _token_choices(
-    spec: PluginSpec,
-    current: ServiceState,
-    store: TokenStore | None,
-    *,
-    has_command: bool,
-) -> list[PromptChoice[str]]:
-    """The token choices, the recommended one first; none stores plain text if avoidable.
-
-    While ``default``'s plaintext token wins, keeping it is the only choice
-    that would work for a section ``auth`` serves.
-    """
-    choices: list[PromptChoice[str]] = []
-    if current.token_source is not None:
-        label = f"Keep the current token ({current.token_source})"
-        choices.append(PromptChoice(value="keep", label=label))
-    if has_command and current.inherited_token:
-        return choices
-    if current.plaintext is not None and store is not None:
-        label = f"Move the current token to {store.name}"
-        choices.insert(0, PromptChoice(value="move", label=label))
-    if store is not None:
-        choices.append(PromptChoice(value="store", label=f"Store a token with {store.name}"))
-    if has_command:
-        choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
-        env = token_env_names(settings_model(spec).model_construct())
-        # default's command would win over the variable once the profile's is gone.
-        if env and not current.inherited_command:
-            stored = current.own_command is not None and preset_entry(current.own_command)
-            effect = "drops the stored token" if stored else "nothing is stored"
-            label = f"Use ${env[0]} (you export it; {effect})"
-            choices.append(PromptChoice(value="env", label=label))
-    else:
-        choices.append(PromptChoice(value="enter", label="Enter a token (stored in config.yml)"))
-    return choices

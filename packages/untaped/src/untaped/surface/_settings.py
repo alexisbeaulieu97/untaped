@@ -66,6 +66,8 @@ class Setting:
     """The key's own mark, else its plugin's."""
     choices: Choices | None = None
     """The names the key accepts, when its field declares them."""
+    bounds: str | None = None
+    """The key's bounds as a sentence (``Above 0.``), when its field declares any."""
 
 
 def check_quarantine(result: CompositionResult) -> None:
@@ -123,7 +125,7 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
 
 def setting_leaves(section: Section) -> list[Setting]:
     """Every leaf key of ``section``, collections included, with its effective mark."""
-    from untaped.config_schema import walk_settings  # noqa: PLC0415
+    from untaped.config_schema import bounds_text, walk_settings  # noqa: PLC0415
     from untaped.settings import model_sections  # noqa: PLC0415
     from untaped.stability import setting_mark  # noqa: PLC0415
 
@@ -140,6 +142,7 @@ def setting_leaves(section: Section) -> list[Setting]:
             default=leaf.default,
             description=leaf.description,
             choices=leaf.choices,
+            bounds=bounds_text(leaf),
             mark=None
             if section.is_state
             else setting_mark(

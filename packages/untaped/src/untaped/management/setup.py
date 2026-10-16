@@ -1,18 +1,20 @@
 """Root ``untaped setup`` command: one full-screen screen to configure a profile.
 
-The screen (:mod:`untaped.management.setup_screen`) lists every composed
-plugin whose settings model has ``base_url`` and ``token`` fields, each with
-a status, and the selected one's form: its URL and how to get its token (stored
-with this machine's password store, a plaintext token moved there, a
-``token_command``, a conventional environment variable, or the current source
-kept). A plugin's online checks run against the values before anything is
-saved; writes go through the same validated settings repository as
-``config set`` (:mod:`untaped.management.setup_write`). After the screen
-closes this command prints what the screen wrote, then the doctor checks of
-the plugins it configured, online ones included, and exits 1 when any
-fails; ctrl-c exits 130 after that. It needs a terminal: without one it exits 2,
+The screen (:mod:`untaped.management.setup_screen`) lists every settings
+section, the services first (a composed plugin whose settings model has
+``base_url`` and ``token`` fields), each with a status, and the selected
+one's settings. A setting is written on enter through the use case
+``config set`` runs. A service's connection is one row whose form takes its
+URL and how to get its token (stored with this machine's password store, a
+plaintext token moved there, a ``token_command``, a conventional environment
+variable, or the current source kept); the service's online checks run
+against those values before anything is saved
+(:mod:`untaped.management.setup_write`). After the screen closes this
+command prints what the screen wrote, then the doctor checks of the services
+whose connection it saved, online ones included, and exits 1 when any fails;
+ctrl-c exits 130 after that. It needs a terminal: without one it exits 2,
 naming ``setup plan``, before it reads the config or the password store.
-``--only`` limits the plugins listed.
+``--only`` limits the sections listed.
 
 ``setup plan`` (:mod:`untaped.management.setup_plan`) is its read-only,
 non-interactive face for agents and scripts; both read service state
@@ -25,7 +27,6 @@ versions left, from every plugin's ``migrations``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -41,8 +42,9 @@ from untaped.cli import (
     writes,
 )
 from untaped.config_file import read_config_dict
-from untaped.errors import PromptInterruptedError
+from untaped.errors import ConfigError, PromptInterruptedError
 from untaped.management.doctor import report_check_rows, selected_check_rows
+from untaped.management.notes import print_notes
 from untaped.management.setup_plan import (
     SETUP_ALTERNATIVE,
     SETUP_COMMAND,
@@ -50,30 +52,23 @@ from untaped.management.setup_plan import (
     pending,
     plan_rows,
 )
-from untaped.management.setup_state import service_states, service_store, setup_services
-from untaped.output.diagnostic import Failure
+from untaped.management.setup_state import service_store, setup_sections, setup_services
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
-from untaped.render import MessageKind
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 _diag = Diagnostics()
-#: How a screen's note prints, by its level.
-_NOTES: dict[MessageKind, Callable[[str], object]] = {
-    "success": _diag.success,
-    "info": _diag.info,
-    "warning": _diag.warning,
-    "error": lambda text: _diag.failure(Failure.plain(text)),
-}
+_NO_SERVICE = "no composed plugin takes a base URL and token to set up"
+_NOTHING_TO_PLAN = "none of the named sections is a service with a base URL and token to set up"
 
 OnlyOption = Annotated[
     list[str] | None,
     Parameter(
         name="--only",
         negative="",
-        help="Only these services (repeatable or comma-separated); default: every service.",
+        help="Only these sections (repeatable or comma-separated); default: every section.",
         consume_multiple=False,
     ),
 ]
@@ -115,7 +110,10 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
     def setup_command(
         *, only: OnlyOption = None, fmt: FormatOption = "table", columns: ColumnsOption = None
     ) -> None:
-        """Set up a profile on one screen: URLs and tokens, checked online before saving."""
+        """Set up a profile on one screen: every setting, and each service's URL and token.
+
+        A service's URL and token are checked online before they are saved.
+        """
         with report_errors():
             _run(shell, result, only=only, fmt=fmt, columns=columns)
 
@@ -128,9 +126,14 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List what the profile still needs, with the command for each step (read-only)."""
+        """List what the profile's services still need, with the command for each step.
+
+        Read-only. `--only` plans the services among the sections it names.
+        """
         with report_errors():
             services = setup_services(result, only)
+            if not services:
+                raise ConfigError(_NOTHING_TO_PLAN if only else _NO_SERVICE)
             profile = selected_profile()
             rows = plan_rows(shell, result, services, profile, online=online)
             emit_plan(rows, profile=profile, fmt=fmt, columns=columns)
@@ -194,23 +197,23 @@ def _run(
     ui = ui_context(strict=False)
     # Before anything is read or probed: with no terminal this exits 2 having touched nothing.
     ui.require_screen_terminal(command=SETUP_COMMAND, alternative=SETUP_ALTERNATIVE)
+    sections = setup_sections(only)
     services = setup_services(result, only)
     raw = read_config_dict()
     active = selected_profile()
     screen = setup_screen(
         result,
         services,
+        sections=sections,
         profile=active,
         store=service_store(services),
-        states=service_states(services, active, raw),
         profiles=sorted(raw.get("profiles") or ()),
     )
     outcome = ui.run(screen)
-    for kind, text in outcome.notes:
-        _NOTES[kind](text)
+    print_notes(outcome.notes)
     profile = outcome.profile
     if not outcome.touched:
-        if not outcome.registered:
+        if not (outcome.registered or outcome.written):
             _diag.info("nothing saved; no changes made")
     else:
         rows = selected_check_rows(shell, result, profile, frozenset(outcome.touched))
