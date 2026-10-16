@@ -158,7 +158,12 @@ def _emit_rows(
     fmt: FormatOption,
     columns: ColumnsOption,
 ) -> None:
-    emit([outcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
+    emit(
+        [outcome.model_validate(row) for row in rows],
+        fmt=fmt,
+        columns=columns,
+        table_columns=outcome.table_columns,
+    )
 
 
 def _preview_payloads(

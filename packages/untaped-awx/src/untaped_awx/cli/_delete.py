@@ -108,5 +108,10 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         elif outcome.detail:
                             ctx.diag.warning(f"{label}: {outcome.detail}")
                     failed = any(outcome.action != "completed" for outcome in outcomes)
-                emit([DeleteOutcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
+                emit(
+                    [DeleteOutcome.model_validate(row) for row in rows],
+                    fmt=fmt,
+                    columns=columns,
+                    table_columns=DeleteOutcome.table_columns,
+                )
                 finish(failed)

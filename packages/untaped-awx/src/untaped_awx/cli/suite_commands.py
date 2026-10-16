@@ -621,7 +621,7 @@ def list_command(
         )
 
     rows = [case_row(path, suite, case) for path, suite in loaded.items() for case in suite.cases]
-    emit(rows, fmt=fmt, columns=columns)
+    emit(rows, fmt=fmt, columns=columns, table_columns=SuiteCase.table_columns)
 
 
 # ---- validate ------------------------------------------------------------
@@ -778,6 +778,7 @@ def _validate(
             ],
             fmt=fmt,
             columns=columns,
+            table_columns=ProvisionOutcome.table_columns,
             empty="No temporary copies planned.",
         )
     finish(any_errors)
@@ -852,6 +853,7 @@ def prune_command(
         [PruneOutcome.model_validate(row, from_attributes=True) for row in rows],
         fmt=fmt,
         columns=columns,
+        table_columns=PruneOutcome.table_columns,
         empty="No temporary copies found.",
     )
     finish(outcome)
