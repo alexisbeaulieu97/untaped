@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from screen.gallery import field_of, lines, run_solo
 from untaped.screen.components.lists import ListEditor
-from untaped.screen.core import Key
+from untaped.screen.core import Key, Paste
 
 
 def _list(*items: str, **kwargs: object) -> ListEditor:
@@ -70,11 +70,28 @@ def test_a_validator_keeps_a_refused_item_open_with_its_error() -> None:
     assert "no spaces" in run.frame
 
 
-def test_an_open_item_must_be_kept_or_dropped_before_the_list_is_written() -> None:
-    editor, _ = _list("a").update(Key("enter"))
+def test_an_open_item_counts_as_kept_so_ctrl_s_keeps_it() -> None:
+    editor = run_solo(_list("a"), "down", "enter", "b")
+    refusing = _list(validator=lambda text: "no spaces" if " " in text else "")
+    refused = run_solo(refusing, "enter", "a", " ", "b")
 
-    assert editor.validate() == "Press enter to keep the open item, or esc to drop it."
-    assert _list("a").validate() == ""
+    assert field_of(editor).value == ("a", "b")
+    assert field_of(editor).validate() == ""
+    assert field_of(refused).validate() == "no spaces"
+    assert field_of(refused).value == ()
+
+
+def test_an_item_keeps_its_text_as_typed() -> None:
+    run = run_solo(_list(" a "), "enter", "enter")
+
+    assert field_of(run).value == (" a ",)
+
+
+def test_lines_pasted_into_a_new_item_become_one_item_each() -> None:
+    run = run_solo(_list("a"), "down", "enter", Paste("b\n\nc\n"))
+
+    assert field_of(run).value == ("a", "b", "c")
+    assert field_of(run).editing is None
 
 
 def test_enter_on_done_and_esc_are_left_to_the_screen() -> None:

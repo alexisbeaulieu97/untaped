@@ -68,8 +68,6 @@ __all__ = [
 CONNECTION = "connection"
 #: Lines kept under the rows for the help or the open field.
 _BELOW = 6
-#: Lines a list editor takes beyond its rows: the blank line, its border and its help.
-_LIST_CHROME = 4
 
 
 @dataclass(frozen=True)
@@ -369,9 +367,13 @@ class SectionPane:
         below = _BELOW
         if isinstance(editing, ListEditor):
             # The editor takes the room it needs, down to one row of settings above it.
-            items = min(len(editing.items) + 2, max(3, frame.height - 1 - _LIST_CHROME))
+            chrome = (2 if frame.box() is None else 3) + _note_lines(
+                editing.error or editing.help, inner
+            )
+            chrome += _note_lines(self.error, inner)
+            items = min(len(editing.items) + 2, max(3, frame.height - 1 - chrome))
             editing = replace(editing, window_rows=items)
-            below = items + _LIST_CHROME
+            below = items + chrome
         size = max(1 if below > _BELOW else 3, frame.height - below)
         start = max(0, min(self.cursor - size // 2, len(self.rows) - size))
         shown = self.rows[start : start + size]
@@ -422,6 +424,18 @@ class SectionPane:
         if cell_len(row.value) > inner - key_width - 2 - trail:
             lines.insert(0, Text(row.value, style=role_style(frame, "screen.value")))
         return lines
+
+
+def _note_lines(text: str, width: int) -> int:
+    """The lines ``text`` wraps to ``width`` cells wide (none when empty)."""
+    lines, used = 0, width
+    for word in text.split():
+        cells = cell_len(word)
+        if used + 1 + cells > width:  # a word wraps as a whole, as rich wraps it
+            lines, used = lines + 1 + (cells - 1) // max(width, 1), cells % max(width, 1)
+        else:
+            used += 1 + cells
+    return lines
 
 
 def _moved(name: str, cursor: int, count: int) -> int:

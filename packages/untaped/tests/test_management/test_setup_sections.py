@@ -13,6 +13,7 @@ from typing import Annotated, ClassVar, Literal
 
 import pytest
 from pydantic import BaseModel, Field, SecretStr
+from rich.console import Console
 
 from screen.support import FakeHost
 from test_management.support import WizProfile, compose, make_spec, write_config
@@ -28,7 +29,7 @@ from untaped.plugins.registry import PluginSpec
 from untaped.screen.components.choices import Check, Cycle, Select, SingleList
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
 from untaped.screen.components.lists import ListEditor
-from untaped.screen.core import Screen
+from untaped.screen.core import Frame, Screen
 from untaped.screen.runtime import Runtime
 from untaped.stability import deprecated, experimental
 from untaped.testing import drive_screen
@@ -279,6 +280,51 @@ def test_a_list_editor_keeps_delete_and_esc_while_an_item_is_open(_isolated_conf
     assert pane.confirm is False
 
 
+def test_ctrl_s_keeps_the_open_item_and_writes_the_list(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [a]}\n")
+    keys = [*_to("knobs"), "down", "down", "down", "enter", "down", "enter", "b", "ctrl-s"]
+
+    drive_screen(_build(), keys)
+
+    assert _knobs_data(_isolated_config, "default") == {"tags": ["a", "b"]}
+
+
+def test_done_closes_an_unchanged_list_and_says_so(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [a]}\n")
+    keys = [*_to("knobs"), "down", "down", "down", "enter", "down", "down"]
+
+    run = drive_screen(_build(), keys)
+
+    assert "enter close" in run.frame.splitlines()[-1]
+
+
+def test_a_list_a_variable_sets_opens_with_its_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_KNOBS__TAGS", '["from-env"]')
+
+    run = drive_screen(_build(), [*_to("knobs"), "down", "down", "down", "enter"])
+
+    editing = run.model.panes["knobs"].editing
+    assert isinstance(editing, ListEditor) and editing.value == ("from-env",)
+
+
+@pytest.mark.parametrize(("width", "height"), [(58, 12), (78, 12), (58, 10), (40, 16)])
+def test_an_open_list_editor_fits_its_pane_with_its_help(
+    _isolated_config: Path, width: int, height: int
+) -> None:
+    tags = ", ".join(f"t{index}" for index in range(20))
+    write_config(_isolated_config, f"profiles:\n  default:\n    knobs: {{tags: [{tags}]}}\n")
+    run = drive_screen(_build(), [*_to("knobs"), "down", "down", "down", "enter"])
+    pane = run.model.panes["knobs"]
+
+    frame = Frame(width, height, BUILTIN_THEMES["default"])
+    drawn = Console(width=width, record=True).render_lines(
+        pane.view(frame, focused=True), pad=False
+    )
+
+    assert len(drawn) <= height
+    assert "writes" in "".join(segment.text for segment in drawn[-1])  # its help ends the pane
+
+
 def test_an_empty_list_overrides_an_inherited_one(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
@@ -522,6 +568,12 @@ def test_a_list_opens_its_items_an_argv_a_command_line_and_a_map_its_json() -> N
     assert items.value == ("a", "b")
     assert argv.value == "pass show 'my token'"
     assert table.value == '{"a": 1}'
+
+
+def test_a_token_command_is_declared_a_command() -> None:
+    descriptors = walk_settings(WizProfile, include_collections=True)
+
+    assert [d.key for d in descriptors if d.argv] == ["token_command"]
 
 
 def test_a_malformed_command_line_is_the_fields_own_error() -> None:

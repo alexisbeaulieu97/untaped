@@ -568,8 +568,10 @@ class ListEditor:
     ``delete`` or ``backspace`` removes the item under the cursor; ``m`` picks
     it up, up and down carry it, and enter or esc puts it down. Enter on
     ``done`` is left to the screen, which commits the list as ctrl-s does.
-    ``value`` is the items, in order. ``validator`` checks one item when it is
-    kept; its error shows and the item stays open.
+    ``value`` is the items, in order, with an open item as enter would keep it,
+    so ctrl-s keeps it too. Lines pasted into a new item become one item each.
+    ``validator`` checks one item when it is kept; its error shows and the item
+    stays open.
     """
 
     label: str
@@ -588,16 +590,18 @@ class ListEditor:
 
     @property
     def value(self) -> tuple[str, ...]:
-        """The items, in order."""
-        return self.items
+        """The items, in order, an open item as enter would keep it (so ctrl-s keeps it too)."""
+        return self.items if self.editing is None else self._kept(self.editing.text).items
 
     def with_error(self, text: str) -> Self:
         """This list showing ``text`` as its error (empty clears it)."""
         return replace(self, error=text)
 
     def validate(self) -> str:
-        """An item still open must be kept or dropped first; each kept item passed its check."""
-        return "Press enter to keep the open item, or esc to drop it." if self.editing else ""
+        """The open item's own error (empty when it is fine); each kept item passed its check."""
+        if self.editing is None or self.validator is None or not self.editing.text.strip():
+            return ""
+        return self.validator(self.editing.text)
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Edit the open item, carry the picked-up one, or act on the row under the cursor."""
@@ -612,11 +616,13 @@ class ListEditor:
     def _edit(self, buffer: EditBuffer, message: object) -> Self:
         match message:
             case Key("enter"):
-                return self._kept(buffer.text.strip())
+                return self._kept(buffer.text)
             case Key("esc"):
                 return replace(self, editing=None, error="")
             case Key(name):
                 edited = buffer.key(name)
+            case Paste(text) if self.cursor == len(self.items) and "\n" in text.strip():
+                return self._pasted(text)
             case Paste(text):
                 edited = buffer.paste(text)
             case _:
@@ -625,9 +631,18 @@ class ListEditor:
             return self
         return replace(self, editing=edited, error="")
 
+    def _pasted(self, text: str) -> Self:
+        """Lines pasted into a new item: one item each, blank lines left out."""
+        lines = tuple(line.strip() for line in text.splitlines() if line.strip())
+        refused = next((e for e in map(self.validator or (lambda _: ""), lines) if e), "")
+        if refused:
+            return replace(self, error=refused)
+        items = (*self.items, *lines)
+        return replace(self, items=items, cursor=len(items), editing=None, error="")
+
     def _kept(self, text: str) -> Self:
         at = self.cursor
-        if not text:
+        if not text.strip():
             items = self.items[:at] + self.items[at + 1 :]
             return replace(self, items=items, editing=None, error="")
         error = self.validator(text) if self.validator is not None else ""
