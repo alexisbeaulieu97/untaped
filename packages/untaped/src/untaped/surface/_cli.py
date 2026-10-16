@@ -127,7 +127,7 @@ def _command(root: App, app: App, path: tuple[str, ...], mark: LineMark | None) 
             yield from _spellings(f"{subject} {main}", argument, own, main=main)
             continue
         if argument.required:
-            main = _positive_names(argument)[0]
+            main = option_name(argument)
             required.append(f"{main} {'VALUE...' if _many(argument) else 'VALUE'}")
             yield from _spellings(f"{subject} {main}", argument, own, main=main)
             continue
@@ -180,7 +180,7 @@ def _is_switch(argument: Any) -> bool:
 
 
 def _option(subject: str, argument: Any, mark: LineMark | None) -> Iterator[Line]:
-    main = _positive_names(argument)[0]
+    main = option_name(argument)
     yield Line(option_identity(subject, argument), mark)
     yield from _spellings(f"{subject} {main}", argument, mark, main=main)
 

@@ -8,8 +8,8 @@ Checks every command of a subtree against ``docs/plugins.md``:
 - ``deprecated-option-panel`` — an option marked ``deprecated(...)`` outside
   ``DEPRECATED_OPTIONS`` (which hides it until ``--deprecated``) or with
   ``show=False`` (which keeps it out of that panel), an unmarked option inside
-  it, or a mark on a parameter that is not an option (a positional, a
-  flattened dataclass), which nothing reads;
+  it, or a mark (or the panel) on a parameter that is not an option (a
+  positional, a flattened dataclass or one of its fields), which nothing reads;
 - ``wrong-deprecated`` — a command function carries Python's
   ``warnings.deprecated`` (cyclopts would print its text), or a settings field
   pydantic's ``deprecated=``, where untaped's ``deprecated(...)`` alone belongs;
@@ -53,11 +53,12 @@ from __future__ import annotations
 
 import inspect
 import re
+import typing
 from collections.abc import Callable, Iterable, Iterator
 from types import ModuleType
 from typing import Any
 
-from cyclopts import App
+from cyclopts import App, Parameter
 
 from untaped._root_options import resolve_command
 from untaped.config_schema import walk_settings
@@ -229,7 +230,13 @@ def _option_panel(app: App) -> Iterator[str]:
     options = {argument.field_info.name for argument, _ in marked_options(app)}
     for argument in app.assemble_argument_collection(parse_docstring=False):
         if argument.keys:
-            continue  # a flattened dataclass's field: its parameter is checked
+            if _field_deprecated(argument.field_info.annotation):
+                yield (
+                    f"{argument.names[0]} is a flattened dataclass's field, which a "
+                    "deprecated(...) mark or DEPRECATED_OPTIONS can't deprecate: make it a "
+                    "keyword-only option of the command"
+                )
+            continue
         field = argument.field_info.name
         name = argument.names[0] if argument.names and not argument.children else field
         inside = any(group is DEPRECATED_OPTIONS for group in as_groups(argument.parameter.group))
@@ -250,6 +257,20 @@ def _option_panel(app: App) -> Iterator[str]:
             )
         elif inside and field not in marked:
             yield f"{name} is in DEPRECATED_OPTIONS without a deprecated(removed_in=...) mark"
+
+
+def _field_deprecated(annotation: object) -> bool:
+    """Whether a dataclass field's own annotation carries a mark or ``DEPRECATED_OPTIONS``."""
+    if typing.get_origin(annotation) is not typing.Annotated:
+        return False
+    for item in annotation.__metadata__:  # type: ignore[attr-defined]
+        if isinstance(item, Deprecated):
+            return True
+        if isinstance(item, Parameter) and any(
+            group is DEPRECATED_OPTIONS for group in as_groups(item.group)
+        ):
+            return True
+    return False
 
 
 def _hand_typed(app: App) -> Iterator[str]:

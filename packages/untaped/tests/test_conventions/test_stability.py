@@ -113,6 +113,33 @@ class _Flags:
     fast: bool = False
 
 
+@dataclass
+class _Fields:
+    gone: Annotated[bool, deprecated(removed_in=3)] = False
+    tucked: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS)] = False
+    kept: bool = False
+
+
+def test_a_flattened_field_can_t_be_deprecated() -> None:
+    def factory() -> App:
+        app = create_app(name="svc", help="Service.")
+
+        @app.command(name="run")
+        def run(*, fields: Annotated[_Fields | None, Parameter(name="*")] = None) -> None:
+            """Run it."""
+
+        return app
+
+    message = (
+        "is a flattened dataclass's field, which a deprecated(...) mark or "
+        "DEPRECATED_OPTIONS can't deprecate: make it a keyword-only option of the command"
+    )
+    assert _violations(factory) == [
+        f"svc run::deprecated-option-panel::--gone {message}",
+        f"svc run::deprecated-option-panel::--tucked {message}",
+    ]
+
+
 def test_a_mark_the_option_mechanism_ignores_or_hides_is_reported() -> None:
     def factory() -> App:
         app = create_app(name="svc", help="Service.")
