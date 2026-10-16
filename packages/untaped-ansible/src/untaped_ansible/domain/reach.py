@@ -28,7 +28,7 @@ from untaped_ansible.domain.graph import (
 
 
 class ReachedNode(BaseModel):
-    """One node reached from a root (``ansible.dependency`` / ``ansible.dependent``).
+    """One node reached from a root; ``deps`` and ``impact`` write it as their records.
 
     ``path`` reads in dependency order (each label requires the next): from
     the root for ``requires`` walks, towards the root for ``impacts`` walks.

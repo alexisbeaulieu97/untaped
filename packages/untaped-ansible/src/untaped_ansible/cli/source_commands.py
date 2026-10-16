@@ -52,7 +52,6 @@ from untaped_ansible.cli.refresh import (
     warn_refresh,
 )
 from untaped_ansible.domain.identity import repo_key
-from untaped_ansible.domain.payloads import SourceOutcome, SourceStatus
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
     AliasRepository,
@@ -64,6 +63,7 @@ from untaped_ansible.infrastructure import (
 from untaped_ansible.infrastructure.github_ref_probe import (
     is_transient_ref_probe_failure,
 )
+from untaped_ansible.records import Source, SourceOutcome, SourceStatus
 from untaped_ansible.settings import (
     INDEX,
     AnsibleSettings,
@@ -74,7 +74,6 @@ from untaped_git.api import Removed, store_key
 from untaped_github.api import github_settings, github_web_host
 
 _FINGERPRINT_HEX_CHARS = 16
-_OUTCOME_KIND = "ansible.source_outcome"
 _diag = Diagnostics()
 
 NameArgument = Annotated[str, Parameter(help="Source name.")]
@@ -162,7 +161,7 @@ def source_set_command(
             source_repo.upsert(source)
             settings = get_config_section("ansible", AnsibleSettings)
             open_index(settings).clear(_saved_source_key(name))
-        _emit_outcome(SourceOutcome(action=action, name=name), fmt=fmt, columns=columns)
+        emit(SourceOutcome(action=action, name=name), fmt=fmt, columns=columns)
 
 
 @app.command(name="patch")
@@ -262,14 +261,12 @@ def source_patch_command(
             clear_ref_scan_default=clear_ref_scan_default,
         )
         if previous == edited:
-            _emit_outcome(SourceOutcome(action="unchanged", name=name), fmt=fmt, columns=columns)
+            emit(SourceOutcome(action="unchanged", name=name), fmt=fmt, columns=columns)
             return
         source_repo.upsert(edited)
         settings = get_config_section("ansible", AnsibleSettings)
         open_index(settings).clear(_saved_source_key(name))
-        _emit_outcome(
-            SourceOutcome(action="updated", name=name, changes=changes), fmt=fmt, columns=columns
-        )
+        emit(SourceOutcome(action="updated", name=name, changes=changes), fmt=fmt, columns=columns)
 
 
 @app.command(name="list")
@@ -281,7 +278,6 @@ def source_list_command(*, fmt: FormatOption = "table", columns: ColumnsOption =
             rows,
             fmt=fmt,
             columns=columns,
-            kind="ansible.source",
             empty="No sources configured. Add one with `untaped ansible source set NAME`.",
         )
 
@@ -300,7 +296,7 @@ def source_get_command(
         source = source_repo.get(name)
         if source is None:
             raise AnsibleError(_unknown_source(name, source_repo), category="not_found")
-        emit(_source_row(source), fmt=fmt, columns=columns, kind="ansible.source")
+        emit(_source_row(source), fmt=fmt, columns=columns)
 
 
 @app.command(name="remove")
@@ -359,7 +355,7 @@ def source_remove_command(
             if failures
             else None
         )
-        _emit_outcome(
+        emit(
             SourceOutcome(action=action, name=name, changes=changes, error=error),
             fmt=fmt,
             columns=columns,
@@ -398,8 +394,6 @@ def source_status_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="ansible.source_status",
-            table_columns=["source", "state", "refreshed_at", "repos", "refs"],
             empty="No sources scanned yet. Run `untaped ansible source refresh NAME`.",
         )
 
@@ -499,10 +493,6 @@ def _report_repo_failures(name: str, result: RefreshResult) -> None:
 
 def _unknown_source(name: str, source_repo: SourceRepository) -> str:
     return not_found("source", name, known=sorted(s.name for s in source_repo.entries()))
-
-
-def _emit_outcome(outcome: SourceOutcome, *, fmt: FormatOption, columns: list[str] | None) -> None:
-    emit(outcome.model_dump(mode="json"), fmt=fmt, columns=columns, kind=_OUTCOME_KIND)
 
 
 def _refresh_failure_message(result: RefreshResult) -> str:
@@ -726,8 +716,8 @@ def _normalized_team_edit_values(values: list[str] | None, orgs: list[str]) -> l
         raise AnsibleError(str(exc), category="invalid") from exc
 
 
-def _source_row(source: SourceDefinition) -> dict[str, object]:
-    return source.model_dump(exclude_none=True)
+def _source_row(source: SourceDefinition) -> Source:
+    return Source.model_validate(source.model_dump())
 
 
 def _release_repos(

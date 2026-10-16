@@ -12,37 +12,12 @@ join results back to its inputs.
 from __future__ import annotations
 
 from collections.abc import Collection
-from typing import ClassVar
-
-from pydantic import BaseModel, ConfigDict
 
 from untaped_ansible.domain.graph import DependencyGraph
 from untaped_ansible.domain.graph_roots import RootInput
 from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.domain.reach import reach
-
-
-class DependencyMatch(BaseModel):
-    """One wanted repository reached from one root (``ansible.dependency_match``)."""
-
-    model_config = ConfigDict(frozen=True)
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "root_repo",
-        "root_ref",
-        "repo",
-        "declared_ref",
-        "path",
-    )
-
-    root_repo: str
-    root_ref: str | None
-    repo: str
-    declared_ref: str | None
-    declared_in: str | None
-    path: list[str]
-    input_kind: str | None = None
-    input_id: int | str | None = None
-    input_name: str | None = None
+from untaped_ansible.records import DependencyMatch
 
 
 def find_matches(
@@ -68,4 +43,4 @@ def find_matches(
     ]
 
 
-__all__ = ["DependencyMatch", "find_matches"]
+__all__ = ["find_matches"]

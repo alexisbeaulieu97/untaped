@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import ErrorCategory, FreshnessRecord, OutcomeRecord, UtcTimestamp
+from untaped.sdk import ErrorCategory, UtcTimestamp
 
 ProbeFallbackReason = Literal["graphql_rate_limited", "graphql_transient"]
 GRAPHQL_RATE_LIMIT_FALLBACK: ProbeFallbackReason = "graphql_rate_limited"
@@ -188,35 +188,3 @@ class SourceIndexStatus(BaseModel):
     repos: int
     refs: int
     edges: int
-
-
-class SourceStatus(FreshnessRecord):
-    """One row of ``source status`` (emitted as ``ansible.source_status``).
-
-    Its freshness (``refreshed_at``, ``stale``, ``partial``, ``retry_at``…)
-    is the cache's; ``scanned_at`` and the counts are when the index was
-    last written and what it holds.
-    """
-
-    source: str
-    source_key: str
-    state: Literal["fresh", "stale", "not_refreshed", "missing_source"]
-    configured: bool
-    scanned_at: UtcTimestamp | None = None
-    repos: int = 0
-    refs: int = 0
-    edges: int = 0
-
-
-class AliasOutcome(OutcomeRecord):
-    """Result of ``source-alias set``/``remove`` (kind ``ansible.source_alias_outcome``)."""
-
-    alias: str
-    repo: str
-
-
-class SourceOutcome(OutcomeRecord):
-    """Result of ``source set``, ``patch`` or ``remove`` (kind ``ansible.source_outcome``)."""
-
-    name: str
-    changes: list[str] = Field(default_factory=list)

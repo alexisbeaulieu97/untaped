@@ -776,7 +776,72 @@ def _samples() -> dict[str, WireModel]:
         ]
     if "untaped_ansible" in _SHIPPED:
         from untaped_ansible.domain.variable_queries import Dependent, VariableUseHit
+        from untaped_ansible.records import (
+            AliasOutcome,
+            DependencyMatch,
+            ReachedDependency,
+            ReachedDependent,
+            Source,
+            SourceAlias,
+            SourceOutcome,
+            SourceStatus,
+        )
 
+        reached = {
+            "repo": "acme/base",
+            "ref": "main",
+            "unresolved": None,
+            "declared_ref": "v1",
+            "declared_in": "roles/requirements.yml",
+            "depth": 1,
+            "path": ["acme/site@main", "acme/base@main"],
+            "root_ref": "main",
+            "stopped": "depth",
+        }
+        rows += [
+            ReachedDependency.model_validate(reached),
+            ReachedDependent.model_validate(reached),
+            DependencyMatch(
+                root_repo="acme/site",
+                root_ref="main",
+                repo="acme/base",
+                declared_ref=None,
+                declared_in="meta/main.yml",
+                path=["acme/site@main", "acme/base"],
+                input_kind="awx.job_template",
+                input_id=7,
+                input_name="deploy",
+            ),
+            Source(
+                name="prod",
+                orgs=["acme"],
+                teams=["acme/platform"],
+                repos=[],
+                dependency_paths=[],
+                ref_kinds=["heads"],
+                ref_patterns=[],
+                ref_scan_default="all",
+            ),
+            SourceAlias(alias="common", repo="acme/common"),
+            AliasOutcome(action="created", alias="common", repo="acme/common"),
+            SourceOutcome(
+                action="failed",
+                name="prod",
+                changes=["failed to release acme/web"],
+                error=Failure.from_exception(ConfigError("x")),
+            ),
+            SourceStatus(
+                source="prod",
+                source_key="source:prod",
+                state="stale",
+                configured=True,
+                scanned_at="2026-10-10T00:00:00Z",
+                repos=2,
+                refreshed_at="2026-10-10T00:00:00Z",
+                stale=True,
+                max_age_seconds=3600,
+            ),
+        ]
         rows.append(
             VariableUseHit(
                 variable="port",

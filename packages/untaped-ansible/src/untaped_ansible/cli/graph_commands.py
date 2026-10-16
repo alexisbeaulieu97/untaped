@@ -59,7 +59,7 @@ from untaped_ansible.cli.refresh import (
     ignored_collections_warning,
     serve_sources,
 )
-from untaped_ansible.domain.containment import DependencyMatch, find_matches
+from untaped_ansible.domain.containment import find_matches
 from untaped_ansible.domain.graph import DependencyGraph, EdgeRelation
 from untaped_ansible.domain.graph_roots import (
     REPO_FIELDS,
@@ -98,6 +98,12 @@ from untaped_ansible.infrastructure import (
     SqliteDependencyIndex,
     local_remote_url,
     open_index,
+)
+from untaped_ansible.records import (
+    DependencyMatch,
+    ReachedDependency,
+    ReachedDependent,
+    ReachedRow,
 )
 from untaped_ansible.settings import INDEX, AnsibleSettings, SourceDefinition
 from untaped_github.api import GithubClient, GithubSettings, github_web_host
@@ -480,7 +486,6 @@ def find_command(
             _table_paths(found.matches, fmt),
             fmt=fmt,
             columns=columns,
-            kind="ansible.dependency_match",
             empty=f"No matching roots found{_within(depth_limit)}.",
         )
 
@@ -569,7 +574,7 @@ def _emit_reach(
     options: GraphSourceOptions,
 ) -> None:
     """Print one row per repository reached from ``target`` in one direction."""
-    relation, kind, noun = _REACH_OUTPUT[command]
+    relation, model, noun = _REACH_OUTPUT[command]
     _check_all_refs(ref, all_refs=all_refs)
     depth_limit = _parse_depth(depth or "unlimited")
     with report_errors(), ExitStack() as stack:
@@ -588,10 +593,9 @@ def _emit_reach(
         _report_warnings(graph.warnings)
         _report_depth_stops(graph, depth_limit)
         emit(
-            _table_paths(rows, fmt),
+            _table_paths([model.model_validate(row.model_dump()) for row in rows], fmt),
             fmt=fmt,
             columns=columns,
-            kind=kind,
             empty=f"No {noun} found{_within(depth_limit)}.",
         )
 
@@ -760,7 +764,7 @@ def _table_keys(hits: list[VariableUseHit], fmt: FormatOption) -> list[VariableU
     ]
 
 
-def _table_paths[R: (ReachedNode, DependencyMatch)](rows: list[R], fmt: FormatOption) -> list[R]:
+def _table_paths[R: (ReachedRow, DependencyMatch)](rows: list[R], fmt: FormatOption) -> list[R]:
     """``rows`` with each path cut to ``first → … → last`` in a table; other formats keep it.
 
     The short path stays a one-item list, so each row keeps its record type.
@@ -787,11 +791,11 @@ def _report_warnings(warnings: Iterable[str]) -> None:
 
 _DIRECTIONS: dict[str, GraphDirection] = {"up": "impact", "down": "deps", "both": "both"}
 
-_REACH_OUTPUT: dict[str, tuple[EdgeRelation, str, str]] = {
-    "deps": ("requires", "ansible.dependency", "dependencies"),
-    "impact": ("impacts", "ansible.dependent", "dependents"),
+_REACH_OUTPUT: dict[str, tuple[EdgeRelation, type[ReachedRow], str]] = {
+    "deps": ("requires", ReachedDependency, "dependencies"),
+    "impact": ("impacts", ReachedDependent, "dependents"),
 }
-"""Per task command: the edges it walks, its record kind and its row noun."""
+"""Per task command: the edges it walks, its record model and its row noun."""
 
 
 def _report_depth_stops(graph: DependencyGraph, depth: int | None, *, root: str = "") -> None:
