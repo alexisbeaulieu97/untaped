@@ -78,6 +78,8 @@ create index if not exists idx_source_ref_scans_snapshot
     on source_ref_scans(snapshot_id);
 create index if not exists idx_source_ref_scans_source_snapshot
     on source_ref_scans(source_key, snapshot_id);
+create index if not exists idx_source_ref_scans_commit
+    on source_ref_scans(source_repo_key, source_sha);
 create index if not exists idx_source_repo_metadata_source
     on source_repo_metadata(source_key, source_repo_key);
 create index if not exists idx_source_refresh_progress_source

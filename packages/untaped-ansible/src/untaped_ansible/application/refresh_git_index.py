@@ -28,8 +28,6 @@ from untaped_ansible.domain.identity import DEFAULT_GITHUB_HOST, IdentityResolve
 from untaped_ansible.domain.models import ParseReport, ParseWarning
 from untaped_ansible.domain.parser import parse_dependency_file
 from untaped_ansible.domain.payloads import (
-    AnalysedFile,
-    CommitListing,
     GitRef,
     IndexedDependency,
     ProbedRepo,
@@ -44,7 +42,7 @@ from untaped_ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped_ansible.domain.repo_targets import remote_url_for
-from untaped_ansible.domain.variables import analyse, selected
+from untaped_ansible.domain.variable_models import AnalysedFile, CommitListing
 from untaped_ansible.settings import SourceDefinition, analyser_version, parser_version
 from untaped_github.api import (
     RepositoryInventoryScope,
@@ -603,6 +601,8 @@ class RefreshGitSourceIndex:
         commits (or analysed by an earlier refresh at this analyser version)
         is read and analysed once.
         """
+        from untaped_ansible.domain.variables import analyse, selected  # noqa: PLC0415  # Jinja2
+
         shas = list(dict.fromkeys(ref.sha for ref in refs))
         listings = tuple(
             CommitListing(
@@ -634,7 +634,11 @@ class RefreshGitSourceIndex:
                 reason = reasons.get((blob, path))
                 if reason is not None and (blob, path) not in skipped:
                     skipped[(blob, path)] = SkippedDependencyFile(
-                        repo=repo, ref=ref_at[listing.sha], source_path=path, reason=reason
+                        repo=repo,
+                        ref=ref_at[listing.sha],
+                        source_path=path,
+                        reason=reason,
+                        analysis=True,
                     )
         return analysed, listings, list(skipped.values())
 

@@ -1670,6 +1670,15 @@ def test_source_refresh_all_failures_exits_nonzero_and_leaves_index_unchanged(
             "warning: 2 collections in requirements files were ignored (only roles are graphed): "
             "ansible.posix, community.general",
         ),
+        (
+            {
+                "requirements.yml": "roles:\n  - src: acme/base\n",
+                "templates/a.j2": "{% if %}",
+                "templates/b.j2": "{% for %}",
+            },
+            "warning: could not read 2 files for variables; 'untaped ansible impact ROLE --uses "
+            "NAME' names those in the role's dependents",
+        ),
     ],
 )
 def test_source_refresh_reports_dependency_file_warnings(

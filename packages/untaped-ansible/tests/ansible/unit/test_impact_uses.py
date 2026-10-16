@@ -11,7 +11,8 @@ import pytest
 
 from ansible.unit.test_cli import _record_refresh, _run, _seed_index, _use_config
 from untaped.testing import CliResult
-from untaped_ansible.domain.payloads import AnalysedFile, CommitListing, IndexedDependency
+from untaped_ansible.domain.payloads import IndexedDependency
+from untaped_ansible.domain.variable_models import AnalysedFile, CommitListing
 from untaped_ansible.domain.variable_queries import render_key_path
 from untaped_ansible.domain.variables import analyse, selected
 from untaped_ansible.infrastructure import SqliteDependencyIndex
@@ -366,3 +367,52 @@ def test_key_paths_render_dotted_with_odd_segments_quoted(
     key_path: list[str | int], rendered: str
 ) -> None:
     assert render_key_path(key_path) == rendered
+
+
+def test_a_table_with_an_unanalysed_dependent_never_says_no_dependents_use_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_haku(tmp_path, skip=("acme/web", "acme/platform", "acme/web-wrapper", "acme/other"))
+    _use_config(tmp_path, monkeypatch, _SOURCE)
+
+    result = _uses("--uses", "haku_port")
+
+    assert result.exit_code == 1
+    assert "No dependents use" not in result.stderr
+    assert "4 dependents without variable facts" in result.stderr
+
+
+def test_several_names_add_the_variable_column(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_haku(tmp_path)
+    _use_config(tmp_path, monkeypatch, _SOURCE)
+
+    one = _uses("--uses", "other")
+    several = _uses("--uses", "other", "--uses", "haku_port")
+
+    def header(result: CliResult) -> str:
+        return next(line for line in result.stdout.splitlines() if "repo" in line.lower()).lower()
+
+    assert "variable" not in header(one)
+    assert "variable" in header(several)
+
+
+def test_a_local_role_walk_leaves_out_vendored_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_haku(tmp_path)
+    _use_config(tmp_path, monkeypatch, _SOURCE)
+    role = tmp_path / "role"
+    (role / "defaults").mkdir(parents=True)
+    (role / "defaults" / "main.yml").write_text("haku_local: 1\n")
+    vendored = role / "node_modules" / "pkg" / "defaults"
+    vendored.mkdir(parents=True)
+    (vendored / "main.yml").write_text("haku_vendored: 1\n")
+
+    result = _run(
+        "impact", str(role), "--target-repo", _ROLE, "--source", "platform",
+        "--uses", "haku_vendored",
+    )  # fmt: skip
+
+    assert "defines no variable haku_vendored" in result.stderr

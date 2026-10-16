@@ -14,10 +14,7 @@ from threading import Lock
 from untaped.sdk import Diagnostics
 from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.domain.payloads import (
-    AnalysedFile,
     CachedRef,
-    CommitFacts,
-    CommitListing,
     IndexedDependency,
     RefScan,
     RefScanMetadata,
@@ -25,7 +22,13 @@ from untaped_ansible.domain.payloads import (
     SourceIndexStatus,
     SourceRepoMetadata,
 )
-from untaped_ansible.domain.variables import How, VariableFact
+from untaped_ansible.domain.variable_models import (
+    AnalysedFile,
+    CommitFacts,
+    CommitListing,
+    How,
+    VariableFact,
+)
 from untaped_ansible.errors import DependencyIndexError
 from untaped_ansible.infrastructure.sqlite_rows import (
     dump_dt,
@@ -283,11 +286,11 @@ class SqliteDependencyIndex:
                     select requested.repo, requested.sha, files.path,
                            facts.name, facts.how, facts.line, facts.key_path
                     from requested
-                    join variable_listing as listing
+                    cross join variable_listing as listing
                       on listing.source_repo_key = requested.repo
                      and listing.source_sha = requested.sha
-                    join variable_facts as facts on facts.file_id = listing.file_id
-                    join variable_files as files on files.id = facts.file_id
+                    cross join variable_files as files on files.id = listing.file_id
+                    cross join variable_facts as facts on facts.file_id = files.id
                     where facts.name in ({marks})
                     order by files.path, facts.line, facts.rowid
                     """,
@@ -1003,7 +1006,10 @@ def _record_analysis(
         key = repo_key(listing.repo)
         missing = [path for path, blob in listing.files if (blob, path) not in ids]
         if missing:
-            raise ValueError(f"{listing.repo}@{listing.sha}: {missing[0]} was never analysed")
+            raise DependencyIndexError(
+                f"{listing.repo}@{listing.sha}: {missing[0]} was never analysed; "
+                "another refresh removed it, run the refresh again"
+            )
         db.execute(
             "delete from variable_listing where source_repo_key = ? and source_sha = ?",
             (key, listing.sha),

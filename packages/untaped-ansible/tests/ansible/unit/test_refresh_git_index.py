@@ -975,14 +975,29 @@ def test_a_new_analyser_version_reanalyses_without_reparsing_dependencies(
     assert _facts(h, ("acme/site", "sha-main")).facts
 
 
+def test_a_file_with_no_facts_is_stored_and_never_read_again(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
+    h.git.files[("site", "sha-main", "group_vars/all.yml")] = "{}\n"
+    h.run()
+    h.git.blob_reads.clear()
+    h.set_refs("acme/site", ("main", "sha-main", _base()), ("tags/v2", "sha-v2", _base()))
+    h.git.files[("site", "sha-v2", "group_vars/all.yml")] = "{}\n"
+
+    h.run()
+
+    # Both files' analyses are known by content, so no file is read.
+    assert [blob for _, blobs in h.git.blob_reads for blob in blobs] == []
+    assert not _facts(h, ("acme/site", "sha-v2")).unanalysed
+
+
 def test_a_file_the_analysis_skips_is_a_skipped_file_warning(h: Harness) -> None:
     h.set_refs("acme/site", ("main", "sha-main", _base()))
     h.git.files[("site", "sha-main", "templates/app.j2")] = "{% if %}"
 
     result = h.run()
 
-    assert [(item.source_path, item.ref) for item in result.skipped_files] == [
-        ("templates/app.j2", "main")
+    assert [(item.source_path, item.ref, item.analysis) for item in result.skipped_files] == [
+        ("templates/app.j2", "main", True)
     ]
     skipped = _facts(h, ("acme/site", "sha-main")).skipped
     assert [path for path, _ in skipped[("acme/site", "sha-main")]] == ["templates/app.j2"]

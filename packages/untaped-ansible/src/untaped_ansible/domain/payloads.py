@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import ErrorCategory, FreshnessRecord, OutcomeRecord, UtcTimestamp
-from untaped_ansible.domain.variables import FileAnalysis, VariableFact
 
 ProbeFallbackReason = Literal["graphql_rate_limited", "graphql_transient"]
 GRAPHQL_RATE_LIMIT_FALLBACK: ProbeFallbackReason = "graphql_rate_limited"
@@ -109,6 +107,8 @@ class SkippedDependencyFile(BaseModel):
     ref: str | None
     source_path: str
     reason: str
+    analysis: bool = False
+    """Skipped by the variable analysis, not the dependency parser."""
 
 
 class SkippedRef(BaseModel):
@@ -220,39 +220,3 @@ class SourceOutcome(OutcomeRecord):
 
     name: str
     changes: list[str] = Field(default_factory=list)
-
-
-class AnalysedFile(BaseModel):
-    """One selected file's variable analysis, stored by its content and path."""
-
-    model_config = ConfigDict(frozen=True)
-
-    blob: str
-    path: str
-    analysis: FileAnalysis
-
-
-class CommitListing(BaseModel):
-    """The selected files one commit holds, as ``(path, blob)`` pairs, all analysed.
-
-    Recording it marks the commit analysed: a query has facts for exactly
-    the commits a listing was recorded for.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    repo: str
-    sha: str
-    files: tuple[tuple[str, str], ...]
-
-
-@dataclass(frozen=True)
-class CommitFacts:
-    """Variable facts read at some commits, keyed by the ``(repo, sha)`` asked for."""
-
-    facts: dict[tuple[str, str], list[VariableFact]]
-    """The facts naming one of the asked names, per analysed commit."""
-    unanalysed: frozenset[tuple[str, str]]
-    """The asked commits no listing was recorded for: their facts are unknown."""
-    skipped: dict[tuple[str, str], list[tuple[str, str]]]
-    """``(path, reason)`` of each file (or part of one) the analysis skipped, per commit."""

@@ -11,6 +11,7 @@ source-data flags of :class:`GraphSourceOptions` and fall back to
 from __future__ import annotations
 
 import keyword
+import os
 import re
 import shlex
 from collections.abc import Callable, Iterable
@@ -81,13 +82,11 @@ from untaped_ansible.domain.renderers import (
 )
 from untaped_ansible.domain.variable_queries import (
     VariableUseHit,
-    defines_any,
     dependent_uses,
     render_key_path,
     skipped_files,
     unanalysed,
 )
-from untaped_ansible.domain.variables import defines, selected
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
     AliasRepository,
@@ -638,13 +637,16 @@ def _emit_uses(
                 f"{plural(len(skipped), 'file')} in the dependents could not be read for "
                 f"variables: {'; '.join(skipped)}"
             )
+        missing = unanalysed(rows, facts)
+        # With a dependent unanalysed, "no dependents use it" is not known.
+        none = f"No dependents use {' or '.join(names)}{_within(depth_limit)}."
         emit(
             _table_keys(dependent_uses(rows, facts, names), fmt),
             fmt=fmt,
             columns=columns,
-            empty=f"No dependents use {' or '.join(names)}{_within(depth_limit)}.",
+            empty=None if missing else none,
+            table_columns=(("variable", *VariableUseHit.table_columns) if len(names) > 1 else None),
         )
-        missing = unanalysed(rows, facts)
         if missing:
             _report_unanalysed(env, missing, [row for row in rows if row.repo is not None])
         finish(bool(missing))
@@ -668,6 +670,8 @@ def _hint_undefined(
 
     Silent when what ROLE defines is unknown (not indexed, or not analysed).
     """
+    from untaped_ansible.domain.variables import defines  # noqa: PLC0415  # Jinja2
+
     label = f"{repo}@{ref}" if ref else repo
     local = Path(target).expanduser()
     if local.is_dir():
@@ -680,8 +684,12 @@ def _hint_undefined(
         found = env.sqlite_index.variable_facts({(repo, sha) for sha in shas}, names)
         if not shas or found.unanalysed:
             return
-        facts = [fact for commit_facts in found.facts.values() for fact in commit_facts]
-        defined = {name for name in names if defines_any(facts, [name])}
+        defined = {
+            fact.name
+            for commit_facts in found.facts.values()
+            for fact in commit_facts
+            if fact.how == "defines"
+        }
     if not defined:
         _diag.hint(
             f"{label} defines no variable {' or '.join(names)} (defaults, vars, argument_specs)"
@@ -690,19 +698,28 @@ def _hint_undefined(
 
 def _role_variable_files(root: Path) -> dict[str, str]:
     """The files of a local checkout that can define variables, relative path → text."""
+    from untaped_ansible.domain.variables import selected  # noqa: PLC0415  # Jinja2
+
     files: dict[str, str] = {}
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root)
-        parts = relative.parts
-        if ".git" in parts or not {"defaults", "vars", "meta"} & set(parts) or not path.is_file():
+    for directory, subdirectories, names in os.walk(root):
+        subdirectories[:] = sorted(name for name in subdirectories if name not in _UNWALKED)
+        base = Path(directory)
+        parts = set(base.relative_to(root).parts)
+        if not {"defaults", "vars", "meta"} & parts:
             continue
-        name = relative.as_posix()
-        if selected(name) == "yaml":
+        for name in sorted(names):
+            relative = (base / name).relative_to(root).as_posix()
+            if selected(relative) != "yaml":
+                continue
             try:
-                files[name] = path.read_text(encoding="utf-8", errors="replace")
+                files[relative] = (base / name).read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-    return files
+    return dict(sorted(files.items()))
+
+
+#: Directories of a local checkout that never hold a role's variables.
+_UNWALKED = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox"})
 
 
 def _report_unanalysed(env: _GraphEnv, missing: list[str], rows: list[ReachedNode]) -> None:

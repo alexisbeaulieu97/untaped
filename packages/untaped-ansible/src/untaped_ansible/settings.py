@@ -119,30 +119,36 @@ INDEX_STORE = Store("ansible", "index", base=default_index_path, layout=4, bare=
 def parser_version() -> str:
     """The version of what a ref's dependency edges are made by: the parser and identity code.
 
-    Folded into the dependency paths fingerprint, so an edit to either module
-    (or a PyYAML upgrade) re-parses every ref: there is no number to forget
-    to bump.
+    Folded into the dependency paths fingerprint, so an edit to the parser,
+    identity or the models they build (or a PyYAML upgrade) re-parses every
+    ref: there is no number to forget to bump. The parser uses PyYAML's pure
+    Python loader, so libyaml does not count.
     """
     return ":".join(
         (
-            code_version(
-                "untaped_ansible.domain.parser", distributions=("PyYAML",), extra=(_libyaml(),)
-            ),
+            code_version("untaped_ansible.domain.parser", distributions=("PyYAML",)),
             code_version("untaped_ansible.domain.identity"),
+            code_version("untaped_ansible.domain.models"),
         )
     )
 
 
 def analyser_version() -> str:
-    """The version of the variable analysis: its module, jinja2 and PyYAML (with libyaml or not).
+    """The version of the variable analysis: its modules, jinja2 and PyYAML (with libyaml or not).
 
-    The module imports nothing first-party (a test holds it), so its own
-    text and those libraries are everything that decides its facts.
+    The analyser imports nothing first-party but its data types (a test
+    holds it), so the two modules' text and those libraries are everything
+    that decides its facts.
     """
-    return code_version(
-        "untaped_ansible.domain.variables",
-        distributions=("jinja2", "PyYAML"),
-        extra=(_libyaml(),),
+    return ":".join(
+        (
+            code_version(
+                "untaped_ansible.domain.variables",
+                distributions=("jinja2", "PyYAML"),
+                extra=(_libyaml(),),
+            ),
+            code_version("untaped_ansible.domain.variable_models"),
+        )
     )
 
 

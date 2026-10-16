@@ -1,7 +1,7 @@
 """Which dependents use a variable: the reached rows joined with the variable facts.
 
 Pure over :class:`~untaped_ansible.domain.reach.ReachedNode` rows and the
-:class:`~untaped_ansible.domain.payloads.CommitFacts` read at their commits.
+:class:`~untaped_ansible.domain.variable_models.CommitFacts` read at their commits.
 Facts are read at the commit each row's repo was indexed at (``shas``), so a
 row never mixes the graph of one commit with the files of another.
 """
@@ -16,9 +16,8 @@ from pydantic import BaseModel, ConfigDict
 
 from untaped.sdk import Record
 from untaped_ansible.domain.identity import repo_key
-from untaped_ansible.domain.payloads import CommitFacts
 from untaped_ansible.domain.reach import ReachedNode
-from untaped_ansible.domain.variables import How, VariableFact
+from untaped_ansible.domain.variable_models import CommitFacts, How, VariableFact
 
 
 class Dependent(BaseModel):
@@ -88,13 +87,16 @@ def dependent_uses(
 
 
 def unanalysed(reached: Iterable[ReachedNode], facts: CommitFacts) -> list[str]:
-    """``repo@ref`` of each reached dependent with a commit no analysis covers, sorted."""
+    """``repo@ref`` of each reached dependent with a commit no analysis covers, sorted.
+
+    A dependent with no commit at all (its edges carry none) is unanalysed too.
+    """
     return sorted(
         {
             _label(node)
             for node in reached
             if node.repo is not None
-            and any((node.repo, sha) in facts.unanalysed for sha in node.shas)
+            and (not node.shas or any((node.repo, sha) in facts.unanalysed for sha in node.shas))
         }
     )
 
@@ -109,12 +111,6 @@ def skipped_files(reached: Iterable[ReachedNode], facts: CommitFacts) -> list[st
             for path, reason in facts.skipped.get((node.repo, sha), ()):
                 lines.setdefault(f"{_label(node)} {path}: {reason}", None)
     return sorted(lines)
-
-
-def defines_any(facts: Iterable[VariableFact], names: Collection[str]) -> bool:
-    """Whether any of ``facts`` defines one of ``names`` (defaults, vars, argument_specs)."""
-    wanted = set(names)
-    return any(fact.how == "defines" and fact.name in wanted for fact in facts)
 
 
 def render_key_path(key_path: list[str | int]) -> str:
@@ -163,7 +159,6 @@ __all__ = [
     "Dependent",
     "VariableUse",
     "VariableUseHit",
-    "defines_any",
     "dependent_uses",
     "render_key_path",
     "skipped_files",

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import ast
+import sys
 import textwrap
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
-from untaped_ansible.domain import variables
+from untaped_ansible.domain import variable_models, variables
 from untaped_ansible.domain.variables import (
     FileAnalysis,
     VariableFact,
@@ -179,6 +181,9 @@ def test_loop_var_outside_loop_control_is_not_a_set() -> None:
         ("x: \"{{ hostvars[inventory_hostname]['haku_port'] }}\"\n", [(1, ["x"])]),
         ("x: \"{{ vars['haku_port'] }}\"\n", [(1, ["x"])]),
         ("x: \"{{ lookup('vars', 'other', 'haku_port') }}\"\n", [(1, ["x"])]),
+        ("x: \"{{ query('ansible.builtin.vars', 'haku_port') }}\"\n", [(1, ["x"])]),
+        ("x: \"{{ q('ansible.legacy.vars', 'haku_port') }}\"\n", [(1, ["x"])]),
+        ("x: '{{ vars.haku_port }}'\n", [(1, ["x"])]),
         ("x: '{{ haku_port.split(\",\") }}'\n", [(1, ["x"])]),
     ],
 )
@@ -343,7 +348,7 @@ def test_yaml_under_templates_is_read_as_a_template() -> None:
         ("{{ v is version('1.0', '>=') }}", {"v"}),
         ("{{ item.haku_port }}", {"item"}),
         ("{% for k, v in m.items() if v %}{{ k }}{{ loop.index }}{% endfor %}", {"m"}),
-        ("{% for i in xs %}{% else %}{{ i }}{% endfor %}", {"xs"}),
+        ("{% for i in xs %}{% else %}{{ i }}{% endfor %}", {"xs", "i"}),
         ("{{ a }}{% set a = b %}{{ a }}", {"a", "b"}),
         ("{% set a %}{{ c }}{% endset %}{{ a }}", {"c"}),
         ("{% set ns = namespace(x=1) %}{% set ns.x = y %}", {"namespace", "y"}),
@@ -397,7 +402,18 @@ def test_nesting_too_deep_is_skipped_not_raised() -> None:
     assert analysis.skipped is not None
 
 
-@pytest.mark.parametrize("text", ["", "\x00", "﻿", "- {{\n", "!!python/object:os.system x", "a: *b"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "\x00",
+        "﻿",
+        "- {{\n",
+        "!!python/object:os.system x",
+        "a: *b",
+        "a: '{{ " + "9" * 5000 + " }}'",
+    ],
+)
 def test_never_raises(text: str) -> None:
     assert isinstance(analyse("t.yml", text), FileAnalysis)
     assert isinstance(analyse("t.j2", text), FileAnalysis)
@@ -450,13 +466,36 @@ def test_defines_and_uses() -> None:
     ]
 
 
-def test_module_imports_nothing_but_its_allowed_dependencies() -> None:
-    allowed = {"__future__", "re", "collections", "typing", "jinja2", "yaml", "pydantic"}
-    tree = ast.parse(Path(variables.__file__).read_text(encoding="utf-8"))
+def _imports(module: ModuleType) -> set[str]:
+    tree = ast.parse(Path(str(module.__file__)).read_text(encoding="utf-8"))
     imported: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            imported.update(alias.name.split(".")[0] for alias in node.names)
+            imported.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module is not None:
-            imported.add(node.module.split(".")[0])
-    assert imported <= allowed
+            imported.add(node.module)
+    return imported
+
+
+@pytest.mark.parametrize(
+    ("module", "libraries"),
+    [
+        (variables, {"jinja2", "yaml", "pydantic", "untaped_ansible.domain.variable_models"}),
+        (variable_models, {"pydantic"}),
+    ],
+)
+def test_the_analyser_imports_only_what_its_version_hashes(
+    module: ModuleType, libraries: set[str]
+) -> None:
+    outside = {
+        name
+        for name in _imports(module)
+        if name.split(".")[0] not in sys.stdlib_module_names
+        and name not in libraries
+        and name.split(".")[0] not in libraries
+    }
+    assert not outside, (
+        f"{module.__name__} imports {sorted(outside)}: analyser_version() hashes only the "
+        "analyser's two modules and its libraries, so an edit there would change the "
+        "facts without changing the version"
+    )

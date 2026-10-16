@@ -5,8 +5,9 @@ Ansible variable is *defined* (role defaults, role vars and argument specs),
 *set* (any other YAML mapping key, ``register`` and ``loop_var``) or *read*
 (a Jinja expression). Results are stored in an index keyed by (blob, path),
 so they must depend only on the path and the text: this module imports
-nothing from untaped, only the standard library, PyYAML, Jinja2 and Pydantic,
-and the index versions its rows by a hash of this file's source.
+nothing from untaped but its data types (:mod:`.variable_models`), only the
+standard library, PyYAML and Jinja2, and the index versions its rows by a
+hash of both modules' source.
 
 Rationale that protects the code:
 
@@ -34,7 +35,8 @@ from typing import Final, Literal
 import jinja2
 import jinja2.nodes as jn
 import yaml
-from pydantic import BaseModel, ConfigDict
+
+from untaped_ansible.domain.variable_models import FileAnalysis, How, KeyPath, VariableFact
 
 __all__ = [
     "FileAnalysis",
@@ -46,35 +48,6 @@ __all__ = [
     "uses",
 ]
 
-How = Literal["defines", "sets", "reads"]
-KeyPath = list[str | int]
-
-
-class VariableFact(BaseModel):
-    """One place a variable is defined, set or read."""
-
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    file: str
-    """Repository-relative path of the file."""
-    line: int
-    """1-based line in the file."""
-    key_path: KeyPath
-    """YAML segments down to the fact; ``[]`` for a read in a template file."""
-    how: How
-
-
-class FileAnalysis(BaseModel):
-    """Every variable fact found in one file."""
-
-    model_config = ConfigDict(frozen=True)
-
-    facts: list[VariableFact]
-    skipped: str | None = None
-    """Why the file, or part of it (``partly: ...``), was not read."""
-
-
 _NAME: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _STR_TAG: Final = "tag:yaml.org,2002:str"
 _NULL_TAG: Final = "tag:yaml.org,2002:null"
@@ -82,6 +55,8 @@ _BARE_KEYS: Final = frozenset({"when", "that", "failed_when", "changed_when", "u
 _DEFINES_DIRS: Final = frozenset({"defaults", "vars"})
 _ARGSPEC_NAMES: Final = frozenset({"argument_specs.yml", "argument_specs.yaml"})
 _SCOPED_NAMES: Final = frozenset({"caller", "varargs", "kwargs"})
+_LOOKUPS: Final = ("lookup", "query", "q")
+_VARS_PLUGINS: Final = frozenset({"vars", "ansible.builtin.vars", "ansible.legacy.vars"})
 _LOADER: Final = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 _ENV: Final = jinja2.Environment(extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"])
 
@@ -114,6 +89,8 @@ def analyse(path: str, text: str) -> FileAnalysis:
             facts, skipped = _analyse_yaml(path, text)
     except RecursionError:
         return FileAnalysis(facts=[], skipped="nested too deeply to read")
+    except Exception as error:
+        return FileAnalysis(facts=[], skipped=f"could not be read: {type(error).__name__}")
     return FileAnalysis(facts=_sorted_unique(facts), skipped=skipped)
 
 
@@ -251,9 +228,9 @@ class _ReadCollector:
         for child in node.iter_child_nodes():
             self.visit(child, bound)
         args = node.args
-        if not (_is_name(node.node, "lookup", bound) and args):
+        if not (any(_is_name(node.node, name, bound) for name in _LOOKUPS) and args):
             return
-        if isinstance(args[0], jn.Const) and args[0].value == "vars":
+        if isinstance(args[0], jn.Const) and args[0].value in _VARS_PLUGINS:
             for arg in args[1:]:
                 if isinstance(arg, jn.Const) and isinstance(arg.value, str):
                     self.read(arg.value, arg.lineno, set())
@@ -283,7 +260,7 @@ class _ReadCollector:
         if node.test is not None:
             self.visit(node.test, set(inner))
         self.visit_all(node.body, set(inner))
-        self.visit_all(node.else_, set(inner))
+        self.visit_all(node.else_, set(bound))  # runs when nothing was iterated
 
     def macro(self, node: jn.Node, bound: set[str]) -> None:
         assert isinstance(node, jn.Macro)

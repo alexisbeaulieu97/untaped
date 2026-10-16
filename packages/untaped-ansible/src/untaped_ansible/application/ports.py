@@ -6,7 +6,7 @@ from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from untaped_ansible.domain import payloads
+from untaped_ansible.domain import payloads, variable_models
 
 if TYPE_CHECKING:
     from untaped_github.api import BatchRepoRefsResult
@@ -89,8 +89,8 @@ class IncrementalDependencyIndexWriter(Protocol):
         processed_repos: frozenset[str] = frozenset(),
         source_fingerprint: str | None = None,
         progress_statuses: dict[str, str] | None = None,
-        analysed: tuple[payloads.AnalysedFile, ...] = (),
-        listings: tuple[payloads.CommitListing, ...] = (),
+        analysed: tuple[variable_models.AnalysedFile, ...] = (),
+        listings: tuple[variable_models.CommitListing, ...] = (),
         analyser: str | None = None,
     ) -> None:
         """Commit processed repos and progress without updating source-wide freshness.

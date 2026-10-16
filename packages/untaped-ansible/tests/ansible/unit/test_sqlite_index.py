@@ -19,6 +19,8 @@ from untaped_ansible.domain.payloads import (
     RefScanTouch,
     SourceRepoMetadata,
 )
+from untaped_ansible.domain.variable_models import CommitListing
+from untaped_ansible.errors import DependencyIndexError
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.infrastructure.sqlite_schema import (
     ADDITIVE_SINCE,
@@ -815,3 +817,15 @@ def test_only_an_index_nothing_was_refreshed_into_holds_no_source(tmp_path) -> N
     assert holds_no_source(empty)
     assert not holds_no_source(full) and not holds_no_source(junk)
     assert not holds_no_source(tmp_path / "missing.db")
+
+
+def test_a_listing_naming_a_file_no_refresh_analysed_is_an_index_error(tmp_path: Path) -> None:
+    index = SqliteDependencyIndex(tmp_path / "index.sqlite3")
+    listing = CommitListing(repo="acme/site", sha="sha-main", files=(("vars/main.yml", "blob"),))
+
+    with pytest.raises(DependencyIndexError, match="run the refresh again"):
+        index.commit_source_ref_partial_refresh(
+            "source:prod", scans=(), touches=(), keep=set(), listings=(listing,), analyser="a"
+        )
+
+    assert index.variable_facts({("acme/site", "sha-main")}, {"x"}).unanalysed
