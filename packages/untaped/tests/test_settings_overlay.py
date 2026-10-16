@@ -265,4 +265,4 @@ def test_plaintext_warning_is_suppressed_under_an_overlay(
 
     resolve_token(section, section="ovl")  # the warning still fires without the overlay
 
-    assert "ovl.token is stored in plain text" in capsys.readouterr().err
+    assert "support for a plain-text ovl.token" in capsys.readouterr().err

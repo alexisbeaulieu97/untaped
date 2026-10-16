@@ -23,6 +23,7 @@ from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
 from untaped.sdk import TokenCommand, TokenSources
 from untaped.settings import get_config_section
+from untaped.stability import forget_notices
 from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -935,7 +936,7 @@ def test_loading_a_plaintext_token_warns_once(
     get_config_section("svc", SvcProfile)
     get_config_section("svc", SvcProfile)
     err = capsys.readouterr().err
-    assert err.count("svc.token is stored in plain text") == 1
+    assert err.count("support for a plain-text svc.token in config.yml is deprecated") == 1
     assert "untaped auth migrate" in err
     assert "tok-7f3a" not in err
 
@@ -950,12 +951,19 @@ def test_the_plaintext_token_warning_carries_its_hint(
     write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: tok-7f3a\n")
     get_config_section("svc", SvcProfile)
     [line] = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
-    assert line["level"] == "warning"
-    assert line["message"] == (
-        "svc.token is stored in plain text in the config file,"
-        " which is deprecated and will be removed in 12.0"
-    )
-    assert line["hint"] == "run `untaped auth migrate`"
+    assert line == {
+        "level": "warning",
+        "kind": "untaped.deprecation",
+        "message": (
+            "support for a plain-text svc.token in config.yml is deprecated and will be removed"
+            " in 12.0; use `untaped auth migrate`"
+        ),
+        "hint": "run `untaped auth migrate` to move it out of config.yml",
+        "id": "behaviour untaped.plaintext-token",
+        "removed_in": 12,
+        "distribution": None,
+        "replacement": "untaped auth migrate",
+    }
 
 
 @pytest.mark.parametrize(
@@ -981,7 +989,7 @@ def test_only_an_env_token_silences_the_warning(
     write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: file\n")
     monkeypatch.setenv(name, value)
     get_config_section("svc", SvcProfile)
-    assert ("plain text" in capsys.readouterr().err) is warns
+    assert ("plain-text" in capsys.readouterr().err) is warns
 
 
 def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
@@ -991,18 +999,17 @@ def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
     result = invoke_cli(root.meta, ["config", "set", "svc.token", "tok"])
     assert result.exit_code == 0, result.output
     assert (
-        "storing svc.token in plain text in config.yml is deprecated and will be removed in 12.0"
-        in result.stderr
+        "support for a plain-text svc.token in config.yml is deprecated and will be removed"
+        " in 12.0; use `untaped auth set svc`" in result.stderr
     )
-    assert "untaped auth set svc" in result.stderr
+    forget_notices()  # once per process, and this test runs two commands in one
     as_json = invoke_cli(root.meta, ["config", "set", "svc.token", "tok", "--format", "json"])
     lines = [json.loads(line) for line in as_json.stderr.splitlines()]
     [line] = [line for line in lines if line["level"] == "warning"]
-    assert (
-        line["message"]
-        == "storing svc.token in plain text in config.yml is deprecated and will be removed in 12.0"
-    )
-    assert line["hint"] == "run `untaped auth set svc`"
+    assert line["kind"] == "untaped.deprecation"
+    assert line["id"] == "behaviour untaped.plaintext-token"
+    assert line["replacement"] == "untaped auth set svc"
+    assert line["message"].endswith("; use `untaped auth set svc`")
     quiet = invoke_cli(root.meta, ["config", "set", "svc.base_url", "https://svc"])
     assert "deprecated" not in quiet.stderr
 

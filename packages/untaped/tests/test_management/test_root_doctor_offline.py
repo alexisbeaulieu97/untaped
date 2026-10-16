@@ -191,13 +191,15 @@ def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
             "{base_url: https://a, token: t}",
             {},
             "warn",
-            "https://a; api.token is stored in plain text in config.yml",
+            "https://a; support for a plain-text api.token in config.yml is deprecated and will"
+            " be removed in 12.0",
         ),
         (
             "{base_url: https://a, token: t}",
             {"UNTAPED_API__TOKEN": "o"},
             "warn",
-            "https://a; api.token is stored in plain text in config.yml",
+            "https://a; support for a plain-text api.token in config.yml is deprecated and will"
+            " be removed in 12.0",
         ),
         ("{base_url: https://a}", {"UNTAPED_API__TOKEN": "o"}, "pass", "token from api.token"),
         ("{base_url: https://a}", {"untaped_api__token": "o"}, "pass", "token from api.token"),
@@ -258,8 +260,8 @@ def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
     row = _row(_rows(spec), "bare.connection")
     assert row["status"] == "warn"
     assert row["detail"] == (
-        "https://b; bare.token is stored in plain text in work.yml; "
-        "use $UNTAPED_BARE__TOKEN instead"
+        "https://b; support for a plain-text bare.token in work.yml is deprecated and will be"
+        " removed in 12.0; use $UNTAPED_BARE__TOKEN"
     )
 
 

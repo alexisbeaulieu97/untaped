@@ -17,12 +17,23 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 | A setting | `old: Annotated[bool, deprecated(removed_in=3, replacement="acme.mode")] = False` |
 | A renamed setting key | `renamed_keys = {"old_key": Renamed("new_key", removed_in=3)}` on the section's model |
 | A cache setting's old key | `Cache(..., renamed_from=("stale_after_seconds",), removed_in=3)` |
+| A behaviour | `ROW_KIND = deprecated_behaviour("row-kind", removed_in=3, replacement="kind= on the Record class")`, listed with `PluginSpec(..., deprecations=lambda: (ROW_KIND,))` |
 
 `removed_in` is a bare major of your distribution: `3` for `untaped-acme
 3.0`. untaped's own plugins use untaped's majors, since they release in
 lockstep. A mark without `removed_in` still works and warns "a future major
 release", but nothing can hold it to a date; `untaped.testing.assert_surface`
 refuses it when you pass your `version=`.
+
+A behaviour has no object to mark, so it gets a name, and listing it on your
+spec gives it a `behaviour acme.row-kind` surface line (keep the import inside
+the function, as for `contracts`). Where the behaviour happens, name what goes
+and let it build the sentence: `ROW_KIND.notify("a row without a declared kind",
+key=...)` warns once per `key` on the command's stderr, `ROW_KIND.warn(...)`
+raises an `UntapedDeprecationWarning` from a Python API, and
+`ROW_KIND.sentence(...)` returns the text for a row of your own. Each takes
+`replacement=` for one site, `None` for none. A behaviour no spec lists reads
+as untaped's own, so list every one.
 
 The replacement is what to use instead: a command's function or app (the
 path follows a rename), or text such as a command (`"untaped acme set"`), a

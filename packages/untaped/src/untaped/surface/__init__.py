@@ -90,6 +90,7 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
         lines = cli_lines(root, marks)
         lines.extend(settings_lines(result, tree=root))
         lines.extend(_owned(result, modules, marks))
+        lines.extend(_behaviour_lines(result, root))
         lines.extend(_convention_lines())
     return sorted(set(lines))
 
@@ -116,6 +117,7 @@ def plugin_lines(spec: PluginSpec) -> list[Line]:
         lines = subtree_lines(root, spec.name, marks.get(spec.name))
         lines.extend(settings_lines(result, root=False, tree=root))
         lines.extend(_owned(result, modules, marks, core=False))
+        lines.extend(_behaviour_lines(result, root, owner=spec.name))
     return sorted(set(lines))
 
 
@@ -170,6 +172,24 @@ def _owned(
         lines.extend(extension_lines(name, ranked))
         lines.extend(contract_lines(name, infos, marks[name], exports.stable_classes))
     return lines
+
+
+def _behaviour_lines(
+    result: CompositionResult, root: App, *, owner: str | None = None
+) -> list[Line]:
+    """``behaviour <plugin>.<name>`` per listed behaviour (``untaped.<name>`` for core's).
+
+    Only ``owner``'s when it is given. The name is the identity, so the guard
+    keeps a behaviour until its major, as it keeps a flag.
+    """
+    from untaped.stability import listed_behaviours  # noqa: PLC0415
+    from untaped.surface._sdk import line_mark  # noqa: PLC0415
+
+    return [
+        Line(f"behaviour {name}.{behaviour.name}", line_mark(behaviour.mark, root))
+        for name, behaviour in listed_behaviours(result)
+        if owner is None or name == owner
+    ]
 
 
 def _convention_lines() -> list[Line]:
