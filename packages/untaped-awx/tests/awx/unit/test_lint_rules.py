@@ -7,8 +7,6 @@ would have read it (origin, location, facts).
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from awx.lint_support import CLEAN, DOCUMENTS
@@ -124,12 +122,14 @@ def test_missing_reference_names_the_batch_offline() -> None:
 
 
 def test_missing_reference_reports_a_required_reference_written_as_null() -> None:
-    snapshot = resources(_TEMPLATE.replace("project: web", "project: null") % "  inventory: null")
+    text = _TEMPLATE.replace("project: web", "project: null")
+    snapshot = resources(text % "  inventory: null\n  ask_inventory_on_launch: false")
     assert _messages(missing_reference, snapshot) == ["project is empty", "inventory is empty"]
 
 
-def test_an_inventory_asked_on_launch_may_be_empty() -> None:
-    text = _TEMPLATE % "  inventory: null\n  ask_inventory_on_launch: true"
+@pytest.mark.parametrize("flag", ["\n  ask_inventory_on_launch: true", ""])
+def test_an_inventory_asked_on_launch_or_maybe_asked_may_be_empty(flag: str) -> None:
+    text = _TEMPLATE % f"  inventory: null{flag}"  # a partial document may leave the flag out
     snapshot = resources(text, "kind: Project\nmetadata: {name: web, organization: Platform}\n")
     assert _messages(missing_reference, snapshot) == []
 
@@ -148,6 +148,45 @@ def test_unresolved_reference_names_the_kind_nothing_documents() -> None:
     assert _messages(unresolved_reference, resources(_TEMPLATE % "")) == [
         "project 'web' was not checked: no Project documents, offline"
     ]
+
+
+def test_an_id_offline_is_unresolved_for_being_an_id() -> None:
+    """N3: the batch holds Project documents; the id is what cannot be checked offline."""
+    text = _TEMPLATE.replace("project: web", "project: 14") % ""
+    snapshot = resources(text, "kind: Project\nmetadata: {name: web, organization: Platform}\n")
+    (found,) = _run(unresolved_reference, snapshot)
+    assert found.message == (
+        "project '14' was not checked: an id is checked on the controller only, offline"
+    )
+    assert found.hint == "lint without --offline to check it on the controller"
+
+
+def test_a_read_only_kind_is_never_offered_as_a_document_to_add() -> None:
+    text = _TEMPLATE % "  credentials: [ssh]"
+    found = {each.message: each.hint for each in _run(unresolved_reference, resources(text))}
+    assert found["credentials 'ssh' was not checked: no Credential documents, offline"] == (
+        "lint without --offline to check it on the controller"
+    )
+    assert found["project 'web' was not checked: no Project documents, offline"] == (
+        "lint without --offline to check it on the controller, or add its document"
+    )
+
+
+def test_a_reference_the_token_cannot_read_says_which_reason() -> None:
+    from untaped_awx.api import Reference
+    from untaped_awx.domain import IdentityRef
+
+    snapshot = _live(resources(_TEMPLATE % ""))
+    unread = Reference(
+        field="project", target=IdentityRef(kind="Project", name="#10"), resolution="unresolved"
+    )
+    item = snapshot.items[0].model_copy(update={"references": (unread,)})
+    for loaded, why in (
+        ((), "the token cannot list Project records"),
+        (("Project",), "the token cannot read that Project"),
+    ):
+        live = snapshot.model_copy(update={"items": (item,), "loaded": loaded})
+        assert _messages(unresolved_reference, live) == [f"project '#10' was not checked: {why}"]
 
 
 def test_a_missing_name_of_a_documented_kind_is_not_unresolved() -> None:
@@ -302,6 +341,61 @@ def test_plaintext_secret_reports_secret_paths_and_secret_named_variables() -> N
     ]
 
 
+def test_a_credential_input_counts_only_under_a_secret_name() -> None:
+    """S4: ``inputs.*`` holds a username too; only the secret-named input is reported."""
+    text = (
+        "kind: Credential\nmetadata: {name: ssh, organization: Platform}\n"
+        "spec: {inputs: {username: deploy, password: hunter2, ssh_key_data: '-----BEGIN'}}\n"
+    )
+    assert _messages(plaintext_secret, resources(text)) == [
+        "inputs.password holds a secret in plain text",
+        "inputs.ssh_key_data holds a secret in plain text",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("document", "field"),
+    [
+        ("kind: Inventory\nmetadata: {name: prod, organization: Platform}\nspec:\n", "variables"),
+        ("kind: Host\nmetadata:\n  name: web1\n  parent: {kind: Inventory, name: prod}\n"
+         "spec:\n", "variables"),
+        ("kind: Group\nmetadata:\n  name: web\n  parent: {kind: Inventory, name: prod}\n"
+         "spec:\n", "variables"),
+        ("kind: Inventory\nmetadata: {name: prod, organization: Platform}\nspec:\n",
+         "source_vars"),
+    ],
+    ids=["inventory", "host", "group", "source-vars"],
+)  # fmt: skip
+def test_inventory_variables_are_read_as_the_snapshot_redacts_them(
+    document: str, field: str
+) -> None:
+    """S5: the fields redaction hides are the fields the rule reads."""
+    from untaped_awx.domain.lint.secrets import VARIABLES, redact_variables
+
+    snapshot = resources(document + f"  {field}: 'ansible_password: swordfish'\n")
+    (item,) = snapshot.items
+    assert field in VARIABLES[item.resource.kind]
+    assert _messages(plaintext_secret, snapshot) == [
+        f"{field}: ansible_password looks like a secret in plain text"
+    ]
+    assert "swordfish" not in str(redact_variables(item.resource).spec)
+
+
+def test_a_workflow_node_prompt_secret_is_reported_and_redacted() -> None:
+    from untaped_awx.domain.lint.secrets import redact_variables
+
+    text = (
+        "kind: WorkflowJobTemplate\nmetadata: {name: release, organization: Platform}\n"
+        "spec:\n  nodes:\n    - id: one\n      run: {job_template: deploy}\n"
+        "      prompts: {extra_vars: {vault_password: opensesame}}\n"
+    )
+    snapshot = resources(text)
+    assert _messages(plaintext_secret, snapshot) == [
+        "nodes[one].prompts.extra_vars: vault_password looks like a secret in plain text"
+    ]
+    assert "opensesame" not in str(redact_variables(snapshot.items[0].resource).spec)
+
+
 def test_encrypted_and_templated_values_are_not_plaintext() -> None:
     text = _TEMPLATE % "  extra_vars: {db_password: $encrypted$, token: '{{ t }}', secret: ''}"
     assert _run(plaintext_secret, resources(text)) == []
@@ -319,9 +413,24 @@ def test_invalid_document_reports_each_unreadable_document_by_its_index() -> Non
         ("text1.yml", found[2].location),
     ]
     assert [getattr(each.location, "index", None) for each in found] == [1, 3, 4]
-    assert re.match(r"unknown kind 'Nope'", found[0].message)
+    assert found[0].message == "unknown kind 'Nope'"
+    assert found[0].hint is not None and found[0].hint.startswith("available: Credential")
     assert found[1].message == "each YAML doc must be a mapping"
     assert not found[2].message.startswith("text1.yml")
+
+
+def test_an_invalid_document_message_is_one_line_and_the_detail_its_hint() -> None:
+    """N7: a validation error's lines become one message and a one-line hint."""
+    text = "kind: JobTemplate\nmetadata: {name: 3, bogus: 1}\nspec: []\n---\nkey: [\n"
+    found = _run(invalid_document, resources(text))
+    assert [each.message for each in found] == [
+        "not a valid resource: metadata.name: Input should be a valid string",
+        "invalid YAML: while parsing a flow node",
+    ]
+    assert found[0].hint == (
+        "metadata.bogus: Extra inputs are not permitted; spec: Input should be a valid dictionary"
+    )
+    assert all("\n" not in (each.hint or "") for each in found)
 
 
 # --- fixes parse ---------------------------------------------------------------
