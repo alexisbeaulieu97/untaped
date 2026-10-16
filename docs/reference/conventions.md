@@ -211,10 +211,10 @@ free, but a command that writes declares it with `@writes`, or
   below, so its identifying field leads the table and `--format raw`. An
   inherited `action` follows it (after `name` when the record leads with
   `id` and `name`).
-- Base mutation results on `OutcomeRecord`. `action` uses this vocabulary:
-  `planned`, `created`, `updated`, `deleted`, `unchanged`, `skipped` (never a
-  failure), `failed`, `partial`, `conflict`, `cancelled`, plus any
-  domain-specific past-tense verbs.
+- Base mutation results on `OutcomeRecord`; an unknown `--columns` name on
+  them only warns, as the change already ran. `action` is one of `planned`,
+  `created`, `updated`, `deleted`, `unchanged`, `skipped` (never a failure),
+  `failed`, `partial`, `conflict`, `cancelled` or a domain past-tense verb.
 - Base records about files or directories on `TargetRecord`, which requires an
   absolute `target_path`.
 - `error` is reserved: both bases give a failed row an optional `error`

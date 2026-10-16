@@ -16,6 +16,8 @@ from untaped.cli import run_cyclopts_app
 from untaped.output.policy import enable_quiet, reset_quiet
 from untaped.output.sink import diagnostics_scope
 from untaped.sdk import (
+    ColumnsOption,
+    FormatOption,
     HttpError,
     HttpTransportError,
     OutcomeRecord,
@@ -603,6 +605,37 @@ def test_emit_unknown_model_column_is_a_usage_error(
     assert captured.out == ""
     assert "unknown column 'nmae'" in captured.err
     assert "name, value" in captured.err
+
+
+class _Created(OutcomeRecord):
+    id: str
+
+
+@pytest.mark.parametrize("single", [False, True])
+def test_unknown_column_on_rows_reporting_a_change_warns_and_still_writes_them(
+    single: bool,
+) -> None:
+    """The change happened before ``emit`` runs: exit 2 would claim it did not.
+
+    Exit 2 means "found before any side effect", and refusing would also drop
+    the rows saying what was done.
+    """
+    app = create_app(name="test")
+    done: list[str] = []
+
+    @app.default
+    def create(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+        done.append("a")
+        row = _Created(id="a", action="created")
+        emit(row if single else [row], fmt=fmt, columns=columns)
+
+    result = CliInvoker().invoke(app, ["--format", "json", "-c", "id,nope"])
+
+    assert result.exit_code == 0
+    assert done == ["a"]
+    rows = json.loads(result.stdout)
+    assert (rows if single else rows[0]) == {"id": "a", "nope": None}
+    assert "warning: unknown column 'nope'; valid columns:" in result.stderr
 
 
 def test_emit_unknown_mapping_column_warns_but_renders(

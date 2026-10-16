@@ -1,12 +1,13 @@
 An unknown `--columns` name is now a usage error (exit 2) listing the valid
-columns, as it already was for other record rows, on the root `auth`,
-`config migrate`, `doctor`, `doctor fix`, `plugin`, `skills` and `setup`
-commands, on `github cache`, on `github sweep`'s repo rows and its
-`--show files` and `--show matches` rows, and on `ansible source list`,
-`get`, `set`, `patch` and `remove` and `ansible source-alias list`, `set` and
-`remove`; it used to only warn. `doctor`'s, `doctor fix`'s and `setup plan`'s
-tables, which show a command to type, and the table of `github sweep`'s repo
-rows still only warn.
-The same holds for `untaped recipe` `apply`, `list`, `get`, `validate`,
-`test`, `packs`, `hooks`, `backups get` and `backups prune`; the tables of
-`apply`, `get` and `backups get`, which reshape a field, still only warn.
+columns, as it already was for other record rows, on the root `auth status`,
+`doctor`, `plugin list`, `plugin check`, `skills list`, `skills status` and
+`setup` commands, on `github cache status`, `delete` and `prune` (before they
+delete anything), on `github sweep`'s repo rows and its `--show files` and
+`--show matches` rows, on `ansible source list`, `ansible source get` and
+`ansible source-alias list`, and on `untaped recipe` `list`, `get`,
+`validate`, `test`, `packs list`, `packs get`, `hooks list`, `hooks get`,
+`hooks run` (before it runs the hook) and `backups get`; it used to only warn.
+Rows reporting a change now only warn, since the change already happened, as
+do `doctor`'s and `setup plan`'s tables, which show a command to type, the
+table of `github sweep`'s repo rows, and the tables of `recipe get` and
+`recipe backups get`, which reshape a field.
