@@ -26,7 +26,7 @@ Whoever owns a capability does its wiring and offers it through a small
 interface; its consumers know as little as possible about how it's wired.
 untaped owns the CLI, so it wires commands, help and agent support from what
 plugins declare (plugins still build commands with Cyclopts for now). A
-plugin that owns a contract wires it, and the plugins filling it provide data.
+plugin owning a contract wires it, and the plugins filling it just provide data.
 
 ## Agent-only notes
 
