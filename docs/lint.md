@@ -22,7 +22,7 @@ Each plugin is checked against:
   `lint.schema`, `lint.owner-schema-drift`, `lint.contracts`,
   `lint.migrations`);
 - the rules that read its files: stderr wording, layering, structure, the
-  terminal and blob-reader boundaries
+  terminal and blob-reader boundaries, databases opened through a store
   ([conventions](reference/conventions.md#enforcement)).
 
 `untaped plugin list -f pipe | untaped lint --stdin` checks every installed
