@@ -99,7 +99,7 @@ class RepoFailure(BaseModel):
 
 
 class SkippedDependencyFile(BaseModel):
-    """One dependency file skipped during parsing."""
+    """One file skipped while parsing dependencies or analysing variables."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -107,6 +107,8 @@ class SkippedDependencyFile(BaseModel):
     ref: str | None
     source_path: str
     reason: str
+    analysis: bool = False
+    """Skipped by the variable analysis, not the dependency parser."""
 
 
 class SkippedRef(BaseModel):

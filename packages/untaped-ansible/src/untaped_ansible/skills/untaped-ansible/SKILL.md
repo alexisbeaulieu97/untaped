@@ -26,6 +26,7 @@ source's cache), how fresh that cache is, and where the walk stopped.
 |---|---|---|
 | What does ROLE depend on? | `untaped ansible deps acme/base-role` | downstream; works live without a source |
 | What depends on ROLE? | `untaped ansible impact acme/base-role` | upstream, blast radius; needs a source |
+| Which dependents use ROLE's variable V? | `untaped ansible impact acme/base-role --uses V --format json` | before renaming or changing a variable; one row per place, `how` says defines, sets or reads |
 | Which roots reach REPO? | `untaped ansible find acme/base-role --root acme/site` | you have the roots (projects, job templates) and want the ones that contain REPO |
 | Show both directions | `untaped ansible graph acme/base-role` | a human-readable report; `--format mermaid` only when the user wants a diagram |
 | How fresh is the cache? | `untaped ansible source status` | `state`, `refreshed_at`, `partial`, `retry_at` per saved source |
@@ -68,6 +69,19 @@ selectors reuses their cached scan.
    collections, omitted unpinned dependents.
 5. Report the dependents per ref, and name any stopped repos and warnings as
    gaps rather than dropping them.
+
+### Answer "who uses variable V of X"
+
+1. Run `untaped ansible impact acme/base-role --uses V --format json`
+   (repeat `--uses` for any of several). Each row is one place: `file`,
+   `line`, `key_path` (YAML segments) and `how`. A dependent with no row
+   does not mention V.
+2. An error line naming dependents "without variable facts" means those
+   were not analysed (their refresh failed), not that they don't use V; it
+   exits 1 and names the `source refresh` to run.
+3. A hint that X "defines no variable V" usually means a typo.
+4. `sets` matches any YAML key named V, so a module argument of that name
+   shows up too. INI inventories and CI config are not read.
 
 ### Answer "what does X depend on"
 

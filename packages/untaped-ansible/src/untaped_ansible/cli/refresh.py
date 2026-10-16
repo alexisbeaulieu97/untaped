@@ -371,12 +371,25 @@ _MAX_LISTED_COLLECTIONS = 10
 
 
 def warn_skipped_files(result: RefreshResult) -> None:
-    """Warn about refs the store refused and dependency files skipped during parsing."""
+    """Warn about refs the store refused and files skipped during parsing or analysis.
+
+    Each dependency file skip is a line; the variable analysis's are one
+    count, since ``impact --uses`` names those a role's dependents hold.
+    """
     for ref in result.skipped_refs:
         noun = "branch" if ref.kind == "heads" else "tag"
         _diag.warning(f"skipped {noun} {ref.repo}@{ref.ref}: {ref.reason}")
+    analysis = 0
     for skipped in result.skipped_files:
-        _diag.warning(format_skipped_dependency_file(skipped))
+        if skipped.analysis:
+            analysis += 1
+        else:
+            _diag.warning(format_skipped_dependency_file(skipped))
+    if analysis:
+        _diag.warning(
+            f"could not fully read {plural(analysis, 'file')} for variables; "
+            "'untaped ansible impact ROLE --uses NAME' names those in the role's dependents"
+        )
 
 
 def format_skipped_dependency_file(skipped: SkippedDependencyFile) -> str:

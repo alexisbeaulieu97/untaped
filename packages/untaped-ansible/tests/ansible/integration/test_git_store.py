@@ -479,3 +479,30 @@ def test_removing_a_source_while_another_sources_refresh_holds_the_repo_keeps_it
         done.set()
         holder.join()
     assert _repo(store_root, "site").is_dir()
+
+
+def test_a_refresh_stores_the_variable_facts_of_each_ref_from_the_store(
+    tmp_path: Path, store_root: Path
+) -> None:
+    _remote(
+        tmp_path,
+        "site",
+        {
+            _REQS: "- src: https://github.com/acme/base\n",
+            "group_vars/all.yml": "base_port: 1\n",
+            "templates/app.conf": "listen {{ base_port }}\n",
+            "docs/notes.md": "base_port\n",
+        },
+    )
+
+    assert _refresh(tmp_path, "site").failures == ()
+
+    sha = _git(_repo(store_root, "site"), "rev-parse", f"{_NAMESPACE}heads/main")
+    facts = SqliteDependencyIndex(tmp_path / "index.sqlite3").variable_facts(
+        {("acme/site", sha)}, {"base_port"}
+    )
+    assert not facts.unanalysed
+    assert [(fact.file, fact.how) for fact in facts.facts[("acme/site", sha)]] == [
+        ("group_vars/all.yml", "sets"),
+        ("templates/app.conf", "reads"),
+    ]

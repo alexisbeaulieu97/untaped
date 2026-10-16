@@ -141,7 +141,8 @@ def test_dependent_plugins_pin_their_siblings() -> None:
     }
     for name, needs in siblings.items():
         project = projects[f"untaped-{name}"]
-        assert project["dependencies"] == [f"{dist}=={version}" for dist in ("untaped", *needs)]
+        pinned = [dep for dep in project["dependencies"] if dep.startswith("untaped")]
+        assert pinned == [f"{dist}=={version}" for dist in ("untaped", *needs)]
 
 
 def test_core_holds_only_the_registry_under_plugins() -> None:
