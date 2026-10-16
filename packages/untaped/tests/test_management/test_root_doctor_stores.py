@@ -231,6 +231,29 @@ def test_a_kept_layout_still_names_its_damaged_lock(tmp_path: Path) -> None:
     assert f"held by nobody: a profile, and its in-use lock {old}.inuse is damaged" in detail
 
 
+def test_a_layout_with_unknown_holders_still_names_its_damaged_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    refs.register(["acme.data@4"])
+    old = tmp_path / "data.v3.db"
+    old.write_bytes(b"x")
+    Path(f"{old}.inuse").write_bytes(b"garbage, not a database")
+    real = Path.iterdir
+
+    def iterdir(self: Path) -> Iterator[Path]:
+        if self == refs.refs_dir():
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    row = _row(_store(tmp_path / "data.db"))
+    assert row["status"] == "warn"
+    detail = str(row["detail"])
+    assert "holders unknown: the install references in" in detail
+    assert f"and its in-use lock {old}.inuse is damaged" in detail
+    assert row["fix"] is None  # the damaged lock's text says what to delete
+
+
 def test_a_keep_check_that_fails_warns(tmp_path: Path) -> None:
     def broken(_path: Path) -> str | None:
         raise RuntimeError("no config")
