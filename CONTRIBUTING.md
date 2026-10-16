@@ -32,6 +32,7 @@ To pick a ref, put `@<branch-or-sha>` before `#subdirectory=` in each URL.
 uv run pytest -n auto                           # tests, in parallel (add `--cov` for the 95% coverage gate, as CI does)
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run mypy                                     # strict types
+uv run untaped lint                             # this repository's own rules (.untaped/)
 uv run pre-commit run --all-files               # pre-commit hooks (vulture included)
 uv run python scripts/release.py check          # release metadata
 uv lock --check                                 # lock file is current
@@ -62,7 +63,10 @@ uv lock --check                                 # lock file is current
 - `docs/` holds the user guides and the plugin guide; `docs/reference/`
   holds lookup pages (settings, records, exit codes, environment variables,
   conventions). Each page stays at most 400 lines long; split one by reader task
-  rather than letting it grow.
+  rather than letting it grow (`house.docs-page-length`).
+- `.untaped/` holds this repository's own lint rules (`lint.yml` and the
+  modules in `lint/`, tested in `tests/lint/`): conventions that used to be
+  prose, which `untaped lint` checks at the root and CI runs.
 - `tests/` verifies public behavior and release contracts: `tests/repo/`
   holds the cross-package tests and `tests/skills/` the skill evaluation
   cases; a plugin's tests live in `packages/untaped-<name>/tests/<name>/`.
@@ -131,7 +135,8 @@ or becomes an SDK helper that every plugin can use. Declare a
   file locks through `untaped.fs` (`file_lock`), both re-exported by
   `untaped.sdk`; never hand-rolled `subprocess` git plumbing.
 - **Module docstrings.** Every module opens with a docstring saying what it
-  owns (re-export stubs are exempt). Rationale that protects code goes there.
+  owns (re-export stubs are exempt; `house.module-docstring` checks source
+  modules). Rationale that protects code goes there.
 - **Secrets and TLS.** Secrets are `pydantic.SecretStr`; HTTP clients resolve
   TLS through `resolve_verify` (`tests/repo/test_invariants.py` pins both).
 - **Docs in the same change.** A change to behavior, settings, composition or
@@ -177,7 +182,7 @@ answer each item, in order, in the PR template's **Drift review** section
 - **Duplicated helpers.** Nothing new repeats a helper in `untaped.sdk`,
   core or another plugin; move a misplaced helper instead of forking it.
 - **Repo rules.** The Workflow rules above that no linter checks: lazy
-  imports, git and locks through core, `SecretStr`, module docstrings.
+  imports, git and locks through core, `SecretStr`, test-module docstrings.
 - **Issues.** `Closes #N` for the issue the PR finishes, and any open issue
   the diff makes stale or already finishes.
 
@@ -456,15 +461,23 @@ _Avoid_: sync mode, force/off.
 
 **Policy**: one invocation's output choices.
 
-**Rule**: one check `untaped lint` runs, with a public id `<plugin>.<id>`
-(`lint.error-case`), a severity and the record kind it reads.
+**Rule**: one check `untaped lint` runs, with a public id `<key>.<id>`
+(`lint.error-case`, `house.docs-page-length`), a severity and the record kind
+it reads.
 
 **Finding**: what a rule reports about one target; an error finding fails the
 run.
 
-**Subject**: a record a run lints, by its kind (`untaped.plugin`).
+**Subject**: a record a run lints, by its kind (`untaped.plugin`, `lint.tree`).
 
-**Linter**: the contract a plugin fills to add rules to `untaped lint`.
+**Tree**: the files of a repository a run lints: what git tracks or would
+track, minus what `.untaped/lint.yml` excludes.
+
+**Linter**: the contract a plugin fills to add rules to `untaped lint`; a
+repository's own rule modules fill it under the lint file's key.
+
+**Reader**: a plugin that fills `TreeReader`, turning the files a
+`readers:` entry names into its own subjects.
 
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.

@@ -23,6 +23,12 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
 WIDGET = pipe(Widget(name="w"))
 
 
+@pytest.fixture(autouse=True)
+def _outside_this_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run where no ``.untaped/lint.yml`` is found: this repository's would add its rules."""
+    monkeypatch.chdir(tmp_path)
+
+
 def _lint(*args: str, input: str = WIDGET) -> CliResult:
     return invoke_cli(app, ["--stdin", "-f", "json", *args], input=input)
 
@@ -187,7 +193,8 @@ def test_nothing_to_lint_warns_and_exits_0(tmp_path: Path, monkeypatch: pytest.M
         result = invoke_cli(app, [])
     assert result.exit_code == 0
     assert _warnings(result) == [
-        "warning: nothing to lint here: run it in a plugin repository or pipe records with --stdin"
+        "warning: nothing to lint here: run it in a plugin repository, a repository with "
+        ".untaped/lint.yml, or pipe records with --stdin"
     ]
 
 
@@ -261,3 +268,124 @@ def test_lint_rules_lists_every_rule_and_composes_nothing(
     assert {"lint.error-case", "lint.plugin-not-installed", "acme.default-branch"} <= set(rows)
     assert rows["acme.default-branch"]["reads"] == "linttest.gadget"
     assert rows["acme.default-branch"]["renamed_from"] == ["old"]
+
+
+# --- the repository's lint file ---------------------------------------------------
+
+NO_PRINT = '''\
+"""No print() in library code."""
+
+from collections.abc import Iterator
+
+from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_of
+
+
+@rule("no-print", reads=Tree, severity="error", summary="No print() in library code.")
+def no_print(tree: Tree) -> Iterator[Finding]:
+    for file in tree.files("src/**/*.py"):
+        for number, line in enumerate(file.lines, start=1):
+            if "print(" in line:
+                yield finding(
+                    no_print, target_of(file), "print() in library code",
+                    location=FileLocation(path=file.path, line=number),
+                )
+'''
+
+
+def _house(root: Path, lint_yml: str | None = None, **files: str) -> Path:
+    (root / ".git").mkdir(exist_ok=True)
+    text = lint_yml or "version: 1\nname: house\nlinters:\n  house:\n    rules: .untaped/lint\n"
+    for name, body in {
+        ".untaped/lint.yml": text,
+        ".untaped/lint/no_print.py": NO_PRINT,
+        **files,
+    }.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(body, encoding="utf-8")
+    return root
+
+
+def test_in_a_repository_with_a_lint_file_its_rules_run_from_any_subdirectory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _house(tmp_path, **{"src/a.py": "print(1)\n", "src/deep/b.py": "x = 1\n"})
+    monkeypatch.chdir(tmp_path / "src" / "deep")
+    with compose_with("lint"):
+        result = invoke_cli(app, ["-f", "json"])
+    assert result.exit_code == 3, result.stderr
+    assert [(row["rule"], row["target"]) for row in json.loads(result.stdout)] == [
+        ("house.no-print", "src/a.py")
+    ]
+    with compose_with("lint"):
+        rules = invoke_cli(app, ["rules", "-f", "json"])
+    assert "house.no-print" in {row["id"] for row in json.loads(rules.stdout)}
+
+
+def test_config_lints_the_current_directory_with_that_files_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _house(
+        tmp_path,
+        **{
+            "src/a.py": "print(1)\n",
+            ".untaped/lint/fixtures/no-print/bad/src/x.py": "print(1)\n",
+            ".untaped/lint/fixtures/no-print/good/src/x.py": "x = 1\n",
+        },
+    )
+    bad = tmp_path / ".untaped/lint/fixtures/no-print/bad"
+    monkeypatch.chdir(bad)
+    with compose_with("lint"):
+        result = invoke_cli(
+            app, ["--config", "../../../../lint.yml", "--select", "house.no-print", "-f", "json"]
+        )
+    assert result.exit_code == 3, result.stderr
+    assert [row["target"] for row in json.loads(result.stdout)] == ["src/x.py"]
+    monkeypatch.chdir(bad.parent / "good")
+    with compose_with("lint"):
+        result = invoke_cli(app, ["--config", "../../../../lint.yml"])
+    assert result.exit_code == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("lint_yml", "files", "code"),
+    [
+        ("version: 1\nname: untaped\n", {}, 2),
+        ("version: 1\nname: house\nlinters:\n  lint:\n    rules: .untaped/lint\n", {}, 2),
+        ("version: 1\nname: house\nlinters: [1]\n", {}, 1),
+        (None, {".untaped/lint/ghost.py": "import untaped_ghost.api\n"}, 4),
+    ],
+    ids=["reserved-key", "installed-key", "invalid-file", "missing-plugin"],
+)
+def test_a_lint_file_problem_exits_by_its_category(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    lint_yml: str | None,
+    files: dict[str, str],
+    code: int,
+) -> None:
+    _house(tmp_path, lint_yml, **files)
+    monkeypatch.chdir(tmp_path)
+    with compose_with("lint"):
+        result = invoke_cli(app, [])
+    assert result.exit_code == code, result.stderr
+
+
+def test_lint_new_writes_the_rule_and_says_what_to_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with compose_with("lint"):
+        result = invoke_cli(app, ["new", "no-print", "--key", "house", "-f", "json"])
+    assert result.exit_code == 0, result.stderr
+    rows = json.loads(result.stdout)
+    assert [Path(row["target_path"]).name for row in rows] == [
+        "no_print.py",
+        "test_no_print.py",
+        "lint.yml",
+    ]
+    assert "untaped lint --select house.no-print" in result.stderr
+    with compose_with("lint"):
+        again = invoke_cli(app, ["--select", "house.no-print", "-f", "json"])
+        assert again.exit_code == 0, again.stdout

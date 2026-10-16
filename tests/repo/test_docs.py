@@ -494,8 +494,6 @@ DOCS_PAGES = [
     "troubleshooting.md",
     "versioning.md",
 ]
-#: Longest a docs page may grow, in lines. An over-budget page is split, not exempted.
-DOCS_PAGE_BUDGET = 400
 #: Retired term -> the term to use instead.
 RETIRED_TERMS = {"root shell": "root", "unified shell": "root"}
 
@@ -505,12 +503,6 @@ def test_records_page_has_a_section_per_plugin(
 ) -> None:
     records = _anchors(REPO_ROOT / "docs" / "reference" / "records.md")
     assert {spec.name for spec in first_party_specs} <= records
-
-
-@pytest.mark.parametrize("page", DOCS_PAGES)
-def test_docs_pages_stay_within_budget(page: str) -> None:
-    lines = len((REPO_ROOT / "docs" / page).read_text(encoding="utf-8").splitlines())
-    assert lines <= DOCS_PAGE_BUDGET, f"docs/{page} has {lines} lines; split it by reader task"
 
 
 def test_docs_avoid_retired_terms() -> None:

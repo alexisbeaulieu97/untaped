@@ -83,6 +83,7 @@ __all__ = [
     "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
+    "allowed_names",
     "allows",
     "assert_destructive_contract",
     "assert_fills",
@@ -405,6 +406,18 @@ def allows(source_lines: list[str], lineno: int, rule: str) -> bool:
     from untaped.conventions.allow import allowed  # noqa: PLC0415
 
     return allowed(source_lines, lineno, rule)
+
+
+def allowed_names(line: str) -> frozenset[str]:
+    """The rule names a source line's ``# untaped: allow`` marker names, as written.
+
+    The same marker :func:`allows` reads, for a reader that resolves the
+    names itself: ``lint`` honours ``house.no-print`` and a bare ``no-print``
+    on a repository rule's findings.
+    """
+    from untaped.conventions.allow import allowed_names as names  # noqa: PLC0415
+
+    return names(line)
 
 
 def import_targets(node: ast.Import | ast.ImportFrom, package: str) -> list[str]:

@@ -30,15 +30,15 @@ def build_app() -> App:
 
 
 def _contracts() -> tuple[type[Contract], ...]:
-    from untaped_lint.application.rules import Linter  # noqa: PLC0415
+    from untaped_lint.application.rules import Linter, TreeReader  # noqa: PLC0415
 
-    return (Linter,)
+    return (Linter, TreeReader)
 
 
 SPEC = PluginSpec(
     name="lint",
     app_factory=build_app,
-    help="Check plugins and records against rules, with ids to ignore.",
+    help="Check plugins, repositories and records against rules, with ids to ignore.",
     stability=experimental,
     settings=LintSettings,
     contracts=_contracts,
@@ -48,10 +48,12 @@ SPEC = PluginSpec(
             name="untaped-lint",
             source=Path(str(files("untaped_lint").joinpath("skills", "untaped-lint"))),
             description=(
-                "Checks an untaped plugin against the house conventions and its contract "
-                "fills through `untaped lint`, lists the rules with `untaped lint rules`, and "
-                "reads or suppresses findings by rule id. Use when the user writes or reviews "
-                "an untaped plugin, asks why `untaped lint` failed, or wants a rule ignored."
+                "Runs a repository's conventions as rules through `untaped lint` (its "
+                "`.untaped/lint.yml` rules, each plugin's, and the plugin checks), lists them "
+                "with `untaped lint rules`, and turns a convention written in prose into a rule "
+                "with `untaped lint new`. Use before changing code in a repository that has "
+                "`.untaped/lint.yml` or untaped plugins, when `untaped lint` fails, or when the "
+                "user explains a convention to keep."
             ),
         ),
     ),

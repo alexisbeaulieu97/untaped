@@ -239,6 +239,7 @@ records.
 |---|---|
 | `lint` | `lint.finding` (`rule`, `severity` `error` or `warning`, `target`, `message`, `location`, `hint`, `fix`) |
 | `lint rules` | `lint.rule` (`id`, `reads`, `severity`, `summary`, `renamed_from`) |
+| `lint new` | `lint.scaffold_outcome` (`action` `created`, `updated` or `planned`, `target_path`) |
 
 A finding's `location` is `{path, line, column}` in a file,
 `{path, index}` for one document of a multi-document file, or `{id, url}`
@@ -246,4 +247,5 @@ for a resource with no file; the table shows `src/a.py:12`, `a.yml#2` or
 the id. A rule that could not run is an `untaped.failure` on stderr, never
 a finding. `lint --stdin` reads `--format pipe` records of any kind: each is
 checked by the rules that read its kind (`untaped.plugin` from
-`plugin list`).
+`plugin list`). A rule over a repository's files reads `lint.tree`
+(`root`, `paths`), which the run builds and never prints.

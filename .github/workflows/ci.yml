@@ -66,6 +66,10 @@ jobs:
       - name: mypy
         run: uv run mypy
 
+      - name: untaped lint
+        # This repository's own rules (.untaped/lint.yml), as any repository runs them.
+        run: uv run untaped lint
+
       - name: Pytest
         run: uv run pytest -n auto --cov --cov-report=term-missing --cov-report=xml --durations=25
 
