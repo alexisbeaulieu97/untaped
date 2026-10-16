@@ -387,7 +387,7 @@ def warn_skipped_files(result: RefreshResult) -> None:
             _diag.warning(format_skipped_dependency_file(skipped))
     if analysis:
         _diag.warning(
-            f"could not read {plural(analysis, 'file')} for variables; "
+            f"could not fully read {plural(analysis, 'file')} for variables; "
             "'untaped ansible impact ROLE --uses NAME' names those in the role's dependents"
         )
 

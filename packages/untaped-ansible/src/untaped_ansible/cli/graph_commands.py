@@ -670,11 +670,11 @@ def _hint_undefined(
 
     Silent when what ROLE defines is unknown (not indexed, or not analysed).
     """
-    from untaped_ansible.domain.variables import defines  # noqa: PLC0415  # Jinja2
-
     label = f"{repo}@{ref}" if ref else repo
     local = Path(target).expanduser()
     if local.is_dir():
+        from untaped_ansible.domain.variables import defines  # noqa: PLC0415  # Jinja2
+
         defined = defines(_role_variable_files(local)) & set(names)
         label = target
     else:

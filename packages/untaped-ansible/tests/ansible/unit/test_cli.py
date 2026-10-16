@@ -1676,8 +1676,8 @@ def test_source_refresh_all_failures_exits_nonzero_and_leaves_index_unchanged(
                 "templates/a.j2": "{% if %}",
                 "templates/b.j2": "{% for %}",
             },
-            "warning: could not read 2 files for variables; 'untaped ansible impact ROLE --uses "
-            "NAME' names those in the role's dependents",
+            "warning: could not fully read 2 files for variables; "
+            "'untaped ansible impact ROLE --uses NAME' names those in the role's dependents",
         ),
     ],
 )

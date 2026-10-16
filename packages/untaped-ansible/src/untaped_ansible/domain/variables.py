@@ -89,8 +89,9 @@ def analyse(path: str, text: str) -> FileAnalysis:
             facts, skipped = _analyse_yaml(path, text)
     except RecursionError:
         return FileAnalysis(facts=[], skipped="nested too deeply to read")
-    except Exception as error:
-        return FileAnalysis(facts=[], skipped=f"could not be read: {type(error).__name__}")
+    except Exception as error:  # one unreadable file never fails a refresh
+        # Stored per blob until the analyser version changes, like any skip.
+        return FileAnalysis(facts=[], skipped=f"could not be read: {error or type(error).__name__}")
     return FileAnalysis(facts=_sorted_unique(facts), skipped=skipped)
 
 

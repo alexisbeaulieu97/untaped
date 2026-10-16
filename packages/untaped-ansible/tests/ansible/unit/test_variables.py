@@ -496,6 +496,6 @@ def test_the_analyser_imports_only_what_its_version_hashes(
     }
     assert not outside, (
         f"{module.__name__} imports {sorted(outside)}: analyser_version() hashes only the "
-        "analyser's two modules and its libraries, so an edit there would change the "
-        "facts without changing the version"
+        "analyser's two modules and jinja2/PyYAML (pydantic only holds the data), so an "
+        "edit there would change the facts without changing the version"
     )

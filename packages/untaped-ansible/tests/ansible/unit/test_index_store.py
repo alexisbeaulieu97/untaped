@@ -65,6 +65,7 @@ def test_a_key_filled_by_another_analyser_is_outdated(monkeypatch: pytest.Monkey
         return Filled()
 
     INDEX.serve({"source:prod": "source prod"}, refresh=True, fill=fill, read=lambda: None)
+    assert INDEX.freshness("source:prod").outdated is False
     monkeypatch.setattr(settings, "analyser_version", lambda: "an edited analyser")
 
     assert INDEX.freshness("source:prod").outdated is True
