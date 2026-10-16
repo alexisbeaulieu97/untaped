@@ -56,7 +56,7 @@ def _ui(theme: ThemeSpec | None = None) -> UiContext:
 
 
 def _messages(theme: ThemeSpec | None = None) -> None:
-    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
         ui = _ui(theme)
         for level in ("success", "info", "warning", "error"):
             ui.message(level, f"a {level} line")
@@ -64,22 +64,22 @@ def _messages(theme: ThemeSpec | None = None) -> None:
 
 
 def _report_error_plain() -> None:
-    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
         report_error(UntapedError("it broke"))
 
 
 def _report_error_item() -> None:
-    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
         report_error(UntapedError("it broke"), item="acme/x")
 
 
 def _report_error_hint() -> None:
-    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
         report_error(ConfigError("no token", hint="run `untaped auth set`"))
 
 
 def _echo_lines() -> None:
-    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
         echo("warning: something is off", err=True)
         echo(hint("try again"), err=True)
         echo("an info line", err=True)
@@ -99,7 +99,7 @@ def _clamp() -> None:
 
 
 def _styled() -> None:
-    with pytest.warns(DeprecationWarning, match="ctx.diag"):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
         _ui().styled(Text("[job 42] ", style="bold"), err=True, tail="ok\tdone")
 
 
@@ -117,7 +117,7 @@ def _debug_line() -> None:
 
 def _progress_lines() -> None:
     with (
-        pytest.warns(DeprecationWarning, match="ctx.diag"),
+        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
         progress_clock() as clock,
         _ui().progress("Syncing repos") as handle,
     ):
@@ -129,7 +129,7 @@ def _progress_lines() -> None:
 
 def _progress_verbose() -> None:
     with (
-        pytest.warns(DeprecationWarning, match="ctx.diag"),
+        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
         progress_clock(),
         UiContext(theme=_COLOURED, verbose=True).progress("Syncing repos") as handle,
     ):

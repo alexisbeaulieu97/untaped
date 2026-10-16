@@ -227,3 +227,13 @@ def test_a_plugin_class_lists_its_own_members_and_its_exported_bases() -> None:
         f"sdk {_NAME}.Refused.category class",
         f"sdk {_NAME}.Refused.why()",
     }
+
+
+def test_a_marked_parameter_is_dated_on_its_own_line(lines: set[str]) -> None:
+    assert _of(lines, "marked") == [
+        f"sdk {_NAME}.marked(old=) default=None  [deprecated, removed in 12.0; use x]",
+        f"sdk {_NAME}.marked(x)",
+    ]
+    assert f"sdk {_NAME}.Boxed(old@1=) default=false  [deprecated, removed in 12.0]" in _of(
+        lines, "Boxed"
+    )

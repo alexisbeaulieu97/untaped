@@ -27,15 +27,16 @@ OLD: dict[str, Callable[[], object]] = {
     "report_error": lambda: report_error(UntapedError("x")),
     "report_row_errors": lambda: report_row_errors([], item=str),
     "echo(err=True)": lambda: echo("x", err=True),
+    "echo(err=False)": lambda: echo("x", err=False),
     "UiContext.styled(err=True)": lambda: UiContext().styled("x", err=True),
 }
 
 
 @pytest.mark.parametrize("name", sorted(OLD))
-def test_each_old_helper_warns_and_names_ctx_diag(name: str) -> None:
+def test_each_old_helper_warns_and_names_its_replacement(name: str) -> None:
     with (
         redirect_stderr(io.StringIO()),
-        pytest.warns(DeprecationWarning, match="ctx.diag"),
+        pytest.warns(DeprecationWarning, match=r"removed in 12\.0; use .*(ctx\.diag|Diagnostics)"),
     ):
         OLD[name]()
 
@@ -44,7 +45,6 @@ def test_stdout_echo_and_styled_do_not_warn() -> None:
     with redirect_stdout(io.StringIO()), warnings.catch_warnings():
         warnings.simplefilter("error")
         echo("x")
-        echo("x", err=False)
         UiContext(stdout=io.StringIO()).styled("x")
 
 

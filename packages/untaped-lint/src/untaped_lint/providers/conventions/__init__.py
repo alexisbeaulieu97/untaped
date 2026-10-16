@@ -21,6 +21,7 @@ from untaped.testing import PluginCandidate, PluginCheckRow, check_plugin
 from untaped_lint.errors import UnreadableSourceError
 from untaped_lint.infrastructure.files import SourceFile, source_files
 from untaped_lint.providers.conventions.blob_reader import blob_reader_violations
+from untaped_lint.providers.conventions.deprecations import deprecation_violations
 from untaped_lint.providers.conventions.layering import layering_violations
 from untaped_lint.providers.conventions.messages import message_violations
 from untaped_lint.providers.conventions.store_format import store_format_violations
@@ -51,9 +52,12 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("reserved-panel", "error", "No help panel is named after one of core's panels."),
     ("unkeyed-panel", "error", "A plugin's own help panel has a sort key below 100."),
     ("hand-typed-mark", "error", "Experimental and Deprecated lines come from marks, not help."),
-    ("wrong-deprecated", "error", "Commands and settings deprecate with untaped's deprecated()."),
+    ("wrong-deprecated", "error", "Commands and settings deprecate with deprecated() alone."),
     ("nested-mark", "error", "No mark sits under a mark that makes it redundant."),
     ("bad-replacement", "error", "A deprecation's replacement resolves and is not deprecated."),
+    ("undated-deprecation", "error", "Every deprecation names the major that removes it."),
+    ("untyped-deprecation", "error", "A deprecated SDK callable also carries warnings.deprecated."),
+    ("deprecation-text", "error", "An SDK callable's warnings.deprecated text is its mark's."),
     ("mark-on-spec", "error", "A plugin's own mark is on its PluginSpec, not its top app."),
     ("exception-base", "error", "A plugin's exceptions derive from UntapedError."),
     ("exception-name", "error", "A plugin's exception classes end in Error."),
@@ -78,6 +82,8 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("print", "error", "Stdout goes through echo or UiContext, stderr through ctx.diag."),
     ("rich-console", "error", "No direct rich Console: use echo, UiContext or ctx.diag."),
     ("hand-typed-deprecation", "error", "Deprecation sentences come from marks, not literals."),
+    ("mark-on-overload", "error", "A mark sits on the implementation, never on an @overload."),
+    ("unwarned-parameter", "error", "A deprecated parameter's function is @deprecated_parameters."),
     ("errors-module", "error", "A plugin keeps its error classes in errors.py."),
     ("foreign-section", "error", "A plugin reads only its own config section."),
     ("private-test-import", "error", "Tests import no private module or name."),
@@ -165,6 +171,7 @@ def file_lines(
         files: list[SourceFile] = list(source_files(source_dir))
         found = [
             *message_violations(source_dir, files),
+            *deprecation_violations(source_dir, files),
             *structure_source_violations(plugin, package, source_dir, files, tests_dir=tests_dir),
             *layering_violations(package, source_dir, files),
             *terminal_boundary_violations(source_dir, files),

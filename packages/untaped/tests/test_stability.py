@@ -311,9 +311,10 @@ def test_replacement_path_finds_a_command_function_or_app_by_identity() -> None:
         ("untaped github sync", "`untaped github sync`"),
         ("awx.test_timeout_seconds", "`awx.test_timeout_seconds`"),
         ("a shell alias or function", "a shell alias or function"),
+        ("--limit 1 --yes", "`--limit 1 --yes`"),
     ],
 )
-def test_text_replacements_are_backticked_when_they_name_a_command_or_a_key(
+def test_text_replacements_are_backticked_when_they_name_a_command_a_key_or_a_flag(
     text: str, shown: str
 ) -> None:
     assert replacement_text(deprecated(replacement=text), None) == shown
