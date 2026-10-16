@@ -43,6 +43,7 @@ from untaped.records import (
     CheckRecord,
     DuplicateKindError,
     Failure,
+    ForeignKindError,
     OutcomeRecord,
     Record,
     TargetRecord,
@@ -292,6 +293,42 @@ def test_two_models_declaring_one_kind_is_duplicate_kind() -> None:
             name: str
 
     assert record_model("acme-tools.widget") is _Widget
+
+
+def test_a_plugin_package_declares_kinds_under_its_own_name() -> None:
+    class _Own(Record, kind="acme-tools.gadget"):
+        __module__ = "untaped_acme_tools.records"
+        name: str
+
+    assert record_model("acme-tools.gadget") is _Own
+
+
+@pytest.mark.parametrize(
+    ("module", "kind", "declarer"),
+    [
+        ("untaped_acme_tools.records", "acme.gizmo", "plugin 'acme-tools'"),
+        ("untaped_awx.records", "untaped.gizmo", "plugin 'awx'"),
+        ("untaped.records_extra", "awx.gizmo", "core"),
+    ],
+)
+def test_a_kind_under_another_plugins_name_is_foreign_kind(
+    module: str, kind: str, declarer: str
+) -> None:
+    with pytest.raises(ForeignKindError, match=f"belongs to {declarer}; ") as caught:
+
+        class _Foreign(Record, kind=kind):
+            __module__ = module
+            name: str
+
+    assert caught.value.reason == "foreign-kind"
+    assert record_model(kind) is None
+
+
+def test_a_model_outside_plugin_packages_is_nobodys() -> None:
+    class _Anywhere(Record, kind="forge.gizmo"):
+        name: str
+
+    assert record_model("forge.gizmo") is _Anywhere
 
 
 def test_the_same_class_defined_again_replaces_itself() -> None:

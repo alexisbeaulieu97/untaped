@@ -36,7 +36,7 @@ from untaped.plugins.registry import (
     run_deferred_factory,
     settings_model,
 )
-from untaped.records import DuplicateKindError, Record
+from untaped.records import DuplicateKindError, Record, record_model
 
 
 @pytest.mark.parametrize(
@@ -359,6 +359,54 @@ def test_a_plugin_whose_import_redeclares_a_kind_is_quarantined(
 
     assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
     assert "untaped.config.models.SettingRow" in result.quarantine[0].detail
+
+
+@pytest.mark.parametrize("kind", ["github.thing", "untaped.thing"])
+def test_a_plugin_declaring_a_kind_under_another_name_is_quarantined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    (tmp_path / "untaped_toy.py").write_text(
+        "from untaped.sdk import Record\n\n\n"
+        f"class Bad(Record, kind={kind!r}):\n"
+        "    key: str\n\n\n"
+        "def provide(): ...\n"
+    )
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, "untaped_toy", raising=False)
+    candidate = PluginCandidate(distribution="toy-dist", name="toy", target="untaped_toy:provide")
+
+    result = compose(make_shell(), [candidate])
+
+    assert [(q.name, q.reason) for q in result.quarantine] == [("toy", "foreign-kind")]
+    detail = result.quarantine[0].detail
+    assert f"untaped_toy.Bad declares kind {kind!r}" in detail
+    assert "belongs to plugin 'toy'; " in detail
+    assert record_model(kind) is None
+
+
+def test_a_kind_a_lazy_module_declares_under_another_name_quarantines_at_first_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "untaped_toy_lazy.py").write_text(
+        "from untaped.sdk import Record\n\n\n"
+        'class Bad(Record, kind="github.lazy_thing"):\n'
+        "    key: str\n"
+    )
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, "untaped_toy_lazy", raising=False)
+
+    def factory() -> App:
+        import untaped_toy_lazy  # noqa: F401, PLC0415 - a record module imported by the factory
+
+        return App()
+
+    spec = PluginSpec(name="toy-lazy", app_factory=factory, help="Toy commands.")
+    [toy] = compose(make_shell(), [make_candidate(spec)]).plugins
+    failure = run_deferred_factory(toy)
+
+    assert isinstance(failure, QuarantineRecord)
+    assert (failure.name, failure.reason) == ("toy-lazy", "foreign-kind")
+    assert "belongs to plugin 'toy-lazy'; " in failure.detail
 
 
 def test_a_plugin_whose_app_factory_redeclares_a_kind_is_quarantined() -> None:

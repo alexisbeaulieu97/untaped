@@ -7,10 +7,10 @@ import sys
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-
 from untaped.errors import ConfigError, UsageError
 from untaped.messages import q
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
+from untaped.output.diagnostic import WireModel, kind_of
 from untaped.render import stream_is_tty
 
 
@@ -111,6 +111,7 @@ class StdinInput:
 
 def read_stdin_input(
     *,
+    accepts: Collection[type[WireModel]] | None = None,
     accept_kinds: Collection[str] | None = None,
     what: str = "identifiers",
     allow_empty: bool = False,
@@ -124,11 +125,14 @@ def read_stdin_input(
     With ``allow_empty`` an empty (or blank) pipe is no values instead, for
     commands where "nothing piped" means "nothing to do"; a terminal stdin
     (nothing piped at all) still raises.
-    ``accept_kinds`` declares the record kinds the command understands: an
-    envelope whose ``kind`` is set and not listed is a :class:`UsageError`
+    ``accepts`` names the record models the command understands: an envelope
+    whose ``kind`` is set and is none of theirs is a :class:`UsageError`
     (exit 2), so ``awx hosts list -f pipe | awx jobs get --stdin`` can never
-    treat host IDs as job IDs. Records without a kind are accepted.
+    treat host IDs as job IDs. Records without a kind are accepted. A model
+    that declares no kind is a ``TypeError``. ``accept_kinds`` names the
+    same as kind strings; pass one or the other.
     """
+    accept_kinds = _accepted_kinds(accepts, accept_kinds)
     pairs = _read_raw_lines()
     if not pairs:
         if pairs is None or not allow_empty:
@@ -152,6 +156,26 @@ def read_stdin_input(
     return StdinInput(values=tuple(values), records=None)
 
 
+def _accepted_kinds(
+    accepts: Collection[type[WireModel]] | None, accept_kinds: Collection[str] | None
+) -> Collection[str] | None:
+    """The kinds a reader accepts, from its models (or the strings, until 12.0)."""
+    if accepts is None:
+        return accept_kinds
+    if accept_kinds is not None:
+        raise TypeError("pass accepts= or accept_kinds=, not both")
+    kinds: set[str] = set()
+    for model in accepts:
+        kind = kind_of(model)
+        if kind is None:
+            raise TypeError(
+                f"accepts= takes record models that declare a kind; "
+                f"{model.__module__}.{model.__qualname__} declares none"
+            )
+        kinds.add(kind)
+    return kinds
+
+
 def _check_kinds(records: Sequence[PipeEnvelope], accept_kinds: Collection[str]) -> None:
     accepted = sorted(accept_kinds)
     for env in records:
@@ -168,6 +192,7 @@ def read_identifiers(
     *,
     stdin: bool,
     id_field: str | None = None,
+    accepts: Collection[type[WireModel]] | None = None,
     accept_kinds: Collection[str] | None = None,
 ) -> list[str]:
     """Resolve identifiers from positional args or stdin (exactly one).
@@ -182,13 +207,14 @@ def read_identifiers(
     On stdin the input may be either bare newline-separated identifiers or an
     untaped ``--format pipe`` stream (see :func:`read_stdin_input`). In
     envelope mode each record's ``id_field`` is extracted, so a producer's rich
-    output pipes straight into an identifier consumer; ``accept_kinds``
-    rejects records of any other kind with exit 2.
+    output pipes straight into an identifier consumer; ``accepts`` (the
+    models) or ``accept_kinds`` (their kinds) rejects records of any other
+    kind with exit 2.
     """
     if stdin and positional:
         raise UsageError("provide identifiers as positional args or via --stdin, not both")
     if stdin:
-        piped = read_stdin_input(accept_kinds=accept_kinds)
+        piped = read_stdin_input(accepts=accepts, accept_kinds=accept_kinds)
         if piped.records is None:
             return list(piped.values)
         if id_field is None:

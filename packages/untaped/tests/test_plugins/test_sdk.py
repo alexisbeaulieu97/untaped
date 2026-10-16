@@ -56,6 +56,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "UtcTimestamp",
         "echo",
         "emit",
+        "emit_document",
         "finish",
         "is_envelope_line",
         "kind_of",

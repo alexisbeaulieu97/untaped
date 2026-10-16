@@ -34,7 +34,7 @@ from untaped.cache import Cache
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
 from untaped.output.sink import Diagnostics
-from untaped.records import DuplicateKindError, OutcomeRecord
+from untaped.records import KindError, OutcomeRecord
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
@@ -442,6 +442,7 @@ VALID_REASONS = frozenset(
         "bad-metadata",
         "bad-settings-keys",
         "duplicate-kind",
+        "foreign-kind",
         "foreign-cache",
         "duplicate-cache",
         "foreign-store",
@@ -896,8 +897,8 @@ def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
 def _check_factory(spec: PluginSpec, factory: Callable[[], App]) -> App:
     try:
         staged = factory()
-    except DuplicateKindError as exc:
-        raise _Quarantine("duplicate-kind", str(exc)) from None
+    except KindError as exc:
+        raise _Quarantine(exc.reason, str(exc)) from None
     except Exception as exc:
         raise _Quarantine(
             "bad-app-factory",
@@ -1082,8 +1083,8 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
     _check_requires_dist(candidate, state)
     try:
         spec = resolve_target(candidate.target)
-    except DuplicateKindError as exc:
-        raise _Quarantine("duplicate-kind", str(exc), entry_point="") from None
+    except KindError as exc:
+        raise _Quarantine(exc.reason, str(exc), entry_point="") from None
     except Exception as exc:
         raise _Quarantine(
             "malformed-entry-point",

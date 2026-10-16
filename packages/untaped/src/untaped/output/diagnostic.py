@@ -140,8 +140,22 @@ def check_data_kind(kind: str) -> None:
         )
 
 
-class DuplicateKindError(ValueError):
+class KindError(ValueError):
+    """A kind declaration composition refuses; ``reason`` is its quarantine reason."""
+
+    reason: ClassVar[str]
+
+
+class DuplicateKindError(KindError):
     """Two models declare the same kind (reason ``duplicate-kind``)."""
+
+    reason = "duplicate-kind"
+
+
+class ForeignKindError(KindError):
+    """A model declares a kind under another plugin's name (reason ``foreign-kind``)."""
+
+    reason = "foreign-kind"
 
 
 _MODELS: dict[str, type[WireModel]] = {}
@@ -171,6 +185,7 @@ def _register(kind: str, model: type[WireModel]) -> None:
     """Map ``kind`` to ``model``; another model already declaring it is ``duplicate-kind``.
 
     The same class defined again (a module imported twice) replaces itself.
+    A plugin's model declaring a kind under another name is ``foreign-kind``.
     """
     held = _MODELS.get(kind)
     if held is not None and (held.__module__, held.__qualname__) != (
@@ -182,8 +197,43 @@ def _register(kind: str, model: type[WireModel]) -> None:
             f"{held.__module__}.{held.__qualname__} and {model.__module__}.{model.__qualname__}; "
             "each kind has exactly one schema, so give one of them another kind"
         )
+    _check_owner(kind, model)
     _MODELS[kind] = model
     _KINDS[model] = kind
+
+
+def _declaring_plugin(module: str) -> str | None:
+    """The plugin whose import package holds ``module`` (``None``: no plugin's).
+
+    ``untaped_acme_tools`` is ``acme-tools`` and ``untaped`` is core: plugin
+    names have no ``_``, so the mapping is unambiguous.
+    """
+    package = module.partition(".")[0]
+    if package == "untaped":
+        return "untaped"
+    if package.startswith("untaped_"):
+        return package.removeprefix("untaped_").replace("_", "-")
+    return None
+
+
+def _check_owner(kind: str, model: type[WireModel]) -> None:
+    """A plugin's model declares kinds under its own name only (``foreign-kind``).
+
+    The plugin is read from the model's import package, since a plugin's
+    name and its package are one name. A model outside ``untaped`` and
+    ``untaped_*`` packages (a test module) is not checked.
+    """
+    owner = _declaring_plugin(model.__module__)
+    prefix = kind.partition(".")[0]
+    if owner is None or prefix == owner:
+        return
+    noun = kind.partition(".")[2]
+    declarer = "core" if owner == "untaped" else f"plugin {owner!r}"
+    raise ForeignKindError(
+        f"{model.__module__}.{model.__qualname__} declares kind {kind!r}, but its package "
+        f"belongs to {declarer}; a kind starts with its declaring plugin's name, "
+        f"so name it {owner}.{noun}"
+    )
 
 
 @cache
@@ -825,6 +875,8 @@ __all__ = [
     "DeprecationNotice",
     "Diagnostic",
     "DuplicateKindError",
+    "ForeignKindError",
+    "KindError",
     "Failure",
     "Level",
     "Message",

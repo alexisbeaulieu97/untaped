@@ -32,7 +32,7 @@ from untaped.output.sink import (
     failure_exit_code,
 )
 from untaped.records import TableGlyph, check_data_kind, kind_of, table_columns_of
-from untaped.render import column_value
+from untaped.render import column_value, render_document
 from untaped.stability import Stability, check_stability, mark_app
 from untaped.theme import OutputFormat, ThemeSpec, resolve_theme_or_default
 from untaped.ui import UiContext, ui_context
@@ -651,6 +651,15 @@ def emit_with(
     )
     if rendered:
         echo(rendered)
+
+
+def emit_document(data: Mapping[str, object], *, fmt: Literal["json", "yaml"]) -> None:
+    """Print one document to stdout: a JSON Schema, a profile's settings, a config file.
+
+    A document is not a row: it has no kind, no ``pipe`` envelope and no
+    columns, so it goes through here, never :func:`emit`.
+    """
+    echo(render_document(data, fmt=fmt))
 
 
 def _rows_kind(items: Sequence[BaseModel | Mapping[str, object]], kind: str | None) -> str | None:
