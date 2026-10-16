@@ -790,6 +790,57 @@ def _samples() -> dict[str, WireModel]:
             Board(id=3, name="B"),
             Sprint(id=5, start_at="2026-06-01T13:00:00Z", origin_board_id=3),
         ]
+    if "untaped_dotfiles" in _SHIPPED:
+        from untaped_dotfiles.records import (
+            ApplyOutcome,
+            ItemOutcome,
+            ItemRow,
+            RemoveOutcome,
+            RepoOutcome,
+            RepoRow,
+            StatusRow,
+            StatusSummary,
+            SyncOutcome,
+        )
+
+        placed = {
+            "repo": "dotfiles",
+            "item": "fish",
+            "source": "fish/config.fish",
+            "mode": "link",
+            "action": "failed",
+            "state": "conflict",
+            "target_path": Path("/h/.config/fish/config.fish"),
+            "error": Failure.from_exception(ConfigError("x")),
+        }
+        rows += [
+            ItemRow(repo="dotfiles", name="fish", suggested="manual", files=2, skip=("conf",)),
+            ItemOutcome(repo="dotfiles", name="fish", action="created", policy="sync"),
+            RepoRow(
+                name="dotfiles",
+                url="https://example.com/acme/dotfiles.git",
+                ref="main",
+                managed=True,
+                head="0" * 40,
+                behind=1,
+                target_path=Path("/h/repos/dotfiles"),
+            ),
+            RepoOutcome(name="dotfiles", action="deleted", detail="kept"),
+            StatusRow(
+                repo="dotfiles",
+                item="fish",
+                file="fish/config.fish",
+                source="fish/config.fish",
+                mode="link",
+                policy="manual",
+                state="applied",
+                target_path=Path("/h/.config/fish/config.fish"),
+            ),
+            StatusSummary(checked_at=datetime(2026, 10, 2, tzinfo=UTC), total=1, attention=0),
+            ApplyOutcome(**placed),
+            SyncOutcome(**placed),
+            RemoveOutcome(**placed),
+        ]
     if "untaped_lint" in _SHIPPED:
         from untaped_lint.records import FileLocation, Finding, Rule, Subject
 

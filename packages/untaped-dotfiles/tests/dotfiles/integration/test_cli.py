@@ -263,10 +263,27 @@ def test_apply_without_a_terminal_needs_yes_and_a_decline_changes_nothing(
         app, ["apply"], terminal=True, prompt_backend=ScriptedPromptBackend(confirms=[False])
     )
     assert declined.exit_code == 1 and "cancelled; no changes made" in declined.stderr
-    assert "starship.toml" in declined.stderr  # the plan was previewed
-    header = declined.stderr.lower()
-    assert "item" in header and "target_path" not in header  # the default columns
+    header = declined.stderr.splitlines()[0]
+    assert header.split() == ["item", "source", "action", "state", "target"]  # the plan
+    assert "~/.config/starship.toml" in declined.stderr  # the target, as the person reads it
     assert not (home / ".config" / "starship.toml").exists()
+    as_json = run(
+        app,
+        ["apply", "--format", "json"],
+        terminal=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+    )
+    plan = as_json.stderr.splitlines()
+    # The preview is text for the person answering, whatever --format the rows take.
+    assert plan[0].split() == ["item", "source", "action", "state", "target"]
+    assert plan[1].split() == [
+        "starship",
+        "starship.toml",
+        "planned",
+        "pending",
+        "~/.config/starship.toml",
+    ]
+    assert as_json.stdout == ""
     accepted = run(
         app, ["apply"], terminal=True, prompt_backend=ScriptedPromptBackend(confirms=[True])
     )
@@ -615,6 +632,15 @@ def test_remove_deletes_placed_paths_unmerges_and_disables(
     (home / ".config/fish/conf.d/fisher.fish").write_text("theirs\n")
     plan = _json(["remove", "--all", "--dry-run"])
     assert {r["action"] for r in plan} == {"planned"}
+    declined = run(
+        app,
+        ["remove", "--all"],
+        terminal=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+    )
+    assert declined.exit_code == 1 and "cancelled; no changes made" in declined.stderr
+    header = declined.stderr.splitlines()[0]
+    assert header.split() == ["item", "source", "action", "state", "target", "detail"]
     rows = _json(["remove", "--all", "--yes"])
     assert {r["action"] for r in rows} == {"deleted"}
     assert sorted(p.name for p in (home / ".config/fish/conf.d").iterdir()) == ["fisher.fish"]

@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING
 from untaped.sdk import Failure, UntapedError
 from untaped_dotfiles.domain.hashing import content_hash, value_hash
 from untaped_dotfiles.domain.models import AppliedRecord, RepoRecord
-from untaped_dotfiles.domain.records import RepoRow, StatusRow, StatusSummary
 from untaped_dotfiles.domain.status import FileState, SourceInfo, file_state, needs_attention
 from untaped_dotfiles.errors import DotfilesError
+from untaped_dotfiles.records import RepoRow, StatusRow, StatusSummary
 
 if TYPE_CHECKING:
     from untaped_dotfiles.application.inventory import Inventory, Placement

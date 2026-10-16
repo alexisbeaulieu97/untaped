@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 from untaped.sdk import UsageError, git_toplevel, not_found, q
 from untaped_dotfiles.domain.manifest import DEFAULT_MANIFEST
 from untaped_dotfiles.domain.models import RepoRecord
-from untaped_dotfiles.domain.records import RepoOutcome
 from untaped_dotfiles.errors import DotfilesError, GitError, RepoNotFoundError
+from untaped_dotfiles.records import RepoOutcome
 
 if TYPE_CHECKING:
     from untaped_dotfiles.application.inventory import Inventory
