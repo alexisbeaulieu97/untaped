@@ -20,8 +20,8 @@ from untaped.contracts import Failed, NoProviderReady, Ok, convert, gather
 from untaped.sdk import ExitCode, PipeEnvelope, UntapedError, UsageError
 from untaped.settings import get_settings
 from untaped.testing import assert_fills, compose_with
-from untaped_github.domain.models import GithubRepo
 from untaped_github.providers.workspace import GithubRepos, inventory_scope
+from untaped_github.records import GithubRepo
 from untaped_github.settings import GithubSettings
 from untaped_workspace.api import Repo, RepoSource
 

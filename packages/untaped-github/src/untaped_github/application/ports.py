@@ -13,14 +13,13 @@ if TYPE_CHECKING:
     from untaped.sdk import ProgressHandle
     from untaped_github.domain import (
         CorpusFreshness,
-        CorpusRepoResult,
         CorpusRepoTarget,
         GrepHit,
         GrepSpec,
         LocalRef,
         RefSelector,
-        WorktreeResult,
     )
+    from untaped_github.records import CorpusRepoResult, WorktreeResult
 
 
 class GithubMeService(Protocol):

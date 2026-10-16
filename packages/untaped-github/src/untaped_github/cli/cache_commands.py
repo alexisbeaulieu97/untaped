@@ -42,8 +42,8 @@ from untaped_github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
-from untaped_github.domain import CorpusRepoResult, GithubRepo
 from untaped_github.errors import GithubError
+from untaped_github.records import CorpusRepoResult, GithubRepo
 from untaped_github.settings import GithubSettings
 
 _diag = Diagnostics()
@@ -167,7 +167,6 @@ def sync_command(
             outcomes,
             fmt=fmt,
             columns=columns,
-            kind="github.sync_outcome",
             empty="No repositories in scope.",
         )
         for outcome in outcomes:
@@ -341,7 +340,7 @@ def worktree_command(
         settings = app_context().section("github", GithubSettings)
         with _diag.progress("Materializing worktree"):
             result = WorktreeCorpus(open_corpus(settings))(repo, ref=ref)
-        emit(result, fmt=fmt, columns=columns, kind="github.worktree")
+        emit(result, fmt=fmt, columns=columns)
 
 
 def _status_summary(rows: tuple[CorpusRepoResult, ...]) -> None:

@@ -29,9 +29,7 @@ from untaped_github.domain import (
     ArchivedMode,
     CorpusFailure,
     CorpusFreshness,
-    CorpusRepoResult,
     CorpusRepoTarget,
-    GithubRepo,
     GrepHit,
     GrepSpec,
     LocalRef,
@@ -39,6 +37,7 @@ from untaped_github.domain import (
     SweepQuery,
 )
 from untaped_github.errors import GitCorpusError
+from untaped_github.records import CorpusRepoResult, GithubRepo
 
 README = SweepQuery(has_files=("README.md",))
 

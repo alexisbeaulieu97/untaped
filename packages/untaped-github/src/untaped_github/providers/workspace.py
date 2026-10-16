@@ -23,9 +23,9 @@ from untaped_github.application.inventory import (
 from untaped_github.application.scopes import normalize_team_scopes
 from untaped_github.domain.errors import github_failures
 from untaped_github.domain.hosts import github_web_host
-from untaped_github.domain.models import GithubRepo
 from untaped_github.errors import GithubError
 from untaped_github.infrastructure.github_client import GithubClient
+from untaped_github.records import GithubRepo
 from untaped_github.settings import GithubSettings
 from untaped_workspace.api import Repo, RepoSource
 

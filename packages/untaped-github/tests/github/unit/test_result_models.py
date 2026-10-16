@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 from untaped.records import kind_of
-from untaped_github.domain import (
+from untaped_github.records import (
     CodeResult,
     CorpusRepoResult,
+    CorpusSyncOutcome,
     GithubRepo,
+    GithubUser,
     IssueResult,
     RepoSweepOutcome,
+    SweepFile,
+    SweepMatch,
     UserResult,
+    WorktreeResult,
 )
 
 _ISSUE = {
@@ -144,3 +153,62 @@ def test_corpus_and_sweep_rows_are_github_repos_of_their_own_kind() -> None:
         "github.sweep_repo",
     )
     assert (corpus.name, sweep.name) == ("p", "p")
+
+
+_URL = "https://github.com/acme/api"
+
+#: Each kind github declared a model for in #611, a row of it, and the keys,
+#: in order, its rows had before: a model keeps its row's wire order and
+#: leaves out what the row left out (``error`` on a row that did not fail).
+_ROW_KEYS: list[tuple[str, BaseModel, list[str]]] = [
+    (
+        "github.user",
+        GithubUser(login="octo", id=1),
+        ["login", "id", "name", "email"],
+    ),
+    (
+        "github.code",
+        CodeResult(name="a.yml", path="ci/a.yml", sha="s", repo="acme/api", url=_URL),
+        ["name", "path", "sha", "repo", "url"],
+    ),
+    (
+        "github.issue",
+        IssueResult.model_validate(_ISSUE),
+        ["repo", "number", "id", "title", "state", "url", "user_login", "is_pull_request"],
+    ),
+    (
+        "github.user_hit",
+        UserResult(id=1, login="octo", type="User", url=_URL),
+        ["id", "login", "type", "url"],
+    ),
+    (
+        "github.sweep_file",
+        SweepFile(repo="acme/api", path="a.yml", refs=["main"], hits=2),
+        ["repo", "path", "refs", "hits"],
+    ),
+    (
+        "github.sweep_match",
+        SweepMatch(repo="acme/api", refs=("main",), path="a.yml", line=3, text="x: 1"),
+        ["repo", "refs", "path", "line", "text"],
+    ),
+    (
+        "github.sync_outcome",
+        CorpusSyncOutcome(
+            repo="acme/api", action="synced", fetched_at=datetime(2026, 1, 2, tzinfo=UTC)
+        ),
+        ["repo", "action", "fetched_at", "detail"],
+    ),
+    (
+        "github.worktree",
+        WorktreeResult(target_path=Path("/s/wt"), path="/s/wt", repo="acme/api", ref="main"),
+        ["target_path", "path", "repo", "ref"],
+    ),
+]
+
+
+@pytest.mark.parametrize(("kind", "row", "keys"), _ROW_KEYS, ids=[each[0] for each in _ROW_KEYS])
+def test_a_github_record_writes_its_kind_and_its_old_row_keys_in_order(
+    kind: str, row: BaseModel, keys: list[str]
+) -> None:
+    assert kind_of(type(row)) == kind
+    assert list(json.loads(row.model_dump_json())) == keys
