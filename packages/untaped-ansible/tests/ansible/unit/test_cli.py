@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -390,12 +391,24 @@ class _SeedGitCache:
         found = {path: content for path, content in self.files.items() if path in paths}
         return dict.fromkeys(shas, found)
 
+    def list_files(self, url: str, sha: str) -> list[tuple[str, str]]:
+        return [(path, _blob(content)) for path, content in self.files.items()]
+
+    def read_blobs(self, url: str, blobs: Sequence[str]) -> dict[str, str]:
+        contents = {_blob(content): content for content in self.files.values()}
+        return {blob: contents[blob] for blob in blobs}
+
     def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
         name = url.removesuffix(".git").rsplit("/", maxsplit=1)[-1]
         return {"HEAD": f"sha-{name}", "refs/heads/main": f"sha-{name}"}
 
     def default_branch(self, url: str) -> str | None:
         return "main"
+
+
+def _blob(content: str) -> str:
+    """A content address for a fake store's file, as git's blob ids are."""
+    return hashlib.sha1(content.encode(), usedforsecurity=False).hexdigest()
 
 
 class _NoFetchGitCache(_SeedGitCache):
@@ -1656,6 +1669,15 @@ def test_source_refresh_all_failures_exits_nonzero_and_leaves_index_unchanged(
             },
             "warning: 2 collections in requirements files were ignored (only roles are graphed): "
             "ansible.posix, community.general",
+        ),
+        (
+            {
+                "requirements.yml": "roles:\n  - src: acme/base\n",
+                "templates/a.j2": "{% if %}",
+                "templates/b.j2": "{% for %}",
+            },
+            "warning: could not fully read 2 files for variables; "
+            "'untaped ansible impact ROLE --uses NAME' names those in the role's dependents",
         ),
     ],
 )

@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections import deque
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from untaped_ansible.domain.graph import (
     DependencyGraph,
@@ -47,6 +47,8 @@ class ReachedNode(BaseModel):
     path: list[str]
     root_ref: str | None
     stopped: StopReason | None
+    shas: frozenset[str] = Field(default=frozenset(), exclude=True)
+    """The commits the row's repo was indexed at (see :attr:`GraphNode.shas`)."""
 
 
 class Reach(BaseModel):
@@ -96,6 +98,7 @@ def reach(graph: DependencyGraph, relation: EdgeRelation) -> list[Reach]:
                             path=path[::-1] if upstream else path,
                             root_ref=root.ref,
                             stopped=node.stopped,
+                            shas=node.shas,
                         ),
                     )
                 )

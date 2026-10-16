@@ -1,8 +1,9 @@
 """``untaped setup plan``: what a profile still needs, as rows an agent can act on.
 
 Read-only and non-interactive. One ``untaped.setup_step`` row per step, in
-order: the profile itself, then each service's ``base_url`` and token (or
-its invalid settings), then (with ``--online``) each online check. A row's
+order: this install's registration (``untaped setup register``), the
+profile itself, then each service's ``base_url`` and token (or its invalid
+settings), then (with ``--online``) each online check. A row's
 ``run`` is the complete argv to run after ``untaped`` (a ``<NAME>`` token
 is a value to ask the user for); ``by`` says who runs it: ``user`` for
 a step that asks for or reveals a token, so a token never passes through
@@ -22,7 +23,7 @@ from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
 from untaped.management.records import SetupActor, SetupState, SetupStep
 from untaped.management.setup_state import ServiceState, service_states, service_store
-from untaped.messages import command_argv, command_line, split_profile
+from untaped.messages import command_argv, command_line, shown_path, split_profile
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
@@ -45,7 +46,7 @@ def plan_rows(
 ) -> list[Row]:
     """Every setup step for ``services`` in ``profile``, in the order to run them."""
     exists = _profile_exists(profile)
-    rows = [_profile_row(shell, profile, exists=exists)]
+    rows = [_install_row(shell, profile), _profile_row(shell, profile, exists=exists)]
     states = service_states(services, profile, read_config_dict())
     store = service_store(services)
     ready: list[str] = []
@@ -66,8 +67,12 @@ def _profile_exists(profile: str) -> bool:
 
 
 def pending(rows: list[Row]) -> bool:
-    """Whether any step still needs doing (``todo`` or ``failed``)."""
-    return any(row["state"] in ("todo", "failed") for row in rows)
+    """Whether any step still needs doing (``todo`` or ``failed``).
+
+    The ``install`` step never counts: registering is advice, so ``--check``
+    still answers whether the services are set up.
+    """
+    return any(row["state"] in ("todo", "failed") and row["step"] != "install" for row in rows)
 
 
 def emit_plan(
@@ -108,6 +113,24 @@ def _row(
         "run": run or [],
         "by": by,
     }
+
+
+def _install_row(shell: ApplicationSpec, profile: str) -> Row:
+    """Whether this install is registered, so the cleanup of store layouts keeps what it uses."""
+    from untaped.refs import environment, install_state, this_install  # noqa: PLC0415
+
+    state = install_state()
+    ref = this_install()
+    env = environment()
+    if state == "source tree" or env is None:
+        detail = "run from a source tree: only an installed untaped can be registered"
+        return _row("install", shell.name, "skipped", detail)
+    if state == "registered" and ref is not None:
+        return _row("install", shell.name, "done", f"registered: {ref.describe()}")
+    detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
+    return _row(
+        "install", shell.name, "todo", detail, command_argv("setup register", profile=profile)
+    )
 
 
 def _profile_row(shell: ApplicationSpec, profile: str, *, exists: bool) -> Row:

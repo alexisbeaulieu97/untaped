@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import threading
 from collections.abc import Callable, Iterable, Sequence
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +33,7 @@ from untaped_ansible.domain.payloads import (
     SkippedRef,
     SourceRepoMetadata,
 )
+from untaped_ansible.domain.variables import analyse
 from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.settings import SourceDefinition
@@ -140,6 +143,8 @@ class FakeGitCache:
         self.fetches: list[tuple[str, tuple[str, ...]]] = []
         self.reads: list[tuple[str, str, str]] = []
         self.read_calls: list[tuple[str, tuple[str, ...]]] = []
+        self.listings: list[tuple[str, str]] = []
+        self.blob_reads: list[tuple[str, tuple[str, ...]]] = []
         self.fail_fetches: set[str] = set()
         self.active_fetches = 0
         self.max_active_fetches = 0
@@ -180,6 +185,25 @@ class FakeGitCache:
                 if content is not None:
                     found[sha][path] = content
         return found
+
+    def list_files(self, url: str, sha: str) -> list[tuple[str, str]]:
+        name = _repo_name(url)
+        self.listings.append((name, sha))
+        return sorted(
+            (path, _blob(content))
+            for (repo, at, path), content in self.files.items()
+            if repo == name and at == sha
+        )
+
+    def read_blobs(self, url: str, blobs: Sequence[str]) -> dict[str, str]:
+        self.blob_reads.append((_repo_name(url), tuple(blobs)))
+        contents = {_blob(content): content for content in self.files.values()}
+        return {blob: contents[blob] for blob in blobs}
+
+
+def _blob(content: str) -> str:
+    """A content address for a fake store's file, as git's blob ids are."""
+    return hashlib.sha1(content.encode(), usedforsecurity=False).hexdigest()
 
 
 class InstrumentedIndex(SqliteDependencyIndex):
@@ -849,7 +873,7 @@ def test_git_refresh_reparses_unchanged_ref_when_parser_version_changes(
     h.run()
     h.run()
 
-    monkeypatch.setattr(refresh_git_index, "PARSER_VERSION", refresh_git_index.PARSER_VERSION + 1)
+    monkeypatch.setattr(refresh_git_index, "parser_version", lambda: "an edited parser")
     third = h.run()
 
     assert h.git.reads == [("site", "sha-main", _REQS)] * 2
@@ -875,3 +899,133 @@ def test_git_refresh_reindexes_moved_tags_and_prunes_unselected_refs(h: Harness)
     assert not h.dependents("acme/base", "v1")
     assert not h.dependents("acme/old")
     assert not h.cached("acme/site", "v-old", "tags")
+
+
+# --- variable analysis --------------------------------------------------------
+
+
+def _facts(h: Harness, *commits: tuple[str, str]) -> Any:
+    return h.index.variable_facts(commits, {"port"})
+
+
+def test_refresh_analyses_every_ref_reading_each_file_version_once(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()), ("tags/v1", "sha-v1", _base()))
+    for sha in ("sha-main", "sha-v1"):
+        h.git.files[("site", sha, "group_vars/all.yml")] = "port: 1\n"
+    h.git.files[("site", "sha-v1", "site.yml")] = "- hosts: all\n  vars:\n    port: 2\n"
+    h.git.files[("site", "sha-v1", "README.md")] = "port"
+
+    h.run()
+
+    facts = _facts(h, ("acme/site", "sha-main"), ("acme/site", "sha-v1"))
+    assert not facts.unanalysed
+    assert [fact.file for fact in facts.facts[("acme/site", "sha-v1")]] == [
+        "group_vars/all.yml",
+        "site.yml",
+    ]
+    assert [fact.file for fact in facts.facts[("acme/site", "sha-main")]] == ["group_vars/all.yml"]
+    # The requirements file and group_vars are shared: three file versions, each read once.
+    assert [len(blobs) for _, blobs in h.git.blob_reads] == [3]
+
+
+def test_a_second_refresh_with_nothing_moved_reads_no_files(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
+    h.git.files[("site", "sha-main", "group_vars/all.yml")] = "port: 1\n"
+    h.run()
+    h.git.blob_reads.clear()
+    h.git.listings.clear()
+
+    h.run()
+
+    assert h.git.blob_reads == []
+    assert h.git.listings == []
+
+
+def test_a_new_tag_analyses_only_the_file_that_changed(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
+    h.git.files[("site", "sha-main", "group_vars/all.yml")] = "port: 1\n"
+    h.run()
+    h.git.blob_reads.clear()
+    h.set_refs("acme/site", ("main", "sha-main", _base()), ("tags/v2", "sha-v2", _base()))
+    h.git.files[("site", "sha-v2", "group_vars/all.yml")] = "port: 2\n"
+
+    h.run()
+
+    assert [len(blobs) for _, blobs in h.git.blob_reads] == [1]
+    assert _facts(h, ("acme/site", "sha-v2")).facts[("acme/site", "sha-v2")][0].line == 1
+
+
+def test_a_new_analyser_version_reanalyses_without_reparsing_dependencies(
+    h: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
+    h.git.files[("site", "sha-main", "group_vars/all.yml")] = "port: 1\n"
+    h.run()
+    h.git.read_calls.clear()
+    monkeypatch.setattr(refresh_git_index, "analyser_version", lambda: "an edited analyser")
+
+    result = h.run()
+
+    assert result.changed_refs == 0
+    assert h.git.read_calls == []  # dependency files are not read again
+    assert (
+        h.index.commits_needing_analysis("acme/site", {"sha-main"}, analyser="an edited analyser")
+        == set()
+    )
+    assert _facts(h, ("acme/site", "sha-main")).facts
+
+
+def test_a_file_with_no_facts_is_stored_and_never_read_again(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
+    h.git.files[("site", "sha-main", "group_vars/all.yml")] = "{}\n"
+    h.run()
+    h.git.blob_reads.clear()
+    h.set_refs("acme/site", ("main", "sha-main", _base()), ("tags/v2", "sha-v2", _base()))
+    h.git.files[("site", "sha-v2", "group_vars/all.yml")] = "{}\n"
+
+    h.run()
+
+    # Both files' analyses are known by content, so no file is read.
+    assert [blob for _, blobs in h.git.blob_reads for blob in blobs] == []
+    assert not _facts(h, ("acme/site", "sha-v2")).unanalysed
+
+
+def test_a_file_the_analysis_skips_is_a_skipped_file_warning(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
+    h.git.files[("site", "sha-main", "templates/app.j2")] = "{% if %}"
+
+    result = h.run()
+
+    assert [(item.source_path, item.ref, item.analysis) for item in result.skipped_files] == [
+        ("templates/app.j2", "main", True)
+    ]
+    skipped = _facts(h, ("acme/site", "sha-main")).skipped
+    assert [path for path, _ in skipped[("acme/site", "sha-main")]] == ["templates/app.j2"]
+
+
+def test_a_repo_whose_files_cannot_be_read_is_never_marked_analysed(h: Harness) -> None:
+    source = _repos("acme/a", "acme/b")
+    h.set_refs("acme/a", ("main", "sha-a", _base()))
+    h.set_refs("acme/b", ("main", "sha-b", _base()))
+    h.git.fail_fetches.add("b")
+
+    h.run(source)
+
+    facts = _facts(h, ("acme/a", "sha-a"), ("acme/b", "sha-b"))
+    assert facts.unanalysed == {("acme/b", "sha-b")}
+
+
+def test_a_ref_dropped_from_the_source_drops_its_analysis(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-main", _base()), ("tags/v1", "sha-v1", _base()))
+    h.git.files[("site", "sha-v1", "group_vars/all.yml")] = "port: 1\n"
+    h.run()
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
+
+    h.run()
+
+    assert _facts(h, ("acme/site", "sha-v1")).unanalysed == {("acme/site", "sha-v1")}
+    with closing(sqlite3.connect(h.tmp_path / "index.sqlite3")) as db:
+        files = {row[0] for row in db.execute("select path from variable_files")}
+        facts = db.execute("select count(*) from variable_facts").fetchone()[0]
+    assert files == {_REQS}
+    assert facts == len(analyse(_REQS, h.git.files[("site", "sha-main", _REQS)]).facts)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from untaped.sdk import Cache, Retired, Store, code_version
+from untaped.sdk import Cache, Retired, Store, code_version, setting_guard
 from untaped_github.api import normalize_team_scopes
 
 DEFAULT_DEPENDENCY_PATHS = (
@@ -111,16 +112,62 @@ def default_index_path() -> Path:
 #: (a test holds them equal; importing the schema here would load the
 #: plugin's infrastructure at startup), not the schema version: an additive
 #: schema change keeps sharing the layout's file. ``bare=4``: 11.0 kept
-#: layout 4 at ``index.sqlite3``, renamed on first open.
-INDEX_STORE = Store("ansible", "index", base=default_index_path, layout=4, bare=4)
+#: layout 4 at ``index.sqlite3``, renamed on first open. A layout any
+#: profile points ``ansible.index_path`` at is that profile's index: it stays.
+INDEX_PATH_GUARD = setting_guard("ansible", "index_path")
+INDEX_STORE = Store(
+    "ansible", "index", base=default_index_path, layout=4, bare=4, keep=INDEX_PATH_GUARD
+)
 
 
-def _parser_version() -> str:
-    return code_version("untaped_ansible.domain.parser", distributions=("untaped-ansible",))
+def parser_version() -> str:
+    """The version of what a ref's dependency edges are made by: the parser and identity code.
+
+    Folded into the dependency paths fingerprint, so an edit to the parser,
+    identity or the models they build (or a PyYAML upgrade) re-parses every
+    ref: there is no number to forget to bump. The parser uses PyYAML's pure
+    Python loader, so libyaml does not count.
+    """
+    return ":".join(
+        (
+            code_version("untaped_ansible.domain.parser", distributions=("PyYAML",)),
+            code_version("untaped_ansible.domain.identity"),
+            code_version("untaped_ansible.domain.models"),
+        )
+    )
 
 
-#: The dependency index: each source's refs and edges, refreshed past a day,
-#: and again when the parser that filled a source changed.
+def analyser_version() -> str:
+    """The version of the variable analysis: its modules, jinja2 and PyYAML (with libyaml or not).
+
+    The analyser imports nothing first-party but its data types (a test
+    holds it), so the two modules' text and those libraries are everything
+    that decides its facts.
+    """
+    return ":".join(
+        (
+            code_version(
+                "untaped_ansible.domain.variables",
+                distributions=("jinja2", "PyYAML"),
+                extra=(_libyaml(),),
+            ),
+            code_version("untaped_ansible.domain.variable_models"),
+        )
+    )
+
+
+def _libyaml() -> str:
+    """Whether PyYAML's C loader is present, found without importing it."""
+    return f"libyaml={importlib.util.find_spec('yaml._yaml') is not None}"
+
+
+def _index_version() -> str:
+    return f"{parser_version()}:{analyser_version()}"
+
+
+#: The dependency index: each source's refs, edges and variable facts,
+#: refreshed past a day, and again when the code that filled a source
+#: (the dependency parser or the variable analysis) changed.
 INDEX = Cache(
     "ansible",
     "index",
@@ -128,7 +175,7 @@ INDEX = Cache(
     max_age=timedelta(days=1),
     renamed_from=("stale_after_seconds",),
     removed_in=12,
-    version=_parser_version,
+    version=_index_version,
     store=INDEX_STORE,
 )
 

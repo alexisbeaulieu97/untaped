@@ -485,6 +485,14 @@ class _GraphBuilder:
         relation: Literal["requires", "impacts"],
         indexed: IndexedDependency,
     ) -> None:
+        if indexed.source_sha is not None:
+            # The edge's source is the node ``indexed`` was read from, in both
+            # directions; a second source can hold it at another commit.
+            node = self._nodes[source_id]
+            if indexed.source_sha not in node.shas:
+                self._nodes[source_id] = node.model_copy(
+                    update={"shas": node.shas | {indexed.source_sha}}
+                )
         key = (source_id, target_id, relation)
         if key in self._seen_edges:
             return

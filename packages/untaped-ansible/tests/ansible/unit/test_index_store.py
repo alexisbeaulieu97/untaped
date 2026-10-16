@@ -11,6 +11,7 @@ import pytest
 
 from untaped.sdk import Filled, Store, code_version
 from untaped.testing import assert_schema_pinned
+from untaped_ansible import settings
 from untaped_ansible.infrastructure import open_index
 from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE, SCHEMA_SQL, SCHEMA_VERSION
 from untaped_ansible.settings import INDEX, INDEX_STORE, AnsibleSettings, default_index_path
@@ -56,6 +57,17 @@ def test_a_key_filled_by_another_parser_is_outdated(monkeypatch: pytest.MonkeyPa
 
     other = code_version("untaped_ansible.domain.parser", extra=("an edited parser",))
     monkeypatch.setattr(INDEX, "version", lambda: other)
+    assert INDEX.freshness("source:prod").outdated is True
+
+
+def test_a_key_filled_by_another_analyser_is_outdated(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fill(_key: str, _progress: object) -> Filled:
+        return Filled()
+
+    INDEX.serve({"source:prod": "source prod"}, refresh=True, fill=fill, read=lambda: None)
+    assert INDEX.freshness("source:prod").outdated is False
+    monkeypatch.setattr(settings, "analyser_version", lambda: "an edited analyser")
+
     assert INDEX.freshness("source:prod").outdated is True
 
 
@@ -124,3 +136,69 @@ def test_open_index_is_the_only_way_the_plugin_opens_the_index() -> None:
             and node.func.id == "SqliteDependencyIndex"
         ]
     assert callers == [], "open the index with open_index(settings), not SqliteDependencyIndex()"
+
+
+# --- cleanup -------------------------------------------------------------------
+
+
+def _fill_index() -> None:
+    def fill(_key: str, _progress: object) -> Filled:
+        return Filled()
+
+    INDEX.serve({"source:prod": "source prod"}, refresh=True, fill=fill, read=lambda: None)
+
+
+def test_a_registered_install_removes_the_layout_nothing_holds_after_a_fill() -> None:
+    from untaped import refs
+
+    refs.register(["ansible.index@4"])
+    newer = _plugin() / "index.v5.sqlite3"
+    _sqlite(newer, "a one-off's layout 5")
+    (_plugin() / "caches" / "index.v5" / "default").mkdir(parents=True)
+
+    open_index(AnsibleSettings())
+    _fill_index()
+
+    assert not newer.exists()
+    assert not (_plugin() / "caches" / "index.v5").exists()
+    assert (_plugin() / "caches" / "index.v4").is_dir()
+
+
+def test_an_unregistered_install_keeps_both_layouts() -> None:
+    newer = _plugin() / "index.v5.sqlite3"
+    _sqlite(newer, "layout 5")
+    open_index(AnsibleSettings())
+    _fill_index()
+    assert _mark(newer) == "layout 5"
+
+
+def test_a_set_index_path_never_prunes_the_default_place(tmp_path: Path) -> None:
+    from untaped import refs
+
+    refs.register(["ansible.index@4"])
+    newer = _plugin() / "index.v5.sqlite3"
+    _sqlite(newer, "layout 5")
+    open_index(AnsibleSettings(index_path=tmp_path / "idx.sqlite3"))
+    _fill_index()
+    assert _mark(newer) == "layout 5"
+
+
+def test_a_layout_a_profile_points_index_path_at_is_never_pruned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Another profile's index stays, while a run on the default path fills and prunes."""
+    from untaped import refs
+
+    refs.register(["ansible.index@4"])
+    pinned = _plugin() / "index.v3.sqlite3"
+    _sqlite(pinned, "a profile's own index")
+    monkeypatch.setenv("UNTAPED_ANSIBLE__INDEX_PATH", str(pinned))  # what the guard reads
+    open_index(AnsibleSettings())  # this run's own settings: the default path
+    _fill_index()
+    assert _mark(pinned) == "a profile's own index"
+
+
+def test_the_index_offers_its_leftover_layouts_to_migrate_dirs() -> None:
+    from untaped_ansible import SPEC
+
+    assert "ansible.index-layouts" in [migration.id for migration in SPEC.migrations]

@@ -154,6 +154,7 @@ def test_a_10x_layout_moves_into_the_store(
     outcomes = {row["id"]: row["action"] for row in json.loads(applied.stdout)}
     assert outcomes == {
         "ansible.index": "moved",
+        "ansible.index-layouts": "unchanged",
         "ansible.cache": "deleted",
         "ansible.repositories": "deleted",
         "dotfiles.data": "moved",

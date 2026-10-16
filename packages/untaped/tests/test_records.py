@@ -30,6 +30,7 @@ from untaped.output.diagnostic import (
     DeprecationNotice,
     Message,
     Progress,
+    Pruned,
     StaleData,
     WireModel,
 )
@@ -539,6 +540,7 @@ def _samples() -> dict[str, WireModel]:
         InstalledSkillRow,
         MigrationPreviewRow,
         PluginCheckRow,
+        RegisterOutcome,
         ScaffoldOutcome,
         SetupStep,
         SkillOutcome,
@@ -571,6 +573,22 @@ def _samples() -> dict[str, WireModel]:
             now=datetime(2026, 10, 10, tzinfo=UTC),
             max_age=timedelta(hours=1),
             error=Failure.from_exception(ConfigError("x")),
+        ),
+        Pruned(
+            message=(
+                "removed layout 4 of store hello.shelf at /x/shelf.v4.db (1 B): nothing holds it"
+            ),
+            store="hello.shelf",
+            layout=4,
+            path="/x/shelf.v4.db",
+            bytes=1,
+        ),
+        RegisterOutcome(
+            action="registered",
+            holder="install:3f9a1c2e8b7d",
+            environment="/x/site-packages",
+            version="11.1.0",
+            layouts=["hello.shelf@4"],
         ),
         DeprecationNotice(
             id="cli untaped hello old",
@@ -673,6 +691,21 @@ def _samples() -> dict[str, WireModel]:
             CorpusRepoResult(full_name="acme/api", ref="main", path="/s/acme/api.git"),
             RepoSweepOutcome(full_name="acme/api", hits={"a.yml": 2}, owners=("@acme/team",)),
         ]
+    if "untaped_ansible" in _SHIPPED:
+        from untaped_ansible.domain.variable_queries import Dependent, VariableUseHit
+
+        rows.append(
+            VariableUseHit(
+                variable="port",
+                repo="acme/web",
+                ref=None,
+                file="site.yml",
+                line=3,
+                key_path=[0, "ansible.builtin.set_fact", "port"],
+                how="sets",
+                dependent=Dependent(repo="acme/web", ref=None, path=["acme/web", "acme/role"]),
+            )
+        )
     if "untaped_lint" in _SHIPPED:
         from untaped_lint.records import FileLocation, Finding, Rule, Subject
 

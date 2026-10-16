@@ -120,6 +120,21 @@ class MigrationPreviewRow(Record, kind="untaped.migration_row"):
     error: _RowError = None
 
 
+class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
+    """What ``setup register`` did: ``registered``, ``unchanged``, ``removed`` or ``gone``.
+
+    ``environment`` is the directory holding untaped's distribution,
+    ``layouts`` the ``<plugin>.<store>@<layout>`` targets the reference names.
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("action", "version", "environment", "layouts")
+
+    holder: str
+    environment: str
+    version: str | None
+    layouts: list[str]
+
+
 SetupState = Literal["done", "todo", "failed", "skipped"]
 """Where a ``setup plan`` step stands."""
 

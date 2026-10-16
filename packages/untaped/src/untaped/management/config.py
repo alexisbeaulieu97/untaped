@@ -465,13 +465,29 @@ def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> 
         if not rows:
             _diag.info("no renamed, retired or deleted keys in the config")
         else:
+            others = _other_readers()
             if dry_run:
                 _diag.info(f"would {_migration_summary(rows, past=False)}")
             else:
                 _diag.success(_migration_summary(rows, past=True))
+            if others:
+                _diag.warning(others)
         if dry_run:
             rows = [{**row, "action": "planned"} for row in rows]
         emit([ConfigMigrationOutcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
+
+
+def _other_readers() -> str:
+    """Who else may still read the old keys, as one sentence; ``""`` when nobody."""
+    from untaped.refs import others_text  # noqa: PLC0415 - reads refs/ only here
+
+    others = others_text()
+    if not others:
+        return ""
+    return (
+        f"other untaped installs here may still read the old keys ({others}): "
+        "migrate once every install is upgraded"
+    )
 
 
 def _migration_summary(rows: list[dict[str, str]], *, past: bool) -> str:
