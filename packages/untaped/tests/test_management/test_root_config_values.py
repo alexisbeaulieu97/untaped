@@ -8,7 +8,9 @@ blocks reading or repairing the rest of the config through the CLI.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -25,6 +27,7 @@ from untaped.config_file import read_config_dict
 from untaped.management.config import build_root_config_app
 from untaped.settings import FORMAT_VERSION
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_cli
+from untaped.theme import THEME_CHOICES
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -303,6 +306,31 @@ def test_prompt_repairs_key_in_invalid_section(_isolated_config: Path) -> None:
     assert _default_profile(_isolated_config)["jira"] == {"timeout": 12.0}
     # The raw stored (invalid) value is offered as the default.
     assert backend.calls == [("text", "Value for jira.timeout")]
+
+
+class _RecordingBackend(ScriptedPromptBackend):
+    """Keeps the choices each select offered."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.offered: list[list[object]] = []
+
+    def select(self, message: str, choices: Sequence[Any], **kwargs: Any) -> Any:
+        self.offered.append([choice.value for choice in choices])
+        return super().select(message, choices, **kwargs)
+
+
+def test_prompt_selects_from_a_fields_declared_choices(_isolated_config: Path) -> None:
+    backend = _RecordingBackend(selections=["plain"])
+    result = invoke_cli(
+        bootstrap.build_root_app(candidates=()),
+        ["config", "set", "ui.theme", "--prompt"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+    assert result.exit_code == 0, result.output
+    assert backend.offered == [sorted(THEME_CHOICES.names())]
+    assert _default_profile(_isolated_config)["ui"] == {"theme": "plain"}
 
 
 # ── non-scalar (mapping / list) settings ─────────────────────────────────────

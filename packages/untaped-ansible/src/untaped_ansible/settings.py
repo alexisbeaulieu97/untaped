@@ -81,15 +81,46 @@ class AnsibleSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    index_path: Path = Path("~/.untaped/plugins/ansible/index.sqlite3")
-    default_source: str | None = None
-    ref_scan_default: Literal["all", "default_branch"] = "all"
-    source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"
-    git_fetch_parallel: int = Field(default=8, ge=1, le=32)
-    probe_parallel: int = Field(default=8, ge=1, le=32)
-    source_refresh_repo_batch_size: int = Field(default=100, ge=1)
-    source_refresh_rate_limit_floor: int = Field(default=500, ge=0)
-    dependency_paths: list[str] = Field(default_factory=lambda: list(DEFAULT_DEPENDENCY_PATHS))
+    index_path: Path = Field(
+        default=Path("~/.untaped/plugins/ansible/index.sqlite3"),
+        description=(
+            "SQLite cache of refreshed source data. At this default the file is "
+            "`index.v<layout>.sqlite3` beside it, one per layout; a path you set is "
+            "used as it is."
+        ),
+    )
+    default_source: str | None = Field(
+        default=None,
+        description=(
+            "Saved source `deps`, `impact`, `find` and `graph` use when no "
+            "`--source` or inline selector is given."
+        ),
+    )
+    ref_scan_default: Literal["all", "default_branch"] = Field(
+        default="all",
+        description="Refs a source scans: `all` refs or each repo's default branch.",
+    )
+    source_refresh_backend: Literal["auto", "graphql", "git"] = Field(
+        default="auto", description="Ref probe backend for source refresh."
+    )
+    git_fetch_parallel: int = Field(
+        default=8, ge=1, le=32, description="Default `--parallel` of a source refresh."
+    )
+    probe_parallel: int = Field(
+        default=8, ge=1, le=32, description="Concurrent ref probes during source refresh."
+    )
+    source_refresh_repo_batch_size: int = Field(
+        default=100, ge=1, description="Repos committed per source refresh batch."
+    )
+    source_refresh_rate_limit_floor: int = Field(
+        default=500,
+        ge=0,
+        description="Stop a refresh (resumable) when the GraphQL budget drops below this.",
+    )
+    dependency_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_DEPENDENCY_PATHS),
+        description="Dependency files scanned in each repo.",
+    )
 
 
 class AnsibleState(BaseModel):
@@ -97,8 +128,16 @@ class AnsibleState(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    sources: list[SourceDefinition] = Field(default_factory=list)
-    aliases: dict[str, str] = Field(default_factory=dict)
+    sources: list[SourceDefinition] = Field(
+        default_factory=list, description="Saved sources. Managed by `ansible source` commands."
+    )
+    aliases: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Role or Galaxy name to `owner/repo` aliases. Managed by `ansible "
+            "source-alias` commands."
+        ),
+    )
 
 
 def default_index_path() -> Path:

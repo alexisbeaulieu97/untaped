@@ -55,9 +55,8 @@ def test_config_reference_is_current() -> None:
 
 def test_every_setting_has_a_description() -> None:
     assert generator.missing_descriptions() == [], (
-        "add Field(description=...) or a DESCRIPTIONS entry in scripts/gen_config_reference.py"
+        "add Field(description=...) to the setting; the config reference reads it"
     )
-    assert generator.unknown_descriptions() == [], "DESCRIPTIONS names a setting that is gone"
 
 
 _SETTING_ROW = re.compile(r"^\| `([a-z_]+)\.[^`]+` \|.*\| (.*) \|$", re.MULTILINE)
