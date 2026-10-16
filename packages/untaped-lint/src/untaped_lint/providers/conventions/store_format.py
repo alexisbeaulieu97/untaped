@@ -87,10 +87,10 @@ def _calls(
             yield node, opener
     for function in functions:
         yield from _calls(function.body, seen if functions_see is None else functions_see)
+    # A class body never sees the class around it, only the function or module.
+    outer = seen if functions_see is None else functions_see
     for class_ in classes:
-        yield from _calls(
-            class_.body, seen, functions_see=seen if functions_see is None else functions_see
-        )
+        yield from _calls(class_.body, outer, functions_see=outer)
 
 
 def _bindings(nodes: Sequence[ast.AST]) -> _Bindings:

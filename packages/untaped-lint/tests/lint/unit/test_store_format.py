@@ -105,7 +105,7 @@ def test_an_import_inside_a_function_binds_only_there(tmp_path: Path) -> None:
 def test_a_decorator_default_or_class_body_sees_the_scope_python_runs_it_in(
     tmp_path: Path,
 ) -> None:
-    """Decorators and defaults run outside the function; methods never see the class body."""
+    """Decorators and defaults run outside the function; nothing nested sees a class body."""
     source = """\
         def outer():
             @deco(open(plugin_dir(SPEC) / "a.txt"))
@@ -121,6 +121,9 @@ def test_a_decorator_default_or_class_body_sees_the_scope_python_runs_it_in(
 
             def notes(self):
                 return open(plugin_dir(SPEC) / "notes.txt")
+
+            class Inner:
+                handle = open(plugin_dir(SPEC) / "inner.txt")
         """
     assert _violations(tmp_path, source) == [_line(6, "shelve.open"), _line(11, "shelve.open")]
 
