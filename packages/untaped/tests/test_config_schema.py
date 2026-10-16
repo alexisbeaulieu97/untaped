@@ -8,6 +8,7 @@ from annotated_types import Ge, Gt
 from pydantic import BaseModel, Field, SecretStr
 
 from untaped.config_schema import (
+    Choices,
     FieldDescriptor,
     find_descriptor,
     redact_secrets,
@@ -207,3 +208,23 @@ def test_redact_url_password_masks_only_the_password(value: str, expected: str) 
 def test_redact_secrets_masks_url_passwords_in_any_string_leaf() -> None:
     out = redact_secrets({"http": {"proxy": "http://u:p@h"}, "tags": ["https://u:p@h"]}, [])
     assert out == {"http": {"proxy": "http://u:***@h"}, "tags": ["https://u:***@h"]}
+
+
+class _Chosen(BaseModel):
+    pick: Annotated[str, Choices(lambda: ("b", "a"), "letters", noun="letter")] = "a"
+    names: Annotated[dict[str, str], Choices(lambda: ("x",), "names")] = Field(default_factory=dict)
+    plain: str = ""
+
+
+def test_choices_reach_the_descriptor_and_name_the_strays() -> None:
+    leaves = {d.key: d for d in walk_settings(_Chosen, include_collections=True)}
+    pick, names = leaves["pick"].choices, leaves["names"].choices
+    assert leaves["plain"].choices is None
+    assert pick is not None and names is not None
+    assert pick.names() == ("b", "a")
+    assert pick.refusal("a") is None
+    assert pick.refusal("z") == "unknown letter 'z'; valid letters: a, b"
+    assert names.refusal({"x": "1"}) is None
+    assert names.refusal({"x": "1", "y": "2", "w": "3"}, prefix="ui.names") == (
+        "unknown name ui.names.w, ui.names.y. Valid names: x"
+    )

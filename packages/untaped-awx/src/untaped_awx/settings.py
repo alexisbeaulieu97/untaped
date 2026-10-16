@@ -21,14 +21,46 @@ class AwxSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
-    api_prefix: str = "/api/controller/v2/"
-    default_organization: str | None = None
-    page_size: int = Field(default=200, gt=0)
-    test_timeout_seconds: Annotated[float, experimental, Field(gt=0)] = 1800
-    test_parallel: Annotated[int, experimental, Field(gt=0)] = 4
+    base_url: str | None = Field(
+        default=None, description="AWX/AAP URL, for example `https://aap.example.com`."
+    )
+    token: SecretStr | None = Field(
+        default=None,
+        description=(
+            "AWX/AAP API token. Falls back to `token_command`, then "
+            "`CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`."
+        ),
+    )
+    token_command: TokenCommand = Field(
+        default=None,
+        description=(
+            "Command (argv list, no shell) that prints the token; used when `awx.token` is unset."
+        ),
+    )
+    api_prefix: str = Field(
+        default="/api/controller/v2/",
+        description="API prefix. Standalone AWX usually uses `/api/v2/`.",
+    )
+    default_organization: str | None = Field(
+        default=None,
+        description="Organization that scopes name lookups and `apply` documents without one.",
+    )
+    page_size: int = Field(default=200, gt=0, description="Results requested per AWX API page.")
+    test_timeout_seconds: Annotated[
+        float,
+        experimental,
+        Field(
+            gt=0,
+            description=(
+                "Seconds a `test run` case waits before its job is cancelled, unless "
+                "`--timeout`, the case's `timeout:` or the suite's `defaults.timeout` "
+                "sets it."
+            ),
+        ),
+    ] = 1800
+    test_parallel: Annotated[
+        int, experimental, Field(gt=0, description="Default `test run --parallel`.")
+    ] = 4
 
     @field_validator("api_prefix")
     @classmethod

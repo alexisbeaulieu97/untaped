@@ -27,13 +27,27 @@ class WorkspaceSettings(BaseModel):
         "protocol": Retired(note="deleted in 11.0; set github.git_protocol"),
     }
 
-    workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
-    parallel: int | None = Field(default=None, ge=1)
+    workspaces_dir: Path = Field(
+        default=Path("~/.untaped/workspaces"),
+        description="Parent directory of every workspace (`<workspaces_dir>/NAME`).",
+    )
+    parallel: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Default workers for `create`/`add`/`run` and for status/archive "
+            "checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are "
+            "clamped."
+        ),
+    )
     """Workers for ``create``/``add`` checkouts and ``status``/``archive`` checks.
 
     ``None`` means ``min(8, 2 x CPUs)``.
     """
-    branch_template: str = "{name}"
+    branch_template: str = Field(
+        default="{name}",
+        description="Branch name for writable repos; `{name}` is the workspace name.",
+    )
 
 
 class WorkspaceState(BaseModel):
@@ -41,5 +55,9 @@ class WorkspaceState(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    active: list[WorkspaceRecord] = Field(default_factory=list)
-    archived: list[ArchivedRecord] = Field(default_factory=list)
+    active: list[WorkspaceRecord] = Field(
+        default_factory=list, description="Active workspaces. Managed by `workspace` commands."
+    )
+    archived: list[ArchivedRecord] = Field(
+        default_factory=list, description="Archived workspaces. Managed by `workspace` commands."
+    )

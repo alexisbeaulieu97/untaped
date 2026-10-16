@@ -30,6 +30,7 @@ from untaped.surface._types import choice_text, default_text, node_token, schema
 if TYPE_CHECKING:
     from cyclopts import App
 
+    from untaped.config_schema import Choices
     from untaped.plugins.registry import CompositionResult
     from untaped.stability import Stability
 
@@ -63,6 +64,8 @@ class Setting:
     description: str | None
     mark: Stability | None
     """The key's own mark, else its plugin's."""
+    choices: Choices | None = None
+    """The names the key accepts, when its field declares them."""
 
 
 def check_quarantine(result: CompositionResult) -> None:
@@ -136,6 +139,7 @@ def setting_leaves(section: Section) -> list[Setting]:
             optional=leaf.optional,
             default=leaf.default,
             description=leaf.description,
+            choices=leaf.choices,
             mark=None
             if section.is_state
             else setting_mark(

@@ -15,8 +15,19 @@ class SweepSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    max_age_seconds: int = Field(default=3600, ge=0)
-    parallel: int = Field(default=12, ge=1)
+    max_age_seconds: int = Field(
+        default=3600,
+        ge=0,
+        description=(
+            "`sweep` and `cache sync` refresh cached repos older than this that "
+            "GitHub reports as pushed since."
+        ),
+    )
+    parallel: int = Field(
+        default=12,
+        ge=1,
+        description="Default `sweep --parallel` and `cache sync --parallel` Git workers.",
+    )
 
 
 class InventorySettings(BaseModel):
@@ -24,8 +35,20 @@ class InventorySettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    orgs: list[str] = Field(default_factory=list)
-    teams: list[str] = Field(default_factory=list)
+    orgs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Orgs whose repositories github lists for workspace (repo names, the "
+            "picker). With no orgs or teams, `github.default_org`."
+        ),
+    )
+    teams: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in "
+            "`github.default_org`) whose repositories github lists for workspace."
+        ),
+    )
 
 
 _INVENTORY_NOTE = (
@@ -49,10 +72,39 @@ class GithubSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    base_url: str = "https://api.github.com"
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
-    default_org: str | None = None
-    git_protocol: Literal["https", "ssh"] = "https"
+    base_url: str = Field(
+        default="https://api.github.com",
+        description="GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",
+    )
+    token: SecretStr | None = Field(
+        default=None,
+        description=(
+            "GitHub token for API calls and Git fetches. Falls back to "
+            "`token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`."
+        ),
+    )
+    token_command: TokenCommand = Field(
+        default=None,
+        description=(
+            "Command (argv list, no shell) that prints the token; used when "
+            "`github.token` is unset."
+        ),
+    )
+    default_org: str | None = Field(
+        default=None,
+        description=(
+            "Org scope for `repos list`, `search` (repos, code, issues), `sweep`, "
+            "`cache sync` and `cache prune` when no scope flag is given. Without "
+            "it, search uses `@me`."
+        ),
+    )
+    git_protocol: Literal["https", "ssh"] = Field(
+        default="https",
+        description=(
+            "How `sweep`, `cache sync`, workspace and `ansible source refresh` "
+            "fetch repos on the GitHub host: `https` or `ssh` "
+            "(`git@HOST:OWNER/NAME.git`)."
+        ),
+    )
     sweep: SweepSettings = Field(default_factory=SweepSettings)
     inventory: InventorySettings = Field(default_factory=InventorySettings)

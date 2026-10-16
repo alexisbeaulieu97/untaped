@@ -14,8 +14,20 @@ class GitSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    store_dir: Path = Field(default=Path("~/.untaped/plugins/git/store"))
-    untaped_helper_only: bool = False
+    store_dir: Path = Field(
+        default=Path("~/.untaped/plugins/git/store"),
+        description=(
+            "Root of the repo store: one shared bare repository per remote, under "
+            "`<store_dir>/<host>/<path>.git`."
+        ),
+    )
+    untaped_helper_only: bool = Field(
+        default=False,
+        description=(
+            "In untaped's worktrees, ask only untaped for a host's credentials, "
+            "instead of your own Git credential helpers first."
+        ),
+    )
 
 
 def git_settings() -> GitSettings:
