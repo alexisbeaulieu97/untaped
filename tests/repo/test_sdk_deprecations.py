@@ -12,25 +12,19 @@ plugin's.
 from __future__ import annotations
 
 import importlib
-from importlib.util import find_spec
 
 import pytest
 
 from repo.support import FIRST_PARTY, REPO_ROOT, SURFACE_FILE
 from untaped.conventions.stability import deprecation_text_violations
-from untaped.surface import SDK_MODULES, DeprecatedMark, parse
+from untaped.surface import SDK_MODULES, DeprecatedMark, parse, plugin_sdk_modules
 
 SURFACE = REPO_ROOT / SURFACE_FILE
 
 MODULES = sorted(
     {
         *SDK_MODULES,
-        *(
-            path
-            for name in FIRST_PARTY
-            for path in (f"untaped_{name}.api", f"untaped_{name}.testing")
-            if find_spec(path) is not None
-        ),
+        *(path for name in FIRST_PARTY for path in plugin_sdk_modules(f"untaped_{name}")),
     }
 )
 

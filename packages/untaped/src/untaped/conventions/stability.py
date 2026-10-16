@@ -70,12 +70,13 @@ from untaped.stability import (
     children,
     class_mark,
     deprecation_sentence,
+    descriptor_function,
     field_descriptions,
     function_mark,
     mark_of,
     marks,
-    parameter_marks,
     pydantic_deprecated_fields,
+    read_parameter_marks,
     replacement_path,
     warns_parameters,
 )
@@ -277,13 +278,17 @@ def undated_violations(spec: PluginSpec) -> list[str]:
     groups, aliases, settings, renamed keys and cache renames. Its ``sdk``
     lines are :func:`deprecation_text_violations`' to report.
     """
-    from untaped.surface import DeprecatedMark, plugin_lines  # noqa: PLC0415
+    from untaped.surface import DeprecatedMark, SurfaceError, plugin_lines  # noqa: PLC0415
 
     try:
         lines = plugin_lines(spec)
+    except SurfaceError as exc:
+        return [
+            f"{spec.name}::undated-deprecation::its marks can't be read from its surface "
+            f"({exc}); untaped.testing.assert_surface shows the same"
+        ]
     except Exception:
-        # A surface the walker can't read (a contracts function that fails, an export it
-        # can't classify) is another check's finding; this rule only reads marks.
+        # A contracts function that fails is the contracts row's finding.
         return []
     return [
         f"{line.identity}::undated-deprecation::{_UNDATED}"
@@ -306,13 +311,18 @@ def deprecation_text_violations(module: ModuleType) -> list[str]:
     ``@deprecated_parameters`` is ``unwarned-parameter``. Nothing compares at
     import: the repo test and ``untaped lint`` run this before a merge.
     """
+    from untaped.surface._sdk import foreign  # noqa: PLC0415 - surface imports conventions
+
+    package = module.__name__.partition(".")[0]
     found: list[str] = []
     for name, obj in _exports(module):
+        if foreign(obj) and str(getattr(obj, "__module__", "")).partition(".")[0] != package:
+            continue  # another library's deprecation is not this module's to date
         where = f"{module.__name__}.{name}"
         found.extend(f"{where}::{rule}::{detail}" for rule, detail in _callable_violations(obj))
-        if isinstance(obj, type) and obj.__module__.startswith(_PACKAGES):
+        if isinstance(obj, type):
             for member, value in vars(obj).items():
-                if not member.startswith("_"):
+                if member == "__init__" or not member.startswith("_"):
                     found.extend(
                         f"{where}.{member}::{rule}::{detail}"
                         for rule, detail in _callable_violations(value)
@@ -320,20 +330,21 @@ def deprecation_text_violations(module: ModuleType) -> list[str]:
     return sorted(set(found))
 
 
-_PACKAGES = ("untaped.", "untaped_")
-
-
 def _exports(module: ModuleType) -> list[tuple[str, object]]:
+    """``__all__``'s objects, else the public names ``module`` defines itself."""
     names = getattr(module, "__all__", None)
     if names is None:
-        names = [name for name in vars(module) if not name.startswith("_")]
+        names = [
+            name
+            for name, obj in vars(module).items()
+            if not name.startswith("_") and getattr(obj, "__module__", None) == module.__name__
+        ]
     return [(name, getattr(module, name)) for name in sorted(set(names)) if hasattr(module, name)]
 
 
 def _callable_violations(obj: object) -> Iterator[tuple[str, str]]:
     """The rules for one exported function, class or class member."""
-    target = obj.fget if isinstance(obj, property) else obj
-    target = getattr(target, "__func__", target)
+    target = descriptor_function(obj)
     if isinstance(target, type):
         mark, literal = class_mark(target), vars(target).get("__deprecated__")
     elif inspect.isfunction(target):
@@ -368,7 +379,13 @@ def _callable_violations(obj: object) -> Iterator[tuple[str, str]]:
 def _parameter_violations(
     function: Callable[..., Any], declared: object
 ) -> Iterator[tuple[str, str]]:
-    marked = parameter_marks(function)
+    marked, unreadable = read_parameter_marks(function)
+    for name, problem in sorted(unreadable.items()):
+        yield (
+            "unwarned-parameter",
+            f"{name}=: its deprecated(...) mark can't be evaluated where the function is "
+            f"defined, so it never warns ({problem}); name only module-level objects in it",
+        )
     for name, mark in sorted(marked.items()):
         if mark.removed_in is None:
             yield "undated-deprecation", f"{name}=: {_UNDATED}"

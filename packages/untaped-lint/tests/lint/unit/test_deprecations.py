@@ -55,12 +55,15 @@ def test_a_marked_parameter_without_the_decorator_is_a_violation(tmp_path: Path)
         @deprecated_parameters
         def fine(rows, *, kind: Annotated[str | None, deprecated(removed_in=3)] = None): ...
         def other(rows, *, kind: Annotated[str, "deprecated"] = ""): ...
+        def optional(*, old: Annotated[bool, deprecated(removed_in=3)] | None = None): ...
     """
     assert _violations(tmp_path, source) == [
         "acme/api.py:4::unwarned-parameter::emit(kind=) is marked deprecated but nothing warns "
         "when it is passed; add @deprecated_parameters",
         "acme/api.py:5::unwarned-parameter::fetch(x=) is marked deprecated but nothing warns "
         "when it is passed; add @deprecated_parameters",
+        "acme/api.py:9::unwarned-parameter::optional(old=) is marked deprecated but nothing "
+        "warns when it is passed; add @deprecated_parameters",
     ]
 
 

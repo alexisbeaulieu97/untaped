@@ -72,13 +72,15 @@ class _Marker:
         On a descriptor (``classmethod``, ``staticmethod``, ``property``) the mark
         lands on its function, where the surface walker reads it.
         """
-        inner: object = target
-        if isinstance(inner, classmethod | staticmethod):
-            inner = inner.__func__
-        elif isinstance(inner, property) and inner.fget is not None:
-            inner = inner.fget
-        setattr(inner, _FUNCTION_ATTR, self)
+        setattr(descriptor_function(target), _FUNCTION_ATTR, self)
         return target
+
+
+def descriptor_function(obj: object) -> object:
+    """The function under a ``classmethod``, ``staticmethod``, ``property`` or bound method."""
+    if isinstance(obj, property):
+        return obj.fget if obj.fget is not None else obj
+    return getattr(obj, "__func__", obj)
 
 
 @dataclass(frozen=True)
@@ -887,16 +889,28 @@ def deprecated_parameters[F: Callable[..., Any]](function: F, /) -> F:
     parameter is the declaration (its surface line shows it); the decorator
     is what warns. Signatures see through it, and an ``async def`` stays one.
     """
+    if isinstance(function, classmethod | staticmethod | property):
+        raise TypeError(
+            f"put @deprecated_parameters under @{type(function).__name__}, on the function"
+        )
     marked: dict[str, Deprecated] | None = None
+    signature: inspect.Signature | None = None
+    by_keyword_only = False
 
     def warn_for(args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
-        nonlocal marked
+        nonlocal marked, signature, by_keyword_only
         if marked is None:
+            signature = inspect.signature(function)
             marked = parameter_marks(function)
-        if not marked:
+            keyword_only = inspect.Parameter.KEYWORD_ONLY
+            by_keyword_only = all(signature.parameters[n].kind is keyword_only for n in marked)
+        if not marked or ((by_keyword_only or not args) and not kwargs.keys() & marked.keys()):
             return
-        bound = inspect.signature(function).bind_partial(*args, **kwargs).arguments
-        for name in marked.keys() & bound.keys():
+        try:
+            bound = typing.cast(inspect.Signature, signature).bind_partial(*args, **kwargs)
+        except TypeError:
+            return  # the call itself raises, in Python's words
+        for name in marked.keys() & bound.arguments.keys():
             mark = marked[name]
             subject = f"{function.__qualname__}({name}=)"
             shown = sdk_replacement_text(mark)
@@ -931,9 +945,7 @@ def deprecated_parameters[F: Callable[..., Any]](function: F, /) -> F:
 
 def warns_parameters(function: object) -> bool:
     """Whether ``function`` (or a descriptor's) is under :func:`deprecated_parameters`."""
-    target = getattr(function, "__func__", function)
-    target = target.fget if isinstance(target, property) else target
-    return bool(getattr(target, _PARAMETERS_ATTR, False))
+    return bool(getattr(descriptor_function(function), _PARAMETERS_ATTR, False))
 
 
 def parameter_marks(function: Callable[..., Any]) -> dict[str, Deprecated]:
@@ -941,52 +953,80 @@ def parameter_marks(function: Callable[..., Any]) -> dict[str, Deprecated]:
 
     Reads the annotations without evaluating them (``annotationlib``,
     ``FORWARDREF``) and evaluates only a string annotation's ``Annotated``
-    metadata, so a hint imported under ``TYPE_CHECKING`` never raises.
+    metadata, so a hint imported under ``TYPE_CHECKING`` never raises. The
+    ``Annotated`` may sit inside a union (``Annotated[bool, deprecated(...)] | None``).
     """
+    return read_parameter_marks(function)[0]
+
+
+def read_parameter_marks(
+    function: Callable[..., Any],
+) -> tuple[dict[str, Deprecated], dict[str, str]]:
+    """:func:`parameter_marks`, and each parameter whose mark could not be evaluated, why."""
     target = inspect.unwrap(function)
     try:
         found = annotationlib.get_annotations(target, format=annotationlib.Format.FORWARDREF)
     except TypeError:
-        return {}
+        return {}, {}
     namespace = getattr(target, "__globals__", {})
     marks: dict[str, Deprecated] = {}
+    failures: dict[str, str] = {}
     for name, annotation in found.items():
         if name == "return":
             continue
+        problems: list[str] = []
         mark = next(
-            (item for item in _metadata(annotation, namespace) if isinstance(item, Deprecated)),
+            (
+                item
+                for item in _metadata(annotation, namespace, problems)
+                if isinstance(item, Deprecated)
+            ),
             None,
         )
         if mark is not None:
             marks[name] = mark
-    return marks
+        elif problems:
+            failures[name] = problems[0]
+    return marks, failures
 
 
-def _metadata(annotation: object, namespace: Mapping[str, Any]) -> list[object]:
-    """The ``Annotated`` metadata of ``annotation``, a type or its source text."""
+def _metadata(
+    annotation: object, namespace: Mapping[str, Any], problems: list[str]
+) -> list[object]:
+    """The ``Annotated`` metadata in ``annotation`` (a type or its source text), unions included.
+
+    A string's metadata that holds ``deprecated`` and fails to evaluate adds its
+    error to ``problems``.
+    """
     if isinstance(annotation, annotationlib.ForwardRef):
         annotation = annotation.__forward_arg__
     if not isinstance(annotation, str):
-        return list(getattr(annotation, "__metadata__", ()))
+        metadata = list(getattr(annotation, "__metadata__", ()))
+        for argument in () if metadata else typing.get_args(annotation):
+            metadata.extend(_metadata(argument, namespace, problems))
+        return metadata
     if "deprecated" not in annotation:
         return []
     try:
-        tree = ast.parse(annotation, mode="eval").body
+        tree = ast.parse(annotation, mode="eval")
     except SyntaxError:
         return []
-    if not isinstance(tree, ast.Subscript) or not isinstance(tree.slice, ast.Tuple):
-        return []
-    outer = tree.value
-    if (outer.id if isinstance(outer, ast.Name) else getattr(outer, "attr", None)) != "Annotated":
-        return []
     found: list[object] = []
-    for element in tree.slice.elts[1:]:
-        try:
-            found.append(
-                eval(compile(ast.Expression(element), "<annotation>", "eval"), dict(namespace))
-            )
-        except Exception:
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Tuple)):
             continue
+        outer = node.value
+        name = outer.id if isinstance(outer, ast.Name) else getattr(outer, "attr", None)
+        if name != "Annotated":
+            continue
+        for element in node.slice.elts[1:]:
+            try:
+                found.append(
+                    eval(compile(ast.Expression(element), "<annotation>", "eval"), dict(namespace))
+                )
+            except Exception as exc:  # reported by the checks, never at a call
+                if "deprecated" in ast.unparse(element):
+                    problems.append(f"{ast.unparse(element)}: {type(exc).__name__}: {exc}")
     return found
 
 

@@ -52,6 +52,7 @@ from untaped.stability import (
     Experimental,
     Stability,
     class_mark,
+    descriptor_function,
     function_mark,
     parameter_marks,
     replacement_text,
@@ -101,8 +102,7 @@ def sdk_line_mark(mark: Stability | None) -> LineMark | None:
 
 def own_mark(obj: object) -> LineMark | None:
     """The mark declared on ``obj``: untaped's marker, else ``warnings.deprecated``."""
-    target = obj.fget if isinstance(obj, property) else obj
-    target = getattr(target, "__func__", target)
+    target = descriptor_function(obj)
     # A class's mark is its own: a subclass of an experimental class is stable.
     found = sdk_line_mark(class_mark(target) if isinstance(target, type) else function_mark(target))
     if isinstance(target, type):
@@ -159,9 +159,9 @@ def _is_plain(obj: object) -> bool:
     return obj is None or isinstance(obj, str | int | float | bool | tuple | frozenset)
 
 
-def foreign(cls: type) -> bool:
-    """Whether ``cls`` belongs to another library (the MRO walk stops there)."""
-    return not cls.__module__.partition(".")[0].startswith("untaped")
+def foreign(obj: object) -> bool:
+    """Whether ``obj`` (a class or function) belongs to another library."""
+    return not str(getattr(obj, "__module__", "") or "").partition(".")[0].startswith("untaped")
 
 
 def implementer_shaped(cls: type, exports: Exports) -> bool:
@@ -398,7 +398,7 @@ class _Walker:
         scope = {**_type_params(owner), **_type_params(function)}
         factories = _factories(function)
         # A parameter marked deprecated in its annotation carries that mark on its own line.
-        own = {} if isinstance(function, type) else parameter_marks(function)
+        own = parameter_marks(function.__init__ if isinstance(function, type) else function)  # type: ignore[misc]
         parameters = list(signature.parameters.values())
         if skip_first:
             parameters = parameters[1:]

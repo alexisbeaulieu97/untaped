@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, Protocol
 from pydantic import BaseModel
 
 from untaped.sdk import UntapedError
-from untaped.stability import experimental
+from untaped.stability import deprecated, deprecated_parameters, experimental
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 __all__ = [
     "NO_LIMIT",
     "VERSION",
+    "Boxed",
     "Color",
     "Fill",
     "Format",
@@ -36,6 +37,7 @@ __all__ = [
     "hook",
     "legacy",
     "listing",
+    "marked",
     "place",
     "preview",
     "watch",
@@ -186,3 +188,18 @@ class Refused(UntapedError):
 
     def why(self) -> str:
         return self.reason
+
+
+@deprecated_parameters
+def marked(
+    x: int, *, old: Annotated[bool, deprecated(removed_in=12, replacement="x")] | None = None
+) -> None:
+    """A parameter marked inside a union."""
+
+
+class Boxed:
+    """A constructor parameter marked deprecated."""
+
+    @deprecated_parameters
+    def __init__(self, old: Annotated[bool, deprecated(removed_in=12)] = False) -> None:
+        self.old = old

@@ -144,11 +144,13 @@ def _core_lines(checked: _Checked) -> list[str]:
 
 def _sdk_deprecations(package: str) -> list[str]:
     """``deprecation_text_violations`` of the plugin's ``api`` and ``testing`` modules."""
-    found: list[str] = []
-    for path in (f"{package}.api", f"{package}.testing"):
-        if find_spec(path) is not None:
-            found.extend(deprecation_text_violations(importlib.import_module(path)))
-    return found
+    from untaped.surface import plugin_sdk_modules  # noqa: PLC0415 - surface imports this
+
+    return [
+        line
+        for path in plugin_sdk_modules(package)
+        for line in deprecation_text_violations(importlib.import_module(path))
+    ]
 
 
 def _file_lines(checked: _Checked, tests_dir: Path | None) -> list[str]:

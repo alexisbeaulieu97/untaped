@@ -179,3 +179,23 @@ def test_echo_s_err_warns_whatever_its_value() -> None:
         warning = shown.message
         assert isinstance(warning, UntapedDeprecationWarning)
         assert warning.id == "sdk echo(err=)"
+
+
+@deprecated_parameters
+def optional(*, old: Annotated[bool, deprecated(removed_in=12)] | None = None) -> bool | None:
+    return old
+
+
+def test_a_mark_inside_a_union_warns() -> None:
+    (shown,) = _caught(lambda: optional(old=True))
+    assert str(shown.message) == "optional(old=) is deprecated and will be removed in 12.0"
+
+
+def test_a_call_that_does_not_bind_raises_python_s_own_error() -> None:
+    with pytest.raises(TypeError, match=r"^emit\(\) got an unexpected keyword argument 'nope'"):
+        emit([], nope=1)  # type: ignore[call-arg]
+
+
+def test_the_decorator_above_a_descriptor_says_where_it_goes() -> None:
+    with pytest.raises(TypeError, match="put @deprecated_parameters under @classmethod"):
+        deprecated_parameters(classmethod(lambda cls: None))  # type: ignore[arg-type]

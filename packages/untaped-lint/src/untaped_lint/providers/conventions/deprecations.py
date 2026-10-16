@@ -78,19 +78,22 @@ def _is_mark(node: ast.expr) -> bool:
 
 
 def _marked(annotation: ast.expr) -> bool:
-    """An ``Annotated[...]`` holding untaped's ``deprecated(...)`` and no ``Parameter(...)``."""
+    """An ``Annotated[...]`` (a union's member too) with ``deprecated(...)``, no ``Parameter``."""
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
         try:
             annotation = ast.parse(annotation.value, mode="eval").body
         except SyntaxError:
             return False
-    if not (
-        isinstance(annotation, ast.Subscript)
-        and _name(annotation.value) == "Annotated"
-        and isinstance(annotation.slice, ast.Tuple)
-    ):
-        return False
-    metadata = annotation.slice.elts[1:]
-    return any(isinstance(item, ast.Call) and _is_mark(item) for item in metadata) and not any(
-        isinstance(item, ast.Call) and _name(item) == "Parameter" for item in metadata
-    )
+    for node in ast.walk(annotation):
+        if not (
+            isinstance(node, ast.Subscript)
+            and _name(node.value) == "Annotated"
+            and isinstance(node.slice, ast.Tuple)
+        ):
+            continue
+        calls = [item for item in node.slice.elts[1:] if isinstance(item, ast.Call)]
+        if any(_is_mark(item) for item in calls) and not any(
+            _name(item) == "Parameter" for item in calls
+        ):
+            return True
+    return False
