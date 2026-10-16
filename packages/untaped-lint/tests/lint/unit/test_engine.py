@@ -160,3 +160,21 @@ def test_an_alias_of_a_rule_method_runs_once() -> None:
         report = run([subject(Widget(name="w"))])
     assert [each.rule for each in report.findings] == ["acme.wide"]
     assert not report.failures
+
+
+def test_locations_keep_only_the_findings_read_there() -> None:
+    from untaped_lint.api import DocumentLocation, ResourceLocation
+    from untaped_lint.domain.selection import Selection
+
+    def at(location: object) -> Finding:
+        return Finding.model_validate(
+            {"rule": "acme.tall", "severity": "error", "target": "T/-/x", "message": "m",
+             "location": location}
+        )  # fmt: skip
+
+    selection = Selection(locations=frozenset({"schedules/400", "a.yml#2"}))
+    assert selection.keeps(at(ResourceLocation(id="schedules/400")))
+    assert selection.keeps(at(DocumentLocation(path="a.yml", index=2)))
+    assert not selection.keeps(at(ResourceLocation(id="schedules/401")))  # same target
+    assert not selection.keeps(at(None))
+    assert Selection(locations=frozenset({"x"}), unchecked=frozenset({"acme.tall"})).keeps(at(None))

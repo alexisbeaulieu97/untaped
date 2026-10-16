@@ -1,6 +1,6 @@
 ---
 name: untaped-awx
-description: Operates Ansible Automation Platform (AAP) or AWX through the `untaped awx` command and proves playbook changes with `awx test` suites. Use when the user mentions AAP, AWX, Tower or automation controller, job or workflow templates, launching, syncing or following jobs, inventories, projects, schedules, or testing a playbook, role or template change.
+description: Operates Ansible Automation Platform (AAP) or AWX through the `untaped awx` command and proves playbook changes with `awx test` suites. Use when the user mentions AAP, AWX, Tower or automation controller, job or workflow templates, launching, syncing or following jobs, inventories, projects, schedules, linting AWX documents or resources, or testing a playbook, role or template change.
 ---
 
 # untaped AWX/AAP
@@ -36,6 +36,7 @@ and redacts secrets. `--help` lists options; `--columns '?'` lists the columns o
 | run a template and see its outcome | `untaped awx job-templates launch Deploy --follow` (`projects sync` first for a new commit) |
 | diagnose a job | `untaped awx jobs logs 101 --tail 50`, `untaped awx jobs events 101` |
 | know what a template change affects | `untaped awx job-templates usage Deploy --recursive` |
+| check documents before `apply`, or the controller for broken references | `untaped awx lint ./specs --offline`, `untaped awx lint --format json` |
 | prove a playbook, role or template change | `untaped awx test` (below) |
 
 Credentials, credential types, organizations and unified templates are
@@ -128,6 +129,7 @@ previews once and asks once, No by default.
 | [references/resources.md](references/resources.md) | selecting, patching, editing, copying, renaming or piping resources |
 | [references/specs.md](references/specs.md) | writing or applying export documents or workflow node graphs |
 | [references/jobs.md](references/jobs.md) | launching, syncing, waiting on, cancelling or inspecting jobs |
+| [references/lint.md](references/lint.md) | linting documents or the controller, reading a finding or its `fix`, or writing a rule over AWX resources |
 | [references/test-suites.md](references/test-suites.md) | writing or validating a suite, or a workflow suite |
 | [references/test-cases.md](references/test-cases.md) | writing a case: its launch payload, `!ref`, expectations and timeouts |
 | [references/test-results.md](references/test-results.md) | reading a test run that exited non-zero, or a baseline comparison |

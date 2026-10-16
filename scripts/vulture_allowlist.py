@@ -67,10 +67,34 @@ GitRemote.refuse_by_oid
 GitRemote.drop_pack
 GitRemote.packs_requested
 
-# awx ports and readers whose first caller is awx lint (#630).
-ProjectPlaybooks.playbooks
-ResourceRepository.playbooks
-read_resource_documents  # awx infrastructure.resources.yaml_io
+# awx lint's typed views of awx.resources, for rule authors (untaped_awx.api).
+ControllerFacts.last_job_failed
+SurveyQuestionDoc.question_name
+ScheduleDoc.rrule
+ProjectDoc.scm_type
+JobTemplateDoc.ask_variables_on_launch
+JobTemplateDoc.ask_limit_on_launch
+JobTemplateDoc.ask_inventory_on_launch
+JobTemplateDoc.ask_credential_on_launch
+JobTemplateDoc.ask_scm_branch_on_launch
+JobTemplateDoc.ask_tags_on_launch
+JobTemplateDoc.ask_skip_tags_on_launch
+JobTemplateDoc.ask_verbosity_on_launch
+JobTemplateDoc.ask_diff_mode_on_launch
+JobTemplateDoc.ask_job_type_on_launch
+JobTemplateDoc.ask_execution_environment_on_launch
+JobTemplateDoc.ask_labels_on_launch
+JobTemplateDoc.ask_forks_on_launch
+JobTemplateDoc.ask_job_slice_count_on_launch
+JobTemplateDoc.ask_timeout_on_launch
+JobTemplateDoc.ask_instance_groups_on_launch
+WorkflowJobTemplateDoc.ask_variables_on_launch
+WorkflowJobTemplateDoc.ask_inventory_on_launch
+WorkflowJobTemplateDoc.ask_scm_branch_on_launch
+WorkflowJobTemplateDoc.ask_limit_on_launch
+WorkflowJobTemplateDoc.ask_labels_on_launch
+WorkflowJobTemplateDoc.ask_tags_on_launch
+WorkflowJobTemplateDoc.ask_skip_tags_on_launch
 
 # Read through getattr over a field table (awx application.resources.workflow_graph).
 NodeRun.inventory_source

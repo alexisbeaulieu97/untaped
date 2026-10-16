@@ -239,7 +239,7 @@ def _sunset() -> PluginCandidate:
     return plugin_candidate(spec)
 
 
-def test_awx_test_sits_in_awxs_experimental_panel(
+def test_awx_lint_and_test_sit_in_awxs_experimental_panel(
     first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
@@ -247,8 +247,11 @@ def test_awx_test_sits_in_awxs_experimental_panel(
     panels = _panels(CliInvoker().invoke(root.meta, ["awx", "--help"]).stdout)
 
     assert list(panels) == ["Commands", "Experimental", "Global options"]
-    assert panels["Experimental"].split()[1] == "test"
-    assert "test" not in panels["Commands"].split()
+    rows = [
+        line.split()[1] for line in panels["Experimental"].splitlines() if len(line.split()) > 2
+    ]
+    assert {"lint", "test"} <= set(rows)
+    assert not {"lint", "test"} & set(panels["Commands"].split())
 
 
 @pytest.mark.parametrize(

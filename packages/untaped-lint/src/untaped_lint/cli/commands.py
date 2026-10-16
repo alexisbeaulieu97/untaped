@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from cyclopts import Parameter
 
@@ -19,10 +19,8 @@ from untaped.sdk import (
     report_errors,
     writes,
 )
+from untaped_lint.cli.lint_config import lint_config
 from untaped_lint.cli.options import IgnoreOption, SelectOption, StrictOption
-
-if TYPE_CHECKING:
-    from untaped_lint.config import LintConfig
 
 app = create_app(
     name="lint", help="Check plugins, repositories and records against rules, with ids to ignore."
@@ -60,8 +58,6 @@ def lint_command(
     them, the rules of .untaped/lint.yml included. Exit 3 when a rule
     reports an error, 1 when a rule could not run.
     """
-    from dataclasses import replace  # noqa: PLC0415
-
     from untaped.sdk import installed_plugins  # noqa: PLC0415
     from untaped_lint.application.output import lint  # noqa: PLC0415
     from untaped_lint.application.subjects import (  # noqa: PLC0415
@@ -78,13 +74,12 @@ def lint_command(
             parse_suppression(each, option="--ignore")
         if stdin and paths:
             raise UsageError("--stdin reads records, so it takes no PATHS")
-        settings = _lint_config(Path.cwd(), config=config)
+        settings = lint_config(Path.cwd(), config=config, tree=not stdin)
         if stdin:
             piped = read_stdin_input(what="records")
             if piped.records is None:
                 raise UsageError("--stdin reads records: pipe untaped's --format pipe output")
             subjects, findings = stdin_subjects(piped.records), []
-            settings = replace(settings, tree_root=None)
         else:
             found = repository_subjects(declared_plugins(Path.cwd()), installed_plugins())
             subjects, findings = found.subjects, found.findings
@@ -112,7 +107,7 @@ def rules_command(
 
     with report_errors():
         report = Report()
-        repo = _lint_config(Path.cwd(), config=config).repo
+        repo = lint_config(Path.cwd(), config=config).repo
         rules = loaded_rules(report, repo=repo)
         diag = Diagnostics()
         for failure in report.failures:
@@ -154,29 +149,3 @@ def new_command(
         emit(outcome.files, fmt=fmt, columns=columns)
         for line in outcome.next_steps:
             Diagnostics().info(line)
-
-
-def _lint_config(start: Path, *, config: Path | None) -> LintConfig:
-    """The profile's ``lint.ignore`` and the repo file found from ``start``.
-
-    ``config`` reads that file instead of the one found walking up, and the
-    tree is then ``start`` itself (the file says which rules, you say
-    where); otherwise the tree is the found file's root, or the project
-    root of ``start`` without one.
-    """
-    from untaped.sdk import get_config_section, installed_plugins, project_root  # noqa: PLC0415
-    from untaped_lint.application import repo_file  # noqa: PLC0415
-    from untaped_lint.config import LintConfig  # noqa: PLC0415
-    from untaped_lint.settings import LintSettings  # noqa: PLC0415
-
-    settings = get_config_section("lint", LintSettings)
-    path = config if config is not None else repo_file.find(start)
-    repo = None
-    if path is not None:
-        installed = [plugin.name for plugin in installed_plugins()]
-        repo = repo_file.read(path, installed=installed)
-    if config is not None:
-        root = start.resolve()
-    else:
-        root = repo.root if repo is not None else project_root(start)
-    return LintConfig(ignore=tuple(settings.ignore), repo=repo, tree_root=root)

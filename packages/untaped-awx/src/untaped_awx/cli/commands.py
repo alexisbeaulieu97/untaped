@@ -46,7 +46,8 @@ from untaped_awx.cli.job_targets import (
 )
 from untaped_awx.cli.job_targets import as_job_id as _as_job_id
 from untaped_awx.cli.job_targets import job_targets as _job_targets
-from untaped_awx.cli.options import OrganizationOption
+from untaped_awx.cli.lint_commands import register_lint_command
+from untaped_awx.cli.options import OrganizationOption, reject_duplicate_org_scope
 from untaped_awx.cli.save_runner import run_save_batch
 from untaped_awx.cli.suite_commands import app as test_app
 from untaped_awx.cli.unified_templates_commands import app as unified_templates_app
@@ -150,28 +151,6 @@ def apply_command(
 # ---- top-level save ----
 
 
-def _reject_duplicate_org_scope(
-    organization: str | None,
-    filters: dict[str, str],
-) -> None:
-    if organization is None:
-        return
-    for key in filters:
-        if _is_raw_org_scope_filter(key):
-            raise_usage(
-                f"do not combine --org/--organization with --filter {key}=...; "
-                "use --org for organization-scoped bulk save"
-            )
-
-
-def _is_raw_org_scope_filter(key: str) -> bool:
-    return (
-        key == "organization"
-        or key.startswith("organization__")
-        or (key == "inventory__organization" or key.startswith("inventory__organization__"))
-    )
-
-
 @app.command(name="export")
 def export_top_command(
     *,
@@ -243,7 +222,7 @@ def export_top_command(
     if not all_kinds and not kind:
         raise_usage("pass --all-kinds or --kind")
     filters = parse_kv_pairs(filter_, flag="--filter")
-    _reject_duplicate_org_scope(organization, filters)
+    reject_duplicate_org_scope(organization, filters)
 
     with report_errors(), open_context() as ctx:
         run_save_batch(
@@ -661,6 +640,7 @@ register_job_actions(jobs_app)
 app.command(jobs_app, name="jobs")
 app.command(unified_templates_app, name="unified-templates")
 app.command(test_app, name="test")
+register_lint_command(app)
 
 
 # ---- per-resource sub-apps (factory-generated) ----

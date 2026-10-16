@@ -13,7 +13,9 @@ functions and import only this module)::
 and offers ``AcmeRules()`` in ``PluginSpec.provides={"lint": ...}``. A
 plugin that turns a repository's files into its own subjects fills
 :class:`TreeReader`. A command of its own runs rules over its records with
-:func:`lint`, which prints and exits by lint's rules.
+:func:`lint`, which prints and exits by lint's rules, from the
+:class:`LintConfig` :func:`lint_config` builds (the profile's ``lint.ignore``
+and the repository's lint file), so the plugin never reads lint's settings.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from untaped.sdk import Plugin
 from untaped_lint.application.output import lint
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.application.rules import Linter, Rules, TreeReader, finding, rule
+from untaped_lint.cli.lint_config import lint_config
 from untaped_lint.cli.options import IgnoreOption, SelectOption, StrictOption
 from untaped_lint.config import LintConfig
 from untaped_lint.records import (
@@ -60,6 +63,7 @@ __all__ = [
     "TreeReader",
     "finding",
     "lint",
+    "lint_config",
     "rule",
     "target_of",
 ]

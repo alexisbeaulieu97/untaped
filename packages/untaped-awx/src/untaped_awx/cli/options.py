@@ -142,6 +142,30 @@ UnverifiedOption = Annotated[
 ]
 
 
+def reject_duplicate_org_scope(organization: str | None, filters: dict[str, str]) -> None:
+    """Refuse ``--organization`` beside a ``--filter`` that scopes by organization itself.
+
+    ``export`` and ``lint`` build each kind's organization filter from
+    ``--organization``; a raw one beside it would scope the listing twice.
+    """
+    if organization is None:
+        return
+    for key in filters:
+        if _is_raw_org_scope_filter(key):
+            raise_usage(
+                f"do not combine --org/--organization with --filter {key}=...; "
+                "--org alone scopes each kind by its organization"
+            )
+
+
+def _is_raw_org_scope_filter(key: str) -> bool:
+    return (
+        key == "organization"
+        or key.startswith("organization__")
+        or (key == "inventory__organization" or key.startswith("inventory__organization__"))
+    )
+
+
 __all__ = [
     "AllOption",
     "ByIdOption",
@@ -161,6 +185,7 @@ __all__ = [
     "UnverifiedOption",
     "WaitTimeoutOption",
     "YesOption",
+    "reject_duplicate_org_scope",
     "resolve_max_depth",
 ]
 

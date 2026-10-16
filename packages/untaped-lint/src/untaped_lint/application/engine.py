@@ -64,6 +64,7 @@ class Options:
     paths: tuple[str, ...] = ()
     only: tuple[str, ...] = ()
     exact: tuple[str, ...] = ()
+    locations: tuple[str, ...] = ()
 
 
 @dataclass
@@ -134,6 +135,7 @@ def run(
         paths=options.paths,
         only=options.only,
         exact=options.exact,
+        locations=options.locations,
         unchecked=UNCHECKED,
     )
     report.warnings.extend(resolver.warnings)

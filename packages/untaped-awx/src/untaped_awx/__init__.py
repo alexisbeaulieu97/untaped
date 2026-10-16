@@ -7,10 +7,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import PluginSpec, SkillAsset, connection_check, online_check
-from untaped_awx.settings import AwxSettings
+from untaped_awx.settings import RESOURCES, AwxSettings
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from cyclopts import App
+
+    from untaped.contracts import Contract
 
 __all__ = ["SPEC", "build_app"]
 
@@ -29,6 +33,13 @@ def _probe_api() -> str:
     return probe_api()
 
 
+def _lint() -> Sequence[Contract]:
+    """awx's ``Linter`` and ``TreeReader``: its rules and its documents (imports lazily)."""
+    from untaped_awx.providers.lint import AwxDocuments, AwxRules  # noqa: PLC0415
+
+    return (AwxRules(), AwxDocuments())
+
+
 SPEC = PluginSpec(
     name="awx",
     app_factory=build_app,
@@ -42,8 +53,9 @@ SPEC = PluginSpec(
                 "Operates Ansible Automation Platform (AAP) or AWX through the `untaped awx` "
                 "command and proves playbook changes with `awx test` suites. Use when the user "
                 "mentions AAP, AWX, Tower or automation controller, job or workflow templates, "
-                "launching, syncing or following jobs, inventories, projects, schedules, or "
-                "testing a playbook, role or template change."
+                "launching, syncing or following jobs, inventories, projects, schedules, "
+                "linting AWX documents or resources, or testing a playbook, role or template "
+                "change."
             ),
         ),
     ),
@@ -51,4 +63,6 @@ SPEC = PluginSpec(
         connection_check("awx.connection", section="awx"),
         online_check("awx.api", section="awx", probe=_probe_api),
     ),
+    caches=(RESOURCES,),
+    provides={"lint": _lint},
 )

@@ -327,3 +327,34 @@ def test_bulk_export_comment_in_every_file(seeded_default_org: Any, tmp_path: Pa
     assert result.exit_code == 0, result.output
     files = list(out_dir.glob("*.yml"))
     assert len(files) == 2 and all(f.read_text().startswith("# x\n") for f in files)
+
+
+def test_save_all_writes_a_management_job_schedule_under_its_system_job_template(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    """AWX's stock cleanup schedules: the parent is a global system job template."""
+    seeded_default_org.seed("system_job_templates", id=500, name="Cleanup Job Details")
+    seeded_default_org.seed(
+        "unified_job_templates", id=500, name="Cleanup Job Details", type="system_job_template"
+    )
+    seeded_default_org.seed(
+        "schedules",
+        id=403,
+        name="Cleanup Job Schedule",
+        unified_job_template=500,
+        rrule="DTSTART:20260101T000000Z RRULE:FREQ=WEEKLY",
+        summary_fields={
+            "unified_job_template": {
+                "id": 500,
+                "name": "Cleanup Job Details",
+                "unified_job_type": "system_job",
+            }
+        },
+    )
+    out_dir = tmp_path / "backup"
+    result = CliInvoker().invoke(
+        app, ["export", "--all-kinds", "--out-dir", str(out_dir), "--kind", "Schedule"]
+    )
+    assert result.exit_code == 0, result.output
+    (doc,) = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
+    assert doc["metadata"]["parent"] == {"kind": "SystemJobTemplate", "name": "Cleanup Job Details"}

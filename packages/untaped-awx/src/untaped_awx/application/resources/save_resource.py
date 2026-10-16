@@ -15,6 +15,7 @@ repository is wired in.
 from __future__ import annotations
 
 import copy
+import dataclasses
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -25,7 +26,7 @@ from untaped_awx.application.resources.ports import (
     ResourceClient,
     WorkflowNodeRepository,
 )
-from untaped_awx.application.resources.workflow_graph import export_graph, read_graph
+from untaped_awx.application.resources.workflow_graph import export_graph, node_ids, read_graph
 from untaped_awx.domain import IdentityRef, Metadata, Resource, ResourceSpec
 from untaped_awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
@@ -46,7 +47,9 @@ class ResourceSnapshot:
 
     The editor defensively copies this snapshot before launching its process;
     save callers use only the portable resource. ``opaque_nodes`` names the
-    workflow nodes the export left out (it runs nothing untaped can name).
+    workflow nodes the export left out (it runs nothing untaped can name);
+    ``node_ids`` holds what the others run and prompt with, by id
+    (:func:`~untaped_awx.application.resources.workflow_graph.node_ids`).
     """
 
     resource: Resource
@@ -55,6 +58,7 @@ class ResourceSnapshot:
     fk_ids: dict[str, Any]
     memberships: dict[str, tuple[dict[str, Any], ...]]
     opaque_nodes: tuple[str, ...] = ()
+    node_ids: dict[str, tuple[tuple[str, int], ...]] = dataclasses.field(default_factory=dict)
 
 
 class SaveResource:
@@ -141,10 +145,12 @@ class SaveResource:
                     ]
         metadata = self.metadata_from_record(spec, record)
         opaque_nodes: tuple[str, ...] = ()
+        by_id: dict[str, tuple[tuple[str, int], ...]] = {}
         if spec.node_field and self._nodes is not None and isinstance(record_id, int):
             label = f"{spec.kind} {metadata.name!r}"
             states = read_graph(self._nodes, record_id)
             opaque_nodes = tuple(state.identifier for state in states if state.opaque)
+            by_id = node_ids(states)
             graph = export_graph(
                 states,
                 organization=metadata.organization,
@@ -172,6 +178,7 @@ class SaveResource:
             fk_ids=fk_ids,
             memberships=memberships,
             opaque_nodes=opaque_nodes,
+            node_ids=by_id,
         )
 
     def _complete(self, spec: ResourceSpec, record: dict[str, Any]) -> dict[str, Any]:

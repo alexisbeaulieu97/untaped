@@ -16,8 +16,9 @@ Two families:
   row used to leave out when unset is now ``null``.
 
 A model a use case builds declares its kind in the domain module it belongs
-to (``PingStatus``, ``WorkflowNode``, ``WorkflowUsage``, ``CaseResult`` and
-the copy and rename outcomes).
+to (``PingStatus``, ``WorkflowNode``, ``WorkflowUsage``, ``CaseResult``, the
+copy and rename outcomes, and ``AwxResources``, the snapshot ``awx lint``'s
+rules read, in ``domain/lint/resources.py``).
 """
 
 from __future__ import annotations

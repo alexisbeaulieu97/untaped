@@ -479,6 +479,10 @@ repository's own rule modules fill it under the lint file's key.
 **Reader**: a plugin that fills `TreeReader`, turning the files a
 `readers:` entry names into its own subjects.
 
+**Origin**: where a linted AWX resource was read: an apply document or the
+controller. A finding's location says which (`templates.yml#2`,
+`job_templates/14`).
+
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.
 _Avoid_: option (a command-line flag).

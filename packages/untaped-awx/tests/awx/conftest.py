@@ -23,7 +23,9 @@ import pytest
 import respx
 import yaml
 
+from untaped.plugins.registry import section_settings
 from untaped.settings import get_settings, register_profile_settings
+from untaped_awx import SPEC
 from untaped_awx.settings import AwxSettings
 
 
@@ -95,6 +97,10 @@ class FakeAap:
         self.delete_error: int | None = None
         # ``(collection, id)`` → HTTP status its ``GET <collection>/<id>/`` reads fail with.
         self.detail_errors: dict[tuple[str, int], int] = {}
+        # Collection → HTTP status its list (``GET <collection>/``) fails with (403: no role).
+        self.list_errors: dict[str, int] = {}
+        # Project id → what ``GET projects/<id>/playbooks/`` answers: its last sync's playbooks.
+        self.playbooks: dict[int, list[str]] = {}
         # How the job a workflow node runs ends, by node ``identifier``: a mapping of
         # ``status``, ``events``, ``host_summaries``, ``stdout``, ``job_fields`` and
         # ``unsaved_reads`` (the ``next_action_*`` values), or a list of them used one per
@@ -168,6 +174,10 @@ class FakeAap:
                 )
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "stdout":
                 return self._stdout(parts[0], int(parts[1]), params)
+            if parts[:1] == ["projects"] and parts[2:] == ["playbooks"] and parts[1].isdigit():
+                if int(parts[1]) not in self.store["projects"]:
+                    return _err(404, f"{path} not found")
+                return httpx.Response(200, json=self.playbooks.get(int(parts[1]), []))
             if len(parts) == 3 and parts[1].isdigit():
                 return self._sub_list(parts[0], int(parts[1]), parts[2], params)
             if len(parts) == 4 and parts[1].isdigit() and parts[3].isdigit():
@@ -226,6 +236,8 @@ class FakeAap:
         return _err(404, f"no fake handler for {method} {path}")
 
     def _list(self, api_path: str, params: dict[str, str]) -> httpx.Response:
+        if api_path in self.list_errors:
+            return _err(self.list_errors[api_path], f"{api_path}/ refused")
         store_collection = _TOP_PATH_STORE.get(api_path, api_path)
         records = self._apply_filters(list(self.store[store_collection].values()), params)
         records = [self._public(api_path, r) for r in records]
@@ -1384,11 +1396,14 @@ def _err(status: int, detail: str) -> httpx.Response:
 def _register_awx_settings(_isolate_config_registry_for_tests: None) -> None:
     """Register the ``awx`` profile section for the awx test trees.
 
+    The section composition registers: the settings model plus the
+    ``caches`` key ``SPEC.caches`` adds.
+
     Depends on the root reset fixture so registration happens after the
     config-registry reset (production registers via composition;
     plugin tests invoking the sub-app directly mirror that here).
     """
-    register_profile_settings("awx", AwxSettings)
+    register_profile_settings("awx", section_settings(SPEC) or AwxSettings)
     get_settings.cache_clear()
 
 

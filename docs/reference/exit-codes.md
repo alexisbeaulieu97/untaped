@@ -62,6 +62,7 @@ pipe keeps its own exit code.
 | `untaped github sweep --fail-on-match` | Any repository matched the query. |
 | `untaped github sweep --strict` | Any repository could not be scanned. |
 | `untaped awx apply --check` | Any document would change the controller. |
+| `untaped awx lint` | A rule found an error, or found anything under `--strict`, as `untaped lint` does. |
 | `untaped recipe apply --check` | Any target would change. |
 | `untaped dotfiles sync`, `untaped dotfiles status --check` | A row needs the user (for example a local edit or a conflict). |
 | `untaped lint` | A rule found an error, or found anything under `--strict` ([Lint](../lint.md#exit-codes)). A rule that could not run exits 1 instead. |

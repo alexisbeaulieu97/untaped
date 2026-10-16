@@ -9,14 +9,15 @@ raise first (2).
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from untaped.sdk import Diagnostics, OutputFormat, emit, finish
-from untaped.testing import PluginCandidate
-from untaped_lint.application.engine import Options, run
 from untaped_lint.config import LintConfig
 from untaped_lint.domain.selection import parse_rule, parse_suppression
 from untaped_lint.records import Finding, Subject, location_text
+
+if TYPE_CHECKING:
+    from untaped.testing import PluginCandidate
 
 _diag = Diagnostics()
 
@@ -30,6 +31,7 @@ def lint(
     paths: Iterable[str] = (),
     only: Iterable[str] = (),
     exact: Iterable[str] = (),
+    locations: Iterable[str] = (),
     strict: bool = False,
     findings: Iterable[Finding] = (),
     fmt: OutputFormat = "table",
@@ -39,9 +41,17 @@ def lint(
     """Lint ``subjects``, print the rows and exit per the lint exit codes.
 
     ``only`` takes target globs and ``exact`` literal targets (a name with
-    ``[`` or ``?`` is never read as a pattern). ``findings`` are ones the
+    ``[`` or ``?`` is never read as a pattern); ``locations`` keeps only the
+    findings at those locations, written as a table reads them
+    (``job_templates/14``, ``templates.yml#2``), for a caller whose targets
+    are not unique. ``findings`` are ones the
     caller already made, with public ids, reported and selected like the rest.
     """
+    # The engine (contracts, providers, the plugin checks) loads when a run
+    # starts, so a command that imports ``untaped_lint.api`` for its option
+    # types pays for none of it until it lints.
+    from untaped_lint.application.engine import Options, run  # noqa: PLC0415
+
     repo = config.repo
     in_file = (
         ()
@@ -58,6 +68,7 @@ def lint(
         paths=tuple(paths),
         only=tuple(only),
         exact=tuple(exact),
+        locations=tuple(locations),
     )
     report = run(
         subjects,

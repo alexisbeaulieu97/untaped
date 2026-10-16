@@ -387,6 +387,32 @@ def _export_run(
     return NodeRun(**values)
 
 
+def node_ids(states: Iterable[NodeState]) -> dict[str, tuple[tuple[str, int], ...]]:
+    """What each node runs and prompts with, by the id AWX holds, keyed as references are.
+
+    ``nodes[<identifier>].run`` and ``nodes[<identifier>].prompts.<field>`` (as
+    :func:`~untaped_awx.application.resources.references.references_of` names
+    them) → ``(kind, id)`` in export order. An opaque node (export leaves it
+    out) names nothing, and an approval runs nothing.
+    """
+    found: dict[str, tuple[tuple[str, int], ...]] = {}
+    for state in states:
+        if state.opaque:
+            continue
+        prefix = f"nodes[{state.identifier}]"
+        if state.run is not None and isinstance(state.run[1], int):
+            found[f"{prefix}.run"] = ((state.run[0], state.run[1]),)
+        for name, kind in PROMPT_REFERENCES.items():
+            value = state.fields.get(name)
+            if isinstance(value, int) and not isinstance(value, bool):
+                found[f"{prefix}.prompts.{name}"] = ((kind, value),)
+        for relation, kind in PROMPT_MEMBERS.items():
+            ids = [m for m in state.members.get(relation, ()) if isinstance(m, int)]
+            if ids:
+                found[f"{prefix}.prompts.{relation}"] = tuple((kind, m) for m in ids)
+    return found
+
+
 def node_lookup_scope(
     kind: str, value: NodeRun | Reference, *, default: dict[str, str] | None
 ) -> dict[str, str] | None:

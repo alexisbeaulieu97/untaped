@@ -139,12 +139,12 @@ jobs:
           # ...and `plugin list` says how to install some (a stderr hint).
           "$RUNNER_TEMP/bare/bin/untaped" plugin list 2>&1 >/dev/null | grep -F "untaped[all]"
 
-      - name: untaped[awx] alone
+      - name: untaped[awx] and the lint it brings
         run: |
           set -euo pipefail
           uv venv -q --python 3.14 "$RUNNER_TEMP/awx"
           uv pip install --python "$RUNNER_TEMP/awx/bin/python" --find-links dist "untaped[awx] @ file://$PWD/$CORE"
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/awx/bin/untaped" "$VERSION" --expect awx --skills
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/awx/bin/untaped" "$VERSION" --expect awx,lint --skills
 
       - name: untaped[all]
         run: |

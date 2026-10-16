@@ -1147,6 +1147,7 @@ def _awx_samples() -> list[WireModel]:
         ProvisionOutcome.model_validate({**copy, "prompts": ["inventory"]}),
         PruneOutcome.model_validate({**copy, "id": 9, "action": "deleted"}),
         PingStatus(version="24.0.0", active_node="awx-1"),
+        _awx_resources(),
         WorkflowNode(id=5, workflow_job_template=4, unified_job_template=1, name="deploy"),
         WorkflowUsage(id=4, name="pipeline", node_count=2),
         JobCancelOutcome(id=2, kind="job", action="canceled"),
@@ -1167,6 +1168,53 @@ def _awx_samples() -> list[WireModel]:
             ),
         ),
     ]
+
+
+def _awx_resources() -> WireModel:
+    from untaped_awx.api import (
+        AwxResources,
+        ControllerFacts,
+        KindFacts,
+        Linted,
+        Reference,
+        Resource,
+        Unreadable,
+    )
+    from untaped_awx.domain import IdentityRef
+    from untaped_lint.api import DocumentLocation, ResourceLocation
+
+    template = Resource.model_validate(
+        {"kind": "JobTemplate", "metadata": {"name": "deploy"}, "spec": {"project": "web"}}
+    )
+    project = Resource.model_validate({"kind": "Project", "metadata": {"name": "web"}})
+    return AwxResources(
+        items=(
+            Linted(
+                origin="document",
+                location=DocumentLocation(path="specs/a.yml", index=1),
+                resource=template,
+                references=(
+                    Reference(
+                        field="project",
+                        target=IdentityRef(kind="Project", name="web"),
+                        resolution="resolved",
+                    ),
+                ),
+            ),
+            Linted(
+                origin="controller",
+                location=ResourceLocation(id="projects/3"),
+                resource=project,
+                controller=ControllerFacts(status="successful", playbooks=("site.yml",)),
+            ),
+        ),
+        kinds={"Project": KindFacts(known_fields=("scm_url",), secret_paths=())},
+        loaded=("JobTemplate", "Project"),
+        online=True,
+        unreadable=(
+            Unreadable(path="specs/b.yml", index=2, error="each YAML doc must be a mapping"),
+        ),
+    )
 
 
 def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:

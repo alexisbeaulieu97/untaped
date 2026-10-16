@@ -809,3 +809,20 @@ def test_apply_reports_dropped_undeclared_secrets(fake_aap: Any, tmp_path: Path)
     assert json.loads(result.stdout)[0]["dropped_undeclared_secrets"] == ["scm_url"]
     assert "set the real value or remove the placeholder" in (result.stderr or "")
     assert "secret_paths" not in (result.stderr or "")
+
+
+def test_a_management_job_schedule_applies_under_its_system_job_template(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """What export writes for a cleanup schedule applies back: a global parent, by name."""
+    fake_aap.seed("system_job_templates", id=500, name="Cleanup Job Details")
+    doc = tmp_path / "schedule.yml"
+    doc.write_text(
+        "kind: Schedule\nmetadata:\n  name: weekly-cleanup\n"
+        "  parent: {kind: SystemJobTemplate, name: Cleanup Job Details}\n"
+        "spec: {rrule: 'DTSTART:20260101T000000Z RRULE:FREQ=WEEKLY'}\n"
+    )
+    result = CliInvoker().invoke(app, ["apply", str(doc), "--yes", "--format", "json"])
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    (post,) = _posts(fake_aap)
+    assert post.request.url.path == "/api/v2/system_job_templates/500/schedules/"

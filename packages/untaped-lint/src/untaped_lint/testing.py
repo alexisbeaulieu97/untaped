@@ -27,7 +27,7 @@ from untaped_lint.application.engine import Options
 from untaped_lint.application.engine import run as _run
 from untaped_lint.application.modules import load
 from untaped_lint.application.ports import RuleFunction
-from untaped_lint.application.rules import Linter
+from untaped_lint.application.rules import Linter, TreeReader
 from untaped_lint.application.subjects import plugin_subject
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import parse_rule, parse_suppression
@@ -163,8 +163,14 @@ def _with_lint(candidates: Sequence[PluginCandidate]) -> list[PluginCandidate]:
     return [*candidates, lint]
 
 
-def conformance(provider: Linter) -> None:
-    """Fail unless ``provider``'s rule table is one the engine loads: bare, unique ids."""
+def conformance(provider: Linter | TreeReader) -> None:
+    """Fail unless ``provider``'s rule table is one the engine loads: bare, unique ids.
+
+    ``untaped plugin check`` calls it for every provider of lint's contracts;
+    a ``TreeReader`` has no rule table, so it passes as it is.
+    """
+    if not isinstance(provider, Linter):
+        return
     rules = provider.rules()
     ids = [each.id for each in rules]
     duplicated = sorted({each for each in ids if ids.count(each) > 1})
