@@ -102,6 +102,29 @@ def test_an_import_inside_a_function_binds_only_there(tmp_path: Path) -> None:
     assert _violations(tmp_path, source) == [_line(5, "shelve.open"), _line(7, "shelve.open")]
 
 
+def test_a_decorator_default_or_class_body_sees_the_scope_python_runs_it_in(
+    tmp_path: Path,
+) -> None:
+    """Decorators and defaults run outside the function; methods never see the class body."""
+    source = """\
+        def outer():
+            @deco(open(plugin_dir(SPEC) / "a.txt"))
+            def inner(path=open(plugin_dir(SPEC) / "b.txt")):
+                from shelve import open
+
+                return open(plugin_dir(SPEC) / "c")
+
+        class Shelf:
+            from shelve import open
+
+            handle = open(plugin_dir(SPEC) / "d")
+
+            def notes(self):
+                return open(plugin_dir(SPEC) / "notes.txt")
+        """
+    assert _violations(tmp_path, source) == [_line(6, "shelve.open"), _line(11, "shelve.open")]
+
+
 def test_another_function_of_an_opener_module_is_not_flagged(tmp_path: Path) -> None:
     source = """\
         import dbm

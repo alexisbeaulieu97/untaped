@@ -35,7 +35,6 @@ _HOME = "~/.untaped"
 
 
 type _Bindings = tuple[dict[str, str], dict[str, str]]
-type _Scope = ast.Module | ast.FunctionDef | ast.AsyncFunctionDef
 
 
 def store_format_violations(
@@ -45,37 +44,53 @@ def store_format_violations(
     found: list[str] = []
     for source in files:
         rel = source.path.relative_to(source_dir.parent).as_posix()
-        for node, opener in _calls(source.tree, ({}, {})):
+        calls = sorted(_calls(source.tree.body, ({}, {})), key=lambda pair: pair[0].lineno)
+        for node, opener in calls:
             under = _under(node)
             if under is not None and not allows(source.lines, node.lineno, RULE):
                 found.append(f"{rel}:{node.lineno}::{RULE}::{_message(opener, under, plugin)}")
-    return sorted(found, key=lambda line: int(line.split("::")[0].rpartition(":")[2]))
+    return found
 
 
-def _calls(scope: _Scope, inherited: _Bindings) -> Iterator[tuple[ast.Call, str]]:
-    """The opener calls in ``scope`` and the functions nested in it, with the opener's name.
+def _calls(
+    body: Sequence[ast.AST], inherited: _Bindings, functions_see: _Bindings | None = None
+) -> Iterator[tuple[ast.Call, str]]:
+    """The opener calls in one scope's ``body`` and the scopes nested in it, with their opener.
 
-    A call sees the imports of its own function and of every scope around it,
-    so an import inside one function never renames a call in another.
+    A call sees the imports of its own scope and of the functions around it,
+    as Python resolves names: a function's decorators, defaults and
+    annotations run in the scope around it, and a class body's imports are
+    not seen by its methods (``functions_see`` is what they see instead).
     """
-    nodes = list(_own_nodes(scope))
-    modules, functions = _bindings(nodes)
-    seen = ({**inherited[0], **modules}, {**inherited[1], **functions})
+    nodes: list[ast.AST] = []
+    functions: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+    classes: list[ast.ClassDef] = []
+    stack = list(body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            functions.append(node)
+            stack.extend(
+                [*node.decorator_list, node.args, *([node.returns] if node.returns else [])]
+            )
+            continue
+        if isinstance(node, ast.ClassDef):
+            classes.append(node)
+            stack.extend([*node.decorator_list, *node.bases, *node.keywords])
+            continue
+        nodes.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    modules, names = _bindings(nodes)
+    seen = ({**inherited[0], **modules}, {**inherited[1], **names})
     for node in nodes:
         if isinstance(node, ast.Call) and (opener := _opener(node.func, *seen)) is not None:
             yield node, opener
-        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            yield from _calls(node, seen)
-
-
-def _own_nodes(scope: _Scope) -> Iterator[ast.AST]:
-    """The nodes of ``scope``, and the functions nested in it, but not their bodies."""
-    stack: list[ast.AST] = list(ast.iter_child_nodes(scope))
-    while stack:
-        node = stack.pop()
-        yield node
-        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            stack.extend(ast.iter_child_nodes(node))
+    for function in functions:
+        yield from _calls(function.body, seen if functions_see is None else functions_see)
+    for class_ in classes:
+        yield from _calls(
+            class_.body, seen, functions_see=seen if functions_see is None else functions_see
+        )
 
 
 def _bindings(nodes: Sequence[ast.AST]) -> _Bindings:
