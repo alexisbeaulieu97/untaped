@@ -306,6 +306,22 @@ def test_a_damaged_inuse_file_leaves_the_layout_unprotected(tmp_path: Path) -> N
     assert store.open() == store.path()
 
 
+@pytest.mark.parametrize("error", [RuntimeError("used after fork"), ValueError("other timeout")])
+def test_a_lock_filelock_refuses_leaves_the_bare_file_readable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    def refuse(_self: _SqliteInUse) -> object:
+        raise error
+
+    monkeypatch.setattr(store_module, "_FACTORY", _SqliteInUse)
+    monkeypatch.setattr(_SqliteInUse, "_lock", refuse)
+    base = tmp_path / "index.sqlite3"
+    base.write_bytes(b"11.0")
+
+    assert _store(base, layout=4, bare=4).open() == base
+    _forget_opened()
+
+
 def test_the_fallback_is_chosen_where_filelock_has_no_read_write_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

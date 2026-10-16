@@ -295,7 +295,7 @@ class _SqliteInUse:
             lock = self._lock()
             lock.acquire_write(blocking=False)
         # RuntimeError: this process reads it; a lock that cannot be taken counts as busy
-        except TimeoutError, OSError, RuntimeError, sqlite3.Error:
+        except TimeoutError, OSError, RuntimeError, ValueError, sqlite3.Error:
             yield False
             return
         try:
