@@ -25,7 +25,6 @@ versions left, from every plugin's ``migrations``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -43,6 +42,7 @@ from untaped.cli import (
 from untaped.config_file import read_config_dict
 from untaped.errors import PromptInterruptedError
 from untaped.management.doctor import report_check_rows, selected_check_rows
+from untaped.management.notes import print_notes
 from untaped.management.setup_plan import (
     SETUP_ALTERNATIVE,
     SETUP_COMMAND,
@@ -51,23 +51,14 @@ from untaped.management.setup_plan import (
     plan_rows,
 )
 from untaped.management.setup_state import service_states, service_store, setup_services
-from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.profile_resolver import selected_profile
-from untaped.render import MessageKind
 from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 _diag = Diagnostics()
 #: How a screen's note prints, by its level.
-_NOTES: dict[MessageKind, Callable[[str], object]] = {
-    "success": _diag.success,
-    "info": _diag.info,
-    "warning": _diag.warning,
-    "error": lambda text: _diag.failure(Failure.plain(text)),
-}
-
 OnlyOption = Annotated[
     list[str] | None,
     Parameter(
@@ -206,8 +197,7 @@ def _run(
         profiles=sorted(raw.get("profiles") or ()),
     )
     outcome = ui.run(screen)
-    for kind, text in outcome.notes:
-        _NOTES[kind](text)
+    print_notes(outcome.notes)
     profile = outcome.profile
     if not outcome.touched:
         if not outcome.registered:

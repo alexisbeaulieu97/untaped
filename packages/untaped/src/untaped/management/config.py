@@ -33,14 +33,21 @@ from untaped.cli import (
     report_errors,
     writes,
 )
-from untaped.config.models import SettingEntry, SettingOutcome, SettingRow, setting_entry_row
+from untaped.config.models import SettingEntry, SettingRow, setting_entry_row
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import GetSetting, ListAllProfilesSettings, ListSettings
+from untaped.config.use_cases import (
+    GetSetting,
+    ListAllProfilesSettings,
+    ListSettings,
+    SetSetting,
+    UnsetSetting,
+)
 from untaped.config_file import read_config_dict
 from untaped.deprecated_keys import NO_KEY_MAPPINGS, KeyMappings, KeyUse, key_mappings, notify_use
 from untaped.errors import ConfigError
 from untaped.management.config_editor import run_config_editor
 from untaped.management.config_prompting import resolve_set_value
+from untaped.management.notes import print_notes
 from untaped.management.records import ConfigMigrationOutcome
 from untaped.messages import hint, plural
 from untaped.output.sink import Diagnostics
@@ -396,16 +403,9 @@ def _set(
         resolved_value = resolve_set_value(resolved, value, stdin=stdin, prompt=prompt, repo=repo)
         _warn_plaintext_token(ctx, resolved)
         _warn_deprecated_setting(ctx, resolved)
-        removed: list[str] = []
-        profile = repo.set_value(
-            resolved, resolved_value, dry_run=dry_run, on_spelling_removed=removed.append
-        )
-        if not dry_run:
-            message = f"set {resolved} in profile {profile}{_removed_note(removed)}"
-            _diag.success(f"{message} (config: {resolve_config_path()})")
-        action = "planned" if dry_run else "updated"
-        outcome = SettingOutcome(key=resolved, profile=profile, action=action)
-        emit(outcome, fmt=fmt, columns=columns)
+        change = SetSetting(repo)(resolved, resolved_value, dry_run=dry_run)
+        print_notes(change.notes)
+        emit(change.outcome, fmt=fmt, columns=columns)
 
 
 def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
@@ -441,23 +441,9 @@ def _unset(
     columns: list[str] | None,
 ) -> None:
     with report_errors():
-        resolved = ctx.resolve_key(key)
-        spellings: list[str] = []
-        removed, profile = SettingsFileRepository().unset_value(
-            resolved, dry_run=dry_run, on_spelling_removed=spellings.append
-        )
-        where = f"in profile {profile}"
-        if not removed:
-            _diag.info(f"{resolved} was not set {where}")
-        elif not dry_run:
-            _diag.success(f"unset {resolved} {where}{_removed_note(spellings)}")
-        action = "unchanged" if not removed else "planned" if dry_run else "deleted"
-        outcome = SettingOutcome(key=resolved, profile=profile, action=action)
-        emit(outcome, fmt=fmt, columns=columns)
-
-
-def _removed_note(spellings: list[str]) -> str:
-    return f"; removed {', '.join(spellings)}" if spellings else ""
+        change = UnsetSetting(SettingsFileRepository())(ctx.resolve_key(key), dry_run=dry_run)
+        print_notes(change.notes)
+        emit(change.outcome, fmt=fmt, columns=columns)
 
 
 def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> None:
