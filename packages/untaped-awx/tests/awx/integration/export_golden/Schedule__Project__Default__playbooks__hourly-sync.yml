@@ -1,0 +1,11 @@
+kind: Schedule
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: hourly-sync
+  parent:
+    kind: Project
+    name: playbooks
+    organization: Default
+spec:
+  rrule: DTSTART:20260101T000000Z RRULE:FREQ=HOURLY
+  enabled: false

@@ -1,0 +1,14 @@
+kind: Schedule
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: refresh
+  parent:
+    kind: InventorySource
+    name: from-git
+    parent:
+      kind: Inventory
+      name: prod
+      organization: Default
+spec:
+  rrule: DTSTART:20260101T000000Z RRULE:FREQ=WEEKLY
+  enabled: true

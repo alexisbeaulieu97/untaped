@@ -1,0 +1,8 @@
+kind: Project
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: manual
+  organization: Default
+spec:
+  scm_type: ''
+  local_path: manual

@@ -1,0 +1,11 @@
+kind: Host
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: web-01
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  enabled: true
+  variables: '{}'

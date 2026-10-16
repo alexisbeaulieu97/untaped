@@ -1,0 +1,13 @@
+kind: Project
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: playbooks
+  organization: Default
+spec:
+  description: Main playbooks
+  scm_type: git
+  scm_url: https://git.example.com/playbooks.git
+  scm_branch: main
+  allow_override: true
+  credential: git
+  default_environment: ee-default

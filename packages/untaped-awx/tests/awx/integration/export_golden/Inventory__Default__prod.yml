@@ -1,0 +1,13 @@
+kind: Inventory
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: prod
+  organization: Default
+spec:
+  kind: ''
+  variables: |
+    ---
+    region: eu
+  instance_groups:
+  - default
+  - fallback

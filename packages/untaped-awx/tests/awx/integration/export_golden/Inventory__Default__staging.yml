@@ -1,0 +1,9 @@
+kind: Inventory
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: staging
+  organization: Default
+spec:
+  kind: ''
+  variables: ''
+  instance_groups: []
