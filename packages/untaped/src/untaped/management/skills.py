@@ -14,7 +14,7 @@ instructions.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated
 
@@ -349,33 +349,33 @@ def _update(
     with report_errors():
         found = _select_installed(skills, skill_names, stdin=stdin, project_dir=project_dir)
         named = bool(skill_names) or stdin
-        rows: list[dict[str, object]] = []
+        rows: list[SkillOutcome] = []
         failed = False
         for item in found:
             if item.state is SkillState.current:
                 if named:
-                    rows.append(_outcome_row(item, "unchanged"))
+                    rows.append(_outcome(item, "unchanged"))
                 continue
             if item.state is SkillState.orphaned:
                 if named:
                     error = _diag.failure(
                         Failure.plain("no plugin installed here ships this skill"), item=item.name
                     )
-                    rows.append(_failed_row(item, error))
+                    rows.append(_outcome(item, "failed", error=error))
                     failed = True
                 continue
             if dry_run:
-                rows.append(_outcome_row(item, "planned"))
+                rows.append(_outcome(item, "planned"))
                 continue
             try:
                 update_installed_skill(skills, item)
             except UntapedError as exc:
-                rows.append(_failed_row(item, _diag.failure(exc, item=item.name)))
+                rows.append(_outcome(item, "failed", error=_diag.failure(exc, item=item.name)))
                 failed = True
                 continue
-            rows.append(_outcome_row(item, "updated"))
-        emit(_outcomes(rows), fmt=fmt, columns=columns, empty="No outdated skills found.")
-        updated = sum(1 for row in rows if row["action"] == "updated")
+            rows.append(_outcome(item, "updated"))
+        emit(rows, fmt=fmt, columns=columns, empty="No outdated skills found.")
+        updated = sum(1 for row in rows if row.action == "updated")
         if updated:
             _diag.success(f"updated {plural(updated, 'skill')}")
     finish(failed)
@@ -410,7 +410,7 @@ def _remove(
             verb="remove",
             noun="skill",
             label=lambda item: str(item.path),
-            describe=lambda item: _outcome_row(item, "planned"),
+            describe=lambda item: _outcome(item, "planned").model_dump(mode="json"),
             ui=ui_context(strict=False),
             destructive=True,
             assume_yes=yes,
@@ -419,33 +419,25 @@ def _remove(
         if outcome.cancelled:
             finish(outcome)
         rows = (
-            outcome.planned_rows
+            [_outcome(item, "planned") for item in chosen]
             if dry_run
-            else [_outcome_row(item, "deleted") for item, _ in outcome.results]
+            else [_outcome(item, "deleted") for item, _ in outcome.results]
         )
-        emit(_outcomes(rows), fmt=fmt, columns=columns, empty="No installed skills found.")
+        emit(rows, fmt=fmt, columns=columns, empty="No installed skills found.")
         if outcome.results:
             _diag.success(f"removed {plural(len(outcome.results), 'skill')}")
     finish(outcome)
 
 
-def _outcome_row(item: InstalledSkill, action: str) -> dict[str, object]:
-    return {
-        "name": item.name,
-        "target": item.target,
-        "scope": item.scope.value,
-        "target_path": str(item.path),
-        "action": action,
-    }
-
-
-def _outcomes(rows: Sequence[Mapping[str, object]]) -> list[SkillOutcome]:
-    return [SkillOutcome.model_validate(row) for row in rows]
-
-
-def _failed_row(item: InstalledSkill, error: Failure) -> dict[str, object]:
-    """A ``failed`` outcome row carrying its structured failure."""
-    return {**_outcome_row(item, "failed"), "error": error.model_dump(mode="json")}
+def _outcome(item: InstalledSkill, action: str, *, error: Failure | None = None) -> SkillOutcome:
+    return SkillOutcome(
+        name=item.name,
+        target=item.target,
+        scope=item.scope.value,
+        target_path=item.path,
+        action=action,
+        error=error,
+    )
 
 
 def _resolve_short(selector: str, skills: Mapping[str, object]) -> str:

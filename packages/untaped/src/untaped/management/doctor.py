@@ -831,6 +831,15 @@ def _run_check(
             check_item.title,
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
         )
+    returned: object = outcome.detail  # an unvalidated dataclass field: may be anything
+    if not isinstance(returned, str | None):
+        return _row(
+            check_item.id,
+            scope.plugin,
+            _FAIL,
+            check_item.title,
+            f"check returned detail of type {type(returned).__name__}, expected str",
+        )
     fix = None
     # A passing row drops its fix, but an automatic one is still validated.
     if outcome.fix and (not outcome.ok or outcome.warn or outcome.automatic):
@@ -847,7 +856,7 @@ def _run_check(
     if outcome.ok and not outcome.warn:
         return _row(check_item.id, scope.plugin, _PASS, title, outcome.detail or "OK")
     status = _FAIL if not outcome.ok else _WARN
-    detail = outcome.detail
+    detail = outcome.detail or ""
     return _row(
         check_item.id, scope.plugin, status, title, detail, fix, automatic=outcome.automatic
     )

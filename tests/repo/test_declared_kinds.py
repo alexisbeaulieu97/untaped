@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -186,3 +187,18 @@ def test_every_declared_kind_is_registered_once_its_plugin_is_composed() -> None
         "declare record models in a module the plugin's spec or app factory imports "
         "(a records module), never only inside a command body"
     )
+
+
+def test_plugin_schema_prints_a_core_kind_in_a_fresh_process(tmp_path: Path) -> None:
+    """S3c: a kind core declares for a management command is there before the command runs."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "untaped", "plugin", "schema", "untaped.plugin_check"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+        env={**os.environ, "UNTAPED_CONFIG": str(tmp_path / "config.yml")},
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["$id"] == "untaped.plugin_check"

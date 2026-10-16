@@ -23,6 +23,7 @@ import sys
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import IO, Any
 
 from pydantic import ValidationError
@@ -128,7 +129,7 @@ def run_fixes(
         _outcome(fix, refusals[fix], runs.get(fix), after, dry_run=dry_run) for fix in fixes
     ]
     _emit(outcomes, fmt=fmt, columns=columns, profile=profile)
-    counts = {action: sum(row["action"] == action for row in outcomes) for action in _ACTIONS}
+    counts = {action: sum(row.action == action for row in outcomes) for action in _ACTIONS}
     _diag.info(summary("doctor fix", counts))
     if dry_run:
         return
@@ -249,28 +250,28 @@ def _outcome(
     after: list[dict[str, object]],
     *,
     dry_run: bool,
-) -> Row:
-    row: Row = {"fix": list(fix.argv), "checks": list(fix.checks)}
+) -> FixOutcome:
+    outcome = partial(FixOutcome, fix=list(fix.argv), checks=list(fix.checks))
     if refusal is not None:
         info = Failure.from_exception(refusal)
-        return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}
+        return outcome(action="failed", detail=_error_detail(info), error=info)
     if not fix.automatic:
-        return row | {"action": "skipped", "detail": f"{_needs(fix)}; run it yourself"}
+        return outcome(action="skipped", detail=f"{_needs(fix)}; run it yourself")
     if dry_run:
-        return row | {"action": "planned", "detail": f"would fix {', '.join(fix.checks)}"}
+        return outcome(action="planned", detail=f"would fix {', '.join(fix.checks)}")
     if not isinstance(run, ChildRun):
         info = Failure.from_exception(run or UntapedError("did not run"))
-        return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}
+        return outcome(action="failed", detail=_error_detail(info), error=info)
     if run.code != 0:
         info = _child_error(run)
-        return row | {"action": "failed", "detail": _error_detail(info), "error": _dump(info)}
+        return outcome(action="failed", detail=_error_detail(info), error=info)
     detail = _done_detail(run)
     remaining = [r for r in after if _key(r) in fix.keys and r["status"] != "pass"]
     if not remaining:
-        return row | {"action": "fixed", "detail": detail}
+        return outcome(action="fixed", detail=detail)
     first = remaining[0]
     still = "still fails" if first["status"] == "fail" else "still warns"
-    return row | {"action": "partial", "detail": f"{detail}; {still}: {first['detail']}"}
+    return outcome(action="partial", detail=f"{detail}; {still}: {first['detail']}")
 
 
 def _needs(fix: _Fix) -> str:
@@ -318,11 +319,9 @@ def _error_detail(info: Failure) -> str:
     return f"{info.message}; {info.hint}" if info.hint else info.message
 
 
-def _dump(info: Failure) -> dict[str, Any]:
-    return info.model_dump(mode="json")
-
-
-def _emit(rows: list[Row], *, fmt: OutputFormat, columns: list[str] | None, profile: str) -> None:
+def _emit(
+    rows: list[FixOutcome], *, fmt: OutputFormat, columns: list[str] | None, profile: str
+) -> None:
     count_row_failures(rows)  # a failed fix's ``error`` sets the exit code
     if fmt == "table" and columns is None:
         if rows:
@@ -330,10 +329,10 @@ def _emit(rows: list[Row], *, fmt: OutputFormat, columns: list[str] | None, prof
         return
     if fmt == "table":
         # A table shows ``fix`` as the line to type, so it is a view, not the record.
-        shown = [{**row, "fix": run_line(row["fix"], profile)} for row in rows]
+        shown = [row.model_dump(mode="json") | {"fix": run_line(row.fix, profile)} for row in rows]
         emit_isolated(shown, fmt=fmt, columns=columns)
     else:
-        emit_isolated([FixOutcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
+        emit_isolated(rows, fmt=fmt, columns=columns)
 
 
 def _exit_unhealthy(rows: list[dict[str, object]], profile: str) -> None:

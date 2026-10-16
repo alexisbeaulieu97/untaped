@@ -171,6 +171,11 @@ def test_accepts_refuses_a_model_without_a_kind() -> None:
         read_stdin_input(accepts=(_Plain,))
 
 
+def test_accepts_is_checked_when_identifiers_come_from_arguments() -> None:
+    with pytest.raises(TypeError, match=r"_Plain declares none"):
+        read_identifiers(["a"], stdin=False, accepts=(_Plain,))
+
+
 def test_accepts_and_accept_kinds_are_one_or_the_other() -> None:
     with pytest.raises(TypeError, match="not both"):
         read_identifiers([], stdin=True, accepts=(_Run,), accept_kinds={"forge.run"})

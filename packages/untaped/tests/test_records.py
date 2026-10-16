@@ -304,15 +304,30 @@ def test_a_plugin_package_declares_kinds_under_its_own_name() -> None:
 
 
 @pytest.mark.parametrize(
-    ("module", "kind", "declarer"),
+    ("module", "kind", "declarer", "fixes"),
     [
-        ("untaped_acme_tools.records", "acme.gizmo", "plugin 'acme-tools'"),
-        ("untaped_awx.records", "untaped.gizmo", "plugin 'awx'"),
-        ("untaped.records_extra", "awx.gizmo", "core"),
+        (
+            "untaped_acme_tools.records",
+            "acme.gizmo",
+            "plugin 'acme-tools'",
+            "name it acme-tools.gizmo, or ship it in the package untaped_acme",
+        ),
+        (
+            "untaped_awx.records",
+            "untaped.gizmo",
+            "plugin 'awx'",
+            "name it awx.gizmo, or ship it in the package untaped",
+        ),
+        (
+            "untaped.records_extra",
+            "acme-tools.gizmo",
+            "core",
+            "name it untaped.gizmo, or ship it in the package untaped_acme_tools",
+        ),
     ],
 )
 def test_a_kind_under_another_plugins_name_is_foreign_kind(
-    module: str, kind: str, declarer: str
+    module: str, kind: str, declarer: str, fixes: str
 ) -> None:
     with pytest.raises(ForeignKindError, match=f"belongs to {declarer}; ") as caught:
 
@@ -320,6 +335,7 @@ def test_a_kind_under_another_plugins_name_is_foreign_kind(
             __module__ = module
             name: str
 
+    assert str(caught.value).endswith(fixes)
     assert caught.value.reason == "foreign-kind"
     assert record_model(kind) is None
 
@@ -683,3 +699,26 @@ def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:
     assert set(samples) == shipped, "give every kind a package declares a sample here"
     for sample in samples.values():
         _assert_round_trips(sample)
+
+
+#: The keys, in order, of the dict rows core's management commands wrote
+#: before each declared a model: a model keeps its row's wire order.
+_ROW_KEYS = {
+    "untaped.auth_outcome": ["section", "profile", "store", "action", "detail", "error"],
+    "untaped.token_source": ["profile", "section", "source"],
+    "untaped.config_migration_outcome": ["profile", "from", "to", "action", "detail"],
+    "untaped.doctor_check": ["check", "plugin", "status", "title", "detail", "fix", "automatic"],
+    "untaped.fix_outcome": ["fix", "checks", "action", "detail"],
+    "untaped.migration_row": ["id", "action", "source", "destination", "detail"],
+    "untaped.setup_step": ["step", "plugin", "state", "detail", "run", "by"],
+    "untaped.skill": ["name", "description", "source"],
+    "untaped.installed_skill": ["name", "target", "scope", "state", "target_path"],
+    "untaped.skill_outcome": ["name", "target", "scope", "target_path", "action"],
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_ROW_KEYS))
+def test_a_core_model_writes_its_old_row_keys_in_their_order(kind: str) -> None:
+    sample = _samples()[kind]
+
+    assert list(json.loads(sample.model_dump_json())) == _ROW_KEYS[kind]

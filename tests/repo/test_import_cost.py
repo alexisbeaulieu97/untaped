@@ -155,8 +155,9 @@ _STARTUP_PROBE = (
 #: (#537 B3) adds none: 129 on it and on its base, 2026-10-13. The lint
 #: plugin (#640) adds three (its package, settings and doctor row) and the SDK's
 #: ``untaped.plugin_records`` one: 133, 2026-10-14. Core's record models in
-#: ``untaped.management.records`` (#607) add one: 131 on 2026-10-16. The budget stays six above
-#: the measure to absorb dependency and patch-release drift; a new built-in
+#: ``untaped.management.records`` (#607) add one: 131 against 130 on its
+#: base, 2026-10-16. The budget stays a few above the measure (six when it
+#: was set) to absorb dependency and patch-release drift; a new built-in
 #: plugin adds a few ``untaped.*`` modules (its SPEC and settings).
 _TOTAL_BUDGET = 700
 _UNTAPED_BUDGET = 139

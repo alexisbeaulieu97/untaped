@@ -20,7 +20,7 @@ from rich.console import Console
 
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
 from untaped.messages import deprecated_message
-from untaped.output.diagnostic import Failure
+from untaped.output.diagnostic import Failure, dumped_names
 from untaped.output.policy import current_policy, note_format, note_theme
 from untaped.output.sink import (
     Diagnostics,
@@ -692,17 +692,8 @@ def _model_schema(
     for item in items:
         model = type(item)
         assert issubclass(model, BaseModel)
-        names.update(dict.fromkeys([*_dumped_names(model), *model.model_computed_fields]))
+        names.update(dict.fromkeys([*dumped_names(model).values(), *model.model_computed_fields]))
     return list(names)
-
-
-def _dumped_names(model: type[BaseModel]) -> list[str]:
-    """``model``'s field names as its dump writes them (an alias where it dumps by alias)."""
-    if not model.model_config.get("serialize_by_alias"):
-        return list(model.model_fields)
-    return [
-        info.serialization_alias or info.alias or name for name, info in model.model_fields.items()
-    ]
 
 
 def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:

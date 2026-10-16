@@ -212,6 +212,7 @@ def read_identifiers(
     models) or ``accept_kinds`` (their kinds) rejects records of any other
     kind with exit 2.
     """
+    _accepted_kinds(accepts, accept_kinds)  # a wrong argument fails without --stdin too
     if stdin and positional:
         raise UsageError("provide identifiers as positional args or via --stdin, not both")
     if stdin:

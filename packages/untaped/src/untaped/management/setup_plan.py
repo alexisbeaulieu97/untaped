@@ -15,13 +15,12 @@ from __future__ import annotations
 
 import shlex
 import shutil
-from typing import Literal
 
 from untaped.auth import takes_token_command, token_env_names, token_instead
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
-from untaped.management.records import SetupStep
+from untaped.management.records import SetupActor, SetupState, SetupStep
 from untaped.management.setup_state import ServiceState, service_states, service_store
 from untaped.messages import command_argv, command_line, split_profile
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
@@ -30,7 +29,6 @@ from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
 from untaped.theme import OutputFormat
 
 Row = dict[str, object]
-State = Literal["done", "todo", "failed", "skipped"]
 
 #: The interactive command and its non-interactive face, as a run without a terminal names them.
 SETUP_COMMAND = "untaped setup"
@@ -96,11 +94,11 @@ def _table_row(row: Row, profile: str) -> Row:
 def _row(
     step: str,
     plugin: str,
-    state: State,
+    state: SetupState,
     detail: str,
     run: list[str] | None = None,
     *,
-    by: Literal["agent", "user"] = "agent",
+    by: SetupActor = "agent",
 ) -> Row:
     return {
         "step": step,
@@ -222,7 +220,7 @@ def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
     )
 
 
-def _by(run: list[str] | None, *, automatic: bool) -> Literal["agent", "user"]:
+def _by(run: list[str] | None, *, automatic: bool) -> SetupActor:
     """Who runs a fix: an automatic one is the agent's.
 
     Any other fix that writes a token (``auth …``, ``….token``) is the user's.

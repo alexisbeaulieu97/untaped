@@ -511,3 +511,14 @@ def test_cache_sync_table_shows_repo_action_and_detail(source_repo: SourceRepo) 
     assert result.exit_code == 0, result.output
     starred = {line.split()[0] for line in result.stderr.splitlines() if line.endswith(" *")}
     assert starred == {"repo", "action", "detail"}
+
+
+def test_cache_delete_dry_run_table_shows_what_each_repo_would_free(
+    source_repo: SourceRepo,
+) -> None:
+    _populate(source_repo, "acme/api")
+
+    result = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--dry-run", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    assert "disk_bytes" in result.stdout.splitlines()[1]

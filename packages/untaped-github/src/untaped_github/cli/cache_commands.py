@@ -318,6 +318,8 @@ def _delete(
         else released,
         fmt=fmt,
         columns=columns,
+        # A preview's table shows what each repo would free.
+        table_columns=(*CorpusRepoResult.table_columns, "disk_bytes") if dry_run else None,
         empty="No matching repositories were cached.",
     )
     finish(outcome)

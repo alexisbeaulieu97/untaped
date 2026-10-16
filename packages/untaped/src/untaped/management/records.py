@@ -2,9 +2,11 @@
 
 They live in one module that building the root app imports, so every kind
 core declares is registered before any command runs (``plugin schema``
-finds each one). A command keeps building its rows as it always did and
-validates them into these models where it emits them; field order and
-which fields an output omits match the rows exactly.
+finds each one). A command builds these models where it makes a row.
+Doctor's and setup's rows stay dicts until they are emitted, because
+``doctor fix`` and the setup screen read them as dicts too; they are
+validated into ``DoctorCheckRow`` and ``SetupStep`` at emit. Field order
+and which fields an output omits match the dict rows these replaced.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import ConfigDict, Field
 
-from untaped.output.diagnostic import _is_none
+from untaped.output.diagnostic import _is_none, _Omitted
 from untaped.records import (
     AbsolutePath,
     CheckRecord,
@@ -23,9 +25,6 @@ from untaped.records import (
     TargetRecord,
     _RowError,
 )
-
-#: A field only some rows of a kind carry: left out of the output when unset.
-_Optional = Annotated[str | None, Field(exclude_if=_is_none)]
 
 
 class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
@@ -41,7 +40,7 @@ class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
     profile: str
     store: str | None
     action: str
-    detail: _Optional = None
+    detail: _Omitted = None
     error: _RowError = None
 
 
@@ -112,11 +111,18 @@ class MigrationPreviewRow(Record, kind="untaped.migration_row"):
 
     id: str
     action: str
-    source: _Optional = None
-    destination: _Optional = None
+    source: _Omitted = None
+    destination: _Omitted = None
     detail: str = ""
     bytes: Annotated[int | None, Field(exclude_if=_is_none)] = None
     error: _RowError = None
+
+
+SetupState = Literal["done", "todo", "failed", "skipped"]
+"""Where a ``setup plan`` step stands."""
+
+SetupActor = Literal["agent", "user"]
+"""Who takes a ``setup plan`` step."""
 
 
 class SetupStep(Record, kind="untaped.setup_step"):
@@ -126,10 +132,10 @@ class SetupStep(Record, kind="untaped.setup_step"):
 
     step: str
     plugin: str
-    state: Literal["done", "todo", "failed", "skipped"]
+    state: SetupState
     detail: str
     run: list[str]
-    by: Literal["agent", "user"]
+    by: SetupActor
     """Whose step it is: the user's when a secret would pass through the agent."""
 
 
