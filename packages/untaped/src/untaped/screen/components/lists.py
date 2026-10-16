@@ -727,7 +727,8 @@ class MapEntry:
     """One name a :class:`MapEditor` shows: its value while the map doesn't set it, and why."""
 
     name: str
-    value: str
+    value: str | None
+    """``None`` when nothing sets the name: it shows ``unset``."""
     source: str
     known: bool = True
     """``False`` for a name the map sets but doesn't accept; it shows ``unknown``."""
@@ -743,7 +744,8 @@ class MapEditor:
     itself (the rest is inherited); ``value`` is ``own`` after the edits, an
     open value as enter would keep it. Enter on a name edits its value in
     place, enter again keeps it (an empty value too; an inherited value kept
-    unchanged stays inherited), esc drops the edit. ``delete`` or
+    unchanged stays inherited, while an unset one kept empty is set blank),
+    esc drops the edit. ``delete`` or
     ``backspace`` clears a name the map sets, so it shows what it inherits
     again. Enter on ``done`` is left to the screen,
     which writes the map as ctrl-s does. A name set here shows ``own_source``.
@@ -794,7 +796,7 @@ class MapEditor:
             return self, []
         name = self.entries[at].name
         if message.name == "enter":
-            text = dict(self.own).get(name, self.entries[at].value)
+            text = dict(self.own).get(name, self.entries[at].value or "")
             return replace(self, editing=EditBuffer(text, len(text)), error=""), []
         if message.name in ("delete", "backspace") and name in dict(self.own):
             return self._set(name, None), []
@@ -816,7 +818,7 @@ class MapEditor:
 
     def _kept(self, text: str) -> Self:
         entry = self.entries[self.cursor]
-        if entry.name not in dict(self.own) and text == entry.value:
+        if entry.name not in dict(self.own) and entry.value is not None and text == entry.value:
             return replace(self, editing=None)  # the inherited value, kept as it was: not copied
         return self._set(entry.name, text)
 
@@ -864,7 +866,8 @@ class MapEditor:
                 )
             )
             return line
-        value = own.get(entry.name, entry.value) or "(blank)"
+        value = own.get(entry.name, entry.value)
+        value = "unset" if value is None else value or "(blank)"
         source = entry.source
         if entry.name in own:
             source = f"{self.own_source}, {entry.wins} wins" if entry.wins else self.own_source

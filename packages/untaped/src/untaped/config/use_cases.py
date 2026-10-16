@@ -272,7 +272,8 @@ class NamedValue:
     """One name of a mapping that declares its names (``ui.symbols``), and its value's source."""
 
     name: str
-    value: str
+    value: str | None
+    """``None`` when nothing sets the name, not even its defaults."""
     source: str
     """The profile (``profile:work``) or variable setting it, else its defaults' (``theme``)."""
     declared: bool = True
@@ -311,16 +312,19 @@ class ListNames:
         below = inherited if isinstance(inherited, dict) else {}
         declared = choices.names()
 
-        def found(name: str) -> tuple[str, str, str | None]:
+        def found(name: str) -> tuple[str | None, str, str | None]:
             variable = self._repo.env_var_setting((*descriptor.path, name))
+            profile = provenance.get((*descriptor.path, name))
+            if variable is None and name in current and profile is None:
+                variable = self._repo.env_var_supplying(descriptor)  # an old spelling's
             if variable is not None and name in current:
                 return str(current[name]), variable, variable
-            profile = provenance.get((*descriptor.path, name))
             if name in current and profile is not None and profile != under:
                 return str(current[name]), _profile_label(profile), None
             if name in below:
                 return str(below[name]), _profile_label(DEFAULT_PROFILE), None
-            return str(defaults.get(name, "")), choices.defaults_label, None
+            default = defaults.get(name)
+            return (None if default is None else str(default)), choices.defaults_label, None
 
         names = (*declared, *(name for name in current if name not in declared))
         rows = []

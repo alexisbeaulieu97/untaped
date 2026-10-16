@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import shlex
+from collections.abc import Callable
 from pathlib import PurePath
 from typing import Literal, get_args, get_origin
 
@@ -70,12 +71,13 @@ def opened_value(repo: SettingsReader, descriptor: FieldDescriptor, *, profile: 
     return GetSetting(repo)(descriptor.key, reveal_secrets=True).value
 
 
-def summary(descriptor: FieldDescriptor, own: object) -> str | None:
+def summary(descriptor: FieldDescriptor, own: Callable[[], object]) -> str | None:
     """How a row shows ``descriptor`` when its value doesn't fit one line: a map of names
-    counts what the profile sets itself (``own``); ``None`` for every other shape."""
+    counts what the profile sets itself (``own()``, read only then); ``None`` otherwise."""
     if _shape(descriptor) != "names":
         return None
-    count = len(own) if isinstance(own, dict) else 0
+    mine = own()
+    count = len(mine) if isinstance(mine, dict) else 0
     return f"{count} override{'' if count == 1 else 's'}" if count else "no overrides"
 
 

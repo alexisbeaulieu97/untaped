@@ -630,8 +630,9 @@ def env_var_setting(path: tuple[str, ...]) -> str | None:
     """The set ``UNTAPED_*`` variable that supplies the leaf at ``path``, if any.
 
     The deepest one wins: the leaf's own variable, else an ancestor's JSON
-    object that holds it; an ancestor's value that isn't a JSON object
-    counts, since it cannot be told apart. Old spellings are not checked.
+    object that holds it; an ancestor whose value (or a level inside it)
+    isn't a JSON object counts, since it cannot be told apart. Old spellings
+    are not checked; ``env_var_supplying`` finds a field's.
     """
     for depth in range(len(path), 0, -1):
         name = env_var_name(path[:depth])
@@ -645,7 +646,9 @@ def env_var_setting(path: tuple[str, ...]) -> str | None:
         except ValueError:
             return name
         for part in path[depth:]:
-            if not isinstance(data, dict) or part not in data:
+            if not isinstance(data, dict):
+                return name
+            if part not in data:
                 break
             data = data[part]
         else:

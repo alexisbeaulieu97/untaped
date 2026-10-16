@@ -226,3 +226,32 @@ def test_list_names_finds_a_variable_at_any_depth(
     assert (names["success"].value, names["success"].source) == ("W", variable)
     assert names["success"].variable == variable  # it wins over the profile's own ``S``
     assert names["error"].source == "profile:default"
+
+
+def test_list_names_leaves_a_name_its_defaults_lack_unset(_isolate_settings: Path) -> None:
+    from untaped.config.use_cases import ListNames
+
+    _isolate_settings.write_text("profiles:\n  default: {}\n")
+
+    names = {item.name: item for item in ListNames(SettingsFileRepository())("ui.color_roles")}
+
+    assert (names["success"].value, names["success"].source) == (None, "theme")
+
+
+@pytest.mark.parametrize(
+    ("value", "found"),
+    [
+        ('{"symbols": {"info": "i"}}', True),
+        ('{"symbols": {}}', False),  # the object doesn't hold it
+        ('{"symbols": "x"}', True),  # not an object: can't be told apart
+        ("nope", True),
+    ],
+)
+def test_env_var_setting_finds_the_deepest_variable_holding_a_leaf(
+    monkeypatch: pytest.MonkeyPatch, value: str, found: bool
+) -> None:
+    from untaped.settings import env_var_setting
+
+    monkeypatch.setenv("UNTAPED_UI", value)
+
+    assert env_var_setting(("ui", "symbols", "info")) == ("UNTAPED_UI" if found else None)

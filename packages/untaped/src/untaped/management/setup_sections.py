@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Self
 
 from rich.cells import cell_len
@@ -160,7 +161,8 @@ def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
                 and entry.source.kind == "env"
                 and repo.own_value(entry.key, profile=profile) is not None
             )
-            mine = repo.own_value(entry.key, profile=profile) if exists else None
+            # Read only for a shape that shows it; a missing profile owns nothing.
+            mine = partial(repo.own_value, entry.key, profile=profile)
             shown_as = None if raw else summary(descriptor, mine)
             row = _row(entry, descriptor, variable, own=own, raw=raw, summary=shown_as)
             rows.setdefault(section, []).append(row)

@@ -189,3 +189,11 @@ def test_enter_on_done_and_esc_are_left_to_the_screen_for_a_map() -> None:
     assert done.rows == 3
     assert done.update(Key("enter"))[0] is done
     assert done.update(Key("esc"))[0] is done
+
+
+def test_an_unset_name_says_so_and_kept_empty_is_set_blank() -> None:
+    editor = MapEditor("Colors", (MapEntry("success", None, "theme"),), (), "profile:work")
+
+    assert "unset" in run_solo(editor).frame
+    assert field_of(run_solo(editor, "enter", "esc")).value == {}
+    assert field_of(run_solo(editor, "enter", "enter")).value == {"success": ""}
