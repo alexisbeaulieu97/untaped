@@ -36,7 +36,7 @@ def whoami_command(
     with report_errors(), open_client() as (client, _):
         with _diag.progress("Fetching authenticated user"):
             user = WhoAmI(client)()
-        emit(user, fmt=fmt, columns=columns, kind="github.user")
+        emit(user, fmt=fmt, columns=columns)
 
 
 app.command(repos_app, name="repos")

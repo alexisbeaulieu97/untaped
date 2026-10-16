@@ -7,8 +7,8 @@ from pathlib import Path
 from untaped.sdk import dir_bytes
 from untaped_github.application.inventory import split_full_name
 from untaped_github.application.ports import GitCorpus
-from untaped_github.domain import CorpusRepoResult, WorktreeResult
 from untaped_github.errors import GitCorpusError
+from untaped_github.records import CorpusRepoResult, WorktreeResult
 
 
 class StatusCorpus:

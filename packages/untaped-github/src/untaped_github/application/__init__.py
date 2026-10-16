@@ -25,7 +25,6 @@ from untaped_github.application.search import (
 from untaped_github.application.sweep import (
     CorpusSyncOptions,
     Sweep,
-    SweepMatch,
     SweepOptions,
     SweepReport,
     SyncCorpus,
@@ -49,7 +48,6 @@ __all__ = [
     "SearchUsers",
     "StatusCorpus",
     "Sweep",
-    "SweepMatch",
     "SweepOptions",
     "SweepReport",
     "SyncCorpus",

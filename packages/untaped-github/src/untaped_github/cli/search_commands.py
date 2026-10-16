@@ -138,7 +138,7 @@ def repos_command(
     """Search repositories (``GET /search/repositories``)."""
     from untaped_github.application import SearchRepos  # noqa: PLC0415
     from untaped_github.domain import RepoSearchFilters  # noqa: PLC0415
-    from untaped_github.domain.models import REPO_HIT_COLUMNS  # noqa: PLC0415
+    from untaped_github.records import REPO_HIT_COLUMNS  # noqa: PLC0415
 
     with report_errors():
         repos = _repo_scopes(repo, stdin=stdin)
@@ -241,7 +241,6 @@ def code_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="github.code",
             empty="No code matches found. Check syntax, language, and repository scope.",
         )
 
@@ -323,7 +322,6 @@ def issues_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="github.issue",
             empty="No issues or pull requests found. Expand your query or check "
             "state/label filters.",
         )
@@ -370,6 +368,5 @@ def users_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="github.user_hit",
             empty="No users or organizations found. Try different keywords or filters.",
         )

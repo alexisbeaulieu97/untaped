@@ -31,14 +31,16 @@ from untaped_github.cli.scopes import (
     parse_team_scopes,
     read_stdin_repos,
 )
+from untaped_github.records import SweepFile
 from untaped_github.settings import GithubSettings
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from untaped.sdk import Diagnostics
-    from untaped_github.application import GitCorpus, SweepMatch, SweepReport
-    from untaped_github.domain import RepoSweepOutcome, SweepQuery
+    from untaped_github.application import GitCorpus, SweepReport
+    from untaped_github.domain import SweepQuery
+    from untaped_github.records import RepoSweepOutcome, SweepMatch
 
 
 def sweep_command(
@@ -234,14 +236,10 @@ def sweep_command(
                 _file_records(report.matches),
                 fmt=fmt,
                 columns=columns,
-                kind="github.sweep_file",
                 empty="No matching files found.",
             )
         elif show == "matches":
-            rows = _match_records(report.matches)
-            emit(
-                rows, fmt=fmt, columns=columns, kind="github.sweep_match", empty="No matches found."
-            )
+            emit(report.matches, fmt=fmt, columns=columns, empty="No matches found.")
         else:
             emit(
                 _display_rows(report.rows, query=query, fmt=fmt),
@@ -291,20 +289,7 @@ def _validate_content_patterns(corpus: GitCorpus, query: SweepQuery) -> None:
         raise UsageError(f"{flag} {pattern!r}: {error}")
 
 
-def _match_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
-    return [
-        {
-            "repo": row.repo,
-            "refs": list(row.refs),
-            "path": row.path,
-            "line": row.line,
-            "text": row.text,
-        }
-        for row in rows
-    ]
-
-
-def _file_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
+def _file_records(rows: tuple[SweepMatch, ...]) -> list[SweepFile]:
     """Collapse match lines to one row per repo and path; ``hits`` counts its lines."""
     refs: dict[tuple[str, str], dict[str, None]] = {}
     hits: dict[tuple[str, str], int] = {}
@@ -313,7 +298,7 @@ def _file_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
         refs.setdefault(key, {}).update(dict.fromkeys(row.refs))
         hits[key] = hits.get(key, 0) + 1
     return [
-        {"repo": key[0], "path": key[1], "refs": list(refs[key]), "hits": hits[key]} for key in refs
+        SweepFile(repo=key[0], path=key[1], refs=tuple(refs[key]), hits=hits[key]) for key in refs
     ]
 
 

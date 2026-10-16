@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from untaped_github.application.ports import GithubMeService
-from untaped_github.domain import GithubUser
+from untaped_github.records import GithubUser
 
 
 class WhoAmI:

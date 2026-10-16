@@ -7,7 +7,7 @@ import re
 from collections.abc import Callable
 from typing import Literal
 
-from untaped_github.domain.models import GithubRepo
+from untaped_github.records import GithubRepo
 
 RepoMatcher = Callable[[GithubRepo], bool]
 ArchivedMode = Literal["include", "exclude", "only"]
