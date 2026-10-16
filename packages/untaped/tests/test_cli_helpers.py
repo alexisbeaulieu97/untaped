@@ -24,6 +24,7 @@ from untaped.sdk import (
     Record,
     UntapedError,
     UtcTimestamp,
+    check_columns,
     clamp_parallel,
     create_app,
     emit,
@@ -636,6 +637,45 @@ def test_unknown_column_on_rows_reporting_a_change_warns_and_still_writes_them(
     rows = json.loads(result.stdout)
     assert (rows if single else rows[0]) == {"id": "a", "nope": None}
     assert "warning: unknown column 'nope'; valid columns:" in result.stderr
+
+
+@pytest.mark.parametrize("columns", [["name,nope"], ["+nope"], ["-name", "-nope"]])
+def test_check_columns_refuses_an_unknown_name_before_the_command_acts(
+    columns: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        check_columns(_Widget, columns, fmt="json")
+    assert excinfo.value.code == 2
+    assert "unknown column 'nope'; valid columns: name, value" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("columns", "fmt"),
+    [
+        (None, "json"),
+        (["name,value"], "raw"),
+        (["+value"], "table"),
+        (["?"], "table"),
+        (["nope"], "pipe"),
+    ],
+    ids=["none", "names", "edit", "question-mark", "pipe"],
+)
+def test_check_columns_passes_known_names_and_what_emit_does_not_check(
+    columns: list[str] | None,
+    fmt: Literal["json", "raw", "table", "pipe"],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    check_columns(_Widget, columns, fmt=fmt)
+    assert capsys.readouterr().err == ""
+
+
+def test_check_columns_refuses_names_mixed_with_edits(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        check_columns(_Widget, ["name,+value"], fmt="table")
+    assert excinfo.value.code == 2
+    assert "error: --columns takes either column names" in capsys.readouterr().err
 
 
 def test_emit_unknown_mapping_column_warns_but_renders(

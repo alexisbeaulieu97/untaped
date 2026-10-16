@@ -55,6 +55,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "TableGlyph",
         "TargetRecord",
         "UtcTimestamp",
+        "check_columns",
         "echo",
         "emit",
         "emit_document",

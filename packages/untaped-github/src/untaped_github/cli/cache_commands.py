@@ -19,6 +19,7 @@ from untaped.sdk import (
     YesOption,
     app_context,
     batch_apply,
+    check_columns,
     clamp_parallel,
     create_app,
     emit,
@@ -43,7 +44,7 @@ from untaped_github.cli.scopes import (
     read_stdin_repos,
 )
 from untaped_github.errors import GithubError
-from untaped_github.records import CorpusRepoResult, GithubRepo
+from untaped_github.records import CorpusRepoResult, GithubRepo, WorktreeResult
 from untaped_github.settings import GithubSettings
 
 _diag = Diagnostics()
@@ -194,6 +195,7 @@ def delete_command(
 ) -> None:
     """Delete cached repositories from the corpus; a repo another plugin uses stays for it."""
     with report_errors():
+        check_columns(CorpusRepoResult, columns, fmt=fmt)
         names = tuple(repos or ())
         if names and all_repos:
             raise UsageError("pass REPO arguments or --all, not both")
@@ -231,6 +233,7 @@ def prune_command(
 ) -> None:
     """Delete cached repositories that left or were archived in their org (as `cache delete`)."""
     with report_errors():
+        check_columns(CorpusRepoResult, columns, fmt=fmt)
         orgs = org_scope(org, scoped=False)
         if not orgs:
             raise UsageError("cache prune requires --org or a github.default_org setting")
@@ -337,6 +340,7 @@ def worktree_command(
     from untaped_github.application import WorktreeCorpus  # noqa: PLC0415
 
     with report_errors():
+        check_columns(WorktreeResult, columns, fmt=fmt)
         settings = app_context().section("github", GithubSettings)
         with _diag.progress("Materializing worktree"):
             result = WorktreeCorpus(open_corpus(settings))(repo, ref=ref)

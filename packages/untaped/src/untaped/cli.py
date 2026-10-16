@@ -477,13 +477,8 @@ def _selected_columns(
         return default, frozenset()
     if fmt == "raw" and table_columns:
         default = list(table_columns)  # edits start from the defaults in raw too
-    names = [part.strip() for entry in columns for part in entry.split(",") if part.strip()]
+    names = _column_names(columns)
     edits = [name for name in names if name[0] in "+-"]
-    if edits and len(edits) != len(names):
-        raise_usage(
-            "--columns takes either column names or +name/-name edits of the defaults, "
-            f"not both: {', '.join(names)}"
-        )
     _check_columns(
         [name.lstrip("+-") for name in names], rows, fmt=fmt, schema=schema, strict=strict
     )
@@ -501,6 +496,33 @@ def _selected_columns(
     if not selection:
         raise_usage(f"--columns removes every column: {', '.join(names)}")
     return selection, frozenset(added)
+
+
+def _column_names(columns: list[str]) -> list[str]:
+    """The names ``--columns`` gives, split on commas; names and edits never mix."""
+    names = [part.strip() for entry in columns for part in entry.split(",") if part.strip()]
+    edits = [name for name in names if name[0] in "+-"]
+    if edits and len(edits) != len(names):
+        raise_usage(
+            "--columns takes either column names or +name/-name edits of the defaults, "
+            f"not both: {', '.join(names)}"
+        )
+    return names
+
+
+def check_columns(model: type[BaseModel], columns: list[str] | None, *, fmt: OutputFormat) -> None:
+    """Refuse a ``--columns`` name no ``model`` field has, before the command acts.
+
+    :func:`emit` checks columns only when it renders. A command whose rows
+    follow a side effect but are not :class:`~untaped.records.OutcomeRecord`
+    rows (which only warn) calls this first, so the usage error (exit 2) comes
+    before anything changed, as the exit code promises. ``+name``/``-name``
+    edits are checked by name; ``pipe`` and ``--columns ?`` are left alone.
+    """
+    if columns is None or columns == ["?"] or fmt == "pipe":
+        return
+    names = [name.lstrip("+-") for name in _column_names(columns)]
+    _check_columns(names, [], fmt=fmt, schema=_model_fields(model), strict=True)
 
 
 def _check_columns(
@@ -728,8 +750,13 @@ def _model_schema(
     for item in items:
         model = type(item)
         assert issubclass(model, BaseModel)
-        names.update(dict.fromkeys([*dumped_names(model).values(), *model.model_computed_fields]))
+        names.update(dict.fromkeys(_model_fields(model)))
     return list(names)
+
+
+def _model_fields(model: type[BaseModel]) -> list[str]:
+    """The columns ``model`` rows have: their dumped field names, then computed fields."""
+    return [*dumped_names(model).values(), *model.model_computed_fields]
 
 
 def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:

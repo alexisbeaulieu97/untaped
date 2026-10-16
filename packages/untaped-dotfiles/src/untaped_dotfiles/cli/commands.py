@@ -16,6 +16,7 @@ from untaped.sdk import (
     UntapedError,
     UsageError,
     YesOption,
+    check_columns,
     create_app,
     echo,
     emit,
@@ -50,6 +51,7 @@ from untaped_dotfiles.domain.status import needs_attention
 from untaped_dotfiles.records import (
     ApplyOutcome,
     ItemOutcome,
+    ItemRow,
     PlaceOutcome,
     RemoveOutcome,
     RepoOutcome,
@@ -105,6 +107,7 @@ def subscribe_command(
     picks them. A registered checkout is fetched but never pulled.
     """
     with report_errors():
+        check_columns(ItemRow, columns, fmt=fmt)
         svc = services()
         subscribe = SubscribeRepo(
             svc.store, svc.git, svc.inventory, repos_dir=svc.repos_dir, now=utc_now

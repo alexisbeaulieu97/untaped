@@ -167,8 +167,7 @@ free, but a command that writes declares it with `@writes`, or
 
 - Destructive batches go through `batch_apply(..., destructive=True,
   assume_yes=yes)`. It previews, then confirms. On a decline it sets
-  `outcome.cancelled`, and `finish(outcome)` prints the decline line and
-  exits 1.
+  `outcome.cancelled`; `finish(outcome)` prints the decline line and exits 1.
 - Single confirmations use `ui.confirm_or_cancel(message, assume_yes=yes,
   refusal="<verb> requires --yes when not interactive", preview=...)`, which
   raises `OperationCancelledError` on a decline (`ui.confirm_action` returns
@@ -197,7 +196,9 @@ free, but a command that writes declares it with `@writes`, or
   command; a single record shows every field.
 - Never pass defaults as `columns=` (`columns or DEFAULTS`):
   `--columns +name/-name` edits the defaults, and a named column is always
-  shown, even when empty.
+  shown, even when empty. An unknown name only warns on `OutcomeRecord` rows,
+  which follow the change or its plan; a command whose other rows follow a
+  side effect calls `check_columns` first.
 - Declare a record's kind on its class, `class Widget(Record,
   kind="acme-tools.widget")`, in a `records` module your app imports:
   `<plugin>.<noun>` (another prefix is `foreign-kind`), `<plugin>.<verb>_outcome`
@@ -211,10 +212,10 @@ free, but a command that writes declares it with `@writes`, or
   below, so its identifying field leads the table and `--format raw`. An
   inherited `action` follows it (after `name` when the record leads with
   `id` and `name`).
-- Base mutation results on `OutcomeRecord`; an unknown `--columns` name on
-  them only warns, as the change already ran. `action` is one of `planned`,
-  `created`, `updated`, `deleted`, `unchanged`, `skipped` (never a failure),
-  `failed`, `partial`, `conflict`, `cancelled` or a domain past-tense verb.
+- Base mutation results on `OutcomeRecord`. `action` uses this vocabulary:
+  `planned`, `created`, `updated`, `deleted`, `unchanged`, `skipped` (never a
+  failure), `failed`, `partial`, `conflict`, `cancelled`, plus any
+  domain-specific past-tense verbs.
 - Base records about files or directories on `TargetRecord`, which requires an
   absolute `target_path`.
 - `error` is reserved: both bases give a failed row an optional `error`
@@ -308,13 +309,12 @@ from untaped.sdk import read_identifiers
 identifiers = read_identifiers([], stdin=True, id_field="id", accepts=(Item,))
 ```
 
-For whole records, `read_stdin_input(accepts=...)` returns the bare
-values or the parsed envelopes (a `StdinInput`). `read_identifiers` and
-`read_stdin_input` raise on empty stdin.
-When an empty pipe (a filter that matched nothing) should do nothing, pass
-`read_stdin_input(allow_empty=True)`: it returns no values, which the command
-must treat as "nothing to do", never as "everything". A terminal stdin with
-nothing piped still raises.
+For whole records, `read_stdin_input(accepts=...)` returns the bare values or
+the parsed envelopes (a `StdinInput`). `read_identifiers` and
+`read_stdin_input` raise on empty stdin. When an empty pipe (a filter that
+matched nothing) should do nothing, pass `read_stdin_input(allow_empty=True)`:
+it returns no values, which the command must treat as "nothing to do", never
+as "everything". A terminal stdin with nothing piped still raises.
 
 A plugin joins pipelines with the first-party plugins:
 
