@@ -78,8 +78,9 @@ finding about a project still needs the project read.
 - `--filter KEY=VALUE` (repeatable) and `--search TEXT` ask the controller
   which resources to report, one listing per kind (`--kind`'s, else every
   kind with the filtered fields), as `export` does. They need the live
-  origin: with FILES or `--cached` they are a usage error. A query that
-  matches nothing prints a warning and exits 0.
+  origin: with FILES or `--cached`, or with a field no such kind has, they
+  are a usage error. A query that matches nothing prints a warning and
+  exits 0.
 - `--ignore RULE[:GLOB]` leaves a rule out (where the target matches the
   glob); `--select RULE` reports only the rules named. The profile's
   `lint.ignore` and the repository's `.untaped/lint.yml` `ignore:` apply

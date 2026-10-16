@@ -212,6 +212,8 @@ def test_a_kind_the_token_cannot_list_is_unresolved_not_absent(fake_aap: Any) ->
     found = _found(result)
     assert ("awx.unresolved-reference", "JobTemplate/Platform/deploy-web") in found
     assert ("awx.playbook-missing", "JobTemplate/Platform/deploy-web") not in found
+    searched = _lint("--search", "deploy")  # lists only the kinds the token could list
+    assert ("awx.unresolved-reference", "JobTemplate/Platform/deploy-web") in _found(searched)
 
 
 @pytest.mark.usefixtures("composed")
@@ -246,9 +248,12 @@ def test_a_filter_that_matches_nothing_says_so_and_exits_0(fake_aap: Any) -> Non
         (["--cached", "--search", "x"], "narrow with --kind or --organization"),
         (["--kind", "gadgets"], "--kind: unknown kind 'gadgets'"),
         (["--org", "A", "--filter", "organization__name=A"], "do not combine --org"),
+        (["--kind", "projects", "--filter", "playbook=x"],
+         "--filter: 'playbook' is not a field of Project"),
+        (["--filter", "colour=x"], "--filter: 'colour' is not a field of any kind"),
     ],
     ids=["offline-alone", "refresh-files", "cached-files", "filter-files", "search-cached",
-         "unknown-kind", "org-twice"],
+         "unknown-kind", "org-twice", "filter-not-on-kind", "filter-on-no-kind"],
 )  # fmt: skip
 def test_usage_mistakes_exit_2_before_anything_is_read(
     fake_aap: Any, tmp_path: Path, args: list[str], message: str

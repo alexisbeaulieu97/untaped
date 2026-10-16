@@ -73,6 +73,7 @@ def run_lint(
     """Lint the origin ``files``/``offline`` name; prints the rows and exits (lint's codes)."""
     catalog = AwxResourceCatalog()
     spec = _kind(catalog, query.kind)
+    _check_filters(catalog, spec, query.filters)
     exact: list[str] = []
     with report_errors():
         if files and offline:
@@ -117,6 +118,15 @@ def _kind(catalog: Catalog, kind: str | None) -> ResourceSpec | None:
         return catalog.get(kind)
     except ConfigError as exc:
         raise_usage(f"--kind: {exc}")
+
+
+def _check_filters(catalog: Catalog, spec: ResourceSpec | None, filters: dict[str, str]) -> None:
+    """Refuse a ``--filter`` field no kind it lists has, before anything is read."""
+    specs = [spec] if spec is not None else [catalog.get(kind) for kind in catalog.kinds()]
+    if filters and all(filter_field_not_on_spec(filters, each) is not None for each in specs):
+        field = filter_field_not_on_spec(filters, specs[0])
+        where = spec.kind if spec is not None else "any kind"
+        raise_usage(f"--filter: {field!r} is not a field of {where}")
 
 
 def _only(spec: ResourceSpec | None, organization: str | None) -> list[str]:
@@ -176,9 +186,11 @@ def _matching(
     """The targets of the snapshot's resources the controller lists for the query.
 
     One listing per kind: ``--kind``'s, else every kind that has the filtered
-    fields. ``--organization`` scopes each listing as ``export`` does.
+    fields, of those the token could list. ``--organization`` scopes each
+    listing as ``export`` does.
     """
-    specs = [spec] if spec is not None else [ctx.catalog.get(kind) for kind in ctx.catalog.kinds()]
+    kinds = [spec.kind] if spec is not None else ctx.catalog.kinds()
+    specs = [ctx.catalog.get(kind) for kind in kinds if kind in resources.loaded]
     paths: set[str] = set()
     for each in specs:
         params = server_filters_for_spec(
