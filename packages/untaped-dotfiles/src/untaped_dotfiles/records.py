@@ -1,18 +1,21 @@
-"""Rows the dotfiles commands emit (record kinds ``dotfiles.*``)."""
+"""The records the dotfiles commands emit, each declaring its ``dotfiles.*`` kind.
+
+The plugin's spec imports this module, so every kind registers before any
+command runs (``plugin schema`` finds each one). It holds models only, to
+keep the plugin's load cheap.
+"""
 
 from __future__ import annotations
 
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
-
-from untaped.sdk import OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.sdk import OutcomeRecord, Record, TargetRecord, UtcTimestamp
 from untaped_dotfiles.domain.models import Mode, Policy
 from untaped_dotfiles.domain.status import FileState
 
 
-class RepoRow(TargetRecord):
-    """``dotfiles.repo``: one subscribed repo and its fetch state."""
+class RepoRow(TargetRecord, kind="dotfiles.repo"):
+    """One subscribed repo and its fetch state."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("name", "ref", "managed", "behind", "items")
 
@@ -26,10 +29,9 @@ class RepoRow(TargetRecord):
     items: int = 0
 
 
-class ItemRow(BaseModel):
-    """``dotfiles.item``: one manifest item and the machine's choice about it."""
+class ItemRow(Record, kind="dotfiles.item"):
+    """One manifest item and the machine's choice about it."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
     table_columns: ClassVar[tuple[str, ...]] = (
         "repo",
         "name",
@@ -53,8 +55,8 @@ class ItemRow(BaseModel):
     description: str = ""
 
 
-class StatusRow(TargetRecord):
-    """``dotfiles.status``: the state of one placed path."""
+class StatusRow(TargetRecord, kind="dotfiles.status"):
+    """The state of one placed path."""
 
     table_columns: ClassVar[tuple[str, ...]] = (
         "item",
@@ -75,10 +77,8 @@ class StatusRow(TargetRecord):
     detail: str = ""
 
 
-class StatusSummary(BaseModel):
-    """``dotfiles.status.summary``: counts over the status rows, also written to ``status.json``."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
+class StatusSummary(Record, kind="dotfiles.status.summary"):
+    """Counts over the status rows, also written to ``status.json``."""
 
     checked_at: UtcTimestamp
     total: int
@@ -105,11 +105,13 @@ PlaceAction = Literal[
 
 
 class PlaceOutcome(OutcomeRecord, TargetRecord):
-    """``dotfiles.{apply,sync,remove}_outcome``: what was done for one placed path.
+    """What was done for one placed path; kind-less, so the command picks the kind.
 
-    ``state`` is the path's state before the action, so a script can tell a
-    ``skipped`` row that was ``behind`` under ``manual`` from one that was
-    ``applied``.
+    The applier builds these for ``apply``, ``sync`` and ``remove`` alike;
+    each command emits them as its own subclass (:class:`ApplyOutcome`,
+    :class:`SyncOutcome`, :class:`RemoveOutcome`). ``state`` is the path's
+    state before the action, so a script can tell a ``skipped`` row that was
+    ``behind`` under ``manual`` from one that was ``applied``.
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("item", "source", "action", "state", "detail")
@@ -123,11 +125,23 @@ class PlaceOutcome(OutcomeRecord, TargetRecord):
     detail: str = ""
 
 
+class ApplyOutcome(PlaceOutcome, kind="dotfiles.apply_outcome"):
+    """What ``apply`` did, or would do, for one placed path."""
+
+
+class SyncOutcome(PlaceOutcome, kind="dotfiles.sync_outcome"):
+    """What ``sync`` did, or would do, for one placed path."""
+
+
+class RemoveOutcome(PlaceOutcome, kind="dotfiles.remove_outcome"):
+    """What ``remove`` did, or would do, for one placed path."""
+
+
 ItemAction = Literal["created", "updated", "deleted", "planned"]
 
 
-class ItemOutcome(OutcomeRecord):
-    """``dotfiles.item_outcome``: what ``enable`` or ``disable`` recorded for one item."""
+class ItemOutcome(OutcomeRecord, kind="dotfiles.item_outcome"):
+    """What ``enable`` or ``disable`` recorded for one item."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "name", "action", "policy", "detail")
 
@@ -141,8 +155,8 @@ class ItemOutcome(OutcomeRecord):
 RepoAction = Literal["planned", "updated", "deleted", "unchanged", "failed", "skipped"]
 
 
-class RepoOutcome(OutcomeRecord):
-    """``dotfiles.repo_outcome``: what ``unsubscribe`` did for a repo.
+class RepoOutcome(OutcomeRecord, kind="dotfiles.repo_outcome"):
+    """What ``unsubscribe`` did for a repo.
 
     ``apply`` and ``sync`` build the same rows for the fetches and fast-forwards
     they run, and report them on stderr rather than emitting them.

@@ -13,7 +13,6 @@ from untaped.sdk import (
     Diagnostics,
     DryRunOption,
     FormatOption,
-    OutputFormat,
     UntapedError,
     UsageError,
     YesOption,
@@ -23,7 +22,6 @@ from untaped.sdk import (
     finish,
     plural,
     q,
-    render_rows,
     report_errors,
     run_hint,
     ui_context,
@@ -48,27 +46,20 @@ from untaped_dotfiles.cli.common import (
     utc_now,
 )
 from untaped_dotfiles.domain.models import Policy, item_id
-from untaped_dotfiles.domain.records import (
+from untaped_dotfiles.domain.status import needs_attention
+from untaped_dotfiles.records import (
+    ApplyOutcome,
     ItemOutcome,
     PlaceOutcome,
+    RemoveOutcome,
     RepoOutcome,
+    SyncOutcome,
 )
-from untaped_dotfiles.domain.status import needs_attention
 
 app = create_app(
     name="dotfiles",
     help="Place dotfiles from subscribed repos, with a policy per item per machine.",
 )
-
-ITEM = "dotfiles.item"
-ITEM_OUTCOME = "dotfiles.item_outcome"
-REPO = "dotfiles.repo"
-REPO_OUTCOME = "dotfiles.repo_outcome"
-STATUS = "dotfiles.status"
-STATUS_SUMMARY = "dotfiles.status.summary"
-APPLY_OUTCOME = "dotfiles.apply_outcome"
-SYNC_OUTCOME = "dotfiles.sync_outcome"
-REMOVE_OUTCOME = "dotfiles.remove_outcome"
 
 _diag = Diagnostics()
 
@@ -120,7 +111,7 @@ def subscribe_command(
         )
         record = subscribe(source, name=name, manifest=manifest, ref=ref)
         rows = svc.catalog.rows(record.name)
-        emit(rows, fmt=fmt, columns=columns, kind=ITEM, empty="No items in the manifest.")
+        emit(rows, fmt=fmt, columns=columns, empty="No items in the manifest.")
         _diag.success(f"subscribed {q(record.name)} ({plural(len(rows), 'item')})")
         _diag.hint(run_hint("dotfiles enable ITEM"))
 
@@ -154,7 +145,6 @@ def unsubscribe_command(
                 [RepoOutcome(name=name, action="planned", detail=what)],
                 fmt=fmt,
                 columns=columns,
-                kind=REPO_OUTCOME,
             )
             return
         ui_context(strict=False).confirm_or_cancel(
@@ -163,7 +153,7 @@ def unsubscribe_command(
             refusal="unsubscribe requires --yes when not interactive",
         )
         row = unsubscribe(record, delete_clone=delete_clone)
-        emit([row], fmt=fmt, columns=columns, kind=REPO_OUTCOME)
+        emit([row], fmt=fmt, columns=columns)
         _diag.success(f"unsubscribed {q(name)}")
 
 
@@ -172,7 +162,7 @@ def repos_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
     with report_errors():
         svc = services()
         rows = svc.reader.repo_rows()
-        emit(rows, fmt=fmt, columns=columns, kind=REPO, empty="No repos subscribed.")
+        emit(rows, fmt=fmt, columns=columns, empty="No repos subscribed.")
 
 
 # -- items ---------------------------------------------------------------------
@@ -194,7 +184,7 @@ def items_command(
     with report_errors():
         svc = services()
         rows = svc.catalog.rows(repo, include_excluded=all_items)
-        emit(rows, fmt=fmt, columns=columns, kind=ITEM, empty="No items found.")
+        emit(rows, fmt=fmt, columns=columns, empty="No items found.")
 
 
 @writes
@@ -239,7 +229,7 @@ def enable_command(
             )
             for row in rows
         ]
-        emit(outcomes, fmt=fmt, columns=columns, kind=ITEM_OUTCOME)
+        emit(outcomes, fmt=fmt, columns=columns)
         _diag.success(f"enabled {plural(len(rows), 'item')}")
         _diag.hint(run_hint("dotfiles apply"))
 
@@ -266,7 +256,7 @@ def disable_command(
             ItemOutcome(repo=c.repo, name=c.name, action="deleted", policy=c.policy)
             for c in choices
         ]
-        emit(rows, fmt=fmt, columns=columns, kind=ITEM_OUTCOME, empty="No items to disable.")
+        emit(rows, fmt=fmt, columns=columns, empty="No items to disable.")
 
 
 # -- status ----------------------------------------------------------------------
@@ -316,9 +306,9 @@ def status_command(
         if not items and repo is None:
             svc.store.write_status(summary)
         if summary_only:
-            emit(summary, fmt=fmt, columns=columns, kind=STATUS_SUMMARY)
+            emit(summary, fmt=fmt, columns=columns)
         else:
-            emit(rows, fmt=fmt, columns=columns, kind=STATUS, empty="No enabled items.")
+            emit(rows, fmt=fmt, columns=columns, empty="No enabled items.")
         for row in rows:
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.item}/{row.source}")
@@ -420,13 +410,13 @@ def apply_command(
             steps = svc.applier.plan_apply(placements, force=force)
             planned = svc.applier.planned(steps) + moved
             if dry_run:
-                emit(planned, fmt=fmt, columns=columns, kind=APPLY_OUTCOME)
+                emit(_as(ApplyOutcome, planned), fmt=fmt, columns=columns)
                 return
             todo = [s for s in steps if s.action in ("apply", "remove")]
             if todo or moved:
                 _confirm(
+                    svc,
                     planned,
-                    fmt=fmt,
                     verb="apply",
                     message=f"Apply {plural(len(todo), 'path')}?",
                     yes=yes,
@@ -435,7 +425,7 @@ def apply_command(
                 steps = svc.applier.replan(steps, force=force)
             rows = svc.applier.execute(steps) + moved
             _refresh_status(svc)
-        emit(rows, fmt=fmt, columns=columns, kind=APPLY_OUTCOME, empty="Nothing to apply.")
+        emit(_as(ApplyOutcome, rows), fmt=fmt, columns=columns, empty="Nothing to apply.")
         for row in rows:
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.item}/{row.source}")
@@ -482,7 +472,7 @@ def sync_command(
                 summary = svc.reader.summary(status_rows, repos_behind=svc.reader.repos_behind())
                 svc.store.write_status(summary)
                 attention = summary.attention
-        emit(rows, fmt=fmt, columns=columns, kind=SYNC_OUTCOME, empty="Nothing enabled.")
+        emit(_as(SyncOutcome, rows), fmt=fmt, columns=columns, empty="Nothing enabled.")
         _note_repos(list(repo_rows.values()))
         for repo_row in repo_rows.values():
             if repo_row.error is not None:
@@ -528,12 +518,12 @@ def remove_command(
             steps = svc.applier.plan_apply(resolved.placements, force=True)
             planned = svc.applier.preview_removal(steps)
             if dry_run:
-                emit(planned, fmt=fmt, columns=columns, kind=REMOVE_OUTCOME)
+                emit(_as(RemoveOutcome, planned), fmt=fmt, columns=columns)
                 return
             recorded = [s for s in steps if s.found.record is not None]
             _confirm(
+                svc,
                 planned,
-                fmt=fmt,
                 verb="remove",
                 message=f"Remove {plural(len(recorded), 'path')} and disable "
                 f"{plural(len(choices), 'item')}?",
@@ -543,7 +533,7 @@ def remove_command(
             for choice in choices:
                 svc.store.remove_item(choice.repo, choice.name)
             _refresh_status(svc)
-        emit(rows, fmt=fmt, columns=columns, kind=REMOVE_OUTCOME, empty="Nothing to remove.")
+        emit(_as(RemoveOutcome, rows), fmt=fmt, columns=columns, empty="Nothing to remove.")
         for row in rows:
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.item}/{row.source}")
@@ -621,25 +611,47 @@ def _moving_with(
     return rows
 
 
+def _as[T: PlaceOutcome](model: type[T], rows: Sequence[PlaceOutcome]) -> list[T]:
+    """The applier's rows as the command's own outcome kind (the fields are the same)."""
+    return [model.model_validate(row, from_attributes=True) for row in rows]
+
+
 def _confirm(
+    svc: Services,
     planned: Sequence[PlaceOutcome],
     *,
-    fmt: OutputFormat,
     verb: str,
     message: str,
     yes: bool,
 ) -> None:
-    def preview() -> None:
-        rows = [row.model_dump(mode="json") for row in planned]
-        _diag.info(
-            render_rows(rows, fmt=fmt, table_columns=PlaceOutcome.table_columns), unmuted=True
-        )
-
     ui_context(strict=False).confirm_or_cancel(
         message,
         assume_yes=yes,
         refusal=f"{verb} requires --yes when not interactive",
-        preview=preview,
+        preview=lambda: _diag.info(_plan_text(svc, planned), unmuted=True),
+    )
+
+
+def _plan_text(svc: Services, planned: Sequence[PlaceOutcome]) -> str:
+    """The plan a prompt shows on stderr: aligned columns, a column empty on every row left out.
+
+    Text for the person answering, whatever ``--format`` is; the rows go to
+    stdout once the command runs.
+    """
+    columns: dict[str, list[str]] = {
+        "item": [row.item for row in planned],
+        "source": [row.source for row in planned],
+        "action": [row.action for row in planned],
+        "state": [row.state or "" for row in planned],
+        "target": [_shown(svc, row.target_path) for row in planned],
+        "detail": [row.detail for row in planned],
+    }
+    shown = [[name, *values] for name, values in columns.items() if any(values)]
+    widths = [max(map(len, column)) for column in shown]
+    lines = zip(*shown, strict=True)
+    return "\n".join(
+        "  ".join(cell.ljust(width) for cell, width in zip(line, widths, strict=True)).rstrip()
+        for line in lines
     )
 
 

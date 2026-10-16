@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING
 from untaped.sdk import UsageError, not_found, q
 from untaped_dotfiles.domain.manifest import Item
 from untaped_dotfiles.domain.models import ItemChoice, Machine, Policy, RepoRecord, item_id
-from untaped_dotfiles.domain.records import ItemRow
 from untaped_dotfiles.domain.selection import item_exclusion
 from untaped_dotfiles.errors import ItemNotFoundError, RepoNotFoundError
+from untaped_dotfiles.records import ItemRow
 
 if TYPE_CHECKING:
     from untaped_dotfiles.application.inventory import Inventory

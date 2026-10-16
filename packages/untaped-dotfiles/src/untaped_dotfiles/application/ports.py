@@ -17,8 +17,8 @@ if TYPE_CHECKING:
         RepoRecord,
         TreeFile,
     )
-    from untaped_dotfiles.domain.records import StatusSummary
     from untaped_dotfiles.domain.status import TargetInfo
+    from untaped_dotfiles.records import StatusSummary
 
 
 class SourceTree(Protocol):

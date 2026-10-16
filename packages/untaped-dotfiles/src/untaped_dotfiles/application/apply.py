@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, UntapedError, q
 from untaped_dotfiles.domain.models import AppliedRecord, RepoRecord
-from untaped_dotfiles.domain.records import PlaceAction, PlaceOutcome, RepoOutcome
 from untaped_dotfiles.domain.status import Action, sync_action, target_modified
 from untaped_dotfiles.errors import DotfilesError, GitError
+from untaped_dotfiles.records import PlaceAction, PlaceOutcome, RepoOutcome
 
 if TYPE_CHECKING:
     from untaped_dotfiles.application.inventory import Inventory, Placement

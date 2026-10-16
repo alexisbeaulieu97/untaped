@@ -14,8 +14,8 @@ from typing import Any
 
 from untaped.sdk import StateCollection, atomic_write, file_lock
 from untaped_dotfiles.domain.models import AppliedRecord, ItemChoice, RepoRecord, item_id
-from untaped_dotfiles.domain.records import StatusSummary
 from untaped_dotfiles.errors import DotfilesError
+from untaped_dotfiles.records import StatusSummary
 
 _BUSY_HINT = "wait for the other untaped dotfiles command to finish, then retry"
 STATUS_FILE = "status.json"

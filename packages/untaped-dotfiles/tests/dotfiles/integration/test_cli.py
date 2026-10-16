@@ -266,7 +266,25 @@ def test_apply_without_a_terminal_needs_yes_and_a_decline_changes_nothing(
     assert "starship.toml" in declined.stderr  # the plan was previewed
     header = declined.stderr.lower()
     assert "item" in header and "target_path" not in header  # the default columns
+    assert "~/.config/starship.toml" in declined.stderr  # the target, as the person reads it
     assert not (home / ".config" / "starship.toml").exists()
+    as_json = run(
+        app,
+        ["apply", "--format", "json"],
+        terminal=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+    )
+    plan = as_json.stderr.splitlines()
+    # The preview is text for the person answering, whatever --format the rows take.
+    assert plan[0].split() == ["item", "source", "action", "state", "target"]
+    assert plan[1].split() == [
+        "starship",
+        "starship.toml",
+        "planned",
+        "pending",
+        "~/.config/starship.toml",
+    ]
+    assert as_json.stdout == ""
     accepted = run(
         app, ["apply"], terminal=True, prompt_backend=ScriptedPromptBackend(confirms=[True])
     )
