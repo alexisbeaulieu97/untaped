@@ -162,6 +162,10 @@ CONFIG_WRITE_CONTEXT = "untaped_config_write"
 CONFIG_WRITTEN_KEY_CONTEXT = "untaped_config_written_key"
 
 
+THEME_CHOICES = Choices(lambda: BUILTIN_THEMES, "themes", noun="UI theme")
+"""The themes ``ui.theme`` accepts: the write check, doctor and theme resolution read it."""
+
+
 class UiSettings(BaseModel):
     """Per-profile UI presentation preferences (the ``ui`` section of a profile).
 
@@ -172,9 +176,7 @@ class UiSettings(BaseModel):
     option (``UNTAPED_FORMAT`` wins over it; an explicit flag wins over both).
     """
 
-    theme: Annotated[str, Choices(lambda: BUILTIN_THEMES, "themes", noun="UI theme")] = Field(
-        default="default", description="Built-in theme."
-    )
+    theme: Annotated[str, THEME_CHOICES] = Field(default="default", description="Built-in theme.")
     format: OutputFormat | None = Field(
         default=None,
         description=(
@@ -213,15 +215,17 @@ class UiSettings(BaseModel):
         """Refuse a name outside a field's :class:`Choices`, on write only.
 
         Loading stays lenient (doctor reports a stray). With a written key in
-        the context, only that key is checked, so a stray already on disk never
-        blocks writing another ``ui`` key.
+        the context, a mapping is checked only when it is that key, so a stray
+        name already on disk never blocks writing another ``ui`` key. A
+        single value is always checked: a stray theme breaks every themed
+        command, so a write that keeps it would fail after saving.
         """
         context = info.context
         choices = field_choices(cls.model_fields[info.field_name or ""])
         if choices is None or not (isinstance(context, dict) and context.get(CONFIG_WRITE_CONTEXT)):
             return value
         written = context.get(CONFIG_WRITTEN_KEY_CONTEXT)
-        if written is not None and written != f"ui.{info.field_name}":
+        if isinstance(value, Mapping) and written not in (None, f"ui.{info.field_name}"):
             return value
         refusal = choices.refusal(value)
         if refusal is not None:
@@ -329,12 +333,8 @@ def resolve_theme(settings: UiSettings | None = None) -> ThemeSpec:
 def _theme_named(name: str) -> ThemeSpec:
     theme = BUILTIN_THEMES.get(name)
     if theme is None:
-        raise ConfigError(f"unknown UI theme: {name!r}. Valid themes: {_valid_themes()}")
+        raise ConfigError(THEME_CHOICES.refusal(name) or f"unknown UI theme {name!r}")
     return theme
-
-
-def _valid_themes() -> str:
-    return ", ".join(sorted(BUILTIN_THEMES))
 
 
 def resolve_theme_or_default(

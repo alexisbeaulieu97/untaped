@@ -13,13 +13,15 @@ import types
 import typing
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, get_args, get_origin
+from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 from pydantic import BaseModel, SecretStr
-from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from untaped.redaction import redact_url_password
+
+if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
 
 
 @dataclass(frozen=True)
@@ -40,7 +42,7 @@ class Choices:
     """Plural noun for messages and docs (``themes``, ``color roles``)."""
 
     noun: str = "name"
-    """Singular noun for an unknown ``str`` value (``UI theme``)."""
+    """Singular noun for what is unknown (``UI theme``)."""
 
     def names(self) -> tuple[str, ...]:
         """The accepted names, in declared order."""
@@ -64,7 +66,7 @@ class Choices:
         if not stray:
             return None
         shown = ", ".join(f"{prefix}.{name}" if prefix else name for name in stray)
-        return f"unknown name {shown}. Valid {self.label}: {valid}"
+        return f"unknown {self.noun} {shown}. Valid {self.label}: {valid}"
 
 
 def field_choices(field: FieldInfo) -> Choices | None:

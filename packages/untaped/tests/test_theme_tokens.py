@@ -155,3 +155,18 @@ def test_check_declared_tokens_names_the_stray_and_lists_valid_ones() -> None:
     with pytest.raises(ConfigError, match=r"ui\.color_roles\.zzz.*Valid color roles: "):
         check_declared_tokens(UiSettings(color_roles={"zzz": "x"}))
     check_declared_tokens(UiSettings(symbols={"success": "y"}, color_roles={"key": "red"}))
+
+
+def test_a_written_key_scopes_mapping_checks_but_a_stray_theme_always_refuses() -> None:
+    strays = {"ui": {"symbols": {"zzz": "x"}, "format": "json"}}
+    validate_settings_section(strays, "ui", written_key="ui.format")
+    with pytest.raises(ValidationError, match="unknown name zzz"):
+        validate_settings_section(strays, "ui", written_key="ui.symbols")
+    stale = {"ui": {"theme": "gone", "format": "json"}}
+    with pytest.raises(ValidationError, match="unknown UI theme 'gone'; valid themes: "):
+        validate_settings_section(stale, "ui", written_key="ui.format")
+
+
+def test_resolving_an_unknown_theme_words_it_as_the_write_check_does() -> None:
+    with pytest.raises(ConfigError, match=r"^unknown UI theme 'gone'; valid themes: classic, "):
+        resolve_theme(UiSettings(theme="gone"))

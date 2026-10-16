@@ -53,7 +53,7 @@ def _prompt_value(full_key: str, repo: SettingsReader) -> str:
     if descriptor.is_secret:
         return ui.secret(message)
     default = _prompt_default(full_key, descriptor, repo)
-    if descriptor.choices is not None and descriptor.annotation is str:
+    if descriptor.choices is not None and not descriptor.is_collection:
         names = [
             PromptChoice(value=name, label=name) for name in sorted(descriptor.choices.names())
         ]
