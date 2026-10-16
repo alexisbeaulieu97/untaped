@@ -44,6 +44,7 @@ from untaped.settings import (
     validate_disjoint_settings_sections,
 )
 from untaped.stability import Stability, check_stability, mark_errors
+from untaped.store import Store
 
 if TYPE_CHECKING:
     from untaped.contracts import Contract
@@ -295,6 +296,8 @@ class PluginSpec:
 
     ``caches`` are the :class:`~untaped.cache.Cache` objects the plugin
     keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``.
+    ``stores`` are the :class:`~untaped.store.Store` objects it keeps, each
+    file in a layout of its own (``doctor`` lists them).
     """
 
     name: str
@@ -311,6 +314,7 @@ class PluginSpec:
     )
     migrations: tuple[DirMigration, ...] = ()
     caches: tuple[Cache, ...] = ()
+    stores: tuple[Store, ...] = ()
 
     def __post_init__(self) -> None:
         check_plugin_name(self.name)
@@ -343,6 +347,10 @@ class PluginSpec:
         for cache in self.caches:
             if not isinstance(cache, Cache):
                 raise ConfigError(f"plugin {self.name!r} caches holds {cache!r}, not a Cache")
+        object.__setattr__(self, "stores", tuple(self.stores))
+        for store in self.stores:
+            if not isinstance(store, Store):
+                raise ConfigError(f"plugin {self.name!r} stores holds {store!r}, not a Store")
         object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
 
 
@@ -436,6 +444,8 @@ VALID_REASONS = frozenset(
         "duplicate-kind",
         "foreign-cache",
         "duplicate-cache",
+        "foreign-store",
+        "duplicate-store",
     }
 )
 
@@ -841,6 +851,21 @@ def _check_caches(spec: PluginSpec) -> None:
         seen.add(cache.name)
 
 
+def _check_stores(spec: PluginSpec) -> None:
+    seen: set[str] = set()
+    for store in spec.stores:
+        if store.plugin != spec.name:
+            raise _Quarantine(
+                "foreign-store",
+                f"plugin {spec.name!r} declares the store {store.qualified!r} of another plugin",
+            )
+        if store.name in seen:
+            raise _Quarantine(
+                "duplicate-store", f"plugin {spec.name!r} declares the store {store.name!r} twice"
+            )
+        seen.add(store.name)
+
+
 def _check_composed_mappings(spec: PluginSpec) -> None:
     # A cache's renamed_from exists on the composed model only: check it there.
     if not any(cache.renamed_from for cache in spec.caches):
@@ -858,6 +883,7 @@ def _check_composed_mappings(spec: PluginSpec) -> None:
 def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_reserved_name(spec, state)
     _check_caches(spec)
+    _check_stores(spec)
     _check_section_keys(spec)
     _check_key_mappings(spec)
     _check_composed_mappings(spec)

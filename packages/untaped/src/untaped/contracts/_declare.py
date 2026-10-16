@@ -175,6 +175,11 @@ def cached[F: Callable[..., Any]](cache: Cache, /) -> Callable[[F], F]:
             "@cached takes a Cache: declare X = Cache(owner, '<contract>_<method>', "
             "label=..., max_age=...) in your settings module and write @cached(X)"
         )
+    if cache.store is not None:
+        raise TypeError(
+            f"@cached({cache.qualified}): an answer cache follows no store; its entries "
+            "are read tolerantly whatever wrote them, so declare it without store="
+        )
 
     def mark(fn: F) -> F:
         return _served(fn, cache, fn.__name__)

@@ -4493,6 +4493,7 @@ sdk untaped.sdk.Buttons.with_error(text)  [experimental]
 sdk untaped.sdk.Cache(plugin, name, *, label, max_age)
 sdk untaped.sdk.Cache(removed_in=) default=None
 sdk untaped.sdk.Cache(renamed_from=) default=[]
+sdk untaped.sdk.Cache(store=) default=None
 sdk untaped.sdk.Cache(version=) default=None callback(0)
 sdk untaped.sdk.Cache.cached(key, read) callback(read, 0)
 sdk untaped.sdk.Cache.default_max_age
@@ -4511,6 +4512,7 @@ sdk untaped.sdk.Cache.serve(empty=) default=None callback(1)
 sdk untaped.sdk.Cache.serve(keys, *, refresh, fill, read) callback(fill, 2) callback(read, 0)
 sdk untaped.sdk.Cache.serve(progress=) default=NO_PROGRESS
 sdk untaped.sdk.Cache.setting
+sdk untaped.sdk.Cache.store
 sdk untaped.sdk.Cache.version
 sdk untaped.sdk.Cancel()  [experimental]
 sdk untaped.sdk.Cancel(interrupted@1=) default=false  [experimental]
@@ -5134,6 +5136,7 @@ sdk untaped.sdk.PluginSpec(settings@3=) default=None
 sdk untaped.sdk.PluginSpec(skills@5=) default=[]
 sdk untaped.sdk.PluginSpec(stability@8=) default=None
 sdk untaped.sdk.PluginSpec(state@4=) default=None
+sdk untaped.sdk.PluginSpec(stores@13=) default=[]
 sdk untaped.sdk.PluginSpec.app_factory
 sdk untaped.sdk.PluginSpec.caches
 sdk untaped.sdk.PluginSpec.contracts()
@@ -5146,6 +5149,7 @@ sdk untaped.sdk.PluginSpec.settings
 sdk untaped.sdk.PluginSpec.skills
 sdk untaped.sdk.PluginSpec.stability
 sdk untaped.sdk.PluginSpec.state
+sdk untaped.sdk.PluginSpec.stores
 sdk untaped.sdk.Pressed(id)  [experimental]
 sdk untaped.sdk.Pressed.id  [experimental]
 sdk untaped.sdk.PrevField()  [experimental]
@@ -5378,6 +5382,19 @@ sdk untaped.sdk.StdinInput(values, records)
 sdk untaped.sdk.StdinInput.records
 sdk untaped.sdk.StdinInput.values
 sdk untaped.sdk.StdinOption
+sdk untaped.sdk.Store(bare=) default=None  [experimental]
+sdk untaped.sdk.Store(layout=) default=1  [experimental]
+sdk untaped.sdk.Store(plugin, name, *, base) callback(base, 0)  [experimental]
+sdk untaped.sdk.Store.adopts  [experimental]
+sdk untaped.sdk.Store.bare  [experimental]
+sdk untaped.sdk.Store.base  [experimental]
+sdk untaped.sdk.Store.layout  [experimental]
+sdk untaped.sdk.Store.name  [experimental]
+sdk untaped.sdk.Store.open()  [experimental]
+sdk untaped.sdk.Store.other_paths()  [experimental]
+sdk untaped.sdk.Store.path()  [experimental]
+sdk untaped.sdk.Store.plugin  [experimental]
+sdk untaped.sdk.Store.qualified  [experimental]
 sdk untaped.sdk.Submit()  [experimental]
 sdk untaped.sdk.Submitted(values)  [experimental]
 sdk untaped.sdk.Submitted.values  [experimental]
@@ -5847,6 +5864,7 @@ sdk untaped.testing.assert_destructive_contract(assert_unchanged=) default=None 
 sdk untaped.testing.assert_destructive_contract(command, args) callback(command, *)
 sdk untaped.testing.assert_fills(provider)
 sdk untaped.testing.assert_fills(samples=) default=[]
+sdk untaped.testing.assert_schema_pinned(ddl, *, version, additive_since, pins)  [experimental]
 sdk untaped.testing.assert_surface(spec, path)  [experimental]
 sdk untaped.testing.assert_surface(version@3=) default=None  [experimental]
 sdk untaped.testing.cache_clock()

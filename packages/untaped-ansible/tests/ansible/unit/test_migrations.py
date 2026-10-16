@@ -61,7 +61,8 @@ def _old_index() -> Path:
 
 
 def _new() -> Path:
-    return Path.home() / ".untaped" / "plugins" / "ansible" / "index.sqlite3"
+    """The index's layout file beside ``ansible.index_path``'s default."""
+    return Path.home() / ".untaped" / "plugins" / "ansible" / "index.v4.sqlite3"
 
 
 def test_the_10x_index_moves_with_its_journal() -> None:
@@ -74,7 +75,7 @@ def test_the_10x_index_moves_with_its_journal() -> None:
     ]
     assert [o.action for o in row.apply(CTX, OPTIONS)] == ["moved"]
     assert Path(f"{_new()}-journal").read_bytes() == b"journal" and not old.exists()
-    assert AnsibleSettings().index_path.expanduser() == _new()
+    assert AnsibleSettings().index_path.expanduser() == _new().with_name("index.sqlite3")
     assert SqliteDependencyIndex(_new()).status("source:prod") is not None
 
 
@@ -106,3 +107,13 @@ def test_a_profile_still_naming_the_old_index_keeps_it(monkeypatch: pytest.Monke
 
     (keep,) = _index_row().preview(CTX, OPTIONS)
     assert keep.action == "keep" and "ansible.index_path" in keep.detail
+
+
+def test_an_11_0_index_awaiting_its_rename_keeps_the_10x_one() -> None:
+    old = _old_index()
+    _commit(SqliteDependencyIndex(_new().with_name("index.sqlite3")), scans=(_scan(),))
+
+    (keep,) = _index_row().preview(CTX, OPTIONS)
+    assert keep.action == "keep" and "becomes" in keep.detail
+    assert [o.action for o in _index_row().apply(CTX, OPTIONS)] == ["unchanged"]
+    assert old.is_file()

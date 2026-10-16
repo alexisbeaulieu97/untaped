@@ -269,7 +269,7 @@ plugin (`examples/untaped-hello`) has one row.
 
 When a command reads data your plugin fetched from an upstream it can ask
 again, declare a `Cache` and serve every read through it: see
-[Caches](./caches.md).
+[Caches](./caches.md), and for a database of it, [Stores](./caches.md#stores).
 
 ## Filling another plugin's contract
 

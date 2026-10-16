@@ -21,6 +21,7 @@ EXPECTED_ALL = [
     "allows",
     "assert_destructive_contract",
     "assert_fills",
+    "assert_schema_pinned",
     "assert_surface",
     "cache_clock",
     "check_conventions",

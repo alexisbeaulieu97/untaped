@@ -169,7 +169,7 @@ def test_a_10x_layout_moves_into_the_store(
                  "github-inventory.json"):  # fmt: skip
         assert not (home / name).exists(), name
     plugins = home / "plugins"
-    assert (plugins / "ansible" / "index.sqlite3").read_bytes() == b"index"
+    assert (plugins / "ansible" / "index.v4.sqlite3").read_bytes() == b"index"
     assert (plugins / "recipe" / "library" / "packs.toml").is_file()
     assert (plugins / "dotfiles" / "repos").is_dir()
 

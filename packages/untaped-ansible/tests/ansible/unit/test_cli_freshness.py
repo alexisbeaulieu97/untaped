@@ -20,7 +20,13 @@ import pytest
 import respx
 import yaml
 
-from ansible.unit.test_cli import _edge, _mock_dependency_file, _seed_index, _use_config
+from ansible.unit.test_cli import (
+    _edge,
+    _mock_dependency_file,
+    _record_refresh,
+    _seed_index,
+    _use_config,
+)
 from untaped.bootstrap import build_root_app
 from untaped.sdk import ErrorCategory, Failure, Message, Progress, StaleData
 from untaped.testing import CliInvoker, CliResult, cache_clock, progress_clock
@@ -50,7 +56,13 @@ def _index(tmp_path: Path) -> SqliteDependencyIndex:
 
 
 def _seed(tmp_path: Path, key: str, *edges: IndexedDependency, ago: timedelta) -> None:
-    """Index ``edges`` under ``key`` as a refresh that completed ``ago``."""
+    """Index ``edges`` under ``key`` as a refresh by this code that completed ``ago``."""
+    at = datetime.now(UTC) - ago
+    _record_refresh(key, at, lambda: _seed_index(_index(tmp_path), key, edges, scanned_at=at))
+
+
+def _seed_rows(tmp_path: Path, key: str, *edges: IndexedDependency, ago: timedelta) -> None:
+    """Index ``edges`` under ``key`` with nothing in the cache (an index older than the cache)."""
     _seed_index(_index(tmp_path), key, edges, scanned_at=datetime.now(UTC) - ago)
 
 
@@ -247,22 +259,27 @@ def test_graph_and_find_fail_offline_only_on_an_empty_answer(
     assert len(_stale(result)) == (exit_code == 0)
 
 
-def test_upgrade_day_reads_freshness_from_the_last_source_refresh(
+def test_upgrade_day_refreshes_each_source_the_cache_never_filled_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
 ) -> None:
-    _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=3))
-    _seed(tmp_path, "source:old", _edge(), ago=timedelta(hours=26))
-    sources = {"sources": [*_PROD["sources"], {"name": "old", "repos": ["acme/site"]}]}
-    _use_config(tmp_path, monkeypatch, sources)
+    """An index older than the cache: its rows seed the cache, at no parser version.
 
-    fresh = _impact()
+    The cache knows the parser that fills it, so a seeded key reads as made
+    by another version: ``--cached`` serves it with that warning, and the
+    first read that may refresh refreshes it, once.
+    """
+    _seed_rows(tmp_path, "source:prod", _edge(), ago=timedelta(hours=3))
+    _use_config(tmp_path, monkeypatch, _PROD)
+
     cached = _impact("--cached")
-    old = _run("impact", "acme/base", "--source", "old", "-f", "json")
+    first = _impact()
+    second = _impact()
 
-    assert (_repos(fresh), fresh.diagnostics) == (["acme/site"], ())
-    assert (_repos(cached), cached.diagnostics) == (["acme/site"], ())
-    assert _repos(old) == ["acme/site"]
-    assert fill.keys == ["source:old"]
+    assert _repos(cached) == ["acme/site"]
+    assert [line.outdated for line in _stale(cached)] == [True]
+    assert (_repos(first), _stale(first)) == (["acme/site"], [])
+    assert (_repos(second), second.diagnostics) == (["acme/site"], ())
+    assert fill.keys == ["source:prod"]
 
 
 def test_only_the_stale_source_of_two_is_refreshed(
@@ -713,7 +730,7 @@ def test_source_refresh_after_another_run_refreshed_it_says_so(
     _seed(tmp_path, "source:prod", _edge(), ago=timedelta(hours=2))
     _use_config(tmp_path, monkeypatch, _PROD)
     # what the waiting run finds once it holds the lock: a refresh newer than its own start
-    INDEX.seed("source:prod", refreshed_at=datetime.now(UTC) + timedelta(minutes=1))
+    _record_refresh("source:prod", datetime.now(UTC) + timedelta(minutes=1), lambda: None)
 
     result = _run("source", "refresh", "prod")
 

@@ -24,7 +24,7 @@ SCHEMA_VERSION = 4
 #: so a table a newer version adds must tolerate rows whose parent is gone.
 ADDITIVE_SINCE = 4
 
-_SCHEMA_SQL = """
+SCHEMA_SQL = """
 create table if not exists source_runs (
     source_key text primary key,
     scanned_at text not null,
@@ -151,7 +151,7 @@ def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], N
     # transactional in SQLite, so wrapping the script in begin/commit makes
     # the whole bootstrap all-or-nothing.
     db.executescript(
-        f"begin;\n{_SCHEMA_SQL}\n{_STAMP_SQL}\npragma user_version = {SCHEMA_VERSION};\ncommit;"
+        f"begin;\n{SCHEMA_SQL}\n{_STAMP_SQL}\npragma user_version = {SCHEMA_VERSION};\ncommit;"
     )
 
 

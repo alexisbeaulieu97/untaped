@@ -59,6 +59,7 @@ from untaped_ansible.infrastructure import (
     GitSourceStore,
     SourceRepository,
     SqliteDependencyIndex,
+    open_index,
 )
 from untaped_ansible.infrastructure.github_ref_probe import (
     is_transient_ref_probe_failure,
@@ -160,7 +161,7 @@ def source_set_command(
         if action != "unchanged":
             source_repo.upsert(source)
             settings = get_config_section("ansible", AnsibleSettings)
-            SqliteDependencyIndex(settings.index_path).clear(_saved_source_key(name))
+            open_index(settings).clear(_saved_source_key(name))
         _emit_outcome(SourceOutcome(action=action, name=name), fmt=fmt, columns=columns)
 
 
@@ -265,7 +266,7 @@ def source_patch_command(
             return
         source_repo.upsert(edited)
         settings = get_config_section("ansible", AnsibleSettings)
-        SqliteDependencyIndex(settings.index_path).clear(_saved_source_key(name))
+        open_index(settings).clear(_saved_source_key(name))
         _emit_outcome(
             SourceOutcome(action="updated", name=name, changes=changes), fmt=fmt, columns=columns
         )
@@ -331,7 +332,7 @@ def source_remove_command(
                 refusal="source remove requires --yes when not interactive",
             )
         settings = get_config_section("ansible", AnsibleSettings)
-        index = SqliteDependencyIndex(settings.index_path)
+        index = open_index(settings)
         host = github_web_host(github_settings().base_url)
         others = {
             _saved_source_key(source.name): source.name
@@ -381,7 +382,7 @@ def source_status_command(
     """Show cached source data status."""
     with report_errors():
         settings = get_config_section("ansible", AnsibleSettings)
-        index = SqliteDependencyIndex(settings.index_path)
+        index = open_index(settings)
         source_repo = SourceRepository()
         configured = {source.name: source for source in source_repo.entries()}
         if name is not None and name not in configured:
@@ -424,7 +425,7 @@ def source_refresh_command(
         settings = get_config_section("ansible", AnsibleSettings)
         key = _saved_source_key(name)
         wiring = RefreshWiring(
-            index=SqliteDependencyIndex(settings.index_path),
+            index=open_index(settings),
             aliases=AliasRepository().entries(),
             settings=settings,
             github_settings=github_settings(),

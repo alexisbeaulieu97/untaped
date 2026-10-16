@@ -343,6 +343,9 @@ profiles, and is never a user setting. The helpers keep other plugins'
 sections intact under the shared lock, so never read or write either file
 directly.
 
+A file under `plugin_dir(SPEC)` that an older release could not open is a
+[store](../caches.md#stores), opened through `Store.open()`.
+
 ## Settings
 
 ### Names

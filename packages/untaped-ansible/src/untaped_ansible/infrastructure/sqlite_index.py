@@ -29,8 +29,23 @@ from untaped_ansible.infrastructure.sqlite_rows import (
     ref_scan_from_row,
 )
 from untaped_ansible.infrastructure.sqlite_schema import ensure_schema
+from untaped_ansible.settings import INDEX_STORE, AnsibleSettings, default_index_path
 
 _diag = Diagnostics()
+
+
+def open_index(settings: AnsibleSettings) -> SqliteDependencyIndex:
+    """The dependency index ``settings`` name: the one way the plugin opens it.
+
+    At ``ansible.index_path``'s default the file is the index store's own
+    layout (``index.v4.sqlite3`` beside the default path), held in use while
+    the process runs. A path the user set is theirs: opened as it is, one
+    file whatever its schema.
+    """
+    path = settings.index_path.expanduser()
+    if path == default_index_path():
+        path = INDEX_STORE.open()
+    return SqliteDependencyIndex(path)
 
 
 class SqliteDependencyIndex:
