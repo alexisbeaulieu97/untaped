@@ -31,6 +31,7 @@ def lint(
     paths: Iterable[str] = (),
     only: Iterable[str] = (),
     exact: Iterable[str] = (),
+    locations: Iterable[str] = (),
     strict: bool = False,
     findings: Iterable[Finding] = (),
     fmt: OutputFormat = "table",
@@ -40,7 +41,10 @@ def lint(
     """Lint ``subjects``, print the rows and exit per the lint exit codes.
 
     ``only`` takes target globs and ``exact`` literal targets (a name with
-    ``[`` or ``?`` is never read as a pattern). ``findings`` are ones the
+    ``[`` or ``?`` is never read as a pattern); ``locations`` keeps only the
+    findings at those locations, written as a table reads them
+    (``job_templates/14``, ``templates.yml#2``), for a caller whose targets
+    are not unique. ``findings`` are ones the
     caller already made, with public ids, reported and selected like the rest.
     """
     # The engine (contracts, providers, the plugin checks) loads when a run
@@ -64,6 +68,7 @@ def lint(
         paths=tuple(paths),
         only=tuple(only),
         exact=tuple(exact),
+        locations=tuple(locations),
     )
     report = run(
         subjects,

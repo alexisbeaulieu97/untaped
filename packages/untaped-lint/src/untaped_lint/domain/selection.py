@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 from untaped.sdk import UsageError
 from untaped_lint.domain.glob import matches
-from untaped_lint.records import Finding, Rule
+from untaped_lint.records import Finding, Rule, location_text
 
 _SPELLING = re.compile(r"^(?:[a-z0-9][a-z0-9-]*\.)?[A-Za-z0-9][A-Za-z0-9-]*$")
 
@@ -94,6 +94,8 @@ class Selection:
     """Target globs: report a finding only when its target matches one."""
     exact: frozenset[str] = frozenset()
     """Literal targets, compared exactly, never as globs."""
+    locations: frozenset[str] = frozenset()
+    """Literal locations as a table reads them (``job_templates/14``, ``a.yml#2``)."""
     unchecked: frozenset[str] = frozenset()
     """Rules saying nothing else ran on a target: ``select`` and PATHS never drop them."""
 
@@ -107,6 +109,7 @@ class Selection:
         paths: Iterable[str] = (),
         only: Iterable[str] = (),
         exact: Iterable[str] = (),
+        locations: Iterable[str] = (),
         unchecked: Iterable[str] = (),
     ) -> Selection:
         chosen = [resolver.resolve(each) for each in select]
@@ -116,6 +119,7 @@ class Selection:
             paths=tuple(paths),
             only=tuple(only),
             exact=frozenset(exact),
+            locations=frozenset(locations),
             unchecked=frozenset(unchecked),
         )
 
@@ -134,6 +138,8 @@ class Selection:
             path = getattr(finding.location, "path", None)
             if path is None or not any(matches(pattern, path) for pattern in self.paths):
                 return False
+        if self.locations and narrowed and location_text(finding.location) not in self.locations:
+            return False
         if self.only and not any(matches(pattern, finding.target) for pattern in self.only):
             return False
         return not self.exact or finding.target in self.exact

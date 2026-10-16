@@ -184,4 +184,7 @@ A plugin with a lint command of its own (`untaped awx lint`) builds its
 subjects and calls `untaped_lint.api.lint(subjects, config=lint_config(Path.cwd(),
 tree=False), ...)`: `lint_config` reads the profile's `lint.ignore` and the
 repository's lint file, so the plugin never reads lint's settings, and
-`lint` prints the rows and exits by the table above.
+`lint` prints the rows and exits by the table above. `only=` (target globs)
+and `exact=` (literal targets) narrow what it reports by target;
+`locations=` narrows by location, as the table writes it
+(`job_templates/14`), where targets are not unique.
