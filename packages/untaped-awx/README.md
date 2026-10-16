@@ -62,13 +62,13 @@ untaped awx lint ./awx-specs --offline     # the documents alone
 untaped awx lint --organization Platform   # what the controller holds
 ```
 
-The first prints:
+On a template naming a project the files lack, and a schedule setting a
+limit its template ignores, the first reports two rows (`--format json` for
+every field) and ends with the summary `lint: 2 errors, 0 warnings`, exit 3:
 
 ```text
-location                  severity  rule                      target                           message
-awx-specs/templates.yml#2 error     awx.missing-reference     JobTemplate/Platform/deploy-web  project 'web' is not in the batch
-awx-specs/templates.yml#4 error     awx.ignored-launch-field  Schedule/Platform/nightly        limit is set, but JobTemplate 'deploy-api' ignores it: ask_limit_on_launch is false
-lint: 2 errors
+awx-specs/templates.yml#2  awx.missing-reference     project 'web' is not in the batch
+awx-specs/templates.yml#4  awx.ignored-launch-field  limit is set, but JobTemplate 'deploy-web' ignores it: ask_limit_on_launch is false
 ```
 
 With files, `lint` checks apply documents before you apply them, resolving

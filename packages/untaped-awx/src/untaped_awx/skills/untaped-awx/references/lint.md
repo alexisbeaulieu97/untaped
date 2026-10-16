@@ -12,7 +12,7 @@ controller.
 |---|---|---|
 | `untaped awx lint ./specs --offline` | apply documents only: no profile, no token | in the batch; a kind with no document in it is not checked |
 | `untaped awx lint ./specs` | apply documents, then the controller | in the batch first, then on the controller |
-| `untaped awx lint` | every resource the token can read | in what the controller holds |
+| `untaped awx lint` | every resource the token can read | by id, in what the controller holds |
 
 FILES are files or directories, read as `apply` reads them (`*.yml` and
 `*.yaml` under a directory). Documents are linted as written:
@@ -24,6 +24,13 @@ Without FILES the controller is read once into a snapshot kept for an hour
 `--refresh` reads it again now, `--cached` reads only what is kept. The
 snapshot redacts secret-named launch and inventory variables before it is
 kept.
+
+On the controller a foreign key resolves by the id AWX holds, so a project
+in another organization or a credential in none is found. A kind the token
+cannot list is skipped with a warning and references to it are
+`unresolved`; its names come from the rows' `summary_fields` where AWX
+embeds them, and a record the token can neither list nor read is named
+`#<id>` (`project '#10' was not checked`).
 
 ## Reading a finding
 
@@ -51,15 +58,15 @@ Each row is a `lint.finding`: `rule` (`awx.missing-reference`),
 
 | Rule | Severity | Origins | Fires when |
 |---|---|---|---|
-| `awx.missing-reference` | error | both | a reference names nothing in its origin: not in the batch (offline), not in the batch or on the controller (online), not on the controller (live); a template's `project`, or its `inventory` when it does not ask for one on launch, written as `null`; a workflow node whose template is gone |
-| `awx.unresolved-reference` | warning | documents, offline | a reference to a kind the batch has no document of, so it was not checked; also, on the controller, a kind the token cannot read |
+| `awx.missing-reference` | error | both | a reference names nothing in its origin: not in the batch (offline), not in the batch or on the controller (online), not on the controller (live); a template's `project`, or its `inventory` beside `ask_inventory_on_launch: false`, written as `null`; a workflow node whose template is gone |
+| `awx.unresolved-reference` | warning | both | a reference that was not checked: offline, to a kind the batch has no document of, or an id; online, to a kind the token cannot list or a record it cannot read |
 | `awx.ignored-launch-field` | error | both | a schedule's launch field or a workflow node's prompt is set while its template's `ask_<field>_on_launch` is false (extra variables: those its enabled survey does not ask for); a field the template cannot prompt for at all |
 | `awx.branch-override-ignored` | error | both | a job template sets `scm_branch` and its project's `allow_override` is false, so jobs run the project's branch |
 | `awx.survey-default-missing` | warning | both | a schedule or workflow node launches a template whose enabled survey has a required question with no default that the schedule's `extra_data` (a node's `prompts.extra_vars`, or its workflow's variables) does not answer |
 | `awx.unknown-field` | warning | documents | a spec field untaped knows no metadata for (often a typo): `apply` would send it as it is |
 | `awx.playbook-missing` | error | controller | a job template's playbook is not one its project found at its last successful sync |
 | `awx.empty-inventory` | warning | controller | an inventory has no hosts |
-| `awx.plaintext-secret` | error | documents | a secret path (a survey's password default) or a secret-named launch variable (`db_password`) holds a plain value; `$encrypted$`, an empty value or a `{{ … }}` expression is fine |
+| `awx.plaintext-secret` | error | documents | a secret path (a survey's password default, a credential's secret-named input such as `inputs.password`) or a secret-named variable (`db_password` in launch variables, `ansible_password` in an inventory's, group's or host's) holds a plain value; `$encrypted$`, an empty value or a `{{ … }}` expression is fine |
 | `awx.invalid-document` | error | documents | a document is not YAML, not a mapping, not a valid resource, or of a kind untaped does not know |
 
 A rule judges only what a document writes: a flag or field left out is a
@@ -75,10 +82,13 @@ finding about a project still needs the project read.
 
 - `--kind job-templates` (a CLI name or `JobTemplate`) reports that kind
   only; `--organization Platform` only resources in it. Both are target
-  globs (`JobTemplate/Platform/**`).
+  globs (`JobTemplate/Platform/**`). A document that could not be read is
+  reported whatever they say.
 - `--filter KEY=VALUE` (repeatable) and `--search TEXT` ask the controller
   which resources to report, one listing per kind (`--kind`'s, else every
-  kind with the filtered fields), as `export` does. They need the live
+  kind with the filtered fields), as `export` does, and exactly those
+  resources are reported (by location: two schedules of one name under two
+  templates share a target, never a location). They need the live
   origin: with FILES or `--cached`, or with a field no such kind has, they
   are a usage error. A query that matches nothing prints a warning and
   exits 0.
@@ -135,5 +145,6 @@ Each item is a `Linted`: the apply document (`resource`), where it was read
 (`origin`, `location`), its `references` (each `resolved`, `absent` or
 `unresolved`) and, from the controller, `controller` facts (`status`,
 `total_hosts`, `playbooks`). `resources.find(reference.target)` gives the
-item a resolved reference names. Test a rule with
+item a resolved reference names, or `None` when no item or several do (a
+rule never judges an arbitrary namesake). Test a rule with
 `untaped_awx.testing.resources(yaml_text)` and `untaped_lint.testing.run_rule`.

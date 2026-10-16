@@ -6045,15 +6045,6 @@ sdk untaped_awx.api.ControllerFacts.last_job_failed  [experimental]
 sdk untaped_awx.api.ControllerFacts.playbooks  [experimental]
 sdk untaped_awx.api.ControllerFacts.status  [experimental]
 sdk untaped_awx.api.ControllerFacts.total_hosts  [experimental]
-sdk untaped_awx.api.IdentityRef(*, kind, name)
-sdk untaped_awx.api.IdentityRef(organization=) default=None
-sdk untaped_awx.api.IdentityRef(parent=) default=None
-sdk untaped_awx.api.IdentityRef.kind
-sdk untaped_awx.api.IdentityRef.lookup_scope()
-sdk untaped_awx.api.IdentityRef.lookup_scope(required@1=) default=None
-sdk untaped_awx.api.IdentityRef.name
-sdk untaped_awx.api.IdentityRef.organization
-sdk untaped_awx.api.IdentityRef.parent
 sdk untaped_awx.api.JobTemplateDoc()  [experimental]
 sdk untaped_awx.api.JobTemplateDoc(**extra_data)  [experimental]
 sdk untaped_awx.api.JobTemplateDoc(ask_credential_on_launch=) default=None  [experimental]
@@ -6109,7 +6100,9 @@ sdk untaped_awx.api.JobTemplateDoc.survey_questions()  [experimental]
 sdk untaped_awx.api.JobTemplateDoc.survey_spec  [experimental]
 sdk untaped_awx.api.JobTemplateDoc.variables()  [experimental]
 sdk untaped_awx.api.KindFacts(*, known_fields, secret_paths)  [experimental]
+sdk untaped_awx.api.KindFacts(read_only=) default=false  [experimental]
 sdk untaped_awx.api.KindFacts.known_fields  [experimental]
+sdk untaped_awx.api.KindFacts.read_only  [experimental]
 sdk untaped_awx.api.KindFacts.secret_paths  [experimental]
 sdk untaped_awx.api.Linted(*, origin, location, resource)  [experimental]
 sdk untaped_awx.api.Linted(controller=) default=None  [experimental]

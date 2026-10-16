@@ -17,15 +17,17 @@ models and report with these helpers::
 
 The awx rules are exported as the constants ``finding()`` takes. The
 snapshot, its views, the rules and the helpers are experimental (each carries
-the mark); ``Resource``, ``Metadata`` and ``IdentityRef``, the apply
-document, are not.
+the mark); ``Resource`` and ``Metadata``, the apply document, are not. A
+reference's ``target`` is read by its fields (``kind``, ``name``,
+``organization``, ``parent``) and handed to ``AwxResources.find``; its model
+is not exported, so its lookup helpers stay awx's.
 The closed :data:`__all__` keeps the boundary explicit; everything else
 under ``untaped_awx`` is private to awx.
 """
 
 from __future__ import annotations
 
-from untaped_awx.domain.envelope import IdentityRef, Metadata, Resource
+from untaped_awx.domain.envelope import Metadata, Resource
 from untaped_awx.domain.lint.resources import (
     AwxResources,
     ControllerFacts,
@@ -59,7 +61,6 @@ from untaped_awx.domain.lint.views import (
 __all__ = [
     "AwxResources",
     "ControllerFacts",
-    "IdentityRef",
     "JobTemplateDoc",
     "KindFacts",
     "Linted",

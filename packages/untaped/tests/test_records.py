@@ -1174,13 +1174,13 @@ def _awx_resources() -> WireModel:
     from untaped_awx.api import (
         AwxResources,
         ControllerFacts,
-        IdentityRef,
         KindFacts,
         Linted,
         Reference,
         Resource,
         Unreadable,
     )
+    from untaped_awx.domain import IdentityRef
     from untaped_lint.api import DocumentLocation, ResourceLocation
 
     template = Resource.model_validate(
