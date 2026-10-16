@@ -343,3 +343,13 @@ def test_conformance_fails_a_host_reading_an_undeclared_kind() -> None:
 
     with pytest.raises(AssertionError, match=r"nobody\.kind"):
         conformance(Bad())
+
+
+def test_conformance_passes_a_tree_reader_which_has_no_rule_table() -> None:
+    from untaped_lint.api import Subject, Tree, TreeReader
+
+    class Reader(TreeReader):
+        def read(self, tree: Tree) -> list[Subject]:
+            return []
+
+    conformance(Reader())
