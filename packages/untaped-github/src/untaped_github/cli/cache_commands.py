@@ -77,12 +77,12 @@ def status_command(
     with report_errors():
         settings = app_context().section("github", GithubSettings)
         rows = StatusCorpus(open_corpus(settings))()
-        records = [row.model_dump() for row in rows]
         emit(
-            _status_display(records) if fmt == "table" and not columns else records,
+            _status_display([row.model_dump() for row in rows])
+            if fmt == "table" and not columns
+            else rows,
             fmt=fmt,
             columns=columns,
-            kind="github.corpus_repo",
             empty="No repositories are cached in the local corpus.",
         )
         _status_summary(rows)
@@ -307,17 +307,19 @@ def _delete(
         assume_yes=yes,
         preview_only=dry_run,
     )
-    if dry_run:
-        records = [with_disk_bytes(row).model_dump() for row in selected]
-    else:
-        records = [row.model_dump() for _, row in outcome.results]
-        if fmt == "table" and not columns:
-            records = _released_display(records)
+    released = (
+        [with_disk_bytes(row) for row in selected]
+        if dry_run
+        else [row for _, row in outcome.results]
+    )
     emit(
-        records,
+        _released_display([row.model_dump() for row in released])
+        if not dry_run and fmt == "table" and not columns
+        else released,
         fmt=fmt,
         columns=columns,
-        kind="github.corpus_repo",
+        # A preview's table shows what each repo would free.
+        table_columns=(*CorpusRepoResult.table_columns, "disk_bytes") if dry_run else None,
         empty="No matching repositories were cached.",
     )
     finish(outcome)

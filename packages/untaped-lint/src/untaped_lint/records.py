@@ -107,5 +107,13 @@ def location_text(location: Location | None) -> str:
 
 def public(key: str, finding: Finding) -> Finding:
     """``finding`` under its public id ``<key>.<id>``, issued by ``key`` unless a provider was."""
-    source = finding.source or Source(plugin=key, kind=kind_of(Finding) or "lint.finding")
+    source = finding.source or Source(plugin=key, kind=declared_kind(Finding))
     return finding.model_copy(update={"rule": f"{key}.{finding.rule}", "source": source})
+
+
+def declared_kind(model: type[BaseModel]) -> str:
+    """The kind ``model`` declares: the one place lint names a kind, by its model."""
+    kind = kind_of(model)
+    if kind is None:
+        raise TypeError(f"{model.__qualname__} declares no kind")
+    return kind

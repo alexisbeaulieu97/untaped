@@ -10,30 +10,13 @@ registers an install.
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 from untaped.cli import emit
+from untaped.management.records import RegisterOutcome
 from untaped.output.sink import Diagnostics
-from untaped.records import OutcomeRecord
 from untaped.refs import Reference, register_this_install, unregister
 from untaped.theme import OutputFormat
 
 _diag = Diagnostics()
-
-
-class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
-    """What ``setup register`` did: ``registered``, ``unchanged``, ``removed`` or ``gone``.
-
-    ``environment`` is the directory holding untaped's distribution,
-    ``layouts`` the ``<plugin>.<store>@<layout>`` targets the reference names.
-    """
-
-    table_columns: ClassVar[tuple[str, ...]] = ("action", "version", "environment", "layouts")
-
-    holder: str
-    environment: str
-    version: str | None
-    layouts: list[str]
 
 
 def run_register(*, remove: bool, fmt: OutputFormat, columns: list[str] | None) -> None:

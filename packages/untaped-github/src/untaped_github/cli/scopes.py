@@ -15,11 +15,12 @@ from untaped.sdk import (
 )
 from untaped_github.application.scopes import TeamScope, normalize_team_scopes
 from untaped_github.domain import ArchivedMode
-from untaped_github.domain.models import GithubRepo
+from untaped_github.domain.models import CorpusRepoResult, GithubRepo
+from untaped_github.domain.sweep import RepoSweepOutcome
 from untaped_github.settings import GithubSettings
 
-REPO_KINDS = frozenset({"github.repo", "github.sweep_repo", "github.corpus_repo"})
-"""Pipe record kinds whose ``full_name`` names a repository for ``--stdin``."""
+REPO_RECORDS = (GithubRepo, RepoSweepOutcome, CorpusRepoResult)
+"""Piped records whose ``full_name`` names a repository for ``--stdin``."""
 
 OrgOption = Annotated[
     list[str] | None,
@@ -84,7 +85,7 @@ def read_stdin_repos() -> tuple[tuple[str, ...], tuple[GithubRepo, ...]]:
     (``repos list`` output) needs no API lookup; other records and bare
     ``owner/name`` lines return as names.
     """
-    piped = read_stdin_input(accept_kinds=REPO_KINDS)
+    piped = read_stdin_input(accepts=REPO_RECORDS)
     if piped.records is None:
         return piped.values, ()
     names: list[str] = []

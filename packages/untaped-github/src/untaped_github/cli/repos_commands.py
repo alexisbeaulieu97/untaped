@@ -102,7 +102,6 @@ def list_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="github.repo",
             empty="No repositories found. Broaden your pattern or scope filters.",
         )
         if len(rows) < len(repos):

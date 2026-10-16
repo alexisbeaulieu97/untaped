@@ -20,7 +20,7 @@ from rich.console import Console
 
 from untaped.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
 from untaped.messages import deprecated_message
-from untaped.output.diagnostic import Failure
+from untaped.output.diagnostic import Failure, dumped_names
 from untaped.output.policy import current_policy, note_format, note_theme
 from untaped.output.sink import (
     Diagnostics,
@@ -32,7 +32,7 @@ from untaped.output.sink import (
     failure_exit_code,
 )
 from untaped.records import TableGlyph, check_data_kind, kind_of, table_columns_of
-from untaped.render import column_value
+from untaped.render import column_value, render_document
 from untaped.stability import Stability, check_stability, mark_app
 from untaped.theme import OutputFormat, ThemeSpec, resolve_theme_or_default
 from untaped.ui import UiContext, ui_context
@@ -653,6 +653,15 @@ def emit_with(
         echo(rendered)
 
 
+def emit_document(data: Mapping[str, object], *, fmt: Literal["json", "yaml"]) -> None:
+    """Print one document to stdout: a JSON Schema, a profile's settings, a config file.
+
+    A document is not a row: it has no kind, no ``pipe`` envelope and no
+    columns, so it goes through here, never :func:`emit`.
+    """
+    echo(render_document(data, fmt=fmt))
+
+
 def _rows_kind(items: Sequence[BaseModel | Mapping[str, object]], kind: str | None) -> str | None:
     """The kind of an emit: the one its rows declare, else ``kind``.
 
@@ -683,7 +692,7 @@ def _model_schema(
     for item in items:
         model = type(item)
         assert issubclass(model, BaseModel)
-        names.update(dict.fromkeys([*model.model_fields, *model.model_computed_fields]))
+        names.update(dict.fromkeys([*dumped_names(model).values(), *model.model_computed_fields]))
     return list(names)
 
 

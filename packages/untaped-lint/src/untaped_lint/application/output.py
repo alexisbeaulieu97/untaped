@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import NoReturn
 
-from untaped.sdk import Diagnostics, OutputFormat, emit, finish, kind_of
+from untaped.sdk import Diagnostics, OutputFormat, emit, finish
 from untaped.testing import PluginCandidate
 from untaped_lint.application.engine import Options, run
 from untaped_lint.config import LintConfig
@@ -19,7 +19,6 @@ from untaped_lint.domain.selection import parse_rule, parse_suppression
 from untaped_lint.records import Finding, Subject, location_text
 
 _diag = Diagnostics()
-_KIND = kind_of(Finding) or "lint.finding"
 
 
 def lint(
@@ -63,12 +62,11 @@ def lint(
         emit(
             [_table_row(row) for row in rows],
             fmt=fmt,
-            kind=_KIND,
             empty=False,
             table_columns=Finding.table_columns,
         )
     else:
-        emit(rows, fmt=fmt, columns=columns, kind=_KIND, empty=False)
+        emit(rows, fmt=fmt, columns=columns, empty=False)
     _diag.info(report.summary())
     finish(bool(report.failures), predicate_hit=report.predicate_hit(strict=strict))
     raise SystemExit(0)

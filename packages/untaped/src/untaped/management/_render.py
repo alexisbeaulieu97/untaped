@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import textwrap
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING
 
 from rich.text import Text
 
@@ -26,6 +26,11 @@ from untaped.output.sink import Diagnostics
 from untaped.render import output_width, status_role_style
 from untaped.theme import OutputFormat
 from untaped.ui import UiContext, ui_context
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from untaped.management.records import FixOutcome
 
 _UNICODE_GLYPHS = {
     "pass": "✓",
@@ -61,26 +66,17 @@ _GLYPH_ROLES = {
 
 
 def emit_isolated(
-    rows: Sequence[dict[str, object]],
+    rows: Sequence[BaseModel] | Sequence[dict[str, object]],
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
-    kind: str | None = None,
-    table_columns: list[str] | None = None,
 ) -> None:
     """Render row data without letting invalid settings block the output.
 
     Settings are broken is often what the caller reports, so a ``table``
     falls back to the default theme instead of failing the listing.
     """
-    emit_with(
-        rows,
-        ui=ui_context(strict=False),
-        fmt=fmt,
-        columns=columns,
-        kind=kind,
-        table_columns=table_columns,
-    )
+    emit_with(rows, ui=ui_context(strict=False), fmt=fmt, columns=columns)
 
 
 def emit_check_list(
@@ -167,23 +163,23 @@ def emit_fix_plan(
     Diagnostics().info("\n".join(lines), unmuted=True)
 
 
-def emit_fix_list(rows: Sequence[dict[str, Any]], *, run_line: Callable[[list[str]], str]) -> None:
+def emit_fix_list(rows: Sequence[FixOutcome], *, run_line: Callable[[list[str]], str]) -> None:
     """Print ``untaped.fix_outcome`` rows: one line per fix, glyph, command, action, detail.
 
     A long detail wraps within its column, as in :func:`emit_check_list`.
     """
     ui = ui_context(strict=False)
     glyphs = _glyphs(ui)
-    commands = [run_line(list(row["fix"])) for row in rows]
+    commands = [run_line(row.fix) for row in rows]
     command_width = max((len(command) for command in commands), default=0)
-    action_width = max((len(str(row["action"])) for row in rows), default=0)
+    action_width = max((len(row.action) for row in rows), default=0)
     detail_column = 4 + command_width + 2 + action_width + 2
     width = output_width()
     lines: list[Text] = []
     for row, command in zip(rows, commands, strict=True):
-        line = _glyph_line(ui, glyphs, str(row["action"]))
-        line.append(f"{command.ljust(command_width)}  {str(row['action']).ljust(action_width)}")
-        detail = str(row["detail"])
+        line = _glyph_line(ui, glyphs, row.action)
+        line.append(f"{command.ljust(command_width)}  {row.action.ljust(action_width)}")
+        detail = row.detail
         if width is None or width - detail_column >= _MIN_DETAIL_WIDTH:
             first, *rest = _wrap(detail, width, detail_column)
             line.append(f"  {first[detail_column:]}")

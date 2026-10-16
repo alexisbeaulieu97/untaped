@@ -16,17 +16,17 @@ from dataclasses import dataclass, field
 from pydantic import ValidationError
 
 from untaped.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather
-from untaped.sdk import ErrorCategory, Failure, Plugin, kind_of, plural
+from untaped.sdk import ErrorCategory, Failure, Plugin, plural
 from untaped.testing import PluginCandidate
 from untaped_lint.application.rules import Linter
 from untaped_lint.application.subjects import PLUGIN_KIND
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import Resolver, Selection, Suppression
 from untaped_lint.providers.conventions import KEY, UNCHECKED, Conventions
-from untaped_lint.records import Finding, Rule, Subject, public
+from untaped_lint.records import Finding, Rule, Subject, declared_kind, public
 
 _RULES_HINT = "untaped lint rules"
-_RULE_KIND = kind_of(Rule) or "lint.rule"
+_RULE_KIND = declared_kind(Rule)
 
 
 @dataclass(frozen=True)

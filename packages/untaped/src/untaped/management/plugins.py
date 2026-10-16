@@ -49,7 +49,7 @@ from untaped.plugins.registry import (
     owns_contracts,
     run_deferred_factory,
 )
-from untaped.records import Record, kind_of, record_kinds, record_model
+from untaped.records import Record, record_kinds, record_model
 from untaped.settings import ContractName, ExtensionSettings
 from untaped.stability import deprecated
 from untaped.theme import OutputFormat
@@ -414,13 +414,7 @@ def _show(
     columns: list[str] | None,
 ) -> None:
     rows = _rows(result, candidates)
-    emit_isolated(
-        [row.model_dump(mode="json") for row in rows],
-        fmt=fmt,
-        columns=columns,
-        kind=kind_of(Plugin),
-        table_columns=list(Plugin.table_columns),
-    )
+    emit_isolated(rows, fmt=fmt, columns=columns)
     if not rows:
         _diag.hint(INSTALL_HINT)
 

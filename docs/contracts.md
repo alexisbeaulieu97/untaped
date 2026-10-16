@@ -107,6 +107,7 @@ and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
 doesn't fill the bridge), `unresolved-item-type`, `duplicate-kind`,
+`foreign-kind` (a kind not under its plugin's name),
 `unserialisable-signature`, `owner-not-installed`, `owner-out-of-range` (the
 plugin's extra named like the owner requires a range of it the installed
 owner is outside), or `bad-provider` (its `provides` function raised or

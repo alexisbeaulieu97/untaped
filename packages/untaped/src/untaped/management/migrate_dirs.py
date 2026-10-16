@@ -26,6 +26,7 @@ from typing import Any
 from untaped.cli import emit, report_declined
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
+from untaped.management.records import MigrationPreviewRow
 from untaped.messages import plural, shown_path
 from untaped.migrations import overlapping, references_migration
 from untaped.output.diagnostic import Failure
@@ -50,7 +51,6 @@ _diag = Diagnostics()
 MIGRATE_COMMAND = "setup migrate-dirs"
 #: Preview actions that change something on disk.
 _CHANGES = frozenset({"move", "delete"})
-_ROW_KIND = "untaped.migration_row"
 #: The context key of core's own migrations (the references of installs that are gone).
 _CORE = "untaped"
 
@@ -150,21 +150,25 @@ def _paths(rows: Sequence[MigrationRow]) -> list[Path]:
     return paths
 
 
-def preview_records(planned: Sequence[Planned]) -> list[dict[str, object]]:
+def preview_records(planned: Sequence[Planned]) -> list[MigrationPreviewRow]:
     """The preview as rows: the migration's id beside each of its rows."""
-    records: list[dict[str, object]] = []
+    records: list[MigrationPreviewRow] = []
     for item in planned:
+        migration_id = item.migration.id
         if item.error is not None:
             records.append(
-                {
-                    "id": item.migration.id,
-                    "action": "failed",
-                    "detail": item.error.message,
-                    "error": item.error.model_dump(mode="json"),
-                }
+                MigrationPreviewRow(
+                    id=migration_id, action="failed", detail=item.error.message, error=item.error
+                )
             )
             continue
-        records.extend({"id": item.migration.id, **row.model_dump()} for row in item.rows)
+        # A plugin's row may subclass MigrationRow; the preview carries the base fields.
+        records.extend(
+            MigrationPreviewRow(
+                id=migration_id, **{name: getattr(row, name) for name in MigrationRow.model_fields}
+            )
+            for row in item.rows
+        )
     return records
 
 
@@ -260,36 +264,32 @@ def _declined() -> bool:
     return True
 
 
-def _shown(records: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+def _shown(records: Sequence[MigrationPreviewRow]) -> list[MigrationPreviewRow]:
     """Records with home-relative paths written ``~/…``, for people (JSON keeps them whole)."""
     return [
-        {
-            key: shown_path(str(value)) if key in ("source", "destination") and value else value
-            for key, value in record.items()
-        }
+        record.model_copy(
+            update={
+                key: shown_path(value)
+                for key in ("source", "destination")
+                if (value := getattr(record, key))
+            }
+        )
         for record in records
     ]
 
 
 def _emit_preview(
-    records: list[dict[str, object]], *, fmt: OutputFormat, columns: list[str] | None
+    records: list[MigrationPreviewRow], *, fmt: OutputFormat, columns: list[str] | None
 ) -> None:
-    emit(
-        _shown(records) if fmt == "table" else records,
-        fmt=fmt,
-        columns=columns,
-        kind=_ROW_KIND,
-        table_columns=("id", "action", "source", "destination", "detail"),
-        empty=False,
-    )
+    emit(_shown(records) if fmt == "table" else records, fmt=fmt, columns=columns, empty=False)
 
 
-def _preview_lines(records: Sequence[Mapping[str, object]]) -> list[str]:
+def _preview_lines(records: Sequence[MigrationPreviewRow]) -> list[str]:
     lines = []
     for record in _shown(records):
-        source, destination = record.get("source") or "", record.get("destination") or ""
-        where = f"{source} → {destination}" if destination else str(source)
-        parts = [str(record["action"]), where, str(record.get("detail") or "")]
+        source, destination = record.source or "", record.destination or ""
+        where = f"{source} → {destination}" if destination else source
+        parts = [record.action, where, record.detail]
         lines.append("  ".join(part for part in parts if part))
     return lines
 

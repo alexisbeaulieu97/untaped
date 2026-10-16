@@ -51,6 +51,8 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from untaped.output.diagnostic import (
     DuplicateKindError,
     Failure,
+    ForeignKindError,
+    KindError,
     UtcTimestamp,
     WireModel,
     _is_none,
@@ -233,7 +235,9 @@ __all__ = [
     "CheckRecord",
     "CheckStatus",
     "DuplicateKindError",
+    "ForeignKindError",
     "Issued",
+    "KindError",
     "OutcomeRecord",
     "Record",
     "Source",
