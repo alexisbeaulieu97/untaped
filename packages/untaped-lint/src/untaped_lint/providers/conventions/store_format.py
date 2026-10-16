@@ -6,11 +6,12 @@ within the major or it is a ``Store`` opened through ``Store.open()``, which
 keeps each layout under its own name.
 
 Only the decidable case is flagged: a call to ``sqlite3.connect``,
-``shelve.open`` or ``dbm.open`` (``dbm.<module>.open`` too, and the names
-``from <module> import connect`` or ``open`` binds) one of whose arguments
-itself contains a ``plugin_dir(...)`` or ``named_plugin_dir(...)`` call or a
-``~/.untaped`` string. A path built elsewhere, kept on ``self`` or returned by
-``Store.open()`` is not read. Lines are
+``shelve.open`` or ``dbm.open`` (a submodule's too, such as ``dbm.gnu.open``,
+and a name ``from <module> import connect`` or ``open`` binds in the call's
+scope) one of whose arguments itself contains a ``plugin_dir(...)`` or
+``named_plugin_dir(...)`` call or a ``~/.untaped`` string. A path built
+elsewhere, kept on ``self`` or returned by ``Store.open()`` is not read.
+Lines are
 ``<file>:<line>::store-format::sqlite3.connect() on a path under plugin_dir() ...``.
 
 ``# untaped: allow store-format`` on the call's first line waives one, for
@@ -20,7 +21,7 @@ a file whose layout is version-neutral.
 from __future__ import annotations
 
 import ast
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 from untaped.testing import allows
@@ -33,41 +34,62 @@ _DIRS = frozenset({"plugin_dir", "named_plugin_dir"})
 _HOME = "~/.untaped"
 
 
+type _Bindings = tuple[dict[str, str], dict[str, str]]
+type _Scope = ast.Module | ast.FunctionDef | ast.AsyncFunctionDef
+
+
 def store_format_violations(
     plugin: str, source_dir: Path, files: Sequence[SourceFile]
 ) -> list[str]:
     """Violations in ``files`` of ``plugin`` (code in ``source_dir``), relative to its parent."""
     found: list[str] = []
     for source in files:
-        modules, functions = _bindings(source.tree)
         rel = source.path.relative_to(source_dir.parent).as_posix()
-        for node in ast.walk(source.tree):
-            if not isinstance(node, ast.Call):
-                continue
-            opener = _opener(node.func, modules, functions)
-            if opener is None:
-                continue
+        for node, opener in _calls(source.tree, ({}, {})):
             under = _under(node)
             if under is not None and not allows(source.lines, node.lineno, RULE):
                 found.append(f"{rel}:{node.lineno}::{RULE}::{_message(opener, under, plugin)}")
-    return found
+    return sorted(found, key=lambda line: int(line.split("::")[0].rpartition(":")[2]))
 
 
-def _bindings(tree: ast.Module) -> tuple[dict[str, str], dict[str, str]]:
+def _calls(scope: _Scope, inherited: _Bindings) -> Iterator[tuple[ast.Call, str]]:
+    """The opener calls in ``scope`` and the functions nested in it, with the opener's name.
+
+    A call sees the imports of its own function and of every scope around it,
+    so an import inside one function never renames a call in another.
+    """
+    nodes = list(_own_nodes(scope))
+    modules, functions = _bindings(nodes)
+    seen = ({**inherited[0], **modules}, {**inherited[1], **functions})
+    for node in nodes:
+        if isinstance(node, ast.Call) and (opener := _opener(node.func, *seen)) is not None:
+            yield node, opener
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            yield from _calls(node, seen)
+
+
+def _own_nodes(scope: _Scope) -> Iterator[ast.AST]:
+    """The nodes of ``scope``, and the functions nested in it, but not their bodies."""
+    stack: list[ast.AST] = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def _bindings(nodes: Sequence[ast.AST]) -> _Bindings:
     """Names bound to an opener's module, and names bound to an opener, as ``module.func``."""
     modules: dict[str, str] = {}
     functions: dict[str, str] = {}
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.split(".")[0] not in _OPENERS:
+                top = alias.name.split(".")[0]
+                if top not in _OPENERS:
                     continue
-                if alias.asname is not None:
-                    modules[alias.asname] = alias.name
-                else:
-                    # ``import dbm.gnu`` binds ``dbm``; the attribute chain names the rest.
-                    top = alias.name.split(".")[0]
-                    modules[top] = top
+                # ``import dbm.gnu`` binds ``dbm``; the attribute chain names the rest.
+                modules[alias.asname or top] = alias.name if alias.asname else top
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             top = node.module.split(".")[0]
             if top not in _OPENERS:
@@ -76,7 +98,7 @@ def _bindings(tree: ast.Module) -> tuple[dict[str, str], dict[str, str]]:
                 bound = alias.asname or alias.name
                 if alias.name == _OPENERS[top]:
                     functions[bound] = f"{node.module}.{alias.name}"
-                elif top == "dbm":
+                else:
                     modules[bound] = f"{node.module}.{alias.name}"
     return modules, functions
 
@@ -97,7 +119,7 @@ def _opener(func: ast.expr, modules: dict[str, str], functions: dict[str, str]) 
     dotted = ".".join([modules[value.id], *reversed(chain)])
     module, _, name = dotted.rpartition(".")
     top = module.split(".")[0]
-    if name != _OPENERS.get(top) or (top != "dbm" and module != top):
+    if name != _OPENERS.get(top):
         return None
     return dotted
 

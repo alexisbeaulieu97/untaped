@@ -28,10 +28,6 @@ def _line(number: int, opener: str = "sqlite3.connect", under: str = "plugin_dir
     )
 
 
-def test_the_rule_is_named_store_format() -> None:
-    assert RULE == "store-format"
-
-
 def test_each_opener_on_a_plugin_directory_is_flagged(tmp_path: Path) -> None:
     source = """\
         import dbm
@@ -78,6 +74,8 @@ def test_a_store_or_a_path_kept_elsewhere_is_not_flagged(tmp_path: Path) -> None
         ("import dbm.gnu", "dbm.gnu.open", "dbm.gnu.open"),
         ("from dbm import gnu", "gnu.open", "dbm.gnu.open"),
         ("from dbm.dumb import open", "open", "dbm.dumb.open"),
+        ("import sqlite3.dbapi2", "sqlite3.dbapi2.connect", "sqlite3.dbapi2.connect"),
+        ("from sqlite3 import dbapi2", "dbapi2.connect", "sqlite3.dbapi2.connect"),
     ],
 )
 def test_an_opener_is_found_through_its_import(
@@ -85,6 +83,23 @@ def test_an_opener_is_found_through_its_import(
 ) -> None:
     source = f"{imports}\n{call}(plugin_dir(SPEC) / 'x')\n"
     assert _violations(tmp_path, source) == [_line(2, opener)]
+
+
+def test_an_import_inside_a_function_binds_only_there(tmp_path: Path) -> None:
+    """A function's ``from shelve import open`` leaves the builtin ``open`` elsewhere alone."""
+    source = """\
+        def shelf():
+            from shelve import open
+
+            def nested():
+                return open(plugin_dir(SPEC) / "inner")
+
+            return open(plugin_dir(SPEC) / "s")
+
+        def notes():
+            return open(plugin_dir(SPEC) / "notes.txt")
+        """
+    assert _violations(tmp_path, source) == [_line(5, "shelve.open"), _line(7, "shelve.open")]
 
 
 def test_another_function_of_an_opener_module_is_not_flagged(tmp_path: Path) -> None:
