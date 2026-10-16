@@ -208,7 +208,7 @@ def test_message_writes_semantic_status_to_stderr() -> None:
     stderr = io.StringIO()
     ui = UiContext(theme=ThemeSpec(symbols={"warning": "!"}))
 
-    with pytest.warns(DeprecationWarning, match="ctx.diag"), redirect_stderr(stderr):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(stderr):
         ui.message("warning", "check this")
 
     assert stderr.getvalue().splitlines() == ["! warning: check this"]
@@ -229,9 +229,15 @@ def test_message_color_roles_style_full_line_only_for_tty_stderr() -> None:
 
     ui = UiContext(theme=theme)
     for kind in ("success", "info", "warning", "error"):
-        with pytest.warns(DeprecationWarning, match="ctx.diag"), redirect_stderr(tty_stderr):
+        with (
+            pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
+            redirect_stderr(tty_stderr),
+        ):
             ui.message(kind, f"{kind} text")
-        with pytest.warns(DeprecationWarning, match="ctx.diag"), redirect_stderr(plain_stderr):
+        with (
+            pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
+            redirect_stderr(plain_stderr),
+        ):
             ui.message(kind, f"{kind} text")
 
     assert _has_ansi(tty_stderr.getvalue())
@@ -242,7 +248,7 @@ def test_message_color_roles_style_full_line_only_for_tty_stderr() -> None:
 
 def test_success_message_preserves_plain_text_by_default() -> None:
     stderr = io.StringIO()
-    with pytest.warns(DeprecationWarning, match="ctx.diag"), redirect_stderr(stderr):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(stderr):
         UiContext().message("success", "created profile: dev")
 
     assert stderr.getvalue().splitlines() == ["created profile: dev"]
@@ -254,7 +260,7 @@ def test_progress_reports_on_stderr_and_keeps_stdout_clean() -> None:
     ui = UiContext(stdout=stdout)
 
     with (
-        pytest.warns(DeprecationWarning, match="ctx.diag"),
+        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
         progress_clock() as clock,
         redirect_stderr(stderr),
         ui.progress("Resolving deps") as p,
@@ -272,7 +278,7 @@ def test_progress_verbose_context_passes_through_without_animation() -> None:
     ui = UiContext(stdout=io.StringIO(), verbose=True)
 
     with (
-        pytest.warns(DeprecationWarning, match="ctx.diag"),
+        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
         redirect_stderr(stderr),
         ui.progress("Resolving deps") as p,
     ):
@@ -402,7 +408,7 @@ def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None
 )
 def test_quiet_suppresses_only_success_and_info(quiet: bool, level: str, shown: bool) -> None:
     buf = io.StringIO()
-    with pytest.warns(DeprecationWarning, match="ctx.diag"), redirect_stderr(buf):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(buf):
         UiContext(quiet=quiet).message(level, "the message")  # type: ignore[arg-type]
     assert ("the message" in buf.getvalue()) is shown
 
@@ -460,7 +466,7 @@ def test_styled_writes_rich_text_to_stdout_with_color_only_on_a_tty() -> None:
 def test_styled_err_writes_to_stderr_and_ignores_quiet() -> None:
     stdout, stderr = io.StringIO(), io.StringIO()
 
-    with pytest.warns(DeprecationWarning, match="ctx.diag"), redirect_stderr(stderr):
+    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(stderr):
         UiContext(stdout=stdout, quiet=True).styled("PLAY [all]", err=True)
 
     assert stdout.getvalue() == ""

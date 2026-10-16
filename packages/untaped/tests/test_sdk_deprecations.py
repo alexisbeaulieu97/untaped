@@ -1,0 +1,181 @@
+"""Deprecated SDK callables and parameters: the marks, the sentence and the warning."""
+
+from __future__ import annotations
+
+import asyncio
+import inspect
+import warnings
+from typing import TYPE_CHECKING, Annotated
+
+import pytest
+
+from untaped.cli import echo, report_error
+from untaped.output.sink import Diagnostics
+from untaped.stability import (
+    UntapedDeprecationWarning,
+    callable_owner,
+    deprecated,
+    deprecated_parameters,
+    deprecation_sentence,
+    function_mark,
+    parameter_marks,
+    sdk_replacement_text,
+    warns_parameters,
+)
+from untaped.ui import UiContext
+
+if TYPE_CHECKING:
+    from untaped.sdk import Record  # never imported at run time
+
+
+# --- the mark and the sentence -------------------------------------------------------------
+
+
+class Client:
+    @classmethod
+    @deprecated(removed_in=3)
+    def build(cls) -> None: ...
+
+    @staticmethod
+    @deprecated(removed_in=3)
+    def make() -> None: ...
+
+    @property
+    @deprecated(removed_in=3)
+    def name(self) -> str:
+        return ""
+
+
+class Tolerant:
+    @deprecated(removed_in=3)  # type: ignore[arg-type]
+    @classmethod
+    def build(cls) -> None: ...
+
+
+def test_a_mark_under_a_descriptor_and_one_above_it_land_on_the_function() -> None:
+    for owner, name in [(Client, "build"), (Client, "make"), (Tolerant, "build")]:
+        member = vars(owner)[name]
+        assert function_mark(member.__func__) == deprecated(removed_in=3)
+    getter = vars(Client)["name"].fget
+    assert function_mark(getter) == deprecated(removed_in=3)
+
+
+def test_an_object_replacement_reads_as_its_qualname() -> None:
+    assert sdk_replacement_text(deprecated(replacement=Diagnostics.failure)) == (
+        "`Diagnostics.failure`"
+    )
+    assert sdk_replacement_text(deprecated(replacement="a log line")) == "a log line"
+    assert sdk_replacement_text(deprecated()) is None
+
+
+def test_core_s_callable_names_the_bare_version_and_a_plugin_s_its_distribution() -> None:
+    def api() -> None: ...
+
+    api.__module__ = "untaped_acme_tools.api"
+    mark = deprecated(removed_in=3, replacement="new_api")
+    assert callable_owner(report_error) is None
+    assert callable_owner(api) == "untaped-acme-tools"
+    assert deprecation_sentence(api, mark) == (
+        "test_core_s_callable_names_the_bare_version_and_a_plugin_s_its_distribution.<locals>.api"
+        " is deprecated and will be removed in untaped-acme-tools 3.0; use new_api"
+    )
+
+
+@pytest.mark.parametrize(
+    "callable_",
+    [report_error, UiContext.message, UiContext.success, UiContext.progress],
+    ids=lambda each: each.__qualname__,
+)
+def test_core_s_literal_is_its_mark_s_sentence(callable_: object) -> None:
+    mark = function_mark(callable_)
+    assert mark is not None and isinstance(mark, type(deprecated()))
+    assert callable_.__deprecated__ == deprecation_sentence(callable_, mark)  # type: ignore[attr-defined]
+
+
+# --- deprecated_parameters -----------------------------------------------------------------
+
+
+@deprecated_parameters
+def emit(
+    rows: list[Record],
+    *,
+    kind: Annotated[
+        str | None, deprecated(removed_in=12, replacement="kind= on the Record class")
+    ] = None,
+) -> int:
+    return len(rows)
+
+
+@deprecated_parameters
+async def fetch(x: int, old: Annotated[bool, deprecated(removed_in=12)] = False) -> int:
+    return x
+
+
+class Builder:
+    @classmethod
+    @deprecated_parameters
+    def build(cls, *, legacy: Annotated[bool, deprecated(removed_in=12)] = False) -> str:
+        return cls.__name__
+
+
+def _caught(call: object) -> list[warnings.WarningMessage]:
+    with warnings.catch_warnings(record=True) as log:
+        warnings.simplefilter("always")
+        call()  # type: ignore[operator]
+    return log
+
+
+def test_a_marked_parameter_warns_when_passed_even_at_its_default() -> None:
+    (passed,) = _caught(lambda: emit([], kind="x"))
+    (default,) = _caught(lambda: emit([], kind=None))
+    assert (
+        str(passed.message)
+        == str(default.message)
+        == ("emit(kind=) is deprecated and will be removed in 12.0; use kind= on the Record class")
+    )
+    assert _caught(lambda: emit([])) == []
+
+
+def test_the_warning_carries_its_fields_and_points_at_the_caller() -> None:
+    with warnings.catch_warnings(record=True) as log:
+        warnings.simplefilter("always")
+        frame = inspect.currentframe()
+        before = frame.f_lineno if frame is not None else 0
+        emit([], kind="x")
+    (shown,) = log
+    assert (shown.filename, shown.lineno) == (__file__, before + 1)
+    warning = shown.message
+    assert isinstance(warning, UntapedDeprecationWarning)
+    assert (warning.id, warning.removed_in, warning.distribution, warning.replacement) == (
+        "sdk emit(kind=)",
+        12,
+        None,
+        "kind= on the Record class",
+    )
+
+
+def test_an_async_function_stays_one_and_warns() -> None:
+    assert inspect.iscoroutinefunction(fetch)
+    (shown,) = _caught(lambda: asyncio.run(fetch(1, old=True)))
+    assert str(shown.message) == "fetch(old=) is deprecated and will be removed in 12.0"
+    assert _caught(lambda: asyncio.run(fetch(1))) == []
+
+
+def test_a_classmethod_warns_and_keeps_its_signature() -> None:
+    (shown,) = _caught(lambda: Builder.build(legacy=True))
+    assert str(shown.message).startswith("Builder.build(legacy=) is deprecated")
+    assert list(inspect.signature(Builder.build).parameters) == ["legacy"]
+    assert warns_parameters(vars(Builder)["build"])
+
+
+def test_hints_imported_for_type_checking_never_raise() -> None:
+    assert set(parameter_marks(emit)) == {"kind"}
+    assert warns_parameters(emit)
+
+
+def test_echo_s_err_warns_whatever_its_value() -> None:
+    for value in (True, False):
+        (shown,) = _caught(lambda value=value: echo("", err=value))
+        warning = shown.message
+        assert isinstance(warning, UntapedDeprecationWarning)
+        assert warning.id == "sdk echo(err=)"

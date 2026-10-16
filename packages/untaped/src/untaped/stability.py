@@ -29,6 +29,10 @@ every use and, on a settings field, becomes pydantic field deprecation.
 
 from __future__ import annotations
 
+import annotationlib
+import ast
+import functools
+import inspect
 import re
 import typing
 import warnings
@@ -63,8 +67,17 @@ class _Marker:
     """What both markers share: applied to a command function, they record themselves on it."""
 
     def __call__[F: Callable[..., Any]](self, target: F, /) -> F:
-        """Mark a command function and return it unchanged (apply under ``@app.command``)."""
-        setattr(target, _FUNCTION_ATTR, self)
+        """Mark a command function and return it unchanged (apply under ``@app.command``).
+
+        On a descriptor (``classmethod``, ``staticmethod``, ``property``) the mark
+        lands on its function, where the surface walker reads it.
+        """
+        inner: object = target
+        if isinstance(inner, classmethod | staticmethod):
+            inner = inner.__func__
+        elif isinstance(inner, property) and inner.fget is not None:
+            inner = inner.fget
+        setattr(inner, _FUNCTION_ATTR, self)
         return target
 
 
@@ -352,21 +365,37 @@ def replacement_text(
 ) -> str | None:
     """The replacement as a help or warning shows it, or ``None`` when there is none.
 
-    An object becomes `` `untaped <path>` ``; a text shaped like a command or a
-    setting key is backticked; prose stays as is. An object that is not found
-    in ``tree`` (or no ``tree``) gives ``None``.
+    An object becomes `` `untaped <path>` ``; a text shaped like a command, a
+    setting key or a flag (``--limit 1 --yes``) is backticked; prose stays as
+    is. An object that is not found in ``tree`` (or no ``tree``) gives ``None``
+    (an SDK callable's replacement is :func:`sdk_replacement_text`'s).
     """
     replacement = mark.replacement
     if replacement is None:
         return None
     if isinstance(replacement, str):
-        return (
-            f"`{replacement}`"
-            if COMMAND_TEXT.match(replacement) or KEY_TEXT.match(replacement)
-            else replacement
+        shaped = (
+            COMMAND_TEXT.match(replacement)
+            or KEY_TEXT.match(replacement)
+            or replacement.startswith("-")
         )
+        return f"`{replacement}`" if shaped else replacement
     path = None if tree is None else replacement_path(tree, replacement, prefix=prefix)
     return None if path is None else f"`{' '.join(path)}`"
+
+
+def sdk_replacement_text(mark: Deprecated) -> str | None:
+    """The replacement of a deprecated SDK callable or parameter, as its warning shows it.
+
+    An object is named by its backticked ``__qualname__`` (``Diagnostics.failure``),
+    so a rename breaks the import rather than the text; text reads as
+    :func:`replacement_text` shows it.
+    """
+    replacement = mark.replacement
+    if replacement is None or isinstance(replacement, str):
+        return replacement_text(mark, None)
+    qualname = getattr(replacement, "__qualname__", None)
+    return None if qualname is None else f"`{qualname}`"
 
 
 def stability_line(
@@ -813,6 +842,152 @@ def notify_deprecation(
             replacement=None if replacement is None else replacement.replace("`", ""),
         )
     )
+
+
+# --- deprecated SDK callables and parameters ----------------------------------
+
+_PLUGIN_PACKAGE = "untaped_"
+_PARAMETERS_ATTR = "__untaped_deprecated_parameters__"
+
+
+def callable_owner(obj: object) -> str | None:
+    """The distribution whose major a deprecated SDK callable names; ``None`` for core's.
+
+    Read from the ``untaped_<name>`` package of its ``__module__``, the rule
+    every plugin's package follows: the composed plugin's distribution, else
+    ``untaped-<name>`` (every plugin's distribution is named after it). No
+    package metadata is read.
+    """
+    package = str(getattr(obj, "__module__", "") or "").partition(".")[0]
+    if not package.startswith(_PLUGIN_PACKAGE):
+        return None
+    name = package.removeprefix(_PLUGIN_PACKAGE).replace("_", "-")
+    return owner(name) or f"untaped-{name}"
+
+
+def deprecation_sentence(obj: object, mark: Deprecated, *, subject: str | None = None) -> str:
+    """The deprecation sentence of SDK callable ``obj``: what its ``warnings.deprecated`` says.
+
+    ``<qualname> is deprecated and will be removed in <version>[; use <replacement>]``;
+    ``subject`` replaces the qualname (a parameter's ``echo(err=)``).
+    """
+    name = subject if subject is not None else str(getattr(obj, "__qualname__", obj))
+    removal = removal_text(mark.removed_in, callable_owner(obj))
+    return deprecated_message(name, sdk_replacement_text(mark), removal)
+
+
+def deprecated_parameters[F: Callable[..., Any]](function: F, /) -> F:
+    """Warn whenever a parameter marked ``deprecated(...)`` in its annotation is passed.
+
+    ``def emit(rows, *, kind: Annotated[str | None, deprecated(removed_in=12,
+    replacement="kind= on the Record class")] = None)`` under
+    ``@deprecated_parameters`` raises an :class:`UntapedDeprecationWarning`
+    each time ``kind`` is passed, its default value included, since the major
+    that removes it makes any spelling of it a ``TypeError``. The mark on the
+    parameter is the declaration (its surface line shows it); the decorator
+    is what warns. Signatures see through it, and an ``async def`` stays one.
+    """
+    marked: dict[str, Deprecated] | None = None
+
+    def warn_for(args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+        nonlocal marked
+        if marked is None:
+            marked = parameter_marks(function)
+        if not marked:
+            return
+        bound = inspect.signature(function).bind_partial(*args, **kwargs).arguments
+        for name in marked.keys() & bound.keys():
+            mark = marked[name]
+            subject = f"{function.__qualname__}({name}=)"
+            shown = sdk_replacement_text(mark)
+            warning = UntapedDeprecationWarning(
+                deprecation_sentence(function, mark, subject=subject),
+                id=f"sdk {subject}",
+                removed_in=mark.removed_in,
+                distribution=callable_owner(function),
+                replacement=None if shown is None else shown.replace("`", ""),
+            )
+            warnings.warn(warning, stacklevel=3)  # untaped: allow warnings-warn
+
+    if inspect.iscoroutinefunction(function):
+
+        @functools.wraps(function)
+        async def awaiting(*args: Any, **kwargs: Any) -> Any:
+            warn_for(args, kwargs)
+            return await function(*args, **kwargs)
+
+        wrapper: Callable[..., Any] = awaiting
+    else:
+
+        @functools.wraps(function)
+        def calling(*args: Any, **kwargs: Any) -> Any:
+            warn_for(args, kwargs)
+            return function(*args, **kwargs)
+
+        wrapper = calling
+    setattr(wrapper, _PARAMETERS_ATTR, True)
+    return typing.cast("F", wrapper)
+
+
+def warns_parameters(function: object) -> bool:
+    """Whether ``function`` (or a descriptor's) is under :func:`deprecated_parameters`."""
+    target = getattr(function, "__func__", function)
+    target = target.fget if isinstance(target, property) else target
+    return bool(getattr(target, _PARAMETERS_ATTR, False))
+
+
+def parameter_marks(function: Callable[..., Any]) -> dict[str, Deprecated]:
+    """Each parameter of ``function`` whose annotation carries a ``deprecated(...)`` mark.
+
+    Reads the annotations without evaluating them (``annotationlib``,
+    ``FORWARDREF``) and evaluates only a string annotation's ``Annotated``
+    metadata, so a hint imported under ``TYPE_CHECKING`` never raises.
+    """
+    target = inspect.unwrap(function)
+    try:
+        found = annotationlib.get_annotations(target, format=annotationlib.Format.FORWARDREF)
+    except TypeError:
+        return {}
+    namespace = getattr(target, "__globals__", {})
+    marks: dict[str, Deprecated] = {}
+    for name, annotation in found.items():
+        if name == "return":
+            continue
+        mark = next(
+            (item for item in _metadata(annotation, namespace) if isinstance(item, Deprecated)),
+            None,
+        )
+        if mark is not None:
+            marks[name] = mark
+    return marks
+
+
+def _metadata(annotation: object, namespace: Mapping[str, Any]) -> list[object]:
+    """The ``Annotated`` metadata of ``annotation``, a type or its source text."""
+    if isinstance(annotation, annotationlib.ForwardRef):
+        annotation = annotation.__forward_arg__
+    if not isinstance(annotation, str):
+        return list(getattr(annotation, "__metadata__", ()))
+    if "deprecated" not in annotation:
+        return []
+    try:
+        tree = ast.parse(annotation, mode="eval").body
+    except SyntaxError:
+        return []
+    if not isinstance(tree, ast.Subscript) or not isinstance(tree.slice, ast.Tuple):
+        return []
+    outer = tree.value
+    if (outer.id if isinstance(outer, ast.Name) else getattr(outer, "attr", None)) != "Annotated":
+        return []
+    found: list[object] = []
+    for element in tree.slice.elts[1:]:
+        try:
+            found.append(
+                eval(compile(ast.Expression(element), "<annotation>", "eval"), dict(namespace))
+            )
+        except Exception:
+            continue
+    return found
 
 
 # --- deprecated behaviours ---------------------------------------------------

@@ -7,8 +7,9 @@ Checks every command of a subtree against ``docs/plugins.md``:
   description (core writes the line from the mark; a hidden option's help is
   exempt);
 - ``wrong-deprecated`` — a command function carries Python's
-  ``warnings.deprecated``, or a settings field pydantic's ``deprecated=``,
-  instead of untaped's ``@deprecated(...)``;
+  ``warnings.deprecated`` (cyclopts would print its text), or a settings field
+  pydantic's ``deprecated=``, where untaped's ``deprecated(...)`` alone belongs;
+  an SDK callable is the other way round and carries both (below);
 - ``nested-mark`` — a mark under a mark that makes it redundant or
   contradictory: experimental under experimental, or anything under
   deprecated (deprecated under experimental is allowed); a settings field
@@ -24,6 +25,19 @@ A deprecated behaviour (``<plugin>.<name>``) is checked for ``nested-mark``
 (under its deprecated plugin) and ``bad-replacement`` (its text), the
 checked plugin's or, with no plugin, core's.
 
+Every deprecation is a promise with a date, so:
+
+- ``undated-deprecation`` — a mark of the checked plugin with no
+  ``removed_in``: a command, group, alias, setting, renamed key or cache
+  rename (:func:`undated_violations`, read from its surface lines), or an
+  export of its ``api`` or ``testing`` module (below);
+- ``untyped-deprecation``, ``deprecation-text`` and ``unwarned-parameter`` —
+  an exported SDK callable or class marked for one audience only, whose
+  ``warnings.deprecated`` literal is not its mark's sentence, or with a
+  marked parameter and no ``@deprecated_parameters``
+  (:func:`deprecation_text_violations`, which the repo's
+  ``test_sdk_deprecations`` runs over core's SDK modules).
+
 A group named after a stability panel is ``reserved-panel``, one of the help
 tree's rules (:mod:`untaped.conventions.help_tree`).
 
@@ -35,7 +49,9 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
+from types import ModuleType
+from typing import Any
 
 from cyclopts import App
 
@@ -52,11 +68,16 @@ from untaped.stability import (
     Stability,
     app_mark,
     children,
+    class_mark,
+    deprecation_sentence,
     field_descriptions,
+    function_mark,
     mark_of,
     marks,
+    parameter_marks,
     pydantic_deprecated_fields,
     replacement_path,
+    warns_parameters,
 )
 
 _HAND_TYPED = re.compile(r"\b(?:Experimental|Deprecated):")
@@ -99,7 +120,10 @@ def stability_violations(
             where = " ".join(path)
             found.extend(f"{where}::hand-typed-mark::{detail}" for detail in _hand_typed(app))
             if getattr(app.default_command, "__deprecated__", None) is not None:
-                found.append(f"{where}::wrong-deprecated::{path[-1]} uses warnings.deprecated")
+                found.append(
+                    f"{where}::wrong-deprecated::{path[-1]} carries warnings.deprecated, whose "
+                    "text cyclopts would print; a command takes untaped's @deprecated(...) alone"
+                )
     every = marks(root, result)
     found.extend(_setting_violations(root, result, settings, every))
     found.extend(_behaviour_violations(root, result, spec, every))
@@ -238,3 +262,125 @@ def _bad_text(root: App, text: str, plugin: str | None) -> Iterator[str]:
         }
         if text not in keys:
             yield f"`{text}` is not a current setting"
+
+
+# --- every deprecation names its removal; an SDK callable's two marks agree ----
+
+_UNDATED = "every deprecation is a promise with a date: add removed_in=<major> to its mark"
+
+
+def undated_violations(spec: PluginSpec) -> list[str]:
+    """``undated-deprecation`` for each mark of ``spec``'s plugin that names no removal.
+
+    Read from its surface lines (:func:`untaped.surface.plugin_lines`), so
+    every kind the release check reads is covered by one walk: commands,
+    groups, aliases, settings, renamed keys and cache renames. Its ``sdk``
+    lines are :func:`deprecation_text_violations`' to report.
+    """
+    from untaped.surface import DeprecatedMark, plugin_lines  # noqa: PLC0415
+
+    try:
+        lines = plugin_lines(spec)
+    except Exception:
+        # A surface the walker can't read (a contracts function that fails, an export it
+        # can't classify) is another check's finding; this rule only reads marks.
+        return []
+    return [
+        f"{line.identity}::undated-deprecation::{_UNDATED}"
+        for line in lines
+        if isinstance(line.mark, DeprecatedMark)
+        and line.mark.removed_in is None
+        and not line.identity.startswith("sdk ")
+    ]
+
+
+def deprecation_text_violations(module: ModuleType) -> list[str]:
+    """``<module>.<qualname>::<rule>::<detail>`` for the deprecated SDK callables of ``module``.
+
+    Each export (``__all__``, else its public names) and each member a class
+    of the workspace defines is read: ``warnings.deprecated`` without
+    untaped's mark, or a mark without a removal, is ``undated-deprecation``;
+    a mark without the literal is ``untyped-deprecation``; a literal that is
+    not the mark's sentence is ``deprecation-text``, naming the one to paste;
+    a parameter marked in its annotation on a function without
+    ``@deprecated_parameters`` is ``unwarned-parameter``. Nothing compares at
+    import: the repo test and ``untaped lint`` run this before a merge.
+    """
+    found: list[str] = []
+    for name, obj in _exports(module):
+        where = f"{module.__name__}.{name}"
+        found.extend(f"{where}::{rule}::{detail}" for rule, detail in _callable_violations(obj))
+        if isinstance(obj, type) and obj.__module__.startswith(_PACKAGES):
+            for member, value in vars(obj).items():
+                if not member.startswith("_"):
+                    found.extend(
+                        f"{where}.{member}::{rule}::{detail}"
+                        for rule, detail in _callable_violations(value)
+                    )
+    return sorted(set(found))
+
+
+_PACKAGES = ("untaped.", "untaped_")
+
+
+def _exports(module: ModuleType) -> list[tuple[str, object]]:
+    names = getattr(module, "__all__", None)
+    if names is None:
+        names = [name for name in vars(module) if not name.startswith("_")]
+    return [(name, getattr(module, name)) for name in sorted(set(names)) if hasattr(module, name)]
+
+
+def _callable_violations(obj: object) -> Iterator[tuple[str, str]]:
+    """The rules for one exported function, class or class member."""
+    target = obj.fget if isinstance(obj, property) else obj
+    target = getattr(target, "__func__", target)
+    if isinstance(target, type):
+        mark, literal = class_mark(target), vars(target).get("__deprecated__")
+    elif inspect.isfunction(target):
+        mark, literal = function_mark(target), getattr(target, "__deprecated__", None)
+    else:
+        return
+    if literal is not None and not isinstance(mark, Deprecated):
+        yield (
+            "undated-deprecation",
+            "carries warnings.deprecated and no untaped mark; add "
+            "@deprecated(removed_in=<major>, replacement=...) above it so the surface dates it",
+        )
+    elif isinstance(mark, Deprecated):
+        sentence = deprecation_sentence(target, mark)
+        if mark.removed_in is None:
+            yield "undated-deprecation", _UNDATED
+        if literal is None:
+            yield (
+                "untyped-deprecation",
+                "untaped's mark alone is invisible to type checkers; add "
+                f"@warnings.deprecated({_literal(sentence)}) under it",
+            )
+        elif literal != sentence:
+            yield (
+                "deprecation-text",
+                f"its warnings.deprecated text is not its mark's; use {_literal(sentence)}",
+            )
+    if not isinstance(target, type):
+        yield from _parameter_violations(target, obj)
+
+
+def _parameter_violations(
+    function: Callable[..., Any], declared: object
+) -> Iterator[tuple[str, str]]:
+    marked = parameter_marks(function)
+    for name, mark in sorted(marked.items()):
+        if mark.removed_in is None:
+            yield "undated-deprecation", f"{name}=: {_UNDATED}"
+    if marked and not warns_parameters(declared):
+        names = ", ".join(f"{name}=" for name in sorted(marked))
+        yield (
+            "unwarned-parameter",
+            f"{names} is marked deprecated but nothing warns when it is passed; "
+            "add @deprecated_parameters to the function",
+        )
+
+
+def _literal(text: str) -> str:
+    """``text`` as the double-quoted literal to paste."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'

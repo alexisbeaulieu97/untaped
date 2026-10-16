@@ -53,7 +53,9 @@ from untaped.stability import (
     Stability,
     class_mark,
     function_mark,
+    parameter_marks,
     replacement_text,
+    sdk_replacement_text,
 )
 from untaped.surface._lines import DEPRECATED, DeprecatedMark, Line, LineMark
 from untaped.surface._lists import HOOKS, IMPLEMENTERS
@@ -89,12 +91,20 @@ def line_mark(mark: Stability | None, tree: App | None = None) -> LineMark | Non
     return None
 
 
+def sdk_line_mark(mark: Stability | None) -> LineMark | None:
+    """An SDK callable's or parameter's marker as a line's mark: an object replacement by name."""
+    if isinstance(mark, Deprecated):
+        use = sdk_replacement_text(mark)
+        return DeprecatedMark(mark.removed_in, None if use is None else use.replace("`", ""))
+    return line_mark(mark)
+
+
 def own_mark(obj: object) -> LineMark | None:
     """The mark declared on ``obj``: untaped's marker, else ``warnings.deprecated``."""
     target = obj.fget if isinstance(obj, property) else obj
     target = getattr(target, "__func__", target)
     # A class's mark is its own: a subclass of an experimental class is stable.
-    found = line_mark(class_mark(target) if isinstance(target, type) else function_mark(target))
+    found = sdk_line_mark(class_mark(target) if isinstance(target, type) else function_mark(target))
     if isinstance(target, type):
         deprecated = vars(target).get("__deprecated__")
     else:
@@ -387,6 +397,8 @@ class _Walker:
         hints = self.hints(function)
         scope = {**_type_params(owner), **_type_params(function)}
         factories = _factories(function)
+        # A parameter marked deprecated in its annotation carries that mark on its own line.
+        own = {} if isinstance(function, type) else parameter_marks(function)
         parameters = list(signature.parameters.values())
         if skip_first:
             parameters = parameters[1:]
@@ -418,7 +430,10 @@ class _Walker:
                 only = "/" if parameter.kind is parameter.POSITIONAL_ONLY else ""
                 name = f"{name}@{position}{only}"
             if parameter.default is not parameter.empty:
-                lines.append(self.optional(subject, name, parameter, arity, mark, factories))
+                own_line = sdk_line_mark(own.get(parameter.name))
+                lines.append(
+                    self.optional(subject, name, parameter, arity, own_line or mark, factories)
+                )
                 continue
             if parameter.kind is parameter.KEYWORD_ONLY:
                 keywords.append(parameter.name)
