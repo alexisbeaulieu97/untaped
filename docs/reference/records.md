@@ -113,11 +113,11 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 `awx.credential_type`, `awx.credential`, `awx.project`, `awx.inventory`,
 `awx.inventory_source`, `awx.host`, `awx.group`, `awx.execution_environment`,
 `awx.label`, `awx.instance_group`, `awx.system_job_template`, `awx.job_template`,
-`awx.workflow_job_template`, `awx.schedule`. A resource row, like `awx.job` and
-`awx.unified_template`, is AWX's answer: `id`, `name` and `type` lead, then the
-fields untaped reads, then every other field AWX sent, in its order. `untaped
-plugin schema awx.job_template` lists the typed fields "plus any others"
-(`additionalProperties`).
+`awx.workflow_job_template`, `awx.schedule`. A resource row is AWX's answer, as
+are `awx.job` and `awx.unified_template` rows: the fields untaped reads lead
+(`id`, `name`, `type` and the resource's own; `id`, `name`, `status` on a job),
+then every other field AWX sent, in its order. `untaped plugin schema
+awx.job_template` lists the typed fields "plus any others" (`additionalProperties`).
 
 | Command | Writes |
 |---|---|

@@ -22,7 +22,6 @@ copy, rename, cancel and relaunch outcomes).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any, ClassVar
 
 from pydantic import ConfigDict, Field, JsonValue
@@ -45,15 +44,6 @@ class AwxRecord(Record):
     __pydantic_extra__: dict[str, JsonValue] = Field(init=False)
 
     id: int
-
-    @classmethod
-    def _reorder(cls, names: list[str], declared_by: Mapping[str, type]) -> list[str]:
-        """AWX's identity leads (``id``, ``name``, ``type``), then the fields a kind adds.
-
-        So ``--format raw`` keeps writing the ``id`` AWX's row starts with.
-        """
-        del declared_by
-        return [name for name in cls.model_fields if name in names]
 
 
 class AwxResource(AwxRecord):

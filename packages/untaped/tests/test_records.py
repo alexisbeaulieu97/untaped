@@ -1243,6 +1243,20 @@ def test_an_open_record_writes_a_field_set_later_and_one_built_in_python() -> No
     }
 
 
+class _AnsweredProject(_Answered, kind="acme-tools.answered_project"):
+    """A subclass adding a typed field: the base's identity still leads."""
+
+    scm_url: str | None = None
+
+
+def test_an_open_record_s_subclass_keeps_its_base_identity_first() -> None:
+    row = {"scm_url": "https://git.example.com/acme.git", "name": "n", "id": 3, "type": "p"}
+
+    dumped = _AnsweredProject.model_validate(row).model_dump(mode="json")
+
+    assert list(dumped) == ["id", "name", "scm_url", "type"]
+
+
 def test_an_open_record_keeps_only_json_values() -> None:
     with pytest.raises(ValidationError):
         _Answered.model_validate({"id": 1, "name": "n", "when": object()})

@@ -259,7 +259,10 @@ def _field_order(model: type[WireModel]) -> tuple[str, ...]:
     """Dumped keys by declaring class, most derived first, then the model's own reordering.
 
     Pydantic lists inherited fields first; wire models want their own fields
-    (including re-declared base fields) ahead of the base-class ones.
+    (including re-declared base fields) ahead of the base-class ones. An
+    ``extra="allow"`` model keeps pydantic's base-first order: a service's
+    answer leads with the identity its base types (``id``, ``name``), then
+    the fields a subclass adds.
     """
     order: dict[str, None] = {}
     declared_by: dict[str, type] = {}
@@ -269,6 +272,8 @@ def _field_order(model: type[WireModel]) -> tuple[str, ...]:
             if name in model.model_fields:
                 order.setdefault(name)
                 declared_by.setdefault(name, klass)
+    if model.model_config.get("extra") == "allow":
+        order = dict.fromkeys(model.model_fields)
     keys = dumped_names(model)
     return tuple(keys[name] for name in model._reorder(list(order), declared_by))
 
@@ -434,8 +439,8 @@ class WireModel(BaseModel):
     A record passing a service's answer through sets ``extra="allow"``: it
     types the fields untaped reads and keeps every other one, typed
     ``__pydantic_extra__: dict[str, JsonValue]``. Its dump is the row it
-    was given, its typed fields first: a declared field the row left out
-    stays out.
+    was given, its typed fields first (base classes' first, so the identity
+    leads): a declared field the row left out stays out.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

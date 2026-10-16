@@ -60,7 +60,7 @@ SUITE = "awx.suite"
 CREDENTIALS = "awx.credentials"
 CONTROLLER = "awx.controller"
 SCM = "awx.scm"
-INVENTORY = "awx.inventories"
+INVENTORIES = "awx.inventories"
 HOSTS = "awx.hosts"
 PLAYBOOK = "awx.playbook"
 EXPECTATION = "awx.expectation"
@@ -83,7 +83,7 @@ _MAX_TRACEBACK = 2000
 _UPDATES: dict[str, tuple[str, ErrorCategory]] = {
     "project_update": (SCM, ErrorCategory.FAILED),
     # A broken inventory source is the environment, not the change.
-    "inventory_update": (INVENTORY, ErrorCategory.CONFIG),
+    "inventory_update": (INVENTORIES, ErrorCategory.CONFIG),
 }
 UPDATE_KINDS = frozenset(_UPDATES)
 """Execution kinds of the updates a job waits for (a workflow node may run one itself)."""

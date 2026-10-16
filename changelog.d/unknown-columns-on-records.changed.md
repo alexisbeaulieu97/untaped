@@ -12,3 +12,8 @@ since the change already happened, as do `doctor`'s and `setup plan`'s
 tables, which show a command to type, the table of `github sweep`'s repo
 rows, and the tables of `recipe get` and `recipe backups get`, which reshape
 a field.
+An unknown name is also a usage error on awx's `jobs events`, `jobs logs`,
+`workflow-templates nodes`, `job-templates usage`, `workflow-templates usage`,
+`test list` and `test run` rows (`test run` before it launches anything), and
+on `<resource> export`'s documents printed with a `--format` other than `yaml`
+(no `--out`).
