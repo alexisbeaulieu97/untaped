@@ -7,6 +7,7 @@ import pytest
 
 from untaped.errors import ConfigError, UsageError
 from untaped.pipe import PIPE_MARKER_KEY
+from untaped.records import Record, kind_of
 from untaped.stdin import (
     StdinInput,
     read_identifiers,
@@ -15,7 +16,6 @@ from untaped.stdin import (
     read_stdin_text,
     resolve_text_input,
 )
-from untaped.records import Record, kind_of
 from untaped.testing import TtyStringIO
 
 

@@ -160,7 +160,7 @@ def read_stdin_input(
 def _accepted_kinds(
     accepts: Collection[type[WireModel]] | None, accept_kinds: Collection[str] | None
 ) -> Collection[str] | None:
-    """The kinds a reader accepts, from its models (or the strings, until 12.0)."""
+    """The kinds a reader accepts: those its models declare, else the strings given."""
     if accepts is None:
         return accept_kinds
     if accept_kinds is not None:

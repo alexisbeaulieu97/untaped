@@ -14,11 +14,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import PipeEnvelope, Plugin, UsageError, kind_of, project_root
+from untaped.sdk import PipeEnvelope, Plugin, UsageError, project_root
 from untaped_lint.providers import conventions
-from untaped_lint.records import Finding, Subject, public
+from untaped_lint.records import Finding, Subject, declared_kind, public
 
-PLUGIN_KIND = kind_of(Plugin) or "untaped.plugin"
+PLUGIN_KIND = declared_kind(Plugin)
 _GROUP = "untaped.plugins"
 
 

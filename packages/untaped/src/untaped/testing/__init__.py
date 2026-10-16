@@ -274,16 +274,17 @@ def invoke_cli(
     )
 
 
-def invoke_root(argv: Sequence[str]) -> CliResult:
+def invoke_root(argv: Sequence[str], *, input: str | None = None) -> CliResult:
     """Run ``untaped *argv`` in-process, composed from the installed providers.
 
     The supported way for a plugin's tests to drive the real root: the root
     is composed through entry-point discovery, as the ``untaped`` script does,
-    and ``argv`` is invoked on it with captured output.
+    and ``argv`` is invoked on it with captured output. ``input`` is what is
+    piped on stdin (another command's ``--format pipe`` output, say).
     """
     from untaped.bootstrap import build_root_app  # noqa: PLC0415
 
-    return CliInvoker().invoke(build_root_app().meta, list(argv))
+    return CliInvoker().invoke(build_root_app().meta, list(argv), input=input)
 
 
 def no_terminal() -> TextIO:

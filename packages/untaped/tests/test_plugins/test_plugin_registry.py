@@ -396,7 +396,7 @@ def test_a_kind_a_lazy_module_declares_under_another_name_quarantines_at_first_b
     monkeypatch.delitem(sys.modules, "untaped_toy_lazy", raising=False)
 
     def factory() -> App:
-        import untaped_toy_lazy  # noqa: F401, PLC0415 - a record module imported by the factory
+        import untaped_toy_lazy  # noqa: F401 - a record module imported by the factory
 
         return App()
 

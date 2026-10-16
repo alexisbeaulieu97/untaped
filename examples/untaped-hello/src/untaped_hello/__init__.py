@@ -1,4 +1,4 @@
-"""The example ``hello`` plugin: commands, settings, one skill, one migration, one cache.
+"""The example ``hello`` plugin: commands, a record, settings, a skill, a migration, a cache.
 
 The ``untaped.plugins`` entry point names :data:`SPEC`. ``help`` is
 set, so the root mounts the app lazily and ``untaped --help`` never imports
