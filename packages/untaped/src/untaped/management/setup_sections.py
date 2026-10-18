@@ -18,7 +18,7 @@ holds no reader or writer of its own.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Self
@@ -27,19 +27,27 @@ from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.config.fields import editor, opened_value, summary, written
+from untaped.config.fields import (
+    editor,
+    opened_value,
+    ranking_editor,
+    ranking_written,
+    ranks,
+    summary,
+    written,
+)
 from untaped.config.models import SettingEntry, Source, setting_entry_row
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import ListSettings, Note, SetSetting
+from untaped.config.use_cases import ListRankings, ListSettings, Note, SetSetting
 from untaped.config_schema import FieldDescriptor, bounds_text
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UsageError
 from untaped.management.setup_state import (
     ServiceState,
     connection_keys,
     profile_exists,
     read_states,
 )
-from untaped.management.setup_write import write_setting
+from untaped.management.setup_write import RankTarget, write_ranking, write_setting
 from untaped.messages import command_line
 from untaped.plugins.registry import PluginSpec
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
@@ -55,6 +63,7 @@ __all__ = [
     "CONNECTION",
     "FieldOpened",
     "Listing",
+    "RankTarget",
     "SectionPane",
     "SettingRow",
     "UnsetAsked",
@@ -89,6 +98,8 @@ class SettingRow:
     """Its field, when enter opens one (``None``: read-only, or the connection)."""
     raw: bool = False
     """Its section failed validation: its value is unvalidated and opens as text."""
+    ranking: RankTarget | None = None
+    """The ranking it edits (or adds), written through ``RankProviders``, not ``config set``."""
 
 
 @dataclass(frozen=True)
@@ -154,6 +165,9 @@ def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
                 continue
             section = descriptor.path[0]
             raw = section in listing.errors
+            if ranks(descriptor) and not raw:
+                rows.setdefault(section, []).extend(_ranking_rows(repo, descriptor, profile))
+                continue
             variable = repo.env_var_for(descriptor)
             # A variable hides whether the profile sets the key too; ask the profile.
             own = entry.source.profile == profile or (
@@ -218,6 +232,40 @@ def _row(
     )
 
 
+def _ranking_rows(
+    repo: SettingsFileRepository, descriptor: FieldDescriptor, profile: str
+) -> list[SettingRow]:
+    """A row per ranking the owner's ``extensions`` holds, then the row that adds one."""
+    owner, label = descriptor.path[0], ".".join(descriptor.path[1:])
+    help_tail = f"`{command_line('plugin list --contracts')}` lists contracts and providers."
+    rows = [
+        SettingRow(
+            key=f"{descriptor.key}.{each.contract}.rank.{each.method}",
+            label=f"{label}.{each.contract}.rank.{each.method}",
+            value=", ".join(each.providers),
+            source=each.source,
+            help=(
+                f"The providers of {owner}.{each.contract} {each.method}, first first.",
+                help_tail,
+            ),
+            own=each.profile == profile,
+            descriptor=descriptor,
+            ranking=RankTarget(owner, each.contract, each.method, each.providers),
+        )
+        for each in ListRankings(repo)(descriptor.key)
+    ]
+    add = SettingRow(
+        key=descriptor.key,
+        label=".".join(descriptor.path[1:]),
+        value="+ add a ranking",
+        source="",
+        help=("Order a contract method's providers, as plugin rank does.", help_tail),
+        descriptor=descriptor,
+        ranking=RankTarget(owner),
+    )
+    return [*rows, add]
+
+
 def connection_row(state: ServiceState) -> SettingRow:
     """A service's connection row: its URL and where its token comes from."""
     url = state.base_url or "no URL"
@@ -232,6 +280,8 @@ def connection_row(state: ServiceState) -> SettingRow:
 def open_command(profile: str, row: SettingRow) -> Cmd:
     """Read ``row``'s value and the profile's own value of it, for its field."""
     key, raw, value = row.key, row.raw, row.value
+    if row.ranking is not None:
+        return Cmd.send(FieldOpened(key, row.ranking.providers, None))
 
     def open_field() -> object:
         exists = profile_exists(profile)
@@ -252,16 +302,27 @@ def write_command(
     value: str | None,
     expected: object,
     services: Mapping[str, PluginSpec],
+    *,
+    ranking: RankTarget | None = None,
+    owners: Collection[str] = (),
 ) -> Cmd:
     """Write ``value`` to ``key`` in ``profile`` (``None`` unsets it), then re-read the rows.
 
-    A refused write comes back with its message; on a conflict the rows are
+    A ``ranking``'s row writes through ``RankProviders`` instead (``owners``
+    own contracts): ``value`` is its providers as JSON, or, on the row adding
+    one, ``CONTRACT METHOD PROVIDER...`` as ``plugin rank`` takes them. A
+    refused write comes back with its message; on a conflict the rows are
     re-read too, so the screen shows what changed.
     """
 
     def write() -> object:
         try:
-            change = write_setting(key, value, profile=profile, expected=expected)
+            if ranking is None:
+                change = write_setting(key, value, profile=profile, expected=expected)
+            else:
+                change = write_ranking(ranking, value, profile=profile, owners=owners)
+        except UsageError as exc:
+            return Written(key, (), None, error=str(exc))
         except ConfigError as exc:
             listing = read_listing(profile, services) if exc.category == "conflict" else None
             return Written(key, (), listing, error=str(exc))
@@ -342,6 +403,8 @@ class SectionPane:
         """The open field's value as ``config set`` takes it; ``None`` unsets the key."""
         row, component = self.row, self.editing
         assert row is not None and row.descriptor is not None and component is not None
+        if row.ranking is not None:
+            return ranking_written(component)
         return written(row.descriptor, component, raw=row.raw)
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
@@ -450,6 +513,10 @@ def field_for(pane: SectionPane, message: FieldOpened) -> SectionPane:
     row = pane.row
     if row is None or row.key != message.key or row.descriptor is None:
         return pane
+    if row.ranking is not None:
+        return pane.opened(
+            ranking_editor(row.label, row.ranking.providers, adds=not row.ranking.method), None
+        )
     component = editor(
         row.descriptor,
         message.value,

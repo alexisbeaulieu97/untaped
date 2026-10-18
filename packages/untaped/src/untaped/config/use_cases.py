@@ -335,6 +335,42 @@ class ListNames:
         return tuple(rows)
 
 
+@dataclass(frozen=True)
+class Ranking:
+    """One contract method's ranked providers in an owner's ``extensions``, and its source."""
+
+    contract: str
+    """The contract's name within its owner (``repo_source``)."""
+    method: str
+    providers: tuple[str, ...]
+    source: str
+    """The profile (``profile:work``) or variable setting it."""
+    profile: str | None = None
+    """The profile setting it (``None``: a variable does)."""
+
+
+class ListRankings:
+    """The rankings an owner's ``<owner>.extensions`` holds, in file order, with their sources."""
+
+    def __init__(self, repo: SettingsReader) -> None:
+        self._repo = repo
+
+    def __call__(self, key: str) -> tuple[Ranking, ...]:
+        """The rankings of ``key`` (``workspace.extensions``)."""
+        descriptor = self._repo.descriptor(key)
+        extensions = self._repo.setting_value(descriptor) or {}
+        provenance = self._repo.provenance()
+        rankings = []
+        for contract, settings in extensions.items():
+            for method, providers in settings.rank.items():
+                path = (*descriptor.path, contract, "rank", method)
+                variable = self._repo.env_var_setting(path)
+                profile = None if variable is not None else provenance.get(path)
+                source = variable or (_profile_label(profile) if profile else "default")
+                rankings.append(Ranking(contract, method, tuple(providers), source, profile))
+        return tuple(rankings)
+
+
 def _profile_label(profile: str) -> str:
     return Source(kind="profile", profile=profile).label
 

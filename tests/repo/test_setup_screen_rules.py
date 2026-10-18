@@ -6,7 +6,8 @@ repository class, the records and the field mapping, and touch neither the
 config file nor YAML; across the code base, only the repositories and the
 editor write the file. The screen knows shapes, not settings: no string in its
 modules is a section, a key or a field name of a first-party setting, so a
-setting gets its row from its model, never from a case in the screen.
+setting gets its row from its model, never from a case in the screen; and every
+first-party setting has a shape with a field, so none falls back to JSON.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import ast
 
 from repo.support import PACKAGES
 from untaped import bootstrap
+from untaped.config.fields import shape
 from untaped.config_schema import walk_settings
 from untaped.settings import get_profile_settings_model
 
@@ -159,4 +161,17 @@ def test_the_screen_names_no_setting() -> None:
     assert not found, (
         f"{found}: the setup screen knows shapes, not settings; read the setting from its "
         "model (or allow the string here with the reason it is not a setting's name)"
+    )
+
+
+def test_every_first_party_setting_gets_a_field_of_its_shape() -> None:
+    bootstrap.compose_root()
+    found = [
+        descriptor.key
+        for descriptor in walk_settings(get_profile_settings_model(), include_collections=True)
+        if shape(descriptor) == "json"
+    ]
+    assert not found, (
+        f"{found}: these settings open as one line of JSON in `untaped setup`; give their "
+        "shape a field in untaped.config.fields"
     )

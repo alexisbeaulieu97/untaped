@@ -85,7 +85,7 @@ from untaped.management.setup_sections import (
 from untaped.management.setup_state import ServiceState
 from untaped.management.setup_write import Candidate, overlay_values, write_candidate
 from untaped.messages import hint, shown_path
-from untaped.plugins.registry import CompositionResult, PluginSpec
+from untaped.plugins.registry import CompositionResult, PluginSpec, owns_contracts
 from untaped.screen.components.buttons import Button, Buttons, Pressed
 from untaped.screen.components.choices import ListItem, SingleList
 from untaped.screen.components.draw import role_style
@@ -435,6 +435,9 @@ class _Setup:
         self.profiles = profiles
         self.profile = profile
         self.plugins = frozenset(registered.spec.name for registered in result.plugins)
+        self.owners = tuple(
+            registered.spec.name for registered in result.plugins if owns_contracts(registered.spec)
+        )
         # Tested once, just before the first token goes to the store.
         self.preflight = cache(store.preflight) if store is not None else _no_preflight
         self.order: tuple[str, ...] = ()
@@ -766,13 +769,26 @@ class _Setup:
         if value == pane.initial:
             # Untouched: writing it would pin an inherited or default value here.
             return _with_pane(model, model.name, pane.closed()), []
-        cmd = write_command(model.current, row.key, value, pane.expected, self.services)
+        cmd = write_command(
+            model.current,
+            row.key,
+            value,
+            pane.expected,
+            self.services,
+            ranking=row.ranking,
+            owners=self.owners,
+        )
         return replace(model, phase="writing"), [cmd]
 
     def _unset(self, model: SetupModel, key: str) -> tuple[SetupModel, list[Cmd]]:
         if model.phase != "idle":
             return model, []
-        cmd = write_command(model.current, key, None, None, self.services)
+        pane = model.pane
+        row = None if pane is None else next((each for each in pane.rows if each.key == key), None)
+        ranking = None if row is None else row.ranking
+        cmd = write_command(
+            model.current, key, None, None, self.services, ranking=ranking, owners=self.owners
+        )
         return replace(model, phase="writing"), [cmd]
 
     def _written(self, model: SetupModel, message: Written) -> tuple[SetupModel, list[Cmd]]:

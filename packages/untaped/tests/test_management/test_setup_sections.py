@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, SecretStr
 from rich.console import Console
 
 from screen.support import FakeHost
+from test_contracts import support as shelf
 from test_management.support import WizProfile, compose, make_spec, write_config
 from untaped.config.fields import editor, written
 from untaped.config.repository import SettingsFileRepository
@@ -30,7 +31,7 @@ from untaped.plugins.registry import PluginSpec
 from untaped.screen.components.choices import Check, Cycle, Select, SingleList
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
 from untaped.screen.components.lists import ListEditor, MapEditor
-from untaped.screen.core import Frame, Screen
+from untaped.screen.core import Frame, Paste, Screen
 from untaped.screen.runtime import Runtime
 from untaped.stability import deprecated, experimental
 from untaped.testing import drive_screen
@@ -761,3 +762,88 @@ def test_a_map_changed_while_its_editor_was_open_is_not_overwritten(
 
     assert _ui_data(_isolated_config) == {"symbols": {"info": "i"}}
     assert "ui.symbols changed in profile work while it was open" in runtime.model.panes["ui"].error
+
+
+# --- rankings ---------------------------------------------------------------------
+
+_RANKED = (
+    "profiles:\n  default:\n"
+    "    shelf: {extensions: {book_source: {rank: {books: [shop, library]}}}}\n"
+)
+
+
+def _shelf() -> Screen[SetupModel, SetupResult]:
+    result = shelf.compose(shelf.shelf_spec(), shelf.library_spec(), shelf.shop_spec())
+    return setup_screen(
+        result,
+        setup_services(result, ["shelf"]),
+        sections=setup_sections(["shelf"]),
+        profile="default",
+        store=None,
+        profiles=("default",),
+    )
+
+
+def _to_shelf() -> list[ScreenKey]:
+    model, _ = _shelf().init()
+    index = next(i for i, row in enumerate(model.rows) if row.name == "shelf")
+    return [*(["down"] * (index - model.selected)), "enter"]
+
+
+def _ranks(path: Path) -> object:
+    return read_config_dict(path)["profiles"]["default"].get("shelf")
+
+
+def test_each_ranking_is_a_row_then_one_adds_a_ranking(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _RANKED)
+
+    run = drive_screen(_shelf(), _to_shelf(), size=(120, 30))
+
+    assert _rows(run.model, "shelf")[:2] == [
+        ("extensions.book_source.rank.books", "shop, library", "profile:default"),
+        ("extensions", "+ add a ranking", ""),
+    ]
+
+
+def test_a_ranking_is_reordered_in_the_list_editor(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _RANKED)
+    keys = [*_to_shelf(), "enter", "down", "m", "up", "enter", "end", "enter"]
+
+    run = drive_screen(_shelf(), keys, size=(120, 30))
+
+    assert _ranks(_isolated_config) == {
+        "extensions": {"book_source": {"rank": {"books": ["library", "shop"]}}}
+    }
+    assert run.model.written == (("default", "shelf.extensions.book_source.rank.books"),)
+
+
+def test_a_ranking_is_added_as_plugin_rank_takes_it(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _RANKED)
+    keys = [*_to_shelf(), "down", "enter", Paste("book_source first library"), "enter"]
+
+    run = drive_screen(_shelf(), keys, size=(120, 30))
+
+    assert _ranks(_isolated_config) == {
+        "extensions": {
+            "book_source": {"rank": {"books": ["shop", "library"], "first": ["library"]}}
+        }
+    }
+    assert run.model.panes["shelf"].rows[1].label == "extensions.book_source.rank.first"
+
+
+def test_a_refused_ranking_shows_plugin_ranks_message(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _RANKED)
+    keys = [*_to_shelf(), "down", "enter", Paste("nope books shop"), "enter"]
+
+    run = drive_screen(_shelf(), keys, size=(120, 30))
+
+    assert "shelf declares no contract 'nope'" in run.frame
+    assert run.model.panes["shelf"].editing is not None  # still open, to fix
+
+
+def test_delete_removes_a_ranking(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _RANKED)
+
+    drive_screen(_shelf(), [*_to_shelf(), "delete", "y"], size=(120, 30))
+
+    assert _ranks(_isolated_config) is None
