@@ -955,3 +955,15 @@ def test_an_invalid_owner_section_opens_its_extensions_as_json(_isolated_config:
 
     labels = [row.label for row in run.model.panes["shelf"].rows]
     assert "extensions" in labels and not any(".rank." in label for label in labels)
+
+
+def test_a_malformed_own_ranking_opens_on_what_the_row_shows(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _RANKED.replace("[shop, library]", "shop"))
+    monkeypatch.setenv("UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__BOOKS", '["library"]')
+
+    run = drive_screen(_shelf(), [*_to_shelf(), "enter"], size=(120, 30))
+
+    editing = run.model.panes["shelf"].editing
+    assert isinstance(editing, ListEditor) and editing.value == ("library",)

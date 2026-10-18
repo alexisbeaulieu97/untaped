@@ -233,6 +233,11 @@ def _row(
     )
 
 
+def _is_ranking(value: object) -> bool:
+    """Whether raw ``value`` is a non-empty list of names, so it can open as a ranking."""
+    return isinstance(value, list) and bool(value) and all(isinstance(each, str) for each in value)
+
+
 def _variable_wins(variable: str) -> str:
     return f"{variable} is set: it wins over the profile until it is unset."
 
@@ -298,7 +303,8 @@ def open_command(profile: str, row: SettingRow) -> Cmd:
                 # The profile's own ranking is what a write replaces; else what it shows.
                 contract = f"{ranking.owner}.{ranking.contract}"
                 own = RankProviders(repo, ()).current(contract, ranking.method, profile=profile)
-                return FieldOpened(key, tuple(own or ranking.providers), own)
+                shown = own if _is_ranking(own) else ranking.providers
+                return FieldOpened(key, tuple(shown), own)
             expected = SetSetting(repo).current(key, profile=profile)
             if raw:
                 return FieldOpened(key, value, expected)
