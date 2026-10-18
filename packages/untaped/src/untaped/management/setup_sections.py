@@ -18,7 +18,7 @@ holds no reader or writer of its own.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Self
@@ -27,19 +27,27 @@ from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.config.fields import editor, opened_value, summary, written
+from untaped.config.fields import (
+    editor,
+    opened_value,
+    ranking_editor,
+    ranking_written,
+    ranks,
+    summary,
+    written,
+)
 from untaped.config.models import SettingEntry, Source, setting_entry_row
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import ListSettings, Note, SetSetting
+from untaped.config.use_cases import ListRankings, ListSettings, Note, RankProviders, SetSetting
 from untaped.config_schema import FieldDescriptor, bounds_text
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UsageError
 from untaped.management.setup_state import (
     ServiceState,
     connection_keys,
     profile_exists,
     read_states,
 )
-from untaped.management.setup_write import write_setting
+from untaped.management.setup_write import RankTarget, write_ranking, write_setting
 from untaped.messages import command_line
 from untaped.plugins.registry import PluginSpec
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
@@ -55,6 +63,7 @@ __all__ = [
     "CONNECTION",
     "FieldOpened",
     "Listing",
+    "RankTarget",
     "SectionPane",
     "SettingRow",
     "UnsetAsked",
@@ -89,6 +98,8 @@ class SettingRow:
     """Its field, when enter opens one (``None``: read-only, or the connection)."""
     raw: bool = False
     """Its section failed validation: its value is unvalidated and opens as text."""
+    ranking: RankTarget | None = None
+    """The ranking it edits (or adds), written through ``RankProviders``, not ``config set``."""
 
 
 @dataclass(frozen=True)
@@ -128,9 +139,10 @@ class Written:
 
 @dataclass(frozen=True)
 class UnsetAsked:
-    """The unset of ``key`` was confirmed."""
+    """The unset of ``key`` was confirmed (``ranking``: a ranking's row)."""
 
     key: str
+    ranking: RankTarget | None = None
 
 
 def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
@@ -154,6 +166,9 @@ def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
                 continue
             section = descriptor.path[0]
             raw = section in listing.errors
+            if ranks(descriptor) and not raw:
+                rows.setdefault(section, []).extend(_ranking_rows(repo, descriptor, profile))
+                continue
             variable = repo.env_var_for(descriptor)
             # A variable hides whether the profile sets the key too; ask the profile.
             own = entry.source.profile == profile or (
@@ -194,7 +209,7 @@ def _row(
     default = "unset" if shown.default is None else str(shown.default)
     help.append(f"default {default} · {variable}")
     if entry.source.variable is not None:
-        help.append(f"{entry.source.variable} is set: it wins over the profile until it is unset.")
+        help.append(_variable_wins(entry.source.variable))
     if shown.note:
         help.append(shown.note)
     editable = shown.stability != "deprecated"
@@ -218,6 +233,50 @@ def _row(
     )
 
 
+def _is_ranking(value: object) -> bool:
+    """Whether raw ``value`` is a non-empty list of names, so it can open as a ranking."""
+    return isinstance(value, list) and bool(value) and all(isinstance(each, str) for each in value)
+
+
+def _variable_wins(variable: str) -> str:
+    return f"{variable} is set: it wins over the profile until it is unset."
+
+
+def _ranking_rows(
+    repo: SettingsFileRepository, descriptor: FieldDescriptor, profile: str
+) -> list[SettingRow]:
+    """A row per ranking the owner's ``extensions`` holds, then the row that adds one."""
+    owner, label = descriptor.path[0], ".".join(descriptor.path[1:])
+    help_tail = f"`{command_line('plugin list --contracts')}` lists contracts and providers."
+    rows = [
+        SettingRow(
+            key=f"{descriptor.key}.{each.contract}.rank.{each.method}",
+            label=f"{label}.{each.contract}.rank.{each.method}",
+            value=", ".join(each.providers),
+            source=each.source,
+            help=(
+                f"The providers of {owner}.{each.contract} {each.method}, first first.",
+                help_tail,
+                *((_variable_wins(each.variable),) if each.variable else ()),
+            ),
+            own=each.profile == profile,
+            descriptor=descriptor,
+            ranking=RankTarget(owner, each.contract, each.method, each.providers),
+        )
+        for each in ListRankings(repo)(descriptor.key)
+    ]
+    add = SettingRow(
+        key=descriptor.key,
+        label=".".join(descriptor.path[1:]),
+        value="+ add a ranking",
+        source="",
+        help=("Order a contract method's providers, as plugin rank does.", help_tail),
+        descriptor=descriptor,
+        ranking=RankTarget(owner),
+    )
+    return [*rows, add]
+
+
 def connection_row(state: ServiceState) -> SettingRow:
     """A service's connection row: its URL and where its token comes from."""
     url = state.base_url or "no URL"
@@ -232,11 +291,20 @@ def connection_row(state: ServiceState) -> SettingRow:
 def open_command(profile: str, row: SettingRow) -> Cmd:
     """Read ``row``'s value and the profile's own value of it, for its field."""
     key, raw, value = row.key, row.raw, row.value
+    ranking = row.ranking
 
     def open_field() -> object:
         exists = profile_exists(profile)
         with profile_scope(profile if exists else DEFAULT_PROFILE):
             repo = SettingsFileRepository()
+            if ranking is not None:
+                if not ranking.method:
+                    return FieldOpened(key, (), None)  # the row adding one
+                # The profile's own ranking is what a write replaces; else what it shows.
+                contract = f"{ranking.owner}.{ranking.contract}"
+                own = RankProviders(repo, ()).current(contract, ranking.method, profile=profile)
+                shown = own if _is_ranking(own) else ranking.providers
+                return FieldOpened(key, tuple(shown), own)
             expected = SetSetting(repo).current(key, profile=profile)
             if raw:
                 return FieldOpened(key, value, expected)
@@ -252,16 +320,30 @@ def write_command(
     value: str | None,
     expected: object,
     services: Mapping[str, PluginSpec],
+    *,
+    ranking: RankTarget | None = None,
+    owners: Collection[str] = (),
 ) -> Cmd:
     """Write ``value`` to ``key`` in ``profile`` (``None`` unsets it), then re-read the rows.
 
-    A refused write comes back with its message; on a conflict the rows are
+    A ``ranking``'s row writes through ``RankProviders`` instead (``owners``
+    own contracts): ``value`` is its providers as JSON, or, on the row adding
+    one, ``CONTRACT METHOD PROVIDER...`` as ``plugin rank`` takes them. A
+    refused write comes back with its message; on a conflict the rows are
     re-read too, so the screen shows what changed.
     """
 
     def write() -> object:
         try:
-            change = write_setting(key, value, profile=profile, expected=expected)
+            if ranking is None:
+                change = write_setting(key, value, profile=profile, expected=expected)
+            else:
+                change = write_ranking(
+                    ranking, value, profile=profile, owners=owners, expected=expected
+                )
+        except UsageError as exc:
+            hint = f" ({exc.hint})" if exc.hint else ""
+            return Written(key, (), None, error=f"{exc}{hint}")
         except ConfigError as exc:
             listing = read_listing(profile, services) if exc.category == "conflict" else None
             return Written(key, (), listing, error=str(exc))
@@ -342,6 +424,8 @@ class SectionPane:
         """The open field's value as ``config set`` takes it; ``None`` unsets the key."""
         row, component = self.row, self.editing
         assert row is not None and row.descriptor is not None and component is not None
+        if row.ranking is not None:
+            return ranking_written(component)
         return written(row.descriptor, component, raw=row.raw)
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
@@ -356,7 +440,7 @@ class SectionPane:
         row = self.row
         if self.confirm:
             if message.name == "y" and row is not None:
-                return replace(self, confirm=False), [Cmd.send(UnsetAsked(row.key))]
+                return replace(self, confirm=False), [Cmd.send(UnsetAsked(row.key, row.ranking))]
             return replace(self, confirm=False), []
         match message.name:
             case "up" | "down" | "home" | "end":
@@ -450,6 +534,10 @@ def field_for(pane: SectionPane, message: FieldOpened) -> SectionPane:
     row = pane.row
     if row is None or row.key != message.key or row.descriptor is None:
         return pane
+    if row.ranking is not None:
+        providers = message.value if isinstance(message.value, tuple) else ()
+        component = ranking_editor(row.label, providers, adds=not row.ranking.method)
+        return pane.opened(component, message.expected)
     component = editor(
         row.descriptor,
         message.value,

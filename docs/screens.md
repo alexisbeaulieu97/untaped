@@ -213,7 +213,8 @@ request that has a title still requires one.
 picked from the shape of its type (a `Check` for a `bool`, a `NumberInput` for
 a number, a `SingleList` or `Select` for a `Literal`, a list editor for a
 `list[str]`, a row per name for a map that declares its names, such as
-`ui.symbols`), never from its key, so a plugin's settings need no screen code: the help under a setting's row is its
+`ui.symbols`, a row per ranking for a contract owner's `extensions`), never
+from its key, so a plugin's settings need no screen code: the help under a setting's row is its
 `Field(description=...)` and its bounds (`gt=0` reads "Above 0."). A command
 that builds its screen only after reading config or probing a store asks
 `ui.require_screen_terminal(command=..., alternative=...)` first, so a run

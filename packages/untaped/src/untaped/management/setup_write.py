@@ -18,7 +18,8 @@ is a ``SecretStr`` throughout and is unwrapped only where it is stored.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import shlex
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, replace
 from typing import Literal
 
@@ -27,8 +28,8 @@ from pydantic import SecretStr
 from untaped.auth import token_env_names
 from untaped.config.models import SettingOutcome
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import Note, SetSetting, SettingChange, UnsetSetting
-from untaped.errors import ConfigError
+from untaped.config.use_cases import Note, RankProviders, SetSetting, SettingChange, UnsetSetting
+from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import delete_stored_token, save_token
 from untaped.management.setup_state import ServiceState, profile_exists
 from untaped.plugins.registry import PluginSpec, settings_model
@@ -37,7 +38,15 @@ from untaped.profile.use_cases import CreateProfile
 from untaped.profile_resolver import DEFAULT_PROFILE
 from untaped.token_store import TokenStore, entry_name, preset_entry
 
-__all__ = ["Candidate", "ensure_profile", "overlay_values", "write_candidate", "write_setting"]
+__all__ = [
+    "Candidate",
+    "RankTarget",
+    "ensure_profile",
+    "overlay_values",
+    "write_candidate",
+    "write_ranking",
+    "write_setting",
+]
 
 type Checked = Literal["passed", "unchecked", "failed"]
 """What the check said about the candidate: it passed, there was none to run, or the user
@@ -61,6 +70,19 @@ class Candidate:
     token: SecretStr | None = None
     argv: tuple[str, ...] | None = None
     checked: Checked = "unchecked"
+
+
+@dataclass(frozen=True)
+class RankTarget:
+    """A contract method's ranking: its owner, contract and method, and its providers.
+
+    The row adding one has no contract yet (``contract`` and ``method`` empty).
+    """
+
+    owner: str
+    contract: str = ""
+    method: str = ""
+    providers: tuple[str, ...] = ()
 
 
 def overlay_values(candidate: Candidate, current: ServiceState) -> dict[str, object]:
@@ -157,6 +179,53 @@ def write_setting(key: str, value: str | None, *, profile: str, expected: object
         SetSetting(repo)(key, value, profile=DEFAULT_PROFILE, dry_run=True)
     created = ensure_profile(profile)
     change = SetSetting(repo)(key, value, profile=profile, expected=expected)
+    return replace(change, notes=(*created, *change.notes))
+
+
+def write_ranking(
+    target: RankTarget,
+    value: str | None,
+    *,
+    profile: str,
+    owners: Collection[str],
+    expected: object = None,
+) -> SettingChange:
+    """Rank ``target``'s providers in ``profile`` as ``plugin rank`` does.
+
+    ``value`` is the providers as JSON (none, or ``None``, removes the
+    ranking), or, for a ``target`` with no method yet, ``CONTRACT METHOD
+    PROVIDER...`` as ``plugin rank`` takes it (the contract is ``target``'s
+    owner's, its owner named or not). ``expected`` is the profile's own
+    ranking when its row opened: a ranking changed since is refused. A new
+    profile is created by its first valid ranking.
+    """
+    if target.method:
+        contract, method = f"{target.owner}.{target.contract}", target.method
+        plugins = [] if value is None else [str(each) for each in json.loads(value)]
+    else:
+        try:
+            words = shlex.split(value or "")
+        except ValueError as exc:
+            raise UsageError(f"not a command line: {exc}") from None
+        if len(words) < 3:
+            raise UsageError("give the contract, the method and its providers")
+        contract, method, *plugins = words
+        owner, dot, name = contract.rpartition(".")
+        if dot and owner != target.owner:
+            raise UsageError(f"rank {contract} in {owner}'s section; this is {target.owner}'s")
+        contract = f"{target.owner}.{name}"
+    rank = RankProviders(SettingsFileRepository(), owners)
+    if not profile_exists(profile):
+        if not plugins:
+            return SettingChange(
+                SettingOutcome(key=target.owner, profile=profile, action="unchanged")
+            )
+        rank(contract, method, plugins, profile=DEFAULT_PROFILE, dry_run=True)
+    created = ensure_profile(profile)
+    if target.method and value is not None:  # an unset (delete) asks no question first
+        change = rank(contract, method, plugins, profile=profile, expected=expected)
+    else:
+        change = rank(contract, method, plugins, profile=profile)
     return replace(change, notes=(*created, *change.notes))
 
 

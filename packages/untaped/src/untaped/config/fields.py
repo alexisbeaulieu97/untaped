@@ -37,11 +37,32 @@ from untaped.screen.components.choices import Check, Cycle, ListItem, Select, Si
 from untaped.screen.components.fields import Field
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
 from untaped.screen.components.lists import ListEditor, MapEditor, MapEntry
+from untaped.settings import ExtensionSettings
 
-__all__ = ["editor", "opened_value", "summary", "written"]
+__all__ = [
+    "editor",
+    "opened_value",
+    "ranking_editor",
+    "ranking_written",
+    "ranks",
+    "shape",
+    "summary",
+    "written",
+]
 
 type Shape = Literal[
-    "check", "cycle", "number", "path", "choice", "secret", "text", "list", "argv", "names", "json"
+    "check",
+    "cycle",
+    "number",
+    "path",
+    "choice",
+    "secret",
+    "text",
+    "list",
+    "argv",
+    "names",
+    "ranks",
+    "json",
 ]
 
 #: The most choices drawn inline; more open as a ``Select``.
@@ -55,6 +76,12 @@ LIST_HELP = "enter edit · delete remove · m move · done or ctrl-s writes"
 ARGV_HELP = "the command as you would type it; empty unsets it"
 JSON_HELP = "JSON, as config set takes it; empty unsets it"
 NAMES_HELP = "enter edit · delete clears · done or ctrl-s writes"
+RANK_HELP = "CONTRACT METHOD PROVIDER..., as plugin rank takes them; empty adds none"
+
+
+def shape(descriptor: FieldDescriptor) -> Shape:
+    """The shape ``descriptor``'s editor takes; ``json`` is the fallback for one with none."""
+    return _shape(descriptor)
 
 
 def opened_value(repo: SettingsReader, descriptor: FieldDescriptor, *, profile: str) -> object:
@@ -69,6 +96,32 @@ def opened_value(repo: SettingsReader, descriptor: FieldDescriptor, *, profile: 
     if descriptor.is_secret:
         return None
     return GetSetting(repo)(descriptor.key, reveal_secrets=True).value
+
+
+def ranks(descriptor: FieldDescriptor) -> bool:
+    """Whether ``descriptor`` is an owner's ``extensions``, edited one ranking at a time.
+
+    Each ranking is a list of providers in the list editor, written through
+    ``RankProviders`` (as ``plugin rank`` writes it), never as one map.
+    """
+    return _shape(descriptor) == "ranks"
+
+
+def ranking_editor(label: str, providers: tuple[str, ...], *, adds: bool) -> Field:
+    """A ranking's providers in the list editor, or, to add one, a line as ``plugin rank``
+    takes it."""
+    if adds:
+        return TextInput(label, "", help=RANK_HELP)
+    return ListEditor(label, providers, help=LIST_HELP)
+
+
+def ranking_written(component: Field) -> str | None:
+    """What a ranking's field writes: its providers as JSON, or the line adding one (``None``
+    when empty)."""
+    value = component.value
+    if isinstance(value, tuple):
+        return json.dumps(list(value))
+    return str(value).strip() or None
 
 
 def summary(descriptor: FieldDescriptor, own: Callable[[], object]) -> str | None:
@@ -101,8 +154,8 @@ def editor(
     shape = _raw_shape(descriptor) if raw else _shape(descriptor)
     if shape == "names":
         return _names(value, own, label=label, own_source=own_source)
-    if shape in ("list", "argv", "json"):
-        return _collection(shape, value, label=label, raw=raw)
+    if shape in ("list", "argv", "json", "ranks"):
+        return _collection("json" if shape == "ranks" else shape, value, label=label, raw=raw)
     shown = "" if value is None else str(value)
     match shape:
         case "check":
@@ -158,9 +211,11 @@ def _shape(descriptor: FieldDescriptor) -> Shape:
     if get_origin(annotation) is list and get_args(annotation) == (str,):
         return "list"
     if descriptor.is_collection:
-        return (
-            "names" if descriptor.choices is not None and get_origin(annotation) is dict else "json"
-        )
+        if get_origin(annotation) is dict and get_args(annotation)[1:] == (ExtensionSettings,):
+            return "ranks"
+        if descriptor.choices is not None and get_origin(annotation) is dict:
+            return "names"
+        return "json"
     if annotation is bool:
         return "cycle" if descriptor.optional else "check"
     if annotation in (int, float):

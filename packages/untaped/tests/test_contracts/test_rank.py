@@ -101,6 +101,23 @@ def test_the_environment_overrides_a_ranking() -> None:
         assert ranking("shelf", "book_source", "books") == ("kiosk", "shop")
 
 
+def test_list_rankings_gives_each_ranking_and_who_sets_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.config import SettingsFileRepository
+    from untaped.config.use_cases import ListRankings, Ranking
+
+    write_config(RANKED + "    library: {}\n")
+    compose(*_all())
+    monkeypatch.setenv("UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__FIRST", '["kiosk"]')
+
+    rankings = ListRankings(SettingsFileRepository())("shelf.extensions")
+
+    variable = "UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__FIRST"
+    assert set(rankings) == {
+        Ranking("book_source", "books", ("shop", "library"), "profile:default", "default"),
+        Ranking("book_source", "first", ("kiosk",), variable, None, variable),
+    }
+
+
 @pytest.mark.parametrize(
     ("body", "message"),
     [

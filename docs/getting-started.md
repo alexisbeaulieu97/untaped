@@ -57,8 +57,11 @@ A map of known names, such as `ui.symbols` or `ui.color_roles`, lists every
 name with its value and where it comes from (a profile, a variable, or the
 theme): enter edits a value in place (an empty one too), `delete` clears
 the profile's own one so the name inherits again, and enter on `done` (or
-ctrl-s) writes the names the profile sets. Any other list or map is one line
-of JSON, as `config set` takes it.
+ctrl-s) writes the names the profile sets. A plugin that owns contracts lists
+each ranking of its `extensions` as a row of its own, edited in the list
+editor and written as `untaped plugin rank` writes it; its `+ add a ranking`
+row takes `CONTRACT METHOD PROVIDER...` as `plugin rank` does. Any other list
+or map is one line of JSON, as `config set` takes it.
 
 A service's first row is its connection. Enter opens its form: the base URL
 and how to get the token (tabs): store it with your password store (as
