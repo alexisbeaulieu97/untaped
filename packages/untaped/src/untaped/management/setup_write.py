@@ -183,14 +183,21 @@ def write_setting(key: str, value: str | None, *, profile: str, expected: object
 
 
 def write_ranking(
-    target: RankTarget, value: str | None, *, profile: str, owners: Collection[str]
+    target: RankTarget,
+    value: str | None,
+    *,
+    profile: str,
+    owners: Collection[str],
+    expected: object = None,
 ) -> SettingChange:
     """Rank ``target``'s providers in ``profile`` as ``plugin rank`` does.
 
     ``value`` is the providers as JSON (none, or ``None``, removes the
     ranking), or, for a ``target`` with no method yet, ``CONTRACT METHOD
-    PROVIDER...`` as ``plugin rank`` takes it (a contract without its owner is
-    ``target``'s). A new profile is created by its first valid ranking.
+    PROVIDER...`` as ``plugin rank`` takes it (the contract is ``target``'s
+    owner's, its owner named or not). ``expected`` is the profile's own
+    ranking when its row opened: a ranking changed since is refused. A new
+    profile is created by its first valid ranking.
     """
     if target.method:
         contract, method = f"{target.owner}.{target.contract}", target.method
@@ -203,8 +210,10 @@ def write_ranking(
         if len(words) < 3:
             raise UsageError("give the contract, the method and its providers")
         contract, method, *plugins = words
-        if "." not in contract:
-            contract = f"{target.owner}.{contract}"
+        owner, dot, name = contract.rpartition(".")
+        if dot and owner != target.owner:
+            raise UsageError(f"rank {contract} in {owner}'s section; this is {target.owner}'s")
+        contract = f"{target.owner}.{name}"
     rank = RankProviders(SettingsFileRepository(), owners)
     if not profile_exists(profile):
         if not plugins:
@@ -213,7 +222,10 @@ def write_ranking(
             )
         rank(contract, method, plugins, profile=DEFAULT_PROFILE, dry_run=True)
     created = ensure_profile(profile)
-    change = rank(contract, method, plugins, profile=profile)
+    if target.method and value is not None:  # an unset (delete) asks no question first
+        change = rank(contract, method, plugins, profile=profile, expected=expected)
+    else:
+        change = rank(contract, method, plugins, profile=profile)
     return replace(change, notes=(*created, *change.notes))
 
 

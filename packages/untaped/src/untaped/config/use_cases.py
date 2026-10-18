@@ -141,6 +141,16 @@ class RankProviders:
         self._repo = repo
         self._owners = owners
 
+    def current(self, contract: str, method: str, *, profile: str | None = None) -> Any:
+        """The ranking ``profile`` sets itself, which a later ``expected`` names (``None``: none).
+
+        ``contract`` is ``OWNER.CONTRACT``.
+        """
+        owner_name, _, name = contract.partition(".")
+        return _rank_of(
+            self._repo.own_value(f"{owner_name}.extensions", profile=profile), name, method
+        )
+
     def __call__(
         self,
         contract: str,
@@ -149,12 +159,15 @@ class RankProviders:
         *,
         profile: str | None = None,
         dry_run: bool = False,
+        expected: Any = _UNRESOLVED,
     ) -> SettingChange:
         """Write ``plugins`` as the ranking of ``contract`` (``OWNER.CONTRACT``) ``method``.
 
         No plugins removes the ranking. Only the owner must exist then:
         removing is how doctor repairs a ranking of a contract or method that
         doesn't. Raises :class:`UsageError` for a name that doesn't exist.
+        ``expected`` (from :meth:`current`) refuses the write with a
+        :class:`ConfigError` when the profile's ranking changed since it was read.
         """
         owner_name, _, name = contract.partition(".")
         if not owner_name or not name:
@@ -174,8 +187,14 @@ class RankProviders:
             notes.extend(_check_rankable(owner_name, name, method, plugins))
         changed = False
 
-        def update(_target: str, current: Any) -> str | None:
+        def update(target: str, current: Any) -> str | None:
             nonlocal changed
+            if expected is not _UNRESOLVED and _rank_of(current, name, method) != expected:
+                raise ConfigError(
+                    f"{owner_name}.{name} {method} changed in profile {target} while it was "
+                    "open; nothing was written",
+                    category="conflict",
+                )
             extensions = _ranked(_mapping(current), name, method, plugins)
             changed = extensions != current and bool(extensions or current)
             return json.dumps(extensions) if extensions else None
@@ -202,6 +221,11 @@ def _removed_note(spellings: list[str]) -> str:
 def _mapping(value: Any) -> dict[str, Any]:
     """``value`` as a mapping to edit; anything else (``null``, a stray list) starts empty."""
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _rank_of(extensions: Any, name: str, method: str) -> Any:
+    """``name``'s ``method`` ranking in raw ``extensions`` data, ``None`` when it sets none."""
+    return _mapping(_mapping(_mapping(extensions).get(name)).get("rank")).get(method)
 
 
 def _ranked(
@@ -346,7 +370,9 @@ class Ranking:
     source: str
     """The profile (``profile:work``) or variable setting it."""
     profile: str | None = None
-    """The profile setting it (``None``: a variable does)."""
+    """The profile setting it, even when a variable wins over it."""
+    variable: str | None = None
+    """The variable setting it, which wins over any profile's ranking."""
 
 
 class ListRankings:
@@ -365,9 +391,11 @@ class ListRankings:
             for method, providers in settings.rank.items():
                 path = (*descriptor.path, contract, "rank", method)
                 variable = self._repo.env_var_setting(path)
-                profile = None if variable is not None else provenance.get(path)
+                profile = provenance.get(path)
                 source = variable or (_profile_label(profile) if profile else "default")
-                rankings.append(Ranking(contract, method, tuple(providers), source, profile))
+                rankings.append(
+                    Ranking(contract, method, tuple(providers), source, profile, variable)
+                )
         return tuple(rankings)
 
 

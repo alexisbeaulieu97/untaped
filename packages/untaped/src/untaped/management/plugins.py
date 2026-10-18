@@ -46,6 +46,7 @@ from untaped.plugin_records import Plugin
 from untaped.plugins.registry import (
     CompositionResult,
     PluginCandidate,
+    contract_owners,
     owns_contracts,
     run_deferred_factory,
 )
@@ -119,7 +120,7 @@ def build_root_plugin_app(
         removes the method's ranking.
         """
         with report_errors():
-            owners = [each.spec.name for each in result.plugins if owns_contracts(each.spec)]
+            owners = contract_owners(result)
             rank = RankProviders(SettingsFileRepository(), owners)
             change = rank(contract, method, list(plugins), dry_run=dry_run)
             print_notes(change.notes)

@@ -38,7 +38,7 @@ from untaped.config.fields import (
 )
 from untaped.config.models import SettingEntry, Source, setting_entry_row
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import ListRankings, ListSettings, Note, SetSetting
+from untaped.config.use_cases import ListRankings, ListSettings, Note, RankProviders, SetSetting
 from untaped.config_schema import FieldDescriptor, bounds_text
 from untaped.errors import ConfigError, UsageError
 from untaped.management.setup_state import (
@@ -139,9 +139,10 @@ class Written:
 
 @dataclass(frozen=True)
 class UnsetAsked:
-    """The unset of ``key`` was confirmed."""
+    """The unset of ``key`` was confirmed (``ranking``: a ranking's row)."""
 
     key: str
+    ranking: RankTarget | None = None
 
 
 def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
@@ -208,7 +209,7 @@ def _row(
     default = "unset" if shown.default is None else str(shown.default)
     help.append(f"default {default} · {variable}")
     if entry.source.variable is not None:
-        help.append(f"{entry.source.variable} is set: it wins over the profile until it is unset.")
+        help.append(_variable_wins(entry.source.variable))
     if shown.note:
         help.append(shown.note)
     editable = shown.stability != "deprecated"
@@ -232,6 +233,10 @@ def _row(
     )
 
 
+def _variable_wins(variable: str) -> str:
+    return f"{variable} is set: it wins over the profile until it is unset."
+
+
 def _ranking_rows(
     repo: SettingsFileRepository, descriptor: FieldDescriptor, profile: str
 ) -> list[SettingRow]:
@@ -247,6 +252,7 @@ def _ranking_rows(
             help=(
                 f"The providers of {owner}.{each.contract} {each.method}, first first.",
                 help_tail,
+                *((_variable_wins(each.variable),) if each.variable else ()),
             ),
             own=each.profile == profile,
             descriptor=descriptor,
@@ -280,13 +286,19 @@ def connection_row(state: ServiceState) -> SettingRow:
 def open_command(profile: str, row: SettingRow) -> Cmd:
     """Read ``row``'s value and the profile's own value of it, for its field."""
     key, raw, value = row.key, row.raw, row.value
-    if row.ranking is not None:
-        return Cmd.send(FieldOpened(key, row.ranking.providers, None))
+    ranking = row.ranking
 
     def open_field() -> object:
         exists = profile_exists(profile)
         with profile_scope(profile if exists else DEFAULT_PROFILE):
             repo = SettingsFileRepository()
+            if ranking is not None:
+                if not ranking.method:
+                    return FieldOpened(key, (), None)  # the row adding one
+                # The profile's own ranking is what a write replaces; else what it shows.
+                contract = f"{ranking.owner}.{ranking.contract}"
+                own = RankProviders(repo, ()).current(contract, ranking.method, profile=profile)
+                return FieldOpened(key, tuple(own or ranking.providers), own)
             expected = SetSetting(repo).current(key, profile=profile)
             if raw:
                 return FieldOpened(key, value, expected)
@@ -320,9 +332,12 @@ def write_command(
             if ranking is None:
                 change = write_setting(key, value, profile=profile, expected=expected)
             else:
-                change = write_ranking(ranking, value, profile=profile, owners=owners)
+                change = write_ranking(
+                    ranking, value, profile=profile, owners=owners, expected=expected
+                )
         except UsageError as exc:
-            return Written(key, (), None, error=str(exc))
+            hint = f" ({exc.hint})" if exc.hint else ""
+            return Written(key, (), None, error=f"{exc}{hint}")
         except ConfigError as exc:
             listing = read_listing(profile, services) if exc.category == "conflict" else None
             return Written(key, (), listing, error=str(exc))
@@ -419,7 +434,7 @@ class SectionPane:
         row = self.row
         if self.confirm:
             if message.name == "y" and row is not None:
-                return replace(self, confirm=False), [Cmd.send(UnsetAsked(row.key))]
+                return replace(self, confirm=False), [Cmd.send(UnsetAsked(row.key, row.ranking))]
             return replace(self, confirm=False), []
         match message.name:
             case "up" | "down" | "home" | "end":
@@ -514,9 +529,9 @@ def field_for(pane: SectionPane, message: FieldOpened) -> SectionPane:
     if row is None or row.key != message.key or row.descriptor is None:
         return pane
     if row.ranking is not None:
-        return pane.opened(
-            ranking_editor(row.label, row.ranking.providers, adds=not row.ranking.method), None
-        )
+        providers = message.value if isinstance(message.value, tuple) else ()
+        component = ranking_editor(row.label, providers, adds=not row.ranking.method)
+        return pane.opened(component, message.expected)
     component = editor(
         row.descriptor,
         message.value,

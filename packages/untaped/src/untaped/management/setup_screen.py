@@ -83,9 +83,14 @@ from untaped.management.setup_sections import (
     write_command,
 )
 from untaped.management.setup_state import ServiceState
-from untaped.management.setup_write import Candidate, overlay_values, write_candidate
+from untaped.management.setup_write import (
+    Candidate,
+    RankTarget,
+    overlay_values,
+    write_candidate,
+)
 from untaped.messages import hint, shown_path
-from untaped.plugins.registry import CompositionResult, PluginSpec, owns_contracts
+from untaped.plugins.registry import CompositionResult, PluginSpec, contract_owners
 from untaped.screen.components.buttons import Button, Buttons, Pressed
 from untaped.screen.components.choices import ListItem, SingleList
 from untaped.screen.components.draw import role_style
@@ -364,6 +369,8 @@ def _enter_label(model: SetupModel) -> str | None:
         return None
     if not row.key:
         return "open"
+    if row.ranking is not None and not row.ranking.method:
+        return "add"
     return "edit" if row.descriptor is not None else None
 
 
@@ -435,9 +442,7 @@ class _Setup:
         self.profiles = profiles
         self.profile = profile
         self.plugins = frozenset(registered.spec.name for registered in result.plugins)
-        self.owners = tuple(
-            registered.spec.name for registered in result.plugins if owns_contracts(registered.spec)
-        )
+        self.owners = contract_owners(result)
         # Tested once, just before the first token goes to the store.
         self.preflight = cache(store.preflight) if store is not None else _no_preflight
         self.order: tuple[str, ...] = ()
@@ -727,8 +732,8 @@ class _Setup:
         match message:
             case FieldOpened():
                 return self._opened(model, message)
-            case UnsetAsked(key=key):
-                return self._unset(model, key)
+            case UnsetAsked(key=key, ranking=ranking):
+                return self._unset(model, key, ranking)
             case Written():
                 return self._written(model, message)
 
@@ -780,12 +785,11 @@ class _Setup:
         )
         return replace(model, phase="writing"), [cmd]
 
-    def _unset(self, model: SetupModel, key: str) -> tuple[SetupModel, list[Cmd]]:
+    def _unset(
+        self, model: SetupModel, key: str, ranking: RankTarget | None
+    ) -> tuple[SetupModel, list[Cmd]]:
         if model.phase != "idle":
             return model, []
-        pane = model.pane
-        row = None if pane is None else next((each for each in pane.rows if each.key == key), None)
-        ranking = None if row is None else row.ranking
         cmd = write_command(
             model.current, key, None, None, self.services, ranking=ranking, owners=self.owners
         )

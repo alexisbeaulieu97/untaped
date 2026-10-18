@@ -21,7 +21,7 @@ from test_contracts import support as shelf
 from test_management.support import WizProfile, compose, make_spec, write_config
 from untaped.config.fields import editor, written
 from untaped.config.repository import SettingsFileRepository
-from untaped.config.use_cases import NamedValue, SetSetting
+from untaped.config.use_cases import NamedValue, RankProviders, SetSetting
 from untaped.config_file import read_config_dict
 from untaped.config_schema import Argv, Choices, FieldDescriptor, walk_settings
 from untaped.deprecated_keys import Renamed
@@ -847,3 +847,111 @@ def test_delete_removes_a_ranking(_isolated_config: Path) -> None:
     drive_screen(_shelf(), [*_to_shelf(), "delete", "y"], size=(120, 30))
 
     assert _ranks(_isolated_config) is None
+
+
+def test_a_ranking_a_variable_sets_says_so_and_edits_the_profiles_own(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _RANKED)
+    variable = "UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__BOOKS"
+    monkeypatch.setenv(variable, '["library"]')
+
+    shown = drive_screen(_shelf(), _to_shelf(), size=(120, 30))
+    opened = drive_screen(_shelf(), [*_to_shelf(), "enter"], size=(120, 30))
+    drive_screen(_shelf(), [*_to_shelf(), "delete", "y"], size=(120, 30))
+
+    row = shown.model.panes["shelf"].rows[0]
+    assert f"{variable} is set: it wins over the profile until it is unset." in row.help
+    editing = opened.model.panes["shelf"].editing
+    assert isinstance(editing, ListEditor) and editing.value == ("shop", "library")
+    assert _ranks(_isolated_config) is None  # delete removed the profile's own ranking
+
+
+def test_a_ranking_changed_while_its_editor_was_open_is_not_overwritten(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, _RANKED)
+    host = FakeHost()
+    runtime = Runtime(_shelf(), host, theme=BUILTIN_THEMES["default"], size=(120, 30))
+    runtime.start()
+    for key in [*_to_shelf(), "enter"]:
+        runtime.send(_message(key))
+    host.run_jobs()
+    host.deliver()  # the editor is open, holding [shop, library]
+
+    owners = ("shelf",)
+    RankProviders(SettingsFileRepository(), owners)("shelf.book_source", "books", ["library"])
+    for key in ["delete", "end", "enter"]:
+        runtime.send(_message(key))
+    host.run_jobs()
+    host.deliver()
+
+    assert _ranks(_isolated_config) == {
+        "extensions": {"book_source": {"rank": {"books": ["library"]}}}
+    }
+    assert "shelf.book_source books changed in profile default while it was open" in (
+        runtime.model.panes["shelf"].error
+    )
+
+
+def test_an_untouched_ranking_or_empty_add_writes_nothing(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _RANKED)
+    before = _isolated_config.read_text(encoding="utf-8")
+
+    ranking = drive_screen(_shelf(), [*_to_shelf(), "enter", "end", "enter"], size=(120, 30))
+    add = drive_screen(_shelf(), [*_to_shelf(), "down", "enter", "enter"], size=(120, 30))
+
+    assert _isolated_config.read_text(encoding="utf-8") == before
+    assert ranking.model.written == () and add.model.written == ()
+    assert "enter add" in drive_screen(_shelf(), [*_to_shelf(), "down"]).frame.splitlines()[-1]
+
+
+@pytest.mark.parametrize(
+    ("line", "error"),
+    [
+        ("book_source books", "give the contract, the method and its providers"),
+        ("book_source 'books shop", "not a command line"),
+        ("other.book_source books shop", "rank other.book_source in other's section"),
+        ("nowhere books shop", "shelf declares no contract 'nowhere'"),
+    ],
+)
+def test_a_refused_add_says_why(_isolated_config: Path, line: str, error: str) -> None:
+    write_config(_isolated_config, _RANKED)
+    keys = [*_to_shelf(), "down", "enter", Paste(line), "enter"]
+
+    run = drive_screen(_shelf(), keys, size=(160, 30))
+
+    assert error in run.model.panes["shelf"].editing.error  # type: ignore[union-attr]
+
+
+def test_an_owner_named_add_and_a_new_profile_rank_as_plugin_rank_does(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, _RANKED)
+    keys = [*_to_shelf(), "down", "enter", Paste("shelf.book_source first shop"), "enter"]
+
+    run = drive_screen(
+        setup_screen(
+            shelf.compose(shelf.shelf_spec(), shelf.library_spec(), shelf.shop_spec()),
+            {},
+            sections=setup_sections(["shelf"]),
+            profile="work",
+            store=None,
+        ),
+        keys,
+        size=(120, 30),
+    )
+
+    assert read_config_dict(_isolated_config)["profiles"]["work"] == {
+        "shelf": {"extensions": {"book_source": {"rank": {"first": ["shop"]}}}}
+    }
+    assert run.model.written == (("work", "shelf.extensions"),)
+
+
+def test_an_invalid_owner_section_opens_its_extensions_as_json(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _RANKED.replace("[shop, library]", "[shop, shop]"))
+
+    run = drive_screen(_shelf(), _to_shelf(), size=(120, 30))
+
+    labels = [row.label for row in run.model.panes["shelf"].rows]
+    assert "extensions" in labels and not any(".rank." in label for label in labels)

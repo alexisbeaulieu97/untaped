@@ -382,6 +382,11 @@ def owns_contracts(spec: PluginSpec) -> bool:
     return spec.contracts is not _no_contracts
 
 
+def contract_owners(result: CompositionResult) -> tuple[str, ...]:
+    """The composed plugins that own contracts, which a ranking may name."""
+    return tuple(each.spec.name for each in result.plugins if owns_contracts(each.spec))
+
+
 def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseModel] | None:
     """The model registered for ``spec``'s config section; ``None`` when it has none.
 
