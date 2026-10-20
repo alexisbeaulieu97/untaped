@@ -128,8 +128,18 @@ class Map:
 
 
 @dataclass(frozen=True)
+class GuideLine:
+    """A guide as a plugin's page lists it: its name and when to read it."""
+
+    name: str
+    description: str
+    shadowed: bool = False
+    """A top-level command or alias has the name, so ``untaped agents PLUGIN NAME`` shows it."""
+
+
+@dataclass(frozen=True)
 class PluginPage:
-    """Stage 2, ``untaped agents PLUGIN``: its commands, extension points and settings."""
+    """Stage 2, ``untaped agents PLUGIN``: its commands, extension points, settings and guides."""
 
     answerer: Answerer
     name: str
@@ -140,6 +150,7 @@ class PluginPage:
     extends: tuple[Extends, ...]
     settings_prefix: str
     settings: tuple[Setting, ...]
+    guides: tuple[GuideLine, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -166,4 +177,16 @@ class CommandPage:
     examples: str
 
 
-type Page = Map | PluginPage | CommandPage
+@dataclass(frozen=True)
+class GuidePage:
+    """``untaped agents PLUGIN GUIDE``: a guide's text, under the heading the renderer writes."""
+
+    answerer: Answerer
+    plugin: str
+    name: str
+    description: str
+    body: str
+    mark: Mark = None
+
+
+type Page = Map | PluginPage | CommandPage | GuidePage

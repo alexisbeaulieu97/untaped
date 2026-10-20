@@ -22,6 +22,7 @@ from cyclopts import App
 from pydantic import SecretStr
 
 from untaped.agents._docstring import describe, first_line, markdown
+from untaped.agents._guides import guides
 from untaped.agents._model import (
     Answerer,
     CommandLine,
@@ -30,6 +31,8 @@ from untaped.agents._model import (
     Extends,
     ExtensionPoint,
     Fill,
+    GuideLine,
+    GuidePage,
     Map,
     Mark,
     Option,
@@ -237,6 +240,36 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
         extends=tuple(Extends(point, line) for _, point, line in fills.get(name, ())),
         settings_prefix=f"profiles.<name>.{name}",
         settings=_settings(result, plugin),
+        guides=tuple(
+            GuideLine(guide.name, guide.description, guide.name in _top_names(app))
+            for guide in guides(plugin.spec)
+        ),
+    )
+
+
+def _top_names(app: App | None) -> frozenset[str]:
+    """The names and aliases of ``app``'s top-level commands: a guide by one is shadowed."""
+    return (
+        frozenset() if app is None else frozenset(name for name in app if not name.startswith("-"))
+    )
+
+
+def build_guide_page(result: CompositionResult, name: str, guide: str) -> GuidePage:
+    """``untaped agents PLUGIN GUIDE``; ``KeyError`` when the plugin has no guide by that name.
+
+    A command by the same name wins: the caller asks for the command first.
+    """
+    plugin = _plugin(result, name)
+    found = next((each for each in guides(plugin.spec) if each.name == guide), None)
+    if found is None:
+        raise KeyError(guide)
+    return GuidePage(
+        answerer=answerer(plugin),
+        plugin=name,
+        name=guide,
+        description=found.description,
+        body=found.body,
+        mark=_mark(plugin.spec.stability),
     )
 
 

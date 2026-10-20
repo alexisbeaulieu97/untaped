@@ -537,7 +537,10 @@ a plugin's page or a topic's page, generated from what core and the plugins
 declare.
 
 **Topic**: what a plugin's agent page lists and `untaped agents PLUGIN TOPIC`
-prints: one of its commands.
+prints: one of its commands, or a guide.
+
+**Guide**: a topic a plugin writes as a Markdown file, for what belongs to no
+single command; each says when to read it.
 
 **Screen**: an interactive terminal UI built on the SDK's runtime.
 _Avoid_: TUI app, program, view.

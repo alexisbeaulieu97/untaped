@@ -35,7 +35,7 @@ KEY = "lint"
 _PLUGIN = declared_kind(Plugin)
 
 _TABLE: tuple[tuple[str, Severity, str], ...] = (
-    # The composed checks: names, requirements, the help tree, marks, structure, imports.
+    # The composed checks: names, requirements, the help tree, guides, marks, structure, imports.
     ("plugin-name", "error", "A plugin's distribution and import package are named after it."),
     ("provides-requirement", "error", "A provider requires untaped and each owner with a range."),
     ("missing-help", "error", "Every visible parameter has help text."),
@@ -52,6 +52,13 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("reserved-panel", "error", "No help panel is named after one of core's panels."),
     ("unkeyed-panel", "error", "A plugin's own help panel has a sort key below 100."),
     ("example-command", "error", "A command docstring's Examples command lines parse."),
+    ("guide-name", "error", "A guide's name is kebab-case and no top-level command's."),
+    ("guide-description", "error", "A guide's front matter has a one-line description."),
+    ("guide-heading", "error", "A guide has no level-one heading of its own."),
+    ("guide-link", "error", "Each untaped agents page a guide quotes exists."),
+    ("guide-command", "error", "Each other untaped command a guide quotes parses."),
+    ("guide-yaml", "error", "A guide's yaml KIND block validates against the kind's model."),
+    ("map-line", "error", "A plugin's first lines on the map are at most 120 characters."),
     ("hand-typed-mark", "error", "Experimental and Deprecated lines come from marks, not help."),
     ("wrong-deprecated", "error", "Commands and settings deprecate with deprecated() alone."),
     ("nested-mark", "error", "No mark sits under a mark that makes it redundant."),

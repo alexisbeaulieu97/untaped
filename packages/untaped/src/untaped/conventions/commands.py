@@ -1,8 +1,8 @@
 """Whether an ``untaped …`` command line parses against the composed root.
 
 Shared by the conventions (a docstring's ``Examples`` section, read here for
-them and for the command's agent page) and the repository's docs and skill
-tests. Synopsis notation is read the obvious way
+them and for the command's agent page; a plugin's guides) and the
+repository's docs and skill tests. Synopsis notation is read the obvious way
 (``[--flag X]`` is optional text, ``a|b`` takes ``a``, ``...`` repeats) and
 placeholders (``NAME``, ``<recipe>``) bind without being converted.
 """
@@ -30,6 +30,8 @@ PLACEHOLDER = re.compile(r"^[A-Z][A-Z0-9_]*(?:[/=:.-][A-Z0-9_]+)*$")
 _ROOT_FLAGS = {"-q", "--quiet", "-v", "--verbose", "--deprecated"}
 _HELP_FLAGS = {"--help", "-h"}
 _CONSOLE = re.compile(r"^```console\n(.*?)^```", re.MULTILINE | re.DOTALL)
+_FENCE = re.compile(r"^```(\w*)\n(.*?)^```", re.MULTILINE | re.DOTALL)
+INLINE = re.compile(r"`(untaped(?: [^`]*)?)`")
 
 
 def segments(line: str) -> Iterator[str]:
@@ -97,6 +99,21 @@ def parse_problem(root: App, command: str, *, inline: bool) -> str | None:
     except CycloptsError as exc:
         return str(exc)
     return None
+
+
+def commands(text: str) -> Iterator[tuple[str, bool]]:
+    """Every ``untaped …`` command in Markdown, and whether it is inline code.
+
+    Commands in ``bash`` blocks come first, then those in inline code spans.
+    A full command must parse in full; one named in inline code may leave out
+    required arguments. ``console`` blocks are :func:`console_lines`'.
+    """
+    for language, block in _FENCE.findall(text):
+        if language in {"bash", "sh", "shell"}:
+            for line in block.replace("\\\n", " ").splitlines():
+                yield from ((command, False) for command in segments(line.split(" #", 1)[0]))
+    for span in INLINE.findall(_FENCE.sub("", text)):
+        yield from ((command, True) for command in segments(span))
 
 
 def examples_of(function: object | None) -> str:
