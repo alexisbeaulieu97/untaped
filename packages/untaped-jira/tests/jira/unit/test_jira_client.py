@@ -11,7 +11,7 @@ import pytest
 import respx
 from pydantic import SecretStr, ValidationError
 
-from untaped.sdk import ConfigError, HttpStatusError, get_config_section
+from untaped.sdk import ConfigError, HttpStatusError, HttpTransportError, get_config_section
 from untaped_jira.domain.parse import ISSUE_DETAIL_FIELDS
 from untaped_jira.errors import JiraError
 from untaped_jira.infrastructure import JiraClient
@@ -140,6 +140,25 @@ def test_patch_puts_are_sent_once(
             send(client)
 
     assert put.call_count == 1
+
+
+def test_patch_put_is_not_resent_after_a_dropped_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Jira may have applied a PUT whose answer never arrived; only a failed connect is retried."""
+    monkeypatch.setattr("untaped.http._sleep", lambda _delay: None)
+    with respx.mock(base_url=BASE) as mock:
+        dropped = mock.put("/rest/api/2/issue/ABC-1").mock(side_effect=httpx.ReadTimeout)
+        unreached = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(
+            side_effect=[httpx.ConnectError("refused"), httpx.Response(204)]
+        )
+        with JiraClient(_settings()) as client:
+            with pytest.raises(HttpTransportError):
+                client.edit_issue("ABC-1", {"update": {}})
+            client.assign_issue("ABC-1", {"name": "ada"})
+
+    assert dropped.call_count == 1
+    assert unreached.call_count == 2
 
 
 @pytest.mark.parametrize(
