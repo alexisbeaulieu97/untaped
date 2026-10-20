@@ -106,10 +106,6 @@ REPO_HIT_COLUMNS = ("full_name", "description", "language", "stargazers_count", 
 class CorpusRepoResult(GithubRepo, kind="github.corpus_repo"):
     """One repository row in the local scan corpus.
 
-    ``path`` is the repo in the git plugin's repo store. ``cache delete`` and
-    ``prune`` rows say ``removed`` (nobody else used the repo; ``disk_bytes``
-    is what it freed) or ``released`` (github's refs, metadata and worktrees
-    went; ``kept`` names who still holds the repo, and ``disk_bytes`` is 0).
     A :class:`GithubRepo`, so it pipes into workspace like any repo row.
     """
 
@@ -117,13 +113,28 @@ class CorpusRepoResult(GithubRepo, kind="github.corpus_repo"):
 
     full_name: str
     ref: str
-    path: str
-    status: Literal["synced", "cached", "released", "removed"] = "cached"
-    kept: str | None = None
+    path: str = Field(
+        description="The repo in the git plugin's repo store, which other plugins may share."
+    )
+    status: Literal["synced", "cached", "released", "removed"] = Field(
+        default="cached",
+        description=(
+            "`cached` for a stored copy, `synced` for one just fetched; on a `cache delete` or "
+            "`prune` row, `removed` when nothing else used the repo, `released` when github's "
+            "refs, metadata and worktrees went but the repo stays."
+        ),
+    )
+    kept: str | None = Field(
+        default=None,
+        description=(
+            "What still holds a `released` repo: other plugins, worktrees untaped didn't "
+            "add, local branches or a stash."
+        ),
+    )
     fetched_at: str | None = None
     profile: str = "default"
     ref_globs: tuple[str, ...] = ()
-    disk_bytes: int = 0
+    disk_bytes: int = Field(default=0, description="What a `removed` repo freed; 0 otherwise.")
 
 
 class RepoSweepOutcome(GithubRepo, kind="github.sweep_repo"):
@@ -136,11 +147,28 @@ class RepoSweepOutcome(GithubRepo, kind="github.sweep_repo"):
     table_columns: ClassVar[tuple[str, ...]] = ("full_name", "refs_matched", "hits", "fetched_at")
 
     full_name: str
-    matched: bool = True
-    refs_matched: tuple[str, ...] = ()
-    hits: dict[str, int] = Field(default_factory=dict)
-    owners: tuple[str, ...] = ()
-    fetched_at: str | None = None
+    matched: bool = Field(
+        default=True, description="Always true: a sweep writes a row only for a repo that matched."
+    )
+    refs_matched: tuple[str, ...] = Field(
+        default=(), description="The refs the predicates held on, by short name."
+    )
+    hits: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Per predicate label (`grep:PAT`, `not-grep:PAT`, `has-file:GLOB`, "
+            "`lacks-file:GLOB`): matching lines for a `grep`, else 1 when the pattern or "
+            "file was found and 0 when not; the most over the matched refs."
+        ),
+    )
+    owners: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "Owners of the matching files from the default branch's CODEOWNERS (its "
+            "default owners when no file matched); empty without one or under `--no-owners`."
+        ),
+    )
+    fetched_at: str | None = Field(default=None, description="When the scanned copy was fetched.")
 
 
 class SweepFile(Record, kind="github.sweep_file"):
@@ -162,7 +190,7 @@ class SweepMatch(Record, kind="github.sweep_match"):
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "refs", "path", "line", "text")
 
     repo: str
-    refs: tuple[str, ...]
+    refs: tuple[str, ...] = Field(description="Every scanned ref whose file has this line.")
     path: str
     line: int
     text: str
