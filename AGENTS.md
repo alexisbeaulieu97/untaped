@@ -28,6 +28,11 @@ untaped owns the CLI, so it wires commands, help and agent support from what
 plugins declare (plugins still build commands with Cyclopts for now). A
 plugin owning a contract wires it, and plugins filling it just provide data.
 
+untaped is made of building blocks. A mechanic several features need, such
+as caching or state, is solved once by its owner (core unless something
+narrower owns it) behind a typed pydantic interface that is robust and simple
+to use. Any plugin can use it, and its owner does too, never a private copy.
+
 ## Agent-only notes
 
 - Tasks, roadmap and priorities live in this repository's GitHub issues. Do
