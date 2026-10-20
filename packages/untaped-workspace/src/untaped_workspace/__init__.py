@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from importlib.resources import files
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import untaped_workspace.records  # noqa: F401  # registers the record kinds before any command runs
@@ -82,16 +81,15 @@ SPEC = PluginSpec(
     skills=(
         SkillAsset(
             name="untaped-workspace",
-            source=Path(str(files("untaped_workspace").joinpath("skills", "untaped-workspace"))),
             description=(
-                "Creates, inspects, archives and removes task workspaces through the "
-                "`untaped workspace` command (one directory per task holding git worktrees of "
-                "several repos on a shared branch, safe archiving once work is pushed). Use "
-                "when the user starts work on a ticket across repos, asks where a workspace "
-                "is, or wants to clean one up."
+                "untaped workspaces: one directory per task holding git worktrees of several "
+                "repos on a shared branch. Use when the work concerns an untaped workspace: "
+                "making one for a task or ticket, adding repos to one, finding, checking or "
+                "cleaning one up. A repo outside a workspace needs only plain git."
             ),
         ),
     ),
+    guides=files("untaped_workspace") / "guides",
     doctor_checks=(executable_check("workspace.git", "git", purpose="workspace commands"),),
     contracts=_contracts,
     migrations=(
