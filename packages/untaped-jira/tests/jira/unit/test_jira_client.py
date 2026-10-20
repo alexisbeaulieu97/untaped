@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -115,6 +116,30 @@ def test_search_retries_a_429_although_it_is_a_post(monkeypatch: pytest.MonkeyPa
     assert [row["key"] for row in rows] == ["ABC-1"]
     assert search.call_count == 2
     assert create.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("path", "send"),
+    [
+        ("/rest/api/2/issue/ABC-1", lambda client: client.edit_issue("ABC-1", {"update": {}})),
+        (
+            "/rest/api/2/issue/ABC-1/assignee",
+            lambda client: client.assign_issue("ABC-1", {"name": "ada"}),
+        ),
+    ],
+)
+@pytest.mark.parametrize("answer", [429, 503])
+def test_patch_puts_are_sent_once(
+    monkeypatch: pytest.MonkeyPatch, path: str, send: Callable[[JiraClient], object], answer: int
+) -> None:
+    """A patch's PUT can carry an ``update`` add, so a retry could apply it twice."""
+    monkeypatch.setattr("untaped.http._sleep", lambda _delay: None)
+    with respx.mock(base_url=BASE) as mock:
+        put = mock.put(path).mock(return_value=httpx.Response(answer))
+        with JiraClient(_settings()) as client, pytest.raises(JiraError):
+            send(client)
+
+    assert put.call_count == 1
 
 
 @pytest.mark.parametrize(
