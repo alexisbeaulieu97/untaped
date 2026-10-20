@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import import_module
 from importlib import metadata as importlib_metadata
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar, Literal
@@ -311,6 +312,10 @@ class PluginSpec:
     keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``.
     ``stores`` are the :class:`~untaped.store.Store` objects it keeps, each
     file in a layout of its own (``doctor`` lists them).
+
+    ``guides`` is a folder of Markdown files (``files("untaped_acme") /
+    "guides"``), each a page ``untaped agents <name> <guide>`` prints: prose
+    that belongs to no single command. Composition never reads it.
     """
 
     name: str
@@ -329,6 +334,7 @@ class PluginSpec:
     caches: tuple[Cache, ...] = ()
     stores: tuple[Store, ...] = ()
     deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
+    guides: Traversable | None = field(default=None, hash=False)
 
     def __post_init__(self) -> None:
         check_plugin_name(self.name)
@@ -360,6 +366,11 @@ class PluginSpec:
         for store in self.stores:
             if not isinstance(store, Store):
                 raise ConfigError(f"plugin {self.name!r} stores holds {store!r}, not a Store")
+        if self.guides is not None and not isinstance(self.guides, Traversable):
+            raise ConfigError(
+                f"plugin {self.name!r} guides is {self.guides!r}, not a folder "
+                "(a Traversable, such as files(package) / 'guides')"
+            )
         object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
 
 

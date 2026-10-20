@@ -22,6 +22,7 @@ from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 from untaped.bootstrap import build_root_app, composition
+from untaped.conventions.guides import guide_violations
 from untaped.conventions.help_tree import help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
 from untaped.conventions.source import SourceFile, UnreadableSource, source_files
@@ -69,8 +70,9 @@ def core_plugin_violations(
     """The violations only the composed root can tell: what ``check_plugin`` reports.
 
     Plugin and distribution names, provides requirements, the help tree,
-    stability marks, structure's class checks (exceptions, ports, frozen
-    settings, setting names) and the import boundary. The rules that read
+    guides and map lines, stability marks, structure's class checks
+    (exceptions, ports, frozen settings, setting names) and the import
+    boundary. The rules that read
     only the plugin's files are not run here. Lines and a quarantined
     plugin's one violation are as :func:`plugin_violations` gives them.
     """
@@ -128,6 +130,7 @@ def _core_lines(checked: _Checked) -> list[str]:
         *_name_violations(name, checked.package, checked.own),
         *_provides_violations(spec, checked.own, checked.candidates),
         *help_tree_violations(checked.root, commands),
+        *guide_violations(checked.root, composition(), spec),
         *stability_violations(checked.root, composition(), commands, spec=spec),
         *undated_violations(spec),
         *_sdk_deprecations(checked.package),

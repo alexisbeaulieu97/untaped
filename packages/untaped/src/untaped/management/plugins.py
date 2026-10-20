@@ -264,7 +264,7 @@ def _contract_rows() -> list[ContractRow]:
 
 def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
     """``kind``'s JSON Schema, with ``$id`` and ``title`` the kind."""
-    model = record_model(kind) or _load_kind(kind, result)
+    model = kind_model(kind, result)
     if model is None:
         raise UsageError(not_found("record kind", kind, known=_near(kind, record_kinds())))
     schema = model.model_json_schema()
@@ -284,8 +284,13 @@ def _near(kind: str, kinds: Iterable[str]) -> list[str]:
     return same or [f"{each}.*" for each in dict.fromkeys(k.partition(".")[0] for k in kinds)]
 
 
-def _load_kind(kind: str, result: CompositionResult) -> type[WireModel] | None:
-    """Import what declares record kinds lazily (contracts, then commands), then look again."""
+def kind_model(kind: str, result: CompositionResult) -> type[WireModel] | None:
+    """The model declaring ``kind``, importing lazily what declares kinds (contracts, commands).
+
+    ``plugin schema`` and the ``guide-yaml`` convention find a kind's model here.
+    """
+    if (model := record_model(kind)) is not None:
+        return model
     if any(owns_contracts(each.spec) or each.spec.provides for each in result.plugins):
         from untaped.contracts._registry import every_offer, owned_contracts  # noqa: PLC0415
 

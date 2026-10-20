@@ -376,8 +376,9 @@ def check_plugin(
 
     Composes ``name`` hermetically, as ``untaped plugin check`` does, and
     returns one :class:`PluginCheckRow` per check: the conventions that read
-    the composed root (names, provides requirements, the help tree, stability
-    marks, structure's class checks, the import boundary), then ``contracts``,
+    the composed root (names, provides requirements, the help tree, guides
+    and map lines, stability marks, structure's class checks, the import
+    boundary), then ``contracts``,
     ``registration``, ``conformance``, ``live``, ``fills``, ``schema`` and
     ``migrations``, each where the plugin has something for it to read. Rows
     carry a check name and a ``status``, never a severity: a linter decides

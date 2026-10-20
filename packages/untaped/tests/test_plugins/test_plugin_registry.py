@@ -419,3 +419,8 @@ def test_a_plugin_whose_app_factory_redeclares_a_kind_is_quarantined() -> None:
     result = compose(make_shell(), [make_candidate(make_spec(name="thief", factory=factory))])
 
     assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
+
+
+def test_plugin_guides_must_be_a_folder() -> None:
+    with pytest.raises(ConfigError, match="guides is 'guides', not a folder"):
+        PluginSpec(name="alpha", guides="guides")  # type: ignore[arg-type]

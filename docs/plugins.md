@@ -358,8 +358,8 @@ untaped skills install --all --target all
 [Install skills](./skills.md#install-skills)). The core `untaped` skill
 covers untaped itself; plugin guidance belongs in the plugin's skill.
 
-Write `SKILL.md` from the [skill template](./plugin-skills.md), which also
-says what belongs in it.
+Write `SKILL.md` from the [skill template](./plugin-skills.md). Prose for agents
+that fits no single command goes in a [guide](./reference/agent-pages.md#guides).
 
 ## Validation and checks
 
