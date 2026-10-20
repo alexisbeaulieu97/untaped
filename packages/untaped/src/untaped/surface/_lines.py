@@ -2,7 +2,8 @@
 
 A file opens with ``# untaped surface <FORMAT>``, then one line per promise in
 plain string order. A line is ``<area> <subject>[ <shape>]``, optionally
-followed by two spaces and a mark: ``[experimental]``, or
+followed by two spaces and a mark: ``[experimental]``, ``[frozen]`` (never
+removed or deprecated, not even in a major release), or
 ``[deprecated[, removed in <major>.0][; use <replacement>]]``. The mark is not
 part of the line's identity: deprecating something in a minor, postponing its
 removal or rewording its replacement keeps its promise. A line splits once on
@@ -21,10 +22,11 @@ from typing import Literal
 
 #: The line format this generator reads. A PR that respells existing lines
 #: bumps it and teaches :func:`upgrade` the old spelling. Format 2 added the
-#: dated deprecation mark; :func:`render` still writes format 1 for a file
-#: none of whose marks carries a date, so an older generator keeps reading it
-#: and an undated plugin's snapshot stays byte-for-byte what 11.0 wrote.
-FORMAT = 2
+#: dated deprecation mark and format 3 the frozen mark; :func:`render` writes
+#: the lowest format its marks need (format 1 for a file with neither), so an
+#: older generator keeps reading what it can and refuses the rest plainly, and
+#: an undated plugin's snapshot stays byte-for-byte what 11.0 wrote.
+FORMAT = 3
 
 HEADER = "# untaped surface"
 
@@ -63,7 +65,7 @@ class DeprecatedMark:
         return text if self.use is None else f"{text}{_USE}{self.use}"
 
 
-type LineMark = Literal["experimental"] | DeprecatedMark
+type LineMark = Literal["experimental", "frozen"] | DeprecatedMark
 """What a line's mark can be."""
 
 DEPRECATED = DeprecatedMark()
@@ -108,13 +110,20 @@ class Line:
 def render(lines: Iterable[Line]) -> str:
     """The file text: the format header, then each distinct line in plain string order.
 
-    The header names format 2 when a deprecated mark carries a date. Without
-    one the file is format 1, where every deprecated mark is ``[deprecated]``
-    (format 1 has no replacement), so an undated file reads as 11.0 wrote it.
+    The header names format 3 when a line is frozen, else format 2 when a
+    deprecated mark carries a date. With neither the file is format 1, where
+    every deprecated mark is ``[deprecated]`` (format 1 has no replacement),
+    so an undated file reads as 11.0 wrote it.
     """
     distinct = set(lines)
-    if any(line.deprecation is not None and line.deprecation.dated for line in distinct):
-        return "\n".join([f"{HEADER} {FORMAT}", *sorted(str(line) for line in distinct)]) + "\n"
+    if any(line.mark == "frozen" for line in distinct):
+        needed = 3
+    elif any(line.deprecation is not None and line.deprecation.dated for line in distinct):
+        needed = 2
+    else:
+        needed = 1
+    if needed > 1:
+        return "\n".join([f"{HEADER} {needed}", *sorted(str(line) for line in distinct)]) + "\n"
     body = sorted(
         {str(Line(line.text, DEPRECATED) if line.deprecation else line) for line in distinct}
     )
@@ -153,6 +162,8 @@ def parse_mark(text: str) -> LineMark:
     """A mark as written between ``[`` and ``]``."""
     if text == "experimental":
         return "experimental"
+    if text == "frozen":
+        return "frozen"
     head, separator, use = text.partition(_USE)
     if head == "deprecated":
         return DeprecatedMark(None, use if separator else None)
@@ -165,11 +176,11 @@ def parse_mark(text: str) -> LineMark:
 def upgrade(lines: list[Line], from_format: int) -> list[Line]:
     """``lines`` written in ``from_format``, respelled in the current format.
 
-    Format 1's marks are format 2's undated ones, spelled the same, so its
-    lines need no translation; the bump exists so an older generator refuses
-    a dated file plainly. A later format adds its step here, and a major
-    release retires it.
+    Format 1's marks are format 2's undated ones, and format 2's lines are
+    format 3's, all spelled the same, so neither needs translation; each bump
+    exists so an older generator refuses a newer mark plainly. A later format
+    adds its step here, and a major release retires it.
     """
-    if from_format in (1, FORMAT):
+    if from_format in (1, 2, FORMAT):
         return lines
     raise ValueError(f"no upgrade from surface format {from_format} to {FORMAT}")

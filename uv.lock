@@ -794,6 +794,7 @@ version = "11.0.0"
 source = { editable = "packages/untaped" }
 dependencies = [
     { name = "cyclopts" },
+    { name = "docstring-parser" },
     { name = "filelock" },
     { name = "httpx" },
     { name = "packaging" },
@@ -849,6 +850,7 @@ workspace = [
 [package.metadata]
 requires-dist = [
     { name = "cyclopts", specifier = ">=4.16.0,<5" },
+    { name = "docstring-parser", specifier = ">=0.18.0,<1" },
     { name = "filelock", specifier = ">=3.32.5,<4" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "packaging", specifier = ">=26.2,<27" },

@@ -15,8 +15,9 @@ from untaped.stability import (
     deprecated,
     deprecated_alias,
     experimental,
+    frozen,
 )
-from untaped.surface import DeprecatedMark
+from untaped.surface import DeprecatedMark, SurfaceError
 from untaped.surface._cli import cli_lines, subtree_lines
 
 
@@ -155,6 +156,34 @@ def test_a_plugin_mark_reaches_every_line() -> None:
         DeprecatedMark(),
         DeprecatedMark(removed_in=12, use="--format json"),
     }
+
+
+def _frozen_root() -> App:
+    root = App(name="untaped")
+    demo = App(name="demo")
+    root.command(demo)
+
+    @demo.command
+    @frozen
+    def pages(*words: str, wide: bool = False) -> None:
+        """Frozen: its line and its positional, not its options."""
+
+    return root
+
+
+def test_a_frozen_command_freezes_its_line_and_positionals_only() -> None:
+    lines = {str(line) for line in subtree_lines(_frozen_root(), "demo", None)}
+    assert _of(lines, "pages") == [
+        "cli untaped demo pages  [frozen]",
+        "cli untaped demo pages --wide negative=--no-wide",
+        "cli untaped demo pages --wide switch",
+        "cli untaped demo pages [WORDS...]@1 default=unset  [frozen]",
+    ]
+
+
+def test_a_frozen_command_under_a_marked_plugin_is_refused() -> None:
+    with pytest.raises(SurfaceError, match="a frozen command is never marked experimental"):
+        list(subtree_lines(_frozen_root(), "demo", "experimental"))
 
 
 def test_the_root_lists_its_options_and_cyclopts_built_ins() -> None:

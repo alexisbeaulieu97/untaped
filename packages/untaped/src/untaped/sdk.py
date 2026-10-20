@@ -157,7 +157,7 @@ from untaped.records import (
 )
 from untaped.refs import holders
 from untaped.settings import HttpSettings, get_config_section
-from untaped.skills import project_root
+from untaped.skills import nearest_pyproject, project_root
 from untaped.stability import (
     DEPRECATED_OPTIONS,
     Deprecated,
@@ -381,6 +381,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "atomic_write",
     "file_lock",
     "git_toplevel",
+    "nearest_pyproject",
     "project_root",
     "run_git",
     "safe_path_segment",

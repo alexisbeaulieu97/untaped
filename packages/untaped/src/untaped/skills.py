@@ -211,6 +211,23 @@ def project_root(start: Path) -> Path:
     return start
 
 
+def nearest_pyproject(start: Path) -> Path | None:
+    """The nearest ``pyproject.toml`` from ``start`` up to its :func:`project_root`, if any.
+
+    The walk stops at the project root, so a stray ``pyproject.toml`` above a
+    checkout is never read; outside a checkout only ``start`` is looked at.
+    """
+    start = start.resolve()
+    top = project_root(start)
+    for folder in (start, *start.parents):
+        candidate = folder / "pyproject.toml"
+        if candidate.is_file():
+            return candidate
+        if folder == top:
+            break
+    return None
+
+
 def skill_roots(*, project_dir: Path | None) -> list[SkillInstallDestination]:
     """Return the global codex/claude skill roots plus ``project_dir``'s local ones."""
     roots = [

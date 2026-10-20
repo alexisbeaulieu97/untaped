@@ -43,6 +43,7 @@ from untaped.errors import ConfigError
 from untaped.git import forward_signals
 from untaped.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.management import (
+    build_root_agents_app,
     build_root_auth_app,
     build_root_config_app,
     build_root_doctor_app,
@@ -306,6 +307,7 @@ def build_root_app(
     if not result.plugins and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     management = {
+        "agents": build_root_agents_app(result=result, root=lambda: root),
         "config": build_root_config_app(shell=SHELL_SPEC, result=result),
         "profile": build_root_profile_app(command=SHELL_NAME),
         "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),
@@ -419,7 +421,18 @@ def _unbuildable_app(failure: QuarantineRecord) -> App:
         note_requested_format(tokens)
         raise ConfigError(message, system=failure.name)
 
+    setattr(_fail, _UNBUILDABLE_ATTR, True)
     return stub
+
+
+_UNBUILDABLE_ATTR = "__untaped_unbuildable__"
+
+
+def fail_if_unbuildable(app: App) -> None:
+    """Raise the stand-in's ``ConfigError`` when ``app`` is a plugin that could not be built."""
+    command = app.default_command
+    if command is not None and getattr(command, _UNBUILDABLE_ATTR, False):
+        command()
 
 
 def _root_panel(spec: PluginSpec) -> Group:
@@ -573,6 +586,7 @@ __all__ = [
     "ShellProfileSettings",
     "build_root_app",
     "compose_root",
+    "fail_if_unbuildable",
     "main",
     "reset",
     "run_root",

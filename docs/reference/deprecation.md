@@ -102,6 +102,9 @@ cli untaped plugin check  [deprecated, removed in 12.0; use untaped lint, from u
 - every deprecated line names its removal version;
 - against the last final release, a date it showed never falls, and its mark
   never goes while the thing stays.
+- a line the last final release marked `[frozen]` (`untaped agents` and its
+  path argument) keeps the mark and is never deprecated or removed, in any
+  release.
 
 `tests/repo/test_surface.py` lets a deprecated line go only at its major,
 while that major's prep (an `upgrading` fragment) is open. A plugin in its

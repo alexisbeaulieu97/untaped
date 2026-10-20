@@ -183,6 +183,27 @@ def class_mark(cls: type) -> Stability | None:
     return mark if isinstance(mark, Experimental | Deprecated) else None
 
 
+_FROZEN_ATTR = "__untaped_frozen__"
+
+
+def frozen[F: Callable[..., Any]](func: F, /) -> F:
+    """Mark a core command whose spelling never changes, not even in a major release.
+
+    For a command that something outside the process calls by name forever,
+    such as ``untaped agents``, which every installed stub skill names. The
+    public surface writes its command line and its positional lines with a
+    ``[frozen]`` mark, and the surface tests refuse to drop or deprecate
+    them. Core only: a plugin's commands follow its own majors.
+    """
+    setattr(func, _FROZEN_ATTR, True)
+    return func
+
+
+def is_frozen(func: object) -> bool:
+    """Whether a command function carries :func:`frozen`."""
+    return getattr(func, _FROZEN_ATTR, False) is True
+
+
 # --- panels and the --deprecated flag ----------------------------------------
 
 _SHOW_DEPRECATED: ContextVar[bool] = ContextVar("untaped_show_deprecated", default=False)

@@ -124,8 +124,11 @@ def test_requires_dist_follows_pep_440_and_508(
     assert names == (["pep440"] if admitted else [])
 
 
-def test_malformed_marker_quarantines(monkeypatch: pytest.MonkeyPatch) -> None:
-    result = _compose_with_sdk_version(monkeypatch, "6.1.0", "untaped>=1; bogus ==")
+@pytest.mark.parametrize(
+    "requirement", ["untaped>=1; bogus ==", "untaped>=1; python_version ~= '3'"]
+)
+def test_malformed_marker_quarantines(monkeypatch: pytest.MonkeyPatch, requirement: str) -> None:
+    result = _compose_with_sdk_version(monkeypatch, "6.1.0", requirement)
     (record,) = result.quarantine  # type: ignore[attr-defined]
     assert record.reason == "bad-metadata"
     assert "malformed Requires-Dist" in record.detail

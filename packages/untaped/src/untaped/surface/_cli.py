@@ -9,7 +9,9 @@ parameters are containers: their fields are the options. Hidden commands and
 parameters are skipped unless deprecated (an option marked ``deprecated(...)``
 in its annotation counts) or listed in
 :data:`~untaped.surface._lists.WRITTEN_OUTSIDE`. Defaults are the declared
-ones, never a value settings would supply at run time.
+ones, never a value settings would supply at run time. A :func:`~untaped.stability.frozen`
+command's line and its positional lines are marked ``frozen``; its options
+are not, so one may still be added and later retired.
 """
 
 from __future__ import annotations
@@ -20,7 +22,14 @@ from typing import Any
 
 from cyclopts import App
 
-from untaped.stability import children, deprecated_aliases, mark_of, marked_options, option_name
+from untaped.stability import (
+    children,
+    deprecated_aliases,
+    is_frozen,
+    mark_of,
+    marked_options,
+    option_name,
+)
 from untaped.surface._lines import DeprecatedMark, Line, LineMark
 from untaped.surface._lists import WRITTEN_OUTSIDE
 from untaped.surface._sdk import SurfaceError, line_mark
@@ -109,6 +118,9 @@ def _command(root: App, app: App, path: tuple[str, ...], mark: LineMark | None) 
     if app.default_command is None:
         yield Line(subject, mark)
         return
+    frozen = is_frozen(app.default_command)
+    if frozen and mark is not None:
+        raise SurfaceError(f"{subject}: a frozen command is never marked {mark}")
     positionals: list[str] = []
     required: list[str] = []
     position = 0
@@ -116,6 +128,7 @@ def _command(root: App, app: App, path: tuple[str, ...], mark: LineMark | None) 
     for argument in _arguments(app, " ".join(path), frozenset(marked)):
         own = line_mark(marked.get(argument.field_info.name), root) or mark
         if argument.field_info.kind in _POSITIONAL:
+            own = "frozen" if frozen else own
             position += 1
             main = _positional_name(argument)
             name = main + ("..." if _many(argument) else "")
@@ -132,7 +145,7 @@ def _command(root: App, app: App, path: tuple[str, ...], mark: LineMark | None) 
             yield from _spellings(f"{subject} {main}", argument, own, main=main)
             continue
         yield from _option(subject, argument, own)
-    yield Line(" ".join([subject, *positionals, *sorted(required)]), mark)
+    yield Line(" ".join([subject, *positionals, *sorted(required)]), "frozen" if frozen else mark)
 
 
 def _arguments(app: App, where: str, marked: frozenset[str]) -> Iterator[Any]:

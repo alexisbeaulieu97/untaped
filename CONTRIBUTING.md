@@ -512,6 +512,9 @@ _Avoid_: status, maturity.
 `--help`.
 _Avoid_: beta, preview, unstable.
 
+**Frozen**: a surface line no release renames, removes or deprecates, such
+as `untaped agents`; marked `[frozen]` in `tests/repo/surface.txt`.
+
 **Deprecated command**: a command that still works, with a warning, until
 its removal version.
 
@@ -528,6 +531,13 @@ _Avoid_: repair, remedy.
 **Automatic fix**: a fix that needs no value and no input, so
 `untaped doctor fix` runs it.
 _Avoid_: autofix.
+
+**Agent page**: what `untaped agents` prints for a coding agent: the map,
+a plugin's page or a topic's page, generated from what core and the plugins
+declare.
+
+**Topic**: what a plugin's agent page lists and `untaped agents PLUGIN TOPIC`
+prints: one of its commands.
 
 **Screen**: an interactive terminal UI built on the SDK's runtime.
 _Avoid_: TUI app, program, view.

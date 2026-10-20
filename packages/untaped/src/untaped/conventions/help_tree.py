@@ -24,6 +24,9 @@ Checks each visible command of a command subtree:
   options) that is not core's own: a same-named group would merge into it;
 - ``unkeyed-panel`` — a shown group of the plugin's own without a sort key
   below 100, which would list after Global options.
+- ``example-command`` — a command line in a command docstring's
+  ``Examples`` section (a ``$ untaped …`` line of a ``console`` fence) that
+  does not parse against the composed root.
 
 Lines are ``<command path>::<rule>::<detail>``; they carry no source line, so
 no inline marker can suppress them.
@@ -41,6 +44,7 @@ from typing import Any
 from cyclopts import App, Group
 
 from untaped.cli import write_kind
+from untaped.conventions.commands import console_lines, examples_of, parse_problem, segments
 from untaped.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
 
 RESERVED_SHORTS = {
@@ -101,6 +105,17 @@ def command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, s
         for flag in ("--yes", "--dry-run"):
             if flag not in options:
                 yield "destructive-controls", flag
+
+
+def example_violations(root: App, app: App) -> Iterator[tuple[str, str]]:
+    """Yield ``(rule, detail)`` for each example command of ``app`` that doesn't parse."""
+    if app.default_command is None:
+        return
+    for line in console_lines(examples_of(app.default_command)):
+        for command in segments(line):
+            problem = parse_problem(root, command, inline=False)
+            if problem is not None:
+                yield "example-command", f"{command}: {problem}"
 
 
 def _argument_violations(arguments: list[Any]) -> Iterator[tuple[str, str]]:
@@ -217,7 +232,9 @@ def help_tree_violations(root: App, names: Iterable[str]) -> list[str]:
         subtree = root[top]
         for path, app in [((top,), subtree), *_walk(subtree, (top,))]:
             command = " ".join(path)
-            for rule, detail in chain(command_violations(path, app), panel_violations(app)):
+            for rule, detail in chain(
+                command_violations(path, app), panel_violations(app), example_violations(root, app)
+            ):
                 found.append(f"{command}::{rule}::{detail}")
             if app.default_command is not None:
                 for flag, long_name in _shorts(app):

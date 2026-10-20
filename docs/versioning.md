@@ -30,6 +30,9 @@ them. For two installs that disagree about a renamed setting, see
 - Spellings `untaped` writes outside its own process, such as the Git
   credential helper (`untaped git credential`, with `--profile` before it)
   in the worktrees it creates, even if hidden.
+- `untaped agents` and its path argument, which are frozen: no release,
+  major or minor, renames or removes them
+  ([agent pages](./reference/agent-pages.md#what-stays-the-same)).
 
 The pipe envelope is versioned on its own (`"untaped": "1"`) and outlives
 application majors.
@@ -41,6 +44,8 @@ These may change in any release:
 - Human-readable output: table layout and default columns, tree and diagram
   text, colors, and the wording of messages, warnings and hints. Scripts read
   `--format json` or `pipe`, and exit codes, instead.
+- What [agent pages](./reference/agent-pages.md) say and how they lay it
+  out.
 - `--format raw` without `--columns`: it prints the first default column,
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
