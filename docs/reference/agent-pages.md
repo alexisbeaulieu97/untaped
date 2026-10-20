@@ -57,7 +57,10 @@ Beyond its [guides](#guides), a plugin writes nothing for the pages that
 - **`PluginSpec.help`** (or, without one, its app's help) is the plugin's
   line on the map; its app's help is the first line of its own page.
 - **A command's docstring**: its first line is its summary on the plugin's
-  page; the paragraphs after it are the behaviour on the command's page.
+  page; the paragraphs after it are the behaviour on the command's page. A
+  plugin whose app runs on its own (`@app.default`, as `untaped lint`) shows
+  that command's docstring, usage and examples under `## Usage` on its own
+  page.
 - **An `Examples` section** in the docstring (NumPy style) prints under
   `## Examples`. Put commands in a fenced `console` block, one per `$ ` line;
   `untaped lint`'s `example-command` rule checks that each one parses.

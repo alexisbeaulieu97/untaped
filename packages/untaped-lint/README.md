@@ -37,6 +37,5 @@ In a plugin's tests, `untaped_lint.testing.assert_clean("<name>")` fails with
 every finding.
 
 [docs/lint.md](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/lint.md)
-explains ids, ignores, exit codes and writing rules. The
-[packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-lint/src/untaped_lint/skills/untaped-lint/SKILL.md)
-is the agent's reference; `untaped lint --help` lists the options.
+explains ids, ignores, exit codes and writing rules. For an agent, run
+`untaped agents lint`; `untaped lint --help` lists the options.

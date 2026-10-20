@@ -151,6 +151,8 @@ class PluginPage:
     settings_prefix: str
     settings: tuple[Setting, ...]
     guides: tuple[GuideLine, ...] = ()
+    own: CommandPage | None = None
+    """The plugin's own command, when its app runs on its own (``untaped lint``)."""
 
 
 @dataclass(frozen=True)
