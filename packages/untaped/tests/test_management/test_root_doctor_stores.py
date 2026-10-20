@@ -11,6 +11,7 @@ from untaped import bootstrap, refs
 from untaped.errors import ConfigError
 from untaped.management.doctor import collect_doctor_rows
 from untaped.plugins.registry import PluginSpec
+from untaped.refs import RefHolder, RefTarget
 from untaped.store import Store
 from untaped.testing import plugin_candidate, write_reference
 
@@ -70,9 +71,14 @@ def test_another_layout_nobody_holds_on_an_unregistered_machine_warns(tmp_path: 
 def test_two_held_layouts_pass(tmp_path: Path) -> None:
     (tmp_path / "data.v4.db").write_bytes(b"x")
     (tmp_path / "data.v3.db").write_bytes(b"xyz")
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     checkout = _install(tmp_path / "checkout")
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@3"], anchor=checkout, version="11.1.0")
+    write_reference(
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
+        [RefTarget(plugin="acme", store="data", layout=3)],
+        anchor=checkout,
+        version="11.1.0",
+    )
     row = _row(_store(tmp_path / "data.db"))
     assert row["status"] == "pass"
     assert "(1 B), held by this install;" in str(row["detail"])
@@ -81,7 +87,7 @@ def test_two_held_layouts_pass(tmp_path: Path) -> None:
 
 def test_an_unheld_layout_the_next_fill_removes_passes(tmp_path: Path) -> None:
     (tmp_path / "data.v3.db").write_bytes(b"xyz")
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     row = _row(_store(tmp_path / "data.db"))
     assert row["status"] == "pass"
     assert "held by nobody (removed at the next complete fill)" in str(row["detail"])
@@ -90,7 +96,7 @@ def test_an_unheld_layout_the_next_fill_removes_passes(tmp_path: Path) -> None:
 def test_a_layout_a_running_process_has_open_warns(tmp_path: Path) -> None:
     old = tmp_path / "data.v3.db"
     old.write_bytes(b"xyz")
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     reader = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=3)
     reader.open()  # this process reads layout 3 as another install would
     row = _row(_store(tmp_path / "data.db"))
@@ -113,7 +119,7 @@ def test_a_damaged_lock_is_named_with_what_to_delete(tmp_path: Path) -> None:
 
 def test_a_reference_this_untaped_cannot_read_warns(tmp_path: Path) -> None:
     (tmp_path / "data.v3.db").write_bytes(b"xyz")
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     (refs.refs_dir() / "install-future.json").write_text('{"untaped": "2"}')
     row = _row(_store(tmp_path / "data.db"))
     assert row["status"] == "warn"
@@ -156,24 +162,44 @@ def test_an_unregistered_install_with_another_layout_warns(tmp_path: Path) -> No
 
 
 def test_every_holder_is_listed(tmp_path: Path) -> None:
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     gone = tmp_path / "gone"
     old = _install(tmp_path / "old", "11.2.0")
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@3"], anchor=gone, version="11.0.0")
-    write_reference("install:bbbbbbbbbbbb", ["acme.data@3"], anchor=old, version="11.1.0")
-    write_reference("workspace:pay", ["git.store#github.com/acme/pay"], plugin="workspace")
+    write_reference(
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
+        [RefTarget(plugin="acme", store="data", layout=3)],
+        anchor=gone,
+        version="11.0.0",
+    )
+    write_reference(
+        RefHolder(kind="install", name="bbbbbbbbbbbb"),
+        [RefTarget(plugin="acme", store="data", layout=3)],
+        anchor=old,
+        version="11.1.0",
+    )
+    write_reference(
+        RefHolder(kind="workspace", name="pay"),
+        [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
+        plugin="workspace",
+    )
+    project = _install(tmp_path / "project", "9.0.0")  # a later untaped's kind, no plugin
+    write_reference(RefHolder(kind="project", name="pay"), [], anchor=project, version="1.0.0")
     row = _row(_store(tmp_path / "data.db"), check="references")
     detail = str(row["detail"])
     assert row["status"] == "pass"  # a dead reference is information, not a warning
     assert f"untaped 11.0.0 at {gone}: no untaped there any more" in detail
     assert f"untaped 11.1.0 at {old}: reference from before an upgrade" in detail
-    assert "workspace:pay (plugin workspace)" in detail
+    assert "workspace pay (plugin workspace)" in detail
+    assert "project pay" in detail and "project pay (" not in detail
+    assert "project pay:" not in detail  # neither dead nor from before an upgrade
     assert "(this install)" in detail
 
 
 def test_a_newer_reference_warns(tmp_path: Path) -> None:
     refs.register([])
-    (refs.refs_dir() / "install-future.json").write_text('{"untaped": "2", "holder": "x"}')
+    (refs.refs_dir() / "install-future.json").write_text(
+        '{"untaped": "2", "holder": {"kind": "install", "name": "x"}}'
+    )
     row = _row(_store(tmp_path / "data.db"), check="references")
     assert row["status"] == "warn"
     assert "written by a newer untaped; upgrade this install to prune" in str(row["detail"])
@@ -182,7 +208,7 @@ def test_a_newer_reference_warns(tmp_path: Path) -> None:
 def test_an_unlistable_refs_folder_warns_in_both_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     (tmp_path / "data.v3.db").write_bytes(b"x")
     real = Path.iterdir
 
@@ -206,7 +232,7 @@ def test_an_unlistable_refs_folder_warns_in_both_rows(
 
 
 def test_a_layout_the_store_keeps_passes_with_why(tmp_path: Path) -> None:
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     (tmp_path / "data.v3.db").write_bytes(b"x")
     store = Store(
         "acme", "data", base=lambda: tmp_path / "data.db", layout=4, keep=lambda _: "a profile"
@@ -218,7 +244,7 @@ def test_a_layout_the_store_keeps_passes_with_why(tmp_path: Path) -> None:
 
 
 def test_a_kept_layout_still_names_its_damaged_lock(tmp_path: Path) -> None:
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     old = tmp_path / "data.v3.db"
     old.write_bytes(b"x")
     Path(f"{old}.inuse").write_bytes(b"garbage, not a database")
@@ -234,7 +260,7 @@ def test_a_kept_layout_still_names_its_damaged_lock(tmp_path: Path) -> None:
 def test_a_layout_with_unknown_holders_still_names_its_damaged_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    refs.register(["acme.data@4"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     old = tmp_path / "data.v3.db"
     old.write_bytes(b"x")
     Path(f"{old}.inuse").write_bytes(b"garbage, not a database")

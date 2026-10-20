@@ -23,6 +23,7 @@ from untaped.plugins.registry import (
     PluginSpec,
     named_plugin_dir,
 )
+from untaped.refs import RefHolder, RefTarget
 from untaped.store import Store, layout_path
 from untaped.testing import CliResult, invoke_cli, plugin_candidate, write_reference
 
@@ -81,7 +82,7 @@ def test_applying_removes_the_layout_and_everything_that_travels_with_it() -> No
 
 
 def test_a_layout_the_next_fill_removes_is_not_listed() -> None:
-    refs.register(["acme.data@5"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=5)])
     _layout(4)
     rows = json.loads(_cli("--dry-run").stdout)
     assert [row for row in rows if row["id"] == "acme.data-layouts"] == []
@@ -90,14 +91,19 @@ def test_a_layout_the_next_fill_removes_is_not_listed() -> None:
 def test_a_held_layout_is_not_listed(tmp_path: Path) -> None:
     other = tmp_path / "tool"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+    write_reference(
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=other,
+        version="11.1.0",
+    )
     _layout(4)
     rows = json.loads(_cli("--dry-run").stdout)
     assert [row for row in rows if row["id"] == "acme.data-layouts"] == []
 
 
 def test_a_layout_a_running_process_has_open_is_listed_and_fails_to_apply() -> None:
-    refs.register(["acme.data@5"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=5)])
     old = _layout(4)
     Store("acme", "data", base=_base, layout=4).open()  # held as another process would
 
@@ -115,7 +121,7 @@ def test_a_layout_a_running_process_has_open_is_listed_and_fails_to_apply() -> N
 def test_a_damaged_lock_does_not_stop_a_person_who_chose_to_remove_it() -> None:
     old = _layout(4)
     Path(f"{old}.inuse").write_bytes(b"not a database")
-    refs.register(["acme.data@5"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=5)])
     rows = json.loads(_cli("--dry-run").stdout)
     [row] = [row for row in rows if row["id"] == "acme.data-layouts"]
     assert "is damaged" in row["detail"]
@@ -157,7 +163,10 @@ def test_nothing_to_show_on_a_clean_home() -> None:
 
 def test_a_dead_reference_is_cores_row_and_applying_removes_it(tmp_path: Path) -> None:
     file = write_reference(
-        "install:aaaaaaaaaaaa", ["acme.data@4"], anchor=tmp_path / "gone", version="11.0.0"
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=tmp_path / "gone",
+        version="11.0.0",
     )
     rows = json.loads(_cli("--dry-run").stdout)
     [row] = [row for row in rows if row["id"] == "untaped.references"]
@@ -169,10 +178,27 @@ def test_a_dead_reference_is_cores_row_and_applying_removes_it(tmp_path: Path) -
     assert not file.exists()
 
 
+def test_a_reference_of_an_unknown_kind_is_never_offered(tmp_path: Path) -> None:
+    file = write_reference(  # a later untaped's kind; an install anchored here would be dead
+        RefHolder(kind="project", name="pay"),
+        [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
+        anchor=tmp_path / "gone",
+    )
+    rows = json.loads(_cli("--dry-run").stdout)
+    assert [row for row in rows if row["id"] == "untaped.references"] == []
+    assert _cli("--yes").exit_code == 0
+    assert file.exists()
+
+
 def test_a_live_reference_is_no_row(tmp_path: Path) -> None:
     alive = tmp_path / "tool"
     (alive / "untaped-11.1.0.dist-info").mkdir(parents=True)
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=alive, version="11.1.0")
+    write_reference(
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=alive,
+        version="11.1.0",
+    )
     rows = json.loads(_cli("--dry-run").stdout)
     assert [row for row in rows if row["id"] == "untaped.references"] == []
 
@@ -184,7 +210,12 @@ def test_applying_checks_again_what_holds_each_layout(tmp_path: Path) -> None:
     assert [row["action"] for row in preview if row["id"] == "acme.data-layouts"] == ["delete"]
     other = tmp_path / "tool"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+    write_reference(
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=other,
+        version="11.1.0",
+    )
 
     migration = other_layouts_migration(STORE)
     applied = migration.apply(PluginContext(settings=None), MigrationOptions())
@@ -198,7 +229,12 @@ def test_an_unlistable_refs_folder_keeps_every_layout(
 ) -> None:
     other = tmp_path / "tool"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+    write_reference(
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=other,
+        version="11.1.0",
+    )
     old = _layout(4)
     real = Path.iterdir
 
@@ -226,9 +262,16 @@ def test_a_damaged_lock_never_hides_unknown_holders(
     Path(f"{old}.inuse").write_bytes(b"not a database")
     if unknown == "newer":  # a newer untaped's reference, which may name layout 4
         refs.refs_dir().mkdir(parents=True)
-        (refs.refs_dir() / "install-future.json").write_text('{"untaped": "99", "holder": "x"}')
+        (refs.refs_dir() / "install-future.json").write_text(
+            '{"untaped": "99", "holder": {"kind": "install", "name": "x"}}'
+        )
     else:  # a live install's reference names layout 4, in a folder this run cannot list
-        write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+        write_reference(
+            RefHolder(kind="install", name="aaaaaaaaaaaa"),
+            [RefTarget(plugin="acme", store="data", layout=4)],
+            anchor=other,
+            version="11.1.0",
+        )
         real = Path.iterdir
 
         def iterdir(self: Path) -> Iterator[Path]:

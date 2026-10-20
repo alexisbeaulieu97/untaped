@@ -751,6 +751,7 @@ def _stores_fix(reasons: set[str]) -> list[str] | None:
 def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
     """Every install (and plugin object) holding store layouts, and whether this one does."""
     from untaped.refs import (  # noqa: PLC0415 - runs only in doctor
+        INSTALL,
         environment,
         install_holder,
         read_references,
@@ -775,7 +776,9 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
                 advice = ", so nothing is pruned; delete it"
             parts.append(f"{shown_path(ref.file)}: {ref.opaque}{advice}")
             continue
-        text = ref.describe() if ref.kind == "install" else f"{ref.holder} (plugin {ref.plugin})"
+        text = ref.describe()
+        if ref.kind != INSTALL and ref.plugin:
+            text += f" (plugin {ref.plugin})"
         if ref.holder == mine:
             registered = True
             text += " (this install)"

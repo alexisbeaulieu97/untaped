@@ -54,6 +54,7 @@ from untaped.records import (
     record_kinds,
     record_model,
 )
+from untaped.refs import RefHolder, RefTarget
 
 
 class _Stamped(BaseModel):
@@ -579,17 +580,18 @@ def _samples() -> dict[str, WireModel]:
             message=(
                 "removed layout 4 of store hello.shelf at /x/shelf.v4.db (1 B): nothing holds it"
             ),
-            store="hello.shelf",
+            plugin="hello",
+            store="shelf",
             layout=4,
             path="/x/shelf.v4.db",
             bytes=1,
         ),
         RegisterOutcome(
             action="registered",
-            holder="install:3f9a1c2e8b7d",
+            holder=RefHolder(kind="install", name="3f9a1c2e8b7d"),
             environment="/x/site-packages",
             version="11.1.0",
-            layouts=["hello.shelf@4"],
+            targets=[RefTarget(plugin="hello", store="shelf", layout=4)],
         ),
         DeprecationNotice(
             id="cli untaped hello old",

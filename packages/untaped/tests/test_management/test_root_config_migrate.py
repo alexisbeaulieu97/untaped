@@ -13,6 +13,7 @@ from test_management.support import compose, make_spec, write_config
 from untaped import bootstrap
 from untaped.deprecated_keys import Retired
 from untaped.management.config import build_root_config_app
+from untaped.refs import RefHolder
 from untaped.stability import deprecated
 from untaped.testing import CliInvoker, CliResult
 
@@ -83,8 +84,15 @@ def test_preview_and_apply_name_the_other_registered_installs(
     write_config(_isolated_config, ROUND_TRIP)
     other = tmp_path / "checkout"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
-    write_reference("install:aaaaaaaaaaaa", [], anchor=other, version="11.1.0")
-    write_reference("install:bbbbbbbbbbbb", [], anchor=tmp_path / "gone", version="11.0.0")
+    write_reference(
+        RefHolder(kind="install", name="aaaaaaaaaaaa"), [], anchor=other, version="11.1.0"
+    )
+    write_reference(
+        RefHolder(kind="install", name="bbbbbbbbbbbb"),
+        [],
+        anchor=tmp_path / "gone",
+        version="11.0.0",
+    )
 
     result = _migrate(*(["--dry-run"] if dry_run else []), "--format", "json")
 

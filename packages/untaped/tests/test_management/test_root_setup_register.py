@@ -9,6 +9,7 @@ import pytest
 
 from untaped import bootstrap, refs
 from untaped.plugins.registry import PluginSpec
+from untaped.refs import RefTarget
 from untaped.store import Store
 from untaped.testing import CliResult, invoke_cli, plugin_candidate
 
@@ -29,14 +30,14 @@ def test_register_writes_this_installs_reference_with_every_store_layout() -> No
     env = refs.environment()
     assert outcome == {
         "action": "registered",
-        "holder": refs.install_holder(env) if env else "",
+        "holder": refs.install_holder(env).model_dump() if env else None,
         "environment": str(env),
         "version": outcome["version"],
-        "layouts": ["acme.data@3"],
+        "targets": [{"plugin": "acme", "store": "data", "layout": 3}],
     }
-    assert "registered untaped " in result.stderr and "(acme.data@3)" in result.stderr
+    assert "registered untaped " in result.stderr and "(acme.data layout 3)" in result.stderr
     ref = refs.this_install()
-    assert ref is not None and ref.targets == ("acme.data@3",)
+    assert ref is not None and ref.targets == (RefTarget(plugin="acme", store="data", layout=3),)
 
 
 def test_registering_twice_changes_nothing() -> None:
@@ -52,7 +53,8 @@ def test_remove_unregisters_and_a_second_remove_finds_nothing() -> None:
     assert json.loads(removed.stdout)[0]["action"] == "removed"
     assert refs.this_install() is None
     again = _cli("--remove", "--format", "json")
-    assert json.loads(again.stdout)[0]["action"] == "gone"
+    [gone] = json.loads(again.stdout)
+    assert gone["action"] == "gone" and "holder" not in gone
     assert "not registered" in again.stderr
 
 

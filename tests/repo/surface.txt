@@ -5260,6 +5260,18 @@ sdk untaped.sdk.Quit.result  [experimental]
 sdk untaped.sdk.Record()
 sdk untaped.sdk.Record.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Record.table_columns class
+sdk untaped.sdk.RefHolder(*, kind, name)  [experimental]
+sdk untaped.sdk.RefHolder.describe()  [experimental]
+sdk untaped.sdk.RefHolder.kind  [experimental]
+sdk untaped.sdk.RefHolder.name  [experimental]
+sdk untaped.sdk.RefTarget(*, plugin, store)  [experimental]
+sdk untaped.sdk.RefTarget(item=) default=None  [experimental]
+sdk untaped.sdk.RefTarget(layout=) default=None  [experimental]
+sdk untaped.sdk.RefTarget.describe()  [experimental]
+sdk untaped.sdk.RefTarget.item  [experimental]
+sdk untaped.sdk.RefTarget.layout  [experimental]
+sdk untaped.sdk.RefTarget.plugin  [experimental]
+sdk untaped.sdk.RefTarget.store  [experimental]
 sdk untaped.sdk.Renamed(to, *, removed_in)
 sdk untaped.sdk.Renamed.removed_in
 sdk untaped.sdk.Renamed.to
@@ -5480,6 +5492,7 @@ sdk untaped.sdk.Store.path()  [experimental]
 sdk untaped.sdk.Store.plugin  [experimental]
 sdk untaped.sdk.Store.prune()  [experimental]
 sdk untaped.sdk.Store.qualified  [experimental]
+sdk untaped.sdk.Store.target  [experimental]
 sdk untaped.sdk.Submit()  [experimental]
 sdk untaped.sdk.Submitted(values)  [experimental]
 sdk untaped.sdk.Submitted.values  [experimental]

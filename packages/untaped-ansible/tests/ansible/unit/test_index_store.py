@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk import Filled, Store, code_version
+from untaped.sdk import Filled, RefTarget, Store, code_version
 from untaped.testing import assert_schema_pinned
 from untaped_ansible import settings
 from untaped_ansible.infrastructure import open_index
@@ -151,7 +151,7 @@ def _fill_index() -> None:
 def test_a_registered_install_removes_the_layout_nothing_holds_after_a_fill() -> None:
     from untaped import refs
 
-    refs.register(["ansible.index@4"])
+    refs.register([RefTarget(plugin="ansible", store="index", layout=4)])
     newer = _plugin() / "index.v5.sqlite3"
     _sqlite(newer, "a one-off's layout 5")
     (_plugin() / "caches" / "index.v5" / "default").mkdir(parents=True)
@@ -175,7 +175,7 @@ def test_an_unregistered_install_keeps_both_layouts() -> None:
 def test_a_set_index_path_never_prunes_the_default_place(tmp_path: Path) -> None:
     from untaped import refs
 
-    refs.register(["ansible.index@4"])
+    refs.register([RefTarget(plugin="ansible", store="index", layout=4)])
     newer = _plugin() / "index.v5.sqlite3"
     _sqlite(newer, "layout 5")
     open_index(AnsibleSettings(index_path=tmp_path / "idx.sqlite3"))
@@ -189,7 +189,7 @@ def test_a_layout_a_profile_points_index_path_at_is_never_pruned(
     """Another profile's index stays, while a run on the default path fills and prunes."""
     from untaped import refs
 
-    refs.register(["ansible.index@4"])
+    refs.register([RefTarget(plugin="ansible", store="index", layout=4)])
     pinned = _plugin() / "index.v3.sqlite3"
     _sqlite(pinned, "a profile's own index")
     monkeypatch.setenv("UNTAPED_ANSIBLE__INDEX_PATH", str(pinned))  # what the guard reads
