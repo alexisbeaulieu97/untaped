@@ -74,9 +74,9 @@ def hosts_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
     stores one from a hidden prompt. A helper in `helpers_first` holding a
     stale password answers before untaped; with `git.untaped_helper_only`
     set, untaped's worktrees ask only untaped and the column is empty. A
-    host two plugins claim lists both; until one is ranked first, fetching
-    from it is a configuration error (exit 4) whose hint names the rank
-    command.
+    host two plugins claim lists both; until one is ranked first, any fetch
+    or credential request for it (a push from untaped's worktrees too) is a
+    configuration error (exit 4) whose hint names the rank command.
     """
     from untaped_git.application.hosts import list_hosts  # noqa: PLC0415
     from untaped_git.infrastructure.helpers import missing_helper, user_helpers  # noqa: PLC0415
