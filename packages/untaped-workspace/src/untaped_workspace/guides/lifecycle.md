@@ -97,10 +97,11 @@ the same blockers.
 
 `--force` archives a blocked workspace after a confirmation: it discards
 uncommitted work and commits made in a read-only repo, which cannot be
-recovered, and removes the directories. Branch commits and stashes stay in the repo store. Without
-`--force`, each repo is checked again just before it is removed, and work
-made after the first check fails that repo as a `conflict`. If removing a
-repo fails, the workspace stays active so archive can run again.
+recovered, and removes the directories. Branch commits and stashes stay in
+the repo store. Without `--force`, each repo is checked again just before it
+is removed, and work made after the first check fails that repo as a
+`conflict`. If removing a repo fails, the workspace stays active so archive
+can run again.
 
 Archiving removes the worktrees and the workspace directory and records the
 workspace under `untaped workspace list --archived`. Other files left in the
