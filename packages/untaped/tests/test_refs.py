@@ -8,6 +8,7 @@ from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from untaped import refs
 from untaped.errors import ConfigError
@@ -102,19 +103,34 @@ def test_unregister_removes_the_file(site: Path) -> None:
     assert refs.this_install() is None
 
 
-def test_a_holder_name_becomes_a_safe_file_name() -> None:
-    long = RefHolder(kind="workspace", name="p/" * 300)
-    file = refs.reference_file(long)
-    assert "/" not in file.name
-    assert len(file.name.encode()) < 255
+def test_a_holders_file_is_its_kind_and_name() -> None:
+    holder = RefHolder(kind="workspace", name="acme.pay-1")
+    file = refs.reference_file(holder)
+    assert file == refs.refs_dir() / "workspace-acme.pay-1.json"
     write_reference(
-        long,
+        holder,
         [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
         plugin="workspace",
     )
     [ref] = refs.read_references()
-    assert ref.holder == long  # the full holder lives inside the file
+    assert ref.file == file and ref.holder == holder
     assert ref.kind == "workspace" and ref.plugin == "workspace"
+
+
+@pytest.mark.parametrize(
+    ("kind", "name"),
+    [
+        ("work-space", "pay"),  # a "-" in the kind would make two holders share a file
+        ("workspace", "Pay"),  # upper case would, on a case-insensitive disk
+        ("workspace", "acme/pay"),
+        ("workspace", ".pay"),
+        ("workspace", "p" * 129),
+        ("", "pay"),
+    ],
+)
+def test_a_holder_that_could_share_or_escape_a_file_is_refused(kind: str, name: str) -> None:
+    with pytest.raises(ValidationError):
+        RefHolder(kind=kind, name=name)
 
 
 def test_a_reference_is_live_while_its_directory_holds_untaped(tmp_path: Path) -> None:
@@ -179,7 +195,13 @@ def test_holders_lists_only_live_references(tmp_path: Path) -> None:
         ('{"untaped": "x"}', "unreadable"),
         ("not json", "unreadable"),
         ("[]", "unreadable"),
-        ('{"untaped": "1", "holder": "install:x", "targets": []}', "no holder"),
+        ('{"untaped": "1", "holder": "install:x", "targets": []}', "holder is malformed"),
+        (
+            '{"untaped": "1", "holder": {"kind": "install", "name": "x", "extra": 1}, '
+            '"targets": []}',
+            "holder is malformed",
+        ),
+        ('{"untaped": "1", "holder": {"kind": "install", "name": ""}, "targets": []}', "malformed"),
         ('{"untaped": "1", "targets": []}', "unreadable"),
         ('{"untaped": "1", "holder": {"kind": "install", "name": "x"}}', "no targets"),
         (

@@ -53,7 +53,8 @@ def test_remove_unregisters_and_a_second_remove_finds_nothing() -> None:
     assert json.loads(removed.stdout)[0]["action"] == "removed"
     assert refs.this_install() is None
     again = _cli("--remove", "--format", "json")
-    assert json.loads(again.stdout)[0]["action"] == "gone"
+    [gone] = json.loads(again.stdout)
+    assert gone["action"] == "gone" and "holder" not in gone
     assert "not registered" in again.stderr
 
 

@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 _LOG = logging.getLogger("untaped.refs")
 
 #: The reference file's own format, bumped only for a change an older reader cannot use
-#: (a new field in a target is one: an older reader refuses unknown fields).
+#: (a new field in a target or the holder is one: an older reader refuses unknown fields).
 FORMAT = "1"
 #: The holder kind of a registered install.
 INSTALL = "install"
@@ -98,13 +98,14 @@ class RefHolder(BaseModel):
 
     A registered install is ``RefHolder(kind="install", name=<12 hex digits>)``;
     a later untaped may write other kinds (a project, say). Its file is
-    ``refs/<kind>-<name>.json``.
+    ``refs/<kind>-<name>.json``, as is: both are lower case and a kind has no
+    ``-``, so no two holders share a file, even on a case-insensitive disk.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
-    kind: Annotated[str, Field(min_length=1)]
-    name: Annotated[str, Field(min_length=1)]
+    kind: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=32)]
+    name: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9._-]*$", max_length=128)]
 
     def describe(self) -> str:
         """How a row names it: ``project pay``."""
@@ -193,10 +194,7 @@ def install_holder(env: Path) -> RefHolder:
 
 def reference_file(holder: RefHolder) -> Path:
     """``refs/<kind>-<name>.json``: the file a holder's reference lives in."""
-    from untaped.git import safe_path_segment  # noqa: PLC0415 - loads unicodedata
-
-    kind, name = safe_path_segment(holder.kind), safe_path_segment(holder.name)
-    return refs_dir() / f"{kind}-{name}.json"
+    return refs_dir() / f"{holder.kind}-{holder.name}.json"
 
 
 def this_install() -> Reference | None:
@@ -248,7 +246,8 @@ def read_reference(file: Path) -> Reference:
         return Reference(file, holder=_holder(data.get("holder")), opaque=why)
     holder, targets, anchor = _holder(data.get("holder")), data.get("targets"), data.get("anchor")
     if holder is None:
-        return Reference(file, opaque="unreadable (no holder)")
+        why = "no holder" if data.get("holder") is None else "the holder is malformed"
+        return Reference(file, opaque=f"unreadable ({why})")
     if holder.kind == INSTALL:
         # An install is this untaped's own kind: anything it cannot read pauses cleanup.
         if not isinstance(targets, list):
