@@ -463,8 +463,8 @@ def sync_command(
     Never prompts and never overwrites a path edited on this machine. Exits 3
     when anything needs the user, 1 when an apply or a git operation failed.
     Rewrites status.json and attention unless --dry-run. `untaped agents
-    dotfiles policies` has what each policy does in each
-    state, and when a clone is pulled.
+    dotfiles policies` has what each policy does in each state, and when a
+    clone is pulled.
     """
     with report_errors():
         svc = services()
