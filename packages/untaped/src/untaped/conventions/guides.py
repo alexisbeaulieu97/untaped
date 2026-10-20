@@ -41,7 +41,6 @@ from pydantic import ValidationError
 
 from untaped.conventions.commands import (
     FENCE,
-    PLACEHOLDER,
     argv_of,
     commands,
     console_lines,
@@ -109,21 +108,15 @@ def _quoted(
             if problem is not None:
                 yield "guide-command", f"{command}: {problem}"
             continue
-        words = [part for word in argv[1:] for part in word.split()]  # as the page reads them
-        written = [part for word in shlex.split(command)[2:] for part in word.split()]
-        if any(_placeholder(word) for word in written) or (
-            words and words[0] not in composed | {spec.name}
-        ):
+        # The page reads a quoted path as its words: read it unquoted, placeholders and all.
+        argv, placeholders = argv_of(" ".join(shlex.split(command)))
+        words = argv[1:]
+        if placeholders & set(words) or (words and words[0] not in composed | {spec.name}):
             continue
         try:
             page(root, result, words)
         except UsageError as exc:
             yield "guide-link", f"{command}: {exc}"
-
-
-def _placeholder(word: str) -> bool:
-    """Whether a page path's word stands for a name (``TOPIC``, ``<topic>``)."""
-    return "<" in word or PLACEHOLDER.match(word) is not None
 
 
 def _yaml_blocks(result: CompositionResult, body: str) -> Iterator[tuple[str, str]]:

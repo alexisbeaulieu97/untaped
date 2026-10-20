@@ -115,8 +115,18 @@ def test_a_quoted_agents_path_is_checked_as_its_words(tmp_path: Path) -> None:
 
 
 def test_a_quoted_path_naming_a_placeholder_is_no_link(tmp_path: Path) -> None:
-    body = 'See `untaped agents "svc TOPIC"` and `untaped agents "svc <topic>"`.'
+    body = (
+        'See `untaped agents "svc TOPIC"`, `untaped agents "svc <topic>"`, '
+        "`untaped agents svc [TOPIC]`, `untaped agents svc [TOPIC]...` and "
+        "`untaped agents svc TOPIC...`."
+    )
     assert _violations(tmp_path, links=_guide(body)) == []
+
+
+def test_root_options_and_redirects_leave_a_broken_link_flagged(tmp_path: Path) -> None:
+    body = '`untaped --profile PROD agents svc nothing` and `untaped agents "svc nothing" < IN`'
+    found = _violations(tmp_path, links=_guide(body))
+    assert [rule for _, rule, _ in found] == ["guide-link", "guide-link"]
 
 
 def test_a_console_block_with_a_title_is_still_checked(tmp_path: Path) -> None:
