@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import ClassVar, Literal
 
+from pydantic import Field
+
 from untaped.sdk import OutcomeRecord, TargetRecord, UtcTimestamp
 
 
@@ -21,9 +23,11 @@ class WorkspaceRow(TargetRecord, kind="workspace.workspace"):
     table_columns: ClassVar[tuple[str, ...]] = ("name", "repos", "created_at", "archived_at")
 
     name: str
-    repos: int
+    repos: int = Field(description="How many repos the workspace holds.")
     created_at: UtcTimestamp
-    archived_at: UtcTimestamp | None = None
+    archived_at: UtcTimestamp | None = Field(
+        default=None, description="When it was archived; null while active."
+    )
 
 
 RepoAction = Literal["created", "checked_out", "unchanged", "failed"]
@@ -37,7 +41,12 @@ class RepoOutcome(OutcomeRecord, TargetRecord, kind="workspace.repo_outcome"):
     workspace: str
     repo: str
     dir: str
-    action: RepoAction
+    action: RepoAction = Field(
+        description=(
+            "`created`: a new branch from the base; `checked_out`: an existing branch "
+            "resumed, or a read-only checkout; `unchanged`: already in the workspace."
+        )
+    )
     branch: str | None = None
     base: str = ""
     read_only: bool = False
@@ -67,16 +76,29 @@ class StatusRow(TargetRecord, kind="workspace.status"):
     branch: str | None
     base: str
     read_only: bool
-    state: StatusState
-    upstream: str | None = None
+    state: StatusState = Field(
+        description=(
+            "`missing`: the repo directory is gone; `cache_missing`: the repo is missing "
+            "from the repo store; `error`: its git state can't be read."
+        )
+    )
+    upstream: str | None = Field(default=None, description="Null until the branch is on origin.")
     ahead: int = 0
     behind: int = 0
     modified: int = 0
     untracked: int = 0
     stashed: int = 0
     unpushed: int = 0
-    blockers: tuple[str, ...] = ()
-    detail: str = ""
+    blockers: tuple[str, ...] = Field(
+        default=(), description="Why the repo blocks `archive`; empty when it doesn't."
+    )
+    detail: str = Field(
+        default="",
+        description=(
+            "Why the repo's git state can't be read; with `--fetch`, why the fetch "
+            "failed, or that the history backfill stopped again (no error then)."
+        ),
+    )
 
 
 ArchiveAction = Literal["removed", "planned", "skipped", "failed"]
@@ -88,8 +110,14 @@ class ArchiveOutcome(OutcomeRecord, TargetRecord, kind="workspace.archive_outcom
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
 
     workspace: str
-    repo: str
-    action: ArchiveAction
+    repo: str = Field(description="Empty on the last row, the workspace directory itself.")
+    action: ArchiveAction = Field(
+        description=(
+            "`removed` or `failed` when it runs; `planned`, or `skipped` for a blocked "
+            "repo, on a preview or a refusal. The workspace row is `skipped` when other "
+            "files stay in its directory."
+        )
+    )
     detail: str = ""
 
 
@@ -101,8 +129,10 @@ class RemoveOutcome(OutcomeRecord, TargetRecord, kind="workspace.remove_outcome"
 
     ``released``: the repo store kept the repo for someone else (``detail``
     names who); ``removed``: it went (``freed_bytes``); ``kept``: another
-    workspace still uses it. A last row with an empty ``repo`` is the
-    workspace itself.
+    workspace still uses it, or a workspace worktree was added to it
+    meanwhile; ``skipped``: it is not in the repo store. On a preview or a
+    refusal: ``planned``, or ``skipped`` for a blocked repo. A last row with
+    an empty ``repo`` is the workspace itself.
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
@@ -111,7 +141,7 @@ class RemoveOutcome(OutcomeRecord, TargetRecord, kind="workspace.remove_outcome"
     repo: str
     action: RemoveAction
     detail: str = ""
-    freed_bytes: int = 0
+    freed_bytes: int = Field(default=0, description="The space a `removed` repo took.")
 
 
 ResolveAction = Literal["updated", "unchanged", "skipped", "failed"]
@@ -153,7 +183,10 @@ class RunOutcome(OutcomeRecord, TargetRecord, kind="workspace.run_outcome"):
     repo: str
     dir: str
     action: RunAction
-    returncode: int | None = None
+    returncode: int | None = Field(
+        default=None,
+        description="Null for a timeout or a repo not run; negative for a signal.",
+    )
     stdout: str = ""
     stderr: str = ""
     duration_s: float = 0.0
