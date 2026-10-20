@@ -132,9 +132,9 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
 
         Read-only. `--only` plans the services among the sections it names.
         The `profile` row comes before every service row, since they name
-        the profile. A service whose token comes from its conventional
-        variable (such as `$GITHUB_TOKEN`) counts as set up only alongside
-        its `base_url`.
+        the profile. A service whose token comes only from its conventional
+        variable (such as `$JIRA_API_TOKEN`) counts as set up only once it
+        has a `base_url`, its own or the service's default (GitHub has one).
         Each row's `run` is the complete argv to pass after `untaped`; every
         one but `profile create` starts with `--profile NAME`, so it acts on
         that profile. A `<NAME>` token in it (`<URL>`, `<COMMAND>`) is a value

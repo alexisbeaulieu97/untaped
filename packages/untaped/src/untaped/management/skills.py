@@ -275,7 +275,8 @@ def check_installed_skills(
     ``~/.untaped/backups/skills``) and updates other outdated copies; ``warn``
     reports them; ``off`` does nothing. Without ``allow_updates`` (after a
     failed or previewing command) nothing is written: ``auto`` leaves stubs
-    for the next successful command and warns about copies. A project's own roots
+    and copies to convert for the next successful command and warns about
+    other copies. A project's own roots
     are never written: old copies there are reported, stubs never. Skills no
     composed plugin ships are left to ``untaped doctor``.
     """
