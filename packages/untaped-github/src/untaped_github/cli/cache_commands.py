@@ -214,12 +214,11 @@ def delete_command(
     untaped github never changes GitHub. This releases github's part of each
     repo: its refs, its ``untaped-github.json`` and its worktrees. A repo
     something else still holds stays, and its row says what. It runs
-    ``git``, which must be on ``PATH``. Pass
-    ``OWNER/NAME`` arguments or ``--all`` (every repo github has stored), not
-    both; ``--org`` narrows the selection; there is no ``--team``, because github
-    doesn't record team membership. A named repo that isn't cached exits 1
-    before anything is deleted. The next sweep that covers a deleted repo
-    fetches it again.
+    ``git``, which must be on ``PATH``. Pass ``OWNER/NAME`` arguments or
+    ``--all`` (every repo github has stored), not both; ``--org`` narrows
+    the selection; there is no ``--team``, because github doesn't record
+    team membership. A named repo that isn't cached exits 1 before anything
+    is deleted. The next sweep that covers a deleted repo fetches it again.
 
     Examples
     --------

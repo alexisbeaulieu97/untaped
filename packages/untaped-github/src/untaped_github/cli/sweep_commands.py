@@ -207,10 +207,10 @@ def sweep_command(
     contents by object id, a filesystem or Git error); report those repos as
     unknown, not as non-matching. A failed refresh falls back to a stored
     copy that covers the query, counted as cached (``refresh failed for N
-    repos; scanned cached copies``); without one the repo is unscanned. Bad credentials (exit 4),
-    rate limits (exit 5), or every explicitly named repo failing to resolve
-    stop the whole sweep. Sweeps running at once are safe: the store locks
-    each repo while it changes it.
+    repos; scanned cached copies``); without one the repo is unscanned. Bad
+    credentials (exit 4), rate limits (exit 5), or every explicitly named
+    repo failing to resolve stop the whole sweep. Sweeps running at once are
+    safe: the store locks each repo while it changes it.
 
     ``untaped agents github scopes`` explains scopes and chaining sweeps
     through ``--stdin``.
