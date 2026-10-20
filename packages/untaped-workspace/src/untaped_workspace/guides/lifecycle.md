@@ -13,10 +13,9 @@ the repos).
 
 - A workspace name is one path segment: letters, digits, `.`, `_` and `-`,
   not starting with `.`. Anything else exits 2. A name is never a path.
-- Inside a workspace directory, every command but `create` takes the
-  workspace from the current directory when NAME is left out; outside one,
-  leaving it out exits 2. The checkouts already there are the workspace's
-  repos.
+- Inside a workspace directory, every command that takes NAME, except
+  `create` and `remove`, takes the workspace from the current directory when
+  NAME is left out; outside one, leaving it out exits 2.
 - Each repo directory is the repo name. When two repos in one workspace
   share a name, the later ones use `OWNER-NAME`.
 
@@ -28,8 +27,7 @@ the repos).
   every installed repo source lists (the plugins under "Where the repos you
   can name in workspace commands come from" on `untaped agents workspace`).
   The lists are cached (`workspace.caches.repo_source_repos.max_age_seconds`).
-  An unknown name exits 2 and suggests close matches; an ambiguous one exits
-  2 and lists the candidates. When two sources list the same name,
+  When two sources list the same name,
   `untaped plugin rank workspace.repo_source repos PLUGIN...` sets their order.
 - A clone URL: `https://…`, `ssh://…` or `user@host:path`. It skips the
   lookup, and its repo is named by its path (`acme/api`). Local paths and
@@ -40,18 +38,17 @@ The source decides each repo's clone URL, and the URL is saved with the
 workspace; `untaped workspace repos resolve NAME` asks again after a source's
 setting changes.
 
-Git never prompts for credentials. Fetching from a host a plugin claims uses
-that plugin's token, and `git push` in a worktree asks
-`untaped git credential` after your own credential helpers. Any other host needs a
-credential helper or an SSH agent.
+The git untaped runs never prompts for credentials. Fetching from a host a
+plugin claims uses that plugin's token. Over https, `git push` in a worktree
+asks `untaped git credential` after your own credential helpers (instead of
+them with `git.untaped_helper_only`). Any other host needs a credential
+helper or an SSH agent.
 
 ## Branches and bases
 
-Writable repos share one branch: `--branch`, else `workspace.branch_template`
-with `{name}` replaced by the workspace name. Every repo, read-only ones
-included, is based on `--base`, else the repo's default branch. `--base`
-names a branch or a tag on origin; a branch wins when both exist, and a base
-that is neither fails that repo as `not_found`.
+Writable repos share one branch, and every repo, read-only ones included,
+has one base. A base names a branch or a tag on origin; a branch wins when
+both exist, and a base that is neither fails that repo as `not_found`.
 
 How a writable repo is checked out, with the row's `action` and `detail`:
 
@@ -72,11 +69,6 @@ another workspace is a `failed` row with category `conflict`.
 (`read-only at origin/BASE`, or `read-only at tag BASE`). A commit made there is on no
 branch, so archiving counts it as unpushed and refuses.
 
-Each repo is independent: repos that succeed stay in the workspace even when
-another fails, and the command exits 1.
-`untaped workspace add NAME --repo OWNER/NAME` retries the failed ones; repos already present report
-`unchanged`.
-
 ## The history backfill
 
 The repo store keeps repos blobless. After the worktree is in place, `create`
@@ -88,7 +80,8 @@ command exits 0, a warning names the repo, and
 
 ## Archiving
 
-`archive` checks each repo offline, so push (or fetch) first. A repo blocks
+`archive` checks each repo offline: it sees origin as of the last push or
+fetch. A repo blocks
 archiving with any of:
 
 - uncommitted changes;
@@ -101,10 +94,9 @@ archiving with any of:
 
 While any repo blocks, archive exits 1, removes nothing, and its hint says
 what to do for each blocker. `untaped workspace status NAME --check` reports
-the same blockers and exits 3 (1 when a repo's git state is unreadable);
-`archive --dry-run` only previews and exits 0 even when repos would block.
+the same blockers.
 
-`--force` archives anyway after a confirmation: it discards uncommitted work
+`--force` archives a blocked workspace after a confirmation: it discards uncommitted work
 and commits made in a read-only repo, which cannot be recovered, and removes
 the directories. Branch commits and stashes stay in the repo store. Without
 `--force`, each repo is checked again just before it is removed, and work
@@ -130,7 +122,7 @@ repo itself goes when no other plugin uses it.
 
 - The workspace's own branch with commits no remote branch has refuses the
   removal (exit 1, "branch BRANCH: N commits not pushed"); `--force` deletes
-  it.
+  it, and also a worktree git refuses to remove.
 - Other branches with unpushed commits or a stash made on them stay and keep
   the repo (`held by branches` in `untaped git store`); `--force` deletes
   them too, and the preview and the confirmation name them. A stash itself

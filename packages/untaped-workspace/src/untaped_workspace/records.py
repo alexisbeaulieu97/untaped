@@ -92,7 +92,13 @@ class StatusRow(TargetRecord, kind="workspace.status"):
     blockers: tuple[str, ...] = Field(
         default=(), description="Why the repo blocks `archive`; empty when it doesn't."
     )
-    detail: str = ""
+    detail: str = Field(
+        default="",
+        description=(
+            "With `--fetch`: why the fetch failed, or that the history backfill stopped "
+            "again (no error then)."
+        ),
+    )
 
 
 ArchiveAction = Literal["removed", "planned", "skipped", "failed"]
@@ -107,8 +113,9 @@ class ArchiveOutcome(OutcomeRecord, TargetRecord, kind="workspace.archive_outcom
     repo: str = Field(description="Empty on the last row, the workspace directory itself.")
     action: ArchiveAction = Field(
         description=(
-            "`planned` and `skipped` on a preview or a refusal; a `skipped` workspace "
-            "row means other files stay in its directory."
+            "`removed` or `failed` when it runs; `planned`, or `skipped` for a blocked "
+            "repo, on a preview or a refusal. The workspace row is `skipped` when other "
+            "files stay in its directory."
         )
     )
     detail: str = ""
@@ -122,8 +129,9 @@ class RemoveOutcome(OutcomeRecord, TargetRecord, kind="workspace.remove_outcome"
 
     ``released``: the repo store kept the repo for someone else (``detail``
     names who); ``removed``: it went (``freed_bytes``); ``kept``: another
-    workspace still uses it. A last row with an empty ``repo`` is the
-    workspace itself.
+    workspace still uses it, or a workspace worktree was added to it
+    meanwhile; ``skipped``: it is not in the repo store. A last row with an
+    empty ``repo`` is the workspace itself.
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")

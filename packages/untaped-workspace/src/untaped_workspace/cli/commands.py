@@ -118,8 +118,8 @@ def create_command(
 
     Without --repo, --read-only or --stdin, a terminal opens the repo picker,
     which also confirms with no repos selected; without a terminal, or with
-    --empty, `create NAME` makes an empty workspace to `add` to, and `create`
-    with no NAME exits 2. --empty with repo options, --branch or --base exits 2.
+    --empty, `create NAME` makes an empty workspace (for `workspace add`),
+    and `create` with no NAME exits 2. --empty with repo options, --branch or --base exits 2.
 
     Each repo is one row: `created` (a new branch from the base),
     `checked_out` (an existing branch resumed, or a read-only checkout) or
@@ -127,7 +127,7 @@ def create_command(
     `add` retries the failed ones. An unknown or ambiguous repo name exits 2
     with candidates. --stdin reads names or URLs, or `workspace.repo` records
     and the repo records a repo source reads (`github.repo`, say); a record
-    of a kind no source reads exits 2.
+    without a kind, or of a kind no source reads, exits 2.
 
     In table format the workspace path is the last stdout line (the only one
     with -q), so `cd "$(untaped -q workspace create ...)"` works. A name
@@ -357,8 +357,9 @@ def archive_command(
     stashed or unpushed work, unless --force. Local branches stay in the
     repo store, so a later `create` with the same branch resumes the work;
     `remove` gives the space back. --dry-run previews with `planned` and
-    `skipped` rows and exits 0. --force confirms first, and without a
-    terminal needs --yes (else exit 2). What blocks, and what --force
+    `skipped` rows and exits 0, even when repos would block. --force on a
+    blocked workspace confirms first, and without a terminal needs --yes
+    (else exit 2). What blocks, and what --force
     discards: `untaped agents workspace lifecycle`.
 
     Examples
@@ -542,8 +543,8 @@ def run_command(
 
     A shell string runs as `sh -c -- CMD`, so pipes and `&&` work. A file,
     resolved against the current directory, runs directly when it is
-    executable and starts with `#!`, else through `sh`. `-` reads the script
-    from stdin; nothing piped, or `-` with --stdin, exits 2. A command that
+    executable and starts with `#!`, else through `sh`. A CMD of `-` reads
+    the script from stdin; nothing piped, or `-` with --stdin, exits 2. A command that
     starts with a hyphen goes after `--`; a lone word starting with `--` is
     taken as a mistyped option (exit 2).
 
@@ -554,11 +555,12 @@ def run_command(
     it exits, except ones in their own session or process group (`setsid`).
     There is no preview.
 
-    Only writable repos run, unless --include-read-only. --stdin reads repo
+    Only writable repos run, unless --include-read-only: without it, naming
+    a read-only repo with --repo exits 2, and --stdin drops read-only repos,
+    so a whole workspace's `status` rows pipe straight in. --stdin reads repo
     names, or `workspace.status`, `workspace.repo_outcome` or
-    `workspace.run_outcome` records; read-only repos and other workspaces'
-    records are dropped, so a whole workspace's `status` rows pipe straight
-    in. With --repo as well, both sets run. When nothing is left to run, it
+    `workspace.run_outcome` records, ignoring other workspaces' records.
+    With --repo as well, both sets run. When nothing is left to run, it
     warns and exits 0.
 
     Every selected repo runs, and the exit is 1 when any failed: a non-zero
@@ -572,6 +574,7 @@ def run_command(
     ```console
     $ untaped workspace run PROJ-123 'git push -u origin HEAD'
     $ untaped workspace run PROJ-123 ./bump.sh
+    $ untaped workspace run PROJ-123 - < rebase.sh
     $ untaped workspace status PROJ-123 -f pipe | untaped workspace run PROJ-123 'git stash' --stdin
     ```
     """
