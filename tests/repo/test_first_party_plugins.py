@@ -110,7 +110,7 @@ def test_first_party_spec_ships_a_lazy_app_and_one_skill(
     assert isinstance(spec.app_factory(), App)
     (skill,) = spec.skills
     assert skill.name == f"untaped-{name}"
-    assert skill.source.joinpath("SKILL.md").is_file()
+    assert skill.source is None or skill.source.joinpath("SKILL.md").is_file()
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)

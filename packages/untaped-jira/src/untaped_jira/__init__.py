@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from importlib.resources import files
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import PluginSpec, SkillAsset, connection_check, online_check
@@ -32,18 +31,18 @@ def _probe_api() -> str:
 SPEC = PluginSpec(
     name="jira",
     app_factory=build_app,
-    help="Manage Jira Data Center issues from untaped.",
+    help="Manage Jira Data Center and self-hosted Jira issues; not Jira Cloud.",
     settings=JiraSettings,
+    guides=files("untaped_jira") / "guides",
     skills=(
         SkillAsset(
             name="untaped-jira",
-            source=Path(str(files("untaped_jira").joinpath("skills", "untaped-jira"))),
             description=(
-                "Works with Jira Data Center or Server issues through the `untaped jira` command "
-                "(JQL search, reading, creating, editing, assigning, commenting on, linking and "
-                "transitioning issues, and listing projects, boards and sprints). Use when the "
-                "user mentions Jira, an issue key such as OPS-123, JQL, a sprint or board, or "
-                "moving an issue to another status."
+                "Jira Data Center and self-hosted Jira issues (not Jira Cloud): JQL searches, "
+                "issue fields, assignees, comments, links and workflow transitions, plus "
+                "projects, boards and sprints. Use when the work concerns a Jira issue or an "
+                "issue key such as OPS-123, JQL, a sprint or board, or moving an issue to "
+                "another status."
             ),
         ),
     ),

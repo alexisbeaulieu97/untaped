@@ -45,8 +45,10 @@ from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.sdk import SkillAsset
 from untaped_awx.domain.suites.suite_starter import starter_suite
 
-#: Each first-party plugin's skill; the shell's own is a stub.
-SKILL_NAMES = tuple(f"untaped-{name}" for name in FIRST_PARTY)
+#: First-party plugins whose skill is already a stub, like the shell's own.
+STUBBED = frozenset({"jira"})
+#: Each first-party plugin's skill copy.
+SKILL_NAMES = tuple(f"untaped-{name}" for name in FIRST_PARTY if name not in STUBBED)
 
 
 #: The skill template's sections (docs/plugin-skills.md), in order.
