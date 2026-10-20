@@ -1,4 +1,6 @@
-# Policies, states and what each command does
+---
+description: "Read before running sync or apply on a machine with enabled items: each path state, what each policy does to it, and when a clone is pulled."
+---
 
 ## States of a placed path
 
@@ -17,7 +19,8 @@
 
 A `link` file is `behind` when the fetched ref changed its source and the
 clone has not been pulled yet; in a registered checkout it is never
-`behind`.
+`behind`. `status` reads nothing from the network, so its `behind` is as of
+the last `sync` or fetch.
 
 ## What `sync` does
 
@@ -54,7 +57,9 @@ carrying an `error` too.
   confirmation.
 - A dirty working tree refuses the fast-forward; the repo row fails with a
   hint to commit or discard the changes.
-- A registered checkout (`subscribe PATH`) is fetched, never pulled.
+- A registered checkout (`subscribe PATH`) is fetched, never pulled: its
+  link files show whatever its working tree holds, and `repos` shows it
+  behind.
 
 ## What `apply` does
 
@@ -62,8 +67,9 @@ carrying an `error` too.
 `foreign`, `behind` and `missing` are applied, `orphan` is removed, and
 `modified` or `conflict` is refused (row action `conflict`, exit 1) unless
 `--force`, which keeps the local version aside. `apply --dry-run` shows the
-plan as rows; `untaped dotfiles diff` shows what it would change in `copy` and
-`merge` files, as a unified diff.
+plan as rows; `untaped dotfiles diff` shows what it would change in `copy`
+and `merge` files, as a unified diff, which is also what `--force` would
+replace.
 
 ## What `remove` does
 

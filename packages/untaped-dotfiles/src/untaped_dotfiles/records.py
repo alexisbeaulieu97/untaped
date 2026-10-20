@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import ClassVar, Literal
 
+from pydantic import Field
+
 from untaped.sdk import OutcomeRecord, Record, TargetRecord, UtcTimestamp
 from untaped_dotfiles.domain.models import Mode, Policy
 from untaped_dotfiles.domain.status import FileState
@@ -73,7 +75,9 @@ class StatusRow(TargetRecord, kind="dotfiles.status"):
     source: str
     mode: Mode
     policy: Policy
-    state: FileState
+    state: FileState = Field(
+        description="The path's state; `untaped agents dotfiles policies` explains each one."
+    )
     detail: str = ""
 
 
@@ -121,7 +125,11 @@ class PlaceOutcome(OutcomeRecord, TargetRecord):
     source: str
     mode: Mode
     action: PlaceAction
-    state: FileState | None = None
+    state: FileState | None = Field(
+        default=None,
+        description="The path's state before the action; `untaped agents dotfiles policies` "
+        "says what each policy does in each state.",
+    )
     detail: str = ""
 
 

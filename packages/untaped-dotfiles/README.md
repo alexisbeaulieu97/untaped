@@ -32,7 +32,8 @@ items:
 ```
 
 Every entry key, the three modes, per-OS and per-tag filters and how a
-directory source is placed are in [the manifest](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/references/manifest.md).
+directory source is placed are in [the manifest guide](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/guides/manifest.md)
+(`untaped agents dotfiles manifest`).
 Where clones, kept files and state live, and the machine's tags and OS,
 are in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#dotfiles).
@@ -71,7 +72,8 @@ untaped dotfiles apply fish
 It only ever writes a path that is absent or still exactly what the tool
 wrote, so it never prompts and never loses a local edit. What each policy
 does to a path in each state, and when a clone is pulled, is in
-[policies](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/references/policies.md).
+[the policies guide](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/guides/policies.md)
+(`untaped agents dotfiles policies`).
 A timer is the machine's business (a launchd agent on macOS, a systemd
 user timer on Linux); `untaped dotfiles sync` is what it runs.
 
@@ -92,7 +94,7 @@ format = "[⇣ $output dotfiles]($style) "
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/skills/untaped-dotfiles/SKILL.md) is the full reference: every command, the manifest, the policy table and the pitfalls. Install it for your agent with `untaped skills install dotfiles --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped dotfiles COMMAND --help` lists each command's options.
+For an agent, `untaped agents dotfiles` is the reference this install generates: each command with its options, the settings, and the manifest and policies guides ([agent pages](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/agent-pages.md)). Run `untaped skills install dotfiles --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) so the agent knows to read it; for people, `untaped dotfiles COMMAND --help` covers one command.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#dotfiles) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#dotfiles)

@@ -1,7 +1,10 @@
-# The manifest
+---
+description: "Read before writing or changing a dotfiles.yml manifest: its entries, the three modes, per-machine filters and directory sources."
+---
 
-`dotfiles.yml` at the repo root (`subscribe --manifest PATH` names another
-file). `version: 1` is the only version; a newer one is refused.
+A repo's manifest is `dotfiles.yml` at its root (`subscribe --manifest PATH`
+names another file). `version: 1` is the only version; a newer one is
+refused.
 
 ```yaml
 version: 1

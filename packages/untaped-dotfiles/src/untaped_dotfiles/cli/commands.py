@@ -103,8 +103,14 @@ def subscribe_command(
 ) -> None:
     """Subscribe to a repo: clone a URL under dotfiles.repos_dir, or register a checkout.
 
-    Nothing is enabled yet: the manifest's items are listed, and `enable`
-    picks them. A registered checkout is fetched but never pulled.
+    Nothing is enabled yet: the manifest's items are listed, with the policy
+    each suggests and why one does not apply on this machine, and `enable`
+    picks them. A registered checkout is fetched but never pulled: its link
+    files show whatever its working tree holds, and `repos` shows it behind.
+
+    Git runs without prompting for credentials, so a private repo needs a
+    credential helper or an SSH agent. `untaped agents dotfiles manifest`
+    explains the manifest.
     """
     with report_errors():
         check_columns(ItemRow, columns=columns, fmt=fmt)
@@ -183,7 +189,11 @@ def items_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List manifest items with the suggested policy and this machine's choice."""
+    """List manifest items with the suggested policy and this machine's choice.
+
+    `untaped agents dotfiles manifest` explains the `os`, `only` and `unless`
+    filters that exclude an item on this machine.
+    """
     with report_errors():
         svc = services()
         rows = svc.catalog.rows(repo, include_excluded=all_items)
@@ -296,8 +306,10 @@ def status_command(
 ) -> None:
     """Show the state of every placed path, offline.
 
-    A path that could not be read exits 1. Run without ITEM or --repo, it also
-    rewrites status.json and attention.
+    It reads nothing from the network, so `behind` is as of the last `sync`
+    or fetch. A path that could not be read exits 1. Run without ITEM or
+    --repo, it also rewrites status.json and attention. `untaped agents
+    dotfiles policies` explains each state.
     """
     with report_errors():
         svc = services()
@@ -395,8 +407,12 @@ def apply_command(
 
     Fetches their repos first and fast-forwards a clone when the item has a
     link file in it, which moves every other link file on that clone too; the
-    plan lists those paths. Refuses paths edited on this machine unless --force.
-    Rewrites status.json and attention afterwards.
+    plan lists those paths. A local file in the way of a new path is kept
+    under dotfiles.kept_dir, and the row says where. Refuses paths edited on
+    this machine (a `conflict` row, exit 1) unless --force; `diff` shows what
+    --force would replace in copy and merge files. Rewrites status.json and
+    attention afterwards. `untaped agents dotfiles policies` explains what
+    each state gets.
     """
     with report_errors():
         svc = services()
@@ -446,8 +462,11 @@ def sync_command(
 ) -> None:
     """Fetch every repo, apply the `sync` items, report the rest. Safe for a timer.
 
-    Never prompts and never overwrites a path edited on this machine. Exits 3
-    when anything needs the user, 1 when an apply or a git operation failed.
+    Never prompts and never overwrites a path edited on this machine. A clone
+    is fast-forwarded only when every enabled link file in it is a `sync`
+    item. Exits 3 when anything needs the user, 1 when an apply or a git
+    operation failed. `untaped agents dotfiles policies` has the table of
+    what each policy does in each state.
     """
     with report_errors():
         svc = services()
