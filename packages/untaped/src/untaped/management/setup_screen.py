@@ -298,7 +298,7 @@ def _register() -> object:
     from untaped.refs import register_this_install  # noqa: PLC0415 - off the startup path
 
     ref, _changed = register_this_install()
-    held = ", ".join(ref.targets) or "no stores"
+    held = ", ".join(target.describe() for target in ref.targets) or "no stores"
     return Registered(f"registered this install, {ref.describe()} ({held})")
 
 

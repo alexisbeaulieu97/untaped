@@ -11,6 +11,7 @@ import pytest
 
 from untaped import refs
 from untaped.errors import ConfigError
+from untaped.refs import RefTarget
 from untaped.store import Store
 from untaped.testing import write_reference
 
@@ -53,7 +54,7 @@ def test_a_source_tree_has_no_environment(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(refs, "distribution", missing)
     assert refs.environment() is None
     with pytest.raises(ConfigError, match="source tree"):
-        refs.register(["acme.data@1"])
+        refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     assert refs.unregister() is None
     assert refs.this_install() is None
 
@@ -68,7 +69,12 @@ def test_the_real_environment_is_the_directory_holding_untaped() -> None:
 
 
 def test_register_writes_one_file_for_this_install(site: Path) -> None:
-    ref = refs.register(["acme.data@2", "ansible.index@4"])
+    ref = refs.register(
+        [
+            RefTarget(plugin="acme", store="data", layout=2),
+            RefTarget(plugin="ansible", store="index", layout=4),
+        ]
+    )
 
     holder = refs.install_holder(site)
     assert ref.file == refs.refs_dir() / f"install-{holder.partition(':')[2]}.json"
@@ -78,15 +84,18 @@ def test_register_writes_one_file_for_this_install(site: Path) -> None:
         "holder": holder,
         "anchor": str(site),
         "version": "11.1.0",
-        "targets": ["acme.data@2", "ansible.index@4"],
+        "targets": [
+            {"plugin": "acme", "store": "data", "layout": 2},
+            {"plugin": "ansible", "store": "index", "layout": 4},
+        ],
     }
     assert refs.this_install() == ref
     assert ref.live and not ref.pre_upgrade
-    assert ref.layouts("acme.data") == {2}
+    assert ref.layouts("acme", "data") == {2}
 
 
 def test_unregister_removes_the_file(site: Path) -> None:
-    refs.register(["acme.data@1"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     removed = refs.unregister()
     assert removed is not None and not removed.file.exists()
     assert refs.unregister() is None
@@ -98,7 +107,11 @@ def test_a_holder_name_becomes_a_safe_file_name() -> None:
     file = refs.reference_file(long)
     assert ":" not in file.name
     assert len(file.name.encode()) < 255
-    write_reference(long, ["git.store#github.com/acme/pay"], plugin="workspace")
+    write_reference(
+        long,
+        [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
+        plugin="workspace",
+    )
     [ref] = refs.read_references()
     assert ref.holder == long  # the full holder lives inside the file
     assert ref.kind == "workspace" and ref.plugin == "workspace"
@@ -106,7 +119,12 @@ def test_a_holder_name_becomes_a_safe_file_name() -> None:
 
 def test_a_reference_is_live_while_its_directory_holds_untaped(tmp_path: Path) -> None:
     env = _install(tmp_path / "other", "11.0.0")
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@1"], anchor=env, version="11.0.0")
+    write_reference(
+        "install:aaaaaaaaaaaa",
+        [RefTarget(plugin="acme", store="data", layout=1)],
+        anchor=env,
+        version="11.0.0",
+    )
     [ref] = refs.read_references()
     assert ref.live and not ref.pre_upgrade
 
@@ -120,18 +138,35 @@ def test_a_reference_is_live_while_its_directory_holds_untaped(tmp_path: Path) -
 
 
 def test_an_anchorless_holder_lives_until_released() -> None:
-    write_reference("workspace:pay", ["git.store#github.com/acme/pay"], plugin="workspace")
+    write_reference(
+        "workspace:pay",
+        [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
+        plugin="workspace",
+    )
     [ref] = refs.read_references()
     assert ref.live
-    assert refs.holders("git.store#github.com/acme/pay") == ["workspace:pay"]
+    assert refs.holders(RefTarget(plugin="git", store="store", item="github.com/acme/pay")) == [
+        "workspace:pay"
+    ]
 
 
 def test_holders_lists_only_live_references(tmp_path: Path) -> None:
     alive = _install(tmp_path / "alive")
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@1"], anchor=alive, version="11.1.0")
-    write_reference("install:bbbbbbbbbbbb", ["acme.data@1"], anchor=tmp_path / "gone")
-    assert refs.holders("acme.data@1") == ["install:aaaaaaaaaaaa"]
-    assert refs.holders("acme.data@2") == []
+    write_reference(
+        "install:aaaaaaaaaaaa",
+        [RefTarget(plugin="acme", store="data", layout=1)],
+        anchor=alive,
+        version="11.1.0",
+    )
+    write_reference(
+        "install:bbbbbbbbbbbb",
+        [RefTarget(plugin="acme", store="data", layout=1)],
+        anchor=tmp_path / "gone",
+    )
+    assert refs.holders(RefTarget(plugin="acme", store="data", layout=1)) == [
+        "install:aaaaaaaaaaaa"
+    ]
+    assert refs.holders(RefTarget(plugin="acme", store="data", layout=2)) == []
 
 
 @pytest.mark.parametrize(
@@ -142,6 +177,16 @@ def test_holders_lists_only_live_references(tmp_path: Path) -> None:
         ("not json", "unreadable"),
         ("[]", "unreadable"),
         ('{"untaped": "1", "targets": []}', "unreadable"),
+        ('{"untaped": "1", "holder": "x", "targets": ["acme.data@1"]}', "malformed"),
+        (
+            '{"untaped": "1", "holder": "x", "targets": [{"plugin": "acme", "store": "data"}]}',
+            "malformed",
+        ),
+        (
+            '{"untaped": "1", "holder": "x", "targets": '
+            '[{"plugin": "acme", "store": "data", "layout": "1"}]}',
+            "malformed",
+        ),
     ],
 )
 def test_an_unreadable_or_newer_reference_is_opaque(content: str, why: str) -> None:
@@ -151,8 +196,8 @@ def test_an_unreadable_or_newer_reference_is_opaque(content: str, why: str) -> N
     [ref] = refs.read_references()
     assert ref.opaque is not None and why in ref.opaque
     assert ref.live  # it pauses pruning
-    with pytest.raises(ConfigError, match=r"cannot tell who holds acme\.data@1"):
-        refs.holders("acme.data@1")  # unknown, never "nobody"
+    with pytest.raises(ConfigError, match=r"cannot tell who holds acme\.data layout 1"):
+        refs.holders(RefTarget(plugin="acme", store="data", layout=1))  # unknown, never "nobody"
 
 
 def test_a_missing_folder_has_no_references() -> None:
@@ -165,7 +210,7 @@ def test_a_missing_folder_has_no_references() -> None:
 @pytest.fixture
 def composed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """What this run's composition declares; a test edits it."""
-    targets = ["acme.data@1"]
+    targets = [RefTarget(plugin="acme", store="data", layout=1)]
     monkeypatch.setattr(refs, "composed_targets", lambda: tuple(targets))
     return targets
 
@@ -173,26 +218,32 @@ def composed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 def test_a_registered_install_refreshes_on_its_first_store_open(
     site: Path, composed: list[str], tmp_path: Path
 ) -> None:
-    ref = refs.register(["acme.data@1"])
-    composed[:] = ["acme.data@2"]  # upgraded in place: same directory, new layout
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
+    composed[:] = [
+        RefTarget(plugin="acme", store="data", layout=2)
+    ]  # upgraded in place: same directory, new layout
 
     Store("acme", "data", base=lambda: tmp_path / "data.db", layout=2).open()
 
-    assert json.loads(ref.file.read_text())["targets"] == ["acme.data@2"]
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 2}
+    ]
 
 
 def test_the_refresh_runs_once_per_process(site: Path, composed: list[str], tmp_path: Path) -> None:
-    ref = refs.register(["acme.data@1"])
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     refs.refresh()
-    composed[:] = ["acme.data@9"]
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=9)]
     refs.refresh()
-    assert json.loads(ref.file.read_text())["targets"] == ["acme.data@1"]
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 1}
+    ]
 
 
 def test_an_unchanged_reference_is_not_rewritten(
     site: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    refs.register(["acme.data@1"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     writes: list[object] = []
     monkeypatch.setattr(refs, "atomic_write", lambda *args, **_kw: writes.append(args))
     refs.refresh()
@@ -207,16 +258,18 @@ def test_no_run_registers(site: Path, composed: list[str], tmp_path: Path) -> No
 def test_a_refresh_without_a_composition_keeps_the_file(
     site: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ref = refs.register(["acme.data@1"])
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     monkeypatch.setattr(refs, "composed_targets", lambda: None)
     refs.refresh()
-    assert json.loads(ref.file.read_text())["targets"] == ["acme.data@1"]
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 1}
+    ]
 
 
 def test_a_read_only_refs_folder_gives_no_error(
     site: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    refs.register(["acme.data@0"])
+    refs.register([RefTarget(plugin="acme", store="data", layout=0)])
 
     def refused(*_args: object, **_kwargs: object) -> None:
         raise PermissionError("read-only")
@@ -235,4 +288,7 @@ def test_the_composition_names_every_declared_store() -> None:
     spec = PluginSpec(name="acme", stores=(data, other))
     with kept_composition(quiet=True):
         compose_root(candidates=[plugin_candidate(spec)])
-        assert refs.composed_targets() == ("acme.catalogue@1", "acme.data@3")
+        assert refs.composed_targets() == (
+            RefTarget(plugin="acme", store="catalogue", layout=1),
+            RefTarget(plugin="acme", store="data", layout=3),
+        )

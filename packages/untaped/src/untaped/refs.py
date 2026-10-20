@@ -12,9 +12,9 @@ until its holder removes it. A dead reference counts for nothing, but its file
 is never another process's to delete: ``setup register --remove`` or the
 previewed ``setup migrate-dirs`` row removes it.
 
-A target is ``<plugin>.<store>@<layout>`` (a layout) or
-``<plugin>.<store>#<item>`` (an item in a store); ``docs/caches.md`` defines
-the grammar. No clock is read anywhere.
+Each target is a :class:`RefTarget`, written as a JSON object: a layout of a
+store, or one item of a store that keeps one per item. No clock is read
+anywhere.
 """
 
 from __future__ import annotations
@@ -29,10 +29,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from untaped.errors import ConfigError
 from untaped.fs import atomic_write, file_lock
+from untaped.output.diagnostic import _is_none
 from untaped.settings import DEFAULT_CONFIG_PATH
 from untaped.stability import experimental
 
@@ -54,6 +57,37 @@ def refs_dir() -> Path:
     return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "refs"
 
 
+@experimental
+class RefTarget(BaseModel):
+    """What a reference keeps: one ``layout`` of a store, or one ``item`` in it.
+
+    ``RefTarget(plugin="acme", store="catalogue", layout=2)`` keeps a layout;
+    ``RefTarget(plugin="git", store="store", item="github.com/acme/pay")`` one
+    item of a store that keeps one per item. Exactly one of the two is set.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    plugin: str
+    store: str
+    layout: Annotated[int | None, Field(exclude_if=_is_none)] = None
+    item: Annotated[str | None, Field(exclude_if=_is_none)] = None
+
+    @model_validator(mode="after")
+    def _one_of(self) -> Self:
+        if (self.layout is None) == (self.item is None):
+            raise ValueError("a target names exactly one of layout or item")
+        return self
+
+    def describe(self) -> str:
+        """How a row names it: ``acme.catalogue layout 2`` or ``git.store item <item>``."""
+        what = f"layout {self.layout}" if self.item is None else f"item {self.item}"
+        return f"{self.plugin}.{self.store} {what}"
+
+    def _key(self) -> tuple[str, str, int, str]:
+        return (self.plugin, self.store, self.layout or 0, self.item or "")
+
+
 @dataclass(frozen=True)
 class Reference:
     """One holder's file, as read.
@@ -68,7 +102,7 @@ class Reference:
     anchor: Path | None = None
     plugin: str | None = None
     version: str | None = None
-    targets: tuple[str, ...] = ()
+    targets: tuple[RefTarget, ...] = ()
     opaque: str | None = None
 
     @property
@@ -90,14 +124,13 @@ class Reference:
         versions = _installed_versions(self.anchor)
         return bool(versions) and versions is not None and self.version not in versions
 
-    def layouts(self, store: str) -> set[int]:
-        """The layouts of ``store`` (``<plugin>.<store>``) this reference names."""
-        found: set[int] = set()
-        for target in self.targets:
-            name, at, layout = target.partition("@")
-            if at and name == store and layout.isdigit():
-                found.add(int(layout))
-        return found
+    def layouts(self, plugin: str, store: str) -> set[int]:
+        """The layouts of ``plugin``'s ``store`` this reference names."""
+        return {
+            target.layout
+            for target in self.targets
+            if target.plugin == plugin and target.store == store and target.layout is not None
+        }
 
     def describe(self) -> str:
         """How a row names the holder: ``untaped 11.1.0 at <env>``, or the holder itself."""
@@ -184,6 +217,10 @@ def read_reference(file: Path) -> Reference:
     holder, targets, anchor = data.get("holder"), data.get("targets"), data.get("anchor")
     if not isinstance(holder, str) or not holder or not isinstance(targets, list):
         return Reference(file, opaque="unreadable (no holder or targets)")
+    try:
+        read = tuple(RefTarget.model_validate(target) for target in targets)
+    except ValidationError:
+        return Reference(file, holder=holder, opaque="unreadable (a target is malformed)")
     return Reference(
         file,
         holder=holder,
@@ -191,13 +228,13 @@ def read_reference(file: Path) -> Reference:
         anchor=Path(anchor) if isinstance(anchor, str) and anchor else None,
         plugin=_text(data.get("plugin")) or None,
         version=_text(data.get("version")) or None,
-        targets=tuple(str(target) for target in targets if isinstance(target, str)),
+        targets=read,
     )
 
 
 @experimental
-def holders(target: str) -> list[str]:
-    """The live holders that name ``target`` (``<plugin>.<store>@<layout>`` or ``…#<item>``).
+def holders(target: RefTarget) -> list[str]:
+    """The live holders that name ``target``.
 
     What a resource asks before it removes something. Raises
     :class:`ConfigError` when a reference cannot be read (a newer untaped's,
@@ -208,7 +245,7 @@ def holders(target: str) -> list[str]:
     unknown = next((ref for ref in found if ref.opaque is not None), None)
     if unknown is not None:
         raise ConfigError(
-            f"cannot tell who holds {target}: {unknown.file} is {unknown.opaque}",
+            f"cannot tell who holds {target.describe()}: {unknown.file} is {unknown.opaque}",
             hint="upgrade this install, or fix or remove that file",
         )
     return [ref.holder for ref in found if target in ref.targets and ref.live]
@@ -225,8 +262,8 @@ def other_installs() -> list[Reference]:
     ]
 
 
-def composed_targets() -> tuple[str, ...] | None:
-    """``<plugin>.<store>@<layout>`` for every store this run's composition declares.
+def composed_targets() -> tuple[RefTarget, ...] | None:
+    """The layout of every store this run's composition declares.
 
     ``None`` when nothing is composed (a library call outside the CLI).
     """
@@ -238,9 +275,12 @@ def composed_targets() -> tuple[str, ...] | None:
         return None
     return tuple(
         sorted(
-            f"{store.qualified}@{store.layout}"
-            for registered in result.plugins
-            for store in registered.spec.stores
+            (
+                RefTarget(plugin=store.plugin, store=store.name, layout=store.layout)
+                for registered in result.plugins
+                for store in registered.spec.stores
+            ),
+            key=RefTarget._key,
         )
     )
 
@@ -254,7 +294,7 @@ def others_text() -> str:
     return ", ".join(ref.describe() for ref in other_installs())
 
 
-def register(targets: Sequence[str]) -> Reference:
+def register(targets: Sequence[RefTarget]) -> Reference:
     """Write this install's reference naming ``targets``; raise when it has no environment."""
     env = environment()
     if env is None:
@@ -367,7 +407,7 @@ def locked() -> Iterator[None]:
 @experimental
 def write_reference(
     holder: str,
-    targets: Sequence[str],
+    targets: Sequence[RefTarget],
     *,
     anchor: Path | None = None,
     plugin: str | None = None,
@@ -386,13 +426,13 @@ def write_reference(
         data["plugin"] = plugin
     if version is not None:
         data["version"] = version
-    data["targets"] = list(targets)
+    data["targets"] = [target.model_dump() for target in targets]
     file = reference_file(holder)
     atomic_write(file, json.dumps(data, indent=2) + "\n")
     return file
 
 
-def _write(holder: str, env: Path, targets: Sequence[str]) -> None:
+def _write(holder: str, env: Path, targets: Sequence[RefTarget]) -> None:
     try:
         write_reference(holder, targets, anchor=env, version=_version())
     except OSError as exc:
@@ -439,4 +479,4 @@ def _forget() -> None:
         _refreshed = False
 
 
-__all__ = ["holders"]
+__all__ = ["RefTarget", "holders"]

@@ -410,7 +410,7 @@ def _layout_state(
     holders = tuple(
         ref
         for ref in references
-        if ref.opaque is None and ref.live and layout in ref.layouts(store.qualified)
+        if ref.opaque is None and ref.live and layout in ref.layouts(store.plugin, store.name)
     )
     if bare and _there(layout_path(path, layout)):
         holders = ()  # a pre-11.1 rebuild beside the adopted file: no reference names this file
@@ -455,7 +455,10 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
     if damaged is not None:
         return damaged
     if not any(
-        ref.opaque is None and ref.live and ref.kind == "install" and ref.layouts(store.qualified)
+        ref.opaque is None
+        and ref.live
+        and ref.kind == "install"
+        and ref.layouts(store.plugin, store.name)
         for ref in references
     ):
         return Kept("unregistered", "no registered install keeps this store, so nothing cleans up")
@@ -498,7 +501,7 @@ def _held(store: Store, references: Sequence[Reference]) -> set[int]:
     held: set[int] = set()
     for ref in references:
         if ref.opaque is None and ref.live:
-            held |= ref.layouts(store.qualified)
+            held |= ref.layouts(store.plugin, store.name)
     return held
 
 
