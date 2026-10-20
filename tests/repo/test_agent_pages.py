@@ -1,6 +1,6 @@
 """``untaped agents`` over the first-party composition: every page renders and says true things.
 
-Every plugin's page and every command's page renders. The map's "Shared by
+Every plugin's page, every command's page and every guide renders. The map's "Shared by
 every command" section is generated, and each option it names exists: a root
 option, or one at least one composed command takes. Each command it quotes
 parses. Core's own commands keep their docstring ``Examples`` parsing too, as
@@ -17,6 +17,7 @@ from cyclopts import App
 from repo import quoted_commands
 from untaped.agents import page
 from untaped.agents._build import visible_children
+from untaped.agents._guides import guides
 from untaped.bootstrap import build_root_app, composition
 from untaped.conventions.help_tree import example_violations
 from untaped.plugins.registry import PluginCandidate
@@ -58,6 +59,18 @@ def test_every_plugin_and_command_page_renders(
                 continue
             command = page(root, result, [plugin, *path])
             assert command.endswith("The map of this untaped: `untaped agents`\n"), path
+
+
+def test_every_first_party_guide_renders(
+    first_party_candidates: tuple[PluginCandidate, ...],
+) -> None:
+    root = build_root_app(candidates=first_party_candidates)
+    result = composition()
+    for plugin in result.plugins:
+        for guide in guides(plugin.spec):
+            text = page(root, result, [plugin.spec.name, guide.name])
+            assert text.startswith(f"# {plugin.spec.name} {guide.name}"), guide.name
+            assert guide.problem is None, f"{plugin.spec.name} {guide.name}: {guide.problem}"
 
 
 def test_every_option_the_shared_section_names_exists(

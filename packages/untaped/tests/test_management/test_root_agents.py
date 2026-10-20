@@ -14,7 +14,9 @@ from __future__ import annotations
 import os
 import re
 import sys
+import zipfile
 from importlib import metadata
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Annotated
 
@@ -363,3 +365,122 @@ def test_a_project_the_running_untaped_satisfies_adds_nothing(
     monkeypatch.chdir(tmp_path)
     _, out, _ = _run()
     assert out.splitlines()[2] == ""
+
+
+# --- guides ----------------------------------------------------------------------
+
+_LIFECYCLE = """\
+---
+description: "Read before adding or dropping widgets: how a widget's life runs."
+---
+
+A widget is added once and dropped for good: `untaped acme widgets drop` keeps nothing.
+
+## Sizes
+
+See `untaped agents acme widgets add` for the size option.
+"""
+
+
+def _guides(tmp_path: Path, **files: str) -> Path:
+    folder = tmp_path / "guides"
+    folder.mkdir()
+    for name, text in files.items():
+        (folder / f"{name.replace('_', '-')}.md").write_text(text, encoding="utf-8")
+    return folder
+
+
+def _with_guides(folder: Traversable, *, app: bool = True) -> list[PluginCandidate]:
+    spec = PluginSpec(
+        name="acme",
+        app_factory=_acme_app if app else None,
+        settings=AcmeSettings,
+        help="Manage widgets." if app else None,
+        guides=folder,
+    )
+    return [make_candidate(spec, "untaped-acme", distribution_version="2.3.4")]
+
+
+def test_a_plugin_page_lists_its_guides_with_when_to_read_them(tmp_path: Path) -> None:
+    candidates = _with_guides(_guides(tmp_path, lifecycle=_LIFECYCLE))
+    code, out, _ = _run("acme", candidates=candidates)
+    assert code == 0
+    _assert_snapshot("plugin-guides", out)
+
+
+def test_a_guide_page_prints_its_text_under_the_heading_the_page_writes(tmp_path: Path) -> None:
+    candidates = _with_guides(_guides(tmp_path, lifecycle=_LIFECYCLE))
+    code, out, _ = _run("acme", "lifecycle", candidates=candidates)
+    assert code == 0
+    _assert_snapshot("guide", out)
+    assert _run("acme", " lifecycle ", candidates=candidates)[1] == out
+
+
+def test_a_command_by_the_guide_s_name_wins_and_the_guide_shows_as_shadowed(
+    tmp_path: Path,
+) -> None:
+    candidates = _with_guides(_guides(tmp_path, beta=_LIFECYCLE))
+    _, plugin, _ = _run("acme", candidates=candidates)
+    _, beta, _ = _run("acme", "beta", candidates=candidates)
+    assert "- `beta` (shadowed by the command `beta`): Read before adding" in plugin
+    assert beta.startswith("# acme beta [experimental]\n")
+    assert "Try the next thing." in beta
+
+
+def test_a_plugin_with_guides_and_no_commands_has_topics(tmp_path: Path) -> None:
+    candidates = _with_guides(_guides(tmp_path, lifecycle=_LIFECYCLE), app=False)
+    code, plugin, _ = _run("acme", candidates=candidates)
+    assert code == 0
+    assert "## Commands" not in plugin
+    assert "## Guides\n- `lifecycle`: Read before" in plugin
+    assert _run("acme", "lifecycle", candidates=candidates)[0] == 0
+
+
+def test_only_one_word_names_a_guide(tmp_path: Path) -> None:
+    candidates = _with_guides(_guides(tmp_path, lifecycle=_LIFECYCLE))
+    code, _, err = _run("acme", "lifecycle", "more", candidates=candidates)
+    assert code == 2
+    assert 'no topic "lifecycle more" in acme' in err
+
+
+def test_a_guide_whose_front_matter_is_broken_still_prints(tmp_path: Path) -> None:
+    candidates = _with_guides(_guides(tmp_path, notes="No front matter here.\n"))
+    _, plugin, _ = _run("acme", candidates=candidates)
+    code, out, _ = _run("acme", "notes", candidates=candidates)
+    assert "- `notes`\n" in plugin
+    assert code == 0
+    assert "No front matter here." in out
+
+
+def test_files_beside_the_guides_are_not_guides(tmp_path: Path) -> None:
+    folder = _guides(tmp_path, lifecycle=_LIFECYCLE)
+    (folder / "suite.yml").write_text("a: 1\n", encoding="utf-8")
+    (folder / "drafts").mkdir()
+    (folder / "drafts" / "later.md").write_text(_LIFECYCLE, encoding="utf-8")
+    _, plugin, _ = _run("acme", candidates=_with_guides(folder))
+    guides = plugin.split("## Guides\n", 1)[1].split("\n\n", 1)[0]
+    assert (
+        guides == "- `lifecycle`: Read before adding or dropping widgets: how a widget's life runs."
+    )
+
+
+def test_a_plugin_without_guides_keeps_the_command_pointer() -> None:
+    _, out, _ = _run("acme")
+    assert "Details of a command: `untaped agents acme COMMAND`" in out
+    assert "## Guides" not in out
+
+
+def test_guides_read_from_a_zip_import(tmp_path: Path) -> None:
+    archive = tmp_path / "acme.zip"
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr("untaped_acme/guides/lifecycle.md", _LIFECYCLE)
+    folder = zipfile.Path(archive, "untaped_acme/guides/")
+    code, out, _ = _run("acme", "lifecycle", candidates=_with_guides(folder))  # type: ignore[arg-type]
+    assert code == 0
+    assert "A widget is added once" in out
+
+
+def test_a_byte_order_mark_does_not_hide_the_front_matter(tmp_path: Path) -> None:
+    folder = _guides(tmp_path, lifecycle="\ufeff" + _LIFECYCLE)
+    _, plugin, _ = _run("acme", candidates=_with_guides(folder))
+    assert "- `lifecycle`: Read before adding" in plugin

@@ -3,10 +3,12 @@
 Plugins provide, untaped generates. The pages come from what plugins already
 declare: ``PluginSpec.help``, the command tree, command docstrings and
 option help, settings models, the contracts registry and the ``@writes``
-marks. There are three stages: the map (``untaped agents``), one plugin
-(``untaped agents PLUGIN``; core answers as ``untaped``) and one command
-(``untaped agents PLUGIN COMMAND``). Every page names the untaped that
-answered, and says so when the folder's project asks for another one.
+marks, plus the guides a plugin writes for what no command says. There are
+three stages: the map (``untaped agents``), one plugin (``untaped agents
+PLUGIN``; core answers as ``untaped``) and one topic (``untaped agents PLUGIN
+TOPIC``): a command, or a guide. A command wins over a guide of its name.
+Every page names the untaped that answered, and says so when the folder's
+project asks for another one.
 
 The command's spelling is frozen: every stub skill ever installed names it
 (:func:`untaped.stability.frozen`). This package is internal and imported
@@ -24,6 +26,7 @@ from cyclopts import App
 from untaped.agents._build import (
     CORE,
     build_command_page,
+    build_guide_page,
     build_map,
     build_plugin_page,
 )
@@ -51,9 +54,13 @@ def page(root: App, result: CompositionResult, words: Sequence[str]) -> str:
     try:
         return render(build_command_page(root, result, name, rest))
     except KeyError:
-        raise UsageError(
-            f'no topic "{" ".join(rest)}" in {name}; `untaped agents {name}` lists them'
-        ) from None
+        pass
+    if name != CORE and len(rest) == 1:
+        try:
+            return render(build_guide_page(result, name, rest[0]))
+        except KeyError:
+            pass
+    raise UsageError(f'no topic "{" ".join(rest)}" in {name}; `untaped agents {name}` lists them')
 
 
 def _not_installed(name: str, result: CompositionResult) -> str:

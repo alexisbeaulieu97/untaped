@@ -13,6 +13,8 @@ from untaped.agents._model import (
     CommandLine,
     CommandPage,
     Fill,
+    GuideLine,
+    GuidePage,
     Map,
     Mark,
     Option,
@@ -41,6 +43,8 @@ def render(page: Page) -> str:
         lines = _map(page)
     elif isinstance(page, PluginPage):
         lines = _plugin(page)
+    elif isinstance(page, GuidePage):
+        lines = _guide(page)
     else:
         lines = _command(page)
     return "\n".join(lines).rstrip() + "\n"
@@ -124,13 +128,14 @@ def _plugin(page: PluginPage) -> list[str]:
     lines = _head(page.name, page.mark, page.answerer)
     if page.summary:
         lines.append(page.summary)
+    if page.guides:
+        lines.append(
+            f"Details of a topic (a command or a guide): `untaped agents {page.name} NAME`"
+        )
+    elif page.commands:
+        lines.append(f"Details of a command: `untaped agents {page.name} COMMAND`")
     if page.commands:
-        lines += [
-            f"Details of a command: `untaped agents {page.name} COMMAND`",
-            "",
-            "## Commands",
-            *(_command_line(line) for line in page.commands),
-        ]
+        lines += ["", "## Commands", *(_command_line(line) for line in page.commands)]
     for point in page.points:
         lines += ["", f"## {point.title.rstrip('.')}{_own_mark(point.mark, page.mark)}"]
         lines += [
@@ -139,6 +144,8 @@ def _plugin(page: PluginPage) -> list[str]:
     for extends in page.extends:
         point = extends.point
         lines += ["", f"## Fills {point.owner}: {point.title.rstrip('.')}", f"- {extends.summary}"]
+    if page.guides:
+        lines += ["", "## Guides", *(_guide_line(guide) for guide in page.guides)]
     if page.settings:
         lines += ["", f"## Settings (`{page.settings_prefix}`)"]
         for setting in page.settings:
@@ -150,6 +157,12 @@ def _plugin(page: PluginPage) -> list[str]:
             text = f": {setting.description}" if setting.description else ""
             lines.append(f"- `{setting.key}`{_mark(setting.mark)} ({shape}){text}")
     return [*lines, "", FOOTER]
+
+
+def _guide_line(guide: GuideLine) -> str:
+    shadowed = f" (shadowed by the command `{guide.name}`)" if guide.shadowed else ""
+    text = f": {guide.description}" if guide.description else ""
+    return f"- `{guide.name}`{shadowed}{text}"
 
 
 # --- stage 3 -------------------------------------------------------------------
@@ -170,6 +183,15 @@ def _command(page: CommandPage) -> list[str]:
         lines += ["", "## Commands", *(_command_line(line) for line in page.subcommands)]
     if page.examples:
         lines += ["", "## Examples", "", page.examples]
+    return [*lines, "", FOOTER]
+
+
+def _guide(page: GuidePage) -> list[str]:
+    lines = _head(f"{page.plugin} {page.name}", page.mark, page.answerer)
+    if page.description:
+        lines.append(page.description)
+    if page.body:
+        lines += ["", page.body]
     return [*lines, "", FOOTER]
 
 

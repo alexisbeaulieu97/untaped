@@ -5204,6 +5204,7 @@ sdk untaped.sdk.PluginSpec(caches@12=) default=[]
 sdk untaped.sdk.PluginSpec(contracts@9=) default=<computed> callback(0)
 sdk untaped.sdk.PluginSpec(deprecations@14=) default=<computed> callback(0)
 sdk untaped.sdk.PluginSpec(doctor_checks@6=) default=[]
+sdk untaped.sdk.PluginSpec(guides@15=) default=None
 sdk untaped.sdk.PluginSpec(help@7=) default=None
 sdk untaped.sdk.PluginSpec(migrations@11=) default=[]
 sdk untaped.sdk.PluginSpec(name)
@@ -5218,6 +5219,7 @@ sdk untaped.sdk.PluginSpec.caches
 sdk untaped.sdk.PluginSpec.contracts()
 sdk untaped.sdk.PluginSpec.deprecations()
 sdk untaped.sdk.PluginSpec.doctor_checks
+sdk untaped.sdk.PluginSpec.guides
 sdk untaped.sdk.PluginSpec.help
 sdk untaped.sdk.PluginSpec.migrations
 sdk untaped.sdk.PluginSpec.name
