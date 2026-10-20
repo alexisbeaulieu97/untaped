@@ -119,7 +119,8 @@ def create_command(
     Without --repo, --read-only or --stdin, a terminal opens the repo picker,
     which also confirms with no repos selected; without a terminal, or with
     --empty, `create NAME` makes an empty workspace (for `workspace add`),
-    and `create` with no NAME exits 2. --empty with repo options, --branch or --base exits 2.
+    and `create` with no NAME exits 2. --empty with repo options, --branch
+    or --base exits 2.
 
     Each repo is one row: `created` (a new branch from the base),
     `checked_out` (an existing branch resumed, or a read-only checkout) or
@@ -544,9 +545,9 @@ def run_command(
     A shell string runs as `sh -c -- CMD`, so pipes and `&&` work. A file,
     resolved against the current directory, runs directly when it is
     executable and starts with `#!`, else through `sh`. A CMD of `-` reads
-    the script from stdin; nothing piped, or `-` with --stdin, exits 2. A command that
-    starts with a hyphen goes after `--`; a lone word starting with `--` is
-    taken as a mistyped option (exit 2).
+    the script from stdin; nothing piped, or `-` with --stdin, exits 2. A
+    command that starts with a hyphen goes after `--`; a lone word starting
+    with `--` is taken as a mistyped option (exit 2).
 
     Each run starts in the repo directory with stdin from /dev/null and
     UNTAPED_WORKSPACE, UNTAPED_REPO (the display name), UNTAPED_BRANCH

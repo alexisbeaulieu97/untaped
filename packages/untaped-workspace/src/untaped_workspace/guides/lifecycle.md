@@ -38,8 +38,8 @@ The source decides each repo's clone URL, and the URL is saved with the
 workspace; `untaped workspace repos resolve NAME` asks again after a source's
 setting changes.
 
-The git untaped runs never prompts for credentials. Fetching from a host a
-plugin claims uses that plugin's token. Over https, `git push` in a worktree
+Git never prompts for credentials when untaped runs it. Fetching from a host
+a plugin claims uses that plugin's token. Over https, `git push` in a worktree
 asks `untaped git credential` after your own credential helpers (instead of
 them with `git.untaped_helper_only`). Any other host needs a credential
 helper or an SSH agent.
@@ -81,8 +81,7 @@ command exits 0, a warning names the repo, and
 ## Archiving
 
 `archive` checks each repo offline: it sees origin as of the last push or
-fetch. A repo blocks
-archiving with any of:
+fetch. A repo blocks archiving with any of:
 
 - uncommitted changes;
 - stash entries made on that repo's branch;
@@ -96,9 +95,9 @@ While any repo blocks, archive exits 1, removes nothing, and its hint says
 what to do for each blocker. `untaped workspace status NAME --check` reports
 the same blockers.
 
-`--force` archives a blocked workspace after a confirmation: it discards uncommitted work
-and commits made in a read-only repo, which cannot be recovered, and removes
-the directories. Branch commits and stashes stay in the repo store. Without
+`--force` archives a blocked workspace after a confirmation: it discards
+uncommitted work and commits made in a read-only repo, which cannot be
+recovered, and removes the directories. Branch commits and stashes stay in the repo store. Without
 `--force`, each repo is checked again just before it is removed, and work
 made after the first check fails that repo as a `conflict`. If removing a
 repo fails, the workspace stays active so archive can run again.

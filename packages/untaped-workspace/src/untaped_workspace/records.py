@@ -95,8 +95,8 @@ class StatusRow(TargetRecord, kind="workspace.status"):
     detail: str = Field(
         default="",
         description=(
-            "With `--fetch`: why the fetch failed, or that the history backfill stopped "
-            "again (no error then)."
+            "Why the repo's git state can't be read; with `--fetch`, why the fetch "
+            "failed, or that the history backfill stopped again (no error then)."
         ),
     )
 
@@ -130,8 +130,9 @@ class RemoveOutcome(OutcomeRecord, TargetRecord, kind="workspace.remove_outcome"
     ``released``: the repo store kept the repo for someone else (``detail``
     names who); ``removed``: it went (``freed_bytes``); ``kept``: another
     workspace still uses it, or a workspace worktree was added to it
-    meanwhile; ``skipped``: it is not in the repo store. A last row with an
-    empty ``repo`` is the workspace itself.
+    meanwhile; ``skipped``: it is not in the repo store. On a preview or a
+    refusal: ``planned``, or ``skipped`` for a blocked repo. A last row with
+    an empty ``repo`` is the workspace itself.
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
