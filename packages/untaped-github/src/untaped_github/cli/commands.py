@@ -30,7 +30,11 @@ def whoami_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Show the authenticated GitHub user (``GET /user``)."""
+    """Show the authenticated GitHub user (``GET /user``).
+
+    It checks the token: a rejected token exits 4, with a hint on where
+    the token comes from.
+    """
     from untaped_github.application import WhoAmI  # noqa: PLC0415
 
     with report_errors(), open_client() as (client, _):
