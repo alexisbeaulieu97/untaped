@@ -43,7 +43,7 @@ then ask only untaped for that host, never your own helpers.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-git/src/untaped_git/skills/untaped-git/SKILL.md) is the full reference: the commands, the repo store's rules and the pitfalls. Install it for your agent with `untaped skills install git --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped git COMMAND --help` lists each command's options.
+`untaped agents git` prints this plugin's commands, settings and the plugins that supply Git hosts, as Markdown for an agent ([agent pages](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/agent-pages.md)); `untaped skills install git --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) installs a skill that sends your agent there. `untaped git COMMAND --help` lists each command's options.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#git) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#git)
