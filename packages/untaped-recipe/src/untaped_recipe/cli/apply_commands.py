@@ -213,7 +213,7 @@ def apply_command(
     Targets that resolve a sensitive input show no file detail or diff, and
     the value appears as `***` in rows, warnings, errors and backup
     metadata; templates and hooks still get the real value, so the written
-    files hold it.
+    files can hold it.
 
     --parallel (at most 32) plans targets concurrently and sizes the hook
     worker pool. --hook-timeout bounds each hook call; preparing a pack's hook
