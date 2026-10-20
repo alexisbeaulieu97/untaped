@@ -192,6 +192,41 @@ def test_a_command_page_prints_its_docstring_examples() -> None:
     assert "## Examples\n\nEvery widget, as JSON:\n\n```console\n$ untaped acme" in out
 
 
+def _check_app() -> App:
+    app = create_app(name="check")
+
+    @app.default
+    def check_command(
+        paths: Annotated[list[str] | None, Parameter(help="Only these files.")] = None,
+        /,
+        *,
+        strict: Annotated[bool, Parameter(help="Fail on warnings too.", negative="")] = False,
+    ) -> None:
+        """Check the files you are in.
+
+        Exit 3 when a check fails.
+
+        Examples
+        --------
+        ```console
+        $ untaped check --strict
+        ```
+        """
+
+    @app.command(name="list")
+    def list_command() -> None:
+        """List every check."""
+
+    return app
+
+
+def test_a_plugin_that_runs_on_its_own_shows_its_usage_on_its_page() -> None:
+    spec = PluginSpec(name="check", app_factory=_check_app, help="Check files.")
+    code, out, _ = _run("check", candidates=[make_candidate(spec, "untaped-check")])
+    assert code == 0
+    _assert_snapshot("plugin-runs", out)
+
+
 def test_a_group_page_lists_its_subcommands() -> None:
     code, out, _ = _run("acme", "widgets")
     assert code == 0

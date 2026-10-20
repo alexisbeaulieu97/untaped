@@ -134,6 +134,8 @@ def _plugin(page: PluginPage) -> list[str]:
         )
     elif page.commands:
         lines.append(f"Details of a command: `untaped agents {page.name} COMMAND`")
+    if page.own is not None:
+        lines += _own(page.own)
     if page.commands:
         lines += ["", "## Commands", *(_command_line(line) for line in page.commands)]
     for point in page.points:
@@ -157,6 +159,21 @@ def _plugin(page: PluginPage) -> list[str]:
             text = f": {setting.description}" if setting.description else ""
             lines.append(f"- `{setting.key}`{_mark(setting.mark)} ({shape}){text}")
     return [*lines, "", FOOTER]
+
+
+def _own(page: CommandPage) -> list[str]:
+    """A plugin's own command on its page: what it does, its usage and examples."""
+    lines = ["", "## Usage"]
+    if page.summary:
+        lines.append(f"{page.summary}{_writes(page.writes)}")
+    if page.body:
+        lines += ["", page.body]
+    lines += ["", f"`{_usage(page)}`"]
+    if page.options:
+        lines += ["", *(_option_line(option) for option in page.options)]
+    if page.examples:
+        lines += ["", "## Examples", "", page.examples]
+    return lines
 
 
 def _guide_line(guide: GuideLine) -> str:

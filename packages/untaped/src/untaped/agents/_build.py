@@ -14,6 +14,7 @@ from __future__ import annotations
 import inspect
 import sys
 from collections.abc import Iterator, Sequence
+from dataclasses import replace
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Literal, get_args, get_origin
@@ -245,7 +246,19 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
             GuideLine(guide.name, guide.description, guide.name in shadowing)
             for guide in guides(plugin.spec)
         ),
+        own=None if app is None or app.default_command is None else _own(root, result, name),
     )
+
+
+def _own(root: App, result: CompositionResult, name: str) -> CommandPage:
+    """The plugin's own command: its usage, with the default command's docstring.
+
+    The app's help is the plugin's line, so the behaviour and examples are
+    read from the command the app runs.
+    """
+    page = build_command_page(root, result, name, ())
+    described = describe(inspect.getdoc(_plugin_app(root, name).default_command), None)
+    return replace(page, summary=described.summary, body=described.body, subcommands=())
 
 
 def top_names(app: App | None) -> frozenset[str]:
