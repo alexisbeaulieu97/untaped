@@ -583,7 +583,7 @@ def test_update_keeps_a_backup_of_a_home_copy_it_converts(
 
 def test_a_refresh_leaves_a_parallel_run_s_temporary_file(run_as: Callable[[str], None]) -> None:
     root = _install_then_age(run_as)
-    foreign = _home() / ".SKILL.md.tmp-0123"
+    foreign = _home() / f".SKILL.md.tmp-{'0' * 32}"
     foreign.write_text("another run's write\n", encoding="utf-8")
     age_stub(_home(), untaped="11.0.0")  # the marker's digest leaves the temp file out
     assert _run(root, "demo", "--help").stderr == ""

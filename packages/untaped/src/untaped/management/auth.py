@@ -222,8 +222,8 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
 
         Never runs a ``token_command``, so it cannot tell whether a stored
         entry still exists; ``untaped doctor --online`` checks that. A token
-        from an environment variable counts only alongside a ``base_url``,
-        and belongs to no profile.
+        from a service's conventional variable (such as ``$GITHUB_TOKEN``)
+        belongs to no profile.
         """
         with report_errors():
             _status(result, fmt=fmt, columns=columns)

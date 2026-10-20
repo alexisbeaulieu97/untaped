@@ -131,7 +131,10 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
         """List what the profile's services still need, with the command for each step.
 
         Read-only. `--only` plans the services among the sections it names.
-        The `profile` row comes first, since the other rows name the profile.
+        The `profile` row comes before every service row, since they name
+        the profile. A service whose token comes from its conventional
+        variable (such as `$GITHUB_TOKEN`) counts as set up only alongside
+        its `base_url`.
         Each row's `run` is the complete argv to pass after `untaped`; every
         one but `profile create` starts with `--profile NAME`, so it acts on
         that profile. A `<NAME>` token in it (`<URL>`, `<COMMAND>`) is a value

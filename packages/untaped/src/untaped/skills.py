@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
@@ -546,7 +547,7 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
         and path.name not in (_MARKER, STUB_MARKER)
-        and _TEMPORARY not in path.name  # a stub write in flight
+        and not _temporary(path.name)  # a stub write in flight
         and path.suffix != ".pyc"
         and not any(part in _IGNORED_PARTS for part in path.relative_to(root).parts)
     }
@@ -733,7 +734,7 @@ def _rewrite_stub(
         _replace_file(destination / relative, content)
     for stale in destination.iterdir():
         # A parallel run's temporary file is its own to rename or remove.
-        if stale.name not in keep and _TEMPORARY not in stale.name:
+        if stale.name not in keep and not _temporary(stale.name):
             if stale.is_dir():
                 shutil.rmtree(stale, ignore_errors=True)
             else:
@@ -742,6 +743,12 @@ def _rewrite_stub(
 
 
 _TEMPORARY = ".tmp-"
+_TEMPORARY_NAME = re.compile(r"\..+\.tmp-[0-9a-f]{32}")
+
+
+def _temporary(name: str) -> bool:
+    """Whether ``name`` is a stub write in flight (``_replace_file``'s temporary file)."""
+    return _TEMPORARY_NAME.fullmatch(name) is not None
 
 
 def _replace_file(path: Path, content: bytes) -> None:
