@@ -2,20 +2,18 @@
 description: "Read before creating, patching, commenting on, transitioning or linking issues: what the preview shows, which writes ask first, and what a write emits."
 ---
 
-The writes are `issues create`, `issues patch`, `issues comment`,
-`issues transition` and `issues links create`. Each one changes Jira for
-everyone the moment it lands.
-
 ## The preview
 
 The preview lists each request a write sends (`METHOD path`), then one
-`field: old → new` line per change. Long text is cut to 60 characters in the
-preview only; the full value is sent.
+`field: old → new` line per change. A field's long text is cut to 60
+characters in the preview only; the full value is sent. A comment prints
+whole.
 
 - `--dry-run` prints the preview on stderr, emits a `jira.issue_outcome`
   with `action` `planned`, and sends nothing, even with `--yes`.
 - Patch and transition previews read the issue's current values, so they
-  need working credentials. A patch preview fails when the issue can't be
+  need working credentials; a patch reads the fields it sets and, when
+  assigning, the assignee. A patch preview fails when the issue can't be
   read. A transition preview shows `(unknown)` for a value it can't read,
   and `(not available from this status)` for an `--id` the issue doesn't
   offer.
@@ -34,9 +32,10 @@ both the question and the preview's reads.
 
 ## What a write emits
 
-Each write emits a `jira.issue_outcome` record whose `action` is `created`,
-`updated`, `commented`, `transitioned`, `linked`, or `planned` under
-`--dry-run`. `untaped plugin schema jira.issue_outcome` lists its fields.
+Each write emits a `jira.issue_outcome` record;
+`untaped plugin schema jira.issue_outcome` describes it.
 
-Writes are never retried. A write that exits 5 may still have landed:
-`untaped jira issues get KEY` shows whether it did.
+Create, comment, transition and link requests are sent once, never retried.
+A patch's requests are retried on Jira's 429 and 503 answers, as reads are.
+A write that exits 5 may still have landed: `untaped jira issues get KEY`
+shows whether it did.

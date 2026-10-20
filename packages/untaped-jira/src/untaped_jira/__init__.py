@@ -31,14 +31,14 @@ def _probe_api() -> str:
 SPEC = PluginSpec(
     name="jira",
     app_factory=build_app,
-    help="Manage Jira Data Center and self-hosted Jira issues; not Jira Cloud.",
+    help="Manage Jira Data Center and Server issues; not Jira Cloud.",
     settings=JiraSettings,
     guides=files("untaped_jira") / "guides",
     skills=(
         SkillAsset(
             name="untaped-jira",
             description=(
-                "Jira Data Center and self-hosted Jira issues (not Jira Cloud): JQL searches, "
+                "Jira Data Center and Server issues (not Jira Cloud): JQL searches, "
                 "issue fields, assignees, comments, links and workflow transitions, plus "
                 "projects, boards and sprints. Use when the work concerns a Jira issue or an "
                 "issue key such as OPS-123, JQL, a sprint or board, or moving an issue to "

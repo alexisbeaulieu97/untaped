@@ -155,7 +155,7 @@ _diag = Diagnostics()
 
 app = create_app(
     name="jira",
-    help="Manage Jira Data Center and self-hosted Jira issues; not Jira Cloud.",
+    help="Manage Jira Data Center and Server issues; not Jira Cloud.",
 )
 issues_app = create_app(name="issues", help="Manage Jira issues.")
 projects_app = create_app(name="projects", help="Look up Jira projects.")
@@ -173,7 +173,7 @@ def whoami_command(
 ) -> None:
     """Show the authenticated Jira user.
 
-    It checks ``jira.base_url`` and the token: a rejected token exits 4.
+    It checks ``jira.base_url`` and the token.
     """
 
     from untaped_jira.application import WhoAmI  # noqa: PLC0415
@@ -500,9 +500,8 @@ def issue_create_command(
 ) -> None:
     """Create one issue from flags and an optional Jira-shaped fields file.
 
-    Flags override the fields file. Under ``--dry-run`` the outcome has no
-    ``key`` yet. ``untaped agents jira writes`` explains the preview and when
-    it asks first.
+    Flags override the fields file. ``untaped agents jira writes`` explains
+    the preview and when it asks first.
     """
 
     from untaped_jira.application import CreateIssue  # noqa: PLC0415
@@ -560,10 +559,8 @@ def issue_patch_command(
 ) -> None:
     """Update fields of one issue (including its assignee) from flags or a fields file.
 
-    A patch counts as destructive for ``jira.confirm`` when it sets a field,
-    changes the assignee, or has an ``update`` operation other than ``add``;
-    an add-only patch does not. ``--assignee`` and ``--unassign`` override
-    ``fields.assignee`` in a fields file.
+    ``--assignee`` and ``--unassign`` override ``fields.assignee`` in a
+    fields file.
 
     The assignment goes through Jira's assignee endpoint, so it works even
     when the assignee field is not on the issue's edit screen. A patch that
@@ -848,7 +845,12 @@ def issue_transition_command(
 def link_create_command(
     key: IssueKeyArgument,
     link_type: Annotated[str, Parameter(help="Link type name (e.g. Blocks, Relates).")],
-    other: Annotated[str, Parameter(help="Issue key the first issue links to.")],
+    other: Annotated[
+        str,
+        Parameter(
+            help="Issue key (PROJECT-123, in any case) or numeric id the first issue links to."
+        ),
+    ],
     /,
     *,
     yes: YesOption = False,
@@ -914,7 +916,7 @@ def project_list_command(
 
 @projects_app.command(name="get")
 def project_get_command(
-    key: Annotated[str, Parameter(help="Project key or id.")],
+    key: Annotated[str, Parameter(help="Project key (in any case) or numeric id.")],
     /,
     *,
     fmt: FormatOption = "table",
