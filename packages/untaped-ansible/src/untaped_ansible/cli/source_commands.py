@@ -147,7 +147,7 @@ def source_set_command(
     It replaces the whole definition; ``source patch`` adds or removes one
     org, team, repo, path or ref selector. A change drops the source's cached
     data, so the next ``deps``, ``impact``, ``find`` or ``graph`` that reads it
-    refreshes it first (``--cached`` fails with "no cached source data").
+    refreshes it first.
 
     Examples
     --------
@@ -401,8 +401,7 @@ def source_status_command(
 ) -> None:
     """Show cached source data status.
 
-    Without NAME, one row per saved source. A stale source refreshes on the
-    next ``deps``, ``impact``, ``find`` or ``graph`` that reads it.
+    Without NAME, one row per saved source.
     """
     with report_errors():
         settings = get_config_section("ansible", AnsibleSettings)
@@ -447,9 +446,9 @@ def source_refresh_command(
     When GitHub's GraphQL budget drops below
     ``ansible.source_refresh_rate_limit_floor``, the refresh stops with the
     finished batches saved and exits 5; rerunning resumes where it left off.
-    Secondary rate limits, a rejected token and forbidden requests abort the
-    whole refresh instead. ``untaped agents ansible source-data`` covers the
-    backends.
+    Secondary rate limits, a rejected token, forbidden requests and unknown
+    GraphQL access failures abort the whole refresh instead.
+    ``untaped agents ansible source-data`` covers the backends.
 
     Examples
     --------

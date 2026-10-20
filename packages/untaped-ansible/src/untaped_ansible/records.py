@@ -80,10 +80,10 @@ class SourceStatus(FreshnessRecord, kind="ansible.source_status"):
     source_key: str
     state: Literal["fresh", "stale", "not_refreshed", "missing_source"] = Field(
         description=(
-            "fresh within ansible.caches.index.max_age_seconds, stale past it, not_refreshed "
-            "when never refreshed (the next read refreshes it), missing_source when the source is "
-            "no longer saved. An empty source that refreshed is fresh with "
-            "zero counts."
+            "stale when past ansible.caches.index.max_age_seconds, made by another untaped "
+            "version, or after a failed or partial refresh; not_refreshed when never "
+            "refreshed; fresh otherwise, with zero counts for an empty source. "
+            "missing_source is reserved."
         )
     )
     configured: bool
@@ -109,7 +109,12 @@ class DependencyMatch(Record, kind="ansible.dependency_match"):
     )
 
     root_repo: str
-    root_ref: str | None = Field(description="The root's ref; null for its default branch.")
+    root_ref: str | None = Field(
+        description=(
+            "The ref the root was read at (its default branch when none was given); null "
+            "when it has no known ref."
+        )
+    )
     repo: str
     declared_ref: str | None = Field(
         description="The ref as the edge that reached the repo declares it, verbatim."
@@ -196,11 +201,7 @@ class VariableUse(Record):
         description="YAML key segments (int for list items); empty for a template file's read."
     )
     how: How = Field(
-        description=(
-            "defines: a top-level key under defaults/ or vars/, or an argument_specs option; "
-            "sets: any other YAML key of that name, register or loop_var (a module argument "
-            "of that name counts too); reads: a Jinja expression."
-        )
+        description="Whether this place defines, sets or reads the variable (see impact --uses)."
     )
 
 

@@ -5,10 +5,8 @@ description: "Read when a deps, impact, find or graph result surprises you: whic
 ## Refs
 
 - `repo@v1` and `repo@main` are different nodes.
-- Without `--ref`, `deps`, `find` and `graph` read what the target depends
-  on at its default branch; `impact` covers every ref a dependent pins.
-- `--all-refs` reads every cached ref of the target instead. Local
-  checkouts, and `find` roots given with a ref, are read as they are.
+- Local checkouts, and `find` roots given with a ref, are read as they
+  are.
 - When the source has not scanned the default branch (a tags-only source),
   every cached ref is read, with a warning.
 - An unpinned dependency resolves to its default-branch node: the source's
@@ -21,24 +19,20 @@ description: "Read when a deps, impact, find or graph result surprises you: whic
 
 ## Repos and local targets
 
-- A target is `owner/repo`, a GitHub URL, a source alias, or a local path.
-  Repo ids match in any case (`Acme/Base` is `acme/base`).
+- Repo ids match in any case (`Acme/Base` is `acme/base`).
 - URLs on the host of `github.base_url` resolve as `github.com` URLs do.
   Path-like sources in requirements files, such as `./local`, stay
   unresolved.
-- A local path takes its repo from the Git remote only at the top level of a
-  checkout, linked worktrees included; for a subdirectory, pass
-  `--target-repo OWNER/NAME`.
+- A local path's Git remote is read at the top level of a checkout, linked
+  worktrees included.
 - Without a source, a local target is read live. With no GitHub token it
   stays offline and warns that its transitive dependencies were not read.
-- Requirements files name some roles by a Galaxy name;
-  `untaped agents ansible source-alias set` maps one to its repo.
 
 ## Where a walk stops
 
-- `stopped: depth` means `--depth` ran out before the repo's own edges were
-  read; one `hint:` on stderr says how many (per root for `find`).
-- `stopped: not_cached` means the repo's ref is not in the source's cache.
+- A row's `stopped` field says why a repo's own edges were not read. When
+  `--depth` left repos unread, one `hint:` on stderr says how many (per root
+  for `find`).
 - A live read that fails for one repo (a deleted repo or tag, lost access)
   is a warning and leaves that node unread. A rejected token or a rate limit
   stops the command instead.

@@ -117,7 +117,8 @@ BackendOption = Annotated[
     Backend | None,
     Parameter(
         name="--backend",
-        help="Ref probe backend for a refresh this command runs: auto, graphql, or git.",
+        help="Ref probe backend for a refresh this command runs: auto, graphql, or git; not "
+        "with --cached.",
     ),
 ]
 RefOption = Annotated[
@@ -161,7 +162,8 @@ LiveOption = Annotated[
         name="--live",
         negative="",
         group=_SOURCE_DATA_GROUP,
-        help="Read downstream dependencies live from GitHub even when a source is selected.",
+        help="Read downstream dependencies live from GitHub even when a source is selected; "
+        "not with --refresh or --cached.",
     ),
 ]
 
@@ -303,15 +305,11 @@ def deps_command(
 
     Reads a source's data when one is selected (--source, inline selectors,
     or ansible.default_source), refreshed first when older than its max age,
-    and GitHub live otherwise (or with --live).
-    Each row carries the ref as declared, the shortest path from ROLE and
-    the ROLE ref it was reached from; each repo appears once per ROLE ref.
-
-    Without --ref it reads ROLE's default branch. With a source selected, a
-    ROLE outside it warns "not cached" and gives no rows: pass --live, or
-    widen the source. A row's ``stopped`` names a repo whose own
-    dependencies were not read. ``untaped agents ansible resolution``
-    explains refs, local targets and where a walk stops.
+    and GitHub live otherwise (or with --live); ``untaped agents ansible
+    source-data`` says which data answers. Each row carries the ref as
+    declared, the shortest path from ROLE and the ROLE ref it was reached
+    from; each repo appears once per ROLE ref. ``untaped agents ansible
+    resolution`` explains refs, local targets and where a walk stops.
 
     Examples
     --------
@@ -370,18 +368,17 @@ def impact_command(
 
     Reads a source's data (--source, inline selectors, or
     ansible.default_source), refreshed first when older than its max age;
-    with no source it fails. Each row carries the ref it declares, its
-    shortest path to ROLE and the ROLE ref it was reached from. Without
-    --ref it covers every ref a dependent pins (``root_ref`` tells them
-    apart). A row's ``stopped`` names a repo whose dependents were not read,
-    so more may lie beyond it.
+    ``untaped agents ansible source-data`` says which data answers. Each row
+    carries the ref it declares, its shortest path to ROLE and the ROLE ref
+    it was reached from (``root_ref`` tells a dependent's pinned refs apart).
 
     With --uses, each row is instead one place a dependent defines, sets or
     reads a variable, read at the commit the source indexed; a dependent
     with no row does not mention it. Dependents whose refresh failed have no
-    variable facts: an error names them and the ``source refresh`` to run,
-    and the command exits 1. A hint that ROLE defines no such variable
-    usually means a typo.
+    variable facts: an error names them and how to refresh them
+    (``source refresh NAME``, or --refresh for inline selectors), and the
+    command exits 1. A hint that ROLE defines no such variable usually means
+    a typo.
 
     Examples
     --------
@@ -456,14 +453,13 @@ def find_command(
 ) -> None:
     """Find which roots contain a repository downstream, one row per match.
 
-    Each row names the root, the matched repo, the ref exactly as declared,
-    the dependency file and the shortest path; a root read from a pipe
-    record also carries that record's kind, id and name, so rows join back
-    to their input. Every input record gets its own rows, even when records
-    share a root; identical bare lines collapse. A root given without a ref,
-    or with an empty one, is read at its default branch.
+    Rows from pipe records carry that record's kind, id and name, so they
+    join back to their input. Every input record gets its own rows, even
+    when records share a root; identical bare lines collapse. A root given
+    without a ref, or with an empty one, is read at its default branch.
 
-    A repo reached through two declared refs gives two rows. A root that
+    A repo reached through two declared refs gives two rows; an unpinned and
+    a default-branch-pinned declaration of one repo give one. A root that
     never reaches the repo gives none; with --depth, no row only means "not
     within that depth". Each root's warnings go to stderr, prefixed with the
     root.
@@ -555,7 +551,6 @@ def graph_command(
     --ref-pattern, --ref-scan-default) are cached under a deterministic
     fingerprint key, so repeated identical invocations reuse the same scan.
     --parallel defaults to ansible.git_fetch_parallel and is capped at 32.
-    With no source, the upstream half is left out with a warning.
 
     The tree's first line names the target, the data it read and the depth;
     a "used by" section lists dependents and a "depends on" section
@@ -564,16 +559,19 @@ def graph_command(
     from the resolved ref). A shared subtree prints once, numbered ``[n]``,
     and later says ``see [n]``; a repo already on the path says ``↻ cycle``
     (``(cycle)`` in ASCII); a stopped repo is marked ``…`` with a
-    ``not read:`` note. The summary counts repos, edges, cycles, unresolved
-    dependencies and stopped repos. Warnings go to stderr, even with --out.
+    ``not read:`` note. The summary counts repos, edges, cycles (a component
+    with too many cycles to list counts as one cyclic group), unresolved
+    dependencies and stopped repos. Lines too wide for the terminal end in
+    ``…``. Warnings go to stderr, even with --out.
 
     The JSON document has ``target_id``, ``nodes`` (each with ``stopped`` as
     on rows), ``edges``, ``cycles`` and ``warnings``. An edge's ``id`` is the
     same for every declaration of one dependency, so duplicates collapse to
     one edge. A cycle has ``kind``, ``relation``, ``node_ids`` and
     ``edge_ids``: ``cycle`` is a closed ordered path, ``scc_group`` a sorted
-    set of nodes, used when a component has too many cycles to list. Node ids
-    are lowercase; labels keep the display casing.
+    set of nodes and their internal edges, used when a component has too
+    many cycles to list. Node ids are lowercase; labels keep the display
+    casing.
 
     Examples
     --------

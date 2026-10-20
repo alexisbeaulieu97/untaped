@@ -17,7 +17,8 @@ when it is selected.
 
 A source is selected by `--source`, by the inline selectors (`--org`,
 `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`,
-`--ref-scan-default`), or by `ansible.default_source` when neither is given.
+`--ref-scan-default`), or by `ansible.default_source` when neither is given (an unknown name there fails
+naming the setting).
 Repeated `--source` and inline selectors add up, and repeating the same
 inline selectors reuses their cached scan. `--refresh`, `--cached` and
 `--backend` need a boundary (`--source`, `--org`, `--team`, `--repo` or
@@ -41,16 +42,15 @@ fails with the refresh's error (exit 5 for a transient one).
 
 ## Partial and paused refreshes
 
-A refresh that failed for some repos saved the rest. Reads then warn on
-every run, with an `untaped.stale` line whose `partial` is `true` and whose
-`error` names the repos, and exit 0 unless the answer is empty, until
-`--refresh` or `source refresh` completes a whole refresh.
+After a refresh that failed for some repos, reads warn on every run with
+an `untaped.stale` line whose `partial` is `true` and whose `error` names
+the repos, and exit 0 unless the answer is empty, until `--refresh` or
+`source refresh` completes a whole refresh.
 
-When GitHub's GraphQL budget drops below
-`ansible.source_refresh_rate_limit_floor`, a refresh stops with its finished
-batches kept and the source not marked refreshed. Reads serve the cached
-data with a warning whose `retry_at` is GitHub's reset time; rerunning skips
-the repos that succeeded.
+After a refresh paused by GitHub's GraphQL budget
+(`source refresh` says how it resumes), the source is not marked refreshed:
+reads serve the cached data with a warning whose `retry_at` is GitHub's
+reset time.
 
 ## Backends
 
