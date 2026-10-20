@@ -14,8 +14,9 @@ from untaped_jira.settings import JiraSettings
 
 # Jira's JQL search is a POST to an idempotent ``/search`` endpoint. Opt just
 # that call into retry by widening the retryable methods to include POST — the
-# tool's mutating POSTs (create/comment/transition) don't go through
-# ``paginate_offset``, so they keep the client's default (non-retrying) policy.
+# tool's mutating POSTs (create/comment/transition/link) don't go through
+# ``paginate_offset``, so the client's default policy sends them once (it
+# retries only idempotent methods, PUT among them).
 _SEARCH_RETRY = RetryPolicy(
     idempotent_methods=frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "POST"})
 )

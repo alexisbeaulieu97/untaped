@@ -103,10 +103,14 @@ FieldsFileOption = Annotated[
         help="Jira-shaped YAML/JSON document (fields/update); flags override it.",
     ),
 ]
-IssueKeyArgument = Annotated[str, Parameter(help="Issue key or id.")]
+IssueKeyArgument = Annotated[
+    str, Parameter(help="Issue key (PROJECT-123, in any case) or numeric id.")
+]
 IssueKeysArgument = Annotated[
     list[str] | None,
-    Parameter(help="Issue keys or ids (or pass --stdin).", negative=""),
+    Parameter(
+        help="Issue keys (PROJECT-123, in any case) or numeric ids, or pass --stdin.", negative=""
+    ),
 ]
 # Default table columns: a compact row per issue (the assignee is always you
 # under ``assigned``), a detail view for one issue (comments get their own
@@ -151,7 +155,7 @@ _diag = Diagnostics()
 
 app = create_app(
     name="jira",
-    help="Manage Jira Data Center issues from untaped.",
+    help="Manage Jira Data Center and Server issues; not Jira Cloud.",
 )
 issues_app = create_app(name="issues", help="Manage Jira issues.")
 projects_app = create_app(name="projects", help="Look up Jira projects.")
@@ -167,7 +171,10 @@ def whoami_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Show the authenticated Jira user."""
+    """Show the authenticated Jira user.
+
+    It checks ``jira.base_url`` and the token.
+    """
 
     from untaped_jira.application import WhoAmI  # noqa: PLC0415
 
@@ -190,7 +197,19 @@ def issue_get_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Fetch one or more issues, with their description and optionally comments."""
+    """Fetch one or more issues, with their description and optionally comments.
+
+    Besides the fields a search fills, it fills the detail fields
+    (``reporter`` to ``links``); ``comments`` stays ``null`` without
+    ``--comments``. A linked issue carries only what the link embeds (its key,
+    summary and status); get its key for the rest.
+
+    One issue prints as a key: value view in a table and as one JSON object;
+    several print as a table or a JSON array. ``--stdin`` reads bare keys or
+    ``jira.issue`` and ``jira.issue_outcome`` records from ``--format pipe``;
+    any other record kind exits 2. A key that fails prints ``error: KEY: ...``
+    and the rest still print; the exit code is the most severe failure.
+    """
 
     from untaped_jira.application import GetIssue  # noqa: PLC0415
 
@@ -285,7 +304,21 @@ def issue_search_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Search issues with JQL plus common shortcuts."""
+    """Search issues with JQL plus common shortcuts.
+
+    ``--jql`` and the shortcut flags are ANDed together. With none of them it
+    searches ``jira.assigned_jql`` (by default your unresolved issues), not
+    every issue. An ``ORDER BY`` in ``--jql`` replaces the default
+    ``updated DESC``. Rows fill the fields from ``key`` to ``priority``; the
+    detail fields stay ``null`` (``issues get`` fills them). Jira's 429 and 503
+    answers are retried.
+
+    Examples
+    --------
+    ```console
+    $ untaped jira issues search --jql 'project = OPS AND labels = infra ORDER BY created DESC'
+    ```
+    """
 
     from untaped_jira.application import SearchIssues  # noqa: PLC0415
 
@@ -325,7 +358,19 @@ def issue_assigned_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List issues assigned to the authenticated Jira user."""
+    """List issues assigned to the authenticated Jira user.
+
+    It always starts from ``jira.assigned_jql`` (by default your unresolved
+    issues); ``--jql`` and the shortcut flags are ANDed onto it, so they only
+    narrow it. An ``ORDER BY`` in ``--jql`` replaces the default
+    ``updated DESC``. Jira's 429 and 503 answers are retried.
+
+    Examples
+    --------
+    ```console
+    $ untaped jira issues assigned --status 'In Progress' --sprint 'openSprints()'
+    ```
+    """
 
     from untaped_jira.application import SearchIssues  # noqa: PLC0415
 
@@ -453,7 +498,11 @@ def issue_create_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Create one issue from flags and an optional Jira-shaped fields file."""
+    """Create one issue from flags and an optional Jira-shaped fields file.
+
+    Flags override the fields file. ``untaped agents jira writes`` explains
+    the preview and when it asks first.
+    """
 
     from untaped_jira.application import CreateIssue  # noqa: PLC0415
 
@@ -508,7 +557,23 @@ def issue_patch_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Update fields of one issue (including its assignee) from flags or a fields file."""
+    """Update fields of one issue (including its assignee) from flags or a fields file.
+
+    ``--assignee`` and ``--unassign`` override ``fields.assignee`` in a
+    fields file.
+
+    The assignment goes through Jira's assignee endpoint, so it works even
+    when the assignee field is not on the issue's edit screen. A patch that
+    changes fields and the assignee sends the field edit first; if only the
+    assignment fails, the error says the fields were already updated.
+    ``untaped agents jira writes`` explains the preview and when it asks first.
+
+    Examples
+    --------
+    ```console
+    $ untaped jira issues patch OPS-123 --assignee @me --set-json 'labels=["infra","tls"]' --dry-run
+    ```
+    """
 
     from untaped_jira.application import PatchIssue, PreviewPatch  # noqa: PLC0415
 
@@ -587,7 +652,14 @@ def issue_comment_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Add a comment to one issue (the body may also be piped on stdin)."""
+    """Add a comment to one issue (the body may also be piped on stdin).
+
+    Examples
+    --------
+    ```console
+    $ git log -1 --format=%B | untaped jira issues comment OPS-123 --yes
+    ```
+    """
 
     from untaped_jira.application import AddComment  # noqa: PLC0415
 
@@ -623,7 +695,11 @@ def issue_transitions_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List available workflow transitions for one issue."""
+    """List available workflow transitions for one issue.
+
+    It lists what the issue offers from its current status; names and ids
+    differ between workflows and statuses.
+    """
 
     from untaped_jira.application import ListTransitions  # noqa: PLC0415
 
@@ -661,7 +737,28 @@ def issue_transition_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Apply one workflow transition, by name or id, to one or more issues."""
+    """Apply one workflow transition, by name or id, to one or more issues.
+
+    Pass exactly one of ``--to`` or ``--id``, as ``issues transitions KEY``
+    lists them for the issue's current status. ``--resolution`` and
+    ``--comment`` go in the same request as the transition.
+
+    Several keys, or ``--stdin`` with bare keys or ``jira.issue`` and
+    ``jira.issue_outcome`` records from ``--format pipe``, transition as one
+    batch: a key that fails prints ``error: KEY: ...``, the rest continue, and
+    the exit code is the most severe failure. ``untaped agents jira writes``
+    explains the preview and when it asks first.
+
+    Examples
+    --------
+    Every issue of a search, previewed as one batch (piping one command into
+    the other works the same):
+
+    ```console
+    $ untaped jira issues search --project OPS --status 'In Review' -f pipe > review.pipe
+    $ untaped jira issues transition --stdin --to Done --dry-run < review.pipe
+    ```
+    """
 
     from untaped_jira.application import (  # noqa: PLC0415
         PreviewTransition,
@@ -748,7 +845,12 @@ def issue_transition_command(
 def link_create_command(
     key: IssueKeyArgument,
     link_type: Annotated[str, Parameter(help="Link type name (e.g. Blocks, Relates).")],
-    other: Annotated[str, Parameter(help="Issue key the first issue links to.")],
+    other: Annotated[
+        str,
+        Parameter(
+            help="Issue key (PROJECT-123, in any case) or numeric id the first issue links to."
+        ),
+    ],
     /,
     *,
     yes: YesOption = False,
@@ -756,7 +858,12 @@ def link_create_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Link KEY to OTHER, read as "KEY OUTWARD-PHRASE OTHER" (OPS-1 Blocks OPS-2)."""
+    """Link KEY to OTHER, read as "KEY OUTWARD-PHRASE OTHER" (OPS-1 Blocks OPS-2).
+
+    With ``Blocks``, KEY blocks OTHER. The preview prints a ``reads as:``
+    line in that order. A reversed link is removed in Jira itself; untaped
+    has no command that deletes links.
+    """
 
     from untaped_jira.application import LinkIssues  # noqa: PLC0415
 
@@ -809,7 +916,7 @@ def project_list_command(
 
 @projects_app.command(name="get")
 def project_get_command(
-    key: Annotated[str, Parameter(help="Project key or id.")],
+    key: Annotated[str, Parameter(help="Project key (in any case) or numeric id.")],
     /,
     *,
     fmt: FormatOption = "table",
@@ -866,7 +973,10 @@ def board_list_command(
 @sprints_app.command(name="list")
 def sprint_list_command(
     *,
-    board_id: Annotated[int | None, Parameter(name="--board-id", help="Board id.")] = None,
+    board_id: Annotated[
+        int | None,
+        Parameter(name="--board-id", help="Board id; defaults to jira.default_board_id."),
+    ] = None,
     state: Annotated[
         str | None,
         Parameter(name="--state", help="Sprint state filter, e.g. active,future."),
