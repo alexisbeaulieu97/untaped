@@ -405,14 +405,12 @@ def apply_command(
 ) -> None:
     """Place the named enabled items (all of them by default), whatever their policy.
 
-    Fetches and fast-forwards a managed clone when the item has a link file
-    in it, which moves every other link file on that clone too; the plan
-    lists those paths. A local file in the way of a new path is kept aside,
-    and the row says where. Refuses paths edited on this machine (row action
-    `conflict`, exit 1) unless --force; `diff` shows what --force would
-    replace in copy and merge files. Rewrites status.json and attention
-    afterwards. `untaped agents dotfiles policies` explains what `apply`
-    does in each state.
+    It can move other items' link files; the plan lists them. A local file in
+    the way of a new path is kept aside, and the row says where. Refuses paths
+    edited on this machine (row action `conflict`, exit 1) unless --force;
+    `diff` shows what --force would replace in copy and merge files. Rewrites
+    status.json and attention afterwards. `untaped agents dotfiles policies`
+    explains what `apply` does in each state and when a clone is pulled.
     """
     with report_errors():
         svc = services()
@@ -464,7 +462,8 @@ def sync_command(
 
     Never prompts and never overwrites a path edited on this machine. Exits 3
     when anything needs the user, 1 when an apply or a git operation failed.
-    `untaped agents dotfiles policies` has what each policy does in each
+    Rewrites status.json and attention unless --dry-run. `untaped agents
+    dotfiles policies` has what each policy does in each
     state, and when a clone is pulled.
     """
     with report_errors():

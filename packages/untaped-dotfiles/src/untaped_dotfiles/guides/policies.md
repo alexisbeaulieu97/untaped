@@ -39,8 +39,7 @@ prompts. It exits 3 when a row needs the user: one left in `behind`,
 and `orphan`). A `manual` `pending` or `foreign` row is reported but does
 not count. It exits 1 when an apply or a git operation failed, or a path
 could not be read (a row carrying an `error`). `status --check` exits the
-same way. `attention`, the one-line count a prompt reads, counts a row
-carrying an `error` too.
+same way.
 
 ## When a clone is pulled
 
