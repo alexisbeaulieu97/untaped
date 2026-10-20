@@ -82,12 +82,12 @@ untaped github cache prune --org acme --dry-run
 Warm the store before a batch of sweeps, check out one stored ref to read
 it, and drop repos that left the org. A repo a workspace or another plugin
 still uses stays when github lets go of it, and the delete says who kept it.
-Deletes preview and ask first; see the skill. For clones you work in, use
+Deletes preview and ask first (`--dry-run`, `--yes`). For clones you work in, use
 [workspaces](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-workspace/README.md).
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/src/untaped_github/skills/untaped-github/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install github --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped github COMMAND --help` lists each command's options.
+`untaped agents github` prints this plugin's commands, settings and guides, as Markdown for an agent ([agent pages](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/agent-pages.md)); `untaped skills install github --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) installs a skill that sends your agent there. `untaped github COMMAND --help` lists each command's options.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#github) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#github)

@@ -108,7 +108,9 @@ saved source or plugin still uses stays.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-ansible/src/untaped_ansible/skills/untaped-ansible/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install ansible --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped ansible COMMAND --help` lists each command's options.
+`untaped agents ansible` lists every command with its options, the settings, and the guides on where an answer's data comes from and how a walk resolves refs; the untaped you run generates it.
+
+`untaped skills install ansible --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) points your agent at it.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#ansible) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#ansible)

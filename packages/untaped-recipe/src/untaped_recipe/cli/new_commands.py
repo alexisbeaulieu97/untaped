@@ -35,7 +35,31 @@ def init_pack_command(
     *,
     lock: _LockOption = True,
 ) -> None:
-    """Scaffold a recipe pack project."""
+    """Scaffold a recipe pack project.
+
+    A pack is a Python project: its `pyproject.toml` lists recipes under
+    `[tool.untaped_recipe.recipes]` and hooks under
+    `[tool.untaped_recipe.hooks]`. `untaped[recipe]` stays a dev-only
+    dependency; hook runtime dependencies go in `[project].dependencies`.
+    Packs ship `pytest` with `pythonpath = ["src"]`, so
+    `uv run --project PACK pytest` works at once.
+
+    Each `init` refreshes the pack's `uv.lock`, which needs package-index
+    access (or a `[tool.uv.sources]` override). If locking fails, the files
+    stay and the error says how to repair them. With --no-lock, hooks can't
+    run until `uv lock` succeeds: they run with `uv run --locked --no-dev`.
+    How to write the pieces: `untaped agents recipe recipe-files` and
+    `untaped agents recipe writing-hooks`.
+
+    Examples
+    --------
+    ```console
+    $ untaped recipe packs init acme
+    $ untaped recipe init ./acme/editorconfig
+    $ untaped recipe hooks init ./acme/pin_python --kind validate
+    $ untaped recipe test ./acme
+    ```
+    """
     with report_config_errors():
         pack_name = safe_library_name(name, field="pack")
         path = pack_scaffold.scaffold_pack(Path.cwd() / pack_name, pack_name, lock=lock)
@@ -50,7 +74,11 @@ def init_recipe_command(
     *,
     lock: _LockOption = True,
 ) -> None:
-    """Scaffold a recipe, with a starter golden test case, inside a pack."""
+    """Scaffold a recipe, with a starter golden test case, inside a pack.
+
+    A `./path/RECIPE` ref targets the pack at `./path`. It locks the pack
+    like `packs init`.
+    """
     with report_config_errors():
         if "/" not in ref:
             raise ValueError(
@@ -81,7 +109,13 @@ def init_hook_command(
     ] = False,
     lock: _LockOption = True,
 ) -> None:
-    """Scaffold a hook module and its pytest inside a pack."""
+    """Scaffold a hook module and its pytest inside a pack.
+
+    It writes a typed stub of the --kind callable and a pytest that calls it
+    directly. A `./path/HOOK` ref targets the pack at `./path`. An existing
+    hook is refused without --force, which replaces both files. It locks the
+    pack like `packs init`.
+    """
     with report_config_errors():
         pack_dir, name = _new_pack_child(ref)
         path = pack_scaffold.scaffold_hook(pack_dir, name, kind=kind, lock=lock, force=force)

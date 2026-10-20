@@ -57,16 +57,16 @@ SPEC = PluginSpec(
     app_factory=build_app,
     help="Apply reusable local recipes to plain directories.",
     settings=RecipeSettings,
+    guides=files("untaped_recipe") / "guides",
     skills=(
         SkillAsset(
             name="untaped-recipe",
-            source=Path(str(files("untaped_recipe").joinpath("skills", "untaped-recipe"))),
             description=(
-                "Applies reusable file recipes (templated files, YAML edits, copies, removals) "
-                "across many directories or repos through the `untaped recipe` command, with a "
-                "preview, backups and a CI drift check, and authors and tests recipe packs. Use "
-                "when the user mentions recipes or recipe packs, codemods, the same file change "
-                "across many repos, or drift checks."
+                "Recipe packs and the file changes they apply across many directories or "
+                "repos: templated files, YAML edits, copies and removals, with previews, "
+                "backups and drift checks, plus authoring and testing packs and hooks. Use "
+                "when the work concerns recipes or recipe packs, codemods, the same file "
+                "change across many repos, or drift checks."
             ),
         ),
     ),

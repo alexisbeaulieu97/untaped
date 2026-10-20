@@ -45,7 +45,11 @@ _diag = Diagnostics()
 
 
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
-    """List backup bundles."""
+    """List backup bundles.
+
+    A bundle holds text content only, not mode or mtime, and is owner-only
+    (directories `0700`, files `0600`).
+    """
     with report_config_errors():
         emit(
             [_backup_row(bundle) for bundle in BackupStore(library_dir() / "backups").list()],
@@ -89,7 +93,7 @@ def _entries(files: object) -> TypeGuard[list[dict[str, object]]]:
 
 
 def get_command(
-    backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
+    backup_id: Annotated[str, Parameter(help="Backup id, an unambiguous prefix, or latest.")],
     /,
     *,
     fmt: FormatOption = "table",
@@ -113,7 +117,7 @@ def get_command(
 
 @writes
 def restore_command(
-    backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
+    backup_id: Annotated[str, Parameter(help="Backup id, an unambiguous prefix, or latest.")],
     /,
     *,
     force: Annotated[
@@ -125,7 +129,18 @@ def restore_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Restore a backup bundle."""
+    """Restore a backup bundle.
+
+    The whole bundle is restored as one transaction, after a
+    preview and a confirmation. It refuses to overwrite files changed after
+    the backup unless --force.
+
+    Examples
+    --------
+    ```console
+    $ untaped recipe backups restore latest --dry-run
+    ```
+    """
     with report_config_errors():
         store = BackupStore(library_dir() / "backups")
         resolved_id = store.resolve(backup_id).id
@@ -191,7 +206,11 @@ def prune_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Prune old backup bundles."""
+    """Prune old backup bundles.
+
+    Without --keep or --older-than, the `recipe.backup_keep` and
+    `recipe.backup_max_age_days` settings decide.
+    """
     with report_config_errors():
         if keep is not None and keep < 1:
             raise UsageError("--keep must be at least 1")

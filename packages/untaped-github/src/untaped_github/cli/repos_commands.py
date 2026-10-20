@@ -34,8 +34,8 @@ PatternArgument = Annotated[
     str | None,
     Parameter(
         help=(
-            "Optional repo-name pattern. Glob by default; with / matches owner/name, "
-            "otherwise matches name."
+            "Optional repo-name pattern: a case-insensitive glob over the whole name by "
+            "default; with / it matches owner/name, otherwise the name alone."
         )
     ),
 ]
@@ -87,7 +87,18 @@ def list_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List repositories from additive org/team inventory scopes."""
+    """List repositories from additive org/team inventory scopes.
+
+    The complete inventory of its scopes, matched by name locally; ``search
+    repos`` ranks instead. ``untaped agents github scopes`` explains scopes,
+    knowing the list is complete and piping the rows on.
+
+    Examples
+    --------
+    ```console
+    $ untaped github repos list 'svc-*' --org acme --format pipe
+    ```
+    """
     from untaped_github.application import ListRepos, RepoListFilters  # noqa: PLC0415
 
     with report_errors():
