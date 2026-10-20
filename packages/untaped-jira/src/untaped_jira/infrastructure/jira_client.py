@@ -16,10 +16,15 @@ from untaped_jira.settings import JiraSettings
 # that call into retry by widening the retryable methods to include POST — the
 # tool's mutating POSTs (create/comment/transition/link) don't go through
 # ``paginate_offset``, so the client's default policy sends them once (it
-# retries only idempotent methods, PUT among them).
+# retries only idempotent methods).
 _SEARCH_RETRY = RetryPolicy(
     idempotent_methods=frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "POST"})
 )
+# A patch's PUTs are not always idempotent: an ``update`` add (a comment, a
+# label) applies again on every attempt. Treat no method as idempotent so
+# they're sent once like the POSTs, retrying only a connect that never reached
+# Jira.
+_SEND_ONCE = RetryPolicy(idempotent_methods=frozenset())
 
 
 def _segment(value: str) -> str:
@@ -106,12 +111,20 @@ class JiraClient:
 
     def edit_issue(self, issue_key: str, payload: dict[str, Any]) -> None:
         with map_jira_errors(noun="issue", name=issue_key):
-            self._http.request_json("PUT", self._api(f"issue/{_segment(issue_key)}"), json=payload)
+            self._http.request_json(
+                "PUT",
+                self._api(f"issue/{_segment(issue_key)}"),
+                json=payload,
+                retry=_SEND_ONCE,
+            )
 
     def assign_issue(self, issue_key: str, payload: dict[str, Any]) -> None:
         with map_jira_errors(noun="issue", name=issue_key):
             self._http.request_json(
-                "PUT", self._api(f"issue/{_segment(issue_key)}/assignee"), json=payload
+                "PUT",
+                self._api(f"issue/{_segment(issue_key)}/assignee"),
+                json=payload,
+                retry=_SEND_ONCE,
             )
 
     def add_comment(self, issue_key: str, body: str) -> dict[str, Any]:
