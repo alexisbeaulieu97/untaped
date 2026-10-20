@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from test_management.support import make_spec, write_config
+from test_management.support import age_stub, make_spec, write_config
 from untaped import bootstrap
 from untaped.management import fix
 from untaped.management.fix import ChildRun
@@ -504,8 +504,7 @@ def _stale_skill() -> None:
     root = bootstrap.build_root_app()
     installed = invoke_cli(root.meta, ["skills", "install", "untaped", "--target", "claude"])
     assert installed.exit_code == 0, installed.output
-    skill = Path.home() / ".claude" / "skills" / "untaped" / "SKILL.md"
-    skill.write_text("stale\n", encoding="utf-8")
+    age_stub(Path.home() / ".claude" / "skills" / "untaped")
 
 
 def _old_http_key() -> None:

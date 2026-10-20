@@ -6,9 +6,9 @@ untaped is one command line built from plugins. Core (below) holds what every pl
 Read a plugin's page before running its commands: `untaped agents PLUGIN`, then `untaped agents PLUGIN COMMAND` for a command's options and examples.
 
 ## Shared by every command
-- Settings live in `CONFIG`: each plugin's under `profiles.<name>.<plugin>`. `untaped config` reads and changes them.
+- Settings live in `CONFIG`: each plugin's under `profiles.<name>.<plugin>`. `untaped config` reads and changes them. A command missing a setting exits 4, and its hint names the other profiles that set it.
 - Tokens are kept by `untaped auth`; a command missing one exits 4 and names the fix.
-- Results are rows on stdout; progress and errors go to stderr. A command's own options, output formats and `--stdin` included where it has them, are on its page.
+- Results are rows on stdout; progress and errors go to stderr, as JSON Lines under `--format json`. A command's own options, output formats and `--stdin` included where it has them, are on its page.
 - Without a terminal nothing prompts. A command that needs an answer exits 2, and its error names what to pass, such as `--yes`.
 - Options every command takes:
   - `--profile`: Override the active profile for this invocation only (scoped to the invocation; does not mutate UNTAPED_PROFILE).

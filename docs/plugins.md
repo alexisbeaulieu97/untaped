@@ -355,11 +355,11 @@ untaped skills install --all --target all
 ```
 
 `SkillAsset.name` is the skill's full ID (`untaped-acme`; see
-[Install skills](./skills.md#install-skills)). The core `untaped` skill
-covers untaped itself; plugin guidance belongs in the plugin's skill.
-
-Write `SKILL.md` from the [skill template](./plugin-skills.md). Prose for agents
-that fits no single command goes in a [guide](./reference/agent-pages.md#guides).
+[Install skills](./skills.md#install-skills)). Without `source` it is a stub
+written from untaped's template and `description` (one per plugin); with
+`source`, a copy whose `SKILL.md` follows the [skill template](./plugin-skills.md).
+Prose for agents that fits no single command goes in a
+[guide](./reference/agent-pages.md#guides).
 
 ## Validation and checks
 

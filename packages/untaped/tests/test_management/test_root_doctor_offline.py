@@ -176,7 +176,7 @@ def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
     )
     row = _row(_rows(make_spec("demo")), "skills")
     assert row["status"] == "warn"
-    assert "orphaned:" in row["detail"]
+    assert "orphaned copy:" in row["detail"]
     assert "no plugin installed here" in row["detail"]
     assert "untaped skills remove" in row["detail"]
     # Orphaned skills alone have no fix, so nothing is automatic.

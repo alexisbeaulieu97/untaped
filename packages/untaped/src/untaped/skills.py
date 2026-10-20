@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
@@ -14,15 +15,21 @@ from typing import Annotated, Protocol
 from uuid import uuid4
 
 from cyclopts import Parameter
+from packaging.version import InvalidVersion, Version
 
+from untaped import skill_stubs
 from untaped.cli import existing_directory
 from untaped.errors import ConfigError, UsageError
 from untaped.git import GitCommandError, git_toplevel
+from untaped.settings import DEFAULT_CONFIG_PATH
+from untaped.skill_stubs import STUB_MARKER, STUB_SOURCE, Comparison, StubAuthor
 from untaped.stdin import read_identifiers
 
 
 class InstallableSkill(Protocol):
-    """A packaged agent skill the install machinery can list and copy.
+    """A packaged agent skill the install machinery can list and install.
+
+    Without ``source`` it is a stub skill, written from core's template.
 
     Structural type implemented by :class:`~untaped.sdk.SkillAsset` (a frozen
     dataclass). The members are read-only properties because the concrete type
@@ -32,9 +39,58 @@ class InstallableSkill(Protocol):
     @property
     def name(self) -> str: ...
     @property
-    def source(self) -> Path: ...
+    def source(self) -> Path | None: ...
     @property
     def description(self) -> str: ...
+
+
+@dataclass(frozen=True)
+class PackagedSkill:
+    """A skill a composed plugin (or core) ships, and who ships it.
+
+    ``plugin`` is the owning spec's name, which a stub's pages use
+    (``untaped agents <plugin>``); ``distribution`` and ``version`` are the
+    plugin side a stub marker records (``version`` is empty when unknown;
+    core's is read when a marker is written, so composing reads no metadata).
+    """
+
+    asset: InstallableSkill
+    plugin: str
+    distribution: str
+    version: str = ""
+
+    @property
+    def name(self) -> str:
+        """The skill's full ID, also its directory name."""
+        return self.asset.name
+
+    @property
+    def source(self) -> Path | None:
+        """The directory a copy is made from; ``None`` for a stub."""
+        return self.asset.source
+
+    @property
+    def description(self) -> str:
+        """The skill's description, the stub's only plugin-written text."""
+        return self.asset.description
+
+    @property
+    def stub(self) -> bool:
+        """Whether this skill installs as a stub."""
+        return self.asset.source is None
+
+    def author(self) -> StubAuthor:
+        """The versions this run records in a stub marker (core's plugin side is untaped's)."""
+        untaped = skill_stubs.running_untaped()
+        return StubAuthor(
+            untaped=untaped,
+            plugin=self.distribution,
+            plugin_version=untaped if self.distribution == skill_stubs.CORE else self.version,
+        )
+
+    def stub_files(self) -> dict[str, bytes]:
+        """The files this run writes for the stub."""
+        return skill_stubs.stub_files(self.name, self.plugin, self.description)
 
 
 class SkillInstallTarget(StrEnum):
@@ -119,20 +175,21 @@ SkillTargetDirOption = Annotated[
 ]
 
 
-def skill_rows(skills: Mapping[str, InstallableSkill]) -> list[dict[str, object]]:
+def skill_rows(skills: Mapping[str, PackagedSkill]) -> list[dict[str, object]]:
     """Return deterministic row data for registered skills."""
     return [
         {
             "name": spec.name,
             "description": spec.description,
-            "source": str(spec.source),
+            "kind": "stub" if spec.stub else "copy",
+            "source": STUB_SOURCE if spec.stub else str(spec.source),
         }
         for spec in sorted(skills.values(), key=lambda item: item.name)
     ]
 
 
 def install_skills(
-    skills: Mapping[str, InstallableSkill],
+    skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
     stdin: bool,
@@ -177,22 +234,46 @@ _IGNORED_PARTS = ("__pycache__",)
 
 
 class SkillState(StrEnum):
-    """How an installed skill compares with the skills this version ships."""
+    """How an installed skill compares with the skills this version ships.
+
+    ``outdated`` covers a stub this run is newer than (with other text) and a
+    copy whose plugin now ships a stub; ``newer`` is a stub a newer untaped or
+    plugin wrote; ``edited`` is a stub whose files someone changed.
+    """
 
     current = "current"
     outdated = "outdated"
     orphaned = "orphaned"
+    edited = "edited"
+    newer = "newer"
+
+
+class SkillKind(StrEnum):
+    """What an installed skill directory is, by its marker."""
+
+    stub = "stub"
+    copy = "copy"
 
 
 @dataclass(frozen=True)
 class InstalledSkill:
-    """One untaped-installed skill directory found in a skill root."""
+    """One untaped-installed skill directory found in a skill root.
+
+    ``written_by`` names what wrote a ``newer`` stub (``untaped (11.3.0)``).
+    """
 
     name: str
     target: str
     scope: SkillInstallScope
     path: Path
     state: SkillState
+    kind: SkillKind
+    written_by: str = ""
+
+    @property
+    def home(self) -> bool:
+        """Whether it sits in a home-folder skill root, decided by path alone."""
+        return self.path.parent.resolve() in {root.resolve() for root in home_skill_roots()}
 
 
 def project_root(start: Path) -> Path:
@@ -228,6 +309,40 @@ def nearest_pyproject(start: Path) -> Path | None:
     return None
 
 
+def home_skill_roots() -> frozenset[Path]:
+    """The two home-folder skill roots, ``~/.agents/skills`` and ``~/.claude/skills``.
+
+    The per-run check writes only here. Any other root is a project's own,
+    often committed, and changes only when someone runs ``skills update``
+    there; when a project root is a home root (a project at ``$HOME``), the
+    home rule wins.
+    """
+    return frozenset(
+        destination.root
+        for destination in (
+            _codex_destination(SkillInstallScope.global_, project_root=None),
+            _claude_destination(SkillInstallScope.global_, project_root=None),
+        )
+    )
+
+
+#: The first version newer than every copy: a copy counts as the newest 11.0.
+_CONVERTS_FROM = "11.1.0"
+
+
+def converts_copies() -> bool:
+    """Whether this run is newer than a copy, so it may convert one to a stub."""
+    try:
+        return Version(skill_stubs.running_untaped()) >= Version(_CONVERTS_FROM)
+    except InvalidVersion:
+        return False
+
+
+def skill_backups_dir() -> Path:
+    """Where a converted copy is kept: ``~/.untaped/backups/skills``. Never removed."""
+    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "backups" / "skills"
+
+
 def skill_roots(*, project_dir: Path | None) -> list[SkillInstallDestination]:
     """Return the global codex/claude skill roots plus ``project_dir``'s local ones."""
     roots = [
@@ -245,39 +360,88 @@ def skill_roots(*, project_dir: Path | None) -> list[SkillInstallDestination]:
 
 
 def find_installed_skills(
-    skills: Mapping[str, InstallableSkill],
+    skills: Mapping[str, PackagedSkill],
     roots: Iterable[SkillInstallDestination],
+    *,
+    deep: bool = True,
 ) -> list[InstalledSkill]:
     """Return every untaped-installed skill under ``roots`` with its state.
 
-    Only directories carrying the untaped install marker count; hand-made
-    skills are never reported. A marked skill no composed plugin ships is
-    ``orphaned``; one whose files differ from the packaged copy is ``outdated``.
+    Only directories carrying an untaped marker count (a stub's or a
+    copy's); hand-made skills are never reported. A marked skill no composed
+    plugin ships is ``orphaned``. Without ``deep`` a stub this run is not
+    newer than is read by its marker alone and reported ``current``, even
+    when someone edited it: the per-run check has nothing to do for it.
     """
     found: list[InstalledSkill] = []
     for root in roots:
         if not root.root.is_dir():
             continue
         for path in sorted(root.root.iterdir()):
-            if not (path / _MARKER).is_file():
-                continue
-            target, scope = _marker_location(path, root)
-            found.append(
-                InstalledSkill(
-                    name=path.name,
-                    target=target,
-                    scope=scope,
-                    path=path,
-                    state=_skill_state(skills.get(path.name), path),
+            if (path / STUB_MARKER).is_file():
+                found.append(_found_stub(skills.get(path.name), path, root, deep=deep))
+            elif (path / _MARKER).is_file():
+                target, scope = _marker_location(path, root)
+                found.append(
+                    InstalledSkill(
+                        name=path.name,
+                        target=target,
+                        scope=scope,
+                        path=path,
+                        state=_copy_state(skills.get(path.name), path),
+                        kind=SkillKind.copy,
+                    )
                 )
-            )
     return found
 
 
+def _found_stub(
+    spec: PackagedSkill | None, path: Path, root: SkillInstallDestination, *, deep: bool
+) -> InstalledSkill:
+    marker = skill_stubs.read_marker(path)
+    target, scope = root.target, root.scope
+    if marker is not None:
+        target = marker.target
+        scope = _scope(marker.scope, root.scope)
+    written_by = ""
+    if spec is None:
+        state = SkillState.orphaned
+    elif marker is None:
+        # An unreadable marker can't say who wrote the stub: treat it as the user's.
+        state = SkillState.edited
+    elif not spec.stub:
+        state = SkillState.outdated  # its plugin went back to shipping a copy
+    else:
+        run = spec.author()
+        comparison = skill_stubs.compare(marker.author, run)
+        if comparison is Comparison.older:
+            state = SkillState.newer
+            written_by = skill_stubs.newer_side(marker.author, run)
+        elif comparison is Comparison.same and not deep:
+            state = SkillState.current
+        else:
+            files = _tree_bytes(path)
+            if skill_stubs.digest(files) != marker.sha256:
+                state = SkillState.edited
+            elif comparison is Comparison.newer and files != spec.stub_files():
+                state = SkillState.outdated
+            else:
+                state = SkillState.current
+    return InstalledSkill(
+        name=path.name,
+        target=target,
+        scope=scope,
+        path=path,
+        state=state,
+        kind=SkillKind.stub,
+        written_by=written_by,
+    )
+
+
 def outdated_skills(
-    skills: Mapping[str, InstallableSkill], *, project_dir: Path | None = None
+    skills: Mapping[str, PackagedSkill], *, project_dir: Path | None = None
 ) -> list[InstalledSkill]:
-    """Return installed skills that are outdated or orphaned.
+    """Return installed skills that are not ``current``.
 
     Looks in the global codex/claude skill roots and, with ``project_dir``,
     that directory's local roots.
@@ -290,25 +454,47 @@ def outdated_skills(
 
 
 def update_installed_skill(
-    skills: Mapping[str, InstallableSkill], installed: InstalledSkill
+    skills: Mapping[str, PackagedSkill],
+    installed: InstalledSkill,
+    *,
+    backup_root: Path | None = None,
 ) -> SkillInstallResult:
-    """Replace ``installed`` in place with the packaged copy of the same skill."""
+    """Replace ``installed`` in place with what this version ships for the same skill.
+
+    A stub is rewritten file by file, so a parallel run never finds its
+    directory missing. A copy whose plugin now ships a stub is converted;
+    with ``backup_root`` the old copy is kept under
+    ``<backup_root>/<target>/<name>``, else deleted. A conversion another
+    run already made counts as done.
+    """
     spec = skills.get(installed.name)
     if spec is None:
         raise ConfigError(
             f"no plugin installed here ships this skill: {installed.name}", category="not_found"
         )
-    if not spec.source.is_dir():
+    if spec.source is not None and not spec.source.is_dir():
         raise ConfigError(f"skill source missing: {installed.name} ({spec.source})")
     destination = SkillInstallDestination(
         target=installed.target, scope=installed.scope, root=installed.path.parent
     )
     try:
-        return _install_skill(
-            spec, target_destination=destination, destination=installed.path, force=True
-        )
+        if spec.stub and installed.kind is SkillKind.stub:
+            _rewrite_stub(spec, destination, installed.path)
+        elif spec.stub:
+            _convert_to_stub(spec, destination, installed.path, backup_root=backup_root)
+        else:
+            _install_skill(
+                spec, target_destination=destination, destination=installed.path, force=True
+            )
     except OSError as exc:
         raise ConfigError(f"could not update {installed.path}: {exc.strerror or exc}") from exc
+    return SkillInstallResult(
+        name=spec.name,
+        target=destination.target,
+        scope=destination.scope,
+        root=destination.root,
+        destination=installed.path,
+    )
 
 
 def remove_installed_skill(installed: InstalledSkill) -> None:
@@ -317,7 +503,7 @@ def remove_installed_skill(installed: InstalledSkill) -> None:
     The directory is moved aside first, so an interrupted removal never leaves
     a half-deleted skill where the agent would still load it.
     """
-    if not (installed.path / _MARKER).is_file():
+    if not (installed.path / _MARKER).is_file() and not (installed.path / STUB_MARKER).is_file():
         raise ConfigError(f"not an untaped-installed skill: {installed.path}", category="invalid")
     backup = _backup_path(installed.path)
     try:
@@ -335,9 +521,20 @@ def _marker_location(path: Path, root: SkillInstallDestination) -> tuple[str, Sk
         return root.target, root.scope
 
 
-def _skill_state(spec: InstallableSkill | None, installed: Path) -> SkillState:
+def _scope(value: str, default: SkillInstallScope) -> SkillInstallScope:
+    try:
+        return SkillInstallScope(value)
+    except ValueError:
+        return default
+
+
+def _copy_state(spec: PackagedSkill | None, installed: Path) -> SkillState:
     if spec is None:
         return SkillState.orphaned
+    if spec.source is None:
+        # Its plugin now ships a stub. A copy carries no version and counts as
+        # the newest 11.0, so only a run from 11.1.0 on is newer than it.
+        return SkillState.outdated if converts_copies() else SkillState.current
     # A packaged source that vanished (a broken install) cannot be compared.
     if spec.source.is_dir() and _tree_bytes(installed) != _tree_bytes(spec.source):
         return SkillState.outdated
@@ -349,14 +546,15 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
         path.relative_to(root).as_posix(): path.read_bytes()
         for path in sorted(root.rglob("*"))
         if path.is_file()
-        and path.name != _MARKER
+        and path.name not in (_MARKER, STUB_MARKER)
+        and not _temporary(path.name)  # a stub write in flight
         and path.suffix != ".pyc"
         and not any(part in _IGNORED_PARTS for part in path.relative_to(root).parts)
     }
 
 
 def _selected_skill_names(
-    skills: Mapping[str, InstallableSkill],
+    skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
     stdin: bool,
@@ -427,19 +625,19 @@ def _target_skill_root(target_dir: Path) -> Path:
 
 
 def _plan_install(
-    skills: Mapping[str, InstallableSkill],
+    skills: Mapping[str, PackagedSkill],
     selected_names: list[str],
     targets: list[SkillInstallDestination],
     *,
     force: bool,
-) -> list[tuple[InstallableSkill, SkillInstallDestination, Path]]:
-    plan: list[tuple[InstallableSkill, SkillInstallDestination, Path]] = []
+) -> list[tuple[PackagedSkill, SkillInstallDestination, Path]]:
+    plan: list[tuple[PackagedSkill, SkillInstallDestination, Path]] = []
     for name in selected_names:
         spec = skills[name]
         # Validate every source up front, before any destructive step runs, so
         # an invalid source aborts the whole install with nothing removed
         # (``is_dir`` is False for both a missing path and a non-directory).
-        if not spec.source.is_dir():
+        if spec.source is not None and not spec.source.is_dir():
             raise ConfigError(f"skill source missing: {name} ({spec.source})")
         for target_destination in targets:
             destination = target_destination.root / name
@@ -450,7 +648,7 @@ def _plan_install(
 
 
 def _install_skill(
-    spec: InstallableSkill,
+    spec: PackagedSkill,
     *,
     target_destination: SkillInstallDestination,
     destination: Path,
@@ -462,26 +660,7 @@ def _install_skill(
     # cannot leave a half-deleted destination.
     stage = Path(tempfile.mkdtemp(dir=destination.parent, prefix=f".{destination.name}.tmp-"))
     try:
-        staged_skill = stage / destination.name
-        shutil.copytree(
-            spec.source,
-            staged_skill,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-        )
-        staged_skill.joinpath(_MARKER).write_text(
-            json.dumps(
-                {
-                    "install_root": str(target_destination.root),
-                    "name": spec.name,
-                    "scope": target_destination.scope.value,
-                    "source": str(spec.source),
-                    "target": target_destination.target,
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n"
-        )
+        staged_skill = _stage_skill(spec, target_destination, stage / destination.name)
         _place_staged_skill(staged_skill, destination, force=force)
     finally:
         shutil.rmtree(stage, ignore_errors=True)
@@ -492,6 +671,139 @@ def _install_skill(
         root=target_destination.root,
         destination=destination,
     )
+
+
+def _stage_skill(
+    spec: PackagedSkill, target_destination: SkillInstallDestination, staged_skill: Path
+) -> Path:
+    if spec.source is None:
+        staged_skill.mkdir()
+        files = spec.stub_files()
+        for relative, content in files.items():
+            staged_skill.joinpath(relative).write_bytes(content)
+        staged_skill.joinpath(STUB_MARKER).write_text(
+            _stub_marker(spec, target_destination, files), encoding="utf-8"
+        )
+        return staged_skill
+    shutil.copytree(
+        spec.source,
+        staged_skill,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    staged_skill.joinpath(_MARKER).write_text(
+        json.dumps(
+            {
+                "install_root": str(target_destination.root),
+                "name": spec.name,
+                "scope": target_destination.scope.value,
+                "source": str(spec.source),
+                "target": target_destination.target,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    return staged_skill
+
+
+def _stub_marker(
+    spec: PackagedSkill, target_destination: SkillInstallDestination, files: dict[str, bytes]
+) -> str:
+    return skill_stubs.marker_text(
+        spec.author(),
+        sha256=skill_stubs.digest(files),
+        name=spec.name,
+        target=target_destination.target,
+        scope=target_destination.scope.value,
+        install_root=target_destination.root,
+    )
+
+
+def _rewrite_stub(
+    spec: PackagedSkill, target_destination: SkillInstallDestination, destination: Path
+) -> None:
+    """Rewrite a stub's files in place, each by temporary file and rename.
+
+    The directory never goes missing, so parallel runs refreshing one stub
+    both succeed. Files the new stub no longer has are removed.
+    """
+    files = spec.stub_files()
+    keep = {*files, STUB_MARKER}
+    for relative, content in files.items():
+        _replace_file(destination / relative, content)
+    for stale in destination.iterdir():
+        # A parallel run's temporary file is its own to rename or remove.
+        if stale.name not in keep and not _temporary(stale.name):
+            if stale.is_dir():
+                shutil.rmtree(stale, ignore_errors=True)
+            else:
+                stale.unlink(missing_ok=True)
+    _replace_file(destination / STUB_MARKER, _stub_marker(spec, target_destination, files).encode())
+
+
+_TEMPORARY = ".tmp-"
+_TEMPORARY_NAME = re.compile(r"\..+\.tmp-[0-9a-f]{32}")
+
+
+def _temporary(name: str) -> bool:
+    """Whether ``name`` is a stub write in flight (``_replace_file``'s temporary file)."""
+    return _TEMPORARY_NAME.fullmatch(name) is not None
+
+
+def _replace_file(path: Path, content: bytes) -> None:
+    temporary = path.with_name(f".{path.name}{_TEMPORARY}{uuid4().hex}")
+    try:
+        temporary.write_bytes(content)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _convert_to_stub(
+    spec: PackagedSkill,
+    target_destination: SkillInstallDestination,
+    destination: Path,
+    *,
+    backup_root: Path | None,
+) -> None:
+    """Replace a copy with ``spec``'s stub, keeping the copy under ``backup_root``.
+
+    The copy is renamed aside first, so of several runs converting at once
+    only one moves it; the others find it gone and count the conversion as
+    done.
+    """
+    stage = Path(tempfile.mkdtemp(dir=destination.parent, prefix=f".{destination.name}.tmp-"))
+    try:
+        staged_skill = _stage_skill(spec, target_destination, stage / destination.name)
+        aside = _backup_path(destination)
+        try:
+            os.replace(destination, aside)
+        except FileNotFoundError:
+            return  # another run converted it
+        try:
+            os.replace(staged_skill, destination)
+        except BaseException:
+            if not destination.exists():
+                os.replace(aside, destination)
+            raise
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    if backup_root is None or (aside / STUB_MARKER).is_file():
+        # Nothing to keep: no backup asked for, or a parallel run's stub got moved aside.
+        shutil.rmtree(aside, ignore_errors=True)
+        return
+    kept = _unused_path(backup_root / target_destination.target / destination.name)
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(aside, kept)
+
+
+def _unused_path(path: Path) -> Path:
+    candidate, number = path, 1
+    while candidate.exists():
+        number += 1
+        candidate = path.with_name(f"{path.name}-{number}")
+    return candidate
 
 
 def _place_staged_skill(staged_skill: Path, destination: Path, *, force: bool) -> None:

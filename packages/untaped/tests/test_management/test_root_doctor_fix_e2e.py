@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from test_management.stores import install_fake_stores
-from test_management.support import write_config
+from test_management.support import age_stub, write_config
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.testing import CliResult, invoke_cli
@@ -83,8 +83,7 @@ def _status(check: str, title: str | None = None) -> str:
 def test_skills_update_fixes_an_outdated_installed_skill(_isolated_config: Path) -> None:
     installed = _untaped("skills", "install", "untaped", "--target", "claude")
     assert installed.exit_code == 0, installed.output
-    skill = Path.home() / ".claude" / "skills" / "untaped" / "SKILL.md"
-    skill.write_text("stale\n", encoding="utf-8")
+    age_stub(Path.home() / ".claude" / "skills" / "untaped")
     assert _status("skills") == "warn"
     result = _untaped("doctor", "fix", "--yes", "--format", "json")
     assert result.exit_code == 0, result.output

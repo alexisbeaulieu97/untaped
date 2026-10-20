@@ -135,7 +135,7 @@ def test_defaults_are_captured() -> None:
     updates = find_descriptor(descriptors, "skills.updates")
     assert updates is not None
     assert updates.has_default
-    assert updates.default == "warn"
+    assert updates.default == "auto"
 
     verify = find_descriptor(descriptors, "http.verify_ssl")
     assert verify is not None

@@ -36,24 +36,24 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ("config", "env", "key", "source", "value"),
     [
         ("", None, "demo.token", Source(kind="unset"), None),
-        ("", None, "skills.updates", Source(kind="default"), "warn"),
+        ("", None, "skills.updates", Source(kind="default"), "auto"),
         ("", None, "demo.api_prefix", Source(kind="default"), "/api/demo/v1/"),
         ("", None, "demo.directory", Source(kind="default"), "~/.demo"),
         # Profile-scoped values are attributed to the supplying profile.
         (
-            "profiles:\n  default:\n    skills:\n      updates: auto\n",
+            "profiles:\n  default:\n    skills:\n      updates: warn\n",
             None,
             "skills.updates",
             Source(kind="profile", profile="default"),
-            "auto",
+            "warn",
         ),
         (
-            "profiles:\n  default:\n    skills:\n      updates: warn\n"
-            "  prod:\n    skills:\n      updates: auto\nactive: prod\n",
+            "profiles:\n  default:\n    skills:\n      updates: auto\n"
+            "  prod:\n    skills:\n      updates: warn\nactive: prod\n",
             None,
             "skills.updates",
             Source(kind="profile", profile="prod"),
-            "auto",
+            "warn",
         ),
         (
             "profiles:\n  default:\n    http:\n      verify_ssl: false\n",

@@ -36,19 +36,19 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         # Profile-scoped fields are only effective under ``profiles.<name>``;
         # the resolved source names the profile that supplied the value.
         (
-            "profiles:\n  default:\n    skills:\n      updates: auto\n",
+            "profiles:\n  default:\n    skills:\n      updates: warn\n",
             "skills.updates",
-            "auto",
             "warn",
+            "auto",
             "profile:default",
             "default",
         ),
         (
-            "profiles:\n  default:\n    skills:\n      updates: warn\n"
-            "  stage:\n    skills:\n      updates: auto\nactive: stage\n",
+            "profiles:\n  default:\n    skills:\n      updates: auto\n"
+            "  stage:\n    skills:\n      updates: warn\nactive: stage\n",
             "skills.updates",
-            "auto",
             "warn",
+            "auto",
             "profile:stage",
             "stage",
         ),

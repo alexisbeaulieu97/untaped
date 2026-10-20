@@ -536,6 +536,11 @@ _Avoid_: autofix.
 a plugin's page or a topic's page, generated from what core and the plugins
 declare.
 
+**Stub skill**: a version-neutral agent skill that untaped writes from its
+own template and a plugin's description; it lists no command and sends the
+agent to `untaped agents`.
+_Avoid_: skill pointer, thin skill.
+
 **Topic**: what a plugin's agent page lists and `untaped agents PLUGIN TOPIC`
 prints: one of its commands, or a guide.
 

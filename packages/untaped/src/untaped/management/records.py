@@ -153,6 +153,7 @@ class SetupStep(Record, kind="untaped.setup_step"):
     state: SetupState
     detail: str
     run: list[str]
+    """The complete argv to pass after ``untaped``; a ``<NAME>`` token is a value to ask for."""
     by: SetupActor
     """Whose step it is: the user's when a secret would pass through the agent."""
 
@@ -178,22 +179,36 @@ class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="untaped.scaffold_outcom
 
 
 class SkillRow(Record, kind="untaped.skill"):
-    """A skill the installed plugins ship (``skills list``)."""
+    """A skill the installed plugins ship (``skills list``).
+
+    ``kind`` is ``stub`` (written from core's template) or ``copy`` (copied
+    from ``source``); a stub's ``source`` is the template's identity,
+    ``untaped:stub/1``, not a path.
+    """
 
     name: str
     description: str
     source: str
+    kind: Literal["stub", "copy"]
 
 
 class InstalledSkillRow(TargetRecord, kind="untaped.installed_skill"):
     """An untaped-installed skill directory and whether it matches this version."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "target", "scope", "state", "target_path")
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "name",
+        "kind",
+        "target",
+        "scope",
+        "state",
+        "target_path",
+    )
 
     name: str
     target: str
     scope: str
     state: str
+    kind: Literal["stub", "copy"]
 
 
 class SkillOutcome(OutcomeRecord, TargetRecord, kind="untaped.skill_outcome"):

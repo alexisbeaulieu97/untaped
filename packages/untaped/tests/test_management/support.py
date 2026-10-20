@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -19,6 +20,7 @@ from untaped.plugins.registry import (
 )
 from untaped.sdk import HttpStatusError, TokenCommand, TokenSources, online_check
 from untaped.settings import get_settings
+from untaped.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.stability import Stability
 from untaped.testing import plugin_candidate
 
@@ -200,3 +202,15 @@ __all__ = [
     "wiz_probe",
     "write_config",
 ]
+
+
+def age_stub(directory: Path, *, untaped: str = "10.0.0", text: str = "older wording\n") -> None:
+    """Make the stub in ``directory`` look written by an older untaped, with other wording."""
+    skill = directory / SKILL_FILE
+    skill.write_text(text, encoding="utf-8")
+    marker = json.loads((directory / STUB_MARKER).read_text(encoding="utf-8"))
+    marker["untaped"] = untaped
+    if marker["plugin"] == "untaped":
+        marker["plugin_version"] = untaped
+    marker["sha256"] = digest({SKILL_FILE: skill.read_bytes()})
+    (directory / STUB_MARKER).write_text(json.dumps(marker), encoding="utf-8")

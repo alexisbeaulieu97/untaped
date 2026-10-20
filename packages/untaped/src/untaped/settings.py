@@ -92,14 +92,14 @@ class HttpSettings(BaseModel):
 
 
 class SkillsSettings(BaseModel):
-    """What every run does about installed agent skills that are out of date (per-profile)."""
+    """What every run does about agent skills an older untaped wrote (per-profile)."""
 
     updates: Literal["warn", "auto", "off"] = Field(
-        default="warn",
+        default="auto",
         description=(
-            "What each run does when installed agent skills differ from this "
-            "version: `warn` (print a warning), `auto` (update them in place), or "
-            "`off`."
+            "What each run does about agent skills in your home folder that an "
+            "older untaped wrote: `auto` (refresh them), `warn` (print a warning), "
+            "or `off`. Skills inside a project are never changed by a run."
         ),
     )
 

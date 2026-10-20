@@ -96,7 +96,7 @@ from untaped.settings import (
     section_stabilities,
     settings_overlay,
 )
-from untaped.skills import SkillState, outdated_skills, project_root
+from untaped.skills import InstalledSkill, SkillState, outdated_skills, project_root
 from untaped.stability import owner, removal_text
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
 from untaped.token_store import pass_problem
@@ -168,7 +168,16 @@ def build_root_doctor_app(
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Run every automatic fix doctor found, after one confirmation."""
+        """Run every automatic fix doctor found, after one confirmation.
+
+        No automatic fix asks for or prints a token, so `--yes` passes none:
+        `auth migrate` moves tokens inside its own process. A keychain may
+        show an unlock prompt on the user's screen; a locked `pass` store
+        exits 5 with a hint naming the unlock command. A `skipped` row's
+        `fix` is the argv to run after `untaped`: a `<NAME>` token in it is a
+        value to ask for, and a fix that asks for or reveals a token
+        (`auth set`, `config set ….token --prompt`) is the user's to run.
+        """
         from untaped.management.fix import run_fixes  # noqa: PLC0415 - fix imports doctor
 
         with report_errors():
@@ -615,15 +624,30 @@ def _collect_unknown(
 
 
 def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
-    """Warn when an installed skill no longer matches the packaged copy."""
+    """Warn when an installed skill is outdated, edited, or shipped by no plugin here.
+
+    A stub a newer untaped wrote is fine and not reported; the automatic fix
+    (``skills update``) leaves it and edited stubs alone.
+    """
     title = "installed skills up to date"
-    stale = outdated_skills(composed_skills(shell, result), project_dir=project_root(Path.cwd()))
+    stale = [
+        item
+        for item in outdated_skills(
+            composed_skills(shell, result), project_dir=project_root(Path.cwd())
+        )
+        if item.state is not SkillState.newer
+    ]
     if not stale:
         return _row("skills", shell.name, _PASS, title, "no outdated skills")
-    parts = [f"{item.state.value}: {item.path}" for item in stale]
+    parts = [f"{_skill_label(item)}: {item.path}" for item in stale]
     fix = None
     if any(item.state is SkillState.outdated for item in stale):
         fix = command_argv("skills update", profile=selected_profile())
+    if any(item.state is SkillState.edited for item in stale):
+        parts.append(
+            "edited stubs are never rewritten by a run: keep them, or replace one with"
+            " `untaped skills update --force NAME`"
+        )
     if any(item.state is SkillState.orphaned for item in stale):
         parts.append(
             "orphaned skills are shipped by no plugin installed here: install the plugin"
@@ -631,6 +655,10 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         )
     detail = "; ".join(parts)
     return _row("skills", shell.name, _WARN, title, detail, fix, automatic=True)
+
+
+def _skill_label(item: InstalledSkill) -> str:
+    return f"{item.state.value} {item.kind.value}"
 
 
 def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:

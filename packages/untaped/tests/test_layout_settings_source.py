@@ -124,7 +124,7 @@ def test_empty_config_file_yields_schema_defaults(
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     s = get_settings()
-    assert s.skills.updates == "warn"
+    assert s.skills.updates == "auto"
     assert s.demo.token is None
 
 
@@ -146,7 +146,7 @@ def test_empty_yaml_document_is_treated_as_empty(
     cfg.write_text("# only a comment\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings_model()()
-    assert s.skills.updates == "warn"
+    assert s.skills.updates == "auto"
 
 
 def test_source_translates_yaml_error_to_config_error(

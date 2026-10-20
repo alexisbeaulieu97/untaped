@@ -33,7 +33,7 @@ def _register_demo() -> None:
 def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     s = get_settings()
-    assert s.skills.updates == "warn"
+    assert s.skills.updates == "auto"
     assert s.demo.base_url is None
     assert s.demo.token is None
     assert s.http.verify_ssl is True

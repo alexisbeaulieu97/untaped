@@ -835,7 +835,12 @@ def _skill(tmp_path: Path, name: str, *, with_file: bool = True) -> dict[str, st
     source.mkdir(parents=True)
     if with_file:
         (source / "SKILL.md").write_text("---\nname: x\n---\n")
-    return {"name": name, "description": "d", "source": str(source)}
+    return {"name": name, "description": "d", "source": str(source), "kind": "copy"}
+
+
+def test_skill_errors_accept_a_stub_without_a_skill_file(tmp_path: Path) -> None:
+    stub = {"name": "untaped", "description": "d", "source": "untaped:stub/1", "kind": "stub"}
+    assert release.skill_errors(json.dumps([stub, _skill(tmp_path, "untaped-awx")]), ["awx"]) == []
 
 
 def test_smoke_skills_need_each_expected_skill_with_its_file(
