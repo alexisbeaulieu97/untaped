@@ -1,38 +1,39 @@
 """What ``untaped setup`` and ``untaped setup plan`` read about a profile's services.
 
-A service is a composed plugin whose settings model has ``base_url`` and
-``token`` fields. Both commands resolve each one's current state here, the
-way ``doctor`` does (the profile's values with ``UNTAPED_*`` overrides
-layered on top), so the setup screen, the plan and doctor cannot disagree about
-what is set up.
+A service is a composed plugin whose settings mark what needs setting up
+(:mod:`untaped.setting_marks`), or, deprecated, an unmarked one with
+``base_url`` and ``token`` fields. Both commands resolve each one's current
+state here, with the set rules doctor's ``setup`` row uses
+(:mod:`untaped.setup_status`: the profile's values with ``UNTAPED_*``
+overrides layered on top), so the setup screen, the plan and doctor cannot
+disagree about what is set up.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from untaped.auth import describe_token_source, takes_token_command
 from untaped.config_file import read_config_dict
-from untaped.doctor_checks import service_configured
+from untaped.config_schema import walk_settings
 from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import inherited_from_default, plaintext_token
 from untaped.messages import not_found
 from untaped.plugins.registry import CompositionResult, PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile_resolver import DEFAULT_PROFILE
+from untaped.setting_marks import MarkedField, SetupMarks
 from untaped.settings import (
     active_settings_layout,
     check_settings_field,
     profile_section_models,
 )
+from untaped.setup_status import field_value, notify_unmarked, plugin_marks, unset_fields
 from untaped.token_store import TokenStore, pick_store
-
-_SERVICE_FIELDS = frozenset({"base_url", "token"})
-#: The keys of a service's connection: its URL, its token and the token's command.
-_CONNECTION_FIELDS = ("base_url", "token", "token_command")
 
 
 def setup_sections(only: list[str] | None = None) -> tuple[str, ...]:
@@ -56,22 +57,55 @@ def setup_services(
 ) -> dict[str, PluginSpec]:
     """The composed services by name (empty when none), narrowed to the sections in ``only``.
 
-    Raises :class:`UsageError` for an ``only`` name that is not a section.
+    Each one set up through the legacy fallback warns, once per run
+    (:data:`~untaped.setting_marks.UNMARKED_SERVICE`). Raises
+    :class:`UsageError` for an ``only`` name that is not a section.
     """
     services = {
         registered.spec.name: registered.spec
         for registered in result.plugins
-        if settings_model(registered.spec).model_fields.keys() >= _SERVICE_FIELDS
+        if plugin_marks(registered.spec) is not None
     }
-    if not only:
-        return services
-    return {name: services[name] for name in setup_sections(only) if name in services}
+    if only:
+        services = {name: services[name] for name in setup_sections(only) if name in services}
+    for name, spec in services.items():
+        notify_unmarked(name, plugin_marks(spec))
+    return services
+
+
+def service_marks(spec: PluginSpec) -> SetupMarks:
+    """What service ``spec`` marks (or the legacy fallback reads as marked)."""
+    marks = plugin_marks(spec)
+    assert marks is not None, f"{spec.name} is not a service"
+    return marks
+
+
+def form_fields(spec: PluginSpec) -> tuple[MarkedField, ...]:
+    """The marked fields the connection form edits as text: top-level, scalar, not secret.
+
+    Any other marked field (a list, a nested one, a secret other than
+    ``token``) stays a row of its own.
+    """
+    descriptors = {d.path: d for d in walk_settings(settings_model(spec))}
+    return tuple(
+        field
+        for field in service_marks(spec).required
+        if field.secret is None
+        and len(field.path) == 1
+        and (descriptor := descriptors.get(field.path)) is not None
+        and not descriptor.is_secret
+    )
 
 
 def connection_keys(spec: PluginSpec) -> frozenset[str]:
     """The keys of ``spec``'s connection, which setup edits together as one row."""
-    fields = settings_model(spec).model_fields
-    return frozenset(f"{spec.name}.{name}" for name in _CONNECTION_FIELDS if name in fields)
+    keys = [field.key for field in form_fields(spec)]
+    token = service_marks(spec).token
+    if token is not None:
+        keys.append(token.key)
+        if token.command is not None and token.command in settings_model(spec).model_fields:
+            keys.append(token.command)
+    return frozenset(f"{spec.name}.{key}" for key in keys)
 
 
 def profile_view(raw: dict[str, Any], profile: str) -> dict[str, Any]:
@@ -89,14 +123,18 @@ def profile_view(raw: dict[str, Any], profile: str) -> dict[str, Any]:
 class ServiceState:
     """What a service section currently resolves to in the profile."""
 
-    base_url: str | None
-    """Effective URL (the model default when unset), the form's starting value."""
+    values: Mapping[str, str]
+    """Each form field's effective value (the model default when unset; ``""`` for none),
+    the form's starting values."""
 
     token_source: str | None
-    """Where the token would come from (``describe_token_source``), if anywhere."""
+    """Where the ``token`` would come from (``describe_token_source``), if anywhere."""
 
-    configured: bool
-    """Whether the section is set up (:func:`untaped.doctor_checks.service_configured`)."""
+    missing: tuple[str, ...] = ()
+    """The marked fields still unset, by key within the section."""
+
+    required: int = 0
+    """How many fields the plugin marks as needing setup."""
 
     plaintext: str | None = field(default=None, repr=False)
     """The token stored in plain text in the profile's own config, if any (never in a repr)."""
@@ -113,6 +151,17 @@ class ServiceState:
     invalid: str | None = None
     """Why the section's settings (file plus environment) are invalid, if they are."""
 
+    shown: Mapping[str, str] = field(default_factory=dict)
+    """Each marked field that is not a secret, set, as text (for ``setup plan``'s done rows)."""
+
+    token_only: bool = False
+    """Whether the ``token`` secret is the one marked field still unset."""
+
+    @property
+    def configured(self) -> bool:
+        """Whether every marked field is set."""
+        return self.invalid is None and not self.missing
+
 
 def service_state(
     spec: PluginSpec, node: object, own: dict[str, Any], profile: str, raw: dict[str, Any]
@@ -123,29 +172,45 @@ def service_state(
     ``raw`` the whole config.
     """
     data = node if isinstance(node, dict) else {}
-    stored = data.get("base_url")
-    configured_url = stored if isinstance(stored, str) and stored.strip() else None
     section = spec.name
+    marks = service_marks(spec)
+    form = form_fields(spec)
     plaintext = plaintext_token(own, section)
+    required = len(marks.required)
     try:
         settings: BaseModel = check_settings_field(section, data, model=settings_model(spec))
     except ConfigError as exc:
-        return ServiceState(
-            configured_url, None, configured_url is not None, plaintext, invalid=str(exc)
-        )
-    url = getattr(settings, "base_url", None)
+        values = {each.key: _text(data.get(each.key)) for each in form}
+        missing = tuple(each.key for each in marks.required)
+        return ServiceState(values, None, missing, required, plaintext, invalid=str(exc))
     own_node = own.get(section)
     command = own_node.get("token_command") if isinstance(own_node, dict) else None
     own_command = [str(part) for part in command] if isinstance(command, list) else None
+    token = marks.token
+    missing = tuple(each.key for each in unset_fields(settings, marks, section=section))
+    shown = {
+        each.key: _text(value)
+        for each in marks.required
+        if each.secret is None and (value := field_value(settings, each)) is not None
+    }
     return ServiceState(
-        url if isinstance(url, str) and url else configured_url,
-        describe_token_source(settings, section=section),
-        service_configured(settings, section=section),
+        {each.key: _text(field_value(settings, each)) for each in form},
+        None if token is None else describe_token_source(settings, section=section),
+        missing,
+        required,
         plaintext,
         own_command or None,
         inherited_from_default(section, profile, "token", raw),
         inherited_from_default(section, profile, "token_command", raw),
+        shown=shown,
+        token_only=token is not None and missing == (token.key,),
     )
+
+
+def _text(value: object) -> str:
+    if value is None:
+        return ""
+    return "***" if isinstance(value, SecretStr) else str(value)
 
 
 def service_states(
@@ -183,9 +248,11 @@ def service_store(services: dict[str, PluginSpec]) -> TokenStore | None:
 __all__ = [
     "ServiceState",
     "connection_keys",
+    "form_fields",
     "profile_exists",
     "profile_view",
     "read_states",
+    "service_marks",
     "service_state",
     "service_states",
     "service_store",

@@ -11,8 +11,9 @@ writes it as ``config set`` does, ``delete`` unsets it. What the section
 names, the screen does not know: rows come from the config use cases, fields
 from each setting's shape.
 
-A service's first row is its connection: enter opens its form (base URL, a
-token source as tabs, buttons; :mod:`untaped.management.setup_connection`).
+A service's first row is its connection: enter opens its form (its marked
+settings, a token source as tabs, buttons;
+:mod:`untaped.management.setup_connection`).
 Saving it checks before it writes: the form's values become a
 :class:`Candidate`, the plugin's online checks run against them inside a
 settings overlay (nothing is stored yet,
@@ -82,7 +83,7 @@ from untaped.management.setup_sections import (
     section_mark,
     write_command,
 )
-from untaped.management.setup_state import ServiceState
+from untaped.management.setup_state import ServiceState, service_marks
 from untaped.management.setup_write import (
     Candidate,
     RankTarget,
@@ -509,7 +510,12 @@ class _Setup:
 
     def _item(self, frame: Frame, row: CapRow) -> ListItem:
         label = row.status + frame.ellipsis() if row.status in _PROGRESS else row.status
-        return ListItem(row.name, row.name, detail=label, detail_role=_STATUS_ROLES[row.status])
+        return ListItem(
+            row.name,
+            row.name,
+            detail=label,
+            detail_role=_STATUS_ROLES.get(row.status, "screen.accent"),
+        )
 
     # --- messages -------------------------------------------------------------
 
@@ -1104,7 +1110,12 @@ class _Setup:
     def _rows_of(self, name: str, listing: Listing) -> tuple[SettingRow, ...]:
         rows = listing.rows.get(name, ())
         state = listing.states.get(name)
-        return rows if state is None else (connection_row(state), *rows)
+        if state is None:
+            return rows
+        token = service_marks(self.services[name]).token is not None
+        if not token and not state.values:
+            return rows  # its marked settings are rows of their own
+        return (connection_row(state, token=token), *rows)
 
     def _panes(self, listing: Listing, profile: str) -> dict[str, SectionPane]:
         return {
@@ -1192,11 +1203,16 @@ def _index(rows: tuple[CapRow, ...], name: str) -> int:
 
 
 def _initial_status(state: ServiceState) -> str:
+    """A service's status: every marked setting set, none, only its token missing, or a count."""
     if state.invalid is not None:
         return "invalid settings"
     if state.configured:
-        return "configured" if state.token_source is not None else "missing token"
-    return "not configured"
+        return "configured"
+    if len(state.missing) == state.required:
+        return "not configured"
+    if state.token_only:
+        return "missing token"
+    return f"{len(state.missing)} to set"
 
 
 def _without(failed: Mapping[str, Candidate], name: str) -> dict[str, Candidate]:

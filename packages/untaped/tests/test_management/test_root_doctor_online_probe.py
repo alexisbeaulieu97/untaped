@@ -91,7 +91,7 @@ def _rows(
 def test_only_online_checks_run(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://old\n")
 
-    rows = _rows({"base_url": "https://new"})
+    rows = _rows({"base_url": "https://new", "token": SecretStr("typed")})
 
     assert [row["check"] for row in rows] == ["wiz.api"]
     assert OFFLINE_CALLS == []

@@ -18,7 +18,13 @@ from rich.console import Console
 
 from screen.support import FakeHost
 from test_contracts import support as shelf
-from test_management.support import WizProfile, compose, make_spec, write_config
+from test_management.support import (
+    UnmarkedWizProfile,
+    WizProfile,
+    compose,
+    make_spec,
+    write_config,
+)
 from untaped.config.fields import editor, written
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import NamedValue, RankProviders, SetSetting
@@ -27,7 +33,7 @@ from untaped.config_schema import Argv, Choices, FieldDescriptor, walk_settings
 from untaped.deprecated_keys import Renamed
 from untaped.management.setup_screen import SetupModel, SetupResult, setup_screen
 from untaped.management.setup_state import setup_sections, setup_services
-from untaped.plugins.registry import PluginSpec
+from untaped.plugins.registry import PluginSpec, settings_model
 from untaped.screen.components.choices import Check, Cycle, Select, SingleList
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
 from untaped.screen.components.lists import ListEditor, MapEditor
@@ -588,8 +594,11 @@ def test_a_map_that_declares_its_names_edits_the_profiles_own_names() -> None:
     assert written(_descriptor("marks"), cleared) is None  # no names left: unset
 
 
-def test_a_token_command_is_declared_a_command() -> None:
-    descriptors = walk_settings(WizProfile, include_collections=True)
+@pytest.mark.parametrize("model", [UnmarkedWizProfile, WizProfile])
+def test_a_token_command_is_declared_a_command(model: type[BaseModel]) -> None:
+    # A marked model's command setting is the one core adds to the composed section.
+    composed = settings_model(make_spec("wiz", settings=model))
+    descriptors = walk_settings(composed, include_collections=True)
 
     assert [d.key for d in descriptors if d.argv] == ["token_command"]
 

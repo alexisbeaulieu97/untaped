@@ -240,6 +240,8 @@ def test_marks_report_behaviours() -> None:
     }
     assert found == {
         "untaped.plaintext-token": "`untaped auth migrate`",
+        "untaped.self-declared-command": "the command setting untaped adds for each Secret",
+        "untaped.unmarked-service": "NeedsSetup and Secret marks on its settings",
         "svc.row-kind": "kind= on the Record class",
     }
 

@@ -450,7 +450,7 @@ def test_an_empty_url_and_an_empty_token_are_refused_in_place(_isolated_config: 
 
     assert run.commands_run == ()
     flat = _flat(run.frame)
-    assert "Enter a base URL." in flat and "Enter a token." in flat
+    assert "Enter a value: the plugin needs it." in flat and "Enter a token." in flat
     assert not _isolated_config.exists()
 
 

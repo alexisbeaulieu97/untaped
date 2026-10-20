@@ -1,9 +1,11 @@
 """A service's connection in ``untaped setup``: its form, and what the form asks to write.
 
-A service's URL and token are one row of the setup screen, edited together in
-this form (the URL, the token source as tabs, ``Save``) and checked online before
-anything is written (:mod:`untaped.management.setup_screen`). The form's values
-become a :class:`~untaped.management.setup_write.Candidate`, which
+A service's marked settings (:func:`~untaped.management.setup_state.form_fields`)
+and its token are one row of the setup screen, edited together in this form
+(a text field per marked setting, the token source as tabs, ``Save``) and
+checked online before anything is written
+(:mod:`untaped.management.setup_screen`). The form's values become a
+:class:`~untaped.management.setup_write.Candidate`, which
 :func:`~untaped.management.setup_write.write_candidate` writes.
 
 The token choices name no plain-text storage when a store or a command can
@@ -22,7 +24,7 @@ from pydantic import SecretStr
 
 from untaped.auth import takes_token_command, token_env_names
 from untaped.errors import ConfigError
-from untaped.management.setup_state import ServiceState
+from untaped.management.setup_state import ServiceState, form_fields, service_marks
 from untaped.management.setup_write import Candidate
 from untaped.messages import hint
 from untaped.plugins.registry import PluginSpec, settings_model
@@ -55,19 +57,19 @@ _TAB_LABELS = {
 def connection_form(
     spec: PluginSpec, state: ServiceState, store: TokenStore | None, profile: str
 ) -> Form:
-    """The connection form of ``spec`` in ``profile``: its URL, its token source, ``Save``."""
-    has_command = takes_token_command(settings_model(spec))
-    choices = token_choices(spec, state, store, has_command=has_command)
-    tabs = tuple(
-        _tab(spec, state, store, choice, profile, has_command=has_command) for choice in choices
-    )
-    return Form(
-        (
-            ("base_url", TextInput("Base URL", state.base_url or "", validator=_url_error)),
-            ("token", Tabs("Token source", tabs, active=choices[0].value)),
-            ("buttons", _save_buttons()),
+    """The connection form of ``spec`` in ``profile``: its marked settings, its token, ``Save``."""
+    fields: list[tuple[str, Any]] = [
+        (field.key, TextInput(field.key, state.values.get(field.key, ""), validator=_required))
+        for field in form_fields(spec)
+    ]
+    if service_marks(spec).token is not None:
+        has_command = takes_token_command(settings_model(spec))
+        choices = token_choices(spec, state, store, has_command=has_command)
+        tabs = tuple(
+            _tab(spec, state, store, choice, profile, has_command=has_command) for choice in choices
         )
-    )
+        fields.append(("token", Tabs("Token source", tabs, active=choices[0].value)))
+    return Form((*fields, ("buttons", _save_buttons())))
 
 
 def _tab(
@@ -119,8 +121,8 @@ def reset(form: Form) -> Form:
     return with_buttons(form, _save_buttons())
 
 
-def _url_error(text: str) -> str:
-    return "" if text.strip() else "Enter a base URL."
+def _required(text: str) -> str:
+    return "" if text.strip() else "Enter a value: the plugin needs it."
 
 
 def _token_error(token: SecretStr) -> str:
@@ -150,8 +152,8 @@ def _token_command(name: str, text: str) -> list[str]:
 
 
 def candidate(spec: PluginSpec, profile: str, values: Mapping[str, object]) -> Candidate:
-    """The form's validated values as what the user asked for."""
-    tab = values["token"]
+    """The form's validated values as what the user asked for (``keep`` without token tabs)."""
+    tab = values.get("token", {"tab": "keep"})
     assert isinstance(tab, dict)
     how = str(tab["tab"])
     token = None
@@ -162,15 +164,8 @@ def candidate(spec: PluginSpec, profile: str, values: Mapping[str, object]) -> C
         token = SecretStr(typed.get_secret_value().strip())
     elif how == "command":
         argv = tuple(_token_command(spec.name, str(tab["command"])))
-    return Candidate(
-        spec.name,
-        spec.name,
-        profile,
-        how,
-        str(values["base_url"]).strip(),
-        token,
-        argv,
-    )
+    fields = tuple((field.key, str(values[field.key]).strip()) for field in form_fields(spec))
+    return Candidate(spec.name, spec.name, profile, how, fields, token, argv)
 
 
 def token_choices(

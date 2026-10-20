@@ -6,7 +6,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import PluginSpec, SkillAsset, connection_check, online_check
+from untaped.sdk import PluginSpec, SkillAsset, online_check
 from untaped_awx.settings import RESOURCES, AwxSettings
 
 if TYPE_CHECKING:
@@ -59,10 +59,7 @@ SPEC = PluginSpec(
             ),
         ),
     ),
-    doctor_checks=(
-        connection_check("awx.connection", section="awx"),
-        online_check("awx.api", section="awx", probe=_probe_api),
-    ),
+    doctor_checks=(online_check("awx.api", section="awx", probe=_probe_api),),
     caches=(RESOURCES,),
     provides={"lint": _lint},
 )

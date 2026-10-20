@@ -43,7 +43,9 @@ from untaped.profile_resolver import (
     resolve_profiles,
     selected_profile,
 )
+from untaped.setting_marks import SetupMarks
 from untaped.settings import active_settings_layout
+from untaped.setup_status import notify_unmarked, plugin_marks
 from untaped.stdin import read_stdin_text
 from untaped.token_store import (
     StoreName,
@@ -71,16 +73,27 @@ class _TokenSection:
     section: str
     env: tuple[str, ...]
     """Its conventional token environment variables, in order."""
+    marks: SetupMarks | None = None
+    """What its plugin marks; legacy ones warn where ``auth`` reads them."""
+
+    def notify(self) -> None:
+        """Warn once when the section is read through the deprecated unmarked fallback."""
+        notify_unmarked(self.section, self.marks)
 
 
 def _token_sections(result: CompositionResult) -> dict[str, _TokenSection]:
-    """Every composed section whose settings model has ``token`` and ``token_command``."""
+    """Every composed section whose settings model has ``token`` and ``token_command``.
+
+    A marked model's ``token_command`` is the one core adds for its ``Secret``
+    named ``token``; ``auth`` acts on no other secret yet.
+    """
     models = {
-        registered.spec.name: settings_model(registered.spec) for registered in result.plugins
+        registered.spec.name: (settings_model(registered.spec), plugin_marks(registered.spec))
+        for registered in result.plugins
     }
     return {
-        name: _TokenSection(name, token_env_names(model.model_construct()))
-        for name, model in models.items()
+        name: _TokenSection(name, token_env_names(model.model_construct()), marks)
+        for name, (model, marks) in models.items()
         if "token" in model.model_fields and takes_token_command(model)
     }
 
@@ -255,9 +268,24 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
 def _section(result: CompositionResult, section: str) -> _TokenSection:
     sections = _token_sections(result)
     if section not in sections:
+        _refuse_other_secrets(result, section)
         known = ", ".join(sorted(sections)) or "(none)"
         raise ConfigError(f"unknown token section {section!r}; known: {known}", category="invalid")
+    sections[section].notify()
     return sections[section]
+
+
+def _refuse_other_secrets(result: CompositionResult, section: str) -> None:
+    """Refuse a section whose secrets have other names than ``token``, naming their commands."""
+    spec = next((each.spec for each in result.plugins if each.spec.name == section), None)
+    marks = None if spec is None else plugin_marks(spec)
+    commands = [] if marks is None else [f"{section}.{each.command}" for each in marks.secrets]
+    if commands:
+        raise ConfigError(
+            f"{section} has no secret named token, and auth stores only that one; "
+            f"set {' or '.join(commands)} to a command that prints it",
+            category="invalid",
+        )
 
 
 def _target_profile() -> str:
@@ -380,6 +408,8 @@ def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -
     layout = active_settings_layout()
     profiles = layout.profile_names(raw) or [DEFAULT_PROFILE]
     sections = _token_sections(result).values()
+    for each in sections:
+        each.notify()
     rows: list[TokenSource] = []
     for profile in profiles:
         effective, provenance = resolve_profiles(raw, active_override=profile)
@@ -428,6 +458,8 @@ def _migrate(
     # `default` first: its token would otherwise win over another profile's command.
     ordered = sorted(names, key=lambda name: name != DEFAULT_PROFILE)
     sections = _token_sections(result)
+    for each in sections.values():
+        each.notify()
     pending = [
         (profile, section, token)
         for profile in ordered

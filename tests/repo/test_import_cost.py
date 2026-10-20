@@ -158,9 +158,11 @@ _STARTUP_PROBE = (
 #: ``untaped.management.records`` (#607) add one: 131 against 130 on its
 #: base, 2026-10-16. The budget stays a few above the measure (six when it
 #: was set) to absorb dependency and patch-release drift; a new built-in
-#: plugin adds a few ``untaped.*`` modules (its SPEC and settings).
+#: plugin adds a few ``untaped.*`` modules (its SPEC and settings). Setting
+#: marks (``untaped.setting_marks``, and ``untaped.setup_status`` read by
+#: ``doctor`` and ``auth``) add two: 140 against 138 on their base, 2026-10-20.
 _TOTAL_BUDGET = 700
-_UNTAPED_BUDGET = 139
+_UNTAPED_BUDGET = 143
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])
