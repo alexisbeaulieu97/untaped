@@ -81,7 +81,8 @@ def compare(written: StubAuthor, run: StubAuthor) -> Comparison:
     """Whether ``run`` is newer than, the same as, or older than ``written``.
 
     A run is newer when its untaped or its plugin version is newer and
-    neither is older; older when either is older. The plugin side counts as
+    neither is older, and older the other way round; a run newer on one side
+    and older on the other is the same (the stub reads as current). The plugin side counts as
     equal when it can't be compared: another distribution (a fork, a rename,
     a plugin moved to its own repo), an unknown version, or one that doesn't
     parse. Versions order by PEP 440.
@@ -89,10 +90,11 @@ def compare(written: StubAuthor, run: StubAuthor) -> Comparison:
     sides = [_order(run.untaped, written.untaped)]
     if canonicalize_name(run.plugin) == canonicalize_name(written.plugin):
         sides.append(_order(run.plugin_version, written.plugin_version))
-    if any(side < 0 for side in sides):
-        return Comparison.older
-    if any(side > 0 for side in sides):
+    newer, older = any(side > 0 for side in sides), any(side < 0 for side in sides)
+    if newer and not older:
         return Comparison.newer
+    if older and not newer:
+        return Comparison.older
     return Comparison.same
 
 

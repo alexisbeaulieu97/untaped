@@ -168,7 +168,16 @@ def build_root_doctor_app(
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Run every automatic fix doctor found, after one confirmation."""
+        """Run every automatic fix doctor found, after one confirmation.
+
+        No automatic fix asks for or prints a token, so `--yes` passes none:
+        `auth migrate` moves tokens inside its own process. A keychain may
+        show an unlock prompt on the user's screen; a locked `pass` store
+        exits 5 with a hint naming the unlock command. A `skipped` row's
+        `fix` is the argv to run after `untaped`: a `<NAME>` token in it is a
+        value to ask for, and a fix that asks for or reveals a token
+        (`auth set`, `config set ….token --prompt`) is the user's to run.
+        """
         from untaped.management.fix import run_fixes  # noqa: PLC0415 - fix imports doctor
 
         with report_errors():

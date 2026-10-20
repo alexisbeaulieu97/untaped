@@ -14,6 +14,7 @@ from typing import Annotated, Protocol
 from uuid import uuid4
 
 from cyclopts import Parameter
+from packaging.version import InvalidVersion, Version
 
 from untaped import skill_stubs
 from untaped.cli import existing_directory
@@ -179,8 +180,8 @@ def skill_rows(skills: Mapping[str, PackagedSkill]) -> list[dict[str, object]]:
         {
             "name": spec.name,
             "description": spec.description,
-            "kind": "stub" if spec.source is None else "copy",
-            "source": STUB_SOURCE if spec.source is None else str(spec.source),
+            "kind": "stub" if spec.stub else "copy",
+            "source": STUB_SOURCE if spec.stub else str(spec.source),
         }
         for spec in sorted(skills.values(), key=lambda item: item.name)
     ]
@@ -265,7 +266,7 @@ class InstalledSkill:
     scope: SkillInstallScope
     path: Path
     state: SkillState
-    kind: SkillKind = SkillKind.copy
+    kind: SkillKind
     written_by: str = ""
 
     @property
@@ -324,6 +325,18 @@ def home_skill_roots() -> frozenset[Path]:
     )
 
 
+#: The first version newer than every copy: a copy counts as the newest 11.0.
+_CONVERTS_FROM = "11.1.0"
+
+
+def converts_copies() -> bool:
+    """Whether this run is newer than a copy, so it may convert one to a stub."""
+    try:
+        return Version(skill_stubs.running_untaped()) >= Version(_CONVERTS_FROM)
+    except InvalidVersion:
+        return False
+
+
 def skill_backups_dir() -> Path:
     """Where a converted copy is kept: ``~/.untaped/backups/skills``. Never removed."""
     return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "backups" / "skills"
@@ -375,6 +388,7 @@ def find_installed_skills(
                         scope=scope,
                         path=path,
                         state=_copy_state(skills.get(path.name), path),
+                        kind=SkillKind.copy,
                     )
                 )
     return found
@@ -517,7 +531,9 @@ def _copy_state(spec: PackagedSkill | None, installed: Path) -> SkillState:
     if spec is None:
         return SkillState.orphaned
     if spec.source is None:
-        return SkillState.outdated  # its plugin now ships a stub
+        # Its plugin now ships a stub. A copy carries no version and counts as
+        # the newest 11.0, so only a run from 11.1.0 on is newer than it.
+        return SkillState.outdated if converts_copies() else SkillState.current
     # A packaged source that vanished (a broken install) cannot be compared.
     if spec.source.is_dir() and _tree_bytes(installed) != _tree_bytes(spec.source):
         return SkillState.outdated
@@ -530,6 +546,7 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
         and path.name not in (_MARKER, STUB_MARKER)
+        and _TEMPORARY not in path.name  # a stub write in flight
         and path.suffix != ".pyc"
         and not any(part in _IGNORED_PARTS for part in path.relative_to(root).parts)
     }
@@ -715,7 +732,8 @@ def _rewrite_stub(
     for relative, content in files.items():
         _replace_file(destination / relative, content)
     for stale in destination.iterdir():
-        if stale.name not in keep:
+        # A parallel run's temporary file is its own to rename or remove.
+        if stale.name not in keep and _TEMPORARY not in stale.name:
             if stale.is_dir():
                 shutil.rmtree(stale, ignore_errors=True)
             else:
@@ -723,8 +741,11 @@ def _rewrite_stub(
     _replace_file(destination / STUB_MARKER, _stub_marker(spec, target_destination, files).encode())
 
 
+_TEMPORARY = ".tmp-"
+
+
 def _replace_file(path: Path, content: bytes) -> None:
-    temporary = path.with_name(f".{path.name}.tmp-{uuid4().hex}")
+    temporary = path.with_name(f".{path.name}{_TEMPORARY}{uuid4().hex}")
     try:
         temporary.write_bytes(content)
         os.replace(temporary, path)

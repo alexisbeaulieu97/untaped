@@ -152,6 +152,7 @@ class SetupStep(Record, kind="untaped.setup_step"):
     state: SetupState
     detail: str
     run: list[str]
+    """The complete argv to pass after ``untaped``; a ``<NAME>`` token is a value to ask for."""
     by: SetupActor
     """Whose step it is: the user's when a secret would pass through the agent."""
 

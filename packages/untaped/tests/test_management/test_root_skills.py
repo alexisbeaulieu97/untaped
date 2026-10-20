@@ -266,7 +266,7 @@ def test_update_keeps_a_failure_s_category_on_its_row(
     _install(app, "one")
     Path.home().joinpath(".agents", "skills", "untaped-one", "SKILL.md").write_text("old\n")
 
-    def broken(*_args: object) -> None:
+    def broken(*_args: object, **_kwargs: object) -> None:
         raise ConfigError("could not update it", hint="check the permissions")
 
     monkeypatch.setattr(skills_cli, "update_installed_skill", broken)

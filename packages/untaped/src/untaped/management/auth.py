@@ -221,7 +221,9 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
         """Show where each profile's tokens come from, and which stores work here.
 
         Never runs a ``token_command``, so it cannot tell whether a stored
-        entry still exists; ``untaped doctor --online`` checks that.
+        entry still exists; ``untaped doctor --online`` checks that. A token
+        from an environment variable counts only alongside a ``base_url``,
+        and belongs to no profile.
         """
         with report_errors():
             _status(result, fmt=fmt, columns=columns)
@@ -239,7 +241,10 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
 
         Each token is stored and read back before it is removed from the
         file; one that fails stays where it was, and the command exits
-        non-zero, with the code of the most severe failure's category.
+        non-zero, with the code of the most severe failure's category. It
+        prints no token. A keychain may show an unlock prompt on the user's
+        screen; a locked `pass` store exits 5 with a hint naming the unlock
+        command.
         """
         with report_errors():
             _migrate(result, store=store, dry_run=dry_run, fmt=fmt, columns=columns)

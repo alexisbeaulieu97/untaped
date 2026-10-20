@@ -345,6 +345,7 @@ def test_updating_a_skill_no_plugin_ships_names_the_plugin_as_missing(tmp_path: 
         scope=SkillInstallScope.global_,
         path=tmp_path / "untaped-gone",
         state=skills_module.SkillState.orphaned,
+        kind=skills_module.SkillKind.copy,
     )
     with pytest.raises(ConfigError, match="no plugin installed here ships this skill"):
         skills_module.update_installed_skill({}, installed)

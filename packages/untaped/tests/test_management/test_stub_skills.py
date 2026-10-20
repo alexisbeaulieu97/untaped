@@ -567,3 +567,25 @@ def test_a_plugin_with_two_stubs_is_quarantined() -> None:
 def test_install_targets_and_scopes_vocabulary_is_unchanged() -> None:
     assert [target.value for target in SkillInstallTarget] == ["codex", "claude", "all"]
     assert [scope.value for scope in SkillInstallScope] == ["global", "local"]
+
+
+def test_update_keeps_a_backup_of_a_home_copy_it_converts(
+    _isolated_config: Path, tmp_path: Path, run_as: Callable[[str], None]
+) -> None:
+    _mode(_isolated_config, "warn")
+    _install_copy(tmp_path)
+    result = _run(_root(), "skills", "update")
+    assert result.exit_code == 0, result.output
+    assert "the old copies are in ~/.untaped/backups/skills" in result.stderr
+    kept = Path.home() / ".untaped" / "backups" / "skills" / "codex" / "untaped-demo"
+    assert (kept / "references" / "commands.md").is_file()
+
+
+def test_a_refresh_leaves_a_parallel_run_s_temporary_file(run_as: Callable[[str], None]) -> None:
+    root = _install_then_age(run_as)
+    foreign = _home() / ".SKILL.md.tmp-0123"
+    foreign.write_text("another run's write\n", encoding="utf-8")
+    age_stub(_home(), untaped="11.0.0")  # the marker's digest leaves the temp file out
+    assert _run(root, "demo", "--help").stderr == ""
+    assert foreign.is_file()
+    assert _marker(_home())["untaped"] == "11.1.0"

@@ -81,7 +81,10 @@ untaped looks at the skills in your home folder, `~/.agents/skills` and
 
 The `skills.updates` setting picks what happens: `auto` (the default) does the
 above, `warn` prints a warning instead, and `off` does nothing; see the
-[configuration reference](./reference/config.md).
+[configuration reference](./reference/config.md). After a failed or
+previewing command `auto` writes nothing: stubs wait for the next command
+that succeeds, and an outdated copy is warned about. `untaped skills update`
+keeps a backup of a home-folder copy it converts, too.
 
 ```text
 warning: agent skills from an older untaped: untaped-awx, untaped-github

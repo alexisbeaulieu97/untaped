@@ -87,7 +87,7 @@ def removal_exempt(line: Line, target: int, baseline: str) -> bool:
 
 #: Stable lines a minor drops anyway, by the baseline release they left: the
 #: maintainer's waiver of "a breaking change waits for the next major"
-#: (CONTRIBUTING § Releasing), each marked breaking in its changelog fragment.
+#: (CONTRIBUTING § Releasing), each named in its changelog fragment.
 #: Name the exact line; an entry stops matching once its baseline is not the
 #: newest release, and the next pre-release cleanup removes it.
 MINOR_WAIVERS: dict[str, frozenset[str]] = {

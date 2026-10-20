@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
-from packaging.version import InvalidVersion, Version
 
 from untaped import skill_stubs
 from untaped.batch import batch_apply, finish
@@ -317,14 +316,12 @@ class _Outdated:
 
 
 def _sort_outdated(skills: Mapping[str, PackagedSkill], found: list[InstalledSkill]) -> _Outdated:
-    """Sort outdated skills; a project's stubs, and copies before 11.1.0 converts them, drop out."""
+    """Sort outdated skills; a project's stubs drop out."""
     sorted_ = _Outdated([], [], [], [])
     for item in found:
         if item.state is not SkillState.outdated:
             continue
         to_stub = item.kind is SkillKind.copy and skills[item.name].stub
-        if to_stub and not _converts_copies():
-            continue
         if item.home:
             (sorted_.older if item.kind is SkillKind.stub or to_stub else sorted_.copies).append(
                 item
@@ -334,18 +331,6 @@ def _sort_outdated(skills: Mapping[str, PackagedSkill], found: list[InstalledSki
     return sorted_
 
 
-#: The first version whose runs convert copies: a copy carries no version
-#: and counts as the newest 11.0.
-_CONVERTS_FROM = Version("11.1.0")
-
-
-def _converts_copies() -> bool:
-    try:
-        return Version(skill_stubs.running_untaped()) >= _CONVERTS_FROM
-    except InvalidVersion:
-        return False
-
-
 def _refresh(
     skills: Mapping[str, PackagedSkill], items: list[InstalledSkill]
 ) -> list[InstalledSkill]:
@@ -353,21 +338,30 @@ def _refresh(
     failed: list[InstalledSkill] = []
     converted = 0
     for item in items:
-        backup = skill_backups_dir() if item.kind is SkillKind.copy else None
+        backup = _backup_root(skills, item)
         try:
             update_installed_skill(skills, item, backup_root=backup)
         except UntapedError:
             failed.append(item)
             continue
-        converted += item.kind is SkillKind.copy
+        converted += backup is not None
     if converted:
         # Unmuted: it shows once, and names where the old copies went.
-        _diag.info(
-            f"converted {plural(converted, 'agent skill')} to stubs; "
-            f"the old copies are in {shown_path(skill_backups_dir())}",
-            unmuted=True,
-        )
+        _diag.info(_converted_line(converted), unmuted=True)
     return failed
+
+
+def _backup_root(skills: Mapping[str, PackagedSkill], item: InstalledSkill) -> Path | None:
+    """Where a home-folder copy goes when it converts to a stub; a project has its VCS."""
+    converts = item.kind is SkillKind.copy and skills[item.name].stub
+    return skill_backups_dir() if converts and item.home else None
+
+
+def _converted_line(count: int) -> str:
+    return (
+        f"converted {plural(count, 'agent skill')} to stubs; "
+        f"the old copies are in {shown_path(skill_backups_dir())}"
+    )
 
 
 def _update_copies(
@@ -466,6 +460,7 @@ def _update(
         named = bool(skill_names) or stdin
         rows: list[SkillOutcome] = []
         failed = False
+        converted = 0
         for item in found:
             if item.state in (SkillState.newer, SkillState.edited) and not force:
                 why = (
@@ -491,17 +486,21 @@ def _update(
             if dry_run:
                 rows.append(_outcome(item, "planned"))
                 continue
+            backup = _backup_root(skills, item)
             try:
-                update_installed_skill(skills, item)
+                update_installed_skill(skills, item, backup_root=backup)
             except UntapedError as exc:
                 rows.append(_outcome(item, "failed", error=_diag.failure(exc, item=item.name)))
                 failed = True
                 continue
             rows.append(_outcome(item, "updated"))
+            converted += backup is not None
         emit(rows, fmt=fmt, columns=columns, empty="No outdated skills found.")
         updated = sum(1 for row in rows if row.action == "updated")
         if updated:
             _diag.success(f"updated {plural(updated, 'skill')}")
+        if converted:
+            _diag.info(_converted_line(converted), unmuted=True)
     finish(failed)
 
 

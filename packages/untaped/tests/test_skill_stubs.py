@@ -33,8 +33,8 @@ def _author(
         (_author(), _author(untaped="11.2.0"), Comparison.newer),
         (_author(), _author(version="11.2.0"), Comparison.newer),
         (_author(), _author(untaped="11.2.0", version="11.2.0"), Comparison.newer),
-        (_author(), _author(untaped="11.2.0", version="11.0.0"), Comparison.older),
-        (_author(), _author(untaped="11.0.0", version="11.2.0"), Comparison.older),
+        (_author(), _author(untaped="11.2.0", version="11.0.0"), Comparison.same),
+        (_author(), _author(untaped="11.0.0", version="11.2.0"), Comparison.same),
         (_author(), _author(untaped="11.0.0"), Comparison.older),
         # Dev builds order before their release (PEP 440).
         (_author(), _author(untaped="11.1.0.dev3"), Comparison.older),
@@ -52,7 +52,7 @@ def _author(
         "dev-stub",
     ],
 )
-def test_a_run_is_newer_only_when_one_side_is_newer_and_neither_older(
+def test_a_run_is_newer_or_older_only_when_neither_side_disagrees(
     written: StubAuthor, run: StubAuthor, expected: Comparison
 ) -> None:
     assert compare(written, run) is expected

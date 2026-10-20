@@ -113,6 +113,8 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
         """Set up a profile on one screen: every setting, and each service's URL and token.
 
         A service's URL and token are checked online before they are saved.
+        It needs a terminal: without one it exits 2, and `setup plan` lists
+        the same steps.
         """
         with report_errors():
             _run(shell, result, only=only, fmt=fmt, columns=columns)
@@ -129,6 +131,13 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
         """List what the profile's services still need, with the command for each step.
 
         Read-only. `--only` plans the services among the sections it names.
+        The `profile` row comes first, since the other rows name the profile.
+        Each row's `run` is the complete argv to pass after `untaped`; every
+        one but `profile create` starts with `--profile NAME`, so it acts on
+        that profile. A `<NAME>` token in it (`<URL>`, `<COMMAND>`) is a value
+        to ask the user for. A row `by: user` asks for or reveals a token, so
+        it is the user's to run in their own terminal; `untaped setup --only
+        SECTIONS` runs all of them on one screen.
         """
         with report_errors():
             services = setup_services(result, only)
@@ -169,7 +178,8 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
 
         Each plugin moves its own: repositories into the repo store, old
         caches deleted. Run it before `config migrate`, which forgets the
-        custom directories older settings named.
+        custom directories older settings named. To keep the repo store
+        outside its default, set `git.store_dir` to a new directory first.
         """
         # Imported here: the migrations and their plugins' code stay off the startup path.
         from untaped.management.migrate_dirs import migrate_dirs  # noqa: PLC0415

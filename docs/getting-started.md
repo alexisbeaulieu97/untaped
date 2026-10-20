@@ -95,11 +95,11 @@ command for each step, and marks every step that asks for or reveals a token
 as yours to run, so a token never passes through the agent. Paste this into your agent:
 
 ```text
-Install untaped with `uv tool install 'untaped[all]'`, then read its
-`untaped` skill: install it with `untaped skills install untaped --target
-codex` (or `claude`), or read SKILL.md in the `source` directory that
-`untaped skills list --format json` prints for `untaped`. Follow its
-"Set up a profile with the user" workflow.
+Install untaped with `uv tool install 'untaped[all]'`, then install its
+agent skills with `untaped skills install --all --target codex` (or
+`claude`). Read `untaped agents`, then `untaped agents untaped setup plan`,
+and set up a profile with me: run the steps that are yours and hand me the
+ones that ask for a token.
 ```
 
 ## Store your tokens
