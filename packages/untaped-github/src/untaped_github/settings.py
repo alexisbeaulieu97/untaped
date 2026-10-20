@@ -103,7 +103,7 @@ class GithubSettings(BaseModel):
         description=(
             "How `sweep`, `cache sync`, workspace and `ansible source refresh` "
             "fetch repos on the GitHub host: `https` or `ssh` "
-            "(`git@HOST:OWNER/NAME.git`)."
+            "(`git@HOST:OWNER/NAME.git`, with your own SSH keys)."
         ),
     )
     sweep: SweepSettings = Field(default_factory=SweepSettings)
