@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -10,7 +11,7 @@ import pytest
 import respx
 from pydantic import SecretStr, ValidationError
 
-from untaped.sdk import ConfigError, HttpStatusError, get_config_section
+from untaped.sdk import ConfigError, HttpStatusError, HttpTransportError, get_config_section
 from untaped_jira.domain.parse import ISSUE_DETAIL_FIELDS
 from untaped_jira.errors import JiraError
 from untaped_jira.infrastructure import JiraClient
@@ -115,6 +116,49 @@ def test_search_retries_a_429_although_it_is_a_post(monkeypatch: pytest.MonkeyPa
     assert [row["key"] for row in rows] == ["ABC-1"]
     assert search.call_count == 2
     assert create.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("path", "send"),
+    [
+        ("/rest/api/2/issue/ABC-1", lambda client: client.edit_issue("ABC-1", {"update": {}})),
+        (
+            "/rest/api/2/issue/ABC-1/assignee",
+            lambda client: client.assign_issue("ABC-1", {"name": "ada"}),
+        ),
+    ],
+)
+@pytest.mark.parametrize("answer", [429, 503])
+def test_patch_puts_are_sent_once(
+    monkeypatch: pytest.MonkeyPatch, path: str, send: Callable[[JiraClient], object], answer: int
+) -> None:
+    """A patch's PUT can carry an ``update`` add, so a retry could apply it twice."""
+    monkeypatch.setattr("untaped.http._sleep", lambda _delay: None)
+    with respx.mock(base_url=BASE) as mock:
+        put = mock.put(path).mock(return_value=httpx.Response(answer))
+        with JiraClient(_settings()) as client, pytest.raises(JiraError):
+            send(client)
+
+    assert put.call_count == 1
+
+
+def test_patch_put_is_not_resent_after_a_dropped_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Jira may have applied a PUT whose answer never arrived; only a failed connect is retried."""
+    monkeypatch.setattr("untaped.http._sleep", lambda _delay: None)
+    with respx.mock(base_url=BASE) as mock:
+        dropped = mock.put("/rest/api/2/issue/ABC-1").mock(side_effect=httpx.ReadTimeout)
+        unreached = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(
+            side_effect=[httpx.ConnectError("refused"), httpx.Response(204)]
+        )
+        with JiraClient(_settings()) as client:
+            with pytest.raises(HttpTransportError):
+                client.edit_issue("ABC-1", {"update": {}})
+            client.assign_issue("ABC-1", {"name": "ada"})
+
+    assert dropped.call_count == 1
+    assert unreached.call_count == 2
 
 
 @pytest.mark.parametrize(
