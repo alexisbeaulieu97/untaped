@@ -10,12 +10,11 @@ become Markdown ones.
 from __future__ import annotations
 
 import inspect
-import re
 from dataclasses import dataclass
 
 import docstring_parser
 
-_CONSOLE = re.compile(r"^```console\n(.*?)^```", re.MULTILINE | re.DOTALL)
+from untaped.conventions.commands import examples_of
 
 
 @dataclass(frozen=True)
@@ -48,24 +47,3 @@ def describe(help_text: str | None, function: object | None) -> Described:
         body=markdown(parsed.long_description or ""),
         examples=examples_of(function),
     )
-
-
-def examples_of(function: object | None) -> str:
-    """The ``Examples`` section of ``function``'s docstring, as written; ``""`` without one."""
-    doc = inspect.getdoc(function) if function is not None else None
-    if not doc:
-        return ""
-    for meta in docstring_parser.parse(doc).meta:
-        if meta.args[:1] == ["examples"] and meta.description:
-            return meta.description.strip()
-    return ""
-
-
-def console_lines(examples: str) -> list[str]:
-    """The commands in an ``Examples`` section's ``console`` fences (``$ `` lines, prompt cut)."""
-    return [
-        line.removeprefix("$ ").strip()
-        for block in _CONSOLE.findall(examples)
-        for line in block.splitlines()
-        if line.startswith("$ ")
-    ]

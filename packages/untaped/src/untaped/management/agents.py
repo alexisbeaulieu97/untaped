@@ -41,6 +41,16 @@ def build_root_agents_app(*, result: CompositionResult, root: Callable[[], App])
         The pages are generated from what the plugins declare: their commands,
         options, settings and extension points. Every page names the untaped
         that answered.
+
+        Examples
+        --------
+        The map, then one plugin's page, then one command's page:
+
+        ```console
+        $ untaped agents
+        $ untaped agents untaped
+        $ untaped agents untaped config set
+        ```
         """
         from untaped.agents import page  # noqa: PLC0415 - only this command pays for it
 

@@ -39,6 +39,7 @@ from untaped.agents._model import (
     Shared,
 )
 from untaped.agents._requirement import untaped_requirement
+from untaped.bootstrap import fail_if_unbuildable
 from untaped.cli import write_kind
 from untaped.errors import ExitCode
 from untaped.messages import shown_path
@@ -54,6 +55,7 @@ from untaped.stability import (
     mark_of,
     marked_options,
 )
+from untaped.surface._types import home_relative
 
 #: The name core answers to on the pages (``untaped agents untaped``); no plugin may take it.
 CORE = "untaped"
@@ -61,6 +63,8 @@ CORE = "untaped"
 AGENTS = "agents"
 #: Root options that don't change what a command does: left off the shared section.
 _NOT_SHARED = frozenset({"--deprecated"})
+#: Core's own section (``profiles.<name>.shell``), shown on core's page with the root's.
+CORE_SECTION = "shell"
 _POSITIONAL = (
     inspect.Parameter.POSITIONAL_ONLY,
     inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -222,7 +226,7 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
         )
     plugin = _plugin(result, name)
     points, fills = _contracts(result)
-    app = None if plugin.spec.app_factory is None else root[name]
+    app = None if plugin.spec.app_factory is None else _plugin_app(root, name)
     return PluginPage(
         answerer=answerer(plugin),
         name=name,
@@ -320,10 +324,6 @@ def _settings(result: CompositionResult, plugin: RegisteredPlugin | None) -> tup
     return tuple(rows)
 
 
-#: Core's own section (``profiles.<name>.shell``), shown on core's page with the root's.
-CORE_SECTION = "shell"
-
-
 def _type_text(annotation: Any, choices: Sequence[str]) -> str:
     origin = get_origin(annotation)
     if choices:
@@ -346,8 +346,6 @@ def _type_text(annotation: Any, choices: Sequence[str]) -> str:
 
 def _default_text(value: object) -> str | None:
     """A default as a page writes it; ``None`` when there is nothing worth saying."""
-    from untaped.surface._types import home_relative  # noqa: PLC0415
-
     if value is None or value == "" or (isinstance(value, list | tuple | dict | set) and not value):
         return None
     if isinstance(value, bool):
@@ -359,6 +357,13 @@ def _default_text(value: object) -> str | None:
     if isinstance(value, list | tuple):
         return ", ".join(str(item) for item in value)
     return None
+
+
+def _plugin_app(root: App, name: str) -> App:
+    """The plugin's resolved app; a plugin that could not build it fails as its commands do."""
+    app = root[name]
+    fail_if_unbuildable(app)
+    return app
 
 
 # --- stage 3: one command --------------------------------------------------------
@@ -378,7 +383,7 @@ def build_command_page(
         plugin = _plugin(result, name)
         if plugin.spec.app_factory is None:
             raise KeyError(path[0])
-        app, invocation = root[name], (CORE, name)
+        app, invocation = _plugin_app(root, name), (CORE, name)
     inherited = None if plugin is None else plugin.spec.stability
     for word in path:
         if word.startswith("-"):

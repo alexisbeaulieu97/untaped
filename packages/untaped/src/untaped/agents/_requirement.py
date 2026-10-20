@@ -16,6 +16,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from packaging.markers import UndefinedEnvironmentName
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
@@ -49,8 +50,17 @@ def untaped_requirement(start: Path) -> UntapedRequirement | None:
     for line in _declared(data):
         parsed = parse_requirement(line)
         if parsed is not None and canonicalize_name(parsed.name) == _UNTAPED:
-            return UntapedRequirement(file, parsed)
+            return UntapedRequirement(file, parsed) if _evaluable(parsed) else None
     return None
+
+
+def _evaluable(requirement: Requirement) -> bool:
+    """Whether its marker can be evaluated, as ``requirement_admits`` needs."""
+    try:
+        requirement_admits(requirement, "0")
+    except UndefinedEnvironmentName, KeyError:
+        return False
+    return True
 
 
 def _declared(data: object) -> Iterator[object]:

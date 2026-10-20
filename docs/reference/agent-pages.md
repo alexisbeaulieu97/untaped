@@ -2,8 +2,9 @@
 
 `untaped agents` prints what this untaped can do, as Markdown pages a coding
 agent reads before running it. Every fact on a page is generated from what
-core and the plugins declare, so a page always matches the untaped that
-printed it.
+core and the plugins declare, or true of every untaped by construction (such
+as how prompts behave without a terminal), so a page always matches the
+untaped that printed it.
 
 ```bash
 untaped agents                         # the map
@@ -47,9 +48,10 @@ version and environment and points at the page that lists what it has.
 
 A plugin writes nothing for the pages beyond what `--help` already reads:
 
-- **A command's docstring**: its first line is the summary on the plugin's
-  page and the map; the paragraphs after it are the behaviour on the
-  command's page.
+- **`PluginSpec.help`** is the plugin's line on the map, and the first line
+  of its own page (the plugin's app help, once its commands are built).
+- **A command's docstring**: its first line is its summary on the plugin's
+  page; the paragraphs after it are the behaviour on the command's page.
 - **An `Examples` section** in the docstring (NumPy style) prints under
   `## Examples`. Put commands in a fenced `console` block, one per `$ ` line;
   `untaped lint`'s `example-command` rule checks that each one parses.

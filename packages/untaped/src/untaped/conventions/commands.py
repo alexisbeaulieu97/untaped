@@ -1,17 +1,20 @@
 """Whether an ``untaped …`` command line parses against the composed root.
 
-Shared by the conventions (a docstring's ``Examples`` section) and the
-repository's docs and skill tests. Synopsis notation is read the obvious way
+Shared by the conventions (a docstring's ``Examples`` section, read here for
+them and for the command's agent page) and the repository's docs and skill
+tests. Synopsis notation is read the obvious way
 (``[--flag X]`` is optional text, ``a|b`` takes ``a``, ``...`` repeats) and
 placeholders (``NAME``, ``<recipe>``) bind without being converted.
 """
 
 from __future__ import annotations
 
+import inspect
 import re
 import shlex
 from collections.abc import Iterator
 
+import docstring_parser
 from cyclopts import App
 from cyclopts.exceptions import (
     CoercionError,
@@ -26,6 +29,7 @@ _SYNOPSIS_SUFFIX = re.compile(r"(?:\]|\.\.\.|…)+$")
 PLACEHOLDER = re.compile(r"^[A-Z][A-Z0-9_]*(?:[/=:.-][A-Z0-9_]+)*$")
 _ROOT_FLAGS = {"-q", "--quiet", "-v", "--verbose", "--deprecated"}
 _HELP_FLAGS = {"--help", "-h"}
+_CONSOLE = re.compile(r"^```console\n(.*?)^```", re.MULTILINE | re.DOTALL)
 
 
 def segments(line: str) -> Iterator[str]:
@@ -93,3 +97,24 @@ def parse_problem(root: App, command: str, *, inline: bool) -> str | None:
     except CycloptsError as exc:
         return str(exc)
     return None
+
+
+def examples_of(function: object | None) -> str:
+    """The ``Examples`` section of ``function``'s docstring, as written; ``""`` without one."""
+    doc = inspect.getdoc(function) if function is not None else None
+    if not doc:
+        return ""
+    for meta in docstring_parser.parse(doc).meta:
+        if meta.args[:1] == ["examples"] and meta.description:
+            return meta.description.strip()
+    return ""
+
+
+def console_lines(examples: str) -> list[str]:
+    """The commands in an ``Examples`` section's ``console`` fences (``$ `` lines, prompt cut)."""
+    return [
+        line.removeprefix("$ ").strip()
+        for block in _CONSOLE.findall(examples)
+        for line in block.splitlines()
+        if line.startswith("$ ")
+    ]

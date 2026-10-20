@@ -61,6 +61,11 @@ def _mark(mark: Mark) -> str:
     return "" if mark is None else f" [{mark}]"
 
 
+def _own_mark(mark: Mark, plugin: Mark) -> str:
+    """A mark under a plugin's heading, left out when the heading already carries it."""
+    return "" if mark == plugin else _mark(mark)
+
+
 def _writes(writes: Writes) -> str:
     return "" if writes is None else _WRITES[writes]
 
@@ -103,7 +108,7 @@ def _map(page: Map) -> list[str]:
         if plugin.summary:
             lines.append(plugin.summary)
         for point in plugin.points:
-            lines.append(f"- {point.title}{_mark(point.mark)}")
+            lines.append(f"- {point.title}{_own_mark(point.mark, plugin.mark)}")
             lines += [f"  - {_fill(fill)}" for fill in point.fills]
         if plugin.extends:
             lines.append(f"- Extends: {', '.join(plugin.extends)}")
@@ -125,7 +130,7 @@ def _plugin(page: PluginPage) -> list[str]:
             *(_command_line(line) for line in page.commands),
         ]
     for point in page.points:
-        lines += ["", f"## {point.title.rstrip('.')}{_mark(point.mark)}"]
+        lines += ["", f"## {point.title.rstrip('.')}{_own_mark(point.mark, page.mark)}"]
         lines += [
             f"- {_fill(fill)} Its settings: `untaped agents {fill.plugin}`" for fill in point.fills
         ] or ["- No installed plugin fills it."]

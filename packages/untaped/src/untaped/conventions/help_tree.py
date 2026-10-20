@@ -43,9 +43,8 @@ from typing import Any
 
 from cyclopts import App, Group
 
-from untaped.agents._docstring import console_lines, examples_of
 from untaped.cli import write_kind
-from untaped.conventions.commands import parse_problem, segments
+from untaped.conventions.commands import console_lines, examples_of, parse_problem, segments
 from untaped.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
 
 RESERVED_SHORTS = {

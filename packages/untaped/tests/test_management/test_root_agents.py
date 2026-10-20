@@ -258,6 +258,45 @@ def test_a_plugin_this_untaped_lacks_is_not_installed_here() -> None:
     assert "`untaped agents` lists what is" in err
 
 
+def test_a_quarantined_plugin_says_why_and_where_to_look() -> None:
+    reserved = PluginSpec(name="agents", app_factory=_acme_app, help="Takes a reserved name.")
+    code, _, err = _run("agents", candidates=[make_candidate(reserved, "untaped-agents")])
+    assert code == 2
+    assert "agents is installed but was quarantined [reserved-name]" in err
+    assert "`untaped plugin list` shows it" in err
+
+
+def _broken_app() -> App:
+    raise RuntimeError("cli import failed")
+
+
+BROKEN = PluginSpec(name="broke", app_factory=_broken_app, help="Never builds.")
+
+
+def test_a_plugin_that_cannot_build_its_commands_fails_as_they_do() -> None:
+    candidates = [make_candidate(BROKEN, "untaped-broke")]
+    for words in (("broke",), ("broke", "list")):
+        code, out, err = _run(*words, candidates=candidates)
+        assert (code, out) == (4, ""), words
+        assert "could not build its commands: " in err
+        assert "cli import failed" in err
+
+
+def test_the_map_builds_no_plugin_s_commands() -> None:
+    built: list[str] = []
+
+    def factory() -> App:
+        built.append("acme")
+        return _acme_app()
+
+    spec = PluginSpec(name="acme", app_factory=factory, help="Manage widgets.")
+    candidates = [make_candidate(spec, "untaped-acme"), make_candidate(BROKEN, "untaped-broke")]
+    code, out, _ = _run(candidates=candidates)
+    assert code == 0
+    assert "## broke · details: `untaped agents broke`\nNever builds." in out
+    assert built == []
+
+
 def test_a_mistyped_topic_points_at_the_plugin_page() -> None:
     code, _, err = _run("acme", "widgets", "new")
     assert code == 2

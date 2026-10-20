@@ -512,6 +512,9 @@ _Avoid_: status, maturity.
 `--help`.
 _Avoid_: beta, preview, unstable.
 
+**Frozen**: a surface line no release renames, removes or deprecates, such
+as `untaped agents`; marked `[frozen]` in `tests/repo/surface.txt`.
+
 **Deprecated command**: a command that still works, with a warning, until
 its removal version.
 
@@ -535,9 +538,6 @@ declare.
 
 **Topic**: what a plugin's agent page lists and `untaped agents PLUGIN TOPIC`
 prints: one of its commands.
-
-**Frozen**: a surface line no release renames, removes or deprecates, such
-as `untaped agents`; marked `[frozen]` in `tests/repo/surface.txt`.
 
 **Screen**: an interactive terminal UI built on the SDK's runtime.
 _Avoid_: TUI app, program, view.

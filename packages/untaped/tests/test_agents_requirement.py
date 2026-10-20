@@ -81,8 +81,16 @@ def test_a_requirement_with_no_version_admits_every_untaped(tmp_path: Path) -> N
         '[project]\ndependencies = "untaped==1"\n',
         '[dependency-groups]\ndev = "untaped==1"\n',
         "project = 3\n",
+        "[project]\ndependencies = ['untaped>=99; \"dev\" in dependency_groups']\n",
     ],
-    ids=["broken toml", "bad requirement", "not a list", "group not a list", "not a table"],
+    ids=[
+        "broken toml",
+        "bad requirement",
+        "not a list",
+        "group not a list",
+        "not a table",
+        "a marker that cannot be evaluated",
+    ],
 )
 def test_a_malformed_file_or_entry_is_no_requirement(tmp_path: Path, text: str) -> None:
     assert untaped_requirement(_project(tmp_path, text)) is None

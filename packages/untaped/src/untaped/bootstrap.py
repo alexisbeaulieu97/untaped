@@ -421,7 +421,18 @@ def _unbuildable_app(failure: QuarantineRecord) -> App:
         note_requested_format(tokens)
         raise ConfigError(message, system=failure.name)
 
+    setattr(_fail, _UNBUILDABLE_ATTR, True)
     return stub
+
+
+_UNBUILDABLE_ATTR = "__untaped_unbuildable__"
+
+
+def fail_if_unbuildable(app: App) -> None:
+    """Raise the stand-in's ``ConfigError`` when ``app`` is a plugin that could not be built."""
+    command = app.default_command
+    if command is not None and getattr(command, _UNBUILDABLE_ATTR, False):
+        command()
 
 
 def _root_panel(spec: PluginSpec) -> Group:
@@ -575,6 +586,7 @@ __all__ = [
     "ShellProfileSettings",
     "build_root_app",
     "compose_root",
+    "fail_if_unbuildable",
     "main",
     "reset",
     "run_root",

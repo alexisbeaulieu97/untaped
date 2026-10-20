@@ -98,3 +98,12 @@ def test_core_examples_parse(first_party_candidates: tuple[PluginCandidate, ...]
         for _, detail in example_violations(root, app)
     ]
     assert found == []
+
+
+def test_an_extension_point_repeats_no_mark_its_plugin_heading_carries(
+    first_party_candidates: tuple[PluginCandidate, ...],
+) -> None:
+    root = build_root_app(candidates=first_party_candidates)
+    text = page(root, composition(), [])
+    assert "- Where the repos you can name in workspace commands come from.\n" in text
+    assert "- Git hosts untaped has credentials and a proxy for. [experimental]\n" in text
