@@ -114,6 +114,18 @@ def test_a_quoted_agents_path_is_checked_as_its_words(tmp_path: Path) -> None:
     assert 'no topic "nothing" in svc' in detail
 
 
+def test_a_quoted_path_naming_a_placeholder_is_no_link(tmp_path: Path) -> None:
+    body = 'See `untaped agents "svc TOPIC"` and `untaped agents "svc <topic>"`.'
+    assert _violations(tmp_path, links=_guide(body)) == []
+
+
+def test_a_console_block_with_a_title_is_still_checked(tmp_path: Path) -> None:
+    [(_, rule, _)] = _violations(
+        tmp_path, titled=_guide("```console title\n$ untaped svc nope\n```")
+    )
+    assert rule == "guide-command"
+
+
 def test_a_guide_may_link_another_guide(tmp_path: Path) -> None:
     assert (
         _violations(

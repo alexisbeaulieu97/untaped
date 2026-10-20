@@ -31,6 +31,7 @@ them.
 from __future__ import annotations
 
 import re
+import shlex
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
@@ -38,7 +39,14 @@ import yaml
 from cyclopts import App
 from pydantic import ValidationError
 
-from untaped.conventions.commands import FENCE, argv_of, commands, console_lines, parse_problem
+from untaped.conventions.commands import (
+    FENCE,
+    PLACEHOLDER,
+    argv_of,
+    commands,
+    console_lines,
+    parse_problem,
+)
 from untaped.errors import UsageError, first_validation_error
 from untaped.plugins.registry import CompositionResult, PluginSpec
 
@@ -95,19 +103,27 @@ def _quoted(
 
     composed = {"untaped", *(each.spec.name for each in result.plugins)}
     for command, inline in quoted:
-        argv, placeholders = argv_of(command)
+        argv, _ = argv_of(command)
         if argv[:1] != ["agents"]:
             problem = parse_problem(root, command, inline=inline)
             if problem is not None:
                 yield "guide-command", f"{command}: {problem}"
             continue
         words = [part for word in argv[1:] for part in word.split()]  # as the page reads them
-        if placeholders & set(words) or (words and words[0] not in composed | {spec.name}):
+        written = [part for word in shlex.split(command)[2:] for part in word.split()]
+        if any(_placeholder(word) for word in written) or (
+            words and words[0] not in composed | {spec.name}
+        ):
             continue
         try:
             page(root, result, words)
         except UsageError as exc:
             yield "guide-link", f"{command}: {exc}"
+
+
+def _placeholder(word: str) -> bool:
+    """Whether a page path's word stands for a name (``TOPIC``, ``<topic>``)."""
+    return "<" in word or PLACEHOLDER.match(word) is not None
 
 
 def _yaml_blocks(result: CompositionResult, body: str) -> Iterator[tuple[str, str]]:

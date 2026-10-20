@@ -29,7 +29,7 @@ _SYNOPSIS_SUFFIX = re.compile(r"(?:\]|\.\.\.|…)+$")
 PLACEHOLDER = re.compile(r"^[A-Z][A-Z0-9_]*(?:[/=:.-][A-Z0-9_]+)*$")
 _ROOT_FLAGS = {"-q", "--quiet", "-v", "--verbose", "--deprecated"}
 _HELP_FLAGS = {"--help", "-h"}
-_CONSOLE = re.compile(r"^```console\n(.*?)^```", re.MULTILINE | re.DOTALL)
+_CONSOLE = re.compile(r"^```console\b[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 FENCE = re.compile(r"^```([^\n]*)\n(.*?)^```", re.MULTILINE | re.DOTALL)
 """A fenced block: its info string (the language, then any words after it) and its text."""
 INLINE = re.compile(r"`(untaped(?: [^`]*)?)`")
