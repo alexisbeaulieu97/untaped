@@ -17,10 +17,10 @@ when it is selected.
 
 A source is selected by `--source`, by the inline selectors (`--org`,
 `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`,
-`--ref-scan-default`), or by `ansible.default_source` when neither is given (an unknown name there fails
-naming the setting).
-Repeated `--source` and inline selectors add up, and repeating the same
-inline selectors reuses their cached scan. `--refresh`, `--cached` and
+`--ref-scan-default`), or by `ansible.default_source` when neither is
+given; an unknown name there fails naming the setting. Repeated `--source`
+and inline selectors add up, and repeating the same inline selectors
+reuses their cached scan. `--refresh`, `--cached` and
 `--backend` need a boundary (`--source`, `--org`, `--team`, `--repo` or
 `ansible.default_source`); `--path` and the ref selectors do not count on
 their own.
@@ -30,8 +30,9 @@ their own.
 A command that reads a source refreshes it first when it was never
 refreshed or is older than `ansible.caches.index.max_age_seconds`.
 `--refresh` refreshes it now; `--cached` reads only what is cached, never
-checks GitHub, and fails with "no cached source data" for a source never
-refreshed. `deps --live` never reads or refreshes the source; `graph --live
+checks GitHub, and fails with "no cached source data" for a source with no
+cached data (never refreshed, or changed by `source set` or `source patch`
+since). `deps --live` never reads or refreshes the source; `graph --live
 --direction both` refreshes it for the upstream half.
 
 A refresh that fails over cached data serves that data with one
