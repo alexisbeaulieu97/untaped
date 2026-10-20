@@ -11,7 +11,7 @@ from untaped import bootstrap, refs
 from untaped.errors import ConfigError
 from untaped.management.doctor import collect_doctor_rows
 from untaped.plugins.registry import PluginSpec
-from untaped.refs import RefTarget
+from untaped.refs import RefHolder, RefTarget
 from untaped.store import Store
 from untaped.testing import plugin_candidate, write_reference
 
@@ -74,7 +74,7 @@ def test_two_held_layouts_pass(tmp_path: Path) -> None:
     refs.register([RefTarget(plugin="acme", store="data", layout=4)])
     checkout = _install(tmp_path / "checkout")
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=3)],
         anchor=checkout,
         version="11.1.0",
@@ -166,38 +166,40 @@ def test_every_holder_is_listed(tmp_path: Path) -> None:
     gone = tmp_path / "gone"
     old = _install(tmp_path / "old", "11.2.0")
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=3)],
         anchor=gone,
         version="11.0.0",
     )
     write_reference(
-        "install:bbbbbbbbbbbb",
+        RefHolder(kind="install", name="bbbbbbbbbbbb"),
         [RefTarget(plugin="acme", store="data", layout=3)],
         anchor=old,
         version="11.1.0",
     )
     write_reference(
-        "workspace:pay",
+        RefHolder(kind="workspace", name="pay"),
         [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
         plugin="workspace",
     )
     project = _install(tmp_path / "project", "9.0.0")  # a later untaped's kind, no plugin
-    write_reference("project:pay", [], anchor=project, version="1.0.0")
+    write_reference(RefHolder(kind="project", name="pay"), [], anchor=project, version="1.0.0")
     row = _row(_store(tmp_path / "data.db"), check="references")
     detail = str(row["detail"])
     assert row["status"] == "pass"  # a dead reference is information, not a warning
     assert f"untaped 11.0.0 at {gone}: no untaped there any more" in detail
     assert f"untaped 11.1.0 at {old}: reference from before an upgrade" in detail
-    assert "workspace:pay (plugin workspace)" in detail
-    assert "project:pay" in detail and "project:pay (" not in detail
-    assert "project:pay:" not in detail  # neither dead nor from before an upgrade
+    assert "workspace pay (plugin workspace)" in detail
+    assert "project pay" in detail and "project pay (" not in detail
+    assert "project pay:" not in detail  # neither dead nor from before an upgrade
     assert "(this install)" in detail
 
 
 def test_a_newer_reference_warns(tmp_path: Path) -> None:
     refs.register([])
-    (refs.refs_dir() / "install-future.json").write_text('{"untaped": "2", "holder": "x"}')
+    (refs.refs_dir() / "install-future.json").write_text(
+        '{"untaped": "2", "holder": {"kind": "install", "name": "x"}}'
+    )
     row = _row(_store(tmp_path / "data.db"), check="references")
     assert row["status"] == "warn"
     assert "written by a newer untaped; upgrade this install to prune" in str(row["detail"])

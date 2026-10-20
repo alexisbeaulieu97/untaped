@@ -27,7 +27,7 @@ from untaped.records import (
     TargetRecord,
     _RowError,
 )
-from untaped.refs import RefTarget
+from untaped.refs import RefHolder, RefTarget
 
 
 class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
@@ -130,7 +130,7 @@ class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
 
     table_columns: ClassVar[tuple[str, ...]] = ("action", "version", "environment", "targets")
 
-    holder: str
+    holder: Annotated[RefHolder | None, Field(exclude_if=_is_none)] = None
     environment: str
     version: str | None
     targets: list[RefTarget]

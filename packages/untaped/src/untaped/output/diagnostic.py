@@ -779,7 +779,7 @@ class StaleData(Diagnostic, kind="untaped.stale"):
 class Pruned(Diagnostic, kind="untaped.pruned"):
     """A store layout nothing holds, removed after a complete fill: an ``info`` line, unmuted.
 
-    ``store`` is ``<plugin>.<name>``, ``layout`` the removed layout's number,
+    ``plugin`` and ``store`` name the store, ``layout`` the removed layout's number,
     ``path`` where it was, ``bytes`` what it freed (its sidecars and its
     caches' sidecar folders included). Built by
     :meth:`untaped.store.Store.prune`.
@@ -787,6 +787,7 @@ class Pruned(Diagnostic, kind="untaped.pruned"):
 
     level: ClassVar[Level] = "info"
 
+    plugin: str
     store: str
     layout: int
     path: str

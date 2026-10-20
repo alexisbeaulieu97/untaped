@@ -186,19 +186,21 @@ pin together passes the check.
 ### Who holds a layout, and cleanup
 
 Each install of untaped that runs `untaped setup register` writes a
-*reference* in `~/.untaped/refs/`: where it is installed, its version, and
-the layouts its plugins' stores use. Each target is a `RefTarget`
-(experimental), written in the file as an object: a layout,
-`{"plugin": "acme", "store": "catalogue", "layout": 2}`, or one item of a
-store that keeps one per item, `{"plugin": "git", "store": "store", "item":
-"github.com/acme/pay"}`; the install is the only holder in 11.1, and it holds
-layouts. An install refreshes its own reference whenever a command opens a
-store after its plugins or their layouts changed, so an upgrade needs nothing
-more. `holders(target)` (experimental) names the references that keep a
-target, and raises while a reference cannot be read
-(who holds it is unknown then, never nobody). A reference is *live* while its folder still
-holds an untaped install; one written by a newer untaped, or one this untaped
-cannot read, is kept as if live and pauses all cleanup until this install is
+*reference* in `~/.untaped/refs/`: where it is installed, its version, and the
+layouts its plugins' stores use. Each target is a `RefTarget` (experimental),
+written in the file as an object: a layout, `{"plugin": "acme", "store":
+"catalogue", "layout": 2}`, or one item of a store that keeps one per item,
+`{"plugin": "git", "store": "store", "item": "github.com/acme/pay"}`. Who the
+reference is for is a `RefHolder` (experimental), written as `{"kind":
+"install", "name": "3f9a1c2e8b7d"}` in `refs/install-3f9a1c2e8b7d.json`; the
+install is the only holder in 11.1, and it holds layouts. An install refreshes
+its own reference whenever a command opens a store after its plugins or their
+layouts changed, so an upgrade needs nothing more. `holders(target)`
+(experimental) returns the `RefHolder` of each live reference that keeps a
+target, and raises while a reference cannot be read (who holds it is unknown
+then, never nobody). A reference is *live* while its folder still holds an
+untaped install; one written by a newer untaped, or one this untaped cannot
+read, is kept as if live and pauses all cleanup until this install is
 upgraded. A reference of a kind this untaped does not know, written by a later
 untaped, is always live and keeps the targets it can read; in this file format
 it never pauses cleanup and is never offered for removal.
@@ -209,7 +211,7 @@ other layout of that store that no live reference holds and no running
 untaped has open: it takes the layout's in-use lock alone, without waiting,
 moves the layout aside with its SQLite sidecars, its caches' folders and its
 lock, then deletes it. Each removal is an info line of kind `untaped.pruned`
-(`store`, `layout`, `path`, `bytes`) that `--quiet` does not hide. An
+(`plugin`, `store`, `layout`, `path`, `bytes`) that `--quiet` does not hide. An
 unregistered install, or one run from a source tree, never removes anything,
 and neither does any install while `refs/` cannot be read.
 
