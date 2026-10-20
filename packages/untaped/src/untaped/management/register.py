@@ -39,7 +39,7 @@ def _remove() -> RegisterOutcome:
     ref = unregister()
     if ref is None:
         _diag.info("this install is not registered; nothing to remove")
-        return RegisterOutcome(action="gone", holder="", environment="", version=None, targets=[])
+        return RegisterOutcome(action="gone", environment="", version=None, targets=[])
     _diag.success(f"unregistered {ref.describe()}: other installs may now remove its layouts")
     return _outcome(ref, "removed")
 

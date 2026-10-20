@@ -23,7 +23,7 @@ from untaped.plugins.registry import (
     PluginSpec,
     named_plugin_dir,
 )
-from untaped.refs import RefTarget
+from untaped.refs import RefHolder, RefTarget
 from untaped.store import Store, layout_path
 from untaped.testing import CliResult, invoke_cli, plugin_candidate, write_reference
 
@@ -92,7 +92,7 @@ def test_a_held_layout_is_not_listed(tmp_path: Path) -> None:
     other = tmp_path / "tool"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=other,
         version="11.1.0",
@@ -163,7 +163,7 @@ def test_nothing_to_show_on_a_clean_home() -> None:
 
 def test_a_dead_reference_is_cores_row_and_applying_removes_it(tmp_path: Path) -> None:
     file = write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=tmp_path / "gone",
         version="11.0.0",
@@ -180,7 +180,7 @@ def test_a_dead_reference_is_cores_row_and_applying_removes_it(tmp_path: Path) -
 
 def test_a_reference_of_an_unknown_kind_is_never_offered(tmp_path: Path) -> None:
     file = write_reference(  # a later untaped's kind; an install anchored here would be dead
-        "project:pay",
+        RefHolder(kind="project", name="pay"),
         [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
         anchor=tmp_path / "gone",
     )
@@ -194,7 +194,7 @@ def test_a_live_reference_is_no_row(tmp_path: Path) -> None:
     alive = tmp_path / "tool"
     (alive / "untaped-11.1.0.dist-info").mkdir(parents=True)
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=alive,
         version="11.1.0",
@@ -211,7 +211,7 @@ def test_applying_checks_again_what_holds_each_layout(tmp_path: Path) -> None:
     other = tmp_path / "tool"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=other,
         version="11.1.0",
@@ -230,7 +230,7 @@ def test_an_unlistable_refs_folder_keeps_every_layout(
     other = tmp_path / "tool"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=other,
         version="11.1.0",
@@ -262,10 +262,12 @@ def test_a_damaged_lock_never_hides_unknown_holders(
     Path(f"{old}.inuse").write_bytes(b"not a database")
     if unknown == "newer":  # a newer untaped's reference, which may name layout 4
         refs.refs_dir().mkdir(parents=True)
-        (refs.refs_dir() / "install-future.json").write_text('{"untaped": "99", "holder": "x"}')
+        (refs.refs_dir() / "install-future.json").write_text(
+            '{"untaped": "99", "holder": {"kind": "install", "name": "x"}}'
+        )
     else:  # a live install's reference names layout 4, in a folder this run cannot list
         write_reference(
-            "install:aaaaaaaaaaaa",
+            RefHolder(kind="install", name="aaaaaaaaaaaa"),
             [RefTarget(plugin="acme", store="data", layout=4)],
             anchor=other,
             version="11.1.0",

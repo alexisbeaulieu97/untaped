@@ -23,7 +23,7 @@ from untaped.output.diagnostic import Failure, Pruned
 from untaped.output.policy import enable_quiet, reset_quiet
 from untaped.output.sink import diagnostics_scope, recording
 from untaped.plugins.registry import named_plugin_dir
-from untaped.refs import RefTarget
+from untaped.refs import RefHolder, RefTarget
 from untaped.store import Store, _FileInUse, _forget_opened, _SqliteInUse
 from untaped.testing import write_reference
 
@@ -95,7 +95,7 @@ def test_a_registered_install_removes_a_layout_nothing_holds(
     assert not old.exists() and not Path(f"{old}-journal").exists() and not folder.exists()
     assert not Path(f"{old}.inuse").exists() and not Path(f"{old}.inuse.d").exists()
     assert not any(".removing-" in p.name for p in base.parent.rglob("*"))
-    assert (line.store, line.layout, line.path) == ("acme.data", 4, str(old))
+    assert (line.plugin, line.store, line.layout, line.path) == ("acme", "data", 4, str(old))
     assert line.bytes >= 13
     assert "removed layout 4 of store acme.data" in line.message
     assert line.level == "info"
@@ -155,7 +155,7 @@ def test_another_live_install_keeps_its_layout(
     _registered(composed)
     other = _install(tmp_path / "checkout")
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=other,
         version="11.1.0",
@@ -176,7 +176,7 @@ def test_a_dead_install_holds_nothing_and_keeps_its_file(
     if gone == "untaped":
         other.mkdir()  # the directory is there, untaped was uninstalled from it
     file = write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=other,
         version="11.0",
@@ -194,7 +194,9 @@ def test_a_plugin_holder_without_an_anchor_keeps_the_layout(
 ) -> None:
     _registered(composed)
     write_reference(
-        "workspace:pay", [RefTarget(plugin="acme", store="data", layout=4)], plugin="workspace"
+        RefHolder(kind="workspace", name="pay"),
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        plugin="workspace",
     )
     old = _layout(base, 4)
     store = _store(base)
@@ -208,12 +210,13 @@ def test_a_reference_of_an_unknown_kind_never_pauses_pruning(
 ) -> None:
     _registered(composed)
     write_reference(  # a later untaped's kind, anchored on a folder that is gone
-        "project:pay",
+        RefHolder(kind="project", name="pay"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=tmp_path / "gone",
     )
     (refs.refs_dir() / "project-other.json").write_text(
-        '{"untaped": "1", "holder": "project:other", "targets": [{"shape": "unknown"}]}'
+        '{"untaped": "1", "holder": {"kind": "project", "name": "other"}, '
+        '"targets": [{"shape": "unknown"}]}'
     )
     held, unheld = _layout(base, 4), _layout(base, 3)
     store = _store(base)
@@ -227,7 +230,9 @@ def test_a_reference_from_a_newer_untaped_stops_pruning(
 ) -> None:
     _registered(composed)
     folder = refs.refs_dir()
-    (folder / "install-future.json").write_text('{"untaped": "2", "holder": "install:f"}')
+    (folder / "install-future.json").write_text(
+        '{"untaped": "2", "holder": {"kind": "install", "name": "f"}}'
+    )
     old = _layout(base, 4)
     store = _store(base)
     store.open()
@@ -420,7 +425,7 @@ def test_an_unlistable_refs_folder_stops_the_cleanup(
     base: Path, composed: list[RefTarget], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=_install(tmp_path / "t"),
         version="11.1.0",
@@ -446,7 +451,7 @@ def test_an_anchor_that_cannot_be_listed_counts_as_live(
 ) -> None:
     anchor = _install(tmp_path / "t")
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=anchor,
         version="11.1.0",
@@ -508,7 +513,7 @@ def test_another_installs_bare_file_is_kept_while_its_layout_is_held(
     _registered(composed)
     other = _install(tmp_path / "tool")
     write_reference(
-        "install:aaaaaaaaaaaa",
+        RefHolder(kind="install", name="aaaaaaaaaaaa"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=other,
         version="11.1.0",

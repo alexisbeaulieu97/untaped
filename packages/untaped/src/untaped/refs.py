@@ -92,6 +92,25 @@ class RefTarget(BaseModel):
         return f"{self.plugin}.{self.store} {what}"
 
 
+@experimental
+class RefHolder(BaseModel):
+    """Who a reference is for: its ``kind`` and its ``name`` within that kind.
+
+    A registered install is ``RefHolder(kind="install", name=<12 hex digits>)``;
+    a later untaped may write other kinds (a project, say). Its file is
+    ``refs/<kind>-<name>.json``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    kind: Annotated[str, Field(min_length=1)]
+    name: Annotated[str, Field(min_length=1)]
+
+    def describe(self) -> str:
+        """How a row names it: ``project pay``."""
+        return f"{self.kind} {self.name}"
+
+
 @dataclass(frozen=True)
 class Reference:
     """One holder's file, as read.
@@ -101,13 +120,17 @@ class Reference:
     """
 
     file: Path
-    holder: str = ""
-    kind: str = ""
+    holder: RefHolder | None = None
     anchor: Path | None = None
     plugin: str | None = None
     version: str | None = None
     targets: tuple[RefTarget, ...] = ()
     opaque: str | None = None
+
+    @property
+    def kind(self) -> str:
+        """The holder's kind, ``""`` when the file names no readable holder."""
+        return "" if self.holder is None else self.holder.kind
 
     @property
     def live(self) -> bool:
@@ -147,7 +170,7 @@ class Reference:
 
         if self.kind == INSTALL and self.anchor is not None:
             return f"untaped {self.version or '?'} at {shown_path(self.anchor)}"
-        return self.holder or self.file.name
+        return self.file.name if self.holder is None else self.holder.describe()
 
 
 def environment() -> Path | None:
@@ -163,17 +186,17 @@ def environment() -> Path | None:
     return Path(os.path.abspath(str(located)))
 
 
-def install_holder(env: Path) -> str:
-    """``install:<12 hex digits>``: the holder an install at ``env`` writes."""
-    return f"{INSTALL}:{hashlib.sha256(str(env).encode()).hexdigest()[:12]}"
+def install_holder(env: Path) -> RefHolder:
+    """The holder an install at ``env`` writes: kind ``install``, 12 hex digits of its path."""
+    return RefHolder(kind=INSTALL, name=hashlib.sha256(str(env).encode()).hexdigest()[:12])
 
 
-def reference_file(holder: str) -> Path:
-    """``refs/<kind>-<segment>.json``: the file a holder's reference lives in."""
+def reference_file(holder: RefHolder) -> Path:
+    """``refs/<kind>-<name>.json``: the file a holder's reference lives in."""
     from untaped.git import safe_path_segment  # noqa: PLC0415 - loads unicodedata
 
-    kind, _, name = holder.partition(":")
-    return refs_dir() / f"{safe_path_segment(kind)}-{safe_path_segment(name)}.json"
+    kind, name = safe_path_segment(holder.kind), safe_path_segment(holder.name)
+    return refs_dir() / f"{kind}-{name}.json"
 
 
 def this_install() -> Reference | None:
@@ -222,12 +245,11 @@ def read_reference(file: Path) -> Reference:
     if form != FORMAT:
         newer = isinstance(form, str) and form.isdigit() and int(form) > int(FORMAT)
         why = "written by a newer untaped" if newer else f"unreadable (format {form!r})"
-        return Reference(file, holder=_text(data.get("holder")), opaque=why)
-    holder, targets, anchor = data.get("holder"), data.get("targets"), data.get("anchor")
-    if not isinstance(holder, str) or not holder:
+        return Reference(file, holder=_holder(data.get("holder")), opaque=why)
+    holder, targets, anchor = _holder(data.get("holder")), data.get("targets"), data.get("anchor")
+    if holder is None:
         return Reference(file, opaque="unreadable (no holder)")
-    kind = holder.partition(":")[0]
-    if kind == INSTALL:
+    if holder.kind == INSTALL:
         # An install is this untaped's own kind: anything it cannot read pauses cleanup.
         if not isinstance(targets, list):
             return Reference(file, holder=holder, opaque="unreadable (no targets)")
@@ -241,7 +263,6 @@ def read_reference(file: Path) -> Reference:
     return Reference(
         file,
         holder=holder,
-        kind=kind,
         anchor=Path(anchor) if isinstance(anchor, str) and anchor else None,
         plugin=_text(data.get("plugin")) or None,
         version=_text(data.get("version")) or None,
@@ -250,7 +271,7 @@ def read_reference(file: Path) -> Reference:
 
 
 @experimental
-def holders(target: RefTarget) -> list[str]:
+def holders(target: RefTarget) -> list[RefHolder]:
     """The live holders that name ``target``.
 
     What a resource asks before it removes something. Raises
@@ -265,7 +286,9 @@ def holders(target: RefTarget) -> list[str]:
             f"cannot tell who holds {target.describe()}: {unknown.file} is {unknown.opaque}",
             hint="upgrade this install, or fix or remove that file",
         )
-    return [ref.holder for ref in found if target in ref.targets and ref.live]
+    return [
+        ref.holder for ref in found if ref.holder is not None and target in ref.targets and ref.live
+    ]
 
 
 def other_installs() -> list[Reference]:
@@ -415,7 +438,7 @@ def locked() -> Iterator[None]:
 
 @experimental
 def write_reference(
-    holder: str,
+    holder: RefHolder,
     targets: Sequence[RefTarget],
     *,
     anchor: Path | None = None,
@@ -428,7 +451,7 @@ def write_reference(
     home: an ``anchor`` is live while it holds an ``untaped-*.dist-info``
     folder, and a holder without one lives until its file is removed.
     """
-    data: dict[str, object] = {"untaped": FORMAT, "holder": holder}
+    data: dict[str, object] = {"untaped": FORMAT, "holder": holder.model_dump()}
     if anchor is not None:
         data["anchor"] = str(anchor)
     if plugin is not None:
@@ -441,7 +464,7 @@ def write_reference(
     return file
 
 
-def _write(holder: str, env: Path, targets: Sequence[RefTarget]) -> None:
+def _write(holder: RefHolder, env: Path, targets: Sequence[RefTarget]) -> None:
     try:
         write_reference(holder, targets, anchor=env, version=_version())
     except OSError as exc:
@@ -490,6 +513,14 @@ def _readable(targets: object) -> tuple[RefTarget, ...]:
     return tuple(read)
 
 
+def _holder(value: object) -> RefHolder | None:
+    """The holder ``value`` names, or ``None`` when it names none this untaped can read."""
+    try:
+        return RefHolder.model_validate(value)
+    except ValidationError:
+        return None
+
+
 def _text(value: object) -> str:
     return value if isinstance(value, str) else ""
 
@@ -501,4 +532,4 @@ def _forget() -> None:
         _refreshed = False
 
 
-__all__ = ["RefTarget", "holders"]
+__all__ = ["RefHolder", "RefTarget", "holders"]

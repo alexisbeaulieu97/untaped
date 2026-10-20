@@ -15,6 +15,7 @@ from test_management.support import GithubProfile, asset, compose, make_spec, wr
 from untaped import bootstrap
 from untaped.management.config import build_root_config_app
 from untaped.management.doctor import build_root_doctor_app
+from untaped.refs import RefHolder
 from untaped.sdk import (
     TokenCommand,
     TokenSources,
@@ -83,7 +84,9 @@ def test_unknown_keys_name_the_other_registered_installs(
     write_config(_isolated_config, "profiles:\n  default:\n    acme: {parallel: 4}\n")
     other = tmp_path / "checkout"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
-    write_reference("install:aaaaaaaaaaaa", [], anchor=other, version="11.1.0")
+    write_reference(
+        RefHolder(kind="install", name="aaaaaaaaaaaa"), [], anchor=other, version="11.1.0"
+    )
     row = _row(_rows(), "unknown-keys")
     assert row["detail"] == (
         "ignored: profiles.default.acme (another untaped here may read them: "

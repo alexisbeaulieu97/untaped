@@ -314,7 +314,7 @@ class Store:
                 _inuse_file(lock_path),
                 _inuse_dir(lock_path),
             ]
-            aside = _Aside(self.qualified, layout, path, bare=bare)
+            aside = _Aside(self, layout, path, bare=bare)
             if not aside.move(path):
                 return "could not be moved aside (open elsewhere, or not writable)"
             for companion in companions:
@@ -512,7 +512,7 @@ def _held(store: Store, references: Sequence[Reference]) -> set[int]:
 class _Aside:
     """One layout being removed: its paths renamed aside, deleted once every lock is released."""
 
-    def __init__(self, store: str, layout: int, path: Path, *, bare: bool) -> None:
+    def __init__(self, store: Store, layout: int, path: Path, *, bare: bool) -> None:
         self.store, self.layout, self.path, self.bare = store, layout, path, bare
         self.bytes = 0
         self.moved: list[Path] = []
@@ -561,12 +561,13 @@ def _report_pruned(aside: _Aside) -> None:
 
     named = " (pre-11.1 name)" if aside.bare else ""
     message = (
-        f"removed layout {aside.layout}{named} of store {aside.store} at "
+        f"removed layout {aside.layout}{named} of store {aside.store.qualified} at "
         f"{shown_path(aside.path)} ({size_text(aside.bytes)}): nothing holds it"
     )
     line = Pruned(
         message=message,
-        store=aside.store,
+        plugin=aside.store.plugin,
+        store=aside.store.name,
         layout=aside.layout,
         path=str(aside.path),
         bytes=aside.bytes,

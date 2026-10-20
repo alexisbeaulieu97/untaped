@@ -5259,6 +5259,10 @@ sdk untaped.sdk.Quit.result  [experimental]
 sdk untaped.sdk.Record()
 sdk untaped.sdk.Record.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Record.table_columns class
+sdk untaped.sdk.RefHolder(*, kind, name)  [experimental]
+sdk untaped.sdk.RefHolder.describe()  [experimental]
+sdk untaped.sdk.RefHolder.kind  [experimental]
+sdk untaped.sdk.RefHolder.name  [experimental]
 sdk untaped.sdk.RefTarget(*, plugin, store)  [experimental]
 sdk untaped.sdk.RefTarget(item=) default=None  [experimental]
 sdk untaped.sdk.RefTarget(layout=) default=None  [experimental]
