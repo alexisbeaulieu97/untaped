@@ -83,8 +83,7 @@ def test_command(
     copied to a temporary target and `expected/` is the full expected tree
     (no `expected/` asserts no change). An optional, data-only `case.yml`
     sets `inputs`, `expect: success|error`, `error_contains` and `verdict`.
-    Cases run the pack's hooks. --update needs an explicit pack or recipe;
-    the regenerated trees are worth reviewing before they are kept. Any
+    --update needs an explicit pack or recipe. Any
     failing case exits 1, and so does an explicit ref with no cases.
     """
     with report_config_errors():

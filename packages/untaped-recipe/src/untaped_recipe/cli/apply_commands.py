@@ -186,8 +186,8 @@ def apply_command(
     Every target is planned in memory, previewed on stderr, confirmed, backed
     up, then written. Recipes edit plain directories: they never commit, push
     or run shell steps. Pack hooks run in the pack's own environment through
-    `uv run` (exit 4 without `uv`), on every plan, dry runs and checks
-    included; built-in hooks such as `yaml_edit` run in-process.
+    `uv run`; built-in hooks such as `yaml_edit` run in-process. What pack
+    code can reach: `untaped agents recipe trust`.
 
     RECIPE_REF is a path only when it is `.` or `..`, starts with `./`, `../`,
     `/` or `~`, or ends in `.yml`/`.yaml`; anything else is a bare recipe name
@@ -211,16 +211,19 @@ def apply_command(
     per target, then truncates with `showing first N of M targets`; --preview
     diff prints unified diffs that `patch` accepts, the only full view then.
     Targets that resolve a sensitive input show no file detail or diff, and
-    the value appears as `***` in rows, warnings, errors and backups.
+    the value appears as `***` in rows, warnings, errors and backup
+    metadata; templates and hooks still get the real value, so the written
+    files hold it.
 
     --parallel (at most 32) plans targets concurrently and sizes the hook
     worker pool. --hook-timeout bounds each hook call; preparing a pack's hook
     environment has its own bound, `recipe.hook_startup_timeout_seconds`, and
     prints `preparing hook environment...`.
 
-    --stdin replaces DIRS; passing both exits 2. Without a terminal it
-    refuses before planning (exit 2) unless --yes, --dry-run or --check, and
-    input prompts never run. A line is a path unless it is a JSON record: a
+    --stdin replaces DIRS; passing both exits 2. With --stdin the
+    confirmation reads the controlling terminal and input prompts never run;
+    without a terminal it refuses before planning (exit 2) unless --yes,
+    --dry-run or --check. A line is a path unless it is a JSON record: a
     record's target is its absolute `target_path`, else `path`, and records
     whose kind ends in `.summary` are skipped. The same directory given twice,
     in any spelling, is planned once.

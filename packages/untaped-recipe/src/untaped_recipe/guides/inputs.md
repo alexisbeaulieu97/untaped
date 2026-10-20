@@ -12,8 +12,7 @@ For each input, the first of these that gives a value wins:
 4. a prompt, for a required input only;
 5. otherwise a `missing required input` error.
 
-Among fixed values, a later `--vars-file` wins over an earlier one and
-`--var` wins over every file. An input name the recipe doesn't declare is
+An input name the recipe doesn't declare is
 rejected. `untaped recipe get REF` lists a recipe's inputs.
 
 ## How values are parsed

@@ -8,18 +8,11 @@ A pack's hooks are Python that runs as you, with full file access and no
 sandbox: the same trust model as `pip install`. They run whenever a plan is
 computed, so on every `recipe apply`, `--dry-run` and `--check` included,
 and in every golden test (`recipe test`). A dry run is no way to inspect a
-pack you don't trust yet.
+pack you don't trust yet; `packs add`, `packs get`, `get`, `hooks get` and
+`validate` read one without importing any of its hooks.
 
-These read a pack without running any of its code:
-
-- `untaped recipe packs add` lists the pack's recipes and hooks on stderr;
-- `untaped recipe packs get NAME`, `untaped recipe get REF` and
-  `untaped recipe hooks get REF` show what it holds, and the `edit`
-  commands open its files;
-- `untaped recipe validate NAME` scans hook modules without importing them.
-
-`packs sync` lists the hook-code files that change before it replaces a
-pack: the code that runs next.
+Hooks, scaffolding and `validate` run `uv` on the pack, so they need `uv`
+on `PATH`; without it they exit 4.
 
 ## What hooks can reach
 

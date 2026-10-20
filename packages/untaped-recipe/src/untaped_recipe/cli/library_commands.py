@@ -453,8 +453,7 @@ def list_packs_command(*, fmt: FormatOption = "table", columns: ColumnsOption = 
 def list_hooks_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List installed hooks, then the built-in ones.
 
-    A built-in such as `yaml_edit` is listed with pack `(builtin)`; it can't
-    be edited.
+    A built-in such as `yaml_edit` is listed with pack `(builtin)`.
     """
     _list_rows(
         lambda installed: [
@@ -551,7 +550,7 @@ def validate_command(
 
     With no argument it checks every installed pack and `packs.toml`; with a
     ref or path, one pack, recipe or built-in hook. It scans hook modules
-    without importing them, so it runs no pack code. A pack that declares
+    without importing them. A pack that declares
     hooks needs a `uv.lock` that `uv lock --check` accepts. Every
     `packs.toml` row must carry its `content_hash`; a malformed or
     incomplete row blocks every library change until it is fixed. An

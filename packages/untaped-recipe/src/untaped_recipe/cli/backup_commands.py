@@ -47,9 +47,8 @@ _diag = Diagnostics()
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
     """List backup bundles.
 
-    Each apply writes one bundle unless --no-backup. A bundle holds text
-    content only, not mode or mtime, and is owner-only (directories `0700`,
-    files `0600`).
+    A bundle holds text content only, not mode or mtime, and is owner-only
+    (directories `0700`, files `0600`).
     """
     with report_config_errors():
         emit(
@@ -94,7 +93,7 @@ def _entries(files: object) -> TypeGuard[list[dict[str, object]]]:
 
 
 def get_command(
-    backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
+    backup_id: Annotated[str, Parameter(help="Backup id, an unambiguous prefix, or latest.")],
     /,
     *,
     fmt: FormatOption = "table",
@@ -118,7 +117,7 @@ def get_command(
 
 @writes
 def restore_command(
-    backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
+    backup_id: Annotated[str, Parameter(help="Backup id, an unambiguous prefix, or latest.")],
     /,
     *,
     force: Annotated[
@@ -132,8 +131,7 @@ def restore_command(
 ) -> None:
     """Restore a backup bundle.
 
-    BACKUP_ID is a full id, an unambiguous prefix, or `latest`, as on
-    `backups get`. The whole bundle is restored as one transaction, after a
+    The whole bundle is restored as one transaction, after a
     preview and a confirmation. It refuses to overwrite files changed after
     the backup unless --force.
 

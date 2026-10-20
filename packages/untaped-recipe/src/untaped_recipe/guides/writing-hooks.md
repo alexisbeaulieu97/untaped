@@ -13,8 +13,7 @@ runs one against a fixture.
   natively (lists and dicts stay structured) and call
   `helpers.render_template()` for templated string args.
 - Hooks stay pure while planning: they read only the target tree and their
-  own pack, and never write or reach the network. They run on every dry
-  run.
+  own pack, and never write or reach the network.
 - A validate hook returns `helpers.pass_()`, `helpers.fail(msg)` or
   `helpers.skip(msg)`; skip means the recipe doesn't apply, and the target
   is `skipped`, not failed. Returning `None` passes; a plain string fails
@@ -26,8 +25,7 @@ runs one against a fixture.
 
 A bare hook name in a pack's recipe is the pack's own hook, else a
 built-in, never another pack's; `pack/hook` names another pack's. Only
-recipes outside a pack, and `hooks run` without `--project`, look bare
-names up across installed packs.
+recipes outside a pack look bare names up across installed packs.
 
 ## The built-in `yaml_edit` hook
 
