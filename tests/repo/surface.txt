@@ -80,7 +80,7 @@ cfg recipe.preview_max_rows integer(minimum=0) default=50
 cfg skills.updates choice=auto
 cfg skills.updates choice=off
 cfg skills.updates choice=warn
-cfg skills.updates string default=warn
+cfg skills.updates string default=auto
 cfg ui.border choice=ascii
 cfg ui.border choice=none
 cfg ui.border choice=rounded
@@ -4181,6 +4181,7 @@ cli untaped skills update
 cli untaped skills update --columns VALUE... default=unset
 cli untaped skills update --columns alias=-c
 cli untaped skills update --dry-run switch
+cli untaped skills update --force switch
 cli untaped skills update --format VALUE default=table
 cli untaped skills update --format alias=-f
 cli untaped skills update --format choice=json
@@ -5402,7 +5403,9 @@ sdk untaped.sdk.SingleList.view(frame)  [experimental]
 sdk untaped.sdk.SingleList.view(width=) default=None  [experimental]
 sdk untaped.sdk.SingleList.window_rows  [experimental]
 sdk untaped.sdk.SingleList.with_error(text)  [experimental]
-sdk untaped.sdk.SkillAsset(name, source, description)
+sdk untaped.sdk.SkillAsset(description@3=) default=""
+sdk untaped.sdk.SkillAsset(name)
+sdk untaped.sdk.SkillAsset(source@2=) default=None
 sdk untaped.sdk.SkillAsset.description
 sdk untaped.sdk.SkillAsset.name
 sdk untaped.sdk.SkillAsset.source

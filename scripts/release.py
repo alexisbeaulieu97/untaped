@@ -666,11 +666,12 @@ def _duplicates(names: Collection[str]) -> list[str]:
 
 def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
     """The shell's ``untaped`` and ``untaped-<name>`` for each expected plugin,
-    each listed once with a SKILL.md."""
+    each listed once; a copy (not a stub) with a SKILL.md in its source."""
     try:
         rows = json.loads(skills_json)
         names = [row["name"] for row in rows]
-        sources = {row["name"]: Path(row["source"]) for row in rows}
+        sources = {row["name"]: row["source"] for row in rows}
+        copies = {row["name"]: Path(row["source"]) for row in rows if row["kind"] == "copy"}
     except ValueError, TypeError, KeyError:
         return ["untaped skills list --format json did not print a list of rows"]
     errors = [f"skill {name} is listed twice" for name in _duplicates(names)]
@@ -678,7 +679,7 @@ def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
     errors += [f"skill {name} is missing" for name in required if name not in sources]
     errors += [
         f"skill {name} has no SKILL.md in {source}"
-        for name, source in sorted(sources.items())
+        for name, source in sorted(copies.items())
         if not (source / "SKILL.md").is_file()
     ]
     return errors

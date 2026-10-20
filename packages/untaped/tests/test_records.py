@@ -640,12 +640,13 @@ def _samples() -> dict[str, WireModel]:
         FixOutcome(fix=["config", "migrate"], checks=["config"], action="fixed", detail="d"),
         MigrationPreviewRow(id="github.cache", action="move", source="/a", destination="/b"),
         SetupStep(step="profile", plugin="untaped", state="todo", detail="d", run=[], by="agent"),
-        SkillRow(name="untaped-hello", description="d", source="/s"),
+        SkillRow(name="untaped-hello", description="d", source="/s", kind="copy"),
         InstalledSkillRow(
             name="untaped-hello",
             target="claude",
             scope="user",
             state="current",
+            kind="stub",
             target_path=Path("/h/.claude/skills/untaped-hello"),
         ),
         SkillOutcome(
@@ -1237,8 +1238,8 @@ _ROW_KEYS = {
     "untaped.fix_outcome": ["fix", "checks", "action", "detail"],
     "untaped.migration_row": ["id", "action", "source", "destination", "detail"],
     "untaped.setup_step": ["step", "plugin", "state", "detail", "run", "by"],
-    "untaped.skill": ["name", "description", "source"],
-    "untaped.installed_skill": ["name", "target", "scope", "state", "target_path"],
+    "untaped.skill": ["name", "description", "source", "kind"],
+    "untaped.installed_skill": ["name", "target", "scope", "state", "kind", "target_path"],
     "untaped.skill_outcome": ["name", "target", "scope", "target_path", "action"],
 }
 

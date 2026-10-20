@@ -1,4 +1,7 @@
-"""Packaged skills are self-contained manuals that match the installed CLI.
+"""Packaged skill copies are self-contained manuals that match the installed CLI.
+
+Stubs (core's own skill among them) hold no plugin text to check; the
+template's own guardrail lives in ``test_skill_stubs.py``.
 
 An agent that has only the installed ``untaped`` reads these files, so:
 
@@ -42,8 +45,8 @@ from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.sdk import SkillAsset
 from untaped_awx.domain.suites.suite_starter import starter_suite
 
-#: The shell's own skill, then each first-party plugin's.
-SKILL_NAMES = ("untaped", *(f"untaped-{name}" for name in FIRST_PARTY))
+#: Each first-party plugin's skill; the shell's own is a stub.
+SKILL_NAMES = tuple(f"untaped-{name}" for name in FIRST_PARTY)
 
 
 #: The skill template's sections (docs/plugin-skills.md), in order.
@@ -55,17 +58,24 @@ EXAMPLE_SKILL = REPO_ROOT / "examples/untaped-hello/src/untaped_hello/skills/unt
 
 @pytest.fixture(scope="module")
 def skills(first_party_specs: tuple[PluginSpec, ...]) -> dict[str, SkillAsset]:
-    """Every first-party skill by name, the shell's included."""
+    """Every first-party skill copy by name."""
     specs = (SHELL_SPEC, *first_party_specs)
-    return {skill.name: skill for spec in specs for skill in spec.skills}
+    return {
+        skill.name: skill for spec in specs for skill in spec.skills if skill.source is not None
+    }
+
+
+def _source(skill: SkillAsset) -> Path:
+    assert skill.source is not None
+    return skill.source
 
 
 def _skill_files(skill: SkillAsset) -> list[Path]:
-    return sorted(skill.source.rglob("*.md"))
+    return sorted(_source(skill).rglob("*.md"))
 
 
 def _example_files(skill: SkillAsset) -> list[Path]:
-    return sorted(skill.source.rglob("*.yml"))
+    return sorted(_source(skill).rglob("*.yml"))
 
 
 def test_the_skills_are_the_first_party_plugins_skills(skills: dict[str, SkillAsset]) -> None:
@@ -98,7 +108,7 @@ def test_every_quoted_command_parses_against_the_cli(
             if path.suffix == ".md"
             else quoted_commands.comment_commands(text)
         )
-        problems += [f"{path.relative_to(skill.source)}: {p}" for p in _problems(root, commands)]
+        problems += [f"{path.relative_to(_source(skill))}: {p}" for p in _problems(root, commands)]
 
     assert problems == []
 
@@ -122,7 +132,7 @@ def test_skill_files_do_not_point_into_the_source_repository(
 ) -> None:
     skill = skills[name]
     offending = [
-        f"{path.relative_to(skill.source)}: {line}"
+        f"{path.relative_to(_source(skill))}: {line}"
         for path in [*_skill_files(skill), *_example_files(skill)]
         for line in path.read_text(encoding="utf-8").splitlines()
         if _REPO_ONLY.search(line)

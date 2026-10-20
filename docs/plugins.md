@@ -355,11 +355,11 @@ untaped skills install --all --target all
 ```
 
 `SkillAsset.name` is the skill's full ID (`untaped-acme`; see
-[Install skills](./skills.md#install-skills)). The core `untaped` skill
-covers untaped itself; plugin guidance belongs in the plugin's skill.
-
-Write `SKILL.md` from the [skill template](./plugin-skills.md), which also
-says what belongs in it.
+[Install skills](./skills.md#install-skills)). Without `source` the asset is
+a stub that untaped writes from its own template and `description`, which
+names what the plugin manages; a plugin ships at most one. With `source` it
+is a copy of that directory: write its `SKILL.md` from the
+[skill template](./plugin-skills.md).
 
 ## Validation and checks
 

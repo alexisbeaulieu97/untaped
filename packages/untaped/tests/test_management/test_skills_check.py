@@ -1,8 +1,8 @@
-"""The per-run installed-skills check wired into the root app.
+"""The per-run installed-skills check wired into the root app, for copies.
 
-After every root command, installed skills that are out of date are
-reported on stderr; ``skills.updates`` switches the check to updating
-them in place (``auto``) or silences it (``off``).
+After every root command, copied skills that are out of date are updated
+in place (``skills.updates: auto``, the default), reported on stderr
+(``warn``) or left alone (``off``). Stubs: ``test_stub_skills.py``.
 """
 
 from __future__ import annotations
@@ -41,6 +41,11 @@ def _installed(name: str) -> Path:
     return Path.home() / ".agents" / "skills" / name / "SKILL.md"
 
 
+@pytest.fixture
+def _warn(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    skills: {updates: warn}\n")
+
+
 def _install_then_change(tmp_path: Path) -> object:
     root, skills = _root(tmp_path, "untaped-demo")
     assert _run(root, "skills", "install", "demo")[0] == 0
@@ -48,6 +53,7 @@ def _install_then_change(tmp_path: Path) -> object:
     return root
 
 
+@pytest.mark.usefixtures("_warn")
 def test_outdated_skill_warns_after_a_command(tmp_path: Path) -> None:
     root = _install_then_change(tmp_path)
     code, output = _run(root, "demo", "--help")
@@ -57,6 +63,7 @@ def test_outdated_skill_warns_after_a_command(tmp_path: Path) -> None:
     assert "skills.updates" in output
 
 
+@pytest.mark.usefixtures("_warn")
 def test_the_warning_follows_the_command_s_json_format(tmp_path: Path) -> None:
     root = _install_then_change(tmp_path)
     result = CliInvoker().invoke(root.meta, ["profile", "list", "--format", "json"])  # type: ignore[attr-defined]
@@ -73,6 +80,7 @@ def test_no_warning_when_skills_match(tmp_path: Path) -> None:
     assert "warning" not in _run(root, "demo", "--help")[1]
 
 
+@pytest.mark.usefixtures("_warn")
 def test_failed_command_still_warns(tmp_path: Path) -> None:
     root = _install_then_change(tmp_path)
     code, output = _run(root, "demo", "--no-such-flag")
@@ -80,6 +88,7 @@ def test_failed_command_still_warns(tmp_path: Path) -> None:
     assert "installed skills are out of date" in output
 
 
+@pytest.mark.usefixtures("_warn")
 @pytest.mark.parametrize(
     "args", [("skills", "list"), ("doctor",), ("--version",), ("Skills", "list"), ("DOCTOR",)]
 )

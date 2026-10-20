@@ -14,9 +14,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from importlib import metadata
-from importlib.resources import files
 from itertools import chain
-from pathlib import Path
 from typing import Annotated, Any
 
 from cyclopts import App, Group, Parameter
@@ -82,7 +80,7 @@ from untaped.settings import (
     reset_config_registry,
 )
 from untaped.shell_settings import ShellProfileSettings
-from untaped.skills import InstallableSkill
+from untaped.skills import PackagedSkill
 from untaped.stability import (
     DeprecatedBehaviour,
     apply_marks,
@@ -124,7 +122,6 @@ SHELL_SPEC = ApplicationSpec(
     skills=(
         SkillAsset(
             name=SHELL_NAME,
-            source=Path(str(files("untaped").joinpath("assets", "skills", SHELL_NAME))),
             description=(
                 "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
                 "URLs and tokens, `setup plan`, `doctor`, output formats and installed agent "
@@ -470,7 +467,7 @@ _PREVIEW_FLAGS = frozenset({"--dry-run", "--check"})
 
 
 def _check_skills_after(
-    root: App, tokens: list[str], skills: Mapping[str, InstallableSkill], *, failed: bool
+    root: App, tokens: list[str], skills: Mapping[str, PackagedSkill], *, failed: bool
 ) -> None:
     """Run the per-run installed-skills check after a command.
 

@@ -43,7 +43,7 @@ class TestDefaultLayout:
         monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
         get_settings.cache_clear()
 
-        assert get_settings().skills.updates == "warn"
+        assert get_settings().skills.updates == "auto"
 
     def test_active_layout_is_a_singleton(self) -> None:
         """There is one layout instance; repeated calls return the same object."""

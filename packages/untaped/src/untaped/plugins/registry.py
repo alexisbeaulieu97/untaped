@@ -91,11 +91,17 @@ RESERVED_COMMAND_GROUPS = frozenset(ROOT_MANAGEMENT_COMMANDS)
 
 @dataclass(frozen=True)
 class SkillAsset:
-    """A packaged agent skill shipped by a plugin."""
+    """A packaged agent skill shipped by a plugin.
+
+    Without ``source`` it is a stub skill: core writes it from its own
+    template and ``description``, and the stub sends the agent to
+    ``untaped agents``. With ``source`` it is a copy of that directory.
+    A plugin ships at most one stub.
+    """
 
     name: str
-    source: Path
-    description: str
+    source: Path | None = None
+    description: str = ""
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -813,6 +819,12 @@ def _check_skills(spec: PluginSpec, state: _CompositionState) -> None:
         if skill.name in state.skill_names or skill.name in seen_skills:
             raise _Quarantine("duplicate-skill", f"duplicate skill name: {skill.name!r}")
         seen_skills.add(skill.name)
+    stubs = [skill.name for skill in spec.skills if skill.source is None]
+    if len(stubs) > 1:
+        raise _Quarantine(
+            "bad-skill-asset",
+            f"plugin {spec.name!r} ships more than one stub skill (no source): {', '.join(stubs)}",
+        )
 
 
 def _check_doctor_checks(spec: PluginSpec, state: _CompositionState) -> None:

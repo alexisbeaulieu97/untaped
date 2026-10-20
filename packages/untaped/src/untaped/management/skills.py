@@ -6,20 +6,24 @@ skills. Selection, planning, and install machinery are imported from
 naming no skill exactly retries with the ``untaped-`` prefix, while the
 installed directory and marker always keep the full ``untaped-*`` ID.
 
-:func:`check_installed_skills` runs after every root command: installed
-skills that are out of date are reported (or, with
-``skills.updates: auto``, updated in place) so agents do not follow stale
-instructions.
+:func:`check_installed_skills` runs after every root command. Under
+``skills.updates: auto`` (the default) it refreshes the stub skills in the
+home folder that an older untaped wrote and converts copies from 11.0 to
+stubs, keeping the copies under ``~/.untaped/backups/skills``; ``warn``
+reports them instead. A project's own skills are never written by a run.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
+from packaging.version import InvalidVersion, Version
 
+from untaped import skill_stubs
 from untaped.batch import batch_apply, finish
 from untaped.cli import (
     ColumnsOption,
@@ -35,18 +39,19 @@ from untaped.cli import (
 )
 from untaped.errors import ConfigError, UntapedError, UsageError
 from untaped.management.records import InstalledSkillRow, SkillOutcome, SkillRow
-from untaped.messages import not_found, plural, run_hint
+from untaped.messages import not_found, plural, run_hint, shown_path
 from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import ApplicationSpec, CompositionResult
 from untaped.settings import SkillsSettings, load_settings_section
 from untaped.skills import (
     AllSkillsOption,
-    InstallableSkill,
     InstalledSkill,
+    PackagedSkill,
     SkillForceOption,
     SkillInstallScope,
     SkillInstallTarget,
+    SkillKind,
     SkillNamesArgument,
     SkillProjectDirOption,
     SkillScopeOption,
@@ -56,9 +61,9 @@ from untaped.skills import (
     SkillTargetOption,
     find_installed_skills,
     install_skills,
-    outdated_skills,
     project_root,
     remove_installed_skill,
+    skill_backups_dir,
     skill_roots,
     skill_rows,
     update_installed_skill,
@@ -86,6 +91,14 @@ RemoveScopeOption = Annotated[
     SkillInstallScope | None,
     Parameter(name="--scope", help="Remove only from this scope (default: both)."),
 ]
+UpdateForceOption = Annotated[
+    bool,
+    Parameter(
+        name="--force",
+        negative="",
+        help="Also rewrite stubs someone edited or a newer untaped wrote.",
+    ),
+]
 FoundProjectDirOption = Annotated[
     Path | None,
     Parameter(
@@ -96,14 +109,21 @@ FoundProjectDirOption = Annotated[
 ]
 
 
-def composed_skills(
-    shell: ApplicationSpec, result: CompositionResult
-) -> dict[str, InstallableSkill]:
+def composed_skills(shell: ApplicationSpec, result: CompositionResult) -> dict[str, PackagedSkill]:
     """Return the shell's skills plus every composed plugin's, keyed by name."""
-    skills_map: dict[str, InstallableSkill] = {asset.name: asset for asset in shell.skills}
+    skills_map = {
+        asset.name: PackagedSkill(asset, plugin=shell.name, distribution=skill_stubs.CORE)
+        for asset in shell.skills
+    }
     for registered in result.plugins:
+        ref = registered.plugin_ref
         for asset in registered.skills:
-            skills_map[asset.name] = asset
+            skills_map[asset.name] = PackagedSkill(
+                asset,
+                plugin=registered.spec.name,
+                distribution=ref.distribution,
+                version=ref.distribution_version,
+            )
     return skills_map
 
 
@@ -184,16 +204,22 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
         *,
         stdin: SkillStdinOption = False,
         project_dir: FoundProjectDirOption = None,
+        force: UpdateForceOption = False,
         dry_run: DryRunOption = False,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Update installed skills that differ from this version (default: all)."""
+        """Update installed skills that an older untaped wrote (default: all).
+
+        A stub a newer untaped wrote, or one someone edited, is left alone
+        unless ``--force`` is given.
+        """
         _update(
             skills_map,
             list(skill_names or []),
             stdin=stdin,
             project_dir=project_dir,
+            force=force,
             dry_run=dry_run,
             fmt=fmt,
             columns=columns,
@@ -239,49 +265,136 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
 
 
 def check_installed_skills(
-    skills: Mapping[str, InstallableSkill], *, allow_updates: bool = True
+    skills: Mapping[str, PackagedSkill], *, allow_updates: bool = True
 ) -> None:
-    """Report installed skills that are out of date.
+    """Keep the agent skills in the home folder current; report a project's.
 
-    Runs after every root command. ``skills.updates`` picks the behaviour:
-    ``warn`` (default) prints a warning, ``auto`` updates outdated skills in
-    place, ``off`` does nothing. Without ``allow_updates`` (after a failed or
-    ``--dry-run`` command) ``auto`` only warns, so nothing is written. Skills
-    no composed plugin ships are left to ``untaped doctor``: a run without the
-    plugin that ships one (``uvx untaped`` with no extras) cannot tell it apart
-    from a skill no version ships any more.
+    Runs after every root command. ``skills.updates`` picks the behaviour
+    for the home roots (``~/.agents/skills``, ``~/.claude/skills``):
+    ``auto`` (default) silently refreshes stubs an older untaped wrote,
+    converts copies from 11.0 to stubs (keeping each copy under
+    ``~/.untaped/backups/skills``) and updates other outdated copies; ``warn``
+    reports them; ``off`` does nothing. Without ``allow_updates`` (after a
+    failed or previewing command) nothing is written: ``auto`` leaves stubs
+    for the next successful command and warns about copies. A project's own roots
+    are never written: old copies there are reported, stubs never. Skills no
+    composed plugin ships are left to ``untaped doctor``.
     """
     mode = _updates_mode()
-    if mode == "auto" and not allow_updates:
-        mode = "warn"
     if mode == "off":
         return
-    stale = outdated_skills(skills, project_dir=project_root(Path.cwd()))
-    outdated = [item for item in stale if item.state is SkillState.outdated]
-    if mode == "auto" and outdated:
-        failed: list[InstalledSkill] = []
-        for item in outdated:
-            try:
-                update_installed_skill(skills, item)
-            except UntapedError:
-                failed.append(item)
-        updated = len(outdated) - len(failed)
-        if updated:
-            _diag.info(f"updated {plural(updated, 'outdated skill')}")
-        outdated = failed
-    if outdated:
-        _diag.warning(f"installed skills are out of date: {_names(outdated)}")
-        _diag.hint(
-            f"{run_hint('skills update')} (set skills.updates to auto or off to change this)"
+    found = find_installed_skills(
+        skills, skill_roots(project_dir=project_root(Path.cwd())), deep=False
+    )
+    sorted_ = _sort_outdated(skills, found)
+    older, copies = sorted_.older, sorted_.copies
+    if mode == "auto" and not allow_updates:
+        older = []  # refreshed after the next command that succeeds
+    elif mode == "auto":
+        older = _refresh(skills, older)
+        copies = _update_copies(skills, copies)
+    hint = f"{run_hint('skills update')} (set skills.updates to auto or off to change this)"
+    here = f"{run_hint('skills update')} here (or set skills.updates to off)"
+    for items, message, hint_text in (
+        (older, "agent skills from an older untaped", hint),
+        (copies, "installed skills are out of date", hint),
+        (sorted_.old_in_project, "copied skills from an older untaped in this project", here),
+        (sorted_.stale_in_project, "copied skills in this project are out of date", here),
+    ):
+        if items:
+            _diag.warning(f"{message}: {_names(items)}")
+            _diag.hint(hint_text)
+
+
+@dataclass(frozen=True)
+class _Outdated:
+    """The per-run check's outdated skills, by what it may do about each."""
+
+    older: list[InstalledSkill]  # home stubs this run is newer than, and copies to convert
+    copies: list[InstalledSkill]  # home copies a newer copy replaces
+    old_in_project: list[InstalledSkill]  # project copies a stub replaces
+    stale_in_project: list[InstalledSkill]  # project copies a newer copy replaces
+
+
+def _sort_outdated(skills: Mapping[str, PackagedSkill], found: list[InstalledSkill]) -> _Outdated:
+    """Sort outdated skills; a project's stubs, and copies before 11.1.0 converts them, drop out."""
+    sorted_ = _Outdated([], [], [], [])
+    for item in found:
+        if item.state is not SkillState.outdated:
+            continue
+        to_stub = item.kind is SkillKind.copy and skills[item.name].stub
+        if to_stub and not _converts_copies():
+            continue
+        if item.home:
+            (sorted_.older if item.kind is SkillKind.stub or to_stub else sorted_.copies).append(
+                item
+            )
+        elif item.kind is SkillKind.copy:
+            (sorted_.old_in_project if to_stub else sorted_.stale_in_project).append(item)
+    return sorted_
+
+
+#: The first version whose runs convert copies: a copy carries no version
+#: and counts as the newest 11.0.
+_CONVERTS_FROM = Version("11.1.0")
+
+
+def _converts_copies() -> bool:
+    try:
+        return Version(skill_stubs.running_untaped()) >= _CONVERTS_FROM
+    except InvalidVersion:
+        return False
+
+
+def _refresh(
+    skills: Mapping[str, PackagedSkill], items: list[InstalledSkill]
+) -> list[InstalledSkill]:
+    """Rewrite stubs and convert copies; return the ones that failed."""
+    failed: list[InstalledSkill] = []
+    converted = 0
+    for item in items:
+        backup = skill_backups_dir() if item.kind is SkillKind.copy else None
+        try:
+            update_installed_skill(skills, item, backup_root=backup)
+        except UntapedError:
+            failed.append(item)
+            continue
+        converted += item.kind is SkillKind.copy
+    if converted:
+        # Unmuted: it shows once, and names where the old copies went.
+        _diag.info(
+            f"converted {plural(converted, 'agent skill')} to stubs; "
+            f"the old copies are in {shown_path(skill_backups_dir())}",
+            unmuted=True,
         )
+    return failed
+
+
+def _update_copies(
+    skills: Mapping[str, PackagedSkill], items: list[InstalledSkill]
+) -> list[InstalledSkill]:
+    """Replace outdated copies with this version's; return the ones that failed."""
+    failed: list[InstalledSkill] = []
+    for item in items:
+        try:
+            update_installed_skill(skills, item)
+        except UntapedError:
+            failed.append(item)
+    updated = len(items) - len(failed)
+    if updated:
+        _diag.info(f"updated {plural(updated, 'outdated skill')}")
+    return failed
+
+
+_DEFAULT_MODE: str = SkillsSettings.model_fields["updates"].default
 
 
 def _updates_mode() -> str:
     try:
         settings = load_settings_section("skills")
     except UntapedError, ValueError:
-        return "warn"
-    return settings.updates if isinstance(settings, SkillsSettings) else "warn"
+        return _DEFAULT_MODE
+    return settings.updates if isinstance(settings, SkillsSettings) else _DEFAULT_MODE
 
 
 def _names(items: list[InstalledSkill]) -> str:
@@ -289,7 +402,7 @@ def _names(items: list[InstalledSkill]) -> str:
 
 
 def _stale(item: InstalledSkill) -> bool:
-    return item.state is not SkillState.current
+    return item.state in (SkillState.outdated, SkillState.orphaned)
 
 
 def _installed_row(item: InstalledSkill) -> InstalledSkillRow:
@@ -298,19 +411,20 @@ def _installed_row(item: InstalledSkill) -> InstalledSkillRow:
         target=item.target,
         scope=item.scope.value,
         state=item.state.value,
+        kind=item.kind.value,
         target_path=item.path,
     )
 
 
 def _found(
-    skills: Mapping[str, InstallableSkill], *, project_dir: Path | None
+    skills: Mapping[str, PackagedSkill], *, project_dir: Path | None
 ) -> list[InstalledSkill]:
     root = project_dir.expanduser().resolve() if project_dir else project_root(Path.cwd())
     return find_installed_skills(skills, skill_roots(project_dir=root))
 
 
 def _select_installed(
-    skills: Mapping[str, InstallableSkill],
+    skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
     stdin: bool,
@@ -337,11 +451,12 @@ def _select_installed(
 
 
 def _update(
-    skills: Mapping[str, InstallableSkill],
+    skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
     stdin: bool,
     project_dir: Path | None,
+    force: bool,
     dry_run: bool,
     fmt: OutputFormat,
     columns: list[str] | None,
@@ -352,6 +467,15 @@ def _update(
         rows: list[SkillOutcome] = []
         failed = False
         for item in found:
+            if item.state in (SkillState.newer, SkillState.edited) and not force:
+                why = (
+                    f"written by a newer {item.written_by}"
+                    if item.state is SkillState.newer
+                    else "edited since it was installed; --force replaces it"
+                )
+                _diag.info(f"left {item.name}: {why}")
+                rows.append(_outcome(item, "skipped"))
+                continue
             if item.state is SkillState.current:
                 if named:
                     rows.append(_outcome(item, "unchanged"))
@@ -382,7 +506,7 @@ def _update(
 
 
 def _remove(
-    skills: Mapping[str, InstallableSkill],
+    skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
     stdin: bool,
@@ -451,7 +575,7 @@ def _resolve_short(selector: str, skills: Mapping[str, object]) -> str:
 
 
 def _list(
-    skills: dict[str, InstallableSkill],
+    skills: dict[str, PackagedSkill],
     *,
     fmt: OutputFormat,
     columns: list[str] | None,
@@ -461,7 +585,7 @@ def _list(
 
 
 def _install(
-    skills: dict[str, InstallableSkill],
+    skills: dict[str, PackagedSkill],
     skill_names: list[str],
     *,
     stdin: bool,

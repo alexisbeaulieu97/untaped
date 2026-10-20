@@ -85,6 +85,18 @@ def removal_exempt(line: Line, target: int, baseline: str) -> bool:
     return target > Version(baseline.removeprefix("v")).major
 
 
+#: Stable lines a minor drops anyway, by the baseline release they left: the
+#: maintainer's waiver of "a breaking change waits for the next major"
+#: (CONTRIBUTING § Releasing), each marked breaking in its changelog fragment.
+#: Name the exact line; an entry stops matching once its baseline is not the
+#: newest release, and the next pre-release cleanup removes it.
+MINOR_WAIVERS: dict[str, frozenset[str]] = {
+    # skills.updates moves to auto with stub skills (#694): under warn, every
+    # upgrader would see a warning after every command until they updated.
+    "v11.0.0": frozenset({"cfg skills.updates string default=warn"}),
+}
+
+
 def removal_message(tag: str, gone: list[Line]) -> str:
     major = Version(tag.removeprefix("v")).major
     return "\n".join(
@@ -111,6 +123,7 @@ def test_no_stable_surface_removed(generated: str) -> None:
         line
         for line in removed(parse(recorded), parse(generated))
         if not removal_exempt(line, target, tag)
+        and line.text not in MINOR_WAIVERS.get(tag, frozenset())
     ]
     assert not gone, removal_message(tag, gone)
 
