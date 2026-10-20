@@ -103,5 +103,4 @@ environment: only an allowlist of variables passes through (`PATH`, `HOME`,
 locale, temp directories, `UV_*`, `XDG_*`, TLS and proxy settings, and
 `SSH_AUTH_SOCK`/`GIT_SSH_COMMAND`). Tokens such as `GITHUB_TOKEN` and
 `UNTAPED_*` credentials are not passed. Hook workers get `PYTHONPATH` set to
-the pack's `src/` only. The full list is in the recipe skill's
-[pack library reference](../../packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/references/library.md).
+the pack's `src/` only. `untaped agents recipe trust` gives the full list.
