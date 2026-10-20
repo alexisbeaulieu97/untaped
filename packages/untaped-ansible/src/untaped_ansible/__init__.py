@@ -91,15 +91,15 @@ SPEC = PluginSpec(
     help="Analyze Ansible dependency graphs.",
     settings=AnsibleSettings,
     state=AnsibleState,
+    guides=files("untaped_ansible") / "guides",
     skills=(
         SkillAsset(
             name="untaped-ansible",
-            source=Path(str(files("untaped_ansible").joinpath("skills", "untaped-ansible"))),
             description=(
-                "Maps Ansible role and project dependencies across GitHub repositories through "
-                "the `untaped ansible` command (what a role depends on, what depends on it, which"
-                " projects reach a repo, and dependency graphs). Use when the user asks who uses "
-                "a role, the impact of changing one, or about requirements.yml or meta/main.yml "
+                "Ansible role and project dependencies across GitHub repositories: what a role "
+                "depends on, what depends on it and which of its variables they use, which "
+                "projects reach a repo, and dependency graphs. Use when the work concerns who "
+                "uses a role, the impact of changing one, or requirements.yml or meta/main.yml "
                 "dependencies."
             ),
         ),
