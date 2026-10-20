@@ -246,18 +246,18 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
             GuideLine(guide.name, guide.description, guide.name in shadowing)
             for guide in guides(plugin.spec)
         ),
-        own=None if app is None or app.default_command is None else _own(root, result, name),
+        own=None if app is None or app.default_command is None else _own(root, result, name, app),
     )
 
 
-def _own(root: App, result: CompositionResult, name: str) -> CommandPage:
+def _own(root: App, result: CompositionResult, name: str, app: App) -> CommandPage:
     """The plugin's own command: its usage, with the default command's docstring.
 
     The app's help is the plugin's line, so the behaviour and examples are
     read from the command the app runs.
     """
     page = build_command_page(root, result, name, ())
-    described = describe(inspect.getdoc(_plugin_app(root, name).default_command), None)
+    described = describe(inspect.getdoc(app.default_command), None)
     return replace(page, summary=described.summary, body=described.body, subcommands=())
 
 

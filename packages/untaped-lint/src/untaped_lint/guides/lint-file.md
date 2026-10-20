@@ -20,8 +20,9 @@ ignore:
 - `untaped lint` finds the file walking up from the current directory to the
   project root (the nearest directory holding `.git`). `--config PATH` reads
   another file and lints the current directory with its rules.
-- Every key is spelled like a plugin name and is never `untaped` or an
-  installed plugin's name; such a key exits 2.
+- `name:` and each `linters:` key are spelled like a plugin name and are never
+  `untaped` or an installed plugin's name; such a key exits 2. A `readers:`
+  key names an installed plugin.
 - The files linted are what git tracks plus untracked files git doesn't
   ignore, so a new file is linted before `git add`; outside a checkout, every
   file under the root. `fixtures/` under a rules directory is never linted.

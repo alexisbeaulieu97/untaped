@@ -3,7 +3,7 @@ untaped VERSION · untaped-check · ENV
 Details of a command: `untaped agents check COMMAND`
 
 ## Usage
-Check the files you are in.
+Check the files you are in. (changes things)
 
 Exit 3 when a check fails.
 

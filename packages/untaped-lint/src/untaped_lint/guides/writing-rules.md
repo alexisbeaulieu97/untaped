@@ -2,8 +2,7 @@
 description: "Read before turning a convention into a repository rule: how a rule comes to be, a rule and its test."
 ---
 
-A convention written as a rule is checked on every run, by every agent after
-the one that wrote it. A rule reads one subject (the repository's files, a
+A rule reads one subject (the repository's files, a
 plugin, a plugin's records) and yields findings.
 
 ## How a rule comes to be
@@ -43,7 +42,8 @@ def no_print(tree: Tree) -> Iterator[Finding]:
 
 - `reads=Tree` takes the model, never a kind string.
 - `tree.files(*globs)` yields each matching file: `path`, `text`, `lines`,
-  and `json()`, `yaml()`, `python()` for the parsed file. A file that isn't
+  and `json()`, `yaml()`, `python()` for the parsed file; in a glob `*` stops
+  at `/` and `**` crosses it. A file that isn't
   UTF-8 never reaches the rule; lint reports it as `lint.unreadable-file`.
 - `target_of(file)` is the file's path, which an ignore glob matches.
 - The id is bare: the run prefixes the key, so the finding reads

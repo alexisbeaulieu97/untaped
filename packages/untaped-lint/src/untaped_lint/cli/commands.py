@@ -61,9 +61,10 @@ def lint_command(
     Findings go to stdout as lint.finding rows and a count to stderr.
 
     Exit 3 when a finding is an error (any finding with --strict), 1 when a
-    rule or provider could not run, 2 on a usage mistake or a lint file key
-    that could shadow a plugin, 4 on a configuration problem such as a rule
-    importing a plugin that isn't installed; the most severe wins. Reading
+    rule or provider could not run or the lint file is invalid, 2 on a usage
+    mistake or a lint file key that could shadow a plugin, 4 on a
+    configuration problem such as a rule importing a plugin that isn't
+    installed; the most severe wins (2, then 4, then 1, then 3). Reading
     findings and leaving one out: ``untaped agents lint findings``.
 
     Examples
@@ -126,8 +127,8 @@ def rules_command(
 ) -> None:
     """List every rule: lint's own, each plugin's and the repository's own (.untaped/lint.yml).
 
-    Each row is a rule's public id, the subject it reads, its severity and its
-    summary: the convention in one sentence.
+    Each row is a rule; the table shows its id, what it reads, its severity
+    and its summary, the convention in one sentence.
     """
     from untaped.sdk import Diagnostics  # noqa: PLC0415
     from untaped_lint.application.engine import loaded_rules  # noqa: PLC0415
@@ -164,9 +165,10 @@ def new_command(
     """Scaffold a repository rule in .untaped/lint/ and its test, fixtures first.
 
     The rule reads the repository's files (reads=Tree). With a pytest
-    configuration at the root its test goes in tests/lint/; otherwise a
-    good and a bad fixture directory, checked by the two commands printed.
-    The lint file and its linters entry are created when missing. How a
+    configuration at the root its test goes in tests/lint/; otherwise
+    fixtures/ID/good and fixtures/ID/bad under the rules directory, checked
+    by the two commands printed. The lint file and its linters entry are
+    created when missing; without a lint file, --key names its key. How a
     rule is written: ``untaped agents lint writing-rules``.
 
     Examples

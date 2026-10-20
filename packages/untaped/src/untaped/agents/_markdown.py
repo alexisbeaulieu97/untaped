@@ -135,7 +135,7 @@ def _plugin(page: PluginPage) -> list[str]:
     elif page.commands:
         lines.append(f"Details of a command: `untaped agents {page.name} COMMAND`")
     if page.own is not None:
-        lines += _own(page.own)
+        lines += _default_usage(page.own)
     if page.commands:
         lines += ["", "## Commands", *(_command_line(line) for line in page.commands)]
     for point in page.points:
@@ -161,16 +161,10 @@ def _plugin(page: PluginPage) -> list[str]:
     return [*lines, "", FOOTER]
 
 
-def _own(page: CommandPage) -> list[str]:
+def _default_usage(page: CommandPage) -> list[str]:
     """A plugin's own command on its page: what it does, its usage and examples."""
-    lines = ["", "## Usage"]
-    if page.summary:
-        lines.append(f"{page.summary}{_writes(page.writes)}")
-    if page.body:
-        lines += ["", page.body]
-    lines += ["", f"`{_usage(page)}`"]
-    if page.options:
-        lines += ["", *(_option_line(option) for option in page.options)]
+    described = _described(page)
+    lines = ["", "## Usage", *described, *([""] if described else []), *_usage_lines(page)]
     if page.examples:
         lines += ["", "## Examples", "", page.examples]
     return lines
@@ -187,20 +181,32 @@ def _guide_line(guide: GuideLine) -> str:
 
 def _command(page: CommandPage) -> list[str]:
     title = " ".join((page.plugin, *page.path))
-    lines = _head(title, page.mark, page.answerer)
-    if page.summary:
-        lines.append(f"{page.summary}{_writes(page.writes)}")
-    if page.body:
-        lines += ["", page.body]
+    lines = [*_head(title, page.mark, page.answerer), *_described(page)]
     if page.runs:
-        lines += ["", "## Usage", f"`{_usage(page)}`"]
-        if page.options:
-            lines += ["", *(_option_line(option) for option in page.options)]
+        lines += ["", "## Usage", *_usage_lines(page)]
     if page.subcommands:
         lines += ["", "## Commands", *(_command_line(line) for line in page.subcommands)]
     if page.examples:
         lines += ["", "## Examples", "", page.examples]
     return [*lines, "", FOOTER]
+
+
+def _described(page: CommandPage) -> list[str]:
+    """A command's summary, with its write mark even when it has no summary, and its behaviour."""
+    lines = []
+    summary = f"{page.summary}{_writes(page.writes)}".strip()
+    if summary:
+        lines.append(summary)
+    if page.body:
+        lines += ["", page.body]
+    return lines
+
+
+def _usage_lines(page: CommandPage) -> list[str]:
+    lines = [f"`{_usage(page)}`"]
+    if page.options:
+        lines += ["", *(_option_line(option) for option in page.options)]
+    return lines
 
 
 def _guide(page: GuidePage) -> list[str]:

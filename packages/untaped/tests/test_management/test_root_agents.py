@@ -196,6 +196,7 @@ def _check_app() -> App:
     app = create_app(name="check")
 
     @app.default
+    @writes
     def check_command(
         paths: Annotated[list[str] | None, Parameter(help="Only these files.")] = None,
         /,
@@ -225,6 +226,25 @@ def test_a_plugin_that_runs_on_its_own_shows_its_usage_on_its_page() -> None:
     code, out, _ = _run("check", candidates=[make_candidate(spec, "untaped-check")])
     assert code == 0
     _assert_snapshot("plugin-runs", out)
+
+
+def test_a_plugin_that_only_runs_on_its_own_has_a_usage_and_no_command_list() -> None:
+    def single() -> App:
+        app = create_app(name="single")
+
+        @app.default
+        @writes
+        def single_command() -> None:
+            pass
+
+        return app
+
+    spec = PluginSpec(name="single", app_factory=single, help="One thing.")
+    code, out, _ = _run("single", candidates=[make_candidate(spec, "untaped-single")])
+    assert code == 0
+    assert "Details of" not in out
+    assert "## Commands" not in out
+    assert "## Usage\n(changes things)\n\n`untaped single`" in out
 
 
 def test_a_group_page_lists_its_subcommands() -> None:
