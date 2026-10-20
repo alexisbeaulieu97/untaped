@@ -24,7 +24,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 from cyclopts import App
-from packaging.markers import UndefinedEnvironmentName
+from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion
@@ -568,6 +568,10 @@ def parse_requirement(requirement: object) -> Requirement | None:
         return None
 
 
+#: What ``requirement_admits`` raises on an entry whose marker or version it cannot evaluate.
+UNEVALUABLE = (InvalidVersion, UndefinedComparison, UndefinedEnvironmentName, KeyError)
+
+
 def requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
     """Whether a parsed Requires-Dist entry admits ``sdk_version``.
 
@@ -671,7 +675,7 @@ def _check_requires_dist(candidate: PluginCandidate, state: _CompositionState) -
     for requirement, parsed in untaped_requirements:
         try:
             admits = requirement_admits(parsed, sdk_version)
-        except InvalidVersion, UndefinedEnvironmentName, KeyError:
+        except UNEVALUABLE:
             raise _Quarantine(
                 "bad-metadata",
                 f"malformed Requires-Dist entry {requirement!r} of distribution "

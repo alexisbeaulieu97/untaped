@@ -48,8 +48,8 @@ version and environment and points at the page that lists what it has.
 
 A plugin writes nothing for the pages beyond what `--help` already reads:
 
-- **`PluginSpec.help`** is the plugin's line on the map, and the first line
-  of its own page (the plugin's app help, once its commands are built).
+- **`PluginSpec.help`** (or, without one, its app's help) is the plugin's
+  line on the map; its app's help is the first line of its own page.
 - **A command's docstring**: its first line is its summary on the plugin's
   page; the paragraphs after it are the behaviour on the command's page.
 - **An `Examples` section** in the docstring (NumPy style) prints under

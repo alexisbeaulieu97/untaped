@@ -16,11 +16,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from packaging.markers import UndefinedEnvironmentName
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-from untaped.plugins.registry import parse_requirement, requirement_admits
+from untaped.plugins.registry import UNEVALUABLE, parse_requirement, requirement_admits
 from untaped.skills import nearest_pyproject
 
 _UNTAPED = "untaped"
@@ -58,7 +57,7 @@ def _evaluable(requirement: Requirement) -> bool:
     """Whether its marker can be evaluated, as ``requirement_admits`` needs."""
     try:
         requirement_admits(requirement, "0")
-    except UndefinedEnvironmentName, KeyError:
+    except UNEVALUABLE:
         return False
     return True
 

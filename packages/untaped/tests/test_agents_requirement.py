@@ -82,6 +82,7 @@ def test_a_requirement_with_no_version_admits_every_untaped(tmp_path: Path) -> N
         '[dependency-groups]\ndev = "untaped==1"\n',
         "project = 3\n",
         "[project]\ndependencies = ['untaped>=99; \"dev\" in dependency_groups']\n",
+        "[project]\ndependencies = ['untaped>=99; python_version ~= \"3\"']\n",
     ],
     ids=[
         "broken toml",
@@ -89,7 +90,8 @@ def test_a_requirement_with_no_version_admits_every_untaped(tmp_path: Path) -> N
         "not a list",
         "group not a list",
         "not a table",
-        "a marker that cannot be evaluated",
+        "a marker naming an unknown variable",
+        "a marker comparing what cannot be compared",
     ],
 )
 def test_a_malformed_file_or_entry_is_no_requirement(tmp_path: Path, text: str) -> None:
