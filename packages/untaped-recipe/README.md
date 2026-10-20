@@ -94,7 +94,11 @@ after a preview.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-recipe/src/untaped_recipe/skills/untaped-recipe/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install recipe --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped recipe COMMAND --help` lists each command's options.
+`untaped agents recipe` is the full reference, with every command's
+options and examples, the settings and the guides; the untaped you run
+generates it. `untaped skills install recipe --target claude` (or another
+[agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills))
+installs the skill that sends your agent there.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#recipe) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#recipe)
