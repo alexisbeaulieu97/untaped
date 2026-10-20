@@ -117,7 +117,8 @@ BackendOption = Annotated[
     Backend | None,
     Parameter(
         name="--backend",
-        help="Ref probe backend for a refresh this command runs: auto, graphql, or git.",
+        help="Ref probe backend for a refresh this command runs: auto, graphql, or git; not "
+        "with --cached.",
     ),
 ]
 RefOption = Annotated[
@@ -129,7 +130,11 @@ RefOption = Annotated[
 ]
 TargetRepoOption = Annotated[
     str | None,
-    Parameter(name="--target-repo", help="Canonical owner/repo override for local targets."),
+    Parameter(
+        name="--target-repo",
+        help="owner/repo of a local target; needed for a subdirectory of a checkout, whose "
+        "remote is read only at the checkout's top level.",
+    ),
 ]
 _TARGET_HELP = "Role or repo: owner/repo, GitHub URL, source alias, or local path."
 RoleArgument = Annotated[str, Parameter(help=_TARGET_HELP)]
@@ -157,7 +162,8 @@ LiveOption = Annotated[
         name="--live",
         negative="",
         group=_SOURCE_DATA_GROUP,
-        help="Read downstream dependencies live from GitHub even when a source is selected.",
+        help="Read downstream dependencies live from GitHub even when a source is selected; "
+        "not with --refresh or --cached.",
     ),
 ]
 
@@ -299,14 +305,18 @@ def deps_command(
 
     Reads a source's data when one is selected (--source, inline selectors,
     or ansible.default_source), refreshed first when older than its max age,
-    and GitHub live otherwise (or with --live).
-    Each row carries the ref as declared, the shortest path from ROLE and
-    the ROLE ref it was reached from.
+    and GitHub live otherwise (or with --live); ``untaped agents ansible
+    source-data`` says which data answers. Each row carries the ref as
+    declared, the shortest path from ROLE and the ROLE ref it was reached
+    from; each repo appears once per ROLE ref. ``untaped agents ansible
+    resolution`` explains refs, local targets and where a walk stops.
 
-    For example:
-
-        untaped ansible deps acme/web --ref v2.1.0
-        untaped ansible deps ./roles/web --target-repo acme/web --format json
+    Examples
+    --------
+    ```console
+    $ untaped ansible deps acme/web --ref v2.1.0
+    $ untaped ansible deps ./roles/web --target-repo acme/web --format json
+    ```
     """
     _emit_reach(
         role,
@@ -357,17 +367,26 @@ def impact_command(
     """Show what depends on ROLE (upstream), one row per repository per root ref.
 
     Reads a source's data (--source, inline selectors, or
-    ansible.default_source), refreshed first when older than its max age.
-    Each row carries the ref it declares, its
-    shortest path to ROLE and the ROLE ref it was reached from.
+    ansible.default_source), refreshed first when older than its max age;
+    ``untaped agents ansible source-data`` says which data answers. Each row
+    carries the ref it declares, its shortest path to ROLE and the ROLE ref
+    it was reached from (``root_ref`` tells a dependent's pinned refs apart).
+
     With --uses, each row is instead one place a dependent defines, sets or
-    reads a variable, read at the commit the source indexed.
+    reads a variable, read at the commit the source indexed; a dependent
+    with no row does not mention it. Dependents whose refresh failed have no
+    variable facts: an error names them and how to refresh them
+    (``source refresh NAME``, or --refresh for inline selectors), and the
+    command exits 1. A hint that ROLE defines no such variable usually means
+    a typo.
 
-    For example:
-
-        untaped ansible impact acme/base --source platform
-        untaped ansible impact acme/base --ref main --format pipe
-        untaped ansible impact acme/base --uses base_port --format json
+    Examples
+    --------
+    ```console
+    $ untaped ansible impact acme/base --source platform
+    $ untaped ansible impact acme/base --ref main --format pipe
+    $ untaped ansible impact acme/base --uses base_port --format json
+    ```
     """
     if uses:
         _emit_uses(
@@ -434,15 +453,23 @@ def find_command(
 ) -> None:
     """Find which roots contain a repository downstream, one row per match.
 
-    Each row names the root, the matched repo, the ref exactly as declared,
-    the dependency file and the shortest path; a root read from a pipe
-    record also carries that record's kind, id and name.
+    Rows from pipe records carry that record's kind, id and name, so they
+    join back to their input. Every input record gets its own rows, even
+    when records share a root; identical bare lines collapse. A root given
+    without a ref, or with an empty one, is read at its default branch.
 
-    For example:
+    A repo reached through two declared refs gives two rows; an unpinned and
+    a default-branch-pinned declaration of one repo give one. A root that
+    never reaches the repo gives none; with --depth, no row only means "not
+    within that depth". Each root's warnings go to stderr, prefixed with the
+    root.
 
-        untaped ansible find acme/base --root acme/site@main --root acme/app
-        untaped awx job-templates list --with-scm --format pipe \\
-          | untaped ansible find acme/base --stdin --format pipe
+    Examples
+    --------
+    ```console
+    $ untaped ansible find acme/base --root acme/site@main --root acme/app
+    $ untaped awx job-templates list --with-scm -f pipe | untaped ansible find acme/base --stdin
+    ```
     """
     if stdin and roots:
         raise_usage("pass --root or --stdin, not both")
@@ -525,11 +552,34 @@ def graph_command(
     fingerprint key, so repeated identical invocations reuse the same scan.
     --parallel defaults to ansible.git_fetch_parallel and is capped at 32.
 
-    For example:
+    The tree's first line names the target, the data it read and the depth;
+    a "used by" section lists dependents and a "depends on" section
+    dependencies. Each repo line names the file that declares the edge, plus
+    ``unpinned`` (no version) or ``pins X`` (the declared version differs
+    from the resolved ref). A shared subtree prints once, numbered ``[n]``,
+    and later says ``see [n]``; a repo already on the path says ``↻ cycle``
+    (``(cycle)`` in ASCII); a stopped repo is marked ``…`` with a
+    ``not read:`` note. The summary counts repos, edges, cycles (a component
+    with too many cycles to list counts as one cyclic group), unresolved
+    dependencies and stopped repos. Lines too wide for the terminal end in
+    ``…``. Warnings go to stderr, even with --out.
 
-        untaped ansible graph acme/base --org acme --team platform --direction up --refresh
-        untaped ansible graph acme/app --source prod --depth 2
-        untaped ansible graph ./roles/web --target-repo acme/web --direction down
+    The JSON document has ``target_id``, ``nodes`` (each with ``stopped`` as
+    on rows), ``edges``, ``cycles`` and ``warnings``. An edge's ``id`` is the
+    same for every declaration of one dependency, so duplicates collapse to
+    one edge. A cycle has ``kind``, ``relation``, ``node_ids`` and
+    ``edge_ids``: ``cycle`` is a closed ordered path, ``scc_group`` a sorted
+    set of nodes and their internal edges, used when a component has too
+    many cycles to list. Node ids are lowercase; labels keep the display
+    casing.
+
+    Examples
+    --------
+    ```console
+    $ untaped ansible graph acme/base --org acme --team acme/platform --direction up --refresh
+    $ untaped ansible graph acme/app --source prod --depth 2
+    $ untaped ansible graph ./roles/web --target-repo acme/web --direction down
+    ```
     """
     _check_all_refs(ref, all_refs=all_refs)
     depth_limit = _parse_depth(depth or "unlimited")

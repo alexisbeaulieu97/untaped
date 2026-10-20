@@ -43,7 +43,18 @@ def alias_set_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Map an Ansible role/Galaxy name to a GitHub owner/repo (creates or replaces)."""
+    """Map an Ansible role/Galaxy name to a GitHub owner/repo (creates or replaces).
+
+    Requirements files name a role by that name; the alias says which repo it
+    is. Aliases apply when a source refreshes, so run ``source refresh`` after
+    changing one.
+
+    Examples
+    --------
+    ```console
+    $ untaped ansible source-alias set acme.base acme/ansible-role-base
+    ```
+    """
     with report_errors():
         if not is_repo_name(repo):
             raise UsageError(f"alias target must be a GitHub owner/name repo (got {q(repo)})")
