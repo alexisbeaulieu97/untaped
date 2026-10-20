@@ -39,20 +39,16 @@ import yaml
 from cyclopts import App
 
 from repo import quoted_commands
-from repo.support import FENCE, FIRST_PARTY, PACKAGES, REPO_ROOT
+from repo.support import FENCE, FIRST_PARTY, REPO_ROOT
 from untaped.bootstrap import SHELL_SPEC, build_root_app
 from untaped.plugins.registry import PluginCandidate, PluginSpec
 from untaped.sdk import SkillAsset
 from untaped_awx.domain.suites.suite_starter import starter_suite
 
-#: Each first-party plugin's skill copy, read from the folders its package
-#: still ships; the shell's own skill and the plugins whose folder is gone
-#: are stubs.
-SKILL_NAMES = tuple(
-    f"untaped-{name}"
-    for name in FIRST_PARTY
-    if (PACKAGES / f"untaped-{name}" / "src" / f"untaped_{name}" / "skills").is_dir()
-)
+#: The first-party plugins whose skill is a stub, like the shell's own.
+STUBBED = frozenset({"lint", "workspace"})
+#: Each first-party plugin's skill copy.
+SKILL_NAMES = tuple(f"untaped-{name}" for name in FIRST_PARTY if name not in STUBBED)
 
 
 #: The skill template's sections (docs/plugin-skills.md), in order.
