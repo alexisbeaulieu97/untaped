@@ -72,7 +72,12 @@ def status_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List repositories cached in the local corpus."""
+    """List repositories cached in the local corpus.
+
+    One row per repo github has stored, then the count, total size and
+    freshness spread on stderr. ``path`` is the repo in the git plugin's
+    repo store, which other plugins may share.
+    """
     from untaped_github.application import StatusCorpus  # noqa: PLC0415
 
     with report_errors():
@@ -125,7 +130,18 @@ def sync_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Fetch repositories into the local corpus without a query, so later sweeps start warm."""
+    """Fetch repositories into the local corpus without a query, so later sweeps start warm.
+
+    Run it before a batch of sweeps, or on a schedule. It picks repos to
+    fetch as ``sweep`` does, and each row says what became of its repo; a
+    failed row exits 1, or 5 when a fetch timed out.
+
+    Examples
+    --------
+    ```console
+    $ untaped github cache sync --org acme
+    ```
+    """
     from untaped_github.application import (  # noqa: PLC0415
         CorpusSyncOptions,
         ResolveRepositoryInventory,
@@ -193,7 +209,24 @@ def delete_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Delete cached repositories from the corpus; a repo another plugin uses stays for it."""
+    """Delete cached repositories from the corpus; a repo another plugin uses stays for it.
+
+    untaped github never changes GitHub: this releases github's part of each
+    repo, its refs, its ``untaped-github.json`` and its worktrees. A repo
+    nothing else uses is ``removed``; one that a workspace, ansible or a
+    hand-added worktree still uses stays as ``released``, and ``kept`` says
+    who kept it. ``--all`` selects every repo github has stored, and
+    ``--org`` narrows the selection; there is no ``--team``, because github
+    doesn't record team membership. A named repo that isn't cached exits 1
+    before anything is deleted. The next sweep that covers a deleted repo
+    fetches it again.
+
+    Examples
+    --------
+    ```console
+    $ untaped github cache delete acme/api --dry-run
+    ```
+    """
     with report_errors():
         check_columns(CorpusRepoResult, columns=columns, fmt=fmt)
         names = tuple(repos or ())
@@ -231,7 +264,14 @@ def prune_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Delete cached repositories that left or were archived in their org (as `cache delete`)."""
+    """Delete cached repositories that left or were archived in their org (as `cache delete`).
+
+    Examples
+    --------
+    ```console
+    $ untaped github cache prune --org acme --dry-run
+    ```
+    """
     with report_errors():
         check_columns(CorpusRepoResult, columns=columns, fmt=fmt)
         orgs = org_scope(org, scoped=False)
@@ -336,7 +376,14 @@ def worktree_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Materialize one cached repo/ref and print the worktree path."""
+    """Materialize one cached repo/ref and print the worktree path.
+
+    It checks a stored ref out, detached, under
+    ``~/.untaped/plugins/github/worktrees/``, for reading a repo's files;
+    ``untaped workspace`` makes checkouts you edit. It works only for refs
+    already stored, and offline once their files have been fetched.
+    ``--format raw`` prints just the path, for ``$(…)``.
+    """
     from untaped_github.application import WorktreeCorpus  # noqa: PLC0415
 
     with report_errors():

@@ -136,11 +136,20 @@ class RepoSweepOutcome(GithubRepo, kind="github.sweep_repo"):
     table_columns: ClassVar[tuple[str, ...]] = ("full_name", "refs_matched", "hits", "fetched_at")
 
     full_name: str
-    matched: bool = True
-    refs_matched: tuple[str, ...] = ()
-    hits: dict[str, int] = Field(default_factory=dict)
-    owners: tuple[str, ...] = ()
-    fetched_at: str | None = None
+    matched: bool = Field(default=True, description="Whether the repo met the predicates.")
+    refs_matched: tuple[str, ...] = Field(
+        default=(), description="The refs the predicates held on, by short name."
+    )
+    hits: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Per predicate: matching lines for a `grep`, 1 or 0 for a file or `not-grep` predicate."
+        ),
+    )
+    owners: tuple[str, ...] = Field(
+        default=(), description="CODEOWNERS for the repo; empty under `--no-owners`."
+    )
+    fetched_at: str | None = Field(default=None, description="When the scanned copy was fetched.")
 
 
 class SweepFile(Record, kind="github.sweep_file"):
@@ -162,7 +171,7 @@ class SweepMatch(Record, kind="github.sweep_match"):
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "refs", "path", "line", "text")
 
     repo: str
-    refs: tuple[str, ...]
+    refs: tuple[str, ...] = Field(description="Every scanned ref whose file has this line.")
     path: str
     line: int
     text: str

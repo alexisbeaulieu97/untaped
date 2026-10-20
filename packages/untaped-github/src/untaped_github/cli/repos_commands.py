@@ -87,7 +87,23 @@ def list_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List repositories from additive org/team inventory scopes."""
+    """List repositories from additive org/team inventory scopes.
+
+    The complete inventory of its scopes, matched by name locally; ``search
+    repos`` ranks instead and is capped. ``PATTERN`` is a case-insensitive
+    glob over the whole name; with ``--regex`` a case-insensitive, unanchored
+    regex. A pattern containing ``/`` matches ``owner/name``, otherwise the
+    name alone. With no scope and no ``github.default_org`` it exits 2; it
+    never falls back to your own repos. When ``--limit`` cuts the list,
+    stderr says ``showing N of M``; without that line you have every match.
+    ``untaped agents github scopes`` explains scopes and piping the rows on.
+
+    Examples
+    --------
+    ```console
+    $ untaped github repos list 'svc-*' --org acme --format pipe
+    ```
+    """
     from untaped_github.application import ListRepos, RepoListFilters  # noqa: PLC0415
 
     with report_errors():

@@ -97,7 +97,14 @@ def sweep_command(
     ] = None,
     any_mode: Annotated[
         bool,
-        Parameter(name="--any", negative="", help="Match when any predicate holds (default: all)."),
+        Parameter(
+            name="--any",
+            negative="",
+            help=(
+                "Match when any positive predicate holds (default: all); "
+                "--not-grep and --lacks-file still apply."
+            ),
+        ),
     ] = False,
     ignore_case: Annotated[
         bool,
@@ -166,7 +173,54 @@ def sweep_command(
     ] = False,
     parallel: CorpusParallelOption | None = None,
 ) -> None:
-    """Sweep repository refs for content and file-presence predicates."""
+    """Sweep repository refs for content and file-presence predicates.
+
+    An exact answer over the repos of its scopes, kept in the git plugin's
+    repo store (``git.store_dir``): regexes, negation, path and file
+    predicates, and refs beyond the default branch, which ``search code``
+    can't do. It runs ``git``, which must be on ``PATH``.
+
+    Content predicates run ``git grep -I --extended-regexp`` whatever your
+    ``grep.patternType``; binary files are skipped, and ``-i``, ``-F`` and
+    ``--word-regexp`` apply to every ``--grep`` and ``--not-grep``. A
+    content predicate first fetches the file contents it reads, once,
+    limited by ``--path``: ``src/*.py`` fetches ``src/``, and ``*.py`` the
+    whole tree. File predicates read names only and fetch nothing.
+
+    Each repo's default branch is scanned unless ``--refs`` or ``--ref`` says
+    otherwise. Refs are reported by short name; a branch and a tag sharing a
+    name are both scanned, as ``heads/NAME`` and ``tags/NAME``. Refs that
+    share a tree are grepped once. Each fetch prunes refs deleted upstream
+    and fetches only new or moved refs, so an interrupted refresh resumes.
+
+    A repo is fetched when it isn't stored, is older than
+    ``github.sweep.max_age_seconds``, or holds fewer refs than asked for; an
+    old copy whose ``pushed_at`` and default branch haven't changed on
+    GitHub counts as current. Transient Git transport failures are retried.
+
+    The stderr footer gives matched and scanned counts, refreshed and cached
+    counts, the oldest fetch, and each unscanned repo with its reason (a
+    name GitHub can't resolve, corrupt metadata, a host that won't send file
+    contents by object id, a filesystem or Git error); report those repos as
+    unknown, not as non-matching. A failed refresh falls back to a stored
+    copy that covers the query (``refresh failed for N repos; scanned cached
+    copies``); without one the repo is unscanned. Bad credentials (exit 4),
+    rate limits (exit 5), or every explicitly named repo failing to resolve
+    stop the whole sweep. Sweeps running at once are safe: the store locks
+    each repo while it changes it.
+
+    A ``--format pipe`` sweep feeds the next sweep's ``--stdin``, narrowing
+    the set at each step; ``untaped agents github scopes`` explains scopes
+    and piped input.
+
+    Examples
+    --------
+    ```console
+    $ untaped github sweep --org acme --grep 'requests\\.get\\(' --path 'src/**'
+    $ untaped github sweep --team acme/platform --grep log4j --grep slf4j --any
+    $ untaped github sweep --org acme --ref 'release/*' --grep jenkins --show matches
+    ```
+    """
     from untaped_github.application import (  # noqa: PLC0415
         ResolveRepositoryInventory,
         Sweep,
