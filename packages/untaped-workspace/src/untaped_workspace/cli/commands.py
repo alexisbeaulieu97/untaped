@@ -118,9 +118,36 @@ def create_command(
 
     Without --repo, --read-only or --stdin, a terminal opens the repo picker,
     which also confirms with no repos selected; without a terminal, or with
-    --empty, `create NAME` makes an empty workspace to `add` to.
+    --empty, `create NAME` makes an empty workspace (for `workspace add`),
+    and `create` with no NAME exits 2. --empty with repo options, --branch
+    or --base exits 2.
+
+    Each repo is one row: `created` (a new branch from the base),
+    `checked_out` (an existing branch resumed, or a read-only checkout) or
+    `failed`. Repos that succeed stay even when another fails (exit 1);
+    `add` retries the failed ones. An unknown or ambiguous repo name exits 2
+    with candidates. --stdin reads names or URLs, or `workspace.repo` records
+    and the repo records a repo source reads (`github.repo`, say); a record
+    without a kind, or of a kind no source reads, exits 2.
+
     In table format the workspace path is the last stdout line (the only one
-    with -q), so `cd "$(untaped -q workspace create ...)"` works.
+    with -q), so `cd "$(untaped -q workspace create ...)"` works. A name
+    whose directory already holds files exits 1. How repos are named, and
+    how branches and bases are chosen: `untaped agents workspace lifecycle`.
+
+    Examples
+    --------
+    Two repos on the task branch, and one read-only for reference:
+
+    ```console
+    $ untaped workspace create PROJ-123 --repo acme/api --repo acme/web --read-only acme/docs
+    ```
+
+    The repos of a GitHub team:
+
+    ```console
+    $ untaped github repos list --team acme/web -f pipe | untaped workspace create PROJ-123 --stdin
+    ```
     """
     with report_errors():
         settings = workspace_settings()
@@ -160,7 +187,15 @@ def add_command(
 ) -> None:
     """Check out more repos into an existing workspace; present ones report unchanged.
 
-    Without --repo, --read-only or --stdin, a terminal opens the repo picker.
+    Without --repo, --read-only or --stdin, a terminal opens the repo picker;
+    without a terminal, that exits 2. Rows, repo names and --stdin work as
+    on `create`.
+
+    Examples
+    --------
+    ```console
+    $ untaped workspace add PROJ-123 --repo acme/infra
+    ```
     """
     with report_errors():
         settings = workspace_settings()
@@ -221,7 +256,14 @@ def status_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Show each repo's branch, ahead/behind, local changes and archive blockers."""
+    """Show each repo's branch, ahead/behind, local changes and archive blockers.
+
+    Offline unless --fetch. A repo whose fetch fails keeps its local state,
+    with an error (exit 1). --fetch also resumes a history backfill that
+    stopped. A repo whose git state can't be read is an `error` row (exit
+    1). --check is the gate before `archive`: it exits 3 while any repo
+    blocks it, where `archive --dry-run` exits 0 either way.
+    """
     with report_errors():
         if all_workspaces and name is not None:
             raise UsageError("--all cannot be combined with a workspace name")
@@ -245,7 +287,17 @@ def status_command(
 
 
 def path_command(name: NameArg = None, /) -> None:
-    """Print the workspace's absolute path."""
+    """Print the workspace's absolute path.
+
+    With no NAME, the workspace containing the current directory; outside
+    one, exit 2.
+
+    Examples
+    --------
+    ```console
+    $ cd "$(untaped workspace path PROJ-123)"
+    ```
+    """
     with report_errors():
         settings = workspace_settings()
         echo(str(workspace_dir(settings, locate(settings, name).name)))
@@ -305,7 +357,18 @@ def archive_command(
     Refuses (exit 1, nothing removed) while any repo has uncommitted,
     stashed or unpushed work, unless --force. Local branches stay in the
     repo store, so a later `create` with the same branch resumes the work;
-    `remove` gives the space back.
+    `remove` gives the space back. --dry-run previews with `planned` and
+    `skipped` rows and exits 0, even when repos would block. --force on a
+    blocked workspace confirms first, and without a terminal needs --yes
+    (else exit 2). What blocks, and what --force
+    discards: `untaped agents workspace lifecycle`.
+
+    Examples
+    --------
+    ```console
+    $ untaped workspace status PROJ-123 --check
+    $ untaped workspace archive PROJ-123
+    ```
     """
     with report_errors():
         settings = workspace_settings()
@@ -366,6 +429,16 @@ def remove_command(
     refs and the local branches whose commits are all pushed go, and the
     repo itself when nothing else uses it. Refuses (exit 1, nothing changed)
     while work would be lost, unless --force; a stash is never deleted.
+
+    Always confirms; without a terminal it needs --yes (else exit 2).
+    --dry-run previews with `planned` and `skipped` rows and exits 0. What
+    stays and what --force deletes: `untaped agents workspace lifecycle`.
+
+    Examples
+    --------
+    ```console
+    $ untaped workspace remove PROJ-123 --dry-run
+    ```
     """
     with report_errors():
         settings = workspace_settings()
@@ -469,8 +542,42 @@ def run_command(
 ) -> None:
     """Run a command in each repo of a workspace.
 
-    Each run gets UNTAPED_WORKSPACE, UNTAPED_REPO, UNTAPED_BRANCH, UNTAPED_BASE
-    and UNTAPED_READ_ONLY in its environment. Exits 1 when any repo failed.
+    A shell string runs as `sh -c -- CMD`, so pipes and `&&` work. A file,
+    resolved against the current directory, runs directly when it is
+    executable and starts with `#!`, else through `sh`. A CMD of `-` reads
+    the script from stdin; nothing piped, or `-` with --stdin, exits 2. A
+    command that starts with a hyphen goes after `--`; a lone word starting
+    with `--` is taken as a mistyped option (exit 2).
+
+    Each run starts in the repo directory with stdin from /dev/null and
+    UNTAPED_WORKSPACE, UNTAPED_REPO (the display name), UNTAPED_BRANCH
+    (empty for a read-only repo), UNTAPED_BASE and UNTAPED_READ_ONLY (`1` or
+    `0`) in its environment. Background processes it starts are stopped when
+    it exits, except ones in their own session or process group (`setsid`).
+    There is no preview.
+
+    Only writable repos run, unless --include-read-only: without it, naming
+    a read-only repo with --repo exits 2, and --stdin drops read-only repos,
+    so a whole workspace's `status` rows pipe straight in. --stdin reads repo
+    names, or `workspace.status`, `workspace.repo_outcome` or
+    `workspace.run_outcome` records, ignoring other workspaces' records.
+    With --repo as well, both sets run. When nothing is left to run, it
+    warns and exits 0.
+
+    Every selected repo runs, and the exit is 1 when any failed: a non-zero
+    status, a timeout (the whole process tree is killed), a signal or a
+    missing directory. In table format each finished repo prints a header,
+    its stdout, then its stderr, and a summary follows on stderr; other
+    formats print `workspace.run_outcome` records only.
+
+    Examples
+    --------
+    ```console
+    $ untaped workspace run PROJ-123 'git push -u origin HEAD'
+    $ untaped workspace run PROJ-123 ./bump.sh
+    $ untaped workspace run PROJ-123 - < rebase.sh
+    $ untaped workspace status PROJ-123 -f pipe | untaped workspace run PROJ-123 'git stash' --stdin
+    ```
     """
     with report_errors():
         name, command = (None, first) if second is None else (first, second)
