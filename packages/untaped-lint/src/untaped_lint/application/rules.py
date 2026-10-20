@@ -30,7 +30,10 @@ _PROVIDER_HELPER = "__untaped_provider_helper__"
 
 @experimental
 class Linter(Contract):
-    """Rules over subjects: what ``untaped lint`` asks every provider."""
+    """Rule sets ``untaped lint`` runs.
+
+    Rules over subjects: what ``untaped lint`` asks every provider.
+    """
 
     @abstractmethod
     def rules(self) -> list[Rule]:
@@ -44,7 +47,11 @@ class Linter(Contract):
 
 @experimental
 class TreeReader(Contract):
-    """Files of a kind read into subjects: what a ``readers:`` entry of the repo file runs."""
+    """File kinds ``untaped lint`` can read from a repository.
+
+    Files of a kind read into subjects: what a ``readers:`` entry of the repo
+    file runs.
+    """
 
     @listing
     @abstractmethod

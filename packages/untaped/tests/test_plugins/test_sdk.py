@@ -133,6 +133,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "atomic_write",
         "file_lock",
         "git_toplevel",
+        "nearest_pyproject",
         "project_root",
         "run_git",
         "safe_path_segment",

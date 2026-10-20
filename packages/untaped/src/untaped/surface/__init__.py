@@ -29,6 +29,10 @@ The rules every contributor keeps:
   major that removes it (``[deprecated, removed in <major>.0]``);
   :func:`postponements` and :func:`due` are the two questions the release
   check and the changelog build ask of it.
+- **A frozen line is kept forever.** A core command marked
+  :func:`~untaped.stability.frozen` writes ``[frozen]`` on its command line
+  and its positional lines; no release, a major included, drops or
+  deprecates one.
 """
 
 from __future__ import annotations

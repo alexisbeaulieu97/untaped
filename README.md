@@ -61,7 +61,7 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 - [Scripting](./docs/scripting.md): pipes, structured output and stderr
   diagnostics in scripts and CI.
 - [Agent skills](./docs/skills.md): install skills for your agent and keep
-  them current.
+  them current; `untaped agents` prints [pages for agents](./docs/reference/agent-pages.md).
 - [Troubleshooting](./docs/troubleshooting.md): common symptoms and where
   they are explained.
 - [Versioning](./docs/versioning.md): what stays stable within a major

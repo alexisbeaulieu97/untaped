@@ -21,7 +21,10 @@ __all__ = ["Repo", "RepoName", "RepoSource"]
 
 @experimental
 class RepoSource[T: Record = Repo](Contract):
-    """Where repos come from. ``T`` is the provider's own record type; it defaults to Repo."""
+    """Where the repos you can name in workspace commands come from.
+
+    ``T`` is the provider's own record type; it defaults to Repo.
+    """
 
     @bridge
     def to_repo(self, item: T) -> Repo:

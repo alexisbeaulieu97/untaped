@@ -43,6 +43,7 @@ from untaped.errors import ConfigError
 from untaped.git import forward_signals
 from untaped.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.management import (
+    build_root_agents_app,
     build_root_auth_app,
     build_root_config_app,
     build_root_doctor_app,
@@ -306,6 +307,7 @@ def build_root_app(
     if not result.plugins and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     management = {
+        "agents": build_root_agents_app(result=result, root=lambda: root),
         "config": build_root_config_app(shell=SHELL_SPEC, result=result),
         "profile": build_root_profile_app(command=SHELL_NAME),
         "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),

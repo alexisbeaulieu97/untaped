@@ -529,5 +529,15 @@ _Avoid_: repair, remedy.
 `untaped doctor fix` runs it.
 _Avoid_: autofix.
 
+**Agent page**: what `untaped agents` prints for a coding agent: the map,
+a plugin's page or a topic's page, generated from what core and the plugins
+declare.
+
+**Topic**: what a plugin's agent page lists and `untaped agents PLUGIN TOPIC`
+prints: one of its commands.
+
+**Frozen**: a surface line no release renames, removes or deprecates, such
+as `untaped agents`; marked `[frozen]` in `tests/repo/surface.txt`.
+
 **Screen**: an interactive terminal UI built on the SDK's runtime.
 _Avoid_: TUI app, program, view.

@@ -51,6 +51,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("destructive-controls", "error", "A destructive command has --yes and --dry-run."),
     ("reserved-panel", "error", "No help panel is named after one of core's panels."),
     ("unkeyed-panel", "error", "A plugin's own help panel has a sort key below 100."),
+    ("example-command", "error", "A command docstring's Examples command lines parse."),
     ("hand-typed-mark", "error", "Experimental and Deprecated lines come from marks, not help."),
     ("wrong-deprecated", "error", "Commands and settings deprecate with deprecated() alone."),
     ("nested-mark", "error", "No mark sits under a mark that makes it redundant."),

@@ -279,3 +279,35 @@ def test_unkeyed_panel_covers_command_groups() -> None:
         return app
 
     assert [line.split("::")[:2] for line in _composed(factory)] == [["svc set", "unkeyed-panel"]]
+
+
+def _examples(*, fmt: Format = "table") -> None:
+    """Show it.
+
+    Examples
+    --------
+    ```console
+    $ untaped demo show --format json
+    $ untaped demo show --format json | untaped demo show --nope
+    ```
+    """
+
+
+def test_an_example_that_does_not_parse_is_flagged() -> None:
+    root = _root(demo={"show": _examples})
+    [line] = help_tree_violations(root, ["demo"])
+    assert line.startswith("demo show::example-command::untaped demo show --nope: ")
+
+
+def test_examples_that_parse_are_clean() -> None:
+    def _good(*, fmt: Format = "table") -> None:
+        """Show it.
+
+        Examples
+        --------
+        ```console
+        $ untaped demo show --format NAME
+        ```
+        """
+
+    assert help_tree_violations(_root(demo={"show": _good}), ["demo"]) == []

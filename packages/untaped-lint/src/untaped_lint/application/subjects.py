@@ -14,7 +14,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import PipeEnvelope, Plugin, UsageError, project_root
+from untaped.sdk import PipeEnvelope, Plugin, UsageError, nearest_pyproject
 from untaped_lint.providers import conventions
 from untaped_lint.records import Finding, Subject, declared_kind, public
 
@@ -36,15 +36,8 @@ def plugin_subject(plugin: Plugin) -> Subject:
 
 def declared_plugins(start: Path) -> list[str]:
     """The plugin names the nearest ``pyproject.toml`` from ``start`` up declares."""
-    start = start.resolve()
-    top = project_root(start)
-    for folder in (start, *start.parents):
-        project = folder / "pyproject.toml"
-        if project.is_file():
-            return _entry_points(project)
-        if folder == top:
-            break
-    return []
+    project = nearest_pyproject(start)
+    return [] if project is None else _entry_points(project)
 
 
 def _entry_points(project: Path) -> list[str]:

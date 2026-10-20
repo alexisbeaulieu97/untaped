@@ -6,6 +6,9 @@ untaped itself ships the `untaped` skill, which covers install, profiles,
 setup (`setup plan`), `doctor` and skills. `untaped skills` lists and installs
 the skills of every composed plugin, first-party or third-party.
 
+`untaped agents` prints what this untaped can do as Markdown pages an agent
+reads before running a command: see [Agent pages](./reference/agent-pages.md).
+
 An agent whose harness has no skills folder can read a skill in place: the
 `source` field of `untaped skills list --format json` is the directory that
 holds its `SKILL.md`.

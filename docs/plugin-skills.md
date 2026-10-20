@@ -2,7 +2,9 @@
 
 A plugin ships its agent skill as a directory holding `SKILL.md`, declared
 on `PluginSpec.skills` (see [Packaged skills](./plugins.md#packaged-skills)).
-This page is the template and the rules for what goes in it.
+This page is the template and the rules for what goes in it. What
+`untaped agents` prints about the plugin comes from its docstrings and help
+instead: see [Agent pages](./reference/agent-pages.md#how-a-plugin-shapes-its-pages).
 
 Start from this template. Copy it to
 `src/<package>/skills/untaped-<plugin>/SKILL.md`, replace every

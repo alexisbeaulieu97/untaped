@@ -14,6 +14,8 @@ being released.
    showed never falls, and a line it dated never loses its mark while it
    stays. While a major is being released, something deprecated since that
    release (no release warned about it) may not be dated for it.
+4. **Frozen stays frozen.** A line the newest final release showed frozen is
+   never deprecated: stubs installed by every version call it.
 
 Rules 1 and 2 need no tags; rule 3 skips without one locally and fails in CI.
 Removing a deprecated line at its major is ``test_surface.py``'s
@@ -103,6 +105,13 @@ def broken_promises(
         "keep the mark or remove the thing"
         for line in sorted(current)
         if line.identity in dated and line.deprecation is None
+    )
+    frozen = {line.identity for line in baseline if line.mark == "frozen"}
+    found.extend(
+        f"{line}: {tag} froze this; stubs installed by every version call it, so it is never "
+        "deprecated"
+        for line in sorted(current)
+        if line.identity in frozen and line.deprecation is not None
     )
     if limit > limit_of(tag.removeprefix("v")):
         unwarned = unwarned_identities(baseline, current)
@@ -253,6 +262,19 @@ def test_dropping_a_shown_mark_fails() -> None:
         [Line("cfg acme.old -> acme.new")],
     )
     assert "v11.2.0 promised users this goes in 12.0; keep the mark or remove the thing" in message
+
+
+def test_a_frozen_line_is_never_deprecated() -> None:
+    (message,) = _promises(
+        [Line("cli untaped agents", "frozen")],
+        [Line("cli untaped agents", DeprecatedMark(13))],
+    )
+    assert message.endswith(
+        "v11.2.0 froze this; stubs installed by every version call it, so it is never deprecated"
+    )
+    assert not _promises(
+        [Line("cli untaped agents", "frozen")], [Line("cli untaped agents", "frozen")]
+    )
 
 
 def test_removing_a_dated_line_is_not_this_checks_business() -> None:

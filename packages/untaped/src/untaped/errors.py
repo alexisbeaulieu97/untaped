@@ -24,22 +24,27 @@ if TYPE_CHECKING:
 
 
 class ExitCode(IntEnum):
-    """The suite's process exit codes (one meaning each)."""
+    """The suite's process exit codes (one meaning each).
 
-    OK = 0
-    """Success."""
-    FAILURE = 1
-    """Runtime failure, a failed item, or a declined confirmation."""
-    USAGE = 2
-    """Bad invocation, detected before any side effect."""
-    PREDICATE = 3
-    """A predicate hit: ``--check`` drift, ``--fail-on-match``, ``--strict``."""
-    ENVIRONMENT = 4
-    """The environment needs fixing: config, credentials, permissions."""
-    UNAVAILABLE = 5
-    """A temporary failure (network, timeout, 5xx, 429); retry later."""
-    INTERRUPTED = 130
-    """Interrupted (Ctrl-C), including at a prompt."""
+    Each member's ``description`` is its meaning in one line, read at run
+    time (``untaped agents`` lists them); attribute docstrings are not.
+    """
+
+    description: str
+
+    def __new__(cls, value: int, description: str) -> ExitCode:
+        member = int.__new__(cls, value)
+        member._value_ = value
+        member.description = description
+        return member
+
+    OK = 0, "Success."
+    FAILURE = 1, "Runtime failure, a failed item, or a declined confirmation."
+    USAGE = 2, "Bad invocation, detected before any side effect."
+    PREDICATE = 3, "A predicate hit: ``--check`` drift, ``--fail-on-match``, ``--strict``."
+    ENVIRONMENT = 4, "The environment needs fixing: config, credentials, permissions."
+    UNAVAILABLE = 5, "A temporary failure (network, timeout, 5xx, 429, a held lock); retry later."
+    INTERRUPTED = 130, "Interrupted (Ctrl-C), including at a prompt."
 
 
 #: Exit codes from most to least severe: the first one seen in a run wins.

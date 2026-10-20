@@ -38,10 +38,11 @@ class Credential(BaseModel):
 
 @experimental
 class GitHost(Contract, shell=False):
-    """A plugin that knows a Git host: its name, and credentials and proxy for its URLs.
+    """Git hosts untaped has credentials and a proxy for.
 
-    untaped asks ``credential`` and ``proxy`` only of the provider it chose for
-    the URL's host by ``home()``.
+    A provider knows one Git host: its name, and credentials and proxy for
+    its URLs. untaped asks ``credential`` and ``proxy`` only of the provider
+    it chose for the URL's host by ``home()``.
     """
 
     @abstractmethod

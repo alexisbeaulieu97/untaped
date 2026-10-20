@@ -74,6 +74,7 @@ RESERVED_PLUGIN_NAMES = frozenset(
 #: Management commands the root app mounts beside the plugins, in mount
 #: order. ``bootstrap`` mounts exactly these.
 ROOT_MANAGEMENT_COMMANDS = (
+    "agents",
     "config",
     "profile",
     "skills",
@@ -567,7 +568,7 @@ def parse_requirement(requirement: object) -> Requirement | None:
         return None
 
 
-def _requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
+def requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
     """Whether a parsed Requires-Dist entry admits ``sdk_version``.
 
     An entry whose environment marker does not apply (e.g. an ``extra``
@@ -669,7 +670,7 @@ def _check_requires_dist(candidate: PluginCandidate, state: _CompositionState) -
         )
     for requirement, parsed in untaped_requirements:
         try:
-            admits = _requirement_admits(parsed, sdk_version)
+            admits = requirement_admits(parsed, sdk_version)
         except InvalidVersion, UndefinedEnvironmentName, KeyError:
             raise _Quarantine(
                 "bad-metadata",

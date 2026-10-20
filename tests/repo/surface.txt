@@ -1,4 +1,4 @@
-# untaped surface 2
+# untaped surface 3
 behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
 cfg ansible.caches.index.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
@@ -127,6 +127,8 @@ cli untaped --quiet switch
 cli untaped --verbose alias=-v
 cli untaped --verbose switch
 cli untaped --version switch
+cli untaped agents  [frozen]
+cli untaped agents [PATH...]@1 default=unset  [frozen]
 cli untaped ansible
 cli untaped ansible deps --all-refs switch
 cli untaped ansible deps --backend VALUE default=unset
@@ -4720,6 +4722,7 @@ sdk untaped.sdk.ExitCode.OK = 0
 sdk untaped.sdk.ExitCode.PREDICATE = 3
 sdk untaped.sdk.ExitCode.UNAVAILABLE = 5
 sdk untaped.sdk.ExitCode.USAGE = 2
+sdk untaped.sdk.ExitCode.description
 sdk untaped.sdk.Failure(*, message, category, system)
 sdk untaped.sdk.Failure(details=) default={}
 sdk untaped.sdk.Failure(exit_code=) default=1
@@ -5763,6 +5766,7 @@ sdk untaped.sdk.move_migration(guard=) default=None callback(1)
 sdk untaped.sdk.move_migration(id, title, moves) callback(moves, 0)
 sdk untaped.sdk.move_migration(replaceable=) default=None callback(1)
 sdk untaped.sdk.move_migration(sidecars=) default=[]
+sdk untaped.sdk.nearest_pyproject(start)
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.old_dirs(default, section, key)
