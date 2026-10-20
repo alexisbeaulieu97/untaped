@@ -91,7 +91,7 @@ def test_register_writes_one_file_for_this_install(site: Path) -> None:
     }
     assert refs.this_install() == ref
     assert ref.live and not ref.pre_upgrade
-    assert ref.layouts("acme", "data") == {2}
+    assert ref.layouts(Store("acme", "data", base=lambda: Path("x"), layout=2)) == {2}
 
 
 def test_unregister_removes_the_file(site: Path) -> None:
@@ -177,13 +177,30 @@ def test_holders_lists_only_live_references(tmp_path: Path) -> None:
         ("not json", "unreadable"),
         ("[]", "unreadable"),
         ('{"untaped": "1", "targets": []}', "unreadable"),
-        ('{"untaped": "1", "holder": "x", "targets": ["acme.data@1"]}', "malformed"),
+        ('{"untaped": "1", "holder": "install:x"}', "no targets"),
+        ('{"untaped": "1", "holder": "install:x", "targets": ["acme.data@1"]}', "malformed"),
         (
-            '{"untaped": "1", "holder": "x", "targets": [{"plugin": "acme", "store": "data"}]}',
+            '{"untaped": "1", "holder": "install:x", "targets": '
+            '[{"plugin": "acme", "store": "data", "layout": 1, "item": "a"}]}',
             "malformed",
         ),
         (
-            '{"untaped": "1", "holder": "x", "targets": '
+            '{"untaped": "1", "holder": "install:x", "targets": '
+            '[{"plugin": "acme", "store": "data", "layout": 1, "extra": 1}]}',
+            "malformed",
+        ),
+        (
+            '{"untaped": "1", "holder": "install:x", "targets": '
+            '[{"plugin": "", "store": "data", "layout": 1}]}',
+            "malformed",
+        ),
+        (
+            '{"untaped": "1", "holder": "install:x", "targets": '
+            '[{"plugin": "acme", "store": "data"}]}',
+            "malformed",
+        ),
+        (
+            '{"untaped": "1", "holder": "install:x", "targets": '
             '[{"plugin": "acme", "store": "data", "layout": "1"}]}',
             "malformed",
         ),
@@ -200,6 +217,41 @@ def test_an_unreadable_or_newer_reference_is_opaque(content: str, why: str) -> N
         refs.holders(RefTarget(plugin="acme", store="data", layout=1))  # unknown, never "nobody"
 
 
+def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
+    tmp_path: Path,
+) -> None:
+    folder = refs.refs_dir()
+    folder.mkdir(parents=True)
+    target = {"plugin": "git", "store": "store", "item": "github.com/acme/pay"}
+    (folder / "project-pay.json").write_text(
+        json.dumps(
+            {
+                "untaped": "1",
+                "holder": "project:pay",
+                "anchor": str(tmp_path / "gone"),  # no untaped there: an install would be dead
+                "targets": [target, "git.store#old", {"plugin": "git"}],
+            }
+        )
+    )
+    (folder / "project-bare.json").write_text('{"untaped": "1", "holder": "project:bare"}')
+    bare, pay = refs.read_references()
+    assert pay.opaque is None and pay.live and not pay.pre_upgrade
+    assert pay.kind == "project"
+    assert pay.targets == (RefTarget.model_validate(target),)
+    assert bare.opaque is None and bare.live and bare.targets == ()
+    assert refs.holders(RefTarget.model_validate(target)) == ["project:pay"]
+
+
+def test_an_item_target_is_written_without_a_layout() -> None:
+    target = RefTarget(plugin="git", store="store", item="github.com/acme/pay")
+    file = write_reference("project:pay", [target])
+    assert json.loads(file.read_text())["targets"] == [
+        {"plugin": "git", "store": "store", "item": "github.com/acme/pay"}
+    ]
+    [ref] = refs.read_references()
+    assert ref.targets == (target,)
+
+
 def test_a_missing_folder_has_no_references() -> None:
     assert refs.read_references() == []
 
@@ -208,7 +260,7 @@ def test_a_missing_folder_has_no_references() -> None:
 
 
 @pytest.fixture
-def composed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+def composed(monkeypatch: pytest.MonkeyPatch) -> list[RefTarget]:
     """What this run's composition declares; a test edits it."""
     targets = [RefTarget(plugin="acme", store="data", layout=1)]
     monkeypatch.setattr(refs, "composed_targets", lambda: tuple(targets))
@@ -216,7 +268,7 @@ def composed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def test_a_registered_install_refreshes_on_its_first_store_open(
-    site: Path, composed: list[str], tmp_path: Path
+    site: Path, composed: list[RefTarget], tmp_path: Path
 ) -> None:
     ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     composed[:] = [
@@ -230,7 +282,9 @@ def test_a_registered_install_refreshes_on_its_first_store_open(
     ]
 
 
-def test_the_refresh_runs_once_per_process(site: Path, composed: list[str], tmp_path: Path) -> None:
+def test_the_refresh_runs_once_per_process(
+    site: Path, composed: list[RefTarget], tmp_path: Path
+) -> None:
     ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     refs.refresh()
     composed[:] = [RefTarget(plugin="acme", store="data", layout=9)]
@@ -241,7 +295,7 @@ def test_the_refresh_runs_once_per_process(site: Path, composed: list[str], tmp_
 
 
 def test_an_unchanged_reference_is_not_rewritten(
-    site: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
+    site: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     writes: list[object] = []
@@ -250,7 +304,7 @@ def test_an_unchanged_reference_is_not_rewritten(
     assert writes == []
 
 
-def test_no_run_registers(site: Path, composed: list[str], tmp_path: Path) -> None:
+def test_no_run_registers(site: Path, composed: list[RefTarget], tmp_path: Path) -> None:
     Store("acme", "data", base=lambda: tmp_path / "data.db").open()
     assert refs.read_references() == []
 
@@ -267,7 +321,7 @@ def test_a_refresh_without_a_composition_keeps_the_file(
 
 
 def test_a_read_only_refs_folder_gives_no_error(
-    site: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
+    site: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     refs.register([RefTarget(plugin="acme", store="data", layout=0)])
 

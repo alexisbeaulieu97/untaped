@@ -41,7 +41,7 @@ from untaped.stability import experimental
 if TYPE_CHECKING:
     from filelock import FileLock, ReadWriteLock
 
-    from untaped.refs import Reference
+    from untaped.refs import Reference, RefTarget
 
 _LOG = logging.getLogger("untaped.store")
 
@@ -159,6 +159,13 @@ class Store:
     def qualified(self) -> str:
         """``<plugin>.<name>``: how a row or a message names the store."""
         return f"{self.plugin}.{self.name}"
+
+    @property
+    def target(self) -> RefTarget:
+        """This code's layout of the store, as a reference names it."""
+        from untaped.refs import RefTarget  # noqa: PLC0415 - refs imports the registry
+
+        return RefTarget(plugin=self.plugin, store=self.name, layout=self.layout)
 
     @property
     def adopts(self) -> bool:
@@ -410,7 +417,7 @@ def _layout_state(
     holders = tuple(
         ref
         for ref in references
-        if ref.opaque is None and ref.live and layout in ref.layouts(store.plugin, store.name)
+        if ref.opaque is None and ref.live and layout in ref.layouts(store)
     )
     if bare and _there(layout_path(path, layout)):
         holders = ()  # a pre-11.1 rebuild beside the adopted file: no reference names this file
@@ -455,10 +462,7 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
     if damaged is not None:
         return damaged
     if not any(
-        ref.opaque is None
-        and ref.live
-        and ref.kind == "install"
-        and ref.layouts(store.plugin, store.name)
+        ref.opaque is None and ref.live and ref.kind == "install" and ref.layouts(store)
         for ref in references
     ):
         return Kept("unregistered", "no registered install keeps this store, so nothing cleans up")
@@ -501,7 +505,7 @@ def _held(store: Store, references: Sequence[Reference]) -> set[int]:
     held: set[int] = set()
     for ref in references:
         if ref.opaque is None and ref.live:
-            held |= ref.layouts(store.plugin, store.name)
+            held |= ref.layouts(store)
     return held
 
 

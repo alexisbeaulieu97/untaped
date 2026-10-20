@@ -8,7 +8,9 @@ holding untaped's own distribution, whatever installed it), its version and
 the layout of every store its composition declares, and each later run of
 that install refreshes the file on its first store open. A reference is live
 while its anchor still holds an ``untaped-*.dist-info``, or, with no anchor,
-until its holder removes it. A dead reference counts for nothing, but its file
+until its holder removes it. A reference of a kind this untaped does not know
+(a later untaped's) is always live and holds the targets it can read, and
+nothing in it pauses cleanup. A dead reference counts for nothing, but its file
 is never another process's to delete: ``setup register --remove`` or the
 previewed ``setup migrate-dirs`` row removes it.
 
@@ -29,7 +31,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -39,9 +41,13 @@ from untaped.output.diagnostic import _is_none
 from untaped.settings import DEFAULT_CONFIG_PATH
 from untaped.stability import experimental
 
+if TYPE_CHECKING:
+    from untaped.store import Store
+
 _LOG = logging.getLogger("untaped.refs")
 
-#: The reference file's own format, bumped only for a change an older reader cannot use.
+#: The reference file's own format, bumped only for a change an older reader cannot use
+#: (a new field in a target is one: an older reader refuses unknown fields).
 FORMAT = "1"
 #: The holder kind of a registered install.
 INSTALL = "install"
@@ -68,9 +74,9 @@ class RefTarget(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
-    plugin: str
-    store: str
-    layout: Annotated[int | None, Field(exclude_if=_is_none)] = None
+    plugin: Annotated[str, Field(min_length=1)]
+    store: Annotated[str, Field(min_length=1)]
+    layout: Annotated[int | None, Field(ge=0, exclude_if=_is_none)] = None
     item: Annotated[str | None, Field(exclude_if=_is_none)] = None
 
     @model_validator(mode="after")
@@ -83,9 +89,6 @@ class RefTarget(BaseModel):
         """How a row names it: ``acme.catalogue layout 2`` or ``git.store item <item>``."""
         what = f"layout {self.layout}" if self.item is None else f"item {self.item}"
         return f"{self.plugin}.{self.store} {what}"
-
-    def _key(self) -> tuple[str, str, int, str]:
-        return (self.plugin, self.store, self.layout or 0, self.item or "")
 
 
 @dataclass(frozen=True)
@@ -107,11 +110,13 @@ class Reference:
 
     @property
     def live(self) -> bool:
-        """Whether it still counts: opaque, anchorless, or its anchor still holds untaped.
+        """Whether it still counts: opaque, not an install, anchorless, or its anchor holds untaped.
 
-        An anchor that exists but cannot be listed counts as live.
+        An anchor that exists but cannot be listed counts as live. Only an
+        install's liveness is known here; a later untaped's kind of holder
+        (a project, say) is never judged dead, so never offered for removal.
         """
-        if self.opaque is not None or self.anchor is None:
+        if self.opaque is not None or self.kind != INSTALL or self.anchor is None:
             return True
         versions = _installed_versions(self.anchor)
         return versions is None or bool(versions)
@@ -124,12 +129,13 @@ class Reference:
         versions = _installed_versions(self.anchor)
         return bool(versions) and versions is not None and self.version not in versions
 
-    def layouts(self, plugin: str, store: str) -> set[int]:
-        """The layouts of ``plugin``'s ``store`` this reference names."""
+    def layouts(self, store: Store) -> set[int]:
+        """The layouts of ``store`` this reference names."""
         return {
             target.layout
             for target in self.targets
-            if target.plugin == plugin and target.store == store and target.layout is not None
+            if (target.plugin, target.store) == (store.plugin, store.name)
+            and target.layout is not None
         }
 
     def describe(self) -> str:
@@ -215,16 +221,24 @@ def read_reference(file: Path) -> Reference:
         why = "written by a newer untaped" if newer else f"unreadable (format {form!r})"
         return Reference(file, holder=_text(data.get("holder")), opaque=why)
     holder, targets, anchor = data.get("holder"), data.get("targets"), data.get("anchor")
-    if not isinstance(holder, str) or not holder or not isinstance(targets, list):
-        return Reference(file, opaque="unreadable (no holder or targets)")
-    try:
-        read = tuple(RefTarget.model_validate(target) for target in targets)
-    except ValidationError:
-        return Reference(file, holder=holder, opaque="unreadable (a target is malformed)")
+    if not isinstance(holder, str) or not holder:
+        return Reference(file, opaque="unreadable (no holder)")
+    kind = holder.partition(":")[0]
+    if kind == INSTALL:
+        # An install is this untaped's own kind: anything it cannot read pauses cleanup.
+        if not isinstance(targets, list):
+            return Reference(file, holder=holder, opaque="unreadable (no targets)")
+        try:
+            read = tuple(RefTarget.model_validate(target) for target in targets)
+        except ValidationError:
+            return Reference(file, holder=holder, opaque="unreadable (a target is malformed)")
+    else:
+        # Another kind (a later untaped's) is live and holds what it can read; it never pauses.
+        read = _readable(targets)
     return Reference(
         file,
         holder=holder,
-        kind=holder.partition(":")[0],
+        kind=kind,
         anchor=Path(anchor) if isinstance(anchor, str) and anchor else None,
         plugin=_text(data.get("plugin")) or None,
         version=_text(data.get("version")) or None,
@@ -273,16 +287,8 @@ def composed_targets() -> tuple[RefTarget, ...] | None:
         result = composition()
     except RuntimeError:
         return None
-    return tuple(
-        sorted(
-            (
-                RefTarget(plugin=store.plugin, store=store.name, layout=store.layout)
-                for registered in result.plugins
-                for store in registered.spec.stores
-            ),
-            key=RefTarget._key,
-        )
-    )
+    stores = [store for registered in result.plugins for store in registered.spec.stores]
+    return tuple(store.target for store in sorted(stores, key=lambda s: (s.plugin, s.name)))
 
 
 def others_text() -> str:
@@ -466,6 +472,19 @@ def _installed_versions(anchor: Path) -> set[str] | None:
         for name in names
         if name.startswith("untaped-") and name.endswith(".dist-info")
     }
+
+
+def _readable(targets: object) -> tuple[RefTarget, ...]:
+    """The targets of ``targets`` that read as a :class:`RefTarget`; the rest are skipped."""
+    if not isinstance(targets, list):
+        return ()
+    read = []
+    for target in targets:
+        try:
+            read.append(RefTarget.model_validate(target))
+        except ValidationError:
+            continue
+    return tuple(read)
 
 
 def _text(value: object) -> str:

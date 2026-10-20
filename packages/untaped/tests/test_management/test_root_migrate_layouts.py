@@ -178,6 +178,18 @@ def test_a_dead_reference_is_cores_row_and_applying_removes_it(tmp_path: Path) -
     assert not file.exists()
 
 
+def test_a_reference_of_an_unknown_kind_is_never_offered(tmp_path: Path) -> None:
+    file = write_reference(  # a later untaped's kind; an install anchored here would be dead
+        "project:pay",
+        [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
+        anchor=tmp_path / "gone",
+    )
+    rows = json.loads(_cli("--dry-run").stdout)
+    assert [row for row in rows if row["id"] == "untaped.references"] == []
+    assert _cli("--yes").exit_code == 0
+    assert file.exists()
+
+
 def test_a_live_reference_is_no_row(tmp_path: Path) -> None:
     alive = tmp_path / "tool"
     (alive / "untaped-11.1.0.dist-info").mkdir(parents=True)
