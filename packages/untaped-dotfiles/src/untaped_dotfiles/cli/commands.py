@@ -405,14 +405,14 @@ def apply_command(
 ) -> None:
     """Place the named enabled items (all of them by default), whatever their policy.
 
-    Fetches their repos first and fast-forwards a clone when the item has a
-    link file in it, which moves every other link file on that clone too; the
-    plan lists those paths. A local file in the way of a new path is kept
-    under dotfiles.kept_dir, and the row says where. Refuses paths edited on
-    this machine (a `conflict` row, exit 1) unless --force; `diff` shows what
-    --force would replace in copy and merge files. Rewrites status.json and
-    attention afterwards. `untaped agents dotfiles policies` explains what
-    each state gets.
+    Fetches and fast-forwards a managed clone when the item has a link file
+    in it, which moves every other link file on that clone too; the plan
+    lists those paths. A local file in the way of a new path is kept aside,
+    and the row says where. Refuses paths edited on this machine (row action
+    `conflict`, exit 1) unless --force; `diff` shows what --force would
+    replace in copy and merge files. Rewrites status.json and attention
+    afterwards. `untaped agents dotfiles policies` explains what `apply`
+    does in each state.
     """
     with report_errors():
         svc = services()
@@ -462,11 +462,10 @@ def sync_command(
 ) -> None:
     """Fetch every repo, apply the `sync` items, report the rest. Safe for a timer.
 
-    Never prompts and never overwrites a path edited on this machine. A clone
-    is fast-forwarded only when every enabled link file in it is a `sync`
-    item. Exits 3 when anything needs the user, 1 when an apply or a git
-    operation failed. `untaped agents dotfiles policies` has the table of
-    what each policy does in each state.
+    Never prompts and never overwrites a path edited on this machine. Exits 3
+    when anything needs the user, 1 when an apply or a git operation failed.
+    `untaped agents dotfiles policies` has what each policy does in each
+    state, and when a clone is pulled.
     """
     with report_errors():
         svc = services()

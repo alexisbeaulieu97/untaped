@@ -26,8 +26,11 @@ class RepoRow(TargetRecord, kind="dotfiles.repo"):
     ref: str
     managed: bool
     head: str | None = None
-    behind: int | None = None
-    """Commits the checkout is behind ``origin/<ref>`` as last fetched; ``None`` when unknown."""
+    behind: int | None = Field(
+        default=None,
+        description="Commits the checkout is behind `origin/<ref>` as last fetched; "
+        "null when unknown.",
+    )
     items: int = 0
 
 
@@ -47,13 +50,15 @@ class ItemRow(Record, kind="dotfiles.item"):
     repo: str
     name: str
     suggested: Policy
-    policy: Policy | None = None
-    """The machine's policy; ``None`` while the item is not enabled."""
+    policy: Policy | None = Field(
+        default=None, description="The machine's policy; null while the item is not enabled."
+    )
     enabled: bool = False
     files: int
     skip: tuple[str, ...] = ()
-    excluded: str | None = None
-    """Why the item does not apply on this machine, or ``None``."""
+    excluded: str | None = Field(
+        default=None, description="Why the item does not apply on this machine, or null."
+    )
     description: str = ""
 
 
@@ -86,11 +91,10 @@ class StatusSummary(Record, kind="dotfiles.status.summary"):
 
     checked_at: UtcTimestamp
     total: int
-    attention: int
-    """Rows that need the user, ``error`` rows included.
-
-    They make ``status --check`` and ``sync`` exit 3, or 1 when one is an ``error`` row.
-    """
+    attention: int = Field(
+        description="Rows that need the user, `error` rows included. They make "
+        "`status --check` and `sync` exit 3, or 1 when one is an `error` row."
+    )
     pending: int = 0
     foreign: int = 0
     applied: int = 0
@@ -113,9 +117,7 @@ class PlaceOutcome(OutcomeRecord, TargetRecord):
 
     The applier builds these for ``apply``, ``sync`` and ``remove`` alike;
     each command emits them as its own subclass (:class:`ApplyOutcome`,
-    :class:`SyncOutcome`, :class:`RemoveOutcome`). ``state`` is the path's
-    state before the action, so a script can tell a ``skipped`` row that was
-    ``behind`` under ``manual`` from one that was ``applied``.
+    :class:`SyncOutcome`, :class:`RemoveOutcome`).
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("item", "source", "action", "state", "detail")
@@ -127,8 +129,9 @@ class PlaceOutcome(OutcomeRecord, TargetRecord):
     action: PlaceAction
     state: FileState | None = Field(
         default=None,
-        description="The path's state before the action; `untaped agents dotfiles policies` "
-        "says what each policy does in each state.",
+        description="The path's state before the action, so a `skipped` row that was "
+        "`behind` under `manual` differs from one that was `applied`; `untaped agents "
+        "dotfiles policies` explains each state and what apply, sync and remove do in it.",
     )
     detail: str = ""
 
