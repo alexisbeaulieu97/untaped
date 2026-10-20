@@ -10,6 +10,8 @@ models hold only what goes on the wire, in the order it is written.
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from untaped.sdk import OutcomeRecord, Record, UtcTimestamp
 
 
@@ -29,7 +31,6 @@ class IssueLink(Record):
     when this issue is the link's source (Jira shows the type's outward
     phrase, e.g. ``blocks``), ``inward`` when it is the target (the inward
     phrase, e.g. ``is blocked by``). ``relation`` is that phrase verbatim.
-    The linked issue carries only what the link embeds; it is not fetched.
     """
 
     key: str
@@ -56,10 +57,8 @@ class Comment(Record, kind="jira.comment"):
 class Issue(Record, kind="jira.issue"):
     """One issue, with Jira's nested fields flattened.
 
-    ``issues search`` and ``issues assigned`` fill the row fields, up to
-    ``priority``; ``issues get`` also fills the detail fields after it
-    (``reporter`` to ``links``), and ``comments`` only with ``--comments``.
-    A field a command does not fill is ``null``.
+    Each command's page says which fields it fills; a field a command does
+    not fill is ``null``.
     """
 
     key: str
@@ -67,8 +66,8 @@ class Issue(Record, kind="jira.issue"):
     status: str = ""
     assignee: str = ""
     updated_at: UtcTimestamp | None = None
-    url: str = ""
-    api_url: str | None = None
+    url: str = Field(default="", description="The issue's page, to open in a browser.")
+    api_url: str | None = Field(default=None, description="The issue's REST API address.")
     issue_type: str = ""
     priority: str = ""
     reporter: str | None = None
