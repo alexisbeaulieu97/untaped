@@ -56,8 +56,8 @@ SPEC = PluginSpec(
         SkillAsset(
             name="untaped-git",
             description=(
-                "untaped's Git plumbing: the credentials and proxy plugins supply for Git "
-                "hosts, the credential helper in untaped's worktrees, and the repo store "
+                "untaped's Git plumbing: the credentials and proxy that plugins supply for "
+                "Git hosts, the credential helper in untaped's worktrees, and the repo store "
                 "where other plugins keep repositories. Use when a fetch or push in an "
                 "untaped worktree asks for credentials or fails to authenticate, or when the "
                 "work concerns where untaped keeps repositories, the disk they take, or the "
