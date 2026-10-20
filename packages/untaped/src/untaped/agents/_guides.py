@@ -50,7 +50,7 @@ def read(entry: Traversable) -> Guide:
         text = entry.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return Guide(name, "", "", f"can't be read: {exc}")
-    description, body, problem = _front_matter(text)
+    description, body, problem = _front_matter(text.removeprefix("\ufeff"))
     return Guide(name, description, body, problem)
 
 

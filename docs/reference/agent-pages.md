@@ -51,7 +51,8 @@ version and environment and points at the page that lists what it has.
 
 ## How a plugin shapes its pages
 
-A plugin writes nothing for the pages beyond what `--help` already reads:
+Beyond its [guides](#guides), a plugin writes nothing for the pages that
+`--help` doesn't already read:
 
 - **`PluginSpec.help`** (or, without one, its app's help) is the plugin's
   line on the map; its app's help is the first line of its own page.

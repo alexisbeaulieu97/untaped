@@ -70,8 +70,9 @@ def core_plugin_violations(
     """The violations only the composed root can tell: what ``check_plugin`` reports.
 
     Plugin and distribution names, provides requirements, the help tree,
-    guides and map lines, stability marks, structure's class checks (exceptions, ports, frozen
-    settings, setting names) and the import boundary. The rules that read
+    guides and map lines, stability marks, structure's class checks
+    (exceptions, ports, frozen settings, setting names) and the import
+    boundary. The rules that read
     only the plugin's files are not run here. Lines and a quarantined
     plugin's one violation are as :func:`plugin_violations` gives them.
     """

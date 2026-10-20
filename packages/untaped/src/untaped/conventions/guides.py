@@ -19,8 +19,9 @@ lines it puts on the map:
   may leave out required arguments;
 - ``guide-yaml`` — a block fenced as ```` ```yaml KIND ```` does not validate
   against the model declaring the record kind ``KIND``;
-- ``map-line`` — the plugin's ``help``, a contract it owns or a provider it
-  offers has a first line over :data:`MAP_LINE_LIMIT` characters.
+- ``map-line`` — a line the plugin puts on the map (its summary, an
+  extension point it owns, its line under one it fills) is over
+  :data:`MAP_LINE_LIMIT` characters.
 
 Lines are ``<where>::<rule>::<detail>``, where is ``guides/<file>`` or the
 plugin's name; they carry no source line, so no inline marker can suppress
@@ -37,9 +38,9 @@ import yaml
 from cyclopts import App
 from pydantic import ValidationError
 
-from untaped.conventions.commands import argv_of, commands, console_lines, parse_problem
+from untaped.conventions.commands import FENCE, argv_of, commands, console_lines, parse_problem
 from untaped.errors import UsageError, first_validation_error
-from untaped.plugins.registry import CompositionResult, PluginSpec, owns_contracts
+from untaped.plugins.registry import CompositionResult, PluginSpec
 
 if TYPE_CHECKING:
     from untaped.agents._guides import Guide
@@ -48,7 +49,6 @@ MAP_LINE_LIMIT = 120
 """The longest first line the map shows: each plugin adds a bounded cost to every session."""
 
 _KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-_ANY_FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 _KIND_FENCE = re.compile(r"^```yaml[ \t]+(\S+)[ \t]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 _HEADING = re.compile(r"^# ", re.MULTILINE)
 
@@ -56,25 +56,20 @@ _HEADING = re.compile(r"^# ", re.MULTILINE)
 def guide_violations(root: App, result: CompositionResult, spec: PluginSpec) -> list[str]:
     """Every guide and map-line violation of the composed plugin ``spec``."""
     # The pages read this package (the Examples section); import them on use.
+    from untaped.agents._build import top_names  # noqa: PLC0415
     from untaped.agents._guides import SUFFIX, guides  # noqa: PLC0415
 
-    found = list(_map_lines(root, spec))
+    found = list(_map_lines(root, result, spec))
     listed = guides(spec)
     if not listed:
         return found
-    top = _top_names(root, spec)
+    top = top_names(None if spec.app_factory is None else root[spec.name])
     for guide in listed:
         where = f"guides/{guide.name}{SUFFIX}"
         found += [
             f"{where}::{rule}::{detail}" for rule, detail in _guide(root, result, spec, guide, top)
         ]
     return found
-
-
-def _top_names(root: App, spec: PluginSpec) -> frozenset[str]:
-    if spec.app_factory is None:
-        return frozenset()
-    return frozenset(name for name in root[spec.name] if not name.startswith("-"))
 
 
 def _guide(
@@ -86,7 +81,7 @@ def _guide(
         yield "guide-name", f"the command `{guide.name}` shadows it; rename the guide"
     if guide.problem is not None:
         yield "guide-description", guide.problem
-    if _HEADING.search(_ANY_FENCE.sub("", guide.body)):
+    if _HEADING.search(FENCE.sub("", guide.body)):
         yield "guide-heading", "the page writes the heading; start the guide's own at ##"
     yield from _quoted(root, result, spec, guide.body)
     yield from _yaml_blocks(result, guide.body)
@@ -106,7 +101,7 @@ def _quoted(
             if problem is not None:
                 yield "guide-command", f"{command}: {problem}"
             continue
-        words = argv[1:]
+        words = [part for word in argv[1:] for part in word.split()]  # as the page reads them
         if placeholders & set(words) or (words and words[0] not in composed | {spec.name}):
             continue
         try:
@@ -134,33 +129,24 @@ def _yaml_blocks(result: CompositionResult, body: str) -> Iterator[tuple[str, st
             yield "guide-yaml", f"{kind}: {first_validation_error(exc)}"
 
 
-def _map_lines(root: App, spec: PluginSpec) -> Iterator[str]:
-    """The plugin's lines on the map over the limit: its help, contracts and providers."""
-    from untaped.agents._docstring import first_line  # noqa: PLC0415
+def _map_lines(root: App, result: CompositionResult, spec: PluginSpec) -> Iterator[str]:
+    """The plugin's lines on the map over the limit, measured on the map itself."""
+    from untaped.agents._build import build_map  # noqa: PLC0415
 
-    help_text = spec.help
-    if help_text is None and spec.app_factory is not None:
-        help_text = first_line(root[spec.name].help)
-    lines = [("help", help_text or "")]
-    if owns_contracts(spec) or spec.provides:
-        from untaped.contracts._registry import (  # noqa: PLC0415
-            Provider,
-            every_offer,
-            owned_contracts,
-        )
-
-        lines += [
-            (f"contract {info.name}", first_line(info.cls.__doc__))
-            for info in owned_contracts().get(spec.name, ())
-        ]
-        lines += [
-            (f"provider {type(entry.instance).__name__}", first_line(type(entry.instance).__doc__))
-            for entry in every_offer()
-            if isinstance(entry, Provider) and entry.plugin == spec.name
-        ]
+    shown = build_map(root, result).plugins
+    own = next(entry for entry in shown if entry.name == spec.name)
+    lines = [("its summary line", own.summary)]
+    lines += [("an extension point's line", point.title) for point in own.points]
+    lines += [
+        (f"its line under {point.owner}'s extension point", fill.summary)
+        for entry in shown
+        for point in entry.points
+        for fill in point.fills
+        if fill.plugin == spec.name
+    ]
     for what, line in lines:
         if len(line) > MAP_LINE_LIMIT:
             yield (
-                f"{spec.name}::map-line::{what}'s first line is {len(line)} characters, over "
+                f"{spec.name}::map-line::{what} is {len(line)} characters, over "
                 f"{MAP_LINE_LIMIT}: every agent session reads the map"
             )

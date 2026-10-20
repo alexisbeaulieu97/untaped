@@ -230,6 +230,7 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
     plugin = _plugin(result, name)
     points, fills = _contracts(result)
     app = None if plugin.spec.app_factory is None else _plugin_app(root, name)
+    shadowing = top_names(app)
     return PluginPage(
         answerer=answerer(plugin),
         name=name,
@@ -241,13 +242,13 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
         settings_prefix=f"profiles.<name>.{name}",
         settings=_settings(result, plugin),
         guides=tuple(
-            GuideLine(guide.name, guide.description, guide.name in _top_names(app))
+            GuideLine(guide.name, guide.description, guide.name in shadowing)
             for guide in guides(plugin.spec)
         ),
     )
 
 
-def _top_names(app: App | None) -> frozenset[str]:
+def top_names(app: App | None) -> frozenset[str]:
     """The names and aliases of ``app``'s top-level commands: a guide by one is shadowed."""
     return (
         frozenset() if app is None else frozenset(name for name in app if not name.startswith("-"))

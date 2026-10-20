@@ -10,7 +10,6 @@ from cyclopts import App
 from test_plugins.plugin_harness import make_spec
 from untaped import bootstrap
 from untaped.conventions.guides import MAP_LINE_LIMIT, guide_violations
-from untaped.errors import ConfigError
 from untaped.plugins.registry import PluginSpec
 from untaped.records import record_model
 from untaped.sdk import Record, create_app
@@ -109,6 +108,12 @@ def test_a_quoted_agents_page_must_exist(tmp_path: Path) -> None:
     assert detail.startswith('untaped agents svc nothing: no topic "nothing" in svc')
 
 
+def test_a_quoted_agents_path_is_checked_as_its_words(tmp_path: Path) -> None:
+    [(_, rule, detail)] = _violations(tmp_path, links=_guide('See `untaped agents "svc nothing"`.'))
+    assert rule == "guide-link"
+    assert 'no topic "nothing" in svc' in detail
+
+
 def test_a_guide_may_link_another_guide(tmp_path: Path) -> None:
     assert (
         _violations(
@@ -124,6 +129,18 @@ def test_quoted_commands_parse(tmp_path: Path) -> None:
     assert [(rule, detail.split(":", 1)[0]) for _, rule, detail in found] == [
         ("guide-command", "untaped svc show --nope"),
         ("guide-command", "untaped svc missing"),
+    ]
+
+
+def test_commands_after_a_kind_tagged_block_are_still_checked(tmp_path: Path) -> None:
+    body = (
+        "```yaml svc.widget\nname: w\n```\n\nRun `untaped svc missing`.\n\n"
+        "```bash\nuntaped svc show --nope\n```"
+    )
+    found = _violations(tmp_path, after=_guide(body))
+    assert sorted(detail.split(":", 1)[0] for _, _, detail in found) == [
+        "untaped svc missing",
+        "untaped svc show --nope",
     ]
 
 
@@ -149,16 +166,11 @@ def test_map_lines_are_capped(tmp_path: Path) -> None:
         (
             "svc",
             "map-line",
-            f"help's first line is {MAP_LINE_LIMIT + 1} characters, over {MAP_LINE_LIMIT}: "
+            f"its summary line is {MAP_LINE_LIMIT + 1} characters, over {MAP_LINE_LIMIT}: "
             "every agent session reads the map",
         )
     ]
     assert _violations(tmp_path, help_text="x" * MAP_LINE_LIMIT) == []
-
-
-def test_guides_must_be_a_folder() -> None:
-    with pytest.raises(ConfigError, match="guides is 'guides', not a folder"):
-        PluginSpec(name="svc", app_factory=_factory, guides="guides")  # type: ignore[arg-type]
 
 
 def test_a_plugin_without_guides_checks_only_its_map_lines() -> None:

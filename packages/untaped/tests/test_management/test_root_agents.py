@@ -14,7 +14,9 @@ from __future__ import annotations
 import os
 import re
 import sys
+import zipfile
 from importlib import metadata
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Annotated
 
@@ -388,7 +390,7 @@ def _guides(tmp_path: Path, **files: str) -> Path:
     return folder
 
 
-def _with_guides(folder: Path, *, app: bool = True) -> list[PluginCandidate]:
+def _with_guides(folder: Traversable, *, app: bool = True) -> list[PluginCandidate]:
     spec = PluginSpec(
         name="acme",
         app_factory=_acme_app if app else None,
@@ -466,3 +468,19 @@ def test_a_plugin_without_guides_keeps_the_command_pointer() -> None:
     _, out, _ = _run("acme")
     assert "Details of a command: `untaped agents acme COMMAND`" in out
     assert "## Guides" not in out
+
+
+def test_guides_read_from_a_zip_import(tmp_path: Path) -> None:
+    archive = tmp_path / "acme.zip"
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr("untaped_acme/guides/lifecycle.md", _LIFECYCLE)
+    folder = zipfile.Path(archive, "untaped_acme/guides/")
+    code, out, _ = _run("acme", "lifecycle", candidates=_with_guides(folder))  # type: ignore[arg-type]
+    assert code == 0
+    assert "A widget is added once" in out
+
+
+def test_a_byte_order_mark_does_not_hide_the_front_matter(tmp_path: Path) -> None:
+    folder = _guides(tmp_path, lifecycle="\ufeff" + _LIFECYCLE)
+    _, plugin, _ = _run("acme", candidates=_with_guides(folder))
+    assert "- `lifecycle`: Read before adding" in plugin

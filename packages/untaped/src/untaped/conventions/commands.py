@@ -30,7 +30,8 @@ PLACEHOLDER = re.compile(r"^[A-Z][A-Z0-9_]*(?:[/=:.-][A-Z0-9_]+)*$")
 _ROOT_FLAGS = {"-q", "--quiet", "-v", "--verbose", "--deprecated"}
 _HELP_FLAGS = {"--help", "-h"}
 _CONSOLE = re.compile(r"^```console\n(.*?)^```", re.MULTILINE | re.DOTALL)
-_FENCE = re.compile(r"^```(\w*)\n(.*?)^```", re.MULTILINE | re.DOTALL)
+FENCE = re.compile(r"^```([^\n]*)\n(.*?)^```", re.MULTILINE | re.DOTALL)
+"""A fenced block: its info string (the language, then any words after it) and its text."""
 INLINE = re.compile(r"`(untaped(?: [^`]*)?)`")
 
 
@@ -108,11 +109,11 @@ def commands(text: str) -> Iterator[tuple[str, bool]]:
     A full command must parse in full; one named in inline code may leave out
     required arguments. ``console`` blocks are :func:`console_lines`'.
     """
-    for language, block in _FENCE.findall(text):
-        if language in {"bash", "sh", "shell"}:
+    for info, block in FENCE.findall(text):
+        if info.split(maxsplit=1)[:1] in (["bash"], ["sh"], ["shell"]):
             for line in block.replace("\\\n", " ").splitlines():
                 yield from ((command, False) for command in segments(line.split(" #", 1)[0]))
-    for span in INLINE.findall(_FENCE.sub("", text)):
+    for span in INLINE.findall(FENCE.sub("", text)):
         yield from ((command, True) for command in segments(span))
 
 
