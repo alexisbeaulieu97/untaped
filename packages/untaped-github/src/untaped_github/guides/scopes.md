@@ -22,9 +22,9 @@ says what was cut off or left unscanned before reporting "none" or "all".
 
 ## Knowing a result is complete
 
-- When `--limit` cuts results off, stderr says so: `showing 50 of 312; omit
-  --limit to list all` for `repos list`, `showing the
-  first 30 results; more match, raise --limit to see them` for search.
+- When `--limit` cuts results off, stderr says so: `showing 50 of 312;
+  omit --limit to list all` for `repos list`, `showing the first 30
+  results; more match, raise --limit to see them` for search.
 - No notice means you have every match, with one exception: search can't
   tell at a `--limit` that is a multiple of 100, or 1000 and up, because
   checking would cost an extra request. Use an odd limit such as 150 when

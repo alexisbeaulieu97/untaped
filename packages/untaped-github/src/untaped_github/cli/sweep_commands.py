@@ -196,10 +196,10 @@ def sweep_command(
     share a tree are grepped once. Each fetch prunes refs deleted upstream
     and fetches only new or moved refs, so an interrupted refresh resumes.
 
-    Beyond ``github.sweep.max_age_seconds``, a repo is fetched when it isn't
-    stored or holds fewer refs than asked for; an old copy counts as current
-    only while its default branch is unchanged too. Transient Git transport
-    failures are retried.
+    A repo is fetched when it isn't stored or holds fewer refs than asked
+    for, and otherwise as ``github.sweep.max_age_seconds`` describes; that
+    check also fetches a copy whose default branch has changed. Transient
+    Git transport failures are retried.
 
     The stderr footer gives matched and scanned counts, refreshed and cached
     counts, the oldest fetch, and each unscanned repo with its reason (a

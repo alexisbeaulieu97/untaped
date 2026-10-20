@@ -133,8 +133,8 @@ def sync_command(
 
     Run it before a batch of sweeps, or on a schedule. Like ``sweep`` it
     runs ``git``, which must be on ``PATH``, and picks repos to fetch the
-    same way; each row says what became of its repo; a
-    failed row exits 1, or 5 when a fetch timed out.
+    same way. Each row says what became of its repo; a failed row exits 1,
+    or 5 when a fetch timed out.
 
     Examples
     --------
@@ -211,9 +211,10 @@ def delete_command(
 ) -> None:
     """Delete cached repositories from the corpus; a repo another plugin uses stays for it.
 
-    untaped github never changes GitHub: this releases github's part of each
-    repo: its refs, its ``untaped-github.json`` and its worktrees. A repo a
-    workspace, ansible or a hand-added worktree still uses stays. Pass
+    untaped github never changes GitHub. This releases github's part of each
+    repo: its refs, its ``untaped-github.json`` and its worktrees. A repo
+    something else still holds stays, and its row says what. It runs
+    ``git``, which must be on ``PATH``. Pass
     ``OWNER/NAME`` arguments or ``--all`` (every repo github has stored), not
     both; ``--org`` narrows the selection; there is no ``--team``, because github
     doesn't record team membership. A named repo that isn't cached exits 1
@@ -379,8 +380,9 @@ def worktree_command(
 
     It checks a stored ref out, detached, under
     ``~/.untaped/plugins/github/worktrees/``, for reading a repo's files;
-    ``untaped workspace`` makes checkouts you edit. It runs ``git``, and
-    works only for refs already stored, and offline once their files have been fetched.
+    ``untaped workspace`` makes checkouts you edit. It runs ``git``, which
+    must be on ``PATH``, and works only for refs already stored, and
+    offline once their files have been fetched.
     ``--format raw`` prints just the path, for ``$(…)``.
     """
     from untaped_github.application import WorktreeCorpus  # noqa: PLC0415

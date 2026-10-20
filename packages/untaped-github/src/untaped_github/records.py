@@ -119,12 +119,17 @@ class CorpusRepoResult(GithubRepo, kind="github.corpus_repo"):
     status: Literal["synced", "cached", "released", "removed"] = Field(
         default="cached",
         description=(
-            "On a `cache delete` or `prune` row: `removed` when nothing else used the repo, "
-            "`released` when github's refs, metadata and worktrees went but the repo stays."
+            "`cached` for a stored copy, `synced` for one just fetched; on a `cache delete` or "
+            "`prune` row, `removed` when nothing else used the repo, `released` when github's "
+            "refs, metadata and worktrees went but the repo stays."
         ),
     )
     kept: str | None = Field(
-        default=None, description="Who still holds a `released` repo, such as `workspace`."
+        default=None,
+        description=(
+            "What still holds a `released` repo: other plugins, worktrees untaped didn't "
+            "add, local branches or a stash."
+        ),
     )
     fetched_at: str | None = None
     profile: str = "default"
