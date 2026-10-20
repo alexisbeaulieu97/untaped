@@ -146,6 +146,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Freshness",
         "FreshnessRecord",
         "NeverRefreshed",
+        "RefTarget",
         "Served",
         "Store",
         "code_version",

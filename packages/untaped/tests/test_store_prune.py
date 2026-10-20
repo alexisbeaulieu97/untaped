@@ -23,6 +23,7 @@ from untaped.output.diagnostic import Failure, Pruned
 from untaped.output.policy import enable_quiet, reset_quiet
 from untaped.output.sink import diagnostics_scope, recording
 from untaped.plugins.registry import named_plugin_dir
+from untaped.refs import RefTarget
 from untaped.store import Store, _FileInUse, _forget_opened, _SqliteInUse
 from untaped.testing import write_reference
 
@@ -41,8 +42,8 @@ def base() -> Path:
 
 
 @pytest.fixture
-def composed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    targets = ["acme.data@5"]
+def composed(monkeypatch: pytest.MonkeyPatch) -> list[RefTarget]:
+    targets = [RefTarget(plugin="acme", store="data", layout=5)]
     monkeypatch.setattr(refs, "composed_targets", lambda: tuple(targets))
     return targets
 
@@ -69,7 +70,7 @@ def _prune(store: Store) -> list[Pruned]:
     return [line for line in emitted if isinstance(line, Pruned)]
 
 
-def _registered(composed: list[str]) -> None:
+def _registered(composed: list[RefTarget]) -> None:
     refs.register(composed)
 
 
@@ -77,7 +78,7 @@ def _registered(composed: list[str]) -> None:
 
 
 def test_a_registered_install_removes_a_layout_nothing_holds(
-    base: Path, composed: list[str], lock_kind: str
+    base: Path, composed: list[RefTarget], lock_kind: str
 ) -> None:
     _registered(composed)
     old = _layout(base, 4, b"x" * 10)
@@ -100,7 +101,7 @@ def test_a_registered_install_removes_a_layout_nothing_holds(
     assert line.level == "info"
 
 
-def test_an_unregistered_install_never_prunes(base: Path, composed: list[str]) -> None:
+def test_an_unregistered_install_never_prunes(base: Path, composed: list[RefTarget]) -> None:
     old = _layout(base, 4)
     store = _store(base)
     store.open()
@@ -109,7 +110,7 @@ def test_an_unregistered_install_never_prunes(base: Path, composed: list[str]) -
 
 
 def test_nothing_is_pruned_before_this_process_opened_its_layout(
-    base: Path, composed: list[str]
+    base: Path, composed: list[RefTarget]
 ) -> None:
     _registered(composed)
     old = _layout(base, 4)
@@ -117,7 +118,7 @@ def test_nothing_is_pruned_before_this_process_opened_its_layout(
     assert old.exists()
 
 
-def test_a_newer_layout_nothing_holds_goes_too(base: Path, composed: list[str]) -> None:
+def test_a_newer_layout_nothing_holds_goes_too(base: Path, composed: list[RefTarget]) -> None:
     _registered(composed)
     newer = _layout(base, 6)
     store = _store(base)
@@ -127,7 +128,7 @@ def test_a_newer_layout_nothing_holds_goes_too(base: Path, composed: list[str]) 
 
 
 def test_the_line_survives_quiet(
-    base: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
+    base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     _registered(composed)
@@ -149,11 +150,16 @@ def test_the_line_survives_quiet(
 
 
 def test_another_live_install_keeps_its_layout(
-    base: Path, composed: list[str], tmp_path: Path
+    base: Path, composed: list[RefTarget], tmp_path: Path
 ) -> None:
     _registered(composed)
     other = _install(tmp_path / "checkout")
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+    write_reference(
+        "install:aaaaaaaaaaaa",
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=other,
+        version="11.1.0",
+    )
     old = _layout(base, 4)
     store = _store(base)
     store.open()
@@ -163,13 +169,18 @@ def test_another_live_install_keeps_its_layout(
 
 @pytest.mark.parametrize("gone", ["directory", "untaped"])
 def test_a_dead_install_holds_nothing_and_keeps_its_file(
-    base: Path, composed: list[str], tmp_path: Path, gone: str
+    base: Path, composed: list[RefTarget], tmp_path: Path, gone: str
 ) -> None:
     _registered(composed)
     other = tmp_path / "checkout"
     if gone == "untaped":
         other.mkdir()  # the directory is there, untaped was uninstalled from it
-    file = write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.0")
+    file = write_reference(
+        "install:aaaaaaaaaaaa",
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=other,
+        version="11.0",
+    )
     old = _layout(base, 4)
     store = _store(base)
     store.open()
@@ -179,10 +190,12 @@ def test_a_dead_install_holds_nothing_and_keeps_its_file(
 
 
 def test_a_plugin_holder_without_an_anchor_keeps_the_layout(
-    base: Path, composed: list[str]
+    base: Path, composed: list[RefTarget]
 ) -> None:
     _registered(composed)
-    write_reference("workspace:pay", ["acme.data@4"], plugin="workspace")
+    write_reference(
+        "workspace:pay", [RefTarget(plugin="acme", store="data", layout=4)], plugin="workspace"
+    )
     old = _layout(base, 4)
     store = _store(base)
     store.open()
@@ -190,7 +203,28 @@ def test_a_plugin_holder_without_an_anchor_keeps_the_layout(
     assert old.exists()
 
 
-def test_a_reference_from_a_newer_untaped_stops_pruning(base: Path, composed: list[str]) -> None:
+def test_a_reference_of_an_unknown_kind_never_pauses_pruning(
+    base: Path, composed: list[RefTarget], tmp_path: Path
+) -> None:
+    _registered(composed)
+    write_reference(  # a later untaped's kind, anchored on a folder that is gone
+        "project:pay",
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=tmp_path / "gone",
+    )
+    (refs.refs_dir() / "project-other.json").write_text(
+        '{"untaped": "1", "holder": "project:other", "targets": [{"shape": "unknown"}]}'
+    )
+    held, unheld = _layout(base, 4), _layout(base, 3)
+    store = _store(base)
+    store.open()
+    assert [line.layout for line in _prune(store)] == [3]
+    assert held.exists() and not unheld.exists()
+
+
+def test_a_reference_from_a_newer_untaped_stops_pruning(
+    base: Path, composed: list[RefTarget]
+) -> None:
     _registered(composed)
     folder = refs.refs_dir()
     (folder / "install-future.json").write_text('{"untaped": "2", "holder": "install:f"}')
@@ -202,11 +236,11 @@ def test_a_reference_from_a_newer_untaped_stops_pruning(base: Path, composed: li
 
 
 def test_this_installs_own_older_layout_goes_once_its_reference_moved(
-    base: Path, composed: list[str]
+    base: Path, composed: list[RefTarget]
 ) -> None:
-    composed[:] = ["acme.data@4"]
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=4)]
     _registered(composed)  # registered while at layout 4
-    composed[:] = ["acme.data@5"]  # upgraded in place
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=5)]  # upgraded in place
     old = _layout(base, 4)
     store = _store(base)
     store.open()  # the first open refreshes the reference to 5
@@ -239,7 +273,7 @@ def _reader(base: Path, layout: int, kind: str) -> subprocess.Popen[str]:
 
 
 def test_a_layout_a_running_process_has_open_is_skipped(
-    base: Path, composed: list[str], lock_kind: str
+    base: Path, composed: list[RefTarget], lock_kind: str
 ) -> None:
     _registered(composed)
     old = _layout(base, 4)
@@ -255,7 +289,7 @@ def test_a_layout_a_running_process_has_open_is_skipped(
 
 
 def test_a_rename_that_fails_counts_as_busy(
-    base: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
+    base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _registered(composed)
     old = _layout(base, 4)
@@ -274,7 +308,7 @@ def test_a_rename_that_fails_counts_as_busy(
 
 
 def test_a_refused_lock_skips_the_layout(
-    base: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
+    base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _registered(composed)
     old = _layout(base, 4)
@@ -286,7 +320,7 @@ def test_a_refused_lock_skips_the_layout(
 
 
 def test_a_removal_that_fails_is_a_warning(
-    base: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
+    base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _registered(composed)
     _layout(base, 4)
@@ -353,7 +387,7 @@ def test_an_opener_waiting_while_its_lock_moved_aside_takes_the_new_one(
         _forget_opened()
 
 
-def test_a_layout_the_store_keeps_stays(base: Path, composed: list[str]) -> None:
+def test_a_layout_the_store_keeps_stays(base: Path, composed: list[RefTarget]) -> None:
     _registered(composed)
     old = _layout(base, 4)
     seen: list[Path] = []
@@ -368,7 +402,7 @@ def test_a_layout_the_store_keeps_stays(base: Path, composed: list[str]) -> None
     assert old.exists() and seen == [old]
 
 
-def test_a_keep_check_that_raises_keeps(base: Path, composed: list[str]) -> None:
+def test_a_keep_check_that_raises_keeps(base: Path, composed: list[RefTarget]) -> None:
     _registered(composed)
     old = _layout(base, 4)
 
@@ -383,10 +417,13 @@ def test_a_keep_check_that_raises_keeps(base: Path, composed: list[str]) -> None
 
 
 def test_an_unlistable_refs_folder_stops_the_cleanup(
-    base: Path, composed: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    base: Path, composed: list[RefTarget], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_reference(
-        "install:aaaaaaaaaaaa", ["acme.data@4"], anchor=_install(tmp_path / "t"), version="11.1.0"
+        "install:aaaaaaaaaaaa",
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=_install(tmp_path / "t"),
+        version="11.1.0",
     )
     _registered(composed)
     held = _layout(base, 4)
@@ -405,10 +442,15 @@ def test_an_unlistable_refs_folder_stops_the_cleanup(
 
 
 def test_an_anchor_that_cannot_be_listed_counts_as_live(
-    base: Path, composed: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    base: Path, composed: list[RefTarget], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     anchor = _install(tmp_path / "t")
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=anchor, version="11.1.0")
+    write_reference(
+        "install:aaaaaaaaaaaa",
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=anchor,
+        version="11.1.0",
+    )
     _registered(composed)
     held = _layout(base, 4)
     store = _store(base)
@@ -428,8 +470,8 @@ def test_an_anchor_that_cannot_be_listed_counts_as_live(
 # --- the bare file -----------------------------------------------------------------
 
 
-def test_a_bare_file_rebuilt_after_the_adoption_goes(base: Path, composed: list[str]) -> None:
-    composed[:] = ["acme.data@4"]
+def test_a_bare_file_rebuilt_after_the_adoption_goes(base: Path, composed: list[RefTarget]) -> None:
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=4)]
     _registered(composed)
     adopted = _layout(base, 4, b"adopted")
     base.write_bytes(b"rebuilt by 11.0")
@@ -447,9 +489,9 @@ def test_a_bare_file_rebuilt_after_the_adoption_goes(base: Path, composed: list[
 
 
 def test_a_bare_file_awaiting_this_codes_adoption_stays(
-    base: Path, composed: list[str], monkeypatch: pytest.MonkeyPatch
+    base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    composed[:] = ["acme.data@4"]
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=4)]
     _registered(composed)
     base.parent.mkdir(parents=True)
     base.write_bytes(b"layout 4")
@@ -461,11 +503,16 @@ def test_a_bare_file_awaiting_this_codes_adoption_stays(
 
 
 def test_another_installs_bare_file_is_kept_while_its_layout_is_held(
-    base: Path, composed: list[str], tmp_path: Path
+    base: Path, composed: list[RefTarget], tmp_path: Path
 ) -> None:
     _registered(composed)
     other = _install(tmp_path / "tool")
-    write_reference("install:aaaaaaaaaaaa", ["acme.data@4"], anchor=other, version="11.1.0")
+    write_reference(
+        "install:aaaaaaaaaaaa",
+        [RefTarget(plugin="acme", store="data", layout=4)],
+        anchor=other,
+        version="11.1.0",
+    )
     base.parent.mkdir(parents=True)
     base.write_bytes(b"its data, awaiting its rename")
     store = _store(base, layout=5, bare=4)
@@ -474,7 +521,7 @@ def test_another_installs_bare_file_is_kept_while_its_layout_is_held(
     assert base.exists()
 
 
-def test_an_unheld_bare_file_of_an_older_layout_goes(base: Path, composed: list[str]) -> None:
+def test_an_unheld_bare_file_of_an_older_layout_goes(base: Path, composed: list[RefTarget]) -> None:
     _registered(composed)
     base.parent.mkdir(parents=True)
     base.write_bytes(b"11.0")
@@ -517,7 +564,7 @@ def _serve(cache: Cache, *, fill_result: Filled | None = None, error: bool = Fal
 
 
 @pytest.fixture
-def cached_store(base: Path, composed: list[str]) -> tuple[Store, Cache, Path]:
+def cached_store(base: Path, composed: list[RefTarget]) -> tuple[Store, Cache, Path]:
     _registered(composed)
     store = _store(base)
     cache = Cache("acme", "items", label="items", max_age=timedelta(hours=1), store=store)

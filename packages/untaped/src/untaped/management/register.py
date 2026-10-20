@@ -27,7 +27,7 @@ def run_register(*, remove: bool, fmt: OutputFormat, columns: list[str] | None) 
 
 def _register() -> RegisterOutcome:
     ref, changed = register_this_install()
-    held = ", ".join(ref.targets) or "no stores"
+    held = ", ".join(target.describe() for target in ref.targets) or "no stores"
     if changed:
         _diag.success(f"registered {ref.describe()} ({held})")
     else:
@@ -39,7 +39,7 @@ def _remove() -> RegisterOutcome:
     ref = unregister()
     if ref is None:
         _diag.info("this install is not registered; nothing to remove")
-        return RegisterOutcome(action="gone", holder="", environment="", version=None, layouts=[])
+        return RegisterOutcome(action="gone", holder="", environment="", version=None, targets=[])
     _diag.success(f"unregistered {ref.describe()}: other installs may now remove its layouts")
     return _outcome(ref, "removed")
 
@@ -50,7 +50,7 @@ def _outcome(ref: Reference, action: str) -> RegisterOutcome:
         holder=ref.holder,
         environment=str(ref.anchor or ""),
         version=ref.version,
-        layouts=list(ref.targets),
+        targets=list(ref.targets),
     )
 
 

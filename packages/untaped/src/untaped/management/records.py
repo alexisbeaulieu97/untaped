@@ -27,6 +27,7 @@ from untaped.records import (
     TargetRecord,
     _RowError,
 )
+from untaped.refs import RefTarget
 
 
 class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
@@ -124,15 +125,15 @@ class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
     """What ``setup register`` did: ``registered``, ``unchanged``, ``removed`` or ``gone``.
 
     ``environment`` is the directory holding untaped's distribution,
-    ``layouts`` the ``<plugin>.<store>@<layout>`` targets the reference names.
+    ``targets`` the store layouts the reference names.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("action", "version", "environment", "layouts")
+    table_columns: ClassVar[tuple[str, ...]] = ("action", "version", "environment", "targets")
 
     holder: str
     environment: str
     version: str | None
-    layouts: list[str]
+    targets: list[RefTarget]
 
 
 SetupState = Literal["done", "todo", "failed", "skipped"]

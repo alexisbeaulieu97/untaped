@@ -155,7 +155,7 @@ from untaped.records import (
     kind_of,
     record_model,
 )
-from untaped.refs import holders
+from untaped.refs import RefTarget, holders
 from untaped.settings import HttpSettings, get_config_section
 from untaped.skills import nearest_pyproject, project_root
 from untaped.stability import (
@@ -393,6 +393,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Freshness",
     "FreshnessRecord",
     "NeverRefreshed",
+    "RefTarget",
     "Served",
     "Store",
     "code_version",

@@ -54,6 +54,7 @@ from untaped.records import (
     record_kinds,
     record_model,
 )
+from untaped.refs import RefTarget
 
 
 class _Stamped(BaseModel):
@@ -589,7 +590,7 @@ def _samples() -> dict[str, WireModel]:
             holder="install:3f9a1c2e8b7d",
             environment="/x/site-packages",
             version="11.1.0",
-            layouts=["hello.shelf@4"],
+            targets=[RefTarget(plugin="hello", store="shelf", layout=4)],
         ),
         DeprecationNotice(
             id="cli untaped hello old",
