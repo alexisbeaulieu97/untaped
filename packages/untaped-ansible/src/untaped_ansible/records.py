@@ -78,7 +78,14 @@ class SourceStatus(FreshnessRecord, kind="ansible.source_status"):
 
     source: str
     source_key: str
-    state: Literal["fresh", "stale", "not_refreshed", "missing_source"]
+    state: Literal["fresh", "stale", "not_refreshed", "missing_source"] = Field(
+        description=(
+            "fresh within ansible.caches.index.max_age_seconds, stale past it, not_refreshed "
+            "when never refreshed (the next read refreshes it), missing_source when the source is "
+            "no longer saved. An empty source that refreshed is fresh with "
+            "zero counts."
+        )
+    )
     configured: bool
     scanned_at: UtcTimestamp | None = None
     repos: int = 0
@@ -102,14 +109,18 @@ class DependencyMatch(Record, kind="ansible.dependency_match"):
     )
 
     root_repo: str
-    root_ref: str | None
+    root_ref: str | None = Field(description="The root's ref; null for its default branch.")
     repo: str
-    declared_ref: str | None
-    declared_in: str | None
-    path: list[str]
-    input_kind: str | None = None
-    input_id: int | str | None = None
-    input_name: str | None = None
+    declared_ref: str | None = Field(
+        description="The ref as the edge that reached the repo declares it, verbatim."
+    )
+    declared_in: str | None = Field(description="The dependency file that declares that edge.")
+    path: list[str] = Field(description="The shortest path from the root to the repo.")
+    input_kind: str | None = Field(
+        default=None, description="The kind of the pipe record the root came from, else null."
+    )
+    input_id: int | str | None = Field(default=None, description="That record's id, else null.")
+    input_name: str | None = Field(default=None, description="That record's name, else null.")
 
 
 class ReachedRow(Record):
@@ -123,14 +134,31 @@ class ReachedRow(Record):
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "ref", "stopped", "declared_in", "path")
 
     repo: str | None
-    ref: str | None
-    unresolved: str | None
-    declared_ref: str | None
-    declared_in: str | None
-    depth: int
-    path: list[str]
-    root_ref: str | None
-    stopped: StopReason | None
+    ref: str | None = Field(
+        description="The ref reached; an unpinned dependency reaches its default branch."
+    )
+    unresolved: str | None = Field(
+        description="The declared name of a dependency that names no GitHub repo, else null."
+    )
+    declared_ref: str | None = Field(
+        description="The ref as the edge that reached the repo declares it, verbatim."
+    )
+    declared_in: str | None = Field(description="The dependency file that declares that edge.")
+    depth: int = Field(description="Hops from the root.")
+    path: list[str] = Field(
+        description=(
+            "The shortest path, in dependency order. A table cuts it to its first and last "
+            "hop; other formats keep it whole."
+        )
+    )
+    root_ref: str | None = Field(description="The root's ref this row was reached from.")
+    stopped: StopReason | None = Field(
+        description=(
+            "depth when --depth ran out before this repo's own edges were read, not_cached "
+            "when its ref is not in the source's cache, else null. Either way more repos may "
+            "lie beyond it."
+        )
+    )
 
 
 class ReachedDependency(ReachedRow, kind="ansible.dependency"):
@@ -164,8 +192,16 @@ class VariableUse(Record):
     ref: str | None
     file: str
     line: int
-    key_path: list[str | int]
-    how: How
+    key_path: list[str | int] = Field(
+        description="YAML key segments (int for list items); empty for a template file's read."
+    )
+    how: How = Field(
+        description=(
+            "defines: a top-level key under defaults/ or vars/, or an argument_specs option; "
+            "sets: any other YAML key of that name, register or loop_var (a module argument "
+            "of that name counts too); reads: a Jinja expression."
+        )
+    )
 
 
 class VariableUseHit(VariableUse, kind="ansible.variable_use_hit"):
