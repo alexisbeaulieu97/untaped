@@ -142,7 +142,21 @@ def add_command(
     """Install a recipe pack from a path or git URL.
 
     Installing never prompts: only --force (and --discard-edits for a library
-    copy with local edits) replaces an installed pack.
+    copy with local edits) replaces an installed pack. The pack's recipes and
+    hooks are listed on stderr. A pack must load, contain a `uv.lock`, and
+    contain no symlinks (ignored directories such as `.venv` excepted).
+
+    --name sets the installed name, the pack's identity everywhere. A local
+    source is recorded as an absolute path; a git source records the
+    requested --rev and the commit it resolved to. A git fetch that times out
+    exits 5. Installing a pack installs code that runs as you:
+    `untaped agents recipe trust`.
+
+    Examples
+    --------
+    ```console
+    $ untaped recipe packs add https://git.example.com/acme/untaped-recipes.git --rev v1.2.0
+    ```
     """
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
         if rev is not None and not is_git_url(source):
@@ -215,9 +229,15 @@ def sync_command(
 ) -> None:
     """Re-fetch installed packs from their recorded source and rev.
 
-    Packs whose content would change are listed and confirmed first, with the
-    commit move and the hook-code files that change; the rest report
-    ``unchanged``.
+    A branch or tag rev moves forward. Packs whose content would change are
+    listed and confirmed first, with the commit move (`old -> new`) and the
+    hook-code files that change (`src/`, root `*.py`, `pyproject.toml`,
+    `uv.lock`, `uv.toml`, `.python-version`, `setup.cfg`): the code that runs
+    next. The rest report `unchanged`.
+
+    A pack whose library copy has local edits fails unless --discard-edits.
+    A failed pack gets a `failed` row and the others still sync; the run
+    exits 1, or 5 when a fetch timed out.
     """
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
         library = PackLibrary(library_dir=library_dir())
@@ -403,7 +423,13 @@ def _pack_outcome[T: (SyncOutcome, RemoveOutcome)](
 
 
 def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
-    """List installed recipes."""
+    """List installed recipes.
+
+    Recipes come from installed packs, so the list is empty until one is
+    installed (`untaped recipe packs add`). A pack whose `pyproject.toml`
+    doesn't parse is skipped with a warning, here and when resolving refs,
+    unless named explicitly.
+    """
     _list_rows(
         lambda installed: [
             recipe_record(pack, name, detail=False)
@@ -425,7 +451,10 @@ def list_packs_command(*, fmt: FormatOption = "table", columns: ColumnsOption = 
 
 
 def list_hooks_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
-    """List installed hooks, then the built-in ones."""
+    """List installed hooks, then the built-in ones.
+
+    A built-in such as `yaml_edit` is listed with pack `(builtin)`.
+    """
     _list_rows(
         lambda installed: [
             *(
@@ -517,7 +546,18 @@ def validate_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Validate a pack, recipe, or the whole installed library."""
+    """Validate a pack, recipe, or the whole installed library.
+
+    With no argument it checks every installed pack and `packs.toml`; with a
+    ref or path, one pack, recipe or built-in hook. It scans hook modules
+    without importing them. A pack that declares
+    hooks needs a `uv.lock` that `uv lock --check` accepts. Every
+    `packs.toml` row must carry its `content_hash`; a malformed or
+    incomplete row blocks every library change until it is fixed. An
+    installed pack whose `pyproject.toml` doesn't parse fails. Template and
+    copy sources containing `{{ input }}` tokens are checked only up to their
+    literal directory prefix. Any `fail` row exits 1.
+    """
     with report_config_errors():
         root = library_dir()
         library = PackLibrary(library_dir=root)
@@ -548,7 +588,11 @@ def remove_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Remove installed packs."""
+    """Remove installed packs.
+
+    Warns when a library copy has local edits. A `partial` row means removal
+    stopped partway; running it again finishes it.
+    """
     with report_config_errors():
         library = PackLibrary(library_dir=library_dir())
         selected = _pack_names(names, stdin=stdin)
@@ -639,7 +683,10 @@ def edit_pack_command(name: Annotated[str, Parameter(help="Installed pack identi
 def edit_hook_command(
     ref_text: Annotated[str, Parameter(help="Hook name or PACK/HOOK reference.")], /
 ) -> None:
-    """Open an installed hook module in $VISUAL or $EDITOR."""
+    """Open an installed hook module in $VISUAL or $EDITOR.
+
+    Built-in hooks can't be edited.
+    """
     with report_config_errors():
         target = _find_hook(PackLibrary(library_dir=library_dir()), ref_text)
         if target.pack is None or target.hook is None:

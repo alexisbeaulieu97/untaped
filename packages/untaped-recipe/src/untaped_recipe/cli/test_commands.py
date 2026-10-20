@@ -77,7 +77,15 @@ def test_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Run golden-fixture test cases for packs."""
+    """Run golden-fixture test cases for packs.
+
+    A case lives under `tests/<recipe>/<case>/` in the pack: `given/` is
+    copied to a temporary target and `expected/` is the full expected tree
+    (no `expected/` asserts no change). An optional, data-only `case.yml`
+    sets `inputs`, `expect: success|error`, `error_contains` and `verdict`.
+    --update needs an explicit pack or recipe. Any
+    failing case exits 1, and so does an explicit ref with no cases.
+    """
     with report_config_errors():
         if update and ref_text is None:
             raise UsageError("--update requires an explicit pack or recipe argument")
