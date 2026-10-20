@@ -10,9 +10,10 @@ that install refreshes the file on its first store open. A reference is live
 while its anchor still holds an ``untaped-*.dist-info``, or, with no anchor,
 until its holder removes it. A reference of a kind this untaped does not know
 (a later untaped's) is always live and holds the targets it can read, and
-nothing in it pauses cleanup. A dead reference counts for nothing, but its file
-is never another process's to delete: ``setup register --remove`` or the
-previewed ``setup migrate-dirs`` row removes it.
+nothing in it pauses cleanup (a newer file format still does). A dead
+reference counts for nothing, but its file is never another process's to
+delete: ``setup register --remove`` or the previewed ``setup migrate-dirs``
+row removes it.
 
 Each target is a :class:`RefTarget`, written as a JSON object: a layout of a
 store, or one item of a store that keeps one per item. No clock is read
@@ -124,7 +125,9 @@ class Reference:
     @property
     def pre_upgrade(self) -> bool:
         """A live install whose directory now holds another untaped version than it records."""
-        if self.anchor is None or self.opaque is not None or self.version is None:
+        if self.kind != INSTALL or self.anchor is None or self.opaque is not None:
+            return False
+        if self.version is None:
             return False
         versions = _installed_versions(self.anchor)
         return bool(versions) and versions is not None and self.version not in versions

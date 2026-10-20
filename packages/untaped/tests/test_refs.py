@@ -229,7 +229,12 @@ def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
                 "untaped": "1",
                 "holder": "project:pay",
                 "anchor": str(tmp_path / "gone"),  # no untaped there: an install would be dead
-                "targets": [target, "git.store#old", {"plugin": "git"}],
+                "targets": [
+                    target,
+                    "git.store#old",
+                    {"plugin": "git"},
+                    {"plugin": "acme", "store": "data", "layout": 4, "new": 1},
+                ],
             }
         )
     )
@@ -240,6 +245,13 @@ def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
     assert pay.targets == (RefTarget.model_validate(target),)
     assert bare.opaque is None and bare.live and bare.targets == ()
     assert refs.holders(RefTarget.model_validate(target)) == ["project:pay"]
+
+
+def test_only_an_install_is_ever_from_before_an_upgrade(tmp_path: Path) -> None:
+    anchor = _install(tmp_path / "project", "9.0.0")
+    write_reference("project:x", [], anchor=anchor, version="1.0.0")
+    [ref] = refs.read_references()
+    assert ref.live and not ref.pre_upgrade
 
 
 def test_an_item_target_is_written_without_a_layout() -> None:

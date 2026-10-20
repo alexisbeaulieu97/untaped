@@ -182,12 +182,16 @@ def test_every_holder_is_listed(tmp_path: Path) -> None:
         [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
         plugin="workspace",
     )
+    project = _install(tmp_path / "project", "9.0.0")  # a later untaped's kind, no plugin
+    write_reference("project:pay", [], anchor=project, version="1.0.0")
     row = _row(_store(tmp_path / "data.db"), check="references")
     detail = str(row["detail"])
     assert row["status"] == "pass"  # a dead reference is information, not a warning
     assert f"untaped 11.0.0 at {gone}: no untaped there any more" in detail
     assert f"untaped 11.1.0 at {old}: reference from before an upgrade" in detail
     assert "workspace:pay (plugin workspace)" in detail
+    assert "project:pay" in detail and "project:pay (" not in detail
+    assert "project:pay:" not in detail  # neither dead nor from before an upgrade
     assert "(this install)" in detail
 
 
