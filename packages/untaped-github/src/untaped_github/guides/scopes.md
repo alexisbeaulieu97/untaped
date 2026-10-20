@@ -9,33 +9,30 @@ says what was cut off or left unscanned before reporting "none" or "all".
 
 ## Scopes
 
-- `repos list`, `search`, `sweep` and `cache sync` take repeatable `--org`
-  and `--team ORG/SLUG`; all but `repos list` also take `-r/--repo
-  OWNER/NAME` and `--stdin`.
-- With no scope flag a command uses `github.default_org`. Any scope flag
-  replaces it, never adds to it.
-- Without a default org, `repos list`, `sweep` and `cache sync` exit 2, and
-  `search` searches your own repos (`user:@me`) with a stderr notice. So
-  does a `--team` that resolves to no repos.
+- `repos list`, `search repos|code|issues`, `sweep` and `cache sync` take
+  repeatable `--org` and `--team ORG/SLUG`; all but `repos list` also take
+  `-r/--repo OWNER/NAME` and `--stdin`.
+- Any scope flag replaces `github.default_org`, never adds to it.
+- Without a default org, `repos list`, `sweep` and `cache sync` exit 2;
+  they never fall back to your own repos. A search falls back to them
+  (`user:@me`) with a stderr notice, and so does a `--team` that resolves
+  to no repos.
 - Scopes add up: `--org acme --team backend` is the whole org plus that
   team. For one team, pass `--team acme/backend` alone.
-- Archived repos are left out unless you pass `--archived include` or
-  `--archived only`.
 
 ## Knowing a result is complete
 
-- When `--limit` cuts results off, stderr says so: `showing 50 of 312
-  repositories; omit --limit to list all` for `repos list`, `showing the
+- When `--limit` cuts results off, stderr says so: `showing 50 of 312; omit
+  --limit to list all` for `repos list`, `showing the
   first 30 results; more match, raise --limit to see them` for search.
 - No notice means you have every match, with one exception: search can't
   tell at a `--limit` that is a multiple of 100, or 1000 and up, because
   checking would cost an extra request. Use an odd limit such as 150 when
   completeness matters.
-- Search `--limit` defaults to 30, and GitHub never returns more than 1000
-  results. Search rate limits are strict: exit 5 means retry later, never
-  "no results".
-- A sweep's footer names every repo it couldn't scan; those are unknown,
-  not non-matching.
+- Search rate limits are strict: exit 5 means retry later, never "no
+  results".
+- A sweep's footer names the repos it couldn't scan
+  (`untaped agents github sweep`).
 
 ## Large search scopes
 
@@ -66,10 +63,7 @@ fit in one query, so a large scope is split into batches:
   no API call per repo, and their `pushed_at` lets an unchanged repo skip
   its fetch. Other records and bare names are looked up.
 - Git fetches send the token only to the Git host of `github.base_url`; a
-  piped `clone_url` on another host is fetched without it. `http.proxy`
-  covers fetches from the GitHub host, and `github.git_protocol: ssh`
-  fetches over SSH with your own keys. Two plugins serving the same host
-  exit 4 until `untaped plugin rank` picks one.
+  piped `clone_url` on another host is fetched without it.
 
 A chain narrows at each step: each command reads the previous one's
 `--format pipe` rows on its stdin.

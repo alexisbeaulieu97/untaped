@@ -1,6 +1,6 @@
-The `untaped-github` skill is now a stub that sends the agent to
-`untaped agents github`; the facts its copy held are on the command pages
-(`sweep`'s predicates, refs, freshness and footer; `cache`'s release rules;
-search sorting and `repos list` matching), in the sweep records' field
-descriptions, and in a new `scopes` guide on scopes, complete answers and
-piped input.
+`untaped skills install github` now writes a stub skill that sends the agent
+to `untaped agents github`. What the old skill said now lives in the github
+commands' own help and examples, the sweep and cache records' field
+descriptions (`untaped plugin schema github.sweep_repo`) and a `scopes` guide
+(`untaped agents github scopes`). An installed copy of the old skill becomes
+the stub as `skills.updates` describes.

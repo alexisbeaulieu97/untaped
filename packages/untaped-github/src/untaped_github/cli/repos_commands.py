@@ -34,8 +34,8 @@ PatternArgument = Annotated[
     str | None,
     Parameter(
         help=(
-            "Optional repo-name pattern. Glob by default; with / matches owner/name, "
-            "otherwise matches name."
+            "Optional repo-name pattern: a case-insensitive glob over the whole name by "
+            "default; with / it matches owner/name, otherwise the name alone."
         )
     ),
 ]
@@ -90,13 +90,8 @@ def list_command(
     """List repositories from additive org/team inventory scopes.
 
     The complete inventory of its scopes, matched by name locally; ``search
-    repos`` ranks instead and is capped. ``PATTERN`` is a case-insensitive
-    glob over the whole name; with ``--regex`` a case-insensitive, unanchored
-    regex. A pattern containing ``/`` matches ``owner/name``, otherwise the
-    name alone. With no scope and no ``github.default_org`` it exits 2; it
-    never falls back to your own repos. When ``--limit`` cuts the list,
-    stderr says ``showing N of M``; without that line you have every match.
-    ``untaped agents github scopes`` explains scopes and piping the rows on.
+    repos`` ranks instead. ``untaped agents github scopes`` explains scopes,
+    knowing the list is complete and piping the rows on.
 
     Examples
     --------

@@ -152,7 +152,10 @@ def sweep_command(
         Literal["repos", "files", "matches"],
         Parameter(
             name="--show",
-            help="Report repo rows, one row per matching file, or deduped match lines.",
+            help=(
+                "Report repo rows (github.sweep_repo), one row per matching file "
+                "(github.sweep_file), or deduped match lines (github.sweep_match)."
+            ),
         ),
     ] = "repos",
     owners: Annotated[
@@ -193,25 +196,24 @@ def sweep_command(
     share a tree are grepped once. Each fetch prunes refs deleted upstream
     and fetches only new or moved refs, so an interrupted refresh resumes.
 
-    A repo is fetched when it isn't stored, is older than
-    ``github.sweep.max_age_seconds``, or holds fewer refs than asked for; an
-    old copy whose ``pushed_at`` and default branch haven't changed on
-    GitHub counts as current. Transient Git transport failures are retried.
+    Beyond ``github.sweep.max_age_seconds``, a repo is fetched when it isn't
+    stored or holds fewer refs than asked for; an old copy counts as current
+    only while its default branch is unchanged too. Transient Git transport
+    failures are retried.
 
     The stderr footer gives matched and scanned counts, refreshed and cached
     counts, the oldest fetch, and each unscanned repo with its reason (a
     name GitHub can't resolve, corrupt metadata, a host that won't send file
     contents by object id, a filesystem or Git error); report those repos as
     unknown, not as non-matching. A failed refresh falls back to a stored
-    copy that covers the query (``refresh failed for N repos; scanned cached
-    copies``); without one the repo is unscanned. Bad credentials (exit 4),
+    copy that covers the query, counted as cached (``refresh failed for N
+    repos; scanned cached copies``); without one the repo is unscanned. Bad credentials (exit 4),
     rate limits (exit 5), or every explicitly named repo failing to resolve
     stop the whole sweep. Sweeps running at once are safe: the store locks
     each repo while it changes it.
 
-    A ``--format pipe`` sweep feeds the next sweep's ``--stdin``, narrowing
-    the set at each step; ``untaped agents github scopes`` explains scopes
-    and piped input.
+    ``untaped agents github scopes`` explains scopes and chaining sweeps
+    through ``--stdin``.
 
     Examples
     --------

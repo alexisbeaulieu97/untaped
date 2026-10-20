@@ -137,8 +137,7 @@ def repos_command(
 ) -> None:
     """Search repositories (``GET /search/repositories``).
 
-    A ranked answer, capped by ``--limit`` and GitHub's 1000 results; ``repos
-    list`` gives every repo of a scope. Sorted by ``stars``, ``forks`` or
+    A ranked answer; ``repos list`` gives every repo of a scope. Sorted by ``stars``, ``forks`` or
     ``updated``, it queries every batch of a large scope and merge-sorts the
     rows before the limit; best match, and ``help-wanted-issues`` (which
     warns), stop once ``--limit`` unique rows arrive, so their order holds

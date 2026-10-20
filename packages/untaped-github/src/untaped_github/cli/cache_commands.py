@@ -75,8 +75,7 @@ def status_command(
     """List repositories cached in the local corpus.
 
     One row per repo github has stored, then the count, total size and
-    freshness spread on stderr. ``path`` is the repo in the git plugin's
-    repo store, which other plugins may share.
+    freshness spread on stderr.
     """
     from untaped_github.application import StatusCorpus  # noqa: PLC0415
 
@@ -132,8 +131,9 @@ def sync_command(
 ) -> None:
     """Fetch repositories into the local corpus without a query, so later sweeps start warm.
 
-    Run it before a batch of sweeps, or on a schedule. It picks repos to
-    fetch as ``sweep`` does, and each row says what became of its repo; a
+    Run it before a batch of sweeps, or on a schedule. Like ``sweep`` it
+    runs ``git``, which must be on ``PATH``, and picks repos to fetch the
+    same way; each row says what became of its repo; a
     failed row exits 1, or 5 when a fetch timed out.
 
     Examples
@@ -212,11 +212,10 @@ def delete_command(
     """Delete cached repositories from the corpus; a repo another plugin uses stays for it.
 
     untaped github never changes GitHub: this releases github's part of each
-    repo, its refs, its ``untaped-github.json`` and its worktrees. A repo
-    nothing else uses is ``removed``; one that a workspace, ansible or a
-    hand-added worktree still uses stays as ``released``, and ``kept`` says
-    who kept it. ``--all`` selects every repo github has stored, and
-    ``--org`` narrows the selection; there is no ``--team``, because github
+    repo: its refs, its ``untaped-github.json`` and its worktrees. A repo a
+    workspace, ansible or a hand-added worktree still uses stays. Pass
+    ``OWNER/NAME`` arguments or ``--all`` (every repo github has stored), not
+    both; ``--org`` narrows the selection; there is no ``--team``, because github
     doesn't record team membership. A named repo that isn't cached exits 1
     before anything is deleted. The next sweep that covers a deleted repo
     fetches it again.
@@ -380,8 +379,8 @@ def worktree_command(
 
     It checks a stored ref out, detached, under
     ``~/.untaped/plugins/github/worktrees/``, for reading a repo's files;
-    ``untaped workspace`` makes checkouts you edit. It works only for refs
-    already stored, and offline once their files have been fetched.
+    ``untaped workspace`` makes checkouts you edit. It runs ``git``, and
+    works only for refs already stored, and offline once their files have been fetched.
     ``--format raw`` prints just the path, for ``$(…)``.
     """
     from untaped_github.application import WorktreeCorpus  # noqa: PLC0415
