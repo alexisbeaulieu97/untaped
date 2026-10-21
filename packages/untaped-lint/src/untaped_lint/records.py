@@ -111,7 +111,8 @@ class Finding(Issued, kind="lint.finding"):
     error: Failure | None = Field(
         default=None,
         description=(
-            "Set only on the row that carries a rule's raise: the engine counts it as a failure."
+            "The error a rule raised, set only on the row that carries it: the engine counts it "
+            "as a failure."
         ),
     )
 

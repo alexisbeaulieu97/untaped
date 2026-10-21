@@ -59,7 +59,7 @@ class Reference(_Model):
             "reference, by id)."
         ),
     )
-    """:meth:`AwxResources.find` then needs no name."""
+    """With it, :meth:`AwxResources.find` needs no name."""
 
 
 @experimental

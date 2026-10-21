@@ -173,7 +173,9 @@ installed or configured.
 owner, stability, the providers that fill it in the order they are asked
 and the profile's ranking, including contracts nobody fills yet.
 `untaped plugin schema <kind>` prints a record or diagnostic kind's JSON
-Schema.
+Schema. A field's description there is its `Field(description=...)`, written
+for whoever reads the JSON (`null`, Markdown): pydantic leaves an attribute
+docstring out.
 
 `untaped doctor` has a `contract-provider` row per provider, titled with
 one of these reasons:

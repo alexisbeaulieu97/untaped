@@ -794,9 +794,9 @@ class CaseResult(Record, kind="awx.test_result"):
     failure: Annotated[CaseFailure | None, NOT_COUNTED] = Field(
         default=None,
         description=(
-            "Why a case did not pass: the responsible system, category, summary and evidence. Not "
-            "counted by the row: the run reports the failures that decide its exit (a baseline "
-            "excuses a `still_failing` one)."
+            "Why a case did not pass: the responsible system, category, summary and evidence. The "
+            "run's exit reads the failures it reports, not this field (a baseline excuses a "
+            "`still_failing` one)."
         ),
     )
     expectations: tuple[ExpectationResult, ...] = ()

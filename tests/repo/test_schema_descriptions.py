@@ -1,7 +1,7 @@
 """A field that documents itself in a schema users read says so with ``Field(description=...)``.
 
 ``untaped plugin schema KIND`` prints a record kind's JSON Schema, and
-``untaped awx schema AwxTestSuite`` the schema of the document awx reads; the
+``untaped awx schema`` the schemas of the documents awx reads; the
 agent pages point at both. A field's description reaches them only through
 ``Field(description=...)``: pydantic drops the attribute docstring written
 after a field unless the model sets ``use_attribute_docstrings``, which no
@@ -10,7 +10,7 @@ double backticks); a description is for whoever reads the JSON (``null``,
 Markdown).
 
 ``silent-field``: a field of a model these schemas reach (every model a
-first-party or example kind nests, and awx's suite document) that has an
+first-party or example kind nests, and the documents ``awx schema`` prints) that has an
 attribute docstring and no description. The fix is the description; a
 docstring may stay beside it for what only a maintainer needs.
 """
@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from repo.support import FIRST_PARTY, REPO_ROOT
 from untaped.records import Record, record_kinds
-from untaped_awx.domain.suites.suite import Suite
+from untaped_awx.cli.commands import DOCUMENT_MODELS
 
 
 def attribute_docstrings(model: type[BaseModel]) -> list[str]:
@@ -97,7 +97,7 @@ def every_silent_field() -> list[str]:
         for info in pkgutil.walk_packages(package.__path__, f"{top}."):
             if not info.name.endswith(".__main__"):
                 importlib.import_module(info.name)
-    return silent_fields([*record_kinds().values(), Suite])
+    return silent_fields([*record_kinds().values(), *DOCUMENT_MODELS.values()])
 
 
 _TESTS = REPO_ROOT / "tests"
