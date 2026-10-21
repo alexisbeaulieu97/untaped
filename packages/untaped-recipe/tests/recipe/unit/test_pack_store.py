@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import threading
 import tomllib
 from pathlib import Path
 
 import pytest
 
-from untaped.sdk import UsageError
+from untaped.sdk import ErrorCategory, UsageError
 from untaped_recipe.domain.pack import InstalledPack, PackManifest, parse_ref
 from untaped_recipe.errors import (
     AmbiguousRefError,
@@ -201,6 +202,74 @@ def test_pack_library_remove_deletes_pack_and_index_row(tmp_path: Path) -> None:
     assert "ansible" not in index
 
 
+def test_pack_library_concurrent_adds_keep_both_index_rows(tmp_path: Path) -> None:
+    """A second ``add`` that runs while the first is installing must not lose either row."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    _write_pack(first, manifest_name="first")
+    _write_pack(second, manifest_name="second")
+    library_dir = tmp_path / "library"
+    slow = PackLibrary(library_dir=library_dir)
+    installing, second_done = threading.Event(), threading.Event()
+    install_tree = slow._install_tree
+
+    def install_slowly(source_dir: Path, dest: Path) -> str:
+        installing.set()
+        second_done.wait(timeout=1)  # the second add, if it is not kept waiting, finishes here
+        return install_tree(source_dir, dest)
+
+    slow._install_tree = install_slowly  # type: ignore[method-assign]
+    errors: list[BaseException] = []
+
+    def add_first() -> None:
+        try:
+            slow.add(first, source=str(first), rev=None, name=None, force=False)
+        except BaseException as exc:  # surfaced by the assert below
+            errors.append(exc)
+
+    worker = threading.Thread(target=add_first)
+    worker.start()
+    try:
+        assert installing.wait(timeout=10)
+        PackLibrary(library_dir=library_dir).add(
+            second, source=str(second), rev=None, name=None, force=False
+        )
+    finally:
+        second_done.set()
+        worker.join(timeout=30)
+
+    assert errors == []
+    index = tomllib.loads((library_dir / "packs.toml").read_text(encoding="utf-8"))
+    assert sorted(index) == ["first", "second"]
+
+
+def test_pack_library_reports_a_library_another_process_holds_as_busy(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="base")
+    library_dir = tmp_path / "library"
+    holder = PackLibrary(library_dir=library_dir)
+    waiter = PackLibrary(library_dir=library_dir, lock_timeout=0.05)
+    held, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with holder._locked():
+            held.set()
+            release.wait(timeout=30)
+
+    worker = threading.Thread(target=hold)
+    worker.start()
+    try:
+        assert held.wait(timeout=10)
+        with pytest.raises(RecipeError, match="recipe library is busy") as excinfo:
+            waiter.add(source, source=str(source), rev=None, name=None, force=False)
+    finally:
+        release.set()
+        worker.join(timeout=30)
+
+    assert excinfo.value.category == ErrorCategory.UNAVAILABLE
+    assert excinfo.value.hint == "wait for the other untaped recipe command to finish, then retry"
+    assert not (library_dir / "packs.toml").exists()
+
+
 def test_pack_library_index_round_trips_source_rev_and_version(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_pack(source, manifest_name="ansible", version="0.3.0")
@@ -281,7 +350,7 @@ def test_pack_library_rejects_a_symlink_that_appears_after_validation(
         library.add(source, source=str(source), rev=None, name=None, force=False)
 
     assert not (library.packs_dir / "ansible").exists()
-    assert [path.name for path in (tmp_path / "library").iterdir()] == ["packs"]
+    assert sorted(path.name for path in (tmp_path / "library").iterdir()) == [".lock", "packs"]
 
 
 def test_pack_library_record_commit_fills_a_legacy_row_without_commit(tmp_path: Path) -> None:
@@ -490,7 +559,7 @@ def test_pack_library_force_replace_keeps_old_pack_when_copy_fails(
     fresh = PackLibrary(library_dir=library_dir)
     assert fresh.packs()[0].installed_version == "0.1.0"
     assert (library_dir / "packs.toml").read_text() == index_before
-    assert sorted(path.name for path in library_dir.iterdir()) == ["packs", "packs.toml"]
+    assert sorted(path.name for path in library_dir.iterdir()) == [".lock", "packs", "packs.toml"]
     assert [path.name for path in (library_dir / "packs").iterdir()] == ["ansible"]
 
 
