@@ -11,6 +11,7 @@ import errno
 import json
 import os
 import shutil
+import subprocess
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -119,10 +120,10 @@ def test_init_writes_the_marker_the_gitignore_and_the_reference(tmp_path: Path) 
     marker = json.loads((root / ".untaped" / "project.json").read_text(encoding="utf-8"))
     assert marker == {"untaped": "1", "id": done.project.id}
     assert (root / ".untaped" / ".gitignore").read_text(encoding="utf-8").splitlines() == [
-        ".gitignore",
-        "project.json",
-        "state.yml",
-        "plugins/",
+        "/.gitignore",
+        "/project.json",
+        "/state.yml",
+        "/plugins/",
         "/state.yml.lock",
         "/config.yml.lock",
     ]
@@ -140,8 +141,9 @@ def test_init_adds_its_lines_to_a_gitignore_already_there(tmp_path: Path) -> Non
     assert (folder / ".gitignore").read_text(encoding="utf-8").splitlines() == [
         "state.yml",
         "notes/",
-        "project.json",
-        "plugins/",
+        "/project.json",
+        "/state.yml",
+        "/plugins/",
         "/state.yml.lock",
         "/config.yml.lock",
     ]
@@ -149,22 +151,30 @@ def test_init_adds_its_lines_to_a_gitignore_already_there(tmp_path: Path) -> Non
 
 
 def test_the_gitignore_ignores_cores_lock_files_and_no_plugins(tmp_path: Path) -> None:
-    import subprocess
-
     root = tmp_path / "PROJ"
     init(root)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
-    names = ["state.yml.lock", "config.yml.lock", "recipe.lock", "notes/state.yml.lock"]
+    names = [
+        "state.yml.lock",
+        "config.yml.lock",
+        "project.json",
+        "state.yml",
+        "plugins/x.json",
+        "recipe.lock",
+        "notes/state.yml.lock",
+        "lint/state.yml",
+        "lint/project.json",
+        "awx/plugins/x.yml",
+        "awx/.gitignore",
+    ]
 
     def ignored(name: str) -> bool:
         check = ["git", "-C", str(root), "check-ignore", "-q", f".untaped/{name}"]
         return subprocess.run(check, check=False).returncode == 0
 
     assert {name: ignored(name) for name in names} == {
-        "state.yml.lock": True,
-        "config.yml.lock": True,
-        "recipe.lock": False,  # a plugin's committed file
-        "notes/state.yml.lock": False,
+        **dict.fromkeys(names[:5], True),
+        **dict.fromkeys(names[5:], False),  # a plugin's committed files, at any depth
     }
 
 

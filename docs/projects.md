@@ -23,9 +23,10 @@ a project:
   It is created only if it doesn't exist, so two `init`s at once make one
   project.
 - `.untaped/.gitignore` keeps `project.json`, `state.yml`, `plugins/` and
-  core's own lock files out of git (by name: a plugin's committed
-  `<plugin>.lock` stays tracked), and itself when `init` creates it. A repository can
-  share its own `.untaped/` files, such as `lint.yml`, never a project's id.
+  core's own lock files at `.untaped/`'s top level out of git, and itself
+  when `init` creates it; a plugin's committed files, such as `recipe.lock`,
+  stay tracked. A repository can share its own `.untaped/` files, such as
+  `lint.yml`, never a project's id.
 - The home records the project in `~/.untaped/refs/project-<id>.json`: its
   folder and the folder's filesystem identity.
 
@@ -100,7 +101,8 @@ All three preview with `--dry-run`; `remove` and `prune` exit 3 under
 ## A plugin's files in `.untaped/`
 
 Every name in `.untaped/` is core's (`project.json`, `config.yml`,
-`state.yml`, `plugins/`, `.gitignore`) or one plugin's. A plugin names the
+`state.yml`, `plugins/`, `.gitignore`, and the lock files beside
+`config.yml` and `state.yml`) or one plugin's. A plugin names the
 files people write, and may commit, through `committed_path` in
 `untaped.sdk`:
 
