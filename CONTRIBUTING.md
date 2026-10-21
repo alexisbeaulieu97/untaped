@@ -482,10 +482,10 @@ by an `UNTAPED_*` environment variable.
 **Profile**: a named set of settings in `config.yml`; the selected profile is
 layered over `default`.
 
-**Project**: a folder whose `.untaped/` holds `project.json`, found by walking
-up from the working directory, which need not be a git checkout's root; the
-home records it by the folder's filesystem identity, so a move or a copy is
-told apart from the same folder.
+**Project**: a folder whose `.untaped/` holds `project.json`, the nearest one
+found by walking up from the working directory; it need not be a git
+checkout's root. The home records it by the folder's filesystem identity, so
+a move or a copy is told apart from the same folder.
 
 **Holder**: what holds items in the home's references: a project, today.
 
