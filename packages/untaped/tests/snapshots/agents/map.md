@@ -22,6 +22,7 @@ Read a plugin's page before running its commands: `untaped agents PLUGIN`, then 
   - 4 The environment needs fixing: config, credentials, permissions
   - 5 A temporary failure (network, timeout, 5xx, 429, a held lock); retry later
   - 130 Interrupted (Ctrl-C), including at a prompt
+  - A run that sees several failures exits with the most severe: 130 > 2 > 4 > 5 > 1 > 3 > 0
 
 ## untaped (core) · details: `untaped agents untaped`
 - `config`: Inspect and modify `~/.untaped/config.yml`.

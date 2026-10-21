@@ -48,7 +48,7 @@ class ExitCode(IntEnum):
 
 
 #: Exit codes from most to least severe: the first one seen in a run wins.
-_PRECEDENCE: tuple[int, ...] = (
+EXIT_CODE_PRECEDENCE: tuple[int, ...] = (
     ExitCode.INTERRUPTED,
     ExitCode.USAGE,
     ExitCode.ENVIRONMENT,
@@ -66,9 +66,9 @@ def combine_exit_codes(*codes: int) -> int:
     """
 
     def rank(code: int) -> int:
-        if code in _PRECEDENCE:
-            return _PRECEDENCE.index(code)
-        return _PRECEDENCE.index(ExitCode.FAILURE if code else ExitCode.OK)
+        if code in EXIT_CODE_PRECEDENCE:
+            return EXIT_CODE_PRECEDENCE.index(code)
+        return EXIT_CODE_PRECEDENCE.index(ExitCode.FAILURE if code else ExitCode.OK)
 
     return min(codes, key=rank, default=ExitCode.OK)
 

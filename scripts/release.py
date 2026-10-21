@@ -26,11 +26,13 @@ subcommand is one step of the workflow:
   built files with what the index already holds: before publishing (conflicts
   fail, so a re-run uploads only what is missing) and, with ``--complete``,
   after publishing (waits until every file is there).
-- ``smoke UNTAPED_EXE VERSION [--expect A,B] [--quarantined C] [--skills]``
+- ``smoke UNTAPED_EXE VERSION [--expect A,B] [--quarantined C] [--agents]``
   runs an installed ``untaped`` and checks its version, that its plugins
   are exactly the expected ones ready (default: every first-party entry point)
   and the quarantined ones quarantined, every ``--help``, and with
-  ``--skills`` each expected plugin's packaged ``SKILL.md``.
+  ``--agents`` each expected plugin's skill and every ``untaped agents`` page:
+  the map, each plugin's page and each guide a page lists (a guide missing
+  from the wheel fails here).
 - ``tag TAG --repo OWNER/REPO`` creates the annotated tag TAG on the
   checkout's commit once PyPI has the verified files, or confirms it is
   already there; a ``v*`` tag on another commit is an error, since tags never
@@ -666,22 +668,54 @@ def _duplicates(names: Collection[str]) -> list[str]:
 
 def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
     """The shell's ``untaped`` and ``untaped-<name>`` for each expected plugin,
-    each listed once; a copy (not a stub) with a SKILL.md in its source."""
+    each listed once."""
     try:
         rows = json.loads(skills_json)
         names = [row["name"] for row in rows]
-        sources = {row["name"]: row["source"] for row in rows}
-        copies = {row["name"]: Path(row["source"]) for row in rows if row["kind"] == "copy"}
     except ValueError, TypeError, KeyError:
         return ["untaped skills list --format json did not print a list of rows"]
     errors = [f"skill {name} is listed twice" for name in _duplicates(names)]
     required = ["untaped", *(f"untaped-{name}" for name in sorted(expected))]
-    errors += [f"skill {name} is missing" for name in required if name not in sources]
-    errors += [
-        f"skill {name} has no SKILL.md in {source}"
-        for name, source in sorted(copies.items())
-        if not (source / "SKILL.md").is_file()
-    ]
+    errors += [f"skill {name} is missing" for name in required if name not in names]
+    return errors
+
+
+#: A topic line under a page's ``## Guides`` heading: ``- `name`: when to read it``.
+_GUIDE_LINE = re.compile(r"^- `([a-z0-9-]+)`")
+
+
+def page_guides(page: str) -> list[str]:
+    """The guides an ``untaped agents PLUGIN`` page lists."""
+    guides: list[str] = []
+    listing = False
+    for line in page.splitlines():
+        if line.startswith("## "):
+            listing = line == "## Guides"
+        elif listing and (match := _GUIDE_LINE.match(line)):
+            guides.append(match.group(1))
+    return guides
+
+
+def agents_errors(exe: str, expected: Collection[str]) -> list[str]:
+    """Every ``untaped agents`` page that fails or prints nothing.
+
+    The map, then each expected plugin's page (core's too) and each guide it lists.
+    """
+    errors: list[str] = []
+
+    def page(*path: str) -> str:
+        result = _run(exe, "agents", *path)
+        command = " ".join(["untaped agents", *path])
+        if result.returncode:
+            errors.append(f"{command} exited {result.returncode}")
+        elif not result.stdout.strip():
+            errors.append(f"{command} printed nothing")
+        return result.stdout
+
+    page()
+    for plugin in ["untaped", *sorted(expected)]:
+        for guide in page_guides(page(plugin)):
+            page(plugin, guide)
     return errors
 
 
@@ -704,7 +738,7 @@ def run_smoke(
     *,
     expect: Collection[str],
     quarantined: Collection[str] = (),
-    skills: bool = False,
+    agents: bool = False,
 ) -> tuple[list[str], int]:
     """Run the installed ``untaped``: (every smoke failure, expected plugin count)."""
     rows = _run(exe, "plugin", "list", "--format", "json")
@@ -716,11 +750,12 @@ def run_smoke(
         code = _run(exe, *command, "--help").returncode
         if code:
             errors.append(f"untaped {' '.join([*command, '--help'])} exited {code}")
-    if skills:
+    if agents:
         listing = _run(exe, "skills", "list", "--format", "json")
         errors += skill_errors(listing.stdout, expect)
         if listing.returncode:
             errors.append(f"untaped skills list --format json exited {listing.returncode}")
+        errors += agents_errors(exe, expect)
     return errors, len(expect)
 
 
@@ -930,7 +965,9 @@ def _parser() -> argparse.ArgumentParser:
         "--quarantined", type=_names, default=[], help="comma-separated quarantined plugins"
     )
     smoke.add_argument(
-        "--skills", action="store_true", help="check each expected plugin's packaged skill"
+        "--agents",
+        action="store_true",
+        help="check each expected plugin's skill and every untaped agents page",
     )
     tag = commands.add_parser("tag", help="tag the checkout's commit, or confirm the tag is there")
     tag.add_argument("tag")
@@ -968,7 +1005,7 @@ def _index(root: Path, args: argparse.Namespace) -> list[str]:
 def _smoke(root: Path, args: argparse.Namespace) -> list[str]:
     expect = plugin_names(root) if args.expect is None else args.expect
     errors, count = run_smoke(
-        args.exe, args.version, expect=expect, quarantined=args.quarantined, skills=args.skills
+        args.exe, args.version, expect=expect, quarantined=args.quarantined, agents=args.agents
     )
     if not errors:
         print(f"smoke ok: untaped {args.version}, {count} plugins")

@@ -1,4 +1,4 @@
-"""The example ``hello`` plugin: commands, a record, settings, a skill, a migration, a cache.
+"""The example ``hello`` plugin: commands, a record, settings, a stub skill, a migration, a cache.
 
 The ``untaped.plugins`` entry point names :data:`SPEC`. ``help`` is
 set, so the root mounts the app lazily and ``untaped --help`` never imports
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Sequence
-from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -77,7 +76,6 @@ SPEC = PluginSpec(
     skills=(
         SkillAsset(
             name="untaped-hello",
-            source=Path(str(files("untaped_hello").joinpath("skills", "untaped-hello"))),
             description=(
                 "Uses the example hello plugin through `untaped hello`. "
                 "Use when demonstrating how an untaped plugin works."

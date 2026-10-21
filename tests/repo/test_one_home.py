@@ -1,8 +1,8 @@
 """Each fact has one home: no paragraph is copied, nearly word for word, into a second place.
 
 Prose paragraphs and list items (outside code fences, tables and headings, at
-least :data:`MIN_WORDS` words) of the docs, the root guides, the package
-READMEs and the packaged skills are compared by their 5-word shingles, within
+least :data:`MIN_WORDS` words) of the docs, the root guides and the package
+READMEs are compared by their 5-word shingles, within
 a page and across pages. Two fail when :data:`THRESHOLD` of the shorter one's
 shingles appear in the other.
 
@@ -10,10 +10,7 @@ This catches near-verbatim copies only: a copied sentence inside otherwise
 different paragraphs, a fact under :data:`MIN_WORDS` words, or a paraphrase
 is still the reviewer's to catch.
 
-A skill must stand alone for an agent that has only the installed CLI, so it
-may restate docs; skill files are compared only with the same plugin's
-other skill files and README. Intentional README repeats go in
-:data:`ALLOWED`, each with its reason.
+Intentional README repeats go in :data:`ALLOWED`, each with its reason.
 """
 
 from __future__ import annotations
@@ -78,26 +75,13 @@ def overlap(a: str, b: str) -> float:
     return len(first & second) / min(len(first), len(second)) if first and second else 0.0
 
 
-def _owner(path: Path) -> tuple[str, str | None]:
-    """``("skill"|"readme"|"doc", plugin)`` for a page."""
-    parts = path.relative_to(REPO_ROOT).parts
-    if "skills" in parts:
-        return "skill", parts[1]
-    if parts[0] == "packages":
-        return "readme", parts[1]
-    return "doc", None
-
-
-def comparable(first: Path, second: Path) -> bool:
-    """Skill files meet only their own plugin's skill files and README."""
-    (kind_a, plugin_a), (kind_b, plugin_b) = _owner(first), _owner(second)
-    if "skill" not in (kind_a, kind_b):
-        return True
-    return plugin_a == plugin_b and {kind_a, kind_b} <= {"skill", "readme"}
+def _is_readme(path: Path) -> bool:
+    """Whether ``path`` is a package README."""
+    return path.relative_to(REPO_ROOT).parts[0] == "packages"
 
 
 def _comparable_paragraphs(page: Path) -> list[str]:
-    allowed = tuple(ALLOWED) if _owner(page)[0] == "readme" else ()
+    allowed = tuple(ALLOWED) if _is_readme(page) else ()
     return paragraphs(page.read_text(encoding="utf-8"), allowed=allowed)
 
 
@@ -115,8 +99,6 @@ def copies(pages: list[Path]) -> list[str]:
         for block in repeats(texts[page])
     ]
     for first, second in itertools.combinations(pages, 2):
-        if not comparable(first, second):
-            continue
         for a, b in itertools.product(texts[first], texts[second]):
             if overlap(a, b) >= THRESHOLD:
                 where = f"{first.relative_to(REPO_ROOT)} and {second.relative_to(REPO_ROOT)}"
@@ -129,7 +111,7 @@ def test_no_paragraph_is_copied() -> None:
 
 
 def test_every_allowed_repeat_still_occurs() -> None:
-    readmes = [page.read_text(encoding="utf-8") for page in _pages() if _owner(page)[0] == "readme"]
+    readmes = [page.read_text(encoding="utf-8") for page in _pages() if _is_readme(page)]
     for opening in ALLOWED:
         assert any(f"\n{opening}" in text for text in readmes), f"stale ALLOWED entry: {opening}"
 

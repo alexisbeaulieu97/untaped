@@ -405,11 +405,11 @@ FRESH_CACHE = 'echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-cache" >> "$GITHUB_ENV"'
 # venv -> (what is installed into it, the smoke's exact expectations)
 WHEEL_MATRIX = {
     "bare": ('"$CORE"', '--expect ""'),
-    "awx": ('--find-links dist "untaped[awx] @ file://$PWD/$CORE"', "--expect awx,lint --skills"),
-    "all": ('--find-links dist "untaped[all] @ file://$PWD/$CORE"', "--skills"),
+    "awx": ('--find-links dist "untaped[awx] @ file://$PWD/$CORE"', "--expect awx,lint --agents"),
+    "all": ('--find-links dist "untaped[all] @ file://$PWD/$CORE"', "--agents"),
     "hello": (
         '--find-links dist "untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/hello-src" pytest',
-        "--expect hello,lint --skills",
+        "--expect hello,lint --agents",
     ),
     "broken": ('"$CORE" "$RUNNER_TEMP/hello-broken"', '--expect "" --quarantined hello'),
 }

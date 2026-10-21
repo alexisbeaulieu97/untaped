@@ -102,6 +102,8 @@ def _map(page: Map) -> list[str]:
         *(f"  {_option_line(option)}" for option in shared.options),
         "- Exit codes:",
         *(f"  - {code.code} {code.description}" for code in shared.exit_codes),
+        "  - A run that sees several failures exits with the most severe: "
+        + " > ".join(str(code) for code in shared.precedence),
         "",
         "## untaped (core) · details: `untaped agents untaped`",
         *(f"- `{line.path[0]}`{_mark(line.mark)}: {line.summary}" for line in page.core),

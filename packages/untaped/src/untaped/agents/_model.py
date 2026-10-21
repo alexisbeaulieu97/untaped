@@ -99,11 +99,16 @@ class ExitCodeLine:
 
 @dataclass(frozen=True)
 class Shared:
-    """What every command shares: the config file, the root options and the exit codes."""
+    """What every command shares: the config file, the root options and the exit codes.
+
+    ``precedence`` is the exit codes from most to least severe: a run that sees
+    several failures exits with the first.
+    """
 
     config_path: str
     options: tuple[Option, ...]
     exit_codes: tuple[ExitCodeLine, ...]
+    precedence: tuple[int, ...]
 
 
 @dataclass(frozen=True)

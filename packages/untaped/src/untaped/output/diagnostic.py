@@ -551,16 +551,34 @@ class Failure(Diagnostic, kind="untaped.failure"):
 
     level: ClassVar[Level] = "error"
 
-    item: _Omitted = None
-    category: ErrorCategory
-    system: str
+    item: Annotated[_Omitted, Field(description="The item that failed, on a per-item failure.")] = (
+        None
+    )
+    category: ErrorCategory = Field(
+        description="What kind of failure it is; it selects `exit_code` and `retryable`."
+    )
+    system: str = Field(
+        description=(
+            "Who is responsible: `untaped` (a bug or the command line), `local` (config, "
+            "files, the environment), `git`, `http`, or a service such as `awx`, which a "
+            "plugin may refine (`awx.scm`)."
+        )
+    )
     # ``retryable`` and ``exit_code`` defaults are never used: both are filled
     # from ``category`` before validation; they only keep them optional to build.
-    retryable: bool = False
-    message: str  # re-declared to keep the wire order: message before hint
-    hint: str | None = None
-    exit_code: int = 1
-    details: dict[str, JsonValue] = {}
+    retryable: bool = Field(
+        default=False, description="`true` only for an `unavailable` failure: retry later."
+    )
+    # Re-declared to keep the wire order: message before hint.
+    message: str = Field(description="The failure, in one line, as a person reads it.")
+    hint: str | None = Field(
+        default=None, description="What to do next, such as a command to run, or `null`."
+    )
+    exit_code: int = Field(default=1, description="The exit code this failure alone selects.")
+    details: dict[str, JsonValue] = Field(
+        default={},
+        description="Machine context, such as `status`, `url` and `attempts` (`{}` when none).",
+    )
 
     @classmethod
     def _reorder(cls, names: list[str], declared_by: Mapping[str, type]) -> list[str]:

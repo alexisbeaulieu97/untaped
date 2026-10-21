@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
+import pytest
 from cyclopts import App
 from pydantic import BaseModel, SecretStr
 
@@ -28,7 +29,7 @@ from untaped.sdk import (
 )
 from untaped.settings import get_settings
 from untaped.skill_stubs import SKILL_FILE, STUB_MARKER, digest
-from untaped.stability import Stability
+from untaped.stability import Stability, UntapedDeprecationWarning
 from untaped.testing import plugin_candidate
 
 # NOTE: section models are module-level on purpose. The settings registry
@@ -168,13 +169,15 @@ def skill_dir(tmp_path: Path, name: str) -> Path:
     return source
 
 
+def copy_asset(name: str, source: Path, description: str) -> SkillAsset:
+    """A copy skill: ``source`` is deprecated (removed in 12.0), so it warns."""
+    with pytest.warns(UntapedDeprecationWarning, match=r"SkillAsset\.__init__\(source=\)"):
+        return SkillAsset(name=name, source=source, description=description)
+
+
 def asset(tmp_path: Path, name: str) -> SkillAsset:
     """Return a skill asset double backed by a real source directory."""
-    return SkillAsset(
-        name=name,
-        source=skill_dir(tmp_path, name),
-        description=f"Teach agents how to use {name}.",
-    )
+    return copy_asset(name, skill_dir(tmp_path, name), f"Teach agents how to use {name}.")
 
 
 def check(

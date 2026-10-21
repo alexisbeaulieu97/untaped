@@ -38,11 +38,10 @@ FIRST_PARTY = (
 def markdown_files() -> list[Path]:
     """Every hand-written or generated Markdown page users and agents read."""
     files = sorted((REPO_ROOT / "docs").rglob("*.md"))
-    skills = sorted(REPO_ROOT.glob("packages/*/src/**/skills/**/*.md"))
     readmes = sorted(PACKAGES.glob("*/README.md"))
     root = (REPO_ROOT / name for name in ("README.md", "AGENTS.md", "CONTRIBUTING.md"))
     examples = sorted(REPO_ROOT.glob("examples/*/README.md"))
-    return [*files, *skills, *readmes, *examples, *root]
+    return [*files, *readmes, *examples, *root]
 
 
 def git(*args: str) -> str:
