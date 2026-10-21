@@ -14,8 +14,8 @@ GUIDES = [
     PACKAGE.parents[1] / "CONTRIBUTING.md",
     *sorted((PACKAGE / "src/untaped_awx/guides").glob("*.md")),
 ]
-# Command docstrings' Examples hold no inventory-scoped example today, so only
-# the guides are read.
+# Command docstrings' Examples hold no inventory-scoped list, export, get or
+# patch example today, so only the guides are read.
 EXAMPLES = [
     shlex.split(line)[2:]
     for guide in GUIDES

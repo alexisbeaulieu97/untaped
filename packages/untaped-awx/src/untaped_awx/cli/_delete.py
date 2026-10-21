@@ -29,6 +29,7 @@ from untaped_awx.cli.options import (
     NamesArgument,
     ParallelOption,
     YesOption,
+    offers_usage,
 )
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.records import DeleteOutcome
@@ -39,7 +40,7 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
         "Delete an explicitly selected batch after one complete preview.\n\n"
         "What a deleted resource loses: `untaped agents awx writes`."
     )
-    if spec.kind in {"JobTemplate", "WorkflowJobTemplate"}:
+    if offers_usage(spec):
         help_text += (
             " A workflow node that ran a deleted template runs nothing afterwards: "
             "`usage` lists the workflows that contain it."

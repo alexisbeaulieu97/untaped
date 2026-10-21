@@ -63,7 +63,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
 
     @app.command(name="patch")
     @writes
-    @_documented(_PATCH_DOC.format(extra=extra))
+    @_documented(_PATCH_DOC.replace("{extra}", extra))
     def patch_command(
         names: NamesArgument = None,
         /,

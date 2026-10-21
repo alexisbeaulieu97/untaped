@@ -47,7 +47,7 @@ from untaped_awx.cli.job_targets import (
 from untaped_awx.cli.job_targets import as_job_id as _as_job_id
 from untaped_awx.cli.job_targets import job_targets as _job_targets
 from untaped_awx.cli.lint_commands import register_lint_command
-from untaped_awx.cli.options import OrganizationOption, reject_duplicate_org_scope
+from untaped_awx.cli.options import OrganizationOption, offers_usage, reject_duplicate_org_scope
 from untaped_awx.cli.save_runner import run_save_batch
 from untaped_awx.cli.suite_commands import app as test_app
 from untaped_awx.cli.unified_templates_commands import app as unified_templates_app
@@ -690,6 +690,6 @@ for spec in ALL_SPECS:
     sub_app = make_resource_app(spec)
     if spec.kind == "WorkflowJobTemplate":
         register_nodes_command(sub_app)
-    if spec.kind in {"JobTemplate", "WorkflowJobTemplate"}:
+    if offers_usage(spec):
         register_usage_command(sub_app, spec)
     app.command(sub_app, name=spec.cli_name)

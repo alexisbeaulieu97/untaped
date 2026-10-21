@@ -36,7 +36,7 @@ from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 def _add_get(app: App, spec: AwxResourceSpec) -> None:
     help_text = "Fetch one or more resources by name, or by explicit AWX id."
-    if spec.kind in {"JobTemplate", "WorkflowJobTemplate"}:
+    if "survey_spec" in spec.sub_document_fields:
         help_text += (
             "\n\nA template includes its survey questions (`survey_spec`); password "
             "defaults read as `$encrypted$`."

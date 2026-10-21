@@ -2,8 +2,8 @@
 description: "Read before changing anything on an AWX controller: how a write previews and confirms, how a batch runs and fails, what is verified, and what can't be undone."
 ---
 
-Every write (a command marked as changing things) previews once and asks
-once, No by default. What to select: `untaped agents awx selecting`.
+Every write (a command marked `(changes things)` or `(destructive)`)
+previews once and asks once, No by default. What to select: `untaped agents awx selecting`.
 
 ## Preview and confirmation
 

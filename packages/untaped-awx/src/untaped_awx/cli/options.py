@@ -196,6 +196,11 @@ WITH_SCM_HELP = (
 )
 
 
+def offers_usage(spec: ResourceSpec) -> bool:
+    """``usage`` applies to the kinds a workflow node can run."""
+    return spec.kind in {"JobTemplate", "WorkflowJobTemplate"}
+
+
 def offers_with_scm(spec: ResourceSpec) -> bool:
     """``--with-scm`` applies to kinds that run a project's playbook."""
     return any(ref.field == "project" and ref.kind == "Project" for ref in spec.fk_refs)
