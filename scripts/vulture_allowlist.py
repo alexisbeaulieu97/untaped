@@ -59,6 +59,7 @@ GitHostRecord.helpers_first  # git.host rows
 
 # The git plugin's repo store API with no first-party caller yet (lock_worktree and
 # repair_worktree too, kept by their same-named helpers, until #773).
+AnchorId.ino  # compared whole: a folder's filesystem identity
 RepoStore.delete_refs
 RepoStore.worktrees_under  # workspace releases a missing project's worktrees (#773)
 

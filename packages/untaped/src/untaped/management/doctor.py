@@ -104,7 +104,7 @@ from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resol
 from untaped.token_store import pass_problem
 
 if TYPE_CHECKING:
-    from untaped.refs import Reference
+    from untaped.refs import Reference, RefHolder
     from untaped.store import Layout, Store
 
 _diag = Diagnostics()
@@ -752,48 +752,26 @@ def _stores_fix(reasons: set[str]) -> list[str] | None:
 
 
 def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
-    """Every install (and plugin object) holding store layouts, and whether this one does."""
+    """Every reference in the home, with its state, and whether this install is registered.
+
+    Installs hold store layouts; projects hold items. A missing project
+    warns; an unreadable one (its drive or share away) is listed, not warned.
+    """
     from untaped.refs import (  # noqa: PLC0415 - runs only in doctor
-        INSTALL,
         environment,
         install_holder,
         read_references,
         refs_dir,
     )
 
-    title = "install references"
+    title = "references"
     references = read_references()
     env = environment()
     mine = install_holder(env) if env is not None else None
-    parts: list[str] = []
-    warn = False
-    registered = False
-    for ref in references:
-        if ref.opaque is not None:
-            warn = True
-            if "newer" in ref.opaque:
-                advice = "; upgrade this install to prune"
-            elif ref.file == refs_dir():
-                advice = ", so nothing is pruned; check its permissions"
-            else:
-                advice = ", so nothing is pruned; delete it"
-            parts.append(f"{shown_path(ref.file)}: {ref.opaque}{advice}")
-            continue
-        text = ref.describe()
-        if ref.kind != INSTALL and ref.plugin:
-            text += f" (plugin {ref.plugin})"
-        if ref.holder == mine:
-            registered = True
-            text += " (this install)"
-        if not ref.live:
-            text += (
-                f": no untaped there any more; `untaped setup migrate-dirs` "
-                f"removes {shown_path(ref.file)}"
-            )
-        elif ref.pre_upgrade:
-            text += ": reference from before an upgrade; run any command from that install"
-            text += " to refresh it"
-        parts.append(text)
+    described = [_reference_text(ref, mine) for ref in references]
+    parts = [text for text, _ in described]
+    warn = any(warns for _, warns in described)
+    registered = any(ref.opaque is None and ref.holder == mine for ref in references)
     fix = None
     if env is None:
         parts.append("this run is from a source tree: it cannot be registered")
@@ -808,6 +786,49 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     # Never automatic: a lasting registration is a deliberate step (a one-off `uvx` run's
     # environment would otherwise pin layouts until its installer's cache is cleared).
     return _row("references", shell.name, _WARN if warn else _PASS, title, detail, fix)
+
+
+def _reference_text(ref: Reference, mine: RefHolder | None) -> tuple[str, bool]:
+    """How the ``references`` row names one reference, and whether it warns."""
+    from untaped.refs import INSTALL, PROJECT, refs_dir  # noqa: PLC0415 - runs only in doctor
+
+    if ref.opaque is not None:
+        if "newer" in ref.opaque:
+            advice = "; upgrade this install to prune"
+        elif ref.file == refs_dir():
+            advice = ", so nothing is pruned; check its permissions"
+        else:
+            advice = ", so nothing is pruned; delete it"
+        return f"{shown_path(ref.file)}: {ref.opaque}{advice}", True
+    if ref.kind == PROJECT:
+        return _project_text(ref)
+    text = ref.describe()
+    if ref.kind != INSTALL and ref.plugin:
+        text += f" (plugin {ref.plugin})"
+    if ref.holder == mine:
+        text += " (this install)"
+    if not ref.live:
+        text += (
+            f": no untaped there any more; `untaped setup migrate-dirs` "
+            f"removes {shown_path(ref.file)}"
+        )
+    elif ref.pre_upgrade:
+        text += ": reference from before an upgrade; run any command from that install"
+        text += " to refresh it"
+    return text, False
+
+
+def _project_text(ref: Reference) -> tuple[str, bool]:
+    """How the ``references`` row names a project, and whether it is missing (a warning)."""
+    from untaped.projects import anchor_state  # noqa: PLC0415 - runs only in doctor
+
+    where = shown_path(ref.anchor) if ref.anchor is not None else "?"
+    state = anchor_state(ref)
+    if state == "missing":
+        return f"{ref.describe()}: {where} is gone; it keeps what it holds until removed", True
+    if state == "unreadable":
+        return f"{ref.describe()}: {where} can't be read now (a drive or share away?)", False
+    return f"{ref.describe()} at {where}", False
 
 
 def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -> bool:

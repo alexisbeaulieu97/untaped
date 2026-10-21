@@ -47,6 +47,7 @@ from untaped.management import (
     build_root_doctor_app,
     build_root_plugin_app,
     build_root_profile_app,
+    build_root_project_app,
     build_root_setup_app,
     build_root_skills_app,
 )
@@ -312,6 +313,7 @@ def build_root_app(
         "agents": build_root_agents_app(result=result, root=lambda: root),
         "config": build_root_config_app(shell=SHELL_SPEC, result=result),
         "profile": build_root_profile_app(command=SHELL_NAME),
+        "project": build_root_project_app(),
         "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),
         "doctor": build_root_doctor_app(
             shell=SHELL_SPEC,

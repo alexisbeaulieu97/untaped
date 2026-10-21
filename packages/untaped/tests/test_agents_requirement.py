@@ -1,8 +1,8 @@
 """Tests for the folder's requirement on untaped and the ``nearest_pyproject`` walk under it.
 
 The requirement is read from the nearest ``pyproject.toml``'s standard
-tables only, never above the checkout root, and a malformed file or entry is
-no requirement at all.
+tables only, never above the farther of the checkout root and the project
+root, and a malformed file or entry is no requirement at all.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import pytest
 
 from untaped.agents import untaped_requirement
 from untaped.sdk import nearest_pyproject
+from untaped.testing import make_project
 
 
 def _project(folder: Path, text: str, *, git: bool = True) -> Path:
@@ -101,3 +102,40 @@ def test_a_malformed_file_or_entry_is_no_requirement(tmp_path: Path, text: str) 
 def test_no_pyproject_is_no_requirement(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     assert untaped_requirement(tmp_path) is None
+
+
+_PIN = '[project]\nname = "p"\ndependencies = ["untaped==11.1.*"]\n'
+
+
+def test_in_a_project_outside_a_checkout_the_walk_reaches_the_project(tmp_path: Path) -> None:
+    project = _project(tmp_path / "PROJ", _PIN, git=False)
+    make_project(project)
+    notes = project / "notes"
+    notes.mkdir()
+    assert nearest_pyproject(notes) == project / "pyproject.toml"
+    assert untaped_requirement(notes) is not None
+
+
+def test_from_a_worktree_in_a_project_the_walk_reaches_the_project(tmp_path: Path) -> None:
+    # As uv finds PROJ's project from PROJ/api: the project is the farther bound.
+    project = _project(tmp_path / "PROJ", _PIN, git=False)
+    make_project(project)
+    src = project / "api" / "src"
+    src.mkdir(parents=True)
+    (project / "api" / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+    assert nearest_pyproject(src) == project / "pyproject.toml"
+
+
+def test_in_a_project_inside_a_checkout_the_walk_reaches_the_checkout(tmp_path: Path) -> None:
+    app = _project(tmp_path / "app", _PIN)
+    ops = app / "ops"
+    make_project(ops)
+    assert nearest_pyproject(ops) == app / "pyproject.toml"
+
+
+def test_the_walk_never_climbs_above_both_roots(tmp_path: Path) -> None:
+    _project(tmp_path, _PIN, git=False)
+    project = tmp_path / "PROJ"
+    make_project(project)
+    (project / "notes").mkdir()
+    assert nearest_pyproject(project / "notes") is None

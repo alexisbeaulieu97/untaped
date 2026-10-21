@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -218,6 +219,13 @@ class _ProbingBackend(ScriptedPromptBackend):
         self.busy: str | None = None
 
     def confirm(self, message: str, *, default: bool) -> bool:
+        # From another thread: within one thread the lock is re-entrant.
+        worker = threading.Thread(target=self._probe)
+        worker.start()
+        worker.join()
+        return super().confirm(message, default=default)
+
+    def _probe(self) -> None:
         try:
             with StateWorkspaceStore(workspaces_dir=self.workspaces, lock_timeout=0.1).locked(
                 "J-1"
@@ -225,7 +233,6 @@ class _ProbingBackend(ScriptedPromptBackend):
                 pass
         except WorkspaceError as exc:
             self.busy = str(exc)
-        return super().confirm(message, default=default)
 
 
 def test_archive_holds_the_workspace_lock_from_check_to_removal(

@@ -25,16 +25,28 @@ from untaped.sdk import (
     ConfigError,
     UsageError,
     checkout_root,
+    committed_path,
     first_validation_error,
     read_structured_file,
 )
+from untaped_lint import SPEC
 from untaped_lint.domain.selection import parse_suppression
 from untaped_lint.records import RULE_ID
 
-DIRECTORY = ".untaped"
-FILE_NAME = "lint.yml"
-RELATIVE = f"{DIRECTORY}/{FILE_NAME}"
+
+def lint_file(root: Path) -> Path:
+    """The lint file under ``root``: ``<root>/.untaped/lint.yml``, lint's name there."""
+    return committed_path(SPEC, "lint.yml", root=root)
+
+
+def rules_dir(root: Path) -> Path:
+    """The default rules directory under ``root``: ``<root>/.untaped/lint/``."""
+    return committed_path(SPEC, "lint", root=root)
+
+
+RELATIVE = lint_file(Path()).as_posix()
 """Where the file sits under its root."""
+_FOLDER = lint_file(Path()).parent.name
 RESERVED = "untaped"
 """Core's prefix: no repository key may take it."""
 FIXTURES = "fixtures"
@@ -98,7 +110,7 @@ def find(start: Path) -> Path | None:
     start = start.resolve()
     top = checkout_root(start) or start
     for folder in (start, *start.parents):
-        candidate = folder / DIRECTORY / FILE_NAME
+        candidate = lint_file(folder)
         if candidate.is_file():
             return candidate
         if folder == top:
@@ -109,7 +121,7 @@ def find(start: Path) -> Path | None:
 def root_of(path: Path) -> Path:
     """The root a repo file's paths are relative to: the directory holding ``.untaped/``."""
     path = path.resolve()
-    return path.parent.parent if path.parent.name == DIRECTORY else path.parent
+    return path.parent.parent if path.parent.name == _FOLDER else path.parent
 
 
 def read(path: Path, *, installed: Iterable[str] = ()) -> RepoFile:

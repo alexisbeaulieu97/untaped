@@ -8,6 +8,7 @@ from untaped.management.config import build_root_config_app
 from untaped.management.doctor import build_root_doctor_app
 from untaped.management.plugins import build_root_plugin_app
 from untaped.management.profile import build_root_profile_app
+from untaped.management.project import build_root_project_app
 from untaped.management.setup import build_root_setup_app
 from untaped.management.skills import build_root_skills_app
 
@@ -18,6 +19,7 @@ __all__ = [
     "build_root_doctor_app",
     "build_root_plugin_app",
     "build_root_profile_app",
+    "build_root_project_app",
     "build_root_setup_app",
     "build_root_skills_app",
 ]

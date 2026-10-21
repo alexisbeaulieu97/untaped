@@ -2,6 +2,7 @@
 
 import os
 import stat
+import threading
 from contextlib import AbstractContextManager
 from pathlib import Path
 
@@ -175,17 +176,50 @@ def test_file_lock_holds_the_lock_file_and_releases_it(tmp_path: Path) -> None:
         pass
 
 
+def _in_thread(path: Path) -> BaseException | None:
+    """Take ``path`` with no wait from another thread; what it raised, if anything."""
+    raised: list[BaseException] = []
+
+    def take() -> None:
+        try:
+            with _locked(path, timeout=0):
+                pass
+        except BaseException as exc:
+            raised.append(exc)
+
+    worker = threading.Thread(target=take)
+    worker.start()
+    worker.join()
+    return raised[0] if raised else None
+
+
 def test_file_lock_contention_raises_the_busy_message(tmp_path: Path) -> None:
     lock = tmp_path / "state.lock"
 
-    with (
-        _locked(lock, timeout=1),
-        pytest.raises(ConfigError) as excinfo,
-        _locked(lock, timeout=0),
-    ):
-        pass  # pragma: no cover - never acquired
-    assert str(excinfo.value) == "busy lock"
-    assert isinstance(excinfo.value.__cause__, TimeoutError)
+    with _locked(lock, timeout=1):
+        raised = _in_thread(lock)
+    assert isinstance(raised, ConfigError)
+    assert str(raised) == "busy lock"
+    assert isinstance(raised.__cause__, TimeoutError)
+
+
+def test_file_lock_is_re_entrant_within_a_thread(tmp_path: Path) -> None:
+    lock = tmp_path / "state.lock"
+
+    with _locked(lock, timeout=0):
+        with _locked(lock, timeout=0):
+            assert isinstance(_in_thread(lock), ConfigError)
+        # The inner block's end keeps the outer one's hold.
+        assert isinstance(_in_thread(lock), ConfigError)
+    assert _in_thread(lock) is None
+
+
+def test_file_lock_re_entrance_follows_the_path_not_its_spelling(tmp_path: Path) -> None:
+    lock = tmp_path / "state.lock"
+
+    with _locked(lock, timeout=0), _locked(tmp_path / "." / "state.lock", timeout=0):
+        pass
+    assert _in_thread(lock) is None
 
 
 def test_file_lock_os_failure_raises_the_failed_message_with_the_reason(tmp_path: Path) -> None:

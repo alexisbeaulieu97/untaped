@@ -144,6 +144,12 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "same_origin",
         "yaml_mapping_indent",
     ),
+    "projects": (
+        "Project",
+        "committed_path",
+        "current_project",
+        "project_at",
+    ),
     "caches and stores": (
         "Cache",
         "Filled",

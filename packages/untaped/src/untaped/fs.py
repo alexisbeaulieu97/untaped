@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import threading
 import uuid
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, suppress
@@ -110,6 +111,11 @@ def _remove_staged(paths: Iterable[Path]) -> None:
             path.unlink(missing_ok=True)
 
 
+#: The locks this process holds, by absolute path and thread: how many blocks hold each.
+_HELD: dict[tuple[str, int], int] = {}
+_HELD_GUARD = threading.Lock()
+
+
 @contextmanager
 def file_lock(
     path: Path,
@@ -125,8 +131,22 @@ def file_lock(
     process still holds it, raises ``error(busy)`` with category ``unavailable``
     (retrying later can succeed); if the lock file cannot be opened,
     ``error(f"{failed}: <reason>")``. Errors raised by the block itself pass
-    through untouched.
+    through untouched. Re-entrant within a thread: taking a lock this thread
+    already holds (a project's, around a step that takes it again) only counts,
+    and the file is released when the outermost block ends.
     """
+    key = (os.path.abspath(path), threading.get_ident())
+    with _HELD_GUARD:
+        held = key in _HELD
+        if held:
+            _HELD[key] += 1
+    if held:
+        try:
+            yield
+        finally:
+            with _HELD_GUARD:
+                _HELD[key] -= 1
+        return
     lock = FileLock(str(path), timeout=timeout)
     try:
         lock.acquire()
@@ -136,9 +156,13 @@ def file_lock(
         raise busy_error from exc
     except OSError as exc:
         raise error(f"{failed}: {exc.strerror or exc}") from exc
+    with _HELD_GUARD:
+        _HELD[key] = 1
     try:
         yield
     finally:
+        with _HELD_GUARD:
+            del _HELD[key]
         lock.release()
 
 

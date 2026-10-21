@@ -5,8 +5,8 @@ Read from the project's own declaration only, the standard tables
 ``[dependency-groups]``), never an installer's files or environment paths.
 The nearest file decides: one that names no untaped means no requirement,
 however many files sit above it. A malformed file or requirement is no
-requirement, so it never fails a page. The projects design (#732) adds
-``.untaped/untaped-version`` as a second place to read it, here.
+requirement, so it never fails a page. The walk stops at the farther of the
+checkout root and the project root (:func:`~untaped.skills.nearest_pyproject`).
 """
 
 from __future__ import annotations

@@ -890,15 +890,16 @@ def _panel_rows(root: App) -> dict[str, list[str]]:
 @pytest.mark.parametrize(
     ("candidates", "panels"),
     [
-        pytest.param([], ["Commands", "Global options"], id="bare"),
+        # `project` is experimental, so core's own commands fill that panel too.
+        pytest.param([], ["Commands", "Experimental", "Global options"], id="bare"),
         pytest.param(
             [plugin_candidate(make_spec("demo"))],
-            ["Commands", "Plugins", "Global options"],
+            ["Commands", "Plugins", "Experimental", "Global options"],
             id="eager",
         ),
         pytest.param(
             [make_candidate(make_spec("demo"), name="other")],
-            ["Commands", "Global options"],
+            ["Commands", "Experimental", "Global options"],
             id="quarantined",
         ),
     ],

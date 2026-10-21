@@ -16,6 +16,8 @@ command runs and needs at least one row, so use it on a read command or add
 | `auth status` | `untaped.token_source` (one per secret, `field` naming it) |
 | `profile list` | `untaped.profile` |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
+| `project list` | `untaped.project` (`name`, `path`, `state` `present`, `unreadable`, `missing` or `unknown`, `current`, `id`, `holds` (items per `plugin.store`), `detail`; experimental) |
+| `project init` | `untaped.project_outcome` (`name`, `path`, `id`, `action` `created`, `unchanged`, `recorded`, `repaired` or `new id`, `detail`; experimental) |
 | `skills list` | `untaped.skill` |
 | `skills status` | `untaped.installed_skill` |
 | `skills update`, `skills remove` | `untaped.skill_outcome` |

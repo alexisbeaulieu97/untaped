@@ -3,7 +3,7 @@
 Every plugin — first-party or third-party — imports untaped helpers
 from this module only. It carries the composition set and the supported runtime helpers (output,
 errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, UI, batch,
-concurrency, shared options, message wording, record bases, setting marks, token sources,
+concurrency, shared options, message wording, record bases, setting marks, token sources, projects,
 caches, stores and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks are a major release.
 
@@ -141,6 +141,7 @@ from untaped.plugins.registry import (
     SkillAsset,
     plugin_dir,
 )
+from untaped.projects import Project, committed_path, current_project, project_at
 from untaped.prompts import PromptChoice
 from untaped.records import (
     AbsolutePath,
@@ -396,6 +397,11 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "safe_path_segment",
     "same_origin",
     "yaml_mapping_indent",
+    # projects
+    "Project",
+    "committed_path",
+    "current_project",
+    "project_at",
     # caches and stores
     "Cache",
     "Filled",

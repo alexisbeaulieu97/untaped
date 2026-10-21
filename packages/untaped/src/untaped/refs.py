@@ -8,9 +8,14 @@ holding untaped's own distribution, whatever installed it), its version and
 the layout of every store its composition declares, and each later run of
 that install refreshes the file on its first store open. A reference is live
 while its anchor still holds an ``untaped-*.dist-info``, or, with no anchor,
-until its holder removes it. A reference of a kind this untaped does not know
-(a later untaped's) is always live and holds the targets it can read, and
-nothing in it pauses cleanup (a newer file format still does). A dead
+until its holder removes it. A project (:mod:`untaped.projects`) writes
+``refs/project-<id>.json`` naming its folder and the folder's filesystem
+identity (``anchor_id``); it is always live here, since only its own service
+decides when a project is gone. Install and project references are read
+strictly: a target this untaped cannot read makes the file opaque, never
+silently shorter. A reference of a kind this untaped does not know (a later
+untaped's) is always live and holds the targets it can read, and nothing in
+it pauses cleanup (a newer file format still does). A dead
 reference counts for nothing, but its file is never another process's to
 delete: ``setup register --remove`` or the previewed ``setup migrate-dirs``
 row removes it.
@@ -52,6 +57,10 @@ _LOG = logging.getLogger("untaped.refs")
 FORMAT = "1"
 #: The holder kind of a registered install.
 INSTALL = "install"
+#: The holder kind of a project (:mod:`untaped.projects`).
+PROJECT = "project"
+#: The kinds this untaped writes, read strictly.
+_OWN_KINDS = frozenset({INSTALL, PROJECT})
 #: Seconds a writer waits for ``refs/.lock``.
 _WAIT = 10.0
 _LOCK = ".lock"
@@ -112,17 +121,35 @@ class RefHolder(BaseModel):
         return f"{self.kind} {self.name}"
 
 
+class AnchorId(BaseModel):
+    """A folder's filesystem identity, ``(st_dev, st_ino)``: the same folder under any spelling."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    dev: int
+    ino: int
+
+    @classmethod
+    def of(cls, path: Path) -> AnchorId:
+        """The identity of ``path`` (following symlinks); raises :class:`OSError`."""
+        found = path.stat()
+        return cls(dev=found.st_dev, ino=found.st_ino)
+
+
 @dataclass(frozen=True)
 class Reference:
     """One holder's file, as read.
 
     ``opaque`` says why it cannot be used (unreadable, or written by a newer
     untaped): an opaque reference counts as live and pauses pruning.
+    ``anchor_id`` is the anchor's filesystem identity when the holder records
+    one (a project does).
     """
 
     file: Path
     holder: RefHolder | None = None
     anchor: Path | None = None
+    anchor_id: AnchorId | None = None
     plugin: str | None = None
     version: str | None = None
     targets: tuple[RefTarget, ...] = ()
@@ -138,8 +165,9 @@ class Reference:
         """Whether it still counts: opaque, not an install, anchorless, or its anchor holds untaped.
 
         An anchor that exists but cannot be listed counts as live. Only an
-        install's liveness is known here; a later untaped's kind of holder
-        (a project, say) is never judged dead, so never offered for removal.
+        install's liveness is known here; a project, whatever its state, and
+        a later untaped's kind of holder are never judged dead, so never
+        offered for removal.
         """
         if self.opaque is not None or self.kind != INSTALL or self.anchor is None:
             return True
@@ -171,6 +199,8 @@ class Reference:
 
         if self.kind == INSTALL and self.anchor is not None:
             return f"untaped {self.version or '?'} at {shown_path(self.anchor)}"
+        if self.kind == PROJECT and self.anchor is not None:
+            return f"project {self.anchor.name}"
         return self.file.name if self.holder is None else self.holder.describe()
 
 
@@ -248,14 +278,22 @@ def read_reference(file: Path) -> Reference:
     if holder is None:
         why = "no holder" if data.get("holder") is None else "the holder is malformed"
         return Reference(file, opaque=f"unreadable ({why})")
-    if holder.kind == INSTALL:
-        # An install is this untaped's own kind: anything it cannot read pauses cleanup.
+    anchor_id = None
+    if holder.kind in _OWN_KINDS:
+        # This untaped's own kinds: anything it cannot read pauses cleanup.
         if not isinstance(targets, list):
             return Reference(file, holder=holder, opaque="unreadable (no targets)")
         try:
             read = tuple(RefTarget.model_validate(target) for target in targets)
         except ValidationError:
             return Reference(file, holder=holder, opaque="unreadable (a target is malformed)")
+        if holder.kind == PROJECT:
+            if not isinstance(anchor, str) or not anchor:
+                return Reference(file, holder=holder, opaque="unreadable (no anchor)")
+            try:
+                anchor_id = AnchorId.model_validate(data.get("anchor_id"))
+            except ValidationError:
+                return Reference(file, holder=holder, opaque="unreadable (no anchor identity)")
     else:
         # Another kind (a later untaped's) is live and holds what it can read; it never pauses.
         read = _readable(targets)
@@ -263,6 +301,7 @@ def read_reference(file: Path) -> Reference:
         file,
         holder=holder,
         anchor=Path(anchor) if isinstance(anchor, str) and anchor else None,
+        anchor_id=anchor_id,
         plugin=_text(data.get("plugin")) or None,
         version=_text(data.get("version")) or None,
         targets=read,
@@ -441,6 +480,7 @@ def write_reference(
     targets: Sequence[RefTarget],
     *,
     anchor: Path | None = None,
+    anchor_id: AnchorId | None = None,
     plugin: str | None = None,
     version: str | None = None,
 ) -> Path:
@@ -449,10 +489,13 @@ def write_reference(
     ``untaped.testing`` exports it to fake another holder in the hermetic
     home: an ``anchor`` is live while it holds an ``untaped-*.dist-info``
     folder, and a holder without one lives until its file is removed.
+    ``anchor_id`` records the anchor's filesystem identity (a project's).
     """
     data: dict[str, object] = {"untaped": FORMAT, "holder": holder.model_dump()}
     if anchor is not None:
         data["anchor"] = str(anchor)
+    if anchor_id is not None:
+        data["anchor_id"] = anchor_id.model_dump()
     if plugin is not None:
         data["plugin"] = plugin
     if version is not None:

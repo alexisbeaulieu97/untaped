@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -73,14 +74,24 @@ def test_one_repo_under_two_url_forms_records_once() -> None:
 def test_a_held_workspace_lock_makes_others_wait_then_fail(tmp_path: Path) -> None:
     holder = StateWorkspaceStore(workspaces_dir=tmp_path)
     other = StateWorkspaceStore(workspaces_dir=tmp_path, lock_timeout=0.1)
+    raised: list[WorkspaceError] = []
+
+    def take(name: str) -> None:  # another thread: within one thread the lock is re-entrant
+        try:
+            with other.locked(name):
+                pass
+        except WorkspaceError as exc:
+            raised.append(exc)
+
     with holder.locked("w"):
-        with pytest.raises(WorkspaceError) as caught, other.locked("w"):
-            pass
-        with other.locked("v"):  # another workspace is not held
-            pass
-    assert (caught.value.category, caught.value.system) == ("unavailable", "local")
-    assert str(caught.value) == "workspace w is busy (another untaped process)"
-    assert caught.value.hint
+        for name in ("w", "v"):  # another workspace is not held
+            worker = threading.Thread(target=take, args=(name,))
+            worker.start()
+            worker.join()
+    [caught] = raised
+    assert (caught.category, caught.system) == ("unavailable", "local")
+    assert str(caught) == "workspace w is busy (another untaped process)"
+    assert caught.hint
     with other.locked("w"):  # free again
         pass
 

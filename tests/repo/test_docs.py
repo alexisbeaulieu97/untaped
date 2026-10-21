@@ -481,6 +481,7 @@ DOCS_PAGES = [
     "lint.md",
     "plugin-skills.md",
     "plugins.md",
+    "projects.md",
     "reference/agent-pages.md",
     "reference/config.md",
     "reference/conventions.md",

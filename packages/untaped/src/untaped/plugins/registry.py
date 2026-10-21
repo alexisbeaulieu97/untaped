@@ -70,6 +70,7 @@ RESERVED_PLUGIN_NAMES = frozenset(
         "profiles",
         "default",
         "shell",
+        "state",
     }
 )
 
@@ -79,6 +80,7 @@ ROOT_MANAGEMENT_COMMANDS = (
     "agents",
     "config",
     "profile",
+    "project",
     "skills",
     "doctor",
     "setup",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from untaped.management.doctor import collect_doctor_rows
 from untaped.plugins.registry import PluginSpec
 from untaped.refs import RefHolder, RefTarget
 from untaped.store import Store
-from untaped.testing import plugin_candidate, write_reference
+from untaped.testing import make_project, plugin_candidate, write_reference
 
 
 def _install(root: Path, version: str = "11.1.0") -> Path:
@@ -182,17 +184,56 @@ def test_every_holder_is_listed(tmp_path: Path) -> None:
         [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
         plugin="workspace",
     )
-    project = _install(tmp_path / "project", "9.0.0")  # a later untaped's kind, no plugin
-    write_reference(RefHolder(kind="project", name="pay"), [], anchor=project, version="1.0.0")
+    job = _install(tmp_path / "job", "9.0.0")  # a later untaped's kind, no plugin
+    write_reference(RefHolder(kind="acme_job", name="pay"), [], anchor=job, version="1.0.0")
     row = _row(_store(tmp_path / "data.db"), check="references")
     detail = str(row["detail"])
     assert row["status"] == "pass"  # a dead reference is information, not a warning
     assert f"untaped 11.0.0 at {gone}: no untaped there any more" in detail
     assert f"untaped 11.1.0 at {old}: reference from before an upgrade" in detail
     assert "workspace pay (plugin workspace)" in detail
-    assert "project pay" in detail and "project pay (" not in detail
-    assert "project pay:" not in detail  # neither dead nor from before an upgrade
+    assert "acme_job pay" in detail and "acme_job pay (" not in detail
+    assert "acme_job pay:" not in detail  # neither dead nor from before an upgrade
     assert "(this install)" in detail
+
+
+def test_projects_are_listed_with_their_state(tmp_path: Path) -> None:
+    refs.register([])
+    present = tmp_path / "PROJ-1"
+    make_project(present)
+    gone = tmp_path / "PROJ-2"
+    make_project(gone)
+    shutil.rmtree(gone)
+    row = _row(_store(tmp_path / "data.db"), check="references")
+    detail = str(row["detail"])
+    assert row["title"] == "references"
+    assert f"project PROJ-1 at {present}" in detail
+    assert f"project PROJ-2: {gone} is gone" in detail
+    assert row["status"] == "warn"  # a missing project still holds what it held
+
+
+def test_an_unreadable_project_is_information(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    refs.register([])
+    away = tmp_path / "PROJ-3"
+    make_project(away)
+    shutil.rmtree(away)
+    # Its parent now reads as another device: an ejected drive, not a deleted folder.
+    real_stat = Path.stat
+
+    def stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        found = real_stat(self, follow_symlinks=follow_symlinks)
+        if self == tmp_path:
+            fields = list(found)
+            fields[2] = found.st_dev + 1  # st_dev
+            return os.stat_result(fields)
+        return found
+
+    monkeypatch.setattr(Path, "stat", stat)
+    row = _row(_store(tmp_path / "data.db"), check="references")
+    assert f"project PROJ-3: {away} can't be read now" in str(row["detail"])
+    assert row["status"] == "pass"
 
 
 def test_a_newer_reference_warns(tmp_path: Path) -> None:

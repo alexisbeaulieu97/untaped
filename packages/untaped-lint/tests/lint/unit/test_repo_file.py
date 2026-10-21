@@ -11,8 +11,9 @@ from textwrap import dedent
 import pytest
 
 from untaped.sdk import ConfigError, UsageError
-from untaped.testing import compose_with
+from untaped.testing import compose_with, make_project
 from untaped_lint.application import repo_file
+from untaped_lint.application.subjects import declared_plugins
 from untaped_lint.testing import conformance, repo_rule, run, run_rule, tree
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -89,6 +90,44 @@ def test_the_file_is_found_walking_up_to_the_checkout_root(tmp_path: Path) -> No
     assert found == (tmp_path / ".untaped" / "lint.yml").resolve()
     assert repo_file.root_of(found) == tmp_path.resolve()
     assert repo_file.find(tmp_path.parent) is None
+
+
+def _lint_file(root: Path) -> Path:
+    (root / ".untaped").mkdir(parents=True, exist_ok=True)
+    file = root / ".untaped" / "lint.yml"
+    file.write_text("version: 1\nname: house\n", encoding="utf-8")
+    return file
+
+
+def _plugin_project(root: Path) -> None:
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "p"\n[project.entry-points."untaped.plugins"]\nacme = "acme:SPEC"\n',
+        encoding="utf-8",
+    )
+
+
+def test_in_a_project_the_file_is_found_as_before(tmp_path: Path) -> None:
+    # PROJ/notes, PROJ/api/src and app/ops: the lint file keeps its checkout bound,
+    # and the file sits beside project.json in a project's own .untaped/.
+    project = tmp_path / "PROJ"
+    make_project(project)
+    _plugin_project(project)
+    beside = _lint_file(project)
+    notes, src = project / "notes", project / "api" / "src"
+    notes.mkdir()
+    src.mkdir(parents=True)
+    (project / "api" / ".git").mkdir()
+    assert repo_file.find(project) == beside.resolve()
+    assert repo_file.find(notes) is None  # no checkout: the start folder only, as before
+    assert repo_file.find(src) is None  # the checkout api/ bounds it, as before
+    assert declared_plugins(notes) == declared_plugins(src) == ["acme"]  # pyproject: the project
+    app = tmp_path / "app"
+    (app / ".git").mkdir(parents=True)
+    _plugin_project(app)
+    in_app = _lint_file(app)
+    make_project(app / "ops")
+    assert repo_file.find(app / "ops") == in_app.resolve()
+    assert declared_plugins(app / "ops") == ["acme"]
 
 
 def test_two_modules_make_one_host_under_the_files_key(tmp_path: Path) -> None:

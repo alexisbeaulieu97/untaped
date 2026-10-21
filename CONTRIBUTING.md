@@ -490,6 +490,11 @@ _Avoid_: option (a command-line flag).
 **Profile**: a named set of settings in `config.yml`; the selected profile is
 layered over `default`.
 
+**Project**: a folder whose `.untaped/` holds `project.json`, found by walking
+up from the working directory; the home records it by the folder's
+filesystem identity, so a move or a copy is told apart from the same folder.
+_Avoid_: workspace (workspace's own folders), checkout (the nearest `.git`).
+
 **Global option**: one of the options that work anywhere in a command
 (`--profile`, `--verbose`, `--quiet`, `--deprecated`); the code calls them
 root options (`_root_options.py`).
