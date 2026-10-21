@@ -45,6 +45,7 @@ SPEC = PluginSpec(
     app_factory=build_app,
     help="Talk to Ansible Automation Platform / AWX.",
     settings=AwxSettings,
+    guides=files("untaped_awx") / "guides",
     skills=(
         SkillAsset(
             name="untaped-awx",

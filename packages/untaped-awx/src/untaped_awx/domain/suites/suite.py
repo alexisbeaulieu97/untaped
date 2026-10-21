@@ -188,8 +188,13 @@ class ExpectationResult(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    check: CheckName
-    expected: str
+    check: CheckName = Field(description="What was checked.")
+    expected: str = Field(
+        description=(
+            "What the case asked for: `<= 0` for `changed`, `*: failed <= 0` for a `hosts` "
+            "bound, `successful, 0 changed` for `idempotent`."
+        )
+    )
     actual: str | None = Field(
         description=(
             "What decided the check: the job status, a log line, a count, a failed task; null when "
@@ -197,7 +202,7 @@ class ExpectationResult(BaseModel):
             "has no summary."
         )
     )
-    passed: bool
+    passed: bool = Field(description="Whether the check held.")
     node: str | None = Field(
         default=None,
         description="The workflow node whose job the check read (null: the case's own job).",
@@ -755,8 +760,8 @@ class Baseline(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    result: CaseStatus
-    job_id: int | None = None
+    result: CaseStatus = Field(description="The case's verdict in the baseline.")
+    job_id: int | None = Field(default=None, description="The baseline's job.")
     system: str | None = Field(
         default=None,
         description="`failure.system` of the baseline row (null: it passed, or an older file).",
@@ -778,19 +783,33 @@ class CaseResult(Record, kind="awx.test_result"):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    suite: str
-    case: str
+    suite: str = Field(description="The suite's `name`.")
+    case: str = Field(description="The case's key under `cases`.")
     result: CaseStatus | None = Field(
         description="Null only on a `removed` row: the baseline ran the case, this run did not."
     )
-    job_status: str | None = None
-    job_id: int | None = None
+    job_status: str | None = Field(
+        default=None,
+        description=(
+            "The job's last status read (null: no job was read); on a `timeout` row the status "
+            "before the cancel, unless the job ended first."
+        ),
+    )
+    job_id: int | None = Field(
+        default=None, description="The launched job (null: the launch failed before AWX made one)."
+    )
     rerun_job_id: int | None = Field(
         default=None, description="The `idempotent` rerun's job (null: no rerun was launched)."
     )
-    duration_s: float | None = None
-    started_at: UtcTimestamp | None = None
-    finished_at: UtcTimestamp | None = None
+    duration_s: float | None = Field(
+        default=None, description="Seconds from the launch to the verdict."
+    )
+    started_at: UtcTimestamp | None = Field(
+        default=None, description="When the job started (null: AWX has not set it)."
+    )
+    finished_at: UtcTimestamp | None = Field(
+        default=None, description="When the job finished (null: AWX has not set it)."
+    )
     failure: Annotated[CaseFailure | None, NOT_COUNTED] = Field(
         default=None,
         description=(
@@ -799,7 +818,13 @@ class CaseResult(Record, kind="awx.test_result"):
             "`still_failing` one)."
         ),
     )
-    expectations: tuple[ExpectationResult, ...] = ()
+    expectations: tuple[ExpectationResult, ...] = Field(
+        default=(),
+        description=(
+            "One entry per check, in order: `status`, each `log` entry, `changed`, each `hosts` "
+            "bound, each node's checks, each `failed_tasks` entry, then `idempotent`."
+        ),
+    )
     hosts: dict[str, HostSummary] | None = Field(
         default=None, description="Each host's PLAY RECAP counters (null: not read)."
     )
@@ -812,9 +837,16 @@ class CaseResult(Record, kind="awx.test_result"):
             "A workflow case's nodes as they ran (null: a job case, or the nodes were not read)."
         ),
     )
-    job_url: str | None = None
-    scm_branch: str | None = None
-    scm_revision: str | None = None
+    job_url: str | None = Field(
+        default=None, description="The job's page in the controller web UI."
+    )
+    scm_branch: str | None = Field(
+        default=None, description="The branch, tag or commit the job ran (AWX's `scm_branch`)."
+    )
+    scm_revision: str | None = Field(
+        default=None,
+        description="The commit the job checked out: compare it with `git rev-parse HEAD`.",
+    )
     baseline: Baseline | None = Field(
         default=None,
         description="The case in the baseline run (null: no baseline, or a `new` case).",

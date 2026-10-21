@@ -8,7 +8,7 @@ between controllers and profiles, and keep it in a repository.
 - [Export](#export)
 - [Apply](#apply)
 - [Workflow templates and their nodes](#workflow-templates-and-their-nodes)
-- Applying from a git ref: [source-ref.md](source-ref.md#apply-from-a-git-ref)
+- Applying from a git ref: `untaped agents awx source-ref`
 - [Copy a template's configuration](#copy-a-templates-configuration)
 
 ## The document

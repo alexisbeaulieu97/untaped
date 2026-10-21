@@ -64,7 +64,7 @@ test` is experimental: after upgrading untaped, revalidate and rebaseline.
 Use the agent profile when one exists (`--profile agent`).
 
 1. Without a suite, `untaped awx test init "Deploy app"` (`--workflow` for a
-   workflow) writes a starter; edit its cases from the examples.
+   workflow) writes a starter; edit its cases from `untaped agents awx test-examples`.
 2. Once per task, save the base branch's results outside the checkout:
    `untaped awx test run --scm-branch main --format json > /tmp/baseline.json`
    (exit 1 is expected when `main` already fails some cases).
@@ -130,10 +130,9 @@ previews once and asks once, No by default.
 | [references/specs.md](references/specs.md) | writing or applying export documents or workflow node graphs |
 | [references/jobs.md](references/jobs.md) | launching, syncing, waiting on, cancelling or inspecting jobs |
 | [references/lint.md](references/lint.md) | linting documents or the controller, reading a finding or its `fix`, or writing a rule over AWX resources |
-| [references/test-suites.md](references/test-suites.md) | writing or validating a suite, or a workflow suite |
-| [references/test-cases.md](references/test-cases.md) | writing a case: its launch payload, `!ref`, expectations and timeouts |
-| [references/test-results.md](references/test-results.md) | reading a test run that exited non-zero, or a baseline comparison |
-| [references/test-result-fields.md](references/test-result-fields.md) | a result row's `failure`, `evidence`, `hosts`, `nodes` or `expectations` field |
-| [references/source-ref.md](references/source-ref.md) | testing or applying specs at a git ref (`--source-ref`), or cleaning up temporary copies |
-| [references/agent-profile.md](references/agent-profile.md) | setting up the AWX user and profile an agent runs as |
-| [examples/](examples/) | starting a suite (smoke, variants, negative, idempotent, workflow) |
+| `untaped agents awx test-suites` | writing or validating a suite, or a workflow suite |
+| `untaped agents awx test-cases` | writing a case: its launch payload, `!ref`, expectations and timeouts |
+| `untaped agents awx test-examples` | starting a suite (smoke, variants, negative, idempotent, workflow) |
+| `untaped agents awx test-results` | reading a test run that exited non-zero, or a baseline comparison; `untaped plugin schema awx.test_result` for a row's fields |
+| `untaped agents awx source-ref` | testing or applying specs at a git ref (`--source-ref`), or cleaning up temporary copies |
+| `untaped agents awx agent-profile` | setting up the AWX user and profile an agent runs as |

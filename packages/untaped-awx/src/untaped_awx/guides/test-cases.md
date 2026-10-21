@@ -1,12 +1,11 @@
-# Test cases
+---
+description: "Read before writing a case of an awx test suite: how launch names and defaults merge, !ref, how expect checks merge and match (hosts, failed_tasks, idempotent), and timeouts."
+---
 
-What one case of a suite holds: its launch payload, resource references,
-expectations and timeouts. The suite around it is in
-[test-suites.md](test-suites.md).
+What one case of a suite holds. `untaped awx schema AwxTestSuite` lists a
+case's fields; the suite around it is in `untaped agents awx test-suites`.
 
-`untaped awx schema AwxTestSuite` lists a case's fields.
-
-## `launch`: the launch payload
+## `launch`
 
 `launch` holds the fields of AWX's job template launch request:
 
@@ -56,9 +55,7 @@ launch:
   organization-scoped kind is looked up as `launch` names are.
 - Plain mappings are never treated as references.
 
-## `expect`: what the job must produce
-
-`untaped awx schema AwxTestSuite` lists the checks.
+## `expect`
 
 Every check must hold. Against `defaults.expect`:
 
@@ -69,13 +66,14 @@ Every check must hold. Against `defaults.expect`:
 - whatever the case leaves out is inherited.
 
 `status: failed` tests an intended failure: add `failed_tasks` naming the
-task and message that prove why (see `negative.yml`). `validate` warns about
-a `status: failed` case without them.
+task and message that prove why (the negative example). `validate` warns
+about a `status: failed` case without them.
+
+Log, `changed`, `hosts` and `failed_tasks` checks read what AWX writes from
+the job's events, so they wait until AWX has saved them. A job AWX is still
+saving is an `awx.controller` error (exit 5, retry later), never a pass.
 
 ### `hosts`
-
-A `hosts` entry sets upper bounds on one host's PLAY RECAP counters; a
-counter it leaves out is not checked:
 
 ```yaml
 expect:
@@ -91,22 +89,16 @@ expect:
 - **The named host wins.** A host's bound for a counter is its own entry's
   when set, else `"*"`'s: `web1: {changed: 3}` loosens `"*": {changed: 0}`
   for `web1` only.
-- Bounds are numbers (`{changed: ">0"}` is invalid).
 - A named host must be in the job's host summaries, so a misspelt host fails
   its check.
 - A job on more than 500 hosts keeps 500 in the result, but the checks read
   every host over a bound, so no host past the cut can hide a failure.
 
-Log, `changed`, `hosts` and `failed_tasks` checks read what AWX writes from
-the job's events, so they wait until AWX has saved them. A job AWX is still
-saving is an `awx.controller` error (exit 5, retry later), never a pass.
-
 ### `failed_tasks`
 
 An entry matches a failed task, as the result's
-`failure.evidence.failed_tasks` lists them, by `task`, `msg` or `matches`:
+`failure.evidence.failed_tasks` lists them:
 
-- An entry needs at least one part, and every part must match the same task.
 - Every entry must match some failed task; other failed tasks do not fail
   the check.
 - `ignore_errors` failures and failures a `rescue` block handled do not
@@ -116,8 +108,6 @@ An entry matches a failed task, as the result's
 - A job that succeeded has no failed task, so its entries fail.
 
 ### `idempotent`
-
-`idempotent: true` proves a second run changes nothing:
 
 - Once the case passed every other check, the same resolved payload is
   launched again; the result adds `rerun_job_id`.
@@ -130,13 +120,10 @@ An entry matches a failed task, as the result's
   interrupted.
 - An idempotent case must expect `status: successful`.
 
-[test-results.md](test-results.md#idempotent-cases) says how a rerun fails.
+How a rerun fails: `untaped agents awx test-results`.
 
 ## Timeouts and parallelism
 
-- A case waits `--timeout` when given, else its own `timeout`, else
-  `defaults.timeout`, else `awx.test_timeout_seconds` (1800 seconds).
-- A job still running then, or when polling fails or Ctrl-C stops the run, is
-  cancelled; `--no-cancel` leaves it running.
-- `--parallel N` (default `awx.test_parallel`, 4) runs that many cases at
-  once.
+- A job still running at the case's timeout, or when polling fails or Ctrl-C
+  stops the run, is cancelled; `--no-cancel` leaves it running.
+- `--parallel N` (default `awx.test_parallel`) runs that many cases at once.

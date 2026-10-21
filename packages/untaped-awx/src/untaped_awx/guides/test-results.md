@@ -1,19 +1,12 @@
-# Test results (`awx.test_result`)
+---
+description: "Read when an awx test run exits non-zero or compares with a baseline: what the exit code means, which system a failure blames and what to do, how reruns and workflow cases fail, and each baseline change."
+---
 
 `untaped awx test run` prints one `awx.test_result` row per case, in the
 order the cases are declared, then a summary on stderr
 (`4 cases: 3 pass, 1 fail`). Read the rows with `--format json` (or `yaml`
 or `pipe`): the table leaves out the evidence and the host summaries.
-
-- [Exit code](#exit-code)
-- [Which system is responsible, and what to do](#which-system-is-responsible-and-what-to-do)
-- The record's fields (`failure`, `evidence`, `hosts`, `nodes`, `expectations`): [test-result-fields.md](test-result-fields.md)
-- [Idempotent cases](#idempotent-cases)
-- [Workflow cases](#workflow-cases)
-- [Comparing with a baseline](#comparing-with-a-baseline)
-- Runs with temporary copies: [source-ref.md](source-ref.md#what-a-run-with-copies-reports)
-- [Verdicts](#verdicts)
-- [Useful follow-ups](#useful-follow-ups)
+`untaped plugin schema awx.test_result` describes every field.
 
 A failing row, abridged:
 
@@ -58,10 +51,9 @@ code first:
 
 With `--format json`, stderr is JSON Lines: an error that stops the run has
 `category`, `system`, `retryable`, `hint` and `exit_code`. With a baseline,
-a failure the baseline already had does not fail the run
-([Comparing with a baseline](#comparing-with-a-baseline)).
+a failure the baseline already had does not fail the run (below).
 
-## Which system is responsible, and what to do
+## Which system is responsible
 
 Every case that did not pass has a `failure` whose `system` says who must
 act. The first row that matches decides:
@@ -91,7 +83,9 @@ act. The first row that matches decides:
   pull, capacity, a runner crash;
 - a job canceled outside the run, or failed with a controller explanation
   (the job was lost), or failed before AWX saved its events;
-- a check that needed the job's events while AWX was still saving them;
+- a check that needed the job's events while AWX was still saving them
+  (`AWX is still saving the events of job 4412, …: only its status was
+  checked`), never checked on partial data;
 - a job that never left `pending`/`waiting` before the timeout.
 
 `awx.expectation` covers:
@@ -104,12 +98,25 @@ act. The first row that matches decides:
   summaries cannot show was unhandled. A rerun reads the same recap, so
   instead of retrying, expect a task that fails unhandled, or check the log.
 
+Its `failure.message` joins the failed checks, such as `expected <= 0
+changed tasks, got 3; no log line contains 'PLAY RECAP'`. A check whose data
+could not be read makes the case an `error` when nothing else failed, and a
+`note` otherwise.
+
 `awx.playbook` also covers a failure with no failed task at all (a syntax
 error or a missing role, shown in the log tail).
 
 A failure that is not AWX's keeps its own `system`: `untaped` for a bug in
 untaped, `local` for local setup. Before blaming the change, confirm the job
 ran it: `scm_revision` must be the commit you pushed.
+
+`failed_tasks` in the evidence leaves out `ignore_errors` failures and
+failures a `rescue` block handled: a host that counts N failures failed on
+its last N failed tasks, the ones before were rescued (likewise for
+`unreachable`). When a host has no summary, or its counters do not account
+for its failed tasks, all of them are listed. It is `null` when the events
+could not be read or were still being saved; read them later with `untaped
+awx jobs events ID`.
 
 ## Idempotent cases
 
@@ -158,40 +165,24 @@ Approvals:
   1). Set `approvals`. With `--no-cancel` the message gives the `untaped awx
   jobs cancel … --kind workflow_job` command.
 - AWX refusing to approve (a missing Approve role, see
-  [agent-profile.md](agent-profile.md)): `awx.credentials` (exit 4).
+  `untaped agents awx agent-profile`): `awx.credentials` (exit 4).
 - A node that ran a project or inventory update itself and failed is
   `awx.scm` or `awx.inventories`, whatever the case expects.
 
 ## Comparing with a baseline
 
 `--compare FILE` compares the run with the saved `--format json` or
-`--format pipe` output of an earlier run. Save the base branch's results once
-per task, outside the checkout so no commit picks the file up, then compare
-every iteration:
-
-```bash
-untaped awx test run --scm-branch main --format json > /tmp/baseline-task.json
-untaped awx test run --scm-branch HEAD --compare /tmp/baseline-task.json --format json
-```
+`--format pipe` output of an earlier run; `--baseline REF` runs every
+selected case on `REF` first and compares with that (an `idempotent` case
+then launches 4 jobs).
 
 - The baseline run exits 1 when the base branch already fails some cases;
   those become `still_failing` rows.
-- `--baseline REF` runs every selected case on `REF` first (as
-  `--scm-branch REF`), then as asked, and compares. An `idempotent` case then
-  launches 4 jobs.
 - `--compare` and `--baseline` cannot be combined (exit 2). A missing file
   exits 2; a file that is not such output fails before any launch (exit 1).
 
 Rows are matched by `suite` and `case`, and each gains `baseline` and
 `change`:
-
-| Field | Meaning |
-|---|---|
-| `result` | The case's verdict in the baseline. |
-| `job_id` | The baseline's job. |
-| `system` | The baseline's `failure.system`; `null` when it passed. |
-| `category` | The baseline's `failure.category`; `null` likewise. |
-| `node` | The baseline's `failure.evidence.node`; `null` for a job case. |
 
 | `change` | Meaning | Fails the run |
 |---|---|---|
@@ -218,12 +209,12 @@ change (`compared with the baseline: 1 regression, 1 fixed, 3 pass`).
 | `error` | untaped could not launch, follow or read the job: AWX refused the launch or ignored fields (the case keeps any `job_id`), polling failed, or a needed log could not be downloaded. |
 | `timeout` | The job was unfinished at the case's timeout and was cancelled unless `--no-cancel`. Read `evidence.log_tail` for where it hung; raise `timeout` only when the job is legitimately slow. |
 
-## Useful follow-ups
+## Follow-ups
 
-```bash
-untaped awx test run --case deploy-smoke/web --format json   # rerun one case
-untaped awx test run --show-logs                             # evidence on stderr
-untaped awx jobs logs 4410 --grep 'fatal:'                   # search a job's log
-untaped awx jobs logs 812 --kind project_update              # a failed update's log
-untaped awx jobs events 4410 --filter event=runner_on_failed # failed task events
+```console
+$ untaped awx test run --case deploy-smoke/web --format json
+$ untaped awx test run --show-logs
+$ untaped awx jobs logs 4410 --grep 'fatal:'
+$ untaped awx jobs logs 812 --kind project_update
+$ untaped awx jobs events 4410 --filter event=runner_on_failed
 ```
