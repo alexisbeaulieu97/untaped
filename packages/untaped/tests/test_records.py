@@ -1233,7 +1233,7 @@ def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:
 #: The keys, in order, of the dict rows core's management commands wrote
 #: before each declared a model: a model keeps its row's wire order.
 _ROW_KEYS = {
-    # C1b added `field`, at the end, so the old keys keep their order.
+    # `field` came later, at the end, so the old keys keep their order.
     "untaped.auth_outcome": ["section", "profile", "store", "action", "detail", "error", "field"],
     "untaped.token_source": ["profile", "section", "source", "field"],
     "untaped.config_migration_outcome": ["profile", "from", "to", "action", "detail"],

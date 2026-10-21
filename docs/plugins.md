@@ -11,11 +11,13 @@ A plugin imports from `untaped.sdk` and nothing else in `untaped`, except
 `untaped.contracts` and `untaped.testing` for [contracts](./contracts.md);
 see [SDK stability](./reference/conventions.md#sdk-stability). Any plugin,
 first-party or not, may also import another plugin's declared `api` module,
-under the rules in [Depending on another plugin](./reference/conventions.md#depending-on-another-plugin).
+under the rules in
+[Depending on another plugin](./reference/conventions.md#depending-on-another-plugin).
 
 [`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
 complete, tested plugin with commands; copy it to start one. To fill another
-plugin's contract, start with [`untaped plugin new`](#filling-another-plugins-contract).
+plugin's contract, start with
+[`untaped plugin new`](#filling-another-plugins-contract).
 
 ## Plugin package
 
@@ -95,10 +97,8 @@ A plugin that connects to a service marks the settings it can't run without;
 `NeedsSetup` goes on an `X | None` field defaulting to `None`, `Secret` on each
 top-level `SecretStr | None` secret, naming the variables tried after it and,
 optionally, a command `setup plan` suggests: `token: Annotated[SecretStr |
-None, NeedsSetup, Secret(env=("ACME_TOKEN",))] = None`. `untaped` adds each one's
+None, NeedsSetup, Secret(env=("ACME_TOKEN",))] = None`. `untaped` adds each a
 command setting (`acme.token_command`); a misplaced mark quarantines the plugin.
-`connected_client(config, section="acme", base_url=config.base_url)` sends the
-`token` secret (else the only one) as the bearer; see its docstring.
 
 A complete plugin module, with a nullary app factory (leave it out for a
 plugin with no commands), one packaged skill and the `SPEC` the entry point

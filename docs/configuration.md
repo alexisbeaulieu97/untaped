@@ -373,8 +373,10 @@ login, set `github.token_command` as above.
 A token in `<section>.token` (or any other secret in its own setting) is stored
 in plain text in `config.yml`. Keeping it there is deprecated, and it is still
 read until the major its warning names; `UNTAPED_<SECTION>__TOKEN` avoids the
-file altogether. Loading one warns once per run, `config set <section>.token` warns, `untaped doctor` warns with
-`untaped auth migrate` as the fix, and `untaped setup` no longer offers it.
+file altogether. Loading one warns once per run, `config set` of any secret
+`auth set` can store warns (naming that `auth set`), `untaped doctor` warns
+with `untaped auth migrate` as the fix, and `untaped setup` no longer offers
+it.
 
 ## Debug logs
 

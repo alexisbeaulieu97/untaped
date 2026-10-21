@@ -33,7 +33,14 @@ from test_management.support import (
 )
 from untaped import bootstrap
 from untaped.plugins.registry import PluginSpec
-from untaped.sdk import HttpTransportError, NeedsSetup, Secret, connection_check, online_check
+from untaped.sdk import (
+    HttpError,
+    HttpTransportError,
+    NeedsSetup,
+    Secret,
+    connection_check,
+    online_check,
+)
 from untaped.stability import forget_notices
 from untaped.testing import (
     CliResult,
@@ -424,3 +431,39 @@ def test_an_unmarked_plugin_keeps_its_screen_status(
     assert setup.exit_code == 0, setup.output
     row = next(row for row in backend.ran[0].init()[0].rows if row.name == "wiz")
     assert row.status == status
+
+
+def test_a_plaintext_secret_not_named_token_warns_with_auth_migrate(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    hook: {url: https://hook, signing_key: plain}\n",
+    )
+    row = _doctor(specs=(make_spec("hook", settings=HookProfile),))["setup:hook"]
+    assert row["status"] == "warn"
+    assert "plain-text hook.signing_key" in row["detail"]
+    assert (row["fix"][-2:], row["automatic"]) == (["auth", "migrate"], True)
+
+
+class PairProfile(BaseModel):
+    """Two secrets, neither named ``token`` (section ``pair``)."""
+
+    url: Annotated[str | None, NeedsSetup] = None
+    api_key: Annotated[SecretStr | None, NeedsSetup, Secret(env=("PAIR_KEY",))] = None
+    signing_key: Annotated[SecretStr | None, Secret()] = None
+
+
+def test_a_rejected_secret_not_named_token_names_its_own_auth_set(
+    _isolated_config: Path,
+) -> None:
+    rejected = HttpError("HTTP 401", status_code=401, url="https://pair/me", system="pair")
+    check = online_check("pair.api", section="pair", probe=_raising(rejected))
+    spec = make_spec("pair", settings=PairProfile, doctor_checks=(check,))
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    pair: {url: https://pair, api_key_command: [echo, k]}\n",
+    )
+    row = _doctor("--online", specs=(spec,), exit_code=1)["pair.api:pair"]
+    assert row["fix"][-3:] == ["auth", "set", "pair.api_key"]
+    assert "(the secret can also come from pair.api_key_command or $PAIR_KEY)" in row["detail"]

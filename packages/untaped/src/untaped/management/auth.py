@@ -24,7 +24,7 @@ from typing import Annotated, Any, Literal
 
 from cyclopts import App, Parameter
 
-from untaped.auth import auth_command, auth_target, token_override_env
+from untaped.auth import auth_command, auth_target, token_env_names, token_override_env
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -110,22 +110,27 @@ class _Secret:
 def _secrets(result: CompositionResult) -> list[_Secret]:
     """Every secret ``auth`` can store: each marked ``Secret``, or an unmarked ``token``.
 
-    An unmarked model's ``token`` counts only beside its ``token_command``.
+    An unmarked model's ``token`` counts only beside its ``token_command``,
+    whether or not the legacy fallback sees a service in it (a model with no
+    ``base_url`` is still served).
     """
     found: list[_Secret] = []
     for registered in result.plugins:
         spec = registered.spec
-        marks = plugin_marks(spec)
-        if marks is None:
-            continue
         model = settings_model(spec)
-        for field in marks.secrets:
-            command = auth_command(model, field.key)
-            target = auth_target(model, spec.name, field.key)
-            if command is None or target is None or field.secret is None:
-                continue
-            env = field.secret.env
-            found.append(_Secret(spec.name, field.key, command, target, env, marks))
+        marks = plugin_marks(spec)
+        env = (
+            {field.key: field.secret.env for field in marks.secrets if field.secret}
+            if marks
+            else {}
+        )
+        if (marks is None or marks.legacy) and "token" in model.model_fields:
+            env.setdefault("token", token_env_names(model.model_construct()))
+        for key, names in env.items():
+            command = auth_command(model, key)
+            target = auth_target(model, spec.name, key)
+            if command is not None and target is not None:
+                found.append(_Secret(spec.name, key, command, target, names, marks))
     return found
 
 
@@ -294,12 +299,12 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Move every plaintext token in ``config.yml``, in every profile, to a store.
+        """Move every plaintext secret in ``config.yml``, in every profile, to a store.
 
-        Each token is stored and read back before it is removed from the
+        Each secret is stored and read back before it is removed from the
         file; one that fails stays where it was, and the command exits
         non-zero, with the code of the most severe failure's category. It
-        prints no token. A keychain may show an unlock prompt on the user's
+        prints no secret. A keychain may show an unlock prompt on the user's
         screen; a locked `pass` store exits 5 with a hint naming the unlock
         command.
         """
@@ -434,6 +439,7 @@ def _unset(
             f"remove it yourself\n{hint(f'config unset {setting}')}",
             category="invalid",
         )
+    _refuse_other_entry(secret, profile, preset[1])
     where = preset[0].describe(preset[1])
     row = row.model_copy(update={"store": where})
     if dry_run:
@@ -452,6 +458,22 @@ def _unset(
     else:
         _diag.success(f"deleted {secret.label} from {where} (profile {profile})")
     emit(row.model_copy(update={"action": deleted}), fmt=fmt, columns=columns)
+
+
+def _refuse_other_entry(secret: _Secret, profile: str, entry: str) -> None:
+    """Refuse to delete an entry another secret owns (a command setting copied by hand).
+
+    Only the part after the profile is compared, so an entry a renamed
+    profile still names is deleted as before.
+    """
+    own = secret.entry(profile).rpartition("/")[2]
+    if entry.rpartition("/")[2] != own:
+        setting = f"{secret.section}.{secret.command}"
+        raise ConfigError(
+            f"{setting} in profile {profile} reads the entry {entry}, not one for "
+            f"{secret.label}; remove it yourself\n{hint(f'config unset {setting}')}",
+            category="invalid",
+        )
 
 
 def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -> None:
@@ -527,7 +549,7 @@ def _migrate(
         is not None
     ]
     if not pending:
-        _diag.info("no plaintext tokens in the config; nothing to move")
+        _diag.info("no plaintext secrets in the config; nothing to move")
         emit([], fmt=fmt, columns=columns)
         return
     chosen = pick_store(store)
@@ -541,16 +563,18 @@ def _migrate(
         chosen.preflight()
     rows, failures = _move_all(pending, chosen, dry_run=dry_run)
     emit(rows, fmt=fmt, columns=columns)
+    # "tokens" while every one is a token, as before; "secrets" once another is among them.
+    noun = "token" if all(secret.field == "token" for _, secret, _ in pending) else "secret"
     if failures:
         worst = most_severe(failures)
         raise ConfigError(
-            f"{plural(len(failures), 'token')} could not be moved and stay in the config",
+            f"{plural(len(failures), noun)} could not be moved and stay in the config",
             category=worst.category,
             system=worst.system,
             hint=next((exc.hint for exc in failures if exc.hint), None),
         )
     if not dry_run:
-        _diag.success(f"moved {plural(len(rows), 'token')} to {chosen.name}")
+        _diag.success(f"moved {plural(len(rows), noun)} to {chosen.name}")
 
 
 def _move_all(

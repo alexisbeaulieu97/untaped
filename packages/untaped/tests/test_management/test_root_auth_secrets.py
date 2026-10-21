@@ -20,7 +20,7 @@ from pydantic import BaseModel, SecretStr
 from test_management.stores import FakeStores, install_fake_stores
 from test_management.support import make_spec, write_config
 from untaped import bootstrap
-from untaped.auth import clear_token_cache
+from untaped.auth import TokenCommand, clear_token_cache
 from untaped.sdk import NeedsSetup, Secret
 from untaped.settings import get_config_section
 from untaped.stability import forget_notices
@@ -44,6 +44,13 @@ class PairProfile(BaseModel):
     signing_key: Annotated[SecretStr | None, Secret()] = None
 
 
+class OnlyTokenProfile(BaseModel):
+    """Unmarked, with only ``token`` and ``token_command`` (section ``onlytok``)."""
+
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
 class KeyProfile(BaseModel):
     """One secret, not named ``token`` (section ``keyed``)."""
 
@@ -63,6 +70,7 @@ def _auth(*args: str, input: str | None = None) -> CliResult:
         make_spec("duo", settings=DuoProfile),
         make_spec("pair", settings=PairProfile),
         make_spec("keyed", settings=KeyProfile),
+        make_spec("onlytok", settings=OnlyTokenProfile),
     )
     root = bootstrap.build_root_app(candidates=tuple(plugin_candidate(s) for s in specs))
     return invoke_cli(root.meta, ["auth", *args], input=input)
@@ -121,14 +129,24 @@ def test_several_secrets_and_no_token_refuse_a_bare_name(stores: FakeStores, ver
 
 
 def test_an_entry_an_earlier_release_wrote_still_serves_the_token(
-    _isolated_config: Path, stores: FakeStores
+    _isolated_config: Path, tmp_path: Path, stores: FakeStores
 ) -> None:
     """``<profile>/<section>`` stays the token's entry, so nothing written before moves."""
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
-    assert _auth("set", "duo", "--stdin", input="old\n").exit_code == 0
+    entry = "untaped/default/duo"
+    write_config(
+        _isolated_config,
+        f"profiles:\n  default:\n    duo:\n      token_command: [pass, show, {entry}]\n",
+    )
+    stores.state.write_text(json.dumps({entry: "old"}))
+    gpg = tmp_path / "password-store" / f"{entry}.gpg"
+    gpg.parent.mkdir(parents=True)
+    gpg.write_text("encrypted")
     status = _auth("status", "--format", "json")
+    clear_token_cache()
+    settings = get_config_section("duo", DuoProfile)
+    assert settings.token is not None and settings.token.get_secret_value() == "old"
     rows = {(row["section"], row["field"]): row["source"] for row in json.loads(status.stdout)}
-    assert rows[("duo", "token")] == "pass (untaped/default/duo)"
+    assert rows[("duo", "token")] == f"pass ({entry})"
     assert rows[("duo", "webhook_secret")] == "none"
     unset = _auth("unset", "duo", "--yes", "--format", "json")
     assert unset.exit_code == 0, unset.output
@@ -149,6 +167,7 @@ def test_migrate_moves_each_plaintext_secret_to_its_own_entry(
         ("token", "moved"),
         ("webhook_secret", "moved"),
     }
+    assert "moved 2 secrets to pass" in result.stderr
     assert stores.entries() == {
         "untaped/default/duo": "t",
         "untaped/default/duo.webhook_secret": "w",
@@ -174,3 +193,38 @@ def test_config_set_of_another_secret_names_its_own_auth_set(
     stderr = " ".join(result.stderr.split())
     assert "plain-text duo.webhook_secret in config.yml is deprecated" in stderr
     assert "use untaped auth set duo.webhook_secret" in stderr.replace("`", "")
+
+
+def test_an_unmarked_plugin_with_only_a_token_command_is_served(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    """No ``base_url``, so no legacy service: ``auth`` still serves its ``token``."""
+    write_config(_isolated_config, "profiles:\n  default:\n    onlytok: {token: t}\n")
+    status = _auth("status", "--format", "json")
+    rows = {(row["section"], row["field"]) for row in json.loads(status.stdout)}
+    assert ("onlytok", "token") in rows
+    migrate = _auth("migrate", "--format", "json")
+    assert migrate.exit_code == 0, migrate.output
+    assert stores.entries() == {"untaped/default/onlytok": "t"}
+    again = _auth("set", "onlytok", "--stdin", input="u\n")
+    assert again.exit_code == 0, again.output
+    assert stores.entries() == {"untaped/default/onlytok": "u"}
+
+
+def test_unset_refuses_an_entry_another_secret_owns(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    """A command setting copied by hand from the token never deletes the token's entry."""
+    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    assert _auth("set", "duo", "--stdin", input="tok\n").exit_code == 0
+    path = _isolated_config
+    data = yaml.safe_load(path.read_text())
+    duo = data["profiles"]["default"]["duo"]
+    duo["webhook_secret_command"] = duo["token_command"]
+    path.write_text(yaml.safe_dump(data))
+    result = _auth("unset", "duo.webhook_secret", "--yes")
+    assert result.exit_code == 1, result.output
+    assert "reads the entry default/duo, not one for the duo.webhook_secret secret" in (
+        " ".join(result.stderr.split())
+    )
+    assert stores.entries() == {"untaped/default/duo": "tok"}

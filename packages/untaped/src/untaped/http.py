@@ -16,6 +16,8 @@ disable verification entirely (escape hatch — leaves traffic open to MITM).
 from __future__ import annotations
 
 import email.utils
+import functools
+import inspect
 import logging
 import shlex
 import ssl
@@ -616,19 +618,40 @@ class _FromConfig:
 
 _FROM_CONFIG: Any = _FromConfig()
 
+
 CONNECTED_BY_NAME = deprecated_behaviour(
     "connected-client-by-name", removed_in=12, replacement="base_url= and bearer= values"
 )
 """``connected_client`` reading ``base_url`` and ``token`` off the settings by field name."""
 
-_BY_NAME_DEFAULTS: dict[str, object] = {
-    "required": ("base_url", "token"),
-    "base_url_field": "base_url",
-    "bearer_token_field": "token",
-}
+#: ``connected_client``'s parameters for each kind of call: values, or the deprecated read by name.
+_BY_VALUE = ("bearer", "require_token")
+_BY_NAME = ("required", "base_url_field", "bearer_token_field")
+
+
+def _one_kind[**P, R](function: Callable[P, R]) -> Callable[P, R]:
+    """Refuse a ``connected_client`` call that mixes values with the read by name.
+
+    Decided by the parameters the call names, so passing an old parameter's
+    default still counts.
+    """
+    signature = inspect.signature(function)
+
+    @functools.wraps(function)
+    def call(*args: P.args, **kwargs: P.kwargs) -> R:
+        passed = signature.bind_partial(*args, **kwargs).arguments
+        if "base_url" in passed:
+            if mixed := [f"{name}=" for name in _BY_NAME if name in passed]:
+                raise TypeError(f"connected_client: pass base_url= or {_join(mixed)}, not both")
+        elif mixed := [f"{name}=" for name in _BY_VALUE if name in passed]:
+            raise TypeError(f"connected_client: pass base_url= with {_join(mixed)}")
+        return function(*args, **kwargs)
+
+    return call
 
 
 @deprecated_parameters
+@_one_kind
 def connected_client(
     config: BaseModel,
     *,
@@ -666,24 +689,15 @@ def connected_client(
     to disable. The client's failures are attributed to ``section``.
 
     Leaving out ``base_url`` reads the settings by field name, the way
-    ``required``, ``base_url_field`` and ``bearer_token_field`` describe:
-    the deprecated behaviour :data:`CONNECTED_BY_NAME`. Passing ``base_url``
-    with any of those refuses.
+    ``required`` (default ``("base_url", "token")``), ``base_url_field``
+    (``"base_url"``) and ``bearer_token_field`` (``"token"``) describe: the
+    deprecated behaviour :data:`CONNECTED_BY_NAME`. Passing ``base_url``
+    with any of those three, or ``bearer`` or ``require_token`` without it,
+    refuses.
     """
-    by_name = {
-        name: value
-        for name, value in (
-            ("required", required),
-            ("base_url_field", base_url_field),
-            ("bearer_token_field", bearer_token_field),
-        )
-        if value != _BY_NAME_DEFAULTS[name]
-    }
     if base_url is _FROM_CONFIG:
-        if bearer is not _FROM_CONFIG:
-            raise TypeError("connected_client: pass base_url= with bearer=")
         CONNECTED_BY_NAME.warn(
-            f"calling connected_client for {section} without base_url=", stacklevel=3
+            f"calling connected_client for {section} without base_url=", stacklevel=4
         )
         url, token = _read_by_name(
             config,
@@ -693,9 +707,6 @@ def connected_client(
             bearer_token_field=bearer_token_field,
         )
     else:
-        if by_name:
-            names = ", ".join(f"{name}=" for name in by_name)
-            raise TypeError(f"connected_client: pass base_url= or {names}, not both")
         url, token = _values(
             config, section=section, base_url=base_url, bearer=bearer, require_token=require_token
         )
@@ -743,7 +754,8 @@ def _values(
 ) -> tuple[str, str]:
     """The URL and the bearer token (``""`` for none), or "<section> is not set up"."""
     has_secret = True
-    if bearer is _FROM_CONFIG:
+    from_config = bearer is _FROM_CONFIG
+    if from_config:
         has_secret, bearer = _default_bearer(config)
     url = _text(base_url)
     token = _text(bearer) if has_secret else ""
@@ -753,16 +765,27 @@ def _values(
         if unset
     ]
     if blank:
-        raise _not_set_up(config, section=section, blank=blank)
+        # A bearer passed, or not needed, is no setting left to set up.
+        own_secret = from_config and require_token
+        raise _not_set_up(config, section=section, blank=blank, own_secret=own_secret)
     return url, token
 
 
-def _not_set_up(config: BaseModel, *, section: str, blank: Sequence[str]) -> ConfigError:
-    """ "<section> is not set up", naming its unset marked fields, else the blank parameters."""
+def _not_set_up(
+    config: BaseModel, *, section: str, blank: Sequence[str], own_secret: bool
+) -> ConfigError:
+    """ "<section> is not set up", naming its unset marked fields, else the blank parameters.
+
+    Without ``own_secret`` (a bearer passed, or none required) the secret a
+    bare section names is not among them.
+    """
     from untaped.setup_status import unset_fields  # noqa: PLC0415 - imports the registry
 
     marks = declared_marks(type(config))
     fields = [] if marks is None else list(unset_fields(config, marks, section=section))
+    secret = None if marks is None or own_secret else marks.default_secret
+    if secret is not None:
+        fields = [field for field in fields if field.path != secret.path]
     if fields:
         keys = [f"{section}.{field.key}" for field in fields]
         needs = [

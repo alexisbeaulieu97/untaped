@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -29,11 +30,18 @@ from untaped.settings import (
     reset_config_registry,
 )
 
-#: The deprecated read by field name (no ``base_url=``), which these tests keep covering.
-_BY_NAME = pytest.mark.filterwarnings(
-    "ignore:calling connected_client:DeprecationWarning",
-    r"ignore:connected_client\(required=\):DeprecationWarning",
-)
+
+@pytest.fixture
+def _by_name() -> Iterator[None]:
+    """The deprecated read by field name (no ``base_url=``), which these tests keep covering.
+
+    Each such call warns; ``required=`` warns on its own.
+    """
+    with pytest.warns(DeprecationWarning, match=r"without base_url=|connected_client\(required="):
+        yield
+
+
+_BY_NAME = pytest.mark.usefixtures("_by_name")
 
 
 class DemoSettings(BaseModel):

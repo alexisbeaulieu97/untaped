@@ -155,20 +155,51 @@ def test_a_model_without_a_secret_builds_a_tokenless_client_when_none_is_require
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    ("kwargs", "named"),
     [
-        {"base_url": _URL, "required": ("base_url",)},
-        {"base_url": _URL, "bearer_token_field": None},
-        {"base_url": _URL, "base_url_field": "url"},
-        {"bearer": "t"},
+        ({"required": ("base_url",)}, "required="),
+        ({"required": ("base_url", "token")}, "required="),
+        ({"bearer_token_field": "token"}, "bearer_token_field="),
+        ({"base_url_field": "url", "required": ()}, "required= and base_url_field="),
     ],
-    ids=["required", "bearer_token_field", "base_url_field", "bearer-without-base_url"],
+    ids=["required", "required-as-its-old-default", "bearer_token_field", "two"],
 )
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_passing_both_kinds_refuses(kwargs: dict[str, object]) -> None:
+def test_base_url_with_an_old_parameter_refuses(kwargs: dict[str, object], named: str) -> None:
+    """Even an old parameter's former default counts as passed."""
     config = Marked(base_url=_URL, token=SecretStr("t"))
-    with pytest.raises(TypeError, match="connected_client: pass base_url="):
+    with (
+        pytest.warns(DeprecationWarning, match=r"connected_client\("),
+        pytest.raises(TypeError, match=f"pass base_url= or {named}, not both"),
+    ):
+        connected_client(config, section="demo", base_url=_URL, http=_HTTP, **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "named"),
+    [
+        ({"bearer": "t"}, "bearer="),
+        ({"require_token": True}, "require_token="),
+        ({"require_token": False, "bearer": None}, "bearer= and require_token="),
+    ],
+    ids=["bearer", "require_token", "both"],
+)
+def test_a_new_parameter_without_base_url_refuses(kwargs: dict[str, object], named: str) -> None:
+    """Without ``base_url=`` the old read would ignore them."""
+    config = Marked(base_url=_URL, token=SecretStr("t"))
+    with pytest.raises(TypeError, match=f"pass base_url= with {named}$"):
         connected_client(config, section="demo", http=_HTTP, **kwargs)  # type: ignore[arg-type]
+
+
+def test_a_client_needing_no_token_does_not_name_it_as_unset() -> None:
+    with pytest.raises(ConfigError) as caught:
+        connected_client(Marked(), section="demo", base_url=None, require_token=False, http=_HTTP)
+    assert str(caught.value).endswith(": demo.base_url is not set")
+
+
+def test_a_passed_bearer_is_not_named_as_unset() -> None:
+    with pytest.raises(ConfigError) as caught:
+        connected_client(Marked(), section="demo", base_url="", bearer="t", http=_HTTP)
+    assert str(caught.value).endswith(": demo.base_url is not set")
 
 
 def test_leaving_base_url_out_keeps_the_old_read_and_warns() -> None:
