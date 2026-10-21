@@ -59,7 +59,32 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
         ] = False,
         controls: WriteControls = CONTROL_DEFAULTS,
     ) -> None:
-        """Replace specified fields on an existing selection, with one confirmation."""
+        """Replace specified fields on an existing selection, with one confirmation.
+
+        Every selected resource gets the same fields. `--set` values are
+        JSON-decoded (`true`, numbers, arrays, objects, `null`); a field the
+        record holds as a string stays a string unless the value is a JSON
+        object or array, so `scm_branch=1.10` stays `"1.10"`. A value replaces
+        the whole top-level field: nested maps are not merged, an empty map
+        clears one, lists keep their order, omitted fields are unchanged. An
+        unknown field close to a known one is refused with "did you mean"
+        (exit 2); other unknown names are sent with a warning.
+
+        A foreign key's integer is an AWX id and a string a name in the
+        selected scope; keep a numeric-looking name a string with JSON quotes
+        (`--set 'inventory="123"'`). An ambiguous, missing or out-of-scope
+        reference fails before any write. `patch` cannot create, rename,
+        reparent or retarget, nor change identity, kind or read-only fields:
+        use `apply` and `rename`. An inventory's `update_cache_timeout` is
+        seconds (`0` is valid) and changing it leaves `update_on_launch`
+        alone. How the writes run: `untaped agents awx writes`.
+
+        Examples
+        --------
+        ```console
+        $ untaped awx job-templates patch --filter name__icontains=web --set verbosity=2 --dry-run
+        ```
+        """
         selection.require_source(names)
         with report_errors():
             controls = controls.validated()

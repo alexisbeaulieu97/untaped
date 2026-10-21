@@ -46,7 +46,19 @@ def _add_rename(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Rename one resource in place, after a preview, and verify the new name."""
+        """Rename one resource in place, after a preview, and verify the new name.
+
+        The current name and a name already used in the same scope (the
+        organization, or none for an org-less workflow) are refused. The
+        template is re-read after the write: a name AWX did not take fails the
+        row (exit 1). The `awx.rename_outcome` row carries `old_name`.
+
+        Examples
+        --------
+        ```console
+        $ untaped awx job-templates rename Deploy "Deploy app" --organization Default --dry-run
+        ```
+        """
         with report_errors(), open_context() as ctx:
             (selected,) = select_resources(
                 ctx, spec, [source], by_id=by_id, organization=organization

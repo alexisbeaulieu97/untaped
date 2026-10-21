@@ -40,7 +40,8 @@ untaped awx job-templates edit --filter name__icontains=deploy --field verbosity
 
 Targets are picked by name inside a scope, by id, by query or from a pipe.
 `patch` sets the same values on every selected resource; `edit` opens the
-selection in your editor as one multi-document file. Writes preview and ask first; see the skill.
+selection in your editor as one multi-document file. Writes preview and ask first
+(`untaped agents awx writes`).
 
 ## Export and apply documents
 
@@ -77,8 +78,8 @@ With files, `lint` checks apply documents before you apply them, resolving
 references in the batch (`--offline`) or on the controller too; without, it
 checks what the controller holds, from a snapshot kept for an hour. Findings
 share `untaped lint`'s ids, `--ignore` and exit codes (3 on an error), and a
-repository can lint its documents offline with `untaped lint`. The skill
-lists the rules.
+repository can lint its documents offline with `untaped lint`.
+`untaped agents awx linting` lists the rules.
 
 ## Launch and follow jobs
 
@@ -110,7 +111,9 @@ act, so an environment failure is not blamed on your change.
 
 ## Reference
 
-The [packaged skill](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-awx/src/untaped_awx/skills/untaped-awx/SKILL.md) is the full reference: every workflow, safety rule and pitfall. Install it for your agent with `untaped skills install awx --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)); `untaped awx COMMAND --help` lists each command's options.
+`untaped agents awx` lists every command with its options, the settings, and the guides on selecting and changing resources, export and apply documents, workflow node graphs, launching jobs, linting, and writing and reading test suites; the untaped you run generates it.
+
+`untaped skills install awx --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) points your agent at it.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#awx) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#awx)

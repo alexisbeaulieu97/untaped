@@ -49,7 +49,13 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Delete an explicitly selected batch after one complete preview."""
+        """Delete an explicitly selected batch after one complete preview.
+
+        Applying a deleted resource's export creates it again with a new id,
+        and without its secrets, access, schedules or history. Before deleting a template, run
+        `usage` on it: a workflow node that ran it runs nothing afterwards.
+        Deleting an inventory is asynchronous (`deletion_requested`).
+        """
         selection.require_source(names)
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)

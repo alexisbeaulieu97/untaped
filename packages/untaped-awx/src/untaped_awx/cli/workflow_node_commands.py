@@ -113,7 +113,11 @@ def register_nodes_command(parent: App) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List the nodes (contents) of one or more workflow job templates."""
+        """List the nodes (contents) of one or more workflow job templates.
+
+        With --recursive, nested workflows are expanded. The graph as a
+        document you can edit and apply: `untaped agents awx workflow-nodes`.
+        """
         max_depth = resolve_max_depth(depth, recursive)
 
         nodes: list[WorkflowNode] = []

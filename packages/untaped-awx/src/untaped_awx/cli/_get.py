@@ -70,7 +70,13 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Fetch one or more resources by name, or by explicit AWX id."""
+        """Fetch one or more resources by name, or by explicit AWX id.
+
+        A job or workflow template includes its survey questions
+        (`survey_spec`); password defaults read as `$encrypted$`. With
+        --with-scm, each project is read once, and a template without a
+        readable project gets `null` SCM values.
+        """
         if not names and not stdin and not filter_ and search is None and not all_:
             raise_usage("provide names, --stdin, filters/search, or --all")
         if with_scm and not offers_with_scm(spec):

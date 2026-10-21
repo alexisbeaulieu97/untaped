@@ -74,7 +74,12 @@ def ping_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Check control-plane health."""
+    """Check control-plane health.
+
+    The row names the authenticated `user`, so it also checks the token.
+    Upstream AWX usually needs `untaped config set
+    awx.api_prefix /api/v2/`; AAP uses the default.
+    """
     with report_errors():
         with open_context() as ctx:
             status = Ping(ctx.client)()
@@ -138,7 +143,25 @@ def apply_command(
     ] = None,
     controls: WriteControls = CONTROL_DEFAULTS,
 ) -> None:
-    """Create/update YAML documents in dependency order, with one confirmation."""
+    """Create/update YAML documents in dependency order, with one confirmation.
+
+    It creates what is missing and updates what differs, every kind at once.
+    A directory contributes every `*.yml`/`*.yaml` in it, so keep other YAML
+    out of it. A file that cannot be read or parsed, an unknown kind, or stdin
+    with no documents fails the apply, naming the file (`<stdin>` for
+    `apply -`). --check plans without writing: exit 3 when anything would
+    change, 0 when nothing would (rows show `planned` or `unchanged`). How
+    each document is resolved and written: `untaped agents awx documents`;
+    with --source-ref: `untaped agents awx source-ref`.
+
+    Examples
+    --------
+    ```console
+    $ untaped awx apply deploy.yml --dry-run
+    $ untaped awx apply ./awx-specs --check
+    $ untaped awx export --kind job-templates --out-dir out | untaped --profile prod awx apply -
+    ```
+    """
     for file in files:
         if str(file).startswith("-") and str(file) != "-":
             # ``-`` may lead the file (stdin), so a mistyped option lands here.
@@ -284,7 +307,12 @@ def jobs_list(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List recent AWX jobs (newest first)."""
+    """List recent AWX jobs (newest first).
+
+    --template takes digits as an id; match a numeric name with `--filter
+    job_template__name=123`. Tables show a summary; json and yaml carry the
+    whole record, as `jobs get` and `jobs wait` do.
+    """
     filters = parse_kv_pairs(filter_, flag="--filter")
     if status:
         filters["status"] = status
@@ -547,6 +575,11 @@ def jobs_logs(
     columns: ColumnsOption = None,
 ) -> None:
     """Print the stdout of one or more jobs. Supports follow / tail / grep.
+
+    It downloads the full stdout. With --follow it reads only new events on
+    each poll (colours removed); `--tail N --follow` starts from the newest
+    events. Project and inventory updates have logs (--kind); a workflow job
+    has none (use `jobs wait`).
 
     Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
     between jobs. Without ``--follow``, ``--format json``/``yaml`` print one

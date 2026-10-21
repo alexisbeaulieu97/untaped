@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from importlib.resources import files
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import PluginSpec, SkillAsset, connection_check, online_check
@@ -49,14 +48,12 @@ SPEC = PluginSpec(
     skills=(
         SkillAsset(
             name="untaped-awx",
-            source=Path(str(files("untaped_awx").joinpath("skills", "untaped-awx"))),
             description=(
-                "Operates Ansible Automation Platform (AAP) or AWX through the `untaped awx` "
-                "command and proves playbook changes with `awx test` suites. Use when the user "
-                "mentions AAP, AWX, Tower or automation controller, job or workflow templates, "
-                "launching, syncing or following jobs, inventories, projects, schedules, "
-                "linting AWX documents or resources, or testing a playbook, role or template "
-                "change."
+                "Ansible Automation Platform (AAP) and AWX resources and jobs: job and workflow "
+                "templates, inventories, projects and schedules, launching, syncing and "
+                "following jobs, export and apply documents, linting them, and `awx test` "
+                "suites that prove a playbook, role or template change. Use when the work "
+                "concerns AAP, AWX, Tower or an automation controller."
             ),
         ),
     ),

@@ -177,7 +177,23 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Launch one or more resources and (optionally) wait for each job."""
+        """Launch one or more resources and (optionally) wait for each job.
+
+        A single named template launches at once; several targets, a query or
+        a --stdin selection are listed and confirmed once. A failed launch
+        fails its row and the rest still launch, unless --fail-fast (a
+        rejected token or broken configuration always stops them). Which
+        launch values a template accepts, what --dry-run shows, and how
+        --wait and --follow end: `untaped agents awx launching`.
+
+        Examples
+        --------
+        ```console
+        $ untaped awx job-templates launch Deploy --extra-vars @vars.yml --extra-vars v=2 --wait
+        $ untaped awx job-templates launch Deploy --launch-inventory Staging --dry-run -f yaml
+        $ untaped awx workflow-templates launch "Release train" --follow
+        ```
+        """
         supplied: dict[str, object] = {
             "--launch-inventory": launch_inventory,
             "--credential": credential,
