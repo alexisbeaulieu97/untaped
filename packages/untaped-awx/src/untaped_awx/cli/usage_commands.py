@@ -130,10 +130,11 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         cycle is warned about on stderr.
 
         --format tree draws the same rows: one tree per target, each
-        workflow under every template it runs, in bold green when it is
-        top-level (not with --filter), ``(N nodes)`` after a workflow
-        running the line above in more than one node, and ``…`` where the
-        depth limit stopped (a stderr hint says how to read further). A
+        workflow under every template it runs, highlighted (the theme's
+        success color, bold green by default) and listed in the summary
+        when it is top-level (not with --filter), ``(N nodes)`` after a
+        workflow running the line above in more than one node, and ``…`` where
+        the depth limit stopped (a stderr hint says how to read further). A
         branch drawn earlier is numbered ``[n]`` and later holds one
         ``… see [n]`` line; a cycle is marked ``↻ cycle``. Set
         ``ui.border: ascii`` for a terminal that misdraws box characters.
@@ -168,7 +169,9 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         for tree in trees:
             for edge in tree.cycle_edges():
                 diag.warning(
-                    f"workflow {edge.child} runs workflow {edge.parent}, "
+                    f"workflow {edge.child} runs itself (a cycle)"
+                    if edge.child == edge.parent
+                    else f"workflow {edge.child} runs workflow {edge.parent}, "
                     "which already runs it (a cycle)"
                 )
         rows = [row for answer in answers for row in answer.rows]

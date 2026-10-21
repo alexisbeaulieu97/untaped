@@ -96,8 +96,8 @@ $ untaped awx workflow-templates export Release --out rec/workflows.yml
 ```
 
 `usage` draws the workflows that run a template, up to the top-level ones;
-export the ones you want kept. Inventories and credentials stay references: they must exist where the
-documents are applied.
+export the ones you want kept. Inventories and credentials stay references:
+they must exist where the documents are applied.
 
 ## Apply
 

@@ -82,9 +82,9 @@ def apply_default_format(
 
     Installed on the root app. Only a ``FormatOption`` (or another
     ``--format`` offering every shared format, such as ``TreeFormatOption``)
-    whose command default is ``table`` follows the user's choice (a command defaulting to ``raw``
-    or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first, then the ``ui.format``
-    setting. An explicit ``--format`` has tokens already and always wins. A
+    whose command default is ``table`` follows the user's choice (a command
+    defaulting to ``raw`` or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first,
+    then the ``ui.format`` setting. An explicit ``--format`` has tokens already and always wins. A
     ``ui`` section that fails to load is ignored here so ``config set`` can
     still repair it; ``doctor`` reports it. An invalid ``UNTAPED_FORMAT`` is
     a usage error, except under ``doctor`` and ``setup``, which ignore it.

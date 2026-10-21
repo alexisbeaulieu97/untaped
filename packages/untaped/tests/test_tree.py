@@ -355,3 +355,9 @@ def test_no_graphs_print_nothing() -> None:
     print_tree([], ui=UiContext(stdout=stream))
 
     assert stream.getvalue() == ""
+
+
+def test_an_empty_stop_reason_adds_no_note() -> None:
+    graph = _graph([_edge("app", "a")], nodes=(_node("a", stopped=""),))
+
+    assert _text(graph) == ["app", "└── a"]

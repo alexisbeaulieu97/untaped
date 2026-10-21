@@ -92,7 +92,12 @@ def usage_tree(target: UsageTarget, rows: Sequence[WorkflowUsage], *, top_level:
     the root rather than a node.
     """
     others = [row for row in rows if row.id != target.id]
-    labels = _labels(target, others)
+    names = _names(target, others)
+    labels = _labels(target, names)
+
+    def order(id_: int) -> tuple[str, int]:
+        return names[id_].casefold(), id_
+
     contained = {link.id for row in rows for link in row.contains}
     tops = (
         {row.id for row in others if row.stopped is None and row.id not in contained}
@@ -118,24 +123,40 @@ def usage_tree(target: UsageTarget, rows: Sequence[WorkflowUsage], *, top_level:
             for row in rows
             for link in row.contains
         ),
-        key=lambda edge: (labels[int(edge.child)].casefold(), int(edge.child)),
+        key=lambda edge: order(int(edge.child)),
     )
     kind = _KIND_WORDS[target.type]
     return TreeGraph(
         root=TreeGraphNode(key=str(target.id), label=labels[target.id]),
-        notes=(kind, "used by" if others else "in no workflow"),
+        notes=(kind, "used by" if rows else "in no workflow"),
         nodes=nodes,
         edges=tuple(edges),
-        summary=_summary(others, sorted((labels[id_] for id_ in tops), key=str.casefold)),
+        summary=_summary(others, [labels[id_] for id_ in sorted(tops, key=order)]),
     )
 
 
-def _labels(target: UsageTarget, rows: Sequence[WorkflowUsage]) -> dict[int, str]:
-    """Each workflow's name (``workflow #id`` without one), plus ``#id`` when two share it."""
+def _names(target: UsageTarget, rows: Sequence[WorkflowUsage]) -> dict[int, str]:
+    """Each template's name by id, ``workflow #id`` for a workflow AWX sent none for."""
     names = {target.id: target.name or f"{_KIND_WORDS[target.type]} #{target.id}"}
-    names |= {row.id: row.name or f"workflow #{row.id}" for row in rows}
-    shared = {name for name, count in Counter(names.values()).items() if count > 1}
-    return {id_: f"{name} #{id_}" if name in shared else name for id_, name in names.items()}
+    return names | {row.id: row.name or f"workflow #{row.id}" for row in rows}
+
+
+def _labels(target: UsageTarget, names: dict[int, str]) -> dict[int, str]:
+    """Each name, plus ``#id`` when two workflows of the tree share it.
+
+    A job template target is never drawn as a row, so it doesn't count: the
+    first line already tells it apart from a workflow of the same name.
+    """
+    workflows = {
+        id_: name
+        for id_, name in names.items()
+        if id_ != target.id or target.type == "workflow_job_template"
+    }
+    counts = Counter(workflows.values())
+    return {
+        id_: f"{name} #{id_}" if id_ in workflows and counts[name] > 1 else name
+        for id_, name in names.items()
+    }
 
 
 def _summary(rows: Sequence[WorkflowUsage], tops: list[str]) -> str | None:

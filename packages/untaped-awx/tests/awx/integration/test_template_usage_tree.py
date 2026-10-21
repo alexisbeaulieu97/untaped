@@ -281,11 +281,13 @@ def test_mutual_containment_along_two_paths_warns(fake_aap: Any) -> None:
     )
 
 
-def test_two_workflows_sharing_a_name_get_their_ids(fake_aap: Any) -> None:
+def test_two_workflows_sharing_a_name_get_their_ids_and_sort_by_id(fake_aap: Any) -> None:
     fake_aap.seed("organizations", id=1, name="Default")
     migrate = _template(fake_aap, "job_templates", 30, "migrate")
+    _node(fake_aap, wf=(1000, "deploy"), ujt=migrate, ujt_type="job")
     _node(fake_aap, wf=(800, "deploy"), ujt=migrate, ujt_type="job")
-    _node(fake_aap, wf=(801, "deploy"), ujt=migrate, ujt_type="job")
+    # A workflow named like the job template needs no id: the first line tells them apart.
+    _node(fake_aap, wf=(900, "migrate"), ujt=migrate, ujt_type="job")
 
     result = _run("job-templates", "usage", "migrate", "--recursive", "-f", "tree")
 
@@ -293,10 +295,23 @@ def test_two_workflows_sharing_a_name_get_their_ids(fake_aap: Any) -> None:
     assert result.stdout.splitlines() == [
         "migrate  job template · used by",
         "├── deploy #800",
-        "└── deploy #801",
+        "├── deploy #1000",
+        "└── migrate",
         "",
-        "2 workflows · top-level: deploy #800, deploy #801",
+        "3 workflows · top-level: deploy #800, deploy #1000, migrate",
     ]
+
+
+def test_a_workflow_running_itself_is_used_by_itself(fake_aap: Any) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    loop = _template(fake_aap, "workflow_job_templates", 200, "loop")
+    _node(fake_aap, wf=loop, ujt=loop, ujt_type="workflow_job")
+
+    result = _run("workflow-templates", "usage", "loop", "-f", "tree")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["loop  workflow template · used by", "└── loop ↻ cycle"]
+    assert result.stderr == "warning: workflow 200 runs itself (a cycle)\n"
 
 
 def test_each_target_gets_its_tree_and_a_failed_one_doesnt_stop_the_others(
