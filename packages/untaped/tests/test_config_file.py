@@ -7,12 +7,14 @@ import pytest
 
 from untaped.config_file import (
     mutate_config,
+    mutate_plugin_state,
     read_config_dict,
+    read_plugin_state,
     set_at_path,
     unset_at_path,
     write_config_dict,
 )
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UntapedError
 
 
 def test_read_returns_empty_when_file_absent(
@@ -355,3 +357,31 @@ def test_write_ignores_a_stale_fixed_name_temp_file(tmp_path: Path) -> None:
     stale.write_text("stale")
     write_config_dict({"log_level": "INFO"}, cfg)
     assert read_config_dict(cfg) == {"log_level": "INFO"}
+
+
+def test_nested_config_write_is_refused(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yml"
+
+    def _inner(data: dict[str, Any]) -> None:
+        data["b"] = 2
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        mutate_config(_inner, path=cfg)
+
+    with pytest.raises(UntapedError, match="inside another write"):
+        mutate_config(_outer, path=cfg)
+    assert not cfg.exists()
+
+
+def test_nested_write_to_another_file_goes_through(tmp_path: Path) -> None:
+    state = tmp_path / "state.yml"
+    config = tmp_path / "config.yml"
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        mutate_plugin_state("demo", lambda section: section.update(b=2), path=state)
+
+    mutate_config(_outer, path=config)
+    assert read_config_dict(config) == {"a": 1}
+    assert read_plugin_state("demo", path=state) == {"b": 2}

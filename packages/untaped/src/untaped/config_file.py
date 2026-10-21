@@ -16,8 +16,8 @@ import contextlib
 import copy
 import math
 import os
+import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -37,9 +37,11 @@ from untaped.yaml_roundtrip import KeyRename, plain_dump, render_preserving
 
 _DEFAULT_LOCK_TIMEOUT = 5.0
 
-#: The files this thread is writing (real paths): a write nested in another to
-#: the same file would be saved over when the outer one saves.
-_WRITING: ContextVar[frozenset[str]] = ContextVar("untaped_config_writing", default=frozenset())
+#: The files each thread is writing (real paths), per thread like ``file_lock``'s
+#: re-entrance: a write nested in another to the same file would be saved over
+#: when the outer one saves. Keyed on the file, not its lock, which follows the
+#: spelling the caller used.
+_WRITING = threading.local()
 
 
 def read_config_dict(path: Path | None = None) -> dict[str, Any]:
@@ -106,8 +108,8 @@ def mutate_config(
     spuriously create or reformat the YAML file. ``get_settings``'s cache
     is cleared after a successful write so the rest of the process sees
     the new values without callers needing to do it themselves. A write to
-    the same file from inside ``fn`` raises :class:`UntapedError` and nothing
-    is written.
+    the same file from inside ``fn`` raises :class:`UntapedError` and writes
+    nothing.
 
     Override the lock acquisition timeout via ``UNTAPED_CONFIG_LOCK_TIMEOUT``
     (seconds, non-negative float; anything else raises ``ConfigError``).
@@ -128,14 +130,16 @@ def _locked(target: Path) -> Iterator[None]:
     """Hold the advisory ``<target>.lock`` (creating the parent directory).
 
     A write to ``target`` started inside another write to it in this thread
-    raises :class:`UntapedError`: ``file_lock`` is re-entrant, so the inner
-    write would succeed and the outer one would then save over it.
+    raises :class:`UntapedError` and writes nothing: ``file_lock`` is
+    re-entrant, so the inner write would succeed and the outer one would then
+    save over it.
     """
     real = os.path.realpath(target)
-    if real in _WRITING.get():
+    writing: frozenset[str] = getattr(_WRITING, "paths", frozenset())
+    if real in writing:
         raise UntapedError(
-            f"a write to {target} started inside another write to it; "
-            "the outer write would save over it, so neither is saved",
+            f"a write to {target} started inside another write to it; the inner "
+            "write is refused so the outer one cannot save over it",
             details={"path": str(target)},
         )
     try:
@@ -155,11 +159,11 @@ def _locked(target: Path) -> Iterator[None]:
         ),
         failed=f"could not lock {target}",
     ):
-        token = _WRITING.set(_WRITING.get() | {real})
+        _WRITING.paths = writing | {real}
         try:
             yield
         finally:
-            _WRITING.reset(token)
+            _WRITING.paths = writing
 
 
 def _lock_timeout() -> float:
@@ -236,7 +240,7 @@ def mutate_plugin_state(
     is removed when ``fn`` leaves it empty; nothing is written when ``fn``
     changes nothing. ``path`` resolves as in :func:`read_plugin_state`. A
     write to the same file from inside ``fn`` raises :class:`UntapedError`
-    and nothing is written.
+    and writes nothing.
     """
     check_state_section_name(section)
     state_path = path or resolve_state_path()
