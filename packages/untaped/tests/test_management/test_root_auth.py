@@ -778,6 +778,7 @@ def test_status_names_every_source_without_running_commands(
         "profile": "default",
         "section": "other",
         "source": "config.yml (plain text)",
+        "field": "token",
     }
     assert rows["work", "svc"]["source"] == "token_command"
     assert ("work", "other") not in rows  # inherited from default, not a separate entry
@@ -889,7 +890,7 @@ def test_migrate_with_a_pass_that_cannot_decrypt_does_not_flood(
     quote = "'pass' exited with status 2: gpg: public key decryption failed: No such file"
     details = [row["detail"] for row in rows]
     assert details.count(quote + " or directory") == 2
-    assert sum("would override the token command" in detail for detail in details) == 1
+    assert sum(".token_command in profile" in detail for detail in details) == 1
     assert "gpg:" not in result.stderr, "gpg's own stderr never reaches the terminal"
     assert result.stderr.count("pinentry") == 1, "the fix is named once, not per token"
     [error] = [line for line in _stderr_lines(result) if line["level"] == "error"]

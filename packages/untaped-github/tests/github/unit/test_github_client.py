@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 from pydantic import SecretStr
 
+from untaped.sdk import ConfigError
 from untaped_github.infrastructure import GithubClient
 from untaped_github.settings import GithubSettings
 
@@ -74,3 +76,12 @@ def test_get_raw_content_reads_file_at_ref() -> None:
     assert route.calls[0].request.url.params["ref"] == "release/1"
     assert route.calls[0].request.headers["accept"] == "application/vnd.github.raw"
     assert content == "- src: https://github.com/acme/base\n"
+
+
+def test_a_blank_base_url_fails_naming_the_setting() -> None:
+    """``base_url`` has a default, so it is not marked; a blank override still fails loudly."""
+    config = GithubSettings(base_url=" ", token=SecretStr("ghp_test"))
+    with pytest.raises(ConfigError, match=r"^github\.base_url is blank$") as caught:
+        GithubClient(config)
+    assert "untaped config unset github.base_url" in (caught.value.hint or "")
+    assert "https://api.github.com" in (caught.value.hint or "")

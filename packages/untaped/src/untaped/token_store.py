@@ -292,13 +292,21 @@ def _gpg_recipients() -> list[str]:
     return [ident for line in text.splitlines() if (ident := line.split("#", 1)[0].strip())]
 
 
-def entry_name(profile: str, section: str) -> str:
-    """The store entry for ``section`` in ``profile``: ``<profile>/<section>``."""
-    entry = f"{profile}/{section}"
+def entry_name(
+    profile: str, section: str, *, field: str = "token", command: str = "token_command"
+) -> str:
+    """The store entry for the secret ``field`` of ``section`` in ``profile``.
+
+    ``<profile>/<section>`` for a field named ``token`` (the entry every
+    earlier release wrote), ``<profile>/<section>.<field>`` for another.
+    ``command`` is the field's command setting, named when the profile
+    can't name an entry.
+    """
+    entry = f"{profile}/{section}" if field == "token" else f"{profile}/{section}.{field}"
     if not _ENTRY.fullmatch(entry):
         raise ConfigError(
             f"profile {profile!r} cannot name a store entry (letters, digits, '.', '_' and "
-            f"'-' only, not starting with '.'); set {section}.token_command to your own "
+            f"'-' only, not starting with '.'); set {section}.{command} to your own "
             "command instead",
             category="invalid",
         )
@@ -336,9 +344,9 @@ def preset_entry(argv: Sequence[str] | None) -> tuple[TokenStore, str] | None:
     return None
 
 
-def no_store_message(section: str, env: Sequence[str]) -> str:
-    """Why nothing was stored, and the routes that remain."""
-    routes = [f"set {section}.token_command to a password manager's command"]
+def no_store_message(section: str, env: Sequence[str], *, command: str = "token_command") -> str:
+    """Why nothing was stored, and the routes that remain (``command``: the secret's setting)."""
+    routes = [f"set {section}.{command} to a password manager's command"]
     routes.extend(f"export ${name}" for name in env[:1])
     skipped = pass_problem() if shutil.which("pass") else None
     note = f" ({skipped})" if skipped else ""

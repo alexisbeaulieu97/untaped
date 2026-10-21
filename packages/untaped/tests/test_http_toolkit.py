@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -30,6 +31,19 @@ from untaped.settings import (
 )
 
 
+@pytest.fixture
+def _by_name() -> Iterator[None]:
+    """The deprecated read by field name (no ``base_url=``), which these tests keep covering.
+
+    Each such call warns; ``required=`` warns on its own.
+    """
+    with pytest.warns(DeprecationWarning, match=r"without base_url=|connected_client\(required="):
+        yield
+
+
+_BY_NAME = pytest.mark.usefixtures("_by_name")
+
+
 class DemoSettings(BaseModel):
     base_url: str = "https://api.example.com"
     token: SecretStr | None = None
@@ -46,7 +60,9 @@ def test_connected_client_applies_settings_timeout() -> None:
     respx.get("https://api.example.com/user").mock(return_value=httpx.Response(200, json={}))
     config = DemoSettings(token=SecretStr("x"))
 
-    with connected_client(config, section="demo", http=HttpSettings(timeout_seconds=5.0)) as client:
+    with connected_client(
+        config, section="demo", base_url=config.base_url, http=HttpSettings(timeout_seconds=5.0)
+    ) as client:
         client.get("/user")
 
     timeout = respx.calls.last.request.extensions["timeout"]
@@ -71,6 +87,7 @@ def test_connected_client_passes_proxy_and_timeout_to_httpx(
     with connected_client(
         config,
         section="demo",
+        base_url=config.base_url,
         http=HttpSettings(timeout_seconds=12.0, proxy="http://proxy.example:8080"),
     ):
         pass
@@ -103,7 +120,7 @@ def test_connected_client_defaults_to_resolved_profile_http(
     monkeypatch.setattr(httpx, "Client", spy)
     config = DemoSettings(token=SecretStr("x"))
     try:
-        with connected_client(config, section="demo"):
+        with connected_client(config, section="demo", base_url=config.base_url):
             pass
     finally:
         reset_config_registry()
@@ -142,6 +159,7 @@ class SourcedSettings(BaseModel):
     token_command: TokenCommand = None
 
 
+@_BY_NAME
 def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file() -> None:
     with pytest.raises(ConfigError) as caught:
         connected_client(SourcedSettings(), section="demo")
@@ -161,6 +179,7 @@ class NoUrlSettings(BaseModel):
     token: SecretStr | None = SecretStr("sekret")
 
 
+@_BY_NAME
 @pytest.mark.parametrize(
     ("config", "message"),
     [
@@ -185,6 +204,7 @@ def _write_config(text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+@_BY_NAME
 def test_a_missing_setting_names_the_profiles_that_set_it() -> None:
     """An agent can switch profile from the error alone instead of asking for the value."""
     _write_config(
@@ -208,6 +228,7 @@ def test_a_missing_setting_names_the_profiles_that_set_it() -> None:
     assert error.details["profiles"] == ["work"]
 
 
+@_BY_NAME
 def test_a_missing_token_counts_a_profile_with_a_token_command() -> None:
     _write_config(
         "profiles:\n"
@@ -224,6 +245,7 @@ def test_a_missing_token_counts_a_profile_with_a_token_command() -> None:
     assert "`untaped --profile NAME …`" in (caught.value.hint or "")
 
 
+@_BY_NAME
 def test_a_missing_setting_no_other_profile_sets_names_only_the_profile() -> None:
     _write_config("profiles:\n  default: {}\n  work: {}\n")
     with pytest.raises(ConfigError) as caught:
@@ -234,6 +256,7 @@ def test_a_missing_setting_no_other_profile_sets_names_only_the_profile() -> Non
     assert "profiles" not in caught.value.details
 
 
+@_BY_NAME
 def test_a_profile_inheriting_the_setting_from_default_counts() -> None:
     """The active profile blanks a key ``default`` sets; ``work`` still inherits it."""
     _write_config(
@@ -251,6 +274,7 @@ def test_a_profile_inheriting_the_setting_from_default_counts() -> None:
     assert caught.value.details["profiles"] == ["default", "my work"]
 
 
+@_BY_NAME
 def test_a_profile_name_with_a_space_is_quoted_in_the_command() -> None:
     _write_config("profiles:\n  default: {}\n  my work:\n    demo: {base_url: https://x}\n")
     with pytest.raises(ConfigError) as caught:
@@ -261,6 +285,7 @@ def test_a_profile_name_with_a_space_is_quoted_in_the_command() -> None:
     assert "UNTAPED_PROFILE='my work'" in hint
 
 
+@_BY_NAME
 @pytest.mark.parametrize(
     ("name", "value"),
     [
@@ -283,6 +308,7 @@ def test_an_environment_override_names_no_profile(
     assert "--profile" not in (caught.value.hint or "")
 
 
+@_BY_NAME
 def test_an_environment_blob_without_the_key_still_names_profiles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -294,6 +320,7 @@ def test_an_environment_blob_without_the_key_still_names_profiles(
     assert caught.value.details["profiles"] == ["work"]
 
 
+@_BY_NAME
 def test_an_unreadable_config_names_only_a_profile_chosen_outside_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -318,6 +345,7 @@ def test_connected_client_sends_bearer_token_and_extra_headers() -> None:
     with connected_client(
         config,
         section="demo",
+        base_url=config.base_url,
         headers={"Accept": "application/vnd.demo+json"},
     ) as client:
         payload = client.get_json_dict("/user")
@@ -335,10 +363,11 @@ def test_connected_client_strips_trailing_base_url_slash() -> None:
     )
     config = DemoSettings(base_url="https://api.example.com/", token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         assert client.get_json_dict("/user") == {"ok": True}
 
 
+@_BY_NAME
 @pytest.mark.parametrize(
     ("token", "authorization"), [(SecretStr("sekret"), "Bearer sekret"), (None, None)]
 )
@@ -408,7 +437,7 @@ def test_paginate_link_accepts_rfc_valid_next_link_forms(link_header: str) -> No
     respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         rows = list(paginate_link(client, "/things"))
 
     assert [row["id"] for row in rows] == [1, 2]
@@ -422,7 +451,7 @@ def test_paginate_link_non_json_page_is_an_http_error() -> None:
     config = DemoSettings(token=SecretStr("sekret"))
 
     with (
-        connected_client(config, section="demo") as client,
+        connected_client(config, section="demo", base_url=config.base_url) as client,
         pytest.raises(HttpError, match="non-JSON"),
     ):
         list(paginate_link(client, "/things"))
@@ -447,7 +476,7 @@ def test_paginate_link_refuses_cross_origin_next_link(next_url: str) -> None:
     config = DemoSettings(token=SecretStr("sekret"))
 
     with (
-        connected_client(config, section="demo") as client,
+        connected_client(config, section="demo", base_url=config.base_url) as client,
         pytest.raises(HttpError, match="cross-origin"),
     ):
         list(paginate_link(client, "/things"))
@@ -483,7 +512,7 @@ def test_paginate_link_follows_relative_next_link() -> None:
     respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         assert [row["id"] for row in paginate_link(client, "/things")] == [1, 2]
 
 
@@ -498,7 +527,7 @@ def test_paginate_link_first_request_caps_page_size_to_limit() -> None:
     respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         list(paginate_link(client, "/things", limit=5, page_size=100))
 
     assert seen == ["5"]
@@ -511,7 +540,7 @@ def test_paginate_link_extracts_items_envelope() -> None:
     )
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         rows = list(paginate_link(client, "/search/code", item_key="items"))
 
     assert rows == [{"id": 42}]
@@ -524,7 +553,7 @@ def test_paginate_link_non_list_payload_short_circuits() -> None:
     )
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         assert list(paginate_link(client, "/things")) == []
 
 
@@ -539,7 +568,7 @@ def test_paginate_offset_walks_start_at_envelopes() -> None:
     respx.get(url__startswith="https://api.example.com/board").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         items = list(
             paginate_offset(
                 client,
@@ -568,7 +597,7 @@ def test_paginate_offset_caps_at_limit_and_shrinks_request_size() -> None:
     respx.get(url__startswith="https://api.example.com/board").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         items = list(
             paginate_offset(
                 client,
@@ -595,7 +624,7 @@ def test_paginate_offset_post_rejects_non_object_envelope() -> None:
     config = DemoSettings(token=SecretStr("sekret"))
 
     with (
-        connected_client(config, section="demo") as client,
+        connected_client(config, section="demo", base_url=config.base_url) as client,
         pytest.raises(HttpError) as exc_info,
     ):
         list(
@@ -630,7 +659,7 @@ def test_paginate_offset_post_empty_object_envelope_is_empty_page() -> None:
     )
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         rows = list(
             paginate_offset(
                 client,
@@ -660,7 +689,7 @@ def test_paginate_offset_neutral_defaults_send_offset_and_limit() -> None:
     respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         list(paginate_offset(client, "GET", "/things", item_key="rows"))
 
     assert seen == [("0", "50")]
@@ -683,7 +712,7 @@ def test_paginate_offset_ignores_islast_unless_opted_in() -> None:
     respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         rows = list(paginate_offset(client, "GET", "/things", item_key="rows"))
 
     assert len(rows) == 50
@@ -701,7 +730,7 @@ def test_paginate_offset_honors_last_flag_when_named() -> None:
     respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         rows = list(paginate_offset(client, "GET", "/things", item_key="rows", last_flag="isLast"))
 
     assert len(rows) == 50
@@ -722,7 +751,7 @@ def test_paginate_offset_total_continues_past_server_capped_short_page() -> None
     respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         rows = list(paginate_offset(client, "GET", "/things", item_key="rows", page_size=50))
 
     assert [row["id"] for row in rows] == [1, 2, 3]
@@ -742,7 +771,7 @@ def test_paginate_offset_last_flag_false_continues_past_short_page() -> None:
     respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
     config = DemoSettings(token=SecretStr("sekret"))
 
-    with connected_client(config, section="demo") as client:
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
         rows = list(
             paginate_offset(
                 client,
@@ -770,7 +799,7 @@ def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
     config = DemoSettings(token=SecretStr("sekret"))
 
     with (
-        connected_client(config, section="demo") as client,
+        connected_client(config, section="demo", base_url=config.base_url) as client,
         pytest.raises(UntapedError, match="did not converge after 2 pages"),
     ):
         list(
