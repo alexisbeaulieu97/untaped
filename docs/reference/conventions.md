@@ -41,9 +41,8 @@ checks, named in each violation line.
 [Exit codes](./exit-codes.md) defines what each code means. To produce one:
 
 - 0: return normally.
-- 1: raise an `UntapedError` whose category is `failed`, `not_found`,
-  `invalid` or `conflict` inside `report_errors()`, or call
-  `finish(any_failed)`.
+- 1: raise an `UntapedError` (category `failed`, `not_found`, `invalid` or
+  `conflict`) inside `report_errors()`, or call `finish(any_failed)`.
 - 2: raise `UsageError` inside `report_errors()`, or call `raise_usage()`
   outside it.
 - 3: call `finish(any_failed, predicate_hit=True)`.
@@ -128,6 +127,7 @@ Use the shared option aliases instead of declaring your own copy:
 | Alias | Flag |
 |---|---|
 | `FormatOption` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`ui.format`) |
+| `TreeFormatOption` | `FormatOption` plus `tree`; pass the records as graphs, `emit(tree=)` |
 | `ColumnsOption` | `-c/--columns` |
 | `YesOption` | `-y/--yes`: skips only the prompt. `--dry-run` still wins. |
 | `DryRunOption` | `--dry-run`: preview, then exit 0 |

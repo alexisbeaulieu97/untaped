@@ -45,7 +45,8 @@ from untaped.stability import (
     deprecated_parameters,
     mark_app,
 )
-from untaped.theme import OutputFormat, ThemeSpec, resolve_theme_or_default
+from untaped.theme import OutputFormat, ThemeSpec, TreeOutputFormat, resolve_theme_or_default
+from untaped.tree import TreeGraph, print_tree
 from untaped.ui import UiContext, ui_context
 
 
@@ -61,6 +62,12 @@ FormatOption = Annotated[
 ]
 """Shared ``--format / -f`` option for any command that prints rows."""
 
+TreeFormatOption = Annotated[
+    TreeOutputFormat,
+    Parameter(name=["--format", "-f"], help="Output format.", show_default=_format_default),
+]
+"""``--format`` plus ``tree``, for a command that draws its rows as a tree (``emit(tree=)``)."""
+
 #: Environment variable naming the default ``--format`` (wins over ``ui.format``).
 FORMAT_ENV = "UNTAPED_FORMAT"
 #: Root commands that diagnose the setup: an invalid ``UNTAPED_FORMAT`` is
@@ -73,8 +80,9 @@ def apply_default_format(
 ) -> None:
     """Cyclopts config source: default an omitted shared ``--format``.
 
-    Installed on the root app. Only a ``FormatOption`` whose command default
-    is ``table`` follows the user's choice (a command defaulting to ``raw``
+    Installed on the root app. Only a ``FormatOption`` (or another
+    ``--format`` offering every shared format, such as ``TreeFormatOption``)
+    whose command default is ``table`` follows the user's choice (a command defaulting to ``raw``
     or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first, then the ``ui.format``
     setting. An explicit ``--format`` has tokens already and always wins. A
     ``ui`` section that fails to load is ignored here so ``config set`` can
@@ -108,14 +116,19 @@ def _user_theme() -> ThemeSpec:
 
 
 def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) -> None:
-    """Append the user's default format to an omitted table-default ``FormatOption``."""
+    """Append the user's default format to an omitted table-default ``--format``.
+
+    That is a ``--format`` whose choices include every shared format
+    (``FormatOption``, ``TreeFormatOption``); the user's default is still
+    one of the shared formats.
+    """
     argument = next(
         (
             argument
             for argument in arguments
             if "--format" in argument.names
             and not argument.tokens
-            and argument.hint == OutputFormat
+            and set(get_args(OutputFormat)) <= set(get_args(argument.hint))
             and argument.field_info.default == "table"
         ),
         None,
@@ -510,7 +523,9 @@ def _column_names(columns: list[str]) -> list[str]:
     return names
 
 
-def check_columns(model: type[BaseModel], *, columns: list[str] | None, fmt: OutputFormat) -> None:
+def check_columns(
+    model: type[BaseModel], *, columns: list[str] | None, fmt: TreeOutputFormat
+) -> None:
     """Refuse a ``--columns`` name no ``model`` field has, before the command acts.
 
     :func:`emit` checks columns only when it renders. A command whose rows
@@ -518,7 +533,11 @@ def check_columns(model: type[BaseModel], *, columns: list[str] | None, fmt: Out
     rows (which only warn) calls this first, so the usage error (exit 2) comes
     before anything changed, as the exit code promises. ``+name``/``-name``
     edits are checked by name; ``pipe`` and ``--columns ?`` are left alone.
+    A ``tree`` has no columns: any ``--columns`` is a usage error.
     """
+    if fmt == "tree":
+        _refuse_tree_columns(columns)
+        return
     if columns is None or columns == ["?"] or fmt == "pipe":
         return
     names = [name.lstrip("+-") for name in _column_names(columns)]
@@ -624,6 +643,7 @@ def _print_available_columns(keys: Iterable[str], *, defaults: Sequence[str] | N
         diag.info(f"  {name} *" if name in marked else f"  {name}", unmuted=True)
 
 
+@overload
 def emit(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
     *,
@@ -632,6 +652,28 @@ def emit(
     empty: str | bool | None = None,
     kind: str | None = None,
     table_columns: Sequence[str] | None = None,
+    tree: TreeGraph | Sequence[TreeGraph] | None = None,
+) -> None: ...
+@overload
+def emit(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+    *,
+    fmt: TreeOutputFormat,
+    columns: list[str] | None = None,
+    empty: str | bool | None = None,
+    kind: str | None = None,
+    table_columns: Sequence[str] | None = None,
+    tree: TreeGraph | Sequence[TreeGraph],
+) -> None: ...
+def emit(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+    *,
+    fmt: TreeOutputFormat,
+    columns: list[str] | None = None,
+    empty: str | bool | None = None,
+    kind: str | None = None,
+    table_columns: Sequence[str] | None = None,
+    tree: TreeGraph | Sequence[TreeGraph] | None = None,
 ) -> None:
     """Render records to stdout, dispatching by shape.
 
@@ -648,13 +690,20 @@ def emit(
     records shows their type's ``table_columns``; a table shows a field's
     :class:`~untaped.records.TableGlyph` instead of its value.
 
+    ``tree`` is the same records as graphs (:class:`~untaped.tree.TreeGraph`),
+    drawn by ``fmt="tree"`` (a command offering it takes
+    ``TreeFormatOption``) and ignored by every other format, so a command
+    always passes it; ``fmt="tree"`` without it is a ``ValueError``. Failed
+    rows set the exit code in a tree too, and ``--columns`` does not apply
+    to one (a usage error, exit 2).
+
     An unknown ``columns`` name on pydantic rows is a usage error (exit 2)
     listing the valid columns. On mapping rows, and on any
     :class:`~untaped.records.OutcomeRecord` row, it only warns and the rows
     still print: outcome rows come after the change they report, and exit 2
     means nothing ran (a ``--dry-run`` plan warns alike, as its run would).
     """
-    emit_with(
+    _emit(
         records,
         ui=None,
         fmt=fmt,
@@ -662,9 +711,11 @@ def emit(
         empty=empty,
         kind=kind,
         table_columns=table_columns,
+        tree=tree,
     )
 
 
+@overload
 def emit_with(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
     *,
@@ -674,16 +725,70 @@ def emit_with(
     empty: str | bool | None = None,
     kind: str | None = None,
     table_columns: Sequence[str] | None = None,
+    tree: TreeGraph | Sequence[TreeGraph] | None = None,
+) -> None: ...
+@overload
+def emit_with(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+    *,
+    ui: UiContext | None,
+    fmt: TreeOutputFormat,
+    columns: list[str] | None = None,
+    empty: str | bool | None = None,
+    kind: str | None = None,
+    table_columns: Sequence[str] | None = None,
+    tree: TreeGraph | Sequence[TreeGraph],
+) -> None: ...
+def emit_with(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+    *,
+    ui: UiContext | None,
+    fmt: TreeOutputFormat,
+    columns: list[str] | None = None,
+    empty: str | bool | None = None,
+    kind: str | None = None,
+    table_columns: Sequence[str] | None = None,
+    tree: TreeGraph | Sequence[TreeGraph] | None = None,
 ) -> None:
-    """:func:`emit` rendering a ``table`` through ``ui`` (``None``: the active theme).
+    """:func:`emit` rendering a ``table`` or ``tree`` through ``ui`` (``None``: the active theme).
 
     For root commands that must render even when the settings are broken.
     """
+    _emit(
+        records,
+        ui=ui,
+        fmt=fmt,
+        columns=columns,
+        empty=empty,
+        kind=kind,
+        table_columns=table_columns,
+        tree=tree,
+    )
+
+
+def _emit(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+    *,
+    ui: UiContext | None,
+    fmt: TreeOutputFormat,
+    columns: list[str] | None,
+    empty: str | bool | None,
+    kind: str | None,
+    table_columns: Sequence[str] | None,
+    tree: TreeGraph | Sequence[TreeGraph] | None,
+) -> None:
     _validate_kind(kind)
     single = isinstance(records, BaseModel | Mapping)
     items: Sequence[BaseModel | Mapping[str, object]] = (
         [records] if isinstance(records, BaseModel | Mapping) else records
     )
+    if fmt == "tree":
+        if tree is None:
+            raise ValueError("emit(fmt='tree') needs tree=, the records drawn as graphs")
+        _refuse_tree_columns(columns)
+        count_row_failures(items)
+        print_tree(tree, ui=ui)
+        return
     count_row_failures(items)
     kind = _rows_kind(items, kind)
     if table_columns is None and not single:
@@ -704,6 +809,11 @@ def emit_with(
     )
     if rendered:
         echo(rendered)
+
+
+def _refuse_tree_columns(columns: list[str] | None) -> None:
+    if columns is not None:
+        raise_usage("--columns does not apply to --format tree")
 
 
 def emit_document(data: Mapping[str, object], *, fmt: Literal["json", "yaml"]) -> None:

@@ -5741,6 +5741,12 @@ sdk untaped.sdk.Tree.view(frame)  [experimental]
 sdk untaped.sdk.Tree.view(width=) default=None  [experimental]
 sdk untaped.sdk.Tree.window_rows  [experimental]
 sdk untaped.sdk.Tree.with_error(text)  [experimental]
+sdk untaped.sdk.TreeFormatOption choice=json
+sdk untaped.sdk.TreeFormatOption choice=pipe
+sdk untaped.sdk.TreeFormatOption choice=raw
+sdk untaped.sdk.TreeFormatOption choice=table
+sdk untaped.sdk.TreeFormatOption choice=tree
+sdk untaped.sdk.TreeFormatOption choice=yaml
 sdk untaped.sdk.TreeGraph(*, root)  [experimental]
 sdk untaped.sdk.TreeGraph(edges=) default=[]  [experimental]
 sdk untaped.sdk.TreeGraph(nodes=) default=[]  [experimental]
@@ -5770,6 +5776,12 @@ sdk untaped.sdk.TreeGraphNode.label  [experimental]
 sdk untaped.sdk.TreeGraphNode.notes  [experimental]
 sdk untaped.sdk.TreeGraphNode.stopped  [experimental]
 sdk untaped.sdk.TreeGraphNode.tone  [experimental]
+sdk untaped.sdk.TreeOutputFormat choice=json
+sdk untaped.sdk.TreeOutputFormat choice=pipe
+sdk untaped.sdk.TreeOutputFormat choice=raw
+sdk untaped.sdk.TreeOutputFormat choice=table
+sdk untaped.sdk.TreeOutputFormat choice=tree
+sdk untaped.sdk.TreeOutputFormat choice=yaml
 sdk untaped.sdk.TreeRow(children@4=) default=[]  [experimental]
 sdk untaped.sdk.TreeRow(id, label)  [experimental]
 sdk untaped.sdk.TreeRow(summary@3=) default=""  [experimental]
@@ -5928,6 +5940,7 @@ sdk untaped.sdk.emit(empty=) default=None
 sdk untaped.sdk.emit(kind=) default=None
 sdk untaped.sdk.emit(records, *, fmt)
 sdk untaped.sdk.emit(table_columns=) default=None
+sdk untaped.sdk.emit(tree=) default=None
 sdk untaped.sdk.emit_document(data, *, fmt)
 sdk untaped.sdk.executable_check(check_id, program, *, purpose)
 sdk untaped.sdk.existing_file(type_, value)

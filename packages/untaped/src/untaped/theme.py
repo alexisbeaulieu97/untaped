@@ -21,6 +21,8 @@ CollectionView = Literal["table", "list"]
 DetailView = Literal["list", "table"]
 Density = Literal["normal", "compact"]
 OutputFormat = Literal["json", "yaml", "table", "raw", "pipe"]
+TreeOutputFormat = Literal["json", "yaml", "table", "raw", "pipe", "tree"]
+"""The shared formats plus ``tree``, for a command that draws its rows as a tree."""
 
 #: Status symbols that prefix ``success``/``warning``/``error``/``info`` lines
 #: (empty by default).

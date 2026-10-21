@@ -21,6 +21,8 @@ untaped github repos list --org acme --format pipe \
 array for a collection (even when it spans several ids), a mapping for a
 single record. `pipe` and `raw` print one line per record. Only a live
 stream (`--follow`) prints json as one object per line (NDJSON).
+`--format tree`, where a command offers it, draws the same records for a
+person; scripts read json, yaml or pipe.
 
 ### Envelope format
 
