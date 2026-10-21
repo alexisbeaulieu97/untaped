@@ -24,7 +24,6 @@ from untaped.sdk import ErrorCategory, UntapedError, UsageError, checkout_root
 from untaped_lint.application import repo_file
 from untaped_lint.records import RULE_ID, ScaffoldOutcome
 
-_RULES_DIR = f"{repo_file.DIRECTORY}/lint"
 _ID = re.compile(RULE_ID)
 
 
@@ -60,7 +59,9 @@ def scaffold(
         )
     repo_file.check_key(key, lint_file, set(installed or ()))
     rules_dir = (
-        current.rules[key] if current is not None and key in current.rules else root / _RULES_DIR
+        current.rules[key]
+        if current is not None and key in current.rules
+        else repo_file.rules_dir(root)
     )
     module = rules_dir / f"{_python_name(rule_id)}.py"
     files: dict[Path, str] = {module: _module(rule_id, key)}

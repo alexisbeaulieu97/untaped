@@ -210,12 +210,12 @@ def test_a_reference_of_an_unknown_kind_never_pauses_pruning(
 ) -> None:
     _registered(composed)
     write_reference(  # a later untaped's kind, anchored on a folder that is gone
-        RefHolder(kind="project", name="pay"),
+        RefHolder(kind="acme_job", name="pay"),
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=tmp_path / "gone",
     )
-    (refs.refs_dir() / "project-other.json").write_text(
-        '{"untaped": "1", "holder": {"kind": "project", "name": "other"}, '
+    (refs.refs_dir() / "acme_job-other.json").write_text(
+        '{"untaped": "1", "holder": {"kind": "acme_job", "name": "other"}, '
         '"targets": [{"shape": "unknown"}]}'
     )
     held, unheld = _layout(base, 4), _layout(base, 3)
@@ -223,6 +223,22 @@ def test_a_reference_of_an_unknown_kind_never_pauses_pruning(
     store.open()
     assert [line.layout for line in _prune(store)] == [3]
     assert held.exists() and not unheld.exists()
+
+
+def test_a_malformed_project_reference_pauses_pruning(
+    base: Path, composed: list[RefTarget]
+) -> None:
+    # A project is this untaped's own kind: one it can't read may hold anything.
+    _registered(composed)
+    (refs.refs_dir() / "project-3f9a1c2b7d10.json").write_text(
+        '{"untaped": "1", "holder": {"kind": "project", "name": "3f9a1c2b7d10"}, '
+        '"targets": [{"shape": "unknown"}]}'
+    )
+    unheld = _layout(base, 3)
+    store = _store(base)
+    store.open()
+    assert _prune(store) == []
+    assert unheld.exists()
 
 
 def test_a_reference_from_a_newer_untaped_stops_pruning(

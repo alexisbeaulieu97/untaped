@@ -58,6 +58,8 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
   a first command in each plugin, and piping.
 - [Configuration](./docs/configuration.md): the config and state files,
   profiles, settings, TLS and tokens.
+- [Projects](./docs/projects.md): make a folder a project with
+  `untaped project init`.
 - [Scripting](./docs/scripting.md): pipes, structured output and stderr
   diagnostics in scripts and CI.
 - [Agent skills](./docs/skills.md): install skills for your agent and keep

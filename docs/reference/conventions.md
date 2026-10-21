@@ -341,12 +341,12 @@ _items.upsert({"id": "one", "label": "Example"})
 ```
 
 State lives in the [state file](../configuration.md#file-and-layout), outside
-profiles, and is never a user setting. The helpers keep other plugins'
-sections intact under the shared lock, so never read or write either file
-directly.
+profiles, and is never a user setting. The helpers keep other plugins' sections
+intact under the shared lock, so never read or write either file directly.
 
 A file under `plugin_dir(SPEC)` that an older release could not open is a
-[store](../caches.md#stores), opened through `Store.open()`.
+[store](../caches.md#stores), opened through `Store.open()`. Files people write
+and may commit under `.untaped/` go through [`committed_path`](../projects.md#a-plugins-files-in-untaped).
 
 ## Settings
 

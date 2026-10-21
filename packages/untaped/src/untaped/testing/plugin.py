@@ -19,6 +19,7 @@ import pytest
 
 from untaped.auth import clear_token_cache
 from untaped.deprecated_keys import reset_key_warnings
+from untaped.projects import _forget as _forget_projects
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.settings import get_settings, reset_config_registry
 from untaped.store import _forget_opened
@@ -71,6 +72,7 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         finally:
             reset_terminal_override(terminal_token)
             _forget_opened()  # the store layouts this test held lived under its HOME
+            _forget_projects()  # and so did the projects it found
     get_settings.cache_clear()
 
 

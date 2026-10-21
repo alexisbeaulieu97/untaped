@@ -24,6 +24,8 @@ clocks are independent.
 
 :func:`write_reference` writes another install's reference in
 ``~/.untaped/refs/``, so a test can say what holds a store's layouts.
+:func:`make_project` makes a folder a project in the hermetic home, as
+``untaped project init`` does.
 """
 
 from __future__ import annotations
@@ -49,6 +51,7 @@ from untaped.errors import ConfigError, PromptInterruptedError
 from untaped.management.records import PluginCheckRow
 from untaped.output.sink import current_clock, installed_clock, recording, tick
 from untaped.plugins.registry import PluginCandidate
+from untaped.projects import Project, init
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -59,7 +62,7 @@ from untaped.prompts import (
 )
 from untaped.refs import write_reference
 from untaped.screen.core import Cancel, Quit, Screen
-from untaped.stability import apply_marks, deprecated
+from untaped.stability import apply_marks, deprecated, experimental
 from untaped.testing.contracts import assert_fills, compose_with
 from untaped.testing.schema import assert_schema_pinned
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
@@ -97,6 +100,7 @@ __all__ = [
     "import_targets",
     "invoke_cli",
     "invoke_root",
+    "make_project",
     "plugin_candidate",
     "progress_clock",
     "write_reference",
@@ -344,6 +348,16 @@ def assert_destructive_contract(
     )
     if assert_unchanged is not None:
         assert_unchanged()
+
+
+@experimental
+def make_project(path: Path) -> Project:
+    """Make ``path`` a project (created when missing) recorded in the hermetic home.
+
+    As ``untaped project init PATH`` does: ``.untaped/project.json``, its
+    ``.gitignore`` and the home's reference, no holds.
+    """
+    return init(path).project
 
 
 def plugin_candidate(

@@ -253,11 +253,11 @@ def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
     folder = refs.refs_dir()
     folder.mkdir(parents=True)
     target = {"plugin": "git", "store": "store", "item": "github.com/acme/pay"}
-    (folder / "project-pay.json").write_text(
+    (folder / "acme_job-pay.json").write_text(
         json.dumps(
             {
                 "untaped": "1",
-                "holder": {"kind": "project", "name": "pay"},
+                "holder": {"kind": "acme_job", "name": "pay"},
                 "anchor": str(tmp_path / "gone"),  # no untaped there: an install would be dead
                 "targets": [
                     target,
@@ -268,32 +268,94 @@ def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
             }
         )
     )
-    (folder / "project-bare.json").write_text(
-        '{"untaped": "1", "holder": {"kind": "project", "name": "bare"}}'
+    (folder / "acme_job-bare.json").write_text(
+        '{"untaped": "1", "holder": {"kind": "acme_job", "name": "bare"}}'
     )
     bare, pay = refs.read_references()
     assert pay.opaque is None and pay.live and not pay.pre_upgrade
-    assert pay.kind == "project"
+    assert pay.kind == "acme_job"
     assert pay.targets == (RefTarget.model_validate(target),)
     assert bare.opaque is None and bare.live and bare.targets == ()
-    assert refs.holders(RefTarget.model_validate(target)) == [RefHolder(kind="project", name="pay")]
+    assert refs.holders(RefTarget.model_validate(target)) == [
+        RefHolder(kind="acme_job", name="pay")
+    ]
 
 
 def test_only_an_install_is_ever_from_before_an_upgrade(tmp_path: Path) -> None:
-    anchor = _install(tmp_path / "project", "9.0.0")
-    write_reference(RefHolder(kind="project", name="x"), [], anchor=anchor, version="1.0.0")
+    anchor = _install(tmp_path / "job", "9.0.0")
+    write_reference(RefHolder(kind="acme_job", name="x"), [], anchor=anchor, version="1.0.0")
     [ref] = refs.read_references()
     assert ref.live and not ref.pre_upgrade
 
 
 def test_an_item_target_is_written_without_a_layout() -> None:
     target = RefTarget(plugin="git", store="store", item="github.com/acme/pay")
-    file = write_reference(RefHolder(kind="project", name="pay"), [target])
+    file = write_reference(RefHolder(kind="acme_job", name="pay"), [target])
     assert json.loads(file.read_text())["targets"] == [
         {"plugin": "git", "store": "store", "item": "github.com/acme/pay"}
     ]
     [ref] = refs.read_references()
     assert ref.targets == (target,)
+
+
+def _project_file(tmp_path: Path, **fields: object) -> Path:
+    data: dict[str, object] = {
+        "untaped": "1",
+        "holder": {"kind": "project", "name": "3f9a1c2b7d10"},
+        "anchor": str(tmp_path / "PROJ-123"),
+        "anchor_id": {"dev": 1, "ino": 2},
+        "targets": [],
+    }
+    data.update(fields)
+    folder = refs.refs_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    file = folder / "project-3f9a1c2b7d10.json"
+    file.write_text(json.dumps(data))
+    return file
+
+
+def test_a_project_reference_reads_its_anchor_and_identity(tmp_path: Path) -> None:
+    _project_file(tmp_path)
+    [ref] = refs.read_references()
+    assert ref.opaque is None
+    assert ref.anchor == tmp_path / "PROJ-123"
+    assert ref.anchor_id == refs.AnchorId(dev=1, ino=2)
+    assert ref.describe() == "project PROJ-123"
+
+
+def test_a_project_reference_is_live_whatever_its_folder_holds(tmp_path: Path) -> None:
+    # The folder is gone: an install there would be dead, a project never is here.
+    _project_file(tmp_path)
+    [ref] = refs.read_references()
+    assert ref.live and not ref.pre_upgrade
+
+
+@pytest.mark.parametrize(
+    ("fields", "why"),
+    [
+        ({"targets": [{"plugin": "workspace"}]}, "a target is malformed"),
+        ({"targets": "workspace.repos"}, "no targets"),
+        ({"anchor": ""}, "no anchor"),
+        ({"anchor_id": {"dev": 1}}, "no anchor identity"),
+        ({"anchor_id": None}, "no anchor identity"),
+    ],
+)
+def test_a_project_reference_is_read_strictly(
+    tmp_path: Path, fields: dict[str, object], why: str
+) -> None:
+    # A project is this untaped's own kind: it never silently holds less than it says.
+    _project_file(tmp_path, **fields)
+    [ref] = refs.read_references()
+    assert ref.opaque == f"unreadable ({why})"
+    assert ref.live
+
+
+def test_write_reference_records_the_anchor_identity(tmp_path: Path) -> None:
+    holder = RefHolder(kind="project", name="3f9a1c2b7d10")
+    anchor_id = refs.AnchorId(dev=5, ino=6)
+    file = write_reference(holder, [], anchor=tmp_path, anchor_id=anchor_id)
+    assert json.loads(file.read_text())["anchor_id"] == {"dev": 5, "ino": 6}
+    assert refs.read_reference(file).anchor_id == anchor_id
 
 
 def test_a_missing_folder_has_no_references() -> None:

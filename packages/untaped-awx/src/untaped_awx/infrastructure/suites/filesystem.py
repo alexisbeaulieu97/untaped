@@ -12,9 +12,13 @@ import re
 from collections.abc import Iterable
 from pathlib import Path, PurePath
 
-from untaped.sdk import ConfigError
+from untaped.sdk import ConfigError, committed_path
+from untaped_awx import SPEC
 
-DEFAULT_SUITE_DIR = Path(".untaped/awx/tests")
+SPEC_ROOT = committed_path(SPEC, "awx", root=Path())
+"""Where a repository keeps its specs and suites (``.untaped/awx``), relative to its root."""
+
+DEFAULT_SUITE_DIR = SPEC_ROOT / "tests"
 """Where suites live when no path is given, relative to the git checkout root."""
 
 

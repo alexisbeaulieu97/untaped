@@ -21,13 +21,11 @@ from untaped_awx.domain.suites.temporary_set import TEMPLATE_KINDS
 from untaped_awx.infrastructure.git_source import GitSource
 from untaped_awx.infrastructure.resources.yaml_io import read_resource_files_at
 from untaped_awx.infrastructure.suites.filesystem import (
+    SPEC_ROOT,
     is_hidden,
     is_suite_text,
     kind_marker,
 )
-
-SPEC_ROOT = Path(".untaped/awx")
-"""Where a repository keeps its specs and suites, at its root."""
 
 _SPEC_MARKER = kind_marker(TEMPLATE_KINDS)
 """A ``kind:`` of a spec, block or flow style, with a trailing comment or not."""

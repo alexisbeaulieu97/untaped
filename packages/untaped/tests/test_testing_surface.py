@@ -32,6 +32,7 @@ EXPECTED_ALL = [
     "import_targets",
     "invoke_cli",
     "invoke_root",
+    "make_project",
     "plugin_candidate",
     "progress_clock",
     "write_reference",

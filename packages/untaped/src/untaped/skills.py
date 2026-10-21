@@ -21,6 +21,7 @@ from packaging.version import InvalidVersion, Version
 from untaped import skill_stubs
 from untaped.cli import existing_directory
 from untaped.errors import ConfigError, UsageError
+from untaped.projects import find_root
 from untaped.settings import DEFAULT_CONFIG_PATH
 from untaped.skill_stubs import STUB_MARKER, STUB_SOURCE, Comparison, StubAuthor
 from untaped.stability import deprecated
@@ -306,13 +307,17 @@ def project_root(start: Path) -> Path:
 
 
 def nearest_pyproject(start: Path) -> Path | None:
-    """The nearest ``pyproject.toml`` from ``start`` up to its :func:`checkout_root`, if any.
+    """The nearest ``pyproject.toml`` from ``start`` up to its checkout or project, if any.
 
-    The walk stops at the checkout root, so a stray ``pyproject.toml`` above a
-    checkout is never read; outside a checkout only ``start`` is looked at.
+    The walk stops at the farther of the checkout root (:func:`checkout_root`)
+    and the project root (the folder holding ``.untaped/project.json``), each
+    only when ``start`` is in one, as ``uv`` finds a project from a worktree
+    inside it; a stray ``pyproject.toml`` above both is never read. Outside
+    both, only ``start`` is looked at.
     """
     start = start.resolve()
-    top = checkout_root(start) or start
+    bounds = [root for root in (checkout_root(start), find_root(start)) if root is not None]
+    top = min(bounds, key=lambda root: len(root.parts)) if bounds else start
     for folder in (start, *start.parents):
         candidate = folder / "pyproject.toml"
         if candidate.is_file():

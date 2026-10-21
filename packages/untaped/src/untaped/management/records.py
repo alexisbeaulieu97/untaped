@@ -145,6 +145,45 @@ class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
     targets: list[RefTarget]
 
 
+ProjectState = Literal["present", "unreadable", "missing", "unknown"]
+"""Where a listed project stands; ``unknown`` is a record that can't be read."""
+
+
+class ProjectRow(Record, kind="untaped.project"):
+    """One project the home records (``project list``).
+
+    ``path`` is its folder; ``holds`` the items it holds, per ``plugin.store``.
+    An ``unknown`` row is a record untaped can't read: no ``id``, its file as
+    ``path`` and why in ``detail``.
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("name", "path", "state", "current")
+
+    name: str
+    path: str
+    state: ProjectState
+    current: bool = Field(description="Whether the working directory is in it.")
+    id: _Omitted = None
+    holds: dict[str, list[str]] = Field(default_factory=dict)
+    detail: _Omitted = None
+
+
+class ProjectOutcome(OutcomeRecord, kind="untaped.project_outcome"):
+    """What ``project init`` did to one folder.
+
+    ``action`` is ``created``, ``unchanged``, ``recorded`` (the home now
+    lists it), ``repaired`` (its record follows a move) or ``new id`` (a copy
+    given its own).
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("name", "path", "action", "detail")
+
+    name: str
+    path: str
+    id: str
+    detail: str
+
+
 SetupState = Literal["done", "todo", "failed", "skipped"]
 """Where a ``setup plan`` step stands."""
 
