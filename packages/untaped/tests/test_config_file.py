@@ -1,5 +1,7 @@
 """Tests for the YAML config-file helpers."""
 
+import contextvars
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -385,3 +387,24 @@ def test_nested_write_to_another_file_goes_through(tmp_path: Path) -> None:
     mutate_config(_outer, path=config)
     assert read_config_dict(config) == {"a": 1}
     assert read_plugin_state("demo", path=state) == {"b": 2}
+
+
+def test_the_nested_write_guard_ends_with_the_outer_write_in_copied_contexts(
+    tmp_path: Path,
+) -> None:
+    cfg = tmp_path / "config.yml"
+    captured: list[contextvars.Context] = []
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        captured.append(contextvars.copy_context())
+
+    mutate_config(_outer, path=cfg)
+    later = threading.Thread(
+        target=captured[0].run,
+        args=(mutate_config, lambda data: data.update(b=2)),
+        kwargs={"path": cfg},
+    )
+    later.start()
+    later.join()
+    assert read_config_dict(cfg) == {"a": 1, "b": 2}
