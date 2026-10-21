@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -37,13 +38,14 @@ from untaped.plugins.registry import (
     settings_model,
 )
 from untaped.records import DuplicateKindError, Record, record_model
+from untaped.stability import UntapedDeprecationWarning
 
 
 @pytest.mark.parametrize(
     "build",
     [
-        lambda: SkillAsset(name="   ", source=Path("/tmp"), description="d"),
-        lambda: SkillAsset(name="s", source=Path("/tmp"), description="   "),
+        lambda: SkillAsset(name="   ", description="d"),
+        lambda: SkillAsset(name="s", description="   "),
         lambda: make_spec(name="   "),
         lambda: make_spec(name="Acme"),
         lambda: make_spec(name="acme_tools"),
@@ -85,6 +87,16 @@ from untaped.records import DuplicateKindError, Record, record_model
 def test_records_reject_invalid_construction(build: Callable[[], object]) -> None:
     with pytest.raises(ConfigError):
         build()
+
+
+def test_a_skill_source_warns_and_a_stub_does_not() -> None:
+    with pytest.warns(UntapedDeprecationWarning, match=r"SkillAsset\.__init__\(source=\).*12\.0"):
+        copy = SkillAsset(name="untaped-acme", source=Path("/tmp/acme"), description="d")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        stub = SkillAsset(name="untaped-acme", description="d")
+
+    assert (copy.source, stub.source) == (Path("/tmp/acme"), None)
 
 
 def test_spec_normalizes_sequences_to_tuples() -> None:

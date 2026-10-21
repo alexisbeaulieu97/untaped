@@ -3,8 +3,9 @@
 A minimal, tested plugin for [untaped](https://github.com/alexisbeaulieu97/untaped):
 a command (`untaped hello greet`) and its setting (`hello.greeting`), a
 record (`Salutation` in `records.py`, kind `hello.salutation`) that `untaped hello
-say` writes and reads back with `--stdin` (`accepts=(Salutation,)`), one
-packaged skill and one `untaped setup migrate-dirs` row (moving an older
+say` writes and reads back with `--stdin` (`accepts=(Salutation,)`), a
+stub skill (`untaped skills install hello` writes it, and it sends the agent
+to `untaped agents hello`) and one `untaped setup migrate-dirs` row (moving an older
 version's directory into the plugin's own). `untaped hello motd` serves a
 file through a cache (`MOTD` in `settings.py`, listed on the spec, so
 `hello.caches.motd.max_age_seconds` tunes it), the way a plugin keeps what an

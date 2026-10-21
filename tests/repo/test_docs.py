@@ -3,7 +3,7 @@
 - ``docs/reference/config.md`` must match ``scripts/gen_config_reference.py``
   output, and every setting must have a description.
 - Every relative Markdown link (and ``#anchor``) in ``docs/``, ``README.md``,
-  ``AGENTS.md``, ``CONTRIBUTING.md`` and the packaged skills must resolve, so
+  ``AGENTS.md`` and ``CONTRIBUTING.md`` must resolve, so
   renaming a heading cannot silently break a pointer to it.
 - Every ``untaped`` example in a ``bash`` block must name a real command and
   only options that command accepts; every ``untaped …`` in inline code, and
@@ -441,12 +441,11 @@ def _prose_command_problem(root: App, command: str) -> str | None:
 def test_inline_commands_name_real_commands(
     first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
-    """Every ``untaped …`` in inline code names a real command (skills are checked on their own)."""
+    """Every ``untaped …`` in inline code names a real command."""
     root = build_root_app(candidates=first_party_candidates)
-    pages = [path for path in markdown_files() if "skills" not in path.parts]
     problems = [
         f"{path.relative_to(REPO_ROOT)}: {command}: {problem}"
-        for path in pages
+        for path in markdown_files()
         for command, inline in quoted_commands.commands(path.read_text(encoding="utf-8"))
         if inline and (problem := _prose_command_problem(root, command)) is not None
     ]
@@ -566,7 +565,7 @@ def test_agents_md_is_short_and_points_to_contributing() -> None:
     contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8").splitlines()
     for heading in (
         "## Releasing",
-        "## Evaluating a skill change",
+        "## Evaluating an agent docs change",
         "## Adding a first-party plugin",
     ):
         assert heading in contributing

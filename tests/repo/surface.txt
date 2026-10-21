@@ -5428,7 +5428,7 @@ sdk untaped.sdk.SingleList.window_rows  [experimental]
 sdk untaped.sdk.SingleList.with_error(text)  [experimental]
 sdk untaped.sdk.SkillAsset(description@3=) default=""
 sdk untaped.sdk.SkillAsset(name)
-sdk untaped.sdk.SkillAsset(source@2=) default=None
+sdk untaped.sdk.SkillAsset(source@2=) default=None  [deprecated, removed in 12.0; use a stub skill: leave source out]
 sdk untaped.sdk.SkillAsset.description
 sdk untaped.sdk.SkillAsset.name
 sdk untaped.sdk.SkillAsset.source

@@ -144,14 +144,14 @@ jobs:
           set -euo pipefail
           uv venv -q --python 3.14 "$RUNNER_TEMP/awx"
           uv pip install --python "$RUNNER_TEMP/awx/bin/python" --find-links dist "untaped[awx] @ file://$PWD/$CORE"
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/awx/bin/untaped" "$VERSION" --expect awx,lint --skills
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/awx/bin/untaped" "$VERSION" --expect awx,lint --agents
 
       - name: untaped[all]
         run: |
           set -euo pipefail
           uv venv -q --python 3.14 "$RUNNER_TEMP/all"
           uv pip install --python "$RUNNER_TEMP/all/bin/python" --find-links dist "untaped[all] @ file://$PWD/$CORE"
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/all/bin/untaped" "$VERSION" --skills
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/all/bin/untaped" "$VERSION" --agents
 
       - name: untaped[lint] plus the example plugin, tested outside the repo
         run: |
@@ -159,7 +159,7 @@ jobs:
           cp -r examples/untaped-hello "$RUNNER_TEMP/hello-src"
           uv venv -q --python 3.14 "$RUNNER_TEMP/hello"
           uv pip install --python "$RUNNER_TEMP/hello/bin/python" --find-links dist "untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/hello-src" pytest
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/hello/bin/untaped" "$VERSION" --expect hello,lint --skills
+          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/hello/bin/untaped" "$VERSION" --expect hello,lint --agents
           (cd "$RUNNER_TEMP/hello-src" && "$RUNNER_TEMP/hello/bin/python" -m pytest -q tests)
 
       - name: The example contract owner and provider, tested outside the repo

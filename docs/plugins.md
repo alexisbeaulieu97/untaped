@@ -1,11 +1,11 @@
 # Building a plugin
 
 A plugin is a Python package that adds to `untaped`, under one name, a
-command subtree (`untaped <name> ...`), settings, state, doctor checks,
-packaged skills, contracts it owns and contracts it fills, each optional. The
-root discovers plugins through the `untaped.plugins` entry-point group and
-owns everything else: there is no second console script, config command or
-profile command. See the [Glossary](../CONTRIBUTING.md#glossary).
+command subtree (`untaped <name> ...`), settings, state, doctor checks, a
+stub skill, guides for agents, contracts it owns and contracts it fills, each
+optional. The root discovers plugins through the `untaped.plugins`
+entry-point group and owns everything else: there is no second console
+script, config command or profile command. See the [Glossary](../CONTRIBUTING.md#glossary).
 
 A plugin imports from `untaped.sdk` and nothing else in `untaped`, except
 `untaped.contracts` and `untaped.testing` for [contracts](./contracts.md);
@@ -28,10 +28,7 @@ and no `[project.scripts]` section:
 untaped-acme/
 ├── pyproject.toml
 └── src/untaped_acme/
-    ├── __init__.py
-    └── skills/
-        └── untaped-acme/
-            └── SKILL.md
+    └── __init__.py
 ```
 
 The package requires the current product and declares the entry-point group:
@@ -54,18 +51,11 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "untaped_acme"
 module-root = "src"
-source-include = ["src/untaped_acme/skills/untaped-acme/SKILL.md"]
 ```
 
-The module settings bind the `src/untaped_acme` layout to the project. A
-skill below that module root ships in the wheel; `source-include` also
-carries it into a source distribution. Check that the wheel has it:
-
-```bash
-uv build --wheel
-unzip -l dist/untaped_acme-*.whl \
-  | grep 'untaped_acme/skills/untaped-acme/SKILL.md'
-```
+The module settings bind the `src/untaped_acme` layout to the project.
+Package data below that module root, such as a folder of
+[guides](./reference/agent-pages.md#guides), ships in the wheel.
 
 A plugin has one name, lowercase words joined by single hyphens (`@` is kept
 for later): `untaped-<name>` on PyPI, `untaped_<name>` to import, and `<name>`
@@ -101,14 +91,13 @@ A plugin that connects to a service marks what it can't run without, and
 `token` secret (else the only one) as the bearer.
 
 A complete plugin module, with a nullary app factory (leave it out for a
-plugin with no commands), one packaged skill and the `SPEC` the entry point
+plugin with no commands), its stub skill and the `SPEC` the entry point
 above names:
 
 ```python
 # src/untaped_acme/__init__.py
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -166,12 +155,10 @@ SPEC = PluginSpec(
     skills=(
         SkillAsset(
             name="untaped-acme",
-            source=Path(__file__).parent / "skills" / "untaped-acme",
-            # SKILL.md's frontmatter `description` repeats this string exactly.
             description=(
-                "Operates Acme through the `untaped acme` command (greeting, identifier"
-                " import). Use when the user wants the Acme greeting or to import"
-                " identifiers, or mentions Acme."
+                "Acme through untaped: its greeting and importing repository names. "
+                "Use when the user wants the Acme greeting or to import identifiers, "
+                "or mentions Acme."
             ),
         ),
     ),
@@ -350,16 +337,12 @@ def put_command() -> None: ...
 
 ## Packaged skills
 
-A plugin ships its agent skill as a directory holding `SKILL.md`. Declare
-it on `PluginSpec.skills`; the root lists and installs every composed
-plugin's skills (see [Agent skills](./skills.md)).
-
-`SkillAsset.name` is the skill's full ID (`untaped-acme`; see
-[Install skills](./skills.md#install-skills)). Without `source` it is a stub
-written from untaped's template and `description` (one per plugin); with
-`source`, a copy whose `SKILL.md` follows the [skill template](./plugin-skills.md).
-Prose for agents that fits no single command goes in a
-[guide](./reference/agent-pages.md#guides).
+A plugin ships its agent skill as a stub: a `SkillAsset` with a name and a
+description on `PluginSpec.skills`, which untaped writes from its own
+template. The root lists and installs every composed plugin's skills (see
+[Agent skills](./skills.md)), and [Writing a plugin's
+skill](./plugin-skills.md) says what the description holds and where the
+rest goes.
 
 ## Validation and checks
 

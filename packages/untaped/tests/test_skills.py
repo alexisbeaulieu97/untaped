@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import untaped.skills as skills_module
+from test_management.support import copy_asset
 from untaped.errors import ConfigError, UsageError
 from untaped.git import run_git
 from untaped.sdk import SkillAsset, checkout_root, project_root
@@ -30,11 +31,7 @@ def _skill_dir(tmp_path: Path, name: str = "untaped-demo") -> Path:
 
 
 def _asset(source: Path) -> SkillAsset:
-    return SkillAsset(
-        name=source.name,
-        source=source,
-        description=f"Teach agents how to use {source.name}.",
-    )
+    return copy_asset(source.name, source, f"Teach agents how to use {source.name}.")
 
 
 def test_skill_install_scope_vocabulary_is_not_profile_vocabulary() -> None:
@@ -163,11 +160,7 @@ def test_install_skills_missing_source_aborts_before_any_copy(tmp_path: Path) ->
         skills_module.install_skills(
             {
                 good.name: _asset(good),
-                "untaped-two": SkillAsset(
-                    name="untaped-two",
-                    source=missing,
-                    description="Teach agents how to use two.",
-                ),
+                "untaped-two": copy_asset("untaped-two", missing, "Teach agents how to use two."),
             },
             [],
             stdin=False,

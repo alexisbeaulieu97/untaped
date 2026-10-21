@@ -9,7 +9,9 @@ import sys
 import tomllib
 from typing import Any
 
+import pytest
 import release
+from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 
@@ -152,3 +154,23 @@ def test_core_holds_only_the_registry_under_plugins() -> None:
         "__init__.py",
         "registry.py",
     ]
+
+
+#: The first release where a ``SkillAsset`` without ``source`` is a stub.
+STUBS_SINCE = Version("11.1.0")
+
+
+def test_the_example_plugin_leaves_out_releases_without_stub_skills() -> None:
+    # untaped-hello's skill is a stub, which 11.0 refuses (its SkillAsset needs a source).
+    core = tomllib.loads((PACKAGES / "untaped" / "pyproject.toml").read_text(encoding="utf-8"))
+    if Version(core["project"]["version"]) < STUBS_SINCE:
+        pytest.skip("no release has stub skills yet, so the floor can't rise")
+    hello = REPO_ROOT / "examples" / "untaped-hello" / "pyproject.toml"
+    project = tomllib.loads(hello.read_text(encoding="utf-8"))["project"]
+    stale = [
+        line
+        for line in project["dependencies"]
+        if (requirement := Requirement(line)).name == "untaped"
+        and requirement.specifier.contains("11.0.0")
+    ]
+    assert not stale, f"raise examples/untaped-hello's floor to untaped>=11.1: {stale}"

@@ -5,7 +5,6 @@ from __future__ import annotations
 import itertools
 import sys
 from collections.abc import Callable
-from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -51,7 +50,7 @@ def nullary_app(name: str = "test-app") -> Callable[[], App]:
 
 
 def make_skill(name: str = "test-skill") -> SkillAsset:
-    return SkillAsset(name=name, source=Path("/tmp/test-skill"), description=f"{name} skill")
+    return SkillAsset(name=name, description=f"{name} skill")
 
 
 def make_check(

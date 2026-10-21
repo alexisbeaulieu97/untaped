@@ -51,10 +51,10 @@ uv lock --check                                 # lock file is current
   the reference for composition and command behavior.
 - Each plugin is its own package,
   `packages/untaped-<name>/src/untaped_<name>/`, and owns one plugin end
-  to end. Its packaged skill is the reference; its `README.md` (also its PyPI
-  page) is a one-screen guide that links to it. A package README links into
-  this repository with absolute `blob/main` URLs, which the release build
-  points at its own `vX.Y.Z` tag.
+  to end. Its agent pages (`untaped agents <name>`) are the reference; its
+  `README.md` (also its PyPI page) is a one-screen guide that points at them.
+  A package README links into this repository with absolute `blob/main`
+  URLs, which the release build points at its own `vX.Y.Z` tag.
 - `examples/` holds third-party plugins with their own tests: `untaped-hello`
   (a minimal plugin) and `untaped-shelf` and `untaped-library` (a contract
   owner and its provider). They are not workspace members and are never
@@ -68,7 +68,7 @@ uv lock --check                                 # lock file is current
   modules in `lint/`, tested in `tests/lint/`): conventions that used to be
   prose, which `untaped lint` checks at the root and CI runs.
 - `tests/` verifies public behavior and release contracts: `tests/repo/`
-  holds the cross-package tests and `tests/skills/` the skill evaluation
+  holds the cross-package tests and `tests/skills/` the agent evaluation
   cases; a plugin's tests live in `packages/untaped-<name>/tests/<name>/`.
 
 ## Adding a first-party plugin
@@ -89,7 +89,7 @@ packages/untaped-<name>/src/untaped_<name>/
 ├── domain/            # entities, value objects (pure, no I/O)
 ├── infrastructure/    # external adapters (httpx clients, fs, …)
 ├── errors.py          # <Name>Error(UntapedError) and its subclasses
-└── skills/            # packaged agent skills shipped via SPEC.skills
+└── guides/            # optional: agent guides shipped via SPEC.guides
 ```
 
 1. Add `packages/untaped-<name>/` with a copy of the root `LICENSE`, exposing
@@ -109,11 +109,10 @@ packages/untaped-<name>/src/untaped_<name>/
 6. Call `untaped_lint.testing.assert_clean` from its tests. The default
    table columns rule is enforced by this repository's own test suite, not by
    `untaped lint`, and `# untaped: allow` does not apply to it.
-7. Start its skill from the [skill template](docs/plugin-skills.md);
-   tests hold it to the template's section order, `SKILL.md` at most 500
-   lines and each reference at most 300. Start its package `README.md` from a
-   sibling's (the same section order, ending in `## Reference`), linked from
-   the root `README.md` and `docs/getting-started.md`.
+7. Give it a stub skill ([Writing a plugin's skill](docs/plugin-skills.md)).
+   Start its package `README.md` from a sibling's (the same section order,
+   ending in `## Reference`), linked from the root `README.md` and
+   `docs/getting-started.md`.
 
 A plugin whose settings import another's `api` (ansible imports
 github's) is quarantined with it when that import fails. Shared logic follows
@@ -141,9 +140,11 @@ or becomes an SDK helper that every plugin can use. Declare a
   TLS through `resolve_verify` (`tests/repo/test_invariants.py` pins both).
 - **Docs in the same change.** A change to behavior, settings, composition or
   a shared helper updates its docs in the same commit. Each fact has one home
-  and other pages link to it: plugin detail in its skill (the package
-  `README.md` is a one-screen guide: set up, one example per workflow, and a
-  `## Reference` section linking the skill), exit codes, record kinds and environment
+  and other pages link to it: plugin detail in the command's docstring, the
+  record's model or the plugin's guide, which its agent pages print (the
+  package `README.md` is a one-screen guide: set up, one example per
+  workflow, and a `## Reference` section pointing at `untaped agents
+  <name>`), exit codes, record kinds and environment
   variables in [`docs/reference/`](docs/reference), settings in the
   generated [config reference](docs/reference/config.md), history in
   [`CHANGELOG.md`](CHANGELOG.md). Never copy `--help` output, default columns
@@ -352,16 +353,13 @@ fork's runs publish nothing.
   `SOURCE_DATE_EPOCH` set to its commit time so the files match any already
   uploaded, then published with a PyPI API token through `uv publish`.
 
-## Evaluating a skill change
+## Evaluating an agent docs change
 
-The structure tests check that packaged skills parse and link, not what an
-agent does with them. When a change to a skill could change an agent's
-behavior, run the cases in [`tests/skills/cases.md`](tests/skills/cases.md)
+`untaped lint` and the agent pages tests check that the pages render and
+that what they quote parses, not what an agent does with them. When a change
+to a stub description, a guide or a command's docstring could change an
+agent's behavior, run the cases in [`tests/skills/cases.md`](tests/skills/cases.md)
 against the old and new versions, following its method.
-
-First-party skills are also checked by `tests/repo/test_skill_files.py`
-(description matches the frontmatter, every quoted command parses, no link
-leaves the skill).
 
 ## Live AAP smoke (awx)
 

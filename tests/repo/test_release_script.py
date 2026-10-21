@@ -733,6 +733,10 @@ case "$1" in
   --version) echo "$FAKE_VERSION" ;;
   plugin) echo "$FAKE_ROWS"; exit "${FAKE_ROWS_EXIT:-0}" ;;
   skills) echo "$FAKE_SKILLS"; exit "${FAKE_SKILLS_EXIT:-0}" ;;
+  agents)
+    [ "$3" = "$FAKE_MISSING_GUIDE" ] && [ -n "$3" ] && exit 2
+    [ "$2" = "$FAKE_EMPTY_PAGE" ] && [ -n "$2" ] && exit 0
+    printf '# page\n\n## Guides\n- `writes`: Read before a write.\n' ;;
   "$FAKE_FAILING") exit 2 ;;
 esac
 exit 0
@@ -830,53 +834,69 @@ def test_smoke_cli_checks_expected_and_quarantined_names(
     )
 
 
-def _skill(tmp_path: Path, name: str, *, with_file: bool = True) -> dict[str, str]:
-    source = tmp_path / "skills" / name
-    source.mkdir(parents=True)
-    if with_file:
-        (source / "SKILL.md").write_text("---\nname: x\n---\n")
-    return {"name": name, "description": "d", "source": str(source), "kind": "copy"}
+def _skill(name: str) -> dict[str, str]:
+    return {"name": name, "description": "d", "source": "untaped:stub/1", "kind": "stub"}
 
 
-def test_skill_errors_accept_a_stub_without_a_skill_file(tmp_path: Path) -> None:
-    stub = {"name": "untaped", "description": "d", "source": "untaped:stub/1", "kind": "stub"}
-    assert release.skill_errors(json.dumps([stub, _skill(tmp_path, "untaped-awx")]), ["awx"]) == []
-
-
-def test_smoke_skills_need_each_expected_skill_with_its_file(
+def test_smoke_agents_need_each_expected_skill_and_every_page(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     exe = _fake_untaped(tmp_path)
     rows = [{"name": "awx", "status": "ready"}, {"name": "jira", "status": "ready"}]
-    skills = [
-        _skill(tmp_path, "untaped"),
-        _skill(tmp_path, "untaped-awx"),
-        _skill(tmp_path, "untaped-x", with_file=False),
-    ]
     monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows))
-    monkeypatch.setenv("FAKE_SKILLS", json.dumps(skills))
-    argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx,jira", "--skills"]
+    monkeypatch.setenv("FAKE_SKILLS", json.dumps([_skill("untaped"), _skill("untaped-awx")]))
+    monkeypatch.setenv("FAKE_MISSING_GUIDE", "writes")
+    monkeypatch.setenv("FAKE_EMPTY_PAGE", "jira")
+    # The checkout ships awx's writes and launching guides; the install lists only writes.
+    guides = {"awx": ["launching", "writes"], "jira": []}
+    monkeypatch.setattr(release, "plugin_guides", lambda root: guides)
+    argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx,jira", "--agents"]
     assert release.main(argv) == 1
     assert capsys.readouterr().err == (
         "skill untaped-jira is missing\n"
-        f"skill untaped-x has no SKILL.md in {tmp_path / 'skills' / 'untaped-x'}\n"
+        "untaped agents untaped writes exited 2\n"
+        "untaped agents awx does not list the guide launching\n"
+        "untaped agents awx writes exited 2\n"
+        "untaped agents jira printed nothing\n"
     )
+    guides["awx"] = ["writes"]
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows[:1]))
-    monkeypatch.setenv("FAKE_SKILLS", json.dumps(skills[:2]))
-    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--skills"]) == 0
+    monkeypatch.setenv("FAKE_MISSING_GUIDE", "")
+    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--agents"]) == 0
     assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 plugins\n"
 
 
-def test_skill_errors_refuse_a_skill_listed_twice(tmp_path: Path) -> None:
-    shell, skill = _skill(tmp_path, "untaped"), _skill(tmp_path, "untaped-awx")
+def test_plugin_guides_are_each_packages_guide_files() -> None:
+    guides = release.plugin_guides(release.REPO_ROOT)
+    shipped = sorted(
+        path.stem
+        for path in (release.REPO_ROOT / "packages/untaped-awx/src/untaped_awx/guides").glob("*.md")
+    )
+    assert guides["awx"] == shipped != []
+    assert guides["lint"] != []
+
+
+def test_page_guides_reads_only_the_guides_section() -> None:
+    page = (
+        "# awx\n\n## Commands\n- `job list`: List jobs.\n\n"
+        "## Guides\n- `writes`: Read before a write.\n- `test-cases`: Read when...\n\n"
+        "## Settings\n- `token`: The token.\n"
+    )
+    assert release.page_guides(page) == ["writes", "test-cases"]
+    assert release.page_guides("## Guides\n- `Odd_Name`: Read it.\n") == ["Odd_Name"]
+    assert release.page_guides("# lint\n\n## Commands\n- `lint`: Lint.\n") == []
+
+
+def test_skill_errors_refuse_a_skill_listed_twice() -> None:
+    shell, skill = _skill("untaped"), _skill("untaped-awx")
     assert release.skill_errors(json.dumps([shell, skill, skill]), ["awx"]) == [
         "skill untaped-awx is listed twice"
     ]
 
 
-def test_skill_errors_need_the_shells_own_skill(tmp_path: Path) -> None:
-    skill = _skill(tmp_path, "untaped-awx")
+def test_skill_errors_need_the_shells_own_skill() -> None:
+    skill = _skill("untaped-awx")
     assert release.skill_errors(json.dumps([skill]), ["awx"]) == ["skill untaped is missing"]
 
 
@@ -887,7 +907,7 @@ def test_skill_errors_need_the_shells_own_skill(tmp_path: Path) -> None:
         ("[]", "4", "untaped skills list --format json exited 4"),
     ],
 )
-def test_smoke_skills_report_a_broken_listing(
+def test_smoke_agents_report_a_broken_skill_listing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -900,7 +920,7 @@ def test_smoke_skills_report_a_broken_listing(
     monkeypatch.setenv("FAKE_ROWS", "[]")
     monkeypatch.setenv("FAKE_SKILLS", skills)
     monkeypatch.setenv("FAKE_SKILLS_EXIT", exit_code)
-    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "", "--skills"]) == 1
+    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "", "--agents"]) == 1
     assert capsys.readouterr().err.endswith(f"{error}\n")
 
 

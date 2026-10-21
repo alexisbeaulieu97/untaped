@@ -22,7 +22,7 @@ from importlib import metadata as importlib_metadata
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal
 
 from cyclopts import App
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
@@ -45,7 +45,14 @@ from untaped.settings import (
     section_model,
     validate_disjoint_settings_sections,
 )
-from untaped.stability import DeprecatedBehaviour, Stability, check_stability, mark_errors
+from untaped.stability import (
+    DeprecatedBehaviour,
+    Stability,
+    check_stability,
+    deprecated,
+    deprecated_parameters,
+    mark_errors,
+)
 from untaped.store import Store
 
 if TYPE_CHECKING:
@@ -97,13 +104,33 @@ class SkillAsset:
 
     Without ``source`` it is a stub skill: core writes it from its own
     template and ``description``, and the stub sends the agent to
-    ``untaped agents``. With ``source`` it is a copy of that directory.
-    A plugin ships at most one stub.
+    ``untaped agents``. With ``source`` (deprecated) it is a copy of that
+    directory. A plugin ships at most one stub.
     """
 
     name: str
     source: Path | None = None
     description: str = ""
+
+    # Written by hand: a dataclass's generated ``__init__`` can't carry
+    # ``@deprecated_parameters``, which is what warns about ``source``.
+    @deprecated_parameters
+    def __init__(
+        self,
+        name: str,
+        source: Annotated[
+            Path | None,
+            deprecated(
+                removed_in=12,
+                replacement="a stub skill: leave source out",
+            ),
+        ] = None,
+        description: str = "",
+    ) -> None:
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "description", description)
+        self.__post_init__()
 
     def __post_init__(self) -> None:
         if not self.name.strip():

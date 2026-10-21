@@ -45,7 +45,7 @@ from untaped.agents._model import (
 from untaped.agents._requirement import untaped_requirement
 from untaped.bootstrap import fail_if_unbuildable
 from untaped.cli import write_kind
-from untaped.errors import ExitCode
+from untaped.errors import EXIT_CODE_PRECEDENCE, ExitCode
 from untaped.messages import shown_path
 from untaped.plugins.registry import CompositionResult, RegisteredPlugin, owns_contracts
 from untaped.settings import resolve_config_path
@@ -144,7 +144,12 @@ def shared(root: App) -> Shared:
     codes = tuple(
         ExitCodeLine(int(code), markdown(code.description).rstrip(".")) for code in ExitCode
     )
-    return Shared(shown_path(resolve_config_path()), options, codes)
+    return Shared(
+        shown_path(resolve_config_path()),
+        options,
+        codes,
+        tuple(int(code) for code in EXIT_CODE_PRECEDENCE),
+    )
 
 
 def core_commands(root: App, result: CompositionResult) -> Iterator[tuple[str, App]]:
