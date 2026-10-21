@@ -247,3 +247,23 @@ def test_a_hand_added_worktree_moved_with_its_source_stays_the_users(
         (new / "app").resolve(): "workspace",
         (new / "mine").resolve(): None,
     }
+
+
+def test_a_copy_of_a_copy_reusing_the_owned_entrys_id_stays_the_users(
+    store_for: StoreFor, tmp_path: Path
+) -> None:
+    store = _workspace(store_for)
+    owned = tmp_path / "P1" / "app"
+    store.worktree_add(owned, _MAIN, branch="one")
+    copy = tmp_path / "b"
+    git(owned, "worktree", "add", "--quiet", "-b", "two", str(copy), bare=False)
+    git(store.path, "worktree", "remove", "--force", str(owned))
+    again = tmp_path / "other" / "app"
+    git(copy, "worktree", "add", "--quiet", "-b", "three", str(again), bare=False)
+    moved = tmp_path / "moved" / "app"
+    again.parent.rename(moved.parent)
+    git(moved, "worktree", "repair", bare=False)
+
+    store.repair_worktree(moved)
+
+    assert store.worktree_owners()[moved.resolve()] is None

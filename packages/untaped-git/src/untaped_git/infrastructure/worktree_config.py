@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from untaped_git.infrastructure.store import RepoStore
 
 _PLAIN_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
+#: The owning plugin's name, in the entry's admin directory (``worktrees/<id>``).
+OWNER_MARK = "untaped-owner"
 
 
 def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | None) -> None:
@@ -91,11 +93,11 @@ def write_owner_config(store: RepoStore, worktree: Path, *, owner: str | None = 
     # Stamps which worktree is owned: git copies this file into worktrees
     # added from this one, which must stay a user's own.
     _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
-    # And which entry: git keeps an entry's admin id across a move or repair,
-    # while a copied file names its source's.
+    # And in the entry's admin directory, which git keeps across a move or
+    # repair, never copies, and deletes with the entry.
     entry = _entry_of(store, worktree)
     if entry is not None:
-        _worktree_config(store, worktree, "untaped.admin", entry.admin.name)
+        (entry.admin / OWNER_MARK).write_text(f"{owner}\n", encoding="utf-8")
     plain = layout_for(owner).heads == "refs/remotes/origin/"
     _write_fetch_config(store, worktree, plain=plain)
 
@@ -160,17 +162,18 @@ def _owned_before_repair(store: RepoStore, entry: WorktreeEntry) -> bool:
 
     An owner counts when its stamp names the entry's recorded directory, or,
     once git already repointed the entry (a hand ``git worktree repair`` or
-    ``move``), when the stamped admin id is the entry's own. A hand-added
-    worktree that inherited a stamp names its source's id, so it stays the
-    user's own.
+    ``move``), when the entry's own admin directory holds this plugin's mark.
+    A hand-added worktree inherits the stamp but never the mark, so it stays
+    the user's own.
     """
     if entry.owner is not None:
         return entry.owner == store._plugin
-    config = entry.admin / "config.worktree"
-    return (
-        config_value(config, "untaped", "owner") == store._plugin
-        and config_value(config, "untaped", "admin") == entry.admin.name
-    )
+    try:
+        mark = (entry.admin / OWNER_MARK).read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    owner = config_value(entry.admin / "config.worktree", "untaped", "owner")
+    return mark == owner == store._plugin
 
 
 def check_worktree(store: RepoStore, worktree: Path) -> None:
