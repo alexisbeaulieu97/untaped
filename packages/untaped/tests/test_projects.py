@@ -11,6 +11,7 @@ import errno
 import json
 import os
 import shutil
+import subprocess
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -119,11 +120,12 @@ def test_init_writes_the_marker_the_gitignore_and_the_reference(tmp_path: Path) 
     marker = json.loads((root / ".untaped" / "project.json").read_text(encoding="utf-8"))
     assert marker == {"untaped": "1", "id": done.project.id}
     assert (root / ".untaped" / ".gitignore").read_text(encoding="utf-8").splitlines() == [
-        ".gitignore",
-        "project.json",
-        "state.yml",
-        "plugins/",
-        "*.lock",
+        "/.gitignore",
+        "/project.json",
+        "/state.yml",
+        "/plugins/",
+        "/state.yml.lock",
+        "/config.yml.lock",
     ]
     ref = _reference(done.project)
     assert ref.anchor == root and ref.anchor_id == AnchorId.of(root) and ref.targets == ()
@@ -139,11 +141,44 @@ def test_init_adds_its_lines_to_a_gitignore_already_there(tmp_path: Path) -> Non
     assert (folder / ".gitignore").read_text(encoding="utf-8").splitlines() == [
         "state.yml",
         "notes/",
-        "project.json",
-        "plugins/",
-        "*.lock",
+        "/project.json",
+        "/state.yml",
+        "/plugins/",
+        "/state.yml.lock",
+        "/config.yml.lock",
     ]
     assert (folder / "lint.yml").read_text(encoding="utf-8") == "version: 1\n"
+
+
+def test_the_gitignore_ignores_cores_lock_files_and_no_plugins(tmp_path: Path) -> None:
+    root = tmp_path / "PROJ"
+    init(root)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    cores = [
+        ".gitignore",
+        "project.json",
+        "state.yml",
+        "plugins/x.json",
+        "state.yml.lock",
+        "config.yml.lock",
+    ]
+    plugins = [  # a plugin's committed files, at any depth
+        "recipe.lock",
+        "notes/state.yml.lock",
+        "lint/state.yml",
+        "lint/project.json",
+        "awx/plugins/x.yml",
+        "awx/.gitignore",
+    ]
+
+    def ignored(name: str) -> bool:
+        check = ["git", "-C", str(root), "check-ignore", "-q", f".untaped/{name}"]
+        return subprocess.run(check, check=False).returncode == 0
+
+    assert {name: ignored(name) for name in cores + plugins} == {
+        **dict.fromkeys(cores, True),
+        **dict.fromkeys(plugins, False),
+    }
 
 
 def test_init_twice_changes_nothing(tmp_path: Path) -> None:

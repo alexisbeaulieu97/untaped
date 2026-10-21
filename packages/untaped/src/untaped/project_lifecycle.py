@@ -40,8 +40,9 @@ from untaped.holds import (
 from untaped.messages import shown_path
 from untaped.output.diagnostic import Failure
 from untaped.projects import (
+    CORE_LOCKS,
     DIRECTORY,
-    GITIGNORE,
+    GITIGNORE_TEXT,
     MARKER,
     Project,
     _create_marker,
@@ -76,8 +77,6 @@ from untaped.refs import (
 _CORE_FILES = (MARKER, "state.yml")
 #: Core's own folder there: plugins' machine files (``Project.plugin_dir``).
 _CORE_FOLDERS = ("plugins",)
-#: The lock files core's locked writes leave beside the state and config files.
-_CORE_LOCKS = ("state.yml.lock", "config.yml.lock")
 
 
 @dataclass(frozen=True)
@@ -217,7 +216,7 @@ def core_files(root: Path) -> tuple[list[str], list[str]]:
     deletes, keeps = [], []
     for name in names:
         path = folder / name
-        core_file = name in _CORE_FILES or name in _CORE_LOCKS or name == ".gitignore"
+        core_file = name in _CORE_FILES or name in CORE_LOCKS or name == ".gitignore"
         if name in _CORE_FOLDERS and path.is_dir() and not path.is_symlink():
             deletes.append(f"{name}/")
         elif core_file and path.is_file() and (name != ".gitignore" or _untouched(folder)):
@@ -264,7 +263,7 @@ def _untouched(folder: Path) -> bool:
         text = (folder / ".gitignore").read_text(encoding="utf-8")
     except OSError:
         return False
-    return text == "\n".join((".gitignore", *GITIGNORE)) + "\n"
+    return text == GITIGNORE_TEXT
 
 
 def _holds_left(holder: RefHolder) -> int:

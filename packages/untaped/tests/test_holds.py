@@ -802,6 +802,16 @@ def test_an_unreadable_project_is_not_removed(
         plan_removal(record, force=())
 
 
+def test_remove_keeps_a_gitignore_someone_edited(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    gitignore = project.root / ".untaped" / ".gitignore"
+    untouched = gitignore.read_text(encoding="utf-8")
+    gitignore.write_text(untouched + "/notes/\n", encoding="utf-8")
+    result = _cli("project", "remove", str(project.root), "--yes", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert gitignore.read_text(encoding="utf-8") == untouched + "/notes/\n"
+
+
 def test_remove_keeps_lock_named_files_that_are_not_cores(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
     folder = project.root / ".untaped"

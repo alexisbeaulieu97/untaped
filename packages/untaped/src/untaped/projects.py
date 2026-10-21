@@ -87,8 +87,14 @@ DIRECTORY = ".untaped"
 MARKER = "project.json"
 #: ``project.json``'s own format.
 FORMAT = "1"
+#: The lock files core's locked writes leave beside the state and config files.
+CORE_LOCKS = ("state.yml.lock", "config.yml.lock")
 #: What ``init`` keeps out of version control: the id and machine records, never config.
-GITIGNORE = ("project.json", "state.yml", "plugins/", "*.lock")
+#: Each is anchored at ``.untaped/``'s top level and named (core's lock files too), so a
+#: plugin's committed files (``recipe.lock``, ``awx/plugins/``) stay tracked.
+GITIGNORE = ("/project.json", "/state.yml", "/plugins/", *(f"/{name}" for name in CORE_LOCKS))
+#: The whole ``.gitignore`` ``init`` creates: those lines and itself.
+GITIGNORE_TEXT = "\n".join(("/.gitignore", *GITIGNORE)) + "\n"
 #: Folders under ``~/.untaped`` that are core's own, never a project.
 _CORE_FOLDERS = ("refs", "plugins")
 
@@ -728,7 +734,7 @@ def _write_gitignore(folder: Path) -> None:
     try:
         existing = file.read_text(encoding="utf-8")
     except FileNotFoundError:
-        atomic_write(file, "\n".join((".gitignore", *GITIGNORE)) + "\n")
+        atomic_write(file, GITIGNORE_TEXT)
         return
     lines = existing.splitlines()
     missing = [line for line in GITIGNORE if line not in lines]
