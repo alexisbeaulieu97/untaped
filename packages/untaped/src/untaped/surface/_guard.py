@@ -89,6 +89,9 @@ def respelled(line: Line, present: set[str]) -> bool:
     if line.area == "cfg":
         key = line.text.split(" ")[1]
         prefix = f"cfg {key} -> "
+        if line.text.startswith(prefix):
+            # a renamed key renamed again: still read, now pointing at the chain's end
+            return any(text.startswith(prefix) for text in present)
         # the new key keeps the old one's shape: a rename, never a retyping
         return any(
             text.startswith(prefix)
