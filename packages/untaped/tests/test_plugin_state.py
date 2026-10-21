@@ -5,11 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from untaped.config_file import (
+    mutate_config,
     mutate_plugin_state,
     read_config_dict,
     read_plugin_state,
 )
+from untaped.errors import UntapedError
 
 
 def test_mutate_plugin_state_creates_section(tmp_path: Path) -> None:
@@ -60,3 +64,63 @@ def test_mutate_plugin_state_removes_emptied_section(tmp_path: Path) -> None:
 def test_read_plugin_state_absent_returns_empty(tmp_path: Path) -> None:
     cfg = tmp_path / "state.yml"
     assert read_plugin_state("ansible", path=cfg) == {}
+
+
+def test_nested_write_to_the_same_file_is_refused_and_writes_nothing(tmp_path: Path) -> None:
+    cfg = tmp_path / "state.yml"
+
+    def _inner(state: dict[str, Any]) -> None:
+        state["b"] = 2
+
+    def _outer(state: dict[str, Any]) -> None:
+        state["a"] = 1
+        mutate_plugin_state("demo", _inner, path=cfg)
+
+    with pytest.raises(UntapedError, match="inside another write") as excinfo:
+        mutate_plugin_state("demo", _outer, path=cfg)
+    assert str(cfg) in str(excinfo.value)
+    assert not cfg.exists()
+    # The guard ends with the outer write: a later write goes through.
+    mutate_plugin_state("demo", _inner, path=cfg)
+    assert read_plugin_state("demo", path=cfg) == {"b": 2}
+
+
+def test_nested_config_write_is_refused(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yml"
+
+    def _inner(data: dict[str, Any]) -> None:
+        data["b"] = 2
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        mutate_config(_inner, path=cfg)
+
+    with pytest.raises(UntapedError, match="inside another write"):
+        mutate_config(_outer, path=cfg)
+    assert not cfg.exists()
+
+
+def test_nested_write_to_the_same_file_through_a_symlink_is_refused(tmp_path: Path) -> None:
+    cfg = tmp_path / "state.yml"
+    link = tmp_path / "link.yml"
+    link.symlink_to(cfg)
+
+    def _outer(state: dict[str, Any]) -> None:
+        state["a"] = 1
+        mutate_plugin_state("demo", lambda inner: inner.update(b=2), path=link)
+
+    with pytest.raises(UntapedError, match="inside another write"):
+        mutate_plugin_state("demo", _outer, path=cfg)
+
+
+def test_nested_write_to_another_file_goes_through(tmp_path: Path) -> None:
+    state = tmp_path / "state.yml"
+    config = tmp_path / "config.yml"
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        mutate_plugin_state("demo", lambda section: section.update(b=2), path=state)
+
+    mutate_config(_outer, path=config)
+    assert read_config_dict(config) == {"a": 1}
+    assert read_plugin_state("demo", path=state) == {"b": 2}
