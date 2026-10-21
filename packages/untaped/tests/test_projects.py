@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from untaped import projects, refs
+from untaped import holds, projects, refs
 from untaped.errors import ConfigError, ErrorCategory, UsageError
 from untaped.plugins.registry import PluginSpec
 from untaped.projects import (
@@ -385,7 +385,7 @@ def test_a_moved_project_is_reported_then_repaired_by_a_writing_use(
     lines = _lines(lambda: _fresh(moved), capsys)
     assert lines == [
         f"project PROJ ({moved}) moved from {project.root}; "
-        "`untaped project init` there repairs its record"
+        f"`untaped project move {project.root} {moved}` repairs it"
     ]
     assert _reference(project).anchor == project.root  # reading repaired nothing
     done = init(moved)
@@ -554,7 +554,7 @@ def test_the_project_lock_is_re_entrant_and_shuts_out_other_threads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = make_project(tmp_path / "PROJ")
-    monkeypatch.setattr(projects, "LOCK_WAIT", 0.0)
+    monkeypatch.setattr(holds, "LOCK_WAIT", 0.0)
     busy: list[BaseException] = []
 
     def other() -> None:

@@ -25,7 +25,10 @@ clocks are independent.
 :func:`write_reference` writes another install's reference in
 ``~/.untaped/refs/``, so a test can say what holds a store's layouts.
 :func:`make_project` makes a folder a project in the hermetic home, as
-``untaped project init`` does.
+``untaped project init`` does, holding the items it is given.
+:func:`release_ask`, :func:`move_ask` and :func:`plan_release` let a plugin
+unit-test its item store's ``release`` and ``moved`` without core's holder
+kinds.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ import io
 import sys
 import warnings
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -48,10 +51,22 @@ from rich.console import Console
 from untaped.cache import installed_utcnow
 from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
+from untaped.holds import (
+    HolderState,
+    HolderView,
+    ItemStore,
+    LetGo,
+    MoveAsk,
+    Refused,
+    ReleaseAsk,
+    _rewrite,
+    holder_view,
+)
+from untaped.holds import release_ask as _release_ask
 from untaped.management.records import PluginCheckRow
 from untaped.output.sink import current_clock, installed_clock, recording, tick
 from untaped.plugins.registry import PluginCandidate
-from untaped.projects import Project, init
+from untaped.projects import Project, holder_of, init
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -60,7 +75,7 @@ from untaped.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
-from untaped.refs import write_reference
+from untaped.refs import PROJECT, RefHolder, write_reference
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.stability import apply_marks, deprecated, experimental
 from untaped.testing.contracts import assert_fills, compose_with
@@ -101,8 +116,11 @@ __all__ = [
     "invoke_cli",
     "invoke_root",
     "make_project",
+    "move_ask",
+    "plan_release",
     "plugin_candidate",
     "progress_clock",
+    "release_ask",
     "write_reference",
 ]
 
@@ -351,13 +369,85 @@ def assert_destructive_contract(
 
 
 @experimental
-def make_project(path: Path) -> Project:
+def make_project(
+    path: Path, *, holds: Mapping[ItemStore[Any], Collection[object]] | None = None
+) -> Project:
     """Make ``path`` a project (created when missing) recorded in the hermetic home.
 
     As ``untaped project init PATH`` does: ``.untaped/project.json``, its
-    ``.gitignore`` and the home's reference, no holds.
+    ``.gitignore`` and the home's reference, holding each store's items in
+    ``holds`` (normalised by the store's item type; no composition needed).
     """
-    return init(path).project
+    project = init(path).project
+    targets = tuple(store.target(item) for store, items in (holds or {}).items() for item in items)
+    if targets:
+        _rewrite(
+            holder_of(project),
+            lambda held: (*held, *(t for t in dict.fromkeys(targets) if t not in held)),
+            None,
+        )
+    return project
+
+
+@experimental
+def release_ask(
+    store: ItemStore[Any],
+    item: object,
+    *,
+    holder: HolderState = "present",
+    others: int | Sequence[HolderState] = 0,
+    force: bool = False,
+) -> ReleaseAsk[Any]:
+    """A :class:`~untaped.sdk.ReleaseAsk` for ``item`` with made-up holders, for unit tests.
+
+    ``holder`` is the state of the project letting go; ``others`` the number
+    of other present holders, or each other holder's state.
+    """
+    states = ["present"] * others if isinstance(others, int) else list(others)
+    return ReleaseAsk(
+        item=store._parse(item),
+        holder=_view(0, holder),
+        others=tuple(_view(n, state) for n, state in enumerate(states, start=1)),  # type: ignore[arg-type]
+        force=force,
+    )
+
+
+@experimental
+def move_ask(store: ItemStore[Any], item: object, *, moved_from: Path) -> MoveAsk[Any]:
+    """A :class:`~untaped.sdk.MoveAsk` for ``item``: a present project moved from ``moved_from``."""
+    holder = _view(0, "present")
+    if moved_from == holder.anchor:
+        holder = holder.model_copy(update={"anchor": holder.anchor.with_name("moved-here")})
+    return MoveAsk(
+        item=store._parse(item),
+        holder=holder,
+        others=(),
+        moved_from=moved_from,
+    )
+
+
+@experimental
+def plan_release(project: Project, store: ItemStore[Any]) -> list[LetGo[Any] | Refused]:
+    """What ``store``'s ``release`` plans for each of ``project``'s holds of it; never applies.
+
+    Every other holder is read from the hermetic home, as core reads them.
+    """
+    seen = holder_view(holder_of(project))
+    if not isinstance(seen, HolderView):
+        raise ConfigError(f"project {project.name} has no readable record in this home")
+    return [
+        store.release(_release_ask(store, item, seen, force=False)) for item in project.holds(store)
+    ]
+
+
+def _view(n: int, state: HolderState) -> HolderView:
+    name = f"{n:012x}"
+    return HolderView(
+        holder=RefHolder(kind=PROJECT, name=name),
+        label=f"project p{n}",
+        anchor=Path("/projects") / f"p{n}",
+        state=state,
+    )
 
 
 def plugin_candidate(

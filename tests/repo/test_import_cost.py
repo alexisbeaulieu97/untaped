@@ -162,8 +162,11 @@ _STARTUP_PROBE = (
 #: marks (``untaped.setting_marks``, and ``untaped.setup_status`` read by
 #: ``doctor`` and ``auth``) add two: the measure is 140 against 138 on their
 #: base, 2026-10-20, so the budget goes from 139 to 143 to keep three spare.
+#: Item stores (#770) add ``untaped.holds``, which the plugin registry reads to
+#: check ``PluginSpec.stores``: the measure is 143, 2026-10-21, so the budget
+#: goes to 146 to keep three spare.
 _TOTAL_BUDGET = 700
-_UNTAPED_BUDGET = 143
+_UNTAPED_BUDGET = 146
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])

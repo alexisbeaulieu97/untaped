@@ -1,35 +1,77 @@
-"""Root ``untaped project …`` command group: make a folder a project, list the projects.
+"""Root ``untaped project …`` command group: make, list, move, remove and prune projects.
 
 A project is a folder whose ``.untaped/`` holds ``project.json``
 (:mod:`untaped.projects`); the home records each one in ``refs/``, which is
-what ``project list`` reads.
+what ``project list`` reads. ``remove`` and ``prune`` release a project's
+holds through their owners (:mod:`untaped.project_lifecycle`), previewed
+and confirmed; ``move`` moves a folder and has each owner repair it.
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
+from contextlib import ExitStack
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.cli import ColumnsOption, FormatOption, create_app, emit, report_errors, writes
-from untaped.errors import ConfigError
+from untaped.batch import finish
+from untaped.cli import (
+    ColumnsOption,
+    DryRunOption,
+    FormatOption,
+    YesOption,
+    create_app,
+    emit,
+    render_rows,
+    report_errors,
+    writes,
+)
+from untaped.errors import ConfigError, UntapedError
+from untaped.holds import HolderView, HoldOutcome, view
 from untaped.management.records import ProjectOutcome, ProjectRow
-from untaped.messages import shown_path
+from untaped.messages import plural, shown_path
 from untaped.output.sink import Diagnostics
 from untaped.projects import (
-    HolderView,
     Project,
+    current_project,
     init,
     project_at,
     project_references,
-    view,
+    writing,
 )
+
+if TYPE_CHECKING:
+    from untaped.project_lifecycle import Removal
 from untaped.refs import Reference
 from untaped.stability import experimental
+from untaped.theme import OutputFormat
+from untaped.ui import ui_context
 
 _diag = Diagnostics()
+
+ForceOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name="--force",
+        negative="",
+        consume_multiple=False,
+        help="Override the refusal for this item (repeatable): it is released anyway, "
+        "or, when its plugin isn't installed, the hold is forgotten.",
+    ),
+]
+CheckOption = Annotated[
+    bool,
+    Parameter(name="--check", negative="", help="Preview, and exit 3 when a hold is refused."),
+]
+ProjectArgument = Annotated[
+    str | None,
+    Parameter(help="The project: its folder, or its name; the current project when left out."),
+]
+#: The columns ``prune`` shows: it acts on several projects at once.
+_PRUNE_COLUMNS = ["holder", *HoldOutcome.table_columns]
 
 
 def build_root_project_app() -> App:
@@ -41,6 +83,9 @@ def build_root_project_app() -> App:
     )
     app.command(name="init")(_init_command)
     app.command(name="list")(_list_command)
+    app.command(name="move")(_move_command)
+    app.command(name="remove")(_remove_command)
+    app.command(name="prune")(_prune_command)
     return app
 
 
@@ -158,3 +203,239 @@ def _why(seen: HolderView) -> str:
 
 
 __all__ = ["build_root_project_app"]
+
+
+@writes
+def _move_command(
+    old: Annotated[Path, Parameter(help="Where the project's folder is, or was.")],
+    new: Annotated[Path, Parameter(help="Where it goes, or where it already is.")],
+    /,
+    *,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Move a project's folder, or make its record follow a folder moved by hand.
+
+    With OLD there and NEW not, moves the folder (on one filesystem only;
+    across filesystems, `mv` it yourself and run this again). With OLD gone
+    and NEW holding the project, its record follows. With OLD gone and NEW
+    holding no project.json (a folder renamed by hand), NEW becomes the
+    project after a confirmation. Each plugin the project holds items of
+    then repairs what points into the folder; a repair that fails is retried
+    by the next command that changes the project.
+
+    Examples:
+        $ untaped project move ~/work/PROJ-200 ~/archive/PROJ-200
+        $ untaped project move ~/old/PROJ-7 ~/work/PROJ-7 --dry-run
+    """
+    from untaped.project_lifecycle import apply_move, plan_move  # noqa: PLC0415 - runs only here
+
+    with report_errors():
+        move = plan_move(old, new)
+        if dry_run:
+            emit(move.preview(), fmt=fmt, columns=columns)
+            return
+        if move.how == "adopt":
+            ui_context(strict=False).confirm_or_cancel(
+                f"Make {shown_path(move.new)} project {move.project.name} "
+                f"(its record names {shown_path(move.old)})?",
+                assume_yes=yes,
+                refusal="project move requires --yes when not interactive",
+            )
+        rows = apply_move(move)
+        emit(rows, fmt=fmt, columns=columns)
+        _report_failures(rows)
+    finish(any(row.failed for row in rows))
+
+
+@writes(destructive=True)
+def _remove_command(
+    project: ProjectArgument = None,
+    /,
+    *,
+    force: ForceOption = None,
+    check: CheckOption = False,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Remove a project: release what it holds, then delete what untaped wrote in it.
+
+    Each plugin the project holds items of says how it lets go (a repo
+    another project holds is kept), shown first. One refused hold applies
+    nothing (exit 1); --force ITEM overrides that item's refusal. Then
+    project.json, state.yml, plugins/ and lock files go; config.yml and
+    your own files stay, and so does the folder unless nothing else is in
+    it. Always confirms; without a terminal it needs --yes (else exit 2).
+
+    Examples:
+        $ untaped project remove --dry-run
+        $ untaped project remove ~/work/PROJ-123 --force github.com/acme/web
+    """
+    from untaped.project_lifecycle import (  # noqa: PLC0415 - runs only here
+        find_project,
+        plan_removal,
+        preview_check,
+        unlink_lock,
+    )
+
+    with report_errors():
+        found = current_project() if project is None else find_project(project)
+        preview = dry_run or check
+        with ExitStack() as stack:
+            if isinstance(found, Project):
+                stack.enter_context(found.locked())
+                if preview:
+                    preview_check(found)
+                else:
+                    found = writing(found)[0]
+            elif found.holder is not None:
+                stack.enter_context(
+                    Project(id=found.holder.name, root=found.anchor or Path()).locked()
+                )
+            removal = plan_removal(found, force=force or ())
+            rows = _run(
+                [removal],
+                preview=preview,
+                check=check,
+                yes=yes,
+                fmt=fmt,
+                columns=columns,
+                question=f"Remove project {removal.name}?",
+                verb="removed",
+            )
+        unlink_lock(removal.holder)
+    finish(any(row.action in {"failed", "refused"} for row in rows))
+
+
+@writes(destructive=True)
+def _prune_command(
+    project: Annotated[
+        str | None,
+        Parameter(
+            help="One missing project, by its folder or name; every missing one when left out."
+        ),
+    ] = None,
+    /,
+    *,
+    force: ForceOption = None,
+    check: CheckOption = False,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Remove the projects whose folder is gone, releasing what they hold.
+
+    A project whose folder can't be read now (a drive or share that isn't
+    there) is listed and skipped: it keeps what it holds. Previewed and
+    confirmed as `project remove`; one refused hold applies nothing.
+
+    Examples:
+        $ untaped project prune --dry-run
+        $ untaped project prune --yes
+    """
+    from untaped.project_lifecycle import (  # noqa: PLC0415 - runs only here
+        find_project,
+        missing_projects,
+        plan_removal,
+        unlink_lock,
+    )
+
+    with report_errors():
+        if project is None:
+            missing, unreadable = missing_projects()
+            for ref in unreadable:
+                where = shown_path(ref.anchor) if ref.anchor is not None else str(ref.file)
+                _diag.info(f"skipped {where}: it can't be read now, so it keeps what it holds")
+        else:
+            named = find_project(project)
+            if isinstance(named, Project):
+                raise UntapedError(
+                    f"project {named.name} is at {shown_path(named.root)}; prune removes only "
+                    "projects whose folder is gone",
+                    hint="remove it with `untaped project remove`",
+                )
+            missing = [named]
+        if not missing:
+            _diag.info("no project's folder is gone; nothing to prune")
+            emit([], fmt=fmt, columns=columns or _PRUNE_COLUMNS)
+            return
+        preview = dry_run or check
+        with ExitStack() as stack:
+            removals = []
+            for ref in missing:
+                if ref.holder is None:
+                    continue
+                stack.enter_context(Project(id=ref.holder.name, root=ref.anchor or Path()).locked())
+                removals.append(plan_removal(ref, force=force or ()))
+            rows = _run(
+                removals,
+                preview=preview,
+                check=check,
+                yes=yes,
+                fmt=fmt,
+                columns=columns or _PRUNE_COLUMNS,
+                question=f"Prune {plural(len(removals), 'project')}?",
+                verb="pruned",
+            )
+        for removal in removals:
+            unlink_lock(removal.holder)
+    finish(any(row.action in {"failed", "refused"} for row in rows))
+
+
+def _run(
+    removals: Sequence[Removal],
+    *,
+    preview: bool,
+    check: bool,
+    yes: bool,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+    question: str,
+    verb: str,
+) -> list[HoldOutcome]:
+    """The service's steps over the planned removals: preview, refuse, confirm, apply."""
+    from untaped.project_lifecycle import apply_removal, blocked_hint  # noqa: PLC0415
+
+    planned = [row for removal in removals for row in removal.preview()]
+    blocked = [plan for removal in removals for plan in removal.plans if plan.blocked]
+    if preview:
+        emit(planned, fmt=fmt, columns=columns)
+        if check and blocked:
+            raise SystemExit(3)
+        return []
+    if blocked:
+        emit(planned, fmt=fmt, columns=columns)
+        raise UntapedError(
+            f"{plural(len(blocked), 'hold')} refused; nothing {verb}",
+            hint=blocked_hint(blocked),
+        )
+    ui_context(strict=False).confirm_or_cancel(
+        question,
+        assume_yes=yes,
+        refusal=f"project {verb.removesuffix('d')} requires --yes when not interactive",
+        preview=lambda: _diag.info(
+            render_rows(
+                [row.model_dump() for row in planned],
+                fmt="table",
+                table_columns=columns or HoldOutcome.table_columns,
+            ),
+            unmuted=True,
+        ),
+    )
+    rows = [row for removal in removals for row in apply_removal(removal)]
+    emit(rows, fmt=fmt, columns=columns)
+    _report_failures(rows)
+    return rows
+
+
+def _report_failures(rows: Sequence[HoldOutcome]) -> None:
+    for row in rows:
+        if row.error is not None:
+            _diag.failure(row.error, item=f"{row.plugin} {row.item}")
+        elif row.action == "refused":
+            _diag.warning(f"{row.plugin} {row.item}: {row.detail}", hint=row.hint)

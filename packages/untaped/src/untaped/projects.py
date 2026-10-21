@@ -13,11 +13,17 @@ project in the home as a reference, ``refs/project-<id>.json``
 comparing path strings: a second spelling, a symlink or a bind mount is the
 same project; a ``mv`` on one filesystem keeps the identity (a move) and a
 copy doesn't. The first use in a process checks the folder against its
-reference and only reports; a writing use (``project init`` here; holding an
-item, later) re-checks under the project's lock and repairs: it records an
-unrecorded project, follows a move, or gives a copy its own id. What it
-cannot decide (a cross-filesystem move, a copy while the original's drive is
-away) it refuses with exit 4, and never guesses.
+reference and only reports; a writing use (the first ``hold()`` or
+``release()``, or a mutating ``project`` command) re-checks under the
+project's lock and repairs: it records an unrecorded project, follows a move
+(asking each hold's owner to repair what points into the folder), or gives a
+copy its own id. What it cannot decide (a cross-filesystem move, a copy
+while the original's drive is away) it refuses with exit 4, and never
+guesses; ``untaped project move OLD NEW`` is the user saying which it was.
+
+A project holds items other plugins own (:mod:`untaped.holds`):
+``project.hold(STORE, item)`` records the hold in its reference, and
+``project.release(STORE)`` lets go through the owner.
 
 Each plugin's committed files under ``.untaped/`` are named through
 :func:`committed_path`, so every name there is core's or one plugin's.
@@ -30,23 +36,41 @@ import os
 import secrets
 import threading
 import uuid
-from collections.abc import Iterator
-from contextlib import AbstractContextManager, contextmanager, suppress
+from collections.abc import Collection
+from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from untaped.errors import ConfigError, ErrorCategory, UsageError
-from untaped.fs import atomic_write, file_lock
+from untaped.fs import atomic_write
+from untaped.holds import (
+    HolderState,
+    HolderView,
+    HoldOutcome,
+    ItemStore,
+    MoveAsk,
+    Owners,
+    Seen,
+    UnknownHolder,
+    add_hold,
+    holder_lock,
+    holder_views,
+    holds_of,
+    release_rows,
+    view,
+)
 from untaped.messages import shown_path
+from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
 from untaped.refs import (
     PROJECT,
     AnchorId,
     Reference,
     RefHolder,
+    RefTarget,
     locked,
     read_reference,
     read_references,
@@ -59,6 +83,7 @@ from untaped.stability import experimental
 
 if TYPE_CHECKING:
     from untaped.plugins.registry import PluginSpec
+    from untaped.records import OutcomeRecord
 
 #: The folder a project keeps its untaped files in, at its root.
 DIRECTORY = ".untaped"
@@ -66,15 +91,10 @@ DIRECTORY = ".untaped"
 MARKER = "project.json"
 #: ``project.json``'s own format.
 FORMAT = "1"
-#: Seconds a writing use waits for the project's lock.
-LOCK_WAIT = 600.0
 #: What ``init`` keeps out of version control: the id and machine records, never config.
 GITIGNORE = ("project.json", "state.yml", "plugins/", "*.lock")
 #: Folders under ``~/.untaped`` that are core's own, never a project.
 _CORE_FOLDERS = ("refs", "plugins")
-
-#: Where a holder's anchor stands, as read now: ``unreadable`` and ``missing`` keep their holds.
-type HolderState = Literal["present", "unreadable", "missing"]
 
 _diag = Diagnostics()
 _SEEN: dict[str, Project] = {}
@@ -104,30 +124,46 @@ class Project(BaseModel):
 
     def locked(self) -> AbstractContextManager[None]:
         """Hold the project's lock for the block: re-entrant; waits 600 s, then exit 5."""
-        return _project_lock(self.id, self.name)
+        return holder_lock(holder_of(self), self.name)
 
     def plugin_dir(self, spec: PluginSpec) -> Path:
         """``<root>/.untaped/plugins/<name>/``: a plugin's machine files in this project."""
         return self.root / DIRECTORY / "plugins" / spec.name
 
+    def hold(self, store: ItemStore[Any], item: object) -> None:
+        """Hold ``item`` of ``store`` (an item store a composed plugin lists); idempotent.
 
-class HolderView(BaseModel):
-    """A holder as the home sees it now: who, how a row names it, its anchor, its state."""
+        A writing use: the project's identity is re-checked under its lock
+        first (a copy gets its own id, a move is followed). Hold, then use:
+        call it before the work that needs the item.
+        """
+        with self.locked():
+            here, _ = writing(self)
+            add_hold(holder_of(here), store, item)
 
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+    def holds[T: str | RootModel[str]](self, store: ItemStore[T]) -> tuple[T, ...]:
+        """The items of ``store`` this project holds; only reads."""
+        return holds_of(holder_of(self), store)
 
-    holder: RefHolder
-    label: Annotated[str, Field(min_length=1)]
-    anchor: Path
-    state: HolderState
+    def release(
+        self,
+        store: ItemStore[Any],
+        *,
+        items: Collection[object] | None = None,
+        force: Collection[object] = (),
+        dry_run: bool = False,
+    ) -> list[OutcomeRecord]:
+        """Let go of this project's holds of ``store`` (or only ``items``) through its owner.
 
-
-class UnknownHolder(BaseModel):
-    """A reference that can't be read: it holds whatever it may hold."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
-
-    label: Annotated[str, Field(min_length=1)]
+        The service without a prompt, for a plugin's own command that
+        previewed and confirmed: one refused or failed plan applies nothing
+        and comes back as its row; ``force`` names the items whose refusal
+        the user overrides; ``dry_run`` returns the preview and repairs
+        nothing. Each row is an ``untaped.hold_outcome`` to emit.
+        """
+        with self.locked():
+            here = self if dry_run else writing(self)[0]
+            return release_rows(holder_of(here), store, items=items, force=force, dry_run=dry_run)
 
 
 @experimental
@@ -204,6 +240,15 @@ def current_project() -> Project:
     return found
 
 
+@experimental
+def known_projects() -> tuple[HolderView | UnknownHolder, ...]:
+    """Every project this home records, in any state; an unreadable record is an UnknownHolder.
+
+    Only reads: a project that holds nothing is listed too.
+    """
+    return tuple(view(ref) for ref in project_references())
+
+
 def project_references() -> list[Reference]:
     """Every ``refs/project-*`` reference, readable or not; no other kind."""
     folder = refs_dir()
@@ -214,15 +259,6 @@ def project_references() -> list[Reference]:
         or (ref.holder is None and ref.file.name.startswith(f"{PROJECT}-"))
         or ref.file == folder  # refs/ can't be listed: any project may be there
     ]
-
-
-def view(ref: Reference) -> HolderView | UnknownHolder:
-    """How a project reference reads now."""
-    if ref.opaque is not None or ref.holder is None or ref.anchor is None:
-        return UnknownHolder(label=f"{shown_path(ref.file)} ({ref.opaque or 'unreadable'})")
-    return HolderView(
-        holder=ref.holder, label=ref.describe(), anchor=ref.anchor, state=anchor_state(ref)
-    )
 
 
 def anchor_state(ref: Reference) -> HolderState:
@@ -399,19 +435,119 @@ def writing(project: Project) -> tuple[Project, Situation]:
             )
         situation = _situation(project.root, current)
         here = Project(id=current, root=project.root)
+        ref = situation.reference
         match situation.kind:
+            case "ok" | "refresh" if ref is not None and ref.moved_from is not None:
+                _warn_unrepaired(here, follow_move(here, moved_from=ref.moved_from, keep=ref))
             case "ok":
                 pass
             case "unrecorded":
                 _record(here, project.root)
-            case "refresh" | "moved":
-                _record(here, project.root, keep=situation.reference)
+            case "refresh":
+                _record(here, project.root, keep=ref)
+            case "moved":
+                moved_from = situation.anchor or project.root
+                _warn_unrepaired(here, follow_move(here, moved_from=moved_from, keep=ref))
             case "copy":
                 here = _renew(project.root, current)
             case _:
                 raise _undecided(here, situation)
     _forget(project.root)
     return here, situation
+
+
+def follow_move(project: Project, *, moved_from: Path, keep: Reference | None) -> list[HoldOutcome]:
+    """Point ``project``'s reference at its folder now, then ask each owner to repair.
+
+    The reference records ``moved_from`` until every owner's ``moved``
+    succeeded, so a later writing use retries; an owner that isn't
+    installed has nothing to run and doesn't keep it pending. The rows say
+    what each owner did (``repaired``), skipped or failed. Runs under the
+    project's lock.
+    """
+    targets = keep.targets if keep is not None else ()
+    _record(project, project.root, keep=keep, moved_from=moved_from)
+    if _same(project.root, moved_from):
+        _record(project, project.root, keep=keep)
+        return []
+    rows = repair_holds(project, targets, moved_from=moved_from)
+    if not any(row.failed for row in rows):
+        _record(project, project.root, keep=keep)
+    return rows
+
+
+def repair_holds(
+    project: Project, targets: Collection[RefTarget], *, moved_from: Path
+) -> list[HoldOutcome]:
+    """Call each hold's owner's ``moved`` for a project now at its root; the rows it gave."""
+    seen = view(read_reference(reference_file(holder_of(project))))
+    label = f"project {project.name}"
+    if not isinstance(seen, HolderView) or seen.state != "present":
+        why = "its record can't be read" if not isinstance(seen, HolderView) else seen.state
+        return [
+            HoldOutcome(
+                holder=label,
+                plugin="untaped",
+                item=str(project.root),
+                action="failed",
+                detail=f"cannot repair its holds: {why}",
+                error=Failure.plain(f"cannot repair project {project.name}'s holds: {why}"),
+            )
+        ]
+    owners = Owners.current()
+    rows: list[HoldOutcome] = []
+    for target in targets:
+        if target.item is None:
+            continue
+        store = owners.stores.get((target.plugin, target.store))
+        row = HoldOutcome(
+            holder=label, plugin=target.plugin, item=target.item, action="skipped", detail=""
+        )
+        if store is None:
+            reason, _ = owners.why_not(target)
+            rows.append(row.model_copy(update={"detail": f"{reason}; nothing repaired"}))
+            continue
+        if store.moved is None:
+            continue
+        try:
+            item = store._parse(target.item)
+            others = tuple(other for other in holder_views(target) if not _same_holder(other, seen))
+            ask: MoveAsk[Any] = MoveAsk(
+                item=item, holder=seen, others=others, moved_from=moved_from
+            )
+            done = store.moved(ask)
+        except Exception as exc:  # a plugin's failure is its row's; the move itself stands
+            message = (
+                str(exc) if isinstance(exc, ConfigError) else f"raised {type(exc).__name__}: {exc}"
+            )
+            rows.append(
+                row.model_copy(
+                    update={
+                        "action": "failed",
+                        "detail": message,
+                        "error": Failure.from_exception(exc, message=message),
+                    }
+                )
+            )
+            continue
+        if isinstance(done, str) and done:
+            rows.append(row.model_copy(update={"action": "repaired", "detail": done}))
+    return rows
+
+
+def _same_holder(other: Seen, seen: HolderView) -> bool:
+    return isinstance(other, HolderView) and other.holder == seen.holder
+
+
+def _warn_unrepaired(project: Project, rows: Collection[HoldOutcome]) -> None:
+    """A failed repair after a move warns; it never changes an unrelated command's exit code."""
+    for row in rows:
+        if row.failed:
+            _diag.warning(
+                f"project {project.name} moved, and {row.plugin} could not repair "
+                f"{row.item}: {row.detail}",
+                hint="the next command that changes the project tries again",
+            )
 
 
 def _discover(root: Path, *, report: bool = True) -> Project:
@@ -483,9 +619,10 @@ def _report(project: Project, situation: Situation) -> None:
                 "`untaped project init` there gives it its own id"
             )
         case "moved":
+            was = shown_path(situation.anchor or here)
             _diag.info(
-                f"project {name} ({here}) moved from {shown_path(situation.anchor or here)}; "
-                "`untaped project init` there repairs its record",
+                f"project {name} ({here}) moved from {was}; "
+                f"`untaped project move {was} {here}` repairs it",
                 unmuted=True,
             )
         case "unreadable" | "undecided":
@@ -506,15 +643,25 @@ def _undecided(project: Project, situation: Situation) -> ConfigError:
             f"cannot tell whether project {project.name} moved or was copied: {situation.reason}",
             hint=f"make {shown_path(project.root)} readable, then run the command again",
         )
+    here = shown_path(project.root)
     return ConfigError(
         f"cannot tell whether project {project.name} moved or was copied: {situation.reason}",
-        hint=f"if {shown_path(project.root)} is a copy, "
-        "`untaped project init --new-id` there gives it its own id",
+        hint=f"if it moved here, `untaped project move {shown_path(situation.anchor)} {here}`; "
+        "if this is a copy, `untaped project init --new-id` here gives it its own id",
     )
 
 
-def _record(project: Project, root: Path, *, keep: Reference | None = None) -> None:
-    """Write the project's reference: this folder, its identity, the targets ``keep`` names."""
+def _record(
+    project: Project,
+    root: Path,
+    *,
+    keep: Reference | None = None,
+    moved_from: Path | None = None,
+) -> None:
+    """Write the project's reference: this folder, its identity, the targets ``keep`` names.
+
+    ``moved_from`` marks a move whose repairs haven't all succeeded yet.
+    """
     try:
         with locked():
             write_reference(
@@ -522,6 +669,7 @@ def _record(project: Project, root: Path, *, keep: Reference | None = None) -> N
                 keep.targets if keep is not None else (),
                 anchor=root,
                 anchor_id=AnchorId.of(root),
+                moved_from=moved_from,
             )
     except OSError as exc:
         raise ConfigError(
@@ -663,23 +811,6 @@ def _project_below(path: Path) -> Path | None:
     return None
 
 
-@contextmanager
-def _project_lock(pid: str, name: str) -> Iterator[None]:
-    folder = refs_dir()
-    try:
-        folder.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise ConfigError(f"could not create {folder}: {exc.strerror or exc}") from exc
-    with file_lock(
-        folder / f".{PROJECT}-{pid}.lock",
-        timeout=LOCK_WAIT,
-        error=ConfigError,
-        busy=f"another untaped is changing project {name}; try again",
-        failed=f"could not lock project {name}",
-    ):
-        yield
-
-
 def _forget(root: Path | None = None) -> None:
     """Drop what discovery remembers: for ``root``, or everything (``untaped.testing.plugin``)."""
     with _SEEN_GUARD:
@@ -689,4 +820,4 @@ def _forget(root: Path | None = None) -> None:
             _SEEN.pop(str(root), None)
 
 
-__all__ = ["Project", "committed_path", "current_project", "project_at"]
+__all__ = ["Project", "committed_path", "current_project", "known_projects", "project_at"]

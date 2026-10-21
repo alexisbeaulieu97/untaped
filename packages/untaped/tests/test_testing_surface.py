@@ -33,8 +33,11 @@ EXPECTED_ALL = [
     "invoke_cli",
     "invoke_root",
     "make_project",
+    "move_ask",
+    "plan_release",
     "plugin_candidate",
     "progress_clock",
+    "release_ask",
     "write_reference",
 ]
 

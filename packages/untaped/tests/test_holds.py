@@ -1,0 +1,798 @@
+"""Holds: a project holds an item an owner declared, and core releases it through the owner.
+
+A fake owner stands in for workspace: it keeps an item while another holder
+holds it and deletes it otherwise, refuses items with "unpushed work" unless
+forced, and can be told to raise while planning or applying.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import threading
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import pytest
+from pydantic import RootModel, ValidationError, field_validator
+
+from untaped import bootstrap, holds, refs
+from untaped.errors import ConfigError
+from untaped.holds import (
+    HolderKind,
+    HolderView,
+    ItemStore,
+    LetGo,
+    MoveAsk,
+    Refused,
+    ReleaseAsk,
+    Sighting,
+    UnknownHolder,
+    plan_holds,
+)
+from untaped.plugins.registry import PluginSpec
+from untaped.project_lifecycle import Removal, apply_removal, plan_removal
+from untaped.projects import Project, holder_of, known_projects
+from untaped.refs import PROJECT, RefHolder, RefTarget
+from untaped.testing import (
+    CliResult,
+    invoke_cli,
+    make_project,
+    move_ask,
+    plan_release,
+    plugin_candidate,
+    release_ask,
+    write_reference,
+)
+
+
+class RepoKey(RootModel[str]):
+    """``github.com/acme/api``: lower case, no ``.git``."""
+
+    @field_validator("root")
+    @classmethod
+    def _normal(cls, value: str) -> str:
+        return value.lower().removesuffix(".git")
+
+
+@dataclass
+class Owner:
+    """What the fake owner does, and what it was asked."""
+
+    refuse: set[str] = field(default_factory=set)
+    raise_plan: set[str] = field(default_factory=set)
+    raise_apply: set[str] = field(default_factory=set)
+    raise_moved: int = 0
+    deleted: list[str] = field(default_factory=list)
+    fresh: list[ReleaseAsk[Any]] = field(default_factory=list)
+    moves: list[MoveAsk[Any]] = field(default_factory=list)
+    during_apply: list[Any] = field(default_factory=list)
+
+
+OWNER = Owner()
+
+
+def _release(ask: ReleaseAsk[RepoKey]) -> LetGo[RepoKey] | Refused:
+    item = ask.item.root
+    if item in OWNER.raise_plan:
+        raise RuntimeError("the plan broke")
+    if item in OWNER.refuse and not ask.force:
+        return Refused(reason=f"{item}: 2 commits never pushed", hint="push them")
+    if ask.others:
+        return LetGo(preview="keeps the repo: another project holds it", apply=_keep)
+    return LetGo(preview="deletes the repo", apply=_delete)
+
+
+def _keep(fresh: ReleaseAsk[RepoKey]) -> str | Refused:
+    OWNER.fresh.append(fresh)
+    for step in OWNER.during_apply:
+        step()
+    if fresh.item.root in OWNER.raise_apply:
+        raise RuntimeError("the apply broke")
+    if not fresh.others:
+        return Refused(reason="now the last holder", hint="run remove again to delete it")
+    return "kept the repo"
+
+
+def _delete(fresh: ReleaseAsk[RepoKey]) -> str | Refused:
+    OWNER.fresh.append(fresh)
+    for step in OWNER.during_apply:
+        step()
+    if fresh.item.root in OWNER.raise_apply:
+        raise RuntimeError("the apply broke")
+    if fresh.others:
+        return "kept the repo: a holder arrived since the preview"  # it may do less, never more
+    OWNER.deleted.append(fresh.item.root)
+    return "deleted the repo"
+
+
+def _moved(ask: MoveAsk[RepoKey]) -> str | None:
+    OWNER.moves.append(ask)
+    if OWNER.raise_moved:
+        OWNER.raise_moved -= 1
+        raise RuntimeError("worktree repair failed")
+    return f"repaired worktree {ask.item.root.rsplit('/', 1)[-1]}"
+
+
+REPOS = ItemStore("acme", "repos", item=RepoKey, release=_release, moved=_moved)
+SPEC = PluginSpec(name="acme", stores=(REPOS,))
+API, WEB = "github.com/acme/api", "github.com/acme/web"
+
+
+@pytest.fixture(autouse=True)
+def _owner() -> Iterator[None]:
+    global OWNER
+    OWNER = Owner()
+    with bootstrap.kept_composition(quiet=True):
+        bootstrap.compose_root(candidates=[plugin_candidate(SPEC)])
+        yield
+
+
+def _cli(*args: str, specs: tuple[PluginSpec, ...] = (SPEC,)) -> CliResult:
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in specs])
+    return invoke_cli(root.meta, list(args))
+
+
+def _rows(result: CliResult) -> list[dict[str, Any]]:
+    assert result.stdout, result.output
+    return json.loads(result.stdout)
+
+
+def _targets(project: Project) -> tuple[RefTarget, ...]:
+    return refs.read_reference(refs.reference_file(holder_of(project))).targets
+
+
+def _two(tmp_path: Path) -> tuple[Project, Project]:
+    """PROJ-123 holds api and web; PROJ-200 holds api."""
+    first = make_project(tmp_path / "PROJ-123", holds={REPOS: [API, WEB]})
+    second = make_project(tmp_path / "PROJ-200", holds={REPOS: [API]})
+    return first, second
+
+
+# --- declaring and holding --------------------------------------------------------------
+
+
+def test_an_item_store_says_how_items_are_released() -> None:
+    with pytest.raises(TypeError):
+        ItemStore("acme", "repos", release=_release)  # type: ignore[call-arg]  # moved= is required
+    with pytest.raises(ConfigError, match="one settings segment"):
+        ItemStore("acme", "Repos", release=_release, moved=None)
+    with pytest.raises(ConfigError, match="item must be str or a RootModel"):
+        ItemStore("acme", "repos", item=int, release=_release, moved=None)  # type: ignore[type-var]
+    same = ItemStore("acme", "repos", item=RepoKey, release=_release, moved=_moved)
+    assert same == REPOS and hash(same) == hash(REPOS)
+    assert REPOS.target("GitHub.com/acme/API.git") == RefTarget(
+        plugin="acme", store="repos", item=API
+    )
+
+
+def test_holding_is_idempotent_and_normalised_by_the_item_type(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    project.hold(REPOS, RepoKey("github.com/acme/api.git"))
+    project.hold(REPOS, "GitHub.com/acme/api")
+    project.hold(REPOS, RepoKey(API))
+    assert project.holds(REPOS) == (RepoKey(API),)
+    assert _targets(project) == (REPOS.target(API),)
+
+
+def test_holding_an_item_store_no_composed_plugin_lists_is_refused(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    stray = ItemStore("acme", "other", release=_release, moved=None)
+    with pytest.raises(ConfigError, match=r"acme\.other is not an item store a composed plugin"):
+        project.hold(stray, "x")
+    assert _targets(project) == ()
+
+
+def test_item_stores_share_the_stores_listing_and_its_checks() -> None:
+    twice = PluginSpec(name="acme", stores=(REPOS, REPOS))
+    foreign = PluginSpec(name="other", stores=(REPOS,))
+    with bootstrap.kept_composition(quiet=True):
+        result = bootstrap.compose_root(
+            candidates=[plugin_candidate(twice), plugin_candidate(foreign)]
+        )
+    assert {record.reason for record in result.quarantine} == {"duplicate-store", "foreign-store"}
+    assert refs.composed_targets() == ()  # an item store keeps no layout an install holds
+
+
+def test_holders_lists_every_holder_and_every_reference_it_cannot_read(tmp_path: Path) -> None:
+    first, second = _two(tmp_path)
+    (refs.refs_dir() / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
+    seen = REPOS.holders(API)
+    views = [h for h in seen if isinstance(h, HolderView)]
+    assert {h.holder.name for h in views} == {first.id, second.id}
+    assert all(h.state == "present" for h in views)
+    assert [h.label for h in seen if isinstance(h, UnknownHolder)] == [
+        "~/.untaped/refs/project-ffffffffffff.json (unreadable (JSONDecodeError))"
+    ]
+    assert {h.holder.name for h in REPOS.holders(WEB) if isinstance(h, HolderView)} == {first.id}
+
+
+# --- the asks -----------------------------------------------------------------------------
+
+
+def test_the_asks_check_their_fields() -> None:
+    ask = release_ask(REPOS, API, others=["present", "missing"])
+    assert ask.item == RepoKey(API) and [o.state for o in ask.others] == ["present", "missing"]
+    with pytest.raises(ValidationError, match="unreadable releases nothing"):
+        release_ask(REPOS, API, holder="unreadable")
+    with pytest.raises(ValidationError, match="not one of the others"):
+        ReleaseAsk(item=RepoKey(API), holder=ask.holder, others=(ask.holder,), force=False)
+    with pytest.raises(ValidationError, match="moved_from is where the holder is now"):
+        MoveAsk(item=RepoKey(API), holder=ask.holder, others=(), moved_from=ask.holder.anchor)
+    plan = _release(ask)
+    assert isinstance(plan, LetGo) and plan.model_dump() == {"preview": plan.preview}
+    assert "apply" not in repr(plan)
+
+
+def test_testing_helpers_plan_without_applying(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    plans = plan_release(first, REPOS)
+    assert [p.preview for p in plans if isinstance(p, LetGo)] == [
+        "keeps the repo: another project holds it",
+        "deletes the repo",
+    ]
+    assert OWNER.fresh == [] and OWNER.deleted == []
+    assert _moved(move_ask(REPOS, API, moved_from=Path("/old"))) == "repaired worktree api"
+    lonely = release_ask(REPOS, API)
+    assert isinstance(_release(lonely), LetGo) and _release(lonely).preview == "deletes the repo"
+
+
+# --- remove -------------------------------------------------------------------------------
+
+
+def test_remove_releases_each_hold_then_deletes_only_what_core_wrote(tmp_path: Path) -> None:
+    first, second = _two(tmp_path)
+    folder = first.root / ".untaped"
+    (folder / "config.yml").write_text("awx: {}\n", encoding="utf-8")
+    (folder / "lint.yml").write_text("version: 1\n", encoding="utf-8")
+    (folder / "state.yml").write_text("format_version: 1\n", encoding="utf-8")
+    (folder / "plugins" / "acme").mkdir(parents=True)
+    (first.root / "notes.md").write_text("mine\n", encoding="utf-8")
+    result = _cli("project", "remove", str(first.root), "--yes", "--format", "json")
+    assert result.exit_code == 0, result.output
+    rows = _rows(result)
+    assert [(r["item"], r["action"], r["detail"]) for r in rows] == [
+        (API, "released", "kept the repo"),
+        (WEB, "released", "deleted the repo"),
+        (
+            str(first.root),
+            "removed",
+            f"removed the project; kept {first.root}: config.yml, lint.yml, notes.md",
+        ),
+    ]
+    assert OWNER.deleted == [WEB]
+    assert sorted(p.name for p in folder.iterdir()) == ["config.yml", "lint.yml"]
+    assert (first.root / "notes.md").read_text(encoding="utf-8") == "mine\n"
+    assert not refs.reference_file(holder_of(first)).exists()
+    assert not (refs.refs_dir() / f".project-{first.id}.lock").exists()
+    assert [h.holder.name for h in REPOS.holders(API) if isinstance(h, HolderView)] == [second.id]
+
+
+def test_remove_of_an_empty_project_removes_the_folder_too(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    result = _cli("project", "remove", str(project.root), "--yes", "--format", "json")
+    assert result.exit_code == 0, result.output
+    [row] = _rows(result)
+    assert row["action"] == "removed" and "which held nothing else" in row["detail"]
+    assert not project.root.exists()
+
+
+def test_one_refusal_applies_nothing(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    OWNER.refuse = {WEB}
+    result = _cli("project", "remove", str(first.root), "--yes", "--format", "json")
+    assert result.exit_code == 1
+    rows = {r["item"]: r for r in _rows(result)}
+    assert rows[API]["action"] == "planned"
+    assert rows[WEB]["action"] == "refused"
+    assert rows[WEB]["hint"] == f"push them, or --force {WEB}"
+    assert "1 hold refused; nothing removed" in result.stderr
+    assert f"--force {WEB}" in result.stderr
+    assert OWNER.fresh == [] and len(_targets(first)) == 2 and first.root.exists()
+
+
+def test_force_names_the_items_whose_refusal_is_overridden(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    OWNER.refuse = {WEB}
+    dry = _cli("project", "remove", str(first.root), "--force", WEB, "--dry-run", "-f", "json")
+    assert dry.exit_code == 0
+    assert {r["item"]: r["action"] for r in _rows(dry)}[WEB] == "planned"
+    result = _cli("project", "remove", str(first.root), "--force", WEB, "--yes", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert OWNER.deleted == [WEB]
+    assert [ask.force for ask in OWNER.fresh] == [False, True]
+
+
+def test_dry_run_and_check_preview_without_applying(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    dry = _cli("project", "remove", str(first.root), "--dry-run", "-f", "json")
+    assert dry.exit_code == 0
+    assert [r["action"] for r in _rows(dry)] == ["planned", "planned", "planned"]
+    assert _rows(dry)[-1]["detail"].startswith("deletes .gitignore, project.json")
+    clean = _cli("project", "remove", str(first.root), "--check", "-f", "json")
+    assert clean.exit_code == 0
+    OWNER.refuse = {API}
+    assert _cli("project", "remove", str(first.root), "--check").exit_code == 3
+    assert OWNER.fresh == [] and len(_targets(first)) == 2
+
+
+def test_a_plan_that_raises_is_a_failed_row_and_nothing_applies(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    OWNER.raise_plan = {API}
+    result = _cli("project", "remove", str(first.root), "--yes", "-f", "json")
+    assert result.exit_code == 1
+    row = next(r for r in _rows(result) if r["item"] == API)
+    assert (row["action"], row["detail"]) == ("failed", "raised RuntimeError: the plan broke")
+    assert OWNER.fresh == [] and len(_targets(first)) == 2
+
+
+def test_an_apply_that_raises_keeps_its_hold_and_the_rest_still_run(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    OWNER.raise_apply = {API}
+    result = _cli("project", "remove", str(first.root), "--yes", "-f", "json")
+    assert result.exit_code == 1
+    rows = {r["item"]: r for r in _rows(result)}
+    assert rows[API]["action"] == "failed"
+    assert rows[WEB]["action"] == "released"
+    assert rows[str(first.root)]["action"] == "skipped"
+    assert _targets(first) == (REPOS.target(API),)
+    assert (first.root / ".untaped" / "project.json").exists()
+
+
+def test_a_holder_added_since_the_preview_is_in_the_fresh_ask(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ-123", holds={REPOS: [WEB]})
+    late = make_project(tmp_path / "PROJ-300")
+    with first.locked():
+        removal = plan_removal(first, force=())
+        assert removal.plans[0].answer.preview == "deletes the repo"  # type: ignore[union-attr]
+        late.hold(REPOS, WEB)
+        rows = apply_removal(removal)
+    [fresh] = OWNER.fresh
+    assert [o.holder.name for o in fresh.others if isinstance(o, HolderView)] == [late.id]
+    assert rows[0].detail == "kept the repo: a holder arrived since the preview"
+    assert OWNER.deleted == []
+
+
+def test_two_removes_of_a_co_held_item_never_leave_it_without_a_holder(tmp_path: Path) -> None:
+    first, second = _two(tmp_path)
+    with first.locked():
+        mine = plan_removal(first, force=())  # previewed: PROJ-200 holds api, so keep it
+        with second.locked():
+            theirs = apply_removal(plan_removal(second, force=()))  # it keeps api too: we hold it
+        assert [r.action for r in theirs] == ["released", "removed"]
+        rows = apply_removal(mine)
+    by_item = {r.item: r for r in rows}
+    assert by_item[API].action == "refused"
+    assert by_item[API].detail == "changed since the preview: now the last holder"
+    assert by_item[API].hint == "run remove again to delete it"
+    assert by_item[WEB].action == "released"
+    assert by_item[str(first.root)].action == "skipped"
+    assert _targets(first) == (REPOS.target(API),)  # the hold stays with the last holder
+    again = _cli("project", "remove", str(first.root), "--yes", "-f", "json")
+    assert again.exit_code == 0, again.output
+    assert OWNER.deleted == [WEB, API]
+
+
+def test_the_item_store_lock_is_taken_per_item_and_times_out_with_exit_5(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first, _ = _two(tmp_path)
+    lock = refs.refs_dir() / ".acme-repos.lock"
+    held: list[bool] = []
+
+    def probe() -> None:  # from another thread: is the store's lock free right now?
+        def take() -> None:
+            try:
+                with holds.store_lock(REPOS):
+                    held.append(False)
+            except ConfigError:
+                held.append(True)
+
+        thread = threading.Thread(target=take)
+        thread.start()
+        thread.join()
+
+    monkeypatch.setattr(holds, "LOCK_WAIT", 0.0)
+    OWNER.during_apply = [probe]
+    with first.locked():
+        removal = plan_removal(first, force=())
+        holds_between: list[bool] = []
+        original = holds.drop_hold
+
+        def drop(holder: RefHolder, target: RefTarget) -> None:
+            original(holder, target)
+            probe()  # between the drop and the next item: still under this item's lock
+            holds_between.append(held.pop())
+
+        monkeypatch.setattr(holds, "drop_hold", drop)
+        apply_removal(removal)
+    assert held == [True, True]  # each apply runs under the store's lock
+    assert holds_between == [True, True]
+    probe()
+    assert held[-1] is False  # and it is let go after each item
+    assert lock.exists()
+
+    other = make_project(tmp_path / "PROJ-9", holds={REPOS: ["github.com/acme/x"]})
+    stop = threading.Event()
+    taken = threading.Event()
+
+    def hog() -> None:
+        with holds.store_lock(REPOS):
+            taken.set()
+            stop.wait(5)
+
+    thread = threading.Thread(target=hog)
+    thread.start()
+    taken.wait(5)
+    try:
+        result = _cli("project", "remove", str(other.root), "--yes")
+    finally:
+        stop.set()
+        thread.join()
+    assert result.exit_code == 5
+    assert "another untaped is changing the items of acme.repos; try again" in result.stderr
+
+
+def test_a_reference_that_cannot_be_read_counts_as_another_holder(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ-123", holds={REPOS: [WEB]})
+    write_reference(RefHolder(kind=PROJECT, name="ffffffffffff"), [], anchor=Path("/x"))  # opaque
+    result = _cli("project", "remove", str(first.root), "--yes", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert _rows(result)[0]["detail"] == "kept the repo"  # an unknown holder keeps the item
+    assert OWNER.deleted == []
+
+
+def test_an_uninstalled_owners_hold_is_forgotten_only_by_name(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ-500", holds={REPOS: ["pack:terraform"]})
+    gone = _cli("project", "remove", str(first.root), "--dry-run", "-f", "json", specs=())
+    [row, _] = _rows(gone)
+    assert (row["action"], row["detail"]) == ("refused", "acme is not installed: the hold stays")
+    assert row["hint"] == "install acme, or --force pack:terraform forgets it"
+    forced = _cli(
+        "project",
+        "remove",
+        str(first.root),
+        "--force",
+        "pack:terraform",
+        "--yes",
+        "-f",
+        "json",
+        specs=(),
+    )
+    assert forced.exit_code == 0, forced.output
+    assert [r["action"] for r in _rows(forced)] == ["forgotten", "removed"]
+
+
+def test_a_quarantined_owners_hold_is_never_forgotten(tmp_path: Path) -> None:
+    broken = PluginSpec(
+        name="acme", stores=(REPOS, ItemStore("acme", "repos", release=_release, moved=None))
+    )
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    result = _cli(
+        "project", "remove", str(first.root), "--force", API, "--yes", "-f", "json", specs=(broken,)
+    )
+    assert result.exit_code == 1
+    row = _rows(result)[0]
+    assert row["action"] == "refused" and row["detail"].startswith("acme is broken")
+    assert "hint" not in row
+    assert _targets(first) == (REPOS.target(API),)
+
+
+def test_remove_needs_yes_without_a_terminal(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    result = _cli("project", "remove", str(first.root))
+    assert result.exit_code == 2
+    assert len(_targets(first)) == 2
+
+
+def test_remove_finds_a_project_by_its_name(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ-7")
+    result = _cli("project", "remove", "PROJ-7", "--dry-run", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert _rows(result)[-1]["item"] == str(project.root)
+    assert _cli("project", "remove", "nope", "--dry-run").exit_code == 2
+
+
+def test_release_lets_go_of_one_owners_holds_without_a_prompt(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    preview = first.release(REPOS, items=[WEB], dry_run=True)
+    assert [(r.action, r.detail) for r in preview] == [("planned", "deletes the repo")]  # type: ignore[attr-defined]
+    rows = first.release(REPOS, items=[WEB])
+    assert [r.action for r in rows] == ["released"]
+    assert first.holds(REPOS) == (RepoKey(API),)
+
+
+# --- prune --------------------------------------------------------------------------------
+
+
+def test_prune_releases_missing_projects_and_skips_unreadable_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first, second = _two(tmp_path)
+    away = make_project(tmp_path / "PROJ-300", holds={REPOS: [API]})
+    shutil.rmtree(first.root)
+    real = holds.view
+
+    def view(ref: refs.Reference) -> Any:  # PROJ-300's drive is away
+        seen = real(ref)
+        if isinstance(seen, HolderView) and seen.holder.name == away.id:
+            return seen.model_copy(update={"state": "unreadable"})
+        return seen
+
+    monkeypatch.setattr(holds, "view", view)
+    import untaped.project_lifecycle as lifecycle
+
+    real_state = lifecycle.anchor_state
+    monkeypatch.setattr(
+        lifecycle,
+        "anchor_state",
+        lambda ref: "unreadable" if ref.holder and ref.holder.name == away.id else real_state(ref),
+    )
+    dry = _cli("project", "prune", "--dry-run", "-f", "json")
+    assert dry.exit_code == 0, dry.output
+    assert {r["holder"] for r in _rows(dry)} == {"project PROJ-123"}
+    assert f"skipped {away.root}: it can't be read now" in dry.stderr
+    result = _cli("project", "prune", "--yes", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert [r["action"] for r in _rows(result)] == ["released", "released", "removed"]
+    assert OWNER.deleted == [WEB]
+    assert not refs.reference_file(holder_of(first)).exists()
+    assert refs.reference_file(holder_of(second)).exists()
+    assert refs.reference_file(holder_of(away)).exists()
+
+
+def test_prune_refuses_a_present_project(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    result = _cli("project", "prune", str(project.root))
+    assert result.exit_code == 1
+    assert "prune removes only projects whose folder is gone" in result.stderr
+
+
+# --- move ---------------------------------------------------------------------------------
+
+
+def test_move_moves_the_folder_and_owners_repair(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    new = tmp_path / "archive" / "PROJ-123"
+    result = _cli("project", "move", str(first.root), str(new), "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert [(r["plugin"], r["action"], r["detail"]) for r in _rows(result)] == [
+        ("untaped", "moved", "moved the folder; its reference follows"),
+        ("acme", "repaired", "repaired worktree api"),
+        ("acme", "repaired", "repaired worktree web"),
+    ]
+    assert not first.root.exists() and (new / ".untaped" / "project.json").exists()
+    ref = refs.read_reference(refs.reference_file(holder_of(first)))
+    assert (ref.anchor, ref.moved_from) == (new, None)
+    assert {ask.moved_from for ask in OWNER.moves} == {first.root}
+
+
+def test_a_failed_repair_is_retried_by_later_writing_uses(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    new = tmp_path / "moved"
+    OWNER.raise_moved = 2
+    result = _cli("project", "move", str(first.root), str(new), "-f", "json")
+    assert result.exit_code == 1
+    assert [r["action"] for r in _rows(result)] == ["moved", "failed"]
+    ref = refs.read_reference(refs.reference_file(holder_of(first)))
+    assert (ref.anchor, ref.moved_from) == (new, first.root)
+    moved = Project(id=first.id, root=new)
+    capsys.readouterr()
+    moved.hold(REPOS, API)  # a writing use retries, fails again, and only warns
+    assert "could not repair github.com/acme/api" in capsys.readouterr().err
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == first.root
+    moved.hold(REPOS, API)  # and again: now it succeeds
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
+    assert len(OWNER.moves) == 3
+
+
+def test_a_hand_move_on_one_filesystem_is_repaired_by_a_writing_use(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    new = tmp_path / "elsewhere"
+    first.root.rename(new)
+    from untaped.projects import _forget, current_project
+
+    _forget()
+    os.chdir(new)
+    try:
+        current_project().hold(REPOS, WEB)
+    finally:
+        os.chdir(tmp_path)
+    ref = refs.read_reference(refs.reference_file(holder_of(first)))
+    assert (ref.anchor, ref.moved_from) == (new, None)
+    assert [ask.moved_from for ask in OWNER.moves] == [first.root]
+
+
+def test_move_follows_a_folder_moved_by_hand_and_adopts_one_without_a_marker(
+    tmp_path: Path,
+) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    hand = tmp_path / "by-hand"
+    first.root.rename(hand)
+    result = _cli("project", "move", str(first.root), str(hand), "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert _rows(result)[0]["action"] == "repaired"
+    assert refs.read_reference(refs.reference_file(holder_of(first))).anchor == hand
+
+    renamed = tmp_path / "renamed"
+    hand.rename(renamed)
+    (renamed / ".untaped" / "project.json").unlink()  # a folder that lost its marker
+    needs_yes = _cli("project", "move", str(hand), str(renamed))
+    assert needs_yes.exit_code == 2
+    adopted = _cli("project", "move", str(hand), str(renamed), "--yes", "-f", "json")
+    assert adopted.exit_code == 0, adopted.output
+    marker = json.loads((renamed / ".untaped" / "project.json").read_text(encoding="utf-8"))
+    assert marker["id"] == first.id
+    assert refs.read_reference(refs.reference_file(holder_of(first))).anchor == renamed
+
+
+def test_move_refuses_another_project_an_existing_folder_and_another_filesystem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = make_project(tmp_path / "PROJ")
+    other = make_project(tmp_path / "OTHER")
+    taken = _cli("project", "move", str(first.root), str(other.root))
+    assert taken.exit_code == 1 and "is another project; nothing moved" in taken.stderr
+    (tmp_path / "plain").mkdir()
+    exists = _cli("project", "move", str(first.root), str(tmp_path / "plain"))
+    assert exists.exit_code == 1 and "already exists; nothing moved" in exists.stderr
+    import untaped.project_lifecycle as lifecycle
+
+    monkeypatch.setattr(lifecycle, "_device", lambda path: hash(path.name))
+    far = _cli("project", "move", str(first.root), str(tmp_path / "far"))
+    assert far.exit_code == 1 and "different filesystems" in far.stderr
+    assert first.root.exists()
+
+
+def test_move_dry_run_changes_nothing(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    result = _cli(
+        "project", "move", str(first.root), str(tmp_path / "new"), "--dry-run", "-f", "json"
+    )
+    assert result.exit_code == 0, result.output
+    assert [r["action"] for r in _rows(result)] == ["planned", "planned"]
+    assert first.root.exists() and OWNER.moves == []
+
+
+def test_known_projects_lists_every_record_holding_or_not(tmp_path: Path) -> None:
+    empty = make_project(tmp_path / "EMPTY")
+    full = make_project(tmp_path / "FULL", holds={REPOS: [API]})
+    (refs.refs_dir() / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
+    seen = known_projects()
+    assert {h.holder.name for h in seen if isinstance(h, HolderView)} == {empty.id, full.id}
+    assert sum(isinstance(h, UnknownHolder) for h in seen) == 1
+
+
+# --- plugin holder kinds (internal) ---------------------------------------------------------
+
+
+def test_a_plugin_holder_kind_round_trips_and_keeps_its_holds_when_it_cannot_tell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(holds, "_KINDS", {})
+    anchor = tmp_path / "job"
+    anchor.mkdir()
+    jobs = HolderKind(
+        "acme-ci",
+        "job",
+        inspect=lambda holder, at: Sighting(state="missing", label=f"job {holder.name}"),
+    )
+    assert jobs.kind == "acme_ci_job"
+    job = jobs.holder("build-42", anchor=anchor)
+    job.hold(REPOS, API)
+    written = refs.read_reference(refs.refs_dir() / "acme_ci_job-build-42.json")
+    assert (written.holder, written.anchor) == (
+        RefHolder(kind="acme_ci_job", name="build-42"),
+        anchor,
+    )
+    assert job.holds(REPOS) == (RepoKey(API),)
+    [seen] = [h for h in REPOS.holders(API) if isinstance(h, HolderView)]
+    assert (seen.label, seen.state) == ("job build-42", "missing")
+
+    def broken(holder: RefHolder, at: Path) -> Sighting:
+        raise OSError("can't look")
+
+    monkeypatch.setitem(holds._KINDS, jobs.kind, HolderKind("acme-ci", "job", inspect=broken))
+    [seen] = [h for h in REPOS.holders(API) if isinstance(h, HolderView)]
+    assert seen.state == "unreadable"
+    monkeypatch.setattr(holds, "_KINDS", {})  # its plugin isn't installed
+    [seen] = [h for h in REPOS.holders(API) if isinstance(h, HolderView)]
+    assert seen.state == "unreadable" and "isn't installed" in seen.label
+    [plan] = plan_holds(seen, [REPOS.target(API)])
+    assert plan.blocked and plan.failure is not None  # a holder that can't be read releases nothing
+    project = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    [keep] = plan_release(project, REPOS)  # the job still counts as a holder
+    assert isinstance(keep, LetGo) and keep.preview == "keeps the repo: another project holds it"
+
+
+def test_the_removal_preview_of_a_copy_holds_nothing(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    copy = tmp_path / "COPY"
+    shutil.copytree(first.root, copy)
+    from untaped.projects import _forget, project_at
+
+    _forget()
+    found = project_at(copy)
+    assert found is not None and found.copy_of == first.root
+    removal = plan_removal(found, force=())
+    assert isinstance(removal, Removal) and removal.plans == []
+
+
+@pytest.mark.parametrize(
+    ("args", "code", "message"),
+    [
+        (("PROJ", "PROJ"), 2, "OLD and NEW are the same folder"),
+        (("PROJ/sub", "x"), 2, "is not a project's folder"),
+        (("gone", "also-gone"), 2, "no project recorded at"),
+        (("PROJ", "PROJ/inner"), 2, "is inside"),
+        (("PROJ", "OUTER/inner"), 2, "is a project; projects don't nest"),
+    ],
+)
+def test_move_refuses_what_it_cannot_do(
+    tmp_path: Path, args: tuple[str, str], code: int, message: str
+) -> None:
+    make_project(tmp_path / "PROJ")
+    (tmp_path / "PROJ" / "sub").mkdir()
+    make_project(tmp_path / "OUTER")
+    result = _cli("project", "move", *(str(tmp_path / arg) for arg in args))
+    assert result.exit_code == code, result.output
+    assert message in result.stderr
+
+
+def test_move_with_both_folders_gone_says_so(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    shutil.rmtree(project.root)
+    result = _cli("project", "move", str(project.root), str(tmp_path / "nowhere"))
+    assert result.exit_code == 1
+    assert "nothing moved" in result.stderr and "name where it is now as NEW" in result.stderr
+
+
+def test_move_refuses_to_adopt_a_folder_inside_another_project(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    outer = make_project(tmp_path / "OUTER")
+    shutil.rmtree(project.root)
+    (outer.root / "inner").mkdir()
+    result = _cli("project", "move", str(project.root), str(outer.root / "inner"), "--yes")
+    assert result.exit_code == 2
+    assert "projects don't nest" in result.stderr
+
+
+def test_remove_finds_a_missing_project_by_name_and_refuses_ambiguity(tmp_path: Path) -> None:
+    gone = make_project(tmp_path / "a" / "PROJ")
+    shutil.rmtree(gone.root)
+    result = _cli("project", "remove", "PROJ", "--yes", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert _rows(result)[-1]["detail"] == "removed the project's record"
+    make_project(tmp_path / "b" / "PROJ")
+    make_project(tmp_path / "c" / "PROJ")
+    ambiguous = _cli("project", "remove", "PROJ", "--dry-run")
+    assert ambiguous.exit_code == 2 and "2 projects are named 'PROJ'" in ambiguous.stderr
+    outside = tmp_path / "plain"
+    outside.mkdir()
+    assert "is not in a project" in _cli("project", "remove", str(outside)).stderr
+    assert "no project recorded at" in _cli("project", "remove", "./nope", "--dry-run").stderr
+
+
+def test_a_preview_refuses_what_the_real_run_would(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    refs.reference_file(holder_of(project)).write_text("{", encoding="utf-8")
+    result = _cli("project", "remove", str(project.root), "--dry-run")
+    assert result.exit_code == 4
+    assert "cannot read project PROJ's record" in result.stderr
+
+
+def test_an_unreadable_project_is_not_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = make_project(tmp_path / "PROJ")
+    record = refs.read_reference(refs.reference_file(holder_of(project)))
+    import untaped.projects as projects_module
+
+    monkeypatch.setattr(projects_module, "anchor_state", lambda ref: "unreadable")
+    with pytest.raises(ConfigError, match="can't be read now, so it keeps what it holds"):
+        plan_removal(record, force=())
