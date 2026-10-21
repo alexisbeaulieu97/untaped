@@ -113,6 +113,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `Submitted` and `Panes`), `UiContext.run`, `UiContext.require_screen_terminal`,
   and `untaped.testing.drive_screen` with `untaped.testing.ScreenKeys` and
   `untaped.testing.ScreenRun`. See [Screens](./screens.md).
+- Tree output: `TreeGraph` (with `cycle_edges`), `TreeGraphNode`,
+  `TreeGraphEdge`, `print_tree` and `tree_text` in `untaped.sdk`. The text a
+  tree draws is for people and outside the promise anyway.
 
 ## Breaking changes
 

@@ -454,6 +454,9 @@ default), refresh (check upstream now) or cached (never check).
 
 **Policy**: one invocation's output choices.
 
+**Tree output**: a graph drawn as an indented tree, shared branches numbered
+and cycles marked (`--format tree`, `ansible graph`); not the lint Tree.
+
 **Rule**: one check `untaped lint` runs, with a public id `<key>.<id>`
 (`lint.error-case`, `house.docs-page-length`), a severity and the record kind
 it reads.
