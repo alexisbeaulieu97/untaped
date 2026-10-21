@@ -85,3 +85,10 @@ def test_a_failed_write_is_the_plugins_error(store_for: StoreFor) -> None:
     with pytest.raises(StoreError, match="could not write") as raised:
         store.write_private(Listing(repo="acme/app"))
     assert (raised.value.category, raised.value.system) == (ErrorCategory.FAILED, "local")
+
+
+def test_freshness_needs_the_value_it_dates(store_for: StoreFor) -> None:
+    store = store_for("github")
+    store.fetch(branches=["main"])
+    with pytest.raises(TypeError, match="needs the value"):
+        store.write_private(refreshed_at=datetime(2026, 10, 21, tzinfo=UTC))

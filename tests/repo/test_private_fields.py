@@ -5,7 +5,7 @@ written through ``RepoStore.read_private``/``write_private`` with its own
 model. git decides when the file is created, copied (adopt) and deleted, never
 what is in it: adopt once dropped github's ``fetched_at``/``pushed_at`` by
 name, so a field github renamed would have kept its freshness through a copy.
-So no string in untaped_git's code is a field of a model another first-party
+So untaped_git uses no key that is a field of a model another first-party
 plugin passes to ``read_private``, nor one of github's 11.0 freshness fields.
 """
 
@@ -14,6 +14,8 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
 
 from repo.support import FIRST_PARTY, PACKAGES
 
@@ -45,33 +47,58 @@ def _private_models(trees: list[ast.Module]) -> set[str]:
 
 
 def _fields(trees: list[ast.Module], models: set[str]) -> set[str]:
-    return {
-        item.target.id
-        for tree in trees
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ClassDef) and node.name in models
-        for item in node.body
-        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name)
-    }
+    """The keys the ``models`` classes put on disk: each field's name and string aliases."""
+    fields: set[str] = set()
+    for tree in trees:
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.ClassDef) and node.name in models):
+                continue
+            for item in node.body:
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                    fields.add(item.target.id)
+                    fields.update(_aliases(item.value))
+    return fields
 
 
-def _strings(tree: ast.Module) -> Iterator[tuple[int, str]]:
-    """Each string constant in ``tree`` but docstrings: a key, a tuple of keys, an argument."""
-    docstrings = {
-        id(node.body[0].value)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
-        and node.body
-        and isinstance(node.body[0], ast.Expr)
-        and isinstance(node.body[0].value, ast.Constant)
-    }
+def _aliases(value: ast.expr | None) -> Iterator[str]:
+    if isinstance(value, ast.Call):
+        for keyword in value.keywords:
+            if keyword.arg in {"alias", "serialization_alias", "validation_alias"} and (
+                isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str)
+            ):
+                yield keyword.value.value
+
+
+def _keys(tree: ast.Module) -> Iterator[tuple[int, str]]:
+    """Each string ``tree`` uses as a key.
+
+    ``x["k"]``, ``x.get("k")`` (``pop``, ``setdefault``), ``{"k": ...}``, and
+    the strings of a tuple, list or set a module or class names, the shape of
+    a list of keys (``_FRESHNESS_KEYS = ("fetched_at", "pushed_at")``). Other
+    strings (messages, ``plural(n, "repo")``) are not keys.
+    """
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and id(node) not in docstrings
+        found: list[ast.expr | None] = []
+        if isinstance(node, ast.Subscript):
+            found.append(node.slice)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"get", "pop", "setdefault"}
+            and node.args
         ):
-            yield node.lineno, node.value
+            found.append(node.args[0])
+        elif isinstance(node, ast.Dict):
+            found.extend(node.keys)
+        elif isinstance(node, ast.Module | ast.ClassDef):
+            for statement in node.body:
+                if isinstance(statement, ast.Assign | ast.AnnAssign) and isinstance(
+                    statement.value, ast.Tuple | ast.List | ast.Set
+                ):
+                    found.extend(statement.value.elts)
+        for key in found:
+            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                yield key.lineno, key.value
 
 
 def test_git_names_no_field_of_another_plugins_private_file() -> None:
@@ -89,10 +116,27 @@ def test_git_names_no_field_of_another_plugins_private_file() -> None:
     named = [
         f"{path.relative_to(PACKAGES)}:{line}: {key!r}"
         for path, tree in _trees("git").items()
-        for line, key in _strings(tree)
+        for line, key in _keys(tree)
         if key in fields
     ]
     assert named == [], (
         "git names another plugin's private-file field; a private file's content is its "
         "owner's, and git copies it whole (copy_data_file):\n" + "\n".join(named)
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '_FRESHNESS_KEYS = ("fetched_at", "pushed_at")',
+        'data.pop("pushed_at", None)',
+        'value = data["history"]',
+        'payload = {"history": "partial"}',
+    ],
+)
+def test_a_key_is_found_in_each_shape(source: str) -> None:
+    assert [key for _, key in _keys(ast.parse(source))] != []
+
+
+def test_a_word_in_a_message_is_not_a_key() -> None:
+    assert list(_keys(ast.parse('label = plural(count, "repo")'))) == []

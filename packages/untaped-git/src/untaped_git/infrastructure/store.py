@@ -308,13 +308,19 @@ class RepoStore:
         from untaped.sdk import write_data_file  # noqa: PLC0415  # the data file loads on first use
 
         path = private_file(self._path, self._plugin)
-        if not self.exists():
-            raise self._error(
-                f"no repo store repository at {self._path} to keep {path.name} in",
-                category=ErrorCategory.FAILED,
-                system="local",
-            )
+        if value is None:
+            if refreshed_at is not None:
+                raise TypeError("write_private(refreshed_at=...) needs the value it dates")
+            if path.is_file():  # a presence mark: nothing to lock or write
+                return
         with self._locked():
+            # Checked under the lock: a release renames the repo aside while holding it.
+            if not self.exists():
+                raise self._error(
+                    f"no repo store repository at {self._path} to keep {path.name} in",
+                    category=ErrorCategory.FAILED,
+                    system="local",
+                )
             try:
                 if value is None:
                     write_data_file(path, _UsesRepo(), exclusive=True)

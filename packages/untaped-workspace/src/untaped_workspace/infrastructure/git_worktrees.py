@@ -13,7 +13,7 @@ The store repo is blobless: a checkout has its tip's blobs, and the history
 backfill that follows (``prefetch(history=)``) brings the rest, so ``git
 blame`` and ``git log -p`` run offline. The backfill is never a gate: when it
 stops, the worktree is still usable, the private file
-``untaped-workspace.json`` says ``{"history": "partial"}``, and the next
+``untaped-workspace.json`` records a ``partial`` history, and the next
 fetch runs it whole again; once ``complete``, a fetch backfills only the
 ranges it moved.
 
@@ -438,9 +438,9 @@ class LocalGitWorktrees:
         """The backfill state in ``untaped-workspace.json``; writes ``partial`` when it is new.
 
         The file is also how the store's report knows workspace uses the repo.
-        ``None``: a file is there that this release can't read (damaged, or a
-        newer untaped's); the backfill walks the whole history and leaves it
-        as it is.
+        ``None``: a file is there that this release can't read (damaged, a
+        ``history`` it doesn't know, or a newer untaped's); the backfill
+        walks the whole history on every fetch and leaves the file as it is.
         """
         from untaped.sdk import Absent, Found  # noqa: PLC0415  # the data file loads on first use
 

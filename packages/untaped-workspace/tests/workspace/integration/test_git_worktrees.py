@@ -9,14 +9,17 @@ import subprocess
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from untaped.testing.git import GitRemote
+from untaped_git.api import RepoStore
 from untaped_workspace.domain.models import LocalBranch, StoredRepo, StoreUse
 from untaped_workspace.domain.safety import archive_blockers
 from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees
+from untaped_workspace.infrastructure.git_worktrees import HISTORY
 from workspace.conftest import add_submodule, commit_in, git, init_submodules, store_repo
 
 
@@ -79,16 +82,27 @@ def test_a_history_mark_it_cannot_read_is_walked_and_left_alone(
     make_upstream: Callable[..., GitRemote],
     store_root: Path,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     text: str,
 ) -> None:
     url = make_upstream("api").url
     worktrees.checkout(url, tmp_path / "ws" / "one", branch="one", base=None)
     mark = store_repo(store_root, url) / "untaped-workspace.json"
     mark.write_text(text, encoding="utf-8")
+    walked: list[list[str]] = []
+    prefetch = RepoStore.prefetch
+
+    def spy(self: RepoStore, **options: Any) -> None:
+        if options.get("history"):
+            walked.append(list(options["history"]))
+        prefetch(self, **options)
+
+    monkeypatch.setattr(RepoStore, "prefetch", spy)
 
     checkout = worktrees.checkout(url, tmp_path / "ws" / "two", branch="two", base=None)
 
     assert checkout.backfill_error is None
+    assert walked == [list(HISTORY)]  # the whole history, as a partial one
     assert mark.read_text(encoding="utf-8") == text
 
 
