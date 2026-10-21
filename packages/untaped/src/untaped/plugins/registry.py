@@ -370,7 +370,7 @@ class PluginSpec:
         default_factory=lambda: MappingProxyType({}), hash=False
     )
     migrations: tuple[DirMigration, ...] = ()
-    caches: tuple[Cache, ...] = ()
+    caches: tuple[Cache[Any], ...] = ()
     stores: tuple[Store | ItemStore[Any], ...] = ()
     deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
     guides: Traversable | None = field(default=None, hash=False)

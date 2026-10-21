@@ -273,7 +273,7 @@ class CacheSettings(BaseModel):
 
 @cache
 def section_model(
-    model: type[BaseModel], *, extensions: bool, caches: tuple[Cache, ...], section: str = ""
+    model: type[BaseModel], *, extensions: bool, caches: tuple[Cache[Any], ...], section: str = ""
 ) -> type[BaseModel]:
     """``model`` with the keys the SDK injects into a plugin's section.
 
@@ -336,7 +336,9 @@ def _command_text(section: str, command: str) -> str:
     return f"Command (argv list, no shell) that prints {what}; used when {key} is unset."
 
 
-def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[str, str | Renamed]:
+def _cache_renames(
+    model: type[BaseModel], caches: tuple[Cache[Any], ...]
+) -> dict[str, str | Renamed]:
     """``model``'s ``renamed_keys`` plus each cache's ``renamed_from``; ``{}`` when none renames.
 
     A cache's old keys are dated by its ``removed_in`` (undated without one).
@@ -344,7 +346,7 @@ def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[st
     Raises :class:`ConfigError` for an old key two caches claim, or one the
     owner already declares (renamed or retired).
     """
-    claimed: dict[str, Cache] = {}
+    claimed: dict[str, Cache[Any]] = {}
     for declared in caches:
         for old in declared.renamed_from:
             if old in claimed:
@@ -372,7 +374,7 @@ def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[st
     }
 
 
-def _caches_model(model: type[BaseModel], caches: tuple[Cache, ...]) -> type[BaseModel]:
+def _caches_model(model: type[BaseModel], caches: tuple[Cache[Any], ...]) -> type[BaseModel]:
     """The ``caches`` key's model: one :class:`CacheSettings` field per cache."""
     fields: dict[str, Any] = {}
     for declared in caches:
