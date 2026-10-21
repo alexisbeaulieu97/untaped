@@ -792,6 +792,8 @@ def test_cache_sync_after_a_failed_refresh_skips_a_copy_inside_its_max_age() -> 
     [after] = _sync(corpus, "acme/api")
 
     assert [outcome.action for outcome in forced] == ["failed"]
+    assert forced[0].error is not None
+    assert (forced[0].error.message, forced[0].error.hint) == ("fetch denied", None)
     assert (after.action, after.error) == ("skipped", None)
     assert corpus.synced == ["acme/api"]
 
@@ -816,4 +818,18 @@ def test_a_copy_fetched_before_the_cache_is_seeded_not_fetched() -> None:
     _sweep(_readme(corpus, "acme/api"), resolver=_Resolver(_item("acme/api")))
 
     assert corpus.synced == []
+    assert SWEEP.freshness("acme/api").refreshed_at == fetched
+
+
+def test_a_copy_whose_first_refresh_failed_is_seeded_once_it_is_stored() -> None:
+    corpus = _Corpus(sync_errors={"acme/api": GitCorpusError("fetch denied")})
+    resolver = _Resolver(_item("acme/api"))
+    first = _sweep(_readme(corpus, "acme/api"), resolver=resolver)
+    fetched = datetime.now(UTC) - timedelta(minutes=5)
+    corpus.freshness["acme/api"] = CorpusFreshness(fetched_at=fetched, profile="default")
+
+    second = _sweep(corpus, resolver=resolver)
+
+    assert (len(first.unscanned), second.scanned) == (1, 1)
+    assert corpus.synced == ["acme/api"]  # seeded from the copy, not fetched again
     assert SWEEP.freshness("acme/api").refreshed_at == fetched

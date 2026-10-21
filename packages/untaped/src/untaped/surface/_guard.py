@@ -82,12 +82,19 @@ def respelled(line: Line, present: set[str]) -> bool:
     """Whether the gone ``line`` keeps its promise under a new spelling ``present`` holds.
 
     A setting renamed in a minor stays read under its old key until the next
-    major (``cfg <key> -> <new key>``); a switch that became tri-state is
+    major (``cfg <key> -> <new key>``), with the new key keeping each of the
+    old one's lines; a switch that became tri-state is
     still the same flag (``<switch line> default=unset``).
     """
     if line.area == "cfg":
         key = line.text.split(" ")[1]
-        return any(text.startswith(f"cfg {key} -> ") for text in present)
+        prefix = f"cfg {key} -> "
+        # the new key keeps the old one's shape: a rename, never a retyping
+        return any(
+            text.startswith(prefix)
+            and line.text.replace(f"cfg {key} ", f"cfg {text.removeprefix(prefix)} ", 1) in present
+            for text in present
+        )
     return line.text.endswith(" switch") and f"{line.text} default=unset" in present
 
 

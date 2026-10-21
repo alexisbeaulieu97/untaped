@@ -272,6 +272,12 @@ CASES = {
         "cfg acme.max_age -> acme.caches.x.max_age_seconds  [deprecated, removed in 12.0]",
         True,
     ),
+    "rename a setting and change its type": (
+        "cfg acme.max_age integer default=60",
+        "cfg acme.caches.x.max_age_seconds string default=never\n"
+        "cfg acme.max_age -> acme.caches.x.max_age_seconds  [deprecated, removed in 12.0]",
+        False,
+    ),
     "rename a setting, its old key no longer read": (
         "cfg acme.max_age integer default=60",
         "cfg acme.caches.x.max_age_seconds integer default=60",

@@ -145,7 +145,7 @@ class GitCorpusCache:
 
         A path, not the store key alone: ``git.store_dir`` may differ by profile.
         """
-        return str(self._store(self._remote_url(repo)).path)
+        return str(self._store(self._remote_url(repo)).path.absolute())
 
     def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         """Mark a stored copy current without fetching (GitHub reports no new push)."""

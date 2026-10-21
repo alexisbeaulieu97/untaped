@@ -614,6 +614,7 @@ def _prepare_repo(
         return _failure(repo, exc)
     narrow = refresh is not False and stored is not None and not covers(stored, selector)
     ran: list[str] = []
+    failed: list[GitCorpusError] = []
     stopped: list[UntapedError] = []
     fill = _filler(
         corpus,
@@ -627,6 +628,7 @@ def _prepare_repo(
         ),
         fetch_progress=fetch_progress,
         ran=ran,
+        failed=failed,
         stopped=stopped,
     )
     try:
@@ -644,7 +646,12 @@ def _prepare_repo(
         _raise_unless_the_repos(stopped)
         remembered = not ran and not isinstance(exc, NeverRefreshed)
         return _not_served(
-            repo, key, exc, remembered=remembered, stored=stored if raise_failure else None
+            repo,
+            key,
+            # the fetch's own error, not the one serve() rebuilt with a hint to --cached
+            failed[-1] if failed else exc,
+            remembered=remembered,
+            stored=stored if raise_failure else None,
         )
     _raise_unless_the_repos(stopped)
     fetched = served.filled.get(key)
@@ -705,12 +712,14 @@ def _filler(
     unchanged_since: datetime | None,
     fetch_progress: bool,
     ran: list[str],
+    failed: list[GitCorpusError],
     stopped: list[UntapedError],
 ) -> Callable[[str, ProgressHandle], _Fetched]:
     """The fill of ``repo``'s key: a fetch, or a touch when GitHub reports no push since.
 
-    Each key it starts on goes in ``ran``, and each error it raises that is
-    not one repo's (credentials, configuration) in ``stopped``.
+    Each key it starts on goes in ``ran``, each repo's error it raises in
+    ``failed``, and each error that is not one repo's (credentials,
+    configuration) in ``stopped``.
     """
 
     def fill(key: str, handle: ProgressHandle) -> _Fetched:
@@ -725,13 +734,15 @@ def _filler(
             result = corpus.sync_repo(
                 repo, selector=selector, progress=handle if fetch_progress else NO_PROGRESS
             )
-        except GitCorpusError:
+        except GitCorpusError as exc:
+            failed.append(exc)
             raise
         except UntapedError as exc:
             stopped.append(exc)
             raise
         except OSError as exc:
-            raise GitCorpusError(str(exc) or type(exc).__name__, system="local") from exc
+            failed.append(GitCorpusError(str(exc) or type(exc).__name__, system="local"))
+            raise failed[-1] from exc
         return _Fetched(fetched_at=_parse_datetime(result.fetched_at))
 
     return fill
@@ -767,7 +778,9 @@ def _sync_freshness(key: str, stored: CorpusFreshness | None) -> None:
             SWEEP.forget(key)
     elif state.refreshed_at is None:
         if state.attempted_at is not None:
-            SWEEP.forget(key)  # seed() keeps an existing file: drop the failed first attempt
+            # seed() keeps an existing file: drop the failed first attempt (a fill another
+            # run completes meanwhile goes with it, which costs one fetch at worst)
+            SWEEP.forget(key)
         SWEEP.seed(key, refreshed_at=stored.fetched_at)
 
 
