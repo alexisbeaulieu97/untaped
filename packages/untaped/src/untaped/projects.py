@@ -333,7 +333,7 @@ def _existing(path: Path, *, new_id: bool) -> Initialized:
         return Initialized(
             renewed, "new id", f"{shown_path(path)} is a project of its own (id {renewed.id})"
         )
-    after, before = _ready(project)
+    after, before = writing(project)
     was = shown_path(before.anchor or path)
     match before.kind:
         case "unrecorded":
@@ -371,18 +371,15 @@ class Situation:
     reason: str = ""
 
 
-def writing(project: Project) -> Project:
-    """Ready ``project`` for a writing use: re-check under its lock and repair; the project now.
+def writing(project: Project) -> tuple[Project, Situation]:
+    """Ready ``project`` for a writing use: re-check under its lock and repair.
 
-    Records an unrecorded project, refreshes a changed identity, follows a
-    move and gives a copy its own id. Raises :class:`ConfigError` (exit 4)
-    when its reference can't be read or it can't tell a move from a copy.
+    Returns the project now and the situation it acted on, read under the
+    lock. Records an unrecorded project, refreshes a changed identity,
+    follows a move and gives a copy its own id. Raises :class:`ConfigError`
+    (exit 4) when its reference can't be read or it can't tell a move from
+    a copy.
     """
-    return _ready(project)[0]
-
-
-def _ready(project: Project) -> tuple[Project, Situation]:
-    """:func:`writing`, and the situation it acted on, read under the lock."""
     with project.locked():
         try:
             current = _marker_id(project.root)

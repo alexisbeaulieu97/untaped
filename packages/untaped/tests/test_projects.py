@@ -303,7 +303,7 @@ def test_a_copy_gets_its_own_id_only_on_a_writing_use(
     seen = project_at(copy)
     assert seen is not None and seen.id == project.id and seen.copy_of == project.root
     assert [ref.anchor for ref in projects.project_references()] == [project.root]
-    renewed = writing(seen)
+    renewed, _ = writing(seen)
     assert renewed.id != project.id and renewed.copy_of is None
     assert json.loads((copy / ".untaped" / "project.json").read_text())["id"] == renewed.id
     assert _reference(renewed).anchor == copy and _reference(renewed).targets == ()
