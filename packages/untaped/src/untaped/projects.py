@@ -456,12 +456,15 @@ def follow_move(project: Project, *, moved_from: Path, keep: Reference | None) -
     """Point ``project``'s reference at its folder now, then ask each owner to repair.
 
     The reference records ``moved_from`` until every owner's ``moved``
-    succeeded, so a later writing use retries; a broken (quarantined) owner
+    succeeded, so a later writing use retries (from the first folder still
+    unrepaired, through any later moves); a broken (quarantined) owner
     keeps it pending too, while one that isn't installed has nothing to run.
     The rows say what each owner did (``repaired``), skipped or failed. Runs
     under the project's lock.
     """
     targets = keep.targets if keep is not None else ()
+    if keep is not None and keep.moved_from is not None:
+        moved_from = keep.moved_from  # still unrepaired: what points into the folder points there
     _record(project, project.root, keep=keep, moved_from=moved_from)
     if _same(project.root, moved_from):
         _record(project, project.root, keep=keep)

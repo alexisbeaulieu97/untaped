@@ -77,7 +77,8 @@ untaped    ~/work/PROJ-123      planned  deletes .gitignore, project.json, state
   `project.json` any more. Each plugin the project holds items of then
   repairs what points into the folder; a repair that fails warns and is
   retried by the next command that changes the project, or by running the
-  same move again. Both folders holding the project is a copy, refused.
+  same move again. When both folders hold the project, one is a copy, and the
+  move is refused unless the record can't tell which one is the original.
 - `project remove [NAME|PATH]` (the current project by default; a PATH
   is the project's own folder, not one inside it) asks each
   plugin how the project lets go of what it holds, shows the plan, and

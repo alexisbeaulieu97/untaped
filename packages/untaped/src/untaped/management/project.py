@@ -377,7 +377,7 @@ def _prune_command(
                 except UntapedError as exc:  # back, or out of reach, since it was listed
                     if project is not None:
                         raise
-                    _diag.info(f"skipped {ref.describe()}: {exc}")
+                    _diag.info(f"skipped: {exc}")
             if not removals:
                 _diag.info("nothing to prune")
                 emit([], fmt=fmt, columns=columns or _PRUNE_COLUMNS)

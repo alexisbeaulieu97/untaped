@@ -50,7 +50,6 @@ from untaped.projects import (
     _marker_id,
     _project_below,
     _reserved,
-    _same,
     _situation,
     _undecided,
     _write_gitignore,
@@ -441,20 +440,28 @@ def _onto(
 
 
 def _check_not_copy(old: Path, new: Path, project: Project) -> None:
-    """Both folders hold the id: refuse unless NEW is the one the record names by identity."""
+    """Both folders hold the id: refuse when the record tells which one is the original.
+
+    Its identity decides first, then its path; with the recorded folder
+    present elsewhere, both are copies. Only when the record can't tell
+    (neither folder is the one it names, and that one is gone) does NEW win.
+    """
     hint = "`untaped project init --new-id` in the copy gives it its own id"
-    if _situation(old, project.id).kind in {"ok", "refresh", "moved"}:
-        # OLD is the folder the record names (here or moved by hand): NEW is a copy of it.
+    kinds = {path: _situation(path, project.id) for path in (old, new)}
+    anchor = kinds[new].anchor
+    name = anchor.name if anchor is not None else project.name  # as its record names it
+    for match in ({"ok", "moved"}, {"refresh"}):
+        for original, copy in ((new, old), (old, new)):
+            if kinds[original].kind in match:
+                raise UntapedError(
+                    f"{shown_path(copy)} is a copy of project {name} at "
+                    f"{shown_path(original)}; nothing moved",
+                    hint=hint,
+                )
+    if anchor is not None and "copy" in {kinds[old].kind, kinds[new].kind}:
         raise UntapedError(
-            f"{shown_path(new)} is a copy of project {project.name} at {shown_path(old)}; "
-            "nothing moved",
-            hint=hint,
-        )
-    if _situation(new, project.id).kind in {"ok", "refresh"}:
-        # NEW is already the folder the record names: OLD is the copy, nothing moved.
-        raise UntapedError(
-            f"{shown_path(old)} is a copy of project {project.name} at {shown_path(new)}, "
-            "which its record already names; nothing moved",
+            f"{shown_path(old)} and {shown_path(new)} are copies of project {name} "
+            f"at {shown_path(anchor)}; nothing moved",
             hint=hint,
         )
 
@@ -527,7 +534,8 @@ def _recorded_at(old: Path, new: Path) -> Project:
     """The project recorded at a gone OLD, or whose repair from OLD is pending.
 
     A pending repair is retried only by following onto the folder the record
-    already names: any other NEW would take the record from that folder.
+    names (or that folder moved by hand again): any other NEW would take the
+    record from it.
     """
     real = _real(old)
     refs = [ref for ref in project_references() if ref.holder is not None]
@@ -541,12 +549,19 @@ def _recorded_at(old: Path, new: Path) -> Project:
             f"no project recorded at {shown_path(old)}",
             hint="`untaped project list` shows the projects this home records",
         )
-    if not (os.path.lexists(new) and _same(new, anchor)):
+    recorded = os.path.lexists(new) and _situation(new.resolve(), holder.name).kind in {
+        "ok",
+        "refresh",
+        "moved",  # moved by hand again since
+    }
+    if not recorded:
+        here = os.path.lexists(anchor)
         raise UntapedError(
             f"project {anchor.name} moved from {shown_path(old)} to {shown_path(anchor)}; "
             "nothing moved",
-            hint=f"`untaped project move {shown_path(old)} {shown_path(anchor)}` "
-            "retries its repair",
+            hint=f"`untaped project move {shown_path(old)} {shown_path(anchor)}` retries its repair"
+            if here
+            else f"name where {shown_path(anchor)} is now as NEW to retry its repair",
         )
     return Project(id=holder.name, root=old)
 

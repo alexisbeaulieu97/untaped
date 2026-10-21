@@ -922,7 +922,7 @@ def test_move_from_a_copy_onto_the_recorded_folder_moves_nothing(tmp_path: Path)
     shutil.copytree(first.root, copy)
     result = _cli("project", "move", str(copy), str(first.root))
     assert result.exit_code == 1
-    assert "which its record already names; nothing moved" in result.stderr
+    assert f"{copy} is a copy of project PROJ at {first.root}" in " ".join(result.stderr.split())
     assert OWNER.moves == []
 
 
@@ -944,7 +944,7 @@ def test_a_pending_repair_is_retried_only_onto_the_folder_the_record_names(
 
 
 def test_a_folder_recorded_at_old_wins_over_another_projects_pending_repair(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
     OWNER.raise_moved = 1
@@ -952,6 +952,10 @@ def test_a_folder_recorded_at_old_wins_over_another_projects_pending_repair(
     second = make_project(tmp_path / "PROJ")  # a new project where the first one was
     hand = tmp_path / "hand"
     second.root.rename(hand)
+    import untaped.project_lifecycle as lifecycle
+
+    pending_first = sorted(lifecycle.project_references(), key=lambda r: r.moved_from is None)
+    monkeypatch.setattr(lifecycle, "project_references", lambda: pending_first)
     result = _cli("project", "move", str(second.root), str(hand), "-f", "json")
     assert result.exit_code == 0, result.output
     assert refs.read_reference(refs.reference_file(holder_of(second))).anchor == hand
@@ -1054,3 +1058,53 @@ def test_forgetting_a_hold_takes_its_item_stores_lock(
     )
     assert forced.exit_code == 0, forced.output
     assert ("acme", "repos") in taken
+
+
+def test_move_refuses_one_copy_onto_another(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    for name in ("C1", "C2"):
+        shutil.copytree(first.root, tmp_path / name)
+    result = _cli("project", "move", str(tmp_path / "C1"), str(tmp_path / "C2"), "--yes")
+    assert result.exit_code == 1
+    assert f"are copies of project PROJ at {first.root}" in " ".join(result.stderr.split())
+    assert refs.read_reference(refs.reference_file(holder_of(first))).anchor == first.root
+    assert OWNER.moves == []
+
+
+def test_the_copy_refusal_names_the_folder_the_record_knows_by_identity(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ")
+    new = tmp_path / "NEW"
+    first.root.rename(new)
+    shutil.copytree(new, first.root)  # a copy where the original was
+    result = _cli("project", "move", str(first.root), str(new))
+    assert result.exit_code == 1
+    assert f"{first.root} is a copy of project PROJ at {new}" in " ".join(result.stderr.split())
+
+
+def test_a_pending_repair_follows_its_folder_moved_by_hand_again(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    moved, again = tmp_path / "moved", tmp_path / "again"
+    OWNER.raise_moved = 1
+    assert _cli("project", "move", str(first.root), str(moved)).exit_code == 1
+    moved.rename(again)
+    stale = _cli("project", "move", str(first.root), str(tmp_path / "nowhere"))
+    assert stale.exit_code == 1 and "name where" in stale.stderr  # moved is gone too
+    OWNER.moves.clear()
+    result = _cli("project", "move", str(first.root), str(again), "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert [ask.moved_from for ask in OWNER.moves] == [first.root]
+    record = refs.read_reference(refs.reference_file(holder_of(first)))
+    assert (record.anchor, record.moved_from) == (again, None)
+
+
+def test_a_later_move_repairs_from_the_first_folder_still_unrepaired(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    moved, again = tmp_path / "moved", tmp_path / "again"
+    OWNER.raise_moved = 1
+    assert _cli("project", "move", str(first.root), str(moved)).exit_code == 1
+    moved.rename(again)  # by hand, before the repair was retried
+    OWNER.moves.clear()
+    result = _cli("project", "move", str(moved), str(again), "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert [ask.moved_from for ask in OWNER.moves] == [first.root]
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
