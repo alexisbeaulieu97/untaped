@@ -1221,3 +1221,45 @@ def test_a_folder_at_its_path_under_a_new_identity_lets_the_move_decide(tmp_path
     result = _cli("project", "move", str(first.root), str(tmp_path / "R"), "-f", "json")
     assert result.exit_code == 0, result.output
     assert refs.read_reference(refs.reference_file(holder_of(first))).anchor == tmp_path / "R"
+
+
+def test_a_failure_from_an_earlier_folder_wins_over_a_later_repair(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "A", holds={REPOS: [API]})
+    a, b, c = first.root, tmp_path / "B", tmp_path / "C"
+    OWNER.raise_moved = 1
+    assert _cli("project", "move", str(a), str(b)).exit_code == 1  # pending from A
+    b.rename(c)
+    asks: list[Path] = []
+
+    def fail_from_a() -> None:  # the repair from A fails again, the one from B works
+        asks.append(OWNER.moves[-1].moved_from)
+        OWNER.raise_moved = int(asks[-1] == a)
+
+    OWNER.during_moved = [fail_from_a]
+    result = _cli("project", "move", str(b), str(c), "-f", "json")
+    assert result.exit_code == 1
+    assert asks == [a, b]
+    [row] = _rows(result)[1:]
+    assert row["action"] == "failed" and row["error"]["message"].startswith("raised RuntimeError")
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == (a,)
+
+
+def test_one_item_held_in_two_stores_gets_a_row_from_each(tmp_path: Path) -> None:
+    def mirrored(ask: MoveAsk[RepoKey]) -> str:
+        raise RuntimeError("mirror repair failed")
+
+    mirrors = ItemStore("acme", "mirrors", item=RepoKey, release=_release, moved=mirrored)
+    spec = PluginSpec(name="acme", stores=(REPOS, mirrors))
+    with bootstrap.kept_composition(quiet=True):
+        bootstrap.compose_root(candidates=[plugin_candidate(spec)])
+        first = make_project(tmp_path / "A", holds={REPOS: [API], mirrors: [API]})
+    OWNER.raise_moved = 1
+    result = _cli(
+        "project", "move", str(first.root), str(tmp_path / "B"), "-f", "json", specs=(spec,)
+    )
+    assert result.exit_code == 1
+    details = sorted(r["detail"] for r in _rows(result)[1:])
+    assert details == [
+        "raised RuntimeError: mirror repair failed",
+        "raised RuntimeError: worktree repair failed",
+    ]

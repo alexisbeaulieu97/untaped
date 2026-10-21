@@ -66,6 +66,7 @@ from untaped.refs import (
     AnchorId,
     Reference,
     RefHolder,
+    RefTarget,
     locked,
     read_reference,
     read_references,
@@ -462,7 +463,7 @@ def follow_move(
     retries; ``moved_from`` is the folder it just left, if any. A broken
     (quarantined) owner keeps it pending too, while one that isn't installed
     has nothing to run. The rows say what each owner did (``repaired``),
-    skipped or failed, one per item. Runs under the project's lock.
+    skipped or failed, one per hold. Runs under the project's lock.
     """
     targets = keep.targets if keep is not None else ()
     # Each folder a repair is still pending from, then the one it just left: what wasn't
@@ -474,12 +475,11 @@ def follow_move(
         if path != project.root and not _same(project.root, path)
     ]
     _record(project, project.root, keep=keep, moved_from=sources)
-    rows: dict[tuple[str, str], HoldOutcome] = {}
+    rows: dict[RefTarget | None, HoldOutcome] = {}
     pending = []
     for source in sources:
         asked, done = repair_holds(holder_of(project), targets, moved_from=source)
-        for row in asked:  # one row per item: a failure from any folder is the one shown
-            key = (row.plugin, row.item)
+        for key, row in asked.items():  # one row per hold: a failure from any folder wins
             if key not in rows or not rows[key].failed:
                 rows[key] = row
         if not done:

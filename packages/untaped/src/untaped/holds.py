@@ -841,11 +841,12 @@ def release_rows(
 
 def repair_holds(
     holder: RefHolder, targets: Collection[RefTarget], *, moved_from: Path
-) -> tuple[list[HoldOutcome], bool]:
+) -> tuple[dict[RefTarget | None, HoldOutcome], bool]:
     """Ask each hold's owner to repair a holder that moved from ``moved_from``.
 
-    The rows say what each owner did; the flag is whether nothing is left to
-    retry (no repair failed, and no owner is broken: once fixed, it repairs).
+    The rows, by hold (``None`` when the holder isn't there), say what each
+    owner did; the flag is whether nothing is left to retry (no repair
+    failed, and no owner is broken: once fixed, it repairs).
     """
     seen = holder_view(holder)
     if not isinstance(seen, HolderView) or seen.state != "present":
@@ -860,9 +861,9 @@ def repair_holds(
             detail=failure.message,
             error=failure,
         )
-        return [row], False
+        return {None: row}, False
     owners = Owners.current()
-    rows: list[HoldOutcome] = []
+    rows: dict[RefTarget | None, HoldOutcome] = {}
     done = True
     for target in targets:
         if target.item is None:
@@ -874,7 +875,7 @@ def repair_holds(
         if store is None:
             reason, forgettable = owners.why_not(target)
             done = done and forgettable
-            rows.append(row.model_copy(update={"detail": f"{reason}; nothing repaired"}))
+            rows[target] = row.model_copy(update={"detail": f"{reason}; nothing repaired"})
             continue
         if store.moved is None:
             continue
@@ -886,15 +887,13 @@ def repair_holds(
             text = store.moved(ask)
         except Exception as exc:  # a plugin's failure is its row's; the move itself stands
             failure = _raised(exc)
-            rows.append(
-                row.model_copy(
-                    update={"action": "failed", "detail": failure.message, "error": failure}
-                )
+            rows[target] = row.model_copy(
+                update={"action": "failed", "detail": failure.message, "error": failure}
             )
             done = False
             continue
         if isinstance(text, str) and text:
-            rows.append(row.model_copy(update={"action": "repaired", "detail": text}))
+            rows[target] = row.model_copy(update={"action": "repaired", "detail": text})
     return rows, done
 
 
