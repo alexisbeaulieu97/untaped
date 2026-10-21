@@ -70,6 +70,7 @@ class Owner:
     fresh: list[ReleaseAsk[Any]] = field(default_factory=list)
     moves: list[MoveAsk[Any]] = field(default_factory=list)
     during_apply: list[Any] = field(default_factory=list)
+    during_moved: list[Any] = field(default_factory=list)
 
 
 OWNER = Owner()
@@ -111,6 +112,8 @@ def _delete(fresh: ReleaseAsk[RepoKey]) -> str | Refused:
 
 def _moved(ask: MoveAsk[RepoKey]) -> str | None:
     OWNER.moves.append(ask)
+    for step in OWNER.during_moved:
+        step()
     if OWNER.raise_moved:
         OWNER.raise_moved -= 1
         raise RuntimeError("worktree repair failed")
@@ -852,7 +855,7 @@ def test_a_broken_owner_keeps_a_moves_repair_pending(tmp_path: Path) -> None:
 def test_a_listed_missing_project_that_came_back_is_not_removed(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
     record = refs.read_reference(refs.reference_file(holder_of(project)))
-    with pytest.raises(UntapedError, match=r"is at .* again; nothing removed"):
+    with pytest.raises(UntapedError, match=r"is at .* again, so it isn't removed"):
         plan_removal(record, force=())
     assert (project.root / ".untaped" / "project.json").exists()
 
@@ -900,3 +903,154 @@ def test_the_preview_of_a_hand_moved_project_asks_about_it_where_it_is(tmp_path:
     found = Project(id=first.id, root=new)
     removal = plan_removal(found, force=())
     assert (removal.seen.state, removal.seen.anchor) == ("present", new)
+
+
+def test_move_refuses_a_copy_of_a_hand_moved_original(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    hand = tmp_path / "hand"
+    first.root.rename(hand)
+    shutil.copytree(hand, tmp_path / "COPY")
+    result = _cli("project", "move", str(hand), str(tmp_path / "COPY"))
+    assert result.exit_code == 1 and "is a copy of project" in result.stderr
+    assert refs.read_reference(refs.reference_file(holder_of(first))).anchor == first.root
+    assert OWNER.moves == []
+
+
+def test_move_from_a_copy_onto_the_recorded_folder_moves_nothing(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    copy = tmp_path / "COPY"
+    shutil.copytree(first.root, copy)
+    result = _cli("project", "move", str(copy), str(first.root))
+    assert result.exit_code == 1
+    assert "which its record already names; nothing moved" in result.stderr
+    assert OWNER.moves == []
+
+
+def test_a_pending_repair_is_retried_only_onto_the_folder_the_record_names(
+    tmp_path: Path,
+) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    moved, other = tmp_path / "moved", tmp_path / "other"
+    OWNER.raise_moved = 1
+    assert _cli("project", "move", str(first.root), str(moved)).exit_code == 1
+    other.mkdir()
+    result = _cli("project", "move", str(first.root), str(other), "--yes")
+    assert result.exit_code == 1
+    assert f"moved from {first.root} to {moved}" in result.stderr
+    assert f"untaped project move {first.root} {moved}" in result.stderr
+    record = refs.read_reference(refs.reference_file(holder_of(first)))
+    assert (record.anchor, record.moved_from) == (moved, first.root)
+    assert not (other / ".untaped").exists()
+
+
+def test_a_folder_recorded_at_old_wins_over_another_projects_pending_repair(
+    tmp_path: Path,
+) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    OWNER.raise_moved = 1
+    assert _cli("project", "move", str(first.root), str(tmp_path / "moved")).exit_code == 1
+    second = make_project(tmp_path / "PROJ")  # a new project where the first one was
+    hand = tmp_path / "hand"
+    second.root.rename(hand)
+    result = _cli("project", "move", str(second.root), str(hand), "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert refs.read_reference(refs.reference_file(holder_of(second))).anchor == hand
+
+
+def test_a_hold_taken_during_a_repair_stays_when_the_move_completes(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    OWNER.during_moved = [lambda: holds.add_hold(holder_of(first), REPOS, WEB)]
+    result = _cli("project", "move", str(first.root), str(tmp_path / "moved"))
+    assert result.exit_code == 0, result.output
+    record = refs.read_reference(refs.reference_file(holder_of(first)))
+    assert record.moved_from is None
+    assert set(record.targets) == {REPOS.target(API), REPOS.target(WEB)}
+
+
+def test_move_refuses_a_symlinked_old(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ")
+    link = tmp_path / "link"
+    link.symlink_to(first.root)
+    result = _cli("project", "move", str(link), str(tmp_path / "new"))
+    assert result.exit_code == 2 and "is a symlink" in result.stderr
+    assert first.root.exists()
+
+
+def test_the_removal_preview_says_whether_the_folder_goes(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    empty = _cli("project", "remove", str(project.root), "--dry-run", "-f", "json")
+    assert _rows(empty)[-1]["detail"].endswith("then the folder, which holds nothing else")
+    (project.root / "notes.md").write_text("mine\n", encoding="utf-8")
+    kept = _cli("project", "remove", str(project.root), "--dry-run", "-f", "json")
+    assert _rows(kept)[-1]["detail"].endswith("keeps the folder (it holds your files)")
+
+
+def test_a_plan_that_raises_exits_1_in_a_preview_too(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    OWNER.raise_plan = {API}
+    assert _cli("project", "remove", str(first.root), "--check").exit_code == 1
+    assert _cli("project", "remove", str(first.root), "--dry-run").exit_code == 1
+
+
+def test_prune_with_every_listed_project_skipped_has_nothing_to_prune(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    record = refs.read_reference(refs.reference_file(holder_of(project)))
+    import untaped.project_lifecycle as lifecycle
+
+    monkeypatch.setattr(lifecycle, "missing_projects", lambda: ([record], []))  # back since
+    result = _cli("project", "prune", "--force", API)
+    assert result.exit_code == 0, result.output
+    assert "isn't removed" in result.stderr and "nothing to prune" in result.stderr
+    assert refs.reference_file(holder_of(project)).exists()
+
+
+def test_a_record_removed_since_it_was_listed_says_so(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    record = refs.read_reference(refs.reference_file(holder_of(project)))
+    record.file.unlink()
+    with pytest.raises(UntapedError, match="was already removed"):
+        plan_removal(record, force=())
+
+
+def test_a_bare_word_that_is_neither_the_project_nor_a_name_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = make_project(tmp_path / "PROJ")
+    (project.root / "src").mkdir()
+    monkeypatch.chdir(project.root)
+    result = _cli("project", "remove", "src", "--dry-run")
+    assert result.exit_code == 2 and "inside project PROJ" in result.stderr
+
+
+def test_a_gone_project_is_found_through_a_symlinked_path(tmp_path: Path) -> None:
+    (tmp_path / "real").mkdir()
+    (tmp_path / "link").symlink_to(tmp_path / "real")
+    project = make_project(tmp_path / "real" / "PROJ")
+    shutil.rmtree(project.root)
+    result = _cli("project", "prune", str(tmp_path / "link" / "PROJ"), "--dry-run", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert _rows(result)[-1]["holder"] == "project PROJ"
+    hand = tmp_path / "hand"
+    result = _cli("project", "move", str(tmp_path / "link" / "PROJ"), str(hand))
+    assert result.exit_code == 1 and "neither" in result.stderr  # found, then both gone
+
+
+def test_forgetting_a_hold_takes_its_item_stores_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: ["pack:terraform"]})
+    taken: list[tuple[str, str]] = []
+    real = holds._target_lock
+
+    def spy(plugin: str, store: str) -> Any:
+        taken.append((plugin, store))
+        return real(plugin, store)
+
+    monkeypatch.setattr(holds, "_target_lock", spy)
+    forced = _cli(
+        "project", "remove", str(first.root), "--force", "pack:terraform", "--yes", specs=()
+    )
+    assert forced.exit_code == 0, forced.output
+    assert ("acme", "repos") in taken

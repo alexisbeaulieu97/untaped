@@ -267,7 +267,7 @@ def _remove_command(
     Each plugin the project holds items of says how it lets go (a repo
     another project holds is kept), shown first. One refused hold applies
     nothing (exit 1); --force ITEM overrides that item's refusal. Then
-    project.json, state.yml, plugins/ and lock files go; config.yml and
+    project.json, state.yml, plugins/ and its own lock files go; config.yml and
     your own files stay, and so does the folder unless nothing else is in
     it. Always confirms; without a terminal it needs --yes (else exit 2).
 
@@ -378,6 +378,10 @@ def _prune_command(
                     if project is not None:
                         raise
                     _diag.info(f"skipped {ref.describe()}: {exc}")
+            if not removals:
+                _diag.info("nothing to prune")
+                emit([], fmt=fmt, columns=columns or _PRUNE_COLUMNS)
+                return
             rows = _run(
                 removals,
                 force=force or (),

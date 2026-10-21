@@ -4,7 +4,7 @@
 project's holds: each owner plans, the plans are previewed, one refusal
 applies nothing, and after confirmation each plan applies on a fresh ask.
 When no hold is left, ``remove`` deletes only what core wrote in the folder
-(``project.json``, ``state.yml``, ``plugins/``, lock files and an untouched
+(``project.json``, ``state.yml``, ``plugins/``, its own lock files and an untouched
 ``.gitignore``) and then the reference; ``config.yml`` and people's files
 stay, and so does the folder unless nothing else is in it. ``prune`` does
 the same for every project whose folder is gone, keeping those it can't read
@@ -50,6 +50,7 @@ from untaped.projects import (
     _marker_id,
     _project_below,
     _reserved,
+    _same,
     _situation,
     _undecided,
     _write_gitignore,
@@ -99,8 +100,10 @@ class Removal:
             detail = f"deletes {', '.join(deletes) or 'nothing of core'}"
             if keeps:
                 detail += f"; keeps {', '.join(keeps)} (yours)"
+            elif any(name != DIRECTORY for name in _entries(self.root)):
+                detail += "; keeps the folder (it holds your files)"
             else:
-                detail += "; then the folder, if nothing else is left in it"
+                detail += "; then the folder, which holds nothing else"
         else:
             detail = f"forgets the project: {shown_path(self.seen.anchor)} is gone"
         return [*preview_rows(self.plans), self._row("planned", detail)]
@@ -140,6 +143,8 @@ def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str])
         return Removal(holder, seen, project.root, plan_holds(seen, ref.targets, force=force))
     if project_or_ref.holder is None:
         raise ConfigError(f"cannot read the project record {shown_path(project_or_ref.file)}")
+    if not project_or_ref.file.exists():  # removed since it was listed (another prune)
+        raise UntapedError(f"{project_or_ref.describe()} was already removed")
     ref = read_reference(project_or_ref.file)  # read again: the caller holds the lock now
     found = view(ref)
     if not isinstance(found, HolderView) or ref.holder is None:
@@ -152,7 +157,7 @@ def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str])
         )
     if seen.state == "present":
         raise UntapedError(
-            f"{seen.label} is at {shown_path(seen.anchor)} again; nothing removed",
+            f"{seen.label} is at {shown_path(seen.anchor)} again, so it isn't removed",
             hint="run the command again",
         )
     return Removal(ref.holder, seen, None, plan_holds(seen, ref.targets, force=force))
@@ -401,7 +406,7 @@ def plan_move(old: Path, new: Path) -> Move:
             raise UsageError(f"{shown_path(old)} is not a project's folder")
         project = _discover(old.resolve(), report=False)
     else:
-        project = _recorded_at(old)
+        project = _recorded_at(old, new)
     reference = _reference(project.id)
     if os.path.lexists(new):
         return _onto(new.resolve(), project, old, reference, present=present)
@@ -426,18 +431,32 @@ def _onto(
         raise UntapedError(f"{shown_path(new)} is another project; nothing moved")
     moved = Project(id=project.id, root=new)
     if there == project.id:
-        if present and _situation(old.resolve(), project.id).kind in {"ok", "refresh"}:
-            # OLD is the folder the record names: NEW is a copy of it, not where it went.
-            raise UntapedError(
-                f"{shown_path(new)} is a copy of project {project.name} at {shown_path(old)}; "
-                "nothing moved",
-                hint="`untaped project init --new-id` in the copy gives it its own id",
-            )
+        if present:
+            _check_not_copy(old.resolve(), new, project)
         return Move("follow", moved, old, new, reference)
     if present:
         raise UntapedError(f"{shown_path(new)} already exists; nothing moved")
     _check_adoptable(new)
     return Move("adopt", moved, old, new, reference)
+
+
+def _check_not_copy(old: Path, new: Path, project: Project) -> None:
+    """Both folders hold the id: refuse unless NEW is the one the record names by identity."""
+    hint = "`untaped project init --new-id` in the copy gives it its own id"
+    if _situation(old, project.id).kind in {"ok", "refresh", "moved"}:
+        # OLD is the folder the record names (here or moved by hand): NEW is a copy of it.
+        raise UntapedError(
+            f"{shown_path(new)} is a copy of project {project.name} at {shown_path(old)}; "
+            "nothing moved",
+            hint=hint,
+        )
+    if _situation(new, project.id).kind in {"ok", "refresh"}:
+        # NEW is already the folder the record names: OLD is the copy, nothing moved.
+        raise UntapedError(
+            f"{shown_path(old)} is a copy of project {project.name} at {shown_path(new)}, "
+            "which its record already names; nothing moved",
+            hint=hint,
+        )
 
 
 def _check_rename(old: Path, new: Path) -> None:
@@ -504,19 +523,32 @@ def apply_move(move: Move) -> list[HoldOutcome]:
     return [move._row("moved" if move.how == "rename" else "repaired", detail), *rows]
 
 
-def _recorded_at(old: Path) -> Project:
+def _recorded_at(old: Path, new: Path) -> Project:
+    """The project recorded at a gone OLD, or whose repair from OLD is pending.
+
+    A pending repair is retried only by following onto the folder the record
+    already names: any other NEW would take the record from that folder.
+    """
     real = _real(old)
-    matches = [
-        ref
-        for ref in project_references()
-        if ref.holder is not None and real in {ref.anchor, ref.moved_from}  # a repair to retry
-    ]
-    if not matches or matches[0].holder is None:
+    refs = [ref for ref in project_references() if ref.holder is not None]
+    at = [ref for ref in refs if ref.anchor == real]
+    if at and at[0].holder is not None:
+        return Project(id=at[0].holder.name, root=old)
+    pending = [ref for ref in refs if ref.moved_from == real]
+    holder, anchor = (pending[0].holder, pending[0].anchor) if pending else (None, None)
+    if holder is None or anchor is None:
         raise UsageError(
             f"no project recorded at {shown_path(old)}",
             hint="`untaped project list` shows the projects this home records",
         )
-    return Project(id=matches[0].holder.name, root=old)
+    if not (os.path.lexists(new) and _same(new, anchor)):
+        raise UntapedError(
+            f"project {anchor.name} moved from {shown_path(old)} to {shown_path(anchor)}; "
+            "nothing moved",
+            hint=f"`untaped project move {shown_path(old)} {shown_path(anchor)}` "
+            "retries its repair",
+        )
+    return Project(id=holder.name, root=old)
 
 
 def _reference(pid: str) -> Reference | None:

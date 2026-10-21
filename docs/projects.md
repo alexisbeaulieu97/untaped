@@ -76,12 +76,15 @@ untaped    ~/work/PROJ-123      planned  deletes .gitignore, project.json, state
   NEW, and adopts NEW (after a confirmation) when it holds no
   `project.json` any more. Each plugin the project holds items of then
   repairs what points into the folder; a repair that fails warns and is
-  retried by the next command that changes the project.
-- `project remove [NAME|PATH]` (the current project by default) asks each
+  retried by the next command that changes the project, or by running the
+  same move again. Both folders holding the project is a copy, refused.
+- `project remove [NAME|PATH]` (the current project by default; a PATH
+  is the project's own folder, not one inside it) asks each
   plugin how the project lets go of what it holds, shows the plan, and
   applies nothing if one hold is refused (exit 1); `--force ITEM` overrides
   that item's refusal, and forgets a hold whose plugin isn't installed (never
-  one whose plugin is broken: fix it instead). Then
+  one whose plugin is broken: fix it instead); naming an item the project
+  doesn't hold exits 2. Then
   it deletes only what untaped wrote: `project.json`, `state.yml`,
   `plugins/`, its own lock files and an untouched `.gitignore`. `config.yml` and
   your own files stay, and so does the folder unless nothing else is in it.
