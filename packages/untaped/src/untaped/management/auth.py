@@ -466,7 +466,7 @@ def _refuse_other_entry(secret: _Secret, profile: str, entry: str) -> None:
     Only the part after the profile is compared, so an entry a renamed
     profile still names is deleted as before.
     """
-    own = secret.entry(profile).rpartition("/")[2]
+    own = secret.section if secret.field == "token" else secret.key
     if entry.rpartition("/")[2] != own:
         setting = f"{secret.section}.{secret.command}"
         raise ConfigError(

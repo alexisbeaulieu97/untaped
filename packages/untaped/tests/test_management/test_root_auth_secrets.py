@@ -228,3 +228,19 @@ def test_unset_refuses_an_entry_another_secret_owns(
         " ".join(result.stderr.split())
     )
     assert stores.entries() == {"untaped/default/duo": "tok"}
+
+
+def test_unset_deletes_the_entry_of_a_profile_that_cannot_name_one(
+    _isolated_config: Path, stores: FakeStores
+) -> None:
+    """A profile renamed to a name no entry can take still unsets the entry it reads."""
+    assert _auth("set", "duo", "--stdin", input="tok\n").exit_code == 0
+    command = ["pass", "show", "untaped/default/duo"]
+    write_config(
+        _isolated_config,
+        "profiles:\n  default: {}\n  my work:\n"
+        f"    duo: {{token_command: {json.dumps(command)}}}\n",
+    )
+    result = _auth("unset", "duo", "--profile", "my work", "--yes")
+    assert result.exit_code == 0, result.output
+    assert stores.entries() == {}
