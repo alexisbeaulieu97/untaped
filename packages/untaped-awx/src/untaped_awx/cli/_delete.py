@@ -35,7 +35,19 @@ from untaped_awx.records import DeleteOutcome
 
 
 def _add_delete(app: App, spec: AwxResourceSpec) -> None:
-    @app.command(name="delete")
+    help_text = (
+        "Delete an explicitly selected batch after one complete preview.\n\n"
+        "What a deleted resource loses: `untaped agents awx writes`."
+    )
+    if spec.kind in {"JobTemplate", "WorkflowJobTemplate"}:
+        help_text += (
+            " A workflow node that ran a deleted template runs nothing afterwards: "
+            "`usage` lists the workflows that contain it."
+        )
+    if spec.kind == "Inventory":
+        help_text += " Deleting an inventory is asynchronous (`deletion_requested`)."
+
+    @app.command(name="delete", help=help_text)
     @writes(destructive=True)
     def delete_command(
         names: NamesArgument = None,
@@ -49,13 +61,6 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Delete an explicitly selected batch after one complete preview.
-
-        Applying a deleted resource's export creates it again with a new id,
-        and without its secrets, access, schedules or history. Before deleting a template, run
-        `usage` on it: a workflow node that ran it runs nothing afterwards.
-        Deleting an inventory is asynchronous (`deletion_requested`).
-        """
         selection.require_source(names)
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)

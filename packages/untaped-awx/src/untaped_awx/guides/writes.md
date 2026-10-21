@@ -2,10 +2,8 @@
 description: "Read before changing anything on an AWX controller: how a write previews and confirms, how a batch runs and fails, what is verified, and what can't be undone."
 ---
 
-Every write (`patch`, `edit`, `apply`, `delete`, `copy`, `rename`,
-membership `add`/`remove`, `jobs cancel`, `jobs relaunch`, `test prune`)
-previews once and asks once, No by default. What to select:
-`untaped agents awx selecting`.
+Every write (a command marked as changing things) previews once and asks
+once, No by default. What to select: `untaped agents awx selecting`.
 
 ## Preview and confirmation
 
@@ -13,17 +11,17 @@ previews once and asks once, No by default. What to select:
   drift. The preview has one row per planned change (resource, field, old →
   new).
 - Without a terminal, a write needs `--yes` or `--dry-run` (else exit 2).
-- A single named `launch` or `sync` submits at once; several targets or a
-  query selection are listed and confirmed once.
+- A single named `launch` or `sync` submits at once; several targets, a
+  query or a `--stdin` selection are listed and confirmed once.
 - Declining exits 1 with `cancelled; no changes made`.
 
 ## How a batch runs
 
-- Writes run one at a time; `--parallel N` allows up to ten. A failure fails
-  its row and the rest still run, except a row that needs a resource whose
-  create failed. `--fail-fast` stops scheduling new writes after the first
-  failure, and a rejected token or broken configuration always does; writes
-  already running finish and the rest are skipped.
+- Writes run one at a time unless `--parallel`. A failure fails its row and
+  the rest still run, except a row that needs a resource whose create failed.
+  `--fail-fast` stops scheduling new writes after the first failure, and a
+  rejected token or broken configuration always does; writes already running
+  finish and the rest are skipped.
 - There is no transaction or rollback; result rows keep the ids they reached.
 - Each write re-reads what it changes to detect a conflicting change.
   `delete` re-reads after an interactive prompt; with `--yes` the read just
@@ -31,8 +29,7 @@ previews once and asks once, No by default. What to select:
 - A body write whose membership or survey write then fails is `partial`,
   keeping the resource id.
 - A write AWX does not read back as sent fails as unverified;
-  `--allow-unverified --yes` keeps it, still labelled unverified.
-- Deleting an inventory is asynchronous (`deletion_requested`).
+  `--allow-unverified` keeps it, still labelled unverified.
 
 ## Secrets
 

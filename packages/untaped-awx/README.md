@@ -111,7 +111,7 @@ act, so an environment failure is not blamed on your change.
 
 ## Reference
 
-`untaped agents awx` lists every command with its options, the settings, and the guides on selecting and changing resources, export and apply documents, workflow node graphs, launching jobs, linting, and writing and reading test suites; the untaped you run generates it.
+`untaped agents awx` lists every command with its options, the settings, and the guides on selecting and changing resources, export and apply documents, workflow node graphs, launching jobs, linting, writing and reading test suites, test runs at a git ref, and the AWX user an agent works as; the untaped you run generates it.
 
 `untaped skills install awx --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) points your agent at it.
 

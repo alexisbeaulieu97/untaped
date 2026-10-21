@@ -77,8 +77,6 @@ def ping_command(
     """Check control-plane health.
 
     The row names the authenticated `user`, so it also checks the token.
-    Upstream AWX usually needs `untaped config set
-    awx.api_prefix /api/v2/`; AAP uses the default.
     """
     with report_errors():
         with open_context() as ctx:
@@ -146,11 +144,11 @@ def apply_command(
     """Create/update YAML documents in dependency order, with one confirmation.
 
     It creates what is missing and updates what differs, every kind at once.
-    A directory contributes every `*.yml`/`*.yaml` in it, so keep other YAML
-    out of it. A file that cannot be read or parsed, an unknown kind, or stdin
-    with no documents fails the apply, naming the file (`<stdin>` for
-    `apply -`). --check plans without writing: exit 3 when anything would
-    change, 0 when nothing would (rows show `planned` or `unchanged`). How
+    A directory contributes every `*.yml`/`*.yaml` under it, so keep other
+    YAML out of it. A file that cannot be read or parsed, an unknown kind, or
+    stdin with no documents fails the apply, naming the file (`<stdin>` for
+    `apply -`). --check exits 0 when nothing would change (rows show
+    `planned` or `unchanged`). How
     each document is resolved and written: `untaped agents awx documents`;
     with --source-ref: `untaped agents awx source-ref`.
 
@@ -311,7 +309,7 @@ def jobs_list(
 
     --template takes digits as an id; match a numeric name with `--filter
     job_template__name=123`. Tables show a summary; json and yaml carry the
-    whole record, as `jobs get` and `jobs wait` do.
+    whole record.
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
     if status:
@@ -389,16 +387,17 @@ def jobs_events(
 ) -> None:
     """Stream the structured per-task event log for one or more jobs.
 
-    Without ``--follow`` this drains each job's event log and exits;
-    with ``--follow`` it polls AWX every 2s until each job is terminal.
-    Filters reach AWX directly so you can scope server-side, e.g.
-    ``--filter event=runner_on_failed --filter host=web-01``.
+    Without `--follow` this drains each job's event log and exits; with
+    `--follow` it polls AWX every 2s until each job is terminal. Filters reach
+    AWX directly so you can scope server-side, e.g. `--filter
+    event=runner_on_failed --filter host=web-01`. A workflow job has no
+    events (use `jobs wait`).
 
-    Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
-    between jobs. Without ``--follow``, ``--format json``/``yaml`` print one
-    array holding every job's events; each row names its ``job``. With
-    ``--follow``, json streams one object per line (NDJSON). ``--columns ?``
-    lists the columns without following.
+    Multiple ids drain serially with a `[<id>]` stderr breadcrumb between
+    jobs. Without `--follow`, `--format json`/`yaml` print one array holding
+    every job's events; each row names its `job`. With `--follow`, json
+    streams one object per line (NDJSON). `--columns ?` lists the columns
+    without following.
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
     cols = columns or (list(_RAW_EVENT_COLUMNS) if fmt == "raw" else None)
@@ -581,10 +580,10 @@ def jobs_logs(
     events. Project and inventory updates have logs (--kind); a workflow job
     has none (use `jobs wait`).
 
-    Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
-    between jobs. Without ``--follow``, ``--format json``/``yaml`` print one
-    array holding every job's lines; each row names its ``job``. ``--columns ?``
-    lists the columns without following.
+    Multiple ids drain serially with a `[<id>]` stderr breadcrumb between
+    jobs. Without --follow, `--format json`/`yaml` print one array holding
+    every job's lines; each row names its `job`. `--columns ?` lists the
+    columns without following.
     """
     if grep is not None:
         # Compile here so an invalid regex fails fast as a clean

@@ -14,10 +14,14 @@ GUIDES = [
     PACKAGE.parents[1] / "CONTRIBUTING.md",
     *sorted((PACKAGE / "src/untaped_awx/guides").glob("*.md")),
 ]
+# Command docstrings' Examples hold no inventory-scoped example today, so only
+# the guides are read.
 EXAMPLES = [
     shlex.split(line)[2:]
     for guide in GUIDES
-    for line in guide.read_text().replace("\\\n", " ").replace("$ untaped", "untaped").splitlines()
+    for line in (
+        raw.removeprefix("$ ") for raw in guide.read_text().replace("\\\n", " ").splitlines()
+    )
     if line.startswith("untaped awx inventory")
     and "--inventory" in line
     and shlex.split(line)[3] in {"list", "export", "get", "patch"}

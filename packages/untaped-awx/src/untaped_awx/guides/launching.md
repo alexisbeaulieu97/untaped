@@ -4,10 +4,10 @@ description: "Read before launching a template or syncing a project or inventory
 
 ## Launch values
 
-`--extra-vars` entries merge left to right into one mapping, a later entry
-winning per key. YAML dates become ISO strings; values JSON cannot carry
-(`.nan`, `!!binary`) are a usage error. `--organization` scopes the template
-lookup and the `--launch-inventory` and `--credential` names.
+A later `--extra-vars` entry wins per key. YAML dates become ISO strings;
+values JSON cannot carry (`.nan`, `!!binary`) are a usage error.
+`--organization` scopes the template lookup and the `--launch-inventory` and
+`--credential` names.
 
 Before any POST, each template's launch settings are read:
 
@@ -52,18 +52,15 @@ These apply to `launch` and `sync`:
 - `--wait` fails the row (exit 1) on `failed`, `error` or `canceled`. The
   row gets the execution's `status`, `started_at`, `finished_at` (UTC) and
   `elapsed` (seconds).
-- `--follow` also streams each job's log to stderr, ending with its PLAY
-  RECAP (prefixed `[template]` when several run).
-- A workflow job, including a sliced job template's launch, has no log:
-  `--follow` prints its status changes instead.
+- With several executions, `--follow` prefixes each log line with
+  `[template]`. A sliced job template's launch is a workflow job, so it
+  shows status changes, not a log.
 - When AWX is still saving a job's events after it ends, a warning says the
   log may be cut short; `untaped awx jobs logs` has it all later.
-- `--timeout` fails a still-running execution's row; the execution keeps
-  running and an `untaped awx jobs wait` hint names it.
-- `--cancel` cancels each execution as soon as the command stops watching it
-  (timeout, polling error, Ctrl-C). Its row's `detail` ends with `cancel
-  requested`, `it ended (successful) before the cancel`, or `cancel failed:
-  …`.
+- A row `--timeout` failed names the execution in an `untaped awx jobs wait`
+  hint.
+- A `--cancel` row's `detail` ends with `cancel requested`, `it ended
+  (successful) before the cancel`, or `cancel failed: …`.
 - Ctrl-C exits 130 and lists the executions not known to have finished, with
   an `untaped awx jobs wait …` command to resume; they keep running.
 - With `--cancel`, Ctrl-C cancels them instead; a second Ctrl-C stops the

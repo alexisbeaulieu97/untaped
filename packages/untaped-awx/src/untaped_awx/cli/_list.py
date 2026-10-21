@@ -89,9 +89,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
     ) -> None:
         """List a complete selection by names, IDs, typed input, or query.
 
-        `list` the same selector a write will use first, to see what it
-        matches. How selections and names resolve: `untaped agents awx
-        selecting`.
+        How selections and names resolve: `untaped agents awx selecting`.
         """
         if with_scm and not offers_with_scm(spec):
             raise_usage(f"--with-scm is not available for {spec.cli_name}")

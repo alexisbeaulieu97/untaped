@@ -109,9 +109,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
     ) -> None:
         """List the workflow job templates that contain one or more templates.
 
-        With --recursive, up to the top-level workflows. Run it before deleting
-        a template: a workflow node that ran a deleted template
-        runs nothing afterwards.
+        With --recursive, up to the top-level workflows.
         """
         max_depth = resolve_max_depth(depth, recursive)
 

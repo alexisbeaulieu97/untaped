@@ -52,8 +52,7 @@ Each row is a `lint.finding`: `rule` (`awx.missing-reference`),
   `["awx", "job-templates", "patch", "deploy-web", "--organization",
   "Platform", "--set", "ask_limit_on_launch=true"]`; a resource in no
   organization is patched by id (`patch 102 --by-id`), since its name alone
-  would select any organization's namesake too. It is a write: show it to
-  the user, then run it with `--dry-run` first like any patch.
+  would select any organization's namesake too.
 
 ## Rules
 

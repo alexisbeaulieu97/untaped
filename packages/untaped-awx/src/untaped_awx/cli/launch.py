@@ -179,12 +179,9 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
     ) -> None:
         """Launch one or more resources and (optionally) wait for each job.
 
-        A single named template launches at once; several targets, a query or
-        a --stdin selection are listed and confirmed once. A failed launch
-        fails its row and the rest still launch, unless --fail-fast (a
-        rejected token or broken configuration always stops them). Which
-        launch values a template accepts, what --dry-run shows, and how
-        --wait and --follow end: `untaped agents awx launching`.
+        Which launch values a template accepts, what --dry-run shows, and how
+        --wait and --follow end: `untaped agents awx launching`. When it asks
+        first and how the batch runs: `untaped agents awx writes`.
 
         Examples
         --------

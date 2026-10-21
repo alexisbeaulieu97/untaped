@@ -50,9 +50,9 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
     ) -> None:
         """Sync a fixed selection; inventories expand to their current source IDs.
 
-        A single named target syncs at once; several are listed and confirmed
-        once. What --wait, --follow and --timeout do, and which inventories
-        can't sync: `untaped agents awx launching`.
+        Which inventories can't sync, and how --wait and --follow end:
+        `untaped agents awx launching`. When it asks first and how the batch
+        runs: `untaped agents awx writes`.
 
         Examples
         --------
