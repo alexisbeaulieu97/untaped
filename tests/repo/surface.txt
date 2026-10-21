@@ -3841,6 +3841,51 @@ cli untaped project list --format choice=pipe  [experimental]
 cli untaped project list --format choice=raw  [experimental]
 cli untaped project list --format choice=table  [experimental]
 cli untaped project list --format choice=yaml  [experimental]
+cli untaped project move --columns VALUE... default=unset  [experimental]
+cli untaped project move --columns alias=-c  [experimental]
+cli untaped project move --dry-run switch  [experimental]
+cli untaped project move --format VALUE default=table  [experimental]
+cli untaped project move --format alias=-f  [experimental]
+cli untaped project move --format choice=json  [experimental]
+cli untaped project move --format choice=pipe  [experimental]
+cli untaped project move --format choice=raw  [experimental]
+cli untaped project move --format choice=table  [experimental]
+cli untaped project move --format choice=yaml  [experimental]
+cli untaped project move --yes alias=-y  [experimental]
+cli untaped project move --yes switch  [experimental]
+cli untaped project move OLD NEW  [experimental]
+cli untaped project prune  [experimental]
+cli untaped project prune --check switch  [experimental]
+cli untaped project prune --columns VALUE... default=unset  [experimental]
+cli untaped project prune --columns alias=-c  [experimental]
+cli untaped project prune --dry-run switch  [experimental]
+cli untaped project prune --force VALUE... default=unset  [experimental]
+cli untaped project prune --format VALUE default=table  [experimental]
+cli untaped project prune --format alias=-f  [experimental]
+cli untaped project prune --format choice=json  [experimental]
+cli untaped project prune --format choice=pipe  [experimental]
+cli untaped project prune --format choice=raw  [experimental]
+cli untaped project prune --format choice=table  [experimental]
+cli untaped project prune --format choice=yaml  [experimental]
+cli untaped project prune --yes alias=-y  [experimental]
+cli untaped project prune --yes switch  [experimental]
+cli untaped project prune [PROJECT]@1 default=unset  [experimental]
+cli untaped project remove  [experimental]
+cli untaped project remove --check switch  [experimental]
+cli untaped project remove --columns VALUE... default=unset  [experimental]
+cli untaped project remove --columns alias=-c  [experimental]
+cli untaped project remove --dry-run switch  [experimental]
+cli untaped project remove --force VALUE... default=unset  [experimental]
+cli untaped project remove --format VALUE default=table  [experimental]
+cli untaped project remove --format alias=-f  [experimental]
+cli untaped project remove --format choice=json  [experimental]
+cli untaped project remove --format choice=pipe  [experimental]
+cli untaped project remove --format choice=raw  [experimental]
+cli untaped project remove --format choice=table  [experimental]
+cli untaped project remove --format choice=yaml  [experimental]
+cli untaped project remove --yes alias=-y  [experimental]
+cli untaped project remove --yes switch  [experimental]
+cli untaped project remove [PROJECT]@1 default=unset  [experimental]
 cli untaped recipe
 cli untaped recipe apply --backup negative=--no-backup
 cli untaped recipe apply --backup switch default=true
@@ -4876,6 +4921,14 @@ sdk untaped.sdk.GitResult.stderr
 sdk untaped.sdk.GitResult.stdout
 sdk untaped.sdk.GitResult.text
 sdk untaped.sdk.Help()  [experimental]
+sdk untaped.sdk.HolderState choice=missing
+sdk untaped.sdk.HolderState choice=present
+sdk untaped.sdk.HolderState choice=unreadable
+sdk untaped.sdk.HolderView(*, holder, label, anchor, state)  [experimental]
+sdk untaped.sdk.HolderView.anchor  [experimental]
+sdk untaped.sdk.HolderView.holder  [experimental]
+sdk untaped.sdk.HolderView.label  [experimental]
+sdk untaped.sdk.HolderView.state  [experimental]
 sdk untaped.sdk.HttpClient()
 sdk untaped.sdk.HttpClient(auth=) default=None
 sdk untaped.sdk.HttpClient(base_url@1=) default=""
@@ -4966,8 +5019,21 @@ sdk untaped.sdk.Issued(source=) default=None
 sdk untaped.sdk.Issued.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Issued.source
 sdk untaped.sdk.Issued.table_columns class
+sdk untaped.sdk.ItemStore(item=) default=<computed>  [experimental]
+sdk untaped.sdk.ItemStore(plugin, name, *, release, moved) callback(release, 1) callback(moved, 1)  [experimental]
+sdk untaped.sdk.ItemStore.holders(item)  [experimental]
+sdk untaped.sdk.ItemStore.item  [experimental]
+sdk untaped.sdk.ItemStore.moved  [experimental]
+sdk untaped.sdk.ItemStore.name  [experimental]
+sdk untaped.sdk.ItemStore.plugin  [experimental]
+sdk untaped.sdk.ItemStore.qualified  [experimental]
+sdk untaped.sdk.ItemStore.release  [experimental]
+sdk untaped.sdk.ItemStore.target(item)  [experimental]
 sdk untaped.sdk.Key(name)  [experimental]
 sdk untaped.sdk.Key.name  [experimental]
+sdk untaped.sdk.LetGo(*, preview, apply) callback(apply, 1)  [experimental]
+sdk untaped.sdk.LetGo.apply  [experimental]
+sdk untaped.sdk.LetGo.preview  [experimental]
 sdk untaped.sdk.LimitOption
 sdk untaped.sdk.ListItem(description@5=) default=""  [experimental]
 sdk untaped.sdk.ListItem(detail@3=) default=""  [experimental]
@@ -5013,6 +5079,11 @@ sdk untaped.sdk.MigrationRow.bytes
 sdk untaped.sdk.MigrationRow.destination
 sdk untaped.sdk.MigrationRow.detail
 sdk untaped.sdk.MigrationRow.source
+sdk untaped.sdk.MoveAsk(*, item, holder, others, moved_from)  [experimental]
+sdk untaped.sdk.MoveAsk.holder  [experimental]
+sdk untaped.sdk.MoveAsk.item  [experimental]
+sdk untaped.sdk.MoveAsk.moved_from  [experimental]
+sdk untaped.sdk.MoveAsk.others  [experimental]
 sdk untaped.sdk.MultiList(cursor@4=) default=None  [experimental]
 sdk untaped.sdk.MultiList(error@6=) default=""  [experimental]
 sdk untaped.sdk.MultiList(help@5=) default=""  [experimental]
@@ -5280,10 +5351,16 @@ sdk untaped.sdk.ProgressHandle.update(total=) default=None
 sdk untaped.sdk.Project(*, id, root)  [experimental]
 sdk untaped.sdk.Project(copy_of=) default=None  [experimental]
 sdk untaped.sdk.Project.copy_of  [experimental]
+sdk untaped.sdk.Project.hold(store, item)  [experimental]
+sdk untaped.sdk.Project.holds(store)  [experimental]
 sdk untaped.sdk.Project.id  [experimental]
 sdk untaped.sdk.Project.locked()  [experimental]
 sdk untaped.sdk.Project.name  [experimental]
 sdk untaped.sdk.Project.plugin_dir(spec)  [experimental]
+sdk untaped.sdk.Project.release(dry_run=) default=false  [experimental]
+sdk untaped.sdk.Project.release(force=) default=[]  [experimental]
+sdk untaped.sdk.Project.release(items=) default=None  [experimental]
+sdk untaped.sdk.Project.release(store)  [experimental]
 sdk untaped.sdk.Project.root  [experimental]
 sdk untaped.sdk.PromptChoice(description@3=) default=None
 sdk untaped.sdk.PromptChoice(value, label)
@@ -5307,6 +5384,15 @@ sdk untaped.sdk.RefTarget.item  [experimental]
 sdk untaped.sdk.RefTarget.layout  [experimental]
 sdk untaped.sdk.RefTarget.plugin  [experimental]
 sdk untaped.sdk.RefTarget.store  [experimental]
+sdk untaped.sdk.Refused(*, reason)  [experimental]
+sdk untaped.sdk.Refused(hint=) default=None  [experimental]
+sdk untaped.sdk.Refused.hint  [experimental]
+sdk untaped.sdk.Refused.reason  [experimental]
+sdk untaped.sdk.ReleaseAsk(*, item, holder, others, force)  [experimental]
+sdk untaped.sdk.ReleaseAsk.force  [experimental]
+sdk untaped.sdk.ReleaseAsk.holder  [experimental]
+sdk untaped.sdk.ReleaseAsk.item  [experimental]
+sdk untaped.sdk.ReleaseAsk.others  [experimental]
 sdk untaped.sdk.Renamed(to, *, removed_in)
 sdk untaped.sdk.Renamed.removed_in
 sdk untaped.sdk.Renamed.to
@@ -5713,6 +5799,8 @@ sdk untaped.sdk.UiContext.terminal(refusal=) default="interactive input requires
 sdk untaped.sdk.UiContext.text(default=) default=None
 sdk untaped.sdk.UiContext.text(message)
 sdk untaped.sdk.UiContext.text(required=) default=true
+sdk untaped.sdk.UnknownHolder(*, label)  [experimental]
+sdk untaped.sdk.UnknownHolder.label  [experimental]
 sdk untaped.sdk.UntapedDeprecationWarning(distribution=) default=None
 sdk untaped.sdk.UntapedDeprecationWarning(message, *, id)
 sdk untaped.sdk.UntapedDeprecationWarning(removed_in=) default=None
@@ -5828,6 +5916,7 @@ sdk untaped.sdk.holders(target)  [experimental]
 sdk untaped.sdk.installed_plugins()
 sdk untaped.sdk.is_envelope_line(obj)
 sdk untaped.sdk.kind_of(model)
+sdk untaped.sdk.known_projects()  [experimental]
 sdk untaped.sdk.most_severe(errors)
 sdk untaped.sdk.move_migration(detail=) default=""
 sdk untaped.sdk.move_migration(guard=) default=None callback(1)
@@ -6088,14 +6177,22 @@ sdk untaped.testing.invoke_cli(prompt_backend=) default=None
 sdk untaped.testing.invoke_cli(terminal=) default=false
 sdk untaped.testing.invoke_root(argv)
 sdk untaped.testing.invoke_root(input=) default=None
+sdk untaped.testing.make_project(holds=) default=None  [experimental]
 sdk untaped.testing.make_project(path)  [experimental]
+sdk untaped.testing.move_ask(store, item, *, moved_from)  [experimental]
+sdk untaped.testing.plan_release(project, store)  [experimental]
 sdk untaped.testing.plugin_candidate(distribution=) default=None
 sdk untaped.testing.plugin_candidate(requires_dist=) default=[]
 sdk untaped.testing.plugin_candidate(spec)
 sdk untaped.testing.progress_clock()
+sdk untaped.testing.release_ask(force=) default=false  [experimental]
+sdk untaped.testing.release_ask(holder=) default=present  [experimental]
+sdk untaped.testing.release_ask(others=) default=0  [experimental]
+sdk untaped.testing.release_ask(store, item)  [experimental]
 sdk untaped.testing.write_reference(anchor=) default=None  [experimental]
 sdk untaped.testing.write_reference(anchor_id=) default=None  [experimental]
 sdk untaped.testing.write_reference(holder, targets)  [experimental]
+sdk untaped.testing.write_reference(moved_from=) default=[]  [experimental]
 sdk untaped.testing.write_reference(plugin=) default=None  [experimental]
 sdk untaped.testing.write_reference(version=) default=None  [experimental]
 sdk untaped_awx.api.AwxResources base=untaped.contracts.Record  [experimental]

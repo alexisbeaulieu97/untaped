@@ -212,6 +212,24 @@ def test_projects_are_listed_with_their_state(tmp_path: Path) -> None:
     assert row["status"] == "warn"  # a missing project still holds what it held
 
 
+def test_a_project_with_a_repair_pending_warns(tmp_path: Path) -> None:
+    refs.register([])
+    project = make_project(tmp_path / "PROJ-4")
+    ref = refs.read_reference(refs.reference_file(RefHolder(kind="project", name=project.id)))
+    write_reference(
+        ref.holder,  # type: ignore[arg-type]
+        ref.targets,
+        anchor=ref.anchor,
+        anchor_id=ref.anchor_id,
+        moved_from=[tmp_path / "OLD"],
+    )
+    row = _row(_store(tmp_path / "data.db"), check="references")
+    assert f"moved from {tmp_path / 'OLD'}, and a plugin's repair is still pending" in str(
+        row["detail"]
+    )
+    assert row["status"] == "warn"
+
+
 def test_an_unreadable_project_is_information(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

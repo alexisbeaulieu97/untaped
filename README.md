@@ -59,7 +59,7 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 - [Configuration](./docs/configuration.md): the config and state files,
   profiles, settings, TLS and tokens.
 - [Projects](./docs/projects.md): make a folder a project with
-  `untaped project init`.
+  `untaped project init`; move, remove and prune projects.
 - [Scripting](./docs/scripting.md): pipes, structured output and stderr
   diagnostics in scripts and CI.
 - [Agent skills](./docs/skills.md): install skills for your agent and keep

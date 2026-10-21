@@ -321,6 +321,13 @@ def test_a_project_reference_reads_its_anchor_and_identity(tmp_path: Path) -> No
     assert ref.anchor == tmp_path / "PROJ-123"
     assert ref.anchor_id == refs.AnchorId(dev=1, ino=2)
     assert ref.describe() == "project PROJ-123"
+    assert ref.moved_from == ()
+
+
+def test_a_project_reference_reads_each_folder_a_repair_is_pending_from(tmp_path: Path) -> None:
+    _project_file(tmp_path, moved_from=[str(tmp_path / "A"), str(tmp_path / "B")])
+    [ref] = refs.read_references()
+    assert ref.moved_from == (tmp_path / "A", tmp_path / "B")
 
 
 def test_a_project_reference_is_live_whatever_its_folder_holds(tmp_path: Path) -> None:
@@ -338,6 +345,9 @@ def test_a_project_reference_is_live_whatever_its_folder_holds(tmp_path: Path) -
         ({"anchor": ""}, "no anchor"),
         ({"anchor_id": {"dev": 1}}, "no anchor identity"),
         ({"anchor_id": None}, "no anchor identity"),
+        ({"moved_from": "/x"}, "moved_from is malformed"),
+        ({"moved_from": [""]}, "moved_from is malformed"),
+        ({"moved_from": [1]}, "moved_from is malformed"),
     ],
 )
 def test_a_project_reference_is_read_strictly(

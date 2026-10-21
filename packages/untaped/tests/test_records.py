@@ -533,6 +533,7 @@ def _import_every_shipped_module() -> None:
 
 def _samples() -> dict[str, WireModel]:
     from untaped.config.models import SettingOutcome, SettingRow
+    from untaped.holds import HoldOutcome
     from untaped.management.plugins import ContractRow
     from untaped.management.records import (
         AuthOutcome,
@@ -609,6 +610,14 @@ def _samples() -> dict[str, WireModel]:
             path="/x/PROJ-123",
             id="3f9a1c2b7d10",
             detail="/x/PROJ-123 is a project (id 3f9a1c2b7d10)",
+        ),
+        HoldOutcome(
+            action="refused",
+            holder="project PROJ-123",
+            plugin="workspace",
+            item="github.com/acme/web",
+            detail="branch PROJ-123: 2 commits never pushed",
+            hint="push it from /x/PROJ-123/web",
         ),
         DeprecationNotice(
             id="cli untaped hello old",

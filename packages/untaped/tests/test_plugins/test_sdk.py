@@ -145,9 +145,18 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "yaml_mapping_indent",
     ),
     "projects": (
+        "HolderState",
+        "HolderView",
+        "ItemStore",
+        "LetGo",
+        "MoveAsk",
         "Project",
+        "Refused",
+        "ReleaseAsk",
+        "UnknownHolder",
         "committed_path",
         "current_project",
+        "known_projects",
         "project_at",
     ),
     "caches and stores": (

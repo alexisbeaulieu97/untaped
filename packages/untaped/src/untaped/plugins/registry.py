@@ -22,7 +22,7 @@ from importlib import metadata as importlib_metadata
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, ClassVar, Literal
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal
 
 from cyclopts import App
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
@@ -57,6 +57,7 @@ from untaped.store import Store
 
 if TYPE_CHECKING:
     from untaped.contracts import Contract
+    from untaped.holds import ItemStore
 
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
@@ -347,7 +348,9 @@ class PluginSpec:
     ``caches`` are the :class:`~untaped.cache.Cache` objects the plugin
     keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``.
     ``stores`` are the :class:`~untaped.store.Store` objects it keeps, each
-    file in a layout of its own (``doctor`` lists them).
+    file in a layout of its own (``doctor`` lists them), and the
+    :class:`~untaped.holds.ItemStore` objects whose items projects may hold
+    (core asks the plugin how to release them); both share one namespace.
 
     ``guides`` is a folder of Markdown files (``files("untaped_acme") /
     "guides"``), each a page ``untaped agents <name> <guide>`` prints: prose
@@ -368,7 +371,7 @@ class PluginSpec:
     )
     migrations: tuple[DirMigration, ...] = ()
     caches: tuple[Cache, ...] = ()
-    stores: tuple[Store, ...] = ()
+    stores: tuple[Store | ItemStore[Any], ...] = ()
     deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
     guides: Traversable | None = field(default=None, hash=False)
 
@@ -400,8 +403,10 @@ class PluginSpec:
                 raise ConfigError(f"plugin {self.name!r} caches holds {cache!r}, not a Cache")
         object.__setattr__(self, "stores", tuple(self.stores))
         for store in self.stores:
-            if not isinstance(store, Store):
-                raise ConfigError(f"plugin {self.name!r} stores holds {store!r}, not a Store")
+            if not isinstance(store, Store) and not _is_item_store(store):
+                raise ConfigError(
+                    f"plugin {self.name!r} stores holds {store!r}, not a Store or an ItemStore"
+                )
         if self.guides is not None and not isinstance(self.guides, Traversable):
             raise ConfigError(
                 f"plugin {self.name!r} guides is {self.guides!r}, not a folder "
@@ -1210,3 +1215,9 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
             f"plugin {candidate.name!r} declares an empty distribution name",
         )
     return spec
+
+
+def _is_item_store(value: object) -> bool:
+    from untaped.holds import ItemStore  # noqa: PLC0415 - kept off the startup path
+
+    return isinstance(value, ItemStore)

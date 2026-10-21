@@ -671,10 +671,15 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     fill; yellow for one the cleanup cannot remove, with the reason.
     """
     from untaped.refs import read_references  # noqa: PLC0415 - runs only in doctor
-    from untaped.store import survey  # noqa: PLC0415
+    from untaped.store import Store, survey  # noqa: PLC0415
 
     title = "stores keep one layout each, or every layout is held"
-    stores = [store for registered in result.plugins for store in registered.spec.stores]
+    stores = [
+        store
+        for registered in result.plugins
+        for store in registered.spec.stores
+        if isinstance(store, Store)  # an item store keeps no layouts
+    ]
     if not stores:
         return _row("stores", shell.name, _PASS, title, "no plugin declares a store")
     references = read_references()
@@ -819,7 +824,7 @@ def _reference_text(ref: Reference, mine: RefHolder | None) -> tuple[str, bool]:
 
 
 def _project_text(ref: Reference) -> tuple[str, bool]:
-    """How the ``references`` row names a project, and whether it is missing (a warning)."""
+    """How the ``references`` row names a project, and whether it warns (missing, repair due)."""
     from untaped.projects import anchor_state  # noqa: PLC0415 - runs only in doctor
 
     where = shown_path(ref.anchor) if ref.anchor is not None else "?"
@@ -828,15 +833,24 @@ def _project_text(ref: Reference) -> tuple[str, bool]:
         return f"{ref.describe()}: {where} is gone; it keeps what it holds until removed", True
     if state == "unreadable":
         return f"{ref.describe()}: {where} can't be read now (a drive or share away?)", False
+    if ref.moved_from:
+        was = ", ".join(shown_path(path) for path in ref.moved_from)
+        return (
+            f"{ref.describe()} at {where}: moved from {was}, and a plugin's "
+            "repair is still pending; the next command that changes the project retries it",
+            True,
+        )
     return f"{ref.describe()} at {where}", False
 
 
 def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -> bool:
     """Whether any composed store has a layout on disk besides its own."""
-    from untaped.store import survey  # noqa: PLC0415 - runs only in doctor
+    from untaped.store import Store, survey  # noqa: PLC0415 - runs only in doctor
 
     for registered in result.plugins:
         for store in registered.spec.stores:
+            if not isinstance(store, Store):
+                continue
             try:
                 layouts = survey(store, references)
             except Exception:

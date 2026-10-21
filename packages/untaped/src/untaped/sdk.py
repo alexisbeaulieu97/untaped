@@ -85,6 +85,16 @@ from untaped.git import (
     run_git,
     safe_path_segment,
 )
+from untaped.holds import (
+    HolderState,
+    HolderView,
+    ItemStore,
+    LetGo,
+    MoveAsk,
+    Refused,
+    ReleaseAsk,
+    UnknownHolder,
+)
 from untaped.http import (
     HttpClient,
     RetryPolicy,
@@ -141,7 +151,7 @@ from untaped.plugins.registry import (
     SkillAsset,
     plugin_dir,
 )
-from untaped.projects import Project, committed_path, current_project, project_at
+from untaped.projects import Project, committed_path, current_project, known_projects, project_at
 from untaped.prompts import PromptChoice
 from untaped.records import (
     AbsolutePath,
@@ -398,9 +408,18 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "same_origin",
     "yaml_mapping_indent",
     # projects
+    "HolderState",
+    "HolderView",
+    "ItemStore",
+    "LetGo",
+    "MoveAsk",
     "Project",
+    "Refused",
+    "ReleaseAsk",
+    "UnknownHolder",
     "committed_path",
     "current_project",
+    "known_projects",
     "project_at",
     # caches and stores
     "Cache",

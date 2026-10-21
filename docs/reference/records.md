@@ -18,6 +18,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
 | `project list` | `untaped.project` (`name`, `path`, `state` `present`, `unreadable`, `missing` or `unknown`, `current`, `id`, `holds` (items per `plugin.store`), `detail`; experimental) |
 | `project init` | `untaped.project_outcome` (`name`, `path`, `id`, `action` `created`, `unchanged`, `recorded`, `repaired` or `new id`, `detail`; experimental) |
+| `project move`, `remove`, `prune` | `untaped.hold_outcome` (`holder`, `plugin`, `item`, `action` `planned`, `refused`, `failed`, `released`, `forgotten`, `repaired`, `moved`, `removed` or `skipped`, `detail`, `hint`; experimental) |
 | `skills list` | `untaped.skill` |
 | `skills status` | `untaped.installed_skill` |
 | `skills update`, `skills remove` | `untaped.skill_outcome` |

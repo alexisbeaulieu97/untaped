@@ -416,7 +416,8 @@ _Avoid_: capability, provider (for the package).
 **Contract**: an interface one plugin declares and others fill, so the
 plugin asking never names who answers.
 
-**Owner**: the plugin that declares a contract.
+**Owner**: the plugin that declares a contract, or an item store and so
+decides how its items are released.
 
 **Provider**: a plugin that fills a contract, or the class in it that does.
 _Avoid_: adapter, backend, implementation.
@@ -492,6 +493,15 @@ layered over `default`.
 up from the working directory; the home records it by the folder's
 filesystem identity, so a move or a copy is told apart from the same folder.
 _Avoid_: workspace (workspace's own folders), checkout (the nearest `.git`).
+
+**Holder**: what holds items in the home's references: a project, today.
+
+**Item store**: the items a plugin keeps for holders (workspace's repos),
+declared as an `ItemStore`; its plugin is their owner.
+
+**Hold**: one item a holder uses, recorded in its reference; it is let go
+only through the item's owner.
+_Avoid_: lease, claim, lock.
 
 **Global option**: one of the options that work anywhere in a command
 (`--profile`, `--verbose`, `--quiet`, `--deprecated`); the code calls them
