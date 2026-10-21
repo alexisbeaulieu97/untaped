@@ -88,16 +88,17 @@ def secret_source(settings: BaseModel, field: MarkedField, *, section: str) -> s
     return describe_token_source(settings, section=section, field=field.key)
 
 
-def set_command(field: MarkedField, *, section: str) -> list[str]:
+def set_command(field: MarkedField, marks: SetupMarks, *, section: str) -> list[str]:
     """The command (after ``untaped``) that sets ``field``; a ``<NAME>`` is the user's value.
 
-    ``auth set`` for the secret named ``token``; another secret's command
-    setting; ``config set`` for any other field.
+    ``auth set <section>`` for the secret a bare section names (``token``,
+    else the only one), ``auth set <section>.<field>`` for another;
+    ``config set`` for any other field.
     """
     if field.secret is not None:
-        if field.path == ("token",):
-            return ["auth", "set", section]
-        return ["config", "set", f"{section}.{field.command}", "<COMMAND>"]
+        default = marks.default_secret
+        target = section if default is not None and default.path == field.path else None
+        return ["auth", "set", target or f"{section}.{field.key}"]
     return ["config", "set", f"{section}.{field.key}", field.value_name]
 
 
@@ -107,8 +108,8 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
     Nothing set passes as "not set up" (an unused plugin never fails doctor);
     some set warns, naming what is missing, with that field's command or
     ``setup plan --only <section>`` as the fix; all set passes, or warns
-    with the automatic ``auth migrate`` when the ``token`` is plain text in
-    the config file.
+    with the automatic ``auth migrate`` when a secret is plain text in the
+    config file.
     """
     if settings is None:
         return DoctorResult(id=SETUP_CHECK, ok=True, detail="skipped: settings are invalid")
@@ -120,14 +121,17 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
         names = ", ".join(f"{section}.{field.key}" for field in missing)
         detail = f"{len(required) - len(missing)} of {len(required)} set; missing {names}"
         fix = (
-            set_command(missing[0], section=section)
+            set_command(missing[0], marks, section=section)
             if len(missing) == 1
             else ["setup", "plan", "--only", section]
         )
         return DoctorResult(id=SETUP_CHECK, ok=True, warn=True, detail=detail, fix=fix)
     detail = summary(settings, marks, section=section)
-    if marks.token is not None and stored_plaintext(section):
-        subject = plaintext_subject(section, resolve_config_path().name)
+    plain = next(
+        (field for field in marks.secrets if stored_plaintext(section, field=field.key)), None
+    )
+    if plain is not None:
+        subject = plaintext_subject(section, resolve_config_path().name, field=plain.key)
         # The row's fix line names `auth migrate`, so the sentence names no replacement.
         sentence = PLAINTEXT_TOKEN.sentence(subject, replacement=None)
         return DoctorResult(
@@ -158,8 +162,8 @@ def summary(settings: BaseModel, marks: SetupMarks, *, section: str) -> str:
     return "; ".join(parts)
 
 
-def stored_plaintext(section: str) -> bool:
-    """Whether the config file itself sets ``<section>.token`` for the resolved profile.
+def stored_plaintext(section: str, *, field: str = "token") -> bool:
+    """Whether the config file itself sets ``<section>.<field>`` for the resolved profile.
 
     Read from the file, not the validated settings: an ``UNTAPED_*`` override
     neither hides a token stored in the file nor counts as one.
@@ -168,7 +172,7 @@ def stored_plaintext(section: str) -> bool:
         node = active_settings_layout().effective(read_config_dict()).get(section)
     except ConfigError:
         return False
-    token = node.get("token") if isinstance(node, dict) else None
+    token = node.get(field) if isinstance(node, dict) else None
     return isinstance(token, str) and bool(token.strip())
 
 

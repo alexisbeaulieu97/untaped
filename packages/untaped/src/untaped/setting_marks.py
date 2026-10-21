@@ -194,8 +194,19 @@ class SetupMarks:
 
     @property
     def token(self) -> MarkedField | None:
-        """The secret ``auth`` and the setup form act on: the one named ``token``."""
+        """The secret named ``token``, which the setup form's token tabs act on."""
         return next((field for field in self.secrets if field.path == ("token",)), None)
+
+    @property
+    def default_secret(self) -> MarkedField | None:
+        """The secret a bare section names (``auth set <section>``, a client's bearer).
+
+        The one named ``token``, else the only one; ``None`` with none, or with
+        several and no ``token``.
+        """
+        if self.token is not None:
+            return self.token
+        return self.secrets[0] if len(self.secrets) == 1 else None
 
 
 def _marks_of(field: FieldInfo) -> list[object]:

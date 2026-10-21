@@ -302,6 +302,18 @@ machine (`UNTAPED_CONFIG`) share it. `untaped auth --help` lists the other
 commands: `migrate` moves every plaintext token, `status` says where each
 comes from, and `unset` removes a stored one.
 
+A plugin can mark more than one secret, such as a token and a webhook secret.
+`auth set|unset <section>` means the one named `token`, else the only one, and
+refuses (naming each) when neither fits; `<section>.<field>` names any of them:
+
+```bash
+untaped auth set acme.webhook_secret  # writes acme.webhook_secret_command
+```
+
+A secret other than `token` has the entry `<profile>/<section>.<field>`, so a
+token stored by an earlier release keeps its entry. `status` has a row per
+secret, `migrate` moves each, and their records say which in `field`.
+
 A store over SSH can fail on an unlock prompt nobody sees: unlock it first
 (`security unlock-keychain` on macOS). Store commands time out after 60s.
 When neither stdin nor stderr is a terminal (an agent running `untaped`,
@@ -358,10 +370,10 @@ call, so the error quotes its first line and, for gpg's, names the usual fix.
 `untaped` does not run `gh auth token` on its own. To reuse the GitHub CLI's
 login, set `github.token_command` as above.
 
-A token in `<section>.token` is stored in plain text in `config.yml`. Keeping
-it there is deprecated, and it is still read until the major its warning
-names; `UNTAPED_<SECTION>__TOKEN` avoids the file altogether. Loading one warns
-once per run, `config set <section>.token` warns, `untaped doctor` warns with
+A token in `<section>.token` (or any other secret in its own setting) is stored
+in plain text in `config.yml`. Keeping it there is deprecated, and it is still
+read until the major its warning names; `UNTAPED_<SECTION>__TOKEN` avoids the
+file altogether. Loading one warns once per run, `config set <section>.token` warns, `untaped doctor` warns with
 `untaped auth migrate` as the fix, and `untaped setup` no longer offers it.
 
 ## Debug logs

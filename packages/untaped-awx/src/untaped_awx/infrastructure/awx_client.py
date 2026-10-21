@@ -20,13 +20,13 @@ class AwxClient:
     """Talks to AAP/AWX REST endpoints using the configured token."""
 
     def __init__(self, config: AwxSettings, *, http: HttpSettings | None = None) -> None:
-        # `token` is deliberately not in `required`: a token-less client can
-        # still hit unauthenticated endpoints like `ping/`. When configured,
-        # connected_client turns it into the Bearer header.
+        # A token-less client can still hit unauthenticated endpoints like
+        # `ping/`; when the token is set, connected_client sends it as the bearer.
         self._http = connected_client(
             config,
             section="awx",
-            required=("base_url",),
+            base_url=config.base_url,
+            require_token=False,
             headers={"Accept": "application/json"},
             http=http,
         )

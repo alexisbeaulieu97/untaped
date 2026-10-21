@@ -338,17 +338,14 @@ class HookProfile(BaseModel):
     signing_key: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
 
 
-def test_a_secret_not_named_token_is_set_by_its_command_setting(
+def test_the_only_secret_not_named_token_is_set_by_a_bare_auth_set(
     _isolated_config: Path,
 ) -> None:
     hook = make_spec("hook", settings=HookProfile)
     write_config(_isolated_config, "profiles:\n  default:\n    hook: {url: https://hook}\n")
     row = _setup(specs=(hook,), plugin="hook")
     assert row["detail"] == "1 of 2 set; missing hook.signing_key"
-    assert row["fix"][-4:] == ["config", "set", "hook.signing_key_command", "<COMMAND>"]
-    refused = _cli("auth", "set", "hook", specs=(hook,))
-    assert refused.exit_code != 0
-    assert "set hook.signing_key_command to a command that prints it" in refused.stderr
+    assert row["fix"][-3:] == ["auth", "set", "hook"]
 
 
 def test_auth_set_calls_an_unmarked_plugin_without_a_command_unknown() -> None:
@@ -389,6 +386,22 @@ class PinProfile(BaseModel):
 def test_an_unset_secret_value_is_the_users_step_even_without_a_secret_mark() -> None:
     row = _plan_rows(make_spec("pin", settings=PinProfile))["pin.pin"]
     assert (row["state"], row["by"]) == ("todo", "user")
+
+
+def test_a_set_masked_value_is_shown_as_set(_isolated_config: Path) -> None:
+    """``setup plan`` says ``set``, not the ``***`` a masked value prints as."""
+    write_config(_isolated_config, "profiles:\n  default:\n    pin: {pin: '1234'}\n")
+    row = _plan_rows(make_spec("pin", settings=PinProfile))["pin.pin"]
+    assert (row["state"], row["detail"]) == ("done", "set")
+
+
+def test_a_failure_line_says_a_masked_value_is_set(_isolated_config: Path) -> None:
+    check = online_check("pin.api", section="pin", probe=_raising(HttpTransportError("down")))
+    spec = make_spec("pin", settings=PinProfile, doctor_checks=(check,))
+    write_config(_isolated_config, "profiles:\n  default:\n    pin: {pin: '1234'}\n")
+    row = _doctor("--online", specs=(spec,), exit_code=1)["pin.api:pin"]
+    assert row["detail"] == "down (pin.pin is set)"
+    assert "1234" not in json.dumps(row)
 
 
 @pytest.mark.parametrize(

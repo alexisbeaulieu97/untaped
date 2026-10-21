@@ -196,16 +196,17 @@ def test_the_only_secret_resolves_whatever_its_name(monkeypatch: pytest.MonkeyPa
     assert resolved.hook.get_secret_value() == "hooked"
 
 
-@pytest.mark.parametrize(("model", "warns"), [(Marked, True), (Hooked, False)])
-def test_only_a_plaintext_token_warns_as_auth_migrate_moves_only_it(
-    capsys: pytest.CaptureFixture[str], model: type[BaseModel], warns: bool
+@pytest.mark.parametrize(("model", "field"), [(Marked, "token"), (Hooked, "hook")])
+def test_each_plaintext_secret_warns_naming_auth_migrate(
+    capsys: pytest.CaptureFixture[str], model: type[BaseModel], field: str
 ) -> None:
     forget_notices()
     composed = section_settings(make_spec("alpha", settings=model))
     assert composed is not None
-    field = "token" if model is Marked else "hook"
     resolve_token(composed(**{field: SecretStr("plain")}), section="alpha")
-    assert ("plain-text alpha." in capsys.readouterr().err) is warns
+    err = capsys.readouterr().err
+    assert f"plain-text alpha.{field}" in err
+    assert "untaped auth migrate" in err
 
 
 @pytest.mark.parametrize(
