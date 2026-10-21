@@ -101,21 +101,10 @@ started, not when the copy was created.
 
 ## Leftover copies
 
-`untaped awx test prune` deletes copies a killed run left behind: templates
-named like a copy whose description carries the matching marker, created
-more than `--older-than` ago.
-
-- An age below the longest run deletes copies of runs still going, whose
-  next launches then fail. Prune another run's copies only once it has ended;
-  `--run RUN` limits it to one run, as the teardown warning's hint does.
-- It lists the copies and asks once; preview with `--dry-run`.
-- It prints one `awx.prune_outcome` row per leftover copy (`planned` with
-  `--dry-run`, then `deleted` or `failed`).
-
-Both `prune` and the `validate` preview print the fields of a `--format json`
-row (`--columns '?'` lists them under `--dry-run`). A `failed` row's `error`
-carries the attributed failure (`category`, `system`, `retryable`, `message`,
-`hint`).
+Copies a killed run left behind are deleted by `untaped awx test prune`
+(`untaped agents awx test prune`). It and the `validate` preview print the
+fields of a `--format json` row (`--columns '?'` lists them under
+`--dry-run`).
 
 ## Apply from a git ref
 

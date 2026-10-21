@@ -194,11 +194,17 @@ class FailureEvidence(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     job_explanation: str | None = Field(
-        default=None, description="AWX's note on why the job ended."
+        default=None,
+        description=(
+            "AWX's note on why the job ended, such as `Previous Task Failed: "
+            '{"job_type": "project_update", …}`.'
+        ),
     )
     result_traceback: str | None = Field(
         default=None,
-        description="The end of the controller's traceback of a job that ended in `error`.",
+        description=(
+            "The last 2000 characters of the controller's traceback of a job that ended in `error`."
+        ),
     )
     related: RelatedExecution | None = Field(
         default=None, description="The failed update the job depended on."
@@ -206,7 +212,7 @@ class FailureEvidence(BaseModel):
     log_tail: tuple[str, ...] | None = Field(
         default=None,
         description=(
-            "The last log lines of the responsible execution (`related` when set, else the job)."
+            "The last 40 log lines of the responsible execution (`related` when set, else the job)."
         ),
     )
     failed_tasks: tuple[FailedTask, ...] | None = Field(

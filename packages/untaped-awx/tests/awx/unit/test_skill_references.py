@@ -83,7 +83,10 @@ def _load(path: Path) -> Suite:
 
 
 def test_the_examples_guide_holds_the_suites_its_description_names() -> None:
+    text = (GUIDES / "test-examples.md").read_text(encoding="utf-8")
+
     assert list(EXAMPLES) == ["Smoke", "Variants", "Negative", "Idempotent", "Workflow"]
+    assert text.count("```yaml") == len(EXAMPLES), "a yaml block no test loads"
 
 
 @pytest.mark.parametrize("name", EXAMPLES)

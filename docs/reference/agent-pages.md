@@ -106,7 +106,9 @@ name: deploy
 
 A guide links another by its command line (`untaped agents acme other`).
 A YAML block tagged with a record kind (`yaml acme.test_suite`) is an example
-of that kind.
+of that kind. An example `guide-yaml` can't load, such as a file of a document
+kind that is no record kind or one with template syntax, stays a plain `yaml`
+block, and its plugin's own tests load it.
 
 `untaped lint` checks every guide: its name is kebab-case and no top-level
 command's (`guide-name`), it has the description (`guide-description`) and no

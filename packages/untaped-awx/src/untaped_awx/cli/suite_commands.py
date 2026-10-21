@@ -832,8 +832,10 @@ def prune_command(
     A copy is a job template or workflow named `NAME [untaped-test SHA RUN]` whose
     description carries the matching `untaped-test run=…` marker. An age below
     the longest run deletes the copies of runs still going, whose next launches
-    then fail; --run limits it to one ended run, as a teardown warning's hint
-    does. It prints one `awx.prune_outcome` row per copy.
+    then fail: prune another run's copies only once it has ended. --run limits
+    it to one run's copies, as a teardown warning's hint does. It prints one
+    `awx.prune_outcome` row per copy: `planned` with --dry-run, then `deleted`
+    or `failed`, whose `error` carries the attributed failure.
 
     Examples
     --------

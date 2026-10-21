@@ -99,6 +99,7 @@ expect:
 An entry matches a failed task, as the result's
 `failure.evidence.failed_tasks` lists them:
 
+- An entry needs at least one of `task`, `msg` and `matches`.
 - Every entry must match some failed task; other failed tasks do not fail
   the check.
 - `ignore_errors` failures and failures a `rescue` block handled do not

@@ -99,8 +99,9 @@ $ untaped awx test run --vars-file ~/.secrets/deploy-test.yml --non-interactive
 
 ## The body
 
-Unknown keys are errors everywhere in the body, so a typo such as `expected:`
-fails validation instead of being ignored. `untaped awx test list` reports
+`cases` needs at least one case. Unknown keys are errors everywhere in the
+body, so a typo such as `expected:` fails validation instead of being
+ignored. `untaped awx test list` reports
 the header's declarations under `variables`.
 
 ## Workflow suites

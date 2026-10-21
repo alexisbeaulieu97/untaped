@@ -197,9 +197,11 @@ class ExpectationResult(BaseModel):
     )
     actual: str | None = Field(
         description=(
-            "What decided the check: the job status, a log line, a count, a failed task; null when "
-            "no log line or failed task matched, no host went over a `*` bound, or a named host "
-            "has no summary."
+            "What decided the check: for `status` and `changed` the job's value; for a log check "
+            "the deciding line (cut at 300 characters); for `hosts` a named host's count, or "
+            "every host over a `*` bound as `name=count`; for `failed_tasks` the matched task as "
+            "`[host] task: msg`. Null when no log line or failed task matched, no host went over "
+            "a `*` bound, or a named host has no summary."
         )
     )
     passed: bool = Field(description="Whether the check held.")
@@ -829,19 +831,25 @@ class CaseResult(Record, kind="awx.test_result"):
         default=None, description="Each host's PLAY RECAP counters (null: not read)."
     )
     hosts_truncated: bool = Field(
-        default=False, description="`hosts` keeps only the first 500 hosts by name."
+        default=False,
+        description="`hosts` keeps 500 hosts: failed and unreachable ones first, then by name.",
     )
     nodes: tuple[NodeResult, ...] | None = Field(
         default=None,
         description=(
-            "A workflow case's nodes as they ran (null: a job case, or the nodes were not read)."
+            "A workflow case's nodes as they ran, in AWX's order (null: a job case, or the nodes "
+            "were not read)."
         ),
     )
     job_url: str | None = Field(
         default=None, description="The job's page in the controller web UI."
     )
     scm_branch: str | None = Field(
-        default=None, description="The branch, tag or commit the job ran (AWX's `scm_branch`)."
+        default=None,
+        description=(
+            "The branch, tag or commit the job was launched with (AWX's `scm_branch`; empty: the "
+            "project's own branch)."
+        ),
     )
     scm_revision: str | None = Field(
         default=None,
