@@ -35,8 +35,20 @@ from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def _add_get(app: App, spec: AwxResourceSpec) -> None:
+    help_text = "Fetch one or more resources by name, or by explicit AWX id."
+    if "survey_spec" in spec.sub_document_fields:
+        help_text += (
+            "\n\nA template includes its survey questions (`survey_spec`); password "
+            "defaults read as `$encrypted$`."
+        )
+    if offers_with_scm(spec):
+        help_text += (
+            "\n\nWith --with-scm, each project is read once, and a template without a "
+            "readable project gets `null` SCM values."
+        )
+
     # Resolved lazily by cyclopts (PEP 649), so ``show`` can read ``spec``.
-    @app.command(name="get")
+    @app.command(name="get", help=help_text)
     def get_command(
         names: NamesArgument = None,
         /,
@@ -70,7 +82,6 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Fetch one or more resources by name, or by explicit AWX id."""
         if not names and not stdin and not filter_ and search is None and not all_:
             raise_usage("provide names, --stdin, filters/search, or --all")
         if with_scm and not offers_with_scm(spec):

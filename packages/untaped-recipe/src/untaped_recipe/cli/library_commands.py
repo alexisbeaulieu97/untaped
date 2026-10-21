@@ -180,8 +180,7 @@ def add_command(
         if edited and not discard_edits:
             raise LocalChangesError(local_edits_message(installed_name))
         _render_pack_add_preview(installed_name, manifest, local_edits=edited)
-        replaced = library.find_pack(installed_name) is not None
-        library.add(
+        added = library.add(
             source_dir,
             source=source,
             rev=rev,
@@ -192,7 +191,7 @@ def add_command(
         )
         record = AddOutcome(
             name=installed_name,
-            action="updated" if replaced else "created",
+            action="updated" if added.replaced else "created",
             source=source,
             rev=rev,
             commit=commit,
@@ -236,6 +235,8 @@ def sync_command(
     next. The rest report `unchanged`.
 
     A pack whose library copy has local edits fails unless --discard-edits.
+    A pack another command replaced or removed while sync fetched it fails
+    and is left as that command made it.
     A failed pack gets a `failed` row and the others still sync; the run
     exits 1, or 5 when a fetch timed out.
     """
@@ -280,9 +281,17 @@ def sync_command(
         if not dry_run:
             # An unchanged pack still moved to the fetched commit: a commit
             # may touch only files the install ignores.
+            @as_recipe_error
+            def record_commit(plan: _SyncPlan) -> None:
+                library.record_commit(plan.pack.name, plan.commit or "", expect=plan.pack)
+
             for plan in plans:
                 if not plan.changed and plan.commit and plan.commit != plan.pack.commit:
-                    library.record_commit(plan.pack.name, plan.commit)
+                    try:
+                        record_commit(plan)
+                    except UntapedError as exc:
+                        _diag.failure(exc, item=plan.pack.name)
+                        failed[plan.pack.name] = exc
         failed.update((plan.pack.name, exc) for plan, exc in outcome.failures)
         by_name = {plan.pack.name: plan for plan in plans}
         rows = [
@@ -319,6 +328,7 @@ def _install_for_sync(library: PackLibrary, plan: _SyncPlan, *, discard_edits: b
         name=plan.pack.name,
         force=True,
         discard_edits=discard_edits,
+        expect=plan.pack,
     )
 
 

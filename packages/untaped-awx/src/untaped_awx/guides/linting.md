@@ -1,10 +1,11 @@
-# Linting AWX resources
+---
+description: "Read when linting AWX documents or the controller, reading an awx finding or its fix, narrowing what is reported, or writing a rule over AWX resources."
+---
 
-`untaped awx lint` (experimental) checks AWX resources against rules before
-`apply` writes them or after the controller holds them. It runs on lint's
-engine, so the ids, `--ignore`, `--select`, `--strict` and the exit codes
-are `untaped lint`'s (the `untaped-lint` skill). It never writes to the
-controller.
+`untaped awx lint` checks AWX resources against rules before `apply` writes
+them or after the controller holds them. It runs on lint's engine, so the
+ids, `--ignore`, `--select`, `--strict` and the exit codes are `untaped
+lint`'s (`untaped agents lint findings`). It never writes to the controller.
 
 ## Three origins
 
@@ -36,10 +37,6 @@ asked for once at most.
 
 ## Reading a finding
 
-```bash
-untaped awx lint ./specs --offline --format json
-```
-
 Each row is a `lint.finding`: `rule` (`awx.missing-reference`),
 `severity`, `target`, `message`, `location`, `hint` and, on the controller,
 `fix`.
@@ -55,8 +52,7 @@ Each row is a `lint.finding`: `rule` (`awx.missing-reference`),
   `["awx", "job-templates", "patch", "deploy-web", "--organization",
   "Platform", "--set", "ask_limit_on_launch=true"]`; a resource in no
   organization is patched by id (`patch 102 --by-id`), since its name alone
-  would select any organization's namesake too. It is a write: show it to
-  the user, then run it with `--dry-run` first like any patch.
+  would select any organization's namesake too.
 
 ## Rules
 
@@ -116,12 +112,6 @@ readers:
 
 The files the globs match are read as `awx lint FILES --offline` reads them,
 as one batch. A file that is not UTF-8 is lint's `lint.unreadable-file`.
-
-## Exit codes
-
-0 no finding or warnings only; 3 an error finding (any finding with
-`--strict`); 1 a rule could not run; 2 a usage mistake (nothing was read);
-4 the profile or token is not set up; 5 the controller is unavailable.
 
 ## Writing a rule over AWX resources
 

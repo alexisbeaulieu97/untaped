@@ -47,7 +47,7 @@ from untaped_awx.cli.job_targets import (
 from untaped_awx.cli.job_targets import as_job_id as _as_job_id
 from untaped_awx.cli.job_targets import job_targets as _job_targets
 from untaped_awx.cli.lint_commands import register_lint_command
-from untaped_awx.cli.options import OrganizationOption, reject_duplicate_org_scope
+from untaped_awx.cli.options import OrganizationOption, offers_usage, reject_duplicate_org_scope
 from untaped_awx.cli.save_runner import run_save_batch
 from untaped_awx.cli.suite_commands import app as test_app
 from untaped_awx.cli.unified_templates_commands import app as unified_templates_app
@@ -74,7 +74,10 @@ def ping_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Check control-plane health."""
+    """Check control-plane health.
+
+    The row names the authenticated `user`, so it also checks the token.
+    """
     with report_errors():
         with open_context() as ctx:
             status = Ping(ctx.client)()
@@ -138,7 +141,25 @@ def apply_command(
     ] = None,
     controls: WriteControls = CONTROL_DEFAULTS,
 ) -> None:
-    """Create/update YAML documents in dependency order, with one confirmation."""
+    """Create/update YAML documents in dependency order, with one confirmation.
+
+    It creates what is missing and updates what differs, every kind at once.
+    A directory contributes every `*.yml`/`*.yaml` under it, so keep other
+    YAML out of it. A file that cannot be read or parsed, an unknown kind, or
+    stdin with no documents fails the apply, naming the file (`<stdin>` for
+    `apply -`). --check exits 0 when nothing would change (rows show
+    `planned` or `unchanged`). How
+    each document is resolved and written: `untaped agents awx documents`;
+    with --source-ref: `untaped agents awx source-ref`.
+
+    Examples
+    --------
+    ```console
+    $ untaped awx apply deploy.yml --dry-run
+    $ untaped awx apply ./awx-specs --check
+    $ untaped awx export --kind job-templates --out-dir out | untaped --profile prod awx apply -
+    ```
+    """
     for file in files:
         if str(file).startswith("-") and str(file) != "-":
             # ``-`` may lead the file (stdin), so a mistyped option lands here.
@@ -284,7 +305,12 @@ def jobs_list(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List recent AWX jobs (newest first)."""
+    """List recent AWX jobs (newest first).
+
+    --template takes digits as an id; match a numeric name with `--filter
+    job_template__name=123`. Tables show a summary; json and yaml carry the
+    whole record.
+    """
     filters = parse_kv_pairs(filter_, flag="--filter")
     if status:
         filters["status"] = status
@@ -361,16 +387,17 @@ def jobs_events(
 ) -> None:
     """Stream the structured per-task event log for one or more jobs.
 
-    Without ``--follow`` this drains each job's event log and exits;
-    with ``--follow`` it polls AWX every 2s until each job is terminal.
-    Filters reach AWX directly so you can scope server-side, e.g.
-    ``--filter event=runner_on_failed --filter host=web-01``.
+    Without `--follow` this drains each job's event log and exits; with
+    `--follow` it polls AWX every 2s until each job is terminal. Filters reach
+    AWX directly so you can scope server-side, e.g. `--filter
+    event=runner_on_failed --filter host=web-01`. A workflow job has no
+    events (use `jobs wait`).
 
-    Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
-    between jobs. Without ``--follow``, ``--format json``/``yaml`` print one
-    array holding every job's events; each row names its ``job``. With
-    ``--follow``, json streams one object per line (NDJSON). ``--columns ?``
-    lists the columns without following.
+    Multiple ids drain serially with a `[<id>]` stderr breadcrumb between
+    jobs. Without `--follow`, `--format json`/`yaml` print one array holding
+    every job's events; each row names its `job`. With `--follow`, json
+    streams one object per line (NDJSON). `--columns ?` lists the columns
+    without following.
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
     cols = columns or (list(_RAW_EVENT_COLUMNS) if fmt == "raw" else None)
@@ -548,10 +575,15 @@ def jobs_logs(
 ) -> None:
     """Print the stdout of one or more jobs. Supports follow / tail / grep.
 
-    Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
-    between jobs. Without ``--follow``, ``--format json``/``yaml`` print one
-    array holding every job's lines; each row names its ``job``. ``--columns ?``
-    lists the columns without following.
+    It downloads the full stdout. With --follow it reads only new events on
+    each poll (colours removed); `--tail N --follow` starts from the newest
+    events. Project and inventory updates have logs (--kind); a workflow job
+    has none (use `jobs wait`).
+
+    Multiple ids drain serially with a `[<id>]` stderr breadcrumb between
+    jobs. Without --follow, `--format json`/`yaml` print one array holding
+    every job's lines; each row names its `job`. `--columns ?` lists the
+    columns without following.
     """
     if grep is not None:
         # Compile here so an invalid regex fails fast as a clean
@@ -658,6 +690,6 @@ for spec in ALL_SPECS:
     sub_app = make_resource_app(spec)
     if spec.kind == "WorkflowJobTemplate":
         register_nodes_command(sub_app)
-    if spec.kind in {"JobTemplate", "WorkflowJobTemplate"}:
+    if offers_usage(spec):
         register_usage_command(sub_app, spec)
     app.command(sub_app, name=spec.cli_name)

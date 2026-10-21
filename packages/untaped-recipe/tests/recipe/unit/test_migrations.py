@@ -41,6 +41,7 @@ def test_a_library_a_command_made_with_nothing_in_it_is_replaced() -> None:
     old = _old()
     (_new() / "packs").mkdir(parents=True)
     (_new() / "packs.toml").write_text("", encoding="utf-8")
+    (_new() / ".lock").write_text("", encoding="utf-8")
     (row,) = SPEC.migrations
 
     (move,) = row.preview(CTX, OPTIONS)

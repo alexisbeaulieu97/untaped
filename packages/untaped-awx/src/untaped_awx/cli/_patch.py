@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
@@ -24,10 +25,45 @@ from untaped_awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped_awx.domain import Resource
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
+# The docstring is built per kind, before cyclopts reads it; its Examples
+# section is what the command's agents page prints.
+_PATCH_DOC = """\
+Replace specified fields on an existing selection, with one confirmation.
+
+Every selected resource gets the same fields. `--set` values are JSON-decoded
+(`true`, numbers, arrays, objects, `null`); a field the record holds as a
+string stays a string unless the value is a JSON object or array, so
+`scm_branch=1.10` stays `"1.10"`. A value replaces the whole top-level field:
+nested maps are not merged, an empty map clears one, lists keep their order,
+omitted fields are unchanged. An unknown field close to a known one is refused
+with "did you mean" (exit 2); other unknown names are sent with a warning.
+
+A foreign key's integer is an AWX id and a string a name in the selected
+scope; keep a numeric-looking name a string with JSON quotes
+(`--set 'inventory="123"'`). An ambiguous, missing or out-of-scope reference
+fails before any write. `patch` cannot create, rename, reparent or retarget,
+nor change identity, kind or read-only fields: use `apply` and `rename`.{extra}
+How the writes run: `untaped agents awx writes`.
+
+Examples
+--------
+```console
+$ untaped awx job-templates patch --filter name__icontains=web --set verbosity=2 --dry-run
+```
+"""
+
+_CACHE_TIMEOUT = (
+    "\n`update_cache_timeout` is seconds (`0` is valid); changing it leaves "
+    "`update_on_launch` alone."
+)
+
 
 def _add_patch(app: App, spec: AwxResourceSpec) -> None:
+    extra = _CACHE_TIMEOUT if "update_cache_timeout" in spec.canonical_fields else ""
+
     @app.command(name="patch")
     @writes
+    @_documented(_PATCH_DOC.replace("{extra}", extra))
     def patch_command(
         names: NamesArgument = None,
         /,
@@ -59,7 +95,6 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
         ] = False,
         controls: WriteControls = CONTROL_DEFAULTS,
     ) -> None:
-        """Replace specified fields on an existing selection, with one confirmation."""
         selection.require_source(names)
         with report_errors():
             controls = controls.validated()
@@ -91,6 +126,14 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                 engine = build_mutation_engine(ctx, allow_unverified=controls.allow_unverified)
                 plan = engine.prepare(resources, mode="patch", existing=selected)
                 run_mutation_plan(ctx, engine, plan, controls, per_kind=True)
+
+
+def _documented[F: Callable[..., object]](doc: str) -> Callable[[F], F]:
+    def document(function: F) -> F:
+        function.__doc__ = doc
+        return function
+
+    return document
 
 
 def _likely_typos(spec: AwxResourceSpec, overlay: dict[str, object]) -> list[tuple[str, str]]:

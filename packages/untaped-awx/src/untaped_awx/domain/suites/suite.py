@@ -180,7 +180,7 @@ CheckName = Literal[
 ]
 
 _MAX_ACTUAL = 300
-"""Characters of a deciding log line kept in a result (lines can be huge)."""
+"""Characters of a check's ``actual`` kept in a result (log lines can be huge)."""
 
 
 class ExpectationResult(BaseModel):
@@ -197,11 +197,12 @@ class ExpectationResult(BaseModel):
     )
     actual: str | None = Field(
         description=(
-            "What decided the check: for `status` and `changed` the job's value; for a log check "
-            "the deciding line (cut at 300 characters); for `hosts` a named host's count, or "
-            "every host over a `*` bound as `name=count`; for `failed_tasks` the matched task as "
-            "`[host] task: msg`. Null when no log line or failed task matched, no host went over "
-            "a `*` bound, or a named host has no summary."
+            "What decided the check, cut at 300 characters: for `status` and `changed` the job's "
+            "value; for a log check the deciding line; for `hosts` a named host's count, or every "
+            "host over a `*` bound as `name=count`; for `failed_tasks` the matched task as "
+            "`[host] task: msg`; for `idempotent` the rerun's `STATUS, N changed`. Null when no "
+            "log line or failed task matched, no host went over a `*` bound, or a named host has "
+            "no summary."
         )
     )
     passed: bool = Field(description="Whether the check held.")

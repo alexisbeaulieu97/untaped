@@ -101,7 +101,11 @@ def _add_membership_verb(
     parent_noun = _words(spec.kind)
     article = "an" if parent_noun[:1] in "aeiou" else "a"
     members_noun = _plural_words(ref.kind)
-    help_text = f"{verb_doc} {members_noun} {preposition} {article} {parent_noun}."
+    help_text = (
+        f"{verb_doc} {members_noun} {preposition} {article} {parent_noun}.\n\n"
+        "Idempotent: a member already there (or already gone) is left as it is. "
+        "To set the whole list at once, apply a document (`untaped agents awx documents`)."
+    )
 
     # Positional-only: a keyword spelling of ``parent`` would claim ``--parent``,
     # which belongs to the ``ParentOption`` scope filter below.

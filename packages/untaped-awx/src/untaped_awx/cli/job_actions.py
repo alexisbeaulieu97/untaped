@@ -63,9 +63,17 @@ def register_job_actions(jobs_app: App) -> None:
     ) -> None:
         """Cancel running executions after one preview and confirmation.
 
-        Finished executions are skipped. AWX stops a job asynchronously, so a
-        successful row reports ``cancel_requested``; ``jobs wait`` shows when it
-        reached ``canceled``.
+        Every id is read first, and an unknown id rejects the batch. AWX stops
+        a job asynchronously, so a successful `awx.cancel_outcome` row reports
+        `cancel_requested`; `jobs wait` shows when it reached `canceled`. A
+        finished execution is `skipped`, and one AWX refuses is `failed`. A
+        row's `status` is the one read before the request.
+
+        Examples
+        --------
+        ```console
+        $ untaped awx jobs cancel 101 102 --dry-run
+        ```
         """
         rows: list[JobCancelOutcome] = []
         with report_errors(), open_context() as ctx:
@@ -115,9 +123,17 @@ def register_job_actions(jobs_app: App) -> None:
     ) -> None:
         """Relaunch executions as new jobs after one preview and confirmation.
 
-        Each row's ``id`` and ``kind`` name the new execution and
-        ``target_id`` the one it repeats, so ``--format pipe`` feeds
-        ``jobs wait --stdin`` or ``jobs logs --stdin``.
+        Every id is read first, and an unknown id rejects the batch. Each
+        row's `id` and `kind` name the new execution and `target_id` the one
+        it repeats, so `--format pipe` feeds `jobs wait --stdin` or `jobs
+        logs --stdin`. Project and inventory updates cannot be relaunched:
+        sync them instead.
+
+        Examples
+        --------
+        ```console
+        $ untaped awx jobs relaunch 101 --failed-hosts --yes -f pipe | untaped awx jobs wait --stdin
+        ```
         """
         hosts = "failed" if failed_hosts else "all"
         rows: list[JobRelaunchOutcome] = []
