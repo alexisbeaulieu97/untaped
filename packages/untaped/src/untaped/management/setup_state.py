@@ -159,7 +159,7 @@ class ServiceState:
     """Why the section's settings (file plus environment) are invalid, if they are."""
 
     shown: Mapping[str, str] = field(default_factory=dict)
-    """Each marked field that is not a secret, set, as text (for ``setup plan``'s done rows)."""
+    """Each set marked field neither secret nor masked, as text (``setup plan``'s done rows)."""
 
     sources: Mapping[str, str] = field(default_factory=dict)
     """Where each set secret comes from (``hook.signing_key_command``, ``$HOOK_KEY``)."""
@@ -205,7 +205,9 @@ def service_state(
     shown = {
         each.key: _text(value)
         for each in marks.required
-        if each.secret is None and (value := field_value(settings, each)) is not None
+        if each.secret is None
+        and not each.masked
+        and (value := field_value(settings, each)) is not None
     }
     return ServiceState(
         {each.key: _text(field_value(settings, each)) for each in form},

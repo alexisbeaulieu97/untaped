@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from untaped.sdk import ErrorCategory, UntapedError, UsageError, project_root
+from untaped.sdk import ErrorCategory, UntapedError, UsageError, checkout_root
 from untaped_lint.application import repo_file
 from untaped_lint.records import RULE_ID, ScaffoldOutcome
 
@@ -48,7 +48,9 @@ def scaffold(
     if not _ID.match(rule_id):
         raise UsageError(f"{rule_id!r} is not a rule id: lowercase words joined by hyphens")
     found = repo_file.find(start)
-    root = repo_file.root_of(found) if found is not None else project_root(start)
+    root = (
+        repo_file.root_of(found) if found is not None else checkout_root(start) or start.resolve()
+    )
     lint_file = found or root / repo_file.RELATIVE
     current = repo_file.read(found, installed=installed or ()) if found is not None else None
     key = key or (current.name if current is not None else None)

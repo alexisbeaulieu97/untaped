@@ -21,8 +21,9 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from cyclopts import App, Parameter
+from pydantic import BaseModel
 
-from untaped.auth import PLAINTEXT_TOKEN, plaintext_subject
+from untaped.auth import PLAINTEXT_TOKEN, auth_target, plaintext_subject
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -72,14 +73,14 @@ class RootSectionScope:
     plugin: str
     """Owning plugin name (the shell name for the shell section)."""
 
-    settings_fields: frozenset[str]
-    """User-tunable field names of the section's settings model."""
-
     state_fields: frozenset[str]
     """Tool-managed field names of the section's state model (never settable)."""
 
     mappings: KeyMappings = NO_KEY_MAPPINGS
     """The section model's renamed, retired and deprecated keys."""
+
+    model: type[BaseModel] | None = None
+    """The section's settings model, for the secrets ``auth set`` can store instead."""
 
 
 @dataclass(frozen=True)
@@ -164,25 +165,25 @@ def section_scopes(
     scopes = {
         section: RootSectionScope(
             plugin=shell.name,
-            settings_fields=frozenset(model.model_fields),
             state_fields=frozenset(),
             mappings=key_mappings(model),
+            model=model,
         )
         for section, model in model_sections(Settings).items()
     }
     scopes[shell.section] = RootSectionScope(
         plugin=shell.name,
-        settings_fields=frozenset(shell.settings.model_fields),
         state_fields=frozenset(shell.state.model_fields if shell.state is not None else ()),
         mappings=key_mappings(shell.settings),
+        model=shell.settings,
     )
     for registered in result.plugins:
         spec = registered.spec
         scopes[spec.name] = RootSectionScope(
             plugin=spec.name,
-            settings_fields=frozenset(settings_model(spec).model_fields),
             state_fields=frozenset(spec.state.model_fields if spec.state is not None else ()),
             mappings=key_mappings(settings_model(spec)),
+            model=settings_model(spec),
         )
     return scopes
 
@@ -421,14 +422,17 @@ def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
 
 
 def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
-    """Deprecate ``config set <section>.token`` where ``auth set`` can store it instead."""
+    """Deprecate ``config set <section>.<secret>`` where ``auth set`` can store it instead."""
     section, rest = _split_first(key)
     scope = ctx.sections.get(section)
-    if rest == "token" and scope is not None and "token_command" in scope.settings_fields:
+    if rest is None or scope is None or scope.model is None:
+        return
+    target = auth_target(scope.model, section, rest)
+    if target is not None:
         PLAINTEXT_TOKEN.notify(
-            plaintext_subject(section, resolve_config_path().name),
-            key=section,
-            replacement=f"untaped auth set {section}",
+            plaintext_subject(section, resolve_config_path().name, field=rest),
+            key=section if rest == "token" else key,
+            replacement=f"untaped auth set {target}",
         )
 
 

@@ -1,6 +1,6 @@
 """The repository's lint file, ``.untaped/lint.yml``: its rules, readers and ignores.
 
-Found by walking up from the working directory to the project root (the
+Found by walking up from the working directory to the checkout root (the
 nearest ``.git`` ancestor); the directory holding ``.untaped/`` is the root
 its paths are relative to. Version 1 holds ``name:`` (the key of the
 repository's own rules), ``exclude:`` (globs left out of the tree on top of
@@ -24,8 +24,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 from untaped.sdk import (
     ConfigError,
     UsageError,
+    checkout_root,
     first_validation_error,
-    project_root,
     read_structured_file,
 )
 from untaped_lint.domain.selection import parse_suppression
@@ -94,9 +94,9 @@ class RepoFile:
 
 
 def find(start: Path) -> Path | None:
-    """The nearest ``.untaped/lint.yml`` from ``start`` up to its project root."""
+    """The nearest ``.untaped/lint.yml`` from ``start`` up to its checkout root."""
     start = start.resolve()
-    top = project_root(start)
+    top = checkout_root(start) or start
     for folder in (start, *start.parents):
         candidate = folder / DIRECTORY / FILE_NAME
         if candidate.is_file():

@@ -170,7 +170,9 @@ def test_token_command_must_be_a_non_empty_argv_list() -> None:
 def test_command_token_becomes_the_bearer_header() -> None:
     route = respx.get("https://api.example.com/user").mock(return_value=httpx.Response(200))
     settings = resolve_token(DemoSettings(token_command=_printer("cmd-token")), section="demo")
-    with connected_client(settings, section="demo", http=HttpSettings()) as client:
+    with connected_client(
+        settings, section="demo", base_url=settings.base_url, http=HttpSettings()
+    ) as client:
         client.get("/user")
     assert route.calls.last.request.headers["Authorization"] == "Bearer cmd-token"
 

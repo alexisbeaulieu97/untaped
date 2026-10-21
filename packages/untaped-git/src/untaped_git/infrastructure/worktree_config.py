@@ -8,21 +8,30 @@ is the store's own: it uses :class:`RepoStore`'s internals.
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorCategory
+from untaped.sdk import ErrorCategory, UntapedError
 from untaped_git.domain.namespace import layout_for
 from untaped_git.domain.url import https_origin
-from untaped_git.infrastructure.repo_files import names_admin, repo_origin, worktree_entries
+from untaped_git.infrastructure.repo_files import (
+    WorktreeEntry,
+    config_value,
+    names_admin,
+    repo_origin,
+    worktree_entries,
+)
 
 if TYPE_CHECKING:
     from untaped_git.infrastructure.store import RepoStore
 
 _PLAIN_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
+#: The owning plugin's name, in the entry's admin directory (``worktrees/<id>``).
+OWNER_MARK = "untaped-owner"
 
 
 def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | None) -> None:
@@ -84,6 +93,11 @@ def write_owner_config(store: RepoStore, worktree: Path, *, owner: str | None = 
     # Stamps which worktree is owned: git copies this file into worktrees
     # added from this one, which must stay a user's own.
     _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+    # And in the entry's admin directory, which git keeps across a move or
+    # repair, never copies, and deletes with the entry.
+    entry = _entry_of(store, worktree)
+    if entry is not None:
+        (entry.admin / OWNER_MARK).write_text(f"{owner}\n", encoding="utf-8")
     plain = layout_for(owner).heads == "refs/remotes/origin/"
     _write_fetch_config(store, worktree, plain=plain)
 
@@ -97,6 +111,71 @@ def _write_fetch_config(store: RepoStore, worktree: Path, *, plain: bool) -> Non
     _worktree_config(store, worktree, "remote.origin.partialclonefilter", "")
 
 
+def check_reason(store: RepoStore, reason: str) -> None:
+    """Refuse a lock reason ``git worktree list --porcelain`` could not show on one line."""
+    if not reason.strip() or any(char in reason for char in "\n\r\0"):
+        raise store._error(
+            f"a worktree lock reason is one non-empty line, not {reason!r}",
+            category=ErrorCategory.INVALID,
+        )
+
+
+def lock_worktree(store: RepoStore, worktree: Path, *, reason: str) -> None:
+    """Lock one of the repo's worktrees, under the caller's lock; one already locked stays as is.
+
+    The folder may be gone: an entry registered at ``worktree`` is locked all
+    the same. :meth:`RepoStore.lock_worktree` documents it.
+    """
+    check_reason(store, reason)
+    real = Path(os.path.realpath(worktree))
+    entry = _entry_of(store, worktree) or next(
+        (e for e in worktree_entries(store._path) if e.path == real and not worktree.exists()),
+        None,
+    )
+    if entry is None:
+        raise _not_a_worktree(store, worktree)
+    if (entry.admin / "locked").exists():
+        return
+    store._git(["worktree", "lock", "--reason", reason, str(entry.path or real)])
+
+
+def repair_worktree(store: RepoStore, worktree: Path) -> None:
+    """Repair a moved worktree, under the caller's lock; see :meth:`RepoStore.repair_worktree`."""
+    entry = _entry_of(store, worktree)
+    if entry is None:
+        raise _not_a_worktree(store, worktree)
+    store._git(["worktree", "repair", os.path.abspath(worktree)])
+    if _owned_before_repair(store, entry):
+        _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+
+
+def _entry_of(store: RepoStore, worktree: Path) -> WorktreeEntry | None:
+    """The entry whose admin directory ``worktree``'s ``.git`` file names, if any."""
+    return next(
+        (e for e in worktree_entries(store._path) if names_admin(worktree / ".git", e.admin)),
+        None,
+    )
+
+
+def _owned_before_repair(store: RepoStore, entry: WorktreeEntry) -> bool:
+    """Whether ``entry`` is this plugin's, read before its stamp is rewritten.
+
+    An owner counts when its stamp names the entry's recorded directory, or,
+    once git already repointed the entry (a hand ``git worktree repair`` or
+    ``move``), when the entry's own admin directory holds this plugin's mark.
+    A hand-added worktree inherits the stamp but never the mark, so it stays
+    the user's own.
+    """
+    if entry.owner is not None:
+        return entry.owner == store._plugin
+    try:
+        mark = (entry.admin / OWNER_MARK).read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    owner = config_value(entry.admin / "config.worktree", "untaped", "owner")
+    return mark == owner == store._plugin
+
+
 def check_worktree(store: RepoStore, worktree: Path) -> None:
     """Refuse a path that is not one of this repo's worktrees (a user's own clone, say)."""
     result = store._git(
@@ -108,10 +187,14 @@ def check_worktree(store: RepoStore, worktree: Path) -> None:
     common = result.text.strip()
     # Relative to the worktree when git prints it relative (``--path-format`` is 2.31+).
     if result.returncode != 0 or (worktree / common).resolve() != store._path.resolve():
-        raise store._error(
-            f"{worktree} is not a worktree of repo store {store._path}",
-            category=ErrorCategory.INVALID,
-        )
+        raise _not_a_worktree(store, worktree)
+
+
+def _not_a_worktree(store: RepoStore, worktree: Path) -> UntapedError:
+    return store._error(
+        f"{worktree} is not a worktree of repo store {store._path}",
+        category=ErrorCategory.INVALID,
+    )
 
 
 def _rewrites_onto(store: RepoStore, worktree: Path, label: str) -> list[str]:

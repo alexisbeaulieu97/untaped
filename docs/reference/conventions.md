@@ -265,9 +265,9 @@ The sections above name the helper for each rule. Beyond those:
 - Read settings with `app_context().section(name, Model)` or
   `get_config_section(name, Model)`, which validate only your section, rather
   than `app_context().settings`.
-- For a service's URL and token, mark the fields `NeedsSetup` and `Secret`
-  rather than declaring `token_sources` or `token_command`; see
-  [Settings and the plugin app](../plugins.md#settings-and-the-plugin-app).
+- For a service's URL and secrets, mark the fields `NeedsSetup` and `Secret`
+  (not `token_sources` or `token_command`) and pass `connected_client` their
+  values; see [Settings and the plugin app](../plugins.md#settings-and-the-plugin-app).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
 - To keep a repository, use `RepoStore.for_url(url, plugin=SPEC, error=...)`

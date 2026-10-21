@@ -57,8 +57,10 @@ Pack.manifest_name  # recipe.pack
 
 GitHostRecord.helpers_first  # git.host rows
 
-# The git plugin's repo store API with no first-party caller yet.
+# The git plugin's repo store API with no first-party caller yet (lock_worktree and
+# repair_worktree too, kept by their same-named helpers, until #773).
 RepoStore.delete_refs
+RepoStore.worktrees_under  # workspace releases a missing project's worktrees (#773)
 
 # untaped.testing.git: fixtures for plugins that test against the repo store.
 GitRemote.spread
@@ -125,3 +127,6 @@ drop_tasks  # the root conftest's cleanup of a leaked progress task
 
 # Wire fields read by stderr's JSON readers, never by untaped itself.
 StaleData.age_seconds
+
+# Settings fields read by name from the config (the secret lookup, `auth`).
+GithubSettings.token_command  # declared until 12.0; core adds it for other plugins

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from importlib.resources import files
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import (
@@ -57,14 +55,13 @@ SPEC = PluginSpec(
     skills=(
         SkillAsset(
             name="untaped-git",
-            source=Path(str(files("untaped_git").joinpath("skills", "untaped-git"))),
             description=(
-                "Explains untaped's Git plumbing through the `untaped git` command (which "
-                "plugin supplies credentials for a Git host with `git hosts`, the credential "
-                "helper untaped writes into its worktrees, and the repo store other plugins "
-                "keep repositories in). Use when a Git fetch or push in an untaped worktree "
-                "asks for credentials or fails to authenticate, or when the user asks where "
-                "untaped keeps repositories or which Git version it needs."
+                "untaped's Git plumbing: the credentials and proxy that plugins supply for "
+                "Git hosts, the credential helper in untaped's worktrees, and the repo store "
+                "where other plugins keep repositories. Use when a fetch or push in an "
+                "untaped worktree asks for credentials or fails to authenticate, or when the "
+                "work concerns where untaped keeps repositories, the disk they take, or the "
+                "Git version untaped needs."
             ),
         ),
     ),

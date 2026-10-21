@@ -25,7 +25,7 @@ from untaped.auth import (
 )
 from untaped.errors import HttpError, HttpTransportError, UntapedError
 from untaped.plugins.registry import DoctorCheck, DoctorResult, PluginContext
-from untaped.setting_marks import SetupMarks, declared_marks
+from untaped.setting_marks import MarkedField, SetupMarks, declared_marks
 from untaped.settings import resolve_config_path
 from untaped.setup_status import field_value, set_command, stored_plaintext, unset_fields
 
@@ -208,26 +208,34 @@ def _marked_probe(
             # line, never the response body a validation dump would carry.
             detail = f"{type(exc).__name__}: {line}".rstrip(": ")
         chain = list(_causes(exc))
-        secret = marks.token or next(iter(marks.secrets), None)
+        secret = marks.default_secret or next(iter(marks.secrets), None)
         if secret is not None and _rejected(chain):
-            if secret is marks.token and (
-                alternatives := token_alternatives(settings, section=section)
-            ):
-                detail = f"{detail} (the token can also come from {alternatives})"
+            if alternatives := token_alternatives(settings, section=section, field=secret.key):
+                detail = f"{detail} (the {_noun(secret)} can also come from {alternatives})"
             return DoctorResult(
-                id=check_id, ok=False, detail=detail, fix=set_command(secret, section=section)
+                id=check_id,
+                ok=False,
+                detail=detail,
+                fix=set_command(secret, marks, section=section),
             )
         if _untrusted(chain):
             return DoctorResult(id=check_id, ok=False, detail=detail, fix=_CA_FIX)
         plain = [field for field in marks.required if field.secret is None]
         if plain:
-            shown = ", ".join(
-                f"{section}.{field.key} is {field_value(settings, field)}" for field in plain
-            )
+            shown = ", ".join(f"{section}.{field.key} {_shown(settings, field)}" for field in plain)
             detail = f"{detail} ({shown})"
-        fix = set_command(plain[0], section=section) if plain else None
+        fix = set_command(plain[0], marks, section=section) if plain else None
         return DoctorResult(id=check_id, ok=False, detail=detail, fix=fix)
     return DoctorResult(id=check_id, ok=True, detail=detail)
+
+
+def _noun(secret: MarkedField) -> str:
+    return "token" if secret.path == ("token",) else "secret"
+
+
+def _shown(settings: BaseModel, field: MarkedField) -> str:
+    """``is <value>``, or ``is set`` for a masked one: a failure line never prints a secret."""
+    return "is set" if field.masked else f"is {field_value(settings, field)}"
 
 
 _CA_FIX = "config set http.ca_bundle <PATH>"

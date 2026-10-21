@@ -153,14 +153,15 @@ def _service_rows(
         detail = f"{section} settings are invalid: {state.invalid}"
         return [_row(f"{name}.settings", name, "failed", detail)]
     rows = []
-    for field in service_marks(spec).required:
+    marks = service_marks(spec)
+    for field in marks.required:
         step = f"{name}.{field.key}"
         if field.path == ("token",) and field.secret is not None:
             rows.append(_token_row(spec, state, profile, store_name=store_name))
         elif field.key not in state.missing:
             rows.append(_row(step, name, "done", _done(field, state)))
         else:
-            run = command_argv(set_command(field, section=section), profile=profile)
+            run = command_argv(set_command(field, marks, section=section), profile=profile)
             # A secret never passes through an agent, marked Secret or not.
             by: SetupActor = "user" if field.secret is not None or field.masked else "agent"
             detail = f"{section}.{field.key} is not set"

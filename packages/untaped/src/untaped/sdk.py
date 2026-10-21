@@ -158,7 +158,11 @@ from untaped.records import (
 from untaped.refs import RefHolder, RefTarget, holders
 from untaped.setting_marks import NeedsSetup, Secret, Suggest
 from untaped.settings import HttpSettings, get_config_section
-from untaped.skills import nearest_pyproject, project_root
+from untaped.skills import (  # type: ignore[deprecated]
+    checkout_root,
+    nearest_pyproject,
+    project_root,
+)
 from untaped.stability import (
     DEPRECATED_OPTIONS,
     Deprecated,
@@ -383,6 +387,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "GitCommandError",
     "GitResult",
     "atomic_write",
+    "checkout_root",
     "file_lock",
     "git_toplevel",
     "nearest_pyproject",

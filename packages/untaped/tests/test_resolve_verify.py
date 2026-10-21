@@ -142,5 +142,8 @@ def test_http_client_with_invalid_ca_bundle_raises_config_error(tmp_path: Path) 
     bundle.write_text("not a certificate")
     with pytest.raises(ConfigError, match=r"http\.ca_bundle"):
         connected_client(
-            Conn(), section="demo", http=HttpSettings(ca_bundle=bundle, verify_hostname=False)
+            Conn(),
+            section="demo",
+            base_url=Conn().base_url,
+            http=HttpSettings(ca_bundle=bundle, verify_hostname=False),
         )

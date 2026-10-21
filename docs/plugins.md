@@ -92,13 +92,13 @@ model. The two field sets must be disjoint, and either may be left out.
 `plugin_dir(SPEC)` (`~/.untaped/plugins/<name>/`) is where it keeps other
 data. To rename a setting, see [Settings](./reference/conventions.md#settings).
 
-A plugin that connects to a service marks the settings it can't run without;
-`setup`, `setup plan`, doctor, `auth` and the token lookup read the marks.
-`NeedsSetup` goes on an `X | None` field defaulting to `None`, `Secret` on a
-top-level `SecretStr | None` one, naming the variables tried after it and,
-optionally, a command `setup plan` suggests: `token: Annotated[SecretStr |
-None, NeedsSetup, Secret(env=("ACME_TOKEN",))] = None`. `untaped` adds its
-command setting (`acme.token_command`); a misplaced mark quarantines the plugin.
+A plugin that connects to a service marks what it can't run without, and
+`setup`, `setup plan`, doctor and `auth` read the marks: `NeedsSetup` on an
+`X | None = None` field, `Secret(env=..., suggest=...)` on each top-level
+`SecretStr | None` secret. `untaped` adds each secret's command setting
+(`acme.token_command`); a misplaced mark quarantines the plugin.
+`connected_client(config, section="acme", base_url=config.base_url)` sends the
+`token` secret (else the only one) as the bearer.
 
 A complete plugin module, with a nullary app factory (leave it out for a
 plugin with no commands), one packaged skill and the `SPEC` the entry point
