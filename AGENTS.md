@@ -32,12 +32,11 @@ a contract wires it, and plugins filling it just provide data. When one side
 has to know something only the other cares about, the boundary is in the wrong
 place.
 
-untaped is made of building blocks. A mechanic several features need, such
-as caching or state, is solved once by its owner (core unless something
-narrower owns it) behind a typed pydantic interface that is robust and simple
-to use. Any plugin can use it, and its owner does too, never a private copy.
-For example, the SDK provides output formats and each command, core's or a
-plugin's, picks the ones it supports instead of rendering its own.
+untaped is made of building blocks. A mechanic several features need, such as
+caching or state, is solved once by its owner (core unless something narrower
+owns it) behind a typed pydantic interface that is robust and simple to use.
+Any plugin can use it, and its owner does too, never a private copy. For
+example, the SDK provides output formats and commands pick those they support.
 
 ## Agent-only notes
 
