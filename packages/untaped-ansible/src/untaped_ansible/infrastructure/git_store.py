@@ -16,14 +16,12 @@ analysed yet.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from pathlib import Path
 
 from untaped.sdk import (
     GitCommandError,
     UntapedError,
-    atomic_write,
     attribution,
     git_toplevel,
     run_git,
@@ -63,9 +61,9 @@ class GitSourceStore:
                 branches=[ref.name for ref in stale if ref.kind == "heads"],
                 tags=[ref.name for ref in stale if ref.kind == "tags"],
             )
-        if store.exists() and not store.private_file.is_file():
+        if store.exists():
             # Its presence tells the store's report and a release that ansible uses the repo.
-            atomic_write(store.private_file, json.dumps({"url": url}) + "\n")
+            store.write_private()
 
     def holds(self, url: str) -> bool:
         """Whether ansible has a part in ``url``'s store repo (see :meth:`RepoStore.has_part`)."""

@@ -6581,6 +6581,7 @@ sdk untaped_git.api.RepoStore.prefetched(paths=) default=[]
 sdk untaped_git.api.RepoStore.prefetched(progress=) default=NO_PROGRESS
 sdk untaped_git.api.RepoStore.prefetched(trees=) default=[]
 sdk untaped_git.api.RepoStore.private_file
+sdk untaped_git.api.RepoStore.read_private(model)  [experimental]
 sdk untaped_git.api.RepoStore.ref(name)
 sdk untaped_git.api.RepoStore.refs()
 sdk untaped_git.api.RepoStore.relative(ref)
@@ -6601,6 +6602,9 @@ sdk untaped_git.api.RepoStore.worktree_add(lock_reason=) default=None
 sdk untaped_git.api.RepoStore.worktree_add(path, ref)
 sdk untaped_git.api.RepoStore.worktree_owners()
 sdk untaped_git.api.RepoStore.worktrees_under(path)
+sdk untaped_git.api.RepoStore.write_private()  [experimental]
+sdk untaped_git.api.RepoStore.write_private(refreshed_at=) default=None  [experimental]
+sdk untaped_git.api.RepoStore.write_private(value@1=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_worktree_config(worktree, *, profile)
 sdk untaped_git.api.TreeEntry base=untaped.contracts.Record
 sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)

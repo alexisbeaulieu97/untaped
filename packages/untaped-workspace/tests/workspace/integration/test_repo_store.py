@@ -101,7 +101,7 @@ def test_a_users_git_works_in_a_worktree(
     assert git(wt, "rev-parse", "@{upstream}") == remote.oid("main")
     assert git(wt, "status", "-sb").splitlines()[0] == "## main...origin/main"
     assert git(wt, "config", "--worktree", "untaped.owner") == "workspace"
-    assert json.loads((repo / "untaped-workspace.json").read_text()) == {"history": "complete"}
+    assert json.loads((repo / "untaped-workspace.json").read_text())["history"] == "complete"
 
     # A user's fetch lands in origin/*, follows new tags and brings the new blobs.
     new = remote.commit("new.txt", "new\n")
@@ -189,7 +189,7 @@ def test_a_stalled_backfill_warns_and_status_fetch_resumes_it(
     wt = workspace_env / "J-1" / "app"
     repo = store_repo(store_root, remote.url)
     assert git(wt, "status", "--porcelain") == ""
-    assert json.loads((repo / "untaped-workspace.json").read_text()) == {"history": "partial"}
+    assert json.loads((repo / "untaped-workspace.json").read_text())["history"] == "partial"
     assert missing(repo)
 
     # Stalled again on a `status --fetch`: a warning on the row, not an error.
@@ -204,7 +204,7 @@ def test_a_stalled_backfill_warns_and_status_fetch_resumes_it(
     resumed = run(app, ["status", "--fetch", "J-1", "--format", "json"])
     assert resumed.exit_code == 0, resumed.output
     assert "history backfill" not in resumed.output
-    assert json.loads((repo / "untaped-workspace.json").read_text()) == {"history": "complete"}
+    assert json.loads((repo / "untaped-workspace.json").read_text())["history"] == "complete"
     assert missing(repo) == []
     assert "second line" in offline(wt, "blame", "README.md")
 
@@ -270,7 +270,7 @@ def test_remove_releases_around_another_plugins_namespace(
     assert run(app, ["create", "J-1", "--repo", remote.url, "--branch", "b1"]).exit_code == 0
     github = RepoStore.for_url(remote.url, plugin="github", error=WorkspaceError)
     github.fetch(branches=["main"])
-    github.private_file.write_text("{}\n")
+    github.write_private()
     repo = store_repo(store_root, remote.url)
 
     rows = _outcomes("remove", "J-1", "--yes")
