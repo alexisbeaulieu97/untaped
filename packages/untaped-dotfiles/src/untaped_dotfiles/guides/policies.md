@@ -1,4 +1,6 @@
-# Policies, states and what each command does
+---
+description: "Read before running sync or apply on a machine with enabled items: each path state, what each policy does to it, and when a clone is pulled."
+---
 
 ## States of a placed path
 
@@ -12,7 +14,7 @@
 | `conflict` | Both `behind` and `modified`. |
 | `missing` | Applied before, target now gone. |
 | `orphan` | Applied before, the manifest no longer places it (a file left a directory source, or the entry was dropped). |
-| `excluded` | Filtered out by `os`, `only`/`unless` or a machine `--skip`; `status --all` shows it. |
+| `excluded` | Filtered out by `os`, `only`/`unless` or a machine `--skip`. |
 | `error` | Could not be read (a git or filesystem failure); the row's `error` says why. |
 
 A `link` file is `behind` when the fetched ref changed its source and the
@@ -37,10 +39,7 @@ prompts. It exits 3 when a row needs the user: one left in `behind`,
 and `orphan`). A `manual` `pending` or `foreign` row is reported but does
 not count. It exits 1 when an apply or a git operation failed, or a path
 could not be read (a row carrying an `error`). `status --check` exits the
-same way. Both rewrite `status.json` and `attention` under
-`dotfiles.state_dir` (`status` only when run without ITEM or `--repo`);
-`attention` is the one-line count a prompt reads, and it counts a row
-carrying an `error` too.
+same way.
 
 ## When a clone is pulled
 
@@ -60,14 +59,4 @@ carrying an `error` too.
 
 `apply` places every selected path whatever its policy: `pending`,
 `foreign`, `behind` and `missing` are applied, `orphan` is removed, and
-`modified` or `conflict` is refused (row action `conflict`, exit 1) unless
-`--force`, which keeps the local version aside. `apply --dry-run` shows the
-plan as rows; `untaped dotfiles diff` shows what it would change in `copy` and
-`merge` files, as a unified diff.
-
-## What `remove` does
-
-`remove ITEM` deletes the paths the tool placed, keeps a `modified` or
-`conflict` copy aside instead of deleting it, takes merged keys back out of
-the target document, and disables the item. `disable ITEM` leaves every
-file where it is.
+`modified` or `conflict` is refused unless `--force`.

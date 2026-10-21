@@ -1,7 +1,8 @@
-# The manifest
+---
+description: "Read before writing or changing a dotfiles.yml manifest: its entries, the three modes, per-machine filters and directory sources."
+---
 
-`dotfiles.yml` at the repo root (`subscribe --manifest PATH` names another
-file). `version: 1` is the only version; a newer one is refused.
+`version: 1` is the only manifest version; a newer one is refused.
 
 ```yaml
 version: 1
@@ -40,13 +41,12 @@ items:
 - `mode` defaults to `link`. `merge` needs a JSON or YAML target, chosen by
   the extension (`.json`, `.yml`, `.yaml`) or an explicit `format:`.
   `merge` does not apply to a directory source.
-- `policy` on an item is a suggestion: `sync`, `once` or `manual`; `enable
-  --policy` overrides it on a machine.
+- `policy` on an item is a suggestion: `sync`, `once` or `manual`.
 - `os` on an item or a file: `macos`, `linux`, `windows`. `only` and
   `unless` on an item or a file: tag lists. An entry applies when the
   machine has any `only` tag (or `only` is absent) and none of the `unless`
-  tags. Tags are the `dotfiles.tags` setting; the OS is detected, or
-  `dotfiles.os` overrides it.
+  tags. The machine's tags and OS are the `dotfiles.tags` and `dotfiles.os`
+  settings.
 - `name` on a file defaults to its `source` and is what `enable --skip`
   takes. The same target twice in one item is an error; the same source
   twice is fine, and skipping it by source skips both placements.
@@ -61,8 +61,7 @@ items:
 
 `copy` and `merge` files in a managed clone are read from the fetched ref
 (`origin/<ref>`), so they follow their policy even while a `manual` link
-file holds the working tree back. `link` files in a registered checkout
-show whatever the checkout holds.
+file holds the working tree back.
 
 ## Directory sources
 
