@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, Any
 
+from pydantic import Field
+
 from untaped.records import OutcomeRecord, Record, TableGlyph
 
 
@@ -39,8 +41,7 @@ class ProfileRow(Record, kind="untaped.profile"):
 
     name: str
     active: Annotated[bool, TableGlyph(true="✓", false="")]
-    keys: int
-    """Number of leaf keys the profile sets."""
+    keys: int = Field(description="Number of leaf keys the profile sets.")
 
 
 class ProfileOutcome(OutcomeRecord, kind="untaped.profile_outcome"):

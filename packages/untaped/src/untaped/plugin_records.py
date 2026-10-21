@@ -14,6 +14,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import ClassVar, Literal
 
+from pydantic import Field
+
 from untaped.plugins.registry import (
     PLUGINS_ENTRY_POINT_GROUP,
     CompositionResult,
@@ -35,12 +37,16 @@ class Plugin(Record, kind="untaped.plugin"):
     status: Literal["ready", "quarantined"]
     distribution: str
     version: str
-    package: str | None = None
-    """Its import package (``untaped_awx``)."""
-    source_dir: AbsolutePath | None = None
-    """Where that package's code is."""
-    tests_dir: AbsolutePath | None = None
-    """``tests/`` beside the ``pyproject.toml`` declaring its entry point, in a checkout."""
+    package: str | None = Field(default=None, description="Its import package (`untaped_awx`).")
+    source_dir: AbsolutePath | None = Field(
+        default=None, description="Where that package's code is."
+    )
+    tests_dir: AbsolutePath | None = Field(
+        default=None,
+        description=(
+            "`tests/` beside the `pyproject.toml` declaring its entry point, in a checkout."
+        ),
+    )
 
 
 def plugin_records(

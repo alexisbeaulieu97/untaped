@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_core import to_jsonable_python
 
 from untaped.config_schema import (
@@ -122,19 +122,34 @@ class SettingRow(Record, kind="untaped.setting"):
     value: Annotated[object, _UNSET]
     default: Annotated[object, _UNSET]
     source: str
-    profile: str | None
-    """Set in ``--all-profiles`` mode to name the profile owning this row."""
-    note: str | None = None
-    """Set when the value came from a deprecated key or variable (``from OLD, removed
-    in …``), and for a deprecated setting (``use NEW, removed in …``)."""
-    stability: SettingStability = "stable"
-    """``stable``, ``experimental`` or ``deprecated``; the table is split by it, so
-    it is not a column."""
-    removed_in: int | None = None
-    """For a deprecated setting: the major that removes it (``None`` when undated)."""
-    distribution: str | None = None
-    """For a deprecated setting: the plugin distribution whose major that is; ``None``
-    for a core setting."""
+    profile: str | None = Field(
+        description="Set in `--all-profiles` mode to name the profile owning this row."
+    )
+    note: str | None = Field(
+        default=None,
+        description=(
+            "Set when the value came from a deprecated key or variable (`from OLD, removed in "
+            "…`), and for a deprecated setting (`use NEW, removed in …`)."
+        ),
+    )
+    stability: SettingStability = Field(
+        default="stable",
+        description=(
+            "`stable`, `experimental` or `deprecated`; the table is split by it, so it is not a "
+            "column."
+        ),
+    )
+    removed_in: int | None = Field(
+        default=None,
+        description="For a deprecated setting: the major that removes it (null when undated).",
+    )
+    distribution: str | None = Field(
+        default=None,
+        description=(
+            "For a deprecated setting: the plugin distribution whose major that is; null for a "
+            "core setting."
+        ),
+    )
 
 
 def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
