@@ -672,6 +672,18 @@ def test_fast_forward_refuses_a_dirty_clone(make_upstream: Upstream, tmp_path: P
     assert "local changes" in result.stderr
 
 
+def test_apply_reports_a_refused_fast_forward(make_upstream: Upstream, tmp_path: Path) -> None:
+    bare, author = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "fish"])
+    run(app, ["apply", "--yes"])
+    (tmp_path / "repos/dotfiles/scratch.txt").write_text("x")
+    _bump(author, {"fish/config.fish": "v2\n"})
+    result = run(app, ["apply", "fish", "--yes", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    assert "local changes" in result.stderr
+
+
 # -- diff, remove, disable, unsubscribe -------------------------------------------------
 
 

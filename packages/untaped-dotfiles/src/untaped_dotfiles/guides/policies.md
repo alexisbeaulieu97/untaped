@@ -57,7 +57,9 @@ same way.
 
 ## What `apply` does
 
-`apply` fetches the repos of the selected items first, so it places what
-their remotes hold now. It places every selected path whatever its policy:
-`pending`, `foreign`, `behind` and `missing` are applied, `orphan` is
-removed, and `modified` or `conflict` is refused unless `--force`.
+`apply` fetches the repos of the selected items first, so a managed
+clone's manifest, `copy` and `merge` files are read as its remote holds them
+now; a registered checkout is still read from its working tree. It places
+every selected path whatever its policy: `pending`, `foreign`, `behind` and
+`missing` are applied, `orphan` is removed, and `modified` or `conflict` is
+refused unless `--force`.
