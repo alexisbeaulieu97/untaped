@@ -231,6 +231,8 @@ def install_skills(
     return results
 
 
+#: A copy's marker: its own JSON, not core's data file, a named exception
+#: that goes with copies themselves (``SkillAsset(source=...)``, removed in 12.0).
 _MARKER = ".untaped-skill.json"
 _IGNORED_PARTS = ("__pycache__",)
 

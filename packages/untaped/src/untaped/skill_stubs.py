@@ -70,11 +70,10 @@ class Comparison(StrEnum):
 
 
 def running_untaped() -> str:
-    """This run's untaped version, the one a marker's stamp names; empty when unknown."""
+    """This run's untaped version, the one a marker's stamp names."""
     from untaped import data_file  # noqa: PLC0415 - first use
 
-    by = data_file.written_by()
-    return "" if by == data_file.UNKNOWN else by
+    return data_file.written_by()
 
 
 def compare(written: StubAuthor, run: StubAuthor) -> Comparison:

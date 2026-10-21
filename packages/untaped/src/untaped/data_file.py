@@ -24,7 +24,6 @@ import functools
 import hashlib
 import json
 import os
-import uuid
 from collections.abc import Collection, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
@@ -36,7 +35,7 @@ from typing import Any, Final, Literal
 from pydantic import BaseModel, ValidationError
 
 from untaped.errors import ConfigError
-from untaped.fs import atomic_write
+from untaped.fs import atomic_write, write_temp_name
 from untaped.output.diagnostic import format_utc, parse_utc
 from untaped.stability import experimental
 
@@ -46,8 +45,6 @@ STAMP: Final = "untaped"
 FILE: Final = 1
 #: Owner-only: what untaped keeps for itself is nobody else's to read.
 MODE: Final = 0o600
-#: A stamp's ``by`` when the untaped distribution is not installed.
-UNKNOWN: Final = "unknown"
 
 
 @experimental
@@ -100,7 +97,7 @@ def _version() -> str:
     try:
         return version("untaped")
     except PackageNotFoundError:
-        return UNKNOWN
+        return "unknown"
 
 
 def check_model(model: object) -> type[BaseModel]:
@@ -246,7 +243,7 @@ def _create(path: Path, text: str) -> bool:
     exclusive create stands in.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.untaped.tmp")
+    tmp = write_temp_name(path)
     try:
         _write_new(tmp, text)  # a failure here leaves no file at path
         try:

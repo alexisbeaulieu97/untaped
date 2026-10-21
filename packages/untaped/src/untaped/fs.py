@@ -58,6 +58,11 @@ _TEMP_SUFFIX = ".untaped.tmp"
 _TEMP_NAME = re.compile(r"\..+\.[0-9a-f]{32}" + re.escape(_TEMP_SUFFIX))
 
 
+def write_temp_name(target: Path) -> Path:
+    """A fresh temp file name beside ``target``, one :func:`is_write_temp` recognizes."""
+    return target.with_name(f".{target.name}.{uuid.uuid4().hex}{_TEMP_SUFFIX}")
+
+
 def is_write_temp(name: str) -> bool:
     """Whether ``name`` is :func:`atomic_write`'s temp file: a write in flight, not data."""
     return _TEMP_NAME.fullmatch(name) is not None
@@ -85,7 +90,7 @@ def _write_temp(
         with suppress(FileNotFoundError):
             mode = stat.S_IMODE(target.stat().st_mode)
     create_mode = 0o666 if mode is None else 0o600
-    tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}{_TEMP_SUFFIX}")
+    tmp = write_temp_name(target)
     try:
         text = isinstance(content, str)
         with open(

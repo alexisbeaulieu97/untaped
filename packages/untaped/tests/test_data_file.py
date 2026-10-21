@@ -319,3 +319,18 @@ def test_fields_named_title_or_description_are_part_of_the_shape() -> None:
 
     assert "title" in json.dumps(data_file._shape(Titled.model_json_schema()))
     assert _hash(Titled) != _hash(Untitled)
+
+
+def test_an_exclusive_create_s_temp_file_is_a_write_in_flight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    linked: list[str] = []
+    real = os.link
+
+    def spy(source: str, target: str) -> None:
+        linked.append(Path(source).name)
+        real(source, target)
+
+    monkeypatch.setattr(os, "link", spy)
+    write_data_file(tmp_path / "project.json", Strict(id="a"), exclusive=True)
+    assert [fs.is_write_temp(name) for name in linked] == [True]
