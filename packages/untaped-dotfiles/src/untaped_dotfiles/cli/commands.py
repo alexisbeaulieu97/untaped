@@ -410,13 +410,14 @@ def apply_command(
 
     Fetches every repo the items read from first, so a managed clone's
     manifest, copy and merge files are read as its remote holds them now; a
-    failed fetch is reported and exits 1. It can move other items' link files;
-    the plan lists them. A local file in the way of a new path is kept aside,
-    and the row says where. Refuses paths edited on this machine (row action
-    `conflict`, exit 1) unless --force; `diff` shows what --force would
-    replace in copy and merge files as of the last fetch. Rewrites status.json
-    and attention afterwards. `untaped agents dotfiles policies`
-    explains what `apply` does in each state and when a clone is pulled.
+    failed fetch is reported and exits 1 (a --dry-run preview still exits 0).
+    It can move other items' link files; the plan lists them. A local file in
+    the way of a new path is kept aside, and the row says where. Refuses paths
+    edited on this machine (row action `conflict`, exit 1) unless --force;
+    `diff` shows what --force would replace in copy and merge files as of the
+    last fetch. Rewrites status.json and attention afterwards. `untaped agents
+    dotfiles policies` explains what `apply` does in each state and when a
+    clone is pulled.
     """
     with report_errors():
         svc = services()
