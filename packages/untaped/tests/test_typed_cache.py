@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import stat
 from collections.abc import Iterator
@@ -13,7 +14,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from untaped import refs
+from untaped import data_file, refs
 from untaped.cache import Cache, Filled, Freshness, NeverRefreshed
 from untaped.contracts import cached
 from untaped.errors import ConfigError, HttpTransportError
@@ -227,6 +228,63 @@ def test_another_types_file_is_missing(clock: CacheClock, up: Controller) -> Non
     assert SNAPSHOTS.freshness(KEY) == Freshness()
 
 
+def test_refresh_fills_its_own_version_when_another_filled_meanwhile(
+    clock: CacheClock, up: Controller
+) -> None:
+    """Two installs share the folder: another version's fill is no answer to --refresh."""
+    later = START + timedelta(seconds=1)
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["other"]), refreshed_at=later, version="0")
+    served, emitted = _serve(up, refresh=True)
+    assert (up.fills, served.value[KEY], _stale(emitted)) == ([KEY], Snapshot(items=["jt"]), [])
+
+
+def test_a_versions_failed_first_fill_still_falls_back_on_another_versions_value(
+    clock: CacheClock, up: Controller
+) -> None:
+    up.error = HttpTransportError("connection refused", system="toy")
+    with pytest.raises(HttpTransportError):
+        _serve(up)
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["other"]), refreshed_at=START, version="0")
+
+    served, _ = _serve(up, refresh=False)
+
+    assert served.value[KEY] == Snapshot(items=["other"])
+    state = SNAPSHOTS.freshness(KEY)
+    assert (state.version, state.outdated, state.attempted_at) == ("0", True, START)
+    assert state.error is not None  # this version's own attempt is still told
+
+
+def test_the_newest_other_version_that_validates_is_the_fallback(
+    clock: CacheClock, up: Controller
+) -> None:
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["older"]), refreshed_at=START, version="0")
+    clock.advance(timedelta(minutes=1))
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["newer"]), refreshed_at=clock.now, version="2")
+    [newer] = [file for file in _files() if '"version":"2"' in _lines(file)[0]]
+    newer.write_text(_lines(newer)[0] + '\n{"items": "broken"}\n', encoding="utf-8")
+
+    served, _ = _serve(up, refresh=False)
+
+    assert served.value[KEY] == Snapshot(items=["older"])
+
+
+def test_a_fill_that_could_not_be_kept_leaves_the_older_files(
+    clock: CacheClock, up: Controller, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["old"]), refreshed_at=START, version="0")
+    clock.advance(timedelta(hours=2))
+
+    def full(*_args: object, **_kwargs: object) -> None:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(data_file, "atomic_write", full)
+    served, _ = _serve(up)
+
+    assert served.value[KEY] == Snapshot(items=["jt"])
+    monkeypatch.undo()
+    assert [json.loads(_lines(file)[0])["untaped"]["version"] for file in _files()] == ["0"]
+
+
 def test_a_complete_fill_sweeps_other_versions_past_their_max_age(
     clock: CacheClock, up: Controller
 ) -> None:
@@ -375,6 +433,15 @@ def test_cached_peeks_at_the_kept_value_and_forget_drops_every_version(
 
     assert _files() == []
     assert SNAPSHOTS.cached(KEY) is None
+
+
+def test_forget_leaves_a_key_whose_name_reads_like_a_version_of_another(
+    clock: CacheClock,
+) -> None:
+    plain = Cache("toy", "plain", label="plain", max_age=timedelta(hours=1))
+    assert plain.seed("x.vdeadbeef", refreshed_at=START)
+    plain.forget("x")
+    assert plain.freshness("x.vdeadbeef").refreshed_at == START
 
 
 # --- 11.0's caches/ ------------------------------------------------------------------

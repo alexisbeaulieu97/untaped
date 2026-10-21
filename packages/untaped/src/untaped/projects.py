@@ -636,7 +636,11 @@ def _renew(root: Path, old: str) -> Project:
     """Give the copy at ``root`` its own id: a new ``project.json`` and a reference, no holds."""
     project = Project(id=_new_id(), root=root)
     marker = root / DIRECTORY / MARKER
-    if _marker_id(root) != old:
+    try:
+        current = _marker_id(root)
+    except ValueError as exc:
+        raise ConfigError(f"cannot read {shown_path(root)}'s project marker: {exc}") from exc
+    if current != old:
         raise ConfigError(
             f"{shown_path(root)}'s id changed while untaped was giving it a new one",
             hint="run the command again",

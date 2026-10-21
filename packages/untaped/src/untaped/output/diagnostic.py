@@ -94,6 +94,16 @@ def format_utc(value: datetime) -> str:
     return _to_utc(value).isoformat().replace("+00:00", "Z")
 
 
+def parse_utc(value: object) -> datetime | None:
+    """An ISO 8601 time as aware UTC (naive taken as UTC), or ``None`` for anything else."""
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return _to_utc(value) if isinstance(value, datetime) else None
+
+
 UtcTimestamp = Annotated[
     datetime,
     AfterValidator(_to_utc),

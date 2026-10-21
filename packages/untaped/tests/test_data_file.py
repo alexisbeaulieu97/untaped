@@ -182,6 +182,17 @@ def test_a_copy_of_an_unstamped_file_gets_this_releases_stamp(tmp_path: Path) ->
         copy_data_file(source, target)
 
 
+def test_a_copy_refuses_a_newer_or_a_broken_stamp(tmp_path: Path) -> None:
+    source, target = tmp_path / "a.json", tmp_path / "b.json"
+    source.write_text('{"untaped": {"file": 2, "by": "12.0.0"}, "x": 1}', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"newer untaped \(12\.0\.0\)"):
+        copy_data_file(source, target)
+    source.write_text('{"untaped": {"file": "one"}, "x": 1}', encoding="utf-8")
+    with pytest.raises(ValueError, match="names no format"):
+        copy_data_file(source, target)
+    assert not target.exists()
+
+
 def test_a_filesystem_that_refuses_modes_still_gets_the_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -219,9 +230,13 @@ def test_lines_keep_the_stamp_and_the_value_bytes_apart(tmp_path: Path) -> None:
     assert found.value == b'{"items": [1]}'
     assert _mode(file) == 0o600
 
+    head = read_lines(file, value=False)
+    assert isinstance(head, Lines) and (head.value, head.holds) == (None, True)
+    assert head.stamp == found.stamp
+
     write_lines(file, {"key": "k"}, None)
-    found = read_lines(file)
-    assert isinstance(found, Lines) and found.value is None
+    for each in (read_lines(file), read_lines(file, value=False)):
+        assert isinstance(each, Lines) and (each.value, each.holds) == (None, False)
 
 
 def test_lines_tell_a_newer_and_a_damaged_file_apart(tmp_path: Path) -> None:

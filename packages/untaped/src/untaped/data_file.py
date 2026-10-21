@@ -28,7 +28,7 @@ import uuid
 from collections.abc import Collection, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -37,6 +37,7 @@ from pydantic import BaseModel, ValidationError
 
 from untaped.errors import ConfigError
 from untaped.fs import atomic_write
+from untaped.output.diagnostic import format_utc, parse_utc
 from untaped.stability import experimental
 
 #: The key every data file keeps its stamp under.
@@ -161,7 +162,7 @@ def read_data_file[M: BaseModel](
         checked = check_stamp(stamp)
         if not isinstance(checked, dict):
             return checked
-        refreshed_at = parsed_time(checked.get("refreshed_at"))
+        refreshed_at = parse_utc(checked.get("refreshed_at"))
         fields = {key: value for key, value in data.items() if key != STAMP}
     elif isinstance(stamp, str) and stamp in legacy_stamps:
         fields = {key: value for key, value in data.items() if key != STAMP}
@@ -195,7 +196,7 @@ def write_data_file(
     check_model(type(value))
     stamp: dict[str, Any] = {"file": FILE, "by": written_by()}
     if refreshed_at is not None:
-        stamp["refreshed_at"] = format_time(refreshed_at)
+        stamp["refreshed_at"] = format_utc(refreshed_at)
     body = value.model_dump(mode="json", by_alias=True)
     text = json.dumps({STAMP: stamp, **body}, ensure_ascii=False) + "\n"
     if exclusive:
@@ -212,15 +213,19 @@ def copy_data_file(source: Path, target: Path) -> None:
     data, never claims to have been refreshed, and is written atomically,
     owner-only. Raises :class:`OSError` when ``source`` can't be read or
     ``target`` written, and :class:`ValueError` when ``source`` is not a JSON
-    object.
+    object or a format this release can't read (a newer untaped's).
     """
     data = json.loads(source.read_bytes())
     if not isinstance(data, dict):
         raise ValueError(f"{source} is not a JSON object")
     stamp = data.get(STAMP)
-    kept = dict(stamp) if isinstance(stamp, dict) else {"file": FILE}
-    kept.pop("refreshed_at", None)
-    kept["by"] = written_by()
+    if isinstance(stamp, dict):
+        checked = check_stamp(stamp)
+        if isinstance(checked, OtherVersion):
+            raise ValueError(f"{source} was written by a newer untaped ({checked.by})")
+        if isinstance(checked, Unreadable):
+            raise ValueError(f"{source} {checked.reason}")
+    kept = {"file": FILE, "by": written_by()}
     copied = {STAMP: kept, **{key: value for key, value in data.items() if key != STAMP}}
     atomic_write(target, json.dumps(copied, ensure_ascii=False) + "\n", mode=MODE)
 
@@ -280,16 +285,29 @@ def _write_new(path: Path, text: str) -> None:
 
 @dataclass(frozen=True)
 class Lines:
-    """A line-layout file: its stamp (line 1) and line 2's bytes (``None``: no line 2)."""
+    """A line-layout file: its stamp (line 1) and line 2's bytes (``None``: no line 2).
+
+    ``holds`` says whether line 2 has a value, also when it was left unread.
+    """
 
     stamp: Mapping[str, Any]
     value: bytes | None
+    holds: bool
 
 
-def read_lines(path: Path) -> Lines | Absent | Unreadable | OtherVersion:
-    """``path`` in the line layout, in one read; the value's bytes are left unparsed."""
+def read_lines(path: Path, *, value: bool = True) -> Lines | Absent | Unreadable | OtherVersion:
+    """``path`` in the line layout; the value's bytes are left unparsed.
+
+    ``value=False`` reads line 1 only (a status read of a large value):
+    ``holds`` still says whether a value follows, ``value`` is ``None``.
+    """
     try:
-        text = path.read_bytes()
+        with path.open("rb") as file:
+            if value:
+                text = file.read()
+            else:
+                text = file.readline()
+                text += file.read(2)  # enough to tell a value from a bare newline
     except FileNotFoundError, NotADirectoryError:
         return Absent()
     except OSError as exc:
@@ -305,8 +323,8 @@ def read_lines(path: Path) -> Lines | Absent | Unreadable | OtherVersion:
     checked = check_stamp(stamp)
     if not isinstance(checked, dict):
         return checked
-    value = rest.rstrip(b"\n") if newline else b""
-    return Lines(stamp=checked, value=value or None)
+    rest = rest.rstrip(b"\n") if newline else b""
+    return Lines(stamp=checked, value=(rest or None) if value else None, holds=bool(rest))
 
 
 def write_lines(path: Path, stamp: Mapping[str, Any], value: bytes | None) -> None:
@@ -372,26 +390,6 @@ def _shape(node: Any) -> Any:
         else:
             shaped[key] = _shape(value)
     return shaped
-
-
-def parsed_time(value: object) -> datetime | None:
-    """An ISO 8601 time (naive taken as UTC), or ``None`` for anything else."""
-    if isinstance(value, datetime):
-        parsed = value
-    elif isinstance(value, str):
-        try:
-            parsed = datetime.fromisoformat(value)
-        except ValueError:
-            return None
-    else:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-
-
-def format_time(value: datetime) -> str:
-    """``value`` as RFC 3339 UTC with a ``Z`` suffix (naive taken as UTC)."""
-    aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-    return aware.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def first_error(exc: ValidationError) -> str:

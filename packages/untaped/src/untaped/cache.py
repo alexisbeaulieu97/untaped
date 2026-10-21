@@ -61,7 +61,7 @@ from untaped.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.fs import file_lock
 from untaped.git import safe_path_segment
 from untaped.messages import duration_text
-from untaped.output.diagnostic import NOT_COUNTED, Failure, StaleData, format_utc
+from untaped.output.diagnostic import NOT_COUNTED, Failure, StaleData, format_utc, parse_utc
 from untaped.output.progress import NO_PROGRESS, ProgressHandle
 from untaped.output.sink import current_sink
 from untaped.records import Record, UtcTimestamp
@@ -191,7 +191,7 @@ def installed_utcnow(clock: Callable[[], datetime]) -> Iterator[None]:
 
 @dataclass(frozen=True)
 class Freshness:
-    """What a cache knows about one key; kept in its sidecar.
+    """What a cache knows about one key; kept in the first line of its file.
 
     ``refreshed_at`` is the last completed fill (``None``: never);
     ``attempted_at`` the last one that did not complete (failed or
@@ -735,7 +735,9 @@ class Cache[M = None]:
             ):
                 current = kept = self._load(paths, key, version, typing)
                 refreshed_at = current.freshness.refreshed_at
-                if refreshed_at is not None and refreshed_at >= started:
+                # another version's typed value is a fallback, never an answer: fill this one's
+                fallback = typing is not None and current.freshness.outdated
+                if refreshed_at is not None and refreshed_at >= started and not fallback:
                     return current  # refreshed while this run waited: serve it, under --refresh too
                 due = current.freshness.due(None, max_age=max_age, now=_utcnow())
                 if refresh is None and not due:
@@ -758,8 +760,10 @@ class Cache[M = None]:
                 filled[key] = result
                 if progress is NO_PROGRESS:
                     task.update(result.summary)  # the done line carries it
-                saved = self._filled(paths, own, key, label, result, version, typing, max_age)
-            if saved.error is None:
+                saved, kept_it = self._filled(
+                    paths, own, key, label, result, version, typing, max_age
+                )
+            if saved.error is None and kept_it:
                 if self.store is not None:
                     # a complete fill: this layout has data, so the ones nothing holds may go
                     self.store.prune()
@@ -785,8 +789,12 @@ class Cache[M = None]:
         version: str | None,
         typing: ValueTyping | None,
         max_age: timedelta,
-    ) -> Freshness:
-        """Keep what a fill returned, under the key's lock; the key's freshness now."""
+    ) -> tuple[Freshness, bool]:
+        """Keep what a fill returned, under the key's lock: the key's freshness, and if kept.
+
+        Only a value kept lets older files go: until then they are what a
+        later read falls back on.
+        """
         value = self._filled_value(result, typing)
         saved = Freshness(
             refreshed_at=_utcnow(),
@@ -795,10 +803,10 @@ class Cache[M = None]:
             retry_at=result.retry_at,
             version=version,
         )
-        self._keep(own, key, label, saved, typing, value)
-        if typing is not None and saved.error is None:
+        kept_it = self._keep(own, key, label, saved, typing, value)
+        if kept_it and typing is not None and saved.error is None:
             self._sweep(paths, key, own, max_age)
-        return saved
+        return saved, kept_it
 
     def _say_interrupted(self, freshness: Freshness) -> None:
         """Say the Ctrl-C a fill stopped on: nothing else prints it, the CLI exits 130 bare."""
@@ -960,7 +968,7 @@ class Cache[M = None]:
                 if paths.file().exists():
                     return False
                 return self._write(
-                    paths.file(), key, Freshness(refreshed_at=_parsed(refreshed_at)), None, None
+                    paths.file(), key, Freshness(refreshed_at=parse_utc(refreshed_at)), None, None
                 )
         except _LockError as exc:
             if exc.busy:
@@ -975,13 +983,19 @@ class Cache[M = None]:
         freshness. Waits for a fill of the key in progress; a key the cache
         knows nothing of is left as it is.
         """
+        from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - first use
+
         paths = self._paths(key, partition)
         with self._lock(paths, key, NO_PROGRESS):
             paths.file().unlink(missing_ok=True)
             for entry in _listed(paths.dir):
                 matched = _VERSIONED.fullmatch(entry.name)
-                if matched is not None and matched["stem"] == paths.stem:
-                    entry.unlink(missing_ok=True)
+                if matched is None or matched["stem"] != paths.stem:
+                    continue
+                found = read_lines(entry, value=False)
+                if isinstance(found, Lines) and found.stamp.get("key") != key:
+                    continue  # another key whose name reads like a version of this one
+                entry.unlink(missing_ok=True)
 
     # ---- the seams ----------------------------------------------------------
 
@@ -1032,19 +1046,29 @@ class Cache[M = None]:
         from untaped.data_file import Lines, Unreadable, read_lines  # noqa: PLC0415 - first use
 
         if typing is None:
-            found = read_lines(paths.file())
+            found = read_lines(paths.file(), value=False)
             if not isinstance(found, Lines) or found.stamp.get("key") != key:
                 return _Kept(Freshness())
             return _Kept(_freshness_of(found.stamp, version, typed=False))
         own = paths.file(versioned(typing, version))
-        found = read_lines(own)
+        found = read_lines(own, value=check)
         kept = _read_kept(found, key, version, typing, check=check)
-        if kept is not None:
+        if kept is not None and kept.freshness.refreshed_at is not None:
             return kept
         fallback = self._fallback(paths, key, own, version, typing, check=check)
-        if fallback is not None:
+        if fallback is None:
+            return kept or _Kept(Freshness(), damaged=isinstance(found, (Lines, Unreadable)))
+        if kept is None:
             return fallback
-        return _Kept(Freshness(), damaged=isinstance(found, (Lines, Unreadable)))
+        # this version failed before it ever filled: its attempt, over the other's value
+        mine = kept.freshness
+        attempt = replace(
+            fallback.freshness,
+            attempted_at=mine.attempted_at,
+            error=mine.error,
+            retry_at=mine.retry_at,
+        )
+        return replace(fallback, freshness=attempt)
 
     @staticmethod
     def _fallback(
@@ -1056,22 +1080,30 @@ class Cache[M = None]:
         *,
         check: bool,
     ) -> _Kept | None:
-        """The newest value of the same type another version filled for ``key``, outdated."""
+        """The newest value of the same type another version filled for ``key``, outdated.
+
+        Stamps are read first; only the newest value is validated, and the
+        next newest when it doesn't.
+        """
         from untaped.data_file import read_lines  # noqa: PLC0415 - first use
 
-        newest: _Kept | None = None
+        candidates: list[tuple[datetime, Path, _Kept]] = []
         for entry in _listed(paths.dir):
             matched = _VERSIONED.fullmatch(entry.name)
             if matched is None or matched["stem"] != paths.stem or entry == own:
                 continue
-            kept = _read_kept(read_lines(entry), key, version, typing, check=check)
+            kept = _read_kept(read_lines(entry, value=False), key, version, typing, check=False)
             if kept is None or kept.freshness.refreshed_at is None:
                 continue
-            if newest is None or kept.freshness.refreshed_at > newest.freshness.refreshed_at:  # type: ignore[operator]
-                newest = kept
-        if newest is None:
-            return None
-        return replace(newest, freshness=replace(newest.freshness, outdated=True))
+            candidates.append((kept.freshness.refreshed_at, entry, kept))
+        for _, entry, kept in sorted(candidates, key=lambda each: each[0], reverse=True):
+            if check:
+                found = _read_kept(read_lines(entry), key, version, typing, check=True)
+                if found is None or found.freshness.refreshed_at is None:
+                    continue
+                kept = found
+            return replace(kept, freshness=replace(kept.freshness, outdated=True))
+        return None
 
     def _write(
         self,
@@ -1139,10 +1171,10 @@ class Cache[M = None]:
         freshness: Freshness,
         typing: ValueTyping | None,
         value: bytes | None,
-    ) -> None:
-        """Keep a fill's result: a file that can't be written is one warning, never a failure."""
+    ) -> bool:
+        """Keep a fill's result; whether it did. A file that can't be written is one warning."""
         if typing is not None and value is None:
-            return  # a value that won't serialise: the older file stays, due, and is refilled
+            return False  # a value that won't serialise: the older file stays, due, and is refilled
         try:
             self._write_file(own, key, freshness, typing, value)
         except OSError as exc:
@@ -1152,6 +1184,8 @@ class Cache[M = None]:
                 f"could not keep {self.label} for {label} ({exc.strerror or exc}); "
                 "the next run refreshes it again"
             )
+            return False
+        return True
 
     def _sweep(self, paths: _KeyPaths, key: str, own: Path, max_age: timedelta) -> None:
         """After a complete fill, under the key's lock: drop values no reader would serve.
@@ -1163,7 +1197,7 @@ class Cache[M = None]:
         their own lock taken without waiting: a folder shared by profiles
         may serve one whose max age is longer than this one's.
         """
-        from untaped.data_file import Lines, parsed_time, read_lines  # noqa: PLC0415 - first use
+        from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - first use
 
         now = _utcnow()
         horizon = max(_PARTITION_HORIZON, 10 * self.default_max_age)
@@ -1175,10 +1209,10 @@ class Cache[M = None]:
             stem = matched["stem"]
             if stem != segment and not stem.startswith(f"{segment}.p"):
                 continue
-            found = read_lines(entry)
+            found = read_lines(entry, value=False)
             if not isinstance(found, Lines) or found.stamp.get("key") != key:
                 continue  # unreadable, or another key whose name begins alike
-            refreshed = parsed_time(found.stamp.get("refreshed_at"))
+            refreshed = parse_utc(found.stamp.get("refreshed_at"))
             if stem == paths.stem:
                 if refreshed is None or now - refreshed >= max_age:
                     entry.unlink(missing_ok=True)
@@ -1361,7 +1395,7 @@ def _failed(current: Freshness, error: UntapedError, started: datetime) -> Fresh
         attempted_at=started,
         error=Failure.from_exception(error),
         partial=False,  # `error` is now the failure, no longer what a fill left out
-        retry_at=_parsed(error.details.get("retry_at")) or started + RETRY_AFTER,
+        retry_at=parse_utc(error.details.get("retry_at")) or started + RETRY_AFTER,
     )
 
 
@@ -1403,20 +1437,6 @@ def _failure(raw: object) -> Failure | None:
         return None
 
 
-def _parsed(value: object) -> datetime | None:
-    """An ISO 8601 time (naive taken as UTC), or ``None`` for anything else."""
-    if isinstance(value, datetime):
-        parsed = value
-    elif isinstance(value, str):
-        try:
-            parsed = datetime.fromisoformat(value)
-        except ValueError:
-            return None
-    else:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-
-
 def _iso(value: datetime | None) -> str | None:
     return None if value is None else format_utc(value)
 
@@ -1453,7 +1473,8 @@ def _read_kept(
 
     Another key's, another type's, a newer format's or an unreadable file
     can't; nor can one that says it was refreshed but has no value that
-    validates (``check=False`` only asks that one is there).
+    validates (``check=False`` only asks that one is there: the file may
+    have been read without it).
     """
     from untaped.data_file import Lines  # noqa: PLC0415 - first use
 
@@ -1465,10 +1486,12 @@ def _read_kept(
     freshness = _freshness_of(stamp, version, typed=True)
     if freshness.refreshed_at is None:
         return _Kept(freshness)  # attempts only: no value yet
-    if found.value is None:
+    if not found.holds:
         return None
     if not check:
         return _Kept(freshness, raw=found.value)
+    if found.value is None:
+        return None  # read without its value: nothing to check
     try:
         value = typing.adapter.validate_json(found.value, strict=True)
     except ValidationError:
@@ -1482,7 +1505,7 @@ def _freshness_of(stamp: Mapping[str, Any], version: str | None, *, typed: bool)
     A typed cache's value filled at any other version is outdated; an
     untyped one's only when the cache has a version.
     """
-    refreshed_at = _parsed(stamp.get("refreshed_at"))
+    refreshed_at = parse_utc(stamp.get("refreshed_at"))
     filled_at = stamp.get("version")
     filled_at = filled_at if isinstance(filled_at, str) else None
     outdated = refreshed_at is not None and filled_at != version and (typed or version is not None)
@@ -1492,10 +1515,10 @@ def _freshness_of(stamp: Mapping[str, Any], version: str | None, *, typed: bool)
         return Freshness(refreshed_at=refreshed_at, version=filled_at, outdated=outdated)
     return Freshness(
         refreshed_at=refreshed_at,
-        attempted_at=_parsed(stamp.get("attempted_at")),
+        attempted_at=parse_utc(stamp.get("attempted_at")),
         error=error,
         partial=stamp.get("partial") is True,
-        retry_at=_parsed(stamp.get("retry_at")),
+        retry_at=parse_utc(stamp.get("retry_at")),
         version=filled_at,
         outdated=outdated,
     )

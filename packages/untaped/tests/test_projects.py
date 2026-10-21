@@ -24,6 +24,7 @@ from untaped import data_file, holds, projects, refs
 from untaped.data_file import written_by
 from untaped.errors import ConfigError, ErrorCategory, UsageError
 from untaped.plugins.registry import PluginSpec
+from untaped.project_lifecycle import preview_check
 from untaped.projects import (
     Project,
     anchor_state,
@@ -132,6 +133,7 @@ def test_an_unreadable_or_newer_marker_stops_every_use(
         lambda: project_at(project.root),
         lambda: writing(seen),
         lambda: init(project.root),
+        lambda: preview_check(seen),
     ):
         with pytest.raises(ConfigError, match=problem) as caught:
             use()
