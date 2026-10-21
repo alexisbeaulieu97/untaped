@@ -31,7 +31,6 @@ THRESHOLD = 0.5
 ALLOWED: dict[str, str] = {
     # Opening words of a package README paragraph -> why the repeat is intentional.
     "Install it as part of `untaped`": "each package README is a standalone PyPI page",
-    "The [packaged skill]": "the standard Reference section of every package README",
 }
 
 _ITEM = re.compile(r"\n(?=\s*(?:[-*]|\d+\.) )")
