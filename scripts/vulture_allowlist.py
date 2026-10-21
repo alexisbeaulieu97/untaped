@@ -57,7 +57,8 @@ Pack.manifest_name  # recipe.pack
 
 GitHostRecord.helpers_first  # git.host rows
 
-# The git plugin's repo store API with no first-party caller yet.
+# The git plugin's repo store API with no first-party caller yet (lock_worktree and
+# repair_worktree too, kept by their same-named helpers, until #773).
 RepoStore.delete_refs
 RepoStore.worktrees_under  # workspace releases a missing project's worktrees (#773)
 

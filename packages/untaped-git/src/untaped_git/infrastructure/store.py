@@ -866,8 +866,9 @@ class RepoStore:
         checkout, remove and release, then keeps the entry while its directory
         is moved away or unreachable (an unmounted drive), so
         :meth:`repair_worktree` can still find it. The caller says why, in one
-        line; a worktree already locked keeps its lock and reason. Releasing
-        the plugin's worktrees removes locked ones too.
+        line; a worktree already locked keeps its lock and reason. An entry
+        whose folder is already gone can still be locked by its registered
+        path. Releasing the plugin's worktrees removes locked ones too.
         """
         with self._locked():
             worktree_config.lock_worktree(self, worktree, reason=reason)
@@ -877,8 +878,9 @@ class RepoStore:
 
         The repo's entry is pointed at the new directory, and the owner stamp,
         which records the absolute path, is rewritten when this plugin owns
-        it. Safe to repeat. Refused when ``worktree`` is not one of this
-        repo's worktrees.
+        it, also when git already repointed the entry (a hand ``git worktree
+        repair`` or ``move``). Safe to repeat. Refused when ``worktree`` is
+        not one of this repo's worktrees.
         """
         with self._locked():
             worktree_config.repair_worktree(self, worktree)

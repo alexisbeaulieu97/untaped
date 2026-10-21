@@ -73,7 +73,7 @@ def test_a_bad_reason_is_refused_before_anything_is_added(
     store = _workspace(store_for)
     tree = tmp_path / "PROJ-1" / "app"
 
-    for reason in ("", "  ", "two\nlines"):
+    for reason in ("", "  ", "two\nlines", "nul\0byte"):
         with pytest.raises(StoreError, match="lock reason") as caught:
             store.worktree_add(tree, _MAIN, branch="one", lock_reason=reason)
         assert caught.value.category == ErrorCategory.INVALID
@@ -166,3 +166,61 @@ def test_worktrees_under_lists_only_this_plugins_entries_inside_the_folder(
         (project / "nested" / "web").resolve(),
     ]
     assert sweep.worktrees_under(project) == [(project / "other").resolve()]
+
+
+def test_repair_keeps_the_owner_after_git_already_repaired_the_move(
+    store_for: StoreFor, tmp_path: Path
+) -> None:
+    store = _workspace(store_for)
+    old = tmp_path / "PROJ-1" / "app"
+    store.worktree_add(old, _MAIN, branch="one", lock_reason="untaped project PROJ-1")
+    new = tmp_path / "PROJ-1-moved" / "app"
+    old.parent.rename(new.parent)
+    git(new, "worktree", "repair", bare=False)
+
+    store.repair_worktree(new)
+
+    assert store.worktree_owners() == {new.resolve(): "workspace"}
+
+
+def test_a_missing_folders_entry_can_still_be_locked(store_for: StoreFor, tmp_path: Path) -> None:
+    store = _workspace(store_for)
+    tree = tmp_path / "PROJ-1" / "app"
+    store.worktree_add(tree, _MAIN, branch="one")
+    shutil.rmtree(tree.parent)
+
+    store.lock_worktree(tree, reason="untaped project PROJ-1")
+    store.run(["worktree", "prune"])
+
+    assert _lock_lines(store) == ["locked untaped project PROJ-1"]
+    with pytest.raises(StoreError, match="is not a worktree of repo store"):
+        store.lock_worktree(tmp_path / "PROJ-2" / "app", reason="untaped project PROJ-2")
+
+
+def test_relative_paths_name_the_callers_folder(
+    store_for: StoreFor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _workspace(store_for)
+    for project in ("PROJ-1", "PROJ-2"):
+        store.worktree_add(tmp_path / project / "api", _MAIN, branch=project)
+    monkeypatch.chdir(tmp_path)
+
+    store.lock_worktree(Path("PROJ-2/api"), reason="untaped project PROJ-2")
+    Path("PROJ-2").rename("PROJ-3")
+    store.repair_worktree(Path("PROJ-3/api"))
+
+    porcelain = git(store.path, "worktree", "list", "--porcelain")
+    assert f"worktree {(tmp_path / 'PROJ-3' / 'api').resolve()}\nHEAD" in porcelain
+    assert _lock_lines(store) == ["locked untaped project PROJ-2"]
+    assert store.worktrees_under(Path("PROJ-3")) == [(tmp_path / "PROJ-3" / "api").resolve()]
+
+
+def test_worktrees_under_resolves_a_symlinked_folder(store_for: StoreFor, tmp_path: Path) -> None:
+    store = _workspace(store_for)
+    (tmp_path / "real").mkdir()
+    (tmp_path / "link").symlink_to(tmp_path / "real")
+    store.worktree_add(tmp_path / "link" / "PROJ-1" / "app", _MAIN, branch="one")
+
+    assert store.worktrees_under(tmp_path / "link" / "PROJ-1") == [
+        (tmp_path / "real" / "PROJ-1" / "app").resolve()
+    ]

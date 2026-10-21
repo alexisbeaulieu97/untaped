@@ -8,6 +8,7 @@ is the store's own: it uses :class:`RepoStore`'s internals.
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 import sys
@@ -17,7 +18,13 @@ from typing import TYPE_CHECKING
 from untaped.sdk import ErrorCategory, UntapedError
 from untaped_git.domain.namespace import layout_for
 from untaped_git.domain.url import https_origin
-from untaped_git.infrastructure.repo_files import names_admin, repo_origin, worktree_entries
+from untaped_git.infrastructure.repo_files import (
+    WorktreeEntry,
+    config_value,
+    names_admin,
+    repo_origin,
+    worktree_entries,
+)
 
 if TYPE_CHECKING:
     from untaped_git.infrastructure.store import RepoStore
@@ -99,7 +106,7 @@ def _write_fetch_config(store: RepoStore, worktree: Path, *, plain: bool) -> Non
 
 def check_reason(store: RepoStore, reason: str) -> None:
     """Refuse a lock reason ``git worktree list --porcelain`` could not show on one line."""
-    if not reason.strip() or "\n" in reason or "\r" in reason:
+    if not reason.strip() or any(char in reason for char in "\n\r\0"):
         raise store._error(
             f"a worktree lock reason is one non-empty line, not {reason!r}",
             category=ErrorCategory.INVALID,
@@ -109,33 +116,62 @@ def check_reason(store: RepoStore, reason: str) -> None:
 def lock_worktree(store: RepoStore, worktree: Path, *, reason: str) -> None:
     """Lock one of the repo's worktrees, under the caller's lock; one already locked stays as is.
 
-    :meth:`RepoStore.lock_worktree` documents it.
+    The folder may be gone: an entry registered at ``worktree`` is locked all
+    the same. :meth:`RepoStore.lock_worktree` documents it.
     """
     check_reason(store, reason)
-    check_worktree(store, worktree)
-    if any(
-        (entry.admin / "locked").exists()
-        for entry in worktree_entries(store._path)
-        if names_admin(worktree / ".git", entry.admin)
-    ):
-        return
-    store._git(["worktree", "lock", "--reason", reason, str(worktree)])
-
-
-def repair_worktree(store: RepoStore, worktree: Path) -> None:
-    """Repair a moved worktree, under the caller's lock; see :meth:`RepoStore.repair_worktree`."""
-    entry = next(
-        (e for e in worktree_entries(store._path) if names_admin(worktree / ".git", e.admin)),
+    real = Path(os.path.realpath(worktree))
+    entry = _entry_of(store, worktree) or next(
+        (e for e in worktree_entries(store._path) if e.path == real and not worktree.exists()),
         None,
     )
     if entry is None:
         raise _not_a_worktree(store, worktree)
-    store._git(["worktree", "repair", str(worktree)])
-    # Read before the repair: an owner counts only when its stamp names the
-    # entry's old directory, so a hand-added worktree that inherited another's
-    # stamp stays the user's own.
-    if entry.owner == store._plugin:
+    if (entry.admin / "locked").exists():
+        return
+    store._git(["worktree", "lock", "--reason", reason, str(entry.path or real)])
+
+
+def repair_worktree(store: RepoStore, worktree: Path) -> None:
+    """Repair a moved worktree, under the caller's lock; see :meth:`RepoStore.repair_worktree`."""
+    entry = _entry_of(store, worktree)
+    if entry is None:
+        raise _not_a_worktree(store, worktree)
+    entries = worktree_entries(store._path)
+    store._git(["worktree", "repair", os.path.abspath(worktree)])
+    if _owned_before_repair(store, entry, entries):
         _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+
+
+def _entry_of(store: RepoStore, worktree: Path) -> WorktreeEntry | None:
+    """The entry whose admin directory ``worktree``'s ``.git`` file names, if any."""
+    return next(
+        (e for e in worktree_entries(store._path) if names_admin(worktree / ".git", e.admin)),
+        None,
+    )
+
+
+def _owned_before_repair(
+    store: RepoStore, entry: WorktreeEntry, entries: list[WorktreeEntry]
+) -> bool:
+    """Whether ``entry`` is this plugin's, read before its stamp is rewritten.
+
+    An owner counts when its stamp names the entry's recorded directory, or,
+    once git already repointed the entry (a hand ``git worktree repair`` or
+    ``move``), when the stamped folder is gone and no registered entry has it.
+    A hand-added worktree that inherited a stamp names a live worktree, so it
+    stays the user's own.
+    """
+    if entry.owner is not None:
+        return entry.owner == store._plugin
+    config = entry.admin / "config.worktree"
+    if config_value(config, "untaped", "owner") != store._plugin:
+        return False
+    stamp = config_value(config, "untaped", "worktree")
+    if not stamp or os.path.lexists(stamp):
+        return False
+    real = Path(os.path.realpath(stamp))
+    return all(other.path != real for other in entries)
 
 
 def check_worktree(store: RepoStore, worktree: Path) -> None:
