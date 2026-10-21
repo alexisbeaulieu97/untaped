@@ -87,8 +87,11 @@ DIRECTORY = ".untaped"
 MARKER = "project.json"
 #: ``project.json``'s own format.
 FORMAT = "1"
-#: What ``init`` keeps out of version control: the id and machine records, never config.
-GITIGNORE = ("project.json", "state.yml", "plugins/", "*.lock")
+#: The lock files core's locked writes leave beside the state and config files.
+CORE_LOCKS = ("state.yml.lock", "config.yml.lock")
+#: What ``init`` keeps out of version control: the id and machine records, never config;
+#: core's lock files by name, so a plugin's committed ``<plugin>.lock`` stays tracked.
+GITIGNORE = ("project.json", "state.yml", "plugins/", *(f"/{name}" for name in CORE_LOCKS))
 #: Folders under ``~/.untaped`` that are core's own, never a project.
 _CORE_FOLDERS = ("refs", "plugins")
 

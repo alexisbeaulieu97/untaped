@@ -123,7 +123,8 @@ def test_init_writes_the_marker_the_gitignore_and_the_reference(tmp_path: Path) 
         "project.json",
         "state.yml",
         "plugins/",
-        "*.lock",
+        "/state.yml.lock",
+        "/config.yml.lock",
     ]
     ref = _reference(done.project)
     assert ref.anchor == root and ref.anchor_id == AnchorId.of(root) and ref.targets == ()
@@ -141,7 +142,8 @@ def test_init_adds_its_lines_to_a_gitignore_already_there(tmp_path: Path) -> Non
         "notes/",
         "project.json",
         "plugins/",
-        "*.lock",
+        "/state.yml.lock",
+        "/config.yml.lock",
     ]
     assert (folder / "lint.yml").read_text(encoding="utf-8") == "version: 1\n"
 

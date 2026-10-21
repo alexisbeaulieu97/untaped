@@ -23,7 +23,8 @@ a project:
   It is created only if it doesn't exist, so two `init`s at once make one
   project.
 - `.untaped/.gitignore` keeps `project.json`, `state.yml`, `plugins/` and
-  lock files out of git, and itself when `init` creates it. A repository can
+  core's own lock files out of git (by name: a plugin's committed
+  `<plugin>.lock` stays tracked), and itself when `init` creates it. A repository can
   share its own `.untaped/` files, such as `lint.yml`, never a project's id.
 - The home records the project in `~/.untaped/refs/project-<id>.json`: its
   folder and the folder's filesystem identity.
