@@ -70,9 +70,9 @@ PLAINTEXT_TOKEN = deprecated_behaviour(
 """Support for ``<section>.token`` stored in plain text in ``config.yml`` (removal: #670)."""
 
 
-def plaintext_subject(section: str, where: str, *, field: str = "token") -> str:
+def plaintext_subject(section: str, where: str) -> str:
     """How every site names what goes: ``support for a plain-text awx.token in config.yml``."""
-    return f"support for a plain-text {section}.{field} in {where}"
+    return f"support for a plain-text {section}.token in {where}"
 
 
 @dataclass(frozen=True)
@@ -149,7 +149,8 @@ def resolve_token[T: BaseModel](settings: T, *, section: str) -> T:
 def _resolve_one[T: BaseModel](settings: T, sources: _Sources, *, section: str) -> T:
     field = sources.field
     if _explicit_token(settings, field):
-        _warn_plaintext(settings, section=section, field=field)
+        if field == "token":
+            _warn_plaintext(settings, section=section)
         return settings
     argv = getattr(settings, sources.command, None)
     if argv:
@@ -182,9 +183,9 @@ def describe_token_source(
     return None if env_name is None else f"${env_name}"
 
 
-def token_env_names(settings: BaseModel, *, field: str = "token") -> tuple[str, ...]:
-    """The conventional variables ``settings``' model declares for ``field``, in order."""
-    return _secret_sources(type(settings), field).env
+def token_env_names(settings: BaseModel) -> tuple[str, ...]:
+    """The conventional variables ``settings``' model declares for ``token``, in order."""
+    return _secret_sources(type(settings), "token").env
 
 
 def token_alternatives(settings: BaseModel, *, section: str) -> str:
@@ -208,30 +209,30 @@ def token_instead(settings: BaseModel, *, section: str) -> str:
     return token_alternatives(settings, section=section) or f"${token_override_name(section)}"
 
 
-def takes_token_command(model: type[BaseModel], *, field: str = "token") -> bool:
-    """Whether ``model`` takes ``<field>_command`` (so ``auth set`` serves a ``token``).
+def takes_token_command(model: type[BaseModel]) -> bool:
+    """Whether ``model`` takes ``token_command`` (so ``auth set`` serves its ``token``).
 
-    A model that marks ``field`` :class:`~untaped.setting_marks.Secret` does,
+    A model that marks ``token`` :class:`~untaped.setting_marks.Secret` does,
     even narrowed to the plugin's own class: the composed section carries it.
     """
-    if f"{field}_command" in model.model_fields:
+    if "token_command" in model.model_fields:
         return True
     marks = declared_marks(model)
-    return marks is not None and any(each.path == (field,) for each in marks.secrets)
+    return marks is not None and marks.token is not None
 
 
-def token_override_name(section: str, *, field: str = "token") -> str:
+def token_override_name(section: str) -> str:
     """The ``UNTAPED_<SECTION>__TOKEN`` variable that overrides ``<section>.token``."""
-    return env_var_name([section, field])
+    return env_var_name([section, "token"])
 
 
-def token_override_env(section: str, *, field: str = "token") -> str | None:
+def token_override_env(section: str) -> str | None:
     """The environment variable that sets ``<section>.token`` right now, if any.
 
     ``UNTAPED_<SECTION>__TOKEN``, or ``UNTAPED_<SECTION>`` when it holds a
     JSON object with a ``token``; either one wins over the config file.
     """
-    name = token_override_name(section, field=field)
+    name = token_override_name(section)
     if os.environ.get(name, "").strip():
         return name
     whole = env_var_name([section])
@@ -239,7 +240,7 @@ def token_override_env(section: str, *, field: str = "token") -> str | None:
         node = json.loads(os.environ.get(whole) or "null")
     except ValueError:
         return None
-    token = node.get(field) if isinstance(node, dict) else None
+    token = node.get("token") if isinstance(node, dict) else None
     return whole if isinstance(token, str) and token.strip() else None
 
 
@@ -400,11 +401,12 @@ def clear_token_cache() -> None:
     _cache.clear()
 
 
-def _warn_plaintext(settings: BaseModel, *, section: str, field: str = "token") -> None:
-    """Warn once that ``<section>.<field>`` comes from the config file in plain text.
+def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
+    """Warn once that ``<section>.token`` comes from the config file in plain text.
 
     A token from the environment (:func:`token_override_env`) is not a file,
-    so it never warns; nor does a model ``auth set`` cannot serve.
+    so it never warns; nor does a model ``auth set`` cannot serve. Only the
+    secret named ``token``: ``auth migrate`` moves no other.
     """
     from untaped.settings import active_overlay  # noqa: PLC0415 - imports each other lazily
 
@@ -412,17 +414,14 @@ def _warn_plaintext(settings: BaseModel, *, section: str, field: str = "token") 
     # worker thread over its screen: nothing to warn about, nowhere to print it.
     if active_overlay() is not None:
         return
-    if (
-        not takes_token_command(type(settings), field=field)
-        or token_override_env(section, field=field) is not None
-    ):
+    if not takes_token_command(type(settings)) or token_override_env(section) is not None:
         return
     from untaped.messages import run_hint  # noqa: PLC0415 - keep auth imports light
 
     config_name = resolve_config_path().name
     PLAINTEXT_TOKEN.notify(
-        plaintext_subject(section, config_name, field=field),
-        key=section if field == "token" else f"{section}.{field}",
+        plaintext_subject(section, config_name),
+        key=section,
         hint=f"{run_hint('auth migrate')} to move it out of {config_name}",
     )
 

@@ -20,6 +20,7 @@ from pydantic import BaseModel, SecretStr
 from untaped.auth import describe_token_source, takes_token_command
 from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
+from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import inherited_from_default, plaintext_token
 from untaped.messages import not_found
@@ -32,7 +33,13 @@ from untaped.settings import (
     check_settings_field,
     profile_section_models,
 )
-from untaped.setup_status import field_value, notify_unmarked, plugin_marks, unset_fields
+from untaped.setup_status import (
+    field_value,
+    notify_unmarked,
+    plugin_marks,
+    secret_source,
+    unset_fields,
+)
 from untaped.token_store import TokenStore, pick_store
 
 
@@ -154,8 +161,15 @@ class ServiceState:
     shown: Mapping[str, str] = field(default_factory=dict)
     """Each marked field that is not a secret, set, as text (for ``setup plan``'s done rows)."""
 
+    sources: Mapping[str, str] = field(default_factory=dict)
+    """Where each set secret comes from (``hook.signing_key_command``, ``$HOOK_KEY``)."""
+
     token_only: bool = False
     """Whether the ``token`` secret is the one marked field still unset."""
+
+    legacy_configured: bool | None = None
+    """For a plugin read through the legacy fallback, whether it is set up by the old rule
+    (:func:`~untaped.doctor_checks.service_configured`); ``None`` for a marked one."""
 
     @property
     def configured(self) -> bool:
@@ -203,7 +217,14 @@ def service_state(
         inherited_from_default(section, profile, "token", raw),
         inherited_from_default(section, profile, "token_command", raw),
         shown=shown,
+        sources={
+            each.key: source
+            for each in marks.secrets
+            if each.key not in missing
+            and (source := secret_source(settings, each, section=section)) is not None
+        },
         token_only=token is not None and missing == (token.key,),
+        legacy_configured=service_configured(settings, section=section) if marks.legacy else None,
     )
 
 

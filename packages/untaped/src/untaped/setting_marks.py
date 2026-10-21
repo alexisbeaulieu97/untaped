@@ -155,6 +155,8 @@ class MarkedField:
     placeholder: str = ""
     """The ``<NAME>`` a command that sets it asks for; ``<KEY>`` (its name, upper case) when
     empty. The legacy fallback keeps ``<URL>`` for ``base_url``."""
+    masked: bool = False
+    """Whether its value is a ``SecretStr`` (a secret even without a :class:`Secret` mark)."""
 
     @property
     def value_name(self) -> str:
@@ -222,7 +224,8 @@ def declared_marks(model: type[BaseModel]) -> SetupMarks | None:
             continue
         secret = next((mark for mark in marks if isinstance(mark, Secret)), None)
         needs = any(isinstance(mark, _NeedsSetup) for mark in marks)
-        found.append(MarkedField(path, secret, needs_setup=needs))
+        masked = unwrap_optional(field.annotation) is SecretStr
+        found.append(MarkedField(path, secret, needs_setup=needs, masked=masked))
     return SetupMarks(tuple(found)) if found else None
 
 
@@ -244,7 +247,7 @@ def setup_marks(model: type[BaseModel]) -> SetupMarks | None:
     env = sources.env if isinstance(sources, TokenSources) else ()
     found = [MarkedField(("base_url",), placeholder="<URL>")] if "base_url" in names else []
     if "token" in names:
-        found.append(MarkedField(("token",), Secret(env=tuple(env))))
+        found.append(MarkedField(("token",), Secret(env=tuple(env)), masked=True))
     return SetupMarks(tuple(found), legacy=True)
 
 

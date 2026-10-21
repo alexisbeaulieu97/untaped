@@ -19,6 +19,7 @@ from untaped import bootstrap
 from untaped.auth import resolve_token
 from untaped.plugins.registry import CompositionResult, compose, section_settings
 from untaped.sdk import NeedsSetup, Secret, Suggest, TokenCommand, TokenSources
+from untaped.stability import forget_notices
 from untaped.surface._settings import settings_lines
 from untaped.testing import check_plugin, plugin_candidate
 
@@ -193,6 +194,18 @@ def test_the_only_secret_resolves_whatever_its_name(monkeypatch: pytest.MonkeyPa
     resolved = resolve_token(composed(), section="alpha")
     assert resolved.hook is not None
     assert resolved.hook.get_secret_value() == "hooked"
+
+
+@pytest.mark.parametrize(("model", "warns"), [(Marked, True), (Hooked, False)])
+def test_only_a_plaintext_token_warns_as_auth_migrate_moves_only_it(
+    capsys: pytest.CaptureFixture[str], model: type[BaseModel], warns: bool
+) -> None:
+    forget_notices()
+    composed = section_settings(make_spec("alpha", settings=model))
+    assert composed is not None
+    field = "token" if model is Marked else "hook"
+    resolve_token(composed(**{field: SecretStr("plain")}), section="alpha")
+    assert ("plain-text alpha." in capsys.readouterr().err) is warns
 
 
 @pytest.mark.parametrize(

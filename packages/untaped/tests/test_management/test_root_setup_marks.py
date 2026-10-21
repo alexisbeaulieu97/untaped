@@ -24,6 +24,7 @@ from test_management.support import (
     FAIL,
     PROBES,
     ExtProfile,
+    LegacyProfile,
     UnmarkedWizProfile,
     WizProfile,
     make_spec,
@@ -34,7 +35,13 @@ from untaped import bootstrap
 from untaped.plugins.registry import PluginSpec
 from untaped.sdk import HttpTransportError, NeedsSetup, Secret, connection_check, online_check
 from untaped.stability import forget_notices
-from untaped.testing import CliResult, invoke_cli, plugin_candidate
+from untaped.testing import (
+    CliResult,
+    ScreenKeys,
+    ScriptedPromptBackend,
+    invoke_cli,
+    plugin_candidate,
+)
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -342,3 +349,65 @@ def test_a_secret_not_named_token_is_set_by_its_command_setting(
     refused = _cli("auth", "set", "hook", specs=(hook,))
     assert refused.exit_code != 0
     assert "set hook.signing_key_command to a command that prints it" in refused.stderr
+
+
+def test_auth_set_calls_an_unmarked_plugin_without_a_command_unknown() -> None:
+    legacy = make_spec("legacy", settings=LegacyProfile)
+    refused = _cli("auth", "set", "legacy", specs=(legacy, _wiz()))
+    assert refused.exit_code != 0
+    assert "unknown token section 'legacy'; known: wiz" in refused.stderr
+    assert "no secret named token" not in refused.stderr
+
+
+def _plan_rows(*specs: PluginSpec) -> dict[str, dict[str, Any]]:
+    result = _cli("setup", "plan", "--format", "json", specs=specs)
+    assert result.exit_code == 0, result.output
+    return {row["step"]: row for row in json.loads(result.stdout)}
+
+
+@pytest.mark.parametrize(
+    ("hook", "source"),
+    [
+        ("{url: https://hook, signing_key: plain}", "hook.signing_key"),
+        ("{url: https://hook, signing_key_command: [x]}", "hook.signing_key_command"),
+    ],
+)
+def test_a_set_secret_names_where_it_comes_from(
+    _isolated_config: Path, hook: str, source: str
+) -> None:
+    write_config(_isolated_config, f"profiles:\n  default:\n    hook: {hook}\n")
+    row = _plan_rows(make_spec("hook", settings=HookProfile))["hook.signing_key"]
+    assert (row["state"], row["detail"]) == ("done", f"set by {source}")
+
+
+class PinProfile(BaseModel):
+    """A plugin needing a ``SecretStr`` it does not mark ``Secret`` (section ``pin``)."""
+
+    pin: Annotated[SecretStr | None, NeedsSetup] = None
+
+
+def test_an_unset_secret_value_is_the_users_step_even_without_a_secret_mark() -> None:
+    row = _plan_rows(make_spec("pin", settings=PinProfile))["pin.pin"]
+    assert (row["state"], row["by"]) == ("todo", "user")
+
+
+@pytest.mark.parametrize(
+    ("wiz", "status"),
+    [
+        ("{token_command: [x]}", "configured"),
+        ("{base_url: https://wiz}", "missing token"),
+        ("{}", "not configured"),
+    ],
+)
+def test_an_unmarked_plugin_keeps_its_screen_status(
+    _isolated_config: Path, wiz: str, status: str
+) -> None:
+    write_config(_isolated_config, f"profiles:\n  default:\n    wiz: {wiz}\n")
+    backend = ScriptedPromptBackend(screens=[ScreenKeys("esc")])
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(_legacy()),))
+    setup = invoke_cli(
+        root.meta, ["setup"], interactive=True, prompt_backend=backend, terminal=True
+    )
+    assert setup.exit_code == 0, setup.output
+    row = next(row for row in backend.ran[0].init()[0].rows if row.name == "wiz")
+    assert row.status == status

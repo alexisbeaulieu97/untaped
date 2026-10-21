@@ -158,19 +158,22 @@ def _service_rows(
         if field.path == ("token",) and field.secret is not None:
             rows.append(_token_row(spec, state, profile, store_name=store_name))
         elif field.key not in state.missing:
-            done = state.shown.get(field.key) or f"set by {source_of(spec, field, state)}"
-            rows.append(_row(step, name, "done", done))
+            rows.append(_row(step, name, "done", _done(field, state)))
         else:
             run = command_argv(set_command(field, section=section), profile=profile)
-            by: SetupActor = "user" if field.secret is not None else "agent"
+            # A secret never passes through an agent, marked Secret or not.
+            by: SetupActor = "user" if field.secret is not None or field.masked else "agent"
             detail = f"{section}.{field.key} is not set"
             rows.append(_row(step, name, "todo", detail, run, by=by))
     return rows
 
 
-def source_of(spec: PluginSpec, field: MarkedField, state: ServiceState) -> str:
-    """How a done row names where a set field without a shown value comes from."""
-    return f"{spec.name}.{field.command or field.key}" if field.secret else "its setting"
+def _done(field: MarkedField, state: ServiceState) -> str:
+    """A done row's detail: the field's value, else where its secret comes from."""
+    if field.key in state.shown:
+        return state.shown[field.key]
+    source = state.sources.get(field.key)
+    return f"set by {source}" if source else "set"
 
 
 def _token_row(

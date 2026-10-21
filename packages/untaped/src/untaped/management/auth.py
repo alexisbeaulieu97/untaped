@@ -276,10 +276,16 @@ def _section(result: CompositionResult, section: str) -> _TokenSection:
 
 
 def _refuse_other_secrets(result: CompositionResult, section: str) -> None:
-    """Refuse a section whose secrets have other names than ``token``, naming their commands."""
+    """Refuse a section whose marked secrets have other names than ``token``, naming their commands.
+
+    Only marks the plugin declares: an unmarked plugin without ``token_command``
+    is an unknown section, as before the marks.
+    """
     spec = next((each.spec for each in result.plugins if each.spec.name == section), None)
     marks = None if spec is None else plugin_marks(spec)
-    commands = [] if marks is None else [f"{section}.{each.command}" for each in marks.secrets]
+    if marks is None or marks.legacy or marks.token is not None:
+        return
+    commands = [f"{section}.{each.command}" for each in marks.secrets]
     if commands:
         raise ConfigError(
             f"{section} has no secret named token, and auth stores only that one; "

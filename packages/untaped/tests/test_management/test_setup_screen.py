@@ -450,7 +450,8 @@ def test_an_empty_url_and_an_empty_token_are_refused_in_place(_isolated_config: 
 
     assert run.commands_run == ()
     flat = _flat(run.frame)
-    assert "Enter a value: the plugin needs it." in flat and "Enter a token." in flat
+    assert "Enter the base URL." in flat and "Enter a token." in flat
+    assert "Base URL" in flat
     assert not _isolated_config.exists()
 
 
@@ -811,6 +812,9 @@ def test_inherited_token_note_shows_in_the_tab(
     assert "Keep" in flat and "Command" not in flat and "pass" not in flat
 
 
+_UNSET = ServiceState(values={}, token_source=None)
+
+
 def test_tabs_offer_the_same_choices_as_before(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -821,17 +825,19 @@ def test_tabs_offer_the_same_choices_as_before(
     def offered(state: ServiceState, *, has_command: bool = True) -> list[str]:
         return [c.value for c in _token_choices(spec, state, store, has_command=has_command)]
 
-    plain = ServiceState("u", "wiz.token", True, plaintext="old")
+    plain = ServiceState(values={"base_url": "u"}, token_source="wiz.token", plaintext="old")
     assert offered(plain) == ["move", "keep", "store", "command", "env"]
-    assert offered(ServiceState(None, None, False)) == ["store", "command", "env"]
-    inherited = ServiceState("u", "wiz.token", True, inherited_token=True)
+    assert offered(_UNSET) == ["store", "command", "env"]
+    inherited = ServiceState(
+        values={"base_url": "u"}, token_source="wiz.token", inherited_token=True
+    )
     assert offered(inherited) == ["keep"]
-    assert offered(ServiceState(None, None, False), has_command=False) == ["store", "enter"]
-    assert offered(ServiceState(None, None, False, inherited_command=True)) == ["store", "command"]
-    assert [
-        c.value
-        for c in _token_choices(spec, ServiceState(None, None, False), None, has_command=True)
-    ] == [
+    assert offered(_UNSET, has_command=False) == ["store", "enter"]
+    assert offered(ServiceState(values={}, token_source=None, inherited_command=True)) == [
+        "store",
+        "command",
+    ]
+    assert [c.value for c in _token_choices(spec, _UNSET, None, has_command=True)] == [
         "command",
         "env",
     ]

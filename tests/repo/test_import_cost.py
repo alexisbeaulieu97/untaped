@@ -160,7 +160,8 @@ _STARTUP_PROBE = (
 #: was set) to absorb dependency and patch-release drift; a new built-in
 #: plugin adds a few ``untaped.*`` modules (its SPEC and settings). Setting
 #: marks (``untaped.setting_marks``, and ``untaped.setup_status`` read by
-#: ``doctor`` and ``auth``) add two: 140 against 138 on their base, 2026-10-20.
+#: ``doctor`` and ``auth``) add two: the measure is 140 against 138 on their
+#: base, 2026-10-20, so the budget goes from 139 to 143 to keep three spare.
 _TOTAL_BUDGET = 700
 _UNTAPED_BUDGET = 143
 

@@ -158,8 +158,8 @@ def summary(settings: BaseModel, marks: SetupMarks, *, section: str) -> str:
     return "; ".join(parts)
 
 
-def stored_plaintext(section: str, *, field: str = "token") -> bool:
-    """Whether the config file itself sets ``<section>.<field>`` for the resolved profile.
+def stored_plaintext(section: str) -> bool:
+    """Whether the config file itself sets ``<section>.token`` for the resolved profile.
 
     Read from the file, not the validated settings: an ``UNTAPED_*`` override
     neither hides a token stored in the file nor counts as one.
@@ -168,7 +168,7 @@ def stored_plaintext(section: str, *, field: str = "token") -> bool:
         node = active_settings_layout().effective(read_config_dict()).get(section)
     except ConfigError:
         return False
-    token = node.get(field) if isinstance(node, dict) else None
+    token = node.get("token") if isinstance(node, dict) else None
     return isinstance(token, str) and bool(token.strip())
 
 

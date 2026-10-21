@@ -1203,9 +1203,17 @@ def _index(rows: tuple[CapRow, ...], name: str) -> int:
 
 
 def _initial_status(state: ServiceState) -> str:
-    """A service's status: every marked setting set, none, only its token missing, or a count."""
+    """A service's status: every marked setting set, none, only its token missing, or a count.
+
+    A plugin read through the legacy fallback keeps the old rule: a token
+    source or a URL of its own makes it configured.
+    """
     if state.invalid is not None:
         return "invalid settings"
+    if state.legacy_configured is not None:
+        if not state.legacy_configured:
+            return "not configured"
+        return "configured" if state.token_source is not None else "missing token"
     if state.configured:
         return "configured"
     if len(state.missing) == state.required:

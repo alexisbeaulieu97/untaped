@@ -59,7 +59,14 @@ def connection_form(
 ) -> Form:
     """The connection form of ``spec`` in ``profile``: its marked settings, its token, ``Save``."""
     fields: list[tuple[str, Any]] = [
-        (field.key, TextInput(field.key, state.values.get(field.key, ""), validator=_required))
+        (
+            field.key,
+            TextInput(
+                _label(field.path[-1], title=True),
+                state.values.get(field.key, ""),
+                validator=_required(_label(field.path[-1])),
+            ),
+        )
         for field in form_fields(spec)
     ]
     if service_marks(spec).token is not None:
@@ -121,8 +128,23 @@ def reset(form: Form) -> Form:
     return with_buttons(form, _save_buttons())
 
 
-def _required(text: str) -> str:
-    return "" if text.strip() else "Enter a value: the plugin needs it."
+#: Words a field label writes upper case: ``base_url`` reads "Base URL".
+_ACRONYMS = frozenset({"api", "id", "uri", "url"})
+
+
+def _label(name: str, *, title: bool = False) -> str:
+    """A setting's name as words, acronyms upper case: ``base URL`` (``Base URL`` as a title)."""
+    text = " ".join(word.upper() if word in _ACRONYMS else word for word in name.split("_"))
+    return text[:1].upper() + text[1:] if title else text
+
+
+def _required(label: str) -> Callable[[str], str]:
+    """A validator that refuses an empty value, naming the field: "Enter the base URL."."""
+
+    def check(text: str) -> str:
+        return "" if text.strip() else f"Enter the {label}."
+
+    return check
 
 
 def _token_error(token: SecretStr) -> str:

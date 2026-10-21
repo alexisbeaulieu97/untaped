@@ -5,4 +5,5 @@ it, or where its token comes from. `doctor --online` contacts a service only
 once all of it is set up, and a failure that is not a rejected token or an
 untrusted certificate shows the settings it was set up with. `setup` and
 `setup plan` read what each plugin marks, so a step's placeholder is the
-setting's name, as in `<BASE_URL>`.
+setting's name, as in `<BASE_URL>`, and `setup plan` no longer lists a
+`github.base_url` step: its default URL needs nothing set up.
