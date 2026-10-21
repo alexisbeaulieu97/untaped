@@ -38,6 +38,10 @@ def credential_command(
     worktrees): it reads `protocol`, `host` and `path` on stdin and prints a
     username and password when a plugin supplies them for that URL. `store`
     and `erase` do nothing: untaped's credentials live in its own settings.
+
+    `get` prints the secret on stdout, where Git reads it: never run it where
+    its output is logged. `untaped git hosts` says whether a host has a
+    credential without printing it.
     """
     from untaped_git.domain.hosts import resolve_host  # noqa: PLC0415
 
@@ -63,6 +67,16 @@ def hosts_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
     available, the credential helpers your own git config asks before
     untaped's in its worktrees, and an untaped helper path that no longer
     exists.
+
+    A host no plugin claims isn't listed: untaped's worktrees use your own
+    Git credentials for it. `credential` false means the plugin has no token
+    for the host; `untaped auth set SECTION`, with the plugin's section,
+    stores one from a hidden prompt. A helper in `helpers_first` holding a
+    stale password answers before untaped; with `git.untaped_helper_only`
+    set, untaped's worktrees ask only untaped and the column is empty. A
+    host two plugins claim lists both; until one is ranked first, any fetch
+    or credential request for it (a push from untaped's worktrees too) is a
+    configuration error (exit 4) whose hint names the rank command.
     """
     from untaped_git.application.hosts import list_hosts  # noqa: PLC0415
     from untaped_git.infrastructure.helpers import missing_helper, user_helpers  # noqa: PLC0415
@@ -89,6 +103,16 @@ def store_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
     interrupted release left (finished on their next use) or that only a
     branch or stash keeps, pack counts, hosts that ignore the partial-clone
     filter, and repos where git paused automatic maintenance.
+
+    Each plugin's own delete or remove command releases the repos it uses;
+    a repo stays while another plugin, a hand-added worktree, a branch or a
+    stash holds it, and untaped never deletes those branches or stashes.
+    Never edit a repo under the store by hand: other plugins' refs and
+    worktrees share it. Their refs live under `refs/untaped/` and show in
+    `git log --all` from an untaped worktree.
+
+    The store needs Git 2.29 or newer; `untaped doctor` checks the version
+    and the store.
     """
     from untaped_git.cli.store_view import report_lines  # noqa: PLC0415
     from untaped_git.infrastructure.report import store_report  # noqa: PLC0415
