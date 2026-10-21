@@ -14,6 +14,7 @@ from untaped.testing import CliInvoker, ScriptedPromptBackend, invoke_cli, plugi
 from untaped_recipe import SPEC
 from untaped_recipe.cli import app
 from untaped_recipe.cli.common import library_dir
+from untaped_recipe.domain.pack import InstalledPack
 from untaped_recipe.infrastructure.pack_store import PackLibrary
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -402,11 +403,14 @@ def _replace_during_fetch(
     """Make another command reinstall ``alpha`` from ``replacement`` while sync fetches it."""
     fetch_for_sync = library_commands._fetch_for_sync
 
-    def fetch_then_replace(*args: object, **kwargs: object) -> object:
-        plan = fetch_for_sync(*args, **kwargs)  # type: ignore[arg-type]
-        PackLibrary(library_dir=library_dir()).add(
-            replacement, source=source or str(replacement), rev=None, name="alpha", force=True
-        )
+    def fetch_then_replace(
+        library: PackLibrary, pack: InstalledPack, *args: object, **kwargs: object
+    ) -> object:
+        plan = fetch_for_sync(library, pack, *args, **kwargs)  # type: ignore[arg-type]
+        if pack.name == "alpha":
+            PackLibrary(library_dir=library_dir()).add(
+                replacement, source=source or str(replacement), rev=None, name="alpha", force=True
+            )
         return plan
 
     monkeypatch.setattr(library_commands, "_fetch_for_sync", fetch_then_replace)
@@ -460,3 +464,25 @@ def test_sync_does_not_stamp_its_commit_on_a_pack_replaced_during_its_fetch(
     assert "changed in the library" in row["detail"]
     (pack,) = PackLibrary(library_dir=library_dir()).packs()
     assert (pack.source, pack.commit) == (other, "")
+
+
+def test_sync_still_updates_the_other_packs_when_one_was_replaced_during_its_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("alpha", "beta"):
+        _write_pack(tmp_path / name, name=name)
+        _add(tmp_path / name)
+        (tmp_path / name / "recipes" / "seed.yml").write_text(_CHANGED)
+    replacement = tmp_path / "replacement"
+    _write_pack(replacement, name="alpha", body="version: 1\ndescription: newer\nsteps: []\n")
+    _replace_during_fetch(monkeypatch, replacement)
+
+    result = invoke_cli(app, ["packs", "sync", "--all", "--yes", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert [(row["name"], row["action"]) for row in json.loads(result.stdout)] == [
+        ("alpha", "failed"),
+        ("beta", "updated"),
+    ]
+    assert "newer" in _installed_recipe("alpha").read_text()
+    assert _installed_recipe("beta").read_text() == _CHANGED
