@@ -15,7 +15,7 @@ import pytest
 from cyclopts import App
 
 from test_management.support import age_stub, asset, make_spec, write_config
-from untaped import bootstrap, skill_stubs
+from untaped import bootstrap, data_file, skill_stubs
 from untaped.management.skills import composed_skills
 from untaped.plugins.registry import PluginSpec
 from untaped.sdk import SkillAsset
@@ -38,9 +38,9 @@ _COPY_MARKER = ".untaped-skill.json"
 
 @pytest.fixture
 def run_as(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
-    """Set the untaped version this test's runs report (11.1.0 to start)."""
+    """Set the untaped version this test's runs report and stamp (11.1.0 to start)."""
     version = ["11.1.0"]
-    monkeypatch.setattr(skill_stubs, "running_untaped", lambda: version[0])
+    monkeypatch.setattr(data_file, "written_by", lambda: version[0])
 
     def set_version(value: str) -> None:
         version[0] = value
@@ -107,8 +107,9 @@ def test_install_writes_a_stub_and_its_marker(target: str) -> None:
     assert 'description: "Demo things: widgets and gadgets."' in text
     assert "`untaped agents demo`" in text
     marker = _marker(stub)
-    assert marker["format"] == 1
-    assert (marker["untaped"], marker["plugin"], marker["plugin_version"]) == (
+    assert marker["untaped"] == {"file": 1, "by": "11.1.0"}
+    assert "format" not in marker
+    assert (marker["untaped"]["by"], marker["plugin"], marker["plugin_version"]) == (
         "11.1.0",
         "untaped-demo",
         "",
@@ -183,7 +184,7 @@ def test_auto_refreshes_a_stub_an_older_untaped_wrote_silently(
     assert result.exit_code == 0, result.output
     assert result.stderr == ""
     assert "`untaped agents demo`" in (_home() / "SKILL.md").read_text(encoding="utf-8")
-    assert _marker(_home())["untaped"] == "11.1.0"
+    assert _marker(_home())["untaped"]["by"] == "11.1.0"
 
 
 def test_warn_reports_a_stub_an_older_untaped_wrote(
@@ -218,7 +219,7 @@ def test_a_stub_a_newer_untaped_wrote_is_left_alone(
     result = _run(_root(), "demo", "--help")
     assert result.stderr == ""
     assert (_home() / "SKILL.md").read_bytes() == before
-    assert _marker(_home())["untaped"] == "11.3.0"
+    assert _marker(_home())["untaped"]["by"] == "11.3.0"
 
 
 def test_the_same_version_with_other_text_writes_nothing(run_as: Callable[[str], None]) -> None:
@@ -376,7 +377,7 @@ def test_a_local_install_made_from_home_counts_as_the_home_folder(
     assert _marker(_home())["scope"] == "local"
     age_stub(_home(), untaped="11.0.0")
     assert _run(root, "demo", "--help").stderr == ""
-    assert _marker(_home())["untaped"] == "11.1.0"
+    assert _marker(_home())["untaped"]["by"] == "11.1.0"
 
 
 def test_a_home_that_is_a_git_repo_is_still_the_home_folder(
@@ -388,7 +389,7 @@ def test_a_home_that_is_a_git_repo_is_still_the_home_folder(
     monkeypatch.chdir(sub)
     root = _install_then_age(run_as)
     assert _run(root, "demo", "--help").stderr == ""
-    assert _marker(_home())["untaped"] == "11.1.0"
+    assert _marker(_home())["untaped"]["by"] == "11.1.0"
 
 
 # skills update and status
@@ -406,7 +407,7 @@ def test_update_leaves_a_stub_a_newer_untaped_wrote_and_force_rewrites_it(
     assert [row["action"] for row in json.loads(result.stdout)] == ["skipped"]
     forced = _run(_root(), "skills", "update", "--force", "-f", "json")
     assert [row["action"] for row in json.loads(forced.stdout)] == ["updated"]
-    assert _marker(_home())["untaped"] == "11.1.0"
+    assert _marker(_home())["untaped"]["by"] == "11.1.0"
 
 
 def test_update_leaves_an_edited_stub_and_force_replaces_it(run_as: Callable[[str], None]) -> None:
@@ -484,7 +485,7 @@ def test_parallel_conversions_and_refreshes_both_succeed(
     update_installed_skill(skills, first)
     update_installed_skill(skills, second)
     assert sorted(path.name for path in _home().iterdir()) == [STUB_MARKER, "SKILL.md"]
-    assert _marker(_home())["untaped"] == "11.1.0"
+    assert _marker(_home())["untaped"]["by"] == "11.1.0"
 
 
 def test_a_conversion_that_finds_a_parallel_run_s_stub_keeps_no_backup(
@@ -583,9 +584,9 @@ def test_update_keeps_a_backup_of_a_home_copy_it_converts(
 
 def test_a_refresh_leaves_a_parallel_run_s_temporary_file(run_as: Callable[[str], None]) -> None:
     root = _install_then_age(run_as)
-    foreign = _home() / f".SKILL.md.tmp-{'0' * 32}"
+    foreign = _home() / f".SKILL.md.{'0' * 32}.untaped.tmp"
     foreign.write_text("another run's write\n", encoding="utf-8")
     age_stub(_home(), untaped="11.0.0")  # the marker's digest leaves the temp file out
     assert _run(root, "demo", "--help").stderr == ""
     assert foreign.is_file()
-    assert _marker(_home())["untaped"] == "11.1.0"
+    assert _marker(_home())["untaped"]["by"] == "11.1.0"

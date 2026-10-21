@@ -299,7 +299,8 @@ pydantic model's fields at the top level beside a stamp naming the format and
 the untaped version that wrote it (`{"untaped": {"file": 1, "by": "11.1.0"},
 ...}`), atomically and owner-only; `exclusive=True` creates it whole only if
 it is absent and returns whether it did. `read_data_file(path, Model)`
-answers a `DataRead`: `Found(value, refreshed_at)`, `Absent()`,
+answers a `DataRead`: `Found(value, refreshed_at, by)` (`by` is the
+untaped version that wrote it), `Absent()`,
 `Unreadable(reason)` or `OtherVersion(file, by)` when a newer untaped wrote
 it, so a damaged file is never mistaken for a missing one. A file an earlier
 release of yours wrote without the stamp reads with `unstamped="accept"`, in
