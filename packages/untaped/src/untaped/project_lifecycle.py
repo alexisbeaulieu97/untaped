@@ -50,6 +50,7 @@ from untaped.projects import (
     _marker_id,
     _project_below,
     _reserved,
+    _same,
     _situation,
     _undecided,
     _write_gitignore,
@@ -395,7 +396,7 @@ def plan_move(old: Path, new: Path) -> Move:
     """Decide how ``project move OLD NEW`` goes; raises when it can't (exit 1 or 2)."""
     old = _absolute(old)
     new = _absolute(new)
-    if new == old:
+    if new == old or _same(old, new):
         raise UsageError("OLD and NEW are the same folder")
     present = os.path.lexists(old)
     if present and old.is_symlink():
@@ -440,24 +441,23 @@ def _onto(
 
 
 def _check_not_copy(old: Path, new: Path, project: Project) -> None:
-    """Both folders hold the id: refuse when the record tells which one is the original.
+    """Both folders hold the id: refuse when the record's identity tells the original.
 
-    Its identity decides first, then its path; with the recorded folder
-    present elsewhere, both are copies. Only when the record can't tell
-    (neither folder is the one it names, and that one is gone) does NEW win.
+    The original is the folder with the recorded identity: OLD or NEW, or
+    the recorded folder itself (then both are copies). When no folder has
+    it, the record can't tell, and the move is the user's answer.
     """
     hint = "`untaped project init --new-id` in the copy gives it its own id"
     kinds = {path: _situation(path, project.id) for path in (old, new)}
     anchor = kinds[new].anchor
     name = anchor.name if anchor is not None else project.name  # as its record names it
-    for match in ({"ok", "moved"}, {"refresh"}):
-        for original, copy in ((new, old), (old, new)):
-            if kinds[original].kind in match:
-                raise UntapedError(
-                    f"{shown_path(copy)} is a copy of project {name} at "
-                    f"{shown_path(original)}; nothing moved",
-                    hint=hint,
-                )
+    for original, copy in ((new, old), (old, new)):
+        if kinds[original].kind in {"ok", "moved"}:
+            raise UntapedError(
+                f"{shown_path(copy)} is a copy of project {name} at {shown_path(original)}; "
+                "nothing moved",
+                hint=hint,
+            )
     if anchor is not None and "copy" in {kinds[old].kind, kinds[new].kind}:
         raise UntapedError(
             f"{shown_path(old)} and {shown_path(new)} are copies of project {name} "
@@ -561,7 +561,8 @@ def _recorded_at(old: Path, new: Path) -> Project:
             "nothing moved",
             hint=f"`untaped project move {shown_path(old)} {shown_path(anchor)}` retries its repair"
             if here
-            else f"name where {shown_path(anchor)} is now as NEW to retry its repair",
+            else f"`untaped project move {shown_path(anchor)} NEW`, NEW where it is now, "
+            "retries its repair",
         )
     return Project(id=holder.name, root=old)
 

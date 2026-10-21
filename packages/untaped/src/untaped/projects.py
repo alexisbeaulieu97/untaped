@@ -456,22 +456,36 @@ def follow_move(project: Project, *, moved_from: Path, keep: Reference | None) -
     """Point ``project``'s reference at its folder now, then ask each owner to repair.
 
     The reference records ``moved_from`` until every owner's ``moved``
-    succeeded, so a later writing use retries (from the first folder still
-    unrepaired, through any later moves); a broken (quarantined) owner
-    keeps it pending too, while one that isn't installed has nothing to run.
+    succeeded, so a later writing use retries: a repair still pending from an
+    earlier folder is asked first, then the one from the folder it just left.
+    A broken (quarantined) owner keeps it pending too, while one that isn't
+    installed has nothing to run.
     The rows say what each owner did (``repaired``), skipped or failed. Runs
     under the project's lock.
     """
     targets = keep.targets if keep is not None else ()
-    if keep is not None and keep.moved_from is not None:
-        moved_from = keep.moved_from  # still unrepaired: what points into the folder points there
-    _record(project, project.root, keep=keep, moved_from=moved_from)
-    if _same(project.root, moved_from):
-        _record(project, project.root, keep=keep)
-        return []
-    rows, done = repair_holds(holder_of(project), targets, moved_from=moved_from)
-    if done:  # read again: a hold taken meanwhile stays
-        _record(project, project.root, keep=read_reference(reference_file(holder_of(project))))
+    # A repair still pending from an earlier folder is asked first: what wasn't repaired
+    # points there, what was points at the folder it last left. Hooks are idempotent.
+    earlier = keep.moved_from if keep is not None else None
+    sources = [
+        path
+        for path in dict.fromkeys(p for p in (earlier, moved_from) if p is not None)
+        if path != project.root and not _same(project.root, path)
+    ]
+    _record(project, project.root, keep=keep, moved_from=sources[0] if sources else None)
+    rows: list[HoldOutcome] = []
+    pending = None
+    for source in sources:
+        asked, done = repair_holds(holder_of(project), targets, moved_from=source)
+        rows += asked
+        if not done and pending is None:
+            pending = source
+    if sources:  # read again: a hold taken meanwhile stays
+        keep = read_reference(reference_file(holder_of(project)))
+        if pending is None:
+            _record(project, project.root, keep=keep)
+        elif pending != sources[0]:
+            _record(project, project.root, keep=keep, moved_from=pending)
     return rows
 
 
