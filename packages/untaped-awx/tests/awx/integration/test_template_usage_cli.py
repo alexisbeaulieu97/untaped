@@ -165,7 +165,7 @@ def test_usage_rejects_bad_input(graph: Any, args: list[str]) -> None:
 
 
 def test_usage_cycle_emits_stderr_warning(fake_aap: Any) -> None:
-    """A (100) contains B (200) and B contains A: warn on stderr, keep stdout clean."""
+    """A (100) contains B (200) and B contains A: warn once on stderr, keep stdout clean."""
     fake_aap.seed("organizations", id=1, name="Default")
     alpha = _template(fake_aap, "workflow_job_templates", 100, "alpha")
     beta = _template(fake_aap, "workflow_job_templates", 200, "beta")
@@ -175,9 +175,11 @@ def test_usage_cycle_emits_stderr_warning(fake_aap: Any) -> None:
         "workflow-templates", "usage", "--by-id", "200", "--recursive", "--columns", "id"
     )
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["100"]
-    assert "cycle" in result.stderr
-    assert "cycle" not in result.stdout
+    # beta is a row of its own usage: its link to alpha needs a row to live on.
+    assert result.stdout.strip().splitlines() == ["100", "200"]
+    assert result.stderr == (
+        "warning: workflow 200 runs workflow 100, which already runs it (a cycle)\n"
+    )
 
 
 def test_usage_help_advertises_org_alias_without_short_o() -> None:

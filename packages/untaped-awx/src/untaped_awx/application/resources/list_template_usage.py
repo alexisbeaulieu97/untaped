@@ -6,25 +6,37 @@ the ancestry walk goes: ``0`` (default) returns only direct parents;
 ``None`` recurses without limit; ``N>0`` caps at depth N.
 
 Identifier resolution uses template names by default and numeric ids
-only when the caller requests explicit id mode. The walk is
-breadth-first with per-entry ancestor tracking, so true cycles emit a
-stderr warning while workflows reachable along several paths (diamond
-pattern) are emitted once, at their shallowest depth. ``node_count``
-on each row counts that workflow's *direct* references to the child
-whose parents were being queried at that step — depth-0 rows count
-references to the target itself, depth-1 rows count references to the
-depth-0 workflow that led there, and so on.
+only when the caller requests explicit id mode; either way the target's
+record is read, since the tree names it. The walk is breadth-first and
+looks each workflow's containers up once: a workflow reached along
+several paths (a diamond) is one row, at its shallowest depth, whose
+``contains`` lists every link the walk saw. A cycle is a link like any
+other, and a workflow template in its own ancestry is a row of its own
+usage (its link needs a row to live on); the tree marks cycles, so the
+command warns about them from there.
 """
 
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Callable, Iterable
-from typing import Any
+from collections.abc import Iterable
+from typing import Any, Literal
 
-from untaped_awx.application.resources.get_resource import resolve_identity
+from untaped_awx.application.resources.get_resource import parse_resource_id
 from untaped_awx.application.resources.ports import ResourceClient, WorkflowNodeRepository
-from untaped_awx.domain import ResourceSpec, WorkflowUsage
+from untaped_awx.domain import ResourceSpec
+from untaped_awx.domain.workflow_usage import (
+    ContainedTemplate,
+    UsageAnswer,
+    UsageTarget,
+    WorkflowUsage,
+)
+from untaped_awx.errors import ResourceNotFoundError
+
+_TEMPLATE_TYPES: dict[str, Literal["job_template", "workflow_job_template"]] = {
+    "JobTemplate": "job_template",
+    "WorkflowJobTemplate": "workflow_job_template",
+}
 
 
 def _aggregate_references(rows: Iterable[dict[str, Any]]) -> dict[int, tuple[str | None, int]]:
@@ -46,16 +58,9 @@ def _aggregate_references(rows: Iterable[dict[str, Any]]) -> dict[int, tuple[str
 
 
 class ListTemplateUsage:
-    def __init__(
-        self,
-        nodes: WorkflowNodeRepository,
-        resources: ResourceClient,
-        *,
-        warn: Callable[[str], None] = lambda _msg: None,
-    ) -> None:
+    def __init__(self, nodes: WorkflowNodeRepository, resources: ResourceClient) -> None:
         self._nodes = nodes
         self._resources = resources
-        self._warn = warn
 
     def __call__(
         self,
@@ -66,28 +71,49 @@ class ListTemplateUsage:
         by_id: bool = False,
         max_depth: int | None = 0,
         filters: dict[str, str] | None = None,
-    ) -> list[WorkflowUsage]:
-        target_id = resolve_identity(self._resources, spec, identifier, scope=scope, by_id=by_id)
-        out: list[WorkflowUsage] = []
-        listed: set[int] = {target_id}
-        queue: deque[tuple[int, int, frozenset[int]]] = deque([(target_id, 0, frozenset())])
+    ) -> UsageAnswer:
+        target = self._target(spec, identifier, scope=scope, by_id=by_id)
+        rows: dict[int, dict[str, Any]] = {}
+        queue: deque[tuple[int, int]] = deque([(target.id, 0)])
         while queue:
-            child_id, depth, ancestors = queue.popleft()
-            new_ancestors = ancestors | {child_id}
+            child_id, depth = queue.popleft()
+            child_type = target.type if child_id == target.id else "workflow_job_template"
             references = _aggregate_references(
                 self._nodes.list_references(unified_job_template=child_id, params=filters)
             )
             for wf_id, (name, count) in references.items():
-                if wf_id in new_ancestors:
-                    self._warn(
-                        f"workflow {wf_id}: already visited (a cycle); skipped",
-                    )
+                link = ContainedTemplate(id=child_id, type=child_type, node_count=count)
+                if wf_id in rows:
+                    rows[wf_id]["contains"].append(link)
                     continue
-                if wf_id in listed:
-                    continue
-                listed.add(wf_id)
-                out.append(WorkflowUsage(id=wf_id, name=name, depth=depth, node_count=count))
+                row: dict[str, Any] = {
+                    "id": wf_id,
+                    "name": name,
+                    "depth": depth,
+                    "node_count": count,
+                    "contains": [link],
+                    "target": target.id,
+                }
+                rows[wf_id] = row
+                if wf_id == target.id:
+                    continue  # its containers were the first lookup
                 if max_depth is not None and depth + 1 > max_depth:
+                    row["stopped"] = "depth"
                     continue
-                queue.append((wf_id, depth + 1, new_ancestors))
-        return out
+                queue.append((wf_id, depth + 1))
+        return UsageAnswer(target=target, rows=tuple(WorkflowUsage(**row) for row in rows.values()))
+
+    def _target(
+        self, spec: ResourceSpec, identifier: str, *, scope: dict[str, str] | None, by_id: bool
+    ) -> UsageTarget:
+        """The queried template's record: by id, or by name within ``scope``."""
+        if by_id:
+            id_ = parse_resource_id(identifier)
+            record = self._resources.find(spec, params={"id": str(id_)})
+            if record is None:
+                raise ResourceNotFoundError(spec.kind, {"id": id_})
+        else:
+            record = self._resources.find_by_identity(spec, name=identifier, scope=scope)
+            if record is None:
+                raise ResourceNotFoundError(spec.kind, {"name": identifier, **(scope or {})})
+        return UsageTarget(id=record.id, name=record.name, type=_TEMPLATE_TYPES[spec.kind])
