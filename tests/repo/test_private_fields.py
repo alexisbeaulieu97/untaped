@@ -70,12 +70,13 @@ def _aliases(value: ast.expr | None) -> Iterator[str]:
 
 
 def _keys(tree: ast.Module) -> Iterator[tuple[int, str]]:
-    """Each string ``tree`` uses as a key.
+    """Each string ``tree`` uses as a key, or names to use as one.
 
-    ``x["k"]``, ``x.get("k")`` (``pop``, ``setdefault``), ``{"k": ...}``, and
-    the strings of a tuple, list or set a module or class names, the shape of
-    a list of keys (``_FRESHNESS_KEYS = ("fetched_at", "pushed_at")``). Other
-    strings (messages, ``plural(n, "repo")``) are not keys.
+    ``x["k"]``, ``x.get("k")`` (``pop``, ``setdefault``), ``{"k": ...}``,
+    ``"k" in x``, a loop over literal keys (``for key in ("a", "b")``), and any
+    string a module or class constant holds (``_FRESHNESS_KEYS = ("fetched_at",
+    "pushed_at")``, ``frozenset({...})``, ``KEY = "pushed_at"``). Other strings
+    (messages, ``plural(n, "repo")``) are not keys.
     """
     for node in ast.walk(tree):
         found: list[ast.expr | None] = []
@@ -90,12 +91,18 @@ def _keys(tree: ast.Module) -> Iterator[tuple[int, str]]:
             found.append(node.args[0])
         elif isinstance(node, ast.Dict):
             found.extend(node.keys)
+        elif isinstance(node, ast.Compare) and any(
+            isinstance(op, ast.In | ast.NotIn) for op in node.ops
+        ):
+            found.append(node.left)
+        elif isinstance(node, ast.For | ast.comprehension) and isinstance(
+            node.iter, ast.Tuple | ast.List | ast.Set
+        ):
+            found.extend(node.iter.elts)
         elif isinstance(node, ast.Module | ast.ClassDef):
             for statement in node.body:
-                if isinstance(statement, ast.Assign | ast.AnnAssign) and isinstance(
-                    statement.value, ast.Tuple | ast.List | ast.Set
-                ):
-                    found.extend(statement.value.elts)
+                if isinstance(statement, ast.Assign | ast.AnnAssign) and statement.value:
+                    found.extend(n for n in ast.walk(statement.value) if isinstance(n, ast.expr))
         for key in found:
             if isinstance(key, ast.Constant) and isinstance(key.value, str):
                 yield key.lineno, key.value
@@ -132,6 +139,10 @@ def test_git_names_no_field_of_another_plugins_private_file() -> None:
         'data.pop("pushed_at", None)',
         'value = data["history"]',
         'payload = {"history": "partial"}',
+        'def f(data):\n    for key in ("fetched_at", "pushed_at"):\n        data.pop(key)',
+        'KEYS = frozenset({"pushed_at"})',
+        'KEY = "pushed_at"',
+        'def f(data):\n    return "pushed_at" in data',
     ],
 )
 def test_a_key_is_found_in_each_shape(source: str) -> None:
@@ -139,4 +150,5 @@ def test_a_key_is_found_in_each_shape(source: str) -> None:
 
 
 def test_a_word_in_a_message_is_not_a_key() -> None:
-    assert list(_keys(ast.parse('label = plural(count, "repo")'))) == []
+    source = 'def label(count):\n    return plural(count, "repo") + f"{count} repos"'
+    assert list(_keys(ast.parse(source))) == []
