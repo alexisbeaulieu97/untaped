@@ -18,7 +18,7 @@ ignore:
 ```
 
 - `untaped lint` finds the file walking up from the current directory to the
-  project root (the nearest directory holding `.git`). `--config PATH` reads
+  checkout root (the nearest directory holding `.git`). `--config PATH` reads
   another file and lints the current directory with its rules.
 - `name:` and each `linters:` key are spelled like a plugin name and are never
   `untaped` or an installed plugin's name; such a key exits 2. A `readers:`

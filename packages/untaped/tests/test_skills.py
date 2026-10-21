@@ -9,7 +9,7 @@ import pytest
 import untaped.skills as skills_module
 from untaped.errors import ConfigError, UsageError
 from untaped.git import run_git
-from untaped.sdk import SkillAsset, project_root
+from untaped.sdk import SkillAsset, checkout_root, project_root
 from untaped.skills import SkillInstallScope, SkillInstallTarget
 
 
@@ -139,16 +139,19 @@ def test_local_install_outside_a_checkout_uses_the_current_directory(
     assert result.root == here.resolve() / ".agents" / "skills"
 
 
-def test_local_install_without_git_asks_for_project_dir(
+def test_local_install_without_git_still_finds_the_checkout_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     source = _skill_dir(tmp_path)
-    monkeypatch.chdir(tmp_path)
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "sub").mkdir()
+    monkeypatch.chdir(repo / "sub")
     monkeypatch.setattr("shutil.which", lambda _: None)
 
-    with pytest.raises(ConfigError, match="pass --project-dir to choose the project directory"):
-        _install_local_from_cwd(source)
-    assert not (tmp_path / ".agents").exists()
+    [result] = _install_local_from_cwd(source)
+
+    assert result.root == repo.resolve() / ".agents" / "skills"
 
 
 def test_install_skills_missing_source_aborts_before_any_copy(tmp_path: Path) -> None:
@@ -304,38 +307,37 @@ def test_install_skills_force_restores_existing_when_final_replace_fails(
     assert not list(target.glob(".untaped-demo.backup-*"))
 
 
-def test_local_install_without_git_on_path_is_a_config_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    source = _skill_dir(tmp_path)
-    project = tmp_path / "project"
-    project.mkdir()
-    monkeypatch.chdir(project)
-    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
-
-    with pytest.raises(ConfigError, match="--project-dir"):
-        skills_module.install_skills(
-            {source.name: _asset(source)},
-            ["untaped-demo"],
-            stdin=False,
-            all_skills=False,
-            target=SkillInstallTarget.claude,
-            force=False,
-            scope=SkillInstallScope.local,
-            project_dir=None,
-            target_dir=None,
-        )
-
-
-def test_project_root_is_the_git_ancestor_or_the_start(tmp_path: Path) -> None:
-    """S4: the walk the lint repo file shares with ``--scope local``, exported from the SDK."""
+def test_checkout_root_is_the_git_ancestor_or_none(tmp_path: Path) -> None:
+    """The walk the lint repo file shares with ``--scope local``, exported from the SDK."""
     (tmp_path / "repo" / ".git").mkdir(parents=True)
     nested = tmp_path / "repo" / "a" / "b"
     nested.mkdir(parents=True)
-    assert project_root(nested) == (tmp_path / "repo").resolve()
+    assert checkout_root(nested) == (tmp_path / "repo").resolve()
     plain = tmp_path / "plain"
     plain.mkdir()
-    assert project_root(plain) == plain.resolve()
+    assert checkout_root(plain) is None
+
+
+def test_checkout_root_finds_a_worktree_by_its_git_file_without_running_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worktree = tmp_path / "worktree"
+    (worktree / "sub").mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/worktree\n")
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    assert checkout_root(worktree / "sub") == worktree.resolve()
+
+
+def test_project_root_keeps_its_answer_and_warns(tmp_path: Path) -> None:
+    (tmp_path / "repo" / ".git").mkdir(parents=True)
+    nested = tmp_path / "repo" / "a"
+    nested.mkdir(parents=True)
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    with pytest.warns(DeprecationWarning, match=r"removed in 12\.0; use `checkout_root`"):
+        assert project_root(nested) == (tmp_path / "repo").resolve()  # type: ignore[deprecated]
+    with pytest.warns(DeprecationWarning, match="checkout_root"):
+        assert project_root(plain) == plain.resolve()  # type: ignore[deprecated]
 
 
 def test_updating_a_skill_no_plugin_ships_names_the_plugin_as_missing(tmp_path: Path) -> None:

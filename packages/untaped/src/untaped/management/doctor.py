@@ -98,7 +98,7 @@ from untaped.settings import (
     settings_overlay,
 )
 from untaped.setup_status import SETUP_CHECK, notify_unmarked, setup_result
-from untaped.skills import InstalledSkill, SkillState, outdated_skills, project_root
+from untaped.skills import InstalledSkill, SkillState, local_project_root, outdated_skills
 from untaped.stability import owner, removal_text
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
 from untaped.token_store import pass_problem
@@ -636,7 +636,7 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     stale = [
         item
         for item in outdated_skills(
-            composed_skills(shell, result), project_dir=project_root(Path.cwd())
+            composed_skills(shell, result), project_dir=local_project_root(None)
         )
         if item.state is not SkillState.newer
     ]

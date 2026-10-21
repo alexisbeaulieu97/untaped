@@ -1,7 +1,7 @@
 """Tests for the folder's requirement on untaped and the ``nearest_pyproject`` walk under it.
 
 The requirement is read from the nearest ``pyproject.toml``'s standard
-tables only, never above the project root, and a malformed file or entry is
+tables only, never above the checkout root, and a malformed file or entry is
 no requirement at all.
 """
 
@@ -48,7 +48,7 @@ def test_the_nearest_file_wins_even_when_it_names_no_untaped(tmp_path: Path) -> 
     assert nearest_pyproject(inner) == inner / "pyproject.toml"
 
 
-def test_the_walk_climbs_to_the_project_root_and_never_above_it(tmp_path: Path) -> None:
+def test_the_walk_climbs_to_the_checkout_root_and_never_above_it(tmp_path: Path) -> None:
     _project(tmp_path, '[project]\nname = "stray"\ndependencies = ["untaped==1"]\n', git=False)
     checkout = tmp_path / "checkout"
     (checkout / ".git").mkdir(parents=True)

@@ -22,21 +22,19 @@ from untaped.sdk import (
     DryRunOption,
     Failure,
     FormatOption,
-    GitCommandError,
     OutputFormat,
     ParallelOption,
     UntapedError,
     YesOption,
-    attribution,
     batch_apply,
     check_columns,
+    checkout_root,
     create_app,
     echo,
     emit,
     existing_file,
     experimental,
     finish,
-    git_toplevel,
     kind_of,
     parse_envelope_line,
     parse_kv_pairs,
@@ -162,14 +160,10 @@ _SOURCE_REF_OPT = Annotated[
 # ---- shared helpers ------------------------------------------------------
 
 
-def _checkout_root(advice: str = "pass test paths explicitly") -> Path:
+def _checkout_root() -> Path:
     """The git checkout containing the working directory, else the directory itself."""
     cwd = Path.cwd()
-    with report_errors():
-        try:
-            return git_toplevel(cwd) or cwd
-        except GitCommandError as exc:
-            raise ConfigError(f"{exc}; {advice}", **attribution(exc)) from exc
+    return checkout_root(cwd) or cwd
 
 
 def _expand_paths(paths: Iterable[Path] | None) -> list[Path]:
@@ -933,9 +927,7 @@ def init_command(
     )
     from untaped_awx.application.suites.starter import StarterSuite  # noqa: PLC0415
 
-    path = out or _checkout_root("pass --out PATH") / DEFAULT_SUITE_DIR / (
-        f"{suite_slug(template)}.yml"
-    )
+    path = out or _checkout_root() / DEFAULT_SUITE_DIR / (f"{suite_slug(template)}.yml")
     with report_errors(), open_context() as ctx:
         refuse_existing(path)
         spec = ctx.catalog.get(WORKFLOW_TEMPLATE if workflow else JOB_TEMPLATE)

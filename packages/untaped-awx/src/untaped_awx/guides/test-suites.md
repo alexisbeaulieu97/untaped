@@ -14,8 +14,7 @@ this page covers the rules it can't say. A case's own fields are in
 - Suites live in the repository they test, under `.untaped/awx/tests/` at the
   root of the git checkout; `untaped awx test init` writes one there.
 - Without paths, `test run`, `test list` and `test validate` read every suite
-  under that directory (the current directory outside a git checkout;
-  without `git` on `PATH`, pass the paths).
+  under that directory (the current directory outside a git checkout).
 - A directory is searched recursively: every `*.yml`/`*.yaml` file with a
   `kind: AwxTestSuite` key is a suite.
 - Hidden files and directories are skipped and directory symlinks are not

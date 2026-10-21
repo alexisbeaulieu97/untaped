@@ -5738,6 +5738,7 @@ sdk untaped.sdk.bounded_map(fn, items, *, concurrency, on_each) callback(fn, 1) 
 sdk untaped.sdk.bounded_map(on_abort=) default=None callback(0)
 sdk untaped.sdk.bounded_map(while_running=) default=None callback(0)
 sdk untaped.sdk.check_columns(model, *, columns, fmt)
+sdk untaped.sdk.checkout_root(start)
 sdk untaped.sdk.clamp_parallel(requested, *, cap, policy)
 sdk untaped.sdk.code_version(distributions=) default=[]
 sdk untaped.sdk.code_version(extra=) default=[]
@@ -5832,7 +5833,7 @@ sdk untaped.sdk.parse_kv_pairs(values, *, flag)
 sdk untaped.sdk.plugin_dir(spec)
 sdk untaped.sdk.plural(count, singular)
 sdk untaped.sdk.plural(plural_form@3=) default=None
-sdk untaped.sdk.project_root(start)
+sdk untaped.sdk.project_root(start)  [deprecated, removed in 12.0; use checkout_root]
 sdk untaped.sdk.q(value)
 sdk untaped.sdk.raise_usage(message)
 sdk untaped.sdk.read_identifiers(accept_kinds=) default=None
