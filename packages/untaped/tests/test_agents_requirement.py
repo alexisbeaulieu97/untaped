@@ -48,7 +48,7 @@ def test_the_nearest_file_wins_even_when_it_names_no_untaped(tmp_path: Path) -> 
     assert nearest_pyproject(inner) == inner / "pyproject.toml"
 
 
-def test_the_walk_climbs_to_the_project_root_and_never_above_it(tmp_path: Path) -> None:
+def test_the_walk_climbs_to_the_checkout_root_and_never_above_it(tmp_path: Path) -> None:
     _project(tmp_path, '[project]\nname = "stray"\ndependencies = ["untaped==1"]\n', git=False)
     checkout = tmp_path / "checkout"
     (checkout / ".git").mkdir(parents=True)

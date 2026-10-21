@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import tempfile
+import warnings
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -20,9 +21,9 @@ from packaging.version import InvalidVersion, Version
 from untaped import skill_stubs
 from untaped.cli import existing_directory
 from untaped.errors import ConfigError, UsageError
-from untaped.git import GitCommandError, git_toplevel
 from untaped.settings import DEFAULT_CONFIG_PATH
 from untaped.skill_stubs import STUB_MARKER, STUB_SOURCE, Comparison, StubAuthor
+from untaped.stability import deprecated
 from untaped.stdin import read_identifiers
 
 
@@ -276,30 +277,42 @@ class InstalledSkill:
         return self.path.parent.resolve() in {root.resolve() for root in home_skill_roots()}
 
 
-def project_root(start: Path) -> Path:
-    """Return the nearest ancestor of ``start`` holding ``.git``, else ``start``.
+def checkout_root(start: Path) -> Path | None:
+    """Return the nearest ancestor of ``start`` holding ``.git``, else ``None``.
 
-    The project a command acts on: where ``skills install --scope local`` puts
-    skills and where a plugin looks for its repo file. Unlike
+    The git checkout a command acts on: where ``skills install --scope local``
+    puts skills and where a plugin looks for its repo file. Unlike
     :func:`~untaped.git.git_toplevel` it runs no git (the per-run skills check
     stays cheap) and never fails: outside a checkout, or with no git
-    installed, the project is ``start`` itself.
+    installed, there is no checkout and the caller picks its fallback.
     """
     start = start.resolve()
     for candidate in (start, *start.parents):
         if (candidate / ".git").exists():
             return candidate
-    return start
+    return None
+
+
+# untaped's mark dates it on the surface; the literal under it is what mypy reports.
+@deprecated(removed_in=12, replacement=checkout_root)
+@warnings.deprecated("project_root is deprecated and will be removed in 12.0; use `checkout_root`")
+def project_root(start: Path) -> Path:
+    """Return :func:`checkout_root` of ``start``, else ``start`` itself.
+
+    Deprecated, and its warning names the release that removes it: use
+    ``checkout_root(start) or start``.
+    """
+    return checkout_root(start) or start.resolve()
 
 
 def nearest_pyproject(start: Path) -> Path | None:
-    """The nearest ``pyproject.toml`` from ``start`` up to its :func:`project_root`, if any.
+    """The nearest ``pyproject.toml`` from ``start`` up to its :func:`checkout_root`, if any.
 
-    The walk stops at the project root, so a stray ``pyproject.toml`` above a
+    The walk stops at the checkout root, so a stray ``pyproject.toml`` above a
     checkout is never read; outside a checkout only ``start`` is looked at.
     """
     start = start.resolve()
-    top = project_root(start)
+    top = checkout_root(start) or start
     for folder in (start, *start.parents):
         candidate = folder / "pyproject.toml"
         if candidate.is_file():
@@ -865,10 +878,4 @@ def _local_project_root(project_dir: Path | None) -> Path:
     if project_dir is not None:
         return project_dir.expanduser().resolve()
     cwd = Path.cwd().resolve()
-    try:
-        return git_toplevel(cwd) or cwd
-    except GitCommandError as exc:
-        raise ConfigError(
-            f"could not run git to find the project root ({exc}); "
-            "pass --project-dir to choose the project directory"
-        ) from exc
+    return checkout_root(cwd) or cwd

@@ -134,6 +134,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "GitCommandError",
         "GitResult",
         "atomic_write",
+        "checkout_root",
         "file_lock",
         "git_toplevel",
         "nearest_pyproject",
