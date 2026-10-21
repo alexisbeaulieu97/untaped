@@ -29,13 +29,26 @@ from untaped_awx.cli.options import (
     NamesArgument,
     ParallelOption,
     YesOption,
+    offers_usage,
 )
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.records import DeleteOutcome
 
 
 def _add_delete(app: App, spec: AwxResourceSpec) -> None:
-    @app.command(name="delete")
+    help_text = (
+        "Delete an explicitly selected batch after one complete preview.\n\n"
+        "What a deleted resource loses: `untaped agents awx writes`."
+    )
+    if offers_usage(spec):
+        help_text += (
+            " A workflow node that ran a deleted template runs nothing afterwards: "
+            "`usage` lists the workflows that contain it."
+        )
+    if spec.kind == "Inventory":
+        help_text += " Deleting an inventory is asynchronous (`deletion_requested`)."
+
+    @app.command(name="delete", help=help_text)
     @writes(destructive=True)
     def delete_command(
         names: NamesArgument = None,
@@ -49,7 +62,6 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Delete an explicitly selected batch after one complete preview."""
         selection.require_source(names)
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)

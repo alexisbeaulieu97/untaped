@@ -1,4 +1,4 @@
-"""Run the skill and live-smoke inventory examples through scope policy and the HTTP adapter."""
+"""Run the guides' and live-smoke inventory examples through scope policy and the HTTP adapter."""
 
 import shlex
 from pathlib import Path
@@ -12,12 +12,16 @@ from untaped_awx.cli.commands import app
 PACKAGE = Path(__file__).resolve().parents[3]
 GUIDES = [
     PACKAGE.parents[1] / "CONTRIBUTING.md",
-    *sorted((PACKAGE / "src/untaped_awx/skills").rglob("*.md")),
+    *sorted((PACKAGE / "src/untaped_awx/guides").glob("*.md")),
 ]
+# Command docstrings' Examples hold no inventory-scoped list, export, get or
+# patch example today, so only the guides are read.
 EXAMPLES = [
     shlex.split(line)[2:]
     for guide in GUIDES
-    for line in guide.read_text().replace("\\\n", " ").splitlines()
+    for line in (
+        raw.removeprefix("$ ") for raw in guide.read_text().replace("\\\n", " ").splitlines()
+    )
     if line.startswith("untaped awx inventory")
     and "--inventory" in line
     and shlex.split(line)[3] in {"list", "export", "get", "patch"}

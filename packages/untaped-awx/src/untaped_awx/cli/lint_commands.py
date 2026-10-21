@@ -77,12 +77,8 @@ def lint_command(
 ) -> None:
     """Lint AWX resources: apply documents, or what the controller holds.
 
-    With FILES, references resolve in the batch first, then on the controller
-    (--offline: in the batch only). Without FILES, every resource the token
-    can read is checked, from a snapshot kept for an hour. --kind and
-    --organization narrow what is reported, never what is read; --filter and
-    --search ask the controller which resources to report. Exit 3 when a rule
-    reports an error, 1 when a rule could not run.
+    Where references resolve, how the controller snapshot is kept, what the
+    selection options narrow, and every rule: `untaped agents awx linting`.
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
     queried = bool(filters) or search is not None

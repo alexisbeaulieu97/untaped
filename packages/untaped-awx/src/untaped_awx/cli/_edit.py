@@ -34,7 +34,19 @@ def _add_edit(app: App, spec: AwxResourceSpec) -> None:
         ] = None,
         controls: WriteControls = CONTROL_DEFAULTS,
     ) -> None:
-        """Edit selected resources in $VISUAL/$EDITOR, then preview and confirm once."""
+        """Edit selected resources in $VISUAL/$EDITOR, then preview and confirm once.
+
+        The selection opens as one YAML multi-document batch in an editor that
+        waits (such as `code --wait`). It needs a real terminal at `/dev/tty`,
+        even with piped stdin or --yes; without one, use `patch` or `apply`.
+        Removing a document deselects it; removing a field leaves it
+        unchanged; a nested value replaces the whole field. Identity, name and
+        parent changes, and new or duplicate documents, are refused; `edit`
+        never creates or renames. Invalid YAML can be reopened or cancelled,
+        and a session with no change neither prompts nor writes. The file is
+        owner-only and removed after a clean session; a failed session keeps
+        it and prints its path.
+        """
         selection.require_source(names)
         with report_errors():
             controls = controls.validated()

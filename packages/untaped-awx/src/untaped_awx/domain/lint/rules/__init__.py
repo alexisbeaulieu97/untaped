@@ -1,6 +1,6 @@
 """The awx rules, one per module, each a pure function of :class:`AwxResources`.
 
-``RULES`` lists them in the order the skill's rule table does; ``AwxRules``
+``RULES`` lists them in the order the ``linting`` guide's rule table does; ``AwxRules``
 hosts it, and ``untaped_awx.api`` exports each function, the constant
 ``finding()`` takes.
 """

@@ -48,7 +48,19 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Sync a fixed selection; inventories expand to their current source IDs."""
+        """Sync a fixed selection; inventories expand to their current source IDs.
+
+        Which inventories can't sync, and how --wait and --follow end:
+        `untaped agents awx launching`. When it asks first and how the batch
+        runs: `untaped agents awx writes`.
+
+        Examples
+        --------
+        ```console
+        $ untaped awx projects sync Playbooks --wait
+        $ untaped awx inventory-sources sync Cloud --inventory Production --wait
+        ```
+        """
         validate_wait_flags(timeout=timeout, cancel=cancel, wait=wait, follow=follow)
         with report_errors():
             parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)

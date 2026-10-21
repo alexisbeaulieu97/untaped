@@ -32,7 +32,15 @@ JobKind = Literal["job", "workflow_job", "project_update", "inventory_update", "
 JobKindOption = Annotated[JobKind, Parameter(name="--kind", help=JOB_KIND_HELP)]
 
 JobsStdinOption = Annotated[
-    bool, Parameter(name="--stdin", negative="", help="Read job ids from stdin (one per line).")
+    bool,
+    Parameter(
+        name="--stdin",
+        negative="",
+        help=(
+            "Read job ids from stdin (one per line), or piped awx records, which carry "
+            "their own kind over --kind."
+        ),
+    ),
 ]
 
 

@@ -1,12 +1,12 @@
-"""awx's test guides and the skill's specs reference cannot drift from the models.
+"""awx's guides cannot drift from the models they describe.
 
 - Every suite of the ``test-examples`` guide loads through the real suite
   loader (header, Jinja2, ``!ref``, validation) and resolves to launch
   payloads made only of fields AWX's launch endpoint knows. The guide's
   blocks are plain ``yaml``: ``AwxTestSuite`` is a document kind, not a
   record kind, so the ``guide-yaml`` convention cannot load them.
-- Every field of a workflow node (``spec.nodes``) is named in the skill's
-  ``references/specs.md``, and its field tables name only node fields.
+- Every field of a workflow node (``spec.nodes``) is named in the
+  ``workflow-nodes`` guide, and its field tables name only node fields.
 - Every backticked identifier in the ``test-results`` guide's prose is a
   field of an ``awx.test_result`` row or a temporary copy's row, a suite
   field, a value the code defines, or a listed AWX or Ansible word.
@@ -56,8 +56,6 @@ from untaped_awx.infrastructure.suites import (
     resolve_variables,
 )
 
-(_SKILL,) = SPEC.skills
-SKILL_DIR = _SKILL.source
 assert SPEC.guides is not None
 GUIDES = SPEC.guides
 _SUITE_BLOCK = re.compile(r"^## (\w+)\n\n```yaml\n(.*?)^```", re.MULTILINE | re.DOTALL)
@@ -125,17 +123,17 @@ def _node_schema_keys() -> set[str]:
     return {key for model in models for key in model.get("properties", {})}
 
 
-def _specs_reference() -> str:
-    return (SKILL_DIR / "references" / "specs.md").read_text(encoding="utf-8")
+def _nodes_guide() -> str:
+    return (GUIDES / "workflow-nodes.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("key", sorted(_node_schema_keys()))
-def test_every_workflow_node_field_is_in_the_specs_reference(key: str) -> None:
-    assert f"`{key}`" in _specs_reference(), f"references/specs.md does not name {key!r}"
+def test_every_workflow_node_field_is_in_the_nodes_guide(key: str) -> None:
+    assert f"`{key}`" in _nodes_guide(), f"the workflow-nodes guide does not name {key!r}"
 
 
-def test_the_specs_reference_field_tables_name_only_node_fields() -> None:
-    documented = _table_field_names(_specs_reference())
+def test_the_nodes_guide_field_tables_name_only_node_fields() -> None:
+    documented = _table_field_names(_nodes_guide())
 
     assert documented
     assert documented - _node_schema_keys() == set()

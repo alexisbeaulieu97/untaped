@@ -16,7 +16,8 @@ lines it puts on the map:
   (another plugin's page is checked only when that plugin is composed);
 - ``guide-command`` — another ``untaped …`` command the guide quotes does
   not parse: ``console`` ``$`` lines, ``bash`` blocks and the comments of
-  ``yaml`` blocks in full, inline code may leave out required arguments;
+  ``yaml`` blocks in full; inline code, in prose or a comment, may leave out
+  required arguments;
 - ``guide-yaml`` — a block fenced as ```` ```yaml KIND ```` does not validate
   against the model declaring the record kind ``KIND``;
 - ``map-line`` — a line the plugin puts on the map (its summary, an

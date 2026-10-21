@@ -35,7 +35,20 @@ def _add_save(app: App, spec: AwxResourceSpec) -> None:
             ),
         ] = None,
     ) -> None:
-        """Export a fixed selection as one portable YAML document batch."""
+        """Export a fixed selection as one portable YAML document batch.
+
+        The documents go to stdout, or to --out FILE, as one multi-document
+        stream that `untaped awx apply -` reads. What a document holds and
+        can't carry: `untaped agents awx documents`.
+
+        Examples
+        --------
+        Save a recovery point before changing a template:
+
+        ```console
+        $ untaped awx job-templates export Deploy --out deploy-before.yml
+        ```
+        """
         selection.require_source(names)
         with report_errors():
             if comment and output is None and fmt != "yaml":

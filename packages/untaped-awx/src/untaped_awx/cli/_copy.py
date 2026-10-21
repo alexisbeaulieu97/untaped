@@ -46,7 +46,22 @@ def _add_copy(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Copy one resource under a new name in the same scope, after a preview."""
+        """Copy one resource under a new name in the same scope, after a preview.
+
+        AWX copies it server-side in the source's organization. A taken name,
+        the source's own name, or a source AWX cannot copy (`can_copy: false`)
+        is refused before writing. A warning names the parts AWX will not carry
+        without user input, such as a workflow's references the caller cannot
+        use; the `awx.copy_outcome` row lists them in `not_carried`, and its
+        `id` is the new template's. To copy to another controller, export,
+        change `metadata.name` and apply (`untaped agents awx documents`).
+
+        Examples
+        --------
+        ```console
+        $ untaped awx job-templates copy Deploy --name "Deploy next" --org Default --dry-run
+        ```
+        """
         with report_errors(), open_context() as ctx:
             (selected,) = select_resources(
                 ctx, spec, [source], by_id=by_id, organization=organization
