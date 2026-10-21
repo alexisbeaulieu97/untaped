@@ -723,7 +723,7 @@ def test_https_and_ssh_forms_of_one_repo_share_the_store_repo(
     assert synced.path == str(expected)
     assert env.cache.repo_freshness(replace(target, clone_url=ssh)) is not None
     keys = {env.cache.cache_key(replace(target, clone_url=url)) for url in (https, ssh)}
-    assert keys == {"github.com/acme/app.git"}
+    assert keys == {str(expected)}
 
 
 @pytest.mark.parametrize(

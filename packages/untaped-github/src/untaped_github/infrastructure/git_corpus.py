@@ -141,8 +141,11 @@ class GitCorpusCache:
         return _freshness(self._store(self._remote_url(repo)))
 
     def cache_key(self, repo: CorpusRepoTarget) -> str:
-        """The key of ``repo``'s stored copy: its place in the repo store."""
-        return "/".join(store_key(self._remote_url(repo)))
+        """The key of ``repo``'s stored copy: its store repo's path.
+
+        A path, not the store key alone: ``git.store_dir`` may differ by profile.
+        """
+        return str(self._store(self._remote_url(repo)).path)
 
     def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         """Mark a stored copy current without fetching (GitHub reports no new push)."""

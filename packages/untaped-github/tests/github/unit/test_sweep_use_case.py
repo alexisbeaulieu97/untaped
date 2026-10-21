@@ -37,7 +37,7 @@ from untaped_github.domain import (
     SweepQuery,
 )
 from untaped_github.errors import GitCorpusError
-from untaped_github.records import CorpusRepoResult, GithubRepo
+from untaped_github.records import CorpusRepoResult, CorpusSyncOutcome, GithubRepo
 from untaped_github.settings import SWEEP
 
 README = SweepQuery(has_files=("README.md",))
@@ -715,3 +715,105 @@ def test_a_fill_error_that_is_not_the_repos_stops_the_sweep() -> None:
 
     with pytest.raises(ConfigError, match="rank them"):
         _sweep(corpus, resolver=_Resolver(_item("acme/api"), _item("acme/web")))
+
+
+def _sync(corpus: _Corpus, *names: str, refresh: bool = False) -> tuple[CorpusSyncOutcome, ...]:
+    return SyncCorpus(inventory=_Resolver(*map(_item, names)), corpus=corpus)(
+        CorpusSyncOptions(
+            scope=RepositoryInventoryScope(orgs=("acme",)),
+            stdin_repos=(),
+            archived="exclude",
+            refs=RefSelector(),
+            refresh=refresh,
+            parallel=1,
+        )
+    )
+
+
+def test_a_failed_fetch_for_a_wider_query_leaves_the_copy_served_stale_after() -> None:
+    corpus = _Corpus(
+        freshness={"acme/api": _old_copy(pushed_at=None)},
+        sync_errors={"acme/api": GitCorpusError("fetch denied")},
+    )
+    resolver = _Resolver(_item("acme/api"))
+    tags = SweepQuery(has_files=("README.md",), refs=RefSelector(profile="tags"))
+
+    wider = _sweep(_readme(corpus, "acme/api"), tags, resolver=resolver)
+    plain = _sweep(corpus, resolver=resolver)
+
+    assert (wider.scanned, len(wider.unscanned)) == (0, 1)
+    assert (plain.scanned, plain.cached, plain.unscanned) == (1, 1, ())
+    state = SWEEP.freshness("acme/api")
+    # the copy's own fetch stays known, so the default-refs sweep says it is stale
+    assert state.refreshed_at is not None and state.error is not None
+
+
+def test_a_copy_another_run_narrowed_meanwhile_is_unscanned() -> None:
+    class _Narrowed(_Corpus):
+        """The first read covers the query; every later one is a default-refs copy."""
+
+        reads = 0
+
+        def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None:
+            self.reads += 1
+            return CorpusFreshness(
+                fetched_at=datetime.now(UTC), profile="all" if self.reads == 1 else "default"
+            )
+
+    corpus = _readme(_Narrowed(), "acme/api")
+    query = SweepQuery(has_files=("README.md",), refs=RefSelector(profile="all"))
+
+    report = _sweep(corpus, query, resolver=_Resolver(_item("acme/api")))
+
+    assert report.scanned == 0
+    assert "another run changed the stored copy's refs" in report.unscanned[0].reason
+
+
+def test_cached_on_a_copy_that_went_away_is_unscanned_without_a_refresh_hint() -> None:
+    corpus = _Corpus(cached_rows=(_row("acme/api"),))
+    _sweep(_readme(corpus, "acme/api"), refresh=False)
+    del corpus.freshness["acme/api"]
+
+    report = _sweep(corpus, refresh=False)
+
+    [failure] = report.unscanned
+    assert "drop --cached" in failure.reason
+    assert getattr(failure.cause, "hint", None) != "pass --refresh to retry it now"
+
+
+def test_cache_sync_after_a_failed_refresh_skips_a_copy_inside_its_max_age() -> None:
+    corpus = _Corpus(
+        freshness={"acme/api": CorpusFreshness(fetched_at=datetime.now(UTC), profile="default")},
+        sync_errors={"acme/api": GitCorpusError("fetch denied")},
+    )
+    forced = _sync(corpus, "acme/api", refresh=True)
+    del corpus.sync_errors["acme/api"]
+
+    [after] = _sync(corpus, "acme/api")
+
+    assert [outcome.action for outcome in forced] == ["failed"]
+    assert (after.action, after.error) == ("skipped", None)
+    assert corpus.synced == ["acme/api"]
+
+
+def test_cache_sync_inside_a_retry_window_fails_with_a_refresh_hint() -> None:
+    corpus = _Corpus(
+        freshness={"acme/api": _old_copy(pushed_at=None)},
+        sync_errors={"acme/api": GitCorpusError("fetch denied")},
+    )
+
+    first, second = (_sync(corpus, "acme/api")[0] for _ in range(2))
+
+    assert (first.action, second.action) == ("failed", "failed")
+    assert corpus.synced == ["acme/api"]  # the second run fetched nothing
+    assert second.error is not None and second.error.hint == "pass --refresh to retry it now"
+
+
+def test_a_copy_fetched_before_the_cache_is_seeded_not_fetched() -> None:
+    fetched = datetime.now(UTC) - timedelta(minutes=5)
+    corpus = _Corpus(freshness={"acme/api": CorpusFreshness(fetched_at=fetched, profile="default")})
+
+    _sweep(_readme(corpus, "acme/api"), resolver=_Resolver(_item("acme/api")))
+
+    assert corpus.synced == []
+    assert SWEEP.freshness("acme/api").refreshed_at == fetched

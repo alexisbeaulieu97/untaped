@@ -3,7 +3,10 @@
 Two set operations and one relaxation. Experimental lines of either file are
 dropped (they promise nothing), and every remaining old line whose identity is
 missing from the new file's is a removal, unless :func:`relaxed` finds that the
-change only loosened a caller-shaped owner line.
+change only loosened a caller-shaped owner line, or :func:`respelled` finds the
+promise kept under a new spelling: a setting renamed (its old key still read,
+``cfg <key> -> <new key>``), or a switch that also takes its negative (a
+``bool | None`` directive whose unset value is the old default).
 
 A caller-shaped owner (a command, or a function, constructor or method of a
 class plugins only call) may drop required items: its required positionals
@@ -68,7 +71,24 @@ def removed(old: Sequence[Line], new: Sequence[Line]) -> list[Line]:
     present = {line.identity for line in kept}
     implementers = _implementers([*old, *new])
     gone = [line for line in old if line.mark != "experimental" and line.identity not in present]
-    return sorted(line for line in gone if not relaxed(line, kept, implementers=implementers))
+    return sorted(
+        line
+        for line in gone
+        if not relaxed(line, kept, implementers=implementers) and not respelled(line, present)
+    )
+
+
+def respelled(line: Line, present: set[str]) -> bool:
+    """Whether the gone ``line`` keeps its promise under a new spelling ``present`` holds.
+
+    A setting renamed in a minor stays read under its old key until the next
+    major (``cfg <key> -> <new key>``); a switch that became tri-state is
+    still the same flag (``<switch line> default=unset``).
+    """
+    if line.area == "cfg":
+        key = line.text.split(" ")[1]
+        return any(text.startswith(f"cfg {key} -> ") for text in present)
+    return line.text.endswith(" switch") and f"{line.text} default=unset" in present
 
 
 def _implementers(lines: Iterable[Line]) -> frozenset[str]:

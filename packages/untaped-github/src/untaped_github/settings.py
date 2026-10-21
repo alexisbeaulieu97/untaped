@@ -14,8 +14,8 @@ from untaped.sdk import Cache, NeedsSetup, Retired, Secret, Suggest, TokenComman
 _TOKEN_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
 
 
-#: Each repo's stored copy the sweep and ``cache sync`` read, keyed by its place in the
-#: repo store. Its data is the store repo and its ``untaped-github.json``, shared by every
+#: Each repo's stored copy the sweep and ``cache sync`` read, keyed by its store repo's
+#: path. Its data is the store repo and its ``untaped-github.json``, shared by every
 #: profile; the cache keeps when each copy was last checked. Setting:
 #: ``github.caches.sweep.max_age_seconds``.
 SWEEP = Cache(

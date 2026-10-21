@@ -6,13 +6,14 @@ import contextlib
 import fnmatch
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from untaped.sdk import (
     NO_PROGRESS,
     ConfigError,
     Failure,
     Filled,
+    NeverRefreshed,
     ProgressHandle,
     UntapedError,
     UsageError,
@@ -596,58 +597,56 @@ def _prepare_repo(
     """Bring one repo's stored copy up to date for ``selector`` through :data:`SWEEP`.
 
     The copy is the data and :data:`SWEEP` keeps when it was last checked
-    (:func:`_sync_freshness`). A copy that does not cover ``selector`` was
-    never refreshed for this query, so it is fetched, and a failed fetch
-    leaves the repo unscanned. Otherwise ``serve()`` refreshes as
-    ``refresh`` asks (:func:`_filler`), and a failed fetch falls back to the
-    stored copy with one ``untaped.stale`` line or, with ``raise_failure``,
-    is the repo's ``refresh_error`` without one. ``progress`` is the
-    command's task, which each refresh is a phase of; ``fetch_progress``
-    also hands it to the fetch.
+    (:func:`_sync_freshness`). ``serve()`` refreshes as ``refresh`` asks
+    (:func:`_filler`); a failed fetch falls back to the stored copy with one
+    ``untaped.stale`` line or, with ``raise_failure``, is the repo's
+    ``refresh_error`` without one. A copy that does not cover ``selector``
+    was never refreshed for this query: it is fetched whatever its age, and
+    when that fails, or the copy still does not cover the query after the
+    refresh (another run narrowed it meanwhile), the repo is unscanned.
+    ``progress`` is the command's task, which each refresh is a phase of;
+    ``fetch_progress`` also hands it to the fetch.
     """
     try:
         stored = corpus.repo_freshness(repo)
         key = corpus.cache_key(repo)
     except (GitCorpusError, OSError) as exc:
         return _failure(repo, exc)
-    usable = stored if stored and (refresh is False or covers(stored, selector)) else None
-    errors: list[UntapedError] = []
+    narrow = refresh is not False and stored is not None and not covers(stored, selector)
+    ran: list[str] = []
+    stopped: list[UntapedError] = []
     fill = _filler(
         corpus,
         repo,
         selector=selector,
         # a copy GitHub reports no push since: its fetch time, kept if the touch fails
         unchanged_since=(
-            usable.fetched_at
-            if refresh is None and usable is not None and unchanged_upstream(usable, repo)
+            stored.fetched_at
+            if refresh is None and stored and not narrow and unchanged_upstream(stored, repo)
             else None
         ),
         fetch_progress=fetch_progress,
-        errors=errors,
+        ran=ran,
+        stopped=stopped,
     )
     try:
-        _sync_freshness(key, usable)
+        _sync_freshness(key, stored)
         served = SWEEP.serve(
             {key: repo.full_name},
-            refresh=refresh,
+            refresh=True if narrow else refresh,
             fill=fill,
             read=lambda: None,
             progress=progress,
             # every answer is "empty": a failed refresh raises instead of serving a stale line
-            empty=(lambda _: True) if raise_failure else None,
+            empty=(lambda _: True) if raise_failure or narrow else None,
         )
     except (UntapedError, OSError) as exc:
-        _raise_unless_the_repos(errors)
-        if not errors and isinstance(exc, UntapedError) and exc.details.get("key") == key:
-            # an earlier run's failed refresh, inside its retry window: no fill ran
-            exc.hint = "pass --refresh to retry it now"
-        failure = _failure(repo, errors[-1] if errors else exc)
-        if usable is None:
-            return failure
-        return _ReadyRepo(
-            repo=repo, fetched_at=usable.fetched_at, refreshed=False, refresh_error=failure
+        _raise_unless_the_repos(stopped)
+        remembered = not ran and not isinstance(exc, NeverRefreshed)
+        return _not_served(
+            repo, key, exc, remembered=remembered, stored=stored if raise_failure else None
         )
-    _raise_unless_the_repos(errors)
+    _raise_unless_the_repos(stopped)
     fetched = served.filled.get(key)
     if fetched is not None:
         return _ReadyRepo(
@@ -656,13 +655,45 @@ def _prepare_repo(
             refreshed=not fetched.unchanged,
             unchanged=fetched.unchanged,
         )
-    # served as kept: a failed refresh, or one another run made while this one waited
-    current = usable or _stored(corpus, repo)
+    # served as kept: no refresh due, or one another run made while this one waited
+    current = _stored(corpus, repo) if refresh is not False else stored
+    if current is not None and refresh is not False and not covers(current, selector):
+        return _failure(
+            repo, GitCorpusError("another run changed the stored copy's refs; run the sweep again")
+        )
     return _ReadyRepo(
-        repo=repo,
-        fetched_at=current.fetched_at if current is not None else None,
-        refreshed=False,
-        refresh_error=_failure(repo, errors[-1]) if errors else None,
+        repo=repo, fetched_at=current.fetched_at if current is not None else None, refreshed=False
+    )
+
+
+def _not_served(
+    repo: CorpusRepoTarget,
+    key: str,
+    exc: UntapedError | OSError,
+    *,
+    remembered: bool,
+    stored: CorpusFreshness | None,
+) -> _ReadyRepo | CorpusFailure:
+    """What a repo ``serve()`` raised for becomes: unscanned, or a stored copy's failed refresh.
+
+    ``stored`` is passed when the stored copy stands beside the failure (``cache
+    sync``'s rows). A ``remembered`` failure is one an earlier run left (no
+    fill ran): inside the copy's max age it is no refresh this run asked for,
+    so the copy is current and its row says so.
+    """
+    remembered = remembered and isinstance(exc, UntapedError) and exc.details.get("key") == key
+    if remembered and stored is not None:
+        state = SWEEP.freshness(key)
+        if not state.past_max_age(SWEEP.max_age(), now=datetime.now(UTC)):
+            return _ReadyRepo(repo=repo, fetched_at=stored.fetched_at, refreshed=False)
+    if remembered and isinstance(exc, UntapedError):
+        # an earlier run's failed refresh, inside its retry window: no fetch ran
+        exc.hint = "pass --refresh to retry it now"
+    failure = _failure(repo, exc)
+    if stored is None:
+        return failure
+    return _ReadyRepo(
+        repo=repo, fetched_at=stored.fetched_at, refreshed=False, refresh_error=failure
     )
 
 
@@ -673,41 +704,46 @@ def _filler(
     selector: RefSelector,
     unchanged_since: datetime | None,
     fetch_progress: bool,
-    errors: list[UntapedError],
+    ran: list[str],
+    stopped: list[UntapedError],
 ) -> Callable[[str, ProgressHandle], _Fetched]:
     """The fill of ``repo``'s key: a fetch, or a touch when GitHub reports no push since.
 
-    Each error it raises is kept in ``errors``, so the caller reports the
-    fetch's own rather than what ``serve()`` rebuilt from it.
+    Each key it starts on goes in ``ran``, and each error it raises that is
+    not one repo's (credentials, configuration) in ``stopped``.
     """
 
-    def fill(_key: str, handle: ProgressHandle) -> _Fetched:
+    def fill(key: str, handle: ProgressHandle) -> _Fetched:
+        ran.append(key)
+        if unchanged_since is not None:
+            try:
+                touched = corpus.touch_repo(repo)
+            except GitCorpusError, OSError:
+                touched = unchanged_since
+            return _Fetched(fetched_at=touched, unchanged=True, summary="unchanged")
         try:
-            if unchanged_since is not None:
-                try:
-                    touched = corpus.touch_repo(repo)
-                except GitCorpusError, OSError:
-                    touched = unchanged_since
-                return _Fetched(fetched_at=touched, unchanged=True, summary="unchanged")
             result = corpus.sync_repo(
                 repo, selector=selector, progress=handle if fetch_progress else NO_PROGRESS
             )
-        except OSError as exc:
-            errors.append(GitCorpusError(str(exc) or type(exc).__name__, system="local"))
-            raise errors[-1] from exc
-        except UntapedError as exc:
-            errors.append(exc)
+        except GitCorpusError:
             raise
+        except UntapedError as exc:
+            stopped.append(exc)
+            raise
+        except OSError as exc:
+            raise GitCorpusError(str(exc) or type(exc).__name__, system="local") from exc
         return _Fetched(fetched_at=_parse_datetime(result.fetched_at))
 
     return fill
 
 
-def _raise_unless_the_repos(errors: list[UntapedError]) -> None:
-    """Raise a fill's error that is not one repo's (credentials, configuration): it stops a run."""
-    for error in errors:
-        if not isinstance(error, GitCorpusError):
-            raise error
+def _raise_unless_the_repos(stopped: list[UntapedError]) -> None:
+    """Raise a fill's error that is not one repo's: it stops the run, not the repo.
+
+    ``serve()`` has already remembered it as the key's failed attempt.
+    """
+    if stopped:
+        raise stopped[0]
 
 
 def _stored(corpus: GitCorpus, repo: CorpusRepoTarget) -> CorpusFreshness | None:
@@ -719,17 +755,19 @@ def _stored(corpus: GitCorpus, repo: CorpusRepoTarget) -> CorpusFreshness | None
 def _sync_freshness(key: str, stored: CorpusFreshness | None) -> None:
     """Bring what :data:`SWEEP` knows of ``key`` in line with the stored copy.
 
-    A copy the cache knows nothing of was fetched before the cache (or by a
-    run that stopped before recording it): it is seeded with its own fetch
-    time. A key known as refreshed with no usable copy lost its data (a
-    deleted or released repo, a copy narrower than the query), so it is
+    A copy the cache never saw refreshed was fetched before the cache (or
+    by a run that stopped before recording it, or whose first refresh
+    failed): it is seeded with its own fetch time. A key known as refreshed
+    with no stored copy lost its data (a deleted or released repo), so it is
     forgotten and filled.
     """
-    known = SWEEP.freshness(key).refreshed_at is not None
+    state = SWEEP.freshness(key)
     if stored is None:
-        if known:
+        if state.refreshed_at is not None:
             SWEEP.forget(key)
-    elif not known:
+    elif state.refreshed_at is None:
+        if state.attempted_at is not None:
+            SWEEP.forget(key)  # seed() keeps an existing file: drop the failed first attempt
         SWEEP.seed(key, refreshed_at=stored.fetched_at)
 
 
