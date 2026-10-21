@@ -5,6 +5,8 @@
 - Every ``HttpClient(...)`` under ``src/`` passes
   ``verify=resolve_verify(...)`` (TLS flows through OS trust +
   ``http.ca_bundle``, never a hard-coded ``True``/``False``/path).
+- Tree connectors are drawn only by core's tree module (``untaped.sdk.print_tree``
+  and ``tree_text``), never by a private copy.
 
 Each detector is a pure helper fed both the live tree and synthetic
 known-bad/known-good inputs, so a detector silently broken to
@@ -152,3 +154,45 @@ _HEADER = "from untaped.sdk import HttpClient, resolve_verify\nimport untaped.sd
 def test_verify_detector(call: str, flagged: bool) -> None:
     tree = ast.parse(f"{_HEADER}def f(http) -> None:\n    {call}\n")
     assert bool(_verify_offenders(tree, "<test>")) is flagged
+
+
+_TREE_MODULE = REPO_ROOT / "packages/untaped/src/untaped/tree.py"
+_TREE_CONNECTORS = ("├── ", "└── ")
+
+
+def _tree_drawers(paths: list[tuple[str, str]]) -> list[str]:
+    """``"<rel>"`` for each ``(rel, text)`` of a ``.py`` file that holds a tree connector."""
+    return [
+        rel
+        for rel, text in paths
+        if rel.endswith(".py") and any(connector in text for connector in _TREE_CONNECTORS)
+    ]
+
+
+def test_trees_are_drawn_only_by_the_sdk_renderer() -> None:
+    files = [
+        (str(path.relative_to(REPO_ROOT)), path.read_text(encoding="utf-8"))
+        for src in SRC_DIRS
+        for path in sorted(src.rglob("*.py"))
+        if path != _TREE_MODULE
+    ]
+    offenders = _tree_drawers(files)
+    assert not offenders, (
+        "draw trees with untaped.sdk.print_tree or tree_text: one renderer keeps glyphs, the "
+        "ASCII fallback, numbering and cycle marks the same everywhere (#789):\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+@pytest.mark.parametrize(
+    ("rel", "text", "flagged"),
+    [
+        ("pkg/render.py", 'PREFIX = "├── "', True),
+        ("pkg/render.py", 'LAST = "└── "', True),
+        ("pkg/render.py", 'PIPE = "│   "', False),
+        # A guide drawing a directory listing is documentation, not a renderer.
+        ("pkg/guides/source-ref.md", "├── templates/deploy.yml", False),
+    ],
+)
+def test_tree_drawer_detector(rel: str, text: str, flagged: bool) -> None:
+    assert bool(_tree_drawers([(rel, text)])) is flagged

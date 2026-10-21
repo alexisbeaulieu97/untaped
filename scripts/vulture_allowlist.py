@@ -120,6 +120,7 @@ _typed_options_are_supported
 
 # SDK and repo checks that only tests call.
 UiContext.confirm_action  # documented SDK
+TreeGraph.cycle_edges  # documented SDK
 _clear_for_tests  # test hook for the composed root
 ScreenRun.commands_run  # read by tests that drive screens
 ProgressClock.advance  # untaped.testing: a test moves the progress clock

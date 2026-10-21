@@ -40,16 +40,17 @@ from untaped.sdk import (
     get_config_section,
     not_found,
     plural,
+    print_tree,
     q,
     raise_usage,
     read_stdin_input,
     refresh_option,
     report_errors,
     run_hint,
+    tree_text,
 )
 from untaped_ansible.application.graph import BuildGraph, GraphRequest
 from untaped_ansible.application.ports import DependencyIndex
-from untaped_ansible.cli.graph_tree import print_tree, tree_glyphs
 from untaped_ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
     Backend,
@@ -74,12 +75,7 @@ from untaped_ansible.domain.models import DependencyDeclaration, ParseWarning
 from untaped_ansible.domain.parser import parse_dependency_file
 from untaped_ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
 from untaped_ansible.domain.reach import Reach, reach
-from untaped_ansible.domain.renderers import (
-    GraphFormat,
-    plain_text,
-    render_graph,
-    tree_lines,
-)
+from untaped_ansible.domain.renderers import GraphFormat, graph_tree, render_graph
 from untaped_ansible.domain.variable_queries import (
     dependent_uses,
     render_key_path,
@@ -556,8 +552,9 @@ def graph_command(
     a "used by" section lists dependents and a "depends on" section
     dependencies. Each repo line names the file that declares the edge, plus
     ``unpinned`` (no version) or ``pins X`` (the declared version differs
-    from the resolved ref). A shared subtree prints once, numbered ``[n]``,
-    and later says ``see [n]``; a repo already on the path says ``↻ cycle``
+    from the resolved ref). A shared subtree prints once, numbered ``[n]``;
+    a later occurrence holds one ``… see [n]`` line instead of its branches,
+    and a repo already on the path says ``↻ cycle``
     (``(cycle)`` in ASCII); a stopped repo is marked ``…`` with a
     ``not read:`` note. The summary counts repos, edges, cycles (a component
     with too many cycles to list counts as one cyclic group), unresolved
@@ -1536,11 +1533,11 @@ def _emit_graph(
 ) -> None:
     """Print the rendered graph (a styled tree on a terminal), or write it plain to ``output``."""
     if fmt == "tree":
-        lines = tree_lines(graph, glyphs=tree_glyphs(ui), header_note=header_note)
+        tree = graph_tree(graph, header_note=header_note)
         if output is None:
-            print_tree(lines, ui)
+            print_tree(tree, ui=ui)
             return
-        rendered = plain_text(lines)
+        rendered = tree_text(tree, ui=ui)
     else:
         rendered = render_graph(graph, fmt)
         if output is None:
