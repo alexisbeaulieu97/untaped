@@ -1,9 +1,9 @@
 # Building a plugin
 
 A plugin is a Python package that adds to `untaped`, under one name, a
-command subtree (`untaped <name> ...`), settings, state, doctor checks,
-packaged skills, contracts it owns and contracts it fills, each optional. The
-root discovers plugins through the `untaped.plugins` entry-point group and
+command subtree (`untaped <name> ...`), settings, state, doctor checks, a
+stub skill, guides for agents, contracts it owns and contracts it fills, each
+optional. The root discovers plugins through the `untaped.plugins` entry-point group and
 owns everything else: there is no second console script, config command or
 profile command. See the [Glossary](../CONTRIBUTING.md#glossary).
 

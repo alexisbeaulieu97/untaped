@@ -61,7 +61,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from collections import Counter
-from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -681,7 +681,7 @@ def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
 
 
 #: A topic line under a page's ``## Guides`` heading: ``- `name`: when to read it``.
-_GUIDE_LINE = re.compile(r"^- `([a-z0-9-]+)`")
+_GUIDE_LINE = re.compile(r"^- `([^`]+)`")
 
 
 def page_guides(page: str) -> list[str]:
@@ -696,10 +696,24 @@ def page_guides(page: str) -> list[str]:
     return guides
 
 
-def agents_errors(exe: str, expected: Collection[str]) -> list[str]:
-    """Every ``untaped agents`` page that fails or prints nothing.
+def plugin_guides(root: Path) -> dict[str, list[str]]:
+    """``{plugin: guide names}``: the ``guides/*.md`` each package under ``root`` ships."""
+    found: dict[str, list[str]] = {}
+    for directory, project in _package_dirs(root).values():
+        for name, target in project.get("entry-points", {}).get("untaped.plugins", {}).items():
+            folder = directory / "src" / target.partition(":")[0].partition(".")[0] / "guides"
+            found[name] = sorted(path.stem for path in folder.glob("*.md"))
+    return found
 
-    The map, then each expected plugin's page (core's too) and each guide it lists.
+
+def agents_errors(
+    exe: str, expected: Collection[str], guides: Mapping[str, Collection[str]]
+) -> list[str]:
+    """Every ``untaped agents`` page that fails or prints nothing, and every guide left out.
+
+    The map, then each expected plugin's page (core's too) and each guide it
+    lists; a page that lists none of a guide ``guides`` names for its plugin
+    means the guide is missing from the install.
     """
     errors: list[str] = []
 
@@ -714,7 +728,12 @@ def agents_errors(exe: str, expected: Collection[str]) -> list[str]:
 
     page()
     for plugin in ["untaped", *sorted(expected)]:
-        for guide in page_guides(page(plugin)):
+        listed = page_guides(page(plugin))
+        errors += [
+            f"untaped agents {plugin} does not list the guide {guide}"
+            for guide in sorted(set(guides.get(plugin, ())) - set(listed))
+        ]
+        for guide in listed:
             page(plugin, guide)
     return errors
 
@@ -739,6 +758,7 @@ def run_smoke(
     expect: Collection[str],
     quarantined: Collection[str] = (),
     agents: bool = False,
+    guides: Mapping[str, Collection[str]] | None = None,
 ) -> tuple[list[str], int]:
     """Run the installed ``untaped``: (every smoke failure, expected plugin count)."""
     rows = _run(exe, "plugin", "list", "--format", "json")
@@ -755,7 +775,7 @@ def run_smoke(
         errors += skill_errors(listing.stdout, expect)
         if listing.returncode:
             errors.append(f"untaped skills list --format json exited {listing.returncode}")
-        errors += agents_errors(exe, expect)
+        errors += agents_errors(exe, expect, guides or {})
     return errors, len(expect)
 
 
@@ -1005,7 +1025,12 @@ def _index(root: Path, args: argparse.Namespace) -> list[str]:
 def _smoke(root: Path, args: argparse.Namespace) -> list[str]:
     expect = plugin_names(root) if args.expect is None else args.expect
     errors, count = run_smoke(
-        args.exe, args.version, expect=expect, quarantined=args.quarantined, agents=args.agents
+        args.exe,
+        args.version,
+        expect=expect,
+        quarantined=args.quarantined,
+        agents=args.agents,
+        guides=plugin_guides(root),
     )
     if not errors:
         print(f"smoke ok: untaped {args.version}, {count} plugins")

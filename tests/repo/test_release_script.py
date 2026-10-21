@@ -848,18 +848,33 @@ def test_smoke_agents_need_each_expected_skill_and_every_page(
     monkeypatch.setenv("FAKE_SKILLS", json.dumps([_skill("untaped"), _skill("untaped-awx")]))
     monkeypatch.setenv("FAKE_MISSING_GUIDE", "writes")
     monkeypatch.setenv("FAKE_EMPTY_PAGE", "jira")
+    # The checkout ships awx's writes and launching guides; the install lists only writes.
+    guides = {"awx": ["launching", "writes"], "jira": []}
+    monkeypatch.setattr(release, "plugin_guides", lambda root: guides)
     argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx,jira", "--agents"]
     assert release.main(argv) == 1
     assert capsys.readouterr().err == (
         "skill untaped-jira is missing\n"
         "untaped agents untaped writes exited 2\n"
+        "untaped agents awx does not list the guide launching\n"
         "untaped agents awx writes exited 2\n"
         "untaped agents jira printed nothing\n"
     )
+    guides["awx"] = ["writes"]
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows[:1]))
     monkeypatch.setenv("FAKE_MISSING_GUIDE", "")
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--agents"]) == 0
     assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 plugins\n"
+
+
+def test_plugin_guides_are_each_packages_guide_files() -> None:
+    guides = release.plugin_guides(release.REPO_ROOT)
+    shipped = sorted(
+        path.stem
+        for path in (release.REPO_ROOT / "packages/untaped-awx/src/untaped_awx/guides").glob("*.md")
+    )
+    assert guides["awx"] == shipped != []
+    assert guides["lint"] != []
 
 
 def test_page_guides_reads_only_the_guides_section() -> None:
@@ -869,6 +884,7 @@ def test_page_guides_reads_only_the_guides_section() -> None:
         "## Settings\n- `token`: The token.\n"
     )
     assert release.page_guides(page) == ["writes", "test-cases"]
+    assert release.page_guides("## Guides\n- `Odd_Name`: Read it.\n") == ["Odd_Name"]
     assert release.page_guides("# lint\n\n## Commands\n- `lint`: Lint.\n") == []
 
 

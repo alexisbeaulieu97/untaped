@@ -14,7 +14,8 @@ A skill comes in one of two kinds (the `kind` field of `skills list`):
   untaped installed on the machine. Its `source` is `untaped:stub/1`.
 - A **copy** is a directory with `SKILL.md` and reference files, copied from
   the plugin's package. Its `source` is that directory, so an agent whose
-  harness has no skills folder can read it in place.
+  harness has no skills folder can read it in place. A plugin shipping a copy
+  is [deprecated](./plugin-skills.md#copies).
 
 ## Install skills
 
