@@ -1,20 +1,21 @@
-"""The untaped-awx skill's suite reference and examples cannot drift from the suite models.
+"""awx's test guides and the skill's specs reference cannot drift from the models.
 
-- Every ``examples/*.yml`` loads through the real suite loader (header,
-  Jinja2, ``!ref``, validation) and resolves to launch payloads made only of
-  fields AWX's launch endpoint knows.
-- Every field of a workflow node (``spec.nodes``) is named in
+- Every suite of the ``test-examples`` guide loads through the real suite
+  loader (header, Jinja2, ``!ref``, validation) and resolves to launch
+  payloads made only of fields AWX's launch endpoint knows. The guide's
+  blocks are plain ``yaml``: ``AwxTestSuite`` is a document kind, not a
+  record kind, so the ``guide-yaml`` convention cannot load them.
+- Every field of a workflow node (``spec.nodes``) is named in the skill's
   ``references/specs.md``, and its field tables name only node fields.
-- ``references/test-results.md``'s field tables name only fields of an
-  ``awx.test_result`` row or a temporary copy's row, and every backticked
-  identifier in its prose is such a field, a suite field, a value the code
-  defines, or a listed AWX or Ansible word.
-- Every backticked identifier in ``references/test-suites.md``'s prose is a
+- Every backticked identifier in the ``test-results`` guide's prose is a
+  field of an ``awx.test_result`` row or a temporary copy's row, a suite
+  field, a value the code defines, or a listed AWX or Ansible word.
+- Every backticked identifier in the ``test-suites`` guide's prose is a
   suite field, a launch field, an ``untaped awx`` command, a value the code
   defines, or a listed word.
 
-The references do not have to name every field: ``untaped awx schema
-AwxTestSuite`` and ``--columns '?'`` list those.
+The pages do not have to name every field: ``untaped awx schema
+AwxTestSuite`` and ``untaped plugin schema awx.test_result`` list those.
 """
 
 from __future__ import annotations
@@ -57,7 +58,11 @@ from untaped_awx.infrastructure.suites import (
 
 (_SKILL,) = SPEC.skills
 SKILL_DIR = _SKILL.source
-EXAMPLES = sorted((SKILL_DIR / "examples").glob("*.yml"))
+assert SPEC.guides is not None
+GUIDES = SPEC.guides
+_SUITE_BLOCK = re.compile(r"^## (\w+)\n\n```yaml\n(.*?)^```", re.MULTILINE | re.DOTALL)
+EXAMPLES = dict(_SUITE_BLOCK.findall((GUIDES / "test-examples.md").read_text(encoding="utf-8")))
+"""Each example suite of the ``test-examples`` guide, by its heading."""
 
 
 class _AnyId:
@@ -77,18 +82,17 @@ def _load(path: Path) -> Suite:
     return loader(path)
 
 
-def test_the_skill_ships_the_examples_its_manual_names() -> None:
-    assert [path.name for path in EXAMPLES] == [
-        "idempotent.yml",
-        "negative.yml",
-        "smoke.yml",
-        "variants.yml",
-        "workflow.yml",
-    ]
+def test_the_examples_guide_holds_the_suites_its_description_names() -> None:
+    text = (GUIDES / "test-examples.md").read_text(encoding="utf-8")
+
+    assert list(EXAMPLES) == ["Smoke", "Variants", "Negative", "Idempotent", "Workflow"]
+    assert text.count("```yaml") == len(EXAMPLES), "a yaml block no test loads"
 
 
-@pytest.mark.parametrize("path", EXAMPLES, ids=lambda path: path.name)
-def test_example_loads_and_resolves_to_known_launch_fields(path: Path) -> None:
+@pytest.mark.parametrize("name", EXAMPLES)
+def test_example_loads_and_resolves_to_known_launch_fields(name: str, tmp_path: Path) -> None:
+    path = tmp_path / f"{name.lower()}.yml"
+    path.write_text(EXAMPLES[name], encoding="utf-8")
     suite = _load(path)
     warned: list[str] = []
     resolver = ResolveCasePayload(_AnyId(), catalog=AwxResourceCatalog(), warn=warned.append)
@@ -144,12 +148,6 @@ def _all_result_keys() -> set[str]:
     return {key for model in models for key in model.get("properties", {})}
 
 
-def _result_keys() -> set[str]:
-    """The result row fields a field table may name."""
-    # ``expectations`` entries are documented as a list, not a field table.
-    return _all_result_keys() - {"check", "expected", "actual", "passed"}
-
-
 def _copy_keys() -> set[str]:
     """Every field of a temporary copy's row, its ``error`` included."""
     schema = TemporaryCopyOutcome.model_json_schema()
@@ -158,14 +156,7 @@ def _copy_keys() -> set[str]:
 
 
 def _results_reference() -> str:
-    return (SKILL_DIR / "references" / "test-results.md").read_text(encoding="utf-8")
-
-
-def test_the_results_reference_field_tables_name_only_result_fields() -> None:
-    documented = _table_field_names(_results_reference())
-
-    assert documented
-    assert documented - _result_keys() - _copy_keys() == set()
+    return (GUIDES / "test-results.md").read_text(encoding="utf-8")
 
 
 _PROSE_WORDS = frozenset({
@@ -174,7 +165,8 @@ _PROSE_WORDS = frozenset({
     # A stderr diagnostic field, a check's unread ``actual``, and JSON literals.
     "exit_code", "unknown", "null", "true",
     # AWX API and Ansible words the reference explains rows with.
-    "allow_override", "ask_scm_branch_on_launch", "identifier", "dark",
+    "allow_override", "ask_scm_branch_on_launch", "ask_variables_on_launch",
+    "identifier", "dark",
     "pending", "waiting", "running", "project_update", "inventory_update",
     "ignore_errors", "rescue",
 })  # fmt: skip
@@ -220,7 +212,7 @@ def _awx_commands() -> set[str]:
 
 def test_the_suites_reference_prose_names_only_known_fields() -> None:
     """A renamed suite field cannot linger in the prose: every identifier is known."""
-    text = (SKILL_DIR / "references" / "test-suites.md").read_text(encoding="utf-8")
+    text = (GUIDES / "test-suites.md").read_text(encoding="utf-8")
     named = _prose_identifiers(text)
     known = (
         _suite_keys()

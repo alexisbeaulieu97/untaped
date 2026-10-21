@@ -195,13 +195,15 @@ class HostSummary(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    ok: int = 0
-    changed: int = 0
-    failed: int = 0
-    unreachable: int = 0
-    skipped: int = 0
-    rescued: int = 0
-    ignored: int = 0
+    ok: int = Field(default=0, description="Tasks that succeeded without a change.")
+    changed: int = Field(default=0, description="Tasks that changed something.")
+    failed: int = Field(default=0, description="Tasks that failed.")
+    unreachable: int = Field(
+        default=0, description="Tasks that could not reach the host (AWX's `dark`)."
+    )
+    skipped: int = Field(default=0, description="Tasks a condition skipped.")
+    rescued: int = Field(default=0, description="Failures a `rescue` block handled.")
+    ignored: int = Field(default=0, description="Failures `ignore_errors` let pass.")
 
     @classmethod
     def from_record(cls, record: Mapping[str, Any]) -> HostSummary:

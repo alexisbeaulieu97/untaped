@@ -1,4 +1,6 @@
-# AWX agent profile
+---
+description: "Read when setting up the AWX user, roles, token and untaped profile an agent runs awx tests as."
+---
 
 An agent that tests its own changes with `untaped awx test` runs as its own
 AWX user with its own token. untaped does not limit what a token can do; AWX's
@@ -20,7 +22,7 @@ changing something it should not.
    (`inventory: !ref …`, `credentials: …`). AWX refuses a prompted resource
    the launching user cannot use.
 4. For `awx test run --source-ref` (temporary copies of the repository's
-   specs, see [source-ref.md](source-ref.md#test-at-a-ref)),
+   specs, see `untaped agents awx source-ref`),
    the user creates and deletes templates in the organization. Grant:
    - the organization's **Job Template Admin** role and, for workflow
      suites, **Workflow Admin**;
@@ -51,17 +53,16 @@ profiles:
       test_timeout_seconds: 1200  # seconds a case may run before its job is cancelled
 ```
 
-```bash
-untaped --profile agent awx ping   # reports the authenticated user
+```console
+$ untaped --profile agent awx ping
 ```
+
+`ping` names the authenticated user.
 
 Select the profile with `--profile agent` or `UNTAPED_PROFILE=agent` in the
 agent's environment. `awx.token` wins over `token_command`; a profile with
 neither uses `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN` or `AAP_TOKEN`,
 tried in that order.
 
-## Running suites
-
-Follow the skill's "Test a change" workflow with `untaped --profile agent`.
-Exit 4 from AWX usually means this user lacks a role above or its token was
-refused ([test-results.md](test-results.md#exit-code)).
+Exit 4 from a test run usually means this user lacks a role above or its
+token was refused (`untaped agents awx test-results`).

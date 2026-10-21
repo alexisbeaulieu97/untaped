@@ -1,22 +1,19 @@
-# Temporary copies and `--source-ref`
+---
+description: "Read before running awx test or apply with --source-ref: how specs at a git ref become temporary template copies, what such a run reports, cleaning up leftover copies, and applying files from a ref."
+---
 
 `--source-ref REF` reads specs as they are at a git ref instead of the working
 tree. `awx test` uses it to run suites against temporary copies of the
 templates a change edits; `awx apply` uses it to apply files from a tag or
 branch. Either way, messages name the files read as `REF:PATH`.
 
-- [Test at a ref](#test-at-a-ref)
-- [What a run with copies reports](#what-a-run-with-copies-reports)
-- [Leftover copies](#leftover-copies)
-- [Apply from a git ref](#apply-from-a-git-ref)
-
 ## Test at a ref
 
 `--scm-branch` runs a branch's playbooks with the templates AWX holds. When
-the branch also changes a template or workflow, keep its spec in the
-repository ([specs.md](specs.md)) and run `untaped awx test run --source-ref
-REF`: each suite runs against a temporary copy of its template as REF
-describes it.
+the branch also changes a template or workflow, keep its spec (an apply
+document, as `export` writes it) in the repository and run `untaped awx test
+run --source-ref REF`: each suite runs against a temporary copy of its
+template as REF describes it.
 
 1. REF (a branch, tag or commit; `HEAD` once pushed) is pinned to its
    commit, which a remote must have. Suites and specs are read at that
@@ -57,7 +54,7 @@ describes it.
 - `validate --source-ref REF` does everything but the writes. A case of a copied
   template is checked against the spec.
 - The AWX user needs to create and delete templates
-  ([agent-profile.md](agent-profile.md)).
+  (`untaped agents awx agent-profile`).
 
 ## What a run with copies reports
 
@@ -83,7 +80,7 @@ before any launch with one error and prints no row.
 |---|---|---|---|
 | `awx.suite` | A spec names something AWX does not have, a copy's name is taken, or two specs match one suite | `not_found`, `conflict`, `invalid` (1) | Fix the spec or suite (or create the missing resource in AWX), then `untaped awx test validate --source-ref REF`. |
 | `awx.scm` | A copy's project does not allow branch override, or a template the run does not copy does not prompt for `scm_branch` | `invalid` (1) | Enable `allow_override` on the project; add the template's spec or enable `ask_scm_branch_on_launch`. |
-| `awx.credentials` | AWX refused to create a copy (401, 403) | `auth`, `permission` (4) | Give the AWX user the roles in [agent-profile.md](agent-profile.md). |
+| `awx.credentials` | AWX refused to create a copy (401, 403) | `auth`, `permission` (4) | Give the AWX user the roles in `untaped agents awx agent-profile`. |
 | `awx.controller` | AWX was unavailable while creating a copy or reading a project | `unavailable` (5) | Retry later. |
 | `awx` | AWX did not store a copy as the spec asks (`unverified …` fields) | `invalid` (1) | Rerun with `--keep` to inspect the copy, then fix the spec. |
 
@@ -104,21 +101,10 @@ started, not when the copy was created.
 
 ## Leftover copies
 
-`untaped awx test prune` deletes copies a killed run left behind: templates
-named like a copy whose description carries the matching marker, created
-more than `--older-than` ago.
-
-- An age below the longest run deletes copies of runs still going, whose
-  next launches then fail. Prune another run's copies only once it has ended;
-  `--run RUN` limits it to one run, as the teardown warning's hint does.
-- It lists the copies and asks once; preview with `--dry-run`.
-- It prints one `awx.prune_outcome` row per leftover copy (`planned` with
-  `--dry-run`, then `deleted` or `failed`).
-
-Both `prune` and the `validate` preview print the fields of a `--format json`
-row (`--columns '?'` lists them under `--dry-run`). A `failed` row's `error`
-carries the attributed failure (`category`, `system`, `retryable`, `message`,
-`hint`).
+Copies a killed run left behind are deleted by `untaped awx test prune`
+(`untaped agents awx test prune`). It and the `validate` preview print the
+fields of a `--format json` row (`--columns '?'` lists them under
+`--dry-run`).
 
 ## Apply from a git ref
 
@@ -126,8 +112,8 @@ carries the attributed failure (`category`, `system`, `retryable`, `message`,
 (a branch, tag or commit of the repository containing the current directory),
 never from the working tree, then applies them as usual:
 
-```bash
-untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workflows --dry-run
+```console
+$ untaped awx apply --source-ref v1.4.0 .untaped/awx/templates .untaped/awx/workflows --dry-run
 ```
 
 - Paths are relative to the current directory. Local edits and untracked

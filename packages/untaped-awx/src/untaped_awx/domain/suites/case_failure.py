@@ -125,12 +125,14 @@ class FailedTask(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    host: str | None
-    task: str | None
-    status: Literal["failed", "unreachable"]
-    msg: str | None
+    host: str | None = Field(description="The host it failed on.")
+    task: str | None = Field(description="The task's name.")
+    status: Literal["failed", "unreachable"] = Field(
+        description="`unreachable` when the host could not be reached."
+    )
+    msg: str | None = Field(description="The module's message (cut at 1000 characters).")
     stderr: str | None = Field(
-        description="The end of the module's stderr (where errors usually are)."
+        description="The last 1000 characters of the module's stderr (where errors usually are)."
     )
     _unsure: bool = PrivateAttr(default=False)
 
@@ -165,8 +167,8 @@ class ChangedTask(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    host: str | None
-    task: str | None
+    host: str | None = Field(description="The host it changed.")
+    task: str | None = Field(description="The task's name.")
 
 
 class RelatedExecution(BaseModel):
@@ -174,11 +176,16 @@ class RelatedExecution(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: str
-    id: int
-    name: str | None
-    status: str
-    url: str | None
+    kind: str = Field(description="`project_update` or `inventory_update`.")
+    id: int = Field(
+        description="Its id: `untaped awx jobs logs ID --kind KIND` prints its whole log."
+    )
+    name: str | None = Field(description="The project or inventory source it updated.")
+    status: str = Field(
+        description="Its status as AWX reports it (`failed`, or `error` when the controller "
+        "failed it)."
+    )
+    url: str | None = Field(description="Its output page in the controller web UI.")
 
 
 class FailureEvidence(BaseModel):
@@ -187,11 +194,17 @@ class FailureEvidence(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     job_explanation: str | None = Field(
-        default=None, description="AWX's note on why the job ended."
+        default=None,
+        description=(
+            "AWX's note on why the job ended, such as `Previous Task Failed: "
+            '{"job_type": "project_update", …}`.'
+        ),
     )
     result_traceback: str | None = Field(
         default=None,
-        description="The end of the controller's traceback of a job that ended in `error`.",
+        description=(
+            "The last 2000 characters of the controller's traceback of a job that ended in `error`."
+        ),
     )
     related: RelatedExecution | None = Field(
         default=None, description="The failed update the job depended on."
@@ -199,7 +212,7 @@ class FailureEvidence(BaseModel):
     log_tail: tuple[str, ...] | None = Field(
         default=None,
         description=(
-            "The last log lines of the responsible execution (`related` when set, else the job)."
+            "The last 40 log lines of the responsible execution (`related` when set, else the job)."
         ),
     )
     failed_tasks: tuple[FailedTask, ...] | None = Field(
