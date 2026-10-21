@@ -285,6 +285,13 @@ CASES = {
         "cfg acme.old -> acme.newer  [deprecated, removed in 12.0]",
         True,
     ),
+    "retarget a renamed setting to another key": (
+        "cfg acme.new integer default=60\ncfg acme.other string default=x\n"
+        "cfg acme.old -> acme.new  [deprecated, removed in 12.0]",
+        "cfg acme.new integer default=60\ncfg acme.other string default=x\n"
+        "cfg acme.old -> acme.other  [deprecated, removed in 12.0]",
+        False,
+    ),
     "rename a setting, its old key no longer read": (
         "cfg acme.max_age integer default=60",
         "cfg acme.caches.x.max_age_seconds integer default=60",
