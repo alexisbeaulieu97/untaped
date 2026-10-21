@@ -247,8 +247,9 @@ def test_cached_with_nothing_kept_fails_without_asking(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_AWX__TOKEN", "tok-1f2e3d")
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")  # details are shown
     seed_controller(fake_aap)
-    result = _lint("--cached")  # JSON diagnostics: details included
+    result = _lint("--cached")
     assert result.exit_code == 1, result.output
     assert _requests(fake_aap) == []
     assert "controller resources" in result.stderr
@@ -262,11 +263,12 @@ def test_an_outdated_snapshot_under_cached_warns_without_the_token(
     from untaped_awx.settings import RESOURCES
 
     monkeypatch.setenv("UNTAPED_AWX__TOKEN", "tok-1f2e3d")
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")  # details are shown
     seed_controller(fake_aap)
     _lint()
     before = len(fake_aap.router.calls)
     monkeypatch.setattr(RESOURCES, "version", lambda: "another")
-    result = _lint("--cached")  # JSON diagnostics: details included
+    result = _lint("--cached")
     assert result.exit_code == 3, result.output
     assert len(fake_aap.router.calls) == before
     assert "another version" in result.stderr

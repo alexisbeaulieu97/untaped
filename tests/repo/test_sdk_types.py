@@ -148,7 +148,8 @@ def test_a_fill_returning_a_bare_filled_is_refused_by_a_typed_cache(tmp_path: Pa
     """A bare ``Filled`` is ``Filled[None]``: mypy refuses it as a ``Cache[M]`` fill."""
     _code, output = _mypy(tmp_path, TYPED + "TYPED.serve({}, refresh=None, fill=plain_fill)\n")
     errors = [line for line in output.splitlines() if ": error:" in line]
-    assert len(errors) == 1 and "arg-type" in errors[0] and ":52:" in errors[0], output
+    assert len(errors) == 1 and "arg-type" in errors[0], output
+    assert f":{TYPED.count(chr(10)) + 1}:" in errors[0], output  # the appended line
 
 
 def test_a_typed_cache_types_its_values_under_strict_mypy(tmp_path: Path) -> None:

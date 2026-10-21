@@ -22,9 +22,9 @@ results in every profile.
 
 Without FILES the controller is read once into a snapshot kept for an hour
 (`awx.caches.resources.max_age_seconds`), one per controller and token, so
-profiles that share both share it; `--refresh` reads it again now, `--cached` reads only what is kept. The
-snapshot redacts secret-named launch and inventory variables before it is
-kept.
+profiles that share both share it; `--refresh` reads it again now,
+`--cached` reads only what is kept. The snapshot redacts secret-named
+launch and inventory variables before it is kept.
 
 On the controller every reference resolves by the id AWX holds (a foreign
 key, a schedule's parent, what a workflow node runs and prompts with), so a
