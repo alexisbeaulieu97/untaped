@@ -1902,6 +1902,7 @@ cli untaped awx job-templates usage --format choice=json
 cli untaped awx job-templates usage --format choice=pipe
 cli untaped awx job-templates usage --format choice=raw
 cli untaped awx job-templates usage --format choice=table
+cli untaped awx job-templates usage --format choice=tree
 cli untaped awx job-templates usage --format choice=yaml
 cli untaped awx job-templates usage --organization VALUE default=unset
 cli untaped awx job-templates usage --organization alias=--org
@@ -2917,6 +2918,7 @@ cli untaped awx workflow-templates usage --format choice=json
 cli untaped awx workflow-templates usage --format choice=pipe
 cli untaped awx workflow-templates usage --format choice=raw
 cli untaped awx workflow-templates usage --format choice=table
+cli untaped awx workflow-templates usage --format choice=tree
 cli untaped awx workflow-templates usage --format choice=yaml
 cli untaped awx workflow-templates usage --organization VALUE default=unset
 cli untaped awx workflow-templates usage --organization alias=--org
@@ -5762,6 +5764,47 @@ sdk untaped.sdk.Tree.view(frame)  [experimental]
 sdk untaped.sdk.Tree.view(width=) default=None  [experimental]
 sdk untaped.sdk.Tree.window_rows  [experimental]
 sdk untaped.sdk.Tree.with_error(text)  [experimental]
+sdk untaped.sdk.TreeFormatOption choice=json
+sdk untaped.sdk.TreeFormatOption choice=pipe
+sdk untaped.sdk.TreeFormatOption choice=raw
+sdk untaped.sdk.TreeFormatOption choice=table
+sdk untaped.sdk.TreeFormatOption choice=tree
+sdk untaped.sdk.TreeFormatOption choice=yaml
+sdk untaped.sdk.TreeGraph(*, root)  [experimental]
+sdk untaped.sdk.TreeGraph(edges=) default=[]  [experimental]
+sdk untaped.sdk.TreeGraph(nodes=) default=[]  [experimental]
+sdk untaped.sdk.TreeGraph(notes=) default=[]  [experimental]
+sdk untaped.sdk.TreeGraph(summary=) default=None  [experimental]
+sdk untaped.sdk.TreeGraph.cycle_edges()  [experimental]
+sdk untaped.sdk.TreeGraph.edges  [experimental]
+sdk untaped.sdk.TreeGraph.nodes  [experimental]
+sdk untaped.sdk.TreeGraph.notes  [experimental]
+sdk untaped.sdk.TreeGraph.root  [experimental]
+sdk untaped.sdk.TreeGraph.summary  [experimental]
+sdk untaped.sdk.TreeGraphEdge(*, parent, child)  [experimental]
+sdk untaped.sdk.TreeGraphEdge(notes=) default=[]  [experimental]
+sdk untaped.sdk.TreeGraphEdge(section=) default=None  [experimental]
+sdk untaped.sdk.TreeGraphEdge(suffix=) default=""  [experimental]
+sdk untaped.sdk.TreeGraphEdge.child  [experimental]
+sdk untaped.sdk.TreeGraphEdge.notes  [experimental]
+sdk untaped.sdk.TreeGraphEdge.parent  [experimental]
+sdk untaped.sdk.TreeGraphEdge.section  [experimental]
+sdk untaped.sdk.TreeGraphEdge.suffix  [experimental]
+sdk untaped.sdk.TreeGraphNode(*, key, label)  [experimental]
+sdk untaped.sdk.TreeGraphNode(notes=) default=[]  [experimental]
+sdk untaped.sdk.TreeGraphNode(stopped=) default=false  [experimental]
+sdk untaped.sdk.TreeGraphNode(tone=) default=plain  [experimental]
+sdk untaped.sdk.TreeGraphNode.key  [experimental]
+sdk untaped.sdk.TreeGraphNode.label  [experimental]
+sdk untaped.sdk.TreeGraphNode.notes  [experimental]
+sdk untaped.sdk.TreeGraphNode.stopped  [experimental]
+sdk untaped.sdk.TreeGraphNode.tone  [experimental]
+sdk untaped.sdk.TreeOutputFormat choice=json
+sdk untaped.sdk.TreeOutputFormat choice=pipe
+sdk untaped.sdk.TreeOutputFormat choice=raw
+sdk untaped.sdk.TreeOutputFormat choice=table
+sdk untaped.sdk.TreeOutputFormat choice=tree
+sdk untaped.sdk.TreeOutputFormat choice=yaml
 sdk untaped.sdk.TreeRow(children@4=) default=[]  [experimental]
 sdk untaped.sdk.TreeRow(id, label)  [experimental]
 sdk untaped.sdk.TreeRow(summary@3=) default=""  [experimental]
@@ -5923,6 +5966,7 @@ sdk untaped.sdk.emit(empty=) default=None
 sdk untaped.sdk.emit(kind=) default=None
 sdk untaped.sdk.emit(records, *, fmt)
 sdk untaped.sdk.emit(table_columns=) default=None
+sdk untaped.sdk.emit(tree=) default=None
 sdk untaped.sdk.emit_document(data, *, fmt)
 sdk untaped.sdk.executable_check(check_id, program, *, purpose)
 sdk untaped.sdk.existing_file(type_, value)
@@ -5979,6 +6023,8 @@ sdk untaped.sdk.parse_kv_pairs(values, *, flag)
 sdk untaped.sdk.plugin_dir(spec)
 sdk untaped.sdk.plural(count, singular)
 sdk untaped.sdk.plural(plural_form@3=) default=None
+sdk untaped.sdk.print_tree(graphs)  [experimental]
+sdk untaped.sdk.print_tree(ui=) default=None  [experimental]
 sdk untaped.sdk.project_at(path)  [experimental]
 sdk untaped.sdk.project_root(start)  [deprecated, removed in 12.0; use checkout_root]
 sdk untaped.sdk.q(value)
@@ -6046,6 +6092,8 @@ sdk untaped.sdk.setting_guard(section)
 sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
 sdk untaped.sdk.summary(operation, counts)
+sdk untaped.sdk.tree_text(graphs)  [experimental]
+sdk untaped.sdk.tree_text(ui=) default=None  [experimental]
 sdk untaped.sdk.ui_context()
 sdk untaped.sdk.ui_context(stderr=) default=None
 sdk untaped.sdk.ui_context(stdin=) default=None

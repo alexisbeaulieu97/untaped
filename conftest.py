@@ -152,16 +152,14 @@ def table_default_violations(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[s
     (``docs/reference/conventions.md#output-records``).
     """
     found: list[str] = []
-    emit_with = cli.emit_with
+    emit = cli._emit  # what emit and emit_with both call
 
     def checked(records: Any, **kwargs: Any) -> None:
         if not isinstance(records, BaseModel | Mapping) and not kwargs.get("table_columns"):
             found.extend(_lacking_default_columns(records))
-        emit_with(records, **kwargs)
+        emit(records, **kwargs)
 
-    monkeypatch.setattr(cli, "emit_with", checked)
-    # Root commands bound the name at import.
-    monkeypatch.setattr("untaped.management._render.emit_with", checked)
+    monkeypatch.setattr(cli, "_emit", checked)
     yield found
     if found:
         pytest.fail(

@@ -41,6 +41,7 @@ from untaped.cli import (  # type: ignore[deprecated]
     LimitOption,
     ParallelOption,
     StdinOption,
+    TreeFormatOption,
     YesOption,
     check_columns,
     clamp_parallel,
@@ -195,7 +196,8 @@ from untaped.stdin import (
     resolve_text_input,
 )
 from untaped.store import Store
-from untaped.theme import OutputFormat
+from untaped.theme import OutputFormat, TreeOutputFormat
+from untaped.tree import TreeGraph, TreeGraphEdge, TreeGraphNode, print_tree, tree_text
 from untaped.ui import UiContext, ui_context
 from untaped.yaml_roundtrip import yaml_mapping_indent
 
@@ -346,6 +348,11 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "StaleData",
     "TableGlyph",
     "TargetRecord",
+    "TreeFormatOption",
+    "TreeGraph",
+    "TreeGraphEdge",
+    "TreeGraphNode",
+    "TreeOutputFormat",
     "UtcTimestamp",
     "check_columns",
     "echo",
@@ -355,9 +362,11 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "is_envelope_line",
     "kind_of",
     "parse_envelope_line",
+    "print_tree",
     "record_model",
     "render_rows",
     "summary",
+    "tree_text",
     "unified_diff_text",
     # errors
     "ConfigError",

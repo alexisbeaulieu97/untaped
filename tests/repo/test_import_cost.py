@@ -162,8 +162,10 @@ _STARTUP_PROBE = (
 #: marks (``untaped.setting_marks``, and ``untaped.setup_status`` read by
 #: ``doctor`` and ``auth``) add two: the measure is 140 against 138 on their
 #: base, 2026-10-20, so the budget goes from 139 to 143 to keep three spare.
+#: The SDK's tree renderer (``untaped.tree``, #789) adds one: 144 against 143
+#: on its base, 2026-10-21, so the budget goes to 147.
 _TOTAL_BUDGET = 700
-_UNTAPED_BUDGET = 143
+_UNTAPED_BUDGET = 147
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])

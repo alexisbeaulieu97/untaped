@@ -8,19 +8,17 @@ from typing import Any
 
 import pytest
 
+from untaped.sdk import TreeGraphEdge, TreeGraphNode, UiContext, tree_text
+from untaped.theme import BUILTIN_THEMES
 from untaped_ansible.domain.graph import (
     DependencyGraph,
     GraphCycle,
     GraphEdge,
     GraphNode,
 )
-from untaped_ansible.domain.renderers import (
-    ASCII_GLYPHS,
-    TreeSegment,
-    plain_text,
-    render_graph,
-    tree_lines,
-)
+from untaped_ansible.domain.renderers import graph_tree, render_graph
+
+_ASCII = UiContext(theme=BUILTIN_THEMES["plain"])
 
 
 def _edge_id(relation: str, source_id: str, target_id: str) -> str:
@@ -133,9 +131,9 @@ def test_tree_renderer_prints_used_by_above_depends_on_with_edge_notes() -> None
         warnings=("source data is stale",),
     )
 
-    lines = tree_lines(graph, header_note="source prod · depth 3")
+    lines = tree_text(graph_tree(graph, header_note="source prod · depth 3"), ui=UiContext())
 
-    assert plain_text(lines).splitlines() == [
+    assert lines.splitlines() == [
         "acme/base@v1.0.0  source prod · depth 3",
         "",
         "used by",
@@ -152,14 +150,20 @@ def test_tree_renderer_prints_used_by_above_depends_on_with_edge_notes() -> None
     assert "stale" not in render_graph(graph, "tree")
 
 
-def test_tree_line_segments_carry_roles_for_styling() -> None:
-    header, _, section, row, *_ = tree_lines(_sample())
+def test_graph_tree_sections_edges_by_direction_and_marks_unresolved_nodes() -> None:
+    tree = graph_tree(_sample(), header_note="source prod")
 
-    assert header == (TreeSegment("acme/base@v1.0.0", "target"),)
-    assert section == (TreeSegment("used by", "section"),)
-    assert row == (TreeSegment("└── ", "guide"), TreeSegment("acme/site@release/1", "node"))
-    unresolved = next(line for line in tree_lines(_sample()) if "common" in plain_text([line]))
-    assert TreeSegment("common", "unresolved") in unresolved
+    assert tree.root == TreeGraphNode(key="target", label="acme/base@v1.0.0")
+    assert tree.notes == ("source prod",)
+    assert tree.edges == (
+        TreeGraphEdge(parent="target", child="site", section="used by"),
+        TreeGraphEdge(
+            parent="target", child="missing", notes=("unresolved",), section="depends on"
+        ),
+        TreeGraphEdge(parent="target", child="users", section="depends on"),
+    )
+    assert TreeGraphNode(key="missing", label="common", tone="error") in tree.nodes
+    assert tree.summary == "2 repos · 3 edges · 1 unresolved"
 
 
 def test_tree_renderer_nests_transitive_paths_and_shows_nodes_in_both_sections() -> None:
@@ -219,9 +223,9 @@ def test_tree_notes_align_by_terminal_cells() -> None:
 
 
 def test_tree_renderer_uses_ascii_glyphs_when_asked() -> None:
-    lines = tree_lines(_cycle("cycle"), glyphs=ASCII_GLYPHS)
+    lines = tree_text(graph_tree(_cycle("cycle")), ui=_ASCII)
 
-    assert plain_text(lines).splitlines()[-4:] == [
+    assert lines.splitlines()[-4:] == [
         "`-- acme/users@main",
         "    `-- acme/base@v1 (cycle)",
         "",
@@ -229,7 +233,7 @@ def test_tree_renderer_uses_ascii_glyphs_when_asked() -> None:
     ]
 
 
-def test_tree_renderer_numbers_a_shared_subtree_and_refers_back_to_it() -> None:
+def test_tree_renderer_numbers_a_shared_subtree_and_points_back_to_it() -> None:
     graph = _graph(
         [
             _node("target", "acme/app", "main"),
@@ -252,7 +256,8 @@ def test_tree_renderer_numbers_a_shared_subtree_and_refers_back_to_it() -> None:
         "│   └── acme/shared@main [1]",
         "│       └── acme/leaf@main",
         "└── acme/b@main",
-        "    └── acme/shared@main see [1]",
+        "    └── acme/shared@main",
+        "        └── … see [1]",
     ]
 
 
@@ -404,9 +409,9 @@ def _stopped_graph() -> DependencyGraph:
 
 
 def test_tree_renderer_marks_where_the_graph_stopped_reading() -> None:
-    lines = tree_lines(_stopped_graph())
+    lines = tree_text(graph_tree(_stopped_graph()), ui=UiContext())
 
-    assert plain_text(lines).splitlines() == [
+    assert lines.splitlines() == [
         "acme/base@v1",
         "",
         "used by",
@@ -420,18 +425,18 @@ def test_tree_renderer_marks_where_the_graph_stopped_reading() -> None:
     ]
 
 
-def test_tree_stop_marker_sits_next_to_the_label_for_styling() -> None:
-    row = tree_lines(_stopped_graph())[3]
+def test_graph_tree_gives_each_stop_reason() -> None:
+    tree = graph_tree(_stopped_graph())
 
-    assert row[:3] == (
-        TreeSegment("└── ", "guide"),
-        TreeSegment("acme/site@main", "node"),
-        TreeSegment(" …", "note"),
-    )
+    assert {node.key: node.stopped for node in tree.nodes} == {
+        "users": "depth limit",
+        "old": "ref not cached",
+        "site": "depth limit",
+    }
 
 
 def test_tree_stop_marker_is_ascii_with_ascii_glyphs() -> None:
-    lines = plain_text(tree_lines(_stopped_graph(), glyphs=ASCII_GLYPHS)).splitlines()
+    lines = tree_text(graph_tree(_stopped_graph()), ui=_ASCII).splitlines()
 
     assert lines[3] == "`-- acme/site@main ...   not read: depth limit"
 
@@ -450,6 +455,6 @@ def test_json_renderer_carries_each_nodes_stop_reason() -> None:
 def test_tree_header_marks_a_stopped_target() -> None:
     graph = _graph([_node("target", "acme/base", "v9", stopped="not_cached")], [])
 
-    assert plain_text(tree_lines(graph)).splitlines() == [
+    assert tree_text(graph_tree(graph), ui=UiContext()).splitlines() == [
         "acme/base@v9 …  not read: ref not cached"
     ]
