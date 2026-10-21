@@ -834,8 +834,8 @@ def prune_command(
     the longest run deletes the copies of runs still going, whose next launches
     then fail: prune another run's copies only once it has ended. --run limits
     it to one run's copies, as a teardown warning's hint does. It prints one
-    `awx.prune_outcome` row per copy: `planned` with --dry-run, then `deleted`
-    or `failed`, whose `error` carries the attributed failure.
+    `awx.prune_outcome` row per copy: `planned` with --dry-run, otherwise
+    `deleted` or `failed`, whose `error` carries the attributed failure.
 
     Examples
     --------
