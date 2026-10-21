@@ -23,7 +23,6 @@ from untaped.sdk import (
     PluginContext,
     PluginSpec,
     SkillAsset,
-    connection_check,
     delete_migration,
     executable_check,
     old_dirs,
@@ -112,7 +111,6 @@ SPEC = PluginSpec(
     ),
     guides=files("untaped_github") / "guides",
     doctor_checks=(
-        connection_check("github.connection", section="github"),
         online_check("github.api", section="github", probe=_probe_api),
         executable_check("github.git", "git", purpose="`untaped github sweep`"),
     ),

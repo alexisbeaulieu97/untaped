@@ -1,11 +1,11 @@
 """Root ``untaped setup`` command: one full-screen screen to configure a profile.
 
 The screen (:mod:`untaped.management.setup_screen`) lists every settings
-section, the services first (a composed plugin whose settings model has
-``base_url`` and ``token`` fields), each with a status, and the selected
-one's settings. A setting is written on enter through the use case
+section, the services first (a composed plugin whose settings mark what
+needs setting up, :mod:`untaped.setting_marks`), each with a status, and the
+selected one's settings. A setting is written on enter through the use case
 ``config set`` runs. A service's connection is one row whose form takes its
-URL and how to get its token (stored with this machine's password store, a
+marked fields and how to get its token (stored with this machine's password store, a
 plaintext token moved there, a ``token_command``, a conventional environment
 variable, or the current source kept); the service's online checks run
 against those values before anything is saved
@@ -60,8 +60,8 @@ from untaped.theme import OutputFormat
 from untaped.ui import ui_context
 
 _diag = Diagnostics()
-_NO_SERVICE = "no composed plugin takes a base URL and token to set up"
-_NOTHING_TO_PLAN = "none of the named sections is a service with a base URL and token to set up"
+_NO_SERVICE = "no composed plugin marks settings to set up"
+_NOTHING_TO_PLAN = "none of the named sections is a plugin with settings to set up"
 
 OnlyOption = Annotated[
     list[str] | None,
@@ -110,9 +110,10 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
     def setup_command(
         *, only: OnlyOption = None, fmt: FormatOption = "table", columns: ColumnsOption = None
     ) -> None:
-        """Set up a profile on one screen: every setting, and each service's URL and token.
+        """Set up a profile on one screen: every setting, and what each service needs.
 
-        A service's URL and token are checked online before they are saved.
+        A service's connection (the settings its plugin marks as needing
+        setup, and its token) is checked online before it is saved.
         It needs a terminal: without one it exits 2, and `setup plan` lists
         the same steps.
         """
@@ -132,13 +133,14 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
 
         Read-only. `--only` plans the services among the sections it names.
         The `profile` row comes before every service row, since they name
-        the profile. A service whose token comes only from its conventional
-        variable (such as `$JIRA_API_TOKEN`) counts as set up only once it
-        has a `base_url`, its own or the service's default (GitHub has one).
+        the profile; a service has a row per setting its plugin marks as
+        needing setup. A token that comes only from its conventional
+        variable (such as `$JIRA_API_TOKEN`) counts once the service's other
+        marked settings are set (GitHub has none, so `$GH_TOKEN` alone does).
         Each row's `run` is the complete argv to pass after `untaped`; every
         one but `profile create` starts with `--profile NAME`, so it acts on
-        that profile. A `<NAME>` token in it (`<URL>`, `<COMMAND>`) is a value
-        to ask the user for. A row `by: user` asks for or reveals a token, so
+        that profile. A `<NAME>` token in it (`<BASE_URL>`, `<COMMAND>`) is a
+        value to ask the user for. A row `by: user` asks for or reveals a token, so
         it is the user's to run in their own terminal; `untaped setup --only
         SECTIONS` runs all of them on one screen.
         """

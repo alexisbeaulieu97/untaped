@@ -92,6 +92,14 @@ model. The two field sets must be disjoint, and either may be left out.
 `plugin_dir(SPEC)` (`~/.untaped/plugins/<name>/`) is where it keeps other
 data. To rename a setting, see [Settings](./reference/conventions.md#settings).
 
+A plugin that connects to a service marks the settings it can't run without;
+`setup`, `setup plan`, doctor, `auth` and the token lookup read the marks.
+`NeedsSetup` goes on an `X | None` field defaulting to `None`, `Secret` on a
+top-level `SecretStr | None` one, naming the variables tried after it and,
+optionally, a command `setup plan` suggests: `token: Annotated[SecretStr |
+None, NeedsSetup, Secret(env=("ACME_TOKEN",))] = None`. `untaped` adds its
+command setting (`acme.token_command`); a misplaced mark quarantines the plugin.
+
 A complete plugin module, with a nullary app factory (leave it out for a
 plugin with no commands), one packaged skill and the `SPEC` the entry point
 above names:
@@ -186,8 +194,7 @@ network, `ContextVar`); the root owns registration and mounting.
 
 ## Commands and configuration
 
-The root mounts the plugin app beneath its name and keeps management at the
-root:
+The root mounts the plugin app beneath its name; management stays at the root:
 
 ```bash
 untaped acme hello
@@ -292,9 +299,8 @@ with a list of samples to fill in and `assert_surface`, and a `pyproject.toml`
 with the ranges and extra below (`untaped[lint]` in its `dev` group). It
 never writes into an existing directory.
 
-A plugin that fills a contract declares, besides its `untaped` range, the
-owner under an extra named like the owner, with a range of the owner's
-versions:
+A plugin that fills a contract declares, besides its `untaped` range, the owner
+under an extra named like the owner, with a range of the owner's versions:
 
 ```toml
 [project]
@@ -346,13 +352,7 @@ def put_command() -> None: ...
 
 A plugin ships its agent skill as a directory holding `SKILL.md`. Declare
 it on `PluginSpec.skills`; the root lists and installs every composed
-plugin's skills (see [Agent skills](./skills.md)):
-
-```bash
-untaped skills list
-untaped skills install acme --target codex
-untaped skills install --all --target all
-```
+plugin's skills (see [Agent skills](./skills.md)).
 
 `SkillAsset.name` is the skill's full ID (`untaped-acme`; see
 [Install skills](./skills.md#install-skills)). Without `source` it is a stub

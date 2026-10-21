@@ -16,7 +16,11 @@ provides for, so nothing else installed changes the verdict:
   against the installed owner's; a difference is ``owner-schema-drift``,
   reported, never failed;
 - ``migrations``: each ``setup migrate-dirs`` preview runs against an empty
-  HOME and returns ``MigrationRow`` rows.
+  HOME and returns ``MigrationRow`` rows;
+- ``unmarked-service`` and ``self-declared-command``: a ``warn`` row for each
+  deprecated way of saying what the settings need set up (the legacy
+  ``base_url``/``token`` fallback, a ``Secret``'s command field declared by
+  the model), so a plugin's ``assert_clean`` still passes.
 
 An owner gets a ``contracts`` row: its ``contracts`` function loads.
 """
@@ -46,6 +50,14 @@ from untaped.plugins.registry import (
     PluginContext,
     PluginSpec,
     owns_contracts,
+)
+from untaped.setting_marks import (
+    SELF_DECLARED_COMMAND,
+    UNMARKED_SERVICE,
+    self_declared_commands,
+    self_declared_subject,
+    setup_marks,
+    unmarked_subject,
 )
 from untaped.settings import get_settings
 from untaped.theme import OutputFormat
@@ -120,6 +132,7 @@ def _check(
         return [row("registration", quarantined.reason, "fail", quarantined.detail)]
     rows = _conventions(name, candidates, row, violations)
     spec = next(plugin.spec for plugin in result.plugins if plugin.spec.name == name)
+    rows += _setup_marks(spec, row)
     if owns_contracts(spec):
         rows += _contracts(name, candidates, row)
     if spec.provides:
@@ -145,6 +158,22 @@ def _conventions(
     for line in found:
         where, rule, detail = [*line.split("::", 2), "", ""][:3]
         rows.append(row("conventions", rule, "fail", f"{where}: {detail}" if detail else where))
+    return rows
+
+
+def _setup_marks(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
+    """A ``warn`` row per deprecated way ``spec``'s settings say what needs setting up."""
+    model = spec.settings
+    if model is None:
+        return []
+    rows: list[PluginCheckRow] = []
+    marks = setup_marks(model)
+    if marks is not None and marks.legacy:
+        detail = UNMARKED_SERVICE.sentence(unmarked_subject(spec.name))
+        rows.append(row("unmarked-service", model.__name__, "warn", detail))
+    for command in self_declared_commands(model):
+        detail = SELF_DECLARED_COMMAND.sentence(self_declared_subject(spec.name, command))
+        rows.append(row("self-declared-command", model.__name__, "warn", detail))
     return rows
 
 

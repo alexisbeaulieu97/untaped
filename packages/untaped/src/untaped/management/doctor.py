@@ -81,6 +81,7 @@ from untaped.profile_resolver import (
     profile_scope,
     selected_profile,
 )
+from untaped.setting_marks import setup_marks
 from untaped.settings import (
     RESERVED_STATE_SECTIONS,
     HttpSettings,
@@ -96,6 +97,7 @@ from untaped.settings import (
     section_stabilities,
     settings_overlay,
 )
+from untaped.setup_status import SETUP_CHECK, notify_unmarked, setup_result
 from untaped.skills import InstalledSkill, SkillState, outdated_skills, project_root
 from untaped.stability import owner, removal_text
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
@@ -370,12 +372,13 @@ def collect_doctor_rows(
         rows.append(_core_row(shell, field, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
     scopes = _scopes(shell, result)
+    profile = selected_profile(raw or {})
     for scope in scopes:
         settings = _settings_row(scope, effective, settings_error, rows)
         contexts.append((scope, settings))
+        rows.extend(_setup_rows(scope, settings, profile=profile))
         if scope.state_model is not None:
             rows.append(_state_row(scope, scope.state_model, state))
-    profile = selected_profile(raw or {})
     rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
     rows.extend(_contract_rows(result, profile, plugins))
     rows.append(_skills_row(shell, result))
@@ -967,6 +970,37 @@ def _settings_row(
     else:
         rows.append(_row("settings", scope.plugin, _PASS, "validate settings", "settings OK"))
     return settings
+
+
+def _setup_rows(
+    scope: _SectionScope, settings: BaseModel | None, *, profile: str
+) -> list[dict[str, object]]:
+    """Core's ``setup`` row for a plugin that marks what it needs; none for any other.
+
+    A plugin read through the legacy fallback keeps its own
+    ``connection_check`` row, and the fallback warns
+    (:data:`~untaped.setting_marks.UNMARKED_SERVICE`).
+    """
+    marks = None if scope.settings_model is None else setup_marks(scope.settings_model)
+    if marks is None:
+        return []
+    if marks.legacy:
+        notify_unmarked(scope.plugin, marks)
+        return []
+    outcome = setup_result(settings, marks, section=scope.section)
+    fix = None if outcome.fix is None else command_argv(outcome.fix, profile=profile)
+    if outcome.ok and not outcome.warn:
+        return [_row(SETUP_CHECK, scope.plugin, _PASS, SETUP_CHECK, outcome.detail)]
+    row = _row(
+        SETUP_CHECK,
+        scope.plugin,
+        _WARN,
+        SETUP_CHECK,
+        outcome.detail,
+        fix,
+        automatic=outcome.automatic,
+    )
+    return [row]
 
 
 def _run_check(

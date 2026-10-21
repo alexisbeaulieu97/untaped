@@ -41,6 +41,7 @@ from untaped.deprecated_keys import KeyUse, Renamed, key_mappings, notify_use, r
 from untaped.errors import ConfigError, first_validation_error
 from untaped.messages import run_hint
 from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
+from untaped.setting_marks import TokenCommand, command_collisions, injected_commands
 from untaped.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.stability import Stability
 from untaped.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
@@ -240,13 +241,19 @@ def reserved_section_keys(
     name. An old key (``renamed_keys``, ``retired_keys``) collides only with
     a key the SDK actually ``injected`` into this section, so a plugin can
     still move its own ``extensions`` setting away under a new name.
+
+    A :class:`~untaped.setting_marks.Secret`'s command setting
+    (``<field>_command``) is injected too, unless the model declares it
+    itself typed ``TokenCommand`` (the behaviour
+    :data:`~untaped.setting_marks.SELF_DECLARED_COMMAND` dates); declared
+    with another type, it collides.
     """
     keys = set(model.model_fields)
     for field in model.model_fields.values():
         keys.update(
             alias for alias in (field.alias, field.validation_alias) if isinstance(alias, str)
         )
-    taken = RESERVED_SECTION_KEYS & keys
+    taken = (RESERVED_SECTION_KEYS & keys) | set(command_collisions(model))
     for name in ("renamed_keys", "retired_keys"):
         declared = getattr(model, name, None)
         if isinstance(declared, Mapping):
@@ -266,7 +273,7 @@ class CacheSettings(BaseModel):
 
 @cache
 def section_model(
-    model: type[BaseModel], *, extensions: bool, caches: tuple[Cache, ...]
+    model: type[BaseModel], *, extensions: bool, caches: tuple[Cache, ...], section: str = ""
 ) -> type[BaseModel]:
     """``model`` with the keys the SDK injects into a plugin's section.
 
@@ -278,7 +285,10 @@ def section_model(
     age; an unknown cache name loads (doctor names it), so a cache a plugin
     drops never breaks a config. Each cache's ``renamed_from`` joins
     ``model``'s ``renamed_keys`` here, on the composed class only: the
-    owner's own declarations never point at an injected key.
+    owner's own declarations never point at an injected key. Each
+    :class:`~untaped.setting_marks.Secret` gets its ``<field>_command``
+    (:func:`~untaped.setting_marks.injected_commands`), described for
+    ``section``.
     """
     renamed = _cache_renames(model, caches)
     if renamed:
@@ -307,10 +317,23 @@ def section_model(
             held,
             Field(default_factory=held, description="Max ages of the caches this plugin keeps."),
         )
+    for command in injected_commands(model):
+        injected[command] = (
+            TokenCommand,
+            Field(default=None, description=_command_text(section, command)),
+        )
     return cast(
         "type[BaseModel]",
         create_model(model.__name__, __base__=model, __module__=model.__module__, **injected),
     )
+
+
+def _command_text(section: str, command: str) -> str:
+    """The description core writes for a ``Secret``'s injected command setting."""
+    field = command.removesuffix("_command")
+    key = f"`{section}.{field}`" if section else f"`{field}`"
+    what = "the token" if field == "token" else f"the value of {key}"
+    return f"Command (argv list, no shell) that prints {what}; used when {key} is unset."
 
 
 def _cache_renames(model: type[BaseModel], caches: tuple[Cache, ...]) -> dict[str, str | Renamed]:
@@ -1131,10 +1154,13 @@ def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
     from untaped.auth import resolve_token  # noqa: PLC0415
 
     value = load_settings_section(section, settings_cls)
-    if isinstance(value, model_cls):
-        return resolve_token(value, section=section)
     if isinstance(value, BaseModel):
-        return resolve_token(model_cls.model_validate(value.model_dump()), section=section)
+        # Resolve on the composed class, which holds the injected command settings.
+        value = resolve_token(value, section=section)
+    if isinstance(value, model_cls):
+        return value
+    if isinstance(value, BaseModel):
+        return model_cls.model_validate(value.model_dump())
     return resolve_token(model_cls.model_validate(value), section=section)
 
 

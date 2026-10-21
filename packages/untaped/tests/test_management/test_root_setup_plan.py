@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Annotated, Any
 
 import pytest
 from pydantic import BaseModel, SecretStr
@@ -34,7 +34,7 @@ from untaped.plugins.registry import (
     PluginContext,
     PluginSpec,
 )
-from untaped.sdk import TokenCommand, TokenSources, connection_check, online_check
+from untaped.sdk import NeedsSetup, Secret, Suggest, connection_check, online_check
 from untaped.testing import (
     CliResult,
     ScreenKeys,
@@ -47,13 +47,17 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 class HubProfile(BaseModel):
-    """GitHub-like double: a default URL and ``GH_TOKEN`` (section ``hub``)."""
-
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("GH_TOKEN",))
+    """GitHub-like double: a default URL, ``GH_TOKEN`` and a ``gh`` suggestion (section ``hub``)."""
 
     base_url: str = "https://hub.example"
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
+    token: Annotated[
+        SecretStr | None,
+        NeedsSetup,
+        Secret(
+            env=("GH_TOKEN",),
+            suggest=Suggest(("gh", "auth", "token"), note="after `gh auth login`"),
+        ),
+    ] = None
 
 
 @pytest.fixture(autouse=True)
@@ -124,7 +128,7 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
         "plugin": "wiz",
         "state": "todo",
         "detail": "",
-        "run": ["--profile", "default", "config", "set", "wiz.base_url", "<URL>"],
+        "run": ["--profile", "default", "config", "set", "wiz.base_url", "<BASE_URL>"],
         "by": "agent",
     }
     token = _step(rows, "wiz.token")
@@ -250,13 +254,14 @@ def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> Non
     assert settings["state"] == "failed"
     assert "wiz settings are invalid" in settings["detail"]
     assert "wiz.base_url" not in {row["step"] for row in rows}
-    assert _step(rows, "hub.base_url")["state"] == "done"
+    assert _step(rows, "hub.token")["state"] == "todo"
 
 
 def test_only_narrows_and_orders_the_services() -> None:
     hub = make_spec("hub", settings=HubProfile)
     rows = _plan("--only", "hub,wiz", specs=(_wiz(), hub))
-    assert [row["plugin"] for row in rows[2:]] == ["hub", "hub", "wiz", "wiz", "wiz"]
+    # hub marks only its token (its URL has a default), so it has one row
+    assert [row["plugin"] for row in rows[2:]] == ["hub", "wiz", "wiz", "wiz"]
     assert {row["plugin"] for row in _plan("--only", "hub", specs=(_wiz(), hub))} == {
         "untaped",
         "hub",
@@ -306,7 +311,7 @@ def test_check_exits_3_while_a_step_is_pending(_isolated_config: Path) -> None:
 
 
 def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
-    values = {"<URL>": "https://wiz.example"}
+    values = {"<BASE_URL>": "https://wiz.example"}
     for row in _plan():
         if row["state"] == "todo" and row["by"] == "agent":
             argv = [values.get(arg, arg) for arg in row["run"]]
@@ -432,10 +437,24 @@ def test_a_rejected_token_without_token_command_is_never_stored_in_the_config(
         (["--profile", "auth", "config", "set", "wiz.base_url", "<URL>"], "agent"),
         (["--profile", "work", "auth", "set", "wiz"], "user"),
         (["--profile", "work", "config", "set", "wiz.token_command", "<COMMAND>"], "user"),
+        (["--profile", "work", "config", "set", "wiz.token", "--prompt"], "user"),
     ],
 )
 def test_who_runs_a_manual_fix_depends_on_its_command(run: list[str], by: str) -> None:
-    assert setup_plan._by(run, automatic=False) == by
+    assert setup_plan._by(_wiz(), run, automatic=False) == by
+
+
+def test_who_runs_a_fix_comes_from_the_secret_mark_not_the_key_name() -> None:
+    class Keyed(BaseModel):
+        api_key: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
+        token_hint: Annotated[str | None, NeedsSetup] = None
+
+    keyed = make_spec("keyed", settings=Keyed)
+    for key, by in (("keyed.api_key", "user"), ("keyed.api_key_command", "user")):
+        assert setup_plan._by(keyed, ["config", "set", key, "<X>"], automatic=False) == by
+    assert setup_plan._by(keyed, ["config", "set", "keyed.token_hint", "x"], automatic=False) == (
+        "agent"
+    )
 
 
 @pytest.mark.parametrize(("automatic", "by"), [(True, "agent"), (False, "user")])
@@ -471,7 +490,12 @@ def test_a_fix_that_sets_a_token_is_the_users_however_it_names_the_profile(
     assert (online["state"], online["by"]) == ("failed", "user")
 
 
-_VALUES = {"<URL>": "https://wiz.example", "<COMMAND>": '["x"]', "<PATH>": "/ca.pem"}
+_VALUES = {
+    "<URL>": "https://wiz.example",
+    "<BASE_URL>": "https://wiz.example",
+    "<COMMAND>": '["x"]',
+    "<PATH>": "/ca.pem",
+}
 
 
 def test_every_run_parses(
@@ -510,7 +534,7 @@ def test_the_table_shows_each_command_line() -> None:
     result = _cli("setup", "plan", "--format", "table")
     assert result.exit_code == 0, result.output
     # No `--profile` flag chose the profile, so the line goes without it.
-    assert "untaped config set wiz.base_url '<URL>'" in result.stdout
+    assert "untaped config set wiz.base_url '<BASE_URL>'" in result.stdout
     assert "--profile" not in result.stdout
 
 
@@ -518,7 +542,7 @@ def test_the_table_works_before_the_profile_exists() -> None:
     result = _cli("--profile", "work", "setup", "plan", "--check")
     assert result.exit_code == 3, result.output
     assert "untaped profile create work" in result.stdout
-    assert "untaped --profile work config set wiz.base_url '<URL>'" in result.stdout
+    assert "untaped --profile work config set wiz.base_url '<BASE_URL>'" in result.stdout
 
 
 def test_a_github_style_service_suggests_gh_without_running_it(
@@ -530,8 +554,8 @@ def test_a_github_style_service_suggests_gh_without_running_it(
     gh.chmod(0o755)
     hub = make_spec("hub", settings=HubProfile)
     token = _step(_plan(specs=(hub,)), "hub.token")
-    assert "after `gh auth login`" in token["detail"]
-    assert "config set hub.token_command" in token["detail"]
+    assert "after `gh auth login`, let `gh auth token` print it" in token["detail"]
+    assert """config set hub.token_command '["gh", "auth", "token"]'""" in token["detail"]
     assert not marker.exists()
 
 
@@ -543,10 +567,10 @@ def test_without_gh_there_is_no_suggestion() -> None:
 def test_without_a_service_there_is_nothing_to_plan() -> None:
     result = _cli("setup", "plan", specs=(make_spec("plain"),))
     assert result.exit_code == 4
-    assert "no composed plugin takes a base URL and token" in result.stderr
+    assert "no composed plugin marks settings to set up" in result.stderr
 
 
 def test_only_naming_no_service_has_nothing_to_plan() -> None:
     result = _cli("setup", "plan", "--only", "ui")
     assert result.exit_code == 4
-    assert "none of the named sections is a service" in result.stderr
+    assert "none of the named sections is a plugin with settings to set up" in result.stderr
