@@ -828,13 +828,18 @@ class RepoStore:
 
     # ── worktrees ──────────────────────────────────────────────────────────
 
-    def worktree_add(self, path: Path, ref: str, *, branch: str | None = None) -> None:
+    def worktree_add(
+        self, path: Path, ref: str, *, branch: str | None = None, lock_reason: str | None = None
+    ) -> None:
         """Add a worktree at ``path`` on ``ref`` (a new ``branch`` from it, else detached).
 
         The tip's blobs are prefetched first, so a host that refuses them
         fails before anything is written. The first worktree moves
-        ``core.bare`` into the repo's ``config.worktree``.
+        ``core.bare`` into the repo's ``config.worktree``. With
+        ``lock_reason`` the worktree is added locked (see :meth:`lock_worktree`).
         """
+        if lock_reason is not None:
+            worktree_config.check_reason(self, lock_reason)
         with self._locked():
             self._ensure()
             self.prefetch(trees=[ref])
@@ -851,6 +856,47 @@ class RepoStore:
             if branch is not None and ref.startswith("refs/remotes/origin/") and self._plain:
                 # The refspec that makes origin/<x> a tracking ref exists only now.
                 self._git(["branch", "--quiet", f"--set-upstream-to={ref}"], cwd=path)
+            if lock_reason is not None:
+                worktree_config.lock_worktree(self, path, reason=lock_reason)
+
+    def lock_worktree(self, worktree: Path, *, reason: str) -> None:
+        """Lock one of this repo's worktrees (``git worktree lock --reason``).
+
+        ``git worktree prune``, which the store and its consumers run at every
+        checkout, remove and release, then keeps the entry while its directory
+        is moved away or unreachable (an unmounted drive), so
+        :meth:`repair_worktree` can still find it. The caller says why, in one
+        line; a worktree already locked keeps its lock and reason. Releasing
+        the plugin's worktrees removes locked ones too.
+        """
+        with self._locked():
+            worktree_config.lock_worktree(self, worktree, reason=reason)
+
+    def repair_worktree(self, worktree: Path) -> None:
+        """Reconnect a worktree moved to ``worktree`` (``git worktree repair``).
+
+        The repo's entry is pointed at the new directory, and the owner stamp,
+        which records the absolute path, is rewritten when this plugin owns
+        it. Safe to repeat. Refused when ``worktree`` is not one of this
+        repo's worktrees.
+        """
+        with self._locked():
+            worktree_config.repair_worktree(self, worktree)
+
+    def worktrees_under(self, path: Path) -> list[Path]:
+        """This plugin's worktrees registered at or under ``path``, sorted.
+
+        Read from each entry's recorded directory, so a folder that was moved
+        away or sits on an unmounted drive still lists the worktrees it held.
+        """
+        root = Path(os.path.realpath(path.expanduser()))
+        return sorted(
+            entry.path
+            for entry in worktree_entries(self._path)
+            if entry.owner == self._plugin
+            and entry.path is not None
+            and entry.path.is_relative_to(root)
+        )
 
     def checkout(self, worktree: Path, ref: str) -> None:
         """Check ``ref`` out in one of this repo's worktrees, its blobs prefetched first."""

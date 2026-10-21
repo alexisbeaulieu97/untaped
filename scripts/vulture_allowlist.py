@@ -59,6 +59,7 @@ GitHostRecord.helpers_first  # git.host rows
 
 # The git plugin's repo store API with no first-party caller yet.
 RepoStore.delete_refs
+RepoStore.worktrees_under  # workspace releases a missing project's worktrees (#773)
 
 # untaped.testing.git: fixtures for plugins that test against the repo store.
 GitRemote.spread

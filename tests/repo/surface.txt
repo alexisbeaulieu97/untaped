@@ -6341,6 +6341,7 @@ sdk untaped_git.api.RepoStore.fetch(tags=) default=[]
 sdk untaped_git.api.RepoStore.for_url(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore.for_url(url, *, plugin, error)
 sdk untaped_git.api.RepoStore.has_part()
+sdk untaped_git.api.RepoStore.lock_worktree(worktree, *, reason)
 sdk untaped_git.api.RepoStore.ls_tree(paths@2=) default=[]
 sdk untaped_git.api.RepoStore.ls_tree(tree)
 sdk untaped_git.api.RepoStore.owned_by(map_error=) default=None callback(1)
@@ -6364,6 +6365,7 @@ sdk untaped_git.api.RepoStore.relative(ref)
 sdk untaped_git.api.RepoStore.release()
 sdk untaped_git.api.RepoStore.release(branches=) default=[]
 sdk untaped_git.api.RepoStore.release(unless_in_use=) default=false
+sdk untaped_git.api.RepoStore.repair_worktree(worktree)
 sdk untaped_git.api.RepoStore.roots
 sdk untaped_git.api.RepoStore.run(argv)
 sdk untaped_git.api.RepoStore.run(capture=) default=false
@@ -6373,8 +6375,10 @@ sdk untaped_git.api.RepoStore.run(stdin=) default=None
 sdk untaped_git.api.RepoStore.run(timeout=) default=None
 sdk untaped_git.api.RepoStore.url
 sdk untaped_git.api.RepoStore.worktree_add(branch=) default=None
+sdk untaped_git.api.RepoStore.worktree_add(lock_reason=) default=None
 sdk untaped_git.api.RepoStore.worktree_add(path, ref)
 sdk untaped_git.api.RepoStore.worktree_owners()
+sdk untaped_git.api.RepoStore.worktrees_under(path)
 sdk untaped_git.api.RepoStore.write_worktree_config(worktree, *, profile)
 sdk untaped_git.api.TreeEntry base=untaped.contracts.Record
 sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)

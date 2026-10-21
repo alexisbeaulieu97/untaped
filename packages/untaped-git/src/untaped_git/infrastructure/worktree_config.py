@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorCategory
+from untaped.sdk import ErrorCategory, UntapedError
 from untaped_git.domain.namespace import layout_for
 from untaped_git.domain.url import https_origin
 from untaped_git.infrastructure.repo_files import names_admin, repo_origin, worktree_entries
@@ -97,6 +97,47 @@ def _write_fetch_config(store: RepoStore, worktree: Path, *, plain: bool) -> Non
     _worktree_config(store, worktree, "remote.origin.partialclonefilter", "")
 
 
+def check_reason(store: RepoStore, reason: str) -> None:
+    """Refuse a lock reason ``git worktree list --porcelain`` could not show on one line."""
+    if not reason.strip() or "\n" in reason or "\r" in reason:
+        raise store._error(
+            f"a worktree lock reason is one non-empty line, not {reason!r}",
+            category=ErrorCategory.INVALID,
+        )
+
+
+def lock_worktree(store: RepoStore, worktree: Path, *, reason: str) -> None:
+    """Lock one of the repo's worktrees, under the caller's lock; one already locked stays as is.
+
+    :meth:`RepoStore.lock_worktree` documents it.
+    """
+    check_reason(store, reason)
+    check_worktree(store, worktree)
+    if any(
+        (entry.admin / "locked").exists()
+        for entry in worktree_entries(store._path)
+        if names_admin(worktree / ".git", entry.admin)
+    ):
+        return
+    store._git(["worktree", "lock", "--reason", reason, str(worktree)])
+
+
+def repair_worktree(store: RepoStore, worktree: Path) -> None:
+    """Repair a moved worktree, under the caller's lock; see :meth:`RepoStore.repair_worktree`."""
+    entry = next(
+        (e for e in worktree_entries(store._path) if names_admin(worktree / ".git", e.admin)),
+        None,
+    )
+    if entry is None:
+        raise _not_a_worktree(store, worktree)
+    store._git(["worktree", "repair", str(worktree)])
+    # Read before the repair: an owner counts only when its stamp names the
+    # entry's old directory, so a hand-added worktree that inherited another's
+    # stamp stays the user's own.
+    if entry.owner == store._plugin:
+        _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+
+
 def check_worktree(store: RepoStore, worktree: Path) -> None:
     """Refuse a path that is not one of this repo's worktrees (a user's own clone, say)."""
     result = store._git(
@@ -108,10 +149,14 @@ def check_worktree(store: RepoStore, worktree: Path) -> None:
     common = result.text.strip()
     # Relative to the worktree when git prints it relative (``--path-format`` is 2.31+).
     if result.returncode != 0 or (worktree / common).resolve() != store._path.resolve():
-        raise store._error(
-            f"{worktree} is not a worktree of repo store {store._path}",
-            category=ErrorCategory.INVALID,
-        )
+        raise _not_a_worktree(store, worktree)
+
+
+def _not_a_worktree(store: RepoStore, worktree: Path) -> UntapedError:
+    return store._error(
+        f"{worktree} is not a worktree of repo store {store._path}",
+        category=ErrorCategory.INVALID,
+    )
 
 
 def _rewrites_onto(store: RepoStore, worktree: Path, label: str) -> list[str]:
