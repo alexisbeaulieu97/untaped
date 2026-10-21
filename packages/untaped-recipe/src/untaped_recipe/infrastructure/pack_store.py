@@ -8,6 +8,7 @@ import shutil
 import tomllib
 import uuid
 from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from untaped.sdk import (
     UsageError,
     atomic_write,
     attribution,
+    file_lock,
     not_found,
     run_git,
 )
@@ -55,6 +57,9 @@ _GIT_REV_PARSE_TIMEOUT = 30.0
 _HOOK_ENVIRONMENT_FILES = frozenset(
     {"pyproject.toml", "uv.lock", "uv.toml", ".python-version", "setup.cfg"}
 )
+# Held while a command changes the library (pack copies and ``packs.toml``).
+_LOCK_FILE = ".lock"
+_BUSY_HINT = "wait for the other untaped recipe command to finish, then retry"
 
 # Dev/build junk excluded from library installs; pack_content_hash prunes the
 # same names so the recorded install hash and the copied tree always agree.
@@ -79,6 +84,14 @@ class _IndexEntry:
     commit: str = ""
     version: str = ""
     content_hash: str = ""
+
+
+@dataclass(frozen=True)
+class AddResult:
+    """What :meth:`PackLibrary.add` installed, and whether it replaced an installed pack."""
+
+    manifest: PackManifest
+    replaced: bool
 
 
 def _is_ignored(name: str) -> bool:
@@ -145,8 +158,9 @@ def _is_hook_code(relative: str) -> bool:
 class PackLibrary:
     """Manage installed recipe packs under one library directory."""
 
-    def __init__(self, *, library_dir: Path) -> None:
+    def __init__(self, *, library_dir: Path, lock_timeout: float = 600.0) -> None:
         self._library_dir = library_dir
+        self._lock_timeout = lock_timeout
         self._packs_cache: list[InstalledPack] | None = None
         self._load_errors: dict[str, str] = {}
 
@@ -160,6 +174,19 @@ class PackLibrary:
         """Path to the library pack source index."""
         return self._library_dir / "packs.toml"
 
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        """Hold the library's lock; another process waits, then fails as busy."""
+        self._library_dir.mkdir(parents=True, exist_ok=True)
+        with file_lock(
+            self._library_dir / _LOCK_FILE,
+            timeout=self._lock_timeout,
+            error=lambda message: RecipeError(message, hint=_BUSY_HINT),
+            busy="the recipe library is busy (another untaped process)",
+            failed="could not lock the recipe library",
+        ):
+            yield
+
     def add(
         self,
         source_dir: Path,
@@ -170,40 +197,47 @@ class PackLibrary:
         force: bool,
         discard_edits: bool = False,
         commit: str | None = None,
-    ) -> PackManifest:
+        expect: InstalledPack | None = None,
+    ) -> AddResult:
         """Install a validated pack directory into the library.
 
         ``rev`` is the revision the user asked for (a branch keeps tracking on
-        ``sync``); ``commit`` is the resolved commit that was installed.
+        ``sync``); ``commit`` is the resolved commit that was installed. With
+        ``expect`` (the pack as the caller read it), the install is refused
+        when another command has since replaced or removed that pack.
         """
         source_dir = source_dir.expanduser()
         manifest = read_pack_manifest(source_dir)
         validate_pack(source_dir, manifest)
-        index = self._read_index()
         installed_name = safe_library_name(name or manifest.name, field="pack")
-        dest = self.packs_dir / installed_name
-        if dest.exists() and not force:
-            raise RecipeError(
-                f"pack already installed: {installed_name}; use --force to replace "
-                "or --name to install under another name",
-                category=ErrorCategory.CONFLICT,
-            )
-        if force and not discard_edits and self.local_edits(installed_name):
-            raise LocalChangesError(local_edits_message(installed_name))
+        with self._locked():
+            index = self._read_index()
+            if expect is not None:
+                _check_unchanged(index, installed_name, expect)
+            dest = self.packs_dir / installed_name
+            replaced = dest.exists()
+            if replaced and not force:
+                raise RecipeError(
+                    f"pack already installed: {installed_name}; use --force to replace "
+                    "or --name to install under another name",
+                    category=ErrorCategory.CONFLICT,
+                )
+            if force and not discard_edits and self.local_edits(installed_name):
+                raise LocalChangesError(local_edits_message(installed_name))
 
-        self.packs_dir.mkdir(parents=True, exist_ok=True)
-        content_hash = self._install_tree(source_dir, dest)
-        index[installed_name] = _IndexEntry(
-            source=source,
-            rev=rev or "",
-            commit=commit or "",
-            version=manifest.version,
-            content_hash=content_hash,
-        )
-        self._write_index(index)
+            self.packs_dir.mkdir(parents=True, exist_ok=True)
+            content_hash = self._install_tree(source_dir, dest)
+            index[installed_name] = _IndexEntry(
+                source=source,
+                rev=rev or "",
+                commit=commit or "",
+                version=manifest.version,
+                content_hash=content_hash,
+            )
+            self._write_index(index)
         self._packs_cache = None
         self._load_errors = {}
-        return manifest
+        return AddResult(manifest=manifest, replaced=replaced)
 
     def _install_tree(self, source_dir: Path, dest: Path) -> str:
         """Copy ``source_dir`` into place at ``dest`` without a window of loss.
@@ -248,15 +282,22 @@ class PackLibrary:
             shutil.rmtree(staging, ignore_errors=True)
         return content_hash
 
-    def record_commit(self, name: str, commit: str) -> None:
-        """Record the resolved ``commit`` of an installed pack whose files did not change."""
+    def record_commit(self, name: str, commit: str, *, expect: InstalledPack | None = None) -> None:
+        """Record the resolved ``commit`` of an installed pack whose files did not change.
+
+        ``expect`` refuses the write when the pack changed since the caller
+        read it, as in :meth:`add`.
+        """
         installed_name = safe_library_name(name, field="pack")
-        index = self._read_index()
-        entry = index.get(installed_name)
-        if entry is None:
-            raise PackNotFoundError(f"pack not found: {name}")
-        index[installed_name] = replace(entry, commit=commit)
-        self._write_index(index)
+        with self._locked():
+            index = self._read_index()
+            if expect is not None:
+                _check_unchanged(index, installed_name, expect)
+            entry = index.get(installed_name)
+            if entry is None:
+                raise PackNotFoundError(f"pack not found: {name}")
+            index[installed_name] = replace(entry, commit=commit)
+            self._write_index(index)
         self._packs_cache = None
 
     def local_edits(self, name: str) -> bool:
@@ -281,30 +322,31 @@ class PackLibrary:
         stopped partway (:class:`PartialRemovalError`) can be run again.
         """
         installed_name = safe_library_name(name, field="pack")
-        dest = self.packs_dir / installed_name
-        index = self._read_index()
-        if not dest.is_dir() and installed_name not in index:
-            raise PackNotFoundError(f"pack not found: {name}")
-        self._packs_cache = None
-        self._load_errors = {}
-        if dest.is_dir():
-            entries = _entry_count(dest)
+        with self._locked():
+            dest = self.packs_dir / installed_name
+            index = self._read_index()
+            if not dest.is_dir() and installed_name not in index:
+                raise PackNotFoundError(f"pack not found: {name}")
+            self._packs_cache = None
+            self._load_errors = {}
+            if dest.is_dir():
+                entries = _entry_count(dest)
+                try:
+                    shutil.rmtree(dest)
+                except OSError as exc:
+                    if dest.is_dir() and _entry_count(dest) == entries:
+                        raise
+                    raise PartialRemovalError(
+                        f"deleted part of the pack's files; could not delete the rest: {exc}"
+                    ) from exc
+            if index.pop(installed_name, None) is None:
+                return
             try:
-                shutil.rmtree(dest)
+                self._write_index(index)
             except OSError as exc:
-                if dest.is_dir() and _entry_count(dest) == entries:
-                    raise
                 raise PartialRemovalError(
-                    f"deleted part of the pack's files; could not delete the rest: {exc}"
+                    f"deleted the pack's files; could not update packs.toml: {exc}"
                 ) from exc
-        if index.pop(installed_name, None) is None:
-            return
-        try:
-            self._write_index(index)
-        except OSError as exc:
-            raise PartialRemovalError(
-                f"deleted the pack's files; could not update packs.toml: {exc}"
-            ) from exc
 
     def packs(self) -> list[InstalledPack]:
         """Return installed packs keyed by their library identity.
@@ -339,6 +381,7 @@ class PackLibrary:
                     rev=index_entry.rev,
                     commit=index_entry.commit,
                     installed_version=index_entry.version or manifest.version,
+                    content_hash=index_entry.content_hash,
                 )
             )
         self._packs_cache = installed
@@ -476,6 +519,25 @@ class PackLibrary:
         atomic_write(self.index_path, tomlkit.dumps(doc))
 
 
+def _check_unchanged(
+    index: dict[str, _IndexEntry], installed_name: str, expect: InstalledPack
+) -> None:
+    """Refuse a write planned on ``expect`` when its index row has changed since."""
+    entry = index.get(installed_name)
+    if entry is None or (entry.source, entry.rev, entry.commit, entry.content_hash) != (
+        expect.source,
+        expect.rev,
+        expect.commit,
+        expect.content_hash,
+    ):
+        raise RecipeError(
+            f"pack '{installed_name}' changed in the library while this command ran "
+            "(another untaped command replaced or removed it)",
+            category=ErrorCategory.CONFLICT,
+            hint="run the command again to act on the pack as it is now",
+        )
+
+
 def _entry_count(root: Path) -> int:
     return sum(1 for _ in root.rglob("*"))
 
@@ -590,14 +652,16 @@ def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
 def holds_nothing(library_dir: Path) -> bool:
     """Whether ``library_dir`` has no installed pack, no backup and no other file of its own.
 
-    An empty ``packs.toml`` and empty directories are what a command leaves
-    in a library it only created; ``setup migrate-dirs`` replaces such a
+    An empty ``packs.toml``, the library's lock file and empty directories
+    are what a command leaves in a library it only created; ``setup migrate-dirs`` replaces such a
     library with the 10.x one. Anything unreadable counts as data.
     """
     try:
         for directory, _dirs, names in library_dir.walk():
             for name in names:
                 path = directory / name
+                if path == library_dir / _LOCK_FILE:
+                    continue
                 if path != library_dir / "packs.toml":
                     return False
                 if tomllib.loads(path.read_text(encoding="utf-8")):

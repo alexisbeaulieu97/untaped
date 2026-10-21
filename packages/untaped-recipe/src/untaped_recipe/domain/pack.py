@@ -154,6 +154,8 @@ class InstalledPack:
     installed_version: str
     # The resolved commit a git-sourced pack was installed at ("" otherwise).
     commit: str = ""
+    # The content hash recorded when the pack was installed ("" when untracked).
+    content_hash: str = ""
 
     @classmethod
     def local(cls, path: Path, manifest: PackManifest) -> InstalledPack:
