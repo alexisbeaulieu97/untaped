@@ -127,3 +127,6 @@ drop_tasks  # the root conftest's cleanup of a leaked progress task
 
 # Wire fields read by stderr's JSON readers, never by untaped itself.
 StaleData.age_seconds
+
+# Settings fields read by name from the config (the secret lookup, `auth`).
+GithubSettings.token_command  # declared until 12.0; core adds it for other plugins

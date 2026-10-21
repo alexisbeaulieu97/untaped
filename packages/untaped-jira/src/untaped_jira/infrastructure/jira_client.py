@@ -39,6 +39,7 @@ class JiraClient:
         self._http = connected_client(
             config,
             section="jira",
+            base_url=config.base_url,
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",

@@ -6,7 +6,7 @@ from collections.abc import Iterator, Sequence
 from types import TracebackType
 from typing import Any
 
-from untaped.sdk import HttpSettings, connected_client
+from untaped.sdk import ConfigError, HttpSettings, connected_client, run_hint
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.infrastructure.graphql import (
     fetch_default_branch_refs,
@@ -16,21 +16,29 @@ from untaped_github.infrastructure.graphql import (
 from untaped_github.infrastructure.pagination import paginate_list, paginate_search
 from untaped_github.settings import GithubSettings
 
+_DEFAULT_URL = GithubSettings.model_fields["base_url"].default
+
 
 class GithubClient:
     """Talks to ``api.github.com`` (or a GHE base) using the configured token.
 
-    Connection wiring (required-field validation, bearer auth, TLS, base-URL
-    normalization) is delegated to core's ``connected_client``; a missing or
-    blank token fail-fasts with the standard ``ConfigError``. ``base_url``
-    stays in ``required`` despite its non-empty default so an explicit blank
-    override still fails loudly.
+    Connection wiring (bearer auth, TLS, base-URL normalization) is delegated
+    to core's ``connected_client``; a missing or blank token fails fast with
+    its "github is not set up" error. ``base_url`` has a default, so it is
+    not marked as needing setup; an explicit blank override still fails
+    loudly, naming the setting, here.
     """
 
     def __init__(self, config: GithubSettings, *, http: HttpSettings | None = None) -> None:
+        if not config.base_url.strip():
+            raise ConfigError(
+                "github.base_url is blank",
+                hint=f"{run_hint('config unset github.base_url')} to use {_DEFAULT_URL}",
+            )
         self._http = connected_client(
             config,
             section="github",
+            base_url=config.base_url,
             headers={
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",

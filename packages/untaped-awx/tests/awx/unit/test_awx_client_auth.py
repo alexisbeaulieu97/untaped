@@ -1,10 +1,10 @@
 """Auth regression guard: a configured token must reach AAP as a Bearer header.
 
-awx leaves ``token`` out of ``connected_client``'s ``required`` so a token-less
+awx passes ``require_token=False`` to ``connected_client`` so a token-less
 client can hit unauthenticated endpoints (``ping/``). Regressed once: the SDK
-only read fields listed in ``required``, so the configured token was never sent
-— every authenticated request went out unauthenticated and AAP replied 401.
-Fixed in untaped 1.1.1 (``connected_client`` always walks ``bearer_token_field``).
+only read the fields a token-less client required, so the configured token was
+never sent — every authenticated request went out unauthenticated and AAP
+replied 401. Fixed in untaped 1.1.1; a configured token is always the bearer.
 """
 
 from __future__ import annotations

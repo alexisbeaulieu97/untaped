@@ -68,7 +68,7 @@ def test_connected_client_http_default_ignores_invalid_sibling_section(
 
     config = _ConnSettings(base_url="https://example.test", token=SecretStr("t"))
     respx.get("https://example.test/user").mock(return_value=httpx.Response(200, json={}))
-    with connected_client(config, section="conn") as client:
+    with connected_client(config, section="conn", base_url=config.base_url) as client:
         client.get("/user")
 
     assert respx.calls.last.request.extensions["timeout"]["read"] == 7

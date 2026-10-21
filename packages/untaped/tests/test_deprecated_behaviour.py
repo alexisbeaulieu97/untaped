@@ -239,6 +239,7 @@ def test_marks_report_behaviours() -> None:
         if mark.target == "behaviour"
     }
     assert found == {
+        "untaped.connected-client-by-name": "base_url= and bearer= values",
         "untaped.plaintext-token": "`untaped auth migrate`",
         "untaped.self-declared-command": "the command setting untaped adds for each Secret",
         "untaped.unmarked-service": "NeedsSetup and Secret marks on its settings",

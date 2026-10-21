@@ -33,7 +33,14 @@ from test_management.support import (
 )
 from untaped import bootstrap
 from untaped.plugins.registry import PluginSpec
-from untaped.sdk import HttpTransportError, NeedsSetup, Secret, connection_check, online_check
+from untaped.sdk import (
+    HttpError,
+    HttpTransportError,
+    NeedsSetup,
+    Secret,
+    connection_check,
+    online_check,
+)
 from untaped.stability import forget_notices
 from untaped.testing import (
     CliResult,
@@ -338,17 +345,14 @@ class HookProfile(BaseModel):
     signing_key: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
 
 
-def test_a_secret_not_named_token_is_set_by_its_command_setting(
+def test_the_only_secret_not_named_token_is_set_by_a_bare_auth_set(
     _isolated_config: Path,
 ) -> None:
     hook = make_spec("hook", settings=HookProfile)
     write_config(_isolated_config, "profiles:\n  default:\n    hook: {url: https://hook}\n")
     row = _setup(specs=(hook,), plugin="hook")
     assert row["detail"] == "1 of 2 set; missing hook.signing_key"
-    assert row["fix"][-4:] == ["config", "set", "hook.signing_key_command", "<COMMAND>"]
-    refused = _cli("auth", "set", "hook", specs=(hook,))
-    assert refused.exit_code != 0
-    assert "set hook.signing_key_command to a command that prints it" in refused.stderr
+    assert row["fix"][-3:] == ["auth", "set", "hook"]
 
 
 def test_auth_set_calls_an_unmarked_plugin_without_a_command_unknown() -> None:
@@ -391,6 +395,22 @@ def test_an_unset_secret_value_is_the_users_step_even_without_a_secret_mark() ->
     assert (row["state"], row["by"]) == ("todo", "user")
 
 
+def test_a_set_masked_value_is_shown_as_set(_isolated_config: Path) -> None:
+    """``setup plan`` says ``set``, not the ``***`` a masked value prints as."""
+    write_config(_isolated_config, "profiles:\n  default:\n    pin: {pin: '1234'}\n")
+    row = _plan_rows(make_spec("pin", settings=PinProfile))["pin.pin"]
+    assert (row["state"], row["detail"]) == ("done", "set")
+
+
+def test_a_failure_line_says_a_masked_value_is_set(_isolated_config: Path) -> None:
+    check = online_check("pin.api", section="pin", probe=_raising(HttpTransportError("down")))
+    spec = make_spec("pin", settings=PinProfile, doctor_checks=(check,))
+    write_config(_isolated_config, "profiles:\n  default:\n    pin: {pin: '1234'}\n")
+    row = _doctor("--online", specs=(spec,), exit_code=1)["pin.api:pin"]
+    assert row["detail"] == "down (pin.pin is set)"
+    assert "1234" not in json.dumps(row)
+
+
 @pytest.mark.parametrize(
     ("wiz", "status"),
     [
@@ -411,3 +431,39 @@ def test_an_unmarked_plugin_keeps_its_screen_status(
     assert setup.exit_code == 0, setup.output
     row = next(row for row in backend.ran[0].init()[0].rows if row.name == "wiz")
     assert row.status == status
+
+
+def test_a_plaintext_secret_not_named_token_warns_with_auth_migrate(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    hook: {url: https://hook, signing_key: plain}\n",
+    )
+    row = _doctor(specs=(make_spec("hook", settings=HookProfile),))["setup:hook"]
+    assert row["status"] == "warn"
+    assert "plain-text hook.signing_key" in row["detail"]
+    assert (row["fix"][-2:], row["automatic"]) == (["auth", "migrate"], True)
+
+
+class PairProfile(BaseModel):
+    """Two secrets, neither named ``token`` (section ``pair``)."""
+
+    url: Annotated[str | None, NeedsSetup] = None
+    api_key: Annotated[SecretStr | None, NeedsSetup, Secret(env=("PAIR_KEY",))] = None
+    signing_key: Annotated[SecretStr | None, Secret()] = None
+
+
+def test_a_rejected_secret_not_named_token_names_its_own_auth_set(
+    _isolated_config: Path,
+) -> None:
+    rejected = HttpError("HTTP 401", status_code=401, url="https://pair/me", system="pair")
+    check = online_check("pair.api", section="pair", probe=_raising(rejected))
+    spec = make_spec("pair", settings=PairProfile, doctor_checks=(check,))
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    pair: {url: https://pair, api_key_command: [echo, k]}\n",
+    )
+    row = _doctor("--online", specs=(spec,), exit_code=1)["pair.api:pair"]
+    assert row["fix"][-3:] == ["auth", "set", "pair.api_key"]
+    assert "(the secret can also come from pair.api_key_command or $PAIR_KEY)" in row["detail"]

@@ -54,7 +54,7 @@ from pathlib import Path
 from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError
-from untaped.setting_marks import Secret, TokenCommand, TokenSources, declared_marks
+from untaped.setting_marks import SetupMarks, TokenCommand, TokenSources, declared_marks
 from untaped.settings import env_var_name, resolve_config_path
 from untaped.stability import deprecated_behaviour
 
@@ -70,9 +70,9 @@ PLAINTEXT_TOKEN = deprecated_behaviour(
 """Support for ``<section>.token`` stored in plain text in ``config.yml`` (removal: #670)."""
 
 
-def plaintext_subject(section: str, where: str) -> str:
+def plaintext_subject(section: str, where: str, *, field: str = "token") -> str:
     """How every site names what goes: ``support for a plain-text awx.token in config.yml``."""
-    return f"support for a plain-text {section}.token in {where}"
+    return f"support for a plain-text {section}.{field} in {where}"
 
 
 @dataclass(frozen=True)
@@ -87,17 +87,19 @@ class _Sources:
 def _secret_sources(model: type[BaseModel], field: str) -> _Sources:
     """The sources of ``model``'s ``field``: its ``Secret`` mark's, else the unmarked way.
 
-    An unmarked model's ``token`` reads ``token_sources``; any other field has
-    only its command setting.
+    An unmarked model's ``token`` reads ``token_command`` and ``token_sources``;
+    any other field has none (an empty ``command``).
     """
     marks = declared_marks(model)
-    secret: Secret | None = None
     if marks is not None:
-        secret = next((each.secret for each in marks.secrets if each.path == (field,)), None)
+        marked = next((each for each in marks.secrets if each.path == (field,)), None)
+        if marked is not None and marked.secret is not None and marked.command is not None:
+            return _Sources(field, marked.command, marked.secret.env)
     elif field == "token":
         sources = getattr(model, "token_sources", None)
-        secret = Secret(env=tuple(sources.env)) if isinstance(sources, TokenSources) else None
-    return _Sources(field, f"{field}_command", () if secret is None else secret.env)
+        env = tuple(sources.env) if isinstance(sources, TokenSources) else ()
+        return _Sources(field, "token_command", env)
+    return _Sources(field, "", ())
 
 
 def _resolved_fields(model: type[BaseModel]) -> tuple[_Sources, ...]:
@@ -149,10 +151,9 @@ def resolve_token[T: BaseModel](settings: T, *, section: str) -> T:
 def _resolve_one[T: BaseModel](settings: T, sources: _Sources, *, section: str) -> T:
     field = sources.field
     if _explicit_token(settings, field):
-        if field == "token":
-            _warn_plaintext(settings, section=section)
+        _warn_plaintext(settings, section=section, field=field)
         return settings
-    argv = getattr(settings, sources.command, None)
+    argv = getattr(settings, sources.command, None) if sources.command else None
     if argv:
         token: SecretStr = CommandToken(argv, section=section, command=sources.command)
     else:
@@ -177,36 +178,71 @@ def describe_token_source(
     sources = _secret_sources(type(settings), field)
     if _explicit_token(settings, field):
         return f"{section}.{field}"
-    if getattr(settings, sources.command, None):
+    if sources.command and getattr(settings, sources.command, None):
         return f"{section}.{sources.command}"
     env_name = _env_source(sources.env) if ambient else None
     return None if env_name is None else f"${env_name}"
 
 
-def token_env_names(settings: BaseModel) -> tuple[str, ...]:
-    """The conventional variables ``settings``' model declares for ``token``, in order."""
-    return _secret_sources(type(settings), "token").env
+def token_env_names(settings: BaseModel, *, field: str = "token") -> tuple[str, ...]:
+    """The conventional variables ``settings``' model declares for ``field``, in order."""
+    return _secret_sources(type(settings), field).env
 
 
-def token_alternatives(settings: BaseModel, *, section: str) -> str:
-    """Name the token sources that keep a token out of the config file.
+def token_alternatives(settings: BaseModel, *, section: str, field: str = "token") -> str:
+    """Name the sources that keep the secret ``field`` out of the config file.
 
-    ``<section>.token_command`` (when the model has it) and the first
-    conventional variable, joined with ``or``; empty when the model has
-    neither.
+    Its command setting (``<section>.token_command``, when the model takes
+    one) and its first conventional variable, joined with ``or``; empty when
+    the model has neither.
     """
-    names = [f"{section}.token_command"] if takes_token_command(type(settings)) else []
-    names.extend(f"${name}" for name in token_env_names(settings)[:1])
+    command = auth_command(type(settings), field)
+    names = [f"{section}.{command}"] if command is not None else []
+    names.extend(f"${name}" for name in token_env_names(settings, field=field)[:1])
     return " or ".join(names)
 
 
-def token_instead(settings: BaseModel, *, section: str) -> str:
-    """What to use instead of a plaintext ``<section>.token``.
+def token_instead(settings: BaseModel, *, section: str, field: str = "token") -> str:
+    """What to use instead of a plaintext ``<section>.<field>``.
 
-    :func:`token_alternatives`, or the ``UNTAPED_<SECTION>__TOKEN`` override
+    :func:`token_alternatives`, or the ``UNTAPED_<SECTION>__<FIELD>`` override
     when the model has neither a command nor a conventional variable.
     """
-    return token_alternatives(settings, section=section) or f"${token_override_name(section)}"
+    alternatives = token_alternatives(settings, section=section, field=field)
+    return alternatives or f"${token_override_name(section, field=field)}"
+
+
+def auth_command(model: type[BaseModel], field: str = "token") -> str | None:
+    """The command setting ``auth set`` writes for the secret ``field`` of ``model``, if any.
+
+    ``token_command`` for an unmarked model's ``token`` (when it declares
+    it); each :class:`~untaped.setting_marks.Secret`'s own command setting
+    for a marked one, even narrowed to the plugin's own class (the composed
+    section carries it).
+    """
+    marks = declared_marks(model)
+    if marks is None:
+        declared = field == "token" and "token_command" in model.model_fields
+        return "token_command" if declared else None
+    return next((each.command for each in marks.secrets if each.path == (field,)), None)
+
+
+def auth_target(model: type[BaseModel], section: str, field: str = "token") -> str | None:
+    """What ``auth set`` takes to store ``field`` of ``section``; ``None`` when it can't.
+
+    ``<section>`` for the secret ``auth set <section>`` means (the one named
+    ``token``, else the only one), else ``<section>.<field>``.
+    """
+    if auth_command(model, field) is None:
+        return None
+    marks = declared_marks(model)
+    default = "token" if marks is None else _default_field(marks)
+    return section if field == default else f"{section}.{field}"
+
+
+def _default_field(marks: SetupMarks) -> str | None:
+    secret = marks.default_secret
+    return None if secret is None else secret.key
 
 
 def takes_token_command(model: type[BaseModel]) -> bool:
@@ -215,24 +251,21 @@ def takes_token_command(model: type[BaseModel]) -> bool:
     A model that marks ``token`` :class:`~untaped.setting_marks.Secret` does,
     even narrowed to the plugin's own class: the composed section carries it.
     """
-    if "token_command" in model.model_fields:
-        return True
-    marks = declared_marks(model)
-    return marks is not None and marks.token is not None
+    return auth_command(model) is not None
 
 
-def token_override_name(section: str) -> str:
-    """The ``UNTAPED_<SECTION>__TOKEN`` variable that overrides ``<section>.token``."""
-    return env_var_name([section, "token"])
+def token_override_name(section: str, *, field: str = "token") -> str:
+    """The ``UNTAPED_<SECTION>__<FIELD>`` variable that overrides ``<section>.<field>``."""
+    return env_var_name([section, field])
 
 
-def token_override_env(section: str) -> str | None:
-    """The environment variable that sets ``<section>.token`` right now, if any.
+def token_override_env(section: str, *, field: str = "token") -> str | None:
+    """The environment variable that sets ``<section>.<field>`` right now, if any.
 
-    ``UNTAPED_<SECTION>__TOKEN``, or ``UNTAPED_<SECTION>`` when it holds a
-    JSON object with a ``token``; either one wins over the config file.
+    ``UNTAPED_<SECTION>__<FIELD>``, or ``UNTAPED_<SECTION>`` when it holds a
+    JSON object with that key; either one wins over the config file.
     """
-    name = token_override_name(section)
+    name = token_override_name(section, field=field)
     if os.environ.get(name, "").strip():
         return name
     whole = env_var_name([section])
@@ -240,7 +273,7 @@ def token_override_env(section: str) -> str | None:
         node = json.loads(os.environ.get(whole) or "null")
     except ValueError:
         return None
-    token = node.get("token") if isinstance(node, dict) else None
+    token = node.get(field) if isinstance(node, dict) else None
     return whole if isinstance(token, str) and token.strip() else None
 
 
@@ -401,12 +434,12 @@ def clear_token_cache() -> None:
     _cache.clear()
 
 
-def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
-    """Warn once that ``<section>.token`` comes from the config file in plain text.
+def _warn_plaintext(settings: BaseModel, *, section: str, field: str) -> None:
+    """Warn once that ``<section>.<field>`` comes from the config file in plain text.
 
-    A token from the environment (:func:`token_override_env`) is not a file,
-    so it never warns; nor does a model ``auth set`` cannot serve. Only the
-    secret named ``token``: ``auth migrate`` moves no other.
+    A secret from the environment (:func:`token_override_env`) is not a
+    file, so it never warns; nor does one ``auth set`` cannot store, since
+    ``auth migrate`` could not move it.
     """
     from untaped.settings import active_overlay  # noqa: PLC0415 - imports each other lazily
 
@@ -414,14 +447,17 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     # worker thread over its screen: nothing to warn about, nowhere to print it.
     if active_overlay() is not None:
         return
-    if not takes_token_command(type(settings)) or token_override_env(section) is not None:
+    if (
+        auth_command(type(settings), field) is None
+        or token_override_env(section, field=field) is not None
+    ):
         return
     from untaped.messages import run_hint  # noqa: PLC0415 - keep auth imports light
 
     config_name = resolve_config_path().name
     PLAINTEXT_TOKEN.notify(
-        plaintext_subject(section, config_name),
-        key=section,
+        plaintext_subject(section, config_name, field=field),
+        key=section if field == "token" else f"{section}.{field}",
         hint=f"{run_hint('auth migrate')} to move it out of {config_name}",
     )
 
