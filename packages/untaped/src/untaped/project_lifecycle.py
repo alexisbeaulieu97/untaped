@@ -542,7 +542,7 @@ def _recorded_at(old: Path, new: Path) -> Project:
     at = [ref for ref in refs if ref.anchor == real]
     if at and at[0].holder is not None:
         return Project(id=at[0].holder.name, root=old)
-    pending = [ref for ref in refs if ref.moved_from == real]
+    pending = [ref for ref in refs if real in ref.moved_from]
     holder, anchor = (pending[0].holder, pending[0].anchor) if pending else (None, None)
     if holder is None or anchor is None:
         raise UsageError(

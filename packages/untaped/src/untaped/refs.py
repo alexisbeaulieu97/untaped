@@ -143,15 +143,15 @@ class Reference:
     ``opaque`` says why it cannot be used (unreadable, or written by a newer
     untaped): an opaque reference counts as live and pauses pruning.
     ``anchor_id`` is the anchor's filesystem identity when the holder records
-    one (a project does); ``moved_from`` is where the holder was before a
-    move whose repairs haven't all succeeded yet.
+    one (a project does); ``moved_from`` is where the holder was before each
+    move whose repairs haven't all succeeded yet, oldest first.
     """
 
     file: Path
     holder: RefHolder | None = None
     anchor: Path | None = None
     anchor_id: AnchorId | None = None
-    moved_from: Path | None = None
+    moved_from: tuple[Path, ...] = ()
     plugin: str | None = None
     version: str | None = None
     targets: tuple[RefTarget, ...] = ()
@@ -280,7 +280,8 @@ def read_reference(file: Path) -> Reference:
     if holder is None:
         why = "no holder" if data.get("holder") is None else "the holder is malformed"
         return Reference(file, opaque=f"unreadable ({why})")
-    anchor_id = moved_from = None
+    anchor_id = None
+    moved_from: tuple[Path, ...] = ()
     if holder.kind in _OWN_KINDS:
         # This untaped's own kinds: anything it cannot read pauses cleanup.
         if not isinstance(targets, list):
@@ -296,10 +297,10 @@ def read_reference(file: Path) -> Reference:
                 anchor_id = AnchorId.model_validate(data.get("anchor_id"))
             except ValidationError:
                 return Reference(file, holder=holder, opaque="unreadable (no anchor identity)")
-            moved = data.get("moved_from")
-            if moved is not None and (not isinstance(moved, str) or not moved):
+            moved = data.get("moved_from", [])
+            if not isinstance(moved, list) or not all(isinstance(m, str) and m for m in moved):
                 return Reference(file, holder=holder, opaque="unreadable (moved_from is malformed)")
-            moved_from = Path(moved) if moved is not None else None
+            moved_from = tuple(Path(m) for m in moved)
     else:
         # Another kind (a later untaped's) is live and holds what it can read; it never pauses.
         read = _readable(targets)
@@ -495,7 +496,7 @@ def write_reference(
     *,
     anchor: Path | None = None,
     anchor_id: AnchorId | None = None,
-    moved_from: Path | None = None,
+    moved_from: Sequence[Path] = (),
     plugin: str | None = None,
     version: str | None = None,
 ) -> Path:
@@ -505,15 +506,15 @@ def write_reference(
     home: an ``anchor`` is live while it holds an ``untaped-*.dist-info``
     folder, and a holder without one lives until its file is removed.
     ``anchor_id`` records the anchor's filesystem identity (a project's), and
-    ``moved_from`` where it was before a move not yet fully repaired.
+    ``moved_from`` where it was before each move not yet fully repaired.
     """
     data: dict[str, object] = {"untaped": FORMAT, "holder": holder.model_dump()}
     if anchor is not None:
         data["anchor"] = str(anchor)
     if anchor_id is not None:
         data["anchor_id"] = anchor_id.model_dump()
-    if moved_from is not None:
-        data["moved_from"] = str(moved_from)
+    if moved_from:
+        data["moved_from"] = [str(path) for path in moved_from]
     if plugin is not None:
         data["plugin"] = plugin
     if version is not None:

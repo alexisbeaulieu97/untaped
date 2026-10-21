@@ -570,7 +570,7 @@ def test_move_moves_the_folder_and_owners_repair(tmp_path: Path) -> None:
     ]
     assert not first.root.exists() and (new / ".untaped" / "project.json").exists()
     ref = refs.read_reference(refs.reference_file(holder_of(first)))
-    assert (ref.anchor, ref.moved_from) == (new, None)
+    assert (ref.anchor, ref.moved_from) == (new, ())
     assert {ask.moved_from for ask in OWNER.moves} == {first.root}
 
 
@@ -584,14 +584,14 @@ def test_a_failed_repair_is_retried_by_later_writing_uses(
     assert result.exit_code == 1
     assert [r["action"] for r in _rows(result)] == ["moved", "failed"]
     ref = refs.read_reference(refs.reference_file(holder_of(first)))
-    assert (ref.anchor, ref.moved_from) == (new, first.root)
+    assert (ref.anchor, ref.moved_from) == (new, (first.root,))
     moved = Project(id=first.id, root=new)
     capsys.readouterr()
     moved.hold(REPOS, API)  # a writing use retries, fails again, and only warns
     assert "could not repair github.com/acme/api" in capsys.readouterr().err
-    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == first.root
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == (first.root,)
     moved.hold(REPOS, API)  # and again: now it succeeds
-    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == ()
     assert len(OWNER.moves) == 3
 
 
@@ -608,7 +608,7 @@ def test_a_hand_move_on_one_filesystem_is_repaired_by_a_writing_use(tmp_path: Pa
     finally:
         os.chdir(tmp_path)
     ref = refs.read_reference(refs.reference_file(holder_of(first)))
-    assert (ref.anchor, ref.moved_from) == (new, None)
+    assert (ref.anchor, ref.moved_from) == (new, ())
     assert [ask.moved_from for ask in OWNER.moves] == [first.root]
 
 
@@ -835,7 +835,7 @@ def test_the_same_move_again_retries_a_failed_repair(tmp_path: Path) -> None:
     again = _cli("project", "move", str(first.root), str(new), "-f", "json")
     assert again.exit_code == 0, again.output
     assert [r["action"] for r in _rows(again)] == ["repaired", "repaired"]
-    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == ()
 
 
 def test_a_broken_owner_keeps_a_moves_repair_pending(tmp_path: Path) -> None:
@@ -847,10 +847,10 @@ def test_a_broken_owner_keeps_a_moves_repair_pending(tmp_path: Path) -> None:
     result = _cli("project", "move", str(first.root), str(new), "-f", "json", specs=(broken,))
     assert result.exit_code == 0, result.output
     assert _rows(result)[1]["action"] == "skipped"
-    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == first.root
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == (first.root,)
     gone = _cli("project", "move", str(first.root), str(new), "-f", "json", specs=())
     assert gone.exit_code == 0  # an owner that isn't installed has nothing to run
-    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == ()
 
 
 def test_a_listed_missing_project_that_came_back_is_not_removed(tmp_path: Path) -> None:
@@ -940,7 +940,7 @@ def test_a_pending_repair_is_retried_only_onto_the_folder_the_record_names(
     assert f"moved from {first.root} to {moved}" in result.stderr
     assert f"untaped project move {first.root} {moved}" in result.stderr
     record = refs.read_reference(refs.reference_file(holder_of(first)))
-    assert (record.anchor, record.moved_from) == (moved, first.root)
+    assert (record.anchor, record.moved_from) == (moved, (first.root,))
     assert not (other / ".untaped").exists()
 
 
@@ -955,7 +955,7 @@ def test_a_folder_recorded_at_old_wins_over_another_projects_pending_repair(
     second.root.rename(hand)
     import untaped.project_lifecycle as lifecycle
 
-    pending_first = sorted(lifecycle.project_references(), key=lambda r: r.moved_from is None)
+    pending_first = sorted(lifecycle.project_references(), key=lambda r: not r.moved_from)
     monkeypatch.setattr(lifecycle, "project_references", lambda: pending_first)
     result = _cli("project", "move", str(second.root), str(hand), "-f", "json")
     assert result.exit_code == 0, result.output
@@ -968,7 +968,7 @@ def test_a_hold_taken_during_a_repair_stays_when_the_move_completes(tmp_path: Pa
     result = _cli("project", "move", str(first.root), str(tmp_path / "moved"))
     assert result.exit_code == 0, result.output
     record = refs.read_reference(refs.reference_file(holder_of(first)))
-    assert record.moved_from is None
+    assert record.moved_from == ()
     assert set(record.targets) == {REPOS.target(API), REPOS.target(WEB)}
 
 
@@ -1096,7 +1096,7 @@ def test_a_pending_repair_follows_its_folder_moved_by_hand_again(tmp_path: Path)
     assert result.exit_code == 0, result.output
     assert [ask.moved_from for ask in OWNER.moves] == [first.root]
     record = refs.read_reference(refs.reference_file(holder_of(first)))
-    assert (record.anchor, record.moved_from) == (again, None)
+    assert (record.anchor, record.moved_from) == (again, ())
 
 
 def test_a_later_move_repairs_from_the_first_folder_still_unrepaired(tmp_path: Path) -> None:
@@ -1109,7 +1109,7 @@ def test_a_later_move_repairs_from_the_first_folder_still_unrepaired(tmp_path: P
     result = _cli("project", "move", str(moved), str(again), "-f", "json")
     assert result.exit_code == 0, result.output
     assert [ask.moved_from for ask in OWNER.moves] == [first.root, moved]  # pending one first
-    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == ()
 
 
 def _sources() -> list[tuple[str, Path]]:
@@ -1127,7 +1127,7 @@ def test_a_move_back_still_repairs_from_the_folder_it_left(tmp_path: Path) -> No
     assert result.exit_code == 0, result.output
     assert (API, b) in _sources() and (WEB, b) in _sources()
     record = refs.read_reference(refs.reference_file(holder_of(first)))
-    assert (record.anchor, record.moved_from) == (a, None)
+    assert (record.anchor, record.moved_from) == (a, ())
 
 
 def test_a_hand_move_back_repairs_from_the_folder_it_left(tmp_path: Path) -> None:
@@ -1146,7 +1146,7 @@ def test_a_hand_move_back_repairs_from_the_folder_it_left(tmp_path: Path) -> Non
     with here.locked():
         writing(here)
     assert sorted(_sources()) == [(API, b), (WEB, b)]
-    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == ()
 
 
 def test_a_chain_of_moves_asks_from_each_folder_until_every_repair_succeeds(
@@ -1160,13 +1160,18 @@ def test_a_chain_of_moves_asks_from_each_folder_until_every_repair_succeeds(
     OWNER.moves.clear()
     assert _cli("project", "move", str(b), str(c)).exit_code == 1  # web fails again
     assert (API, a) in _sources() and (API, b) in _sources()
-    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == a
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == (a, b)
     OWNER.fail_moved.clear()
     OWNER.moves.clear()
-    again = _cli("project", "move", str(a), str(c), "-f", "json")  # the pending one, retried
+    again = _cli("project", "move", str(b), str(c), "-f", "json")  # the same move, again
     assert again.exit_code == 0, again.output
+    assert sorted(_sources()) == [(API, a), (API, b), (WEB, a), (WEB, b)]
+    assert [(r["item"], r["action"]) for r in _rows(again)[1:]] == [
+        (API, "repaired"),
+        (WEB, "repaired"),
+    ]  # one row per item, whichever folders it was asked from
     record = refs.read_reference(refs.reference_file(holder_of(first)))
-    assert (record.anchor, record.moved_from) == (c, None)
+    assert (record.anchor, record.moved_from) == (c, ())
 
 
 def test_two_copies_the_record_cannot_tell_apart_follow_the_move(tmp_path: Path) -> None:
@@ -1184,3 +1189,35 @@ def test_move_onto_a_symlink_to_old_is_the_same_folder(tmp_path: Path) -> None:
     (tmp_path / "link").symlink_to(first.root)
     result = _cli("project", "move", str(first.root), str(tmp_path / "link"))
     assert result.exit_code == 2 and "the same folder" in result.stderr
+
+
+def test_a_failure_from_any_folder_is_the_row_shown_and_stays_pending(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "A", holds={REPOS: [API]})
+    a, b, c = first.root, tmp_path / "B", tmp_path / "C"
+    OWNER.raise_moved = 1
+    assert _cli("project", "move", str(a), str(b)).exit_code == 1  # pending from A
+    b.rename(c)
+    asks: list[Path] = []
+
+    def fail_from_b() -> None:  # the repair from A now works, the one from B fails
+        asks.append(OWNER.moves[-1].moved_from)
+        OWNER.raise_moved = int(asks[-1] == b)
+
+    OWNER.during_moved = [fail_from_b]
+    result = _cli("project", "move", str(b), str(c), "-f", "json")
+    assert result.exit_code == 1
+    assert asks == [a, b]
+    assert [r["action"] for r in _rows(result)[1:]] == ["failed"]
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == (b,)
+
+
+def test_a_folder_at_its_path_under_a_new_identity_lets_the_move_decide(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "P", holds={REPOS: [API]})
+    away = tmp_path / "away"
+    first.root.rename(away)
+    shutil.copytree(away, first.root)  # restored at its path: a new identity
+    (away / ".untaped" / "project.json").unlink()  # no folder keeps the recorded one
+    shutil.copytree(first.root, tmp_path / "R")
+    result = _cli("project", "move", str(first.root), str(tmp_path / "R"), "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert refs.read_reference(refs.reference_file(holder_of(first))).anchor == tmp_path / "R"

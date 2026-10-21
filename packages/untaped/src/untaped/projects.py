@@ -36,7 +36,7 @@ import os
 import secrets
 import threading
 import uuid
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -433,8 +433,8 @@ def writing(project: Project) -> tuple[Project, Situation]:
         here = Project(id=current, root=project.root)
         ref = situation.reference
         match situation.kind:
-            case "ok" | "refresh" if ref is not None and ref.moved_from is not None:
-                _warn_unrepaired(here, follow_move(here, moved_from=ref.moved_from, keep=ref))
+            case "ok" | "refresh" if ref is not None and ref.moved_from:
+                _warn_unrepaired(here, follow_move(here, moved_from=None, keep=ref))
             case "ok":
                 pass
             case "unrecorded":
@@ -452,41 +452,42 @@ def writing(project: Project) -> tuple[Project, Situation]:
     return here, situation
 
 
-def follow_move(project: Project, *, moved_from: Path, keep: Reference | None) -> list[HoldOutcome]:
+def follow_move(
+    project: Project, *, moved_from: Path | None, keep: Reference | None
+) -> list[HoldOutcome]:
     """Point ``project``'s reference at its folder now, then ask each owner to repair.
 
-    The reference records ``moved_from`` until every owner's ``moved``
-    succeeded, so a later writing use retries: a repair still pending from an
-    earlier folder is asked first, then the one from the folder it just left.
-    A broken (quarantined) owner keeps it pending too, while one that isn't
-    installed has nothing to run.
-    The rows say what each owner did (``repaired``), skipped or failed. Runs
-    under the project's lock.
+    The reference records each folder it moved from (oldest first) until
+    every owner's ``moved`` from it succeeded, so a later writing use
+    retries; ``moved_from`` is the folder it just left, if any. A broken
+    (quarantined) owner keeps it pending too, while one that isn't installed
+    has nothing to run. The rows say what each owner did (``repaired``),
+    skipped or failed, one per item. Runs under the project's lock.
     """
     targets = keep.targets if keep is not None else ()
-    # A repair still pending from an earlier folder is asked first: what wasn't repaired
-    # points there, what was points at the folder it last left. Hooks are idempotent.
-    earlier = keep.moved_from if keep is not None else None
+    # Each folder a repair is still pending from, then the one it just left: what wasn't
+    # repaired points into the folder it was in then. Hooks are idempotent.
+    earlier = keep.moved_from if keep is not None else ()
     sources = [
         path
-        for path in dict.fromkeys(p for p in (earlier, moved_from) if p is not None)
+        for path in dict.fromkeys((*earlier, *([moved_from] if moved_from is not None else [])))
         if path != project.root and not _same(project.root, path)
     ]
-    _record(project, project.root, keep=keep, moved_from=sources[0] if sources else None)
-    rows: list[HoldOutcome] = []
-    pending = None
+    _record(project, project.root, keep=keep, moved_from=sources)
+    rows: dict[tuple[str, str], HoldOutcome] = {}
+    pending = []
     for source in sources:
         asked, done = repair_holds(holder_of(project), targets, moved_from=source)
-        rows += asked
-        if not done and pending is None:
-            pending = source
-    if sources:  # read again: a hold taken meanwhile stays
+        for row in asked:  # one row per item: a failure from any folder is the one shown
+            key = (row.plugin, row.item)
+            if key not in rows or not rows[key].failed:
+                rows[key] = row
+        if not done:
+            pending.append(source)
+    if pending != sources:  # read again: a hold taken meanwhile stays
         keep = read_reference(reference_file(holder_of(project)))
-        if pending is None:
-            _record(project, project.root, keep=keep)
-        elif pending != sources[0]:
-            _record(project, project.root, keep=keep, moved_from=pending)
-    return rows
+        _record(project, project.root, keep=keep, moved_from=pending)
+    return list(rows.values())
 
 
 def _warn_unrepaired(project: Project, rows: Collection[HoldOutcome]) -> None:
@@ -606,11 +607,11 @@ def _record(
     root: Path,
     *,
     keep: Reference | None = None,
-    moved_from: Path | None = None,
+    moved_from: Sequence[Path] = (),
 ) -> None:
     """Write the project's reference: this folder, its identity, the targets ``keep`` names.
 
-    ``moved_from`` marks a move whose repairs haven't all succeeded yet.
+    ``moved_from`` lists the folders whose repairs haven't all succeeded yet.
     """
     try:
         with locked():

@@ -143,7 +143,8 @@ and a hint) or a `LetGo`: a `preview` line and an `apply` that runs after
 confirmation on a fresh ask, under the store's lock. `apply` may do less
 than the preview (another holder arrived), never more: when the fresh ask
 needs more, it returns a `Refused` and the hold stays. `moved` gets a
-`MoveAsk` naming where the project was (`moved_from`), or is `None` when
+`MoveAsk` naming where the project was (`moved_from`; after several moves
+not yet repaired, one ask per folder, oldest first), or is `None` when
 nothing outside the folder points into it. `project.release(REPOS)` runs
 the same steps for the plugin's own commands. `untaped.testing` has
 `make_project(path, holds=...)`, `release_ask`, `move_ask` and

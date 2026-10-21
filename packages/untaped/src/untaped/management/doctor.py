@@ -833,9 +833,10 @@ def _project_text(ref: Reference) -> tuple[str, bool]:
         return f"{ref.describe()}: {where} is gone; it keeps what it holds until removed", True
     if state == "unreadable":
         return f"{ref.describe()}: {where} can't be read now (a drive or share away?)", False
-    if ref.moved_from is not None:
+    if ref.moved_from:
+        was = ", ".join(shown_path(path) for path in ref.moved_from)
         return (
-            f"{ref.describe()} at {where}: moved from {shown_path(ref.moved_from)}, and a plugin's "
+            f"{ref.describe()} at {where}: moved from {was}, and a plugin's "
             "repair is still pending; the next command that changes the project retries it",
             True,
         )

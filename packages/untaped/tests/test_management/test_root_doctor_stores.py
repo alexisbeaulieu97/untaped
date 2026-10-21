@@ -221,7 +221,7 @@ def test_a_project_with_a_repair_pending_warns(tmp_path: Path) -> None:
         ref.targets,
         anchor=ref.anchor,
         anchor_id=ref.anchor_id,
-        moved_from=tmp_path / "OLD",
+        moved_from=[tmp_path / "OLD"],
     )
     row = _row(_store(tmp_path / "data.db"), check="references")
     assert f"moved from {tmp_path / 'OLD'}, and a plugin's repair is still pending" in str(
