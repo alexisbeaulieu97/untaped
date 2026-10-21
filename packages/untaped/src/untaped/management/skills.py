@@ -60,7 +60,7 @@ from untaped.skills import (
     SkillTargetOption,
     find_installed_skills,
     install_skills,
-    project_root,
+    local_project_root,
     remove_installed_skill,
     skill_backups_dir,
     skill_roots,
@@ -284,7 +284,7 @@ def check_installed_skills(
     if mode == "off":
         return
     found = find_installed_skills(
-        skills, skill_roots(project_dir=project_root(Path.cwd())), deep=False
+        skills, skill_roots(project_dir=local_project_root(None)), deep=False
     )
     sorted_ = _sort_outdated(skills, found)
     older, copies = sorted_.older, sorted_.copies
@@ -414,8 +414,7 @@ def _installed_row(item: InstalledSkill) -> InstalledSkillRow:
 def _found(
     skills: Mapping[str, PackagedSkill], *, project_dir: Path | None
 ) -> list[InstalledSkill]:
-    root = project_dir.expanduser().resolve() if project_dir else project_root(Path.cwd())
-    return find_installed_skills(skills, skill_roots(project_dir=root))
+    return find_installed_skills(skills, skill_roots(project_dir=local_project_root(project_dir)))
 
 
 def _select_installed(

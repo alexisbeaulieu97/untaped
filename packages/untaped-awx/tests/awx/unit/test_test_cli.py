@@ -1269,18 +1269,21 @@ def test_no_paths_and_no_tests_directory_is_a_usage_error(
     assert f"no test paths given and no {tmp_path / '.untaped/awx/tests'}" in result.stderr
 
 
-def test_no_paths_without_git_names_the_failure_instead_of_guessing(
+def test_no_paths_finds_the_checkout_suites_without_running_git(
     cli: CliInvoker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".untaped/awx/tests").mkdir(parents=True)
+    _write(tmp_path / ".untaped/awx/tests/one.yml", _suite_text("one"))
+    nested = tmp_path / "sub"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
     monkeypatch.setattr("shutil.which", lambda _: None)
 
-    result = cli.invoke(app, ["test", "list"])
+    result = cli.invoke(app, ["test", "list", "-f", "json"])
 
-    # A missing git binary is a local setup problem: exit 4.
-    assert result.exit_code == 4
-    assert "`git` not found on PATH; pass test paths explicitly" in result.stderr
-    assert "Traceback" not in result.output
+    assert result.exit_code == 0, result.stderr
+    assert "one" in result.stdout
 
 
 def test_overlapping_paths_read_each_file_once(cli: CliInvoker, tmp_path: Path) -> None:

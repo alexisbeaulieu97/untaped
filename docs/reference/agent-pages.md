@@ -35,7 +35,7 @@ untaped agents PLUGIN GUIDE            # a guide the plugin wrote
 The second line of every page names the untaped that answered: its version,
 the plugin's distribution and version on a plugin's pages, and the Python
 environment it runs from. When the nearest `pyproject.toml` (in the current
-folder or above it, up to the project root) requires a version of `untaped`
+folder or above it, up to the git checkout's root) requires a version of `untaped`
 this one does not satisfy, a third line says so and asks for the project's
 own untaped instead. Every page but the map ends by pointing back at it.
 
