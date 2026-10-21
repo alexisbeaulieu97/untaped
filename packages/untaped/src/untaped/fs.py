@@ -135,7 +135,7 @@ def file_lock(
     already holds (a project's, around a step that takes it again) only counts,
     and the file is released when the outermost block ends.
     """
-    key = (os.path.abspath(path), threading.get_ident())
+    key = (os.path.realpath(path), threading.get_ident())
     with _HELD_GUARD:
         held = key in _HELD
         if held:

@@ -14,6 +14,7 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from untaped.cli import ColumnsOption, FormatOption, create_app, emit, report_errors, writes
+from untaped.errors import ConfigError
 from untaped.management.records import ProjectOutcome, ProjectRow
 from untaped.messages import shown_path
 from untaped.output.sink import Diagnostics
@@ -67,7 +68,7 @@ def _init_command(
     Creates the folder when it doesn't exist. Run again in a project, it
     brings the project's record up to date: records it in this home, follows
     a move, or gives a copy its own id. Refuses ~ and ~/.untaped, and a
-    folder inside another project or holding one.
+    folder inside another project or holding a recorded one.
 
     Examples:
         $ untaped project init
@@ -106,7 +107,11 @@ def _list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
         $ untaped project list -f json
     """
     with report_errors():
-        here = project_at(Path.cwd())
+        try:
+            here = project_at(Path.cwd())
+        except ConfigError as exc:  # a damaged marker here: still list the others
+            _diag.warning(str(exc), hint=exc.hint)
+            here = None
         rows = [_row(ref, here) for ref in project_references()]
         emit(
             rows,

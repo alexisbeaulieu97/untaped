@@ -216,8 +216,13 @@ def test_file_lock_is_re_entrant_within_a_thread(tmp_path: Path) -> None:
 
 def test_file_lock_re_entrance_follows_the_path_not_its_spelling(tmp_path: Path) -> None:
     lock = tmp_path / "state.lock"
+    (tmp_path / "link").symlink_to(tmp_path)
 
-    with _locked(lock, timeout=0), _locked(tmp_path / "." / "state.lock", timeout=0):
+    with (
+        _locked(lock, timeout=0),
+        _locked(tmp_path / "." / "state.lock", timeout=0),
+        _locked(tmp_path / "link" / "state.lock", timeout=0),
+    ):
         pass
     assert _in_thread(lock) is None
 

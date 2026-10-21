@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped import bootstrap, refs
+from untaped.projects import holder_of
 from untaped.testing import CliResult, invoke_cli, make_project
 
 
@@ -73,6 +74,20 @@ def test_list_shows_each_project_its_state_and_the_current_one(
     assert unknown["detail"].endswith("(unreadable (JSONDecodeError))")
 
 
+def test_list_still_lists_from_a_folder_with_a_damaged_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = make_project(tmp_path / "PROJ-1")
+    damaged = tmp_path / "PROJ-2"
+    (damaged / ".untaped").mkdir(parents=True)
+    (damaged / ".untaped" / "project.json").write_text("{", encoding="utf-8")
+    monkeypatch.chdir(damaged)
+    result = _cli("project", "list", "--format", "json")
+    assert result.exit_code == 0, result.output
+    assert "project marker" in result.stderr
+    assert [row["path"] for row in json.loads(result.stdout)] == [str(other.root)]
+
+
 def test_list_with_no_projects_says_how_to_make_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -102,4 +117,4 @@ def test_migrate_dirs_never_offers_a_missing_projects_reference(tmp_path: Path) 
     result = _cli("setup", "migrate-dirs", "--dry-run", "--format", "json")
     assert result.exit_code == 0, result.output
     assert "untaped.references" not in result.stdout
-    assert refs.reference_file(project.holder).exists()
+    assert refs.reference_file(holder_of(project)).exists()

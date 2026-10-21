@@ -62,7 +62,7 @@ from untaped.prompts import (
 )
 from untaped.refs import write_reference
 from untaped.screen.core import Cancel, Quit, Screen
-from untaped.stability import apply_marks, deprecated
+from untaped.stability import apply_marks, deprecated, experimental
 from untaped.testing.contracts import assert_fills, compose_with
 from untaped.testing.schema import assert_schema_pinned
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
@@ -350,6 +350,7 @@ def assert_destructive_contract(
         assert_unchanged()
 
 
+@experimental
 def make_project(path: Path) -> Project:
     """Make ``path`` a project (created when missing) recorded in the hermetic home.
 

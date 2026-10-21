@@ -102,11 +102,6 @@ class Project(BaseModel):
         """The folder's name: how rows name the project (never stored)."""
         return self.root.name
 
-    @property
-    def holder(self) -> RefHolder:
-        """The project as a holder of references: kind ``project``, its id."""
-        return RefHolder(kind=PROJECT, name=self.id)
-
     def locked(self) -> AbstractContextManager[None]:
         """Hold the project's lock for the block: re-entrant; waits 600 s, then exit 5."""
         return _project_lock(self.id, self.name)
@@ -161,6 +156,11 @@ def committed_path(spec: PluginSpec, name: str, *, root: Path) -> Path:
     return root / DIRECTORY / name
 
 
+def holder_of(project: Project) -> RefHolder:
+    """``project`` as a holder of references: kind ``project``, its id."""
+    return RefHolder(kind=PROJECT, name=project.id)
+
+
 def untaped_home() -> Path:
     """``~/.untaped``: the home folder, never a project."""
     return Path(DEFAULT_CONFIG_PATH).expanduser().parent
@@ -206,10 +206,13 @@ def current_project() -> Project:
 
 def project_references() -> list[Reference]:
     """Every ``refs/project-*`` reference, readable or not; no other kind."""
+    folder = refs_dir()
     return [
         ref
         for ref in read_references()
-        if ref.kind == PROJECT or (ref.holder is None and ref.file.name.startswith(f"{PROJECT}-"))
+        if ref.kind == PROJECT
+        or (ref.holder is None and ref.file.name.startswith(f"{PROJECT}-"))
+        or ref.file == folder  # refs/ can't be listed: any project may be there
     ]
 
 
@@ -268,7 +271,7 @@ def init(path: Path, *, new_id: bool = False) -> Initialized:
     """Make ``path`` a project, or bring an existing one's record up to date.
 
     Refuses ``~``, ``~/.untaped`` and core's folders in it, a folder inside
-    another project, and a folder holding one (exit 2). ``new_id`` gives a
+    another project, and a folder holding a recorded one (exit 2). ``new_id`` gives a
     copy its own id; the folder the reference records keeps its id.
     """
     path = path.expanduser().resolve()
@@ -299,8 +302,10 @@ def init(path: Path, *, new_id: bool = False) -> Initialized:
         raise ConfigError(
             f"could not make {shown_path(path)} a project: {exc.strerror or exc}"
         ) from exc
-    if not created:  # another init won the race
-        return _existing(path, new_id=False)
+    if not created:  # another init won the race: it records the project
+        return Initialized(
+            _discover(path, report=False), "unchanged", f"{shown_path(path)} is already a project"
+        )
     _write_gitignore(folder)
     with project.locked():
         _record(project, path)
@@ -312,18 +317,23 @@ def _existing(path: Path, *, new_id: bool) -> Initialized:
     project = _discover(path, report=False)  # init says what it did instead
     if new_id:
         with project.locked():
-            if _situation(path, project.id).kind in {"ok", "refresh", "moved"}:
+            situation = _situation(path, project.id)
+            if situation.kind in {"ok", "refresh", "moved"}:
                 raise UsageError(
                     f"{shown_path(path)} is the folder project {project.name} records; "
                     "--new-id is for a copy of it"
                 )
+            if situation.kind == "unreadable" or (
+                situation.kind == "undecided" and situation.anchor is None
+            ):
+                # The record can't be read, or this folder can't: it may be the original.
+                raise _undecided(project, situation)
             renewed = _renew(path, project.id)
         _forget(path)
         return Initialized(
             renewed, "new id", f"{shown_path(path)} is a project of its own (id {renewed.id})"
         )
-    before = _situation(path, project.id)
-    after = writing(project)
+    after, before = _ready(project)
     was = shown_path(before.anchor or path)
     match before.kind:
         case "unrecorded":
@@ -368,6 +378,11 @@ def writing(project: Project) -> Project:
     move and gives a copy its own id. Raises :class:`ConfigError` (exit 4)
     when its reference can't be read or it can't tell a move from a copy.
     """
+    return _ready(project)[0]
+
+
+def _ready(project: Project) -> tuple[Project, Situation]:
+    """:func:`writing`, and the situation it acted on, read under the lock."""
     with project.locked():
         try:
             current = _marker_id(project.root)
@@ -377,6 +392,12 @@ def writing(project: Project) -> Project:
             ) from exc
         if current is None:
             raise ConfigError(f"{shown_path(project.root)} is no longer a project")
+        if current != project.id:
+            _forget(project.root)
+            raise ConfigError(
+                f"{shown_path(project.root)}'s id changed while untaped was checking it",
+                hint="run the command again",
+            )
         situation = _situation(project.root, current)
         here = Project(id=current, root=project.root)
         match situation.kind:
@@ -391,7 +412,7 @@ def writing(project: Project) -> Project:
             case _:
                 raise _undecided(here, situation)
     _forget(project.root)
-    return here
+    return here, situation
 
 
 def _discover(root: Path, *, report: bool = True) -> Project:
@@ -428,7 +449,8 @@ def _situation(root: Path, pid: str) -> Situation:
     try:
         here = AnchorId.of(root)
     except OSError as exc:
-        return Situation("undecided", ref, ref.anchor, f"{shown_path(root)} can't be read: {exc}")
+        # No anchor: this folder itself can't be read, so nothing about it is known.
+        return Situation("undecided", ref, None, f"{shown_path(root)} can't be read: {exc}")
     if _same(root, ref.anchor):
         return Situation("ok" if here == ref.anchor_id else "refresh", ref, ref.anchor)
     if here == ref.anchor_id:
@@ -492,7 +514,7 @@ def _record(project: Project, root: Path, *, keep: Reference | None = None) -> N
     try:
         with locked():
             write_reference(
-                project.holder,
+                holder_of(project),
                 keep.targets if keep is not None else (),
                 anchor=root,
                 anchor_id=AnchorId.of(root),
@@ -564,8 +586,8 @@ def _create_marker(marker: Path, pid: str) -> bool:
     an exclusive create stands in.
     """
     tmp = marker.with_name(f".{marker.name}.{uuid.uuid4().hex}.untaped.tmp")
-    tmp.write_text(_marker_text(pid), encoding="utf-8")
     try:
+        tmp.write_text(_marker_text(pid), encoding="utf-8")
         os.link(tmp, marker)
     except FileExistsError:
         return False
@@ -604,6 +626,8 @@ def _reserved(folder: Path) -> str | None:
         return "it is the home folder"
     if folder == untaped:
         return f"it is {shown_path(untaped)}, untaped's own folder"
+    if untaped.is_relative_to(folder):
+        return f"it holds {shown_path(untaped)}, untaped's own folder"
     for name in _CORE_FOLDERS:
         if folder.is_relative_to(untaped / name):
             return f"{shown_path(untaped / name)} is untaped's own"

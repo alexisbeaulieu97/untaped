@@ -5280,7 +5280,6 @@ sdk untaped.sdk.ProgressHandle.update(total=) default=None
 sdk untaped.sdk.Project(*, id, root)  [experimental]
 sdk untaped.sdk.Project(copy_of=) default=None  [experimental]
 sdk untaped.sdk.Project.copy_of  [experimental]
-sdk untaped.sdk.Project.holder  [experimental]
 sdk untaped.sdk.Project.id  [experimental]
 sdk untaped.sdk.Project.locked()  [experimental]
 sdk untaped.sdk.Project.name  [experimental]
@@ -6089,7 +6088,7 @@ sdk untaped.testing.invoke_cli(prompt_backend=) default=None
 sdk untaped.testing.invoke_cli(terminal=) default=false
 sdk untaped.testing.invoke_root(argv)
 sdk untaped.testing.invoke_root(input=) default=None
-sdk untaped.testing.make_project(path)
+sdk untaped.testing.make_project(path)  [experimental]
 sdk untaped.testing.plugin_candidate(distribution=) default=None
 sdk untaped.testing.plugin_candidate(requires_dist=) default=[]
 sdk untaped.testing.plugin_candidate(spec)

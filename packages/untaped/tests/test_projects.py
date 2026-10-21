@@ -25,6 +25,7 @@ from untaped.projects import (
     committed_path,
     current_project,
     find_root,
+    holder_of,
     init,
     project_at,
     writing,
@@ -34,7 +35,7 @@ from untaped.testing import make_project, write_reference
 
 
 def _reference(project: Project) -> refs.Reference:
-    return refs.read_reference(refs.reference_file(project.holder))
+    return refs.read_reference(refs.reference_file(holder_of(project)))
 
 
 def _fresh(path: Path) -> Project | None:
@@ -153,15 +154,15 @@ def test_init_records_a_project_this_home_does_not_list(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     project = make_project(tmp_path / "PROJ")
-    refs.reference_file(project.holder).unlink()  # a new machine, or a wiped home
+    refs.reference_file(holder_of(project)).unlink()  # a new machine, or a wiped home
     lines = _lines(lambda: _fresh(project.root), capsys)
     assert lines == [
         f"project PROJ ({project.root}) isn't recorded in this home; "
         "`untaped project init` there records it"
     ]
-    assert not refs.reference_file(project.holder).exists()  # reading wrote nothing
+    assert not refs.reference_file(holder_of(project)).exists()  # reading wrote nothing
     assert init(project.root).action == "recorded"
-    assert refs.reference_file(project.holder).exists()
+    assert refs.reference_file(holder_of(project)).exists()
 
 
 @pytest.mark.parametrize(
@@ -219,10 +220,7 @@ def test_a_second_init_racing_the_first_reports_one_project(tmp_path: Path) -> N
             worker.start()
         for worker in workers:
             worker.join()
-    assert sorted(each.action for each in done) in (
-        ["created", "unchanged"],
-        ["created", "recorded"],
-    )
+    assert sorted(each.action for each in done) == ["created", "unchanged"]
     assert len({each.project.id for each in done}) == 1
     assert len([ref for ref in projects.project_references()]) == 1
 
@@ -238,6 +236,21 @@ def test_an_unwritable_home_keeps_the_marker_and_exits_4(tmp_path: Path) -> None
 
 
 # --- identity --------------------------------------------------------------------------
+
+
+def test_new_id_never_renews_a_folder_whose_record_it_cannot_read(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    file = refs.reference_file(holder_of(project))
+    data = json.loads(file.read_text(encoding="utf-8"))
+    file.write_text(json.dumps({**data, "untaped": "2"}), encoding="utf-8")  # a newer untaped's
+    with pytest.raises(ConfigError, match="cannot read project PROJ's record"):
+        init(project.root, new_id=True)
+    assert _fresh(project.root) == project  # the id stays
+
+
+def test_init_refuses_a_folder_holding_untapeds_home(tmp_path: Path) -> None:
+    with pytest.raises(UsageError, match="untaped's own folder"):
+        init(Path.home().parent)
 
 
 def test_a_symlinked_spelling_is_the_same_project(tmp_path: Path) -> None:
@@ -325,7 +338,7 @@ def test_two_folders_with_one_id_neither_recorded_are_undecided(tmp_path: Path) 
 
 def test_an_unreadable_record_stops_a_writing_use(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
-    refs.reference_file(project.holder).write_text("{", encoding="utf-8")
+    refs.reference_file(holder_of(project)).write_text("{", encoding="utf-8")
     seen = _fresh(project.root)
     assert seen is not None
     with pytest.raises(ConfigError, match="cannot read project PROJ's record"):
@@ -334,7 +347,7 @@ def test_an_unreadable_record_stops_a_writing_use(tmp_path: Path) -> None:
 
 def test_a_changed_identity_at_the_same_path_is_refreshed(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
-    write_reference(project.holder, [], anchor=project.root, anchor_id=AnchorId(dev=0, ino=1))
+    write_reference(holder_of(project), [], anchor=project.root, anchor_id=AnchorId(dev=0, ino=1))
     seen = _fresh(project.root)
     assert seen is not None and seen.copy_of is None
     writing(seen)
@@ -345,7 +358,7 @@ def test_a_writing_use_keeps_the_holds_a_move_carries(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
     held = RefTarget(plugin="workspace", store="repos", item="github.com/acme/api")
     write_reference(
-        project.holder, [held], anchor=project.root, anchor_id=AnchorId.of(project.root)
+        holder_of(project), [held], anchor=project.root, anchor_id=AnchorId.of(project.root)
     )
     moved = tmp_path / "moved"
     project.root.rename(moved)
@@ -406,6 +419,14 @@ def test_a_copy_while_the_original_drive_is_away_is_undecided(
         writing(seen)
 
 
+def test_an_unlistable_refs_folder_is_kept_as_unknown() -> None:
+    folder = refs.refs_dir()
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    folder.write_text("not a folder", encoding="utf-8")  # listing it fails
+    [ref] = projects.project_references()
+    assert isinstance(projects.view(ref), projects.UnknownHolder)
+
+
 def test_only_project_references_are_projects(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
     write_reference(RefHolder(kind="acme_job", name="build-1"), [], anchor=tmp_path)
@@ -415,7 +436,7 @@ def test_only_project_references_are_projects(tmp_path: Path) -> None:
     view = found[0]
     assert isinstance(view, projects.HolderView)
     assert (view.holder, view.label, view.anchor, view.state) == (
-        project.holder,
+        holder_of(project),
         "project PROJ",
         project.root,
         "present",

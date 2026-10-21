@@ -29,8 +29,8 @@ a project:
   folder and the folder's filesystem identity.
 
 Projects don't nest: `init` refuses inside another project, and in a folder
-that holds one. Run again in a project, `init` changes nothing, or brings the
-home's record up to date (below).
+that holds one this home records. Run again in a project, `init` changes
+nothing, or brings the home's record up to date (below).
 
 ## Moves and copies
 
@@ -51,7 +51,7 @@ Nothing is repaired by a command that only reads, such as `project list`.
 
 `project list` shows each recorded project's state: `present`, `missing`
 (its folder is gone) or `unreadable` (its drive or share isn't there now; it
-counts as present). `untaped doctor` warns about a missing project.
+keeps what it holds). `untaped doctor` warns about a missing project.
 
 ## A plugin's files in `.untaped/`
 
