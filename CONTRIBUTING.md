@@ -483,9 +483,9 @@ by an `UNTAPED_*` environment variable.
 layered over `default`.
 
 **Project**: a folder whose `.untaped/` holds `project.json`, found by walking
-up from the working directory, apart from any git checkout's root; the home
-records it by the folder's filesystem identity, so a move or a copy is told
-apart from the same folder.
+up from the working directory, which need not be a git checkout's root; the
+home records it by the folder's filesystem identity, so a move or a copy is
+told apart from the same folder.
 
 **Holder**: what holds items in the home's references: a project, today.
 
