@@ -1,7 +1,7 @@
 """Tests for the folder's requirement on untaped and the ``nearest_pyproject`` walk under it.
 
 The requirement is read from the nearest ``pyproject.toml``'s standard
-tables only, never above the project root, and a malformed file or entry is
+tables only, never above the checkout root, and a malformed file or entry is
 no requirement at all.
 """
 

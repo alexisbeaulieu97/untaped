@@ -82,7 +82,7 @@ def _house(root: Path, **files: str) -> Path:
 # --- finding and reading the file ---------------------------------------------
 
 
-def test_the_file_is_found_walking_up_to_the_project_root(tmp_path: Path) -> None:
+def test_the_file_is_found_walking_up_to_the_checkout_root(tmp_path: Path) -> None:
     _house(tmp_path)
     (tmp_path / "src" / "deep").mkdir(parents=True)
     found = repo_file.find(tmp_path / "src" / "deep")

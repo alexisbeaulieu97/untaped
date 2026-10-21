@@ -619,7 +619,7 @@ def _install_targets(
             )
         ]
 
-    project_root = _local_project_root(project_dir) if scope == SkillInstallScope.local else None
+    project_root = local_project_root(project_dir) if scope == SkillInstallScope.local else None
     if target == SkillInstallTarget.codex:
         return [_codex_destination(scope, project_root=project_root)]
     if target == SkillInstallTarget.claude:
@@ -874,7 +874,11 @@ def _claude_destination(
     return SkillInstallDestination(target="claude", scope=scope, root=root)
 
 
-def _local_project_root(project_dir: Path | None) -> Path:
+def local_project_root(project_dir: Path | None) -> Path:
+    """``project_dir``, else the working directory's :func:`checkout_root`, else itself.
+
+    Where ``--scope local`` skills live, for installing and for checking them.
+    """
     if project_dir is not None:
         return project_dir.expanduser().resolve()
     cwd = Path.cwd().resolve()
