@@ -40,10 +40,9 @@ from untaped.holds import (
 from untaped.messages import shown_path
 from untaped.output.diagnostic import Failure
 from untaped.projects import (
-    _GITIGNORE_SELF,
     CORE_LOCKS,
     DIRECTORY,
-    GITIGNORE,
+    GITIGNORE_TEXT,
     MARKER,
     Project,
     _create_marker,
@@ -264,7 +263,7 @@ def _untouched(folder: Path) -> bool:
         text = (folder / ".gitignore").read_text(encoding="utf-8")
     except OSError:
         return False
-    return text == "\n".join((_GITIGNORE_SELF, *GITIGNORE)) + "\n"
+    return text == GITIGNORE_TEXT
 
 
 def _holds_left(holder: RefHolder) -> int:

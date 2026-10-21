@@ -154,12 +154,15 @@ def test_the_gitignore_ignores_cores_lock_files_and_no_plugins(tmp_path: Path) -
     root = tmp_path / "PROJ"
     init(root)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
-    names = [
-        "state.yml.lock",
-        "config.yml.lock",
+    cores = [
+        ".gitignore",
         "project.json",
         "state.yml",
         "plugins/x.json",
+        "state.yml.lock",
+        "config.yml.lock",
+    ]
+    plugins = [  # a plugin's committed files, at any depth
         "recipe.lock",
         "notes/state.yml.lock",
         "lint/state.yml",
@@ -172,9 +175,9 @@ def test_the_gitignore_ignores_cores_lock_files_and_no_plugins(tmp_path: Path) -
         check = ["git", "-C", str(root), "check-ignore", "-q", f".untaped/{name}"]
         return subprocess.run(check, check=False).returncode == 0
 
-    assert {name: ignored(name) for name in names} == {
-        **dict.fromkeys(names[:5], True),
-        **dict.fromkeys(names[5:], False),  # a plugin's committed files, at any depth
+    assert {name: ignored(name) for name in cores + plugins} == {
+        **dict.fromkeys(cores, True),
+        **dict.fromkeys(plugins, False),
     }
 
 

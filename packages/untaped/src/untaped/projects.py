@@ -93,8 +93,8 @@ CORE_LOCKS = ("state.yml.lock", "config.yml.lock")
 #: Each is anchored at ``.untaped/``'s top level and named (core's lock files too), so a
 #: plugin's committed files (``recipe.lock``, ``awx/plugins/``) stay tracked.
 GITIGNORE = ("/project.json", "/state.yml", "/plugins/", *(f"/{name}" for name in CORE_LOCKS))
-#: The line a ``.gitignore`` that ``init`` created ignores itself with.
-_GITIGNORE_SELF = "/.gitignore"
+#: The whole ``.gitignore`` ``init`` creates: those lines and itself.
+GITIGNORE_TEXT = "\n".join(("/.gitignore", *GITIGNORE)) + "\n"
 #: Folders under ``~/.untaped`` that are core's own, never a project.
 _CORE_FOLDERS = ("refs", "plugins")
 
@@ -734,7 +734,7 @@ def _write_gitignore(folder: Path) -> None:
     try:
         existing = file.read_text(encoding="utf-8")
     except FileNotFoundError:
-        atomic_write(file, "\n".join((_GITIGNORE_SELF, *GITIGNORE)) + "\n")
+        atomic_write(file, GITIGNORE_TEXT)
         return
     lines = existing.splitlines()
     missing = [line for line in GITIGNORE if line not in lines]
