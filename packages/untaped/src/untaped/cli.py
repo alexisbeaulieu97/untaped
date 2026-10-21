@@ -84,10 +84,11 @@ def apply_default_format(
     ``--format`` offering every shared format, such as ``TreeFormatOption``)
     whose command default is ``table`` follows the user's choice (a command
     defaulting to ``raw`` or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first,
-    then the ``ui.format`` setting. An explicit ``--format`` has tokens already and always wins. A
-    ``ui`` section that fails to load is ignored here so ``config set`` can
-    still repair it; ``doctor`` reports it. An invalid ``UNTAPED_FORMAT`` is
-    a usage error, except under ``doctor`` and ``setup``, which ignore it.
+    then the ``ui.format`` setting. An explicit ``--format`` has tokens
+    already and always wins. A ``ui`` section that fails to load is ignored
+    here so ``config set`` can still repair it; ``doctor`` reports it. An
+    invalid ``UNTAPED_FORMAT`` is a usage error, except under ``doctor`` and
+    ``setup``, which ignore it.
     A ``--format`` the user chose (the flag, ``UNTAPED_FORMAT`` or
     ``ui.format``; not a command's own default) is recorded for the stderr
     diagnostics (:func:`untaped.output.policy.note_format`, phase 2), and,

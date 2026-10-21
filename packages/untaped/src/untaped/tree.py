@@ -337,4 +337,4 @@ def _row_line(row: _Labelled, column: int) -> _Line:
 
 
 def _stop_note(node: TreeGraphNode) -> tuple[str, ...]:
-    return (f"not read: {node.stopped}",) if node.stopped and node.stopped is not True else ()
+    return (f"not read: {node.stopped}",) if isinstance(node.stopped, str) and node.stopped else ()

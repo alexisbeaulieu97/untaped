@@ -133,10 +133,10 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         workflow under every template it runs, highlighted (the theme's
         success color, bold green by default) and listed in the summary
         when it is top-level (not with --filter), ``(N nodes)`` after a
-        workflow running the line above in more than one node, and ``…`` where
-        the depth limit stopped (a stderr hint says how to read further). A
-        branch drawn earlier is numbered ``[n]`` and later holds one
-        ``… see [n]`` line; a cycle is marked ``↻ cycle``. Set
+        workflow running the line above in more than one node, and ``…``
+        where the depth limit stopped (a stderr hint says how to read
+        further). A branch drawn earlier is numbered ``[n]`` and later holds
+        one ``… see [n]`` line; a cycle is marked ``↻ cycle``. Set
         ``ui.border: ascii`` for a terminal that misdraws box characters.
         """
         max_depth = resolve_max_depth(depth, recursive)
