@@ -30,7 +30,9 @@ def test_a_typed_value_round_trips_with_its_freshness(store_for: StoreFor) -> No
     assert store.read_private(Listing) == Absent()
     store.write_private(Listing(repo="acme/app"), refreshed_at=refreshed)
 
-    assert store.read_private(Listing) == Found(Listing(repo="acme/app"), refreshed)
+    found = store.read_private(Listing)
+    assert isinstance(found, Found)
+    assert (found.value, found.refreshed_at) == (Listing(repo="acme/app"), refreshed)
     data = json.loads(_file(store_for, "github").read_text(encoding="utf-8"))
     assert data["repo"] == "acme/app"  # at the top level, where 11.0 read it
     assert _file(store_for, "github").stat().st_mode & 0o777 == 0o600
