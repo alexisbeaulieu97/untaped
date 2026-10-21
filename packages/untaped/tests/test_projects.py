@@ -146,6 +146,26 @@ def test_init_adds_its_lines_to_a_gitignore_already_there(tmp_path: Path) -> Non
     assert (folder / "lint.yml").read_text(encoding="utf-8") == "version: 1\n"
 
 
+def test_the_gitignore_ignores_cores_lock_files_and_no_plugins(tmp_path: Path) -> None:
+    import subprocess
+
+    root = tmp_path / "PROJ"
+    init(root)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    names = ["state.yml.lock", "config.yml.lock", "recipe.lock", "notes/state.yml.lock"]
+
+    def ignored(name: str) -> bool:
+        check = ["git", "-C", str(root), "check-ignore", "-q", f".untaped/{name}"]
+        return subprocess.run(check, check=False).returncode == 0
+
+    assert {name: ignored(name) for name in names} == {
+        "state.yml.lock": True,
+        "config.yml.lock": True,
+        "recipe.lock": False,  # a plugin's committed file
+        "notes/state.yml.lock": False,
+    }
+
+
 def test_init_twice_changes_nothing(tmp_path: Path) -> None:
     first = init(tmp_path / "PROJ")
     again = init(tmp_path / "PROJ")
