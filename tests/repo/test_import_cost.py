@@ -177,6 +177,22 @@ def test_startup_stays_within_its_module_budget(flag: str) -> None:
     assert total <= _TOTAL_BUDGET, f"untaped {flag} imported {total} modules"
 
 
+def test_a_typed_cache_declared_at_startup_loads_neither_its_model_nor_the_data_file() -> None:
+    """``model=`` takes a function for a model whose import would cost startup; ``--help`` too."""
+    snippet = (
+        "from datetime import timedelta\n"
+        "from untaped.sdk import Cache\n"
+        "def model():\n"
+        "    import untaped_awx.domain.lint.resources\n"
+        "    raise AssertionError('resolved at declaration')\n"
+        "Cache('acme', 'snapshots', label='x', max_age=timedelta(hours=1), model=model)\n"
+        + _DISPATCH_PROBE.format(argv=["--help"])
+        + "assert 'untaped.data_file' not in sys.modules\n"
+        "assert 'untaped_awx.domain.lint.resources' not in sys.modules\n"
+    )
+    assert "httpx" not in _loaded_heavy_modules(snippet)
+
+
 def test_contracts_load_only_when_asked() -> None:
     """``untaped.contracts`` is a module root of its own: the SDK and ``--help`` never load it."""
     snippet = (

@@ -4,10 +4,10 @@ A project is found by walking up from a folder to the nearest
 ``.untaped/project.json``; ``~`` and ``~/.untaped`` are never one, and a
 ``.untaped/`` holding only a plugin's committed files (``lint.yml``) is not
 one either. ``untaped project init`` makes a folder a project: it writes
-``project.json`` (``{"untaped": "1", "id": <12 hex digits>}``, created
-exclusively) and a self-ignoring ``.untaped/.gitignore``, and records the
-project in the home as a reference, ``refs/project-<id>.json``
-(:mod:`untaped.refs`), naming the folder and its filesystem identity.
+``project.json`` (core's data file, :mod:`untaped.data_file`: its stamp and
+``"id": <12 hex digits>``, created exclusively) and a self-ignoring
+``.untaped/.gitignore``, and records the project in the home as a reference,
+``refs/project-<id>.json`` (:mod:`untaped.refs`), naming the folder and its filesystem identity.
 
 "Same folder" is decided by that identity, ``(st_dev, st_ino)``, never by
 comparing path strings: a second spelling, a symlink or a bind mount is the
@@ -31,18 +31,16 @@ Each plugin's committed files under ``.untaped/`` are named through
 
 from __future__ import annotations
 
-import json
 import os
 import secrets
 import threading
-import uuid
 from collections.abc import Collection, Sequence
-from contextlib import AbstractContextManager, suppress
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from untaped.errors import ConfigError, ErrorCategory, UsageError
 from untaped.fs import atomic_write
@@ -85,8 +83,6 @@ if TYPE_CHECKING:
 DIRECTORY = ".untaped"
 #: The file that makes a folder a project.
 MARKER = "project.json"
-#: ``project.json``'s own format.
-FORMAT = "1"
 #: The lock files core's locked writes leave beside the state and config files.
 CORE_LOCKS = ("state.yml.lock", "config.yml.lock")
 #: What ``init`` keeps out of version control: the id and machine records, never config.
@@ -339,7 +335,7 @@ def init(path: Path, *, new_id: bool = False) -> Initialized:
     with project.locked():
         try:
             folder.mkdir(parents=True, exist_ok=True)
-            created = _create_marker(folder / MARKER, project.id)
+            created = _write_marker(folder / MARKER, project.id, exclusive=True)
         except OSError as exc:
             raise ConfigError(
                 f"could not make {shown_path(path)} a project: {exc.strerror or exc}"
@@ -640,13 +636,17 @@ def _renew(root: Path, old: str) -> Project:
     """Give the copy at ``root`` its own id: a new ``project.json`` and a reference, no holds."""
     project = Project(id=_new_id(), root=root)
     marker = root / DIRECTORY / MARKER
-    if _marker_id(root) != old:
+    try:
+        current = _marker_id(root)
+    except ValueError as exc:
+        raise ConfigError(f"cannot read {shown_path(root)}'s project marker: {exc}") from exc
+    if current != old:
         raise ConfigError(
             f"{shown_path(root)}'s id changed while untaped was giving it a new one",
             hint="run the command again",
             category=ErrorCategory.UNAVAILABLE,
         )
-    atomic_write(marker, _marker_text(project.id))
+    _write_marker(marker, project.id)
     with project.locked():
         _record(project, root)
     return project
@@ -659,24 +659,43 @@ def _same(a: Path, b: Path) -> bool:
         return False
 
 
+class ProjectMarker(BaseModel):
+    """``project.json``: the project's id, on core's data file."""
+
+    id: str
+
+    @field_validator("id")
+    @classmethod
+    def _an_id(cls, value: str) -> str:
+        if not _valid_id(value):
+            raise ValueError("is not a project id (12 lowercase hex digits)")
+        return value
+
+
 def _marker_id(root: Path) -> str | None:
     """The id in ``root``'s ``project.json``; ``None`` when there is none.
 
-    Raises :class:`ValueError` for a file that isn't a project marker and
-    :class:`OSError` for one that can't be read.
+    Raises :class:`ValueError` for a file that isn't a project marker, that
+    can't be read, or that a newer untaped wrote.
     """
-    try:
-        text = (root / DIRECTORY / MARKER).read_text(encoding="utf-8")
-    except FileNotFoundError, NotADirectoryError:
-        return None
-    try:
-        data = json.loads(text)
-    except ValueError as exc:
-        raise ValueError(f"{shown_path(root / DIRECTORY / MARKER)} is not valid JSON") from exc
-    pid = data.get("id") if isinstance(data, dict) else None
-    if not isinstance(pid, str) or not _valid_id(pid):
-        raise ValueError(f"{shown_path(root / DIRECTORY / MARKER)} names no project id")
-    return pid
+    from untaped.data_file import (  # noqa: PLC0415 - read on first use only
+        Absent,
+        Found,
+        OtherVersion,
+        read_data_file,
+    )
+
+    marker = root / DIRECTORY / MARKER
+    # "1": the string stamp project.json had before core's data file (development builds only)
+    match read_data_file(marker, ProjectMarker, legacy_stamps=("1",)):
+        case Found(value=found):
+            return found.id
+        case Absent():
+            return None
+        case OtherVersion(by=by):
+            raise ValueError(f"{shown_path(marker)} was written by a newer untaped ({by})")
+        case unreadable:
+            raise ValueError(f"{shown_path(marker)} {unreadable.reason}")
 
 
 def _valid_id(value: str) -> bool:
@@ -687,45 +706,11 @@ def _new_id() -> str:
     return secrets.token_hex(6)
 
 
-def _marker_text(pid: str) -> str:
-    return json.dumps({"untaped": FORMAT, "id": pid}) + "\n"
+def _write_marker(marker: Path, pid: str, *, exclusive: bool = False) -> bool:
+    """Write ``marker`` with ``pid``; with ``exclusive``, only if absent (whether it did)."""
+    from untaped.data_file import write_data_file  # noqa: PLC0415 - read on first use only
 
-
-def _create_marker(marker: Path, pid: str) -> bool:
-    """Create ``marker`` whole, only if it doesn't exist; whether this call created it.
-
-    The content is written to a temp file first and linked into place, so a
-    racing reader never sees an empty marker; where links aren't supported
-    an exclusive create stands in.
-    """
-    tmp = marker.with_name(f".{marker.name}.{uuid.uuid4().hex}.untaped.tmp")
-    try:
-        tmp.write_text(_marker_text(pid), encoding="utf-8")  # a failure here leaves no marker
-        try:
-            os.link(tmp, marker)
-        except FileExistsError:
-            return False
-        except OSError:  # links aren't supported here
-            return _create_exclusive(marker, pid)
-        return True
-    finally:
-        with suppress(OSError):
-            tmp.unlink()
-
-
-def _create_exclusive(marker: Path, pid: str) -> bool:
-    try:
-        fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
-    except FileExistsError:
-        return False
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(_marker_text(pid))
-    except BaseException:
-        with suppress(OSError):
-            marker.unlink()
-        raise
-    return True
+    return write_data_file(marker, ProjectMarker(id=pid), exclusive=exclusive)
 
 
 def _write_gitignore(folder: Path) -> None:

@@ -45,9 +45,9 @@ reveal_type(TextInput("name").value)  # line 25
 """
 
 
-def _mypy(tmp_path: Path) -> tuple[int, str]:
+def _mypy(tmp_path: Path, snippet: str = SNIPPET) -> tuple[int, str]:
     source = tmp_path / "plugin.py"
-    source.write_text(SNIPPET, encoding="utf-8")
+    source.write_text(snippet, encoding="utf-8")
     proc = subprocess.run(
         [
             sys.executable,
@@ -89,6 +89,75 @@ def test_the_component_names_keep_their_real_types(tmp_path: Path) -> None:
     assert revealed[25] == '"str"', output  # TextInput(...).value, not object
 
 
+TYPED = """\
+from collections.abc import Mapping
+from datetime import timedelta
+
+from pydantic import BaseModel
+
+from untaped.sdk import (
+    NO_PROGRESS, Cache, DataRead, Filled, Found, ProgressHandle, read_data_file
+)
+
+
+class Snapshot(BaseModel):
+    items: list[str]
+
+
+def _model() -> type[Snapshot]:
+    return Snapshot
+
+
+TYPED = Cache("acme", "snapshots", label="x", max_age=timedelta(hours=1), model=_model)
+PLAIN = Cache("acme", "plain", label="x", max_age=timedelta(hours=1))
+
+
+def fill(key: str, task: ProgressHandle) -> Filled[Snapshot]:
+    return Filled(value=Snapshot(items=[key]))
+
+
+def plain_fill(key: str, task: ProgressHandle) -> Filled:
+    return Filled()
+
+
+def snapshot(url: str) -> Snapshot:
+    served = TYPED.serve({url: url}, refresh=None, fill=fill, partition="token")
+    return served.value[url]
+
+
+def names() -> list[str]:
+    return PLAIN.serve({"a": "a"}, refresh=None, fill=plain_fill, read=lambda: ["a"]).value
+
+
+def read(path: object) -> Snapshot | None:
+    found: DataRead[Snapshot] = read_data_file(path, Snapshot)  # type: ignore[arg-type]
+    match found:
+        case Found(value=value):
+            return value
+    return None
+
+
+reveal_type(TYPED)  # line 48
+reveal_type(TYPED.serve({}, refresh=None, fill=fill).value)  # line 49
+reveal_type(TYPED.cached("a"))  # line 50
+reveal_type(PLAIN.cached("a", lambda: 1))  # line 51
+"""
+
+
+def test_a_typed_cache_types_its_values_under_strict_mypy(tmp_path: Path) -> None:
+    _code, output = _mypy(tmp_path, TYPED)
+    assert ": error:" not in output, output
+    revealed = {
+        int(line.split(":")[1]): line.split("Revealed type is ", 1)[1]
+        for line in output.splitlines()
+        if "Revealed type is" in line
+    }
+    assert revealed[48] == '"untaped.cache.Cache[plugin.Snapshot]"', output
+    assert revealed[49] == '"typing.Mapping[str, plugin.Snapshot]"', output
+    assert "Served[plugin.Snapshot" in revealed[50], output
+    assert "Served[int" in revealed[51], output
+
+
 def _sdk_tree() -> ast.Module:
     return ast.parse(SDK.read_text(encoding="utf-8"))
 
@@ -109,17 +178,17 @@ def _type_checking_imports(tree: ast.Module) -> set[tuple[str, str]]:
 
 
 def _lazy_exports(tree: ast.Module) -> set[tuple[str, str]]:
-    """``(module, name)`` for each entry of the ``_SCREEN_MODULES`` map."""
+    """``(module, name)`` for each entry of the ``_LAZY_MODULES`` map."""
     for node in tree.body:
         if (
             isinstance(node, ast.AnnAssign)
             and isinstance(node.target, ast.Name)
-            and node.target.id == "_SCREEN_MODULES"
+            and node.target.id == "_LAZY_MODULES"
             and node.value is not None
         ):
             table: dict[str, tuple[str, ...]] = ast.literal_eval(node.value)
             return {(module, name) for module, names in table.items() for name in names}
-    raise AssertionError("sdk.py has no _SCREEN_MODULES map")
+    raise AssertionError("sdk.py has no _LAZY_MODULES map")
 
 
 def test_the_type_checker_imports_are_exactly_the_lazy_screen_exports() -> None:
@@ -135,7 +204,7 @@ def test_the_parity_check_sees_a_missing_import() -> None:
     tree = ast.parse(
         "import typing as _typing\n"
         "if _typing.TYPE_CHECKING:\n    from a.b import X\n"
-        "_SCREEN_MODULES: dict[str, tuple[str, ...]] = {'a.b': ('X', 'Y')}\n"
+        "_LAZY_MODULES: dict[str, tuple[str, ...]] = {'a.b': ('X', 'Y')}\n"
     )
 
     assert _lazy_exports(tree) - _type_checking_imports(tree) == {("a.b", "Y")}

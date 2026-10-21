@@ -45,7 +45,6 @@ from untaped.projects import (
     GITIGNORE_TEXT,
     MARKER,
     Project,
-    _create_marker,
     _discover,
     _forget,
     _marker_id,
@@ -55,6 +54,7 @@ from untaped.projects import (
     _situation,
     _undecided,
     _write_gitignore,
+    _write_marker,
     anchor_state,
     find_root,
     follow_move,
@@ -164,7 +164,12 @@ def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str])
 
 def preview_check(project: Project) -> None:
     """For a preview (``--dry-run``, ``--check``): refuse what a writing use would refuse."""
-    pid = _marker_id(project.root)
+    try:
+        pid = _marker_id(project.root)
+    except ValueError as exc:
+        raise ConfigError(
+            f"cannot read {shown_path(project.root)}'s project marker: {exc}"
+        ) from exc
     if pid is None:
         raise ConfigError(f"{shown_path(project.root)} is no longer a project")
     situation = _situation(project.root, pid)
@@ -505,7 +510,7 @@ def apply_move(move: Move) -> list[HoldOutcome]:
                 try:
                     folder.mkdir(parents=True, exist_ok=True)
                     if (
-                        not _create_marker(folder / MARKER, project.id)
+                        not _write_marker(folder / MARKER, project.id, exclusive=True)
                         and _marker_id(move.new) != project.id
                     ):
                         raise UntapedError(
@@ -515,6 +520,10 @@ def apply_move(move: Move) -> list[HoldOutcome]:
                 except OSError as exc:
                     raise ConfigError(
                         f"could not make {shown_path(move.new)} the project: {exc.strerror or exc}"
+                    ) from exc
+                except ValueError as exc:  # its project.json can't be read
+                    raise ConfigError(
+                        f"could not make {shown_path(move.new)} the project: {exc}"
                     ) from exc
             moved = project
             detail = (

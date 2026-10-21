@@ -180,6 +180,11 @@ def cached[F: Callable[..., Any]](cache: Cache, /) -> Callable[[F], F]:
             f"@cached({cache.qualified}): an answer cache follows no store; its entries "
             "are read tolerantly whatever wrote them, so declare it without store="
         )
+    if cache.model is not None:
+        raise TypeError(
+            f"@cached({cache.qualified}): an answer cache keeps each provider's answer in "
+            "the method's return type, so declare it without model="
+        )
 
     def mark(fn: F) -> F:
         return _served(fn, cache, fn.__name__)

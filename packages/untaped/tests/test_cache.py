@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import stat
 import sys
 import threading
 from collections.abc import Callable, Iterator
@@ -20,6 +21,7 @@ from typing import Annotated, Any
 import pytest
 
 from untaped import cache as cache_module
+from untaped import data_file
 from untaped.cache import (
     RETRY_AFTER,
     Cache,
@@ -33,6 +35,7 @@ from untaped.cache import (
     refresh_scope,
 )
 from untaped.cli import create_app, echo, report_errors
+from untaped.data_file import written_by
 from untaped.errors import ConfigError, ErrorCategory, HttpTransportError, UntapedError
 from untaped.output.diagnostic import Failure, Progress, StaleData
 from untaped.output.progress import ProgressHandle
@@ -126,9 +129,16 @@ def _refreshed(clock: CacheClock, *keys: str, ago: timedelta) -> None:
     UP.fills.clear()
 
 
-def _sidecar(key: str) -> dict[str, Any]:
-    data: dict[str, Any] = json.loads(TOY._paths(key).sidecar.read_text(encoding="utf-8"))
-    return data
+def _sidecar(key: str, cache: Cache = TOY) -> dict[str, Any]:
+    """The stamp on the key's file's first line."""
+    line = cache._paths(key).file().read_text(encoding="utf-8").splitlines()[0]
+    stamp: dict[str, Any] = json.loads(line)["untaped"]
+    return stamp
+
+
+def _write_sidecar(key: str, stamp: dict[str, Any], cache: Cache = TOY) -> None:
+    file = cache._paths(key).file()
+    file.write_text(json.dumps({"untaped": stamp}) + "\n", encoding="utf-8")
 
 
 # ---- Freshness.due -----------------------------------------------------------
@@ -216,17 +226,21 @@ def test_first_use_fills_then_a_fresh_read_is_silent(clock: CacheClock) -> None:
 def test_the_sidecar_holds_the_freshness_under_the_profile(clock: CacheClock) -> None:
     assert _show("a").exit_code == 0
     paths = TOY._paths("a")
-    assert paths.sidecar.parent.name == "default"
-    assert paths.sidecar.parent.parent.name == "items"
+    assert paths.file().parent.name == "default"
+    assert paths.file().parent.parent.name == "items"
+    assert paths.file().parent.parent.parent.name == "cached"
+    assert paths.file().read_text(encoding="utf-8").count("\n") == 1  # no value: one line
+    assert stat.S_IMODE(paths.file().stat().st_mode) == 0o600
     assert _sidecar("a") == {
-        "untaped": "1",
+        "file": 1,
+        "by": written_by(),
         "key": "a",
+        "version": None,
         "refreshed_at": "2026-10-12T09:00:00Z",
         "attempted_at": None,
         "error": None,
         "partial": False,
         "retry_at": None,
-        "version": None,
     }
 
 
@@ -609,7 +623,8 @@ def test_a_waiter_serves_what_the_other_process_refreshed(clock: CacheClock) -> 
     """Under --refresh too: the data was refreshed after this run started."""
 
     def other_process_fills() -> None:
-        TOY._write(TOY._paths("a"), "a", Freshness(refreshed_at=START + timedelta(seconds=1)))
+        fresh = Freshness(refreshed_at=START + timedelta(seconds=1))
+        TOY._write(TOY._paths("a").file(), "a", fresh, None, None)
         UP.held["a"] = ["a9"]
 
     for args in (["a"], ["a", "--refresh"]):
@@ -631,7 +646,7 @@ def test_a_lock_that_never_comes_exits_5(
     assert result.exit_code == 5
     assert "another untaped process is still refreshing toy a" in result.stderr
     assert UP.fills == []
-    assert not TOY._paths("a").sidecar.exists()
+    assert not TOY._paths("a").file().exists()
 
 
 def test_a_fill_never_serves_its_own_cache(clock: CacheClock) -> None:
@@ -701,11 +716,11 @@ def test_a_url_key_and_keys_that_sanitize_alike_keep_their_own_sidecars(
     for key in keys:
         UP.items[key] = [key]
     assert _show(*keys).exit_code == 0
-    sidecars = {TOY._paths(key).sidecar for key in keys}
+    sidecars = {TOY._paths(key).file() for key in keys}
     assert len(sidecars) == 3
     assert all(path.exists() for path in sidecars)
-    assert TOY._paths("a_b").sidecar.name == "a_b.json"
-    assert TOY._paths("a/b").sidecar.name.startswith("a_b~")
+    assert TOY._paths("a_b").file().name == "a_b.json"
+    assert TOY._paths("a/b").file().name.startswith("a_b~")
 
 
 def test_a_long_key_and_keys_differing_in_case_keep_their_own_sidecars(
@@ -715,10 +730,10 @@ def test_a_long_key_and_keys_differing_in_case_keep_their_own_sidecars(
     for key in keys:
         UP.items[key] = [key]
     assert _show(*keys).exit_code == 0
-    names = {TOY._paths(key).sidecar.name.lower() for key in keys}
+    names = {TOY._paths(key).file().name.lower() for key in keys}
     assert len(names) == 4  # apart on a case-insensitive filesystem too
     assert all(len(name.encode()) < 120 for name in names)  # bytes: every filesystem's limit
-    assert TOY._paths("abc").sidecar.name == "abc.json"
+    assert TOY._paths("abc").file().name == "abc.json"
 
 
 def test_profiles_that_sanitize_alike_keep_their_own_folders() -> None:
@@ -729,15 +744,15 @@ def test_profiles_that_sanitize_alike_keep_their_own_folders() -> None:
 def test_an_unreadable_error_keeps_the_data_and_drops_the_attempt(clock: CacheClock) -> None:
     """A newer untaped's error: the data stays, the attempt it describes cannot be told."""
     _refreshed(clock, "a", ago=timedelta(minutes=5))
-    paths = TOY._paths("a")
-    data = json.loads(paths.sidecar.read_text())
+    TOY._paths("a")
+    data = _sidecar("a")
     data.update(
         error={"message": "x", "from_a_newer_untaped": True},
         attempted_at="2026-10-12T08:58:00Z",
         retry_at="2026-10-12T09:03:00Z",
         partial=True,
     )
-    paths.sidecar.write_text(json.dumps(data))
+    _write_sidecar("a", data)
     assert TOY.freshness("a") == Freshness(refreshed_at=START - timedelta(minutes=5))
     result = _show("a")
     assert (result.exit_code, result.diagnostics, UP.fills) == (0, (), [])
@@ -745,8 +760,8 @@ def test_an_unreadable_error_keeps_the_data_and_drops_the_attempt(clock: CacheCl
 
 def test_a_sidecar_for_another_key_reads_as_never_refreshed(clock: CacheClock) -> None:
     assert _show("a").exit_code == 0
-    paths = TOY._paths("a")
-    paths.sidecar.write_text(paths.sidecar.read_text().replace('"key": "a"', '"key": "z"'))
+    TOY._paths("a")
+    _write_sidecar("a", {**_sidecar("a"), "key": "z"})
     assert TOY.freshness("a") == Freshness()
 
 
@@ -758,10 +773,14 @@ def test_a_failed_sidecar_write_keeps_the_old_one_and_the_answer(
     def full_disk(*_args: object, **_kwargs: object) -> None:
         raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr(cache_module, "atomic_write", full_disk)
+    monkeypatch.setattr(data_file, "atomic_write", full_disk)
     result = _show("a")
 
     assert (result.exit_code, UP.fills) == (0, ["a"])
+    assert result.stderr.endswith(
+        "warning: could not keep toy items for toy a (No space left on device); "
+        "the next run refreshes it again\n"
+    )
     assert _sidecar("a")["refreshed_at"] == "2026-10-12T07:00:00Z"
 
 
@@ -774,7 +793,7 @@ def test_each_profile_has_its_own_sidecar(
     assert _show("a", "--cached").exit_code == 1
     assert _show("a").exit_code == 0
     assert UP.fills == ["a", "a"]
-    assert TOY._paths("a").sidecar.parent.name == "work"
+    assert TOY._paths("a").file().parent.name == "work"
 
 
 # ---- the stale line, once ------------------------------------------------------
@@ -879,7 +898,7 @@ def test_a_key_filled_at_another_version_is_due_and_keeps_its_data(
     clock: CacheClock, code: dict[str, str]
 ) -> None:
     assert _versioned("a").exit_code == 0
-    assert json.loads(VERSIONED._paths("a").sidecar.read_text())["version"] == "1"
+    assert _sidecar("a", VERSIONED)["version"] == "1"
     clock.advance(timedelta(minutes=5))
     assert _versioned("a").exit_code == 0
     assert UP.fills == ["a"]  # young and the same version: no fill
@@ -960,8 +979,7 @@ def test_a_seeded_key_is_outdated_under_a_versioned_cache(
 
 def test_an_unversioned_cache_ignores_a_sidecar_version(clock: CacheClock) -> None:
     assert _show("a").exit_code == 0
-    sidecar = TOY._paths("a").sidecar
-    sidecar.write_text(json.dumps({**_sidecar("a"), "version": "9"}), encoding="utf-8")
+    _write_sidecar("a", {**_sidecar("a"), "version": "9"})
 
     assert TOY.freshness("a") == Freshness(refreshed_at=START, version="9")
     assert _show("a").exit_code == 0
@@ -970,10 +988,9 @@ def test_an_unversioned_cache_ignores_a_sidecar_version(clock: CacheClock) -> No
 
 def test_a_sidecar_without_a_version_reads_as_none(clock: CacheClock, code: dict[str, str]) -> None:
     assert _versioned("a").exit_code == 0
-    sidecar = VERSIONED._paths("a").sidecar
-    raw = json.loads(sidecar.read_text(encoding="utf-8"))
+    raw = _sidecar("a", VERSIONED)
     del raw["version"]
-    sidecar.write_text(json.dumps(raw), encoding="utf-8")
+    _write_sidecar("a", raw, VERSIONED)
 
     assert VERSIONED.freshness("a") == Freshness(refreshed_at=START, outdated=True)
 
@@ -997,11 +1014,12 @@ def test_a_waiter_served_another_version_s_fill_says_so_without_cached(
     real_load = Cache._load
     loads: list[int] = []
 
-    def load(self: Cache, paths: Any, key: str, version: str | None) -> Freshness:
+    def load(self: Cache, paths: Any, key: str, version: str | None, typing: Any) -> Any:
         loads.append(1)
         if len(loads) == 2:  # the reload under the lock: the other install just filled it
-            self._write(paths, key, Freshness(refreshed_at=clock.now, version="1"))
-        return real_load(self, paths, key, version)
+            fresh = Freshness(refreshed_at=clock.now, version="1")
+            self._write(paths.file(), key, fresh, None, None)
+        return real_load(self, paths, key, version, typing)
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(Cache, "_load", load)

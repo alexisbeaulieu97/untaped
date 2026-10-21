@@ -94,6 +94,16 @@ def format_utc(value: datetime) -> str:
     return _to_utc(value).isoformat().replace("+00:00", "Z")
 
 
+def parse_utc(value: object) -> datetime | None:
+    """An ISO 8601 time as aware UTC (naive taken as UTC), or ``None`` for anything else."""
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return _to_utc(value) if isinstance(value, datetime) else None
+
+
 UtcTimestamp = Annotated[
     datetime,
     AfterValidator(_to_utc),
@@ -795,19 +805,21 @@ class StaleData(Diagnostic, kind="untaped.stale"):
 
 
 class Pruned(Diagnostic, kind="untaped.pruned"):
-    """A store layout nothing holds, removed after a complete fill: an ``info`` line, unmuted.
+    """Data nothing reads any more, removed after a complete fill: an ``info`` line, unmuted.
 
-    ``plugin`` and ``store`` name the store, ``layout`` the removed layout's number,
-    ``path`` where it was, ``bytes`` what it freed (its sidecars and its
-    caches' sidecar folders included). Built by
-    :meth:`untaped.store.Store.prune`.
+    A store layout nothing holds: ``plugin`` and ``store`` name the store,
+    ``layout`` the removed layout's number (built by
+    :meth:`untaped.store.Store.prune`). Or a plugin's ``caches/`` folder that
+    untaped 11.0 left: ``store`` and ``layout`` are ``None``. ``path`` is
+    where it was, ``bytes`` what it freed (a layout's sidecars and its
+    caches' folders included).
     """
 
     level: ClassVar[Level] = "info"
 
     plugin: str
-    store: str
-    layout: int
+    store: str | None = None
+    layout: int | None = None
     path: str
     bytes: int
 

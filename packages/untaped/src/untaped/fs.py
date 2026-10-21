@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
@@ -84,7 +85,7 @@ def _write_temp(
             opener=lambda name, flags: os.open(name, flags, create_mode),
         ) as handle:
             if mode is not None:
-                os.chmod(handle.fileno(), mode)
+                _set_mode(handle.fileno(), mode)
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
@@ -92,6 +93,19 @@ def _write_temp(
         _remove_staged((tmp,))
         raise
     return tmp
+
+
+def _set_mode(fd: int, mode: int) -> None:
+    """Give the fresh temp file ``mode``; a filesystem that refuses modes keeps its own.
+
+    Some CIFS and FUSE mounts refuse ``fchmod`` outright; the file was
+    created no looser than ``0o600`` anyway.
+    """
+    try:
+        os.chmod(fd, mode)
+    except OSError as exc:
+        if exc.errno not in (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP):
+            raise
 
 
 def _commit(tmp: Path, target: Path) -> None:

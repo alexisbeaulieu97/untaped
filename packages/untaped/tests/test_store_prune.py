@@ -83,7 +83,7 @@ def test_a_registered_install_removes_a_layout_nothing_holds(
     _registered(composed)
     old = _layout(base, 4, b"x" * 10)
     Path(f"{old}-journal").write_bytes(b"j")
-    folder = named_plugin_dir("acme") / "caches" / "items.v4"
+    folder = named_plugin_dir("acme") / "cached" / "items.v4"
     (folder / "default").mkdir(parents=True)
     (folder / "default" / "k.json").write_text("{}")
     store = _store(base)
@@ -552,23 +552,22 @@ def test_an_unheld_bare_file_of_an_older_layout_goes(base: Path, composed: list[
     assert line.layout == 4 and not base.exists()
 
 
-def test_the_adoption_drops_a_bare_cache_folder_the_layout_already_replaced(
-    base: Path,
-) -> None:
+def test_the_adoption_drops_11_0s_cache_folder_and_keeps_the_layouts(base: Path) -> None:
     base.parent.mkdir(parents=True)
     base.write_bytes(b"layout 4")
-    caches = named_plugin_dir("acme") / "caches"
-    (caches / "items" / "default").mkdir(parents=True)
-    (caches / "items" / "default" / "k.json").write_text('{"old": true}')
-    (caches / "items.v4" / "default").mkdir(parents=True)
-    (caches / "items.v4" / "default" / "k.json").write_text('{"new": true}')
+    legacy = named_plugin_dir("acme") / "caches" / "items"
+    (legacy / "default").mkdir(parents=True)
+    (legacy / "default" / "k.json").write_text('{"old": true}')
+    cached = named_plugin_dir("acme") / "cached" / "items.v4"
+    (cached / "default").mkdir(parents=True)
+    (cached / "default" / "k.json").write_text('{"new": true}')
     store = _store(base, layout=4, bare=4)
     Cache("acme", "items", label="items", max_age=timedelta(hours=1), store=store)
 
     store.open()
 
-    assert not (caches / "items").exists()
-    assert (caches / "items.v4" / "default" / "k.json").read_text() == '{"new": true}'
+    assert not legacy.exists()
+    assert (cached / "default" / "k.json").read_text() == '{"new": true}'
 
 
 # --- the cache link -----------------------------------------------------------------

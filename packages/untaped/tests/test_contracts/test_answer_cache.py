@@ -8,7 +8,7 @@ import threading
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 
@@ -27,7 +27,6 @@ from test_contracts.support import (
 from test_contracts.support import write_config as configure
 from untaped.cache import RETRY_AFTER, Cache, Filled
 from untaped.contracts import Failed, Ok, Skipped, gather, select_one
-from untaped.contracts._cache import _Call
 from untaped.contracts._declare import contract_of
 from untaped.contracts._gather import Answers
 from untaped.contracts._registry import Provider, offers
@@ -47,11 +46,18 @@ def clock() -> Iterator[CacheClock]:
 
 def _entries() -> list[Path]:
     root = Path(os.environ["HOME"]) / ".untaped" / "plugins"
-    return sorted(root.rglob("*.answer.json"))
+    return sorted(root.rglob("*.v*.json"))
 
 
-def _sidecar(entry: Path) -> Path:
-    return entry.with_name(entry.name.removesuffix(".answer.json") + ".json")
+def _stamp(entry: Path) -> dict[str, Any]:
+    stamp: dict[str, Any] = json.loads(entry.read_text().splitlines()[0])["untaped"]
+    return stamp
+
+
+def _restamp(entry: Path, **changes: object) -> None:
+    head, value = entry.read_text().splitlines()
+    stamp = {**json.loads(head)["untaped"], **changes}
+    entry.write_text(json.dumps({"untaped": stamp}) + "\n" + value + "\n")
 
 
 def _stale(emitted: list[Diagnostic]) -> list[StaleData]:
@@ -278,66 +284,70 @@ def test_the_line_names_the_provider_the_owners_cache_and_the_entry(clock: Cache
     [entry] = [each for each in _entries() if "library" in each.name]
     assert line.plugin == "library"
     assert line.cache == "shelf.book_source_books"
-    assert line.key == json.loads(_sidecar(entry).read_text())["key"]
+    assert line.key == _stamp(entry)["key"]
     assert line.key.startswith("library:") and len(line.key) == len("library:") + 64
 
 
-def test_an_older_format_entry_and_1cs_path_are_misses() -> None:
+def test_11_0s_entry_and_1cs_path_are_misses() -> None:
     compose(shelf_spec(), library_spec())
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [entry] = _entries()
-    stored = json.loads(entry.read_text())
-    entry.write_text(json.dumps({**stored, "untaped": "1"}))
-    gather(BookSource.books)()
-    assert Library.calls == 2
-    key = json.loads(_sidecar(entry).read_text())["key"]
-    old = Path(os.environ["HOME"]) / ".untaped/plugins/library/cache/shelf.book_source.books"
-    (old / "default").mkdir(parents=True)
-    (old / "default" / f"{key.removeprefix('library:')}.json").write_text(
-        json.dumps({"untaped": "1", "key": key, "schema": stored["schema"], "value": []})
+    key = _stamp(entry)["key"]
+    segment = entry.name.partition(".v")[0]
+    home = Path(os.environ["HOME"]) / ".untaped/plugins"
+    legacy = home / "shelf/caches/book_source_books/default"
+    legacy.mkdir(parents=True)
+    (legacy / f"{segment}.json").write_text(
+        json.dumps({"untaped": "1", "key": key, "refreshed_at": datetime.now().isoformat()})
+    )
+    (legacy / f"{segment}.answer.json").write_text(
+        json.dumps({"untaped": "2", "schema": "0" * 64, "value": []})
+    )
+    old = home / "library/cache/shelf.book_source.books/default"
+    old.mkdir(parents=True)
+    (old / f"{key.removeprefix('library:')}.json").write_text(
+        json.dumps({"untaped": "1", "key": key, "value": []})
     )
     entry.unlink()
     [library] = gather(BookSource.books)()
-    assert Library.calls == 3
+    assert Library.calls == 2
     assert isinstance(library, Ok) and [book.title for book in library.value] == ["Dune", "Emma"]
 
 
-def test_a_changed_schema_refills_under_auto_and_is_no_cache_under_cached() -> None:
+def test_a_changed_type_refills_under_auto_and_is_no_cache_under_cached() -> None:
     compose(shelf_spec(), library_spec())
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [entry] = _entries()
-    stored = json.loads(entry.read_text())
-    entry.write_text(json.dumps({**stored, "schema": "0" * 64}))
+    _restamp(entry, type="0" * 16)
     [library] = gather(BookSource.books, refresh=False)()
     assert isinstance(library, Skipped) and library.reason == "no-cache"
-    assert not _sidecar(entry).exists()
     assert Library.calls == 1
     [library] = gather(BookSource.books)()
     assert isinstance(library, Ok)
     assert Library.calls == 2
 
 
-def test_an_entry_another_process_replaced_unreadably_fails_the_call(
+def test_an_entry_another_process_replaces_after_the_read_serves_what_was_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The freshness and the value are one read of one file: what was judged is served."""
     compose(shelf_spec(), library_spec())
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [entry] = _entries()
-    load = _Call.load
+    load = Cache._load
 
-    def load_then_replaced(self: _Call) -> None:
-        load(self)
-        sidecar = json.loads(_sidecar(entry).read_text())
-        later = datetime.fromisoformat(sidecar["refreshed_at"]) + timedelta(seconds=1)
-        _sidecar(entry).write_text(json.dumps({**sidecar, "refreshed_at": later.isoformat()}))
-        entry.write_text(json.dumps({**json.loads(entry.read_text()), "schema": "0" * 64}))
+    def load_then_replaced(self: Cache[Any], *args: Any, **kwargs: Any) -> Any:
+        kept = load(self, *args, **kwargs)
+        head = entry.read_text().splitlines()[0]
+        entry.write_text(head + "\n" + json.dumps([{"title": "Other"}]) + "\n")
+        return kept
 
-    monkeypatch.setattr(_Call, "load", load_then_replaced)
-    with pytest.raises(UntapedError, match="library's cached answer changed while it was read"):
-        _library_provider().instance.books()  # type: ignore[attr-defined]
+    monkeypatch.setattr(Cache, "_load", load_then_replaced)
+    answer = _library_provider().instance.books()  # type: ignore[attr-defined]
+    assert [book.title for book in answer] == ["Dune", "Emma"]
     assert Library.calls == 1
 
 

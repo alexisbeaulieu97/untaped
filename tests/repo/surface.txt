@@ -4574,6 +4574,7 @@ sdk untaped.contracts.listing(fn, /)
 sdk untaped.contracts.providing(candidates=) default=None
 sdk untaped.contracts.providing(owner, offered)
 sdk untaped.contracts.select_one(answers, matches) callback(matches, 1)
+sdk untaped.sdk.Absent()  [experimental]
 sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Activate()  [experimental]
 sdk untaped.sdk.AppContext()
@@ -4622,18 +4623,25 @@ sdk untaped.sdk.Buttons.view(focused=) default=false  [experimental]
 sdk untaped.sdk.Buttons.view(frame)  [experimental]
 sdk untaped.sdk.Buttons.view(width=) default=None  [experimental]
 sdk untaped.sdk.Buttons.with_error(text)  [experimental]
+sdk untaped.sdk.Cache(model=) default=None callback(0)
 sdk untaped.sdk.Cache(plugin, name, *, label, max_age)
 sdk untaped.sdk.Cache(removed_in=) default=None
 sdk untaped.sdk.Cache(renamed_from=) default=[]
+sdk untaped.sdk.Cache(split=) default=settings
 sdk untaped.sdk.Cache(store=) default=None
 sdk untaped.sdk.Cache(version=) default=None callback(0)
-sdk untaped.sdk.Cache.cached(key, read) callback(read, 0)
+sdk untaped.sdk.Cache.cached(key)
+sdk untaped.sdk.Cache.cached(partition=) default=None
+sdk untaped.sdk.Cache.cached(read@2=) default=None callback(0)
 sdk untaped.sdk.Cache.default_max_age
 sdk untaped.sdk.Cache.default_max_age_text
 sdk untaped.sdk.Cache.forget(key)
+sdk untaped.sdk.Cache.forget(partition=) default=None
 sdk untaped.sdk.Cache.freshness(key)
+sdk untaped.sdk.Cache.freshness(partition=) default=None
 sdk untaped.sdk.Cache.label
 sdk untaped.sdk.Cache.max_age()
+sdk untaped.sdk.Cache.model
 sdk untaped.sdk.Cache.name
 sdk untaped.sdk.Cache.plugin
 sdk untaped.sdk.Cache.qualified
@@ -4641,9 +4649,12 @@ sdk untaped.sdk.Cache.removed_in
 sdk untaped.sdk.Cache.renamed_from
 sdk untaped.sdk.Cache.seed(key, *, refreshed_at)
 sdk untaped.sdk.Cache.serve(empty=) default=None callback(1)
-sdk untaped.sdk.Cache.serve(keys, *, refresh, fill, read) callback(fill, 2) callback(read, 0)
+sdk untaped.sdk.Cache.serve(keys, *, refresh, fill) callback(fill, 2)
+sdk untaped.sdk.Cache.serve(partition=) default=None
 sdk untaped.sdk.Cache.serve(progress=) default=NO_PROGRESS
+sdk untaped.sdk.Cache.serve(read=) default=None callback(0)
 sdk untaped.sdk.Cache.setting
+sdk untaped.sdk.Cache.split
 sdk untaped.sdk.Cache.store
 sdk untaped.sdk.Cache.version
 sdk untaped.sdk.Cancel()  [experimental]
@@ -4711,6 +4722,7 @@ sdk untaped.sdk.Cycle.view(frame)  [experimental]
 sdk untaped.sdk.Cycle.view(width=) default=None  [experimental]
 sdk untaped.sdk.Cycle.with_error(text)  [experimental]
 sdk untaped.sdk.DEPRECATED_OPTIONS
+sdk untaped.sdk.DataRead
 sdk untaped.sdk.Debug(*, message, logger)
 sdk untaped.sdk.Debug(hint=) default=None
 sdk untaped.sdk.Debug.__init_subclass__(kind=) default=None
@@ -4831,9 +4843,11 @@ sdk untaped.sdk.Filled()
 sdk untaped.sdk.Filled(partial=) default=None
 sdk untaped.sdk.Filled(retry_at=) default=None
 sdk untaped.sdk.Filled(summary=) default=None
+sdk untaped.sdk.Filled(value=) default=None
 sdk untaped.sdk.Filled.partial
 sdk untaped.sdk.Filled.retry_at
 sdk untaped.sdk.Filled.summary
+sdk untaped.sdk.Filled.value
 sdk untaped.sdk.Footer()  [experimental]
 sdk untaped.sdk.Footer(bindings@1=) default=[]  [experimental]
 sdk untaped.sdk.Footer(labels@3=) default=<computed>  [experimental]
@@ -4862,6 +4876,10 @@ sdk untaped.sdk.FormatOption choice=pipe
 sdk untaped.sdk.FormatOption choice=raw
 sdk untaped.sdk.FormatOption choice=table
 sdk untaped.sdk.FormatOption choice=yaml
+sdk untaped.sdk.Found(refreshed_at@2=) default=None  [experimental]
+sdk untaped.sdk.Found(value)  [experimental]
+sdk untaped.sdk.Found.refreshed_at  [experimental]
+sdk untaped.sdk.Found.value  [experimental]
 sdk untaped.sdk.Frame(width, height, theme)  [experimental]
 sdk untaped.sdk.Frame.box()  [experimental]
 sdk untaped.sdk.Frame.ellipsis()  [experimental]
@@ -5156,6 +5174,9 @@ sdk untaped.sdk.OperationCancelledError.exit_code
 sdk untaped.sdk.OperationCancelledError.hint class
 sdk untaped.sdk.OperationCancelledError.retryable
 sdk untaped.sdk.OperationCancelledError.system class
+sdk untaped.sdk.OtherVersion(file, by)  [experimental]
+sdk untaped.sdk.OtherVersion.by  [experimental]
+sdk untaped.sdk.OtherVersion.file  [experimental]
 sdk untaped.sdk.OutcomeRecord(*, action)
 sdk untaped.sdk.OutcomeRecord(error=) default=None
 sdk untaped.sdk.OutcomeRecord.__init_subclass__(kind=) default=None
@@ -5844,6 +5865,8 @@ sdk untaped.sdk.UiContext.text(message)
 sdk untaped.sdk.UiContext.text(required=) default=true
 sdk untaped.sdk.UnknownHolder(*, label)  [experimental]
 sdk untaped.sdk.UnknownHolder.label  [experimental]
+sdk untaped.sdk.Unreadable(reason)  [experimental]
+sdk untaped.sdk.Unreadable.reason  [experimental]
 sdk untaped.sdk.UntapedDeprecationWarning(distribution=) default=None
 sdk untaped.sdk.UntapedDeprecationWarning(message, *, id)
 sdk untaped.sdk.UntapedDeprecationWarning(removed_in=) default=None
@@ -5917,6 +5940,7 @@ sdk untaped.sdk.connected_client(require_token=) default=true
 sdk untaped.sdk.connected_client(required=) default=["base_url","token"]  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.connected_client(retry=) default=<computed>
 sdk untaped.sdk.connection_check(check_id, *, section)
+sdk untaped.sdk.copy_data_file(source, target)  [experimental]
 sdk untaped.sdk.create_app(*, name)
 sdk untaped.sdk.create_app(help=) default=""
 sdk untaped.sdk.create_app(stability=) default=None
@@ -6005,6 +6029,9 @@ sdk untaped.sdk.project_at(path)  [experimental]
 sdk untaped.sdk.project_root(start)  [deprecated, removed in 12.0; use checkout_root]
 sdk untaped.sdk.q(value)
 sdk untaped.sdk.raise_usage(message)
+sdk untaped.sdk.read_data_file(legacy_stamps=) default=[]  [experimental]
+sdk untaped.sdk.read_data_file(path, model)  [experimental]
+sdk untaped.sdk.read_data_file(unstamped=) default=refuse  [experimental]
 sdk untaped.sdk.read_identifiers(accept_kinds=) default=None
 sdk untaped.sdk.read_identifiers(accepts=) default=None
 sdk untaped.sdk.read_identifiers(id_field=) default=None
@@ -6075,6 +6102,9 @@ sdk untaped.sdk.ui_context(strict=) default=true
 sdk untaped.sdk.ui_context(theme=) default=None
 sdk untaped.sdk.unified_diff_text(before, after, *, path)
 sdk untaped.sdk.unsafe_dir(path)
+sdk untaped.sdk.write_data_file(exclusive=) default=false  [experimental]
+sdk untaped.sdk.write_data_file(path, value)  [experimental]
+sdk untaped.sdk.write_data_file(refreshed_at=) default=None  [experimental]
 sdk untaped.sdk.writes()
 sdk untaped.sdk.writes(destructive=) default=false
 sdk untaped.sdk.writes(func@1/=) default=None
@@ -6175,6 +6205,8 @@ sdk untaped.testing.check_plugin(name)
 sdk untaped.testing.compose_with()
 sdk untaped.testing.compose_with(*plugins)
 sdk untaped.testing.compose_with(provides=) default=None
+sdk untaped.testing.damage(cache, key)  [experimental]
+sdk untaped.testing.damage(partition=) default=None  [experimental]
 sdk untaped.testing.drive_screen(commands=) default=sync callback(0)  [experimental]
 sdk untaped.testing.drive_screen(keys@2=) default=[]  [experimental]
 sdk untaped.testing.drive_screen(screen)  [experimental]
@@ -6225,6 +6257,9 @@ sdk untaped.testing.invoke_cli(prompt_backend=) default=None
 sdk untaped.testing.invoke_cli(terminal=) default=false
 sdk untaped.testing.invoke_root(argv)
 sdk untaped.testing.invoke_root(input=) default=None
+sdk untaped.testing.keep_value(cache, key, value, *, refreshed_at)  [experimental]
+sdk untaped.testing.keep_value(partition=) default=None  [experimental]
+sdk untaped.testing.keep_value(version=) default=None  [experimental]
 sdk untaped.testing.make_project(holds=) default=None  [experimental]
 sdk untaped.testing.make_project(path)  [experimental]
 sdk untaped.testing.move_ask(store, item, *, moved_from)  [experimental]

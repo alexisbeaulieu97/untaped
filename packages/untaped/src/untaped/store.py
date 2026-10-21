@@ -33,7 +33,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from untaped.errors import ConfigError
 from untaped.stability import experimental
@@ -41,6 +41,7 @@ from untaped.stability import experimental
 if TYPE_CHECKING:
     from filelock import FileLock, ReadWriteLock
 
+    from untaped.cache import Cache
     from untaped.refs import Reference, RefTarget
 
 _LOG = logging.getLogger("untaped.store")
@@ -106,23 +107,19 @@ class Store:
         self.layout = layout
         self.bare = bare
         self.keep = keep
-        self._caches: set[str] = set()
+        self._caches: set[Cache[Any]] = set()
 
-    def _follow(self, cache: str) -> None:
-        """Record that cache ``cache`` (of this plugin) follows the store (``Cache(store=)``)."""
+    def _follow(self, cache: Cache[Any]) -> None:
+        """Record that ``cache`` (of this plugin) follows the store (``Cache(store=)``)."""
         self._caches.add(cache)
 
-    def _cache_folders(self) -> list[tuple[Path, Path]]:
-        """Each following cache's bare folder and its folder at this layout."""
-        return list(zip(self._layout_folders(None), self._layout_folders(self.layout), strict=True))
-
     def _layout_folders(self, layout: int | None) -> list[Path]:
-        """The sidecar folder of every following cache at ``layout`` (``None``: the bare one)."""
-        from untaped.plugins.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
+        """Every following cache's folder at ``layout``; ``None``: 11.0's, beside the bare file.
 
-        caches = named_plugin_dir(self.plugin) / "caches"
-        end = "" if layout is None else f".v{layout}"
-        return [caches / f"{name}{end}" for name in sorted(self._caches)]
+        The caches say where their folders are; the store only moves them.
+        """
+        caches = sorted(self._caches, key=lambda cache: cache.name)
+        return [cache._legacy_root() if layout is None else cache._root(layout) for cache in caches]
 
     def _identity(self) -> tuple[object, ...]:
         return (self.plugin, self.name, self.base, self.layout, self.bare, self.keep)
@@ -206,8 +203,9 @@ class Store:
 
         Creates the base's directory. When a bare file is this layout
         (``bare == layout``) and the layout's own path does not exist yet,
-        the bare file is renamed to it, with the folders of the caches that
-        follow the store, under the layout's exclusive lock; when another
+        the bare file is renamed to it under the layout's exclusive lock, and
+        the folders untaped 11.0 kept for the caches that follow the store
+        are removed (their files say nothing of the renamed one); when another
         process holds the lock, a writer is mid-transaction or the rename
         fails, the bare file is opened as it is and its path returned, and
         the rename waits for a later open. Calling it again returns the same
@@ -245,7 +243,7 @@ class Store:
         (a bare file too, once its layout's named file exists), takes that
         layout's exclusive lock without waiting: a busy or refused lock, or a
         rename that fails, skips the layout until the next fill. The layout,
-        its SQLite sidecars, its caches' sidecar folders and its ``.inuse``
+        its SQLite sidecars, its caches' folders and its ``.inuse``
         are renamed aside under that lock and deleted outside it. Each
         removal prints one ``untaped.pruned`` line, even under ``--quiet``.
         Never raises.
@@ -598,8 +596,8 @@ def _adopt(store: Store, in_use: _InUse, base: Path, target: Path) -> bool:
     A SQLite ``-journal``, ``-wal`` or ``-shm`` beside the bare file means a writer is
     in a transaction (or crashed in one): the file is read where it is, and
     reading it settles the journal, so a later open renames it. The folders
-    of the caches that follow the store move with the file, under the same
-    lock and only after it.
+    11.0 kept for the caches that follow the store are removed under the
+    same lock, only after the rename.
     """
     from untaped.migrations import move_group  # noqa: PLC0415 - migrations imports the registry
 
@@ -616,18 +614,15 @@ def _adopt(store: Store, in_use: _InUse, base: Path, target: Path) -> bool:
             # Open elsewhere (Windows), or on another filesystem: read it where it is.
             _LOG.debug("could not rename %s to %s", base, target, exc_info=True)
             return False
-        for bare, folder in store._cache_folders():
-            if not bare.is_dir() or bare.is_symlink():
+        for legacy in store._layout_folders(None):
+            if not legacy.is_dir() or legacy.is_symlink():
                 continue
             try:
-                if _there(folder):
-                    # written while the bare file was busy: the bare folder's sidecars are
-                    # older, and would call the file a pre-11.1 run rebuilds fresh
-                    _discard(bare)
-                else:
-                    move_group(bare, folder, rename=os.rename)
-            except OSError:  # the cache refills its keys: time, never data
-                _LOG.debug("could not rename %s to %s", bare, folder, exc_info=True)
+                # 11.0's freshness for the bare file, which an 11.0 run would call fresh
+                # over the file it rebuilds; this release keeps its own, in cached/
+                _discard(legacy)
+            except OSError:  # the 11.0 run refills its keys: time, never data
+                _LOG.debug("could not remove %s", legacy, exc_info=True)
         return True
 
 
