@@ -47,16 +47,19 @@ same way.
   reading from it has policy `sync` and the working tree is clean. One
   `manual` link file holds the whole clone back; `sync` then reports
   those link files as `behind` and names them on stderr.
-- `apply ITEM` fast-forwards the clone when the item has a `link` file in
-  it. Every other link file on that clone moves too, `manual` ones
-  included; the plan lists them as `moves with the clone` before the
-  confirmation.
+- `apply ITEM` fetches every repo the item reads from, then fast-forwards
+  the clone when the item has a `link` file in it. Every other link file
+  on that clone moves too, `manual` ones included; the plan lists them as
+  `moves with the clone` before the confirmation.
 - A dirty working tree refuses the fast-forward; the repo row fails with a
   hint to commit or discard the changes.
 - A registered checkout (`subscribe PATH`) is fetched, never pulled.
 
 ## What `apply` does
 
-`apply` places every selected path whatever its policy: `pending`,
-`foreign`, `behind` and `missing` are applied, `orphan` is removed, and
-`modified` or `conflict` is refused unless `--force`.
+`apply` fetches the repos of the selected items first, so a managed
+clone's manifest, `copy` and `merge` files are read as its remote holds them
+now; a registered checkout is still read from its working tree. It places
+every selected path whatever its policy: `pending`, `foreign`, `behind` and
+`missing` are applied, `orphan` is removed, and `modified` or `conflict` is
+refused unless `--force`.
