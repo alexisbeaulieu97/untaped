@@ -241,7 +241,7 @@ def _is_stale(freshness: Freshness, max_age: timedelta, now: datetime) -> bool:
     )
 
 
-class Filled[M = None](BaseModel):
+class Filled[M = Any](BaseModel):
     """What a ``fill`` returns; an owner subclasses it to keep a result of its own.
 
     ``value``: what a cache declared with ``model=`` keeps for the key; its
@@ -1612,7 +1612,7 @@ def _code_version(module: str, distributions: tuple[str, ...], extra: tuple[str,
 # --------------------------------------------------------------------------- #
 
 
-def refresh_option(cache: Cache) -> Parameter:
+def refresh_option(cache: Cache[Any]) -> Parameter:
     """The ``--refresh``/``--cached`` option for ``cache``'s directive; its help names the setting.
 
     Declare it as ``refresh: Annotated[bool | None, refresh_option(CACHE)] = None``
