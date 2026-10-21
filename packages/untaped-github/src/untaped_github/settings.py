@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from untaped.sdk import Retired, TokenCommand, TokenSources
+from untaped.sdk import NeedsSetup, Retired, Secret, Suggest, TokenCommand, TokenSources
+
+#: The GitHub CLI's token variables, in its order.
+_TOKEN_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
 
 
 class SweepSettings(BaseModel):
@@ -61,7 +64,8 @@ _INVENTORY_NOTE = (
 class GithubSettings(BaseModel):
     """GitHub API settings."""
 
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("GH_TOKEN", "GITHUB_TOKEN"))
+    # Kept beside the Secret mark until 12.0: GithubSettings is api surface.
+    token_sources: ClassVar[TokenSources] = TokenSources(env=_TOKEN_ENV)
     retired_keys: ClassVar[Mapping[str, str | Retired]] = {
         "corpus_path": "cache_dir",
         "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
@@ -76,13 +80,21 @@ class GithubSettings(BaseModel):
         default="https://api.github.com",
         description="GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",
     )
-    token: SecretStr | None = Field(
+    token: Annotated[
+        SecretStr | None,
+        NeedsSetup,
+        Secret(
+            env=_TOKEN_ENV,
+            suggest=Suggest(("gh", "auth", "token"), note="after `gh auth login`"),
+        ),
+    ] = Field(
         default=None,
         description=(
             "GitHub token for API calls and Git fetches. Falls back to "
             "`token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`."
         ),
     )
+    # Declared here until 12.0 (GithubSettings is api surface); core adds it for other plugins.
     token_command: TokenCommand = Field(
         default=None,
         description=(
@@ -103,7 +115,7 @@ class GithubSettings(BaseModel):
         description=(
             "How `sweep`, `cache sync`, workspace and `ansible source refresh` "
             "fetch repos on the GitHub host: `https` or `ssh` "
-            "(`git@HOST:OWNER/NAME.git`)."
+            "(`git@HOST:OWNER/NAME.git`, with your own SSH keys)."
         ),
     )
     sweep: SweepSettings = Field(default_factory=SweepSettings)

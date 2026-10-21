@@ -57,7 +57,10 @@ Beyond its [guides](#guides), a plugin writes nothing for the pages that
 - **`PluginSpec.help`** (or, without one, its app's help) is the plugin's
   line on the map; its app's help is the first line of its own page.
 - **A command's docstring**: its first line is its summary on the plugin's
-  page; the paragraphs after it are the behaviour on the command's page.
+  page; the paragraphs after it are the behaviour on the command's page. A
+  plugin whose app runs on its own (`@app.default`, as `untaped lint`) shows
+  that command's docstring, usage and examples under `## Usage` on its own
+  page.
 - **An `Examples` section** in the docstring (NumPy style) prints under
   `## Examples`. Put commands in a fenced `console` block, one per `$ ` line;
   `untaped lint`'s `example-command` rule checks that each one parses.
@@ -103,7 +106,9 @@ name: deploy
 
 A guide links another by its command line (`untaped agents acme other`).
 A YAML block tagged with a record kind (`yaml acme.test_suite`) is an example
-of that kind.
+of that kind. An example `guide-yaml` can't load, such as a file of a document
+kind that is no record kind or one with template syntax, stays a plain `yaml`
+block, and its plugin's own tests load it.
 
 `untaped lint` checks every guide: its name is kebab-case and no top-level
 command's (`guide-name`), it has the description (`guide-description`) and no

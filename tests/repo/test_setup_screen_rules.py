@@ -50,12 +50,11 @@ FILE_WRITERS = frozenset(
 #: Strings of the screen's modules that are also a setting's name, and why each is not one.
 ALLOWED_NAMES: dict[str, dict[str, str]] = {
     CONNECTION: {
-        "base_url": "the connection form's URL field, until the model declares its connection",
-        "token": "the connection form's token field, until the model declares its connection",
+        "token": "the token tabs' field, until the form serves every Secret (config-browser C2)",
     },
     CONNECTION_KEYS: {
-        name: "a connection key its row hides, until the model declares its connection"
-        for name in ("base_url", "token", "token_command")
+        name: "the token's own keys, read from the file, until auth serves every Secret"
+        for name in ("token", "token_command")
     },
 }
 

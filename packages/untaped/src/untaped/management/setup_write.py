@@ -3,9 +3,10 @@
 :func:`write_setting` writes one setting through the use case ``config set``
 runs (creating the profile first when it is new). :func:`write_candidate`
 writes one service's connection once its check passed (or the user said so):
-create the profile once, set ``base_url``, then the branch the user chose for
-the token (``store``, ``move``, ``enter``, ``command``, ``env`` or ``keep``),
-retiring the entry a replaced preset command read. Both run as the screen's
+create the profile once, set each marked setting the form edits, then the
+branch the user chose for the token (``store``, ``move``, ``enter``,
+``command``, ``env`` or ``keep``), retiring the entry a replaced preset
+command read. Both run as the screen's
 write commands, so they print nothing: their lines come back as notes for the
 screen to print after it closes.
 
@@ -59,14 +60,15 @@ class Candidate:
 
     ``how`` is the token branch (``keep``, ``move``, ``store``, ``enter``,
     ``command``, ``env``); ``token`` is the typed secret of ``store`` and
-    ``enter``, ``argv`` the command of ``command``.
+    ``enter``, ``argv`` the command of ``command``. ``values`` are the
+    marked settings the form edits, as ``(key, text)`` in form order.
     """
 
     name: str
     section: str
     profile: str
     how: str
-    url: str
+    values: tuple[tuple[str, str], ...]
     token: SecretStr | None = None
     argv: tuple[str, ...] | None = None
     checked: Checked = "unchecked"
@@ -90,9 +92,9 @@ def overlay_values(candidate: Candidate, current: ServiceState) -> dict[str, obj
 
     A ``None`` unsets the key: a command source removes the profile's token, the
     environment removes both the token and the profile's own command (they
-    would win over the variable); ``keep`` changes only the URL.
+    would win over the variable); ``keep`` changes only the marked settings.
     """
-    values: dict[str, object] = {"base_url": candidate.url}
+    values: dict[str, object] = dict(candidate.values)
     match candidate.how:
         case "store" | "enter":
             values["token"] = candidate.token
@@ -128,7 +130,8 @@ def write_candidate(
     notes.extend(ensure_profile(profile))
     repo = SettingsFileRepository()
     argv = list(candidate.argv) if candidate.argv is not None else None
-    repo.set_value(f"{section}.base_url", candidate.url, profile=profile)
+    for key, text in candidate.values:
+        repo.set_value(f"{section}.{key}", text, profile=profile)
     if how in ("store", "move") and store is not None:
         secret = _typed(candidate.token) if how == "store" else current.plaintext
         if secret is not None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from untaped.sdk import Record
 
@@ -15,5 +15,6 @@ class PingStatus(Record, kind="awx.status"):
     version: str
     active_node: str
     install_uuid: str | None = None
-    user: str | None = None
-    """Username the configured token authenticates as (from ``/me/``)."""
+    user: str | None = Field(
+        default=None, description="Username the configured token authenticates as (from `/me/`)."
+    )

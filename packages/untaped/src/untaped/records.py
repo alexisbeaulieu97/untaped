@@ -149,6 +149,10 @@ class Record(WireModel):
     other than core's omit-when-``None``, an alias validation does not accept,
     computed fields, custom serializers and forward references not yet
     defined. The class definition raises ``TypeError`` naming the field.
+
+    ``untaped plugin schema`` describes a field with its
+    ``Field(description=...)``, written for the JSON reader (``null``,
+    Markdown); an attribute docstring after the field stays in the Python.
     """
 
     #: The fields a table of these records shows by default (empty: every field).

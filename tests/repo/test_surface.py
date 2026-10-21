@@ -246,6 +246,6 @@ def test_conventions_are_real() -> None:
         f"file {FILLS_FILE}": True,
         "attribute renamed_keys": "renamed_keys" in DECLARATIONS,
         "attribute retired_keys": "retired_keys" in DECLARATIONS,
-        "attribute token_sources": 'getattr(type(settings), "token_sources"' in auth,
+        "attribute token_sources": 'getattr(model, "token_sources"' in auth,
     }
     assert {name for name, ok in real.items() if ok} == set(CONVENTIONS)

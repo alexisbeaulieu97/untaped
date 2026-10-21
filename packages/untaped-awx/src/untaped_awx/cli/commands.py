@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 from cyclopts import Parameter
 from cyclopts.validators import Number
@@ -84,6 +84,10 @@ def ping_command(
 # ---- schema ----
 
 
+#: The document kinds ``awx schema`` prints, by name.
+DOCUMENT_MODELS: Final = {"AwxTestSuite": Suite}
+
+
 @app.command(name="schema")
 def schema_command(
     kind: Annotated[Literal["AwxTestSuite"], Parameter(help="The document kind.")],
@@ -95,8 +99,7 @@ def schema_command(
     ] = "json",
 ) -> None:
     """Print the JSON Schema of a document kind you write, for editors and agents."""
-    models = {"AwxTestSuite": Suite}
-    schema = models[kind].model_json_schema(by_alias=True)
+    schema = DOCUMENT_MODELS[kind].model_json_schema(by_alias=True)
     emit_document({"$schema": "https://json-schema.org/draft/2020-12/schema", **schema}, fmt=fmt)
 
 

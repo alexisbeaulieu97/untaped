@@ -64,10 +64,13 @@ class AppContext:
         if name not in self._resolved:
             self._resolved[name] = load_settings_section(name, self.settings_model)
         value = self._resolved[name]
-        if isinstance(value, model_cls):
-            return resolve_token(value, section=name)
         if isinstance(value, BaseModel):
-            return resolve_token(model_cls.model_validate(value.model_dump()), section=name)
+            # Resolve on the composed class, which holds the injected command settings.
+            value = resolve_token(value, section=name)
+        if isinstance(value, model_cls):
+            return value
+        if isinstance(value, BaseModel):
+            return model_cls.model_validate(value.model_dump())
         return resolve_token(model_cls.model_validate(value), section=name)
 
     @property

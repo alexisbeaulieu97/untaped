@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from importlib.resources import files
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import (
@@ -56,16 +55,15 @@ SPEC = PluginSpec(
     skills=(
         SkillAsset(
             name="untaped-dotfiles",
-            source=Path(str(files("untaped_dotfiles").joinpath("skills", "untaped-dotfiles"))),
             description=(
-                "Places config files from subscribed dotfiles repos through the `untaped "
-                "dotfiles` command (subscribe, enable items with a sync, once or manual "
-                "policy, status, apply, sync, remove). Use when the user wants their "
-                "dotfiles on a machine, asks whether a machine is behind its dotfiles repo, "
-                "or mentions dotfiles or a dotfiles manifest."
+                "Dotfiles placed on a machine from subscribed git repos: their `dotfiles.yml` "
+                "manifests, the items a machine enables with a sync, once or manual policy, "
+                "and the state of each placed path. Use when the work concerns dotfiles on a "
+                "machine, whether a machine is behind its dotfiles repo, or a dotfiles manifest."
             ),
         ),
     ),
+    guides=files("untaped_dotfiles") / "guides",
     doctor_checks=(executable_check("dotfiles.git", "git", purpose="dotfiles commands"),),
     migrations=(
         DirMigration(

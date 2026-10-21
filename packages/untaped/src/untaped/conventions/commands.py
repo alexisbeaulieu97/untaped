@@ -105,16 +105,33 @@ def parse_problem(root: App, command: str, *, inline: bool) -> str | None:
 def commands(text: str) -> Iterator[tuple[str, bool]]:
     """Every ``untaped …`` command in Markdown, and whether it is inline code.
 
-    Commands in ``bash`` blocks come first, then those in inline code spans.
-    A full command must parse in full; one named in inline code may leave out
-    required arguments. ``console`` blocks are :func:`console_lines`'.
+    Commands in ``bash`` blocks and in the comments of ``yaml`` blocks come
+    first, then those in inline code spans. A full command must parse in full;
+    one named in inline code may leave out required arguments. ``console``
+    blocks are :func:`console_lines`'.
     """
     for info, block in FENCE.findall(text):
-        if info.split(maxsplit=1)[:1] in (["bash"], ["sh"], ["shell"]):
+        language = info.split(maxsplit=1)[:1]
+        if language in (["bash"], ["sh"], ["shell"]):
             for line in block.replace("\\\n", " ").splitlines():
                 yield from ((command, False) for command in segments(line.split(" #", 1)[0]))
+        elif language == ["yaml"]:
+            yield from comment_commands(block)
     for span in INLINE.findall(FENCE.sub("", text)):
         yield from ((command, True) for command in segments(span))
+
+
+def comment_commands(text: str) -> Iterator[tuple[str, bool]]:
+    """Every ``untaped …`` command in YAML comment lines (inline code, or the whole line)."""
+    for line in text.splitlines():
+        comment = line.lstrip()
+        if not comment.startswith("#"):
+            continue
+        spans = INLINE.findall(comment)
+        if spans:
+            yield from ((command, True) for span in spans for command in segments(span))
+        else:
+            yield from ((command, False) for command in segments(comment.lstrip("# ")))
 
 
 def examples_of(function: object | None) -> str:

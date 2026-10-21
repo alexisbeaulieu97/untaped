@@ -154,6 +154,14 @@ def test_quoted_commands_parse(tmp_path: Path) -> None:
     ]
 
 
+def test_commands_in_yaml_comments_parse(tmp_path: Path) -> None:
+    body = "```yaml\n#   untaped svc show --nope\nkey: value\n```"
+    found = _violations(tmp_path, commands=_guide(body))
+    assert [(rule, detail.split(":", 1)[0]) for _, rule, detail in found] == [
+        ("guide-command", "untaped svc show --nope"),
+    ]
+
+
 def test_commands_after_a_kind_tagged_block_are_still_checked(tmp_path: Path) -> None:
     body = (
         "```yaml svc.widget\nname: w\n```\n\nRun `untaped svc missing`.\n\n"

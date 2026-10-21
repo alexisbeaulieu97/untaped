@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from untaped.sdk import TokenCommand, TokenSources
+from untaped.sdk import NeedsSetup, Secret
 from untaped_jira.domain.changes import ConfirmPolicy
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
@@ -15,23 +15,15 @@ DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 class JiraSettings(BaseModel):
     """Connection and behavior settings for one Jira Data Center target."""
 
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("JIRA_API_TOKEN",))
-
     model_config = ConfigDict(frozen=True)
 
-    base_url: str | None = Field(
+    base_url: Annotated[str | None, NeedsSetup] = Field(
         default=None, description="Jira Data Center URL, for example `https://jira.example.com`."
     )
-    token: SecretStr | None = Field(
+    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=("JIRA_API_TOKEN",))] = Field(
         default=None,
         description=(
             "Jira personal access token. Falls back to `token_command`, then `JIRA_API_TOKEN`."
-        ),
-    )
-    token_command: TokenCommand = Field(
-        default=None,
-        description=(
-            "Command (argv list, no shell) that prints the token; used when `jira.token` is unset."
         ),
     )
     api_prefix: str = Field(default="/rest/api/2", description="Jira platform REST prefix.")

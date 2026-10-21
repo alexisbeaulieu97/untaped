@@ -36,6 +36,7 @@ from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
 from untaped.output.sink import Diagnostics
 from untaped.records import KindError, OutcomeRecord
+from untaped.setting_marks import injected_commands, setup_mark_errors
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
@@ -410,12 +411,17 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
 
     The section of a contract owner, or of a plugin that declares caches,
     always exists: it carries the keys the SDK injects, ``extensions`` and
-    ``caches`` (:func:`untaped.settings.section_model`). ``extensions=False``
-    leaves ``extensions`` out (the config reference documents it elsewhere).
+    ``caches`` (:func:`untaped.settings.section_model`), as does a model
+    marking a :class:`~untaped.setting_marks.Secret` (its command setting).
+    ``extensions=False`` leaves ``extensions`` out (the config reference
+    documents it elsewhere).
     """
     owner = extensions and owns_contracts(spec)
-    if owner or spec.caches:
-        return section_model(spec.settings or _NoSettings, extensions=owner, caches=spec.caches)
+    commands = spec.settings is not None and bool(injected_commands(spec.settings))
+    if owner or spec.caches or commands:
+        return section_model(
+            spec.settings or _NoSettings, extensions=owner, caches=spec.caches, section=spec.name
+        )
     return spec.settings
 
 
@@ -785,7 +791,9 @@ def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
 def _check_section_keys(spec: PluginSpec) -> None:
     # Only an owner's settings section gets ``extensions``, and only one with caches ``caches``.
     injected = frozenset(
-        ({"extensions"} if owns_contracts(spec) else set()) | ({"caches"} if spec.caches else set())
+        ({"extensions"} if owns_contracts(spec) else set())
+        | ({"caches"} if spec.caches else set())
+        | (set(injected_commands(spec.settings)) if spec.settings is not None else set())
     )
     for label, model, keys in (
         ("settings", spec.settings, injected),
@@ -880,6 +888,15 @@ def _check_migrations(spec: PluginSpec, state: _CompositionState) -> None:
         seen.add(migration.id)
 
 
+def _check_setup_marks(spec: PluginSpec) -> None:
+    # ``NeedsSetup`` and ``Secret`` take effect only where core can act on them.
+    if spec.settings is None:
+        return
+    errors = setup_mark_errors(spec.settings)
+    if errors:
+        raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {errors[0]}")
+
+
 def _check_key_mappings(spec: PluginSpec) -> None:
     # The plugin's own model: an old key may never point at an injected key.
     if spec.settings is None:
@@ -937,6 +954,7 @@ def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_reserved_name(spec, state)
     _check_caches(spec)
     _check_stores(spec)
+    _check_setup_marks(spec)
     _check_section_keys(spec)
     _check_key_mappings(spec)
     _check_composed_mappings(spec)

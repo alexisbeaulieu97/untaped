@@ -35,7 +35,7 @@ both the question and the preview's reads.
 Each write emits a `jira.issue_outcome` record;
 `untaped plugin schema jira.issue_outcome` describes it.
 
-Create, comment, transition and link requests are sent once, never retried.
-A patch's requests are retried on Jira's 429 and 503 answers, as reads are.
+Writes are sent once, never resent: Jira's 429 and 503 answers are retried
+only for reads.
 A write that exits 5 may still have landed: `untaped jira issues get KEY`
 shows whether it did.

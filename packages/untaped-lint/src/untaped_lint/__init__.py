@@ -7,7 +7,6 @@ factory. Importing this package never constructs the CLI tree.
 from __future__ import annotations
 
 from importlib.resources import files
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import DoctorCheck, PluginSpec, SkillAsset, experimental
@@ -46,15 +45,15 @@ SPEC = PluginSpec(
     skills=(
         SkillAsset(
             name="untaped-lint",
-            source=Path(str(files("untaped_lint").joinpath("skills", "untaped-lint"))),
             description=(
-                "Runs a repository's conventions as rules through `untaped lint` (its "
-                "`.untaped/lint.yml` rules, each plugin's, and the plugin checks), lists them "
-                "with `untaped lint rules`, and turns a convention written in prose into a rule "
-                "with `untaped lint new`. Use before changing code in a repository that has "
-                "`.untaped/lint.yml` or untaped plugins, when `untaped lint` fails, or when the "
-                "user explains a convention to keep."
+                "untaped lint: a repository's conventions as rules (its own, named in "
+                "`.untaped/lint.yml`, each plugin's, and the checks every untaped plugin "
+                "passes) and the findings they report, each with a rule id. Use when the work "
+                "is in a repository with `.untaped/lint.yml` or untaped plugins, when "
+                "`untaped lint` fails, or when the user explains a convention the code should "
+                "keep."
             ),
         ),
     ),
+    guides=files("untaped_lint") / "guides",
 )

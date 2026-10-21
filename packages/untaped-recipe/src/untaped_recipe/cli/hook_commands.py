@@ -133,7 +133,26 @@ def run_command(
     ] = None,
     columns: ColumnsOption = None,
 ) -> None:
-    """Run one hook once against explicit fixture context without writing files."""
+    """Run one hook once against explicit fixture context without writing files.
+
+    A transform needs --file and prints the transformed content, or a diff
+    with --diff. A validate emits a `recipe.hook_run` verdict and exits 1
+    only on `fail`. A hook that raises prints its traceback as an `error:`
+    and exits 1. --var and --arg values are parsed as YAML, so quote strings
+    such as `'v="3.10"'`.
+
+    A local hook project runs only when named, with --project or a
+    `./pack/hook` ref; running inside a cloned repo never runs its hooks.
+    Without --project a bare NAME is looked up across installed packs, then
+    the built-ins. The context (fixture values included) and the hook's
+    warnings go to stderr; --quiet keeps sensitive values out.
+
+    Examples
+    --------
+    ```console
+    $ untaped recipe hooks run ./acme/pin_python --target ./api --file ci.yml --diff
+    ```
+    """
     with report_config_errors():
         root = library_dir()
         project, name = _split_project_hook_ref(name, project)

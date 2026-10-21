@@ -334,8 +334,33 @@ def run_command(
 ) -> None:
     """Render, resolve, launch and report on one or more test files.
 
+    Each case's job runs what the git remote holds, so commit and push first;
+    `--scm-branch HEAD` is the current branch as named on its upstream, and
+    is refused while HEAD is detached, has no upstream, or is not pushed.
+    Every case is preflighted before any launch, and a failing preflight
+    launches nothing (`untaped agents awx test-suites`). The run prints one
+    `awx.test_result` row per case and a summary on stderr; what a failing
+    run's exit code and rows mean: `untaped agents awx test-results`.
+
     With --source-ref, temporary copies of the templates with specs are created
-    first (no confirmation) and deleted after the run, even when interrupted.
+    first (no confirmation) and deleted after the run, even when interrupted
+    (`untaped agents awx source-ref`).
+
+    Examples
+    --------
+    Save the base branch's results once, outside the checkout (exit 1 when it
+    already fails some cases), then compare every pushed iteration with them:
+
+    ```console
+    $ untaped awx test run --scm-branch main --format json > /tmp/baseline.json
+    $ untaped awx test run --scm-branch HEAD --compare /tmp/baseline.json --format json
+    ```
+
+    One case, with its evidence on stderr:
+
+    ```console
+    $ untaped awx test run --case deploy-smoke/web --show-logs
+    ```
     """
     from untaped_awx.application import RunAction, WatchJob  # noqa: PLC0415
     from untaped_awx.application.suites.preflight import (  # noqa: PLC0415
@@ -632,8 +657,16 @@ def validate_command(
 ) -> None:
     """Render, parse, resolve and preflight each case; report errors without launching.
 
+    Each failing case prints `SUITE/CASE: problem` on stderr and the command
+    exits 1; otherwise it reports `N cases validated`. A --case that matches
+    nothing is an error. Warnings name cases that may pass or fail for another
+    reason than the one they test: a `status: failed` case without
+    `failed_tasks`, and a workflow case without `approvals` whose workflow
+    has approval nodes.
+
     With --source-ref, also check the temporary copies a run would create (every
-    link, name and project branch override) and print them.
+    link, name and project branch override) and print them as `planned`
+    `awx.provision_outcome` rows.
     """
     _refuse_scm_branch_with_source_ref(source_ref, scm_branch)
     _validate(
@@ -797,7 +830,18 @@ def prune_command(
     """Delete the temporary copies `test run --source-ref` left behind (e.g. after a kill -9).
 
     A copy is a job template or workflow named `NAME [untaped-test SHA RUN]` whose
-    description carries the matching `untaped-test run=…` marker.
+    description carries the matching `untaped-test run=…` marker. An age below
+    the longest run deletes the copies of runs still going, whose next launches
+    then fail: prune another run's copies only once it has ended. --run limits
+    it to one run's copies, as a teardown warning's hint does. It prints one
+    `awx.prune_outcome` row per copy: `planned` with --dry-run, then `deleted`
+    or `failed`, whose `error` carries the attributed failure.
+
+    Examples
+    --------
+    ```console
+    $ untaped awx test prune --run k3x9 --older-than 0 --dry-run
+    ```
     """
     from untaped_awx.cli import _temporary_sets as copies  # noqa: PLC0415
     from untaped_awx.domain.suites.temporary_set import parse_age  # noqa: PLC0415
@@ -872,7 +916,18 @@ def init_command(
         ),
     ] = False,
 ) -> None:
-    """Write a starter suite for a job template or workflow from its survey and launch prompts."""
+    """Write a starter suite for a job template or workflow from its survey and launch prompts.
+
+    The suite is commented and has one `smoke` case. Required survey variables
+    get their default, else their first choice, else `TODO`. A password with a
+    stored default gets `$encrypted$`, which makes AWX use the stored value;
+    one without gets `TODO` (supply it from a `secret` variable, never in the
+    file). Optional survey variables and the launch fields the template
+    prompts for are listed as comments. With --workflow, a comment lists the
+    node ids (approvals marked), and the case carries a commented `nodes:`
+    example and, when the workflow has approval nodes, a commented `approvals:
+    approve`. Suites to start from instead: `untaped agents awx test-examples`.
+    """
     from untaped_awx.application.suites.preflight import (  # noqa: PLC0415
         PreflightLaunch,
     )

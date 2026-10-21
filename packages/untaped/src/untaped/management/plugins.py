@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal
 
 from cyclopts import App, Parameter
+from pydantic import Field
 
 from untaped.cli import (
     ColumnsOption,
@@ -214,16 +215,18 @@ class ContractRow(Record, kind="untaped.contract"):
         "ranked",
     )
 
-    contract: str
-    """``owner.contract``."""
+    contract: str = Field(description="`owner.contract`.")
     method: str
     owner: str
-    stability: Literal["stable", "experimental", "deprecated"]
-    """The method's own mark, else its contract's."""
-    providers: list[str]
-    """The plugins whose usable providers fill the method, in the order they are asked."""
-    ranked: list[str]
-    """The profile's explicit ranking (``plugin rank``)."""
+    stability: Literal["stable", "experimental", "deprecated"] = Field(
+        description="The method's own mark, else its contract's."
+    )
+    providers: list[str] = Field(
+        description=(
+            "The plugins whose usable providers fill the method, in the order they are asked."
+        )
+    )
+    ranked: list[str] = Field(description="The profile's explicit ranking (`plugin rank`).")
 
 
 def _contract_rows() -> list[ContractRow]:

@@ -1,5 +1,7 @@
 # untaped surface 3
 behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
+behaviour untaped.self-declared-command  [deprecated, removed in 12.0; use the command setting untaped adds for each Secret]
+behaviour untaped.unmarked-service  [deprecated, removed in 12.0; use NeedsSetup and Secret marks on its settings]
 cfg ansible.caches.index.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
@@ -5009,6 +5011,7 @@ sdk untaped.sdk.MultiList.window_rows  [experimental]
 sdk untaped.sdk.MultiList.with_error(text)  [experimental]
 sdk untaped.sdk.NOT_COUNTED
 sdk untaped.sdk.NO_PROGRESS
+sdk untaped.sdk.NeedsSetup
 sdk untaped.sdk.NeverRefreshed(cache, key, label)
 sdk untaped.sdk.NeverRefreshed.category class
 sdk untaped.sdk.NeverRefreshed.details class
@@ -5349,6 +5352,11 @@ sdk untaped.sdk.SearchList.view(frame)  [experimental]
 sdk untaped.sdk.SearchList.view(width=) default=None  [experimental]
 sdk untaped.sdk.SearchList.window_rows  [experimental]
 sdk untaped.sdk.SearchList.with_error(text)  [experimental]
+sdk untaped.sdk.Secret()
+sdk untaped.sdk.Secret(env=) default=[]
+sdk untaped.sdk.Secret(suggest=) default=None
+sdk untaped.sdk.Secret.env
+sdk untaped.sdk.Secret.suggest
 sdk untaped.sdk.SecretInput(cursor@3=) default=None  [experimental]
 sdk untaped.sdk.SecretInput(error@5=) default=""  [experimental]
 sdk untaped.sdk.SecretInput(help@4=) default=""  [experimental]
@@ -5496,6 +5504,10 @@ sdk untaped.sdk.Store.target  [experimental]
 sdk untaped.sdk.Submit()  [experimental]
 sdk untaped.sdk.Submitted(values)  [experimental]
 sdk untaped.sdk.Submitted.values  [experimental]
+sdk untaped.sdk.Suggest(argv)
+sdk untaped.sdk.Suggest(note@2=) default=""
+sdk untaped.sdk.Suggest.argv
+sdk untaped.sdk.Suggest.note
 sdk untaped.sdk.Tab(fields@3=) default=[]  [experimental]
 sdk untaped.sdk.Tab(id, label)  [experimental]
 sdk untaped.sdk.Tab(note@4=) default=""  [experimental]

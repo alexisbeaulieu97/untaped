@@ -50,11 +50,11 @@ class Rule(Issued, kind="lint.rule"):
     table_columns: ClassVar[tuple[str, ...]] = ("id", "reads", "severity", "summary")
 
     id: Annotated[str, Field(pattern=RULE_ID)]
-    reads: str
-    """The kind of subject the rule reads, written by ``rule()`` from the model."""
+    reads: str = Field(
+        description="The kind of subject the rule reads, written by `rule()` from the model."
+    )
     severity: Severity
-    summary: str
-    """The convention in one sentence, as an agent reads it."""
+    summary: str = Field(description="The convention in one sentence, as an agent reads it.")
     renamed_from: tuple[str, ...] = ()
 
 
@@ -92,18 +92,29 @@ class Finding(Issued, kind="lint.finding"):
 
     table_columns: ClassVar[tuple[str, ...]] = ("location", "severity", "rule", "target", "message")
 
-    rule: str
-    """The public id once the engine prefixed it: ``lint.error-case``, ``acme.no-print``."""
+    rule: str = Field(
+        description="The public id once the engine prefixed it: `lint.error-case`, `acme.no-print`."
+    )
     severity: Severity
-    target: str
-    """What the finding is about, spelled by the subject's owner (an ignore glob matches it)."""
+    target: str = Field(
+        description=(
+            "What the finding is about, spelled by the subject's owner (an ignore glob matches it)."
+        )
+    )
     message: str
     location: Location | None = None
     hint: str | None = None
-    fix: list[str] | None = None
-    """Arguments after ``untaped`` that fix it, as a doctor check's ``fix``."""
-    error: Failure | None = None
-    """Set only on the row that carries a rule's raise: the engine counts it as a failure."""
+    fix: list[str] | None = Field(
+        default=None,
+        description="Arguments after `untaped` that fix it, as a doctor check's `fix`.",
+    )
+    error: Failure | None = Field(
+        default=None,
+        description=(
+            "The error a rule raised, set only on the row that carries it: the engine counts it "
+            "as a failure."
+        ),
+    )
 
 
 class Subject(Record, kind="lint.subject"):
@@ -122,8 +133,7 @@ class Tree(Record, kind="lint.tree"):
     """
 
     root: AbsolutePath
-    paths: tuple[str, ...]
-    """Relative to ``root``, ``/``-separated, sorted."""
+    paths: tuple[str, ...] = Field(description="Relative to `root`, `/`-separated, sorted.")
 
     def files(self, *globs: str) -> Iterator[File]:
         """Each file whose path matches one of ``globs`` (every file with none), in order."""

@@ -247,8 +247,9 @@ checked: copy the file over `config.yml` yourself and run `untaped doctor`.
 `untaped doctor` checks offline, one row per check: the config and state
 files, the selected profile, every section, unknown keys, renamed, retired or
 deprecated keys in any profile, a `pass` token command that gpg cannot serve
-here, installed skills and each plugin's own checks. `--online` also
-authenticates against each configured service. A failed check makes it exit
+here, installed skills, a `setup` row per service (`not set up`, what is
+still missing, or where its token comes from) and each plugin's own checks.
+`--online` also authenticates against each service that is set up. A failed check makes it exit
 nonzero; a `warn` row does not. To browse and write a profile's settings
 interactively, its services' URLs and tokens included, see
 [Getting started](./getting-started.md#set-up-your-services): `untaped setup`
@@ -331,8 +332,10 @@ is set:
 
 These variables are not tied to a profile: one applies to every profile that
 sets neither `token` nor `token_command`, whatever its `base_url`. For the
-same reason, `doctor` and `setup` count one as configuring a service only
-when the section also has a `base_url`.
+same reason, `doctor` and `setup` count one only once the service's other
+settings are set: `awx` and `jira` also need a `base_url`, and `github`,
+which has a default URL, is set up by `GH_TOKEN` alone. `doctor` never runs
+`token_command` to check that it is set.
 
 `token_command` keeps the token out of `config.yml`; `auth set` writes one,
 and any password manager's command works too. It is an argv list, run without

@@ -135,7 +135,16 @@ def repos_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Search repositories (``GET /search/repositories``)."""
+    """Search repositories (``GET /search/repositories``).
+
+    A ranked answer; ``repos list`` gives every repo of a scope. Sorted by ``stars``, ``forks`` or
+    ``updated``, it queries every batch of a large scope and merge-sorts the
+    rows before the limit; best match, and ``help-wanted-issues`` (which
+    warns), stop once ``--limit`` unique rows arrive, so their order holds
+    only within a batch. An unquoted ``archived:`` qualifier in the query
+    wins over ``--archived``. ``untaped agents github scopes`` explains
+    scopes, batches and knowing a result is complete.
+    """
     from untaped_github.application import SearchRepos  # noqa: PLC0415
     from untaped_github.domain import RepoSearchFilters  # noqa: PLC0415
     from untaped_github.records import REPO_HIT_COLUMNS  # noqa: PLC0415
@@ -207,7 +216,8 @@ def code_command(
     supports ``sort`` for code search — best-match is the only order.
     Use ``sweep`` for exhaustive regex, path, negation, or multi-ref
     queries; GitHub code search has no regex, caps at 1000 results, and
-    searches the default branch only.
+    searches the default branch only. ``untaped agents github scopes``
+    explains scopes, batches and knowing a result is complete.
     """
     from untaped_github.application import SearchCode  # noqa: PLC0415
     from untaped_github.domain import CodeSearchFilters  # noqa: PLC0415
@@ -286,7 +296,20 @@ def issues_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Search issues and pull requests (``GET /search/issues``)."""
+    """Search issues and pull requests (``GET /search/issues``).
+
+    A sorted search (``--sort``, or a ``sort:FIELD[-asc|-desc]`` qualifier in
+    the query) queries every batch of a large scope and merge-sorts the rows
+    before the limit; an unsupported ``sort:`` field warns and keeps batch
+    order. ``untaped agents github scopes`` explains scopes, batches and
+    knowing a result is complete.
+
+    Examples
+    --------
+    ```console
+    $ untaped github search issues --org acme --state open --kind pr
+    ```
+    """
     from untaped_github.application import SearchIssues  # noqa: PLC0415
     from untaped_github.domain import IssueSearchFilters  # noqa: PLC0415
 

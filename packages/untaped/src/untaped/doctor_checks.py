@@ -23,10 +23,11 @@ from untaped.auth import (
     token_alternatives,
     token_instead,
 )
-from untaped.config_file import read_config_dict
-from untaped.errors import ConfigError, HttpError, HttpTransportError, UntapedError
+from untaped.errors import HttpError, HttpTransportError, UntapedError
 from untaped.plugins.registry import DoctorCheck, DoctorResult, PluginContext
-from untaped.settings import active_settings_layout, resolve_config_path
+from untaped.setting_marks import SetupMarks, declared_marks
+from untaped.settings import resolve_config_path
+from untaped.setup_status import field_value, set_command, stored_plaintext, unset_fields
 
 
 def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorCheck:
@@ -48,6 +49,10 @@ def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorChec
 
 def connection_check(check_id: str, *, section: str) -> DoctorCheck:
     """Check the resolved profile's ``<section>.base_url`` and token source.
+
+    For a plugin whose settings are not marked (:mod:`untaped.setting_marks`):
+    a plugin that marks them gets core's ``setup`` row instead, so it lists
+    no ``connection_check``.
 
     A section with neither is simply unused and passes; one with only half
     of the pair is a warning, and so is a token stored in plain text in the
@@ -80,7 +85,7 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
                     f"{section} commands that call the API will fail"
                 ),
             )
-        if _stored_token(section):
+        if stored_plaintext(section):
             subject = plaintext_subject(section, resolve_config_path().name)
             if takes_token_command(type(settings)):
                 # The row's fix line names `auth migrate`, so the sentence names no replacement.
@@ -98,20 +103,6 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
         return DoctorResult(id=check_id, ok=True, detail=f"{base_url}; token from {source}")
 
     return DoctorCheck(id=check_id, title=f"{section} connection settings", run=run)
-
-
-def _stored_token(section: str) -> bool:
-    """Whether the config file itself sets ``<section>.token`` for the resolved profile.
-
-    Read from the file, not the validated settings: an ``UNTAPED_*`` override
-    neither hides a token stored in the file nor counts as one.
-    """
-    try:
-        node = active_settings_layout().effective(read_config_dict()).get(section)
-    except ConfigError:
-        return False
-    token = node.get("token") if isinstance(node, dict) else None
-    return isinstance(token, str) and bool(token.strip())
 
 
 def service_configured(settings: BaseModel, *, section: str) -> bool:
@@ -140,17 +131,22 @@ def online_check(
     ``probe`` is the plugin's own authenticated call (``whoami``-style),
     run against the active profile inside :func:`untaped.upstream.quick_probe`
     (no retries, a short timeout); it returns the pass detail and raises on
-    failure. A section that is not :func:`service_configured` passes
-    without probing. A failure keeps one line of its message and names the
-    command that fixes it: a new token for a rejected or missing one,
-    ``http.ca_bundle`` for an untrusted certificate, otherwise the
-    ``base_url``.
+    failure. A plugin that marks what it needs
+    (:mod:`untaped.setting_marks`) is probed only once every marked field is
+    set; an unmarked one only once it is :func:`service_configured`. A
+    failure keeps one line of its message and names the command that fixes
+    it: a new token for a rejected (or, unmarked, missing) one,
+    ``http.ca_bundle`` for an untrusted certificate, otherwise the first
+    marked field (``base_url`` for an unmarked one).
     """
 
     def run(ctx: PluginContext) -> DoctorResult:
         settings = ctx.settings
         if settings is None:
             return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")
+        marks = declared_marks(type(settings))
+        if marks is not None:
+            return _marked_probe(check_id, settings, marks, section=section, probe=probe)
         if not service_configured(settings, section=section):
             return DoctorResult(id=check_id, ok=True, detail="not configured")
         url_fix = f"config set {section}.base_url <URL>"
@@ -181,6 +177,61 @@ def online_check(
     return DoctorCheck(id=check_id, title=title or f"{section} API reachable", run=run, online=True)
 
 
+def _marked_probe(
+    check_id: str,
+    settings: BaseModel,
+    marks: SetupMarks,
+    *,
+    section: str,
+    probe: Callable[[], str],
+) -> DoctorResult:
+    """``probe`` for a plugin that marks what it needs: only once every marked field is set.
+
+    A rejected secret names its ``auth set``, an untrusted certificate
+    ``http.ca_bundle``; any other failure names the marked fields' values and
+    the command that sets the first of them (none when every mark is a secret).
+    """
+    if unset_fields(settings, marks, section=section):
+        # Core's `setup` row says what is missing.
+        return DoctorResult(id=check_id, ok=True, detail="skipped: not set up")
+    from untaped.upstream import quick_probe  # noqa: PLC0415 - keep SPEC imports light
+
+    try:
+        with quick_probe():
+            detail = probe()
+    except Exception as exc:
+        line = _first_line(exc)
+        if isinstance(exc, UntapedError):
+            detail = line or type(exc).__name__
+        else:
+            # Not a service error (e.g. an unexpected response shape): keep one
+            # line, never the response body a validation dump would carry.
+            detail = f"{type(exc).__name__}: {line}".rstrip(": ")
+        chain = list(_causes(exc))
+        secret = marks.token or next(iter(marks.secrets), None)
+        if secret is not None and _rejected(chain):
+            if secret is marks.token and (
+                alternatives := token_alternatives(settings, section=section)
+            ):
+                detail = f"{detail} (the token can also come from {alternatives})"
+            return DoctorResult(
+                id=check_id, ok=False, detail=detail, fix=set_command(secret, section=section)
+            )
+        if _untrusted(chain):
+            return DoctorResult(id=check_id, ok=False, detail=detail, fix=_CA_FIX)
+        plain = [field for field in marks.required if field.secret is None]
+        if plain:
+            shown = ", ".join(
+                f"{section}.{field.key} is {field_value(settings, field)}" for field in plain
+            )
+            detail = f"{detail} ({shown})"
+        fix = set_command(plain[0], section=section) if plain else None
+        return DoctorResult(id=check_id, ok=False, detail=detail, fix=fix)
+    return DoctorResult(id=check_id, ok=True, detail=detail)
+
+
+_CA_FIX = "config set http.ca_bundle <PATH>"
+
 #: OpenSSL's verify code for a certificate that does not match the host name.
 _HOSTNAME_MISMATCH = 62
 
@@ -196,19 +247,24 @@ def _token_fix(section: str, settings: BaseModel) -> str:
     return f"config set {section}.token --prompt"
 
 
-def _online_fix(exc: BaseException, *, section: str, has_token: bool, token_fix: str) -> str:
-    chain = list(_causes(exc))
-    rejected = any(
-        isinstance(error, HttpError) and error.status_code in (401, 403) for error in chain
-    )
-    if rejected:
-        return token_fix
-    if any(
+def _rejected(chain: list[BaseException]) -> bool:
+    return any(isinstance(error, HttpError) and error.status_code in (401, 403) for error in chain)
+
+
+def _untrusted(chain: list[BaseException]) -> bool:
+    return any(
         isinstance(error, ssl.SSLCertVerificationError)
         and getattr(error, "verify_code", None) != _HOSTNAME_MISMATCH
         for error in chain
-    ):
-        return "config set http.ca_bundle <PATH>"
+    )
+
+
+def _online_fix(exc: BaseException, *, section: str, has_token: bool, token_fix: str) -> str:
+    chain = list(_causes(exc))
+    if _rejected(chain):
+        return token_fix
+    if _untrusted(chain):
+        return _CA_FIX
     # An unreachable service is a URL problem even when no token is set yet.
     if not has_token and not any(isinstance(error, HttpTransportError) for error in chain):
         return token_fix

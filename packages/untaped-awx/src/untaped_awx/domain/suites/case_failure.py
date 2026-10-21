@@ -125,12 +125,15 @@ class FailedTask(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    host: str | None
-    task: str | None
-    status: Literal["failed", "unreachable"]
-    msg: str | None
-    stderr: str | None
-    """The end of the module's stderr (where errors usually are)."""
+    host: str | None = Field(description="The host it failed on.")
+    task: str | None = Field(description="The task's name.")
+    status: Literal["failed", "unreachable"] = Field(
+        description="`unreachable` when the host could not be reached."
+    )
+    msg: str | None = Field(description="The module's message (cut at 1000 characters).")
+    stderr: str | None = Field(
+        description="The last 1000 characters of the module's stderr (where errors usually are)."
+    )
     _unsure: bool = PrivateAttr(default=False)
 
     @property
@@ -164,8 +167,8 @@ class ChangedTask(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    host: str | None
-    task: str | None
+    host: str | None = Field(description="The host it changed.")
+    task: str | None = Field(description="The task's name.")
 
 
 class RelatedExecution(BaseModel):
@@ -173,11 +176,16 @@ class RelatedExecution(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: str
-    id: int
-    name: str | None
-    status: str
-    url: str | None
+    kind: str = Field(description="`project_update` or `inventory_update`.")
+    id: int = Field(
+        description="Its id: `untaped awx jobs logs ID --kind KIND` prints its whole log."
+    )
+    name: str | None = Field(description="The project or inventory source it updated.")
+    status: str = Field(
+        description="Its status as AWX reports it (`failed`, or `error` when the controller "
+        "failed it)."
+    )
+    url: str | None = Field(description="Its output page in the controller web UI.")
 
 
 class FailureEvidence(BaseModel):
@@ -185,24 +193,52 @@ class FailureEvidence(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    job_explanation: str | None = None
-    """AWX's note on why the job ended."""
-    result_traceback: str | None = None
-    """The end of the controller's traceback of a job that ended in ``error``."""
-    related: RelatedExecution | None = None
-    """The failed update the job depended on."""
-    log_tail: tuple[str, ...] | None = None
-    """The last log lines of the responsible execution (``related`` when set, else the job)."""
-    failed_tasks: tuple[FailedTask, ...] | None = None
-    """The responsible execution's failed tasks (``ignore_errors`` and rescued ones left out)."""
-    unreachable_hosts: tuple[str, ...] | None = None
-    """Hosts among ``failed_tasks`` that could not be reached."""
-    changed_tasks: tuple[ChangedTask, ...] | None = None
-    """The tasks an ``idempotent`` case's rerun changed (the first 100)."""
-    note: str | None = None
-    """A secondary problem that did not decide the failure (a log that failed to download)."""
-    node: str | None = None
-    """The workflow node whose job the evidence is from (``outer/inner`` in a nested workflow)."""
+    job_explanation: str | None = Field(
+        default=None,
+        description=(
+            "AWX's note on why the job ended, such as `Previous Task Failed: "
+            '{"job_type": "project_update", …}`.'
+        ),
+    )
+    result_traceback: str | None = Field(
+        default=None,
+        description=(
+            "The last 2000 characters of the controller's traceback of a job that ended in `error`."
+        ),
+    )
+    related: RelatedExecution | None = Field(
+        default=None, description="The failed update the job depended on."
+    )
+    log_tail: tuple[str, ...] | None = Field(
+        default=None,
+        description=(
+            "The last 40 log lines of the responsible execution (`related` when set, else the job)."
+        ),
+    )
+    failed_tasks: tuple[FailedTask, ...] | None = Field(
+        default=None,
+        description=(
+            "The responsible execution's failed tasks (`ignore_errors` and rescued ones left out)."
+        ),
+    )
+    unreachable_hosts: tuple[str, ...] | None = Field(
+        default=None, description="Hosts among `failed_tasks` that could not be reached."
+    )
+    changed_tasks: tuple[ChangedTask, ...] | None = Field(
+        default=None, description="The tasks an `idempotent` case's rerun changed (the first 100)."
+    )
+    note: str | None = Field(
+        default=None,
+        description=(
+            "A secondary problem that did not decide the failure (a log that failed to download)."
+        ),
+    )
+    node: str | None = Field(
+        default=None,
+        description=(
+            "The workflow node whose job the evidence is from (`outer/inner` in a nested workflow)."
+        ),
+    )
 
     @classmethod
     def of(

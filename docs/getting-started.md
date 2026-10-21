@@ -63,11 +63,11 @@ editor and written as `untaped plugin rank` writes it; its `+ add a ranking`
 row takes `CONTRACT METHOD PROVIDER...` as `plugin rank` does. Any other list
 or map is one line of JSON, as `config set` takes it.
 
-A service's first row is its connection. Enter opens its form: the base URL
-and how to get the token (tabs): store it with your password store (as
-`untaped auth set` does), move a plaintext one there, give a command that
-prints it (`token_command`), use an environment variable, or keep the current
-one. Saving checks the service online with what you typed before anything is
+A service's first row is its connection. Enter opens its form: the settings
+the plugin needs (such as the base URL) and how to get the token (tabs):
+store it with your password store (as `untaped auth set` does), move a
+plaintext one there, give a command that prints it (`token_command`), use an
+environment variable, or keep the current one. Saving checks the service online with what you typed before anything is
 written; if the check fails, the reason is shown under the form and you can fix
 the values, or `Save anyway`. An exported `UNTAPED_<SECTION>__TOKEN` (for
 example `UNTAPED_GITHUB__TOKEN`) wins over the token you type in that check, as

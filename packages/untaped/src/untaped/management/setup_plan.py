@@ -2,11 +2,12 @@
 
 Read-only and non-interactive. One ``untaped.setup_step`` row per step, in
 order: this install's registration (``untaped setup register``), the
-profile itself, then each service's ``base_url`` and token (or its invalid
+profile itself, then each service's marked fields (or its invalid
 settings), then (with ``--online``) each online check. A row's
 ``run`` is the complete argv to run after ``untaped`` (a ``<NAME>`` token
-is a value to ask the user for); ``by`` says who runs it: ``user`` for
-a step that asks for or reveals a token, so a token never passes through
+is a value to ask the user for); ``by`` says who runs it, read from the
+marks: ``user`` for a step that asks for or reveals a
+:class:`~untaped.setting_marks.Secret`, so a secret never passes through
 an agent. Service state comes from :mod:`untaped.management.setup_state`
 (shared with the setup screen) and the online rows are the plugins' own
 online doctor checks.
@@ -14,16 +15,11 @@ online doctor checks.
 
 from __future__ import annotations
 
+import json
 import shlex
 import shutil
 
-from untaped.auth import (
-    PLAINTEXT_TOKEN,
-    plaintext_subject,
-    takes_token_command,
-    token_env_names,
-    token_instead,
-)
+from untaped.auth import PLAINTEXT_TOKEN, plaintext_subject, takes_token_command, token_instead
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
@@ -31,12 +27,15 @@ from untaped.management.records import SetupActor, SetupState, SetupStep
 from untaped.management.setup_state import (
     ServiceState,
     profile_exists,
+    service_marks,
     service_states,
     service_store,
 )
 from untaped.messages import command_argv, command_line, shown_path, split_profile
 from untaped.plugins.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
+from untaped.setting_marks import MarkedField
+from untaped.setup_status import set_command
 from untaped.theme import OutputFormat
 
 Row = dict[str, object]
@@ -148,18 +147,33 @@ def _profile_row(shell: ApplicationSpec, profile: str, *, exists: bool) -> Row:
 def _service_rows(
     spec: PluginSpec, state: ServiceState, profile: str, *, store_name: str | None
 ) -> list[Row]:
+    """A row per marked field, in declaration order: done, or the command that sets it."""
     name, section = spec.name, spec.name
     if state.invalid is not None:
         detail = f"{section} settings are invalid: {state.invalid}"
         return [_row(f"{name}.settings", name, "failed", detail)]
     rows = []
-    if state.base_url:
-        rows.append(_row(f"{name}.base_url", name, "done", state.base_url))
-    else:
-        run = command_argv(["config", "set", f"{section}.base_url", "<URL>"], profile=profile)
-        rows.append(_row(f"{name}.base_url", name, "todo", f"{section}.base_url is not set", run))
-    rows.append(_token_row(spec, state, profile, store_name=store_name))
+    for field in service_marks(spec).required:
+        step = f"{name}.{field.key}"
+        if field.path == ("token",) and field.secret is not None:
+            rows.append(_token_row(spec, state, profile, store_name=store_name))
+        elif field.key not in state.missing:
+            rows.append(_row(step, name, "done", _done(field, state)))
+        else:
+            run = command_argv(set_command(field, section=section), profile=profile)
+            # A secret never passes through an agent, marked Secret or not.
+            by: SetupActor = "user" if field.secret is not None or field.masked else "agent"
+            detail = f"{section}.{field.key} is not set"
+            rows.append(_row(step, name, "todo", detail, run, by=by))
     return rows
+
+
+def _done(field: MarkedField, state: ServiceState) -> str:
+    """A done row's detail: the field's value, else where its secret comes from."""
+    if field.key in state.shown:
+        return state.shown[field.key]
+    source = state.sources.get(field.key)
+    return f"set by {source}" if source else "set"
 
 
 def _token_row(
@@ -175,6 +189,7 @@ def _token_row(
     step = f"{name}.token"
     takes_command = takes_token_command(settings_model(spec))
     settings = settings_model(spec).model_construct()
+    token = service_marks(spec).token
     if state.plaintext is not None or state.inherited_token:
         holder = profile if state.plaintext is not None else DEFAULT_PROFILE
         # Each branch names its own way out, so the sentence names none.
@@ -207,10 +222,13 @@ def _token_row(
         )
         command = ["config", "set", f"{section}.token_command", "<COMMAND>"]
         run = command_argv(command, profile=profile)
-    if "GH_TOKEN" in token_env_names(settings) and shutil.which("gh") is not None:
-        gh = ["config", "set", f"{section}.token_command", '["gh", "auth", "token"]']
-        reuse = command_line(shlex.join(command_argv(gh, profile=profile)))
-        detail = f"{detail}; or, after `gh auth login`, reuse the GitHub CLI's login: `{reuse}`"
+    suggest = None if token is None or token.secret is None else token.secret.suggest
+    if suggest is not None and shutil.which(suggest.argv[0]) is not None:
+        argv = json.dumps(list(suggest.argv))
+        command = command_argv(["config", "set", f"{section}.token_command", argv], profile=profile)
+        reuse = command_line(shlex.join(command))
+        when = f"{suggest.note}, " if suggest.note else ""
+        detail = f"{detail}; or, {when}let `{shlex.join(suggest.argv)}` print it: `{reuse}`"
     return _row(step, name, "todo", detail, run, by="user")
 
 
@@ -245,22 +263,25 @@ def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
         settings = settings_model(spec).model_construct()
         detail = f"{detail}; export {token_instead(settings, section=section)} with a working token"
         return _row(step, name, "failed", detail, by="user")
-    return _row(
-        step, name, "failed", detail, run, by=_by(run, automatic=row.get("automatic") is True)
-    )
+    by = _by(spec, run, automatic=row.get("automatic") is True)
+    return _row(step, name, "failed", detail, run, by=by)
 
 
-def _by(run: list[str] | None, *, automatic: bool) -> SetupActor:
+def _by(spec: PluginSpec, run: list[str] | None, *, automatic: bool) -> SetupActor:
     """Who runs a fix: an automatic one is the agent's.
 
-    Any other fix that writes a token (``auth …``, ``….token``) is the user's.
+    Any other fix that writes a secret (``auth …``, a ``Secret`` field or
+    its command setting, from the marks) is the user's.
     """
     if automatic:
         return "agent"
     command = split_profile(run or [])[1]
-    secret = command[:1] == ["auth"] or any(
-        arg.endswith((".token", ".token_command")) for arg in command
-    )
+    secrets = {
+        f"{spec.name}.{key}"
+        for field in service_marks(spec).secrets
+        for key in (field.key, field.command)
+    }
+    secret = command[:1] == ["auth"] or any(arg in secrets for arg in command)
     return "user" if secret else "agent"
 
 

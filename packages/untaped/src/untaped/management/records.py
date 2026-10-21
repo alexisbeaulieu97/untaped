@@ -64,11 +64,9 @@ class ConfigMigrationOutcome(OutcomeRecord, kind="untaped.config_migration_outco
 
     profile: str
     from_: str = Field(alias="from")
-    to: str
-    """Empty for a deleted key."""
+    to: str = Field(description="Empty for a deleted key.")
     action: str
-    detail: str
-    """For a deleted key, the value it held and why it went."""
+    detail: str = Field(description="For a deleted key, the value it held and why it went.")
 
 
 class DoctorCheckRow(CheckRecord, kind="untaped.doctor_check"):
@@ -89,8 +87,7 @@ class DoctorCheckRow(CheckRecord, kind="untaped.doctor_check"):
     title: str
     detail: str
     fix: list[str] | None
-    automatic: bool
-    """Whether ``doctor fix`` runs ``fix`` on its own."""
+    automatic: bool = Field(description="Whether `doctor fix` runs `fix` on its own.")
 
 
 class FixOutcome(OutcomeRecord, kind="untaped.fix_outcome"):
@@ -152,10 +149,14 @@ class SetupStep(Record, kind="untaped.setup_step"):
     plugin: str
     state: SetupState
     detail: str
-    run: list[str]
-    """The complete argv to pass after ``untaped``; a ``<NAME>`` token is a value to ask for."""
-    by: SetupActor
-    """Whose step it is: the user's when a secret would pass through the agent."""
+    run: list[str] = Field(
+        description=(
+            "The complete argv to pass after `untaped`; a `<NAME>` token is a value to ask for."
+        )
+    )
+    by: SetupActor = Field(
+        description="Whose step it is: the user's when a secret would pass through the agent."
+    )
 
 
 class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
@@ -164,11 +165,17 @@ class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
     table_columns: ClassVar[tuple[str, ...]] = ("plugin", "check", "title", "status", "detail")
 
     plugin: str
-    check: str
-    """``conventions``, ``registration``, ``conformance``, ``live``, ``fills``, ``schema``,
-    ``contracts`` or ``migrations``."""
-    title: str
-    """What it is about: a convention rule, ``owner.contract`` or ``owner.contract.method``."""
+    check: str = Field(
+        description=(
+            "`conventions`, `registration`, `conformance`, `live`, `fills`, `schema`, `contracts` "
+            "or `migrations`."
+        )
+    )
+    title: str = Field(
+        description=(
+            "What it is about: a convention rule, `owner.contract` or `owner.contract.method`."
+        )
+    )
     detail: str = ""
 
 

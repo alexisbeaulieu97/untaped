@@ -51,8 +51,9 @@ class AwxResource(AwxRecord):
     """A resource of the catalog, as ``list`` and ``get`` write it."""
 
     name: str
-    type: str | None = None
-    """AWX's own spelling of the kind (``job_template``)."""
+    type: str | None = Field(
+        default=None, description="AWX's own spelling of the kind (`job_template`)."
+    )
 
 
 class Organization(AwxResource, kind="awx.organization"):
@@ -75,8 +76,10 @@ class Project(AwxResource, kind="awx.project"):
     organization: ForeignKey = None
     scm_url: str | None = None
     scm_branch: str | None = None
-    allow_override: bool | None = None
-    """Whether a job template may run another branch (its own ``scm_branch``)."""
+    allow_override: bool | None = Field(
+        default=None,
+        description="Whether a job template may run another branch (its own `scm_branch`).",
+    )
 
 
 class Inventory(AwxResource, kind="awx.inventory"):
@@ -128,14 +131,21 @@ class JobTemplate(AwxResource, kind="awx.job_template"):
 
     organization: ForeignKey = None
     project: ForeignKey = None
-    scm_branch: str | None = None
-    """The template's own branch, which runs only when its project allows the override."""
-    scm_url: str | None = None
-    """``--with-scm``: the project's repository."""
-    effective_scm_ref: str | None = None
-    """``--with-scm``: the ref a job checks out (empty: the repository's default)."""
-    project_allow_override: bool | None = None
-    """``--with-scm``: whether the project lets the template pick the branch."""
+    scm_branch: str | None = Field(
+        default=None,
+        description=(
+            "The template's own branch, which runs only when its project allows the override."
+        ),
+    )
+    scm_url: str | None = Field(default=None, description="`--with-scm`: the project's repository.")
+    effective_scm_ref: str | None = Field(
+        default=None,
+        description="`--with-scm`: the ref a job checks out (empty: the repository's default).",
+    )
+    project_allow_override: bool | None = Field(
+        default=None,
+        description="`--with-scm`: whether the project lets the template pick the branch.",
+    )
 
 
 class WorkflowJobTemplate(AwxResource, kind="awx.workflow_job_template"):
@@ -275,8 +285,9 @@ class ActionOutcome(OutcomeRecord):
     started_at: UtcTimestamp | None = None
     finished_at: UtcTimestamp | None = None
     elapsed: float | None = None
-    job_failed: bool | None = Field(default=None, alias="failed")
-    """The execution's own ``failed``, as AWX reports it."""
+    job_failed: bool | None = Field(
+        default=None, alias="failed", description="The execution's own `failed`, as AWX reports it."
+    )
     scm_branch: str | None = None
     scm_revision: str | None = None
 
@@ -386,8 +397,9 @@ class SuiteCase(Record, kind="awx.test_case"):
     workflow_template: str | None
     organization: str | None
     path: str
-    variables: dict[str, dict[str, Any]]
-    """Each variable the suite declares, as written (unset keys left out)."""
+    variables: dict[str, dict[str, Any]] = Field(
+        description="Each variable the suite declares, as written (unset keys left out)."
+    )
 
 
 class ProvisionOutcome(TemporaryCopyOutcome, kind="awx.provision_outcome"):

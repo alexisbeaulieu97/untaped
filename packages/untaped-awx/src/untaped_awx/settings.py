@@ -8,34 +8,27 @@ from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from untaped.sdk import Cache, TokenCommand, TokenSources, code_version, experimental
+from untaped.sdk import Cache, NeedsSetup, Secret, code_version, experimental
+
+#: The ansible.controller / awx.awx collection's token variables, in its order.
+_TOKEN_ENV = ("CONTROLLER_OAUTH_TOKEN", "TOWER_OAUTH_TOKEN", "AAP_TOKEN")
 
 
 class AwxSettings(BaseModel):
     """Connection + behaviour configuration for a single AWX/AAP target."""
 
-    # The ansible.controller / awx.awx collection's variables, in its order.
-    token_sources: ClassVar[TokenSources] = TokenSources(
-        env=("CONTROLLER_OAUTH_TOKEN", "TOWER_OAUTH_TOKEN", "AAP_TOKEN")
-    )
     retired_keys: ClassVar[Mapping[str, str]] = {"test_timeout": "test_timeout_seconds"}
 
     model_config = ConfigDict(frozen=True)
 
-    base_url: str | None = Field(
+    base_url: Annotated[str | None, NeedsSetup] = Field(
         default=None, description="AWX/AAP URL, for example `https://aap.example.com`."
     )
-    token: SecretStr | None = Field(
+    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=_TOKEN_ENV)] = Field(
         default=None,
         description=(
             "AWX/AAP API token. Falls back to `token_command`, then "
             "`CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`."
-        ),
-    )
-    token_command: TokenCommand = Field(
-        default=None,
-        description=(
-            "Command (argv list, no shell) that prints the token; used when `awx.token` is unset."
         ),
     )
     api_prefix: str = Field(

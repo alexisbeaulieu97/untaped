@@ -26,7 +26,7 @@ and when another plugin or tool fits better.
 
 Settings live under `profiles.<name>.PLUGIN`. The user stores the token
 by running `untaped auth set PLUGIN` in their own terminal (the settings
-model needs a `token_command` field for that). Check the connection with
+model marks its `token` field `Secret` for that). Check the connection with
 `untaped PLUGIN whoami`. Never ask for, print, echo or log tokens.
 
 ## Commands

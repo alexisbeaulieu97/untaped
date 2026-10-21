@@ -142,7 +142,19 @@ def source_set_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Create or replace a reusable GitHub source."""
+    """Create or replace a reusable GitHub source.
+
+    It replaces the whole definition; ``source patch`` adds or removes one
+    org, team, repo, path or ref selector. A change drops the source's cached
+    data, so the next ``deps``, ``impact``, ``find`` or ``graph`` that reads it
+    refreshes it first.
+
+    Examples
+    --------
+    ```console
+    $ untaped ansible source set platform --org acme --team acme/platform
+    ```
+    """
     with report_errors():
         source = _source_definition(
             name=name,
@@ -231,7 +243,17 @@ def source_patch_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Patch a saved GitHub source definition."""
+    """Patch a saved GitHub source definition.
+
+    A change drops the source's cached data, as ``source set`` does;
+    ``changes`` on the outcome lists what was added or removed.
+
+    Examples
+    --------
+    ```console
+    $ untaped ansible source patch platform --add-repo acme/site --remove-org legacy
+    ```
+    """
     with report_errors():
         source_repo = SourceRepository()
         previous = source_repo.get(name)
@@ -314,8 +336,10 @@ def source_remove_command(
 
     A repo another saved source still selects is kept. Every other repo the
     source selected is released from the repo store first: ``removed`` when no
-    other plugin holds it, else ``released`` with who kept it. The source and
-    its index rows go only once every release succeeded, so a rerun retries.
+    other plugin holds it, else ``released`` with who kept it; a repo kept for
+    another saved source reads ``kept``. With ``--dry-run`` each reads
+    ``would release``. The source and its index rows go only once every
+    release succeeded; otherwise ``action`` is ``failed`` and a rerun retries.
     """
     with report_errors():
         source_repo = SourceRepository()
@@ -375,7 +399,10 @@ def source_status_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Show cached source data status."""
+    """Show cached source data status.
+
+    Without NAME, one row per saved source.
+    """
     with report_errors():
         settings = get_config_section("ansible", AnsibleSettings)
         index = open_index(settings)
@@ -409,6 +436,25 @@ def source_refresh_command(
     """Refresh a saved source from GitHub.
 
     --parallel defaults to ansible.git_fetch_parallel and is capped at 32.
+    Progress goes to stderr. A failure for one repo does not stop the
+    refresh: successes are saved, each failure prints ``error: REPO: reason``,
+    and the run exits 1, or 5 when any failure was transient, with
+    ``refresh completed with N repo failures; successes were saved``. Rerun
+    it to retry only the failures. When every repo fails, the previous data
+    is kept (``index left unchanged``).
+
+    When GitHub's GraphQL budget drops below
+    ``ansible.source_refresh_rate_limit_floor``, the refresh stops with the
+    finished batches saved and exits 5; rerunning resumes where it left off.
+    Secondary rate limits, a rejected token, forbidden requests and unknown
+    GraphQL access failures abort the whole refresh instead.
+    ``untaped agents ansible source-data`` covers the backends.
+
+    Examples
+    --------
+    ```console
+    $ untaped ansible source refresh platform --backend git
+    ```
     """
     with report_errors():
         ctx = app_context()
