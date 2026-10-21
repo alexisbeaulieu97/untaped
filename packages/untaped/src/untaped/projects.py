@@ -379,7 +379,7 @@ def writing(project: Project) -> tuple[Project, Situation]:
     lock. Records an unrecorded project, refreshes a changed identity,
     follows a move and gives a copy its own id. Raises :class:`ConfigError`
     (exit 4) when its reference can't be read or it can't tell a move from
-    a copy.
+    a copy, and (exit 5) when its id changed meanwhile.
     """
     with project.locked():
         try:

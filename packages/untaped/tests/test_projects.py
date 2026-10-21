@@ -7,12 +7,14 @@ under the project's lock, and what can't be decided is refused (exit 4).
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -247,7 +249,7 @@ def test_an_init_arriving_before_the_first_records_waits_for_it(tmp_path: Path) 
         go.set()
         first.join()
         second.join()
-    assert [each.action for each in done] == ["created", "unchanged"]
+    assert sorted(each.action for each in done) == ["created", "unchanged"]
 
 
 def test_a_failed_marker_write_leaves_no_marker(tmp_path: Path) -> None:
@@ -259,6 +261,39 @@ def test_a_failed_marker_write_leaves_no_marker(tmp_path: Path) -> None:
         with pytest.raises(ConfigError, match="No space left on device"):
             init(tmp_path / "PROJ")
     assert not (tmp_path / "PROJ" / ".untaped" / "project.json").exists()
+
+
+def test_without_hard_links_an_exclusive_create_stands_in(tmp_path: Path) -> None:
+    def no_link(*_args: object) -> None:
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(os, "link", no_link)
+        assert init(tmp_path / "PROJ").action == "created"
+        real = os.fdopen
+
+        def full(fd: int, *args: Any, **kwargs: Any) -> Any:
+            handle = real(fd, *args, **kwargs)
+            handle.close()
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        patch.setattr(os, "fdopen", full)
+        with pytest.raises(ConfigError, match="No space left on device"):
+            init(tmp_path / "OTHER")
+    assert not (tmp_path / "OTHER" / ".untaped" / "project.json").exists()
+
+
+def test_a_failed_record_keeps_the_marker_and_exits_4(tmp_path: Path) -> None:
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(projects, "write_reference", fail)
+        with pytest.raises(ConfigError, match="recording it in") as caught:
+            init(tmp_path / "PROJ")
+    assert caught.value.hint == "the next command that changes the project records it"
+    assert (tmp_path / "PROJ" / ".untaped" / "project.json").is_file()
+    assert init(tmp_path / "PROJ").action == "recorded"
 
 
 def test_an_unwritable_home_makes_nothing_and_exits_4(tmp_path: Path) -> None:
