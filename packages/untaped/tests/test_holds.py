@@ -1169,7 +1169,7 @@ def test_a_chain_of_moves_asks_from_each_folder_until_every_repair_succeeds(
     assert [(r["item"], r["action"]) for r in _rows(again)[1:]] == [
         (API, "repaired"),
         (WEB, "repaired"),
-    ]  # one row per item, whichever folders it was asked from
+    ]  # one row per hold, whichever folders it was asked from
     record = refs.read_reference(refs.reference_file(holder_of(first)))
     assert (record.anchor, record.moved_from) == (c, ())
 
