@@ -225,14 +225,50 @@ def test_a_second_init_racing_the_first_reports_one_project(tmp_path: Path) -> N
     assert len([ref for ref in projects.project_references()]) == 1
 
 
-def test_an_unwritable_home_keeps_the_marker_and_exits_4(tmp_path: Path) -> None:
+def test_an_init_arriving_before_the_first_records_waits_for_it(tmp_path: Path) -> None:
+    linked, go = threading.Event(), threading.Event()
+    real = projects._write_gitignore
+
+    def write(folder: Path) -> None:
+        linked.set()  # the marker is in place, the project not recorded yet
+        go.wait(5)
+        real(folder)
+
+    done: list[projects.Initialized] = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(projects, "_write_gitignore", write)
+        first = threading.Thread(target=lambda: done.append(init(tmp_path / "PROJ")))
+        first.start()
+        assert linked.wait(5)
+        second = threading.Thread(target=lambda: done.append(init(tmp_path / "PROJ")))
+        second.start()
+        second.join(0.2)
+        assert second.is_alive()  # waiting on the project's lock
+        go.set()
+        first.join()
+        second.join()
+    assert [each.action for each in done] == ["created", "unchanged"]
+
+
+def test_a_failed_marker_write_leaves_no_marker(tmp_path: Path) -> None:
+    def full(*_args: object, **_kwargs: object) -> int:
+        raise OSError(28, "No space left on device")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "write_text", full)
+        with pytest.raises(ConfigError, match="No space left on device"):
+            init(tmp_path / "PROJ")
+    assert not (tmp_path / "PROJ" / ".untaped" / "project.json").exists()
+
+
+def test_an_unwritable_home_makes_nothing_and_exits_4(tmp_path: Path) -> None:
     refs_dir = refs.refs_dir()
     refs_dir.parent.mkdir(parents=True, exist_ok=True)
     refs_dir.write_text("not a folder", encoding="utf-8")
     with pytest.raises(ConfigError) as caught:
         init(tmp_path / "PROJ")
     assert caught.value.category is ErrorCategory.CONFIG
-    assert (tmp_path / "PROJ" / ".untaped" / "project.json").is_file()
+    assert not (tmp_path / "PROJ" / ".untaped" / "project.json").exists()
 
 
 # --- identity --------------------------------------------------------------------------
@@ -248,9 +284,42 @@ def test_new_id_never_renews_a_folder_whose_record_it_cannot_read(tmp_path: Path
     assert _fresh(project.root) == project  # the id stays
 
 
-def test_init_refuses_a_folder_holding_untapeds_home(tmp_path: Path) -> None:
+def test_new_id_never_renews_a_folder_it_cannot_identify(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    real = AnchorId.of
+
+    def of(path: Path) -> AnchorId:
+        if path == project.root:
+            raise PermissionError(13, "Permission denied")
+        return real(path)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(AnchorId, "of", staticmethod(of))
+        with pytest.raises(ConfigError, match="cannot tell whether") as caught:
+            init(project.root, new_id=True)
+    assert caught.value.hint == f"make {project.root} readable, then run the command again"
+    assert _fresh(project.root) == project  # the id stays
+
+
+def test_an_id_changed_under_a_writing_use_asks_to_run_again(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    seen = _fresh(project.root)
+    assert seen is not None
+    marker = project.root / ".untaped" / "project.json"
+    marker.write_text(json.dumps({"untaped": "1", "id": "0" * 12}), encoding="utf-8")
+    with pytest.raises(ConfigError, match="id changed while untaped was checking") as caught:
+        writing(seen)
+    assert caught.value.category is ErrorCategory.UNAVAILABLE
+    found = _fresh(project.root)
+    assert found is not None and found.id == "0" * 12  # nothing cached the old id
+
+
+def test_init_refuses_a_folder_holding_untapeds_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "a" / "home"))
     with pytest.raises(UsageError, match="untaped's own folder"):
-        init(Path.home().parent)
+        init(tmp_path / "a")
 
 
 def test_a_symlinked_spelling_is_the_same_project(tmp_path: Path) -> None:

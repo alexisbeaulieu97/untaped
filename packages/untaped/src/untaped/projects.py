@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.errors import ConfigError, UsageError
+from untaped.errors import ConfigError, ErrorCategory, UsageError
 from untaped.fs import atomic_write, file_lock
 from untaped.messages import shown_path
 from untaped.output.sink import Diagnostics
@@ -295,20 +295,21 @@ def init(path: Path, *, new_id: bool = False) -> Initialized:
         )
     project = Project(id=_new_id(), root=path)
     folder = path / DIRECTORY
-    try:
-        folder.mkdir(parents=True, exist_ok=True)
-        created = _create_marker(folder / MARKER, project.id)
-    except OSError as exc:
-        raise ConfigError(
-            f"could not make {shown_path(path)} a project: {exc.strerror or exc}"
-        ) from exc
-    if not created:  # another init won the race: it records the project
-        return Initialized(
-            _discover(path, report=False), "unchanged", f"{shown_path(path)} is already a project"
-        )
-    _write_gitignore(folder)
+    # The lock is held before the marker appears, so a racing init or writing
+    # use that reads the new id waits until the project is recorded.
     with project.locked():
-        _record(project, path)
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            created = _create_marker(folder / MARKER, project.id)
+        except OSError as exc:
+            raise ConfigError(
+                f"could not make {shown_path(path)} a project: {exc.strerror or exc}"
+            ) from exc
+        if created:
+            _write_gitignore(folder)
+            _record(project, path)
+    if not created:  # another init won the race: check its project like any other
+        return _existing(path, new_id=False)
     _forget(path)
     return Initialized(project, "created", f"{shown_path(path)} is a project (id {project.id})")
 
@@ -394,6 +395,7 @@ def writing(project: Project) -> tuple[Project, Situation]:
             raise ConfigError(
                 f"{shown_path(project.root)}'s id changed while untaped was checking it",
                 hint="run the command again",
+                category=ErrorCategory.UNAVAILABLE,
             )
         situation = _situation(project.root, current)
         here = Project(id=current, root=project.root)
@@ -499,6 +501,11 @@ def _undecided(project: Project, situation: Situation) -> ConfigError:
             f"cannot read project {project.name}'s record: {situation.reason}",
             hint="upgrade untaped, or fix or remove that file",
         )
+    if situation.anchor is None:  # this folder itself can't be read
+        return ConfigError(
+            f"cannot tell whether project {project.name} moved or was copied: {situation.reason}",
+            hint=f"make {shown_path(project.root)} readable, then run the command again",
+        )
     return ConfigError(
         f"cannot tell whether project {project.name} moved or was copied: {situation.reason}",
         hint=f"if {shown_path(project.root)} is a copy, "
@@ -529,7 +536,11 @@ def _renew(root: Path, old: str) -> Project:
     project = Project(id=_new_id(), root=root)
     marker = root / DIRECTORY / MARKER
     if _marker_id(root) != old:
-        raise ConfigError(f"{shown_path(root)}'s id changed while untaped was giving it a new one")
+        raise ConfigError(
+            f"{shown_path(root)}'s id changed while untaped was giving it a new one",
+            hint="run the command again",
+            category=ErrorCategory.UNAVAILABLE,
+        )
     atomic_write(marker, _marker_text(project.id))
     with project.locked():
         _record(project, root)
@@ -584,20 +595,31 @@ def _create_marker(marker: Path, pid: str) -> bool:
     """
     tmp = marker.with_name(f".{marker.name}.{uuid.uuid4().hex}.untaped.tmp")
     try:
-        tmp.write_text(_marker_text(pid), encoding="utf-8")
-        os.link(tmp, marker)
-    except FileExistsError:
-        return False
-    except OSError:
+        tmp.write_text(_marker_text(pid), encoding="utf-8")  # a failure here leaves no marker
         try:
-            fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            os.link(tmp, marker)
         except FileExistsError:
             return False
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(_marker_text(pid))
+        except OSError:  # links aren't supported here
+            return _create_exclusive(marker, pid)
+        return True
     finally:
         with suppress(OSError):
             tmp.unlink()
+
+
+def _create_exclusive(marker: Path, pid: str) -> bool:
+    try:
+        fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    except FileExistsError:
+        return False
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(_marker_text(pid))
+    except BaseException:
+        with suppress(OSError):
+            marker.unlink()
+        raise
     return True
 
 
