@@ -89,7 +89,7 @@ def test_pack_library_adds_and_finds_recipes_and_hooks(tmp_path: Path) -> None:
     )
     library = PackLibrary(library_dir=tmp_path / "library")
 
-    manifest = library.add(source, source=str(source), rev=None, name=None, force=False)
+    manifest = library.add(source, source=str(source), rev=None, name=None, force=False).manifest
 
     assert manifest.name == "ansible"
     recipe_pack, recipe = library.find_recipe(parse_ref("playbook"))
@@ -268,6 +268,64 @@ def test_pack_library_reports_a_library_another_process_holds_as_busy(tmp_path: 
     assert excinfo.value.category == ErrorCategory.UNAVAILABLE
     assert excinfo.value.hint == "wait for the other untaped recipe command to finish, then retry"
     assert not (library_dir / "packs.toml").exists()
+
+
+def test_pack_library_add_says_whether_it_replaced_a_pack(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="base")
+    library = PackLibrary(library_dir=tmp_path / "library")
+
+    first = library.add(source, source=str(source), rev=None, name=None, force=False)
+    second = library.add(source, source=str(source), rev=None, name=None, force=True)
+
+    assert (first.replaced, second.replaced) == (False, True)
+    assert first.manifest.name == "base"
+
+
+def test_pack_library_refuses_to_write_over_a_row_that_changed_since_it_was_read(
+    tmp_path: Path,
+) -> None:
+    source, other = tmp_path / "source", tmp_path / "other"
+    _write_pack(source, manifest_name="base")
+    _write_pack(other, manifest_name="base", version="0.2.0")
+    library_dir = tmp_path / "library"
+    PackLibrary(library_dir=library_dir).add(
+        source, source=str(source), rev=None, name=None, force=False
+    )
+    (read,) = PackLibrary(library_dir=library_dir).packs()
+    PackLibrary(library_dir=library_dir).add(
+        other, source=str(other), rev=None, name=None, force=True
+    )
+    library = PackLibrary(library_dir=library_dir)
+
+    with pytest.raises(RecipeError, match="changed in the library") as add_error:
+        library.add(source, source=str(source), rev=None, name=None, force=True, expect=read)
+    with pytest.raises(RecipeError, match="changed in the library"):
+        library.record_commit("base", "abc", expect=read)
+
+    assert add_error.value.category == ErrorCategory.CONFLICT
+    (pack,) = PackLibrary(library_dir=library_dir).packs()
+    assert (pack.source, pack.installed_version, pack.commit) == (str(other), "0.2.0", "")
+
+
+def test_pack_library_does_not_bring_back_a_pack_removed_since_it_was_read(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="base")
+    library_dir = tmp_path / "library"
+    PackLibrary(library_dir=library_dir).add(
+        source, source=str(source), rev=None, name=None, force=False
+    )
+    (read,) = PackLibrary(library_dir=library_dir).packs()
+    PackLibrary(library_dir=library_dir).remove("base")
+
+    with pytest.raises(RecipeError, match="changed in the library"):
+        PackLibrary(library_dir=library_dir).add(
+            source, source=str(source), rev=None, name=None, force=True, expect=read
+        )
+
+    assert PackLibrary(library_dir=library_dir).packs() == []
 
 
 def test_pack_library_index_round_trips_source_rev_and_version(tmp_path: Path) -> None:

@@ -86,6 +86,14 @@ class _IndexEntry:
     content_hash: str = ""
 
 
+@dataclass(frozen=True)
+class AddResult:
+    """What :meth:`PackLibrary.add` installed, and whether it replaced an installed pack."""
+
+    manifest: PackManifest
+    replaced: bool
+
+
 def _is_ignored(name: str) -> bool:
     return any(fnmatch.fnmatch(name, pattern) for pattern in PACK_COPY_IGNORE)
 
@@ -189,11 +197,14 @@ class PackLibrary:
         force: bool,
         discard_edits: bool = False,
         commit: str | None = None,
-    ) -> PackManifest:
+        expect: InstalledPack | None = None,
+    ) -> AddResult:
         """Install a validated pack directory into the library.
 
         ``rev`` is the revision the user asked for (a branch keeps tracking on
-        ``sync``); ``commit`` is the resolved commit that was installed.
+        ``sync``); ``commit`` is the resolved commit that was installed. With
+        ``expect`` (the pack as the caller read it), the install is refused
+        when another command has since replaced or removed that pack.
         """
         source_dir = source_dir.expanduser()
         manifest = read_pack_manifest(source_dir)
@@ -201,8 +212,11 @@ class PackLibrary:
         installed_name = safe_library_name(name or manifest.name, field="pack")
         with self._locked():
             index = self._read_index()
+            if expect is not None:
+                _check_unchanged(index, installed_name, expect)
             dest = self.packs_dir / installed_name
-            if dest.exists() and not force:
+            replaced = dest.exists()
+            if replaced and not force:
                 raise RecipeError(
                     f"pack already installed: {installed_name}; use --force to replace "
                     "or --name to install under another name",
@@ -223,7 +237,7 @@ class PackLibrary:
             self._write_index(index)
         self._packs_cache = None
         self._load_errors = {}
-        return manifest
+        return AddResult(manifest=manifest, replaced=replaced)
 
     def _install_tree(self, source_dir: Path, dest: Path) -> str:
         """Copy ``source_dir`` into place at ``dest`` without a window of loss.
@@ -268,11 +282,17 @@ class PackLibrary:
             shutil.rmtree(staging, ignore_errors=True)
         return content_hash
 
-    def record_commit(self, name: str, commit: str) -> None:
-        """Record the resolved ``commit`` of an installed pack whose files did not change."""
+    def record_commit(self, name: str, commit: str, *, expect: InstalledPack | None = None) -> None:
+        """Record the resolved ``commit`` of an installed pack whose files did not change.
+
+        ``expect`` refuses the write when the pack changed since the caller
+        read it, as in :meth:`add`.
+        """
         installed_name = safe_library_name(name, field="pack")
         with self._locked():
             index = self._read_index()
+            if expect is not None:
+                _check_unchanged(index, installed_name, expect)
             entry = index.get(installed_name)
             if entry is None:
                 raise PackNotFoundError(f"pack not found: {name}")
@@ -361,6 +381,7 @@ class PackLibrary:
                     rev=index_entry.rev,
                     commit=index_entry.commit,
                     installed_version=index_entry.version or manifest.version,
+                    content_hash=index_entry.content_hash,
                 )
             )
         self._packs_cache = installed
@@ -496,6 +517,25 @@ class PackLibrary:
             table.add("content_hash", entry.content_hash)
             doc.add(name, table)
         atomic_write(self.index_path, tomlkit.dumps(doc))
+
+
+def _check_unchanged(
+    index: dict[str, _IndexEntry], installed_name: str, expect: InstalledPack
+) -> None:
+    """Refuse a write planned on ``expect`` when its index row has changed since."""
+    entry = index.get(installed_name)
+    if entry is None or (entry.source, entry.rev, entry.commit, entry.content_hash) != (
+        expect.source,
+        expect.rev,
+        expect.commit,
+        expect.content_hash,
+    ):
+        raise RecipeError(
+            f"pack '{installed_name}' changed in the library while this command ran "
+            "(another untaped command replaced or removed it)",
+            category=ErrorCategory.CONFLICT,
+            hint="run the command again to act on the pack as it is now",
+        )
 
 
 def _entry_count(root: Path) -> int:
