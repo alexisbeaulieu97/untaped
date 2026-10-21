@@ -432,8 +432,8 @@ provider, method, profile and arguments, kept under the owner's
 **Repo store**: the git plugin's shared bare repositories under
 `plugins/git/store/`, which every consumer's refs and worktrees depend on.
 
-**Cache**: upstream data a plugin keeps and checks again once it is older
-than its max age; see [Caches](docs/caches.md).
+**Cache**: upstream data a plugin keeps and can fetch again, checked once it
+is older than its max age; see [Caches](docs/caches.md).
 
 **Max age**: how long cached data is served without checking upstream; a
 cache's declared default, tunable per cache.
@@ -483,8 +483,9 @@ by an `UNTAPED_*` environment variable.
 layered over `default`.
 
 **Project**: a folder whose `.untaped/` holds `project.json`, found by walking
-up from the working directory; the home records it by the folder's
-filesystem identity, so a move or a copy is told apart from the same folder.
+up from the working directory, apart from any git checkout's root; the home
+records it by the folder's filesystem identity, so a move or a copy is told
+apart from the same folder.
 
 **Holder**: what holds items in the home's references: a project, today.
 
