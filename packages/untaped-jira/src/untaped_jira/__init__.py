@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib.resources import files
 from typing import TYPE_CHECKING
 
-from untaped.sdk import PluginSpec, SkillAsset, connection_check, online_check
+from untaped.sdk import PluginSpec, SkillAsset, online_check
 from untaped_jira.settings import JiraSettings
 
 if TYPE_CHECKING:
@@ -46,8 +46,5 @@ SPEC = PluginSpec(
             ),
         ),
     ),
-    doctor_checks=(
-        connection_check("jira.connection", section="jira"),
-        online_check("jira.api", section="jira", probe=_probe_api),
-    ),
+    doctor_checks=(online_check("jira.api", section="jira", probe=_probe_api),),
 )

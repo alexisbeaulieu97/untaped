@@ -277,15 +277,19 @@ def _ranking_rows(
     return [*rows, add]
 
 
-def connection_row(state: ServiceState) -> SettingRow:
-    """A service's connection row: its URL and where its token comes from."""
-    url = state.base_url or "no URL"
-    token = f"token from {state.token_source}" if state.token_source else "no token"
+def connection_row(state: ServiceState, *, token: bool = True) -> SettingRow:
+    """A service's connection row: its marked settings' values and where its token comes from.
+
+    ``token`` is whether the service has one the form edits.
+    """
+    parts = [value or f"no {key}" for key, value in state.values.items()]
+    if token:
+        parts.append(f"token from {state.token_source}" if state.token_source else "no token")
     help = (
-        "The service's URL and token, checked online before they are saved.",
+        "The settings the plugin needs, checked online before they are saved.",
         "enter opens them.",
     )
-    return SettingRow(key="", label=CONNECTION, value=f"{url}, {token}", source="", help=help)
+    return SettingRow(key="", label=CONNECTION, value=", ".join(parts), source="", help=help)
 
 
 def open_command(profile: str, row: SettingRow) -> Cmd:

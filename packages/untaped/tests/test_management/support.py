@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
 from cyclopts import App
 from pydantic import BaseModel, SecretStr
@@ -18,7 +18,14 @@ from untaped.plugins.registry import (
     PluginSpec,
     SkillAsset,
 )
-from untaped.sdk import HttpStatusError, TokenCommand, TokenSources, online_check
+from untaped.sdk import (
+    HttpStatusError,
+    NeedsSetup,
+    Secret,
+    TokenCommand,
+    TokenSources,
+    online_check,
+)
 from untaped.settings import get_settings
 from untaped.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.stability import Stability
@@ -65,7 +72,21 @@ class ExtProfile(BaseModel):
 
 
 class WizProfile(BaseModel):
-    """Service double for ``setup`` (section ``wiz``)."""
+    """Service double for ``setup`` (section ``wiz``); core adds ``token_command``."""
+
+    base_url: Annotated[str | None, NeedsSetup] = None
+    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=("WIZ_TOKEN",))] = None
+
+
+class EnvProfile(BaseModel):
+    """Service double with a conventional token variable (section ``envy``)."""
+
+    base_url: Annotated[str | None, NeedsSetup] = None
+    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=("ENVY_TOKEN",))] = None
+
+
+class UnmarkedWizProfile(BaseModel):
+    """An unmarked service double, read through the deprecated fallback (section ``wiz``)."""
 
     token_sources: ClassVar[TokenSources] = TokenSources(env=("WIZ_TOKEN",))
 
@@ -74,18 +95,8 @@ class WizProfile(BaseModel):
     token_command: TokenCommand = None
 
 
-class EnvProfile(BaseModel):
-    """Service double with a conventional token variable (section ``envy``)."""
-
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("ENVY_TOKEN",))
-
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
-
-
 class LegacyProfile(BaseModel):
-    """Service double without ``token_command`` (section ``legacy``)."""
+    """Unmarked service double without ``token_command`` (section ``legacy``)."""
 
     base_url: str | None = None
     token: SecretStr | None = None

@@ -61,13 +61,13 @@ overridden for one process with the environment variable shown.
 |---|---|---|---|---|
 | `awx.base_url` | string (optional) | unset | `UNTAPED_AWX__BASE_URL` | AWX/AAP URL, for example `https://aap.example.com`. |
 | `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | AWX/AAP API token. Falls back to `token_command`, then `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`. |
-| `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `awx.token` is unset. |
 | `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
 | `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. Above 0. |
 | `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. Above 0. Experimental: may change in a minor release. |
 | `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. Above 0. Experimental: may change in a minor release. |
 | `awx.caches.resources.max_age_seconds` | integer | `3600` | `UNTAPED_AWX__CACHES__RESOURCES__MAX_AGE_SECONDS` | Seconds controller resources is served before untaped checks upstream; 0 checks every time. 0 or more. |
+| `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `awx.token` is unset. |
 
 ## `dotfiles`
 
@@ -114,7 +114,6 @@ overridden for one process with the environment variable shown.
 |---|---|---|---|---|
 | `jira.base_url` | string (optional) | unset | `UNTAPED_JIRA__BASE_URL` | Jira Data Center URL, for example `https://jira.example.com`. |
 | `jira.token` | secret (optional) | unset | `UNTAPED_JIRA__TOKEN` | Jira personal access token. Falls back to `token_command`, then `JIRA_API_TOKEN`. |
-| `jira.token_command` | list (optional) | unset | `UNTAPED_JIRA__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `jira.token` is unset. |
 | `jira.api_prefix` | string | `/rest/api/2` | `UNTAPED_JIRA__API_PREFIX` | Jira platform REST prefix. |
 | `jira.agile_prefix` | string | `/rest/agile/1.0` | `UNTAPED_JIRA__AGILE_PREFIX` | Jira Software (boards, sprints) REST prefix. |
 | `jira.assigned_jql` | string | `assignee = currentUser() AND resolution = Unresolved` | `UNTAPED_JIRA__ASSIGNED_JQL` | Base JQL for `issues assigned`, and for `issues search` with no query. |
@@ -122,6 +121,7 @@ overridden for one process with the environment variable shown.
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. Above 0. |
 | `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
+| `jira.token_command` | list (optional) | unset | `UNTAPED_JIRA__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `jira.token` is unset. |
 
 ## `lint`
 

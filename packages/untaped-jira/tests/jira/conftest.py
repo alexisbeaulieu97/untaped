@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from untaped.plugins.registry import section_settings
 from untaped.settings import register_profile_settings
+from untaped_jira import SPEC
 from untaped_jira.settings import JiraSettings
 
 BASE = "https://jira.example.com"
@@ -14,8 +16,9 @@ BASE = "https://jira.example.com"
 
 @pytest.fixture(autouse=True)
 def _register_jira_settings(fresh_composition: None) -> None:
-    # Invoking the jira app directly skips the SDK profile-settings registration.
-    register_profile_settings("jira", JiraSettings)
+    # Invoking the jira app directly skips the SDK profile-settings registration;
+    # the section is the composed model, with the token_command core adds.
+    register_profile_settings("jira", section_settings(SPEC) or JiraSettings)
 
 
 @pytest.fixture(autouse=True)

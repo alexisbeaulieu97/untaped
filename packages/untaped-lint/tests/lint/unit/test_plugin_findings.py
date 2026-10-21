@@ -243,3 +243,58 @@ def test_the_deprecation_rules_run_as_lint_ids(install: Install) -> None:
         "lint.unwarned-parameter",
         "lint.unwarned-parameter",
     ]
+
+
+_SERVICE = '''
+    """A service plugin that says what needs setting up the deprecated ways."""
+
+    from __future__ import annotations
+
+    from typing import Annotated, ClassVar
+
+    from pydantic import BaseModel, ConfigDict, SecretStr
+
+    from untaped.sdk import NeedsSetup, PluginSpec, Secret, TokenCommand, TokenSources
+
+
+    class OldSettings(BaseModel):
+        """Read through the base_url/token fallback."""
+
+        model_config = ConfigDict(frozen=True)
+        token_sources: ClassVar[TokenSources] = TokenSources(env=("OLD_TOKEN",))
+
+        base_url: str | None = None
+        token: SecretStr | None = None
+
+
+    class OwnSettings(BaseModel):
+        """Marked, but declaring the command setting core adds."""
+
+        model_config = ConfigDict(frozen=True)
+
+        token: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
+        token_command: TokenCommand = None
+
+
+    OLD = PluginSpec(name="old", settings=OldSettings)
+    OWN = PluginSpec(name="own", settings=OwnSettings)
+    '''
+
+
+@pytest.mark.parametrize(
+    ("name", "rule"), [("old", "lint.unmarked-service"), ("own", "lint.self-declared-command")]
+)
+def test_a_deprecated_setup_declaration_is_a_warning(
+    install: Install, name: str, rule: str
+) -> None:
+    install({"svc_plugin/__init__.py": _SERVICE})
+    candidate = PluginCandidate(
+        distribution=f"untaped-{name}", name=name, target=f"svc_plugin:{name.upper()}"
+    )
+    record = Plugin(name=name, status="ready", distribution=f"untaped-{name}", version="0.1.0")
+    with compose_with("lint"):
+        report = run([subject(record)], select=[rule], candidates=[candidate])
+    [finding] = report.findings
+    assert (finding.rule, finding.severity) == (rule, "warning")
+    assert "removed in 12.0" in finding.message
+    assert not report.predicate_hit(strict=False)

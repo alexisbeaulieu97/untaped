@@ -48,12 +48,12 @@ supply, and `fix` is null on a passing row. A `doctor_check` row's
 `automatic` is true when its fix is safe to run unattended (no value, no
 input, and nothing a person should decide, such as registering an install). A
 `setup_step` row also has `step` (`install` for this install's registration,
-`profile`, `<service>.base_url`,
-`<service>.token`, `<service>.settings` when the service's settings are
-invalid, and `<service>.online.<check>` for each online check, such as
-`awx.online.api`),
+`profile`, `<service>.<setting>` for each setting the plugin needs, such as
+`awx.base_url` and `awx.token`, `<service>.settings` when the service's
+settings are invalid, and `<service>.online.<check>` for each online check,
+such as `awx.online.api`),
 `state` (`done`, `todo`, `failed`, `skipped`), `detail` and `by`: `user` for
-a step that asks for or reveals a token, else `agent`.
+a step that asks for or reveals a secret, else `agent`.
 
 ## workspace
 
