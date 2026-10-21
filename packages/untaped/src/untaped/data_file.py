@@ -24,7 +24,6 @@ import functools
 import hashlib
 import json
 import os
-import uuid
 from collections.abc import Collection, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
@@ -36,7 +35,7 @@ from typing import Any, Final, Literal
 from pydantic import BaseModel, ValidationError
 
 from untaped.errors import ConfigError
-from untaped.fs import atomic_write
+from untaped.fs import atomic_write, write_temp_name
 from untaped.output.diagnostic import format_utc, parse_utc
 from untaped.stability import experimental
 
@@ -51,10 +50,15 @@ MODE: Final = 0o600
 @experimental
 @dataclass(frozen=True)
 class Found[M]:
-    """The file holds ``value``; ``refreshed_at`` is when it was refreshed, if it says."""
+    """The file holds ``value``; ``refreshed_at`` is when it was refreshed, if it says.
+
+    ``by`` is the untaped version its stamp names: ``None`` for a file with
+    no stamp (an earlier release's) or a stamp that names none.
+    """
 
     value: M
     refreshed_at: datetime | None = None
+    by: str | None = None
 
 
 @experimental
@@ -157,12 +161,13 @@ def read_data_file[M: BaseModel](
     if not isinstance(data, dict):
         return Unreadable("is not a JSON object")
     stamp = data.get(STAMP)
-    refreshed_at = None
+    refreshed_at = by = None
     if isinstance(stamp, dict):
         checked = check_stamp(stamp)
         if not isinstance(checked, dict):
             return checked
         refreshed_at = parse_utc(checked.get("refreshed_at"))
+        by = checked["by"] if isinstance(checked.get("by"), str) else None
         fields = {key: value for key, value in data.items() if key != STAMP}
     elif isinstance(stamp, str) and stamp in legacy_stamps:
         fields = {key: value for key, value in data.items() if key != STAMP}
@@ -174,7 +179,7 @@ def read_data_file[M: BaseModel](
         value = model.model_validate(fields)
     except ValidationError as exc:
         return Unreadable(f"does not hold a {model.__name__}: {first_error(exc)}")
-    return Found(value, refreshed_at)
+    return Found(value, refreshed_at, by)
 
 
 @experimental
@@ -238,7 +243,7 @@ def _create(path: Path, text: str) -> bool:
     exclusive create stands in.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.untaped.tmp")
+    tmp = write_temp_name(path)
     try:
         _write_new(tmp, text)  # a failure here leaves no file at path
         try:

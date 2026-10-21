@@ -171,7 +171,11 @@ class PackLibrary:
 
     @property
     def index_path(self) -> Path:
-        """Path to the library pack source index."""
+        """Path to the library pack source index.
+
+        TOML in the user's library, not core's data file: a named exception
+        until converting the only copy is designed (#802).
+        """
         return self._library_dir / "packs.toml"
 
     @contextmanager

@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 
+from untaped import data_file
 from untaped.skill_stubs import (
     STUB_MARKER,
     Comparison,
     StubAuthor,
     compare,
     digest,
-    marker_text,
     newer_side,
     read_marker,
     render_stub,
+    write_marker,
 )
 
 
@@ -125,17 +127,19 @@ def test_core_s_stub_falls_back_to_root_help() -> None:
     assert "`untaped --help`" in text
 
 
-def test_the_marker_round_trips(tmp_path: Path) -> None:
+def test_the_marker_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(data_file, "written_by", lambda: "11.1.0")
     author = _author(version="")
-    text = marker_text(
-        author,
+    write_marker(
+        tmp_path,
+        plugin=author.plugin,
+        plugin_version=author.plugin_version,
         sha256="abc",
         name="untaped-jira",
         target="claude",
         scope="global",
         install_root=tmp_path,
     )
-    (tmp_path / STUB_MARKER).write_text(text, encoding="utf-8")
     marker = read_marker(tmp_path)
     assert marker is not None
     assert (marker.author, marker.sha256, marker.target, marker.scope) == (
@@ -144,12 +148,68 @@ def test_the_marker_round_trips(tmp_path: Path) -> None:
         "claude",
         "global",
     )
-    assert '"format": 1' in text
 
 
-@pytest.mark.parametrize("text", ["", "{}", "[]", '{"untaped": "1"}'])
+def test_the_marker_is_a_data_file_whose_stamp_names_its_untaped(tmp_path: Path) -> None:
+    write_marker(
+        tmp_path,
+        plugin="untaped-jira",
+        plugin_version="11.2.0",
+        sha256="abc",
+        name="untaped-jira",
+        target="claude",
+        scope="global",
+        install_root=tmp_path,
+    )
+    data = json.loads((tmp_path / STUB_MARKER).read_text(encoding="utf-8"))
+    assert data == {
+        "untaped": {"file": 1, "by": data_file.written_by()},
+        "plugin": "untaped-jira",
+        "plugin_version": "11.2.0",
+        "sha256": "abc",
+        "name": "untaped-jira",
+        "target": "claude",
+        "scope": "global",
+        "install_root": str(tmp_path),
+    }
+
+
+#: A marker from an 11.1 development build, before it moved onto the data file.
+_PRE_DATA_FILE = json.dumps(
+    {
+        "format": 1,
+        "untaped": "11.1.0.dev1",
+        "plugin": "untaped-jira",
+        "plugin_version": "11.1.0.dev1",
+        "sha256": "abc",
+        "name": "untaped-jira",
+        "target": "claude",
+        "scope": "global",
+        "install_root": "/home/u/.claude/skills",
+    }
+)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "{}",
+        "[]",
+        '{"untaped": "1"}',
+        '{"untaped": {"file": 1, "by": "11.1.0"}, "plugin": "untaped-jira"}',
+        _PRE_DATA_FILE,
+    ],
+)
 def test_an_unreadable_marker_reads_as_none(tmp_path: Path, text: str) -> None:
     (tmp_path / STUB_MARKER).write_text(text, encoding="utf-8")
+    assert read_marker(tmp_path) is None
+
+
+def test_a_marker_from_a_newer_format_reads_as_none(tmp_path: Path) -> None:
+    (tmp_path / STUB_MARKER).write_text(
+        json.dumps({"untaped": {"file": 99, "by": "13.0.0"}, "plugin": "x"}), encoding="utf-8"
+    )
     assert read_marker(tmp_path) is None
 
 

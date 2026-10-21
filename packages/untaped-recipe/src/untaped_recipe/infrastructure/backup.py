@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import builtins
 import hashlib
-import json
 import os
 import shutil
 import uuid
@@ -12,9 +11,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Literal
 
-from untaped.sdk import atomic_write
+from pydantic import BaseModel, Field, JsonValue
+
+from untaped.sdk import Absent, Found, OtherVersion, read_data_file, write_data_file
 from untaped_recipe.domain.paths import confined_path
 from untaped_recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped_recipe.errors import BackupNotFoundError, LocalChangesError
@@ -22,6 +23,36 @@ from untaped_recipe.infrastructure.file_writer import flush_changes
 
 _PRIVATE_DIR_MODE = 0o700
 _PRIVATE_FILE_MODE = 0o600
+#: A bundle's description, beside its ``files/``.
+METADATA_FILE = "metadata.json"
+
+
+class BackupEntry(BaseModel):
+    """One backed-up file: where it was, its hashes, and its saved before-content.
+
+    ``backup_file`` (relative to the bundle) is ``None`` when the apply
+    created the file, so a restore deletes it.
+    """
+
+    target: str
+    relative_path: str
+    before_hash: str | None = None
+    after_hash: str | None
+    backup_file: str | None
+    inputs: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class BackupMetadata(BaseModel):
+    """A bundle's ``metadata.json``: which recipe ran, with what, over which files.
+
+    A data file since 11.1; 11.0's, unstamped, read in the same shape.
+    """
+
+    id: str
+    created_at: str | None = None
+    recipe: str | None = None
+    inputs: dict[str, JsonValue] = Field(default_factory=dict)
+    files: list[BackupEntry]
 
 
 @dataclass(frozen=True)
@@ -53,7 +84,7 @@ class _PlannedRestore:
 class BackupReservation:
     """Backup entries staged before a target write."""
 
-    entries: list[dict[str, Any]]
+    entries: list[BackupEntry]
 
 
 @dataclass
@@ -64,7 +95,7 @@ class BackupDraft:
     path: Path
     recipe_name: str
     inputs: dict[str, object]
-    entries: list[dict[str, Any]] = field(default_factory=list)
+    entries: list[BackupEntry] = field(default_factory=list)
     # Stamped once when the bundle is started; commits never move it.
     created_at: str = field(default_factory=lambda: datetime.now(tz=UTC).isoformat())
     _next_file_index: int = 0
@@ -81,23 +112,27 @@ class BackupDraft:
         inputs: Mapping[str, object] | None = None,
     ) -> BackupReservation:
         """Save before-content for changes without publishing metadata yet."""
-        entries: list[dict[str, Any]] = []
+        entries: list[BackupEntry] = []
         display_inputs = dict(inputs or {})
         for change in changes:
-            entry: dict[str, Any] = {
-                "target": str(change.target),
-                "relative_path": str(change.relative_path),
-                "before_hash": _hash_text(change.before),
-                "after_hash": _hash_text(change.after),
-                "backup_file": None,
-                "inputs": display_inputs,
-            }
+            saved = None
             if change.before is not None:
                 backup_file = self.files_dir / f"{self._next_file_index}"
                 _write_private(backup_file, change.before)
                 self._next_file_index += 1
-                entry["backup_file"] = str(backup_file.relative_to(self.path))
-            entries.append(entry)
+                saved = str(backup_file.relative_to(self.path))
+            entries.append(
+                BackupEntry.model_validate(
+                    {
+                        "target": str(change.target),
+                        "relative_path": str(change.relative_path),
+                        "before_hash": _hash_text(change.before),
+                        "after_hash": _hash_text(change.after),
+                        "backup_file": saved,
+                        "inputs": display_inputs,
+                    }
+                )
+            )
         return BackupReservation(entries=entries)
 
     def commit(self, reservation: BackupReservation) -> None:
@@ -107,18 +142,16 @@ class BackupDraft:
 
     def write_metadata(self) -> None:
         """Write the current metadata snapshot."""
-        metadata = {
-            "id": self.id,
-            "created_at": self.created_at,
-            "recipe": self.recipe_name,
-            "inputs": self.inputs,
-            "files": self.entries,
-        }
-        atomic_write(
-            self.path / "metadata.json",
-            json.dumps(metadata, indent=2, sort_keys=True),
-            mode=_PRIVATE_FILE_MODE,
+        metadata = BackupMetadata.model_validate(
+            {
+                "id": self.id,
+                "created_at": self.created_at,
+                "recipe": self.recipe_name,
+                "inputs": self.inputs,
+                "files": self.entries,
+            }
         )
+        write_data_file(self.path / METADATA_FILE, metadata)
 
     def discard_if_empty(self) -> None:
         """Remove an unused bundle directory."""
@@ -157,7 +190,7 @@ class BackupStore:
         return [
             BackupBundle(id=path.name, path=path)
             for path in sorted(self._root.iterdir(), key=lambda p: p.name)
-            if (path / "metadata.json").is_file()
+            if (path / METADATA_FILE).is_file()
         ]
 
     def restore(self, backup_id: str, *, force: bool = False) -> None:
@@ -177,18 +210,17 @@ class BackupStore:
     ) -> builtins.list[_PlannedRestore]:
         bundle = self.resolve(backup_id)
         bundle_dir = bundle.path
-        metadata = read_metadata(bundle)
         planned: builtins.list[_PlannedRestore] = []
-        for entry in _metadata_entries(metadata, bundle.id):
-            target = Path(entry["target"])
-            relative_path = Path(entry["relative_path"])
+        for entry in read_metadata(bundle).files:
+            target = Path(entry.target)
+            relative_path = Path(entry.relative_path)
             path = confined_path(target, relative_path, field="relative_path")
             current_hash = _current_hash(path)
-            if not force and current_hash != entry["after_hash"]:
+            if not force and current_hash != entry.after_hash:
                 raise LocalChangesError(
                     f"{path} changed since backup {backup_id}; pass --force to restore"
                 )
-            backup_file = entry["backup_file"]
+            backup_file = entry.backup_file
             before = (
                 path.read_text(encoding="utf-8", errors=CONTENT_ERRORS, newline="")
                 if path.is_file()
@@ -219,12 +251,12 @@ class BackupStore:
     def delete(self, backup_id: str) -> None:
         """Delete one backup bundle by exact id."""
         bundle_dir = self._root / backup_id
-        if not (bundle_dir / "metadata.json").is_file():
+        if not (bundle_dir / METADATA_FILE).is_file():
             raise BackupNotFoundError(f"backup not found: {backup_id}")
         shutil.rmtree(bundle_dir)
 
-    def metadata(self, backup_id: str) -> dict[str, object]:
-        """Read raw metadata for a backup bundle."""
+    def metadata(self, backup_id: str) -> BackupMetadata:
+        """Read a backup bundle's metadata."""
         return read_metadata(self.resolve(backup_id))
 
     def resolve(self, backup_id: str) -> BackupBundle:
@@ -285,34 +317,18 @@ def prune_selection(
     return [bundle for bundle in sorted(bundles, key=lambda b: b.id) if bundle.id in pruned]
 
 
-def read_metadata(bundle: BackupBundle) -> dict[str, object]:
-    """One bundle's raw metadata; ``ValueError`` when it cannot be read."""
-    try:
-        metadata = json.loads((bundle.path / "metadata.json").read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"invalid backup metadata: {bundle.id}: {exc}") from exc
-    if not isinstance(metadata, dict):
-        raise ValueError(f"invalid backup metadata: {bundle.id}")
-    return cast(dict[str, object], metadata)
-
-
-def _metadata_entries(metadata: Mapping[str, object], backup_id: str) -> builtins.list[Any]:
-    """Return the bundle's file entries, rejecting any malformed row up front."""
-    files = metadata.get("files")
-    if not isinstance(files, builtins.list):
-        raise ValueError(f"invalid backup metadata: {backup_id}: files must be a list")
-    for index, entry in enumerate(files):
-        if not (
-            isinstance(entry, Mapping)
-            and isinstance(entry.get("target"), str)
-            and isinstance(entry.get("relative_path"), str)
-            and "backup_file" in entry
-            and isinstance(entry["backup_file"], str | None)
-            and "after_hash" in entry
-            and isinstance(entry["after_hash"], str | None)
-        ):
-            raise ValueError(f"invalid backup metadata: {backup_id}: malformed files[{index}]")
-    return files
+def read_metadata(bundle: BackupBundle) -> BackupMetadata:
+    """One bundle's metadata; ``ValueError`` when it cannot be read."""
+    match read_data_file(bundle.path / METADATA_FILE, BackupMetadata, unstamped="accept"):
+        case Found(value=metadata):
+            return metadata
+        case Absent():
+            reason = "no metadata file"
+        case OtherVersion(by=by):
+            reason = f"written by a newer untaped ({by or 'unknown version'})"
+        case unreadable:
+            reason = unreadable.reason
+    raise ValueError(f"invalid backup metadata: {bundle.id}: {reason}")
 
 
 def _write_private(path: Path, content: str) -> None:
