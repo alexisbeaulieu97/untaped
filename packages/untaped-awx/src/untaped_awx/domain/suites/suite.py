@@ -190,15 +190,18 @@ class ExpectationResult(BaseModel):
 
     check: CheckName
     expected: str
-    actual: str | None
-    """What decided the check: the job status, a log line, a count, a failed task.
-
-    ``None``: no log line or failed task matched, no host went over a ``*``
-    bound, or a named host has no summary.
-    """
+    actual: str | None = Field(
+        description=(
+            "What decided the check: the job status, a log line, a count, a failed task; null when "
+            "no log line or failed task matched, no host went over a `*` bound, or a named host "
+            "has no summary."
+        )
+    )
     passed: bool
-    node: str | None = None
-    """The workflow node whose job the check read (``None``: the case's own job)."""
+    node: str | None = Field(
+        default=None,
+        description="The workflow node whose job the check read (null: the case's own job).",
+    )
 
     def describe_failure(self) -> str:
         described = self._describe()
@@ -351,8 +354,10 @@ class ExecutionChecks(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    status: str | None = None
-    """The final status required (each model narrows the statuses it accepts)."""
+    status: str | None = Field(
+        default=None,
+        description="The final status required (each model narrows the statuses it accepts).",
+    )
     log: LogExpectation = Field(
         default_factory=LogExpectation,
         description="Checks on the job's stdout; a case's list replaces the default's list.",
@@ -752,12 +757,20 @@ class Baseline(BaseModel):
 
     result: CaseStatus
     job_id: int | None = None
-    system: str | None = None
-    """``failure.system`` of the baseline row (``None``: it passed, or an older file)."""
-    category: ErrorCategory | None = None
-    """``failure.category`` of the baseline row (``None``: it passed, or an older file)."""
-    node: str | None = None
-    """``failure.evidence.node`` of the baseline row (``None``: not a workflow node's failure)."""
+    system: str | None = Field(
+        default=None,
+        description="`failure.system` of the baseline row (null: it passed, or an older file).",
+    )
+    category: ErrorCategory | None = Field(
+        default=None,
+        description="`failure.category` of the baseline row (null: it passed, or an older file).",
+    )
+    node: str | None = Field(
+        default=None,
+        description=(
+            "`failure.evidence.node` of the baseline row (null: not a workflow node's failure)."
+        ),
+    )
 
 
 class CaseResult(Record, kind="awx.test_result"):
@@ -767,35 +780,48 @@ class CaseResult(Record, kind="awx.test_result"):
 
     suite: str
     case: str
-    result: CaseStatus | None
-    """``None`` only on a ``removed`` row: the baseline ran the case, this run did not."""
+    result: CaseStatus | None = Field(
+        description="Null only on a `removed` row: the baseline ran the case, this run did not."
+    )
     job_status: str | None = None
     job_id: int | None = None
-    rerun_job_id: int | None = None
-    """The ``idempotent`` rerun's job (``None``: no rerun was launched)."""
+    rerun_job_id: int | None = Field(
+        default=None, description="The `idempotent` rerun's job (null: no rerun was launched)."
+    )
     duration_s: float | None = None
     started_at: UtcTimestamp | None = None
     finished_at: UtcTimestamp | None = None
-    failure: Annotated[CaseFailure | None, NOT_COUNTED] = None
-    """Why a case did not pass: the responsible system, category, summary and evidence.
-
-    Not counted by the row: the run reports the failures that decide its exit
-    (a baseline excuses a ``still_failing`` one).
-    """
+    failure: Annotated[CaseFailure | None, NOT_COUNTED] = Field(
+        default=None,
+        description=(
+            "Why a case did not pass: the responsible system, category, summary and evidence. Not "
+            "counted by the row: the run reports the failures that decide its exit (a baseline "
+            "excuses a `still_failing` one)."
+        ),
+    )
     expectations: tuple[ExpectationResult, ...] = ()
-    hosts: dict[str, HostSummary] | None = None
-    """Each host's PLAY RECAP counters (``None``: not read)."""
-    hosts_truncated: bool = False
-    """``hosts`` keeps only the first 500 hosts by name."""
-    nodes: tuple[NodeResult, ...] | None = None
-    """A workflow case's nodes as they ran (``None``: a job case, or the nodes were not read)."""
+    hosts: dict[str, HostSummary] | None = Field(
+        default=None, description="Each host's PLAY RECAP counters (null: not read)."
+    )
+    hosts_truncated: bool = Field(
+        default=False, description="`hosts` keeps only the first 500 hosts by name."
+    )
+    nodes: tuple[NodeResult, ...] | None = Field(
+        default=None,
+        description=(
+            "A workflow case's nodes as they ran (null: a job case, or the nodes were not read)."
+        ),
+    )
     job_url: str | None = None
     scm_branch: str | None = None
     scm_revision: str | None = None
-    baseline: Baseline | None = None
-    """The case in the baseline run (``None``: no baseline, or a ``new`` case)."""
-    change: Change | None = None
-    """How the case changed since the baseline (``None``: no baseline)."""
+    baseline: Baseline | None = Field(
+        default=None,
+        description="The case in the baseline run (null: no baseline, or a `new` case).",
+    )
+    change: Change | None = Field(
+        default=None, description="How the case changed since the baseline (null: no baseline)."
+    )
 
     @property
     def fails_run(self) -> bool:

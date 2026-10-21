@@ -43,39 +43,59 @@ class _Model(BaseModel):
 class Reference(_Model):
     """One reference a resource makes, as written, and what its loader found."""
 
-    field: str
-    """The field holding it: ``project``, ``credentials``, ``parent``, ``nodes[deploy].run``."""
-    target: IdentityRef
-    """The kind and name it names, in the scope it is looked up in (an empty name: unset)."""
+    field: str = Field(
+        description="The field holding it: `project`, `credentials`, `parent`, `nodes[deploy].run`."
+    )
+    target: IdentityRef = Field(
+        description=(
+            "The kind and name it names, in the scope it is looked up in (an empty name: unset)."
+        )
+    )
     resolution: Resolution
-    location: DocumentLocation | ResourceLocation | None = None
-    """Where the item it names was read, when the loader resolved it to one item (a live
-    reference, by id); :meth:`AwxResources.find` then needs no name."""
+    location: DocumentLocation | ResourceLocation | None = Field(
+        default=None,
+        description=(
+            "Where the item it names was read, when the loader resolved it to one item (a live "
+            "reference, by id)."
+        ),
+    )
+    """:meth:`AwxResources.find` then needs no name."""
 
 
 @experimental
 class ControllerFacts(_Model):
     """What only the controller knows about a resource; unset under the document origin."""
 
-    status: str | None = None
-    """The resource's last job or update status (a project's last sync: ``successful``)."""
+    status: str | None = Field(
+        default=None,
+        description=(
+            "The resource's last job or update status (a project's last sync: `successful`)."
+        ),
+    )
     last_job_failed: bool | None = None
-    total_hosts: int | None = None
-    """An inventory's host count."""
-    playbooks: tuple[str, ...] | None = None
-    """A successful project's playbooks at that sync; ``None`` when not read."""
+    total_hosts: int | None = Field(default=None, description="An inventory's host count.")
+    playbooks: tuple[str, ...] | None = Field(
+        default=None,
+        description="A successful project's playbooks at that sync; null when not read.",
+    )
 
 
 @experimental
 class KindFacts(_Model):
     """What the catalog knows about a kind that a rule may need."""
 
-    known_fields: tuple[str, ...]
-    """Every field untaped knows for the kind, sorted."""
-    secret_paths: tuple[str, ...]
-    """The kind's secret-path patterns (``survey_spec.spec.*[type=password].default``)."""
-    read_only: bool = False
-    """Whether ``apply`` refuses the kind's documents (``Credential``): export leaves it out."""
+    known_fields: tuple[str, ...] = Field(
+        description="Every field untaped knows for the kind, sorted."
+    )
+    secret_paths: tuple[str, ...] = Field(
+        description="The kind's secret-path patterns (`survey_spec.spec.*[type=password].default`)."
+    )
+    read_only: bool = Field(
+        default=False,
+        description=(
+            "Whether `apply` refuses the kind's documents (`Credential`): export leaves it out."
+        ),
+    )
 
 
 @experimental
@@ -83,8 +103,7 @@ class Unreadable(_Model):
     """A document the reader could not read: not YAML, not a resource, or an unknown kind."""
 
     path: str
-    index: int
-    """The document's position in its file, from 1."""
+    index: int = Field(description="The document's position in its file, from 1.")
     error: str
 
 
@@ -104,12 +123,21 @@ class AwxResources(Record, kind="awx.resources"):
     """Every resource one run lints, with the catalog facts its rules need."""
 
     items: tuple[Linted, ...] = ()
-    kinds: dict[str, KindFacts] = Field(default_factory=dict)
-    """Every catalog kind, by name."""
-    loaded: tuple[str, ...] = ()
-    """The kinds searched this run: the batch's under ``--offline``, else every kind read."""
-    online: bool = False
-    """Whether the controller was searched: every run but ``--offline`` and the repo reader."""
+    kinds: dict[str, KindFacts] = Field(
+        default_factory=dict, description="Every catalog kind, by name."
+    )
+    loaded: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "The kinds searched this run: the batch's under `--offline`, else every kind read."
+        ),
+    )
+    online: bool = Field(
+        default=False,
+        description=(
+            "Whether the controller was searched: every run but `--offline` and the repo reader."
+        ),
+    )
     unreadable: tuple[Unreadable, ...] = ()
 
     _index: _Index | None = PrivateAttr(default=None)

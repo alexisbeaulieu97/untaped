@@ -19,7 +19,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from untaped_awx.domain.jobs.job import Job
 
@@ -42,14 +42,12 @@ class NodeResult(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: str | None
-    """The node's id: AWX's node ``identifier``."""
-    template: str | None
-    """What the node ran: the template's name (the approval's, for an approval node)."""
-    job_id: int | None
-    """The execution the node started (``None``: it never ran)."""
-    status: str
-    """That execution's status, or ``never_ran``."""
+    id: str | None = Field(description="The node's id: AWX's node `identifier`.")
+    template: str | None = Field(
+        description="What the node ran: the template's name (the approval's, for an approval node)."
+    )
+    job_id: int | None = Field(description="The execution the node started (null: it never ran).")
+    status: str = Field(description="That execution's status, or `never_ran`.")
 
 
 @dataclass(frozen=True, slots=True)
