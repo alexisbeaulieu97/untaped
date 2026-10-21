@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from dotfiles.conftest import commit_all, git, push, write_files
+from dotfiles.conftest import MANIFEST, commit_all, git, push, write_files
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_root
 from untaped_dotfiles.cli import app
 
@@ -599,6 +599,65 @@ def test_apply_lists_the_manual_link_files_that_move_with_the_clone(
     assert (home / ".config/fish/config.fish").read_text() == "set -gx EDITOR vim\n"
     run(app, ["apply", "claude", "--yes"])
     assert (home / ".config/fish/config.fish").read_text() == "v2\n"
+
+
+def test_apply_fetches_the_repos_of_copy_and_merge_files(
+    make_upstream: Upstream, home: Path
+) -> None:
+    bare, author = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship", "claude", "--skip", "claude/skills"])
+    run(app, ["apply", "--yes"])
+    _bump(author, {"starship.toml": "v2\n", "claude/settings.json": '{"theme": "light"}\n'})
+    result = run(app, ["apply", "--yes", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert {r["source"]: r["action"] for r in _rows(result)} == {
+        "starship.toml": "updated",
+        "claude/settings.json": "updated",
+    }
+    assert (home / ".config/starship.toml").read_text() == "v2\n"
+    assert json.loads((home / ".claude/settings.json").read_text())["theme"] == "light"
+
+
+def test_apply_reads_the_manifest_as_just_fetched(make_upstream: Upstream, home: Path) -> None:
+    bare, author = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship"])
+    run(app, ["apply", "--yes"])
+    moved = MANIFEST.replace("~/.config/starship.toml", "~/.starship.toml")
+    _bump(author, {"dotfiles.yml": moved})
+    result = run(app, ["apply", "starship", "--yes", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert (home / ".starship.toml").is_file()
+    assert not (home / ".config/starship.toml").exists()
+
+
+def test_apply_fetches_a_registered_checkout_without_pulling_it(
+    make_upstream: Upstream, tmp_path: Path
+) -> None:
+    bare, author = make_upstream()
+    mine = tmp_path / "mine"
+    git(tmp_path, "clone", "-q", str(bare), str(mine))
+    _subscribe(mine)
+    run(app, ["enable", "starship"])
+    run(app, ["apply", "--yes"])
+    _bump(author, {"starship.toml": "v2\n"})
+    result = run(app, ["apply", "--yes", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert git(mine, "rev-list", "--count", "HEAD..origin/main") == "1"
+    assert [r["behind"] for r in _json(["repos"])] == [1]
+
+
+def test_apply_reports_a_failed_fetch_and_exits_1(make_upstream: Upstream, home: Path) -> None:
+    bare, _ = make_upstream()
+    _subscribe(bare)
+    run(app, ["enable", "starship"])
+    run(app, ["apply", "--yes"])
+    bare.rename(bare.with_name("gone.git"))
+    result = run(app, ["apply", "--yes", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    assert "fetch failed" in result.stderr
+    assert (home / ".config/starship.toml").read_text().startswith("[character]")
 
 
 def test_fast_forward_refuses_a_dirty_clone(make_upstream: Upstream, tmp_path: Path) -> None:
