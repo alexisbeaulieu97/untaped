@@ -224,3 +224,26 @@ def test_worktrees_under_resolves_a_symlinked_folder(store_for: StoreFor, tmp_pa
     assert store.worktrees_under(tmp_path / "link" / "PROJ-1") == [
         (tmp_path / "real" / "PROJ-1" / "app").resolve()
     ]
+
+
+@pytest.mark.parametrize("by_hand", [False, True])
+def test_a_hand_added_worktree_moved_with_its_source_stays_the_users(
+    store_for: StoreFor, tmp_path: Path, by_hand: bool
+) -> None:
+    store = _workspace(store_for)
+    old = tmp_path / "P1"
+    store.worktree_add(old / "app", _MAIN, branch="one")
+    git(old / "app", "worktree", "add", "--quiet", "-b", "two", str(old / "mine"), bare=False)
+    new = tmp_path / "P2"
+    old.rename(new)
+    if by_hand:
+        for tree in ("app", "mine"):
+            git(new / tree, "worktree", "repair", bare=False)
+
+    store.repair_worktree(new / "app")
+    store.repair_worktree(new / "mine")
+
+    assert store.worktree_owners() == {
+        (new / "app").resolve(): "workspace",
+        (new / "mine").resolve(): None,
+    }

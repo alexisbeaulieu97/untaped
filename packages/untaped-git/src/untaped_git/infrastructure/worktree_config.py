@@ -91,6 +91,11 @@ def write_owner_config(store: RepoStore, worktree: Path, *, owner: str | None = 
     # Stamps which worktree is owned: git copies this file into worktrees
     # added from this one, which must stay a user's own.
     _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+    # And which entry: git keeps an entry's admin id across a move or repair,
+    # while a copied file names its source's.
+    entry = _entry_of(store, worktree)
+    if entry is not None:
+        _worktree_config(store, worktree, "untaped.admin", entry.admin.name)
     plain = layout_for(owner).heads == "refs/remotes/origin/"
     _write_fetch_config(store, worktree, plain=plain)
 
@@ -137,9 +142,8 @@ def repair_worktree(store: RepoStore, worktree: Path) -> None:
     entry = _entry_of(store, worktree)
     if entry is None:
         raise _not_a_worktree(store, worktree)
-    entries = worktree_entries(store._path)
     store._git(["worktree", "repair", os.path.abspath(worktree)])
-    if _owned_before_repair(store, entry, entries):
+    if _owned_before_repair(store, entry):
         _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
 
 
@@ -151,27 +155,22 @@ def _entry_of(store: RepoStore, worktree: Path) -> WorktreeEntry | None:
     )
 
 
-def _owned_before_repair(
-    store: RepoStore, entry: WorktreeEntry, entries: list[WorktreeEntry]
-) -> bool:
+def _owned_before_repair(store: RepoStore, entry: WorktreeEntry) -> bool:
     """Whether ``entry`` is this plugin's, read before its stamp is rewritten.
 
     An owner counts when its stamp names the entry's recorded directory, or,
     once git already repointed the entry (a hand ``git worktree repair`` or
-    ``move``), when the stamped folder is gone and no registered entry has it.
-    A hand-added worktree that inherited a stamp names a live worktree, so it
-    stays the user's own.
+    ``move``), when the stamped admin id is the entry's own. A hand-added
+    worktree that inherited a stamp names its source's id, so it stays the
+    user's own.
     """
     if entry.owner is not None:
         return entry.owner == store._plugin
     config = entry.admin / "config.worktree"
-    if config_value(config, "untaped", "owner") != store._plugin:
-        return False
-    stamp = config_value(config, "untaped", "worktree")
-    if not stamp or os.path.lexists(stamp):
-        return False
-    real = Path(os.path.realpath(stamp))
-    return all(other.path != real for other in entries)
+    return (
+        config_value(config, "untaped", "owner") == store._plugin
+        and config_value(config, "untaped", "admin") == entry.admin.name
+    )
 
 
 def check_worktree(store: RepoStore, worktree: Path) -> None:
