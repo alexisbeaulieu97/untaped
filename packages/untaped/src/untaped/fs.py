@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import re
 import stat
 import threading
 import uuid
@@ -52,6 +53,16 @@ def atomic_write(
         _remove_staged((tmp,))
 
 
+#: The end of a write's temp file name: ``.<name>.<32 hex digits>.untaped.tmp``.
+_TEMP_SUFFIX = ".untaped.tmp"
+_TEMP_NAME = re.compile(r"\..+\.[0-9a-f]{32}" + re.escape(_TEMP_SUFFIX))
+
+
+def is_write_temp(name: str) -> bool:
+    """Whether ``name`` is :func:`atomic_write`'s temp file: a write in flight, not data."""
+    return _TEMP_NAME.fullmatch(name) is not None
+
+
 def _write_target(path: Path) -> Path:
     """The file a write to ``path`` must replace: a symlink's final target."""
     return Path(os.path.realpath(path)) if path.is_symlink() else path
@@ -74,7 +85,7 @@ def _write_temp(
         with suppress(FileNotFoundError):
             mode = stat.S_IMODE(target.stat().st_mode)
     create_mode = 0o666 if mode is None else 0o600
-    tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.untaped.tmp")
+    tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}{_TEMP_SUFFIX}")
     try:
         text = isinstance(content, str)
         with open(

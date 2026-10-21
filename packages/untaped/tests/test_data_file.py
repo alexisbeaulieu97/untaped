@@ -64,14 +64,16 @@ def test_a_value_round_trips_with_its_stamp_first_and_its_fields_at_the_top(
         "history": "complete",  # where 11.0 reads it, with .get("history")
     }
     assert _mode(file) == 0o600
-    assert read_data_file(file, Mark) == Found(Mark(history="complete"), refreshed_at=WHEN)
+    assert read_data_file(file, Mark) == Found(
+        Mark(history="complete"), refreshed_at=WHEN, by=written_by()
+    )
 
 
 def test_without_refreshed_at_the_stamp_has_none(tmp_path: Path) -> None:
     file = tmp_path / "mark.json"
     write_data_file(file, Mark())
     assert json.loads(file.read_text())["untaped"] == {"file": 1, "by": written_by()}
-    assert read_data_file(file, Mark) == Found(Mark(), refreshed_at=None)
+    assert read_data_file(file, Mark) == Found(Mark(), by=written_by())
 
 
 @pytest.mark.parametrize(
@@ -141,7 +143,7 @@ def test_an_exclusive_write_creates_the_file_whole_only_when_absent(tmp_path: Pa
     file = tmp_path / ".untaped" / "project.json"
     assert write_data_file(file, Strict(id="a"), exclusive=True) is True
     assert write_data_file(file, Strict(id="b"), exclusive=True) is False
-    assert read_data_file(file, Strict) == Found(Strict(id="a"))
+    assert read_data_file(file, Strict) == Found(Strict(id="a"), by=written_by())
     assert _mode(file) == 0o600
     assert [path.name for path in file.parent.iterdir()] == ["project.json"]  # no temp left
 
@@ -156,7 +158,7 @@ def test_without_hard_links_an_exclusive_create_stands_in(
     file = tmp_path / "project.json"
     assert write_data_file(file, Strict(id="a"), exclusive=True) is True
     assert write_data_file(file, Strict(id="b"), exclusive=True) is False
-    assert read_data_file(file, Strict) == Found(Strict(id="a"))
+    assert read_data_file(file, Strict) == Found(Strict(id="a"), by=written_by())
     assert _mode(file) == 0o600
 
 
@@ -164,8 +166,16 @@ def test_a_copy_keeps_the_data_and_clears_its_freshness(tmp_path: Path) -> None:
     source, target = tmp_path / "a.json", tmp_path / "b" / "a.json"
     write_data_file(source, Mark(history="complete"), refreshed_at=WHEN)
     copy_data_file(source, target)
-    assert read_data_file(target, Mark) == Found(Mark(history="complete"), refreshed_at=None)
+    assert read_data_file(target, Mark) == Found(Mark(history="complete"), by=written_by())
     assert _mode(target) == 0o600
+
+
+def test_found_names_the_untaped_its_stamp_names(tmp_path: Path) -> None:
+    file = tmp_path / "mark.json"
+    file.write_text('{"untaped": {"file": 1, "by": "11.3.0"}}', encoding="utf-8")
+    assert read_data_file(file, Mark) == Found(Mark(), by="11.3.0")
+    file.write_text('{"untaped": {"file": 1}}', encoding="utf-8")
+    assert read_data_file(file, Mark) == Found(Mark())  # a stamp that names none
 
 
 def test_a_copy_of_an_unstamped_file_gets_this_releases_stamp(tmp_path: Path) -> None:
@@ -207,7 +217,7 @@ def test_a_filesystem_that_refuses_modes_still_gets_the_file(
     monkeypatch.setattr(fs.os, "chmod", refuse)
     file = tmp_path / "mark.json"
     write_data_file(file, Mark())
-    assert read_data_file(file, Mark) == Found(Mark())
+    assert read_data_file(file, Mark) == Found(Mark(), by=written_by())
 
     def broken(target: object, mode: int, **kwargs: object) -> None:
         raise OSError(errno.EIO, "Input/output error")

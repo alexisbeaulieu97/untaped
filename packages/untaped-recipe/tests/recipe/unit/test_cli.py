@@ -805,7 +805,7 @@ def test_apply_keeps_backup_only_when_write_rollback_is_incomplete(
     assert "rollback incomplete" in result.stdout
     assert len(store.list()) == 1
     metadata = store.metadata("latest")
-    assert [entry["relative_path"] for entry in metadata["files"]] == ["one.txt", "two.txt"]
+    assert [entry.relative_path for entry in metadata.files] == ["one.txt", "two.txt"]
 
 
 @pytest.mark.parametrize("preview", ["table", "diff"])
@@ -1848,7 +1848,7 @@ def test_apply_bulk_invocation_backs_up_only_successful_targets_in_one_bundle(
     assert (first / "config.txt").read_text() == "after\n"
     store = BackupStore(library_dir() / "backups")
     [bundle] = store.list()
-    assert len(store.metadata(bundle.id)["files"]) == 2
+    assert len(store.metadata(bundle.id).files) == 2
 
 
 def test_apply_record_valued_source_fails_without_copying_record_contents(
@@ -2114,8 +2114,8 @@ def test_apply_backup_metadata_records_redacted_per_target_inputs(tmp_path: Path
 
     assert result.exit_code == 0, result.output
     metadata = BackupStore(library_dir() / "backups").metadata("latest")
-    assert metadata["files"][0]["inputs"] == {"service": "api", "token": "***"}
-    assert "secret" not in json.dumps(metadata)
+    assert metadata.files[0].inputs == {"service": "api", "token": "***"}
+    assert "secret" not in metadata.model_dump_json()
 
 
 def test_ansible_style_optional_multi_file_recipe_acceptance(tmp_path: Path) -> None:

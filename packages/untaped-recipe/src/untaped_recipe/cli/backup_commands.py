@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated, Any, TypeGuard
+from typing import Annotated, Any
 
 from cyclopts import Parameter
 
@@ -33,6 +33,7 @@ from untaped_recipe.cli.common import (
 )
 from untaped_recipe.infrastructure.backup import (
     BackupBundle,
+    BackupMetadata,
     BackupStore,
     bundle_bytes,
     bundle_created_at,
@@ -58,38 +59,33 @@ def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) 
         )
 
 
-def _backup_row(bundle: BackupBundle, metadata: dict[str, object] | None = None) -> Backup:
+def _backup_row(bundle: BackupBundle, metadata: BackupMetadata | None = None) -> Backup:
     """One bundle; unreadable metadata warns and leaves ``recipe`` empty.
 
     With its ``metadata`` (``backups get``) the row also carries the
     bundle's ``inputs`` and ``files``.
     """
+    inputs = files = None
     if metadata is None:
         try:
-            recipe = read_metadata(bundle).get("recipe")
+            recipe = read_metadata(bundle).recipe
         except ValueError as exc:
             _diag.warning(str(exc))
             recipe = None
-        inputs = files = None
     else:
-        recipe = metadata.get("recipe")
-        inputs = metadata.get("inputs")
-        files = metadata.get("files")
+        recipe = metadata.recipe
+        inputs = metadata.inputs
+        files = [entry.model_dump(mode="json") for entry in metadata.files]
     return Backup.model_validate(
         {
             "id": bundle.id,
             "created_at": bundle_created_at(bundle),
-            "recipe": recipe if isinstance(recipe, str) else None,
+            "recipe": recipe,
             "path": str(bundle.path),
-            "inputs": inputs if isinstance(inputs, dict) else None,
-            "files": files if _entries(files) else None,
+            "inputs": inputs,
+            "files": files,
         }
     )
-
-
-def _entries(files: object) -> TypeGuard[list[dict[str, object]]]:
-    """Whether ``files`` is a list of file entries (a mapping each)."""
-    return isinstance(files, list) and all(isinstance(entry, dict) for entry in files)
 
 
 def get_command(

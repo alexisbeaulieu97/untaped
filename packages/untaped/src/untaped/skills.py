@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import tempfile
 import warnings
@@ -21,6 +20,7 @@ from packaging.version import InvalidVersion, Version
 from untaped import skill_stubs
 from untaped.cli import existing_directory
 from untaped.errors import ConfigError, UsageError
+from untaped.fs import atomic_write, is_write_temp
 from untaped.projects import find_root
 from untaped.settings import DEFAULT_CONFIG_PATH
 from untaped.skill_stubs import STUB_MARKER, STUB_SOURCE, Comparison, StubAuthor
@@ -565,7 +565,7 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
         for path in sorted(root.rglob("*"))
         if path.is_file()
         and path.name not in (_MARKER, STUB_MARKER)
-        and not _temporary(path.name)  # a stub write in flight
+        and not is_write_temp(path.name)  # a stub write in flight
         and path.suffix != ".pyc"
         and not any(part in _IGNORED_PARTS for part in path.relative_to(root).parts)
     }
@@ -699,9 +699,7 @@ def _stage_skill(
         files = spec.stub_files()
         for relative, content in files.items():
             staged_skill.joinpath(relative).write_bytes(content)
-        staged_skill.joinpath(STUB_MARKER).write_text(
-            _stub_marker(spec, target_destination, files), encoding="utf-8"
-        )
+        _write_stub_marker(spec, target_destination, staged_skill, files)
         return staged_skill
     shutil.copytree(
         spec.source,
@@ -725,11 +723,17 @@ def _stage_skill(
     return staged_skill
 
 
-def _stub_marker(
-    spec: PackagedSkill, target_destination: SkillInstallDestination, files: dict[str, bytes]
-) -> str:
-    return skill_stubs.marker_text(
-        spec.author(),
+def _write_stub_marker(
+    spec: PackagedSkill,
+    target_destination: SkillInstallDestination,
+    directory: Path,
+    files: dict[str, bytes],
+) -> None:
+    author = spec.author()
+    skill_stubs.write_marker(
+        directory,
+        plugin=author.plugin,
+        plugin_version=author.plugin_version,
         sha256=skill_stubs.digest(files),
         name=spec.name,
         target=target_destination.target,
@@ -749,33 +753,15 @@ def _rewrite_stub(
     files = spec.stub_files()
     keep = {*files, STUB_MARKER}
     for relative, content in files.items():
-        _replace_file(destination / relative, content)
+        atomic_write(destination / relative, content)
     for stale in destination.iterdir():
         # A parallel run's temporary file is its own to rename or remove.
-        if stale.name not in keep and not _temporary(stale.name):
+        if stale.name not in keep and not is_write_temp(stale.name):
             if stale.is_dir():
                 shutil.rmtree(stale, ignore_errors=True)
             else:
                 stale.unlink(missing_ok=True)
-    _replace_file(destination / STUB_MARKER, _stub_marker(spec, target_destination, files).encode())
-
-
-_TEMPORARY = ".tmp-"
-_TEMPORARY_NAME = re.compile(r"\..+\.tmp-[0-9a-f]{32}")
-
-
-def _temporary(name: str) -> bool:
-    """Whether ``name`` is a stub write in flight (``_replace_file``'s temporary file)."""
-    return _TEMPORARY_NAME.fullmatch(name) is not None
-
-
-def _replace_file(path: Path, content: bytes) -> None:
-    temporary = path.with_name(f".{path.name}{_TEMPORARY}{uuid4().hex}")
-    try:
-        temporary.write_bytes(content)
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    _write_stub_marker(spec, target_destination, destination, files)
 
 
 def _convert_to_stub(

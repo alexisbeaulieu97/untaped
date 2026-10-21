@@ -46,15 +46,22 @@ STAMP: Final = "untaped"
 FILE: Final = 1
 #: Owner-only: what untaped keeps for itself is nobody else's to read.
 MODE: Final = 0o600
+#: A stamp's ``by`` when the untaped distribution is not installed.
+UNKNOWN: Final = "unknown"
 
 
 @experimental
 @dataclass(frozen=True)
 class Found[M]:
-    """The file holds ``value``; ``refreshed_at`` is when it was refreshed, if it says."""
+    """The file holds ``value``; ``refreshed_at`` is when it was refreshed, if it says.
+
+    ``by`` is the untaped version its stamp names: ``None`` for a file with
+    no stamp (an earlier release's) or a stamp that names none.
+    """
 
     value: M
     refreshed_at: datetime | None = None
+    by: str | None = None
 
 
 @experimental
@@ -93,7 +100,7 @@ def _version() -> str:
     try:
         return version("untaped")
     except PackageNotFoundError:
-        return "unknown"
+        return UNKNOWN
 
 
 def check_model(model: object) -> type[BaseModel]:
@@ -157,12 +164,13 @@ def read_data_file[M: BaseModel](
     if not isinstance(data, dict):
         return Unreadable("is not a JSON object")
     stamp = data.get(STAMP)
-    refreshed_at = None
+    refreshed_at = by = None
     if isinstance(stamp, dict):
         checked = check_stamp(stamp)
         if not isinstance(checked, dict):
             return checked
         refreshed_at = parse_utc(checked.get("refreshed_at"))
+        by = checked["by"] if isinstance(checked.get("by"), str) else None
         fields = {key: value for key, value in data.items() if key != STAMP}
     elif isinstance(stamp, str) and stamp in legacy_stamps:
         fields = {key: value for key, value in data.items() if key != STAMP}
@@ -174,7 +182,7 @@ def read_data_file[M: BaseModel](
         value = model.model_validate(fields)
     except ValidationError as exc:
         return Unreadable(f"does not hold a {model.__name__}: {first_error(exc)}")
-    return Found(value, refreshed_at)
+    return Found(value, refreshed_at, by)
 
 
 @experimental

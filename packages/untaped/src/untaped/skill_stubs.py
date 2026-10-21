@@ -2,11 +2,13 @@
 
 A stub skill names what a plugin manages and sends the agent to
 ``untaped agents``; it lists no command, so one stub serves every untaped
-on the machine. Its marker, ``.untaped-stub.json``, records two versions
-because the stub has two owners: core's template writes the body and the
-plugin writes the description. :func:`compare` is the one rule every reader
-(the per-run check, ``skills update``, ``skills status``, ``doctor``) uses
-to decide whether a run is newer than the stub it finds.
+on the machine. Its marker, ``.untaped-stub.json``, is a data file
+(:mod:`untaped.data_file`) recording two versions because the stub has two
+owners: core's template writes the body (the stamp's ``by`` names its
+untaped) and the plugin writes the description (``plugin_version``).
+:func:`compare` is the one rule every reader (the per-run check, ``skills
+update``, ``skills status``, ``doctor``) uses to decide whether a run is
+newer than the stub it finds.
 
 untaped 11.0 counts only directories with ``.untaped-skill.json`` (a copy),
 so it never sees a stub and never writes a copy back over one.
@@ -19,18 +21,16 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from importlib import metadata
 from pathlib import Path
 
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
+from pydantic import BaseModel
 
 #: The marker file in a stub's directory; a copy's is ``.untaped-skill.json``.
 STUB_MARKER = ".untaped-stub.json"
 #: What ``skills list`` shows as a stub's ``source``: the template's identity.
 STUB_SOURCE = "untaped:stub/1"
-#: The marker file's own layout, read by every later version.
-MARKER_FORMAT = 1
 #: The distribution whose version is the untaped side of a stub.
 CORE = "untaped"
 
@@ -70,11 +70,11 @@ class Comparison(StrEnum):
 
 
 def running_untaped() -> str:
-    """This run's untaped version; empty when the distribution is not installed."""
-    try:
-        return metadata.version(CORE)
-    except metadata.PackageNotFoundError:
-        return ""
+    """This run's untaped version, the one a marker's stamp names; empty when unknown."""
+    from untaped import data_file  # noqa: PLC0415 - first use
+
+    by = data_file.written_by()
+    return "" if by == data_file.UNKNOWN else by
 
 
 def compare(written: StubAuthor, run: StubAuthor) -> Comparison:
@@ -168,43 +168,65 @@ def digest(files: Mapping[str, bytes]) -> str:
     return hasher.hexdigest()
 
 
-def marker_text(
-    author: StubAuthor, *, sha256: str, name: str, target: str, scope: str, install_root: Path
-) -> str:
-    """The marker file's contents."""
-    return (
-        json.dumps(
-            {
-                "format": MARKER_FORMAT,
-                "untaped": author.untaped,
-                "plugin": author.plugin,
-                "plugin_version": author.plugin_version,
-                "sha256": sha256,
-                "name": name,
-                "target": target,
-                "scope": scope,
-                "install_root": str(install_root),
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n"
+class _MarkerFile(BaseModel):
+    """The marker's fields; the untaped side of its author is the stamp's ``by``."""
+
+    plugin: str
+    plugin_version: str = ""
+    sha256: str
+    name: str = ""
+    target: str
+    scope: str
+    install_root: str = ""
+
+
+def write_marker(
+    directory: Path,
+    *,
+    plugin: str,
+    plugin_version: str,
+    sha256: str,
+    name: str,
+    target: str,
+    scope: str,
+    install_root: Path,
+) -> None:
+    """Write the stub marker in ``directory``, stamped by this run's untaped."""
+    from untaped.data_file import write_data_file  # noqa: PLC0415 - first use
+
+    write_data_file(
+        directory / STUB_MARKER,
+        _MarkerFile(
+            plugin=plugin,
+            plugin_version=plugin_version,
+            sha256=sha256,
+            name=name,
+            target=target,
+            scope=scope,
+            install_root=str(install_root),
+        ),
     )
 
 
 def read_marker(directory: Path) -> StubMarker | None:
-    """The stub marker in ``directory``; ``None`` when missing or unreadable."""
-    try:
-        data = json.loads((directory / STUB_MARKER).read_text(encoding="utf-8"))
-        return StubMarker(
-            author=StubAuthor(
-                untaped=str(data["untaped"]),
-                plugin=str(data["plugin"]),
-                plugin_version=str(data.get("plugin_version") or ""),
-            ),
-            sha256=str(data["sha256"]),
-            target=str(data["target"]),
-            scope=str(data["scope"]),
-        )
-    except OSError, ValueError, TypeError, KeyError:
+    """The stub marker in ``directory``; ``None`` when missing or unreadable.
+
+    A marker from before the data file (an 11.1 development build's) reads
+    as unreadable, as any damaged one does.
+    """
+    from untaped.data_file import Found, read_data_file  # noqa: PLC0415 - first use
+
+    read = read_data_file(directory / STUB_MARKER, _MarkerFile)
+    if not isinstance(read, Found):
         return None
+    marker = read.value
+    return StubMarker(
+        author=StubAuthor(
+            untaped=read.by or "",
+            plugin=marker.plugin,
+            plugin_version=marker.plugin_version,
+        ),
+        sha256=marker.sha256,
+        target=marker.target,
+        scope=marker.scope,
+    )
