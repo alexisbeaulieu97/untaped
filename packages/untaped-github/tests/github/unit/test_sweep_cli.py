@@ -374,8 +374,8 @@ def test_failed_refresh_warns_that_cached_copy_was_scanned(source_repo: SourceRe
 
     assert first.exit_code == 0, first.output
     assert [row["full_name"] for row in _json(refreshed)] == ["acme/api"]
-    assert "refresh failed for 1 repo; scanned cached copies" in refreshed.stderr
-    assert "warning: stale acme/api:" in refreshed.stderr
+    assert "warning: acme/api: refresh failed (" in refreshed.stderr
+    assert refreshed.stderr.count("acme/api: refresh failed") == 1
 
 
 def test_branch_and_tag_with_same_name_are_both_swept(

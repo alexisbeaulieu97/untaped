@@ -91,6 +91,10 @@ class GitCorpus(Protocol):
 
     def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None: ...
 
+    def cache_key(self, repo: CorpusRepoTarget) -> str:
+        """The key of ``repo``'s stored copy: the same for every spelling of its URL."""
+        ...
+
     def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         """Record that the cached copy is current without fetching; return the new time."""
         ...

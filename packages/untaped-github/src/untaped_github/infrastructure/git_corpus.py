@@ -140,6 +140,10 @@ class GitCorpusCache:
         """Return the stored fetch metadata of ``repo`` if present."""
         return _freshness(self._store(self._remote_url(repo)))
 
+    def cache_key(self, repo: CorpusRepoTarget) -> str:
+        """The key of ``repo``'s stored copy: its place in the repo store."""
+        return "/".join(store_key(self._remote_url(repo)))
+
     def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         """Mark a stored copy current without fetching (GitHub reports no new push)."""
         store = self._existing(repo)

@@ -26,6 +26,7 @@ from untaped.sdk import (
     finish,
     not_found,
     plural,
+    refresh_option,
     report_errors,
     size_text,
     summary,
@@ -45,7 +46,7 @@ from untaped_github.cli.scopes import (
 )
 from untaped_github.errors import GithubError
 from untaped_github.records import CorpusRepoResult, GithubRepo, WorktreeResult
-from untaped_github.settings import GithubSettings
+from untaped_github.settings import SWEEP, GithubSettings
 
 _diag = Diagnostics()
 
@@ -114,17 +115,7 @@ def sync_command(
             negative="",
         ),
     ] = None,
-    refresh: Annotated[
-        bool,
-        Parameter(
-            name="--refresh",
-            negative="",
-            help=(
-                "Fetch every repo. Default: fetch copies older than "
-                "github.sweep.max_age_seconds that GitHub reports as pushed since."
-            ),
-        ),
-    ] = False,
+    refresh: Annotated[bool | None, refresh_option(SWEEP)] = None,
     parallel: CorpusParallelOption | None = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -133,8 +124,9 @@ def sync_command(
 
     Run it before a batch of sweeps, or on a schedule. Like ``sweep`` it
     runs ``git``, which must be on ``PATH``, and picks repos to fetch the
-    same way. Each row says what became of its repo; a failed row exits 1,
-    or 5 when a fetch timed out.
+    same way; ``--cached`` would fetch nothing, so it is refused. Each row
+    says what became of its repo; a failed row exits 1, or 5 when a fetch
+    timed out.
 
     Examples
     --------
@@ -150,6 +142,8 @@ def sync_command(
     from untaped_github.domain import RefSelector  # noqa: PLC0415
 
     with report_errors():
+        if refresh is False:
+            raise UsageError("cache sync fetches repos: drop --cached")
         settings = app_context().section("github", GithubSettings)
         stdin_repos, stdin_items = read_stdin_repos() if stdin else ((), ())
         repos = tuple(repo or ())
@@ -167,8 +161,7 @@ def sync_command(
             stdin_items=stdin_items,
             archived=archived,
             refs=RefSelector(profile=refs, globs=tuple(ref or ())),
-            refresh=refresh,
-            max_age_seconds=settings.sweep.max_age_seconds,
+            refresh=bool(refresh),
             parallel=clamp_parallel(
                 parallel if parallel is not None else settings.sweep.parallel,
                 cap=32,

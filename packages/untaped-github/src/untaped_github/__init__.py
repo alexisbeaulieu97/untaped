@@ -28,7 +28,7 @@ from untaped.sdk import (
     old_dirs,
     online_check,
 )
-from untaped_github.settings import GithubSettings
+from untaped_github.settings import SWEEP, GithubSettings
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -97,6 +97,7 @@ SPEC = PluginSpec(
     app_factory=build_app,
     help="Inspect and search GitHub from the authenticated user's account.",
     settings=GithubSettings,
+    caches=(SWEEP,),
     skills=(
         SkillAsset(
             name="untaped-github",

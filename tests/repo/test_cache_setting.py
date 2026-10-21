@@ -5,8 +5,8 @@ Declaring a ``Cache`` on ``PluginSpec.caches`` gives it
 same way for every plugin, and the ``--refresh`` help names it. A settings
 field whose name says ``max_age``, ``stale``, ``expir`` or ``ttl`` is a
 hand-made one and fails here. The exemptions are fields that are not a
-cache's max age, or not on a ``Cache`` yet (each names the PR that moves it);
-:func:`test_the_exemptions_are_still_needed` fails once one is gone.
+cache's max age; :func:`test_the_exemptions_are_still_needed` fails once one
+is gone.
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ WORDS = ("max_age", "stale", "expir")
 #: ``(plugin, field path)`` → why it stays.
 EXEMPT = {
     ("recipe", "backup_max_age_days"): "a retention policy for backups, not a cache",
-    ("github", "sweep.max_age_seconds"): "until D (#582)",
 }
 
 

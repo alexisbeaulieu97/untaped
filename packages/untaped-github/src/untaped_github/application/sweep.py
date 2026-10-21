@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Literal
+from datetime import datetime
 
 from untaped.sdk import (
     NO_PROGRESS,
     ConfigError,
     Failure,
+    Filled,
     ProgressHandle,
     UntapedError,
     UsageError,
@@ -42,6 +43,7 @@ from untaped_github.domain import (
 from untaped_github.domain.errors import is_global_github_failure
 from untaped_github.errors import GitCorpusError
 from untaped_github.records import CorpusSyncOutcome, GithubRepo, RepoSweepOutcome, SweepMatch
+from untaped_github.settings import SWEEP
 
 InventoryResolver = Callable[[RepositoryInventoryScope], tuple[GithubRepo, ...]]
 # Parallel per-repo API lookups; kept low to stay clear of GitHub's secondary rate limits.
@@ -56,8 +58,8 @@ class SweepOptions:
     stdin_repos: tuple[str, ...]
     archived: ArchivedMode
     query: SweepQuery
-    sync: Literal["auto", "force", "off"]
-    max_age_seconds: int
+    # SWEEP's directive: None refreshes copies past their max age, True all, False none.
+    refresh: bool | None
     parallel: int
     owners: bool
     # Piped records complete enough to skip the per-repo API lookup.
@@ -73,7 +75,6 @@ class CorpusSyncOptions:
     archived: ArchivedMode
     refs: RefSelector
     refresh: bool
-    max_age_seconds: int
     parallel: int
     stdin_items: tuple[GithubRepo, ...] = ()
 
@@ -89,8 +90,6 @@ class SweepReport:
     refreshed: int
     cached: int
     oldest_fetched_at: datetime | None
-    # Repos whose refresh failed but whose covering cached copy was scanned.
-    stale: tuple[CorpusFailure, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -250,8 +249,8 @@ class Sweep(_CorpusUseCase):
                 self._corpus,
                 repo,
                 selector=options.query.refs,
-                sync=options.sync,
-                max_age_seconds=options.max_age_seconds,
+                refresh=options.refresh,
+                progress=progress,
             )
             if isinstance(prepared, CorpusFailure):
                 return None, prepared
@@ -302,22 +301,12 @@ class Sweep(_CorpusUseCase):
             refreshed=refreshed,
             cached=cached,
             oldest_fetched_at=min(scanned_dates) if scanned_dates else None,
-            stale=tuple(
-                sorted(
-                    (
-                        ready_repo.refresh_error
-                        for ready_repo in ready
-                        if ready_repo.refresh_error is not None
-                    ),
-                    key=lambda failure: failure.repo,
-                )
-            ),
         )
 
     def _resolve_scope(
         self, options: SweepOptions
     ) -> tuple[tuple[CorpusRepoTarget, ...], tuple[CorpusFailure, ...]]:
-        if options.sync == "off":
+        if options.refresh is False:
             return self._resolve_offline_scope(options), ()
 
         return _resolve_online_scope(
@@ -540,10 +529,12 @@ class SyncCorpus(_CorpusUseCase):
                 self._corpus,
                 repo,
                 selector=options.refs,
-                sync="force" if options.refresh else "auto",
-                max_age_seconds=options.max_age_seconds,
+                refresh=True if options.refresh else None,
+                progress=progress,
                 # One repo: its fetch's phases are the line; many: the count is.
-                progress=progress if len(repos) == 1 else NO_PROGRESS,
+                fetch_progress=len(repos) == 1,
+                # A failed fetch is the row's failure, never a stale line: no data is served.
+                raise_failure=True,
             )
 
         def record(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> None:
@@ -584,54 +575,162 @@ def _sync_outcome(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) ->
     return CorpusSyncOutcome(repo=repo.full_name, action=action, fetched_at=result.fetched_at)
 
 
+class _Fetched(Filled):
+    """What one fill of :data:`SWEEP` did to a repo's stored copy."""
+
+    fetched_at: datetime | None = None
+    # GitHub reported no push since the stored fetch, so none ran.
+    unchanged: bool = False
+
+
 def _prepare_repo(
     corpus: GitCorpus,
     repo: CorpusRepoTarget,
     *,
     selector: RefSelector,
-    sync: Literal["auto", "force", "off"],
-    max_age_seconds: int,
+    refresh: bool | None,
     progress: ProgressHandle = NO_PROGRESS,
+    fetch_progress: bool = False,
+    raise_failure: bool = False,
 ) -> _ReadyRepo | CorpusFailure:
-    """Bring one repo's cached copy up to date for ``selector``, fetching only when needed.
+    """Bring one repo's stored copy up to date for ``selector`` through :data:`SWEEP`.
 
-    ``auto`` fetches a copy that is missing, under-profiled, or older than
-    ``max_age_seconds``; an old copy whose GitHub ``pushed_at`` has not moved
-    is marked current without any Git call. ``force`` always fetches and
-    ``off`` never does. A failed fetch falls back to a covering cached copy.
+    The copy is the data and :data:`SWEEP` keeps when it was last checked
+    (:func:`_sync_freshness`). A copy that does not cover ``selector`` was
+    never refreshed for this query, so it is fetched, and a failed fetch
+    leaves the repo unscanned. Otherwise ``serve()`` refreshes as
+    ``refresh`` asks (:func:`_filler`), and a failed fetch falls back to the
+    stored copy with one ``untaped.stale`` line or, with ``raise_failure``,
+    is the repo's ``refresh_error`` without one. ``progress`` is the
+    command's task, which each refresh is a phase of; ``fetch_progress``
+    also hands it to the fetch.
     """
     try:
-        freshness = corpus.repo_freshness(repo)
+        stored = corpus.repo_freshness(repo)
+        key = corpus.cache_key(repo)
     except (GitCorpusError, OSError) as exc:
         return _failure(repo, exc)
-    if sync == "off":
-        fetched_at = freshness.fetched_at if freshness is not None else None
-        return _ReadyRepo(repo=repo, fetched_at=fetched_at, refreshed=False)
-    if sync == "auto" and freshness is not None and covers(freshness, selector):
-        if not _expired(freshness, max_age_seconds=max_age_seconds):
-            return _ReadyRepo(repo=repo, fetched_at=freshness.fetched_at, refreshed=False)
-        if unchanged_upstream(freshness, repo):
-            try:
-                touched = corpus.touch_repo(repo)
-            except GitCorpusError, OSError:
-                touched = freshness.fetched_at
-            return _ReadyRepo(repo=repo, fetched_at=touched, refreshed=False, unchanged=True)
+    usable = stored if stored and (refresh is False or covers(stored, selector)) else None
+    errors: list[UntapedError] = []
+    fill = _filler(
+        corpus,
+        repo,
+        selector=selector,
+        # a copy GitHub reports no push since: its fetch time, kept if the touch fails
+        unchanged_since=(
+            usable.fetched_at
+            if refresh is None and usable is not None and unchanged_upstream(usable, repo)
+            else None
+        ),
+        fetch_progress=fetch_progress,
+        errors=errors,
+    )
     try:
-        result = corpus.sync_repo(repo, selector=selector, progress=progress)
-    except (GitCorpusError, OSError) as exc:
-        if freshness is not None and covers(freshness, selector):
-            return _ReadyRepo(
-                repo=repo,
-                fetched_at=freshness.fetched_at,
-                refreshed=False,
-                refresh_error=_failure(repo, exc),
+        _sync_freshness(key, usable)
+        served = SWEEP.serve(
+            {key: repo.full_name},
+            refresh=refresh,
+            fill=fill,
+            read=lambda: None,
+            progress=progress,
+            # every answer is "empty": a failed refresh raises instead of serving a stale line
+            empty=(lambda _: True) if raise_failure else None,
+        )
+    except (UntapedError, OSError) as exc:
+        _raise_unless_the_repos(errors)
+        if not errors and isinstance(exc, UntapedError) and exc.details.get("key") == key:
+            # an earlier run's failed refresh, inside its retry window: no fill ran
+            exc.hint = "pass --refresh to retry it now"
+        failure = _failure(repo, errors[-1] if errors else exc)
+        if usable is None:
+            return failure
+        return _ReadyRepo(
+            repo=repo, fetched_at=usable.fetched_at, refreshed=False, refresh_error=failure
+        )
+    _raise_unless_the_repos(errors)
+    fetched = served.filled.get(key)
+    if fetched is not None:
+        return _ReadyRepo(
+            repo=repo,
+            fetched_at=fetched.fetched_at,
+            refreshed=not fetched.unchanged,
+            unchanged=fetched.unchanged,
+        )
+    # served as kept: a failed refresh, or one another run made while this one waited
+    current = usable or _stored(corpus, repo)
+    return _ReadyRepo(
+        repo=repo,
+        fetched_at=current.fetched_at if current is not None else None,
+        refreshed=False,
+        refresh_error=_failure(repo, errors[-1]) if errors else None,
+    )
+
+
+def _filler(
+    corpus: GitCorpus,
+    repo: CorpusRepoTarget,
+    *,
+    selector: RefSelector,
+    unchanged_since: datetime | None,
+    fetch_progress: bool,
+    errors: list[UntapedError],
+) -> Callable[[str, ProgressHandle], _Fetched]:
+    """The fill of ``repo``'s key: a fetch, or a touch when GitHub reports no push since.
+
+    Each error it raises is kept in ``errors``, so the caller reports the
+    fetch's own rather than what ``serve()`` rebuilt from it.
+    """
+
+    def fill(_key: str, handle: ProgressHandle) -> _Fetched:
+        try:
+            if unchanged_since is not None:
+                try:
+                    touched = corpus.touch_repo(repo)
+                except GitCorpusError, OSError:
+                    touched = unchanged_since
+                return _Fetched(fetched_at=touched, unchanged=True, summary="unchanged")
+            result = corpus.sync_repo(
+                repo, selector=selector, progress=handle if fetch_progress else NO_PROGRESS
             )
-        return _failure(repo, exc)
-    return _ReadyRepo(repo=repo, fetched_at=_parse_datetime(result.fetched_at), refreshed=True)
+        except OSError as exc:
+            errors.append(GitCorpusError(str(exc) or type(exc).__name__, system="local"))
+            raise errors[-1] from exc
+        except UntapedError as exc:
+            errors.append(exc)
+            raise
+        return _Fetched(fetched_at=_parse_datetime(result.fetched_at))
+
+    return fill
 
 
-def _expired(freshness: CorpusFreshness, *, max_age_seconds: int) -> bool:
-    return (datetime.now(UTC) - freshness.fetched_at).total_seconds() > max_age_seconds
+def _raise_unless_the_repos(errors: list[UntapedError]) -> None:
+    """Raise a fill's error that is not one repo's (credentials, configuration): it stops a run."""
+    for error in errors:
+        if not isinstance(error, GitCorpusError):
+            raise error
+
+
+def _stored(corpus: GitCorpus, repo: CorpusRepoTarget) -> CorpusFreshness | None:
+    with contextlib.suppress(GitCorpusError, OSError):
+        return corpus.repo_freshness(repo)
+    return None
+
+
+def _sync_freshness(key: str, stored: CorpusFreshness | None) -> None:
+    """Bring what :data:`SWEEP` knows of ``key`` in line with the stored copy.
+
+    A copy the cache knows nothing of was fetched before the cache (or by a
+    run that stopped before recording it): it is seeded with its own fetch
+    time. A key known as refreshed with no usable copy lost its data (a
+    deleted or released repo, a copy narrower than the query), so it is
+    forgotten and filled.
+    """
+    known = SWEEP.freshness(key).refreshed_at is not None
+    if stored is None:
+        if known:
+            SWEEP.forget(key)
+    elif not known:
+        SWEEP.seed(key, refreshed_at=stored.fetched_at)
 
 
 def _spec(query: SweepQuery, pattern: str) -> GrepSpec:

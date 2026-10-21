@@ -38,6 +38,7 @@ from untaped_github.domain import (
 )
 from untaped_github.errors import GitCorpusError
 from untaped_github.records import CorpusRepoResult, GithubRepo
+from untaped_github.settings import SWEEP
 
 README = SweepQuery(has_files=("README.md",))
 
@@ -92,7 +93,13 @@ class _Corpus:
         sync_errors: dict[str, Exception] | None = None,
     ) -> None:
         self.cached_rows = cached_rows
-        self.freshness = freshness or {}
+        # A cached row's copy was fetched at its fetched_at.
+        self.freshness = {
+            row.full_name: CorpusFreshness(
+                fetched_at=datetime.fromisoformat(row.fetched_at or ""), profile="default"
+            )
+            for row in cached_rows
+        } | (freshness or {})
         self.sync_errors = sync_errors or {}
         self.freshness_errors: dict[str, str] = {}
         self.synced: list[str] = []
@@ -125,6 +132,9 @@ class _Corpus:
         return CorpusRepoResult(
             full_name=repo.full_name, ref="main", path="/store", fetched_at=fetched_at.isoformat()
         )
+
+    def cache_key(self, repo: CorpusRepoTarget) -> str:
+        return repo.full_name
 
     def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None:
         reason = self.freshness_errors.get(repo.full_name)
@@ -185,8 +195,7 @@ def _sweep(
         "scope": RepositoryInventoryScope(orgs=("acme",)),
         "stdin_repos": (),
         "archived": "exclude",
-        "sync": "auto",
-        "max_age_seconds": 3600,
+        "refresh": None,
         "parallel": 1,
         "owners": True,
     }
@@ -218,7 +227,7 @@ def test_cached_sweep_scopes_corpus_rows_case_insensitively(
 ) -> None:
     corpus = _readme(_Corpus(cached_rows=_CACHED), *(row.full_name for row in _CACHED))
 
-    report = _sweep(corpus, scope=scope, archived=archived, sync="off")
+    report = _sweep(corpus, scope=scope, archived=archived, refresh=False)
 
     assert _names(report) == expected
     assert report.rows[0].clone_url == f"https://github.example.com/{expected[0]}.git"
@@ -241,7 +250,7 @@ def test_cached_sweep_rejects_unusable_scopes(
     scope: RepositoryInventoryScope, error: type[Exception], message: str
 ) -> None:
     with pytest.raises(error, match=message):
-        _sweep(_Corpus(cached_rows=_CACHED), scope=scope, sync="off")
+        _sweep(_Corpus(cached_rows=_CACHED), scope=scope, refresh=False)
 
 
 def test_auto_sync_refreshes_only_stale_or_underprofiled() -> None:
@@ -272,13 +281,15 @@ def test_failed_refresh_with_covering_cache_scans_cached() -> None:
     )
 
     report = _sweep(
-        _readme(corpus, "acme/api"), resolver=_Resolver(_item("acme/api")), sync="force"
+        _readme(corpus, "acme/api"), resolver=_Resolver(_item("acme/api")), refresh=True
     )
 
     assert _names(report) == ["acme/api"]
     assert report.unscanned == ()
-    assert report.stale == (CorpusFailure(repo="acme/api", reason="fetch denied", cause=ANY),)
     assert (report.scanned, report.refreshed, report.cached) == (1, 0, 1)
+    # serve() remembers the failure and says it in one untaped.stale line (test_sweep_cli)
+    error = SWEEP.freshness("acme/api").error
+    assert error is not None and error.message == "fetch denied"
 
 
 def _unresolvable(corpus: _Corpus) -> dict[str, Any]:
@@ -295,14 +306,15 @@ def _corrupt_metadata(corpus: _Corpus) -> dict[str, Any]:
 
 def _corrupt_cached_metadata(corpus: _Corpus) -> dict[str, Any]:
     corpus.cached_rows = (_row("acme/api"), _row("acme/bad"))
+    corpus.freshness["acme/api"] = CorpusFreshness(fetched_at=datetime.now(UTC), profile="default")
     corpus.freshness_errors["acme/bad"] = "invalid fetched_at"
-    return {"sync": "off"}
+    return {"refresh": False}
 
 
 def _sync_error(error: Exception) -> Callable[[_Corpus], dict[str, Any]]:
     def setup(corpus: _Corpus) -> dict[str, Any]:
         corpus.sync_errors["acme/bad"] = error
-        return {"resolver": _Resolver(_item("acme/api"), _item("acme/bad")), "sync": "force"}
+        return {"resolver": _Resolver(_item("acme/api"), _item("acme/bad")), "refresh": True}
 
     return setup
 
@@ -467,21 +479,21 @@ def test_expired_copy_with_unchanged_pushed_at_is_touched_not_fetched() -> None:
 
 
 @pytest.mark.parametrize(
-    ("stored", "pushed_at", "sync"),
+    ("stored", "pushed_at", "refresh"),
     [
-        (_old_copy(pushed_at="2026-06-01T00:00:00Z"), _PUSHED, "auto"),
-        (_old_copy(branch="master"), _PUSHED, "auto"),
-        (_old_copy(pushed_at=None), None, "auto"),
-        (_old_copy(), _PUSHED, "force"),
+        (_old_copy(pushed_at="2026-06-01T00:00:00Z"), _PUSHED, None),
+        (_old_copy(branch="master"), _PUSHED, None),
+        (_old_copy(pushed_at=None), None, None),
+        (_old_copy(), _PUSHED, True),
     ],
     ids=["pushed-since", "default-branch-renamed", "pushed-at-unknown", "refresh"],
 )
 def test_expired_copy_is_fetched_unless_github_reports_it_unchanged(
-    stored: CorpusFreshness, pushed_at: str | None, sync: str
+    stored: CorpusFreshness, pushed_at: str | None, refresh: bool | None
 ) -> None:
     corpus = _Corpus(freshness={"acme/api": stored})
 
-    _sweep(corpus, resolver=_Resolver(_item("acme/api", pushed_at=pushed_at)), sync=sync)
+    _sweep(corpus, resolver=_Resolver(_item("acme/api", pushed_at=pushed_at)), refresh=refresh)
 
     assert corpus.synced == ["acme/api"]
     assert corpus.touched == []
@@ -616,7 +628,6 @@ def test_sync_corpus_reports_one_outcome_per_repo() -> None:
             archived="exclude",
             refs=RefSelector(),
             refresh=False,
-            max_age_seconds=3600,
             parallel=1,
         )
     )
@@ -652,7 +663,6 @@ def test_sync_corpus_passes_its_handle_to_the_store_only_for_one_repo(
             archived="exclude",
             refs=RefSelector(),
             refresh=True,
-            max_age_seconds=3600,
             parallel=2,
         ),
         progress=progress,
@@ -661,3 +671,47 @@ def test_sync_corpus_passes_its_handle_to_the_store_only_for_one_repo(
     # One repo: the store's phases are the line; many: the per-repo count is.
     assert corpus.handles == [progress if passed_on else NO_PROGRESS] * len(names)
     assert progress.updates[-1][1:] == ("syncing", len(names), len(names))
+
+
+def test_a_copy_narrower_than_the_query_whose_fetch_fails_is_unscanned() -> None:
+    corpus = _Corpus(
+        freshness={"acme/api": CorpusFreshness(fetched_at=datetime.now(UTC), profile="default")},
+        sync_errors={"acme/api": GitCorpusError("fetch denied")},
+    )
+    query = SweepQuery(has_files=("README.md",), refs=RefSelector(profile="tags"))
+
+    report = _sweep(_readme(corpus, "acme/api"), query, resolver=_Resolver(_item("acme/api")))
+
+    assert report.scanned == 0
+    assert report.unscanned == (CorpusFailure(repo="acme/api", reason="fetch denied", cause=ANY),)
+
+
+def test_a_failed_refresh_is_not_tried_again_inside_its_retry_window() -> None:
+    corpus = _Corpus(
+        freshness={"acme/api": _old_copy(pushed_at=None)},
+        sync_errors={"acme/api": GitCorpusError("fetch denied")},
+    )
+    resolver = _Resolver(_item("acme/api"))
+
+    reports = [_sweep(_readme(corpus, "acme/api"), resolver=resolver) for _ in range(2)]
+
+    assert corpus.synced == ["acme/api"]
+    assert [(report.scanned, report.cached) for report in reports] == [(1, 1), (1, 1)]
+
+
+def test_a_copy_that_went_away_is_fetched_although_the_cache_knew_it() -> None:
+    corpus = _readme(_Corpus(), "acme/api")
+    resolver = _Resolver(_item("acme/api"))
+    _sweep(corpus, resolver=resolver)
+    del corpus.freshness["acme/api"]  # released by `cache delete`, say
+
+    _sweep(corpus, resolver=resolver)
+
+    assert corpus.synced == ["acme/api", "acme/api"]
+
+
+def test_a_fill_error_that_is_not_the_repos_stops_the_sweep() -> None:
+    corpus = _Corpus(sync_errors={"acme/api": ConfigError("rank them to choose one")})
+
+    with pytest.raises(ConfigError, match="rank them"):
+        _sweep(corpus, resolver=_Resolver(_item("acme/api"), _item("acme/web")))
