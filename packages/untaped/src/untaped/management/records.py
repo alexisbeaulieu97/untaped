@@ -31,13 +31,21 @@ from untaped.refs import RefHolder, RefTarget
 
 
 class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
-    """What ``auth set``, ``auth unset`` or ``auth migrate`` did to one section's token.
+    """What ``auth set``, ``auth unset`` or ``auth migrate`` did to one section's secret.
 
-    Never the token. ``store`` is where it is kept (``None``: nowhere); a
-    failed ``migrate`` row says why in ``detail`` and ``error``.
+    Never the secret; ``field`` names it. ``store`` is where it is kept
+    (``None``: nowhere); a failed ``migrate`` row says why in ``detail`` and
+    ``error``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("section", "profile", "store", "action", "detail")
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "section",
+        "field",
+        "profile",
+        "store",
+        "action",
+        "detail",
+    )
 
     section: str
     profile: str
@@ -45,14 +53,18 @@ class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
     action: str
     detail: _Omitted = None
     error: _RowError = None
+    field: str = Field(default="token", description="The secret: ``token`` or another field.")
 
 
 class TokenSource(Record, kind="untaped.token_source"):
-    """Where one profile's token for one section comes from (``auth status``)."""
+    """Where one profile's secret for one section comes from (``auth status``)."""
+
+    table_columns: ClassVar[tuple[str, ...]] = ("profile", "section", "field", "source")
 
     profile: str
     section: str
     source: str
+    field: str = Field(default="token", description="The secret: ``token`` or another field.")
 
 
 class ConfigMigrationOutcome(OutcomeRecord, kind="untaped.config_migration_outcome"):

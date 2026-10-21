@@ -108,12 +108,13 @@ def _shell_app() -> App:
 
 def _shell_deprecations() -> Sequence[DeprecatedBehaviour]:
     from untaped.auth import PLAINTEXT_TOKEN  # noqa: PLC0415 - off the composition path
+    from untaped.http import CONNECTED_BY_NAME  # noqa: PLC0415
     from untaped.setting_marks import (  # noqa: PLC0415
         SELF_DECLARED_COMMAND,
         UNMARKED_SERVICE,
     )
 
-    return (PLAINTEXT_TOKEN, SELF_DECLARED_COMMAND, UNMARKED_SERVICE)
+    return (CONNECTED_BY_NAME, PLAINTEXT_TOKEN, SELF_DECLARED_COMMAND, UNMARKED_SERVICE)
 
 
 #: The root application. A singleton so repeated

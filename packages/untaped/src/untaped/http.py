@@ -16,6 +16,8 @@ disable verification entirely (escape hatch — leaves traffic open to MITM).
 from __future__ import annotations
 
 import email.utils
+import functools
+import inspect
 import logging
 import shlex
 import ssl
@@ -26,12 +28,12 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, SecretStr
 
-from untaped.auth import takes_token_command, token_alternatives
+from untaped.auth import auth_target, takes_token_command, token_alternatives
 from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
 from untaped.errors import (
@@ -44,6 +46,7 @@ from untaped.errors import (
 from untaped.messages import command_line, q, run_hint
 from untaped.profile_resolver import ACTIVE_PROFILE_ENV, classify_active_profile, selected_profile
 from untaped.redaction import redact_url_password
+from untaped.setting_marks import declared_marks
 from untaped.settings import (
     HttpSettings,
     active_settings_layout,
@@ -52,6 +55,7 @@ from untaped.settings import (
     load_settings_section,
     registered_profile_model,
 )
+from untaped.stability import deprecated, deprecated_behaviour, deprecated_parameters
 from untaped.upstream import PROBE_TIMEOUT, capped, succeeded
 
 if TYPE_CHECKING:
@@ -577,19 +581,25 @@ def _other_profiles_hint(profiles: Sequence[str], *, plural: bool) -> str:
 
 
 def rejected_token_error(
-    section: str, message: str, *, cause: BaseException | None = None
+    section: str,
+    message: str,
+    *,
+    cause: BaseException | None = None,
+    field: str = "token",
 ) -> ConfigError:
-    """The standard error for a service rejecting ``<section>.token`` (HTTP 401).
+    """The standard error for a service rejecting the secret ``<section>.<field>`` (HTTP 401).
 
-    ``auth`` in ``section`` (exit ``4``). The hint is ``auth set <section>``
-    when the section's registered settings model has ``token_command``, else
-    ``config set <section>.token --prompt``. The ``cause``'s details
-    (``status``, ``url``) are kept.
+    ``auth`` in ``section`` (exit ``4``). The hint is the ``auth set`` that
+    stores that secret (``auth set <section>``, or ``auth set
+    <section>.<field>`` for one of several) when the section's registered
+    settings model takes its command setting, else ``config set
+    <section>.<field> --prompt``. The ``cause``'s details (``status``,
+    ``url``) are kept.
     """
     details = cause.details if isinstance(cause, UntapedError) else None
     model = registered_profile_model(section)
-    auth_set = model is not None and takes_token_command(model)
-    command = f"auth set {section}" if auth_set else f"config set {section}.token --prompt"
+    target = None if model is None else auth_target(model, section, field)
+    command = f"auth set {target}" if target else f"config set {section}.{field} --prompt"
     return ConfigError(
         message,
         category="auth",
@@ -599,69 +609,113 @@ def rejected_token_error(
     )
 
 
+class _FromConfig:
+    """``connected_client``'s ``base_url`` and ``bearer`` default: read from ``config``."""
+
+    def __repr__(self) -> str:
+        return "<from config>"
+
+
+_FROM_CONFIG: Any = _FromConfig()
+
+
+CONNECTED_BY_NAME = deprecated_behaviour(
+    "connected-client-by-name", removed_in=12, replacement="base_url= and bearer= values"
+)
+"""``connected_client`` reading ``base_url`` and ``token`` off the settings by field name."""
+
+#: ``connected_client``'s parameters for each kind of call: values, or the deprecated read by name.
+_BY_VALUE = ("bearer", "require_token")
+_BY_NAME = ("required", "base_url_field", "bearer_token_field")
+
+
+def _one_kind[**P, R](function: Callable[P, R]) -> Callable[P, R]:
+    """Refuse a ``connected_client`` call that mixes values with the read by name.
+
+    Decided by the parameters the call names, so passing an old parameter's
+    default still counts.
+    """
+    signature = inspect.signature(function)
+
+    @functools.wraps(function)
+    def call(*args: P.args, **kwargs: P.kwargs) -> R:
+        passed = signature.bind_partial(*args, **kwargs).arguments
+        if "base_url" in passed:
+            if mixed := [f"{name}=" for name in _BY_NAME if name in passed]:
+                raise TypeError(f"connected_client: pass base_url= or {_join(mixed)}, not both")
+        elif mixed := [f"{name}=" for name in _BY_VALUE if name in passed]:
+            raise TypeError(f"connected_client: pass base_url= with {_join(mixed)}")
+        return function(*args, **kwargs)
+
+    return call
+
+
+@deprecated_parameters
+@_one_kind
 def connected_client(
     config: BaseModel,
     *,
     section: str,
-    required: tuple[str, ...] = ("base_url", "token"),
+    base_url: str | None = _FROM_CONFIG,
+    require_token: bool = True,
+    bearer: SecretStr | str | None = _FROM_CONFIG,
+    required: Annotated[tuple[str, ...], deprecated(removed_in=12, replacement="base_url=")] = (
+        "base_url",
+        "token",
+    ),
     headers: Mapping[str, str] | None = None,
-    base_url_field: str = "base_url",
-    bearer_token_field: str | None = "token",
+    base_url_field: Annotated[str, deprecated(removed_in=12, replacement="base_url=")] = "base_url",
+    bearer_token_field: Annotated[
+        str | None, deprecated(removed_in=12, replacement="base_url=")
+    ] = "token",
     http: HttpSettings | None = None,
     retry: RetryPolicy | None = _DEFAULT_RETRY,
 ) -> HttpClient:
-    """Validate a tool's connection settings and build an :class:`HttpClient`.
+    """Build an :class:`HttpClient` for a service from the values it needs.
 
-    Each ``required`` field must be present and non-blank on ``config``
-    (:class:`SecretStr` values are unwrapped); missing ones are reported
-    together via the standard :func:`missing_setting_error`.
-    ``bearer_token_field`` (when set and configured) becomes an
-    ``Authorization: Bearer`` header unless the caller supplied their own.
-    ``http`` defaults to the active profile's resolved :class:`HttpSettings`
-    (proxy/ca/verify), so per-profile HTTP config takes effect without each
-    tool threading it explicitly. ``retry`` defaults to a safe
-    :class:`RetryPolicy` (transport + idempotent-method 429/503 backoff);
-    pass ``None`` to disable, or a custom policy to opt a POST endpoint in.
-    The client's failures are attributed to ``section`` (their ``system``).
+    ``base_url`` is the service's URL (``config.base_url``); ``bearer``, an
+    ``Authorization: Bearer`` header's token, defaults to ``config``'s
+    :class:`~untaped.setting_marks.Secret` named ``token``, else its only
+    one (an unmarked model's ``token``). ``require_token=False`` builds a
+    client without one (an unauthenticated ``ping``). A blank value raises
+    "<section> is not set up", naming the marked settings still unset (or
+    the parameter whose value is blank), with ``untaped setup plan --only
+    <section>`` as the hint.
+
+    ``headers`` are sent on every request (a caller's ``Authorization``
+    wins over the bearer). ``http`` defaults to the active profile's
+    resolved :class:`HttpSettings` (proxy/ca/verify); ``retry`` to a safe
+    :class:`RetryPolicy` (transport and idempotent 429/503 backoff), ``None``
+    to disable. The client's failures are attributed to ``section``.
+
+    Leaving out ``base_url`` reads the settings by field name, the way
+    ``required`` (default ``("base_url", "token")``), ``base_url_field``
+    (``"base_url"``) and ``bearer_token_field`` (``"token"``) describe: the
+    deprecated behaviour :data:`CONNECTED_BY_NAME`. Passing ``base_url``
+    with any of those three, or ``bearer`` or ``require_token`` without it,
+    refuses.
     """
-    values: dict[str, str] = {}
-    missing: list[str] = []
-    # ``base_url_field`` and ``bearer_token_field`` are always walked — even
-    # when not listed in ``required`` — so the client can be built and the
-    # bearer header set; de-dup keeps a field named twice from being read twice.
-    optional = (base_url_field, bearer_token_field) if bearer_token_field else (base_url_field,)
-    for field in dict.fromkeys((*required, *optional)):
-        raw = getattr(config, field, None)
-        if isinstance(raw, SecretStr):
-            raw = raw.get_secret_value()
-        value = str(raw).strip() if raw is not None else ""
-        if field in required and not value:
-            missing.append(field)
-        values[field] = value
-    if missing:
-        secret = [d.path[0] for d in walk_settings(type(config)) if d.is_secret]
-        sources = token_alternatives(config, section=section) if "token" in missing else ""
-        auth_set = takes_token_command(type(config))
-        profile, set_in = _profiles_for(section, missing, token_command=auth_set)
-        raise missing_setting_error(
-            section,
-            *missing,
-            secret=secret,
-            token_sources=sources,
-            auth_set=auth_set,
-            profile=profile,
-            set_in=set_in,
+    if base_url is _FROM_CONFIG:
+        CONNECTED_BY_NAME.warn(
+            f"calling connected_client for {section} without base_url=", stacklevel=4
         )
-
+        url, token = _read_by_name(
+            config,
+            section=section,
+            required=required,
+            base_url_field=base_url_field,
+            bearer_token_field=bearer_token_field,
+        )
+    else:
+        url, token = _values(
+            config, section=section, base_url=base_url, bearer=bearer, require_token=require_token
+        )
     request_headers = dict(headers or {})
-    if bearer_token_field is not None:
-        token = values.get(bearer_token_field, "")
-        if token:
-            request_headers.setdefault("Authorization", f"Bearer {token}")
-
+    if token:
+        request_headers.setdefault("Authorization", f"Bearer {token}")
     http_settings = http if http is not None else load_settings_section("http")
     return HttpClient(
-        base_url=values[base_url_field].rstrip("/"),
+        base_url=url.rstrip("/"),
         headers=request_headers,
         verify=resolve_verify(http_settings),
         timeout=http_settings.timeout_seconds,
@@ -671,29 +725,152 @@ def connected_client(
     )
 
 
-def _profiles_for(
-    section: str, missing: Sequence[str], *, token_command: bool
-) -> tuple[str | None, list[str]]:
-    """The selected profile and the other profiles that resolve every ``missing`` field.
+def _text(value: object) -> str:
+    """A setting's value as stripped text (``""`` for none); a ``SecretStr`` is unwrapped."""
+    if isinstance(value, SecretStr):
+        value = value.get_secret_value()
+    return str(value).strip() if value is not None else ""
 
-    Each profile is resolved as it would be selected (``default`` beneath
-    it, old key names renamed). A ``token_command`` counts for a missing
-    ``token`` when the model takes one. An environment override of a
-    missing field applies to every profile, so it names none; an unreadable
-    config file names only a profile chosen by ``--profile`` or
-    ``UNTAPED_PROFILE``.
+
+def _default_bearer(config: BaseModel) -> tuple[bool, SecretStr | str | None]:
+    """Whether ``config`` has a secret a bare section names, and its value."""
+    marks = declared_marks(type(config))
+    if marks is None:
+        has = "token" in type(config).model_fields
+        return has, getattr(config, "token", None) if has else None
+    secret = marks.default_secret
+    if secret is None:
+        return False, None
+    return True, getattr(config, secret.key, None)
+
+
+def _values(
+    config: BaseModel,
+    *,
+    section: str,
+    base_url: str | None,
+    bearer: SecretStr | str | None,
+    require_token: bool,
+) -> tuple[str, str]:
+    """The URL and the bearer token (``""`` for none), or "<section> is not set up"."""
+    has_secret = True
+    from_config = bearer is _FROM_CONFIG
+    if from_config:
+        has_secret, bearer = _default_bearer(config)
+    url = _text(base_url)
+    token = _text(bearer) if has_secret else ""
+    blank = [
+        name
+        for name, unset in (("base_url", not url), ("bearer", require_token and not token))
+        if unset
+    ]
+    if blank:
+        # A bearer passed, or not needed, is no setting left to set up.
+        own_secret = from_config and require_token
+        raise _not_set_up(config, section=section, blank=blank, own_secret=own_secret)
+    return url, token
+
+
+def _not_set_up(
+    config: BaseModel, *, section: str, blank: Sequence[str], own_secret: bool
+) -> ConfigError:
+    """ "<section> is not set up", naming its unset marked fields, else the blank parameters.
+
+    Without ``own_secret`` (a bearer passed, or none required) the secret a
+    bare section names is not among them.
     """
-    if any(env_sets_key(section, name) for name in missing):
+    from untaped.setup_status import unset_fields  # noqa: PLC0415 - imports the registry
+
+    marks = declared_marks(type(config))
+    fields = [] if marks is None else list(unset_fields(config, marks, section=section))
+    secret = None if marks is None or own_secret else marks.default_secret
+    if secret is not None:
+        fields = [field for field in fields if field.path != secret.path]
+    if fields:
+        keys = [f"{section}.{field.key}" for field in fields]
+        needs = [
+            (field.key,) if field.command is None else (field.key, field.command)
+            for field in fields
+        ]
+        profile, set_in = _profiles_for(section, needs)
+        what = f"{_join(keys)} {'is' if len(keys) == 1 else 'are'} not set"
+    else:
+        profile, set_in = _profiles_for(section, [])
+        names = _join([f"{name}=" for name in blank])
+        what = f"{names} {'has' if len(blank) == 1 else 'have'} no value"
+    where = f" in profile {q(profile)}" if profile else ""
+    lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
+    return ConfigError(
+        f"{section} is not set up{where}: {what}",
+        hint=f"{lead}{run_hint(f'setup plan --only {section}')}",
+        details={"profiles": list(set_in)} if set_in else None,
+    )
+
+
+def _join(names: Sequence[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _read_by_name(
+    config: BaseModel,
+    *,
+    section: str,
+    required: tuple[str, ...],
+    base_url_field: str,
+    bearer_token_field: str | None,
+) -> tuple[str, str]:
+    """The old read: ``required`` fields must be non-blank; the URL and bearer by name."""
+    values: dict[str, str] = {}
+    missing: list[str] = []
+    # ``base_url_field`` and ``bearer_token_field`` are always walked — even
+    # when not listed in ``required`` — so the client can be built and the
+    # bearer header set; de-dup keeps a field named twice from being read twice.
+    optional = (base_url_field, bearer_token_field) if bearer_token_field else (base_url_field,)
+    for field in dict.fromkeys((*required, *optional)):
+        value = _text(getattr(config, field, None))
+        if field in required and not value:
+            missing.append(field)
+        values[field] = value
+    if missing:
+        secret = [d.path[0] for d in walk_settings(type(config)) if d.is_secret]
+        sources = token_alternatives(config, section=section) if "token" in missing else ""
+        auth_set = takes_token_command(type(config))
+        needs = [
+            (name, "token_command") if name == "token" and auth_set else (name,) for name in missing
+        ]
+        profile, set_in = _profiles_for(section, needs)
+        raise missing_setting_error(
+            section,
+            *missing,
+            secret=secret,
+            token_sources=sources,
+            auth_set=auth_set,
+            profile=profile,
+            set_in=set_in,
+        )
+    token = values.get(bearer_token_field, "") if bearer_token_field is not None else ""
+    return values[base_url_field], token
+
+
+def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str | None, list[str]]:
+    """The selected profile and the other profiles that resolve every one of ``needs``.
+
+    Each need is a missing field, then the settings that also supply it (a
+    secret's command setting). Each profile is resolved as it would be
+    selected (``default`` beneath it, old key names renamed). An
+    environment override of a missing field applies to every profile, so it
+    names none; an unreadable config file names only a profile chosen by
+    ``--profile`` or ``UNTAPED_PROFILE``.
+    """
+    if any(env_sets_key(section, need[0]) for need in needs):
         return None, []
     try:
         data = read_config_dict()
     except ConfigError:
         return classify_active_profile({})[0], []
     profile = selected_profile(data)
-    needs = [
-        (name, "token_command") if name == "token" and token_command else (name,)
-        for name in missing
-    ]
+    if not needs:
+        return profile, []
     layout = active_settings_layout()
     found: list[str] = []
     for name in layout.profile_names(data):

@@ -1,4 +1,5 @@
 # untaped surface 3
+behaviour untaped.connected-client-by-name  [deprecated, removed in 12.0; use base_url= and bearer= values]
 behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
 behaviour untaped.self-declared-command  [deprecated, removed in 12.0; use the command setting untaped adds for each Secret]
 behaviour untaped.unmarked-service  [deprecated, removed in 12.0; use NeedsSetup and Secret marks on its settings]
@@ -5742,12 +5743,15 @@ sdk untaped.sdk.clamp_parallel(requested, *, cap, policy)
 sdk untaped.sdk.code_version(distributions=) default=[]
 sdk untaped.sdk.code_version(extra=) default=[]
 sdk untaped.sdk.code_version(module)
-sdk untaped.sdk.connected_client(base_url_field=) default=base_url
-sdk untaped.sdk.connected_client(bearer_token_field=) default=token
+sdk untaped.sdk.connected_client(base_url=) default=<computed>
+sdk untaped.sdk.connected_client(base_url_field=) default=base_url  [deprecated, removed in 12.0; use base_url=]
+sdk untaped.sdk.connected_client(bearer=) default=<computed>
+sdk untaped.sdk.connected_client(bearer_token_field=) default=token  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.connected_client(config, *, section)
 sdk untaped.sdk.connected_client(headers=) default=None
 sdk untaped.sdk.connected_client(http=) default=None
-sdk untaped.sdk.connected_client(required=) default=["base_url","token"]
+sdk untaped.sdk.connected_client(require_token=) default=true
+sdk untaped.sdk.connected_client(required=) default=["base_url","token"]  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.connected_client(retry=) default=<computed>
 sdk untaped.sdk.connection_check(check_id, *, section)
 sdk untaped.sdk.create_app(*, name)
@@ -5847,6 +5851,7 @@ sdk untaped.sdk.read_structured_file(path)
 sdk untaped.sdk.record_model(kind)
 sdk untaped.sdk.refresh_option(cache)
 sdk untaped.sdk.rejected_token_error(cause=) default=None
+sdk untaped.sdk.rejected_token_error(field=) default=token
 sdk untaped.sdk.rejected_token_error(section, message)
 sdk untaped.sdk.render_rows(columns=) default=None
 sdk untaped.sdk.render_rows(empty=) default=None
