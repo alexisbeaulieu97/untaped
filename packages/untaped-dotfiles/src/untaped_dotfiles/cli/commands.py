@@ -46,7 +46,7 @@ from untaped_dotfiles.cli.common import (
     services,
     utc_now,
 )
-from untaped_dotfiles.domain.models import Policy, item_id
+from untaped_dotfiles.domain.models import ItemChoice, Policy, item_id
 from untaped_dotfiles.domain.status import needs_attention
 from untaped_dotfiles.records import (
     ApplyOutcome,
@@ -405,25 +405,28 @@ def apply_command(
 ) -> None:
     """Place the named enabled items (all of them by default), whatever their policy.
 
-    It can move other items' link files; the plan lists them. A local file in
-    the way of a new path is kept aside, and the row says where. Refuses paths
-    edited on this machine (row action `conflict`, exit 1) unless --force;
-    `diff` shows what --force would replace in copy and merge files. Rewrites
-    status.json and attention afterwards. `untaped agents dotfiles policies`
+    Fetches every repo the items read from first, so manifests, copy and merge
+    files are current; a failed fetch exits 1. It can move other items' link
+    files; the plan lists them. A local file in the way of a new path is kept
+    aside, and the row says where. Refuses paths edited on this machine (row
+    action `conflict`, exit 1) unless --force; `diff` shows what --force would
+    replace in copy and merge files. Rewrites status.json and attention
+    afterwards. `untaped agents dotfiles policies`
     explains what `apply` does in each state and when a clone is pulled.
     """
     with report_errors():
         svc = services()
         with svc.store.locked():
             choices = pick_enabled(svc.store, items, repo=repo)
-            resolved = svc.inventory.placements(choices)
+            fetched = _fetch_repos(svc, choices)
+            resolved = svc.inventory.placements(choices)  # manifests as just fetched
             _report_problems(resolved.problems)
             placements = resolved.placements
-            pulled = _pull_repos(svc, placements)
-            moved = _moving_with(svc, pulled, placements) if pulled else []
-            for pull in pulled.values():
-                if pull.error is not None:
-                    _diag.failure(pull.error, item=pull.name)
+            pulled = _plan_pulls(placements, fetched)
+            moved = _moving_with(svc, pulled, placements)
+            for fetch in fetched.values():
+                if fetch.error is not None:
+                    _diag.failure(fetch.error, item=fetch.name)
             steps = svc.applier.plan_apply(placements, force=force)
             planned = svc.applier.planned(steps) + moved
             if dry_run:
@@ -447,7 +450,7 @@ def apply_command(
             if row.error is not None:
                 _diag.failure(row.error, item=f"{row.item}/{row.source}")
         failed = bool(resolved.problems) or any(row.failed for row in rows)
-        failed = failed or any(row.error is not None for row in pulled.values())
+        failed = failed or bool(fetched) or any(row.error is not None for row in pulled.values())
     finish(failed)
 
 
@@ -576,23 +579,32 @@ def _report_problems(problems: Sequence[tuple[str, UntapedError]]) -> None:
         _diag.failure(exc, item=item)
 
 
-def _pull_repos(svc: Services, placements: Sequence[Placement]) -> dict[str, RepoOutcome]:
-    """Fetch the managed repos the selected link files read from; the clone moves later."""
-    repos = {p.repo.name: p.repo for p in placements if p.mode == "link" and p.repo.managed}
-    rows = {row.name: row for row in svc.applier.fetch_all(list(repos.values()))}
-    for name in repos:
-        rows.setdefault(name, RepoOutcome(name=name, action="planned", detail="fast-forward"))
+def _fetch_repos(svc: Services, choices: Sequence[ItemChoice]) -> dict[str, RepoOutcome]:
+    """Fetch every repo the chosen items read from; return the fetches that failed."""
+    names = {c.repo for c in choices}
+    repos = [r for r in svc.store.repos() if r.name in names]
+    failed = {row.name: row for row in svc.applier.fetch_all(repos)}
     svc.evaluator.reset()
-    return rows
+    return failed
+
+
+def _plan_pulls(
+    placements: Sequence[Placement], fetched: dict[str, RepoOutcome]
+) -> dict[str, RepoOutcome]:
+    """The managed clones the selected link files read from; each moves later if fetched."""
+    names = {p.repo.name for p in placements if p.mode == "link" and p.repo.managed}
+    return {
+        name: RepoOutcome(name=name, action="planned", detail="fast-forward")
+        for name in names
+        if name not in fetched
+    }
 
 
 def _fast_forward(
     svc: Services, pulled: dict[str, RepoOutcome], placements: Sequence[Placement]
 ) -> None:
-    """Fast-forward every clone ``_pull_repos`` planned; ``apply`` never holds one back."""
-    for name, row in list(pulled.items()):
-        if row.action != "planned":
-            continue
+    """Fast-forward every clone ``_plan_pulls`` planned; ``apply`` never holds one back."""
+    for name in list(pulled):
         repo = next(p.repo for p in placements if p.repo.name == name)
         pulled[name] = svc.applier.fast_forward(repo)
     svc.evaluator.reset()
@@ -602,6 +614,8 @@ def _moving_with(
     svc: Services, pulled: dict[str, RepoOutcome], selected: Sequence[Placement]
 ) -> list[PlaceOutcome]:
     """Link paths of other items that move when the selected items' clones are pulled."""
+    if not pulled:
+        return []
     chosen = {p.key for p in selected}
     every = svc.inventory.placements(svc.store.items()).placements
     others = [
