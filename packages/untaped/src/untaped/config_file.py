@@ -17,12 +17,13 @@ import copy
 import math
 import os
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 from pydantic import SecretStr
 
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UntapedError
 from untaped.fs import atomic_write, file_lock
 from untaped.settings import (
     FormatVersionError,
@@ -35,6 +36,10 @@ from untaped.settings import (
 from untaped.yaml_roundtrip import KeyRename, plain_dump, render_preserving
 
 _DEFAULT_LOCK_TIMEOUT = 5.0
+
+#: The files this thread is writing (real paths): a write nested in another to
+#: the same file would be saved over when the outer one saves.
+_WRITING: ContextVar[frozenset[str]] = ContextVar("untaped_config_writing", default=frozenset())
 
 
 def read_config_dict(path: Path | None = None) -> dict[str, Any]:
@@ -100,7 +105,9 @@ def mutate_config(
     no-ops (deleting a missing profile, unsetting a missing key) don't
     spuriously create or reformat the YAML file. ``get_settings``'s cache
     is cleared after a successful write so the rest of the process sees
-    the new values without callers needing to do it themselves.
+    the new values without callers needing to do it themselves. A write to
+    the same file from inside ``fn`` raises :class:`UntapedError` and nothing
+    is written.
 
     Override the lock acquisition timeout via ``UNTAPED_CONFIG_LOCK_TIMEOUT``
     (seconds, non-negative float; anything else raises ``ConfigError``).
@@ -118,7 +125,19 @@ def mutate_config(
 
 @contextlib.contextmanager
 def _locked(target: Path) -> Iterator[None]:
-    """Hold the advisory ``<target>.lock`` (creating the parent directory)."""
+    """Hold the advisory ``<target>.lock`` (creating the parent directory).
+
+    A write to ``target`` started inside another write to it in this thread
+    raises :class:`UntapedError`: ``file_lock`` is re-entrant, so the inner
+    write would succeed and the outer one would then save over it.
+    """
+    real = os.path.realpath(target)
+    if real in _WRITING.get():
+        raise UntapedError(
+            f"a write to {target} started inside another write to it; "
+            "the outer write would save over it, so neither is saved",
+            details={"path": str(target)},
+        )
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -136,7 +155,11 @@ def _locked(target: Path) -> Iterator[None]:
         ),
         failed=f"could not lock {target}",
     ):
-        yield
+        token = _WRITING.set(_WRITING.get() | {real})
+        try:
+            yield
+        finally:
+            _WRITING.reset(token)
 
 
 def _lock_timeout() -> float:
@@ -211,7 +234,9 @@ def mutate_plugin_state(
     preserved. Independent plugins share one state file (possibly across SDK
     versions), so a write must never drop data it doesn't understand. The section
     is removed when ``fn`` leaves it empty; nothing is written when ``fn``
-    changes nothing. ``path`` resolves as in :func:`read_plugin_state`.
+    changes nothing. ``path`` resolves as in :func:`read_plugin_state`. A
+    write to the same file from inside ``fn`` raises :class:`UntapedError`
+    and nothing is written.
     """
     check_state_section_name(section)
     state_path = path or resolve_state_path()
