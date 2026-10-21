@@ -20,7 +20,7 @@ import pytest
 from pydantic import RootModel, ValidationError, field_validator
 
 from untaped import bootstrap, holds, refs
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UntapedError
 from untaped.holds import (
     HolderKind,
     HolderView,
@@ -774,7 +774,7 @@ def test_remove_finds_a_missing_project_by_name_and_refuses_ambiguity(tmp_path: 
     assert ambiguous.exit_code == 2 and "2 projects are named 'PROJ'" in ambiguous.stderr
     outside = tmp_path / "plain"
     outside.mkdir()
-    assert "is not in a project" in _cli("project", "remove", str(outside)).stderr
+    assert "is not a project's folder" in _cli("project", "remove", str(outside)).stderr
     assert "no project recorded at" in _cli("project", "remove", "./nope", "--dry-run").stderr
 
 
@@ -796,3 +796,107 @@ def test_an_unreadable_project_is_not_removed(
     monkeypatch.setattr(projects_module, "anchor_state", lambda ref: "unreadable")
     with pytest.raises(ConfigError, match="can't be read now, so it keeps what it holds"):
         plan_removal(record, force=())
+
+
+def test_remove_keeps_lock_named_files_that_are_not_cores(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    folder = project.root / ".untaped"
+    (folder / "mine.lock").mkdir()
+    (folder / "mine.lock" / "precious.txt").write_text("x", encoding="utf-8")
+    (folder / "recipe.lock").write_text("pinned\n", encoding="utf-8")
+    (folder / "state.yml.lock").write_text("", encoding="utf-8")
+    (folder / "plugins").write_text("not a folder", encoding="utf-8")
+    result = _cli("project", "remove", str(project.root), "--yes", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert sorted(p.name for p in folder.iterdir()) == ["mine.lock", "plugins", "recipe.lock"]
+    assert (folder / "mine.lock" / "precious.txt").exists()
+
+
+def test_move_refuses_to_retarget_the_original_onto_a_copy(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    copy = tmp_path / "COPY"
+    shutil.copytree(first.root, copy)
+    result = _cli("project", "move", str(first.root), str(copy))
+    assert result.exit_code == 1
+    assert "is a copy of project PROJ" in result.stderr and "--new-id" in result.stderr
+    assert refs.read_reference(refs.reference_file(holder_of(first))).anchor == first.root
+    assert OWNER.moves == []
+
+
+def test_the_same_move_again_retries_a_failed_repair(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    new = tmp_path / "moved"
+    OWNER.raise_moved = 1
+    assert _cli("project", "move", str(first.root), str(new)).exit_code == 1
+    again = _cli("project", "move", str(first.root), str(new), "-f", "json")
+    assert again.exit_code == 0, again.output
+    assert [r["action"] for r in _rows(again)] == ["repaired", "repaired"]
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
+
+
+def test_a_broken_owner_keeps_a_moves_repair_pending(tmp_path: Path) -> None:
+    broken = PluginSpec(
+        name="acme", stores=(REPOS, ItemStore("acme", "repos", release=_release, moved=None))
+    )
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
+    new = tmp_path / "moved"
+    result = _cli("project", "move", str(first.root), str(new), "-f", "json", specs=(broken,))
+    assert result.exit_code == 0, result.output
+    assert _rows(result)[1]["action"] == "skipped"
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == first.root
+    gone = _cli("project", "move", str(first.root), str(new), "-f", "json", specs=())
+    assert gone.exit_code == 0  # an owner that isn't installed has nothing to run
+    assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from is None
+
+
+def test_a_listed_missing_project_that_came_back_is_not_removed(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    record = refs.read_reference(refs.reference_file(holder_of(project)))
+    with pytest.raises(UntapedError, match=r"is at .* again; nothing removed"):
+        plan_removal(record, force=())
+    assert (project.root / ".untaped" / "project.json").exists()
+
+
+def test_a_bare_name_is_a_project_name_even_beside_a_folder_of_that_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    here = make_project(tmp_path / "PROJ-123")
+    other = make_project(tmp_path / "elsewhere" / "PROJ-200")
+    (here.root / "PROJ-200").mkdir()
+    monkeypatch.chdir(here.root)
+    result = _cli("project", "remove", "PROJ-200", "--dry-run", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert _rows(result)[-1]["item"] == str(other.root)
+    inside = _cli("project", "remove", "./PROJ-200", "--dry-run")
+    assert inside.exit_code == 2 and "inside project PROJ-123" in inside.stderr
+
+
+def test_force_names_are_normalised_and_unknown_ones_refused(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    OWNER.refuse = {WEB}
+    spelled = _cli(
+        "project",
+        "remove",
+        str(first.root),
+        "--force",
+        "GitHub.com/acme/web.git",
+        "--dry-run",
+        "-f",
+        "json",
+    )
+    assert spelled.exit_code == 0
+    assert {r["item"]: r["action"] for r in _rows(spelled)}[WEB] == "planned"
+    unknown = _cli("project", "remove", str(first.root), "--force", "nope", "--dry-run")
+    assert unknown.exit_code == 2 and "--force names nope" in unknown.stderr
+
+
+def test_the_preview_of_a_hand_moved_project_asks_about_it_where_it_is(tmp_path: Path) -> None:
+    first = make_project(tmp_path / "PROJ", holds={REPOS: [WEB]})
+    new = tmp_path / "moved"
+    first.root.rename(new)
+    from untaped.projects import _forget
+
+    _forget()
+    found = Project(id=first.id, root=new)
+    removal = plan_removal(found, force=())
+    assert (removal.seen.state, removal.seen.anchor) == ("present", new)

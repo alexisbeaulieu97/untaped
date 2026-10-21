@@ -29,8 +29,8 @@ from untaped.cli import (
     report_errors,
     writes,
 )
-from untaped.errors import ConfigError, UntapedError
-from untaped.holds import HolderView, HoldOutcome, view
+from untaped.errors import ConfigError, UntapedError, UsageError
+from untaped.holds import HolderView, HoldOutcome, unnamed, view
 from untaped.management.records import ProjectOutcome, ProjectRow
 from untaped.messages import plural, shown_path
 from untaped.output.sink import Diagnostics
@@ -299,6 +299,7 @@ def _remove_command(
             removal = plan_removal(found, force=force or ())
             rows = _run(
                 [removal],
+                force=force or (),
                 preview=preview,
                 check=check,
                 yes=yes,
@@ -368,12 +369,18 @@ def _prune_command(
         with ExitStack() as stack:
             removals = []
             for ref in missing:
-                if ref.holder is None:
+                if ref.holder is None:  # missing_projects lists only readable records
                     continue
                 stack.enter_context(Project(id=ref.holder.name, root=ref.anchor or Path()).locked())
-                removals.append(plan_removal(ref, force=force or ()))
+                try:
+                    removals.append(plan_removal(ref, force=force or ()))
+                except UntapedError as exc:  # back, or out of reach, since it was listed
+                    if project is not None:
+                        raise
+                    _diag.info(f"skipped {ref.describe()}: {exc}")
             rows = _run(
                 removals,
+                force=force or (),
                 preview=preview,
                 check=check,
                 yes=yes,
@@ -390,6 +397,7 @@ def _prune_command(
 def _run(
     removals: Sequence[Removal],
     *,
+    force: Sequence[str],
     preview: bool,
     check: bool,
     yes: bool,
@@ -401,12 +409,19 @@ def _run(
     """The service's steps over the planned removals: preview, refuse, confirm, apply."""
     from untaped.project_lifecycle import apply_removal, blocked_hint  # noqa: PLC0415
 
+    plans = [plan for removal in removals for plan in removal.plans]
+    unknown = unnamed(force, plans)
+    if unknown:
+        raise UsageError(
+            f"--force names {', '.join(unknown)}, which "
+            f"{'is' if len(unknown) == 1 else 'are'} not held here",
+            hint="name items as the rows show them",
+        )
     planned = [row for removal in removals for row in removal.preview()]
-    blocked = [plan for removal in removals for plan in removal.plans if plan.blocked]
+    blocked = [plan for plan in plans if plan.blocked]
     if preview:
         emit(planned, fmt=fmt, columns=columns)
-        if check and blocked:
-            raise SystemExit(3)
+        finish(False, predicate_hit=check and bool(blocked))
         return []
     if blocked:
         emit(planned, fmt=fmt, columns=columns)

@@ -31,9 +31,11 @@ from untaped.holds import (
     HoldOutcome,
     Plan,
     apply_plans,
+    holder_lock_file,
     holder_view,
     plan_holds,
     preview_rows,
+    view,
 )
 from untaped.messages import shown_path
 from untaped.output.diagnostic import Failure
@@ -67,11 +69,14 @@ from untaped.refs import (
     locked,
     read_reference,
     reference_file,
-    refs_dir,
 )
 
 #: Core's own files in ``.untaped/`` that ``remove`` deletes (``.gitignore`` only when untouched).
-_CORE_FILES = (MARKER, "state.yml", "plugins")
+_CORE_FILES = (MARKER, "state.yml")
+#: Core's own folder there: plugins' machine files (``Project.plugin_dir``).
+_CORE_FOLDERS = ("plugins",)
+#: The lock files core's locked writes leave beside the state and config files.
+_CORE_LOCKS = ("state.yml.lock", "config.yml.lock")
 
 
 @dataclass(frozen=True)
@@ -94,6 +99,8 @@ class Removal:
             detail = f"deletes {', '.join(deletes) or 'nothing of core'}"
             if keeps:
                 detail += f"; keeps {', '.join(keeps)} (yours)"
+            else:
+                detail += "; then the folder, if nothing else is left in it"
         else:
             detail = f"forgets the project: {shown_path(self.seen.anchor)} is gone"
         return [*preview_rows(self.plans), self._row("planned", detail)]
@@ -117,28 +124,38 @@ def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str])
     if isinstance(project_or_ref, Project):
         project = project_or_ref
         holder = holder_of(project)
-        seen = holder_view(holder)
-        if project.copy_of is not None or seen is None:
-            # A copy not yet given its own id holds nothing of its own, nor does an unrecorded one.
-            seen = HolderView(
-                holder=holder, label=f"project {project.name}", anchor=project.root, state="present"
-            )
+        # The project as a writing use leaves it: here, present (a preview of a moved project
+        # asks its owners what the real run, which follows the move first, will ask).
+        seen = HolderView(
+            holder=holder, label=f"project {project.name}", anchor=project.root, state="present"
+        )
+        if project.copy_of is not None:  # a copy not yet given its own id holds nothing of its own
             return Removal(holder, seen, project.root)
-        if not isinstance(seen, HolderView):
-            raise ConfigError(f"cannot read project {project.name}'s record: {seen.label}")
-        ref = read_reference(reference_file(holder))
+        file = reference_file(holder)
+        if not file.exists():  # an unrecorded project holds nothing
+            return Removal(holder, seen, project.root)
+        ref = read_reference(file)
+        if ref.opaque is not None:
+            raise ConfigError(f"cannot read project {project.name}'s record: {ref.opaque}")
         return Removal(holder, seen, project.root, plan_holds(seen, ref.targets, force=force))
-    ref = project_or_ref
-    seen = holder_view(ref.holder) if ref.holder is not None else None
-    if not isinstance(seen, HolderView) or ref.holder is None:
+    if project_or_ref.holder is None:
+        raise ConfigError(f"cannot read the project record {shown_path(project_or_ref.file)}")
+    ref = read_reference(project_or_ref.file)  # read again: the caller holds the lock now
+    found = view(ref)
+    if not isinstance(found, HolderView) or ref.holder is None:
         raise ConfigError(f"cannot read the project record {shown_path(ref.file)}")
+    seen = found
     if seen.state == "unreadable":
         raise ConfigError(
             f"{seen.label}: {shown_path(seen.anchor)} can't be read now, so it keeps what it holds",
             hint="mount the drive or share it is on, then run the command again",
         )
-    root = seen.anchor if seen.state == "present" else None
-    return Removal(ref.holder, seen, root, plan_holds(seen, ref.targets, force=force))
+    if seen.state == "present":
+        raise UntapedError(
+            f"{seen.label} is at {shown_path(seen.anchor)} again; nothing removed",
+            hint="run the command again",
+        )
+    return Removal(ref.holder, seen, None, plan_holds(seen, ref.targets, force=force))
 
 
 def preview_check(project: Project) -> None:
@@ -182,7 +199,7 @@ def unlink_lock(holder: RefHolder) -> None:
     """Remove a removed project's lock file; call it once the lock is let go."""
     if not reference_file(holder).exists():
         with suppress(OSError):
-            (refs_dir() / f".{holder.kind}-{holder.name}.lock").unlink()
+            holder_lock_file(holder).unlink()
 
 
 def core_files(root: Path) -> tuple[list[str], list[str]]:
@@ -194,12 +211,12 @@ def core_files(root: Path) -> tuple[list[str], list[str]]:
         return [], []
     deletes, keeps = [], []
     for name in names:
-        if (
-            name in _CORE_FILES
-            or name.endswith(".lock")
-            or (name == ".gitignore" and _untouched(folder))
-        ):
-            deletes.append(f"{name}/" if (folder / name).is_dir() else name)
+        path = folder / name
+        core_file = name in _CORE_FILES or name in _CORE_LOCKS or name == ".gitignore"
+        if name in _CORE_FOLDERS and path.is_dir() and not path.is_symlink():
+            deletes.append(f"{name}/")
+        elif core_file and path.is_file() and (name != ".gitignore" or _untouched(folder)):
+            deletes.append(name)
         else:
             keeps.append(name)
     return deletes, keeps
@@ -214,7 +231,7 @@ def _delete_core_files(root: Path) -> list[str]:
         path = folder / name.rstrip("/")
         if path == marker:
             continue
-        if path.is_dir() and not path.is_symlink():
+        if name.endswith("/"):  # core's plugins/ folder, checked a real folder above
             shutil.rmtree(path)
         else:
             with suppress(FileNotFoundError):
@@ -264,13 +281,19 @@ def find_project(target: str) -> Project | Reference:
     Raises :class:`UsageError` when nothing or more than one record matches.
     """
     path = Path(target).expanduser()
+    by_path = os.sep in target or target.startswith(("~", "."))
     if os.path.lexists(path):
         found = project_at(path)
-        if found is None:
-            raise UsageError(f"{shown_path(path.resolve())} is not in a project")
-        return found
-    by_path = os.sep in target or target.startswith(("~", "."))
-    wanted = path.absolute()
+        if found is not None and found.root == path.resolve():
+            return found
+        if by_path or not _named(target):
+            where = shown_path(path.resolve())
+            raise UsageError(
+                f"{where} is not a project's folder"
+                + (f" (it is inside project {found.name})" if found is not None else ""),
+                hint="name the project's own folder, or its name",
+            )
+    wanted = _real(path)
     matches = [
         ref
         for ref in project_references()
@@ -295,6 +318,15 @@ def find_project(target: str) -> Project | Reference:
         if present is not None:
             return present
     return ref
+
+
+def _named(name: str) -> bool:
+    return any(ref.anchor is not None and ref.anchor.name == name for ref in project_references())
+
+
+def _real(path: Path) -> Path:
+    """``path`` absolute, its existing part resolved as the records are (``/tmp`` on macOS)."""
+    return Path(os.path.realpath(path.expanduser()))
 
 
 def missing_projects() -> tuple[list[Reference], list[Reference]]:
@@ -336,7 +368,7 @@ class Move:
             if target.item is not None:
                 rows.append(
                     HoldOutcome(
-                        holder=f"project {self.project.name}",
+                        holder=f"project {self.new.name}",
                         plugin=target.plugin,
                         item=target.item,
                         action="planned",
@@ -347,7 +379,7 @@ class Move:
 
     def _row(self, action: str, detail: str) -> HoldOutcome:
         return HoldOutcome(
-            holder=f"project {self.project.name}",
+            holder=f"project {self.new.name}",
             plugin="untaped",
             item=str(self.new),
             action=action,
@@ -362,6 +394,8 @@ def plan_move(old: Path, new: Path) -> Move:
     if new == old:
         raise UsageError("OLD and NEW are the same folder")
     present = os.path.lexists(old)
+    if present and old.is_symlink():
+        raise UsageError(f"{shown_path(old)} is a symlink; name the project's folder itself")
     if present:
         if find_root(old) != old.resolve():
             raise UsageError(f"{shown_path(old)} is not a project's folder")
@@ -392,6 +426,13 @@ def _onto(
         raise UntapedError(f"{shown_path(new)} is another project; nothing moved")
     moved = Project(id=project.id, root=new)
     if there == project.id:
+        if present and _situation(old.resolve(), project.id).kind in {"ok", "refresh"}:
+            # OLD is the folder the record names: NEW is a copy of it, not where it went.
+            raise UntapedError(
+                f"{shown_path(new)} is a copy of project {project.name} at {shown_path(old)}; "
+                "nothing moved",
+                hint="`untaped project init --new-id` in the copy gives it its own id",
+            )
         return Move("follow", moved, old, new, reference)
     if present:
         raise UntapedError(f"{shown_path(new)} already exists; nothing moved")
@@ -464,7 +505,12 @@ def apply_move(move: Move) -> list[HoldOutcome]:
 
 
 def _recorded_at(old: Path) -> Project:
-    matches = [ref for ref in project_references() if ref.anchor == old and ref.holder is not None]
+    real = _real(old)
+    matches = [
+        ref
+        for ref in project_references()
+        if ref.holder is not None and real in {ref.anchor, ref.moved_from}  # a repair to retry
+    ]
     if not matches or matches[0].holder is None:
         raise UsageError(
             f"no project recorded at {shown_path(old)}",

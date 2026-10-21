@@ -422,12 +422,22 @@ def _same_holder(other: Seen, holder: HolderView) -> bool:
 
 def holder_lock(holder: RefHolder, name: str) -> AbstractContextManager[None]:
     """A holder's lock, ``refs/.<kind>-<name>.lock``: re-entrant; 600 s, then exit 5."""
-    return _lock(f".{holder.kind}-{holder.name}.lock", f"{holder.kind} {name}")
+    return _lock(holder_lock_file(holder).name, f"{holder.kind} {name}")
+
+
+def holder_lock_file(holder: RefHolder) -> Path:
+    """The file a holder's lock takes, ``refs/.<kind>-<name>.lock``."""
+    return refs_dir() / f".{holder.kind}-{holder.name}.lock"
 
 
 def store_lock(store: ItemStore[Any]) -> AbstractContextManager[None]:
     """An item store's lock, ``refs/.<plugin>-<store>.lock``: re-entrant; 600 s, then exit 5."""
-    return _lock(f".{store.plugin}-{store.name}.lock", f"the items of {store.qualified}")
+    return _target_lock(store.plugin, store.name)
+
+
+def _target_lock(plugin: str, store: str) -> AbstractContextManager[None]:
+    """The lock of item store ``<plugin>.<store>``, declared here or not (a forgotten hold's)."""
+    return _lock(f".{plugin}-{store}.lock", f"the items of {plugin}.{store}")
 
 
 @contextmanager
@@ -615,23 +625,44 @@ def plan_holds(
 ) -> list[Plan]:
     """Ask each hold's owner how ``holder`` lets go of it; never changes anything."""
     owners = Owners.current() if owners is None else owners
-    forced = set(force)
     plans: list[Plan] = []
     for target in targets:
         if target.item is None:
             continue
         store = owners.stores.get((target.plugin, target.store))
+        named = any(names_item(name, target, store) for name in force)
         if store is None:
             reason, forgettable = owners.why_not(target)
-            if forgettable and target.item in forced:
+            if forgettable and named:
                 plans.append(Plan(target, holder, forget=True))
                 continue
             hint = f"install {target.plugin}, or --force {target.item} forgets it"
             refusal = Refused(reason=reason, hint=hint if forgettable else None)
             plans.append(Plan(target, holder, answer=refusal, forceable=forgettable))
             continue
-        plans.append(_plan_one(store, target, holder, force=target.item in forced))
+        plans.append(_plan_one(store, target, holder, force=named))
     return plans
+
+
+def names_item(name: str, target: RefTarget, store: ItemStore[Any] | None) -> bool:
+    """Whether ``--force NAME`` names ``target``'s item: as its owner normalises it, if composed."""
+    if name == target.item:
+        return True
+    if store is None:
+        return False
+    try:
+        return store._text(name) == target.item
+    except ValueError:
+        return False
+
+
+def unnamed(force: Collection[str], plans: Sequence[Plan]) -> list[str]:
+    """The ``--force`` names that name none of the planned holds."""
+    return [
+        name
+        for name in force
+        if not any(names_item(name, plan.target, plan.owner) for plan in plans)
+    ]
 
 
 def _plan_one(store: ItemStore[Any], target: RefTarget, holder: HolderView, *, force: bool) -> Plan:
@@ -724,7 +755,8 @@ def apply_plans(
     rows: list[HoldOutcome] = []
     for plan in plans:
         if plan.forget:
-            drop_hold(holder, plan.target)
+            with _target_lock(plan.target.plugin, plan.target.store):
+                drop_hold(holder, plan.target)
             rows.append(_row(plan, "forgotten", "forgot the hold without releasing it"))
             continue
         if plan.owner is None or not isinstance(plan.answer, LetGo):
@@ -805,6 +837,65 @@ def release_rows(
     if dry_run or any(plan.blocked for plan in plans):
         return list(preview_rows(plans))
     return list(apply_plans(holder, plans, now=lambda: holder_view(holder)))
+
+
+def repair_holds(
+    holder: RefHolder, targets: Collection[RefTarget], *, moved_from: Path
+) -> tuple[list[HoldOutcome], bool]:
+    """Ask each hold's owner to repair a holder that moved from ``moved_from``.
+
+    The rows say what each owner did; the flag is whether nothing is left to
+    retry (no repair failed, and no owner is broken: once fixed, it repairs).
+    """
+    seen = holder_view(holder)
+    if not isinstance(seen, HolderView) or seen.state != "present":
+        why = "its record can't be read" if not isinstance(seen, HolderView) else seen.state
+        failure = Failure.plain(f"cannot repair {holder.describe()}'s holds: {why}")
+        label = seen.label if isinstance(seen, HolderView) else holder.describe()
+        row = HoldOutcome(
+            holder=label,
+            plugin="untaped",
+            item=holder.name,
+            action="failed",
+            detail=failure.message,
+            error=failure,
+        )
+        return [row], False
+    owners = Owners.current()
+    rows: list[HoldOutcome] = []
+    done = True
+    for target in targets:
+        if target.item is None:
+            continue
+        store = owners.stores.get((target.plugin, target.store))
+        row = HoldOutcome(
+            holder=seen.label, plugin=target.plugin, item=target.item, action="skipped", detail=""
+        )
+        if store is None:
+            reason, forgettable = owners.why_not(target)
+            done = done and forgettable
+            rows.append(row.model_copy(update={"detail": f"{reason}; nothing repaired"}))
+            continue
+        if store.moved is None:
+            continue
+        try:
+            others = tuple(o for o in holder_views(target) if not _same_holder(o, seen))
+            ask: MoveAsk[Any] = MoveAsk(
+                item=store._parse(target.item), holder=seen, others=others, moved_from=moved_from
+            )
+            text = store.moved(ask)
+        except Exception as exc:  # a plugin's failure is its row's; the move itself stands
+            failure = _raised(exc)
+            rows.append(
+                row.model_copy(
+                    update={"action": "failed", "detail": failure.message, "error": failure}
+                )
+            )
+            done = False
+            continue
+        if isinstance(text, str) and text:
+            rows.append(row.model_copy(update={"action": "repaired", "detail": text}))
+    return rows, done
 
 
 def _raised(exc: BaseException, message: str | None = None) -> Failure:

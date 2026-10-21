@@ -51,26 +51,21 @@ from untaped.holds import (
     HolderView,
     HoldOutcome,
     ItemStore,
-    MoveAsk,
-    Owners,
-    Seen,
     UnknownHolder,
     add_hold,
     holder_lock,
-    holder_views,
     holds_of,
     release_rows,
+    repair_holds,
     view,
 )
 from untaped.messages import shown_path
-from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
 from untaped.refs import (
     PROJECT,
     AnchorId,
     Reference,
     RefHolder,
-    RefTarget,
     locked,
     read_reference,
     read_references,
@@ -134,8 +129,9 @@ class Project(BaseModel):
         """Hold ``item`` of ``store`` (an item store a composed plugin lists); idempotent.
 
         A writing use: the project's identity is re-checked under its lock
-        first (a copy gets its own id, a move is followed). Hold, then use:
-        call it before the work that needs the item.
+        first (a copy gets its own id, a move is followed); in a copy, look
+        the project up again (``current_project()``) before using it further.
+        Hold, then use: call it before the work that needs the item.
         """
         with self.locked():
             here, _ = writing(self)
@@ -460,83 +456,20 @@ def follow_move(project: Project, *, moved_from: Path, keep: Reference | None) -
     """Point ``project``'s reference at its folder now, then ask each owner to repair.
 
     The reference records ``moved_from`` until every owner's ``moved``
-    succeeded, so a later writing use retries; an owner that isn't
-    installed has nothing to run and doesn't keep it pending. The rows say
-    what each owner did (``repaired``), skipped or failed. Runs under the
-    project's lock.
+    succeeded, so a later writing use retries; a broken (quarantined) owner
+    keeps it pending too, while one that isn't installed has nothing to run.
+    The rows say what each owner did (``repaired``), skipped or failed. Runs
+    under the project's lock.
     """
     targets = keep.targets if keep is not None else ()
     _record(project, project.root, keep=keep, moved_from=moved_from)
     if _same(project.root, moved_from):
         _record(project, project.root, keep=keep)
         return []
-    rows = repair_holds(project, targets, moved_from=moved_from)
-    if not any(row.failed for row in rows):
-        _record(project, project.root, keep=keep)
+    rows, done = repair_holds(holder_of(project), targets, moved_from=moved_from)
+    if done:  # read again: a hold taken meanwhile stays
+        _record(project, project.root, keep=read_reference(reference_file(holder_of(project))))
     return rows
-
-
-def repair_holds(
-    project: Project, targets: Collection[RefTarget], *, moved_from: Path
-) -> list[HoldOutcome]:
-    """Call each hold's owner's ``moved`` for a project now at its root; the rows it gave."""
-    seen = view(read_reference(reference_file(holder_of(project))))
-    label = f"project {project.name}"
-    if not isinstance(seen, HolderView) or seen.state != "present":
-        why = "its record can't be read" if not isinstance(seen, HolderView) else seen.state
-        return [
-            HoldOutcome(
-                holder=label,
-                plugin="untaped",
-                item=str(project.root),
-                action="failed",
-                detail=f"cannot repair its holds: {why}",
-                error=Failure.plain(f"cannot repair project {project.name}'s holds: {why}"),
-            )
-        ]
-    owners = Owners.current()
-    rows: list[HoldOutcome] = []
-    for target in targets:
-        if target.item is None:
-            continue
-        store = owners.stores.get((target.plugin, target.store))
-        row = HoldOutcome(
-            holder=label, plugin=target.plugin, item=target.item, action="skipped", detail=""
-        )
-        if store is None:
-            reason, _ = owners.why_not(target)
-            rows.append(row.model_copy(update={"detail": f"{reason}; nothing repaired"}))
-            continue
-        if store.moved is None:
-            continue
-        try:
-            item = store._parse(target.item)
-            others = tuple(other for other in holder_views(target) if not _same_holder(other, seen))
-            ask: MoveAsk[Any] = MoveAsk(
-                item=item, holder=seen, others=others, moved_from=moved_from
-            )
-            done = store.moved(ask)
-        except Exception as exc:  # a plugin's failure is its row's; the move itself stands
-            message = (
-                str(exc) if isinstance(exc, ConfigError) else f"raised {type(exc).__name__}: {exc}"
-            )
-            rows.append(
-                row.model_copy(
-                    update={
-                        "action": "failed",
-                        "detail": message,
-                        "error": Failure.from_exception(exc, message=message),
-                    }
-                )
-            )
-            continue
-        if isinstance(done, str) and done:
-            rows.append(row.model_copy(update={"action": "repaired", "detail": done}))
-    return rows
-
-
-def _same_holder(other: Seen, seen: HolderView) -> bool:
-    return isinstance(other, HolderView) and other.holder == seen.holder
 
 
 def _warn_unrepaired(project: Project, rows: Collection[HoldOutcome]) -> None:

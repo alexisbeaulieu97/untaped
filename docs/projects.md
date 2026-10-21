@@ -80,9 +80,10 @@ untaped    ~/work/PROJ-123      planned  deletes .gitignore, project.json, state
 - `project remove [NAME|PATH]` (the current project by default) asks each
   plugin how the project lets go of what it holds, shows the plan, and
   applies nothing if one hold is refused (exit 1); `--force ITEM` overrides
-  that item's refusal, and forgets a hold whose plugin isn't installed. Then
+  that item's refusal, and forgets a hold whose plugin isn't installed (never
+  one whose plugin is broken: fix it instead). Then
   it deletes only what untaped wrote: `project.json`, `state.yml`,
-  `plugins/`, lock files and an untouched `.gitignore`. `config.yml` and
+  `plugins/`, its own lock files and an untouched `.gitignore`. `config.yml` and
   your own files stay, and so does the folder unless nothing else is in it.
 - `project prune` does the same for every project whose folder is gone, and
   skips the ones it can't read now.
