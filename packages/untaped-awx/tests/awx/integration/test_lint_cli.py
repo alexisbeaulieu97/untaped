@@ -243,12 +243,34 @@ def test_a_damaged_snapshot_is_read_again(fake_aap: Any) -> None:
 
 
 @pytest.mark.usefixtures("composed")
-def test_cached_with_nothing_kept_fails_without_asking(fake_aap: Any) -> None:
+def test_cached_with_nothing_kept_fails_without_asking(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "tok-1f2e3d")
     seed_controller(fake_aap)
-    result = _lint("--cached")
+    result = _lint("--cached")  # JSON diagnostics: details included
     assert result.exit_code == 1, result.output
     assert _requests(fake_aap) == []
     assert "controller resources" in result.stderr
+    assert "tok-1f2e3d" not in result.output  # the partition, never its details
+
+
+@pytest.mark.usefixtures("composed")
+def test_an_outdated_snapshot_under_cached_warns_without_the_token(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped_awx.settings import RESOURCES
+
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "tok-1f2e3d")
+    seed_controller(fake_aap)
+    _lint()
+    before = len(fake_aap.router.calls)
+    monkeypatch.setattr(RESOURCES, "version", lambda: "another")
+    result = _lint("--cached")  # JSON diagnostics: details included
+    assert result.exit_code == 3, result.output
+    assert len(fake_aap.router.calls) == before
+    assert "another version" in result.stderr
+    assert "tok-1f2e3d" not in result.output
 
 
 @pytest.mark.usefixtures("composed")
@@ -288,7 +310,7 @@ def test_another_token_never_reads_this_tokens_snapshot(
         assert first not in file.name and second not in file.name
         assert first not in file.read_text(encoding="utf-8")
         assert second not in file.read_text(encoding="utf-8")
-    assert _stored(first) is not None and _stored(second) is not None
+    assert _stored(first).items and _stored(second).items
 
 
 @pytest.mark.usefixtures("composed")

@@ -346,7 +346,7 @@ def _cache_renames(
     Raises :class:`ConfigError` for an old key two caches claim, or one the
     owner already declares (renamed or retired).
     """
-    claimed: dict[str, Cache] = {}
+    claimed: dict[str, Cache[Any]] = {}
     for declared in caches:
         for old in declared.renamed_from:
             if old in claimed:

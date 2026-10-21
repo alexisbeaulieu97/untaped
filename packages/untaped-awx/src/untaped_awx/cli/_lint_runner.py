@@ -146,6 +146,8 @@ def _snapshot(ctx: AwxContext, *, refresh: bool | None) -> AwxResources:
     """The controller's snapshot, filled when ``awx.caches.resources`` says it is due.
 
     The token is the partition: hashed into the file's name, never shown.
+    A profile with no token reads what the controller shows anyone, which
+    is its own partition, ``""``.
     """
     base_url = str(ctx.settings.base_url)
     token = ctx.settings.token

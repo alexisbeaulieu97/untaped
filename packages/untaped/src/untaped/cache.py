@@ -55,7 +55,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, Final, Literal, overload
 
 from cyclopts import Parameter
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, ValidationError
 
 from untaped.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.fs import file_lock
@@ -241,7 +241,7 @@ def _is_stale(freshness: Freshness, max_age: timedelta, now: datetime) -> bool:
     )
 
 
-class Filled[M = Any](BaseModel):
+class Filled[M = None](BaseModel):
     """What a ``fill`` returns; an owner subclasses it to keep a result of its own.
 
     ``value``: what a cache declared with ``model=`` keeps for the key; its
@@ -254,7 +254,9 @@ class Filled[M = Any](BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    value: M | None = None
+    # Not validated here: an unparameterized ``Filled(value=...)`` would check it against
+    # ``None``. The cache checks the value against its model= when it keeps it.
+    value: SkipValidation[M | None] = None
     partial: Failure | None = None
     retry_at: UtcTimestamp | None = None
     summary: str | None = None

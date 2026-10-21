@@ -21,8 +21,8 @@ FILES are files or directories, read as `apply` reads them (`*.yml` and
 results in every profile.
 
 Without FILES the controller is read once into a snapshot kept for an hour
-(`awx.caches.resources.max_age_seconds`, per profile and controller);
-`--refresh` reads it again now, `--cached` reads only what is kept. The
+(`awx.caches.resources.max_age_seconds`), one per controller and token, so
+profiles that share both share it; `--refresh` reads it again now, `--cached` reads only what is kept. The
 snapshot redacts secret-named launch and inventory variables before it is
 kept.
 
