@@ -64,7 +64,12 @@ class StateCollection:
     def mutate(
         self, fn: Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
     ) -> list[dict[str, Any]]:
-        """Replace rows under the state-file lock and return the replacement."""
+        """Replace rows under the state-file lock and return the replacement.
+
+        A state write from inside ``fn`` (any ``StateCollection`` or
+        ``StateMap`` change) raises :class:`~untaped.errors.UntapedError`:
+        read first, then write once.
+        """
         replacement: list[dict[str, Any]] = []
 
         def _apply(state: dict[str, Any]) -> None:
