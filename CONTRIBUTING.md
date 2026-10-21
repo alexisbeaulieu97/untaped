@@ -411,7 +411,6 @@ untaped is.
 command group, config section and data directory, and the distribution
 `untaped-<name>` that ships it. It may add commands, settings, state,
 skills, doctor checks and contracts; each is optional.
-_Avoid_: capability, provider (for the package).
 
 **Contract**: an interface one plugin declares and others fill, so the
 plugin asking never names who answers.
@@ -420,7 +419,6 @@ plugin asking never names who answers.
 decides how its items are released.
 
 **Provider**: a plugin that fills a contract, or the class in it that does.
-_Avoid_: adapter, backend, implementation.
 
 **Source**: three things that keep the word. A record's `source` names the
 plugin and record it came from (provenance on the wire); ansible's `source`
@@ -433,15 +431,12 @@ provider, method, profile and arguments, kept under the owner's
 
 **Repo store**: the git plugin's shared bare repositories under
 `plugins/git/store/`, which every consumer's refs and worktrees depend on.
-_Avoid_: cache, corpus, bare cache.
 
-**Cache**: data a plugin keeps from an upstream it can ask again, with a max
-age after which it is checked before use.
-_Avoid_: store (the repo store), corpus, index as a synonym.
+**Cache**: upstream data a plugin keeps and can fetch again, checked once it
+is older than its max age; see [Caches](docs/caches.md).
 
 **Max age**: how long cached data is served without checking upstream; a
 cache's declared default, tunable per cache.
-_Avoid_: TTL, stale-after.
 
 **Stale**: older than its max age, or last refreshed by a run that failed or
 stopped early.
@@ -451,7 +446,6 @@ what changed.
 
 **Directive**: what the user asked of a cache: auto (refresh when stale; the
 default), refresh (check upstream now) or cached (never check).
-_Avoid_: sync mode, force/off.
 
 **Diagnostic**: a typed stderr line, with a `level`, a `kind` and a
 `message`.
@@ -484,15 +478,14 @@ controller. A finding's location says which (`templates.yml#2`,
 
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.
-_Avoid_: option (a command-line flag).
 
 **Profile**: a named set of settings in `config.yml`; the selected profile is
 layered over `default`.
 
-**Project**: a folder whose `.untaped/` holds `project.json`, found by walking
-up from the working directory; the home records it by the folder's
-filesystem identity, so a move or a copy is told apart from the same folder.
-_Avoid_: workspace (workspace's own folders), checkout (the nearest `.git`).
+**Project**: a folder whose `.untaped/` holds `project.json`, the nearest one
+found by walking up from the working directory; it need not be a git
+checkout's root. The home records it by the folder's filesystem identity, so
+a move or a copy is told apart from the same folder.
 
 **Holder**: what holds items in the home's references: a project, today.
 
@@ -501,7 +494,6 @@ declared as an `ItemStore`; its plugin is their owner.
 
 **Hold**: one item a holder uses, recorded in its reference; it is let go
 only through the item's owner.
-_Avoid_: lease, claim, lock.
 
 **Global option**: one of the options that work anywhere in a command
 (`--profile`, `--verbose`, `--quiet`, `--deprecated`); the code calls them
@@ -515,15 +507,12 @@ until its removal version.
 
 **Changelog fragment**: one user-visible change, written as a file in
 `changelog.d/` and gathered into `CHANGELOG.md` at release.
-_Avoid_: news file, changelog entry (for the file).
 
 **Stability**: whether a command or setting is stable, experimental or
 deprecated.
-_Avoid_: status, maturity.
 
 **Experimental**: may change or go away in a minor release; said in its
 `--help`.
-_Avoid_: beta, preview, unstable.
 
 **Frozen**: a surface line no release renames, removes or deprecates, such
 as `untaped agents`; marked `[frozen]` in `tests/repo/surface.txt`.
@@ -536,14 +525,11 @@ until its removal version.
 
 **Removal version**: the major release that removes a deprecated thing,
 named in its declaration (`removed_in=`) and shown in its warning.
-_Avoid_: sunset, end of life, until.
 
 **Fix**: the `untaped` command a doctor row names to resolve what it found.
-_Avoid_: repair, remedy.
 
 **Automatic fix**: a fix that needs no value and no input, so
 `untaped doctor fix` runs it.
-_Avoid_: autofix.
 
 **Agent page**: what `untaped agents` prints for a coding agent: the map,
 a plugin's page or a topic's page, generated from what core and the plugins
@@ -552,7 +538,6 @@ declare.
 **Stub skill**: a version-neutral agent skill that untaped writes from its
 own template and a plugin's description; it lists no command and sends the
 agent to `untaped agents`.
-_Avoid_: skill pointer, thin skill.
 
 **Topic**: what a plugin's agent page lists and `untaped agents PLUGIN TOPIC`
 prints: one of its commands, or a guide.
@@ -561,4 +546,3 @@ prints: one of its commands, or a guide.
 single command; each says when to read it.
 
 **Screen**: an interactive terminal UI built on the SDK's runtime.
-_Avoid_: TUI app, program, view.
