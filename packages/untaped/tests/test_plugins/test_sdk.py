@@ -173,6 +173,16 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "holders",
         "refresh_option",
     ),
+    "data files": (
+        "Absent",
+        "DataRead",
+        "Found",
+        "OtherVersion",
+        "Unreadable",
+        "copy_data_file",
+        "read_data_file",
+        "write_data_file",
+    ),
     "prompts and ui": (
         "NO_PROGRESS",
         "PickCatalog",

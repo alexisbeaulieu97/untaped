@@ -4,13 +4,14 @@ Every plugin — first-party or third-party — imports untaped helpers
 from this module only. It carries the composition set and the supported runtime helpers (output,
 errors and exit codes, settings, HTTP, git, stdin/pipe, files and locks, state, UI, batch,
 concurrency, shared options, message wording, record bases, setting marks, token sources, projects,
-caches, stores and doctor-check factories).
+caches, stores, data files and doctor-check factories).
 Additions are backwards compatible; removals or signature breaks are a major release.
 
 The screen names (``Screen``, ``Cmd``, ``Key``, the components such as ``TextInput``,
 ...) are exported lazily, on first use, so ``import untaped.sdk``
 loads no screen code and no prompt_toolkit and stays within the startup import
-budget; they are experimental (``docs/versioning.md``).
+budget; they are experimental (``docs/versioning.md``). So is core's data file
+(``read_data_file``, ``write_data_file``, ...), loaded when a command first uses it.
 """
 
 from __future__ import annotations
@@ -199,6 +200,16 @@ from untaped.ui import UiContext, ui_context
 from untaped.yaml_roundtrip import yaml_mapping_indent
 
 if _typing.TYPE_CHECKING:
+    from untaped.data_file import (
+        Absent,
+        DataRead,
+        Found,
+        OtherVersion,
+        Unreadable,
+        copy_data_file,
+        read_data_file,
+        write_data_file,
+    )
     from untaped.screen.components.buttons import Button, Buttons, Pressed
     from untaped.screen.components.choices import (
         Check,
@@ -235,8 +246,19 @@ if _typing.TYPE_CHECKING:
         Submit,
     )
 
-#: Screen names by the module that defines them, resolved on first access (PEP 562).
-_SCREEN_MODULES: dict[str, tuple[str, ...]] = {
+#: Names exported lazily, by the module that defines them, resolved on first access
+#: (PEP 562): the screen names, and core's data file, which a command reads on first use.
+_LAZY_MODULES: dict[str, tuple[str, ...]] = {
+    "untaped.data_file": (
+        "Absent",
+        "DataRead",
+        "Found",
+        "OtherVersion",
+        "Unreadable",
+        "copy_data_file",
+        "read_data_file",
+        "write_data_file",
+    ),
     "untaped.screen.core": (
         "Activate",
         "Back",
@@ -273,8 +295,8 @@ _SCREEN_MODULES: dict[str, tuple[str, ...]] = {
     "untaped.screen.components.layout": ("Panes", "Viewport"),
     "untaped.screen.components.lists": ("SearchList", "Tags", "Tree", "TreeRow"),
 }
-_SCREEN_EXPORTS: dict[str, str] = {
-    name: module for module, names in _SCREEN_MODULES.items() for name in names
+_LAZY_EXPORTS: dict[str, str] = {
+    name: module for module, names in _LAZY_MODULES.items() for name in names
 }
 
 __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
@@ -434,6 +456,15 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "code_version",
     "holders",
     "refresh_option",
+    # data files
+    "Absent",
+    "DataRead",
+    "Found",
+    "OtherVersion",
+    "Unreadable",
+    "copy_data_file",
+    "read_data_file",
+    "write_data_file",
     # prompts and ui
     "NO_PROGRESS",
     "PickCatalog",
@@ -517,13 +548,13 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
 
 
 if not _typing.TYPE_CHECKING:
-    # Hidden from the type checker, which resolves the screen names from the
+    # Hidden from the type checker, which resolves the lazy names from the
     # imports above: a module-level ``__getattr__`` would type every other
     # attribute (a plugin's typo) as ``object`` instead of an error.
 
     def __getattr__(name: str) -> object:
-        """Resolve a screen name on first use and keep it, so later lookups are plain."""
-        module = _SCREEN_EXPORTS.get(name)
+        """Resolve a lazy name on first use and keep it, so later lookups are plain."""
+        module = _LAZY_EXPORTS.get(name)
         if module is None:
             raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
         value = getattr(_importlib.import_module(module), name)
@@ -531,4 +562,4 @@ if not _typing.TYPE_CHECKING:
         return value
 
     def __dir__() -> list[str]:
-        return sorted({*globals(), *_SCREEN_EXPORTS})
+        return sorted({*globals(), *_LAZY_EXPORTS})

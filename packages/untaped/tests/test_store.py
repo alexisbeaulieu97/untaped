@@ -363,18 +363,26 @@ def test_an_existing_layout_file_wins_over_the_bare_one(tmp_path: Path, lock_kin
 
 
 def _caches() -> Path:
+    """Where untaped 11.0 kept acme's caches."""
     return Path.home() / ".untaped" / "plugins" / "acme" / "caches"
 
 
-def test_a_cache_following_a_store_keeps_its_sidecars_per_layout(tmp_path: Path) -> None:
+def _cached() -> Path:
+    return Path.home() / ".untaped" / "plugins" / "acme" / "cached"
+
+
+def test_a_cache_following_a_store_keeps_its_files_per_layout(tmp_path: Path) -> None:
     data = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=3)
     cache = Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
 
-    assert cache._paths("k").sidecar.parent == _caches() / "data.v3" / "default"
+    assert cache._paths("k").file().parent == _cached() / "data.v3" / "default"
+    assert data._layout_folders(3) == [_cached() / "data.v3"]
+    assert data._layout_folders(None) == [_caches() / "data"]
     assert cache != Cache("acme", "data", label="data", max_age=timedelta(hours=1))
 
 
-def test_a_cache_folder_moves_with_its_stores_bare_file(tmp_path: Path) -> None:
+def test_adopting_a_bare_file_removes_the_cache_folder_11_0_kept_for_it(tmp_path: Path) -> None:
+    """An 11.0 run would call the file it rebuilds fresh; this release keeps its own."""
     data = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=4, bare=4)
     Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
     (tmp_path / "data.db").write_bytes(b"layout 4")
@@ -383,8 +391,9 @@ def test_a_cache_folder_moves_with_its_stores_bare_file(tmp_path: Path) -> None:
 
     data.open()
 
-    assert (_caches() / "data.v4" / "default" / "k.json").is_file()
+    assert (tmp_path / "data.v4.db").read_bytes() == b"layout 4"
     assert not (_caches() / "data").exists()
+    assert not (_cached() / "data.v4").exists()
 
 
 def test_a_cache_folder_stays_when_its_file_does(tmp_path: Path) -> None:

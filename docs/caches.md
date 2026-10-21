@@ -41,8 +41,9 @@ progress through `handle`; `read()` then computes the command's answer once,
 over every key. `serve()` opens the refresh's progress task, holds the key's
 lock while it fills (another process filling the same key is waited for,
 then served), and keeps what it knows about each key in a file under
-`plugin_dir(SPEC)/caches/`, per profile: keep your own store apart the same
-way (by key, and by profile when a setting can change what a key holds).
+`plugin_dir(SPEC)/cached/`, per profile: keep your own store apart the same
+way (by key, and by profile when a setting can change what a key holds), or
+let the cache keep the data itself (below).
 A fill never serves its own cache; serving another one, it passes its
 `handle` as `serve(progress=)`, so the inner refresh shows as its phase.
 
@@ -81,6 +82,53 @@ provider method that `gather` asked, the warning waits until the answer is
 used, and is never said if it isn't
 ([contracts](./contracts.md#how-providers-are-loaded-and-chosen)).
 
+## A cache that keeps its data
+
+When what a fill fetches is one value per key, let the cache keep it: declare
+the value's pydantic model with `model=`, return it as `Filled(value=...)`,
+and `serve()` answers a mapping of each key to its value, with no `read=` and
+no store of your own:
+
+```python
+class Snapshot(BaseModel):
+    items: list[str]
+
+SNAPSHOTS = Cache("acme", "snapshots", label="controller data", max_age=timedelta(hours=1),
+                  model=Snapshot)                         # a Cache[Snapshot]
+
+def fill(key: str, handle: ProgressHandle) -> Filled[Snapshot]:
+    return Filled(value=Snapshot(items=fetch(key)), summary="12 items")
+
+served = SNAPSHOTS.serve({url: host}, refresh=refresh, fill=fill, partition=token)
+snapshot = served.value[url]                               # a Snapshot
+```
+
+`model=` also takes a function of no arguments that returns the class, for a
+model whose import would load more than a settings module should: it is
+called once, on first use. Each key's freshness and value are one file, one
+file per version of the value: its model's shape (field names and types,
+not docstrings, descriptions or field order) and the cache's `version=`. A
+key filled by another version (another install sharing `~/.untaped`, or an
+upgrade) is *outdated*: refreshed when it is due, and served, with one
+`untaped.stale` warning, under `--cached` or when the refresh fails. A file
+that can't be read, or holds another shape, is missing and refilled. After a
+complete fill, the key's files of other versions older than the max age are
+deleted.
+
+`partition=` keeps another set of files for the same keys, for data that
+depends on a credential: it is hashed into the file names and never shown in
+a warning or an error. Another partition's files of a key go once they are
+older than 30 days and ten times the declared max age. `split="none"` keeps
+one folder for every profile, when the key and the partition already say
+whose data it is (by default, `split="settings"`, each profile has its own).
+`cached(key)` peeks at the kept value, `forget(key)` drops every version of
+it, and `seed()` and `read=` are refused, since the cache holds the data
+itself. A fill of a typed cache that returns no value, or a value of another
+class, raises `TypeError`; so does a value from any other cache's fill. In
+tests, `untaped.testing.keep_value(CACHE, key, value, refreshed_at=,
+version=)` keeps a value as a fill would, and `damage(CACHE, key)` makes its
+file unreadable. Both are experimental.
+
 ## When the code that fills a cache changes
 
 A cache's data can go out of date without upstream changing: a new release of
@@ -109,7 +157,7 @@ that shapes the data in that module or hash its modules too
 (`extra=(code_version("acme.domain.identity"),)`). A `version` that raises
 fails every read of the cache, `--cached` included.
 
-The sidecar keeps the version each key was filled at. A key filled at
+Each key's file keeps the version it was filled at. A key filled at
 another version is *outdated*: due the way a key past its max age is (auto
 refreshes it, its data is kept, and after a failed refresh the retry window
 holds), and stale: `--cached` serves it with one `untaped.stale` warning whose
@@ -162,13 +210,15 @@ Composition quarantines a plugin that lists another plugin's store
 every other layout on disk with what holds it (below).
 
 A cache that describes a store follows it, `Cache(..., store=CATALOGUE)`: its
-sidecars live in `caches/<name>.v<layout>/`, so a key is never fresh over
+files live in `cached/<name>.v<layout>/`, so a key is never fresh over
 another layout's file. An answer cache (`@cached`) follows no store.
 
 A store that predates 11.1 declares what its bare file holds: `bare=4` says a
 file at `base` itself, with no layout in its name, was written at layout 4.
-The first `open()` at that layout renames it to the layout's name, then the
-folders of the caches that follow the store: same bytes, no rebuild. While
+The first `open()` at that layout renames it to the layout's name, same
+bytes, no rebuild, and removes the folders untaped 11.0 kept for the caches
+that follow the store: an 11.0 run would call the file it rebuilds fresh.
+Reseed what you can from the data itself (`seed()`). While
 another process has it open, or a SQLite `-journal`, `-wal` or `-shm` sits
 beside it, `open()` returns the bare path and a later open renames it. A
 store born in 11.1 or later leaves `bare` unset.
@@ -215,6 +265,11 @@ lock, then deletes it. Each removal is an info line of kind `untaped.pruned`
 unregistered install, or one run from a source tree, never removes anything,
 and neither does any install while `refs/` cannot be read.
 
+The same goes for the `caches/` folder untaped 11.0 kept in each plugin's
+folder, which no later release reads: after any of the plugin's caches
+completes a fill, a registered install removes it, with one `untaped.pruned`
+line whose `store` and `layout` are `null`.
+
 A layout a setting may point at, such as an index path a profile sets to an
 older layout's file, is that profile's data. `Store(..., keep=…)` says so: a
 function of a layout's path returning why it stays, or `None`;
@@ -234,13 +289,31 @@ are gone are core's `untaped.references` row, and `untaped doctor`'s
 `references` row lists every reference. In tests,
 `untaped.testing.write_reference` writes another install's reference.
 
+## Other files your plugin keeps
+
+Any other file your plugin keeps for itself, whose place you decide (a
+file in a repo, a backup's description), goes on core's data file rather
+than a JSON format of your own (all experimental):
+`write_data_file(path, value, refreshed_at=None, exclusive=False)` writes a
+pydantic model's fields at the top level beside a stamp naming the format and
+the untaped version that wrote it (`{"untaped": {"file": 1, "by": "11.1.0"},
+...}`), atomically and owner-only; `exclusive=True` creates it whole only if
+it is absent and returns whether it did. `read_data_file(path, Model)`
+answers a `DataRead`: `Found(value, refreshed_at)`, `Absent()`,
+`Unreadable(reason)` or `OtherVersion(file, by)` when a newer untaped wrote
+it, so a damaged file is never mistaken for a missing one. A file an earlier
+release of yours wrote without the stamp reads with `unstamped="accept"`, in
+the model's shape. `copy_data_file(source, target)` copies one with its
+freshness cleared. A model may not name a field `untaped`: that key is the
+stamp's.
+
 ## Status rows and tests
 
 For a command that reports a cache's state, subclass `FreshnessRecord` and
 fill it with `FreshnessRecord.fields(MY_CACHE.freshness(key), max_age=…,
 now=…)`; its `refresh_error` never fails the row, and `outdated` says the
-key was filled by another version. `cached(key, read)` peeks
-at what is cached with no refresh, lock or warning, for in-process readers
+key was filled by another version. `cached(key, read)` (`cached(key)` for a
+cache with `model=`) peeks at what is cached with no refresh, lock or warning, for in-process readers
 such as a screen; `seed()` and `forget()` record what an owner already holds
 or forget a key whose data changed. In tests, `untaped.testing.cache_clock()`
 moves the clock a cache reads. The example plugin (`examples/untaped-hello`,

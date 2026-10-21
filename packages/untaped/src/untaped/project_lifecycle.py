@@ -45,7 +45,6 @@ from untaped.projects import (
     GITIGNORE_TEXT,
     MARKER,
     Project,
-    _create_marker,
     _discover,
     _forget,
     _marker_id,
@@ -55,6 +54,7 @@ from untaped.projects import (
     _situation,
     _undecided,
     _write_gitignore,
+    _write_marker,
     anchor_state,
     find_root,
     follow_move,
@@ -505,7 +505,7 @@ def apply_move(move: Move) -> list[HoldOutcome]:
                 try:
                     folder.mkdir(parents=True, exist_ok=True)
                     if (
-                        not _create_marker(folder / MARKER, project.id)
+                        not _write_marker(folder / MARKER, project.id, exclusive=True)
                         and _marker_id(move.new) != project.id
                     ):
                         raise UntapedError(

@@ -16,17 +16,20 @@ and never checks. :func:`refresh_option` is the ``--refresh``/``--cached``
 option that sets it; ``gather`` opens one for every provider call it makes
 (:func:`call_state`), which ``serve()`` reads when its own is ``None``.
 
-Layout: what the cache knows about a key (:class:`Freshness`) lives in a
-sidecar, ``<plugin dir>/caches/<name>/<profile>/<segment>.json``
-(``caches/<name>.v<layout>/`` when the cache follows a store), written
-atomically; ``<segment>.lock`` beside it is held while the key is filled, and
-only then. Readers never take it. The lock is not re-entrant: a fill never
-serves its own cache. Nested caches lock outer, then inner; the repo store's
-own lock is always the innermost.
+Layout: each key is one file under ``<plugin dir>/cached/<name>/<profile>/``
+(``cached/<name>.v<layout>/`` when the cache follows a store; no profile
+folder under ``split="none"``) on core's data file (:mod:`untaped.data_file`):
+its first line says what the cache knows about the key (:class:`Freshness`),
+and a cache declared with ``model=`` keeps the value itself on the second,
+one file per version of the value. Files are written atomically and
+owner-only; ``<segment>.lock`` beside them is held while the key is filled,
+and only then. Readers never take it. The lock is not re-entrant: a fill
+never serves its own cache. Nested caches lock outer, then inner; the repo
+store's own lock is always the innermost.
 
 When the code that fills a cache changes what it would store, ``version=``
 names that code's version (:func:`code_version` hashes a module and the
-distributions it relies on): the sidecar keeps the version each key was
+distributions it relies on): each key's file keeps the version it was
 filled at, and a key filled at another one is *outdated*, due and stale the
 way a key past its max age is.
 """
@@ -37,9 +40,11 @@ import functools
 import hashlib
 import importlib.metadata
 import importlib.util
-import json
 import logging
+import os
 import re
+import shutil
+import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
@@ -47,13 +52,13 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Literal, overload
 
 from cyclopts import Parameter
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 from untaped.errors import ConfigError, ErrorCategory, UntapedError
-from untaped.fs import atomic_write, file_lock
+from untaped.fs import file_lock
 from untaped.git import safe_path_segment
 from untaped.messages import duration_text
 from untaped.output.diagnostic import NOT_COUNTED, Failure, StaleData, format_utc
@@ -70,7 +75,6 @@ _LOG = logging.getLogger("untaped.cache")
 RETRY_AFTER: Final = timedelta(minutes=5)
 #: Seconds a refresh waits for another process refreshing the same key.
 _LOCK_TIMEOUT = 600.0
-_FORMAT = "1"
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 _WAITING = "waiting for another untaped process"
 #: Longest key segment kept in a sidecar's name, under any filesystem's limit.
@@ -128,11 +132,13 @@ def refresh_scope() -> bool | None:
     return None if state is None else state.refresh
 
 
-_ANSWERING: ContextVar[tuple[Cache, str] | None] = ContextVar("untaped_answering", default=None)
+_ANSWERING: ContextVar[tuple[Cache[Any], str] | None] = ContextVar(
+    "untaped_answering", default=None
+)
 
 
 @contextmanager
-def answering(cache: Cache, provider: str) -> Iterator[None]:
+def answering(cache: Cache[Any], provider: str) -> Iterator[None]:
     """Serve ``cache`` as the answer cache, answering for ``provider``.
 
     Its lines name ``provider`` and suggest no option: whoever reads an
@@ -145,7 +151,7 @@ def answering(cache: Cache, provider: str) -> Iterator[None]:
         _ANSWERING.reset(token)
 
 
-def _answering_for(cache: Cache) -> str | None:
+def _answering_for(cache: Cache[Any]) -> str | None:
     """The provider ``cache`` answers for as the answer cache, else ``None``."""
     scope = _ANSWERING.get()
     return scope[1] if scope is not None and scope[0] is cache else None
@@ -235,9 +241,11 @@ def _is_stale(freshness: Freshness, max_age: timedelta, now: datetime) -> bool:
     )
 
 
-class Filled(BaseModel):
+class Filled[M = None](BaseModel):
     """What a ``fill`` returns; an owner subclasses it to keep a result of its own.
 
+    ``value``: what a cache declared with ``model=`` keeps for the key; its
+    fill must set it, and any other cache's fill must leave it out.
     ``partial``: the fill completed but left items out (one ``Failure``
     naming them); every read until the next whole refresh warns about it.
     ``retry_at``: when upstream said to come back (a rate-limit reset).
@@ -246,13 +254,14 @@ class Filled(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    value: M | None = None
     partial: Failure | None = None
     retry_at: UtcTimestamp | None = None
     summary: str | None = None
 
 
 @dataclass(frozen=True)
-class Served[T, F: Filled = Filled]:
+class Served[T, F: Filled[Any] = Filled]:
     """What :meth:`Cache.serve` answered: the value, and how fresh each key was.
 
     ``value`` is ``read()``'s answer over every key; ``freshness`` each
@@ -272,7 +281,7 @@ class NeverRefreshed(UntapedError):
 
     category = ErrorCategory.NOT_FOUND
 
-    def __init__(self, cache: Cache, key: str, label: str) -> None:
+    def __init__(self, cache: Cache[Any], key: str, label: str) -> None:
         super().__init__(
             f"no cached {cache.label} for {label}; drop --cached to refresh it",
             system=cache.plugin,
@@ -306,18 +315,57 @@ def _old_keys(cache: str, keys: Sequence[str]) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class _KeyPaths:
-    """One key's files: its folder, its sidecar and its lock."""
+    """One key's files in one partition: its folder, the name they start with, and its lock.
+
+    ``stem`` is ``<segment>`` or ``<segment>.p<partition hash>``; the lock is
+    one per key and partition, shared by every version of the value.
+    """
 
     dir: Path
-    sidecar: Path
+    stem: str
     lock: Path
+
+    def file(self, versioned: str | None = None) -> Path:
+        """The key's file: ``<stem>.json``, or ``<stem>.v<hash>.json`` for a value's version."""
+        name = f"{self.stem}.json" if versioned is None else f"{self.stem}.v{versioned}.json"
+        return self.dir / name
+
+
+@dataclass(frozen=True)
+class ValueTyping:
+    """How a typed cache's values are checked and told apart: an adapter and its shape's hash.
+
+    ``model`` is the class ``model=`` named (``None`` for the answer cache's
+    per-call type), which a fill's value must be an instance of.
+    """
+
+    adapter: TypeAdapter[Any]
+    shape: str
+    model: type[BaseModel] | None = None
+
+
+@dataclass(frozen=True)
+class _Kept:
+    """What a key's file holds: its freshness and, for a typed cache, the value and its bytes.
+
+    ``damaged``: this version's file was there but could not be used.
+    """
+
+    freshness: Freshness
+    value: Any = None
+    raw: bytes | None = None
+    damaged: bool = False
 
 
 #: The lock paths this context holds: a fill serving its own cache fails at once.
 _HELD: ContextVar[frozenset[Path]] = ContextVar("untaped_cache_held", default=frozenset())
+#: How long another partition's file of a key outlives its last refresh, at least.
+_PARTITION_HORIZON = timedelta(days=30)
+#: A version's file of a key: ``<segment>[.p<hash>].v<hash>.json``.
+_VERSIONED = re.compile(r"(?P<stem>.+)\.v[0-9a-f]{8}\.json")
 
 
-class Cache:
+class Cache[M = None]:
     """Data plugin ``plugin`` keeps from an upstream, refreshed past ``max_age``.
 
     ``name`` is one settings segment (``[a-z][a-z0-9_]*``); ``label`` names
@@ -331,24 +379,67 @@ class Cache:
     cache (usually :func:`code_version`); it is called each time the cache
     is read (once per :meth:`serve`), never at import, and a key filled at
     another version is refreshed like an expired one. ``store`` ties the
-    sidecars to a :class:`~untaped.store.Store`'s layout: they live under
-    ``caches/<name>.v<layout>/``, so a key is never fresh over another
-    layout's file (a store that adopts its bare file renames ``caches/<name>/``
-    with it), and a complete fill (no error, not partial) ends with
-    :meth:`Store.prune() <untaped.store.Store.prune>`. Two declarations with
-    the same values (the same ``version`` callable) are equal.
+    cache's files to a :class:`~untaped.store.Store`'s layout: they live under
+    ``cached/<name>.v<layout>/``, so a key is never fresh over another
+    layout's file, and a complete fill (no error, not partial) ends with
+    :meth:`Store.prune() <untaped.store.Store.prune>`.
+
+    ``model`` makes the cache keep the value itself (a ``Cache[M]``): a
+    pydantic model class, or a function of no arguments returning it when
+    importing the class would load more than a declaration should. The
+    class is resolved and hashed on first use. Each key's value and
+    freshness are one file per version of the value (its type's shape and
+    ``version``): a key filled by another version is served, outdated, when
+    a refresh fails or under ``--cached``. ``split`` says whether the files
+    are kept per profile (``"settings"``) or once for every profile
+    (``"none"``, when the key and partition already say whose data it is).
+    Two declarations with the same values (the same callables) are equal.
     """
 
     __slots__ = (
+        "_resolved",
         "default_max_age",
         "label",
+        "model",
         "name",
         "plugin",
         "removed_in",
         "renamed_from",
+        "split",
         "store",
         "version",
     )
+
+    @overload
+    def __init__(
+        self: Cache[None],
+        plugin: str,
+        name: str,
+        *,
+        label: str,
+        max_age: timedelta,
+        renamed_from: Sequence[str] = (),
+        removed_in: int | None = None,
+        version: Callable[[], str] | None = None,
+        store: Store | None = None,
+        split: Literal["settings", "none"] = "settings",
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        plugin: str,
+        name: str,
+        *,
+        label: str,
+        max_age: timedelta,
+        renamed_from: Sequence[str] = (),
+        removed_in: int | None = None,
+        version: Callable[[], str] | None = None,
+        store: Store | None = None,
+        model: type[M] | Callable[[], type[M]],
+        split: Literal["settings", "none"] = "settings",
+    ) -> None: ...
 
     def __init__(
         self,
@@ -361,6 +452,8 @@ class Cache:
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
         store: Store | None = None,
+        model: type[M] | Callable[[], type[M]] | None = None,
+        split: Literal["settings", "none"] = "settings",
     ) -> None:
         from untaped.plugins.registry import check_plugin_name  # noqa: PLC0415 - no cycle
         from untaped.stability import check_removed_in  # noqa: PLC0415 - no cycle
@@ -389,22 +482,22 @@ class Cache:
             raise ConfigError(
                 f"cache {plugin}.{name}: store {store.qualified} belongs to another plugin"
             )
+        if model is not None and not callable(model):
+            raise ConfigError(
+                f"cache {plugin}.{name}: model takes a model class or a function returning one"
+            )
+        if split not in ("settings", "none"):
+            raise ConfigError(
+                f"cache {plugin}.{name}: split is 'settings' or 'none', not {split!r}"
+            )
+        self.model = model
+        self.split = split
+        self._resolved: ValueTyping | None = None
         self.store = store
         if store is not None:
-            store._follow(name)  # its folder moves with the store's bare file
+            store._follow(self)  # its folder moves with the store's layouts
 
-    def _identity(
-        self,
-    ) -> tuple[
-        str,
-        str,
-        str,
-        timedelta,
-        tuple[str, ...],
-        int | None,
-        Callable[[], str] | None,
-        Store | None,
-    ]:
+    def _identity(self) -> tuple[object, ...]:
         return (
             self.plugin,
             self.name,
@@ -414,6 +507,8 @@ class Cache:
             self.removed_in,
             self.version,
             self.store,
+            self.model,
+            self.split,
         )
 
     def __eq__(self, other: object) -> bool:
@@ -461,60 +556,146 @@ class Cache:
         """The version of the code that fills the cache now; ``None`` when unversioned."""
         return None if self.version is None else self.version()
 
+    def _typing(self) -> ValueTyping | None:
+        """The value's type when the cache keeps one (``model=``), resolved on first use."""
+        if self.model is None:
+            return None
+        if self._resolved is None:
+            model = self.model if isinstance(self.model, type) else self.model()
+            if not (isinstance(model, type) and issubclass(model, BaseModel)):
+                raise ConfigError(
+                    f"cache {self.qualified}: model is not a pydantic model: {model!r}"
+                )
+            self._resolved = value_typing(model, model=model)
+        return self._resolved
+
     # ---- reading and filling ------------------------------------------------
 
+    @overload
     def serve[T, F: Filled](
-        self,
+        self: Cache[None],
         keys: Mapping[str, str],
         *,
         refresh: bool | None,
         fill: Callable[[str, ProgressHandle], F],
         read: Callable[[], T],
+        partition: str | None = None,
         empty: Callable[[T], bool] | None = None,
         progress: ProgressHandle = NO_PROGRESS,
-    ) -> Served[T, F]:
-        """Refresh what ``refresh`` asks for, then answer ``read()`` over every key.
+    ) -> Served[T, F]: ...
+
+    @overload
+    def serve(
+        self,
+        keys: Mapping[str, str],
+        *,
+        refresh: bool | None,
+        fill: Callable[[str, ProgressHandle], Filled[M]],
+        partition: str | None = None,
+        empty: Callable[[Mapping[str, M]], bool] | None = None,
+        progress: ProgressHandle = NO_PROGRESS,
+    ) -> Served[Mapping[str, M], Filled[M]]: ...
+
+    def serve(
+        self,
+        keys: Mapping[str, str],
+        *,
+        refresh: bool | None,
+        fill: Callable[[str, ProgressHandle], Any],
+        read: Callable[[], Any] | None = None,
+        partition: str | None = None,
+        empty: Callable[[Any], bool] | None = None,
+        progress: ProgressHandle = NO_PROGRESS,
+    ) -> Served[Any, Any]:
+        """Refresh what ``refresh`` asks for, then answer over every key.
 
         ``keys`` maps each key to its label for a human (``source prod``).
         ``fill(key, handle)`` refreshes one key from upstream and reports
         through ``handle``; it raises an :class:`~untaped.errors.UntapedError`
         when the refresh fails, with upstream's own retry time, when it knows
-        one, in ``details["retry_at"]`` (ISO 8601). ``empty(value)`` says
-        whether the answer found nothing: a stale empty answer fails with the
-        refresh's error instead of passing for an absence. Under a ``progress``
-        handle no task is opened: the refresh is a phase of the caller's.
+        one, in ``details["retry_at"]`` (ISO 8601). A cache with ``model=``
+        keeps what the fill returns as ``Filled(value=...)`` and answers a
+        mapping of each key to its value; any other cache answers ``read()``,
+        called once over every key. ``partition`` keeps another set of files
+        for the same keys (a credential, hashed into the file names and never
+        shown). ``empty(value)`` says whether the answer found nothing: a
+        stale empty answer fails with the refresh's error instead of passing
+        for an absence. Under a ``progress`` handle no task is opened: the
+        refresh is a phase of the caller's.
 
         A failed refresh with data cached serves that data with a warning; with
         none, the error is raised. ``--cached`` on a key never filled raises
         :class:`NeverRefreshed`. A Ctrl-C during a fill is remembered like a
         failed attempt and said as one ``error:`` line before it propagates.
         """
+        typing = self._typing()
+        if typing is None and read is None:
+            raise ConfigError(f"cache {self.qualified}: serve() needs read= without model=")
+        if typing is not None and read is not None:
+            raise ConfigError(
+                f"cache {self.qualified}: a cache with model= answers its kept values; "
+                "serve() takes no read="
+            )
+        return self._serve_with(
+            keys,
+            refresh=refresh,
+            fill=fill,
+            typing=typing,
+            read=read,
+            partition=partition,
+            empty=empty,
+            progress=progress,
+        )
+
+    def _serve_with(
+        self,
+        keys: Mapping[str, str],
+        *,
+        refresh: bool | None,
+        fill: Callable[[str, ProgressHandle], Filled[Any]],
+        typing: ValueTyping | None,
+        read: Callable[[], Any] | None = None,
+        partition: str | None = None,
+        empty: Callable[[Any], bool] | None = None,
+        progress: ProgressHandle = NO_PROGRESS,
+    ) -> Served[Any, Any]:
+        """:meth:`serve` for a value of ``typing``'s type (``None``: answered by ``read``).
+
+        The answer cache serves through it with each provider's own type.
+        """
         max_age, started, version = self.max_age(), _utcnow(), self._version_now()
         if refresh is None:
             refresh = refresh_scope()
         folder = self._folder()
-        paths = {key: self._key_paths(folder, key) for key in keys}
-        freshness = {key: self._load(paths[key], key, version) for key in keys}
-        filled: dict[str, F] = {}
+        paths = {key: self._paths(key, partition, folder=folder) for key in keys}
+        kept = {key: self._load(paths[key], key, version, typing) for key in keys}
+        filled: dict[str, Filled[Any]] = {}
         for key, label in keys.items():
-            if freshness[key].due(refresh, max_age=max_age, now=started):
-                freshness[key] = self._refresh(
+            if kept[key].freshness.due(refresh, max_age=max_age, now=started):
+                kept[key] = self._refresh(
                     key,
                     label,
                     paths[key],
-                    freshness[key],
+                    kept[key],
                     filled,
                     fill=fill,
                     refresh=refresh,
                     started=started,
                     max_age=max_age,
                     version=version,
+                    typing=typing,
                     progress=progress,
                 )
+        if typing is None:
+            assert read is not None
+            answer = read
+        else:
+            values = MappingProxyType({key: entry.value for key, entry in kept.items()})
+            answer = lambda: values  # noqa: E731 - the kept values, read once already
         return self._serve(
             keys,
-            read,
-            freshness,
+            answer,
+            {key: entry.freshness for key, entry in kept.items()},
             filled,
             refresh=refresh,
             started=started,
@@ -522,87 +703,141 @@ class Cache:
             max_age=max_age,
         )
 
-    def _refresh[F: Filled](
+    def _refresh(
         self,
         key: str,
         label: str,
         paths: _KeyPaths,
-        freshness: Freshness,
-        filled: dict[str, F],
+        kept: _Kept,
+        filled: dict[str, Filled[Any]],
         *,
-        fill: Callable[[str, ProgressHandle], F],
+        fill: Callable[[str, ProgressHandle], Filled[Any]],
         refresh: bool | None,
         started: datetime,
         max_age: timedelta,
         version: str | None,
+        typing: ValueTyping | None,
         progress: ProgressHandle,
-    ) -> Freshness:
-        """Fill ``key`` under its task and lock; what the cache knows of it afterwards.
+    ) -> _Kept:
+        """Fill ``key`` under its task and lock; what the cache keeps of it afterwards.
 
         Raises when the fill fails with nothing cached to fall back to, when
         the lock never comes, and on Ctrl-C.
         """
         failure: BaseException | None = None
+        own = paths.file(None if typing is None else versioned(typing, version))
         try:
-            text = self._task_text(label, freshness, max_age)
+            text = self._task_text(label, kept, max_age)
             with (
                 self._task(text, progress) as task,
                 # back to the parent's phase after a wait; an own task has none
                 self._lock(paths, label, task, resume=None if progress is NO_PROGRESS else text),
             ):
-                current = freshness = self._load(paths, key, version)
-                if current.refreshed_at is not None and current.refreshed_at >= started:
+                current = kept = self._load(paths, key, version, typing)
+                refreshed_at = current.freshness.refreshed_at
+                if refreshed_at is not None and refreshed_at >= started:
                     return current  # refreshed while this run waited: serve it, under --refresh too
-                if refresh is None and not current.due(None, max_age=max_age, now=_utcnow()):
+                due = current.freshness.due(None, max_age=max_age, now=_utcnow())
+                if refresh is None and not due:
                     return current  # auto: no longer due (another run failed meanwhile)
                 try:
                     # the budget is a fallback too: a first fill keeps its full retries
-                    budget = refresh is None and current.refreshed_at is not None
+                    budget = refresh is None and refreshed_at is not None
                     with fail_fast() if budget else full_retries():
                         result = fill(key, task)
                 except UntapedError as exc:
                     failure = exc
-                    freshness = self._save(paths, key, _failed(current, exc, started))
+                    attempt = _failed(current.freshness, exc, started)
+                    kept = self._remember(own, key, current, attempt, typing)
                     raise
                 except KeyboardInterrupt as exc:
                     failure = exc
-                    freshness = self._save(paths, key, _interrupted(current, exc, label, started))
+                    attempt = _interrupted(current.freshness, exc, label, started)
+                    kept = self._remember(own, key, current, attempt, typing)
                     raise
                 filled[key] = result
                 if progress is NO_PROGRESS:
                     task.update(result.summary)  # the done line carries it
-                saved = self._save(
-                    paths,
-                    key,
-                    Freshness(
-                        refreshed_at=_utcnow(),
-                        error=result.partial,
-                        partial=result.partial is not None,
-                        retry_at=result.retry_at,
-                        version=version,
-                    ),
-                )
-            if self.store is not None and saved.error is None:
-                # a complete fill: this layout has data, so the ones nothing holds may go
-                self.store.prune()
-            return saved
+                saved = self._filled(paths, own, key, label, result, version, typing, max_age)
+            if saved.error is None:
+                if self.store is not None:
+                    # a complete fill: this layout has data, so the ones nothing holds may go
+                    self.store.prune()
+                _remove_legacy(self.plugin)
+            return _Kept(saved, value=None if typing is None else result.value)
         except UntapedError as exc:
             # the task closed `failed` on the way out, before the warning _serve emits
-            if exc is not failure or freshness.refreshed_at is None:
+            if exc is not failure or kept.freshness.refreshed_at is None:
                 raise  # a lock that never came, or nothing cached to fall back to
-            return freshness
+            return kept
         except KeyboardInterrupt as exc:
-            if exc is failure and freshness.error is not None:
-                # nothing else prints it: the CLI exits 130 bare
-                error = freshness.error
-                # else the next run fills again; the answer cache's reader has no --cached
-                if freshness.refreshed_at is not None and _answering_for(self) is None:
-                    hint = "pass --cached to read the cached data without checking"
-                    error = error.model_copy(update={"hint": hint})
-                current_sink().emit(error)
+            if exc is failure and kept.freshness.error is not None:
+                self._say_interrupted(kept.freshness)
             raise
 
-    def _serve[T, F: Filled](
+    def _filled(
+        self,
+        paths: _KeyPaths,
+        own: Path,
+        key: str,
+        label: str,
+        result: Filled[Any],
+        version: str | None,
+        typing: ValueTyping | None,
+        max_age: timedelta,
+    ) -> Freshness:
+        """Keep what a fill returned, under the key's lock; the key's freshness now."""
+        value = self._filled_value(result, typing)
+        saved = Freshness(
+            refreshed_at=_utcnow(),
+            error=result.partial,
+            partial=result.partial is not None,
+            retry_at=result.retry_at,
+            version=version,
+        )
+        self._keep(own, key, label, saved, typing, value)
+        if typing is not None and saved.error is None:
+            self._sweep(paths, key, own, max_age)
+        return saved
+
+    def _say_interrupted(self, freshness: Freshness) -> None:
+        """Say the Ctrl-C a fill stopped on: nothing else prints it, the CLI exits 130 bare."""
+        assert freshness.error is not None
+        error = freshness.error
+        # else the next run fills again; the answer cache's reader has no --cached
+        if freshness.refreshed_at is not None and _answering_for(self) is None:
+            hint = "pass --cached to read the cached data without checking"
+            error = error.model_copy(update={"hint": hint})
+        current_sink().emit(error)
+
+    def _filled_value(self, result: Filled[Any], typing: ValueTyping | None) -> bytes | None:
+        """The bytes of the value ``result`` carries; refused when the cache keeps none, or does."""
+        if typing is None:
+            if result.value is not None:
+                raise TypeError(
+                    f"a fill of {self.qualified} returned a value, which a cache without "
+                    "model= never keeps"
+                )
+            return None
+        if "value" not in result.model_fields_set:
+            raise TypeError(
+                f"a fill of {self.qualified} returned no value: Filled(value=...) carries "
+                "what a cache with model= keeps"
+            )
+        if typing.model is not None and not isinstance(result.value, typing.model):
+            raise TypeError(
+                f"a fill of {self.qualified} returned a {type(result.value).__name__}, "
+                f"not the {typing.model.__name__} its model= names"
+            )
+        try:
+            return typing.adapter.dump_json(
+                result.value, by_alias=True, round_trip=True, warnings=False
+            )
+        except Exception:  # the live answer still stands; the next run fills again
+            _LOG.debug("could not serialise a value of %s", self.qualified, exc_info=True)
+            return None
+
+    def _serve[T, F: Filled[Any]](
         self,
         keys: Mapping[str, str],
         read: Callable[[], T],
@@ -662,129 +897,300 @@ class Cache:
             stale=any(_is_stale(state, max_age, now) for state in freshness.values()),
         )
 
-    def cached[T](self, key: str, read: Callable[[], T]) -> Served[T] | None:
+    @overload
+    def cached[T](
+        self: Cache[None], key: str, read: Callable[[], T], *, partition: str | None = None
+    ) -> Served[T] | None: ...
+
+    @overload
+    def cached(self, key: str, *, partition: str | None = None) -> Served[M] | None: ...
+
+    def cached(
+        self, key: str, read: Callable[[], Any] | None = None, *, partition: str | None = None
+    ) -> Served[Any] | None:
         """What is cached for ``key``, without a directive, a lock, a warning or a raise.
 
-        ``None`` when the key was never refreshed. For in-process peeks (a
-        screen opening on what is cached), never a command's answer: a
-        command asked for ``--cached`` on a key never filled still fails.
+        ``None`` when the key was never refreshed. A cache with ``model=``
+        answers the kept value and takes no ``read``; any other answers
+        ``read()``. For in-process peeks (a screen opening on what is
+        cached), never a command's answer: a command asked for ``--cached``
+        on a key never filled still fails.
         """
-        state = self.freshness(key)
+        typing = self._typing()
+        if (typing is None) == (read is None):
+            raise ConfigError(
+                f"cache {self.qualified}: cached() takes read= exactly when the cache has no model="
+            )
+        kept = self._load(self._paths(key, partition), key, self._version_now(), typing)
+        state = kept.freshness
         if state.refreshed_at is None:
             return None
         stale = _is_stale(state, self.max_age(), _utcnow())
-        return Served(value=read(), freshness=MappingProxyType({key: state}), stale=stale)
+        value = kept.value if read is None else read()
+        return Served(value=value, freshness=MappingProxyType({key: state}), stale=stale)
 
-    def freshness(self, key: str) -> Freshness:
-        """What the cache knows about ``key`` now, without a lock (a status row)."""
-        return self._load(self._paths(key), key, self._version_now())
+    def freshness(self, key: str, *, partition: str | None = None) -> Freshness:
+        """What the cache knows about ``key`` now, without a lock (a status row).
+
+        Reads each file's first line only: a value that no longer reads is
+        found by :meth:`serve`, which refills it.
+        """
+        paths = self._paths(key, partition)
+        return self._load(paths, key, self._version_now(), self._typing(), check=False).freshness
 
     def seed(self, key: str, *, refreshed_at: datetime) -> bool:
         """Record ``key`` as refreshed at ``refreshed_at`` if the cache knows nothing of it.
 
         For an owner whose data predates the cache (upgrade day). Writes only
-        when no sidecar exists and no other process is filling the key;
+        when no file exists and no other process is filling the key;
         returns whether it wrote. The seeded key has no version: under a
-        versioned cache it is outdated, so its first read refreshes it.
+        versioned cache it is outdated, so its first read refreshes it. A
+        cache with ``model=`` has no value to seed from and refuses.
         """
+        if self.model is not None:
+            raise ConfigError(
+                f"cache {self.qualified}: seed() records data the owner holds; "
+                "a cache with model= holds its own"
+            )
         paths = self._paths(key)
-        if paths.sidecar.exists():
+        if paths.file().exists():
             return False
         try:
             with self._held(paths, timeout=0.0, label=key):
-                if paths.sidecar.exists():
+                if paths.file().exists():
                     return False
-                return self._write(paths, key, Freshness(refreshed_at=_parsed(refreshed_at)))
+                return self._write(
+                    paths.file(), key, Freshness(refreshed_at=_parsed(refreshed_at)), None, None
+                )
         except _LockError as exc:
             if exc.busy:
-                return False  # another process is filling it: it will write the sidecar
+                return False  # another process is filling it: it will write the file
             raise
 
-    def forget(self, key: str) -> None:
-        """Forget what the cache knows about ``key``: its next read refreshes it.
+    def forget(self, key: str, *, partition: str | None = None) -> None:
+        """Forget what the cache keeps for ``key``: its next read refreshes it.
 
         For an owner whose data under ``key`` changed or went away (a source
-        redefined or removed). Waits for a fill of the key in progress; a key
-        the cache knows nothing of is left as it is.
+        redefined or removed). Every version's value goes with its
+        freshness. Waits for a fill of the key in progress; a key the cache
+        knows nothing of is left as it is.
         """
-        paths = self._paths(key)
+        paths = self._paths(key, partition)
         with self._lock(paths, key, NO_PROGRESS):
-            paths.sidecar.unlink(missing_ok=True)
+            paths.file().unlink(missing_ok=True)
+            for entry in _listed(paths.dir):
+                matched = _VERSIONED.fullmatch(entry.name)
+                if matched is not None and matched["stem"] == paths.stem:
+                    entry.unlink(missing_ok=True)
 
     # ---- the seams ----------------------------------------------------------
 
-    def _folder(self) -> Path:
+    def _root(self, layout: int | None = None) -> Path:
+        """``plugins/<plugin>/cached/<name>``, or ``<name>.v<layout>`` for a store's layout."""
         from untaped.plugins.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
+
+        folder = self.name if layout is None else f"{self.name}.v{layout}"
+        return named_plugin_dir(self.plugin) / "cached" / folder
+
+    def _legacy_root(self) -> Path:
+        """``plugins/<plugin>/caches/<name>``: where untaped 11.0 kept this cache's sidecars."""
+        from untaped.plugins.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
+
+        return named_plugin_dir(self.plugin) / "caches" / self.name
+
+    def _folder(self) -> Path:
+        """The folder this cache's files are in for the active settings: computed here only."""
         from untaped.profile_resolver import selected_profile  # noqa: PLC0415 - no cycle
 
-        folder = self.name if self.store is None else f"{self.name}.v{self.store.layout}"
-        return named_plugin_dir(self.plugin) / "caches" / folder / _segment(selected_profile())
+        root = self._root(None if self.store is None else self.store.layout)
+        return root if self.split == "none" else root / _segment(selected_profile())
 
-    @staticmethod
-    def _key_paths(folder: Path, key: str) -> _KeyPaths:
-        segment = _segment(key)
-        return _KeyPaths(folder, folder / f"{segment}.json", folder / f"{segment}.lock")
+    def _paths(
+        self, key: str, partition: str | None = None, *, folder: Path | None = None
+    ) -> _KeyPaths:
+        """``key``'s folder, file stem and lock in ``partition`` (the active profile's folder)."""
+        folder = self._folder() if folder is None else folder
+        stem = _segment(key) if partition is None else f"{_segment(key)}.p{_digest(partition)}"
+        return _KeyPaths(folder, stem, folder / f"{stem}.lock")
 
-    def _paths(self, key: str) -> _KeyPaths:
-        """``key``'s folder, sidecar and lock in the active profile."""
-        return self._key_paths(self._folder(), key)
-
-    def _load(self, paths: _KeyPaths, key: str, version: str | None) -> Freshness:
-        """The sidecar's freshness: never refreshed when missing, unreadable or another key's.
+    def _load(
+        self,
+        paths: _KeyPaths,
+        key: str,
+        version: str | None,
+        typing: ValueTyping | None,
+        *,
+        check: bool = True,
+    ) -> _Kept:
+        """What ``key``'s file holds: never refreshed when missing, unreadable or another key's.
 
         ``version`` is the cache's version now: a key filled at another one
-        is ``outdated``.
+        is ``outdated``. A typed cache reads this version's file, else the
+        newest file of the same type another version filled (outdated);
+        ``check`` validates the value (``False``: the first line only).
         """
-        try:
-            raw = json.loads(paths.sidecar.read_text(encoding="utf-8"))
-            if raw.get("untaped") != _FORMAT or raw.get("key") != key:
-                return Freshness()
-            refreshed_at = _parsed(raw.get("refreshed_at"))
-            filled_at = raw.get("version")
-            filled_at = filled_at if isinstance(filled_at, str) else None
-            outdated = version is not None and refreshed_at is not None and filled_at != version
-            error = _failure(raw.get("error"))
-            if error is None and raw.get("error") is not None:
-                # a newer untaped's error: the attempt it describes cannot be told, the data can
-                return Freshness(refreshed_at=refreshed_at, version=filled_at, outdated=outdated)
-            return Freshness(
-                refreshed_at=refreshed_at,
-                attempted_at=_parsed(raw.get("attempted_at")),
-                error=error,
-                partial=raw.get("partial") is True,
-                retry_at=_parsed(raw.get("retry_at")),
-                version=filled_at,
-                outdated=outdated,
-            )
-        except OSError, ValueError, AttributeError, TypeError, ValidationError:
-            return Freshness()
+        from untaped.data_file import Lines, Unreadable, read_lines  # noqa: PLC0415 - first use
 
-    def _write(self, paths: _KeyPaths, key: str, freshness: Freshness) -> bool:
-        error = freshness.error
-        text = json.dumps(
-            {
-                "untaped": _FORMAT,
-                "key": key,
-                "refreshed_at": _iso(freshness.refreshed_at),
-                "attempted_at": _iso(freshness.attempted_at),
-                "error": None if error is None else error.model_dump(mode="json"),
-                "partial": freshness.partial,
-                "retry_at": _iso(freshness.retry_at),
-                "version": freshness.version,
-            },
-            ensure_ascii=False,
-        )
+        if typing is None:
+            found = read_lines(paths.file())
+            if not isinstance(found, Lines) or found.stamp.get("key") != key:
+                return _Kept(Freshness())
+            return _Kept(_freshness_of(found.stamp, version, typed=False))
+        own = paths.file(versioned(typing, version))
+        found = read_lines(own)
+        kept = _read_kept(found, key, version, typing, check=check)
+        if kept is not None:
+            return kept
+        fallback = self._fallback(paths, key, own, version, typing, check=check)
+        if fallback is not None:
+            return fallback
+        return _Kept(Freshness(), damaged=isinstance(found, (Lines, Unreadable)))
+
+    @staticmethod
+    def _fallback(
+        paths: _KeyPaths,
+        key: str,
+        own: Path,
+        version: str | None,
+        typing: ValueTyping,
+        *,
+        check: bool,
+    ) -> _Kept | None:
+        """The newest value of the same type another version filled for ``key``, outdated."""
+        from untaped.data_file import read_lines  # noqa: PLC0415 - first use
+
+        newest: _Kept | None = None
+        for entry in _listed(paths.dir):
+            matched = _VERSIONED.fullmatch(entry.name)
+            if matched is None or matched["stem"] != paths.stem or entry == own:
+                continue
+            kept = _read_kept(read_lines(entry), key, version, typing, check=check)
+            if kept is None or kept.freshness.refreshed_at is None:
+                continue
+            if newest is None or kept.freshness.refreshed_at > newest.freshness.refreshed_at:  # type: ignore[operator]
+                newest = kept
+        if newest is None:
+            return None
+        return replace(newest, freshness=replace(newest.freshness, outdated=True))
+
+    def _write(
+        self,
+        path: Path,
+        key: str,
+        freshness: Freshness,
+        typing: ValueTyping | None,
+        value: bytes | None,
+    ) -> bool:
+        """Write ``key``'s file; whether it was written (a failure is logged, never raised)."""
         try:
-            atomic_write(paths.sidecar, text)
+            self._write_file(path, key, freshness, typing, value)
         except OSError:
             # The next run refreshes again; the data the fill wrote is the owner's.
-            _LOG.debug("could not write the cache sidecar %s", paths.sidecar, exc_info=True)
+            _LOG.debug("could not write the cache file %s", path, exc_info=True)
             return False
         return True
 
-    def _save(self, paths: _KeyPaths, key: str, freshness: Freshness) -> Freshness:
-        self._write(paths, key, freshness)
-        return freshness
+    @staticmethod
+    def _write_file(
+        path: Path,
+        key: str,
+        freshness: Freshness,
+        typing: ValueTyping | None,
+        value: bytes | None,
+    ) -> None:
+        from untaped.data_file import write_lines  # noqa: PLC0415 - first use
+
+        error = freshness.error
+        stamp: dict[str, Any] = {"key": key}
+        if typing is not None:
+            stamp["type"] = typing.shape
+        stamp |= {
+            "version": freshness.version,
+            "refreshed_at": _iso(freshness.refreshed_at),
+            "attempted_at": _iso(freshness.attempted_at),
+            "error": None if error is None else error.model_dump(mode="json"),
+            "partial": freshness.partial,
+            "retry_at": _iso(freshness.retry_at),
+        }
+        write_lines(path, stamp, value)
+
+    def _remember(
+        self,
+        own: Path,
+        key: str,
+        current: _Kept,
+        attempt: Freshness,
+        typing: ValueTyping | None,
+    ) -> _Kept:
+        """Keep a failed attempt in this version's file, with the value it falls back on, if any.
+
+        The value's bytes are copied unparsed: from this version's file, or
+        from another version's, which this version's file then serves,
+        outdated, until a fill succeeds.
+        """
+        self._write(own, key, attempt, typing, current.raw)
+        return replace(current, freshness=attempt)
+
+    def _keep(
+        self,
+        own: Path,
+        key: str,
+        label: str,
+        freshness: Freshness,
+        typing: ValueTyping | None,
+        value: bytes | None,
+    ) -> None:
+        """Keep a fill's result: a file that can't be written is one warning, never a failure."""
+        if typing is not None and value is None:
+            return  # a value that won't serialise: the older file stays, due, and is refilled
+        try:
+            self._write_file(own, key, freshness, typing, value)
+        except OSError as exc:
+            from untaped.output.sink import Diagnostics  # noqa: PLC0415 - no cycle
+
+            Diagnostics().warning(
+                f"could not keep {self.label} for {label} ({exc.strerror or exc}); "
+                "the next run refreshes it again"
+            )
+
+    def _sweep(self, paths: _KeyPaths, key: str, own: Path, max_age: timedelta) -> None:
+        """After a complete fill, under the key's lock: drop values no reader would serve.
+
+        This key and partition's files of other versions go once past
+        ``max_age``: whoever reads one refills it anyway. Another
+        partition's files of the key (a rotated credential) go only past
+        the longer of 30 days and ten times the declared max age, under
+        their own lock taken without waiting: a folder shared by profiles
+        may serve one whose max age is longer than this one's.
+        """
+        from untaped.data_file import Lines, parsed_time, read_lines  # noqa: PLC0415 - first use
+
+        now = _utcnow()
+        horizon = max(_PARTITION_HORIZON, 10 * self.default_max_age)
+        segment = _segment(key)
+        for entry in _listed(paths.dir):
+            matched = _VERSIONED.fullmatch(entry.name)
+            if matched is None or entry == own:
+                continue
+            stem = matched["stem"]
+            if stem != segment and not stem.startswith(f"{segment}.p"):
+                continue
+            found = read_lines(entry)
+            if not isinstance(found, Lines) or found.stamp.get("key") != key:
+                continue  # unreadable, or another key whose name begins alike
+            refreshed = parsed_time(found.stamp.get("refreshed_at"))
+            if stem == paths.stem:
+                if refreshed is None or now - refreshed >= max_age:
+                    entry.unlink(missing_ok=True)
+                continue
+            if refreshed is not None and now - refreshed < horizon:
+                continue
+            other = _KeyPaths(paths.dir, stem, paths.dir / f"{stem}.lock")
+            try:
+                with self._held(other, timeout=0.0, label=key):
+                    entry.unlink(missing_ok=True)
+            except _LockError:
+                continue  # busy, or its lock won't open: the next complete fill tries again
 
     @contextmanager
     def _task(self, text: str, parent: ProgressHandle) -> Iterator[ProgressHandle]:
@@ -797,9 +1203,12 @@ class Cache:
             yield task
 
     @staticmethod
-    def _task_text(label: str, freshness: Freshness, max_age: timedelta) -> str:
+    def _task_text(label: str, kept: _Kept, max_age: timedelta) -> str:
         """The refresh's task, worded from the key's age."""
+        freshness = kept.freshness
         if freshness.refreshed_at is None:
+            if kept.damaged:
+                return f"Refreshing {label} (the kept copy could not be read)"
             return f"Refreshing {label} (first use)"
         if freshness.outdated:
             return f"Refreshing {label} (made by another version)"
@@ -1010,6 +1419,122 @@ def _parsed(value: object) -> datetime | None:
 
 def _iso(value: datetime | None) -> str | None:
     return None if value is None else format_utc(value)
+
+
+def value_typing(hint: Any, *, model: type[BaseModel] | None = None) -> ValueTyping:
+    """How a cache keeps values of type ``hint``: its adapter and its shape's hash."""
+    from untaped.data_file import type_hash  # noqa: PLC0415 - first use
+
+    adapter: TypeAdapter[Any] = TypeAdapter(hint)
+    return ValueTyping(adapter, type_hash(adapter.json_schema()), model)
+
+
+def versioned(typing: ValueTyping, version: str | None) -> str:
+    """The hash naming one version's file of a value: its type's shape and ``version``."""
+    return _digest(f"{typing.shape}:{version or ''}")
+
+
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()[:8]
+
+
+def _listed(folder: Path) -> list[Path]:
+    """``folder``'s entries; none when it is missing or can't be listed."""
+    try:
+        return list(folder.iterdir())
+    except OSError:
+        return []
+
+
+def _read_kept(
+    found: object, key: str, version: str | None, typing: ValueTyping, *, check: bool
+) -> _Kept | None:
+    """What a typed file read as ``found`` keeps for ``key``; ``None`` when it can't serve it.
+
+    Another key's, another type's, a newer format's or an unreadable file
+    can't; nor can one that says it was refreshed but has no value that
+    validates (``check=False`` only asks that one is there).
+    """
+    from untaped.data_file import Lines  # noqa: PLC0415 - first use
+
+    if not isinstance(found, Lines):
+        return None
+    stamp = found.stamp
+    if stamp.get("key") != key or stamp.get("type") != typing.shape:
+        return None
+    freshness = _freshness_of(stamp, version, typed=True)
+    if freshness.refreshed_at is None:
+        return _Kept(freshness)  # attempts only: no value yet
+    if found.value is None:
+        return None
+    if not check:
+        return _Kept(freshness, raw=found.value)
+    try:
+        value = typing.adapter.validate_json(found.value, strict=True)
+    except ValidationError:
+        return None
+    return _Kept(freshness, value=value, raw=found.value)
+
+
+def _freshness_of(stamp: Mapping[str, Any], version: str | None, *, typed: bool) -> Freshness:
+    """A file's stamp as :class:`Freshness`, ``outdated`` against ``version``.
+
+    A typed cache's value filled at any other version is outdated; an
+    untyped one's only when the cache has a version.
+    """
+    refreshed_at = _parsed(stamp.get("refreshed_at"))
+    filled_at = stamp.get("version")
+    filled_at = filled_at if isinstance(filled_at, str) else None
+    outdated = refreshed_at is not None and filled_at != version and (typed or version is not None)
+    error = _failure(stamp.get("error"))
+    if error is None and stamp.get("error") is not None:
+        # a newer untaped's error: the attempt it describes cannot be told, the data can
+        return Freshness(refreshed_at=refreshed_at, version=filled_at, outdated=outdated)
+    return Freshness(
+        refreshed_at=refreshed_at,
+        attempted_at=_parsed(stamp.get("attempted_at")),
+        error=error,
+        partial=stamp.get("partial") is True,
+        retry_at=_parsed(stamp.get("retry_at")),
+        version=filled_at,
+        outdated=outdated,
+    )
+
+
+def _remove_legacy(plugin: str) -> None:
+    """Remove ``plugin``'s ``caches/`` folder, untaped 11.0's, after a complete fill. Never raises.
+
+    No release since reads it: each cache keeps its files under ``cached/``.
+    Only a registered install removes it (``untaped setup register``), as
+    :meth:`Store.prune <untaped.store.Store.prune>` does: renamed aside, then
+    deleted, with one ``untaped.pruned`` line, even under ``--quiet``.
+    """
+    from untaped import refs  # noqa: PLC0415 - refs imports the registry
+    from untaped.plugins.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
+
+    folder = named_plugin_dir(plugin) / "caches"
+    try:
+        if not folder.is_dir() or folder.is_symlink() or refs.this_install() is None:
+            return
+        aside = folder.with_name(f"caches.removing-{uuid.uuid4().hex[:8]}")
+        os.rename(folder, aside)
+    except (OSError, ConfigError) as exc:
+        _LOG.debug("could not remove %s: %s", folder, exc)
+        return
+    from untaped.messages import shown_path, size_text  # noqa: PLC0415 - no cycle
+    from untaped.migrations import dir_bytes  # noqa: PLC0415 - migrations imports the registry
+    from untaped.output.diagnostic import Pruned  # noqa: PLC0415 - no cycle
+
+    size = dir_bytes(aside)
+    shutil.rmtree(aside, ignore_errors=True)
+    line = Pruned(
+        message=f"removed {shown_path(folder)} ({size_text(size)}): left by untaped 11.0, "
+        "which kept caches there; this release keeps them in cached/",
+        plugin=plugin,
+        path=str(folder),
+        bytes=size,
+    )
+    current_sink().emit(line, unmuted=True)
 
 
 # --------------------------------------------------------------------------- #

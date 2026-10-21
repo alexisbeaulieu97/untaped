@@ -11,6 +11,7 @@ import errno
 import json
 import os
 import shutil
+import stat
 import subprocess
 import threading
 from collections.abc import Callable
@@ -19,7 +20,8 @@ from typing import Any
 
 import pytest
 
-from untaped import holds, projects, refs
+from untaped import data_file, holds, projects, refs
+from untaped.data_file import written_by
 from untaped.errors import ConfigError, ErrorCategory, UsageError
 from untaped.plugins.registry import PluginSpec
 from untaped.projects import (
@@ -85,7 +87,7 @@ def test_the_home_and_untaped_home_are_never_a_project() -> None:
     for folder in (home, home / ".untaped"):
         (folder / ".untaped").mkdir(parents=True, exist_ok=True)
         (folder / ".untaped" / "project.json").write_text(
-            '{"untaped": "1", "id": "3f9a1c2b7d10"}', encoding="utf-8"
+            '{"untaped": {"file": 1}, "id": "3f9a1c2b7d10"}', encoding="utf-8"
         )
     inside = home / "notes"
     inside.mkdir()
@@ -110,6 +112,40 @@ def test_a_damaged_marker_is_a_config_error(tmp_path: Path) -> None:
         project_at(tmp_path / "PROJ")
 
 
+@pytest.mark.parametrize(
+    ("text", "problem"),
+    [
+        ('{"untaped": {"file": 2, "by": "12.0.0"}, "id": "3f9a1c2b7d10"}', "a newer untaped"),
+        ('{"id": "3f9a1c2b7d10"}', "has no 'untaped' stamp"),
+        ('{"untaped": {"file": 1}, "id": "nope"}', "does not hold a ProjectMarker"),
+    ],
+)
+def test_an_unreadable_or_newer_marker_stops_every_use(
+    tmp_path: Path, text: str, problem: str
+) -> None:
+    project = make_project(tmp_path / "PROJ")
+    seen = _fresh(project.root)
+    assert seen is not None
+    (project.root / ".untaped" / "project.json").write_text(text, encoding="utf-8")
+    projects._forget()
+    for use in (
+        lambda: project_at(project.root),
+        lambda: writing(seen),
+        lambda: init(project.root),
+    ):
+        with pytest.raises(ConfigError, match=problem) as caught:
+            use()
+        assert caught.value.exit_code == 4
+
+
+def test_a_marker_from_before_the_data_file_still_reads(tmp_path: Path) -> None:
+    project = make_project(tmp_path / "PROJ")
+    marker = project.root / ".untaped" / "project.json"
+    marker.write_text(json.dumps({"untaped": "1", "id": project.id}), encoding="utf-8")
+    projects._forget()
+    assert project_at(project.root) == project
+
+
 # --- init ------------------------------------------------------------------------------
 
 
@@ -118,7 +154,8 @@ def test_init_writes_the_marker_the_gitignore_and_the_reference(tmp_path: Path) 
     assert done.action == "created"
     root = tmp_path / "PROJ"
     marker = json.loads((root / ".untaped" / "project.json").read_text(encoding="utf-8"))
-    assert marker == {"untaped": "1", "id": done.project.id}
+    assert marker == {"untaped": {"file": 1, "by": written_by()}, "id": done.project.id}
+    assert stat.S_IMODE((root / ".untaped" / "project.json").stat().st_mode) == 0o600
     assert (root / ".untaped" / ".gitignore").read_text(encoding="utf-8").splitlines() == [
         "/.gitignore",
         "/project.json",
@@ -241,17 +278,17 @@ def test_new_id_is_only_for_a_copy(tmp_path: Path) -> None:
 def test_a_second_init_racing_the_first_reports_one_project(tmp_path: Path) -> None:
     barrier = threading.Barrier(2)
     done: list[projects.Initialized] = []
-    real = projects._create_marker
+    real = projects._write_marker
 
-    def create(marker: Path, pid: str) -> bool:
+    def create(marker: Path, pid: str, *, exclusive: bool = False) -> bool:
         barrier.wait()  # both have decided the folder is not a project yet
-        return real(marker, pid)
+        return real(marker, pid, exclusive=exclusive)
 
     def run() -> None:
         done.append(init(tmp_path / "PROJ"))
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(projects, "_create_marker", create)
+        patch.setattr(projects, "_write_marker", create)
         workers = [threading.Thread(target=run) for _ in range(2)]
         for worker in workers:
             worker.start()
@@ -292,7 +329,7 @@ def test_a_failed_marker_write_leaves_no_marker(tmp_path: Path) -> None:
         raise OSError(28, "No space left on device")
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(Path, "write_text", full)
+        patch.setattr(data_file, "_write_new", full)
         with pytest.raises(ConfigError, match="No space left on device"):
             init(tmp_path / "PROJ")
     assert not (tmp_path / "PROJ" / ".untaped" / "project.json").exists()
@@ -376,7 +413,7 @@ def test_an_id_changed_under_a_writing_use_asks_to_run_again(tmp_path: Path) -> 
     seen = _fresh(project.root)
     assert seen is not None
     marker = project.root / ".untaped" / "project.json"
-    marker.write_text(json.dumps({"untaped": "1", "id": "0" * 12}), encoding="utf-8")
+    marker.write_text(json.dumps({"untaped": {"file": 1}, "id": "0" * 12}), encoding="utf-8")
     with pytest.raises(ConfigError, match="id changed while untaped was checking") as caught:
         writing(seen)
     assert caught.value.category is ErrorCategory.UNAVAILABLE
@@ -539,7 +576,7 @@ def test_states_present_missing_and_unreadable(
 def test_another_id_at_the_folder_reads_missing(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
     (project.root / ".untaped" / "project.json").write_text(
-        '{"untaped": "1", "id": "000000000000"}', encoding="utf-8"
+        '{"untaped": {"file": 1}, "id": "000000000000"}', encoding="utf-8"
     )
     assert anchor_state(_reference(project)) == "missing"
 

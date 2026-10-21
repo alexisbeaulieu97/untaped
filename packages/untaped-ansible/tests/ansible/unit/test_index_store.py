@@ -77,7 +77,7 @@ def test_the_default_index_is_its_layout_file_beside_the_setting() -> None:
     assert INDEX_STORE.path() == _plugin() / "index.v4.sqlite3"
 
 
-def test_the_first_open_adopts_the_11_0_index_and_its_sidecars() -> None:
+def test_the_first_open_adopts_the_11_0_index_and_drops_its_sidecars() -> None:
     bare = _plugin() / "index.sqlite3"
     _sqlite(bare, "11.0")
     sidecars = _plugin() / "caches" / "index" / "default"
@@ -90,8 +90,7 @@ def test_the_first_open_adopts_the_11_0_index_and_its_sidecars() -> None:
     assert index._path == layout
     assert _mark(layout) == "11.0"
     assert not bare.exists()
-    assert (_plugin() / "caches" / "index.v4" / "default" / "source_prod.json").is_file()
-    assert not (_plugin() / "caches" / "index").exists()
+    assert not (_plugin() / "caches" / "index").exists()  # the freshness reseeds from the rows
     assert (_plugin() / "index.v4.sqlite3.inuse").exists()
 
 
@@ -154,14 +153,16 @@ def test_a_registered_install_removes_the_layout_nothing_holds_after_a_fill() ->
     refs.register([RefTarget(plugin="ansible", store="index", layout=4)])
     newer = _plugin() / "index.v5.sqlite3"
     _sqlite(newer, "a one-off's layout 5")
-    (_plugin() / "caches" / "index.v5" / "default").mkdir(parents=True)
+    (_plugin() / "cached" / "index.v5" / "default").mkdir(parents=True)
+    (_plugin() / "caches" / "index.v4" / "default").mkdir(parents=True)  # a development build's
 
     open_index(AnsibleSettings())
     _fill_index()
 
     assert not newer.exists()
-    assert not (_plugin() / "caches" / "index.v5").exists()
-    assert (_plugin() / "caches" / "index.v4").is_dir()
+    assert not (_plugin() / "cached" / "index.v5").exists()
+    assert (_plugin() / "cached" / "index.v4").is_dir()
+    assert not (_plugin() / "caches").exists()
 
 
 def test_an_unregistered_install_keeps_both_layouts() -> None:

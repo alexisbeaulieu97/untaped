@@ -3,10 +3,9 @@
 One entry per provider, method, profile and arguments, keyed ``<provider>:<hash>``
 (``<hash>`` is the sha256 of the arguments' canonical JSON): the cache is the
 owner's and the entry one provider's, so whatever reports an entry (a stale
-line) names whose it is. The entry, ``<segment>.answer.json`` beside the key's
-sidecar under the owner's ``caches/<contract>_<method>/<profile>/``, holds
-``{"untaped": "2", "schema": …, "value": …}``; how fresh it is lives in the
-sidecar. ``schema`` is the sha256 of the return type's JSON schema (with the
+line) names whose it is. The entry is a typed cache file like any
+``Cache(model=)``'s, under the owner's ``cached/<contract>_<method>/<profile>/``:
+its freshness, then the answer. Its type is the return type's shape (with the
 provider's own record model's, which ``source.record`` carries), so an entry
 written for another shape of either model is a miss, never an error. A cache
 that can't be written never costs the live answer.
@@ -26,16 +25,12 @@ import functools
 import hashlib
 import inspect
 import json
-import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, TypeVar, get_args, get_origin
 
-from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 
 from untaped.cache import (
@@ -43,18 +38,17 @@ from untaped.cache import (
     CallState,
     Filled,
     Freshness,
+    ValueTyping,
     answering,
     call_state,
     current_call,
+    value_typing,
 )
 from untaped.contracts._declare import Binding, Contract, binding_of
 from untaped.errors import UntapedError
-from untaped.fs import atomic_write
 from untaped.output.progress import ProgressHandle
 from untaped.output.sink import current_sink
 
-_FORMAT = "2"
-_LOG = logging.getLogger("untaped.contracts")
 #: The entries this context is filling, as ``(cache, key)``.
 _FILLING: ContextVar[frozenset[tuple[str, str]]] = ContextVar(
     "untaped_answer_filling", default=frozenset()
@@ -80,29 +74,22 @@ def substitute(hint: Any, param: TypeVar | None, item: type | None) -> Any:
 
 
 @functools.cache
-def _adapter(hint: Any) -> tuple[TypeAdapter[Any], str]:
-    adapter: TypeAdapter[Any] = TypeAdapter(hint)
-    schema = json.dumps(adapter.json_schema(), sort_keys=True, separators=(",", ":"))
-    return adapter, hashlib.sha256(schema.encode()).hexdigest()
+def _typing_of(hint: Any) -> ValueTyping:
+    return value_typing(hint)
 
 
-def _schema(binding: Binding, hint: Any) -> str:
-    """The entry's schema hash: the return type's, and the provider's own model's when bridged."""
-    schema = _adapter(hint)[1]
+def _typing(binding: Binding, hint: Any) -> ValueTyping:
+    """The entry's type: the return type's, and the provider's own model's when bridged."""
+    typing = _typing_of(hint)
     if binding.owns_item or binding.item is None:
-        return schema
-    return hashlib.sha256(f"{schema}:{_adapter(binding.item)[1]}".encode()).hexdigest()
+        return typing
+    compound = hashlib.sha256(f"{typing.shape}:{_typing_of(binding.item).shape}".encode())
+    return ValueTyping(typing.adapter, compound.hexdigest()[:16])
 
 
 def entry_key(binding: Binding, digest: str) -> str:
     """The entry's key in the owner's cache: ``<provider>:<arguments hash>``."""
     return f"{binding.plugin}:{digest}"
-
-
-def entry_path(cache: Cache, key: str) -> Path:
-    """Where ``key``'s answer lives in the active profile: beside its sidecar."""
-    sidecar = cache._paths(key).sidecar
-    return sidecar.with_name(f"{sidecar.stem}.answer.json")
 
 
 def argument_key(function: Callable[..., Any], provider: object, args: Any, kwargs: Any) -> str:
@@ -116,38 +103,6 @@ def argument_key(function: Callable[..., Any], provider: object, args: Any, kwar
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-@dataclass(frozen=True)
-class _Entry:
-    value: Any
-
-
-def _read(path: Path, adapter: TypeAdapter[Any], schema: str) -> _Entry | None:
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        if raw.get("untaped") != _FORMAT or raw.get("schema") != schema:
-            return None
-        value = adapter.validate_json(json.dumps(raw["value"]), strict=True)
-    except OSError, ValueError, KeyError, TypeError, AttributeError, ValidationError:
-        return None
-    return _Entry(value)
-
-
-def _write(path: Path, adapter: TypeAdapter[Any], schema: str, value: Any) -> None:
-    """Write ``value`` as the entry; the caller holds the key's lock (inside ``fill``)."""
-    try:
-        dumped = adapter.dump_python(
-            value, mode="json", by_alias=True, round_trip=True, warnings=False
-        )
-    except Exception:
-        _LOG.debug("could not serialise the answer cache entry %s", path, exc_info=True)
-        return
-    text = json.dumps({"untaped": _FORMAT, "schema": schema, "value": dumped}, ensure_ascii=False)
-    try:
-        atomic_write(path, text)
-    except OSError:
-        _LOG.debug("could not write the answer cache entry %s", path, exc_info=True)
-
-
 class _ProviderBug(UntapedError):
     """A provider's own exception, carried through ``serve()`` (which falls back on these)."""
 
@@ -157,7 +112,7 @@ class _ProviderBug(UntapedError):
 
 
 @contextmanager
-def _answering(provider: str, cache: Cache, caller: str) -> Iterator[CallState]:
+def _answering(provider: str, cache: Cache[Any], caller: str) -> Iterator[CallState]:
     """The call state ``serve()`` defers to while answering for ``provider`` from ``cache``.
 
     ``gather``'s when it opened one; otherwise one of this call's own, whose
@@ -176,30 +131,15 @@ def _answering(provider: str, cache: Cache, caller: str) -> Iterator[CallState]:
 
 @dataclass
 class _Call:
-    """One provider call through the answer cache: what ``serve()`` fills and reads."""
+    """One provider call through the answer cache: what ``serve()`` fills."""
 
     live_call: Callable[[], Any]
-    cache: Cache
+    cache: Cache[Any]
     key: str
     plugin: str
-    path: Path
-    adapter: TypeAdapter[Any]
-    schema: str
-    stored: _Entry | None = None
-    known: datetime | None = None
-    live: list[Any] = field(default_factory=list)
     failure: BaseException | None = None
 
-    def load(self) -> None:
-        """Read the stored entry; a miss the sidecar calls refreshed is forgotten, so it fills."""
-        self.stored = _read(self.path, self.adapter, self.schema)
-        self.known = self.cache.freshness(self.key).refreshed_at
-        if self.stored is None and self.known is not None:
-            # a schema change, an older format or a lost entry: what the sidecar says is wrong
-            self.cache.forget(self.key)
-            self.known = None
-
-    def fill(self, _key: str, _task: ProgressHandle) -> Filled:
+    def fill(self, _key: str, _task: ProgressHandle) -> Filled[Any]:
         token = _FILLING.set(_FILLING.get() | {(self.cache.qualified, self.key)})
         try:
             value = self.live_call()
@@ -211,23 +151,7 @@ class _Call:
             raise _ProviderBug(exc, self.plugin) from exc
         finally:
             _FILLING.reset(token)
-        self.live.append(value)  # served as is: never re-read, so never validated twice
-        _write(self.path, self.adapter, self.schema, value)
-        return Filled()
-
-    def read(self) -> Any:
-        if self.live:
-            return self.live[0]
-        if self.stored is not None and self.cache.freshness(self.key).refreshed_at == self.known:
-            return self.stored.value
-        entry = _read(self.path, self.adapter, self.schema)  # refreshed by another process
-        if entry is None:
-            raise UntapedError(
-                f"{self.plugin}'s cached answer changed while it was read; run it again",
-                system=self.plugin,
-                details={"cache": self.cache.qualified, "key": self.key},
-            )
-        return entry.value
+        return Filled[Any](value=value)  # served as is: never re-read, so never validated twice
 
     def record(self, state: CallState, freshness: Freshness) -> None:
         """Tell ``gather`` how old the answer is and, when it is stale, why."""
@@ -258,26 +182,21 @@ def call(
     key = entry_key(binding, argument_key(function, provider, args, kwargs))
     if (cache.qualified, key) in _FILLING.get():
         return function(provider, *args, **kwargs)  # an override's super(): the outer call keeps it
-    hint = return_type(binding, name)
     answer = _Call(
-        functools.partial(function, provider, *args, **kwargs),
-        cache,
-        key,
-        binding.plugin,
-        entry_path(cache, key),
-        _adapter(hint)[0],
-        _schema(binding, hint),
+        functools.partial(function, provider, *args, **kwargs), cache, key, binding.plugin
     )
-    answer.load()
     caller = f"{binding.plugin}'s {binding.contract.cls.__name__}.{name}"
     with _answering(binding.plugin, cache, caller) as state:
         try:
-            served = cache.serve(
-                {key: binding.plugin}, refresh=None, fill=answer.fill, read=answer.read
+            served = cache._serve_with(
+                {key: binding.plugin},
+                refresh=None,
+                fill=answer.fill,
+                typing=_typing(binding, return_type(binding, name)),
             )
         except _ProviderBug as exc:
             bug = exc.bug
         else:
             answer.record(state, served.freshness[key])
-            return served.value
+            return served.value[key]
         raise bug  # outside the except: it keeps its own cause; inside the with: lines dropped

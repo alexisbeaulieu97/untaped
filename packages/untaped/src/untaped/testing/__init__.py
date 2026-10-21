@@ -48,7 +48,7 @@ from typing import TYPE_CHECKING, Any, TextIO, cast
 from cyclopts import App
 from rich.console import Console
 
-from untaped.cache import installed_utcnow
+from untaped.cache import Cache, installed_utcnow, versioned
 from untaped.cli import run_cyclopts_app
 from untaped.errors import ConfigError, PromptInterruptedError
 from untaped.holds import (
@@ -111,10 +111,12 @@ __all__ = [
     "check_conventions",
     "check_plugin",
     "compose_with",
+    "damage",
     "drive_screen",
     "import_targets",
     "invoke_cli",
     "invoke_root",
+    "keep_value",
     "make_project",
     "move_ask",
     "plan_release",
@@ -177,6 +179,48 @@ def cache_clock(start: datetime | None = None) -> Iterator[CacheClock]:
     clock = CacheClock(start)
     with installed_utcnow(clock):
         yield clock
+
+
+@experimental
+def keep_value[M](
+    cache: Cache[M],
+    key: str,
+    value: M,
+    *,
+    refreshed_at: datetime,
+    partition: str | None = None,
+    version: str | None = None,
+) -> None:
+    """Keep ``value`` for ``key`` in a ``Cache(model=)`` as a fill at ``refreshed_at`` would.
+
+    ``version`` is the version of the code that filled it (by default the
+    cache's own now): another one's value is served outdated.
+    """
+    from untaped.cache import Freshness  # noqa: PLC0415 - the cache module is loaded already
+
+    typing = cache._typing()
+    if typing is None:
+        raise ConfigError(f"keep_value: cache {cache.qualified} has no model= to keep a value of")
+    filled_at = cache._version_now() if version is None else version
+    paths = cache._paths(key, partition)
+    paths.dir.mkdir(parents=True, exist_ok=True)
+    cache._write_file(
+        paths.file(versioned(typing, filled_at)),
+        key,
+        Freshness(refreshed_at=refreshed_at, version=filled_at),
+        typing,
+        typing.adapter.dump_json(value, by_alias=True, round_trip=True),
+    )
+
+
+@experimental
+def damage(cache: Cache[Any], key: str, *, partition: str | None = None) -> None:
+    """Make ``key``'s file in ``cache`` unreadable, as a disk or an editor might."""
+    typing = cache._typing()
+    paths = cache._paths(key, partition)
+    file = paths.file(None if typing is None else versioned(typing, cache._version_now()))
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text("{not json\n", encoding="utf-8")
 
 
 @dataclass(frozen=True)

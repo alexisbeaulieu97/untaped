@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, Field, SecretStr
@@ -54,16 +55,30 @@ def rank(monkeypatch: pytest.MonkeyPatch) -> object:
 
 
 def _cache_files() -> list[Path]:
-    """Every stored answer (the entries, not their sidecars)."""
+    """Every stored answer: one file per entry, its freshness then its value."""
     import os
 
     root = Path(os.environ["HOME"]) / ".untaped" / "plugins"
-    return sorted(root.rglob("*.answer.json"))
+    return sorted(root.rglob("*.v*.json"))
 
 
-def _sidecar(entry: Path) -> Path:
-    """The freshness sidecar beside ``entry``."""
-    return entry.with_name(entry.name.removesuffix(".answer.json") + ".json")
+def _stamp(entry: Path) -> dict[str, Any]:
+    """The entry's first line: what the cache knows about it."""
+    stamp: dict[str, Any] = json.loads(entry.read_text().splitlines()[0])["untaped"]
+    return stamp
+
+
+def _value(entry: Path) -> Any:
+    return json.loads(entry.read_text().splitlines()[1])
+
+
+def _rewrite(entry: Path, *, stamp: dict[str, Any] | None = None, value: Any = None) -> None:
+    lines = entry.read_text().splitlines()
+    if stamp is not None:
+        lines[0] = json.dumps({"untaped": stamp})
+    if value is not None:
+        lines[1] = json.dumps(value)
+    entry.write_text("\n".join(lines) + "\n")
 
 
 def test_answers_come_in_rank_order_then_by_name(rank) -> None:  # type: ignore[no-untyped-def]
@@ -218,14 +233,12 @@ def test_the_answer_cache_serves_within_its_max_age_and_refresh_directs_it() -> 
     assert Library.calls == 2
     assert isinstance(cached_only, Ok)
     [path] = _cache_files()
-    assert path.parts[-6:-1] == ("plugins", "shelf", "caches", "book_source_books", "default")
-    stored = json.loads(path.read_text())
-    assert set(stored) == {"untaped", "schema", "value"}
-    assert stored["untaped"] == "2"
-    assert [row["title"] for row in stored["value"]] == ["Dune", "Emma"]
-    sidecar = json.loads(_sidecar(path).read_text())
-    assert sidecar["key"].startswith("library:")
-    assert sidecar["refreshed_at"] is not None
+    assert path.parts[-6:-1] == ("plugins", "shelf", "cached", "book_source_books", "default")
+    assert [row["title"] for row in _value(path)] == ["Dune", "Emma"]
+    stamp = _stamp(path)
+    assert stamp["file"] == 1
+    assert stamp["key"].startswith("library:")
+    assert stamp["refreshed_at"] is not None
 
 
 def test_refresh_false_without_a_cached_answer_is_skipped_no_cache() -> None:
@@ -304,7 +317,7 @@ def test_a_stale_answer_prints_one_stale_warning_when_used_and_counts_nothing() 
     assert (stale.plugin, stale.cache, stale.key) == (
         "library",
         "shelf.book_source_books",
-        json.loads(_sidecar(path).read_text())["key"],
+        _stamp(path)["key"],
     )
     assert stale.error is not None and stale.error.category == "unavailable"
     assert stale.message.startswith("library: refresh failed (HTTP 503)")
@@ -335,20 +348,16 @@ def test_a_failed_live_call_with_no_cached_answer_fails() -> None:
 
 
 def test_s20_a_changed_model_misses_the_cache_and_nothing_errors() -> None:
-    """S20: the cached answer's schema hash differs, so the next call refreshes."""
+    """S20: the cached answer's type differs, so the next call refreshes."""
     compose(shelf_spec(), library_spec())
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [path] = _cache_files()
-    stored = json.loads(path.read_text())
-    stored["schema"] = "0" * 64
-    path.write_text(json.dumps(stored))
+    _rewrite(path, stamp={**_stamp(path), "type": "0" * 16})
     [answer] = gather(BookSource.books)()
     assert isinstance(answer, Ok)
     assert Library.calls == 2
-    stored["schema"] = json.loads(path.read_text())["schema"]
-    stored["value"] = [{"title": 5}]
-    path.write_text(json.dumps(stored))
+    _rewrite(path, value=[{"title": 5}])
     [answer] = gather(BookSource.books)()
     assert isinstance(answer, Ok)
     assert Library.calls == 3
@@ -359,10 +368,9 @@ def test_an_expired_entry_is_refreshed() -> None:
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [path] = _cache_files()
-    sidecar = _sidecar(path)
-    stored = json.loads(sidecar.read_text())
+    stored = _stamp(path)
     stored["refreshed_at"] = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
-    sidecar.write_text(json.dumps(stored))
+    _rewrite(path, stamp=stored)
     gather(BookSource.books)()
     assert Library.calls == 2
 
@@ -448,7 +456,7 @@ def test_a_cache_entry_names_the_provider_own_record_shape() -> None:
     import dataclasses
 
     from test_contracts.support import SpecialVolume
-    from untaped.contracts._cache import _adapter, _schema, return_type
+    from untaped.contracts._cache import _typing, _typing_of, return_type
     from untaped.contracts._declare import binding_of
 
     provider = Library()
@@ -459,10 +467,10 @@ def test_a_cache_entry_names_the_provider_own_record_shape() -> None:
     assert binding is not None
     hint = return_type(binding, "books")
     [path] = _cache_files()
-    stored = json.loads(path.read_text())["schema"]
-    assert stored == _schema(binding, hint)
-    assert stored != _adapter(hint)[1]
-    assert stored != _schema(dataclasses.replace(binding, item=SpecialVolume), hint)
+    stored = _stamp(path)["type"]
+    assert stored == _typing(binding, hint).shape
+    assert stored != _typing_of(hint).shape
+    assert stored != _typing(dataclasses.replace(binding, item=SpecialVolume), hint).shape
 
 
 def test_a_cache_that_cannot_be_written_keeps_the_live_answer(
@@ -471,7 +479,7 @@ def test_a_cache_that_cannot_be_written_keeps_the_live_answer(
     def refuse(*_: object, **__: object) -> None:
         raise OSError("read-only file system")
 
-    monkeypatch.setattr("untaped.contracts._cache.atomic_write", refuse)
+    monkeypatch.setattr("untaped.data_file.atomic_write", refuse)
     compose(shelf_spec(), library_spec())
     write_config(LIBRARY_CONFIG)
     [library] = gather(BookSource.books)()
@@ -491,7 +499,7 @@ def test_an_answer_that_cannot_be_dumped_is_served_and_logged(
     assert isinstance(shop, Ok)
     assert shop.invalid == ("row 2: expected a Book, got object",)
     assert _cache_files() == []
-    [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
+    [record] = [r for r in caplog.records if r.name == "untaped.cache"]
     assert record.exc_info is not None and isinstance(record.exc_info[1], ValueError)
 
 
