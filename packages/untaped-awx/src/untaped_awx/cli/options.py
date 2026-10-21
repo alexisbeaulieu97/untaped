@@ -197,7 +197,7 @@ WITH_SCM_HELP = (
 
 
 def offers_usage(spec: ResourceSpec) -> bool:
-    """``usage`` applies to the kinds a workflow node can run."""
+    """``usage`` applies to job and workflow templates, whose workflow references it looks up."""
     return spec.kind in {"JobTemplate", "WorkflowJobTemplate"}
 
 

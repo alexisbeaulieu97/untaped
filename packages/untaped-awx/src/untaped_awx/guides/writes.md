@@ -3,7 +3,8 @@ description: "Read before changing anything on an AWX controller: how a write pr
 ---
 
 Every write (a command marked `(changes things)` or `(destructive)`)
-previews once and asks once, No by default. What to select: `untaped agents awx selecting`.
+previews once and asks once, No by default. What to select:
+`untaped agents awx selecting`.
 
 ## Preview and confirmation
 
