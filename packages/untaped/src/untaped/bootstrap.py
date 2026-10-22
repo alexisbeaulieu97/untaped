@@ -252,6 +252,7 @@ def _reregister() -> None:
     else:
         bind_owners({})
         bind_behaviours({})
+        bind_credentials({})
 
 
 def composition() -> CompositionResult:

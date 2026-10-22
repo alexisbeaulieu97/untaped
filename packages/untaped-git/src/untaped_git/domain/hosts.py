@@ -38,8 +38,9 @@ class Credential(BaseModel):
     verify_tls: bool | Path = Field(
         default=True,
         description=(
-            "The key's TLS setting: `True` (untaped's trust: root `http.ca_bundle`, else "
-            "git's own), a CA file for this host, or `False` (git still verifies)."
+            "How git checks the host: `True` (git's own trust), a CA file for this host "
+            "(the key's, or root `http.ca_bundle` when the key keeps untaped's trust), "
+            "or `False` (git still verifies)."
         ),
     )
 

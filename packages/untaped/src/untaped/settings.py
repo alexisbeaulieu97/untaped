@@ -12,6 +12,7 @@ import contextvars
 import json
 import os
 import re
+import weakref
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from functools import cache, lru_cache
@@ -321,10 +322,19 @@ def section_model(
             Field(default_factory=held, description="Max ages of the caches this plugin keeps."),
         )
     injected.update(legacy_credential_fields(model, credentials, section=section))
-    return cast(
+    composed = cast(
         "type[BaseModel]",
         create_model(model.__name__, __base__=model, __module__=model.__module__, **injected),
     )
+    if credentials:
+        _CREDENTIAL_NAMES[composed] = frozenset(each.name for each in credentials)
+    return composed
+
+
+#: Each composed section model's credential names: ``UNTAPED_<SECTION>__<NAME>`` overrides one.
+_CREDENTIAL_NAMES: weakref.WeakKeyDictionary[type[BaseModel], frozenset[str]] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def legacy_credential_fields(
@@ -786,7 +796,10 @@ class _RenamingEnvSource(EnvSettingsSource):
             if not isinstance(value, dict) or not key_mappings(model):
                 continue
             data[section], uses = rename_keys(model, value)
+            overrides = _CREDENTIAL_NAMES.get(model, frozenset())
             for use in uses:
+                if use.kind == "deprecated" and use.old in overrides:
+                    continue  # UNTAPED_<SECTION>__<NAME> is a credential's override, not deprecated
                 # The new key follows the old one's form: a variable or a blob key.
                 as_variable = _env_is_set(_env_name(section, use.old))
                 notify_use(

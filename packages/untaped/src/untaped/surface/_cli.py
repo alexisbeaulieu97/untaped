@@ -7,9 +7,8 @@ options sorted); every optional positional, option, alias, negative flag and
 choice has a line of its own, so adding one adds a line. Flattened dataclass
 parameters are containers: their fields are the options; a ``**kwargs``
 parameter (options read by name at run time) is one ``--<NAME> VALUE`` line.
-Hidden commands and
-parameters are skipped unless deprecated (an option marked ``deprecated(...)``
-in its annotation counts) or listed in
+Hidden commands and parameters are skipped unless deprecated (an option
+marked ``deprecated(...)`` in its annotation counts) or listed in
 :data:`~untaped.surface._lists.WRITTEN_OUTSIDE`. Defaults are the declared
 ones, never a value settings would supply at run time. A :func:`~untaped.stability.frozen`
 command's line and its positional lines are marked ``frozen``; its options

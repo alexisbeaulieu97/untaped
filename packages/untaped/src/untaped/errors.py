@@ -201,11 +201,11 @@ class UntapedError(Exception):
 
 
 def attribution(error: BaseException) -> dict[str, Any]:
-    """The ``category``/``system``/``hint``/``details``/``fix_by`` keyword arguments of ``error``.
+    """The ``category``/``system``/``hint``/``details`` keyword arguments of ``error``.
 
     Pass them on when a new error replaces a caught one, so the replacement
     keeps its attribution: ``raise AwxApiError(msg, **attribution(exc))``.
-    ``hint``, ``details`` and ``fix_by`` are included only when set. Anything but an
+    ``hint`` and ``details`` are included only when set. Anything but an
     :class:`UntapedError` has none (``{}``).
     """
     if not isinstance(error, UntapedError):
@@ -215,9 +215,27 @@ def attribution(error: BaseException) -> dict[str, Any]:
         fields["hint"] = error.hint
     if error.details:
         fields["details"] = dict(error.details)
-    if error.fix_by:
-        fields["fix_by"] = error.fix_by
     return fields
+
+
+def fix_by(error: BaseException) -> FixBy | None:
+    """Who must take ``error``'s hint step: its own ``fix_by``, else its cause's.
+
+    A replacement made with :func:`attribution` and ``raise … from exc``
+    keeps the caught error's hint, so it keeps whose step that hint is
+    without its constructor taking ``fix_by``.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while isinstance(current, UntapedError) and id(current) not in seen:
+        if current.fix_by is not None:
+            return current.fix_by
+        seen.add(id(current))
+        cause = current.__cause__
+        if not isinstance(cause, UntapedError) or cause.hint != current.hint:
+            return None
+        current = cause
+    return None
 
 
 class ConfigError(UntapedError):

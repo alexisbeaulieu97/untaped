@@ -638,7 +638,7 @@ def test_a_partial_write_keeps_the_category_of_its_cause(
     )
     assert "error: JobTemplate/fresh: " in result.stderr
     if status == 401:
-        assert "auth set awx" in (row["error"]["hint"] or "")
+        assert "auth login awx" in (row["error"]["hint"] or "")
 
 
 def test_rejected_token_during_survey_write_still_stops_the_batch(

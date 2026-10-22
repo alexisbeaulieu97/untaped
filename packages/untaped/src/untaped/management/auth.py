@@ -283,8 +283,8 @@ def _name_outranked(credential: Credential[Any]) -> None:
     legacy = legacy_setting(credential)
     if legacy is not None:
         _diag.info(
-            f"this login now wins over {legacy[0]}, which is deprecated; "
-            f"{run_hint('config migrate')}"
+            f"this login now wins over {legacy[0]}; "
+            f"{run_hint('config migrate')} to drop the old setting"
         )
     found = next((each for each in credential.env if os.environ.get(each, "").strip()), None)
     if found is not None:

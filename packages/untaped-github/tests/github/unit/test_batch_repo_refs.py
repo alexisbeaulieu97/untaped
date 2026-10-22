@@ -9,13 +9,20 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from pydantic import SecretStr
+from pydantic import HttpUrl
 
 from untaped.sdk import UntapedError
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.errors import GithubGraphqlError
 from untaped_github.infrastructure import GithubClient
-from untaped_github.settings import GithubSettings
+from untaped_github.settings import GithubServer, GithubSettings
+
+
+@pytest.fixture(autouse=True)
+def _token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every probe's token comes from gh's variable."""
+    monkeypatch.setenv("GH_TOKEN", "ghp_test")
+
 
 Reply = httpx.Response | Callable[[httpx.Request], httpx.Response] | Exception
 
@@ -45,7 +52,7 @@ def _probe(
             route.mock(return_value=replies)
         else:
             route.mock(side_effect=replies)
-        client = GithubClient(GithubSettings(token=SecretStr("ghp_test"), base_url=base_url))
+        client = GithubClient(GithubSettings(server=GithubServer(url=HttpUrl(base_url))))
         with client:
             result = getattr(client, method)(repos, **kwargs)
         queries = [json.loads(call.request.content)["query"] for call in route.calls]
@@ -452,7 +459,7 @@ def test_http_access_errors_are_classified_and_never_retried(
 ) -> None:
     with respx.mock(base_url="https://api.github.com") as mock:
         route = mock.post("/graphql").mock(side_effect=[response])
-        client = GithubClient(GithubSettings(token=SecretStr("ghp_test")))
+        client = GithubClient(GithubSettings())
         with client, pytest.raises(GithubGraphqlError) as exc_info:
             client.batch_repo_refs(["acme/a", "acme/b"])
 

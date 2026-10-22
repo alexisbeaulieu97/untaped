@@ -221,7 +221,7 @@ def _credential_row(spec: PluginSpec, field: MarkedField, state: ServiceState, p
         run = command_argv("config migrate", profile=profile)
         return _row(step, name, "failed", detail, run, by="user")
     if source.startswith(f"{name}."):
-        detail = f"{detail}; {source} is deprecated, `config migrate` moves it to a stored login"
+        detail = f"{detail}; `config migrate` moves {source} to a stored login"
     return _row(step, name, "done", detail)
 
 

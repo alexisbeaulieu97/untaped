@@ -5,15 +5,18 @@ from __future__ import annotations
 import httpx
 import pytest
 import respx
-from pydantic import SecretStr
 
-from untaped.sdk import ConfigError
 from untaped_github.infrastructure import GithubClient
 from untaped_github.settings import GithubSettings
 
 
+@pytest.fixture(autouse=True)
+def _token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GH_TOKEN", "ghp_test")
+
+
 def _client() -> GithubClient:
-    return GithubClient(GithubSettings(token=SecretStr("ghp_test")))
+    return GithubClient(GithubSettings())
 
 
 def test_list_matching_refs_returns_branch_and_tag_refs() -> None:
@@ -78,10 +81,7 @@ def test_get_raw_content_reads_file_at_ref() -> None:
     assert content == "- src: https://github.com/acme/base\n"
 
 
-def test_a_blank_base_url_fails_naming_the_setting() -> None:
-    """``base_url`` has a default, so it is not marked; a blank override still fails loudly."""
-    config = GithubSettings(base_url=" ", token=SecretStr("ghp_test"))
-    with pytest.raises(ConfigError, match=r"^github\.base_url is blank$") as caught:
-        GithubClient(config)
-    assert "untaped config unset github.base_url" in (caught.value.hint or "")
-    assert "https://api.github.com" in (caught.value.hint or "")
+def test_the_11_0_base_url_keyword_reads_as_the_servers_url() -> None:
+    with pytest.warns(DeprecationWarning, match=r"GithubSettings\(base_url=\.\.\.\) is deprecated"):
+        config = GithubSettings(base_url="https://ghe.example.com/api/v3")  # type: ignore[call-arg]
+    assert config.api_url == "https://ghe.example.com/api/v3"

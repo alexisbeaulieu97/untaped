@@ -135,8 +135,8 @@ class GithubSettings(BaseModel):
             "`untaped auth login github`."
         ),
     )
-    # 11.0 api surface until 12.0: core fills `token` from GH (None without one),
-    # and reads both from a config file, deprecated, for other plugins too.
+    # 11.0 api surface until 12.0: 11.0's fallbacks still fill `token` from
+    # `token_command` and GH's variables; a stored login is read with `GH`.
     token: Annotated[
         SecretStr | None,
         deprecated(removed_in=12, replacement="untaped auth login github"),
@@ -197,7 +197,7 @@ class GithubSettings(BaseModel):
 
     @property
     def base_url(self) -> str:
-        """11.0's name for :attr:`api_url`; deprecated, removed in 12.0."""
+        """11.0's name for :attr:`api_url` (:data:`BASE_URL_ALIAS`)."""
         BASE_URL_ALIAS.warn("GithubSettings.base_url", stacklevel=3)
         return self.api_url
 

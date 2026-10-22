@@ -17,10 +17,9 @@ provides for, so nothing else installed changes the verdict:
   reported, never failed;
 - ``migrations``: each ``setup migrate-dirs`` preview runs against an empty
   HOME and returns ``MigrationRow`` rows;
-- ``unmarked-service`` and ``self-declared-command``: a ``warn`` row for each
-  deprecated way of saying what the settings need set up (the legacy
-  ``base_url``/``token`` fallback, a ``Secret``'s command field declared by
-  the model), so a plugin's ``assert_clean`` still passes.
+- ``unmarked-service``: a ``warn`` row when the settings say what needs
+  setting up only through the legacy ``base_url``/``token`` names, so a
+  plugin's ``assert_clean`` still passes.
 
 An owner gets a ``contracts`` row: its ``contracts`` function loads.
 """

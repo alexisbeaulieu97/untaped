@@ -326,9 +326,15 @@ def legacy_values(
     once (as any deprecated setting does). The override variable is step 1
     of ``get``, so it is not read here.
     """
-    from untaped.settings import env_var_setting, load_settings_section  # noqa: PLC0415
+    from untaped.settings import (  # noqa: PLC0415
+        env_var_setting,
+        load_settings_section,
+        registered_profile_model,
+    )
 
     plugin, name = credential.plugin, credential.name
+    if registered_profile_model(plugin) is None:
+        return None  # used uncomposed: no section holds the old settings
     try:
         section = load_settings_section(plugin)
     except ConfigError:

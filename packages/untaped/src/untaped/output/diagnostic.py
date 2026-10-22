@@ -69,7 +69,7 @@ from pydantic import (
 from pydantic.fields import FieldInfo
 from pydantic_core import to_jsonable_python
 
-from untaped.errors import ErrorCategory, FixBy, HttpError, UntapedError
+from untaped.errors import ErrorCategory, FixBy, HttpError, UntapedError, fix_by
 from untaped.messages import duration_text
 from untaped.output.policy import is_verbose
 from untaped.redaction import redact_url_password
@@ -650,7 +650,7 @@ class Failure(Diagnostic, kind="untaped.failure"):
             message=text,
             hint=hint,
             details=_jsonable(details),
-            fix_by=error.fix_by if isinstance(error, UntapedError) else None,
+            fix_by=fix_by(error),
         )
 
     @classmethod
@@ -917,7 +917,7 @@ def format_error(exc: UntapedError) -> str:
     """
     message = _with_body(exc)
     if exc.hint and exc.hint not in message:
-        prefix = _USER_HINT_PREFIX if exc.fix_by == "user" else _HINT_PREFIX
+        prefix = _USER_HINT_PREFIX if fix_by(exc) == "user" else _HINT_PREFIX
         message = f"{message}\n{prefix}{exc.hint}"
     return redact_url_password(message)
 

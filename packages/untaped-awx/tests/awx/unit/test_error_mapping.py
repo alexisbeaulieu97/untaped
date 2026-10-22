@@ -28,7 +28,7 @@ from untaped_awx.errors import (
 )
 from untaped_awx.infrastructure.errors import map_awx_errors, to_awx_error
 
-_TOKEN_HINT = "hint: run `untaped auth set awx`"
+_TOKEN_HINT = "hint (your step): run `untaped auth login awx`"
 
 
 @pytest.mark.parametrize(
@@ -88,7 +88,7 @@ def test_rejected_token_stays_a_config_error_with_its_hint_as_a_field() -> None:
     mapped = to_awx_error(raw)
     assert isinstance(mapped, ConfigError)
     assert str(mapped) == "AWX rejected the token (HTTP 401)"
-    assert mapped.hint == _TOKEN_HINT.removeprefix("hint: ")
+    assert mapped.hint == _TOKEN_HINT.removeprefix("hint (your step): ")
     assert mapped.exit_code == 4
 
 

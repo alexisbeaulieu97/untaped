@@ -246,15 +246,15 @@ def test_the_deprecation_rules_run_as_lint_ids(install: Install) -> None:
 
 
 _SERVICE = '''
-    """A service plugin that says what needs setting up the deprecated ways."""
+    """A service plugin that says what needs setting up the deprecated way."""
 
     from __future__ import annotations
 
-    from typing import Annotated, ClassVar
+    from typing import ClassVar
 
     from pydantic import BaseModel, ConfigDict, SecretStr
 
-    from untaped.sdk import NeedsSetup, PluginSpec, Secret, TokenCommand, TokenSources
+    from untaped.sdk import PluginSpec, TokenSources
 
 
     class OldSettings(BaseModel):
@@ -267,31 +267,15 @@ _SERVICE = '''
         token: SecretStr | None = None
 
 
-    class OwnSettings(BaseModel):
-        """Marked, but declaring the command setting core adds."""
-
-        model_config = ConfigDict(frozen=True)
-
-        token: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
-        token_command: TokenCommand = None
-
-
     OLD = PluginSpec(name="old", settings=OldSettings)
-    OWN = PluginSpec(name="own", settings=OwnSettings)
     '''
 
 
-@pytest.mark.parametrize(
-    ("name", "rule"), [("old", "lint.unmarked-service"), ("own", "lint.self-declared-command")]
-)
-def test_a_deprecated_setup_declaration_is_a_warning(
-    install: Install, name: str, rule: str
-) -> None:
+def test_an_unmarked_service_is_a_warning(install: Install) -> None:
     install({"svc_plugin/__init__.py": _SERVICE})
-    candidate = PluginCandidate(
-        distribution=f"untaped-{name}", name=name, target=f"svc_plugin:{name.upper()}"
-    )
-    record = Plugin(name=name, status="ready", distribution=f"untaped-{name}", version="0.1.0")
+    candidate = PluginCandidate(distribution="untaped-old", name="old", target="svc_plugin:OLD")
+    record = Plugin(name="old", status="ready", distribution="untaped-old", version="0.1.0")
+    rule = "lint.unmarked-service"
     with compose_with("lint"):
         report = run([subject(record)], select=[rule], candidates=[candidate])
     [finding] = report.findings
