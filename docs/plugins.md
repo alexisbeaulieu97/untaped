@@ -88,7 +88,10 @@ A plugin that connects to a service marks what it can't run without, and
 `SecretStr | None` secret. `untaped` adds each secret's command setting
 (`acme.token_command`); a misplaced mark quarantines the plugin.
 `connected_client(config, section="acme", base_url=config.base_url)` sends the
-`token` secret (else the only one) as the bearer.
+`token` secret (else the only one) as the bearer, to `base_url`'s origin
+(scheme, host and port) only: a request elsewhere raises `HttpError` before it
+is sent. Redirects are returned unless a call passes `follow_redirects=True`,
+which follows them on the same origin only.
 
 A complete plugin module, with a nullary app factory (leave it out for a
 plugin with no commands), its stub skill and the `SPEC` the entry point

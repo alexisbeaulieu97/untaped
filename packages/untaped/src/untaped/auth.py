@@ -286,7 +286,8 @@ def run_command(
 ) -> subprocess.CompletedProcess[str]:
     """Run ``argv`` without a shell, its stdout captured, and return it finished.
 
-    ``label`` starts every error, which never repeats the command's output or
+    It runs in :func:`_command_folder`, never the current folder. ``label``
+    starts every error, which never repeats the command's output or
     arguments. stderr goes straight to the terminal unless ``capture_stderr``.
     A non-zero exit is returned, not raised. With nobody to answer a prompt,
     ``pass`` (also inside a wrapper) runs with :func:`pass_gpg_env`.
@@ -302,6 +303,7 @@ def run_command(
             timeout=_TIMEOUT_SECONDS,
             check=False,
             env=env,
+            cwd=_command_folder(),
         )
     except FileNotFoundError:
         raise ConfigError(f"{label} not found on PATH") from None
@@ -319,6 +321,17 @@ def run_command(
         ) from None
     except OSError as exc:
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
+
+
+def _command_folder() -> Path:
+    """The folder token and store commands run in: the config file's (``~/.untaped``).
+
+    Never the current folder, so a repository can't plant the program that a
+    relative ``argv[0]``, or a bare name with ``.`` on ``PATH``, would run.
+    Home, until the config folder exists.
+    """
+    folder = resolve_config_path().parent
+    return folder if folder.is_dir() else Path.home()
 
 
 def pass_gpg_options() -> list[str]:

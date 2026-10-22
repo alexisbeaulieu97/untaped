@@ -45,7 +45,7 @@ from untaped.errors import (
 )
 from untaped.messages import command_line, q, run_hint
 from untaped.profile_resolver import ACTIVE_PROFILE_ENV, classify_active_profile, selected_profile
-from untaped.redaction import redact_url_password
+from untaped.redaction import redact_credentials
 from untaped.setting_marks import declared_marks
 from untaped.settings import (
     HttpSettings,
@@ -69,6 +69,7 @@ PageFetcher = Callable[[str | None], tuple[list[dict[str, Any]], str | None]]
 
 _LOG = logging.getLogger("untaped.http")
 _DEFAULT_PORTS = {"http": 80, "https": 443}
+_MAX_REDIRECTS = 20
 
 
 @dataclass(frozen=True)
@@ -284,6 +285,9 @@ class HttpClient:
         :class:`RetryPolicy` replaces it, ``None`` disables retries, and the
         default (``_INHERIT``) keeps the client's policy. The request is rebuilt
         each attempt so re-signing auth and re-reading the body stay correct.
+        Redirects are returned, not followed, unless ``follow_redirects=True``;
+        then each hop is signed again and one that leaves the request's origin
+        raises :class:`HttpError` naming both, before anything is sent there.
         A final failure carries the client's ``system`` and the number of
         ``attempts`` in its ``details``. Inside :func:`request_deadline`, no
         attempt starts past the deadline and each one's timeout is capped at
@@ -294,6 +298,7 @@ class HttpClient:
         import httpx  # noqa: PLC0415
 
         policy = self._retry if isinstance(retry, _Inherit) else retry
+        follow = bool(kwargs.pop("follow_redirects", False))
         if capped():
             policy = None
         attempt = 0
@@ -304,7 +309,7 @@ class HttpClient:
                 request = self._auth(request)
             started = time.monotonic()
             try:
-                response = self._client.send(request)
+                request, response = self._send(request, follow=follow, started=started)
             except httpx.HTTPError as exc:
                 _log_exchange(request, f"failed: {type(exc).__name__}", started)
                 presend = isinstance(
@@ -359,6 +364,38 @@ class HttpClient:
                 )
             succeeded()
             return response
+
+    def _send(
+        self, request: httpx.Request, *, follow: bool, started: float
+    ) -> tuple[httpx.Request, httpx.Response]:
+        """Send ``request``; with ``follow``, its same-origin redirects too.
+
+        Returns the last request sent and its response. httpx builds each
+        hop (``next_request``, its method and body per the status); the hop
+        is signed again by the client's ``auth``.
+        """
+        response = self._client.send(request)
+        hops = 0
+        while follow and (hop := response.next_request) is not None:
+            response.close()
+            if not same_origin(str(hop.url), str(request.url)):
+                raise HttpError(
+                    f"refusing to follow a redirect from {_site(str(request.url))} "
+                    f"to {_site(str(hop.url))}: it leaves the origin",
+                    url=str(request.url),
+                    system=self.system,
+                )
+            hops += 1
+            if hops > _MAX_REDIRECTS:
+                raise HttpError(
+                    f"more than {_MAX_REDIRECTS} redirects from {request.url}",
+                    url=str(request.url),
+                    system=self.system,
+                )
+            _log_exchange(request, f"{response.status_code} -> {hop.url}", started)
+            request = hop if self._auth is None else self._auth(hop)
+            response = self._client.send(request)
+        return request, response
 
     def _bounded(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """``kwargs`` with the timeout capped by the upstream budget and the deadline."""
@@ -448,7 +485,7 @@ def _log_exchange(request: httpx.Request, outcome: str, started: float) -> None:
     """Debug-log one request: method, URL (password masked), outcome, elapsed time."""
     if _LOG.isEnabledFor(logging.DEBUG):
         elapsed_ms = (time.monotonic() - started) * 1000
-        url = redact_url_password(str(request.url))
+        url = redact_credentials(str(request.url))
         _LOG.debug("%s %s -> %s (%.0f ms)", request.method, url, outcome, elapsed_ms)
 
 
@@ -669,6 +706,7 @@ def connected_client(
         str | None, deprecated(removed_in=12, replacement="base_url=")
     ] = "token",
     http: HttpSettings | None = None,
+    verify: VerifyTypes | None = None,
     retry: RetryPolicy | None = _DEFAULT_RETRY,
 ) -> HttpClient:
     """Build an :class:`HttpClient` for a service from the values it needs.
@@ -682,9 +720,14 @@ def connected_client(
     the parameter whose value is blank), with ``untaped setup plan --only
     <section>`` as the hint.
 
-    ``headers`` are sent on every request (a caller's ``Authorization``
-    wins over the bearer). ``http`` defaults to the active profile's
-    resolved :class:`HttpSettings` (proxy/ca/verify); ``retry`` to a safe
+    The credential is bound to ``base_url``'s origin (scheme, host and
+    port): it is added to each request to that origin, and a request to any
+    other raises :class:`HttpError` naming both, before anything is sent.
+    ``headers`` are sent on every request; a caller's ``Authorization`` wins
+    over the bearer and is bound the same way. ``http`` defaults to the
+    active profile's resolved :class:`HttpSettings` (proxy/ca/verify);
+    ``verify`` replaces the TLS verification ``http`` resolves to
+    (:func:`resolve_verify`); ``retry`` to a safe
     :class:`RetryPolicy` (transport and idempotent 429/503 backoff), ``None``
     to disable. The client's failures are attributed to ``section``.
 
@@ -711,18 +754,61 @@ def connected_client(
             config, section=section, base_url=base_url, bearer=bearer, require_token=require_token
         )
     request_headers = dict(headers or {})
-    if token:
-        request_headers.setdefault("Authorization", f"Bearer {token}")
+    credential = _pop_authorization(request_headers) or (f"Bearer {token}" if token else None)
     http_settings = http if http is not None else load_settings_section("http")
+    base = url.rstrip("/")
+    if http_settings.proxy:
+        _LOG.debug("%s: via proxy %s", section, redact_credentials(http_settings.proxy))
     return HttpClient(
-        base_url=url.rstrip("/"),
+        base_url=base,
         headers=request_headers,
-        verify=resolve_verify(http_settings),
+        auth=None if credential is None else _origin_bound(credential, base, system=section),
+        verify=resolve_verify(http_settings) if verify is None else verify,
         timeout=http_settings.timeout_seconds,
         proxy=http_settings.proxy,
         retry=retry,
         system=section,
     )
+
+
+def _pop_authorization(headers: dict[str, str]) -> str | None:
+    """Remove and return ``headers``' ``Authorization`` (any case), if it has one."""
+    name = next((name for name in headers if name.lower() == "authorization"), None)
+    return None if name is None else headers.pop(name)
+
+
+def _origin_bound(credential: str, base: str, *, system: str) -> AuthFn:
+    """An ``auth=`` hook adding ``Authorization: credential`` on ``base``'s origin only.
+
+    A request to another origin raises :class:`HttpError` naming both sites,
+    before anything is sent, so the credential never leaves the server it
+    was set up for. A request's own ``Authorization`` header is kept.
+    """
+
+    def sign(request: httpx.Request) -> httpx.Request:
+        if not same_origin(str(request.url), base):
+            raise HttpError(
+                f"refusing to send {system}'s credential to {_site(str(request.url))}: "
+                f"it is bound to {_site(base)}",
+                url=str(request.url),
+                system=system,
+            )
+        request.headers.setdefault("Authorization", credential)
+        return request
+
+    return sign
+
+
+def _site(url: str) -> str:
+    """``scheme://host[:port]`` of ``url``, without userinfo, path or query."""
+    parts = urlsplit(url.strip())
+    host = parts.hostname or ""
+    host = f"[{host}]" if ":" in host else host
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    return f"{parts.scheme}://{host}" + (f":{port}" if port else "")
 
 
 def _text(value: object) -> str:

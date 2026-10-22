@@ -3,6 +3,7 @@
 Settings values, error messages, diagnostics and records may carry a URL
 with a password in its userinfo (``https://user:s3cret@host``);
 :func:`redact_url_password` masks it wherever it appears in a string.
+Log lines get :func:`redact_credentials`, which masks more.
 """
 
 from __future__ import annotations
@@ -21,4 +22,23 @@ def redact_url_password(value: str, *, placeholder: str = "***") -> str:
     return _URL_PASSWORD.sub(rf"\g<prefix>:{placeholder}@", value)
 
 
-__all__ = ["redact_url_password"]
+_URL_USERINFO = re.compile(r"(?P<prefix>[A-Za-z][A-Za-z0-9+.\-]*://)[^/?#@\s]+@")
+_AUTHORIZATION = re.compile(
+    r"(?P<name>\b(?:proxy-)?authorization\b['\"]?\s*[:=]\s*['\"]?)"
+    r"(?P<scheme>[A-Za-z]+\s+)?[^\s'\",;}]+",
+    re.IGNORECASE,
+)
+
+
+def redact_credentials(value: str, *, placeholder: str = "***") -> str:
+    """Mask every URL's whole userinfo and every ``Authorization`` value in ``value``.
+
+    For log lines, where a user name may itself be the secret (a proxy URL
+    ``https://<token>@proxy``): ``https://***@host``. An ``Authorization``
+    or ``Proxy-Authorization`` value keeps its scheme (``Bearer ***``).
+    """
+    value = _URL_USERINFO.sub(rf"\g<prefix>{placeholder}@", value)
+    return _AUTHORIZATION.sub(rf"\g<name>\g<scheme>{placeholder}", value)
+
+
+__all__ = ["redact_credentials", "redact_url_password"]

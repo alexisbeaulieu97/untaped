@@ -5943,6 +5943,7 @@ sdk untaped.sdk.connected_client(http=) default=None
 sdk untaped.sdk.connected_client(require_token=) default=true
 sdk untaped.sdk.connected_client(required=) default=["base_url","token"]  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.connected_client(retry=) default=<computed>
+sdk untaped.sdk.connected_client(verify=) default=None
 sdk untaped.sdk.connection_check(check_id, *, section)
 sdk untaped.sdk.copy_data_file(source, target)  [experimental]
 sdk untaped.sdk.create_app(*, name)

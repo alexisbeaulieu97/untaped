@@ -105,16 +105,36 @@ def _is_named_call(node: ast.expr, name: str) -> bool:
     )
 
 
+def _resolves_verify(node: ast.expr) -> bool:
+    """``resolve_verify(...)``, or ``resolve_verify(...) if v is None else v``.
+
+    The second is a caller's explicit ``verify=`` replacing the settings'.
+    """
+    if isinstance(node, ast.IfExp):
+        test = node.test
+        return (
+            _is_named_call(node.body, "resolve_verify")
+            and isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name)
+            and isinstance(test.ops[0], ast.Is)
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value is None
+            and isinstance(node.orelse, ast.Name)
+            and node.orelse.id == test.left.id
+        )
+    return _is_named_call(node, "resolve_verify")
+
+
 def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
     """``"<rel>:<lineno>"`` for ``HttpClient(...)`` calls whose ``verify=`` is
-    missing or not a ``resolve_verify(...)`` call."""
+    missing or not a ``resolve_verify(...)`` call (or a caller's override of one)."""
     offenders: list[str] = []
     for call in ast.walk(tree):
         if not _is_named_call(call, "HttpClient"):  # type: ignore[arg-type]
             continue
         assert isinstance(call, ast.Call)
         verify_kw = next((kw for kw in call.keywords if kw.arg == "verify"), None)
-        if verify_kw is None or not _is_named_call(verify_kw.value, "resolve_verify"):
+        if verify_kw is None or not _resolves_verify(verify_kw.value):
             offenders.append(f"{rel}:{call.lineno}")
     return offenders
 
@@ -148,6 +168,9 @@ _HEADER = "from untaped.sdk import HttpClient, resolve_verify\nimport untaped.sd
         # Regression: the bare, uncalled reference must not be accepted.
         ("HttpClient(base_url='x', verify=resolve_verify)", True),
         ("HttpClient(base_url='x', verify=resolve_verify(http))", False),
+        ("HttpClient(base_url='x', verify=resolve_verify(http) if v is None else v)", False),
+        ("HttpClient(base_url='x', verify=resolve_verify(http) if v is None else False)", True),
+        ("HttpClient(base_url='x', verify=False if v is None else resolve_verify(http))", True),
         ("capi.HttpClient(base_url='x', verify=capi.resolve_verify(http))", False),
     ],
 )
