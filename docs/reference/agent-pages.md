@@ -123,4 +123,5 @@ since every agent reads the map.
 
 `untaped agents` is experimental: its path argument, and what the pages say
 and how they lay it out, may change in a minor release. Installed stub skills
-call it, so a release that changes how they call it updates the stubs.
+call it: a release that changes how they call it refreshes the stubs in the
+home folder, and a project's stubs need `untaped skills update`.

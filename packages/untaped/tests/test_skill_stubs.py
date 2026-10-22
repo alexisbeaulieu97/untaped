@@ -91,7 +91,7 @@ def test_newer_side_names_what_wrote_the_stub() -> None:
 
 
 #: The command forms a stub may name: the ``agents`` entry points, the
-#: ``--help`` fallback for an untaped older than the stub, and the example of
+#: ``--help`` fallback for an untaped without them, and the example of
 #: running a project's own untaped.
 _STUB_FORMS = re.compile(
     r"untaped|uv run untaped|untaped agents( \w[\w-]*( COMMAND)?)?|untaped( [\w-]+)? --help"
