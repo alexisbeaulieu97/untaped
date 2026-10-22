@@ -942,7 +942,8 @@ class RepoStore:
         The repo's entry is pointed at the new directory, and the owner stamp,
         which records the absolute path, is rewritten when this plugin owns
         it, also when git already repointed the entry (a hand ``git worktree
-        repair`` or ``move``). Safe to repeat. Refused when ``worktree`` is
+        repair`` or ``move``), and so is untaped's credential helper line,
+        whose nonce is the folder's. Safe to repeat. Refused when ``worktree`` is
         not one of this repo's worktrees.
         """
         with self._locked():
@@ -1248,10 +1249,17 @@ def host_config(url: str, auth: HostAuth | None) -> tuple[dict[str, str], dict[s
 
 
 def _credential_config(origin: str, credential: Credential) -> dict[str, str]:
-    """The command-scope setting that sends ``credential`` to ``origin`` only (``run_git``'s
-    ``auth_config``: a private include file, never argv or the environment)."""
+    """The command-scope settings that send ``credential`` to ``origin`` only (``run_git``'s
+    ``auth_config``: a private include file, never argv or the environment).
+
+    The CA file git checks ``origin`` against goes with it, when the
+    credential names one; otherwise git verifies as it would.
+    """
     header = basic_header(credential.username, credential.password)
-    return {f"http.{origin}/.extraHeader": header}
+    found = {f"http.{origin}/.extraHeader": header}
+    if isinstance(credential.verify_tls, Path):
+        found[f"http.{origin}/.sslCAInfo"] = str(credential.verify_tls)
+    return found
 
 
 def basic_header(username: str, password: object) -> str:

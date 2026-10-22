@@ -83,7 +83,7 @@ from untaped.profile_resolver import (
     profile_scope,
     selected_profile,
 )
-from untaped.setting_marks import setup_marks
+from untaped.setting_marks import section_marks
 from untaped.settings import (
     RESERVED_STATE_SECTIONS,
     HttpSettings,
@@ -184,7 +184,7 @@ def build_root_doctor_app(
         exits 5 with a hint naming the unlock command. A `skipped` row's
         `fix` is the argv to run after `untaped`: a `<NAME>` token in it is a
         value to ask for, and a fix that asks for or reveals a token
-        (`auth set`, `config set ….token --prompt`) is the user's to run.
+        (`auth login`, `auth set`, `config set ….token --prompt`) is the user's to run.
         """
         from untaped.management.fix import run_fixes  # noqa: PLC0415 - fix imports doctor
 
@@ -1064,7 +1064,7 @@ def _setup_rows(
     ``connection_check`` row, and the fallback warns
     (:data:`~untaped.setting_marks.UNMARKED_SERVICE`).
     """
-    marks = None if scope.settings_model is None else setup_marks(scope.settings_model)
+    marks = section_marks(scope.section, scope.settings_model)
     if marks is None:
         return []
     if marks.legacy:

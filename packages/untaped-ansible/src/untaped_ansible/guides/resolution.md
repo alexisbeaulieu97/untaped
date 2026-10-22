@@ -20,7 +20,7 @@ description: "Read when a deps, impact, find or graph result surprises you: whic
 ## Repos and local targets
 
 - Repo ids match in any case (`Acme/Base` is `acme/base`).
-- URLs on the host of `github.base_url` resolve as `github.com` URLs do.
+- URLs on the host of `github.server.url` resolve as `github.com` URLs do.
   Path-like sources in requirements files, such as `./local`, stay
   unresolved.
 - A local path's Git remote is read at the top level of a checkout, linked

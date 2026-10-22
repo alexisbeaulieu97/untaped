@@ -14,11 +14,15 @@ The digest is the first 16 hex digits of the sha256 of canonical JSON
   default alters what a cache holds bumps that cache's ``version=``. The keys
   the SDK injects into every section (:data:`~untaped.settings.RESERVED_SECTION_KEYS`:
   cache max ages, extension ranks) and every secret are left out.
-- ``credentials``: each secret's source (:func:`~untaped.auth.secret_source`),
-  never its value: a run on another credential source never shares a folder
-  with your stored login, while the same variable with a new value keeps its
-  folder. Data that depends on who asks passes the credential as the cache's
-  ``partition=``.
+- ``credentials``: for each credential the plugin declares, the step its
+  ``get`` would use for this run's key: the variable's name, the old
+  ``<name>``/``<name>_command`` setting, or ``stored`` (read from the
+  environment and the index, never a value or a backend); for an 11.0
+  section, each secret setting's source (:func:`~untaped.auth.secret_source`).
+  A run on another credential source never shares a folder with your stored
+  login, while the same variable with a new value keeps its folder. Data that
+  depends on who asks passes the credential as the cache's ``partition=``.
+  The old settings of a declared credential are sources, not values.
 
 Core's own sections (``http``) are no plugin's: they are never part of it.
 """
@@ -34,6 +38,7 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.auth import secret_source
 from untaped.config_schema import unwrap_optional
+from untaped.credentials import Credential, credential_key, declared_credentials
 from untaped.settings import RESERVED_SECTION_KEYS, load_settings_section, registered_profile_model
 
 #: Hex digits of the sha256 kept: a folder name, still far from any collision.
@@ -54,19 +59,35 @@ def settings_terms(section: str) -> dict[str, Any]:
     if registered_profile_model(section) is None:
         return {"settings": {}, "credentials": {}}
     loaded: BaseModel = load_settings_section(section)
+    declared = declared_credentials(section)
     secrets = {
         name
         for name, field in type(loaded).model_fields.items()
         if unwrap_optional(field.annotation) is SecretStr
     }
+    old = {f"{each.name}_command" for each in declared}
     values = loaded.model_dump(
-        mode="json", exclude_unset=True, exclude=set(RESERVED_SECTION_KEYS) | secrets
+        mode="json", exclude_unset=True, exclude=set(RESERVED_SECTION_KEYS) | secrets | old
     )
-    sources = {name: secret_source(loaded, section=section, field=name) for name in sorted(secrets)}
+    if declared:
+        sources = {each.name: _step(each, loaded) for each in declared}
+    else:
+        sources = {
+            name: secret_source(loaded, section=section, field=name) for name in sorted(secrets)
+        }
     return {
         "settings": values,
         "credentials": {name: source for name, source in sources.items() if source is not None},
     }
+
+
+def _step(credential: Credential[Any], settings: BaseModel) -> str | None:
+    """The step ``credential.get`` would use for this run's key, named; ``None`` for none."""
+    key = credential_key(credential, settings)
+    answer = None if key is None else credential.answer(key)
+    if answer is None:
+        return None
+    return "stored" if answer.step == "stored" else answer.source.removeprefix("$")
 
 
 def digest_of(terms: Mapping[str, Any]) -> str:

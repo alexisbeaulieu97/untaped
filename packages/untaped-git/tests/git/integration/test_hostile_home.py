@@ -8,6 +8,7 @@ fetch in a store worktree still honours them.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,9 @@ from git.conftest import StoreError, all_refs, ensure, git, objects
 from untaped.testing.git import GitRemote, git_remote, hostile_git_home
 from untaped_git.infrastructure import store as store_module
 from untaped_git.infrastructure.store import RepoStore
+
+# Each worktree's helper nonce depends on its path and its repo's key.
+_NONCE = re.compile(r"--nonce [0-9a-f]+")
 
 
 def _store(base: Path, remote: GitRemote, plugin: str = "workspace") -> RepoStore:
@@ -44,7 +48,14 @@ def _exercise(base: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, li
     real = store_module.run_git
 
     def spy(args: Any, **kwargs: Any) -> Any:
-        seen.append([str(a).replace(str(base), "<base>").replace(base.name, "<run>") for a in args])
+        seen.append(
+            [
+                _NONCE.sub("--nonce <nonce>", str(a))
+                .replace(str(base), "<base>")
+                .replace(base.name, "<run>")
+                for a in args
+            ]
+        )
         return real(args, **kwargs)
 
     monkeypatch.setattr(store_module, "run_git", spy)

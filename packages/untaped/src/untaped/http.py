@@ -27,13 +27,14 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, SecretStr
 
-from untaped.auth import auth_target, takes_token_command, token_alternatives
+from untaped.auth import takes_token_command, token_alternatives
 from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
 from untaped.errors import (
@@ -46,7 +47,7 @@ from untaped.errors import (
 from untaped.messages import command_line, q, run_hint
 from untaped.profile_resolver import ACTIVE_PROFILE_ENV, classify_active_profile, selected_profile
 from untaped.redaction import redact_credentials
-from untaped.setting_marks import declared_marks
+from untaped.setting_marks import section_marks
 from untaped.settings import (
     HttpSettings,
     active_settings_layout,
@@ -648,25 +649,33 @@ def rejected_token_error(
     cause: BaseException | None = None,
     field: str = "token",
 ) -> ConfigError:
-    """The standard error for a service rejecting the secret ``<section>.<field>`` (HTTP 401).
+    """The standard error for a service rejecting the secret ``field`` of ``section`` (HTTP 401).
 
-    ``auth`` in ``section`` (exit ``4``). The hint is the ``auth set`` that
-    stores that secret (``auth set <section>``, or ``auth set
-    <section>.<field>`` for one of several) when the section's registered
-    settings model takes its command setting, else ``config set
-    <section>.<field> --prompt``. The ``cause``'s details (``status``,
+    ``auth`` in ``section`` (exit ``4``). For a declared credential the hint
+    is ``auth login <section>`` (``auth login <section> <name>`` for one not
+    named ``token``), the person's step. For an 11.0 section it is ``auth
+    set <section>`` when its model takes ``token_command``, else ``config
+    set <section>.<field> --prompt``. The ``cause``'s details (``status``,
     ``url``) are kept.
     """
+    from untaped.credentials import declared_credentials  # noqa: PLC0415
+
     details = cause.details if isinstance(cause, UntapedError) else None
+    declared = {each.name for each in declared_credentials(section)}
     model = registered_profile_model(section)
-    target = None if model is None else auth_target(model, section, field)
-    command = f"auth set {target}" if target else f"config set {section}.{field} --prompt"
+    if field in declared:
+        command = f"auth login {section}" + ("" if field == "token" else f" {field}")
+    elif field == "token" and model is not None and takes_token_command(model):
+        command = f"auth set {section}"
+    else:
+        command = f"config set {section}.{field} --prompt"
     return ConfigError(
         message,
         category="auth",
         system=section,
         hint=f"run `{command_line(command)}`",
         details=details,
+        fix_by="user" if field in declared else None,
     )
 
 
@@ -686,7 +695,7 @@ CONNECTED_BY_NAME = deprecated_behaviour(
 """``connected_client`` reading ``base_url`` and ``token`` off the settings by field name."""
 
 #: ``connected_client``'s parameters for each kind of call: values, or the deprecated read by name.
-_BY_VALUE = ("bearer", "require_token")
+_BY_VALUE = ("bearer", "verify")
 _BY_NAME = ("required", "base_url_field", "bearer_token_field")
 
 
@@ -718,8 +727,7 @@ def connected_client(
     *,
     section: str,
     base_url: str | None = _FROM_CONFIG,
-    require_token: bool = True,
-    bearer: SecretStr | str | None = _FROM_CONFIG,
+    bearer: SecretStr | str | None = None,
     required: Annotated[tuple[str, ...], deprecated(removed_in=12, replacement="base_url=")] = (
         "base_url",
         "token",
@@ -730,38 +738,44 @@ def connected_client(
         str | None, deprecated(removed_in=12, replacement="base_url=")
     ] = "token",
     http: HttpSettings | None = None,
-    verify: VerifyTypes | None = None,
+    verify: bool | Path | None = None,
     retry: RetryPolicy | None = _DEFAULT_RETRY,
 ) -> HttpClient:
     """Build an :class:`HttpClient` for a service from the values it needs.
 
-    ``base_url`` is the service's URL (``config.base_url``); ``bearer``, an
-    ``Authorization: Bearer`` header's token, defaults to ``config``'s
-    :class:`~untaped.setting_marks.Secret` named ``token``, else its only
-    one (an unmarked model's ``token``). ``require_token=False`` builds a
-    client without one (an unauthenticated ``ping``). A blank value raises
-    "<section> is not set up", naming the marked settings still unset (or
-    the parameter whose value is blank), with ``untaped setup plan --only
-    <section>`` as the hint.
+    ``base_url`` is the service's URL (its key's ``url``); a blank one
+    raises "<section> is not set up", naming the marked settings still
+    unset, with ``untaped setup plan --only <section>`` as the hint.
+    ``bearer`` is an ``Authorization: Bearer`` header's token: a
+    :class:`~untaped.credentials.BoundSecret` from ``Credential.get``, or
+    ``None`` for a client without one (an unauthenticated ``ping``).
+    ``verify`` is the key's :data:`~untaped.credentials.TlsVerify`: ``True``
+    keeps untaped's trust (root ``http.ca_bundle``, else the OS store),
+    ``False`` checks nothing, a CA file replaces it for this server. Left
+    out, the client applies the deprecated root ``http.verify_ssl`` too.
 
-    The credential is bound to ``base_url``'s origin (scheme, host and
-    port): it is added to each request to that origin, and a request to any
-    other raises :class:`HttpError` naming both, before anything is sent.
+    The credential is bound to its origin (the ``BoundSecret``'s, else
+    ``base_url``'s): it is added to each request to that origin, and a
+    request to any other raises :class:`HttpError` naming both, before
+    anything is sent. A ``BoundSecret`` for another origin than
+    ``base_url``'s, or one bound to none, is refused here. A credentialed
+    client also refuses a proxy a folder's file set unless the request is
+    https and verified, and any trust setting a folder's file set.
     ``headers`` are sent on every request; a caller's ``Authorization`` wins
     over the bearer and is bound the same way. ``http`` defaults to the
-    active profile's resolved :class:`HttpSettings` (proxy/ca/verify);
-    ``verify`` replaces the TLS verification ``http`` resolves to
-    (:func:`resolve_verify`); ``retry`` to a safe
-    :class:`RetryPolicy` (transport and idempotent 429/503 backoff), ``None``
-    to disable. The client's failures are attributed to ``section``.
+    run's resolved :class:`HttpSettings` (proxy, CA bundle, timeout);
+    ``retry`` to a safe :class:`RetryPolicy` (transport and idempotent
+    429/503 backoff), ``None`` to disable. The client's failures are
+    attributed to ``section``.
 
     Leaving out ``base_url`` reads the settings by field name, the way
     ``required`` (default ``("base_url", "token")``), ``base_url_field``
     (``"base_url"``) and ``bearer_token_field`` (``"token"``) describe: the
     deprecated behaviour :data:`CONNECTED_BY_NAME`. Passing ``base_url``
-    with any of those three, or ``bearer`` or ``require_token`` without it,
+    with any of those three, or ``bearer`` or ``verify`` without it,
     refuses.
     """
+    override: VerifyTypes | None = None
     if base_url is _FROM_CONFIG:
         CONNECTED_BY_NAME.warn(
             f"calling connected_client for {section} without base_url=", stacklevel=4
@@ -773,25 +787,140 @@ def connected_client(
             base_url_field=base_url_field,
             bearer_token_field=bearer_token_field,
         )
+        origin = url
+        if token and _legacy_refused(section):
+            raise _legacy_refusal(section)
     else:
-        url, token = _values(
-            config, section=section, base_url=base_url, bearer=bearer, require_token=require_token
-        )
+        url = _text(base_url)
+        if not url:
+            raise _not_set_up(config, section=section)
+        token = _text(bearer)
+        origin = _bound_origin(bearer, url, section=section)
+        override = None if verify is None else _key_verify(verify)
+    http_settings = http if http is not None else load_settings_section("http")
     request_headers = dict(headers or {})
     credential = _pop_authorization(request_headers) or (f"Bearer {token}" if token else None)
-    http_settings = http if http is not None else load_settings_section("http")
     base = url.rstrip("/")
+    if credential is not None:
+        _refuse_folder_transport(
+            http_settings,
+            base,
+            verified=_verified(override, http_settings, keyed=verify is not None),
+            section=section,
+        )
     if http_settings.proxy:
         _LOG.debug("%s: via proxy %s", section, redact_credentials(http_settings.proxy))
     return HttpClient(
         base_url=base,
         headers=request_headers,
-        auth=None if credential is None else _origin_bound(credential, base, system=section),
-        verify=resolve_verify(http_settings) if verify is None else verify,
+        auth=None if credential is None else _origin_bound(credential, origin, system=section),
+        verify=resolve_verify(_trust(http_settings, keyed=verify is not None))
+        if override is None
+        else override,
         timeout=http_settings.timeout_seconds,
         proxy=http_settings.proxy,
         retry=retry,
         system=section,
+    )
+
+
+def _verified(override: VerifyTypes | None, http: HttpSettings, *, keyed: bool) -> bool:
+    """Whether a client's TLS checks the chain and the host: its key's, else the root's."""
+    if override is not None:
+        return override is not False
+    return (keyed or http.verify_ssl) and http.verify_hostname
+
+
+def _trust(http: HttpSettings, *, keyed: bool) -> HttpSettings:
+    """The root settings untaped's own trust comes from; a key's client leaves ``verify_ssl``.
+
+    Root ``verify_ssl: false`` already reads as the key's ``verify_tls:
+    false`` (the settings layout), so a key that still says ``true`` set it.
+    """
+    if keyed and not http.verify_ssl:
+        return http.model_copy(update={"verify_ssl": True})
+    return http
+
+
+def _key_verify(verify: bool | Path) -> VerifyTypes | None:
+    """A key's TLS as httpx takes it; ``None`` for untaped's own trust (``True``)."""
+    if verify is True:
+        return None
+    if verify is False:
+        return False
+    if isinstance(verify, Path | str):
+        from untaped.credentials import _absolute  # noqa: PLC0415
+
+        path = _absolute(Path(verify))
+        if not path.is_file():
+            raise ConfigError(f"the CA file {path} does not exist")
+        return str(path)
+    raise TypeError(f"connected_client(verify=...) takes a key's verify_tls, not {verify!r}")
+
+
+def _bound_origin(bearer: object, url: str, *, section: str) -> str:
+    """The origin ``bearer`` may go to: its own (a ``BoundSecret``), checked against ``url``."""
+    from untaped.credentials import BoundSecret  # noqa: PLC0415
+
+    if not isinstance(bearer, BoundSecret) or not _text(bearer):
+        return url
+    if bearer.origin is None:
+        raise ConfigError(
+            f"{section}: this credential is not for HTTP, so it is never sent as a bearer",
+            system=section,
+        )
+    if not same_origin(url, bearer.origin):
+        raise ConfigError(
+            f"{section}: refusing to build a client for {_site(url)} with a credential bound to "
+            f"{_site(bearer.origin)}",
+            system=section,
+        )
+    return bearer.origin
+
+
+def _refuse_folder_transport(
+    http: HttpSettings, base: str, *, verified: bool, section: str
+) -> None:
+    """Refuse to send a credential under a proxy or trust setting a folder's file chose.
+
+    A proxy is allowed over verified https (it can't read or change the
+    request); a CA bundle never is, nor TLS turned off.
+    """
+    from untaped.credentials import folder_leaves  # noqa: PLC0415
+
+    leaves = folder_leaves()
+    if not leaves:
+        return
+    for leaf in (("http", "ca_bundle"), ("http", "verify_ssl"), ("http", "verify_hostname")):
+        if leaf in leaves:
+            raise ConfigError(
+                f"{leaves[leaf]} sets {'.'.join(leaf)}; untaped won't send a credential under a "
+                "trust setting a folder chose",
+                system=section,
+                fix_by="user",
+            )
+    proxy = ("http", "proxy")
+    if proxy in leaves and http.proxy and not (verified and base.startswith("https://")):
+        raise ConfigError(
+            f"{leaves[proxy]} sets http.proxy, and this {section} request isn't verified https; "
+            "untaped won't send a credential through a folder's proxy without it",
+            system=section,
+            fix_by="user",
+        )
+
+
+def _legacy_refused(section: str) -> bool:
+    from untaped.credentials import legacy_section_refused  # noqa: PLC0415
+
+    return legacy_section_refused(section)
+
+
+def _legacy_refusal(section: str) -> ConfigError:
+    return ConfigError(
+        f"a folder's settings set {section}'s settings; untaped never sends a token from a "
+        "variable or a setting to a server a folder chose",
+        system=section,
+        fix_by="user",
     )
 
 
@@ -838,72 +967,20 @@ def _text(value: object) -> str:
     return str(value).strip() if value is not None else ""
 
 
-def _default_bearer(config: BaseModel) -> tuple[bool, SecretStr | str | None]:
-    """Whether ``config`` has a secret a bare section names, and its value."""
-    marks = declared_marks(type(config))
-    if marks is None:
-        has = "token" in type(config).model_fields
-        return has, getattr(config, "token", None) if has else None
-    secret = marks.default_secret
-    if secret is None:
-        return False, None
-    return True, getattr(config, secret.key, None)
-
-
-def _values(
-    config: BaseModel,
-    *,
-    section: str,
-    base_url: str | None,
-    bearer: SecretStr | str | None,
-    require_token: bool,
-) -> tuple[str, str]:
-    """The URL and the bearer token (``""`` for none), or "<section> is not set up"."""
-    has_secret = True
-    from_config = bearer is _FROM_CONFIG
-    if from_config:
-        has_secret, bearer = _default_bearer(config)
-    url = _text(base_url)
-    token = _text(bearer) if has_secret else ""
-    blank = [
-        name
-        for name, unset in (("base_url", not url), ("bearer", require_token and not token))
-        if unset
-    ]
-    if blank:
-        # A bearer passed, or not needed, is no setting left to set up.
-        own_secret = from_config and require_token
-        raise _not_set_up(config, section=section, blank=blank, own_secret=own_secret)
-    return url, token
-
-
-def _not_set_up(
-    config: BaseModel, *, section: str, blank: Sequence[str], own_secret: bool
-) -> ConfigError:
-    """ "<section> is not set up", naming its unset marked fields, else the blank parameters.
-
-    Without ``own_secret`` (a bearer passed, or none required) the secret a
-    bare section names is not among them.
-    """
+def _not_set_up(config: BaseModel, *, section: str) -> ConfigError:
+    """ "<section> is not set up", naming its unset marked settings, else ``base_url=``."""
     from untaped.setup_status import unset_fields  # noqa: PLC0415 - imports the registry
 
-    marks = declared_marks(type(config))
+    marks = section_marks(section, type(config))
     fields = [] if marks is None else list(unset_fields(config, marks, section=section))
-    secret = None if marks is None or own_secret else marks.default_secret
-    if secret is not None:
-        fields = [field for field in fields if field.path != secret.path]
+    fields = [field for field in fields if not field.is_secret]
     if fields:
         keys = [f"{section}.{field.key}" for field in fields]
-        needs = [
-            (field.key,) if field.command is None else (field.key, field.command)
-            for field in fields
-        ]
-        profile, set_in = _profiles_for(section, needs)
+        profile, set_in = _profiles_for(section, [(field.key,) for field in fields])
         what = f"{_join(keys)} {'is' if len(keys) == 1 else 'are'} not set"
     else:
         profile, set_in = _profiles_for(section, [])
-        names = _join([f"{name}=" for name in blank])
-        what = f"{names} {'has' if len(blank) == 1 else 'have'} no value"
+        what = "base_url= has no value"
     where = f" in profile {q(profile)}" if profile else ""
     lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
     return ConfigError(

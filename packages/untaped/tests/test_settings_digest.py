@@ -1,23 +1,25 @@
 """The settings digest: what names a ``split="settings"`` cache folder and a contract answer.
 
 A ``toy`` section is registered as composition would (with its injected
-cache max age, extension ranks and ``token_command``), and the config file is
-written per test.
+cache max age, extension ranks and its declared token's old settings), and
+the config file is written per test.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, ClassVar
 
 import pytest
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, HttpUrl
 
 from untaped.cache import Cache
-from untaped.setting_marks import NeedsSetup, Secret
+from untaped.credentials import Credential, CredentialKey, bind_credentials
+from untaped.setting_marks import NeedsSetup
 from untaped.settings import get_settings, register_profile_settings, section_model
 from untaped.settings_digest import digest_of, settings_digest, settings_terms
 
@@ -29,12 +31,19 @@ class Limits(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
-class ToySettings(BaseModel):
-    renamed_keys: ClassVar[dict[str, str]] = {"url": "base_url"}
+class ToyServer(CredentialKey):
+    url: HttpUrl
 
-    base_url: str = "https://example.com"
+
+class ToySettings(BaseModel):
+    renamed_keys: ClassVar[dict[str, str]] = {"base_url": "server.url"}
+
+    server: Annotated[ToyServer | None, NeedsSetup] = None
     limits: Limits = Field(default_factory=Limits)
-    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=("TOY_TOKEN",))] = None
+
+
+TOKEN = Credential("toy", "token", key=ToyServer, env=("TOY_TOKEN",))
+_SERVER = "server: {url: https://a.example.com}"
 
 
 class ToySettingsWithNewField(ToySettings):
@@ -42,8 +51,11 @@ class ToySettingsWithNewField(ToySettings):
 
 
 def _register(model: type[BaseModel] = ToySettings) -> None:
-    composed = section_model(model, extensions=True, caches=(ITEMS,), section="toy")
+    composed = section_model(
+        model, extensions=True, caches=(ITEMS,), section="toy", credentials=(TOKEN,)
+    )
     register_profile_settings("toy", composed)
+    bind_credentials({"toy": (TOKEN,)})
 
 
 def _config(**profiles: str) -> None:
@@ -65,8 +77,10 @@ def _digest(monkeypatch: pytest.MonkeyPatch, profile: str = "default") -> str:
 
 
 @pytest.fixture(autouse=True)
-def _toy() -> None:
+def _toy() -> Iterator[None]:
     _register()
+    yield
+    bind_credentials({})
 
 
 def test_the_digest_format_is_pinned() -> None:
@@ -74,18 +88,18 @@ def test_the_digest_format_is_pinned() -> None:
     canonical = b'{"credentials":{"token":"stored"},"settings":{"base_url":"https://example.com"}}'
     assert hashlib.sha256(canonical).hexdigest()[:16] == "4611b47e81bbd8b5"
     assert digest_of(terms) == "4611b47e81bbd8b5"
-    _config(default="base_url: https://example.com\ntoken_command: [pass, show, toy]")
+    _config(default="server: {url: https://example.com}\ntoken_command: [pass, show, toy]")
     assert settings_terms("toy") == {
-        "settings": {"base_url": "https://example.com", "token_command": ["pass", "show", "toy"]},
-        "credentials": {"token": "stored"},
+        "settings": {"server": {"url": "https://example.com/"}},
+        "credentials": {"token": "toy.token_command"},
     }
-    assert settings_digest("toy") == "693b7646ef3d734d"
+    assert settings_digest("toy") == "e854719d872c33c6"
 
 
 def test_profiles_whose_section_reads_the_same_share_it(monkeypatch: pytest.MonkeyPatch) -> None:
     _config(
-        default="base_url: https://a.example.com",
-        work="base_url: https://a.example.com",
+        default=_SERVER,
+        work=_SERVER,
         other="base_url: https://b.example.com",
     )
     assert _digest(monkeypatch) == _digest(monkeypatch, "work")
@@ -103,11 +117,11 @@ def test_a_value_a_layer_sets_moves_it(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_injected_keys_never_move_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    _config(default="base_url: https://a.example.com")
+    _config(default=_SERVER)
     before = _digest(monkeypatch)
     _config(
         default=(
-            "base_url: https://a.example.com\n"
+            f"{_SERVER}\n"
             "caches:\n  items:\n    max_age_seconds: 5\n"
             "extensions:\n  catalogue:\n    rank:\n      search: [jira, github]"
         )
@@ -118,7 +132,7 @@ def test_injected_keys_never_move_it(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_a_newly_defaulted_field_never_moves_it(monkeypatch: pytest.MonkeyPatch) -> None:
     from untaped.settings import reset_config_registry
 
-    _config(default="base_url: https://a.example.com")
+    _config(default=_SERVER)
     before = _digest(monkeypatch)
     reset_config_registry()
     _register(ToySettingsWithNewField)
@@ -126,13 +140,14 @@ def test_a_newly_defaulted_field_never_moves_it(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_an_old_key_name_reads_as_the_new_one(monkeypatch: pytest.MonkeyPatch) -> None:
-    _config(default="base_url: https://a.example.com")
+    _config(default=_SERVER)
     before = _digest(monkeypatch)
-    _config(default="url: https://a.example.com")
+    _config(default="base_url: https://a.example.com")
     assert _digest(monkeypatch) == before
 
 
 def test_each_credential_source_has_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    _config(default=_SERVER)
     seen = {"none": _digest(monkeypatch)}
     monkeypatch.setenv("TOY_TOKEN", "first")
     seen["conventional variable"] = _digest(monkeypatch)
@@ -142,19 +157,29 @@ def test_each_credential_source_has_its_own(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("UNTAPED_TOY__TOKEN", "first")
     seen["override variable"] = _digest(monkeypatch)
     monkeypatch.delenv("UNTAPED_TOY__TOKEN")
-    _config(default="token: first")
-    seen["config file"] = _digest(monkeypatch)
-    assert settings_terms("toy") == {"settings": {}, "credentials": {"token": "toy.token"}}
-    _config(default="token_command: [pass, show, toy]")
+    _config(default=f"{_SERVER}\ntoken: first")
+    seen["old setting"] = _digest(monkeypatch)
+    assert settings_terms("toy")["credentials"] == {"token": "toy.token"}
+    _config(default=f"{_SERVER}\ntoken_command: [pass, show, toy]")
+    seen["old command setting"] = _digest(monkeypatch)
+    assert settings_terms("toy")["credentials"] == {"token": "toy.token_command"}
+    _config(default=_SERVER)
+    TOKEN.store(ToyServer(url=HttpUrl("https://a.example.com")), command=["pass", "show", "x"])
+    seen["stored"] = _digest(monkeypatch)
     assert settings_terms("toy")["credentials"] == {"token": "stored"}
     assert len(set(seen.values())) == len(seen)
 
 
 def test_the_override_variable_is_named(monkeypatch: pytest.MonkeyPatch) -> None:
+    _config(default=_SERVER)
     monkeypatch.setenv("UNTAPED_TOY__TOKEN", "secret-value")
     terms = settings_terms("toy")
-    assert terms == {"settings": {}, "credentials": {"token": "UNTAPED_TOY__TOKEN"}}
+    assert terms["credentials"] == {"token": "UNTAPED_TOY__TOKEN"}
     assert "secret-value" not in repr(terms)
+
+
+def test_without_a_server_no_credential_answers() -> None:
+    assert settings_terms("toy") == {"settings": {}, "credentials": {}}
 
 
 def test_an_unregistered_section_digests_as_empty() -> None:
@@ -162,7 +187,7 @@ def test_an_unregistered_section_digests_as_empty() -> None:
 
 
 def test_a_settings_cache_folder_is_named_by_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    _config(default="base_url: https://a.example.com", work="base_url: https://a.example.com")
+    _config(default=_SERVER, work=_SERVER)
     folder = ITEMS._paths("k").dir
     assert folder.name == _digest(monkeypatch)
     assert ITEMS._paths("k").dir == folder
@@ -173,10 +198,12 @@ def test_a_settings_cache_folder_is_named_by_it(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_a_section_blob_is_named_as_the_variable_it_is(monkeypatch: pytest.MonkeyPatch) -> None:
+    _config(default=_SERVER)
     monkeypatch.setenv("UNTAPED_TOY", '{"token": "secret-value"}')
     assert settings_terms("toy")["credentials"] == {"token": "UNTAPED_TOY"}
 
 
 def test_a_lowercase_override_is_named_as_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    _config(default=_SERVER)
     monkeypatch.setenv("untaped_toy__token", "secret-value")
     assert settings_terms("toy")["credentials"]["token"].upper() == "UNTAPED_TOY__TOKEN"

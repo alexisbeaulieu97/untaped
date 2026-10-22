@@ -48,6 +48,7 @@ EXPECTED_ALL = [
     "ResolveRepositoryInventory",
     "TeamScope",
     "github_settings",
+    "github_token_found",
     "github_web_host",
     "is_global_github_failure",
     "normalize_team_scopes",

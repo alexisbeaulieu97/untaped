@@ -13,13 +13,13 @@ and Agile 1.0), not Jira Cloud.
 Create a personal access token in Jira, then:
 
 ```bash
-untaped config set jira.base_url https://jira.example.com
-untaped auth set jira
+untaped config set jira.server.url https://jira.example.com
+untaped auth login jira
 untaped jira whoami
 ```
 
-`auth set` stores the token with your password store, not in `config.yml`;
-`jira.token_command` or `JIRA_API_TOKEN` also work; see
+`auth login` stores the token with your password store, not in `config.yml`;
+`JIRA_API_TOKEN` also works; see
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens). Defaults such as `jira.default_project` and the
 `jira.assigned_jql` base query are in the
 [settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#jira).

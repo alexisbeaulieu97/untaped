@@ -22,6 +22,7 @@ from untaped_github import SPEC
 from untaped_github.cli import app
 from untaped_github.errors import GitCorpusError
 from untaped_github.providers.git import GithubHost
+from untaped_github.settings import GH, GithubServer
 
 
 def configure(github: dict[str, object], **sections: dict[str, object]) -> None:
@@ -62,7 +63,7 @@ def _composition(fresh_composition: None) -> Iterator[None]:
     ],
 )
 def test_home_is_the_git_host_of_the_api(base_url: str, home: str) -> None:
-    configure({"base_url": base_url})
+    configure({"server": {"url": base_url}})
 
     assert GithubHost().home() == home
 
@@ -77,7 +78,8 @@ def test_home_is_the_git_host_of_the_api(base_url: str, home: str) -> None:
     ],
 )
 def test_the_token_goes_only_to_the_github_host(url: str, expected: bool) -> None:
-    configure({"token": "ghp_secret"})
+    configure({})
+    GH.store(GithubServer(), token="ghp_secret")
 
     credential = GithubHost().credential(url)
 
@@ -119,7 +121,8 @@ def test_no_http_proxy_leaves_git_to_its_own_config() -> None:
 
 
 def test_the_store_asks_github_for_its_host() -> None:
-    configure({"token": "ghp_secret"}, http={"proxy": "http://proxy.example:3128"})
+    configure({}, http={"proxy": "http://proxy.example:3128"})
+    GH.store(GithubServer(), token="ghp_secret")
     compose()
 
     auth = resolve_host("https://github.com/acme/api.git")

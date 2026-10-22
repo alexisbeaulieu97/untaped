@@ -71,12 +71,21 @@ SAMPLES: list[object] = [
 
 
 def configure(**github: object) -> None:
-    """Write the default profile's ``github`` section (with a token) and forget cached settings."""
+    """Write the default profile's ``github`` section and forget cached settings.
+
+    The token is ``GH_TOKEN``'s (:func:`_token`); a ``base_url`` is the server's URL.
+    """
     path = Path(os.environ["UNTAPED_CONFIG"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    section = {"token": "ghp_test", **github}
+    url = github.pop("base_url", None)
+    section = {**github, **({"server": {"url": url}} if url else {})}
     path.write_text(yaml.safe_dump({"profiles": {"default": {"github": section}}}))
     get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GH_TOKEN", "ghp_test")
 
 
 @pytest.fixture(autouse=True)
@@ -343,7 +352,7 @@ def test_an_auto_refresh_over_a_stored_list_fails_fast_and_a_first_one_retries()
 @pytest.mark.parametrize(
     ("response", "category", "hint"),
     [
-        (httpx.Response(401, json={"message": "Bad credentials"}), "auth", "auth set github"),
+        (httpx.Response(401, json={"message": "Bad credentials"}), "auth", "auth login github"),
         (
             httpx.Response(
                 403,

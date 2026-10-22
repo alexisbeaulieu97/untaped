@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from untaped.credentials import bind_credentials
 from untaped.plugins.registry import section_settings
 from untaped.sdk import GitResult
 from untaped.settings import get_settings, register_profile_settings
@@ -24,6 +25,7 @@ def _github_settings() -> None:
     # Invoking the github app directly skips the SDK profile-settings registration;
     # composition registers the section with the ``caches`` key SPEC.caches adds.
     register_profile_settings("github", section_settings(SPEC) or GithubSettings)
+    bind_credentials({SPEC.name: SPEC.credentials})
 
 
 def _git_dir(cwd: Path) -> list[str]:

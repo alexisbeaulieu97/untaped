@@ -51,6 +51,7 @@ FILE_WRITERS = frozenset(
 ALLOWED_NAMES: dict[str, dict[str, str]] = {
     CONNECTION: {
         "token": "the token tabs' field, until the form serves every Secret (config-browser C2)",
+        "url": "an acronym field labels write upper case (`Base URL`), not a setting's name",
     },
     CONNECTION_KEYS: {
         name: "the token's own keys, read from the file, until auth serves every Secret"

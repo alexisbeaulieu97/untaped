@@ -22,11 +22,13 @@ import httpx
 import pytest
 import respx
 import yaml
+from pydantic import HttpUrl
 
+from untaped.credentials import bind_credentials
 from untaped.plugins.registry import section_settings
 from untaped.settings import get_settings, register_profile_settings
 from untaped_awx import SPEC
-from untaped_awx.settings import AwxSettings
+from untaped_awx.settings import AwxServer, AwxSettings
 
 
 class FakeAap:
@@ -1404,6 +1406,7 @@ def _register_awx_settings(_isolate_config_registry_for_tests: None) -> None:
     plugin tests invoking the sub-app directly mirror that here).
     """
     register_profile_settings("awx", section_settings(SPEC) or AwxSettings)
+    bind_credentials({SPEC.name: SPEC.credentials})
     get_settings.cache_clear()
 
 
@@ -1415,7 +1418,7 @@ def aap_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               api_prefix: /api/v2/
         """
     )
@@ -1508,12 +1511,11 @@ def seeded_job_template_with_credentials(
 
 
 @pytest.fixture
-def awx_config() -> AwxSettings:
-    """Standard test config matching the YAML in :func:`aap_config`."""
+def awx_config(monkeypatch: pytest.MonkeyPatch) -> AwxSettings:
+    """Standard test config matching the YAML in :func:`aap_config` (its token a variable)."""
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "secret")
     return AwxSettings(
-        base_url="https://aap.example.com",
-        token="secret",  # type: ignore[arg-type]
-        api_prefix="/api/v2/",
+        server=AwxServer(url=HttpUrl("https://aap.example.com")), api_prefix="/api/v2/"
     )
 
 

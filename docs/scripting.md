@@ -78,9 +78,10 @@ exit code. Rows that did not fail have no `error` key.
 | `system` | Who is responsible; see [categories](./reference/exit-codes.md#categories). |
 | `retryable` | `true` only for `unavailable` failures. |
 | `message` | The failure, as `detail` shows it. |
-| `hint` | A follow-up such as ``run `untaped auth set awx` ``, or `null`. |
+| `hint` | A follow-up such as ``run `untaped auth login awx` ``, or `null`. |
 | `exit_code` | The exit code this failure alone selects. |
 | `details` | Machine context such as `status` and `url` (`{}` when there is none). |
+| `fix_by` | `user` when only the person can take the hint's step (logging in, setting a secret variable): an agent reports it and does not run it. Absent otherwise. |
 
 Tables leave `error` out (the `detail` column says the same); ask for it with
 `--columns error` or use `json`, `yaml` or `pipe`.
@@ -107,7 +108,7 @@ line printed; `--verbose` prints every update and `--quiet` none.
   switches them.
 
 ```json
-{"level": "error", "kind": "untaped.failure", "category": "auth", "system": "awx", "retryable": false, "message": "AWX rejected the token (HTTP 401)", "hint": "run `untaped auth set awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}}
+{"level": "error", "kind": "untaped.failure", "category": "auth", "system": "awx", "retryable": false, "message": "AWX rejected the token (HTTP 401)", "hint": "run `untaped auth login awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}, "fix_by": "user"}
 {"level": "error", "kind": "untaped.failure", "item": "Deploy", "category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/", "attempts": 3}}
 {"level": "warning", "kind": "untaped.message", "message": "--parallel 64 clamped to 16 (2 * os.cpu_count())"}
 {"level": "warning", "kind": "untaped.deprecation", "id": "cli untaped acme me -> untaped acme whoami", "removed_in": 3, "distribution": "untaped-acme", "replacement": "untaped acme whoami", "hint": null, "message": "`untaped acme me` is deprecated and will be removed in untaped-acme 3.0; use `untaped acme whoami`"}

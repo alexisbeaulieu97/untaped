@@ -135,7 +135,8 @@ def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
     """``"<rel>:<lineno>"`` for ``HttpClient(...)`` calls whose ``verify=`` is
     missing or not a ``resolve_verify(...)`` call (or, in a core builder, its
     parameter's override of one), and for ``connected_client(...)`` or
-    ``_http_client(...)`` calls passing ``verify=`` at all."""
+    ``_http_client(...)`` calls passing a ``verify=`` that is not a
+    credential key's own ``verify_tls`` (``True`` while there is no key)."""
     offenders: list[str] = []
     overrides = rel in _VERIFY_OVERRIDES
     for call in ast.walk(tree):
@@ -145,11 +146,22 @@ def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
         if _is_named_call(call, "HttpClient"):
             if verify_kw is None or not _resolves_verify(verify_kw.value, overrides=overrides):
                 offenders.append(f"{rel}:{call.lineno}")
-        elif verify_kw is not None and (
-            _is_named_call(call, "connected_client") or _is_named_call(call, "_http_client")
+        elif (
+            verify_kw is not None
+            and (_is_named_call(call, "connected_client") or _is_named_call(call, "_http_client"))
+            and not _keys_tls(verify_kw.value)
         ):
             offenders.append(f"{rel}:{call.lineno}")
     return offenders
+
+
+def _keys_tls(value: ast.expr, *, bare_true: bool = False) -> bool:
+    """Whether ``value`` is a key's ``verify_tls``, or ``True`` in the branch without a key."""
+    if isinstance(value, ast.Attribute):
+        return value.attr == "verify_tls"
+    if isinstance(value, ast.IfExp):
+        return _keys_tls(value.body, bare_true=True) and _keys_tls(value.orelse, bare_true=True)
+    return bare_true and isinstance(value, ast.Constant) and value.value is True
 
 
 def test_httpclient_construction_passes_verify() -> None:
@@ -163,7 +175,7 @@ def test_httpclient_construction_passes_verify() -> None:
             )
     assert not offenders, (
         "HttpClient(...) construction under src/ must pass verify=resolve_verify(...), "
-        "and nothing may replace the user's TLS through connected_client(verify=):\n  "
+        "and connected_client(verify=) takes only a credential key's verify_tls:\n  "
         + "\n  ".join(offenders)
     )
 
@@ -175,6 +187,17 @@ _HEADER = "from untaped.sdk import HttpClient, resolve_verify\nimport untaped.sd
     ("call", "flagged"),
     [
         ("connected_client(c, section='x', base_url='u', verify=False)", True),
+        ("connected_client(c, section='x', base_url='u', verify=True)", True),
+        ("connected_client(c, section='x', base_url='u', verify=server.verify_tls)", False),
+        (
+            "connected_client(c, section='x', base_url='u',"
+            " verify=True if server is None else server.verify_tls)",
+            False,
+        ),
+        (
+            "connected_client(c, section='x', base_url='u', verify=False if a else s.verify_tls)",
+            True,
+        ),
         ("capi.connected_client(c, section='x', base_url='u')", False),
         ("_http_client(binding, verify=False)", True),
         ("HttpClient(base_url='x', headers={})", True),

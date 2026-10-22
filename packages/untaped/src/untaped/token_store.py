@@ -80,15 +80,23 @@ class TokenStore:
             return f"pass ({SERVICE}/{entry})"
         return f"{self.name} ({SERVICE} {entry})"
 
-    def save(self, entry: str, token: str) -> None:
-        """Write (or overwrite) the entry, then check it reads back as ``token``."""
+    def save(self, entry: str, token: str, *, label: str | None = None) -> None:
+        """Write (or overwrite) the entry, then check it reads back as ``token``.
+
+        ``label`` is how the store lists it (``awx token url=…``; macOS
+        ``security`` and ``secret-tool`` show one), the entry name by default.
+        """
+        shown = label or f"{SERVICE} {entry}"
         if self.name == "security":
             # `security -i` reads commands from stdin; the token goes as hex
             # (`-X`) so no character in it can break security's own parser.
-            line = f'add-generic-password -U -s {SERVICE} -a "{entry}" -X {token.encode().hex()}\n'
+            line = (
+                f'add-generic-password -U -s {SERVICE} -a "{entry}" -l {_quoted(shown)} '
+                f"-X {token.encode().hex()}\n"
+            )
             _run(["security", "-i"], stdin=line)
         elif self.name == "secret-tool":
-            argv = ["secret-tool", "store", f"--label={SERVICE} {entry}"]
+            argv = ["secret-tool", "store", f"--label={shown}"]
             _run([*argv, "service", SERVICE, "account", entry], stdin=token)
         else:
             argv = ["pass", "insert", "--multiline", "--force", f"{SERVICE}/{entry}"]
@@ -359,6 +367,26 @@ def no_store_message(section: str, env: Sequence[str], *, command: str = "token_
     )
 
 
+def no_backend_message(plugin: str, name: str) -> tuple[str, str]:
+    """Why no credential store answers here, and the hint naming the command way that remains."""
+    skipped = pass_problem() if find_program("pass") else None
+    what = (
+        f": {skipped}"
+        if skipped
+        else " (macOS security, secret-tool with a Secret Service, or pass with a gpg key)"
+    )
+    login = f"untaped auth login {plugin}" + ("" if name == "token" else f" {name}")
+    return (
+        f"no credential store answers here{what}",
+        f"{login} --token-command '/absolute/path/to/a/command/printing/it'",
+    )
+
+
+def _quoted(text: str) -> str:
+    """``text`` as one argument of a ``security -i`` command line."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def _candidate_entries(store: TokenStore, argv: Sequence[str]) -> list[str]:
     if store.name == "pass":
         prefix = f"{SERVICE}/"
@@ -406,6 +434,7 @@ __all__ = [
     "StoreName",
     "TokenStore",
     "entry_name",
+    "no_backend_message",
     "no_store_message",
     "pass_problem",
     "pick_store",

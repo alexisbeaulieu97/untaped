@@ -17,10 +17,9 @@ provides for, so nothing else installed changes the verdict:
   reported, never failed;
 - ``migrations``: each ``setup migrate-dirs`` preview runs against an empty
   HOME and returns ``MigrationRow`` rows;
-- ``unmarked-service`` and ``self-declared-command``: a ``warn`` row for each
-  deprecated way of saying what the settings need set up (the legacy
-  ``base_url``/``token`` fallback, a ``Secret``'s command field declared by
-  the model), so a plugin's ``assert_clean`` still passes.
+- ``unmarked-service``: a ``warn`` row when the settings say what needs
+  setting up only through the legacy ``base_url``/``token`` names, so a
+  plugin's ``assert_clean`` still passes.
 
 An owner gets a ``contracts`` row: its ``contracts`` function loads.
 """
@@ -51,14 +50,7 @@ from untaped.plugins.registry import (
     PluginSpec,
     owns_contracts,
 )
-from untaped.setting_marks import (
-    SELF_DECLARED_COMMAND,
-    UNMARKED_SERVICE,
-    self_declared_commands,
-    self_declared_subject,
-    setup_marks,
-    unmarked_subject,
-)
+from untaped.setting_marks import UNMARKED_SERVICE, setup_marks, unmarked_subject
 from untaped.settings import get_settings
 from untaped.theme import OutputFormat
 
@@ -167,13 +159,10 @@ def _setup_marks(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
     if model is None:
         return []
     rows: list[PluginCheckRow] = []
-    marks = setup_marks(model)
+    marks = setup_marks(model, spec.credentials)
     if marks is not None and marks.legacy:
         detail = UNMARKED_SERVICE.sentence(unmarked_subject(spec.name))
         rows.append(row("unmarked-service", model.__name__, "warn", detail))
-    for command in self_declared_commands(model):
-        detail = SELF_DECLARED_COMMAND.sentence(self_declared_subject(spec.name, command))
-        rows.append(row("self-declared-command", model.__name__, "warn", detail))
     return rows
 
 

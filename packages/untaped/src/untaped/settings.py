@@ -12,6 +12,7 @@ import contextvars
 import json
 import os
 import re
+import weakref
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from functools import cache, lru_cache
@@ -41,13 +42,14 @@ from untaped.deprecated_keys import KeyUse, Renamed, key_mappings, notify_use, r
 from untaped.errors import ConfigError, first_validation_error
 from untaped.messages import run_hint
 from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
-from untaped.setting_marks import TokenCommand, command_collisions, injected_commands
+from untaped.setting_marks import TokenCommand
 from untaped.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
-from untaped.stability import Stability
+from untaped.stability import Stability, deprecated
 from untaped.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 
 if TYPE_CHECKING:
     from untaped.cache import Cache
+    from untaped.credentials import Credential
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 STATE_FILE_NAME = "state.yml"
@@ -71,11 +73,17 @@ class HttpSettings(BaseModel):
         default=None,
         description="PEM file of extra CA certificates to trust instead of the OS trust store.",
     )
-    verify_ssl: bool = Field(
+    # Turning checks off belongs to one server's key (`<plugin>.server.verify_tls`).
+    verify_ssl: Annotated[
+        bool, deprecated(removed_in=12, replacement="each server's verify_tls")
+    ] = Field(
         default=True,
-        description="Verify TLS certificates. `false` disables all certificate checks.",
+        description=(
+            "Verify TLS certificates. `false` disables all certificate checks, and reads as "
+            "`verify_tls: false` on every server key; `config migrate` writes it there."
+        ),
     )
-    verify_hostname: bool = Field(
+    verify_hostname: Annotated[bool, deprecated(removed_in=12)] = Field(
         default=True,
         description="Check the certificate host name. `false` keeps chain validation.",
     )
@@ -242,18 +250,15 @@ def reserved_section_keys(
     a key the SDK actually ``injected`` into this section, so a plugin can
     still move its own ``extensions`` setting away under a new name.
 
-    A :class:`~untaped.setting_marks.Secret`'s command setting
-    (``<field>_command``) is injected too, unless the model declares it
-    itself typed ``TokenCommand`` (the behaviour
-    :data:`~untaped.setting_marks.SELF_DECLARED_COMMAND` dates); declared
-    with another type, it collides.
+    A credential's deprecated ``<name>``/``<name>_command`` settings are
+    injected unless the model declares them, so they never collide.
     """
     keys = set(model.model_fields)
     for field in model.model_fields.values():
         keys.update(
             alias for alias in (field.alias, field.validation_alias) if isinstance(alias, str)
         )
-    taken = (RESERVED_SECTION_KEYS & keys) | set(command_collisions(model))
+    taken = RESERVED_SECTION_KEYS & keys
     for name in ("renamed_keys", "retired_keys"):
         declared = getattr(model, name, None)
         if isinstance(declared, Mapping):
@@ -273,7 +278,12 @@ class CacheSettings(BaseModel):
 
 @cache
 def section_model(
-    model: type[BaseModel], *, extensions: bool, caches: tuple[Cache[Any], ...], section: str = ""
+    model: type[BaseModel],
+    *,
+    extensions: bool,
+    caches: tuple[Cache[Any], ...],
+    section: str = "",
+    credentials: tuple[Credential[Any], ...] = (),
 ) -> type[BaseModel]:
     """``model`` with the keys the SDK injects into a plugin's section.
 
@@ -285,10 +295,10 @@ def section_model(
     age; an unknown cache name loads (doctor names it), so a cache a plugin
     drops never breaks a config. Each cache's ``renamed_from`` joins
     ``model``'s ``renamed_keys`` here, on the composed class only: the
-    owner's own declarations never point at an injected key. Each
-    :class:`~untaped.setting_marks.Secret` gets its ``<field>_command``
-    (:func:`~untaped.setting_marks.injected_commands`), described for
-    ``section``.
+    owner's own declarations never point at an injected key. Each declared
+    :class:`~untaped.credentials.Credential` gets the 11.0 settings that
+    still supply it (:func:`legacy_credential_fields`, which marks them),
+    unless the model declares them itself.
     """
     renamed = _cache_renames(model, caches)
     if renamed:
@@ -317,23 +327,53 @@ def section_model(
             held,
             Field(default_factory=held, description="Max ages of the caches this plugin keeps."),
         )
-    for command in injected_commands(model):
-        injected[command] = (
-            TokenCommand,
-            Field(default=None, description=_command_text(section, command)),
-        )
-    return cast(
+    injected.update(legacy_credential_fields(model, credentials, section=section))
+    composed = cast(
         "type[BaseModel]",
         create_model(model.__name__, __base__=model, __module__=model.__module__, **injected),
     )
+    if credentials:
+        _CREDENTIAL_NAMES[composed] = frozenset(each.name for each in credentials)
+    return composed
 
 
-def _command_text(section: str, command: str) -> str:
-    """The description core writes for a ``Secret``'s injected command setting."""
-    field = command.removesuffix("_command")
-    key = f"`{section}.{field}`" if section else f"`{field}`"
-    what = "the token" if field == "token" else f"the value of {key}"
-    return f"Command (argv list, no shell) that prints {what}; used when {key} is unset."
+#: Each composed section model's credential names: ``UNTAPED_<SECTION>__<NAME>`` overrides one.
+_CREDENTIAL_NAMES: weakref.WeakKeyDictionary[type[BaseModel], frozenset[str]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def legacy_credential_fields(
+    model: type[BaseModel], credentials: tuple[Credential[Any], ...], *, section: str
+) -> dict[str, Any]:
+    """The deprecated ``<name>`` and ``<name>_command`` settings each credential still reads.
+
+    In 11.x a credential's old plain-text setting and its command setting
+    are read after the stored login (``Credential.get``'s third step); each
+    carries a ``deprecated(...)`` mark. A field the plugin's model declares
+    itself (an 11.0 model kept as is) is left to it.
+    """
+    fields: dict[str, Any] = {}
+    for credential in credentials:
+        login = f"untaped auth login {section or credential.plugin}"
+        if credential.name != "token":
+            login += f" {credential.name}"
+        mark = deprecated(removed_in=12, replacement=login)
+        name, command = credential.name, f"{credential.name}_command"
+        if name not in model.model_fields:
+            fields[name] = (
+                Annotated[SecretStr | None, mark],
+                Field(default=None, description=f"The {credential.label} in plain text."),
+            )
+        if command not in model.model_fields:
+            fields[command] = (
+                Annotated[TokenCommand, mark],
+                Field(
+                    default=None,
+                    description=f"Command (argv list, no shell) printing the {credential.label}.",
+                ),
+            )
+    return fields
 
 
 def _cache_renames(
@@ -545,15 +585,25 @@ def apply_overlay(effective: dict[str, Any], *, profile: str) -> dict[str, Any]:
     node = effective.get(overlay.section)
     section = dict(node) if isinstance(node, dict) else {}
     for key, value in overlay.values.items():
+        # A dotted key (``server.url``) is a leaf of a nested setting.
+        *parents, leaf = key.split(".")
+        target = section
+        for part in parents:
+            child = target.get(part)
+            target[part] = dict(child) if isinstance(child, dict) else {}
+            target = target[part]
         if value is None:
-            section.pop(key, None)
+            target.pop(leaf, None)
         else:
-            section[key] = value.get_secret_value() if isinstance(value, SecretStr) else value
+            target[leaf] = value.get_secret_value() if isinstance(value, SecretStr) else value
     return {**effective, overlay.section: section}
 
 
 def resolve_with_overlay(
-    raw: dict[str, Any], *, sections: SectionModels | None = None
+    raw: dict[str, Any],
+    *,
+    sections: SectionModels | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> ResolvedConfig:
     """The layout's resolution of ``raw`` with the active overlay laid over it.
 
@@ -567,7 +617,7 @@ def resolve_with_overlay(
     known = {} if profiles is None else profiles
     if overlay is not None and isinstance(known, dict) and overlay.profile not in known:
         raw = {**raw, "profiles": {**known, overlay.profile: {}}}
-    resolved = active_settings_layout().resolve(raw, sections=sections)
+    resolved = active_settings_layout().resolve(raw, sections=sections, environ=environ)
     selected = effective_active_profile_name(raw) or DEFAULT_PROFILE
     return replace(resolved, effective=apply_overlay(resolved.effective, profile=selected))
 
@@ -577,7 +627,9 @@ class LayoutSettingsSource(InitSettingsSource):
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
         raw = load_config_yaml(yaml_file)
-        resolved = resolve_with_overlay(raw, sections=model_sections(settings_cls))
+        resolved = resolve_with_overlay(
+            raw, sections=model_sections(settings_cls), environ=os.environ
+        )
         effective = resolved.effective
         for sections in resolved.uses.values():
             for section, uses in sections.items():
@@ -651,17 +703,21 @@ def env_sets_key(section: str, key: str) -> bool:
     return not isinstance(data, dict) or key in data
 
 
-def env_var_setting(path: tuple[str, ...]) -> str | None:
+def env_var_setting(
+    path: tuple[str, ...], *, environ: Mapping[str, str] | None = None
+) -> str | None:
     """The set ``UNTAPED_*`` variable that supplies the leaf at ``path``, if any.
 
     The deepest one wins: the leaf's own variable, else an ancestor's JSON
     object that holds it; an ancestor whose value (or a level inside it)
     isn't a JSON object counts, since it cannot be told apart. Old spellings
-    are not checked; ``env_var_supplying`` finds a field's.
+    are not checked; ``env_var_supplying`` finds a field's. ``environ``
+    defaults to this process's variables.
     """
+    variables = os.environ if environ is None else environ
     for depth in range(len(path), 0, -1):
         name = env_var_name(path[:depth])
-        value = next((text for key, text in os.environ.items() if key.upper() == name), None)
+        value = next((text for key, text in variables.items() if key.upper() == name), None)
         if value is None:
             continue
         if depth == len(path):
@@ -755,7 +811,10 @@ class _RenamingEnvSource(EnvSettingsSource):
             if not isinstance(value, dict) or not key_mappings(model):
                 continue
             data[section], uses = rename_keys(model, value)
+            overrides = _CREDENTIAL_NAMES.get(model, frozenset())
             for use in uses:
+                if use.kind == "deprecated" and use.old in overrides:
+                    continue  # UNTAPED_<SECTION>__<NAME> is a credential's override, not deprecated
                 # The new key follows the old one's form: a variable or a blob key.
                 as_variable = _env_is_set(_env_name(section, use.old))
                 notify_use(

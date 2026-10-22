@@ -9,6 +9,7 @@ from cyclopts import Parameter
 
 from untaped.sdk import (
     ColumnsOption,
+    Diagnostics,
     FormatOption,
     create_app,
     echo,
@@ -17,6 +18,8 @@ from untaped.sdk import (
     report_errors,
 )
 from untaped_git.settings import git_settings, store_root
+
+_diag = Diagnostics()
 
 app = create_app(
     name="git",
@@ -31,13 +34,20 @@ def credential_command(
         Parameter(help="The credential helper action git asks for."),
     ],
     /,
+    *,
+    nonce: Annotated[
+        str | None,
+        Parameter(help="The worktree's nonce, from the helper line untaped wrote."),
+    ] = None,
 ) -> None:
     """Answer Git's credential requests from the plugins that know the host.
 
     Git runs this as a credential helper (untaped writes it into its own
-    worktrees): it reads `protocol`, `host` and `path` on stdin and prints a
-    username and password when a plugin supplies them for that URL. `store`
-    and `erase` do nothing: untaped's credentials live in its own settings.
+    worktrees, with a nonce for that worktree): it reads `protocol`, `host`
+    and `path` on stdin and prints a username and password when a plugin
+    supplies them for that URL. A nonce that isn't the worktree's (a moved
+    worktree, or a call by hand) gets nothing. `store` and `erase` do
+    nothing: untaped's credentials live in its own store.
 
     `get` prints the secret on stdout, where Git reads it: never run it where
     its output is logged. `untaped git hosts` says whether a host has a
@@ -46,7 +56,7 @@ def credential_command(
     from untaped_git.domain.hosts import resolve_host  # noqa: PLC0415
 
     with report_errors():
-        if action != "get":
+        if action != "get" or not _nonce_ok(nonce):
             return
         fields = _read_fields()
         protocol, host = fields.get("protocol"), fields.get("host")
@@ -57,6 +67,26 @@ def credential_command(
             return
         echo(f"username={auth.credential.username}")
         echo(f"password={auth.credential.password.get_secret_value()}")
+
+
+def _nonce_ok(nonce: str | None) -> bool:
+    """Whether to answer: the nonce is this worktree's, or (11.x) there is none."""
+    from untaped_git.infrastructure.helper_nonce import nonce_matches  # noqa: PLC0415
+    from untaped_git.settings import NONCELESS_HELPER  # noqa: PLC0415
+
+    if nonce is None:
+        NONCELESS_HELPER.notify(
+            "a credential helper line without --nonce", key="helper", replacement=None
+        )
+        return True
+    matches, worktree = nonce_matches(nonce, Path.cwd())
+    if not matches:
+        where = "this folder" if worktree is None else str(worktree)
+        _diag.warning(
+            f"untaped's credential helper in {where} was written for another folder, so it "
+            "answers nothing; the worktree's owner rewrites it when it next refreshes it"
+        )
+    return matches
 
 
 @app.command(name="hosts")
@@ -70,8 +100,8 @@ def hosts_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
 
     A host no plugin claims isn't listed: untaped's worktrees use your own
     Git credentials for it. `credential` false means the plugin has no token
-    for the host; `untaped auth set SECTION`, with the plugin's section,
-    stores one from a hidden prompt. A helper in `helpers_first` holding a
+    for the host; `untaped auth login PLUGIN` stores one from a hidden
+    prompt. A helper in `helpers_first` holding a
     stale password answers before untaped; with `git.untaped_helper_only`
     set, untaped's worktrees ask only untaped and the column is empty. A
     host two plugins claim lists both; until one is ranked first, any fetch

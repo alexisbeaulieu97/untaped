@@ -73,7 +73,7 @@ lists the categories. A plugin's error classes declare them as class defaults
   `connected_client(section=…)`. A mapper that turns them into plugin
   errors keeps both: `JiraApiError(msg, **attribution(err))`, and a 401 stays
   `auth` even when it becomes a `ConfigError` for its hint.
-- Put a follow-up command in `hint=` (``"run `untaped auth set awx`"``)
+- Put a follow-up command in `hint=` (``"run `untaped auth login awx`"``)
   rather than in the message; text output prints it as a `hint:` line.
 - When a new error replaces a caught one, pass `**attribution(exc)` so the
   category, system, hint and details survive.
@@ -101,7 +101,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Not found | `<noun> not found: 'x'; known: a, b` | `not_found("profile", name, known=names)` |
 | Quoted name | `'name'` | `q(name)` |
 | Count | `3 repos`, never `repo(s)` | `plural(3, "repo")` |
-| Hint | ``hint: run `untaped …` `` (or a short instruction that is not a command, like the bare-install hint) | `ctx.diag.hint(run_hint("auth set awx"))`; `hint(…)` ends an error's message |
+| Hint | ``hint: run `untaped …` `` (or a short instruction that is not a command, like the bare-install hint) | `ctx.diag.hint(run_hint("auth login awx"))`; `hint(…)` ends an error's message |
 | Warning | `warning: …` | `ctx.diag.warning(text)` |
 | Success | Muted by `-q` | `ctx.diag.success(text)` |
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |
@@ -265,9 +265,10 @@ The sections above name the helper for each rule. Beyond those:
 - Read settings with `app_context().section(name, Model)` or
   `get_config_section(name, Model)`, which validate only your section, rather
   than `app_context().settings`.
-- For a service's URL and secrets, mark the fields `NeedsSetup` and `Secret`
-  (not `token_sources` or `token_command`) and pass `connected_client` their
-  values; see [Settings and the plugin app](../plugins.md#settings-and-the-plugin-app).
+- For a service, hold its server in one `NeedsSetup`-marked `CredentialKey`
+  setting and declare each secret as a `Credential` on the spec (not
+  `token_sources` or a `token` setting), and pass `connected_client` the
+  values; see [Credentials](../credentials.md).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
 - To keep a repository, use `RepoStore.for_url(url, plugin=SPEC, error=...)`

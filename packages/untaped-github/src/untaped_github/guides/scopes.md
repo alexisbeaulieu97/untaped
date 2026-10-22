@@ -62,7 +62,7 @@ fit in one query, so a large scope is split into batches:
 - `sweep` and `cache sync` use records from `repos list` as they are, with
   no API call per repo, and their `pushed_at` lets an unchanged repo skip
   its fetch. Other records and bare names are looked up.
-- Git fetches send the token only to the Git host of `github.base_url`; a
+- Git fetches send the token only to the Git host of `github.server.url`; a
   piped `clone_url` on another host is fetched without it.
 
 A chain narrows at each step: each command reads the previous one's

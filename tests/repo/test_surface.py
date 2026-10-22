@@ -93,7 +93,19 @@ def removal_exempt(line: Line, target: int, baseline: str) -> bool:
 MINOR_WAIVERS: dict[str, frozenset[str]] = {
     # skills.updates moves to auto with stub skills (#694): under warn, every
     # upgrader would see a warning after every command until they updated.
-    "v11.0.0": frozenset({"cfg skills.updates string default=warn"}),
+    "v11.0.0": frozenset(
+        {
+            "cfg skills.updates string default=warn",
+            # base_url moves into each server's credential key (#811): the old key is
+            # still read as server.url, but the value is now checked as a URL up front,
+            # and github's default comes from its key.
+            "cfg awx.base_url string? default=unset",
+            "cfg github.base_url string default=https://api.github.com",
+            "cfg jira.base_url string? default=unset",
+            # still accepted, with a deprecation warning, by GithubSettings' validator
+            "sdk untaped_github.api.GithubSettings(base_url=) default=https://api.github.com",
+        }
+    ),
 }
 
 
@@ -288,11 +300,12 @@ def test_overrides_are_declared() -> None:
 
 def test_written_outside_spellings_have_lines(generated: str) -> None:
     """The git credential helper untaped writes into worktree configs uses promised spellings."""
-    words = shlex.split(worktree_config._helper_command("work").removeprefix("!"))[1:]
-    assert words == ["--profile", "work", "git", "credential"]
+    words = shlex.split(worktree_config._helper_command("work", "ab12").removeprefix("!"))[1:]
+    assert words == ["--profile", "work", "git", "credential", "--nonce", "ab12"]
     lines = {line.text for line in parse(generated)}
     assert "cli untaped --profile VALUE default=unset" in lines
     assert "cli untaped git credential ACTION" in lines
+    assert "cli untaped git credential --nonce VALUE default=unset" in lines
     for action in ("get", "store", "erase"):
         assert f"cli untaped git credential ACTION choice={action}" in lines
 

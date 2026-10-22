@@ -13,7 +13,7 @@ from typing import Any
 from untaped.sdk import HttpSettings, connected_client, same_origin
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.errors import map_awx_errors
-from untaped_awx.settings import AwxSettings
+from untaped_awx.settings import TOKEN, AwxSettings
 
 
 class AwxClient:
@@ -21,17 +21,19 @@ class AwxClient:
 
     def __init__(self, config: AwxSettings, *, http: HttpSettings | None = None) -> None:
         # A token-less client can still hit unauthenticated endpoints like
-        # `ping/`; when the token is set, connected_client sends it as the bearer.
+        # `ping/`; when a token is found for the server, it is the bearer.
+        server = config.server
+        self._base_url = "" if server is None else str(server.url)
         self._http = connected_client(
             config,
             section="awx",
-            base_url=config.base_url,
-            require_token=False,
+            base_url=self._base_url,
+            bearer=TOKEN.find(server),
+            verify=True if server is None else server.verify_tls,
             headers={"Accept": "application/json"},
             http=http,
         )
         self._api_prefix = config.api_prefix
-        self._base_url = str(config.base_url)
 
     def _url(self, path: str) -> str:
         """Join ``api_prefix`` with a relative resource path.
@@ -86,12 +88,12 @@ class AwxClient:
         Used to follow AWX's pagination ``next`` URLs, which come back
         as full paths and would double-prefix if passed through
         :meth:`_url`. A URL naming another scheme, host or port than the
-        configured ``base_url`` is refused, so the token never leaves it.
+        configured ``server.url`` is refused, so the token never leaves it.
         """
         if not same_origin(absolute_path, self._base_url):
             raise AwxApiError(
                 f"refusing to follow {absolute_path!r}: its origin differs from "
-                f"the configured awx.base_url {self._base_url!r}"
+                f"the configured awx.server.url {self._base_url!r}"
             )
         return self._http.get_json(absolute_path, **kwargs)
 

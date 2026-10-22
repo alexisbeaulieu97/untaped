@@ -43,7 +43,7 @@ code first:
 - 4: fix the environment, not your change: `awx.credentials` (token,
   permission, credential lookup), `awx.inventories` (a failed source sync),
   `git` (HEAD not pushed, or an unusable checkout) or `local` (missing
-  settings such as `awx.base_url`).
+  settings such as `awx.server.url`).
 - 5: temporary, retry later: `awx.controller` or `awx.hosts`.
 - 130: interrupted. Running jobs are cancelled and listed on stderr; with
   `--no-cancel` they keep running and the list ends with an

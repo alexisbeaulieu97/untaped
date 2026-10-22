@@ -325,11 +325,11 @@ def test_two_profiles_on_one_controller_and_token_share_its_snapshot(
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               api_prefix: /api/v2/
           other:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               api_prefix: /api/v2/
         """
     )

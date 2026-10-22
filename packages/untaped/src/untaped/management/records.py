@@ -31,21 +31,13 @@ from untaped.refs import RefHolder, RefTarget
 
 
 class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
-    """What ``auth set``, ``auth unset`` or ``auth migrate`` did to one section's secret.
+    """What the deprecated ``auth set``, ``unset`` or ``migrate`` did to a section's token.
 
-    Never the secret; ``field`` names it. ``store`` is where it is kept
-    (``None``: nowhere); a failed ``migrate`` row says why in ``detail`` and
-    ``error``.
+    Never the token. ``store`` is where it is kept (``None``: nowhere); a
+    failed ``migrate`` row says why in ``detail`` and ``error``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "section",
-        "field",
-        "profile",
-        "store",
-        "action",
-        "detail",
-    )
+    table_columns: ClassVar[tuple[str, ...]] = ("section", "profile", "store", "action", "detail")
 
     section: str
     profile: str
@@ -53,18 +45,56 @@ class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
     action: str
     detail: _Omitted = None
     error: _RowError = None
-    field: str = Field(default="token", description="The secret: ``token`` or another field.")
 
 
 class TokenSource(Record, kind="untaped.token_source"):
-    """Where one profile's secret for one section comes from (``auth status``)."""
+    """Where one credential comes from (``auth status``), named without reading it.
 
-    table_columns: ClassVar[tuple[str, ...]] = ("profile", "section", "field", "source")
+    For a declared credential, one row for this run: its key, the step that
+    answers (``variable``, ``stored``, ``setting``, ``env``) and the stored
+    row's id, or why a folder's settings refuse it. For a plugin still on
+    11.0's ``token`` settings, one row per profile, as in 11.0.
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("profile", "section", "name", "key", "source")
 
     profile: str
     section: str
-    source: str
-    field: str = Field(default="token", description="The secret: ``token`` or another field.")
+    source: str = Field(description="What answers: a variable, `stored <id>`, a setting, `none`.")
+    name: str = Field(default="token", description="The credential's name in its plugin.")
+    key: _Omitted = Field(default=None, description="What the credential is for, described.")
+    step: _Omitted = Field(default=None, description="Which step answers: `variable`, `stored`…")
+    id: _Omitted = Field(default=None, description="The stored row's short id, when one answers.")
+    refusal: _Omitted = Field(
+        default=None, description="Why a folder's settings refuse this credential."
+    )
+
+
+class CredentialOutcome(OutcomeRecord, kind="untaped.credential_outcome"):
+    """What ``auth login`` or ``auth forget`` did to one stored credential (never the secret)."""
+
+    table_columns: ClassVar[tuple[str, ...]] = ("plugin", "name", "key", "id", "store", "action")
+
+    plugin: str
+    name: str
+    key: str = Field(description="What the credential is for, described.")
+    id: str = Field(description="The stored row's short id.")
+    store: str | None = Field(description="Where the secret is kept, or `None`: nowhere.")
+    action: str
+    detail: _Omitted = None
+
+
+class StoredCredential(Record, kind="untaped.stored_credential"):
+    """One stored credential (``auth list``): what it is for and how it is read, not the secret."""
+
+    table_columns: ClassVar[tuple[str, ...]] = ("id", "plugin", "name", "key", "where")
+
+    id: str = Field(description="The row's short id, as `auth forget --id` takes it.")
+    plugin: str
+    name: str
+    key: str = Field(description="What the credential is for, described.")
+    backend: str = Field(description="`security`, `secret-tool`, `pass` or `command`.")
+    where: str = Field(description="The store entry, or the command's program alone.")
 
 
 class ConfigMigrationOutcome(OutcomeRecord, kind="untaped.config_migration_outcome"):

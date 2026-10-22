@@ -308,14 +308,15 @@ def test_missing_issue_is_a_not_found_error() -> None:
     assert "error: issue not found: 'ABC-9'" in result.stderr.splitlines()
 
 
-def test_rejected_token_hints_at_auth_set() -> None:
+def test_rejected_token_hints_at_auth_login() -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(401))
         result = invoke_cli(app, ["whoami"])
 
     assert result.exit_code == 4, result.output
     assert result.stderr.endswith(
-        "error: Jira rejected the token (HTTP 401)\nhint: run `untaped auth set jira`\n"
+        "error: Jira rejected the token (HTTP 401)\n"
+        "hint (your step): run `untaped auth login jira`\n"
     )
 
 
@@ -329,7 +330,7 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(monkeypatch: pytest.Mon
     record = json.loads(result.stderr.splitlines()[-1])
     assert record["message"] == "Jira rejected the token (HTTP 401)"
     assert (record["category"], record["system"]) == ("auth", "jira")
-    assert record["hint"] == "run `untaped auth set jira`"
+    assert record["hint"] == "run `untaped auth login jira`"
 
 
 @pytest.mark.parametrize(

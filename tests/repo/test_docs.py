@@ -67,18 +67,22 @@ def _setting_command_problems(root: App, page: str) -> list[str]:
     """Commands a setting description names (``source refresh --parallel``) that do not exist.
 
     A span of two or more words is a command, named from the root or from the
-    setting's own plugin; its options must exist too. One word is ambiguous
-    with a value (``table``, ``never``) and is not checked.
+    setting's own plugin (``untaped`` first is allowed); its options must exist
+    too. Words after two or more command words are its arguments (``auth login
+    awx``). One word is ambiguous with a value (``table``, ``never``) and is
+    not checked.
     """
     problems = []
     for section, description in _SETTING_ROW.findall(page):
         for span, flags in _COMMAND_SPAN.findall(description):
             words = span.split()
+            words = words[1:] if words[:1] == ["untaped"] else words
             path = next(
                 (
-                    base + words
+                    base + words[:named]
                     for base in ([], [section])
-                    if not root.parse_commands(base + words)[2]
+                    if (named := len(words) - len(root.parse_commands(base + words)[2]))
+                    >= min(2, len(words))
                 ),
                 None,
             )
@@ -112,6 +116,11 @@ def test_setting_descriptions_name_real_commands(
             "github: github cache sync: --jobs",
         ),
         ("| `awx.n` | int | `4` | `X` | Read by `github sweep`. |", None),
+        ("| `awx.s` | url | `X` | `X` | Log in: `untaped auth login awx`. |", None),
+        (
+            "| `awx.s` | url | `X` | `X` | Log in: `untaped auth logon awx`. |",
+            "awx: `untaped auth logon awx` is not a command",
+        ),
     ],
 )
 def test_setting_command_detector(
@@ -476,6 +485,7 @@ DOCS_PAGES = [
     "composition.md",
     "configuration.md",
     "contracts.md",
+    "credentials.md",
     "getting-started.md",
     "lint.md",
     "plugin-skills.md",

@@ -10,7 +10,7 @@ from urllib.parse import quote
 from untaped.sdk import HttpSettings, RetryPolicy, connected_client, paginate_offset
 from untaped_jira.domain.parse import ISSUE_DETAIL_FIELDS, ISSUE_ROW_FIELDS
 from untaped_jira.infrastructure.errors import map_jira_errors
-from untaped_jira.settings import JiraSettings
+from untaped_jira.settings import TOKEN, JiraSettings
 
 # Jira's JQL search is a POST to an idempotent ``/search`` endpoint. Opt just
 # that call into retry by widening the retryable methods to include POST — the
@@ -36,10 +36,13 @@ class JiraClient:
     """Talks to Jira Data Center using a configured personal access token."""
 
     def __init__(self, config: JiraSettings, *, http: HttpSettings | None = None) -> None:
+        server = config.server
         self._http = connected_client(
             config,
             section="jira",
-            base_url=config.base_url,
+            base_url=config.url,
+            bearer=None if server is None else TOKEN.get(server),
+            verify=True if server is None else server.verify_tls,
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",

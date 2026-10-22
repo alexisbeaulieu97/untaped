@@ -311,6 +311,8 @@ def _bad_text(root: App, text: str, plugin: str | None) -> Iterator[str]:
         current = root
         for word in words:
             name = resolve_command(current, word)
+            if name is None and current is not root and current.default_command is not None:
+                break  # the rest are the command's arguments (`untaped auth login awx`)
             if name is None:
                 yield f"`{text}` does not resolve to a command"
                 return

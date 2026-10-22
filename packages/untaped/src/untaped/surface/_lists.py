@@ -35,6 +35,7 @@ HOOKS: Mapping[str, Mapping[str, str]] = {
         "category": "subclasses set it; the exit code and the failure record read it",
         "hint": "subclasses set it; the error report prints it",
         "system": "subclasses set it; the failure record reads it",
+        "fix_by": "subclasses set it; the error report and the failure record read it",
     },
     "untaped.sdk.HttpError": {
         "category": "subclasses set it; the exit code and the failure record read it",

@@ -31,23 +31,28 @@ from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion
-from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, create_model, model_validator
+from pydantic.fields import FieldInfo
 
 from untaped.cache import Cache
+from untaped.config_schema import unwrap_optional
+from untaped.credentials import Credential, CredentialKey, credential_list, key_errors, key_fields
 from untaped.deprecated_keys import key_mappings, mapping_errors
 from untaped.errors import ConfigError
 from untaped.output.sink import Diagnostics
 from untaped.records import KindError, OutcomeRecord
-from untaped.setting_marks import injected_commands, setup_mark_errors
+from untaped.setting_marks import setup_mark_errors
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
     RESERVED_SECTION_KEYS,
     RESERVED_SECTIONS,
+    legacy_credential_fields,
     reserved_section_keys,
     section_model,
 )
 from untaped.stability import (
+    Deprecated,
     DeprecatedBehaviour,
     Stability,
     check_stability,
@@ -373,6 +378,11 @@ class PluginSpec:
     must be listed. ``state`` (a model of the whole section) is still read
     alongside.
 
+    ``credentials`` are the :class:`~untaped.credentials.Credential` objects
+    whose secrets the plugin needs: core keeps them outside configuration,
+    owns ``untaped auth login`` for them, and each still reads its 11.0
+    ``<name>``/``<name>_command`` settings, which carry their own marks.
+
     ``guides`` is a folder of Markdown files (``files("untaped_acme") /
     "guides"``), each a page ``untaped agents <name> <guide>`` prints: prose
     that belongs to no single command. Composition never reads it.
@@ -393,6 +403,7 @@ class PluginSpec:
     migrations: tuple[DirMigration, ...] = ()
     caches: tuple[Cache[Any], ...] = ()
     stores: tuple[Store | ItemStore[Any] | StateDeclaration, ...] = ()
+    credentials: tuple[Credential[Any], ...] = ()
     deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
     guides: Traversable | None = field(default=None, hash=False)
     _home: str = field(default="", init=False, repr=False, compare=False, hash=False)
@@ -425,6 +436,10 @@ class PluginSpec:
         for cache in self.caches:
             if not isinstance(cache, Cache):
                 raise ConfigError(f"plugin {self.name!r} caches holds {cache!r}, not a Cache")
+        try:
+            object.__setattr__(self, "credentials", credential_list(self.credentials))
+        except TypeError as exc:
+            raise ConfigError(f"plugin {self.name!r} {exc}") from None
         object.__setattr__(self, "stores", tuple(self.stores))
         for store in self.stores:
             if _is_state(store):
@@ -475,13 +490,17 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
     ``caches`` (:func:`untaped.settings.section_model`), as does a model
     marking a :class:`~untaped.setting_marks.Secret` (its command setting).
     ``extensions=False`` leaves ``extensions`` out (the config reference
-    documents it elsewhere).
+    documents it elsewhere). So does a plugin declaring credentials: it
+    carries their deprecated 11.0 settings.
     """
     owner = extensions and owns_contracts(spec)
-    commands = spec.settings is not None and bool(injected_commands(spec.settings))
-    if owner or spec.caches or commands:
+    if owner or spec.caches or spec.credentials:
         return section_model(
-            spec.settings or _NoSettings, extensions=owner, caches=spec.caches, section=spec.name
+            spec.settings or _NoSettings,
+            extensions=owner,
+            caches=spec.caches,
+            section=spec.name,
+            credentials=spec.credentials,
         )
     return spec.settings
 
@@ -557,6 +576,9 @@ VALID_REASONS = frozenset(
         "foreign-store",
         "duplicate-store",
         "unlisted-state",
+        "foreign-credential",
+        "duplicate-credential",
+        "bad-credential",
     }
 )
 
@@ -855,7 +877,11 @@ def _check_section_keys(spec: PluginSpec) -> None:
     injected = frozenset(
         ({"extensions"} if owns_contracts(spec) else set())
         | ({"caches"} if spec.caches else set())
-        | (set(injected_commands(spec.settings)) if spec.settings is not None else set())
+        | set(
+            legacy_credential_fields(
+                spec.settings or _NoSettings, spec.credentials, section=spec.name
+            )
+        )
     )
     for label, model, keys in (
         ("settings", spec.settings, injected),
@@ -988,6 +1014,54 @@ def _check_caches(spec: PluginSpec) -> None:
                 "duplicate-cache", f"plugin {spec.name!r} declares the cache {cache.name!r} twice"
             )
         seen.add(cache.name)
+
+
+def _check_credentials(spec: PluginSpec) -> None:
+    seen: set[str] = set()
+    fields = {} if spec.settings is None else spec.settings.model_fields
+    holders: dict[type[CredentialKey], list[str]] = {}
+    if spec.settings is not None:
+        for path, model in key_fields(spec.settings):
+            holders.setdefault(model, []).append(".".join(path))
+    for credential in spec.credentials:
+        if credential.plugin != spec.name:
+            raise _Quarantine(
+                "foreign-credential",
+                f"plugin {spec.name!r} declares the credential {credential.qualified!r} of "
+                "another plugin",
+            )
+        if credential.name in seen:
+            raise _Quarantine(
+                "duplicate-credential",
+                f"plugin {spec.name!r} declares the credential {credential.name!r} twice",
+            )
+        seen.add(credential.name)
+        errors = key_errors(credential.key)
+        if errors:
+            raise _Quarantine(
+                "bad-credential",
+                f"plugin {spec.name!r} credential {credential.name!r}: {errors[0]}",
+            )
+        clash = fields.get(credential.name)
+        if clash is not None and not _kept_secret_field(clash):
+            raise _Quarantine(
+                "bad-credential",
+                f"plugin {spec.name!r} credential {credential.name!r} has the name of a "
+                "setting of its section; a credential is not a setting",
+            )
+        held = holders.get(credential.key, [])
+        if len(held) > 1:
+            raise _Quarantine(
+                "bad-credential",
+                f"plugin {spec.name!r} credential {credential.name!r}: several settings hold a "
+                f"{credential.key.__name__} ({', '.join(held)}); keep one",
+            )
+
+
+def _kept_secret_field(field: FieldInfo) -> bool:
+    """Whether ``field`` is an 11.0 secret setting kept, deprecated, beside its credential."""
+    deprecated_mark = any(isinstance(item, Deprecated) for item in field.metadata)
+    return deprecated_mark and unwrap_optional(field.annotation) is SecretStr
 
 
 def _check_stores(spec: PluginSpec) -> None:
@@ -1169,6 +1243,7 @@ def _check_composed_mappings(spec: PluginSpec) -> None:
 def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_reserved_name(spec, state)
     _check_caches(spec)
+    _check_credentials(spec)
     _check_stores(spec)
     _check_setup_marks(spec)
     _check_section_keys(spec)

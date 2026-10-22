@@ -23,7 +23,7 @@ def open_corpus(settings: GithubSettings) -> GitCorpusCache:
     from untaped_github.infrastructure.git_corpus import GitCorpusCache  # noqa: PLC0415
 
     return GitCorpusCache(
-        web_host=github_web_host(settings.base_url), protocol=settings.git_protocol
+        web_host=github_web_host(settings.api_url), protocol=settings.git_protocol
     )
 
 

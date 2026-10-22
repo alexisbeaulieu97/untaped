@@ -17,9 +17,10 @@ from typing import Any
 
 from pydantic import BaseModel, SecretStr
 
-from untaped.auth import describe_token_source, takes_token_command
+from untaped.auth import takes_token_command
 from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
+from untaped.credentials import CredentialKey, key_fields
 from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import inherited_from_default, plaintext_token
@@ -38,6 +39,7 @@ from untaped.setup_status import (
     notify_unmarked,
     plugin_marks,
     secret_source,
+    shown_value,
     unset_fields,
 )
 from untaped.token_store import TokenStore, pick_store
@@ -88,30 +90,48 @@ def service_marks(spec: PluginSpec) -> SetupMarks:
 
 
 def form_fields(spec: PluginSpec) -> tuple[MarkedField, ...]:
-    """The marked fields the connection form edits as text: top-level, scalar, not secret.
+    """The marked fields the connection form edits as text: scalar, not secret.
 
-    Any other marked field (a list, a nested one, a secret other than
-    ``token``) stays a row of its own.
+    A top-level marked setting, or a required field of a marked
+    :class:`~untaped.credentials.CredentialKey` (``server.url``). Any other
+    marked field (a list, a nested one, a secret) stays a row of its own.
     """
     descriptors = {d.path: d for d in walk_settings(settings_model(spec))}
-    return tuple(
-        field
-        for field in service_marks(spec).required
-        if field.secret is None
-        and len(field.path) == 1
-        and (descriptor := descriptors.get(field.path)) is not None
-        and not descriptor.is_secret
-    )
+    fields: list[MarkedField] = []
+    for marked in service_marks(spec).required:
+        if marked.is_secret:
+            continue
+        key = _marked_key(spec, marked)
+        if key is not None:
+            fields.extend(
+                MarkedField((*marked.path, name))
+                for name, each in key.model_fields.items()
+                if each.is_required() and (*marked.path, name) in descriptors
+            )
+            continue
+        descriptor = descriptors.get(marked.path)
+        if len(marked.path) == 1 and descriptor is not None and not descriptor.is_secret:
+            fields.append(marked)
+    return tuple(fields)
+
+
+def _marked_key(spec: PluginSpec, field: MarkedField) -> type[CredentialKey] | None:
+    """The key class a marked setting holds, if it is one."""
+    model = settings_model(spec)
+    for path, key in key_fields(model):
+        if path == field.path:
+            return key
+    return None
 
 
 def connection_keys(spec: PluginSpec) -> frozenset[str]:
     """The keys of ``spec``'s connection, which setup edits together as one row."""
     keys = [field.key for field in form_fields(spec)]
     token = service_marks(spec).token
-    if token is not None:
+    if token is not None and token.credential is None:
         keys.append(token.key)
-        if token.command is not None and token.command in settings_model(spec).model_fields:
-            keys.append(token.command)
+        if takes_token_command(settings_model(spec)):
+            keys.append("token_command")
     return frozenset(f"{spec.name}.{key}" for key in keys)
 
 
@@ -203,15 +223,13 @@ def service_state(
     token = marks.token
     missing = tuple(each.key for each in unset_fields(settings, marks, section=section))
     shown = {
-        each.key: _text(value)
+        each.key: shown_value(settings, each)
         for each in marks.required
-        if each.secret is None
-        and not each.masked
-        and (value := field_value(settings, each)) is not None
+        if not each.is_secret and not each.masked and field_value(settings, each) is not None
     }
     return ServiceState(
         {each.key: _text(field_value(settings, each)) for each in form},
-        None if token is None else describe_token_source(settings, section=section),
+        None if token is None else secret_source(settings, token, section=section),
         missing,
         required,
         plaintext,

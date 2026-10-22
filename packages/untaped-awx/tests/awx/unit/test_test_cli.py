@@ -35,7 +35,7 @@ def aap_config_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               api_prefix: /api/v2/
         """
     )
@@ -161,7 +161,7 @@ def test_run_exits_with_the_category_of_a_launch_failure(
     )
     assert failure["retryable"] is (status == 503)
     if status == 401:
-        assert "untaped auth set awx" in failure["hint"]
+        assert "untaped auth login awx" in failure["hint"]
 
 
 def test_run_preflights_every_case_before_launching(

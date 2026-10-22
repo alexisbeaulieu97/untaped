@@ -306,7 +306,7 @@ def refresh_source(
             repo_batch_size=settings.source_refresh_repo_batch_size,
             rate_limit_floor=settings.source_refresh_rate_limit_floor,
             progress=progress,
-            github_host=github_web_host(github_settings.base_url),
+            github_host=github_web_host(github_settings.api_url),
         )(source, source_key=source_key)
     return result
 

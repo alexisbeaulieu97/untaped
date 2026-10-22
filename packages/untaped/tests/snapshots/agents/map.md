@@ -31,7 +31,7 @@ Read a plugin's page before running its commands: `untaped agents PLUGIN`, then 
 - `skills`: List, install, update, and remove agent skills shipped by untaped.
 - `doctor`: Check the health of the shell and every composed plugin.
 - `setup`: Configure a profile's services interactively.
-- `auth`: Keep API tokens out of `config.yml`.
+- `auth`: Log in to the servers plugins talk to; keep tokens safe.
 - `plugin`: Inspect installed plugins and their contracts.
 
 ## acme · details: `untaped agents acme`

@@ -22,7 +22,7 @@ import json
 import shlex
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import SecretStr
 
@@ -30,13 +30,15 @@ from untaped.auth import token_env_names
 from untaped.config.models import SettingOutcome
 from untaped.config.repository import SettingsFileRepository
 from untaped.config.use_cases import Note, RankProviders, SetSetting, SettingChange, UnsetSetting
+from untaped.credentials import Credential, credential_key, describe_key
 from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import delete_stored_token, save_token
-from untaped.management.setup_state import ServiceState, profile_exists
+from untaped.management.setup_state import ServiceState, profile_exists, service_marks
 from untaped.plugins.registry import PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
-from untaped.profile_resolver import DEFAULT_PROFILE
+from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
+from untaped.settings import load_settings_section
 from untaped.token_store import TokenStore, entry_name, preset_entry
 
 __all__ = [
@@ -132,6 +134,13 @@ def write_candidate(
     argv = list(candidate.argv) if candidate.argv is not None else None
     for key, text in candidate.values:
         repo.set_value(f"{section}.{key}", text, profile=profile)
+    token = service_marks(spec).token
+    credential = None if token is None else token.credential
+    if credential is not None:
+        notes.extend(_login(credential, candidate, current, repo))
+        if how != "keep":
+            notes.extend(_retire(section, current.own_command, None))
+        return notes
     if how in ("store", "move") and store is not None:
         secret = _typed(candidate.token) if how == "store" else current.plaintext
         if secret is not None:
@@ -153,6 +162,49 @@ def write_candidate(
         notes.append(("info", f"export ${env} in your shell for untaped {spec.name} to use it"))
     if how != "keep":
         notes.extend(_retire(section, current.own_command, argv))
+    return notes
+
+
+def _login(
+    credential: Credential[Any],
+    candidate: Candidate,
+    current: ServiceState,
+    repo: SettingsFileRepository,
+) -> list[Note]:
+    """File a declared credential's candidate under the key just saved, as ``auth login`` does.
+
+    The key is read back from the profile once its settings are written, so
+    the login is filed under exactly what later runs resolve. The profile's
+    old ``<name>`` and ``<name>_command`` go: the stored login answers first.
+    """
+    section, profile, how = candidate.section, candidate.profile, candidate.how
+    if how == "keep":
+        return []
+    with profile_scope(profile):
+        key = credential_key(credential, load_settings_section(section))
+    if key is None:
+        raise ConfigError(
+            f"{section} has no settings to file the {credential.label} under",
+            fix_by="user",
+        )
+    notes: list[Note] = []
+    if how == "env":
+        if credential.forget(key) is not None:
+            notes.append(("info", f"forgot the stored {credential.label} for {describe_key(key)}"))
+        env = credential.env[0] if credential.env else None
+        if env is not None:
+            notes.append(("info", f"export ${env} in your shell for untaped {section} to use it"))
+    else:
+        secret = _typed(candidate.token) if how == "store" else current.plaintext
+        if how == "command" and candidate.argv is not None:
+            credential.store(key, command=list(candidate.argv))
+        elif secret is not None:
+            credential.store(key, token=secret)
+        else:
+            return notes
+    for old in (credential.name, f"{credential.name}_command"):
+        if repo.unset_value(f"{section}.{old}", profile=profile)[0]:
+            notes.append(("info", f"unset {section}.{old} in profile {profile}"))
     return notes
 
 
