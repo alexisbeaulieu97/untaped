@@ -13,6 +13,7 @@ import json
 import socket
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -32,12 +33,15 @@ from test_management.support import (
     write_config,
 )
 from untaped import bootstrap
+from untaped.cache import Cache
+from untaped.data_file import write_lines
 from untaped.management.doctor import build_root_doctor_app, collect_doctor_rows
 from untaped.plugins.registry import (
     CompositionResult,
     PluginCandidate,
     PluginSpec,
     QuarantineRecord,
+    named_plugin_dir,
 )
 from untaped.settings import FORMAT_VERSION, get_settings
 from untaped.state import StateRows
@@ -662,3 +666,56 @@ def test_quiet_keeps_the_checklist_but_mutes_its_footer(_isolated_config: Path) 
     assert quiet.stdout == loud.stdout
     assert "doctor:" in loud.stderr
     assert quiet.stderr == ""
+
+
+# ── caches ───────────────────────────────────────────────────────────────────
+
+
+def _caches_row(rows: list[dict[str, str]]) -> dict[str, str]:
+    [row] = [row for row in rows if row["check"] == "caches"]
+    return row
+
+
+def test_the_caches_row_has_nothing_to_note_on_a_clean_home() -> None:
+    code, rows = _rows(_doctor_app())
+    assert code == 0
+    assert (_caches_row(rows)["status"], _caches_row(rows)["detail"]) == (_PASS, "nothing to note")
+
+
+def test_a_cache_file_of_another_version_passes_with_a_note() -> None:
+    typed = Cache("acme", "items", label="items", max_age=timedelta(hours=1), model=_Row)
+    plain = Cache("acme", "names", label="names", max_age=timedelta(hours=1), version=lambda: "2")
+    stamp = {"key": "k", "version": None, "refreshed_at": "2026-10-01T00:00:00Z"}
+    shape = typed._typing().shape  # type: ignore[union-attr]
+    write_lines(typed._root() / "s" / "k.v00000000.json", {**stamp, "type": shape}, b"{}")
+    write_lines(typed._root() / "s" / "j.v11111111.json", {**stamp, "type": "other"}, b"{}")
+    write_lines(plain._root() / "s" / "k.json", {**stamp, "version": "1"}, b"[]")
+    write_lines(plain._root() / "s" / "j.json", {**stamp, "version": "2"}, b"[]")
+    spec = make_spec("acme", caches=(typed, plain))
+
+    code, rows = _rows(_doctor_app(spec))
+
+    assert code == 0, _failed(rows)
+    row = _caches_row(rows)
+    assert row["status"] == _PASS
+    assert row["detail"] == (
+        "acme.items: 1 file filled by another version, refilled on next use; "
+        "acme.names: 1 file filled by another version, refilled on next use"
+    )
+
+
+def test_an_uninstalled_plugins_caches_pass_with_a_note_and_warn_nowhere() -> None:
+    folder = named_plugin_dir("gone") / "cached" / "items"
+    folder.mkdir(parents=True)
+    (folder / "k.json").write_bytes(b"x" * 2048)
+
+    code, rows = _rows(_doctor_app(make_spec("acme")))
+
+    assert code == 0, _failed(rows)
+    row = _caches_row(rows)
+    assert row["status"] == _PASS
+    assert row["detail"].endswith(
+        "cached: 2.0 KiB of a plugin not installed here; another install may use it, "
+        "`untaped setup migrate-dirs` removes it"
+    )
+    assert [row for row in rows if row["status"] == "warn"] == []

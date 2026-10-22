@@ -121,7 +121,8 @@ upgrade) is *outdated*: refreshed when it is due, and served, with one
 `untaped.stale` warning, under `--cached` or when the refresh fails. A file
 that can't be read, or holds another shape, is missing and refilled. After a
 complete fill, the key's files of other versions older than the max age are
-deleted.
+deleted. `untaped doctor`'s `caches` row counts each cache's files of
+another version, as a note.
 
 `partition=` keeps another set of files for the same keys, for data that
 depends on a credential: it is hashed into the file names and never shown in
@@ -303,7 +304,10 @@ to its `migrations`: `untaped setup migrate-dirs` then offers each one as a
 anything `keep` names, and every layout while `refs/` or a reference cannot
 be read, since who holds it is unknown then. The references of installs that
 are gone are core's `untaped.references` row, and `untaped doctor`'s
-`references` row lists every reference. In tests,
+`references` row lists every reference. A plugin uninstalled here leaves its
+`cached/` folder, since another install sharing the home may still use it:
+`doctor`'s `caches` row notes it, and core's `untaped.uninstalled-caches`
+row offers to delete it. In tests,
 `untaped.testing.write_reference` writes another install's reference.
 
 ## Other files your plugin keeps

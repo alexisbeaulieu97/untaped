@@ -502,7 +502,12 @@ def plugin_dir(spec: PluginSpec) -> Path:
 
 def named_plugin_dir(name: str) -> Path:
     """:func:`plugin_dir` by the plugin's name, for core code that holds a name, not a spec."""
-    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins" / name
+    return plugins_root() / name
+
+
+def plugins_root() -> Path:
+    """``~/.untaped/plugins/``: every plugin's folder, installed here or not."""
+    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins"
 
 
 @dataclass(frozen=True)
