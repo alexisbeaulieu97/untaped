@@ -330,19 +330,11 @@ re-declare it as `target_path: AbsolutePath` so it leads the output.
 
 ## Managed state
 
-A plugin that writes structured state declares a `state` model, whose
-fields are disjoint from its `settings`, and writes through the state helpers:
-
-```python
-from untaped.sdk import StateCollection
-
-_items = StateCollection("acme", "items", id_field="id")
-_items.upsert({"id": "one", "label": "Example"})
-```
-
-State lives in the [state file](../configuration.md#file-and-layout), outside
-profiles, and is never a user setting. The helpers keep other plugins' sections
-intact under the shared lock, so never read or write either file directly.
+A plugin keeps what only it holds (what users created through its commands)
+through the state helpers, listed on `PluginSpec.stores`: typed rows in a
+`StateRows`, strings in a `StateMap` ([Plugin state](../state.md)). Their names
+are disjoint from its `settings`. The helpers keep other plugins' sections
+intact under the shared lock, so never read or write the state file directly.
 
 A file under `plugin_dir(SPEC)` an older release could not open is a [store](../caches.md#stores),
 opened through `Store.open()`; files people commit under `.untaped/` go through [`committed_path`](../projects.md#a-plugins-files-in-untaped),

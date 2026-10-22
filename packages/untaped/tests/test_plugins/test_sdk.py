@@ -31,8 +31,11 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "settings and state": (
         "AppContext",
+        "ProjectStateRows",
+        "RowExists",
         "StateCollection",
         "StateMap",
+        "StateRows",
         "app_context",
         "get_config_section",
     ),

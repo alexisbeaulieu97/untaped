@@ -52,7 +52,12 @@ from untaped.management.notes import print_notes
 from untaped.management.records import ConfigMigrationOutcome
 from untaped.messages import hint, plural
 from untaped.output.sink import Diagnostics
-from untaped.plugins.registry import ApplicationSpec, CompositionResult, settings_model
+from untaped.plugins.registry import (
+    ApplicationSpec,
+    CompositionResult,
+    settings_model,
+    state_keys,
+)
 from untaped.settings import (
     Settings,
     active_settings_layout,
@@ -173,7 +178,7 @@ def section_scopes(
     }
     scopes[shell.section] = RootSectionScope(
         plugin=shell.name,
-        state_fields=frozenset(shell.state.model_fields if shell.state is not None else ()),
+        state_fields=state_keys(shell),
         mappings=key_mappings(shell.settings),
         model=shell.settings,
     )
@@ -181,7 +186,7 @@ def section_scopes(
         spec = registered.spec
         scopes[spec.name] = RootSectionScope(
             plugin=spec.name,
-            state_fields=frozenset(spec.state.model_fields if spec.state is not None else ()),
+            state_fields=state_keys(spec),
             mappings=key_mappings(settings_model(spec)),
             model=settings_model(spec),
         )

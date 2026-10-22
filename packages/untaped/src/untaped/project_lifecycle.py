@@ -72,9 +72,10 @@ from untaped.refs import (
     read_reference,
     reference_file,
 )
+from untaped.settings import STATE_FILE_NAME
 
 #: Core's own files in ``.untaped/`` that ``remove`` deletes (``.gitignore`` only when untouched).
-_CORE_FILES = (MARKER, "state.yml")
+_CORE_FILES = (MARKER, STATE_FILE_NAME)
 #: Core's own folder there: plugins' machine files (``Project.plugin_dir``).
 _CORE_FOLDERS = ("plugins",)
 

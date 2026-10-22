@@ -77,7 +77,8 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
   your own package, with its [conventions](./docs/reference/conventions.md),
   [how composition works](./docs/composition.md),
   [contracts](./docs/contracts.md) between plugins,
-  [caches](./docs/caches.md) of what an upstream answered and
+  [caches](./docs/caches.md) of what an upstream answered,
+  [state](./docs/state.md) only it holds and
   [its agent skill](./docs/plugin-skills.md), checked with
   [`untaped lint`](./docs/lint.md).
 - [Building a screen](./docs/screens.md): an interactive terminal UI on the

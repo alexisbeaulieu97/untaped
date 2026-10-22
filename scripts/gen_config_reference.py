@@ -127,9 +127,9 @@ def _first_party() -> tuple[PluginCandidate, ...]:
 
 
 def collect_sections() -> list[Section]:
-    """``(title, prefix, model, is_state, stability)``: the shell and each first-party plugin.
+    """``(title, prefix, model, is_state, stability, rows)``: the shell and each first-party plugin.
 
-    ``stability`` is the owning plugin's mark. Plugins follow in name
+    ``stability`` is the owning plugin's mark; ``rows`` its typed state rows. Plugins follow in name
     order. Raises :class:`RuntimeError` naming every quarantined first-party
     plugin rather than drop its section.
     """
@@ -215,7 +215,7 @@ def _renamed_table() -> list[str]:
     from untaped.settings import model_sections  # noqa: PLC0415
 
     rows: list[str] = []
-    for _, prefix, model, is_state, _ in collect_sections():
+    for _, prefix, model, is_state, _, _ in collect_sections():
         if is_state:
             continue
         sections = {prefix: model} if prefix else model_sections(model)

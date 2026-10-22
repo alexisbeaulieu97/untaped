@@ -28,6 +28,7 @@ from untaped.management.config import (
     build_root_config_app,
 )
 from untaped.settings import FORMAT_VERSION, get_settings
+from untaped.state import StateMap
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -116,6 +117,18 @@ def test_state_field_is_rejected_without_writing(_isolated_config: Path, argv: l
     result = CliInvoker().invoke(_config_app(), argv)  # type: ignore[arg-type]
     assert result.exit_code != 0
     assert "github.cursor" in result.output
+    assert "managed by" in result.output
+    assert not _isolated_config.exists()
+
+
+@pytest.mark.parametrize("argv", [["set", "acme.aliases", "abc"], ["get", "acme.aliases"]])
+def test_a_declared_state_key_is_rejected(_isolated_config: Path, argv: list[str]) -> None:
+    acme = make_spec("acme", stores=(StateMap("acme", "aliases"),))
+    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose(acme))
+
+    result = CliInvoker().invoke(app, argv)  # type: ignore[arg-type]
+
+    assert result.exit_code != 0
     assert "managed by" in result.output
     assert not _isolated_config.exists()
 

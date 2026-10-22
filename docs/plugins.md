@@ -262,6 +262,11 @@ its key left your settings model, until `config migrate` deletes it.
 `untaped lint` runs each preview on an empty `HOME`; the example
 plugin (`examples/untaped-hello`) has one row.
 
+## Keeping what users create
+
+What only your plugin holds, such as the records its commands create, is
+[state](./state.md): typed rows in a `StateRows` listed on `PluginSpec.stores`.
+
 ## Caching what an upstream answers
 
 When a command reads data your plugin fetched from an upstream it can ask

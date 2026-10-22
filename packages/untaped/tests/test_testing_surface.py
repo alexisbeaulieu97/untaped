@@ -39,8 +39,10 @@ EXPECTED_ALL = [
     "plan_release",
     "plugin_candidate",
     "progress_clock",
+    "read_rows",
     "release_ask",
     "write_reference",
+    "write_rows",
 ]
 
 

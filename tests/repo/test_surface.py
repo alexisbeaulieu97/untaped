@@ -128,6 +128,70 @@ def test_no_stable_surface_removed(generated: str) -> None:
     assert not gone, removal_message(tag, gone)
 
 
+# --- a field added to a stable only-copy row ---------------------------------------
+
+
+def required_fields_added(recorded: list[Line], generated: list[Line]) -> list[Line]:
+    """New stable ``state <plugin>.<name>.<field>`` lines without ``default=``.
+
+    Only for rows whose fields the baseline already lists: rows written by
+    that release lack the field, and it rewrites a row without the fields
+    it doesn't know, so a field it lacks must read as absent.
+    """
+    before = {line.text for line in recorded}
+    known = {_rows_of(line) for line in recorded if _rows_of(line)}
+    return [
+        line
+        for line in generated
+        if line.text not in before
+        and line.mark is None
+        and _rows_of(line) in known
+        and " default=" not in line.text
+        and " choice=" not in line.text
+    ]
+
+
+def _rows_of(line: Line) -> str:
+    """``<plugin>.<name>`` of a ``state`` field line; ``""`` for any other line."""
+    if line.area != "state":
+        return ""
+    parts = line.text.split(" ")[1].split(".")
+    return ".".join(parts[:2]) if len(parts) > 2 else ""
+
+
+def test_no_required_field_added_to_stable_rows(generated: str) -> None:
+    tag = release_baseline()
+    try:
+        recorded = git("show", f"{tag}:{SURFACE_FILE}")
+    except GitCommandError:
+        pytest.skip(f"the baseline {tag} predates {SURFACE_FILE}")
+    fragments = [path.name for path in (REPO_ROOT / "changelog.d").glob("*.md")]
+    target = removal_target(release.release_version(REPO_ROOT), tag, fragments)
+    if target > Version(tag.removeprefix("v")).major:
+        return  # a major may add a required field (with its upgrading note)
+    added = required_fields_added(parse(recorded), parse(generated))
+    assert not added, "\n".join(
+        [
+            f"A field added to rows {tag} keeps needs a default that means 'absent': "
+            f"{tag} wrote rows without it and drops it when it rewrites one.",
+            *(f"  {line}" for line in added),
+        ]
+    )
+
+
+def test_a_required_field_is_refused_only_for_rows_the_baseline_lists() -> None:
+    recorded = [Line("state acme.items.name string"), Line("state acme.items.size integer")]
+    generated = [
+        *recorded,
+        Line("state acme.items.color string"),
+        Line('state acme.items.shade string default="dark"'),
+        Line("state acme.items.tone string", "experimental"),
+        Line("state acme.new.name string"),
+        Line("state acme.flat object"),
+    ]
+    assert required_fields_added(recorded, generated) == [Line("state acme.items.color string")]
+
+
 @pytest.mark.parametrize(
     ("tags", "expected"),
     [

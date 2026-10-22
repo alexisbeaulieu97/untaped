@@ -215,13 +215,16 @@ def replace_config_text(text: str, *, expected: str | None, path: Path | None = 
         get_settings.cache_clear()
 
 
-def read_plugin_state(section: str, path: Path | None = None) -> dict[str, Any]:
+def read_plugin_state(
+    section: str, path: Path | None = None, *, core: bool = False
+) -> dict[str, Any]:
     """Return a copy of a plugin's state ``section`` dict, or ``{}``.
 
     State is read from ``state.yml`` (``path``, default
-    :func:`~untaped.settings.resolve_state_path`).
+    :func:`~untaped.settings.resolve_state_path`). ``core=True`` reads one of
+    core's own sections instead.
     """
-    check_state_section_name(section)
+    check_state_section_name(section, core=core)
     raw = read_config_dict(path or resolve_state_path()).get(section)
     return copy.deepcopy(raw) if isinstance(raw, dict) else {}
 
@@ -230,6 +233,8 @@ def mutate_plugin_state(
     section: str,
     fn: Callable[[dict[str, Any]], None],
     path: Path | None = None,
+    *,
+    core: bool = False,
 ) -> None:
     """Safely mutate a plugin's state ``section`` in ``state.yml`` under its lock.
 
@@ -240,9 +245,10 @@ def mutate_plugin_state(
     is removed when ``fn`` leaves it empty; nothing is written when ``fn``
     changes nothing. ``path`` resolves as in :func:`read_plugin_state`. A
     write to the same file from inside ``fn`` raises :class:`UntapedError`
-    and writes nothing.
+    and writes nothing; a failed write (a full disk) raises
+    :class:`ConfigError` and leaves the file as it was.
     """
-    check_state_section_name(section)
+    check_state_section_name(section, core=core)
     state_path = path or resolve_state_path()
     with _locked(state_path):
         state = read_config_dict(state_path)
@@ -260,7 +266,12 @@ def mutate_plugin_state(
             state[section] = sub
         else:
             state.pop(section, None)
-        write_config_dict(state, state_path)
+        try:
+            write_config_dict(state, state_path)
+        except OSError as exc:
+            raise ConfigError(
+                f"could not write {state_path}: {exc.strerror or exc}; nothing changed"
+            ) from exc
         get_settings.cache_clear()
 
 

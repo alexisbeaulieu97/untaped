@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from untaped.surface._lines import DeprecatedMark, Line, LineMark
 from untaped.surface._sdk import line_mark
@@ -50,6 +50,8 @@ class Section(NamedTuple):
     model: type[BaseModel]
     is_state: bool
     stability: Stability | None
+    rows: tuple[Any, ...] = ()
+    """A state section's typed row declarations, each field of which has a line."""
 
 
 @dataclass(frozen=True)
@@ -92,8 +94,13 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
     owner's section (the config reference documents it elsewhere).
     """
     from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
-    from untaped.plugins.registry import section_settings  # noqa: PLC0415
+    from untaped.plugins.registry import (  # noqa: PLC0415
+        section_settings,
+        state_declarations,
+        state_model,
+    )
     from untaped.settings import Settings  # noqa: PLC0415
+    from untaped.state import ProjectStateRows, StateRows  # noqa: PLC0415
 
     found: list[Section] = []
     if root:
@@ -116,9 +123,17 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
         settings = section_settings(spec, extensions=extensions)
         if settings is not None:
             found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))
-        if spec.state is not None:
+        state = state_model(spec)
+        rows = tuple(
+            each
+            for each in state_declarations(spec)
+            if isinstance(each, StateRows | ProjectStateRows)
+        )
+        if state is None and rows:  # only a project's rows: no section in the home
+            state = create_model(spec.name.title().replace("-", "") + "State")
+        if state is not None:
             found.append(
-                Section(f"`{spec.name}` state", spec.name, spec.state, True, spec.stability)
+                Section(f"`{spec.name}` state", spec.name, state, True, spec.stability, rows)
             )
     return found
 
@@ -173,6 +188,32 @@ def settings_lines(
             lines.extend(_leaf_lines(area, leaf, mark, schema, section.prefix))
         if not section.is_state:
             lines.extend(_renamed(section))
+        for rows in section.rows:
+            lines.extend(row_field_lines(rows, plugin_mark))
+    return lines
+
+
+def row_field_lines(rows: Any, mark: LineMark | None) -> list[Line]:
+    """``state <plugin>.<name>.<field> <type> [default=…]``: one per field of a row model.
+
+    A row is the only copy, so its fields are a promise: a minor keeps each
+    line, and a field it adds has a default (``tests/repo/test_surface.py``).
+    """
+    model: type[BaseModel] = rows.model if isinstance(rows.model, type) else rows.model()
+    schema = schema_of(model)
+    defs = schema.get("$defs", {})
+    lines: list[Line] = []
+    for name, info in model.model_fields.items():
+        key = info.serialization_alias or info.alias or name
+        token = node_token(schema["properties"][key], defs)
+        text = f"state {rows.qualified}.{key} {token.token}"
+        if not info.is_required():
+            text += f" default={default_text(info.get_default(call_default_factory=True))}"
+        lines.append(Line(text, mark))
+        lines.extend(
+            Line(f"state {rows.qualified}.{key} choice={choice_text(value)}", mark)
+            for value in token.choices
+        )
     return lines
 
 

@@ -73,6 +73,7 @@ from untaped.plugins.registry import (
     discover_candidates,
     run_deferred_factory,
     section_settings,
+    spliced_state,
 )
 from untaped.profile_resolver import set_profile_override
 from untaped.settings import (
@@ -165,8 +166,9 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
         section = section_settings(spec)
         if section is not None:
             register_profile_settings(spec.name, section, spec.stability)
-        if spec.state is not None:
-            register_state_settings(spec.name, spec.state)
+        spliced = spliced_state(spec)
+        if spliced is not None:
+            register_state_settings(spec.name, spliced)
 
 
 def _warn_quarantined(result: CompositionResult) -> None:

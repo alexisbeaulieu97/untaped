@@ -117,6 +117,9 @@ The name is the plugin's own: its name (`awx`), `<plugin>.<ext>`
 a `ValueError`. `project_at(path)` and `current_project()` find the project a
 folder is in (`current_project()` is a usage error, exit 2, outside one).
 
+A plugin's rows for one project go in the project's `state.yml` through
+`StateRows.per_project(...).of(project)` ([Plugin state](./state.md#a-projects-rows)).
+
 `nearest_pyproject(start)` walks up to the farther of the checkout root and
 the project root, as `uv` finds a project from a worktree inside it.
 
