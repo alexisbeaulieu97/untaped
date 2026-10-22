@@ -290,8 +290,25 @@ def test_a_refused_value_is_shown_on_its_field_which_takes_the_focus() -> None:
 
     form = run.model.forms["duo"]
     assert form.focus == 0  # the URL, scrolled back into sight
+    assert form.error == ""
+    assert dict(form.fields)["server.url"].error.startswith("invalid value for 'duo.server.url'")
     assert "invalid value for 'duo.server.url'" in run.frame
     assert SEEN == []
+
+    fixed = drive_screen(
+        _build(),
+        [
+            *_form("duo.example.com", "acme", "8443"),
+            "ctrl-u",
+            Paste("https://duo.example.com"),
+            "ctrl-s",
+        ],
+    )
+
+    assert SEEN == [("tok", "hook", 8443)]  # fixed in place, then checked and saved
+    assert fixed.model.forms["duo"].error == ""
+    key = DuoServer(url=HttpUrl("https://duo.example.com"), org="acme")
+    assert DUO_TOKEN.get(key).get_secret_value() == "tok"
 
 
 def test_a_setting_left_empty_is_named_on_its_field_on_a_short_screen() -> None:
