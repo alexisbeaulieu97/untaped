@@ -93,7 +93,19 @@ def removal_exempt(line: Line, target: int, baseline: str) -> bool:
 MINOR_WAIVERS: dict[str, frozenset[str]] = {
     # skills.updates moves to auto with stub skills (#694): under warn, every
     # upgrader would see a warning after every command until they updated.
-    "v11.0.0": frozenset({"cfg skills.updates string default=warn"}),
+    "v11.0.0": frozenset(
+        {
+            "cfg skills.updates string default=warn",
+            # base_url moves into each server's credential key (#811): the old key is
+            # still read as server.url, but the value is now checked as a URL up front,
+            # and github's default comes from its key.
+            "cfg awx.base_url string? default=unset",
+            "cfg github.base_url string default=https://api.github.com",
+            "cfg jira.base_url string? default=unset",
+            # still accepted, with a deprecation warning, by GithubSettings' validator
+            "sdk untaped_github.api.GithubSettings(base_url=) default=https://api.github.com",
+        }
+    ),
 }
 
 
