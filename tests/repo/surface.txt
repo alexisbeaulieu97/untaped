@@ -5977,6 +5977,7 @@ sdk untaped.sdk.executable_check(check_id, program, *, purpose)
 sdk untaped.sdk.existing_file(type_, value)
 sdk untaped.sdk.experimental
 sdk untaped.sdk.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)
+sdk untaped.sdk.find_program(name)
 sdk untaped.sdk.finish(outcome)
 sdk untaped.sdk.finish(predicate_hit=) default=false
 sdk untaped.sdk.first_validation_error(exc)

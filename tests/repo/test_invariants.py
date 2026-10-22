@@ -157,7 +157,7 @@ def test_httpclient_construction_passes_verify() -> None:
     offenders: list[str] = []
     for py_file in sorted(path for src in SRC_DIRS for path in src.rglob("*.py")):
         text = py_file.read_text(encoding="utf-8")
-        if "HttpClient" in text:
+        if any(name in text for name in ("HttpClient", "connected_client", "_http_client")):
             offenders.extend(
                 _verify_offenders(ast.parse(text), str(py_file.relative_to(REPO_ROOT)))
             )

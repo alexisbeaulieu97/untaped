@@ -22,8 +22,8 @@ from untaped import verbose
 from untaped.auth import command_folder, find_program, run_command
 from untaped.errors import HttpError, HttpTransportError
 from untaped.git import run_git
-from untaped.http import HttpClient, RetryPolicy, connected_client
-from untaped.redaction import redact_credentials
+from untaped.http import HttpClient, RetryPolicy, connected_client, same_origin
+from untaped.redaction import redact_credentials, redact_url_password
 from untaped.settings import HttpSettings
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -118,6 +118,7 @@ def test_a_redirect_to_another_origin_is_refused_naming_both() -> None:
     assert str(caught.value).startswith(
         "refusing to follow a redirect from https://api.example.com to https://evil.example.net"
     )
+    assert caught.value.hint == "if http's server moved, set its URL to https://evil.example.net"
 
 
 @respx.mock
@@ -152,6 +153,24 @@ def test_an_idn_base_url_is_its_own_origin() -> None:
     ) as client:
         client.get("/me")
     assert route.calls.last.request.headers["Authorization"] == f"Bearer {_CANARY}"
+
+
+def test_same_origin_reads_an_idn_host_as_it_is_sent() -> None:
+    assert same_origin("https://xn--bcher-kva.example/x", "https://bücher.example")
+    assert not same_origin("https://xn--bcher-kva.example/x", "https://bucher.example")
+
+
+@respx.mock
+def test_a_hop_gets_only_the_time_left(monkeypatch: pytest.MonkeyPatch) -> None:
+    respx.get(f"{_URL}/old").mock(
+        return_value=httpx.Response(302, headers={"Location": f"{_URL}/new"})
+    )
+    new = respx.get(f"{_URL}/new").mock(return_value=httpx.Response(200))
+    left = iter([30.0, 0.5])  # the first request, then the hop
+    monkeypatch.setattr("untaped.http._time_left", lambda: next(left))
+    with HttpClient(_URL) as client:
+        client.get("/old", follow_redirects=True)
+    assert new.calls.last.request.extensions["timeout"]["read"] == 0.5
 
 
 @respx.mock
@@ -292,10 +311,16 @@ def test_a_command_runs_from_home_until_the_config_folder_exists(
         ("GET https://api.example.com/a?b=c@d", "GET https://api.example.com/a?b=c@d"),
         ("via proxy http://user:p@ss@proxy:3128", "via proxy http://***@proxy:3128"),
         ("Authorization: Bearer\nnext line", "Authorization: ***\nnext line"),
+        ("Authorization:\nnext line", "Authorization:\nnext line"),
+        ('{"url":"https://host","email":"a@b"}', '{"url":"https://host","email":"a@b"}'),
     ],
 )
 def test_log_redaction_masks_credentials(line: str, masked: str) -> None:
     assert redact_credentials(line) == masked
+
+
+def test_a_password_holding_an_at_sign_is_masked_whole() -> None:
+    assert redact_url_password("https://user:p@ss@host/x") == "https://user:***@host/x"
 
 
 def test_verbose_lines_mask_the_proxy_and_authorization(

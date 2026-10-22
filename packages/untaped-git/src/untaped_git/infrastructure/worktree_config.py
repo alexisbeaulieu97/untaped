@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import os
 import shlex
-import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, UntapedError, find_program
 from untaped_git.domain.namespace import layout_for
 from untaped_git.domain.url import https_origin
 from untaped_git.infrastructure.repo_files import (
@@ -217,7 +216,7 @@ def _worktree_config(store: RepoStore, worktree: Path, *args: str, check: bool =
 
 
 def _helper_command(profile: str | None) -> str:
-    executable = shutil.which("untaped") or str(Path(sys.argv[0]).resolve())
+    executable = find_program("untaped") or str(Path(sys.argv[0]).resolve())
     command = f"!{shlex.quote(executable)}"
     if profile:
         command += f" --profile {shlex.quote(profile)}"

@@ -20,7 +20,7 @@ import importlib as _importlib
 import typing as _typing
 
 from untaped.app_context import AppContext, app_context
-from untaped.auth import TokenCommand, TokenSources
+from untaped.auth import TokenCommand, TokenSources, find_program
 from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.cache import (
     Cache,
@@ -431,6 +431,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "atomic_write",
     "checkout_root",
     "file_lock",
+    "find_program",
     "git_toplevel",
     "nearest_pyproject",
     "project_root",

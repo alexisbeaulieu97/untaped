@@ -15,6 +15,7 @@ disable verification entirely (escape hatch — leaves traffic open to MITM).
 
 from __future__ import annotations
 
+import contextlib
 import email.utils
 import functools
 import inspect
@@ -379,6 +380,8 @@ class HttpClient:
         signed again by the client's ``auth``, and none starts past the
         deadline.
         """
+        import httpx  # noqa: PLC0415
+
         response = self._client.send(sent[0])
         while follow and (hop := response.next_request) is not None:
             response.close()
@@ -389,6 +392,7 @@ class HttpClient:
                     f"to {_site(str(hop.url))}: it leaves the origin",
                     url=str(request.url),
                     system=self.system,
+                    hint=f"if {self.system}'s server moved, set its URL to {_site(str(hop.url))}",
                 )
             if len(sent) > _MAX_REDIRECTS:
                 raise HttpError(
@@ -403,6 +407,9 @@ class HttpClient:
                     url=str(hop.url),
                     system=self.system,
                 )
+            if left is not None:
+                # httpx copies the first request's timeout onto the hop.
+                hop.extensions["timeout"] = httpx.Timeout(left).as_dict()
             _log_exchange(request, f"{response.status_code} -> {hop.url}", started)
             sent.append(hop if self._auth is None else self._auth(hop))
             response = self._client.send(sent[-1])
@@ -796,10 +803,6 @@ def _origin_bound(credential: str, base: str, *, system: str) -> AuthFn:
     was set up for. A request's own ``Authorization`` header is kept.
     """
 
-    import httpx  # noqa: PLC0415
-
-    base = str(httpx.URL(base))  # the host as httpx sends it (an IDN as punycode)
-
     def sign(request: httpx.Request) -> httpx.Request:
         if not same_origin(str(request.url), base):
             raise HttpError(
@@ -818,7 +821,8 @@ def _site(url: str) -> str:
     """``scheme://host[:port]`` of an absolute ``url``: its origin, as a message names it."""
     scheme, host, port = _origin(url) or ("", "", None)
     host = f"[{host}]" if host and ":" in host else host or ""
-    return f"{scheme}://{host}" + ("" if port in {None, _DEFAULT_PORTS.get(scheme)} else f":{port}")
+    shown = port not in {None, -1, _DEFAULT_PORTS.get(scheme)}
+    return f"{scheme}://{host}" + (f":{port}" if shown else "")
 
 
 def _text(value: object) -> str:
@@ -1083,11 +1087,14 @@ def _origin(url: str) -> tuple[str, str | None, int | None] | None:
     if not parts.scheme and not parts.netloc:
         return None
     scheme = parts.scheme.lower()
+    host = parts.hostname
+    with contextlib.suppress(UnicodeError):
+        host = host.encode("idna").decode("ascii") if host else host  # an IDN as sent
     try:
         port = parts.port or _DEFAULT_PORTS.get(scheme)
     except ValueError:
         port = -1  # an unparsable port never matches a well-formed origin
-    return scheme, parts.hostname, port
+    return scheme, host, port
 
 
 def _same_origin_next(response: httpx.Response, *, system: str | None = None) -> str | None:
