@@ -22,21 +22,26 @@ bug often says something about the design, and so does a change that only fits
 by being bolted on. The task is why we're in the code, not the limit of what
 we notice.
 
+Every command can run unattended: what it would ask at a terminal can also
+come from a flag, an environment variable or configuration.
+
 Core and each plugin care only about what comes in and what goes out, and know
 one another only through public interfaces, never how the other is built. A
 plugin doesn't know other plugins exist unless it depends on one. Whoever owns
 a capability does its wiring and offers it through a small interface. untaped
 owns the CLI, so it wires commands, help and agent support from what plugins
-declare (plugins still build commands with Cyclopts for now). A plugin owning
+declare (plugins still build their own commands for now). A plugin owning
 a contract wires it, and plugins filling it just provide data. When one side
 has to know something only the other cares about, the boundary is in the wrong
-place.
+place. Boundaries catch honest mistakes, not hostile code: a plugin runs with
+the user's rights, so we add no guard against what it could do anyway.
 
 untaped is made of building blocks. A mechanic several features need, such as
 caching or state, is solved once by its owner (core unless something narrower
 owns it) behind a typed pydantic interface that is robust and simple to use.
 Any plugin can use it, and its owner does too, never a private copy. For
 example, the SDK provides output formats and commands pick those they support.
+Core ships mechanics, not ready-made shapes; each plugin models its own domain.
 
 ## Agent-only notes
 
