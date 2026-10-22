@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from pydantic import SecretStr
 
@@ -230,6 +232,19 @@ def test_a_form_level_error_shows_under_the_fields_in_the_error_colour() -> None
 
     assert style_of(segments, "Check failed: 401.").color == role(DEFAULT, "screen.error").color
     assert form.with_error("").error == ""
+
+
+def test_a_form_level_error_stays_in_sight_only_while_the_last_field_is_focused() -> None:
+    def shown(form: Form) -> str:
+        segments = render_styled(form.view(Frame(60, 3, DEFAULT), width=40), width=40)
+        return "".join(segment.text for segment in segments)
+
+    form = _form().with_error("Check failed: 401.")
+
+    assert "Check failed" in shown(replace(form, focus=2))
+    top = shown(form)
+    assert "Base URL" in top
+    assert "Check failed" not in top
 
 
 # --- tabs inside a form ------------------------------------------------------------

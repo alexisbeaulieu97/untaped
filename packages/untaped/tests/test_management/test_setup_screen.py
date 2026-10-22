@@ -120,7 +120,7 @@ def _keys(
     command: str | None = None,
     submit: bool = True,
 ) -> list[ScreenKey]:
-    """List -> rows -> connection form: the URL, the token tab (``right`` steps in), its field,
+    """List -> rows -> setup form: the URL, the token tab (``right`` steps in), its field,
     then enter."""
     keys: list[ScreenKey] = ["enter", "enter"]
     if url is not None:
@@ -205,7 +205,8 @@ def test_check_passes_then_moves_the_plaintext_token(
 
     run = drive_screen(_build(), [*_keys(), "esc", "esc"])
 
-    assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz/"}}
+    # The URL was not edited, so it is not rewritten.
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz"}}
     assert list(current_memory_store().entries.values()) == ["old"]
     assert "old" not in _isolated_config.read_text()
     assert _result(run).touched == ("wiz",)
@@ -357,8 +358,10 @@ def test_save_anyway_writes(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    # After the failed check the focus is on the token field: tab goes to the buttons.
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "enter", "esc", "esc"])
+    # After the failed check the focus is on its buttons, on Cancel: Save anyway is left of it.
+    run = drive_screen(
+        _build(), [*_keys("https://wiz", token="bad"), "left", "enter", "esc", "esc"]
+    )
 
     assert run.commands_run == ("probe", "save")
     assert list(current_memory_store().entries.values()) == ["bad"]
@@ -374,7 +377,7 @@ def test_a_failed_check_is_forgotten_when_the_values_change(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "x"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "shift-tab", "x"])
 
     flat = _flat(run.frame)
     assert "Save anyway" not in flat
@@ -388,7 +391,7 @@ def test_cancel_forgets_the_failed_check_and_returns_to_the_rows(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "right", "enter"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "enter"])
 
     assert run.model.focus == "section"
     assert run.model.failed == {}
@@ -838,7 +841,7 @@ def test_inherited_token_note_shows_in_the_tab(
     assert "Keep" in flat and "Command" not in flat and "pass" not in flat
 
 
-_UNSET = ServiceState(values={}, token_source=None)
+_UNSET = ServiceState(values={})
 
 
 def test_tabs_offer_the_same_choices_as_before(
@@ -853,10 +856,10 @@ def test_tabs_offer_the_same_choices_as_before(
         spec = spec or _wiz()
         return [c.value for c in _token_choices(spec, state, store, has_command=has_command)]
 
-    plain = ServiceState(values={}, token_source="wiz.token", plaintext="old")
+    plain = ServiceState(values={}, secret_sources={"token": "wiz.token"}, plaintext="old")
     assert offered(plain) == ["move", "keep", "store", "command", "env"]
     assert offered(_UNSET) == ["store", "command", "env"]
-    inherited = ServiceState(values={}, token_source="wiz.token", inherited_token=True)
+    inherited = ServiceState(values={}, secret_sources={"token": "wiz.token"}, inherited_token=True)
     # A stored login answers before default's plain text, so every choice works.
     assert offered(inherited) == ["keep", "store", "command", "env"]
     assert [c.value for c in _token_choices(_wiz(), _UNSET, None, has_command=True)] == [
@@ -866,9 +869,10 @@ def test_tabs_offer_the_same_choices_as_before(
     unmarked = make_spec("wiz", settings=UnmarkedWizProfile)
     assert offered(inherited, unmarked) == ["keep"]
     assert offered(_UNSET, _legacy(), has_command=False) == ["store", "enter"]
-    assert offered(
-        ServiceState(values={}, token_source=None, inherited_command=True), unmarked
-    ) == ["store", "command"]
+    assert offered(ServiceState(values={}, inherited_command=True), unmarked) == [
+        "store",
+        "command",
+    ]
 
 
 def test_without_a_store_the_tabs_never_offer_plain_text() -> None:
@@ -1133,8 +1137,8 @@ def test_save_anyway_survives_another_plugin_saving(
         "esc",
         "down",
         "enter",
-        "enter",  # back in wiz's form, on the token field it failed on
-        "tab",  # the buttons: Save anyway
+        "enter",  # back in wiz's form, on its buttons
+        "left",  # Save anyway
         "enter",
     ]
 

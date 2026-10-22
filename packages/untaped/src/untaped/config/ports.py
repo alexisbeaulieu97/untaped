@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 
 from pydantic import BaseModel
@@ -50,6 +50,14 @@ class SettingsWriter(Protocol):
         self,
         key: str,
         update: Callable[[str, Any], str | None],
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        on_spelling_removed: Callable[[str], None] | None = None,
+    ) -> str: ...
+    def update_values(
+        self,
+        updates: Mapping[str, Callable[[str, Any], str | None]],
         *,
         profile: str | None = None,
         dry_run: bool = False,
