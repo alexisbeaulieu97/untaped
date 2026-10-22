@@ -1641,7 +1641,8 @@ def outdated_keys(cache: Cache[Any]) -> int:
     typing = cache._typing()
     version = cache._version_now()
     root = cache._root(None if cache.store is None else cache.store.layout)
-    current: dict[tuple[Path, str], bool] = {}
+    current: set[tuple[Path, str]] = set()
+    other: set[tuple[Path, str]] = set()
     try:
         entries = sorted(root.rglob("*.json"))
     except OSError:
@@ -1654,11 +1655,14 @@ def outdated_keys(cache: Cache[Any]) -> int:
         assert named is not None  # every ``*.json`` name reads as a stem
         other_type = typing is not None and lines.stamp.get("type") != typing.shape
         freshness = _freshness_of(lines.stamp, version, typed=typing is not None)
-        # A file of this version holding only a failed attempt serves nothing.
-        mine = not other_type and not freshness.outdated and freshness.refreshed_at is not None
         key = (entry.parent, named["stem"])
-        current[key] = current.get(key, False) or mine
-    return sum(1 for mine in current.values() if not mine)
+        if freshness.refreshed_at is None:
+            continue  # a failed attempt only: no value of any version
+        if other_type or freshness.outdated:
+            other.add(key)
+        else:
+            current.add(key)
+    return len(other - current)
 
 
 def _remove_legacy(plugin: str) -> None:

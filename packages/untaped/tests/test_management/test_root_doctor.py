@@ -694,10 +694,13 @@ def test_keys_of_another_version_only_pass_with_a_note() -> None:
     write_lines(folder / "j.v11111111.json", {**stamp, "key": "j", "type": "other"}, b"{}")
     write_lines(plain._root() / "s" / "k.json", {**stamp, "version": "1"}, b"[]")
     write_lines(plain._root() / "s" / "j.json", {**stamp, "key": "j", "version": "2"}, b"[]")
-    # i's only file of this version holds a failed attempt: another's value is served.
+    # i's file of this version holds only a failed attempt, beside another version's
+    # value; h has only a failed attempt, so no version of it was ever filled.
     attempt = {**stamp, "key": "i", "type": shape, "refreshed_at": None}
     write_lines(folder / "i.v00000000.json", attempt, None)
     write_lines(folder / "i.v11111111.json", {**stamp, "key": "i", "type": "other"}, b"{}")
+    write_lines(folder / "h.v00000000.json", {**attempt, "key": "h"}, None)
+    write_lines(plain._root() / "s" / "h.json", {**attempt, "key": "h"}, None)
     spec = make_spec("acme", caches=(typed, plain))
 
     code, rows = _rows(_doctor_app(spec))
