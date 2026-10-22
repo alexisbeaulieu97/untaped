@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel, HttpUrl
 
 from test_management.support import compose, make_spec, write_config
-from untaped.credential_store import file_reference, index
+from untaped.credential_store import CredentialRow, file_reference, index
 from untaped.credential_store import rows as stored_rows
 from untaped.credentials import describe_key
 from untaped.errors import ConfigError
@@ -419,3 +419,24 @@ def test_a_defaulted_url_is_still_named() -> None:
     assert row.key == {}, "the id leaves defaults out, so adding one keeps every login"
     listed = _json(_auth("list", "--format", "json"))
     assert listed[0]["key"] == "url=https://api.hub.example.com"
+
+
+@pytest.mark.usefixtures("_server")
+def test_a_replaced_entry_that_cannot_be_deleted_only_warns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def locked(self: TokenStore, entry: str) -> None:
+        raise ConfigError("the keychain is locked")
+
+    monkeypatch.setattr(TokenStore, "delete", locked)
+    monkeypatch.setattr(TokenStore, "gone", lambda self, entry: False)
+    index().put(
+        CredentialRow(id=TOKEN.id(KEY), plugin="wiz", name="token", backend="pass", entry="old")
+    )
+
+    result = _auth("login", "wiz", input="new\n")
+
+    assert result.exit_code == 0, result.output
+    assert "the replaced entry pass" in result.stderr
+    assert "the keychain is locked" in result.stderr
+    assert _secret(TOKEN, KEY) == "new"

@@ -600,7 +600,10 @@ def apply_overlay(effective: dict[str, Any], *, profile: str) -> dict[str, Any]:
 
 
 def resolve_with_overlay(
-    raw: dict[str, Any], *, sections: SectionModels | None = None
+    raw: dict[str, Any],
+    *,
+    sections: SectionModels | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> ResolvedConfig:
     """The layout's resolution of ``raw`` with the active overlay laid over it.
 
@@ -614,7 +617,7 @@ def resolve_with_overlay(
     known = {} if profiles is None else profiles
     if overlay is not None and isinstance(known, dict) and overlay.profile not in known:
         raw = {**raw, "profiles": {**known, overlay.profile: {}}}
-    resolved = active_settings_layout().resolve(raw, sections=sections)
+    resolved = active_settings_layout().resolve(raw, sections=sections, environ=environ)
     selected = effective_active_profile_name(raw) or DEFAULT_PROFILE
     return replace(resolved, effective=apply_overlay(resolved.effective, profile=selected))
 
@@ -624,7 +627,9 @@ class LayoutSettingsSource(InitSettingsSource):
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
         raw = load_config_yaml(yaml_file)
-        resolved = resolve_with_overlay(raw, sections=model_sections(settings_cls))
+        resolved = resolve_with_overlay(
+            raw, sections=model_sections(settings_cls), environ=os.environ
+        )
         effective = resolved.effective
         for sections in resolved.uses.values():
             for section, uses in sections.items():

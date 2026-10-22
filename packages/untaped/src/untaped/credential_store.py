@@ -37,6 +37,7 @@ from untaped.credentials import (
     override_variable,
 )
 from untaped.errors import ConfigError
+from untaped.output.sink import Diagnostics
 from untaped.settings import DEFAULT_CONFIG_PATH, resolve_config_path
 from untaped.token_store import StoreName, TokenStore, no_backend_message, pick_store
 
@@ -71,6 +72,8 @@ class ReadableStore(SecretStore, Protocol):
 
     def read(self, entry: str) -> str: ...
 
+
+_diag = Diagnostics()
 
 _TEST_STORE: ContextVar[ReadableStore | None] = ContextVar("untaped_test_store", default=None)
 
@@ -263,7 +266,10 @@ def store_token(
     old = find_row(ident)
     index().put(_row(credential, key, ident, backend=cast("Backend", store.name), entry=entry))
     if old is not None and (old.backend, old.entry) != (store.name, entry):
-        _drop_entry(old)
+        try:
+            _drop_entry(old)
+        except ConfigError as exc:
+            _diag.warning(f"stored, but the replaced entry {old.where()} stays: {exc}")
     return store.describe(entry)
 
 

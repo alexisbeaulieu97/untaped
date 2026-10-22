@@ -238,13 +238,22 @@ def _clash(other: str, credential: Credential[Any], key: CredentialKey) -> str:
 
 
 def _hold_clashes(moves: list[CredentialMove]) -> list[CredentialMove]:
-    """Keep both lines of a clash: a stored login would answer for the other profile too."""
-    clashes = {(move.clash, _ident(move)): move.profile for move in moves if move.clash is not None}
+    """Keep every line for a server two profiles file differently for.
+
+    A stored login would answer for each of them, so none is filed, and a
+    line that only matched another (``same``) stays too.
+    """
+    clashes: dict[str, set[str]] = {}
+    for move in moves:
+        ident = _ident(move)
+        if move.clash is not None and ident is not None:
+            clashes.setdefault(ident, set()).update({move.clash, move.profile})
     found: list[CredentialMove] = []
     for move in moves:
-        other = clashes.get((move.profile, _ident(move)))
-        credential, key = move.credential, move.key
-        if other is not None and credential is not None and key is not None:
+        ident, credential, key = _ident(move), move.credential, move.key
+        held = clashes.get(ident or "")
+        if held and credential is not None and key is not None and move.clash is None:
+            other = sorted(held - {move.profile})[0]
             move = replace(move, how="leftover", detail=_clash(other, credential, key))
         found.append(move)
     return found

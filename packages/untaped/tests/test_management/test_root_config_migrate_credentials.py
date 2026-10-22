@@ -238,3 +238,29 @@ def test_moving_tokens_off_a_terminal_needs_yes(_isolated_config: Path) -> None:
     assert "an older untaped sharing this config stops reading them" in result.stderr
     assert _isolated_config.read_text() == text
     assert stored_rows() == []
+
+
+def test_a_line_matching_a_held_one_stays_too(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n"
+        "  default:\n    wiz: {server: {url: https://wiz.example.com}}\n"
+        "  lab:\n    wiz: {token: one}\n"
+        "  prod:\n    wiz: {token: one}\n"
+        "  work:\n    wiz: {token: two}\n",
+    )
+
+    rows = _rows(_migrate("--yes", "--format", "json"))
+
+    assert {(row["profile"], row["action"]) for row in rows} == {
+        ("lab", "kept"),
+        ("prod", "kept"),
+        ("work", "kept"),
+    }
+    profiles = _profiles(_isolated_config)
+    assert [profiles[name]["wiz"]["token"] for name in ("lab", "prod", "work")] == [
+        "one",
+        "one",
+        "two",
+    ]
+    assert stored_rows() == []

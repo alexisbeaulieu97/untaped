@@ -111,3 +111,38 @@ def test_root_verify_ssl_false_reads_as_each_keys_verify_tls(
 
     assert (value is not False) is expected
     assert (("wiz", "server", "verify_tls") in turned) is not expected
+
+
+class _Hub(CredentialKey):
+    url: HttpUrl = HttpUrl("https://api.hub.example.com")
+    verify_tls: TlsVerify = True
+
+
+class _HubSection(BaseModel):
+    server: _Hub = _Hub()
+
+
+@pytest.mark.parametrize(
+    ("text", "environ", "turned"),
+    [
+        # a server at its default URL is a server too
+        ("profiles:\n  default: {http: {verify_ssl: false}}\n", {}, True),
+        # the variable counts, over the file
+        ("profiles:\n  default: {}\n", {"UNTAPED_HTTP__VERIFY_SSL": "false"}, True),
+        (
+            "profiles:\n  default: {http: {verify_ssl: false}}\n",
+            {"UNTAPED_HTTP__VERIFY_SSL": "1"},
+            False,
+        ),
+    ],
+)
+def test_root_verify_ssl_reaches_a_defaulted_server_and_the_variable(
+    text: str, environ: dict[str, str], turned: bool
+) -> None:
+    resolved = ProfilesSettingsLayout().resolve(
+        yaml.safe_load(text), sections={"hub": _HubSection}, environ=environ
+    )
+
+    assert (("hub", "server", "verify_tls") in resolved.tls_off) is turned
+    if turned:
+        assert resolved.effective["hub"] == {"server": {"verify_tls": False}}

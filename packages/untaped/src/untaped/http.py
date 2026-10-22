@@ -802,7 +802,10 @@ def connected_client(
     base = url.rstrip("/")
     if credential is not None:
         _refuse_folder_transport(
-            http_settings, base, verified=_verified(override, http_settings), section=section
+            http_settings,
+            base,
+            verified=_verified(override, http_settings, keyed=base_url is not _FROM_CONFIG),
+            section=section,
         )
     if http_settings.proxy:
         _LOG.debug("%s: via proxy %s", section, redact_credentials(http_settings.proxy))
@@ -810,7 +813,9 @@ def connected_client(
         base_url=base,
         headers=request_headers,
         auth=None if credential is None else _origin_bound(credential, origin, system=section),
-        verify=resolve_verify(http_settings) if override is None else override,
+        verify=resolve_verify(_trust(http_settings, keyed=base_url is not _FROM_CONFIG))
+        if override is None
+        else override,
         timeout=http_settings.timeout_seconds,
         proxy=http_settings.proxy,
         retry=retry,
@@ -818,11 +823,22 @@ def connected_client(
     )
 
 
-def _verified(override: VerifyTypes | None, http: HttpSettings) -> bool:
+def _verified(override: VerifyTypes | None, http: HttpSettings, *, keyed: bool) -> bool:
     """Whether a client's TLS checks the chain and the host: its key's, else the root's."""
     if override is not None:
         return override is not False
-    return http.verify_ssl and http.verify_hostname
+    return (keyed or http.verify_ssl) and http.verify_hostname
+
+
+def _trust(http: HttpSettings, *, keyed: bool) -> HttpSettings:
+    """The root settings untaped's own trust comes from; a key's client leaves ``verify_ssl``.
+
+    Root ``verify_ssl: false`` already reads as the key's ``verify_tls:
+    false`` (the settings layout), so a key that still says ``true`` set it.
+    """
+    if keyed and not http.verify_ssl:
+        return http.model_copy(update={"verify_ssl": True})
+    return http
 
 
 def _key_verify(verify: bool | Path) -> VerifyTypes | None:

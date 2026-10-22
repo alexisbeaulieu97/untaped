@@ -166,12 +166,7 @@ def _renew_helper_nonce(store: RepoStore, worktree: Path) -> None:
         key, _, value = entry.partition("\n")
         renewed = _NONCE.sub(f"--nonce {nonce}", value)
         if key and renewed != value:
-            _worktree_config(store, worktree, "--replace-all", key, renewed, _exact(value))
-
-
-def _exact(value: str) -> str:
-    """A ``git config`` value pattern matching ``value`` alone."""
-    return "^" + re.escape(value) + "$"
+            _worktree_config(store, worktree, "--fixed-value", "--replace-all", key, renewed, value)
 
 
 def _entry_of(store: RepoStore, worktree: Path) -> WorktreeEntry | None:

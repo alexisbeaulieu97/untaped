@@ -227,7 +227,8 @@ def test_a_rejected_credential_names_its_own_auth_login() -> None:
             _URL,
             False,
         ),
-        (HttpSettings(proxy="http://proxy.example.com:3128", verify_ssl=False), True, _URL, False),
+        # root verify_ssl already reads as the key's verify_tls; a key saying true set it
+        (HttpSettings(proxy="http://proxy.example.com:3128", verify_ssl=False), True, _URL, True),
         (
             HttpSettings(proxy="http://proxy.example.com:3128"),
             True,
@@ -262,3 +263,19 @@ def test_a_folder_trust_setting_carries_no_credential(monkeypatch: pytest.Monkey
 
     with pytest.raises(ConfigError, match="won't send a credential under a trust setting"):
         connected_client(Marked(), section="demo", base_url=_URL, bearer="tok", http=_HTTP)
+
+
+def test_a_keys_client_takes_root_trust_without_verify_ssl(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[HttpSettings] = []
+
+    def trust(http: HttpSettings) -> bool:
+        seen.append(http)
+        return True
+
+    monkeypatch.setattr("untaped.http.resolve_verify", trust)
+    root = HttpSettings(verify_ssl=False, ca_bundle=Path("/etc/ca.pem"))
+
+    connected_client(Marked(), section="demo", base_url=_URL, bearer="tok", http=root).close()
+
+    [used] = seen
+    assert (used.verify_ssl, used.ca_bundle) == (True, Path("/etc/ca.pem"))

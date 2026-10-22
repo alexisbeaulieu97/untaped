@@ -75,16 +75,19 @@ class ProfilesSettingsLayout:
         *,
         profile: str | None = None,
         sections: SectionModels | None = None,
+        environ: Mapping[str, str] | None = None,
     ) -> ResolvedConfig:
         """Resolve effective settings, provenance and old-key uses.
 
-        ``sections`` overrides the constructor's section models.
+        ``sections`` overrides the constructor's section models; ``environ``
+        (a run's variables) adds ``UNTAPED_HTTP__VERIFY_SSL`` to how root
+        ``verify_ssl`` reads on keys.
         """
         override = profile or effective_active_profile_name(raw)
         models = sections if sections is not None else self._sections_now()
         renamed, uses = _rename_profiles(raw, models, override)
         effective, provenance = resolve_profiles(renamed, active_override=override)
-        tls_off = _root_tls_off(renamed, override, effective, models)
+        tls_off = _root_tls_off(renamed, override, effective, models, environ or {})
         return ResolvedConfig(effective, provenance, uses, tls_off)
 
     def _sections_now(self) -> SectionModels:
@@ -144,19 +147,27 @@ def _layers(raw: dict[str, Any], active: str | None) -> list[dict[str, Any]]:
 
 
 def _root_tls_off(
-    raw: dict[str, Any], active: str | None, effective: dict[str, Any], models: SectionModels
+    raw: dict[str, Any],
+    active: str | None,
+    effective: dict[str, Any],
+    models: SectionModels,
+    environ: Mapping[str, str],
 ) -> frozenset[tuple[str, ...]]:
-    """Read a layer's root ``http.verify_ssl: false`` as each key's ``verify_tls: false``.
+    """Read root ``http.verify_ssl: false`` as each key's ``verify_tls: false``.
 
-    11.x only (``verify_ssl`` goes in 12.0). The key's TLS field is found by
-    type; a key with no URL set is left alone, and a layer's own
-    ``verify_tls`` wins over its ``verify_ssl``, as a later layer wins over
-    an earlier one. ``effective`` is updated in place; returns the leaves
-    turned off.
+    11.x only (``verify_ssl`` goes in 12.0): a client built for a key takes
+    its TLS from the key alone. The key's TLS field is found by type; a key
+    with no URL (set, or by default) is left alone. A layer's own
+    ``verify_tls`` wins over its ``verify_ssl``, a later layer wins over an
+    earlier one, and ``UNTAPED_HTTP__VERIFY_SSL`` in ``environ`` over both.
+    ``effective`` is updated in place; returns the leaves turned off.
     """
     from untaped.credentials import key_fields, key_shape  # noqa: PLC0415 - credentials is heavy
 
-    layers = _layers(raw, active)
+    layers: list[Mapping[str, Any]] = list(_layers(raw, active))
+    variable = environ.get("UNTAPED_HTTP__VERIFY_SSL")
+    if variable is not None:
+        layers.append({"http": {"verify_ssl": variable.strip().lower() not in _FALSE}})
     if not any(_dig(layer, ("http", "verify_ssl")) is False for layer in layers):
         return frozenset()
     turned: set[tuple[str, ...]] = set()
@@ -164,24 +175,36 @@ def _root_tls_off(
         for path, key in key_fields(model):
             shape = key_shape(key)
             node = _dig(effective, (section, *path))
-            if shape.tls is None or not isinstance(node, dict):
+            if shape.tls is None or (node is not None and not isinstance(node, dict)):
                 continue
-            if (
-                not any(node.get(url) for url in shape.urls)
-                or node.get(shape.tls, True) is not True
-            ):
+            node = node or {}
+            urls = [node.get(url) or key.model_fields[url].get_default() for url in shape.urls]
+            if not any(urls) or node.get(shape.tls, True) is not True:
                 continue
             leaf = (section, *path, shape.tls)
             decided = None
             for layer in layers:
+                root = _dig(layer, ("http", "verify_ssl"))
                 if _dig(layer, leaf) is not None:
                     decided = "key"
-                elif _dig(layer, ("http", "verify_ssl")) is False:
-                    decided = "root"
+                elif root is not None:
+                    decided = "root" if root is False else None
             if decided == "root":
-                node[shape.tls] = False
+                _place(effective, leaf, False)
                 turned.add(leaf)
     return frozenset(turned)
+
+
+_FALSE = frozenset({"0", "off", "f", "false", "n", "no"})
+
+
+def _place(data: dict[str, Any], path: tuple[str, ...], value: object) -> None:
+    for part in path[:-1]:
+        child = data.get(part)
+        if not isinstance(child, dict):
+            child = data[part] = {}
+        data = child
+    data[path[-1]] = value
 
 
 def _dig(data: Any, path: tuple[str, ...]) -> Any:
