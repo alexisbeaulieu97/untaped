@@ -158,6 +158,7 @@ def make_spec(
     doctor_checks: tuple[DoctorCheck, ...] = (),
     stability: Stability | None = None,
     stores: tuple[Any, ...] = (),
+    caches: tuple[Any, ...] = (),
     credentials: tuple[Credential[Any], ...] | None = None,
 ) -> PluginSpec:
     """Return a minimal plugin spec double mounting an empty sub-app.
@@ -177,6 +178,7 @@ def make_spec(
         doctor_checks=doctor_checks,
         stability=stability,
         stores=stores,
+        caches=caches,
         credentials=CREDENTIALS.get(settings, ()) if credentials is None else credentials,
     )
 

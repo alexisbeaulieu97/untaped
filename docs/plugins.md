@@ -218,7 +218,9 @@ When your plugin's data moves, declare a `DirMigration` in
 `PluginSpec.migrations` rather than asking users to move or delete it by hand.
 `untaped setup migrate-dirs` previews every plugin's rows as one table,
 confirms (`--yes`, `--dry-run`), then applies them in plugin-name order;
-`untaped doctor` warns while any row would still move or delete something.
+`untaped doctor` warns while any row would still move or delete something
+(core's offer to delete an uninstalled plugin's caches is only a note, in its
+`caches` row).
 
 ```python
 from untaped.sdk import delete_migration, move_migration, plugin_dir, setting_guard

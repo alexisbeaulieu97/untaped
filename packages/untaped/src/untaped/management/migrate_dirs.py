@@ -1,10 +1,12 @@
 """``untaped setup migrate-dirs``: move or delete the directories older versions left.
 
-Core owns no layout; its one row offers the reference files of installs that
-are gone (:func:`~untaped.migrations.references_migration`). Each plugin
+Core owns no layout; its rows offer the reference files of installs that
+are gone (:func:`~untaped.migrations.references_migration`) and the caches
+of plugins not installed here
+(:func:`~untaped.migrations.uninstalled_caches_migration`). Each plugin
 contributes its own rows through ``PluginSpec.migrations``
 (:class:`~untaped.plugins.registry.DirMigration`): a ``preview`` that reads
-and an ``apply`` that changes. This command previews core's row, then every
+and an ``apply`` that changes. This command previews core's rows, then every
 composed plugin's migrations in registry order (by plugin name), shows
 them as one table, confirms (``--yes`` skips it; with no terminal it exits 2),
 then applies them in the same order and reports one ``untaped.migration``
@@ -28,7 +30,12 @@ from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.management.records import MigrationPreviewRow
 from untaped.messages import plural, shown_path
-from untaped.migrations import overlapping, references_migration
+from untaped.migrations import (
+    overlapping,
+    references_migration,
+    uninstalled_caches,
+    uninstalled_caches_migration,
+)
 from untaped.output.diagnostic import Failure
 from untaped.output.sink import Diagnostics
 from untaped.plugins.registry import (
@@ -98,14 +105,25 @@ def plan(result: CompositionResult, options: MigrationOptions) -> list[Planned]:
 
 
 def _migrations(result: CompositionResult) -> list[tuple[str, DirMigration]]:
-    """Core's own migration first (only while a reference is dead), then each plugin's."""
+    """Core's own migrations first (each only while it has something), then each plugin's."""
     from untaped.refs import read_references  # noqa: PLC0415 - reads refs/ only here
 
     dead = any(ref.opaque is None and not ref.live for ref in read_references())
     found = [(_CORE, references_migration())] if dead else []
+    installed = installed_names(result)
+    if uninstalled_caches(installed):
+        found.append((_CORE, uninstalled_caches_migration(installed)))
     for registered in result.plugins:
         found += [(registered.spec.name, migration) for migration in registered.spec.migrations]
     return found
+
+
+def installed_names(result: CompositionResult) -> frozenset[str]:
+    """Every plugin installed here: composed, or quarantined (its data is still its own)."""
+    return frozenset(
+        [registered.spec.name for registered in result.plugins]
+        + [record.name for record in result.quarantine]
+    )
 
 
 def _clashes(planned: list[Planned]) -> list[Planned]:
@@ -326,4 +344,4 @@ def summary_text(planned: Sequence[Planned]) -> str:
     return f"{plural(count, 'directory', 'directories')} to migrate"
 
 
-__all__ = ["MIGRATE_COMMAND", "Planned", "migrate_dirs", "plan", "summary_text"]
+__all__ = ["MIGRATE_COMMAND", "Planned", "installed_names", "migrate_dirs", "plan", "summary_text"]
