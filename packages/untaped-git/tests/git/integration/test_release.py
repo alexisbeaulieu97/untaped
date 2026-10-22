@@ -21,13 +21,13 @@ def _shared(store_for: StoreFor, tmp_path: Path) -> tuple[Path, Path]:
     """Github, ansible and workspace (two worktrees) in one repo; returns the worktrees."""
     github = store_for("github")
     github.fetch(branches=["main"])
-    github.private_file.write_text("{}")
+    github.write_private()
     ansible = store_for("ansible")
     ansible.fetch(branches=["main"], tags=["*"])
-    ansible.private_file.write_text("{}")
+    ansible.write_private()
     workspace = store_for("workspace")
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
-    workspace.private_file.write_text("{}")
+    workspace.write_private()
     trees = (tmp_path / "ws" / "one", tmp_path / "ws" / "two")
     workspace.worktree_add(trees[0], "refs/remotes/origin/main", branch="one")
     workspace.worktree_add(trees[1], "refs/remotes/origin/main", branch="two")
@@ -49,8 +49,8 @@ def test_release_keeps_a_shared_repo_and_deletes_only_its_own(
     assert not any(ref.startswith("refs/untaped/github/") for ref in refs)
     assert "refs/untaped/ansible/heads/main" in refs
     assert "refs/remotes/origin/main" in refs
-    assert not github.private_file.exists()
-    assert store_for("ansible").private_file.exists()
+    assert not (github.path / "untaped-github.json").exists()
+    assert (store_for("ansible").path / "untaped-ansible.json").is_file()
     assert git(trees[0], "status", "--short", bare=False) == ""
     unmarked = subprocess.run(
         ["git", f"--git-dir={github.path}", "config", RELEASE_MARK], capture_output=True
@@ -61,7 +61,7 @@ def test_release_keeps_a_shared_repo_and_deletes_only_its_own(
 def test_release_removes_a_repo_only_that_plugin_used(store_for: StoreFor) -> None:
     github = store_for("github")
     github.fetch(branches=["main"])
-    github.private_file.write_text("{}")
+    github.write_private()
 
     outcome = github.release()
 
@@ -79,9 +79,9 @@ def test_has_part_names_a_file_refs_or_its_own_interrupted_release(
     github.fetch(branches=["main"])
     assert github.has_part()  # its refs
     assert not ansible.has_part()  # another plugin's repo
-    ansible.private_file.write_text("{}")
+    ansible.write_private()
     assert ansible.has_part()
-    ansible.private_file.unlink()
+    (ansible.path / "untaped-ansible.json").unlink()
     git(github.path, "config", RELEASE_MARK, "github")
     assert not ansible.has_part()  # someone else's mark
     git(github.path, "config", RELEASE_MARK, "ansible")
@@ -171,7 +171,7 @@ def test_a_checked_out_branch_is_refused_before_anything_changes(
 ) -> None:
     workspace = store_for("workspace")
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
-    workspace.private_file.write_text("{}")
+    workspace.write_private()
     workspace.worktree_add(tmp_path / "ws" / "one", "refs/remotes/origin/main", branch="fix")
     before = all_refs(workspace.path)
 
@@ -180,7 +180,7 @@ def test_a_checked_out_branch_is_refused_before_anything_changes(
 
     assert caught.value.category == ErrorCategory.CONFLICT
     assert all_refs(workspace.path) == before
-    assert workspace.private_file.exists()
+    assert (workspace.path / "untaped-workspace.json").exists()
 
 
 @pytest.mark.parametrize("name", ["*", "a..b", "-x", "refs/heads/x"])
@@ -197,7 +197,7 @@ def test_ensure_finishes_an_interrupted_release_and_keeps_the_others(
     ansible.fetch(branches=["main"])
     github = store_for("github")
     github.fetch(branches=["main"])
-    github.private_file.write_text("{}")
+    github.write_private()
     git(github.path, "config", RELEASE_MARK, "github")  # killed right after the mark
 
     assert ensure(ansible) is False
@@ -205,7 +205,7 @@ def test_ensure_finishes_an_interrupted_release_and_keeps_the_others(
     refs = all_refs(github.path)
     assert "refs/untaped/ansible/heads/main" in refs
     assert not any(ref.startswith("refs/untaped/github/") for ref in refs)
-    assert not github.private_file.exists()
+    assert not (github.path / "untaped-github.json").exists()
     assert "untaped.release" not in (github.path / "config").read_text()
 
 
@@ -245,12 +245,11 @@ def test_owned_by_lists_repos_holding_the_private_file(
     monkeypatch.setenv("UNTAPED_GIT__STORE_DIR", str(tmp_path / "store"))
     github = store_for("github")
     github.fetch(branches=["main"])
-    github.private_file.write_text("{}")
+    github.write_private()
     store_for("ansible").fetch(branches=["main"])
     (found,) = RepoStore.owned_by("github", error=StoreError)
 
     assert found.path == github.path
-    assert found.private_file == github.private_file
     assert RepoStore.owned_by("ansible", error=StoreError) == []
 
 
@@ -279,7 +278,7 @@ def test_release_finishes_another_plugins_interrupted_release_first(
 ) -> None:
     github = store_for("github")
     github.fetch(branches=["main"])
-    github.private_file.write_text("{}")
+    github.write_private()
     git(github.path, "config", RELEASE_MARK, "github")  # killed right after the mark
     ansible = store_for("ansible")
     ansible.fetch(branches=["main"])
@@ -295,7 +294,7 @@ def test_release_unless_in_use_keeps_everything_while_a_worktree_is_registered(
 ) -> None:
     workspace = store_for("workspace")
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
-    workspace.private_file.write_text("{}")
+    workspace.write_private()
     tree = tmp_path / "ws" / "one"
     workspace.worktree_add(tree, "refs/remotes/origin/main", branch="one")
     before = all_refs(workspace.path)
@@ -304,7 +303,7 @@ def test_release_unless_in_use_keeps_everything_while_a_worktree_is_registered(
 
     assert outcome == Released(plugins={"workspace": 1}, branches=("one",))
     assert all_refs(workspace.path) == before
-    assert workspace.private_file.exists()
+    assert (workspace.path / "untaped-workspace.json").exists()
     assert tree.is_dir()
 
 

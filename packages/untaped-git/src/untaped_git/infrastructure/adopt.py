@@ -18,9 +18,9 @@ worktree can be made again; a 10.x github repo's ``refs/heads`` are github's
 own). Both holding work is a conflict and nothing changes. Otherwise the
 copy holding work is kept; with neither, the complete one over a shallow one;
 still tied, the one already in the store. The other copy's private files
-the kept one lacks are copied in without ``fetched_at`` and ``pushed_at``, so
-its owner fetches into the kept repo on its next sync; its regenerable
-worktrees go with it.
+the kept one lacks are copied in with their data kept and their freshness
+cleared (:func:`~untaped.sdk.copy_data_file`), so each owner fetches into
+the kept repo on its next sync; its regenerable worktrees go with it.
 
 This module is the store's own: it uses :class:`RepoStore`'s internals.
 """
@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import contextlib
 import errno
-import json
 import os
 import shutil
 from collections.abc import Collection, Iterable, Mapping
@@ -44,7 +43,6 @@ from untaped.sdk import (
     MigrationOptions,
     MigrationRow,
     UntapedError,
-    atomic_write,
     attribution,
     dir_bytes,
     run_git,
@@ -61,8 +59,6 @@ from untaped_git.infrastructure.store import TIMEOUT, RepoStore, _plugin_name
 from untaped_git.infrastructure.store_release import REMOVING_SUFFIX, remove_worktree
 from untaped_git.infrastructure.worktree_config import enable_worktree_config, write_owner_config
 
-#: What a copied private file loses, so its owner's next sync fetches.
-_FRESHNESS_KEYS = ("fetched_at", "pushed_at")
 #: What a copied source is renamed to while it is deleted.
 _REMOVING = ".git" + REMOVING_SUFFIX
 #: The 10.x workspace layout mark, replaced by the store's ``untaped.store``.
@@ -267,19 +263,19 @@ def _shallow(repo: Path) -> bool:
 
 
 def _copy_private_files(loser: Path, winner: Path) -> None:
-    """Copy the loser's ``untaped-<plugin>.json`` files the winner lacks, freshness dropped."""
+    """Copy the loser's ``untaped-<plugin>.json`` files the winner lacks, freshness cleared.
+
+    A file that can't be copied (unreadable, or a newer untaped's format) is
+    left behind: its owner writes a new one on its next sync.
+    """
+    from untaped.sdk import copy_data_file  # noqa: PLC0415  # the data file loads on first use
+
     for plugin in private_files(loser):
         kept = private_file(winner, plugin)
         if kept.exists():
             continue
-        try:
-            data = json.loads(private_file(loser, plugin).read_text(encoding="utf-8"))
-        except OSError, ValueError:
-            continue
-        if isinstance(data, dict):
-            for key in _FRESHNESS_KEYS:
-                data.pop(key, None)
-        atomic_write(kept, json.dumps(data, sort_keys=True) + "\n")
+        with contextlib.suppress(OSError, ValueError):
+            copy_data_file(private_file(loser, plugin), kept)
 
 
 def _same_filesystem(left: Path, right: Path) -> bool:

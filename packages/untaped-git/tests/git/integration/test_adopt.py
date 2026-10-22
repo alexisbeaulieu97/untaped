@@ -142,7 +142,9 @@ def test_the_overlap_keeps_the_copy_holding_work_in_either_order(
     assert all_refs(target)["refs/heads/fix"] == remote.oid("main")
     assert not any(ref.startswith("refs/untaped/github/") for ref in all_refs(target))
     copied = json.loads((target / "untaped-github.json").read_text(encoding="utf-8"))
-    assert copied == {"profile": "default"}
+    stamp = copied.pop("untaped")
+    assert "refreshed_at" not in stamp  # github's next sync fetches into the kept repo
+    assert copied == {"profile": "default", "fetched_at": "x", "pushed_at": "y"}
     assert not sweep.exists() and not (new_root / "sweep-1").exists()
     assert git(tree, "status", "--short", bare=False) == ""
 
@@ -219,6 +221,25 @@ def test_the_kept_copys_own_files_win_and_an_unreadable_one_is_skipped(
 
     assert not (target / "untaped-github.json").exists()
     assert json.loads((target / "untaped-workspace.json").read_text()) == {"history": "complete"}
+
+
+def test_a_copied_private_file_keeps_its_data_and_loses_its_freshness(tmp_path: Path) -> None:
+    loser, winner = tmp_path / "loser.git", tmp_path / "winner.git"
+    loser.mkdir()
+    winner.mkdir()
+    stamp = {"file": 1, "by": "11.1.0", "refreshed_at": "2026-10-21T12:00:00Z"}
+    (loser / "untaped-github.json").write_text(
+        json.dumps({"untaped": stamp, "repo": "acme/app", "archived": False}), encoding="utf-8"
+    )
+    newer = {"untaped": {"file": 99, "by": "99.0.0"}, "history": "complete"}
+    (loser / "untaped-workspace.json").write_text(json.dumps(newer), encoding="utf-8")
+
+    adopt_module._copy_private_files(loser, winner)
+
+    copied = json.loads((winner / "untaped-github.json").read_text(encoding="utf-8"))
+    assert "refreshed_at" not in copied.pop("untaped")
+    assert copied == {"repo": "acme/app", "archived": False}
+    assert not (winner / "untaped-workspace.json").exists()  # a newer untaped's: left behind
 
 
 def test_a_move_across_filesystems_copies_then_deletes(

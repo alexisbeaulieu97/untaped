@@ -9,14 +9,17 @@ import subprocess
 import threading
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from untaped.testing.git import GitRemote
+from untaped_git.api import RepoStore
 from untaped_workspace.domain.models import LocalBranch, StoredRepo, StoreUse
 from untaped_workspace.domain.safety import archive_blockers
 from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees
+from untaped_workspace.infrastructure.git_worktrees import HISTORY
 from workspace.conftest import add_submodule, commit_in, git, init_submodules, store_repo
 
 
@@ -47,10 +50,60 @@ def test_a_checkout_lands_in_the_store_with_workspaces_file(
     dest = tmp_path / "ws" / "api"
     worktrees.checkout(url, dest, branch="b", base=None)
     repo = store_repo(store_root, url)
-    assert json.loads((repo / "untaped-workspace.json").read_text()) == {"history": "complete"}
+    assert json.loads((repo / "untaped-workspace.json").read_text())["history"] == "complete"
     assert git(dest, "config", "--worktree", "untaped.owner") == "workspace"
     assert git(dest, "rev-parse", "--git-common-dir") == str(repo)
     assert worktrees.in_store(url)
+
+
+def test_an_11_0_history_mark_is_read_as_it_is(
+    worktrees: LocalGitWorktrees,
+    make_upstream: Callable[..., GitRemote],
+    store_root: Path,
+    tmp_path: Path,
+) -> None:
+    url = make_upstream("api").url
+    worktrees.checkout(url, tmp_path / "ws" / "one", branch="one", base=None)
+    mark = store_repo(store_root, url) / "untaped-workspace.json"
+    mark.write_text('{"history": "complete"}\n', encoding="utf-8")  # 11.0 wrote no stamp
+
+    worktrees.checkout(url, tmp_path / "ws" / "two", branch="two", base=None)
+
+    assert mark.read_text(encoding="utf-8") == '{"history": "complete"}\n'
+
+
+@pytest.mark.parametrize(
+    "text",
+    ['{"history": "partial"', '{"untaped": {"file": 99, "by": "99.0.0"}, "history": "partial"}'],
+    ids=["damaged", "newer"],
+)
+def test_a_history_mark_it_cannot_read_is_walked_and_left_alone(
+    worktrees: LocalGitWorktrees,
+    make_upstream: Callable[..., GitRemote],
+    store_root: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+) -> None:
+    url = make_upstream("api").url
+    worktrees.checkout(url, tmp_path / "ws" / "one", branch="one", base=None)
+    mark = store_repo(store_root, url) / "untaped-workspace.json"
+    mark.write_text(text, encoding="utf-8")
+    walked: list[list[str]] = []
+    prefetch = RepoStore.prefetch
+
+    def spy(self: RepoStore, **options: Any) -> None:
+        if options.get("history"):
+            walked.append(list(options["history"]))
+        prefetch(self, **options)
+
+    monkeypatch.setattr(RepoStore, "prefetch", spy)
+
+    checkout = worktrees.checkout(url, tmp_path / "ws" / "two", branch="two", base=None)
+
+    assert checkout.backfill_error is None
+    assert walked == [list(HISTORY)]  # the whole history, as a partial one
+    assert mark.read_text(encoding="utf-8") == text
 
 
 def test_existing_remote_branch_is_tracked(

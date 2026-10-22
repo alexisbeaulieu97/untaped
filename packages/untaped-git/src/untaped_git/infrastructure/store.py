@@ -38,8 +38,11 @@ import re
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
-from typing import Self
+from typing import TYPE_CHECKING, Self
+
+from pydantic import BaseModel
 
 from untaped.sdk import (
     NO_PROGRESS,
@@ -50,6 +53,7 @@ from untaped.sdk import (
     ProgressHandle,
     UntapedError,
     attribution,
+    experimental,
     run_git,
 )
 from untaped_git.domain.delta import RefDelta, diff_refs
@@ -74,6 +78,9 @@ from untaped_git.infrastructure.repo_files import (
 )
 from untaped_git.infrastructure.store_release import RELEASE_MARK
 from untaped_git.infrastructure.version import below_floor, floor_text, git_version, version_text
+
+if TYPE_CHECKING:
+    from untaped.sdk import DataRead
 
 _diag = Diagnostics()
 
@@ -126,6 +133,10 @@ _OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 #: An object id's length in each object format.
 _ID_LENGTH = {"sha1": 40, "sha256": 64}
 _HANDLE_REFUSED = ("fetch", "checkout", "worktree")
+
+
+class _UsesRepo(BaseModel):
+    """A private file that holds no data: its presence says the plugin uses the repo."""
 
 
 class RepoStore:
@@ -269,6 +280,58 @@ class RepoStore:
         deletes it.
         """
         return private_file(self._path, self._plugin)
+
+    @experimental
+    def read_private[M: BaseModel](self, model: type[M]) -> DataRead[M]:
+        """This plugin's private file in the repo, read as ``model``.
+
+        Found, absent, unreadable or a newer untaped's (:data:`~untaped.sdk.DataRead`);
+        ``Found.refreshed_at`` is the freshness :meth:`write_private` was given.
+        A file with no stamp is 11.0's, which wrote the same fields at the top level.
+        """
+        from untaped.sdk import read_data_file  # noqa: PLC0415  # the data file loads on first use
+
+        return read_data_file(private_file(self._path, self._plugin), model, unstamped="accept")
+
+    @experimental
+    def write_private(
+        self, value: BaseModel | None = None, *, refreshed_at: datetime | None = None
+    ) -> None:
+        """Write this plugin's private file in the repo, under the repo's lock.
+
+        The file's presence is how the store's report, :meth:`owned_by` and
+        :meth:`release` know the plugin uses the repo; ``value`` is the
+        plugin's own data, and ``refreshed_at`` when it was last refreshed,
+        for data that can go stale. With no ``value`` the file only marks the
+        repo as used: one already there is kept as it is. The repo must exist.
+        """
+        from untaped.sdk import write_data_file  # noqa: PLC0415  # the data file loads on first use
+
+        path = private_file(self._path, self._plugin)
+        if value is None:
+            if refreshed_at is not None:
+                raise TypeError("write_private(refreshed_at=...) needs the value it dates")
+            if path.is_file():  # a presence mark: nothing to lock or write
+                return
+        with self._locked():
+            # Checked under the lock: a release renames the repo aside while holding it.
+            if not self.exists():
+                raise self._error(
+                    f"no repo store repository at {self._path} to keep {path.name} in",
+                    category=ErrorCategory.FAILED,
+                    system="local",
+                )
+            try:
+                if value is None:
+                    write_data_file(path, _UsesRepo(), exclusive=True)
+                else:
+                    write_data_file(path, value, refreshed_at=refreshed_at)
+            except OSError as exc:
+                raise self._error(
+                    f"could not write {path}: {exc.strerror or exc}",
+                    category=ErrorCategory.FAILED,
+                    system="local",
+                ) from exc
 
     def exists(self) -> bool:
         return (self._path / "HEAD").is_file()

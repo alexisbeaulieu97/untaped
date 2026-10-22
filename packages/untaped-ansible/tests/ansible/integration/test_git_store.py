@@ -163,7 +163,7 @@ def test_a_refresh_lands_in_ansibles_namespace_and_reads_files_by_prefetch(
     repo = _repo(store_root, "site")
     refs = _git(repo, "for-each-ref", "--format=%(refname)").splitlines()
     assert refs == [f"{_NAMESPACE}heads/main", f"{_NAMESPACE}tags/v1"]
-    assert json.loads((repo / "untaped-ansible.json").read_text())["url"].endswith("site.git")
+    assert set(json.loads((repo / "untaped-ansible.json").read_text())) == {"untaped"}
     # One prefetch per changed ref with blobs missing: v1's requirements file is
     # main's blob, already there; docs has no dependency file.
     assert len(_fetches(calls, stdin=True)) == 2
@@ -246,7 +246,7 @@ def test_a_release_by_github_keeps_a_repo_ansibles_refresh_uses(
     _refresh(tmp_path, "site")
     github = RepoStore.for_url(site.url, plugin=GITHUB, error=RepoStoreError)
     github.fetch(branches=["main"])
-    github.private_file.write_text("{}\n")
+    github.write_private()
 
     outcome = github.release()
 

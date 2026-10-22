@@ -97,29 +97,82 @@ def _branch(git: Git, commit: Commit, source: Path, name: str, rel: str) -> None
     git(source, "checkout", "-q", "main")
 
 
-def test_metadata_without_a_profile_reads_as_the_default_profile(
+def test_an_11_0_metadata_file_lists_offline_and_refetches_once(
     corpus: Callable[..., _Corpus],
 ) -> None:
     env = corpus({"README.md": "hello\n"})
     env.store.fetch(branches=["main"])
-    env.store.private_file.write_text(
+    env.store.private_file.write_text(  # 11.0's: no stamp, its freshness a field
         json.dumps(
             {
                 "repo": "acme/api",
                 "ref": "main",
                 "clone_url": env.source.as_uri(),
                 "fetched_at": "2026-07-06T12:00:00+00:00",
+                "profile": "tags",
+                "ref_globs": ["release/*"],
+                "archived": True,
+                "pushed_at": "2026-07-01T00:00:00Z",
             }
         )
     )
 
-    assert env.cache.repo_freshness(env.repo) == CorpusFreshness(
-        fetched_at=datetime(2026, 7, 6, 12, 0, tzinfo=UTC),
-        profile="default",
-        ref_globs=(),
-        archived=False,
-        default_branch="main",
+    (row,) = env.cache.list_repos()
+    assert (row.full_name, row.ref, row.profile, row.ref_globs, row.archived, row.fetched_at) == (
+        "acme/api",
+        "main",
+        "tags",
+        ("release/*",),
+        True,
+        None,
     )
+    found = env.cache.get_repo("acme/api")
+    assert found is not None and found.archived is True
+    assert env.cache.repo_freshness(env.repo) is None  # the sweep refetches it once
+
+    synced = env.sync()
+
+    assert (synced.profile, synced.ref_globs) == ("tags", ("release/*",))  # widened, not lost
+    written = json.loads(env.store.private_file.read_text())
+    assert "fetched_at" not in written and written["pushed_at"] == "2026-07-01T00:00:00Z"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"repo": "acme/api", "profile": "everything"}',
+        '{"untaped": {"file": 99, "by": "99.0.0"}, "repo": "acme/api"}',
+    ],
+    ids=["invalid", "newer"],
+)
+def test_metadata_it_cannot_read_is_refetched_and_rewritten(
+    corpus: Callable[..., _Corpus], text: str
+) -> None:
+    warnings: list[str] = []
+    env = corpus({"README.md": "hello\n"}, warn=warnings.append)
+    env.store.fetch(branches=["main"])
+    env.store.private_file.write_text(text)
+
+    assert env.cache.repo_freshness(env.repo) is None, warnings
+    env.sync()
+
+    assert env.cache.repo_freshness(env.repo) is not None
+    (warning,) = warnings  # from the freshness check, not again from the sync rewriting it
+    assert "the next sync rewrites it" in warning
+
+
+def test_a_stamped_copy_without_freshness_is_listed_but_never_fresh(
+    corpus: Callable[..., _Corpus],
+) -> None:
+    # What git's adopt leaves: github's data kept, its freshness cleared.
+    env = corpus({"README.md": "hello\n"})
+    env.sync(repo=replace(env.repo, pushed_at="2026-07-01T00:00:00Z"))
+    data = json.loads(env.store.private_file.read_text())
+    del data["untaped"]["refreshed_at"]
+    env.store.private_file.write_text(json.dumps(data))
+
+    assert env.cache.repo_freshness(env.repo) is None
+    assert [row.full_name for row in env.cache.list_repos()] == ["acme/api"]
 
 
 def test_sync_keeps_its_refs_and_metadata_to_itself(corpus: Callable[..., _Corpus]) -> None:
@@ -131,7 +184,9 @@ def test_sync_keeps_its_refs_and_metadata_to_itself(corpus: Callable[..., _Corpu
     assert synced.path == str(store.path)
     assert store.path.is_relative_to(Path.home() / ".untaped/plugins/git/store")
     assert store.private_file.name == "untaped-github.json"
-    assert json.loads(store.private_file.read_text())["repo"] == "acme/api"
+    written = json.loads(store.private_file.read_text())
+    assert written["repo"] == "acme/api"
+    assert "fetched_at" not in written and "refreshed_at" in written["untaped"]
     assert set(store.refs()) == {"heads/main"}
     shown = subprocess.run(
         ["git", "--git-dir", str(store.path), "for-each-ref", "--format=%(refname)"],
@@ -694,7 +749,7 @@ def test_sync_records_pushed_at_and_touch_marks_copy_current(
 ) -> None:
     env = corpus({"README.md": "hello\n"})
     repo = replace(env.repo, pushed_at="2026-07-01T00:00:00Z")
-    env.sync(repo=repo)
+    env.sync(RefSelector(profile="tags", globs=("release/*",)), repo=repo)
     before = env.cache.repo_freshness(repo)
 
     touched = env.cache.touch_repo(replace(repo, archived=True))
@@ -704,7 +759,12 @@ def test_sync_records_pushed_at_and_touch_marks_copy_current(
     assert (before.pushed_at, before.default_branch) == ("2026-07-01T00:00:00Z", "main")
     assert after.fetched_at == touched > before.fetched_at
     assert after.archived is True
-    assert after.pushed_at == before.pushed_at
+    assert (after.pushed_at, after.profile, after.ref_globs, after.default_branch) == (
+        before.pushed_at,
+        "tags",
+        ("release/*",),
+        "main",
+    )
 
 
 @pytest.mark.usefixtures("composed")

@@ -13,7 +13,7 @@ The store repo is blobless: a checkout has its tip's blobs, and the history
 backfill that follows (``prefetch(history=)``) brings the rest, so ``git
 blame`` and ``git log -p`` run offline. The backfill is never a gate: when it
 stops, the worktree is still usable, the private file
-``untaped-workspace.json`` says ``{"history": "partial"}``, and the next
+``untaped-workspace.json`` records a ``partial`` history, and the next
 fetch runs it whole again; once ``complete``, a fetch backfills only the
 ranges it moved.
 
@@ -25,11 +25,12 @@ the last workspace of a URL. The repo store lock is always the inner lock (see
 
 from __future__ import annotations
 
-import json
 import shutil
 from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
+
+from pydantic import BaseModel
 
 from untaped.sdk import (
     NO_PROGRESS,
@@ -37,7 +38,6 @@ from untaped.sdk import (
     GitResult,
     ProgressHandle,
     UntapedError,
-    atomic_write,
     attribution,
     plural,
     run_git,
@@ -58,6 +58,13 @@ if TYPE_CHECKING:
     from untaped_git.api import RefDelta, RepoStore
 
 type History = Literal["partial", "complete"]
+
+
+class BackfillMark(BaseModel):
+    """Workspace's private file in a store repo: how far its history backfill got."""
+
+    history: History = "partial"
+
 
 #: What the history backfill walks: every commit of the remote's branches and tags.
 HISTORY = ("refs/remotes/origin/*", "refs/tags/*")
@@ -427,36 +434,33 @@ class LocalGitWorktrees:
 
     # -- history backfill --------------------------------------------------
 
-    def _history(self, store: RepoStore) -> History:
+    def _history(self, store: RepoStore) -> History | None:
         """The backfill state in ``untaped-workspace.json``; writes ``partial`` when it is new.
 
         The file is also how the store's report knows workspace uses the repo.
+        ``None``: a file is there that this release can't read (damaged, a
+        ``history`` it doesn't know, or a newer untaped's); the backfill
+        walks the whole history on every fetch and leaves the file as it is.
         """
-        try:
-            recorded = json.loads(store.private_file.read_text(encoding="utf-8")).get("history")
-        except OSError, ValueError, AttributeError:
-            recorded = None
-        if recorded == "complete":
-            return "complete"
-        if recorded != "partial":
-            self._record_history(store, "partial")
-        return "partial"
+        from untaped.sdk import Absent, Found  # noqa: PLC0415  # the data file loads on first use
+
+        match store.read_private(BackfillMark):
+            case Found(value=mark):
+                return mark.history
+            case Absent():
+                self._record_history(store, "partial")
+                return "partial"
+            case _:
+                return None
 
     def _record_history(self, store: RepoStore, history: History) -> None:
-        try:
-            atomic_write(store.private_file, json.dumps({"history": history}) + "\n")
-        except OSError as exc:
-            raise WorkspaceError(
-                f"could not write {store.private_file}: {exc.strerror or exc}",
-                category="failed",
-                system="local",
-            ) from exc
+        store.write_private(BackfillMark(history=history))
 
     def _backfill(
         self,
         store: RepoStore,
         delta: RefDelta,
-        history: History,
+        history: History | None,
         *,
         progress: ProgressHandle = NO_PROGRESS,
     ) -> str | None:
@@ -465,7 +469,8 @@ class LocalGitWorktrees:
         A ``partial`` history walks every ref whole (an interrupted backfill
         resumes where its packs left off); a ``complete`` one walks only what
         this fetch moved (``<old>..<new>``) or added, so a fetch that brought
-        nothing walks nothing.
+        nothing walks nothing. An unknown one (``None``) walks whole and
+        records nothing.
         """
         if history == "complete":
             revisions = [f"{move.old}..{move.new}" for move in delta.moved.values()]

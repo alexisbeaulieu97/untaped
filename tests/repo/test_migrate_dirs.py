@@ -180,8 +180,10 @@ def test_a_10x_layout_moves_into_the_store(
     refs = git(repo, "for-each-ref", "--format=%(refname)", bare=True).splitlines()
     assert "refs/heads/main" in refs and "refs/heads/feature" in refs
     assert not [ref for ref in refs if ref.startswith("refs/untaped/github/")]
-    assert json.loads((repo / "untaped-github.json").read_text()) == {"profile": "default"}
-    assert json.loads((repo / "untaped-workspace.json").read_text()) == {"history": "partial"}
+    copied = json.loads((repo / "untaped-github.json").read_text())
+    assert "refreshed_at" not in copied.pop("untaped")  # github fetches into the kept repo
+    assert copied["profile"] == "default"
+    assert json.loads((repo / "untaped-workspace.json").read_text())["history"] == "partial"
     assert git(repo, "config", "--local", "--get-all", "untaped.store", bare=True)
     shared = subprocess.run(
         ["git", "--git-dir", str(repo), "config", "--local", "--get-all", "remote.origin.fetch"],
