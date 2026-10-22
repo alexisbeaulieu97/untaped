@@ -17,7 +17,7 @@ from untaped.sdk import (
     clamp_parallel,
     emit,
     finish,
-    plural,
+    refresh_option,
     report_errors,
 )
 from untaped_github.application import RepositoryInventoryScope
@@ -33,7 +33,7 @@ from untaped_github.cli.scopes import (
     read_stdin_repos,
 )
 from untaped_github.records import RepoSweepOutcome, SweepFile, SweepMatch
-from untaped_github.settings import GithubSettings
+from untaped_github.settings import SWEEP, GithubSettings
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -137,17 +137,7 @@ def sweep_command(
             negative="",
         ),
     ] = None,
-    refresh: Annotated[
-        bool | None,
-        Parameter(
-            name="--refresh",
-            negative="--cached",
-            help=(
-                "--refresh fetches every repo; --cached scans the local corpus only. "
-                "Default: refresh copies older than github.sweep.max_age_seconds."
-            ),
-        ),
-    ] = None,
+    refresh: Annotated[bool | None, refresh_option(SWEEP)] = None,
     show: Annotated[
         Literal["repos", "files", "matches"],
         Parameter(
@@ -197,17 +187,19 @@ def sweep_command(
     and fetches only new or moved refs, so an interrupted refresh resumes.
 
     A repo is fetched when it isn't stored or holds fewer refs than asked
-    for, and otherwise as ``github.sweep.max_age_seconds`` describes; that
-    check also fetches a copy whose default branch has changed. Transient
-    Git transport failures are retried.
+    for, and otherwise once its copy is older than
+    ``github.caches.sweep.max_age_seconds`` and GitHub reports a push since
+    (or a new default branch); ``--cached`` scans the stored copies only,
+    and ``--refresh`` fetches every repo. Transient Git transport failures
+    are retried.
 
     The stderr footer gives matched and scanned counts, refreshed and cached
     counts, the oldest fetch, and each unscanned repo with its reason (a
     name GitHub can't resolve, corrupt metadata, a host that won't send file
     contents by object id, a filesystem or Git error); report those repos as
     unknown, not as non-matching. A failed refresh falls back to a stored
-    copy that covers the query, counted as cached (``refresh failed for N
-    repos; scanned cached copies``); without one the repo is unscanned. Bad
+    copy that covers the query, counted as cached, with one ``untaped.stale``
+    line for the repo; without one the repo is unscanned. Bad
     credentials (exit 4), rate limits (exit 5), or every explicitly named
     repo failing to resolve stop the whole sweep. Sweeps running at once are
     safe: the store locks each repo while it changes it.
@@ -260,21 +252,18 @@ def sweep_command(
         corpus = open_corpus(settings)
         _validate_content_patterns(corpus, query)
 
-        sync_mode: Literal["auto", "force", "off"]
-        sync_mode = "auto" if refresh is None else "force" if refresh else "off"
         options = SweepOptions(
             scope=scope,
             stdin_repos=stdin_repos,
             archived=archived,
             query=query,
-            sync=sync_mode,
-            max_age_seconds=settings.sweep.max_age_seconds,
+            refresh=refresh,
             parallel=workers,
             owners=owners,
             stdin_items=stdin_items,
         )
 
-        if sync_mode == "off":
+        if refresh is False:
             with ctx.diag.progress("Sweeping cached repositories") as progress:
                 report = Sweep(inventory=lambda _scope: (), corpus=corpus)(
                     options, progress=progress
@@ -413,11 +402,5 @@ def _footer(report: SweepReport, diag: Diagnostics) -> None:
         f"Sweep: {len(report.rows)} matched of {report.scanned} scanned "
         f"({report.refreshed} refreshed, {report.cached} cached), oldest fetch {oldest}"
     )
-    if report.stale:
-        diag.warning(
-            f"refresh failed for {plural(len(report.stale), 'repo')}; scanned cached copies",
-        )
-        for failure in report.stale:
-            diag.warning(f"stale {failure.repo}: {failure.reason}")
     for failure in report.unscanned:
         diag.warning(f"unscanned {failure.repo}: {failure.reason}")

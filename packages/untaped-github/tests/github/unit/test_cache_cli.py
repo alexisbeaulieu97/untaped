@@ -29,6 +29,8 @@ from untaped_github.cli import app
 from untaped_github.errors import GitCorpusError
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
+#: ``github.caches.sweep.max_age_seconds: 0``: every run checks every repo.
+_NO_MAX_AGE = "      caches:\n        sweep:\n          max_age_seconds: 0\n"
 
 
 @pytest.fixture(autouse=True)
@@ -129,10 +131,17 @@ def test_cache_sync_quiet_prints_no_summary(source_repo: SourceRepo) -> None:
     assert "sync:" not in result.stderr
 
 
+def test_cache_sync_refuses_cached() -> None:
+    result = _cache(["cache", "sync", "--org", "acme", "--cached"])
+
+    assert result.exit_code == 2, result.output
+    assert "cache sync fetches repos: drop --cached" in result.stderr
+
+
 def test_cache_sync_skips_fetch_when_github_reports_no_push(
     _config: Path, source_repo: SourceRepo
 ) -> None:
-    _config.write_text(_config.read_text() + "      sweep:\n        max_age_seconds: 0\n")
+    _config.write_text(_config.read_text() + _NO_MAX_AGE)
     listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
     args = ["cache", "sync", "--org", "acme", "-f", "json"]
 
@@ -144,7 +153,7 @@ def test_cache_sync_skips_fetch_when_github_reports_no_push(
 def test_cache_sync_of_piped_repos_list_skips_fetch_when_github_reports_no_push(
     _config: Path, source_repo: SourceRepo
 ) -> None:
-    _config.write_text(_config.read_text() + "      sweep:\n        max_age_seconds: 0\n")
+    _config.write_text(_config.read_text() + _NO_MAX_AGE)
     listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
     piped = _cache(["repos", "list", "--org", "acme", "-f", "pipe"], org={"acme": listed})
     args = ["cache", "sync", "--stdin", "-f", "json"]

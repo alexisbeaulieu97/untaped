@@ -42,13 +42,14 @@ cfg git.extensions.git_host.rank.proxy string[] default=[]  [experimental]
 cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
 cfg git.untaped_helper_only boolean default=false
 cfg github.base_url string default=https://api.github.com
+cfg github.caches.sweep.max_age_seconds integer(minimum=0) default=3600
 cfg github.default_org string? default=unset
 cfg github.git_protocol choice=https
 cfg github.git_protocol choice=ssh
 cfg github.git_protocol string default=https
 cfg github.inventory.orgs string[] default=[]
 cfg github.inventory.teams string[] default=[]
-cfg github.sweep.max_age_seconds integer(minimum=0) default=3600
+cfg github.sweep.max_age_seconds -> github.caches.sweep.max_age_seconds  [deprecated, removed in 12.0]
 cfg github.sweep.parallel integer(minimum=1) default=12
 cfg github.token string(format=password)? default=unset
 cfg github.token_command string[]? default=unset
@@ -3243,7 +3244,8 @@ cli untaped github cache sync --org VALUE... default=unset
 cli untaped github cache sync --parallel VALUE default=unset
 cli untaped github cache sync --parallel alias=-j
 cli untaped github cache sync --ref VALUE... default=unset
-cli untaped github cache sync --refresh switch
+cli untaped github cache sync --refresh negative=--cached
+cli untaped github cache sync --refresh switch default=unset
 cli untaped github cache sync --refs VALUE default=default
 cli untaped github cache sync --refs choice=all
 cli untaped github cache sync --refs choice=branches

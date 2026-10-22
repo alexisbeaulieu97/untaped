@@ -3,14 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import timedelta
 from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from untaped.sdk import NeedsSetup, Retired, Secret, Suggest, TokenCommand, TokenSources
+from untaped.sdk import Cache, NeedsSetup, Retired, Secret, Suggest, TokenCommand, TokenSources
 
 #: The GitHub CLI's token variables, in its order.
 _TOKEN_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
+
+
+#: Each repo's stored copy the sweep and ``cache sync`` read, keyed by its store repo's
+#: path. Its data is the store repo and its ``untaped-github.json``, shared by every
+#: profile; the cache keeps when each copy was last checked. Setting:
+#: ``github.caches.sweep.max_age_seconds``.
+SWEEP = Cache(
+    "github",
+    "sweep",
+    label="repo data",
+    max_age=timedelta(hours=1),
+    renamed_from=("sweep.max_age_seconds",),
+    removed_in=12,
+    split="none",
+)
 
 
 class SweepSettings(BaseModel):
@@ -18,14 +34,6 @@ class SweepSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    max_age_seconds: int = Field(
-        default=3600,
-        ge=0,
-        description=(
-            "`sweep` and `cache sync` refresh cached repos older than this that "
-            "GitHub reports as pushed since."
-        ),
-    )
     parallel: int = Field(
         default=12,
         ge=1,
