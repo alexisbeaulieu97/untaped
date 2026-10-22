@@ -6,7 +6,7 @@ model. git decides when the file is created, copied (adopt) and deleted, never
 what is in it: adopt once dropped github's ``fetched_at``/``pushed_at`` by
 name, so a field github renamed would have kept its freshness through a copy.
 So untaped_git uses no key that is a field of a model another first-party
-plugin passes to ``read_private``, nor one of github's 11.0 freshness fields.
+plugin passes to ``read_private``, nor 11.0's ``fetched_at``.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import pytest
 from repo.support import FIRST_PARTY, PACKAGES
 
 #: Fields 11.0's private files held that no model names any more.
-LEGACY = frozenset({"fetched_at", "pushed_at"})
+LEGACY = frozenset({"fetched_at"})
 #: Models the scan must find, so a change in how plugins call it can't empty it.
 EXPECTED = frozenset({"BackfillMark", "CorpusMeta"})
 

@@ -299,15 +299,15 @@ def _unresolvable(corpus: _Corpus) -> dict[str, Any]:
     }
 
 
-def _corrupt_metadata(corpus: _Corpus) -> dict[str, Any]:
-    corpus.freshness_errors["acme/bad"] = "could not read corpus metadata: invalid JSON"
+def _freshness_error(corpus: _Corpus) -> dict[str, Any]:
+    corpus.freshness_errors["acme/bad"] = "could not open the store repo"
     return {"resolver": _Resolver(_item("acme/api"), _item("acme/bad"))}
 
 
-def _corrupt_cached_metadata(corpus: _Corpus) -> dict[str, Any]:
+def _cached_freshness_error(corpus: _Corpus) -> dict[str, Any]:
     corpus.cached_rows = (_row("acme/api"), _row("acme/bad"))
     corpus.freshness["acme/api"] = CorpusFreshness(fetched_at=datetime.now(UTC), profile="default")
-    corpus.freshness_errors["acme/bad"] = "invalid fetched_at"
+    corpus.freshness_errors["acme/bad"] = "could not open the cached store repo"
     return {"refresh": False}
 
 
@@ -323,8 +323,8 @@ def _sync_error(error: Exception) -> Callable[[_Corpus], dict[str, Any]]:
     ("setup", "reason"),
     [
         (_unresolvable, "failed to expand repository acme/bad: 404 Not Found"),
-        (_corrupt_metadata, "could not read corpus metadata: invalid JSON"),
-        (_corrupt_cached_metadata, "invalid fetched_at"),
+        (_freshness_error, "could not open the store repo"),
+        (_cached_freshness_error, "could not open the cached store repo"),
         (_sync_error(PermissionError("permission denied: corpus")), "permission denied: corpus"),
         (_sync_error(GitCorpusError("fetch denied")), "fetch denied"),
     ],

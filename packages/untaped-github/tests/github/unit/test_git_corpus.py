@@ -109,18 +109,56 @@ def test_an_11_0_metadata_file_lists_offline_and_refetches_once(
                 "ref": "main",
                 "clone_url": env.source.as_uri(),
                 "fetched_at": "2026-07-06T12:00:00+00:00",
+                "profile": "tags",
+                "ref_globs": ["release/*"],
+                "archived": True,
+                "pushed_at": "2026-07-01T00:00:00Z",
             }
         )
     )
 
     (row,) = env.cache.list_repos()
-    assert (row.full_name, row.ref, row.profile, row.fetched_at) == (
+    assert (row.full_name, row.ref, row.profile, row.ref_globs, row.archived, row.fetched_at) == (
         "acme/api",
         "main",
-        "default",
+        "tags",
+        ("release/*",),
+        True,
         None,
     )
+    found = env.cache.get_repo("acme/api")
+    assert found is not None and found.archived is True
     assert env.cache.repo_freshness(env.repo) is None  # the sweep refetches it once
+
+    synced = env.sync()
+
+    assert (synced.profile, synced.ref_globs) == ("tags", ("release/*",))  # widened, not lost
+    written = json.loads(env.store.private_file.read_text())
+    assert "fetched_at" not in written and written["pushed_at"] == "2026-07-01T00:00:00Z"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"repo": "acme/api", "profile": "everything"}',
+        '{"untaped": {"file": 99, "by": "99.0.0"}, "repo": "acme/api"}',
+    ],
+    ids=["invalid", "newer"],
+)
+def test_metadata_it_cannot_read_is_refetched_and_rewritten(
+    corpus: Callable[..., _Corpus], text: str
+) -> None:
+    warnings: list[str] = []
+    env = corpus({"README.md": "hello\n"}, warn=warnings.append)
+    env.store.fetch(branches=["main"])
+    env.store.private_file.write_text(text)
+
+    assert env.cache.repo_freshness(env.repo) is None, warnings
+    env.sync()
+
+    assert env.cache.repo_freshness(env.repo) is not None
+    assert warnings, "no warning"
+    assert all("the next sync rewrites it" in warning for warning in warnings), warnings
 
 
 def test_a_stamped_copy_without_freshness_is_listed_but_never_fresh(
@@ -711,7 +749,7 @@ def test_sync_records_pushed_at_and_touch_marks_copy_current(
 ) -> None:
     env = corpus({"README.md": "hello\n"})
     repo = replace(env.repo, pushed_at="2026-07-01T00:00:00Z")
-    env.sync(repo=repo)
+    env.sync(RefSelector(profile="tags", globs=("release/*",)), repo=repo)
     before = env.cache.repo_freshness(repo)
 
     touched = env.cache.touch_repo(replace(repo, archived=True))
@@ -721,7 +759,12 @@ def test_sync_records_pushed_at_and_touch_marks_copy_current(
     assert (before.pushed_at, before.default_branch) == ("2026-07-01T00:00:00Z", "main")
     assert after.fetched_at == touched > before.fetched_at
     assert after.archived is True
-    assert after.pushed_at == before.pushed_at
+    assert (after.pushed_at, after.profile, after.ref_globs, after.default_branch) == (
+        before.pushed_at,
+        "tags",
+        ("release/*",),
+        "main",
+    )
 
 
 @pytest.mark.usefixtures("composed")

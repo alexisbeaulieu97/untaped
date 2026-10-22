@@ -4,7 +4,8 @@ Each repo the sweep and the ``cache`` commands use is a store repo
 (``RepoStore.for_url(url, plugin=SPEC)``), which other plugins may share:
 github's refs live in its own namespace, ``refs/untaped/github/heads/*`` and
 ``refs/untaped/github/tags/*``, its fetch metadata in the repo's
-``untaped-github.json``, and its materialised worktrees under
+``untaped-github.json`` (a :class:`CorpusMeta`; when it was fetched is the
+file's stamp), and its materialised worktrees under
 ``~/.untaped/plugins/github/worktrees/``. Rows and outputs keep plain ref names
 (``refs/heads/<branch>``, ``refs/tags/<tag>``). The store fetches full history
 blobless and holds the credentials (github's own ``GithubHost`` answers for
@@ -27,7 +28,7 @@ import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel
@@ -58,9 +59,6 @@ from untaped_github.domain import (
 )
 from untaped_github.errors import GitCorpusError
 from untaped_github.records import CorpusRepoResult, WorktreeResult
-
-if TYPE_CHECKING:
-    from untaped.sdk import OtherVersion, Unreadable
 
 DEFAULT_TIMEOUT = 60.0
 _PLAIN_ROOTS = ("refs/heads/", "refs/tags/")
@@ -104,7 +102,8 @@ class GitCorpusCache:
         url = self._remote_url(repo)
         branch = _default_branch(repo)
         store = self._store(url)
-        stored = _metadata(store)
+        read = self._read(store)
+        stored = read[0] if read else None
         profile = profile_join(stored.profile, selector.profile) if stored else selector.profile
         ref_globs = tuple(dict.fromkeys((*(stored.ref_globs if stored else ()), *selector.globs)))
         effective = RefSelector(profile=profile, globs=ref_globs)
@@ -138,8 +137,26 @@ class GitCorpusCache:
         )
 
     def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None:
-        """Return the stored fetch metadata of ``repo`` if present."""
-        return _freshness(self._store(self._remote_url(repo)))
+        """``repo``'s stored copy and when github fetched it.
+
+        ``None`` when there is none, or this release never fetched it (an
+        11.0 copy, one adopt made, or one whose metadata can't be read), so
+        the sweep refetches it.
+        """
+        read = self._read(self._store(self._remote_url(repo)))
+        if read is None:
+            return None
+        meta, fetched_at = read
+        if fetched_at is None:
+            return None
+        return CorpusFreshness(
+            fetched_at=fetched_at,
+            profile=meta.profile,
+            ref_globs=meta.ref_globs,
+            archived=meta.archived,
+            pushed_at=meta.pushed_at,
+            default_branch=meta.ref or None,
+        )
 
     def cache_key(self, repo: CorpusRepoTarget) -> str:
         """The key of ``repo``'s stored copy: its store repo's path.
@@ -151,11 +168,11 @@ class GitCorpusCache:
     def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         """Mark a stored copy current without fetching (GitHub reports no new push)."""
         store = self._existing(repo)
-        stored = _metadata(store)
-        if stored is None:
+        read = self._read(store)
+        if read is None:
             raise GitCorpusError(f"no stored copy of {repo.full_name} to mark current")
         fetched = datetime.now(UTC)
-        meta = stored.model_copy(update={"archived": repo.archived, "pushed_at": repo.pushed_at})
+        meta = read[0].model_copy(update={"archived": repo.archived, "pushed_at": repo.pushed_at})
         store.write_private(meta, refreshed_at=fetched)
         return fetched
 
@@ -320,20 +337,35 @@ class GitCorpusCache:
         at ``store_key`` of its recorded ``clone_url`` (moved by hand, say) is
         not listed: no command could use it.
         """
-        from untaped.sdk import Absent, Found  # noqa: PLC0415  # the data file loads on first use
-
         for store in RepoStore.owned_by(SPEC, error=GitCorpusError):
-            read = store.read_private(CorpusMeta)
-            if isinstance(read, Absent):  # released since it was listed
+            read = self._read(store)
+            if read is None or read[0].clone_url is None:
                 continue
-            if not isinstance(read, Found):
-                self._warn(_unreadable(store, read))
-                continue
-            if read.value.clone_url is None:
-                continue
-            key = store_key(read.value.clone_url)
+            key = store_key(read[0].clone_url)
             if store.path.parts[-len(key) :] == key:
-                yield store, read.value, read.refreshed_at
+                yield store, *read
+
+    def _read(self, store: RepoStore) -> tuple[CorpusMeta, datetime | None] | None:
+        """github's metadata in ``store`` and when it was fetched; ``None`` when there is none.
+
+        A file this release can't read (damaged, or a newer untaped's) is
+        warned about and read as none: the next fetch rewrites it.
+        """
+        from untaped.sdk import Absent, Found, OtherVersion  # noqa: PLC0415  # loads on first use
+
+        match store.read_private(CorpusMeta):
+            case Found(value=meta, refreshed_at=refreshed_at):
+                return meta, refreshed_at
+            case Absent():
+                return None
+            case OtherVersion(by=by):
+                reason = f"written by a newer untaped ({by or 'unknown'})"
+            case unreadable:
+                reason = f"it {unreadable.reason}"
+        self._warn(
+            f"could not read corpus metadata in {store.path}: {reason}; the next sync rewrites it"
+        )
+        return None
 
     def clean_repo(self, repo: CorpusRepoResult) -> CorpusRepoResult:
         """Release one repo: it goes when nobody else uses it, else github's part of it goes.
@@ -484,50 +516,6 @@ class CorpusMeta(BaseModel):
     ref_globs: tuple[str, ...] = ()
     archived: bool = False
     pushed_at: str | None = None
-
-
-def _metadata(store: RepoStore) -> CorpusMeta | None:
-    """github's metadata in ``store``, or ``None`` when there is none."""
-    from untaped.sdk import Absent, Found  # noqa: PLC0415  # the data file loads on first use
-
-    read = store.read_private(CorpusMeta)
-    if isinstance(read, Found):
-        return read.value
-    if isinstance(read, Absent):
-        return None
-    raise GitCorpusError(_unreadable(store, read))
-
-
-def _freshness(store: RepoStore) -> CorpusFreshness | None:
-    """``store``'s copy and when it was fetched; ``None`` when it never was (or was copied)."""
-    from untaped.sdk import Absent, Found  # noqa: PLC0415  # the data file loads on first use
-
-    read = store.read_private(CorpusMeta)
-    if isinstance(read, Absent):
-        return None
-    if not isinstance(read, Found):
-        raise GitCorpusError(_unreadable(store, read))
-    meta, fetched_at = read.value, read.refreshed_at
-    if fetched_at is None:
-        return None
-    return CorpusFreshness(
-        fetched_at=fetched_at,
-        profile=meta.profile,
-        ref_globs=meta.ref_globs,
-        archived=meta.archived,
-        pushed_at=meta.pushed_at,
-        default_branch=meta.ref or None,
-    )
-
-
-def _unreadable(store: RepoStore, read: Unreadable | OtherVersion) -> str:
-    """Why github's metadata in ``store`` can't be read: damaged, or a newer untaped's."""
-    from untaped.sdk import OtherVersion  # noqa: PLC0415  # the data file loads on first use
-
-    where = f"corpus metadata in {store.path}"
-    if isinstance(read, OtherVersion):
-        return f"could not read {where}: written by a newer untaped ({read.by or 'unknown'})"
-    return f"could not read {where}: it {read.reason}"
 
 
 def _resolve_ref(store: RepoStore, ref: str) -> str | None:
