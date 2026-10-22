@@ -37,6 +37,7 @@ from untaped.plugins.registry import (
 from untaped.refs import refs_dir
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
+    PLUGIN_NAME_PATTERN,
     env_var_name,
     resolve_config_path,
     resolve_state_path,
@@ -133,7 +134,10 @@ def unsafe_dir(path: Path) -> str | None:
 
 
 def _unsafe(path: Path, *, plugins: bool) -> str | None:
-    """:func:`unsafe_dir`, with ``plugins=False`` for a store's layout (which lives there)."""
+    """:func:`unsafe_dir`, with ``plugins=False`` for what lives in a plugin's folder.
+
+    A store's layout, or an uninstalled plugin's caches.
+    """
     real = _real(path)
     untaped = Path(DEFAULT_CONFIG_PATH).expanduser().parent
     if _real(Path.home()).is_relative_to(real):
@@ -144,8 +148,8 @@ def _unsafe(path: Path, *, plugins: bool) -> str | None:
             return f"it holds {shown_path(held)}"
     if overlapping(path, refs_dir()):
         return f"it overlaps the install references in {shown_path(refs_dir())}"
-    if plugins and overlapping(path, untaped / "plugins"):
-        return f"it overlaps the plugins' data in {shown_path(untaped / 'plugins')}"
+    if plugins and overlapping(path, plugins_root()):
+        return f"it overlaps the plugins' data in {shown_path(plugins_root())}"
     return None
 
 
@@ -301,7 +305,9 @@ def uninstalled_caches(installed: Collection[str]) -> list[Path]:
     return [
         folder / "cached"
         for folder in folders
-        if folder.name not in installed and _there(folder / "cached")
+        if PLUGIN_NAME_PATTERN.fullmatch(folder.name)
+        and folder.name not in installed
+        and _there(folder / "cached")
     ]
 
 
@@ -317,12 +323,18 @@ def uninstalled_caches_migration(installed: Collection[str]) -> DirMigration:
     def detail(path: Path) -> str:
         return f"plugin {path.parent.name!r} isn't installed here; another install may use it"
 
+    def refused(path: Path) -> str | None:
+        if path.parent.is_symlink():
+            target = shown_path(os.path.realpath(path.parent))
+            return f"its plugin's folder is a symlink to {target}: it stays"
+        return _unsafe(path, plugins=False)
+
     return _deleting(
         UNINSTALLED_CACHES,
         "caches of plugins not installed here",
         lambda: uninstalled_caches(installed),
         detail=detail,
-        refused=lambda path: _unsafe(path, plugins=False),
+        refused=refused,
     )
 
 

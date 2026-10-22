@@ -682,15 +682,18 @@ def test_the_caches_row_has_nothing_to_note_on_a_clean_home() -> None:
     assert (_caches_row(rows)["status"], _caches_row(rows)["detail"]) == (_PASS, "nothing to note")
 
 
-def test_a_cache_file_of_another_version_passes_with_a_note() -> None:
+def test_keys_of_another_version_only_pass_with_a_note() -> None:
     typed = Cache("acme", "items", label="items", max_age=timedelta(hours=1), model=_Row)
     plain = Cache("acme", "names", label="names", max_age=timedelta(hours=1), version=lambda: "2")
     stamp = {"key": "k", "version": None, "refreshed_at": "2026-10-01T00:00:00Z"}
     shape = typed._typing().shape  # type: ignore[union-attr]
-    write_lines(typed._root() / "s" / "k.v00000000.json", {**stamp, "type": shape}, b"{}")
-    write_lines(typed._root() / "s" / "j.v11111111.json", {**stamp, "type": "other"}, b"{}")
+    folder = typed._root() / "s"
+    # k has this version's file beside another install's; j has only another's.
+    write_lines(folder / "k.v00000000.json", {**stamp, "type": shape}, b"{}")
+    write_lines(folder / "k.v11111111.json", {**stamp, "type": "other"}, b"{}")
+    write_lines(folder / "j.v11111111.json", {**stamp, "key": "j", "type": "other"}, b"{}")
     write_lines(plain._root() / "s" / "k.json", {**stamp, "version": "1"}, b"[]")
-    write_lines(plain._root() / "s" / "j.json", {**stamp, "version": "2"}, b"[]")
+    write_lines(plain._root() / "s" / "j.json", {**stamp, "key": "j", "version": "2"}, b"[]")
     spec = make_spec("acme", caches=(typed, plain))
 
     code, rows = _rows(_doctor_app(spec))
@@ -699,9 +702,21 @@ def test_a_cache_file_of_another_version_passes_with_a_note() -> None:
     row = _caches_row(rows)
     assert row["status"] == _PASS
     assert row["detail"] == (
-        "acme.items: 1 file filled by another version, refilled on next use; "
-        "acme.names: 1 file filled by another version, refilled on next use"
+        "acme.items: 1 key filled by another version, refilled when due; "
+        "acme.names: 1 key filled by another version, refilled when due"
     )
+
+
+def test_a_cache_whose_version_code_fails_is_named_and_doctor_goes_on() -> None:
+    def broken() -> str:
+        raise RuntimeError("no source")
+
+    cache = Cache("acme", "names", label="names", max_age=timedelta(hours=1), version=broken)
+
+    code, rows = _rows(_doctor_app(make_spec("acme", caches=(cache,))))
+
+    assert code == 0, _failed(rows)
+    assert _caches_row(rows)["detail"] == "acme.names: could not read its files: no source"
 
 
 def test_an_uninstalled_plugins_caches_pass_with_a_note_and_warn_nowhere() -> None:
@@ -715,7 +730,7 @@ def test_an_uninstalled_plugins_caches_pass_with_a_note_and_warn_nowhere() -> No
     row = _caches_row(rows)
     assert row["status"] == _PASS
     assert row["detail"].endswith(
-        "cached: 2.0 KiB of a plugin not installed here; another install may use it, "
-        "`untaped setup migrate-dirs` removes it"
+        "cached: 2.0 KiB of a plugin not installed here (another install may use it, "
+        "so only `untaped setup migrate-dirs` removes it)"
     )
     assert [row for row in rows if row["status"] == "warn"] == []

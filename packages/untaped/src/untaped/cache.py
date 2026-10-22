@@ -1628,31 +1628,36 @@ def _freshness_of(stamp: Mapping[str, Any], version: str | None, *, typed: bool)
     )
 
 
-def outdated_files(cache: Cache[Any]) -> list[Path]:
-    """``cache``'s files filled for another version of its value; each refills on next use.
+def outdated_keys(cache: Cache[Any]) -> int:
+    """How many of ``cache``'s keys hold only another version's value: each refills when due.
 
     Read from each file's stamp, in every settings folder of the cache's
-    root. A file that isn't a cache file is not counted.
+    root. A key with this version's file isn't counted, though another
+    install's version of it may sit beside it; a file that isn't a cache
+    file is not read.
     """
     from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - doctor only
 
     typing = cache._typing()
     version = cache._version_now()
     root = cache._root(None if cache.store is None else cache.store.layout)
-    found: list[Path] = []
+    current: dict[tuple[Path, str], bool] = {}
     try:
         entries = sorted(root.rglob("*.json"))
     except OSError:
-        return []
+        return 0
     for entry in entries:
+        named = _VERSIONED.fullmatch(entry.name) or _PLAIN.fullmatch(entry.name)
         lines = read_lines(entry, value=False)
-        if not isinstance(lines, Lines) or not isinstance(lines.stamp.get("key"), str):
+        if named is None or not isinstance(lines, Lines):
+            continue
+        if not isinstance(lines.stamp.get("key"), str):
             continue
         other_type = typing is not None and lines.stamp.get("type") != typing.shape
         freshness = _freshness_of(lines.stamp, version, typed=typing is not None)
-        if other_type or freshness.outdated:
-            found.append(entry)
-    return found
+        key = (entry.parent, named["stem"])
+        current[key] = current.get(key, False) or not (other_type or freshness.outdated)
+    return sum(1 for mine in current.values() if not mine)
 
 
 def _remove_legacy(plugin: str) -> None:

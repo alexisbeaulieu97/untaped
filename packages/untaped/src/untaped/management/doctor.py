@@ -720,36 +720,36 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
     """What doctor notes about caches: always a pass, since every cache refills.
 
-    A cache file filled for another version of its value, and the
+    A cache's keys holding only another version's value, and the
     ``cached/`` folder of a plugin not installed here (another install
     sharing this home may use it; ``setup migrate-dirs`` offers to remove it).
     """
-    from untaped.cache import outdated_files  # noqa: PLC0415 - runs only in doctor
+    from untaped.cache import outdated_keys  # noqa: PLC0415 - runs only in doctor
     from untaped.management.migrate_dirs import (  # noqa: PLC0415
         MIGRATE_COMMAND,
         installed_names,
     )
     from untaped.migrations import dir_bytes, uninstalled_caches  # noqa: PLC0415
 
-    title = "caches are this version's, of plugins installed here"
+    title = "no caches of another version or of a plugin not installed here"
     parts: list[str] = []
     for registered in result.plugins:
         for cache in registered.spec.caches:
             try:
-                outdated = len(outdated_files(cache))
-            except UntapedError as exc:
+                outdated = outdated_keys(cache)
+            except Exception as exc:  # the plugin's version= or model= code runs here
                 parts.append(f"{cache.qualified}: could not read its files: {exc}")
                 continue
             if outdated:
-                files = "file" if outdated == 1 else "files"
+                keys = plural(outdated, "key", "keys")
                 parts.append(
-                    f"{cache.qualified}: {outdated} {files} filled by another version, "
-                    "refilled on next use"
+                    f"{cache.qualified}: {keys} filled by another version, refilled when due"
                 )
     for folder in uninstalled_caches(installed_names(result)):
         parts.append(
             f"{shown_path(folder)}: {size_text(dir_bytes(folder))} of a plugin not installed"
-            f" here; another install may use it, `untaped {MIGRATE_COMMAND}` removes it"
+            f" here (another install may use it, so only `untaped {MIGRATE_COMMAND}`"
+            " removes it)"
         )
     return _row("caches", shell.name, _PASS, title, "; ".join(parts) or "nothing to note")
 

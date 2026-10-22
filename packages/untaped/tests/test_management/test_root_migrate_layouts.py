@@ -353,3 +353,26 @@ def test_a_symlinked_cached_folder_is_kept(tmp_path: Path) -> None:
     assert row["action"] == "keep"
     assert _cli("--yes").exit_code == 0
     assert link.is_symlink()
+
+
+def test_a_symlinked_plugin_folder_keeps_its_caches(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    (shared / "cached").mkdir(parents=True)
+    link = named_plugin_dir("gone")
+    link.parent.mkdir(parents=True)
+    link.symlink_to(shared)
+
+    rows = json.loads(_cli("--dry-run").stdout)
+
+    [row] = [row for row in rows if row["id"] == "untaped.uninstalled-caches"]
+    assert row["action"] == "keep"
+    assert _cli("--yes").exit_code == 0
+    assert (shared / "cached").is_dir()
+
+
+def test_a_folder_no_plugin_could_own_is_never_offered() -> None:
+    _cached(".trash")
+
+    rows = json.loads(_cli("--dry-run").stdout)
+
+    assert [row for row in rows if row["id"] == "untaped.uninstalled-caches"] == []

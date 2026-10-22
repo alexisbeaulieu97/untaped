@@ -121,8 +121,8 @@ upgrade) is *outdated*: refreshed when it is due, and served, with one
 `untaped.stale` warning, under `--cached` or when the refresh fails. A file
 that can't be read, or holds another shape, is missing and refilled. After a
 complete fill, the key's files of other versions older than the max age are
-deleted. `untaped doctor`'s `caches` row counts each cache's files of
-another version, as a note.
+deleted. `untaped doctor`'s `caches` row counts each cache's keys holding
+only another version's value, as a note.
 
 `partition=` keeps another set of files for the same keys, for data that
 depends on a credential: it is hashed into the file names and never shown in
