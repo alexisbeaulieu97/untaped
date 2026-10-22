@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from test_plugins.plugin_harness import make_candidate, make_shell
 from untaped.errors import ConfigError
@@ -181,7 +181,10 @@ def test_the_spliced_state_leaves_out_what_rows_own() -> None:
     spliced = spliced_state(spec)
 
     assert spliced is not None
-    assert list(spliced.model_fields) == ["cursor"]
+    assert issubclass(spliced, HelloState)
+    assert spliced.model_validate({"rows": [{"name": 1}], "cursor": "c"}).model_dump() == {
+        "cursor": "c"
+    }
     assert spliced_state(spec) is spliced  # registered again as the same section
     assert spliced_state(_hello(state=HelloState)) is HelloState
 
@@ -198,7 +201,6 @@ def test_the_spliced_state_ignores_the_keys_declarations_own() -> None:
     spliced = spliced_state(_hello(state=StrictState, stores=(ROWS, ALIASES)))
 
     assert spliced is not None
-    assert list(spliced.model_fields) == ["cursor"]
     loaded = spliced.model_validate({"rows": [{"name": 1}], "aliases": {"a": "b"}, "cursor": "c"})
     assert loaded.model_dump() == {"cursor": "c"}
 
@@ -230,6 +232,24 @@ def test_a_strict_state_model_ignores_a_declared_key_it_lacks() -> None:
     assert spliced.model_validate({"aliases": {"a": "b"}, "cursor": "c"}).model_dump() == {
         "cursor": "c"
     }
+
+
+def test_the_state_models_validators_still_run() -> None:
+    class Checked(BaseModel):
+        cursor: str = ""
+
+        @field_validator("cursor")
+        @classmethod
+        def _short(cls, value: str) -> str:
+            if len(value) > 3:
+                raise ValueError("too long")
+            return value
+
+    spliced = spliced_state(_hello(state=Checked, stores=(ALIASES,)))
+
+    assert spliced is not None
+    with pytest.raises(ValueError, match="too long"):
+        spliced.model_validate({"aliases": {}, "cursor": "longer"})
 
 
 def test_an_open_state_model_stays_open() -> None:

@@ -127,9 +127,9 @@ def _first_party() -> tuple[PluginCandidate, ...]:
 
 
 def collect_sections() -> list[Section]:
-    """``(title, prefix, model, is_state, stability)``: the shell and each first-party plugin.
+    """``(title, prefix, model, is_state, stability, rows)``: the shell and each first-party plugin.
 
-    ``stability`` is the owning plugin's mark. Plugins follow in name
+    ``stability`` is the owning plugin's mark; ``rows`` its typed state rows. Plugins follow in name
     order. Raises :class:`RuntimeError` naming every quarantined first-party
     plugin rather than drop its section.
     """

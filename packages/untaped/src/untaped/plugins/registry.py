@@ -23,14 +23,14 @@ from importlib import metadata as importlib_metadata
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeGuard
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeGuard, cast
 
 from cyclopts import App
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from untaped.cache import Cache
 from untaped.deprecated_keys import key_mappings, mapping_errors
@@ -1078,18 +1078,30 @@ def spliced_state(spec: PluginSpec) -> type[BaseModel] | None:
 
 @functools.cache
 def _without(model: type[BaseModel], keys: frozenset[str]) -> type[BaseModel]:
-    """``model`` less the fields ``keys``, one class per pair: registering it again is a no-op."""
+    """A subclass of ``model`` that never reads ``keys``, one class per pair.
+
+    A subclass keeps the model's validators and methods. The keys are dropped
+    before validation and their fields reset to ``None``: registering the
+    class again is a no-op.
+    """
+    # The dropped keys stay in the file: a model forbidding extra keys would refuse them.
+    extra = model.model_config.get("extra")
+
+    class Spliced(model):  # type: ignore[misc,valid-type]
+        model_config = ConfigDict(extra="ignore" if extra == "forbid" else extra)
+
+        @model_validator(mode="before")
+        @classmethod
+        def _drop_declared(cls, data: object) -> object:
+            if isinstance(data, dict):
+                return {key: value for key, value in data.items() if key not in keys}
+            return data
+
     fields: dict[str, Any] = {
-        name: (info.annotation, info)
-        for name, info in model.model_fields.items()
-        if name not in keys
+        name: (Any, Field(default=None, exclude=True)) for name in keys & set(model.model_fields)
     }
-    # The removed keys stay in the file: a model forbidding extra keys would refuse them.
-    config = ConfigDict(**model.model_config)
-    if config.get("extra") == "forbid":
-        config["extra"] = "ignore"
-    without: type[BaseModel] = create_model(model.__name__, __config__=config, **fields)
-    return without
+    without = create_model(model.__name__, __base__=Spliced, __module__=model.__module__, **fields)
+    return cast("type[BaseModel]", without)
 
 
 _EMPTY: dict[type, Callable[[], object]] = {
