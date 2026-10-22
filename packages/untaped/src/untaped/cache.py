@@ -1632,9 +1632,9 @@ def outdated_keys(cache: Cache[Any]) -> int:
     """How many of ``cache``'s keys hold only another version's value: each refills when due.
 
     Read from each file's stamp, in every settings folder of the cache's
-    root. A key with this version's file isn't counted, though another
-    install's version of it may sit beside it; a file that isn't a cache
-    file is not read.
+    root (a key counts once per partition and settings folder). A key with
+    this version's value isn't counted, though another install's version of
+    it may sit beside it; a file that isn't a cache file is skipped.
     """
     from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - doctor only
 
@@ -1647,16 +1647,17 @@ def outdated_keys(cache: Cache[Any]) -> int:
     except OSError:
         return 0
     for entry in entries:
-        named = _VERSIONED.fullmatch(entry.name) or _PLAIN.fullmatch(entry.name)
         lines = read_lines(entry, value=False)
-        if named is None or not isinstance(lines, Lines):
+        if not isinstance(lines, Lines) or not isinstance(lines.stamp.get("key"), str):
             continue
-        if not isinstance(lines.stamp.get("key"), str):
-            continue
+        named = _VERSIONED.fullmatch(entry.name) or _PLAIN.fullmatch(entry.name)
+        assert named is not None  # every ``*.json`` name reads as a stem
         other_type = typing is not None and lines.stamp.get("type") != typing.shape
         freshness = _freshness_of(lines.stamp, version, typed=typing is not None)
+        # A file of this version holding only a failed attempt serves nothing.
+        mine = not other_type and not freshness.outdated and freshness.refreshed_at is not None
         key = (entry.parent, named["stem"])
-        current[key] = current.get(key, False) or not (other_type or freshness.outdated)
+        current[key] = current.get(key, False) or mine
     return sum(1 for mine in current.values() if not mine)
 
 

@@ -738,7 +738,7 @@ def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
             try:
                 outdated = outdated_keys(cache)
             except Exception as exc:  # the plugin's version= or model= code runs here
-                parts.append(f"{cache.qualified}: could not read its files: {exc}")
+                parts.append(f"{cache.qualified}: could not check its files: {exc}")
                 continue
             if outdated:
                 keys = plural(outdated, "key", "keys")

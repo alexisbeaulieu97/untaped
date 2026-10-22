@@ -694,6 +694,10 @@ def test_keys_of_another_version_only_pass_with_a_note() -> None:
     write_lines(folder / "j.v11111111.json", {**stamp, "key": "j", "type": "other"}, b"{}")
     write_lines(plain._root() / "s" / "k.json", {**stamp, "version": "1"}, b"[]")
     write_lines(plain._root() / "s" / "j.json", {**stamp, "key": "j", "version": "2"}, b"[]")
+    # i's only file of this version holds a failed attempt: another's value is served.
+    attempt = {**stamp, "key": "i", "type": shape, "refreshed_at": None}
+    write_lines(folder / "i.v00000000.json", attempt, None)
+    write_lines(folder / "i.v11111111.json", {**stamp, "key": "i", "type": "other"}, b"{}")
     spec = make_spec("acme", caches=(typed, plain))
 
     code, rows = _rows(_doctor_app(spec))
@@ -702,7 +706,7 @@ def test_keys_of_another_version_only_pass_with_a_note() -> None:
     row = _caches_row(rows)
     assert row["status"] == _PASS
     assert row["detail"] == (
-        "acme.items: 1 key filled by another version, refilled when due; "
+        "acme.items: 2 keys filled by another version, refilled when due; "
         "acme.names: 1 key filled by another version, refilled when due"
     )
 
@@ -716,7 +720,7 @@ def test_a_cache_whose_version_code_fails_is_named_and_doctor_goes_on() -> None:
     code, rows = _rows(_doctor_app(make_spec("acme", caches=(cache,))))
 
     assert code == 0, _failed(rows)
-    assert _caches_row(rows)["detail"] == "acme.names: could not read its files: no source"
+    assert _caches_row(rows)["detail"] == "acme.names: could not check its files: no source"
 
 
 def test_an_uninstalled_plugins_caches_pass_with_a_note_and_warn_nowhere() -> None:
