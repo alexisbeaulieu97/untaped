@@ -178,8 +178,9 @@ def _root_tls_off(
             if shape.tls is None or (node is not None and not isinstance(node, dict)):
                 continue
             node = node or {}
-            urls = [node.get(url) or key.model_fields[url].get_default() for url in shape.urls]
-            if not any(urls) or node.get(shape.tls, True) is not True:
+            if not any(_url(node, key, url) for url in shape.urls):
+                continue
+            if node.get(shape.tls, True) is not True or not _complete(node, key):
                 continue
             leaf = (section, *path, shape.tls)
             decided = None
@@ -193,6 +194,19 @@ def _root_tls_off(
                 _place(effective, leaf, False)
                 turned.add(leaf)
     return frozenset(turned)
+
+
+def _url(node: Mapping[str, Any], key: type[BaseModel], name: str) -> bool:
+    """Whether the key has a URL ``name``: set in the file, or a real default."""
+    field = key.model_fields[name]
+    return bool(node.get(name)) or (
+        not field.is_required() and field.get_default(call_default_factory=True) is not None
+    )
+
+
+def _complete(node: Mapping[str, Any], key: type[BaseModel]) -> bool:
+    """Whether ``node`` sets each required field, so turning TLS off never makes a key invalid."""
+    return all(name in node for name, field in key.model_fields.items() if field.is_required())
 
 
 _FALSE = frozenset({"0", "off", "f", "false", "n", "no"})

@@ -738,7 +738,7 @@ def connected_client(
         str | None, deprecated(removed_in=12, replacement="base_url=")
     ] = "token",
     http: HttpSettings | None = None,
-    verify: bool | Path = True,
+    verify: bool | Path | None = None,
     retry: RetryPolicy | None = _DEFAULT_RETRY,
 ) -> HttpClient:
     """Build an :class:`HttpClient` for a service from the values it needs.
@@ -751,7 +751,8 @@ def connected_client(
     ``None`` for a client without one (an unauthenticated ``ping``).
     ``verify`` is the key's :data:`~untaped.credentials.TlsVerify`: ``True``
     keeps untaped's trust (root ``http.ca_bundle``, else the OS store),
-    ``False`` checks nothing, a CA file replaces it for this server.
+    ``False`` checks nothing, a CA file replaces it for this server. Left
+    out, the client applies the deprecated root ``http.verify_ssl`` too.
 
     The credential is bound to its origin (the ``BoundSecret``'s, else
     ``base_url``'s): it is added to each request to that origin, and a
@@ -795,7 +796,7 @@ def connected_client(
             raise _not_set_up(config, section=section)
         token = _text(bearer)
         origin = _bound_origin(bearer, url, section=section)
-        override = _key_verify(verify)
+        override = None if verify is None else _key_verify(verify)
     http_settings = http if http is not None else load_settings_section("http")
     request_headers = dict(headers or {})
     credential = _pop_authorization(request_headers) or (f"Bearer {token}" if token else None)
@@ -804,7 +805,7 @@ def connected_client(
         _refuse_folder_transport(
             http_settings,
             base,
-            verified=_verified(override, http_settings, keyed=base_url is not _FROM_CONFIG),
+            verified=_verified(override, http_settings, keyed=verify is not None),
             section=section,
         )
     if http_settings.proxy:
@@ -813,7 +814,7 @@ def connected_client(
         base_url=base,
         headers=request_headers,
         auth=None if credential is None else _origin_bound(credential, origin, system=section),
-        verify=resolve_verify(_trust(http_settings, keyed=base_url is not _FROM_CONFIG))
+        verify=resolve_verify(_trust(http_settings, keyed=verify is not None))
         if override is None
         else override,
         timeout=http_settings.timeout_seconds,

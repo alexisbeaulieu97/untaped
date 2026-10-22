@@ -265,7 +265,11 @@ def test_a_folder_trust_setting_carries_no_credential(monkeypatch: pytest.Monkey
         connected_client(Marked(), section="demo", base_url=_URL, bearer="tok", http=_HTTP)
 
 
-def test_a_keys_client_takes_root_trust_without_verify_ssl(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("verify", "verify_ssl"), [(True, True), (None, False)])
+def test_a_keys_client_takes_root_trust_without_verify_ssl(
+    monkeypatch: pytest.MonkeyPatch, verify: bool | None, verify_ssl: bool
+) -> None:
+    """A key's TLS already holds root verify_ssl; a client given no key's TLS still applies it."""
     seen: list[HttpSettings] = []
 
     def trust(http: HttpSettings) -> bool:
@@ -275,7 +279,9 @@ def test_a_keys_client_takes_root_trust_without_verify_ssl(monkeypatch: pytest.M
     monkeypatch.setattr("untaped.http.resolve_verify", trust)
     root = HttpSettings(verify_ssl=False, ca_bundle=Path("/etc/ca.pem"))
 
-    connected_client(Marked(), section="demo", base_url=_URL, bearer="tok", http=root).close()
+    connected_client(
+        Marked(), section="demo", base_url=_URL, bearer="tok", http=root, verify=verify
+    ).close()
 
     [used] = seen
-    assert (used.verify_ssl, used.ca_bundle) == (True, Path("/etc/ca.pem"))
+    assert (used.verify_ssl, used.ca_bundle) == (verify_ssl, Path("/etc/ca.pem"))

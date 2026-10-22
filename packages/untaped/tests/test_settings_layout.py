@@ -146,3 +146,32 @@ def test_root_verify_ssl_reaches_a_defaulted_server_and_the_variable(
     assert (("hub", "server", "verify_tls") in resolved.tls_off) is turned
     if turned:
         assert resolved.effective["hub"] == {"server": {"verify_tls": False}}
+
+
+class _Required(CredentialKey):
+    url: HttpUrl
+    verify_tls: TlsVerify = True
+
+
+class _RequiredSection(BaseModel):
+    server: _Required | None = None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "profiles:\n  default: {http: {verify_ssl: false}}\n",
+        "profiles:\n  default: {http: {verify_ssl: false}, req: {}}\n",
+    ],
+)
+def test_root_verify_ssl_leaves_a_server_nobody_set_up_alone(text: str) -> None:
+    resolved = ProfilesSettingsLayout().resolve(
+        yaml.safe_load(text), sections={"req": _RequiredSection}
+    )
+
+    assert resolved.tls_off == frozenset()
+    assert _dig_server(resolved.effective) is None
+
+
+def _dig_server(effective: dict[str, Any]) -> Any:
+    return (effective.get("req") or {}).get("server")
