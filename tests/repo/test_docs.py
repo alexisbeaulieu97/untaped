@@ -485,6 +485,7 @@ DOCS_PAGES = [
     "composition.md",
     "configuration.md",
     "contracts.md",
+    "credentials.md",
     "getting-started.md",
     "lint.md",
     "plugin-skills.md",

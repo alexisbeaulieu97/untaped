@@ -11,4 +11,4 @@ person's step (`fix_by: user`) so an agent hands it over
 A plugin declares its secrets as `Credential`s on `PluginSpec(credentials=)`,
 for a server held by a `CredentialKey` setting, and reads one with
 `Credential.get`; `untaped.testing` keeps logins in memory in tests
-([plugins.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/plugins.md#credentials)).
+([credentials.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/credentials.md)).

@@ -268,7 +268,7 @@ The sections above name the helper for each rule. Beyond those:
 - For a service, hold its server in one `NeedsSetup`-marked `CredentialKey`
   setting and declare each secret as a `Credential` on the spec (not
   `token_sources` or a `token` setting), and pass `connected_client` the
-  values; see [Credentials](../plugins.md#credentials).
+  values; see [Credentials](../credentials.md).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
 - To keep a repository, use `RepoStore.for_url(url, plugin=SPEC, error=...)`
