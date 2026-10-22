@@ -83,7 +83,7 @@ from untaped.profile_resolver import (
     profile_scope,
     selected_profile,
 )
-from untaped.setting_marks import setup_marks
+from untaped.setting_marks import section_marks
 from untaped.settings import (
     RESERVED_STATE_SECTIONS,
     HttpSettings,
@@ -1064,7 +1064,7 @@ def _setup_rows(
     ``connection_check`` row, and the fallback warns
     (:data:`~untaped.setting_marks.UNMARKED_SERVICE`).
     """
-    marks = None if scope.settings_model is None else setup_marks(scope.settings_model)
+    marks = section_marks(scope.section, scope.settings_model)
     if marks is None:
         return []
     if marks.legacy:

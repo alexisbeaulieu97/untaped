@@ -21,10 +21,9 @@ Each plugin is checked against:
   called live
   (`lint.registration`, `lint.conformance`, `lint.live`, `lint.fills`,
   `lint.schema`, `lint.owner-schema-drift`, `lint.contracts`,
-  `lint.migrations`), and two deprecation warnings: settings that leave
+  `lint.migrations`), and a deprecation warning for settings that leave
   `untaped` to guess what needs setting up from the names `base_url` and
-  `token` (`lint.unmarked-service`), or that declare the token command
-  setting `untaped` adds (`lint.self-declared-command`);
+  `token` (`lint.unmarked-service`);
 - the rules that read its files: stderr wording, layering, structure, the
   terminal and blob-reader boundaries, databases opened through a store
   ([conventions](reference/conventions.md#enforcement)).

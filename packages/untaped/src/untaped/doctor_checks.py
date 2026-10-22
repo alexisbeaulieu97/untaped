@@ -25,9 +25,9 @@ from untaped.auth import (
 )
 from untaped.errors import HttpError, HttpTransportError, UntapedError
 from untaped.plugins.registry import DoctorCheck, DoctorResult, PluginContext
-from untaped.setting_marks import MarkedField, SetupMarks, declared_marks
+from untaped.setting_marks import MarkedField, SetupMarks, section_marks
 from untaped.settings import resolve_config_path
-from untaped.setup_status import field_value, set_command, stored_plaintext, unset_fields
+from untaped.setup_status import set_command, shown_value, stored_plaintext, unset_fields
 
 
 def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorCheck:
@@ -144,8 +144,8 @@ def online_check(
         settings = ctx.settings
         if settings is None:
             return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")
-        marks = declared_marks(type(settings))
-        if marks is not None:
+        marks = section_marks(section, type(settings))
+        if marks is not None and not marks.legacy:
             return _marked_probe(check_id, settings, marks, section=section, probe=probe)
         if not service_configured(settings, section=section):
             return DoctorResult(id=check_id, ok=True, detail="not configured")
@@ -187,7 +187,7 @@ def _marked_probe(
 ) -> DoctorResult:
     """``probe`` for a plugin that marks what it needs: only once every marked field is set.
 
-    A rejected secret names its ``auth set``, an untrusted certificate
+    A rejected secret names its ``auth login``, an untrusted certificate
     ``http.ca_bundle``; any other failure names the marked fields' values and
     the command that sets the first of them (none when every mark is a secret).
     """
@@ -210,7 +210,12 @@ def _marked_probe(
         chain = list(_causes(exc))
         secret = marks.default_secret or next(iter(marks.secrets), None)
         if secret is not None and _rejected(chain):
-            if alternatives := token_alternatives(settings, section=section, field=secret.key):
+            alternatives = (
+                " or ".join(f"${name}" for name in secret.env[:1])
+                if secret.credential is not None
+                else token_alternatives(settings, section=section, field=secret.key)
+            )
+            if alternatives:
                 detail = f"{detail} (the {_noun(secret)} can also come from {alternatives})"
             return DoctorResult(
                 id=check_id,
@@ -220,7 +225,7 @@ def _marked_probe(
             )
         if _untrusted(chain):
             return DoctorResult(id=check_id, ok=False, detail=detail, fix=_CA_FIX)
-        plain = [field for field in marks.required if field.secret is None]
+        plain = [field for field in marks.required if not field.is_secret]
         if plain:
             shown = ", ".join(f"{section}.{field.key} {_shown(settings, field)}" for field in plain)
             detail = f"{detail} ({shown})"
@@ -230,12 +235,12 @@ def _marked_probe(
 
 
 def _noun(secret: MarkedField) -> str:
-    return "token" if secret.path == ("token",) else "secret"
+    return "token" if secret.key == "token" else "secret"
 
 
 def _shown(settings: BaseModel, field: MarkedField) -> str:
     """``is <value>``, or ``is set`` for a masked one: a failure line never prints a secret."""
-    return "is set" if field.masked else f"is {field_value(settings, field)}"
+    return "is set" if field.masked else f"is {shown_value(settings, field)}"
 
 
 _CA_FIX = "config set http.ca_bundle <PATH>"

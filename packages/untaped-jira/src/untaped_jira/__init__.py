@@ -6,7 +6,7 @@ from importlib.resources import files
 from typing import TYPE_CHECKING
 
 from untaped.sdk import PluginSpec, SkillAsset, online_check
-from untaped_jira.settings import JiraSettings
+from untaped_jira.settings import TOKEN, JiraSettings
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -33,6 +33,7 @@ SPEC = PluginSpec(
     app_factory=build_app,
     help="Manage Jira Data Center and Server issues; not Jira Cloud.",
     settings=JiraSettings,
+    credentials=(TOKEN,),
     guides=files("untaped_jira") / "guides",
     skills=(
         SkillAsset(

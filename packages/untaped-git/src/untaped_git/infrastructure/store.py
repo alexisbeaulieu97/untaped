@@ -52,6 +52,7 @@ from untaped.sdk import (
     GitResult,
     ProgressHandle,
     UntapedError,
+    app_context,
     attribution,
     experimental,
     run_git,
@@ -1248,10 +1249,27 @@ def host_config(url: str, auth: HostAuth | None) -> tuple[dict[str, str], dict[s
 
 
 def _credential_config(origin: str, credential: Credential) -> dict[str, str]:
-    """The command-scope setting that sends ``credential`` to ``origin`` only (``run_git``'s
-    ``auth_config``: a private include file, never argv or the environment)."""
+    """The command-scope settings that send ``credential`` to ``origin`` only (``run_git``'s
+    ``auth_config``: a private include file, never argv or the environment).
+
+    The CA git checks ``origin`` against goes with it: the key's CA file, or
+    root ``http.ca_bundle`` when the key keeps untaped's trust. A key with
+    ``verify_tls: false`` leaves git verifying as it would.
+    """
     header = basic_header(credential.username, credential.password)
-    return {f"http.{origin}/.extraHeader": header}
+    found = {f"http.{origin}/.extraHeader": header}
+    ca = _ca_file(credential.verify_tls)
+    if ca is not None:
+        found[f"http.{origin}/.sslCAInfo"] = str(ca)
+    return found
+
+
+def _ca_file(verify: bool | Path) -> Path | None:
+    if isinstance(verify, Path):
+        return verify
+    if verify is False:
+        return None
+    return app_context().http.ca_bundle
 
 
 def basic_header(username: str, password: object) -> str:

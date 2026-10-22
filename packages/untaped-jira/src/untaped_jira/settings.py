@@ -2,28 +2,46 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from untaped.sdk import NeedsSetup, Secret
+from untaped.sdk import Credential, CredentialKey, NeedsSetup, Renamed, TlsVerify
 from untaped_jira.domain.changes import ConfirmPolicy
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 
 
+class JiraServer(CredentialKey):
+    """The Jira a token is for: its URL, and how its certificate is checked."""
+
+    url: HttpUrl = Field(
+        description="Jira Data Center URL, for example `https://jira.example.com`."
+    )
+    verify_tls: TlsVerify = Field(
+        default=True,
+        description=(
+            "Check Jira's certificate: `true` (untaped's trust), `false`, "
+            "or a CA file for this server alone."
+        ),
+    )
+
+
 class JiraSettings(BaseModel):
     """Connection and behavior settings for one Jira Data Center target."""
 
+    renamed_keys: ClassVar[Mapping[str, Renamed]] = {
+        "base_url": Renamed("server.url", removed_in=12)
+    }
+
     model_config = ConfigDict(frozen=True)
 
-    base_url: Annotated[str | None, NeedsSetup] = Field(
-        default=None, description="Jira Data Center URL, for example `https://jira.example.com`."
-    )
-    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=("JIRA_API_TOKEN",))] = Field(
+    server: Annotated[JiraServer | None, NeedsSetup] = Field(
         default=None,
         description=(
-            "Jira personal access token. Falls back to `token_command`, then `JIRA_API_TOKEN`."
+            "The Jira server: its `url` and `verify_tls`. Its personal access token is "
+            "stored with `untaped auth login jira`."
         ),
     )
     api_prefix: str = Field(default="/rest/api/2", description="Jira platform REST prefix.")
@@ -50,6 +68,11 @@ class JiraSettings(BaseModel):
         ),
     )
 
+    @property
+    def url(self) -> str | None:
+        """The server's URL as text, or ``None`` while it is not set up."""
+        return None if self.server is None else str(self.server.url)
+
     @field_validator("api_prefix", "agile_prefix")
     @classmethod
     def _prefix_shape(cls, value: str) -> str:
@@ -64,3 +87,7 @@ class JiraSettings(BaseModel):
         if not stripped:
             raise ValueError("assigned_jql must not be blank")
         return stripped
+
+
+#: Jira's personal access token, filed per server by ``untaped auth login jira``.
+TOKEN = Credential("jira", "token", key=JiraServer, env=("JIRA_API_TOKEN",))

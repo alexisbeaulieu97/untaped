@@ -8,7 +8,7 @@ from typing import Annotated, Any, ClassVar, Literal
 
 import pytest
 from cyclopts import App
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, HttpUrl, SecretStr
 
 from untaped import bootstrap
 from untaped.cli import create_app
@@ -19,10 +19,12 @@ from untaped.plugins.registry import (
     PluginSpec,
     SkillAsset,
 )
-from untaped.sdk import (
+from untaped.sdk import (  # type: ignore[deprecated]
+    Credential,
+    CredentialKey,
     HttpStatusError,
     NeedsSetup,
-    Secret,
+    TlsVerify,
     TokenCommand,
     TokenSources,
     online_check,
@@ -72,24 +74,49 @@ class ExtProfile(BaseModel):
     token: str = "default-token"
 
 
-class WizProfile(BaseModel):
-    """Service double for ``setup`` (section ``wiz``); core adds ``token_command``."""
+class WizServer(CredentialKey):
+    """The server a ``wiz`` token is for."""
 
-    base_url: Annotated[str | None, NeedsSetup] = None
-    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=("WIZ_TOKEN",))] = None
+    url: HttpUrl
+    verify_tls: TlsVerify = True
+
+
+class WizProfile(BaseModel):
+    """Service double for ``setup`` (section ``wiz``): a server and a declared token."""
+
+    server: Annotated[WizServer | None, NeedsSetup] = None
+
+
+#: The ``wiz`` token, read last from ``$WIZ_TOKEN``.
+WIZ_TOKEN = Credential("wiz", "token", key=WizServer, env=("WIZ_TOKEN",))
+
+
+class EnvyServer(CredentialKey):
+    """The server an ``envy`` token is for."""
+
+    url: HttpUrl
 
 
 class EnvProfile(BaseModel):
     """Service double with a conventional token variable (section ``envy``)."""
 
-    base_url: Annotated[str | None, NeedsSetup] = None
-    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=("ENVY_TOKEN",))] = None
+    server: Annotated[EnvyServer | None, NeedsSetup] = None
+
+
+#: The ``envy`` token, read last from ``$ENVY_TOKEN``.
+ENVY_TOKEN = Credential("envy", "token", key=EnvyServer, env=("ENVY_TOKEN",))
+
+#: The credentials :func:`make_spec` declares for a settings double.
+CREDENTIALS: dict[type[BaseModel], tuple[Credential[Any], ...]] = {
+    WizProfile: (WIZ_TOKEN,),
+    EnvProfile: (ENVY_TOKEN,),
+}
 
 
 class UnmarkedWizProfile(BaseModel):
-    """An unmarked service double, read through the deprecated fallback (section ``wiz``)."""
+    """An unmarked 11.0 service double, read through the deprecated fallback (section ``wiz``)."""
 
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("WIZ_TOKEN",))
+    token_sources: ClassVar[TokenSources] = TokenSources(env=("WIZ_TOKEN",))  # type: ignore[deprecated]
 
     base_url: str | None = None
     token: SecretStr | None = None
@@ -131,8 +158,12 @@ def make_spec(
     doctor_checks: tuple[DoctorCheck, ...] = (),
     stability: Stability | None = None,
     stores: tuple[Any, ...] = (),
+    credentials: tuple[Credential[Any], ...] | None = None,
 ) -> PluginSpec:
-    """Return a minimal plugin spec double mounting an empty sub-app."""
+    """Return a minimal plugin spec double mounting an empty sub-app.
+
+    ``credentials`` defaults to what :data:`CREDENTIALS` lists for ``settings``.
+    """
 
     def _factory() -> App:
         return create_app(name=name, help=f"{name} plugin.")
@@ -146,6 +177,7 @@ def make_spec(
         doctor_checks=doctor_checks,
         stability=stability,
         stores=stores,
+        credentials=CREDENTIALS.get(settings, ()) if credentials is None else credentials,
     )
 
 
@@ -199,6 +231,8 @@ def check(
 
 
 __all__ = [
+    "CREDENTIALS",
+    "ENVY_TOKEN",
     "FAIL",
     "PROBES",
     "EnvProfile",
@@ -208,7 +242,9 @@ __all__ = [
     "JiraProfile",
     "LegacyProfile",
     "StrictProfile",
+    "WIZ_TOKEN",
     "WizProfile",
+    "WizServer",
     "asset",
     "check",
     "compose",

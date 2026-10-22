@@ -1,12 +1,11 @@
-"""Token resolution for token-bearing plugin settings sections.
+"""Running token commands, and the 11.0 way a settings section supplies its token.
 
-One place owns where a section's API token (any :class:`~untaped.setting_marks.Secret`
-field) comes from when the field itself is unset. A settings model opts in
-by marking the field, ``Annotated[SecretStr | None, NeedsSetup, Secret(env=(...))]``;
-core then adds its ``<field>_command: TokenCommand`` setting. A model with no
-marks keeps the deprecated way: a ``token_sources: ClassVar[TokenSources]``
-attribute beside a ``token`` and a ``token_command`` field.
-Precedence, first match wins:
+A plugin that declares a :class:`~untaped.credentials.Credential` gets its
+secret from core (:mod:`untaped.credentials`). This module keeps what both
+ways share, running a token command and the gpg/``pass`` plumbing, and the
+11.0 way, for a plugin that has not moved: a ``token`` and a
+``token_command`` setting beside a ``token_sources: ClassVar[TokenSources]``
+attribute, read by name. Precedence there, first match wins:
 
 1. ``<section>.token`` (config file or its ``UNTAPED_<SECTION>__TOKEN``
    override);
@@ -16,14 +15,16 @@ Precedence, first match wins:
 3. the section's conventional environment variables, in declared order
    (for example ``GH_TOKEN`` then ``GITHUB_TOKEN``).
 
-Resolution runs on the composed section model (which carries the injected
-command settings) before a reader narrows it into the plugin's own class.
+A folder's file that set any of such a section's settings makes the section
+one key a folder chose: its token from a variable or a setting is refused,
+as for a declared credential.
 
 Token values never reach logs or error messages: a failing command is
 reported by program name and exit status only, never by its arguments or
 stdout. Its stderr goes straight to the terminal, uncaptured. One exception:
 a locked ``pass show <entry>`` names its entry (a name, never a secret) in
-the command that unlocks it.
+the command that unlocks it. Every command runs in the config file's folder
+(:func:`command_folder`).
 
 A store may need unlocking first. From a terminal its own prompt asks; with
 neither stdin nor stderr on a terminal (an agent, cron), nobody is there to
@@ -35,8 +36,7 @@ unlock the store from a terminal.
 
 Support for a token stored in plain text in the config file is the
 deprecated behaviour :data:`PLAINTEXT_TOKEN`, which names its removal
-version: using one warns once per section per process and points at
-``untaped auth migrate``.
+version: using one warns once per section per process.
 """
 
 from __future__ import annotations
@@ -49,13 +49,13 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError
-from untaped.setting_marks import SetupMarks, TokenCommand, TokenSources, declared_marks
+from untaped.setting_marks import TokenCommand, TokenSources  # type: ignore[deprecated]
 from untaped.settings import env_var_name, env_var_setting, resolve_config_path
 from untaped.stability import deprecated_behaviour
 
@@ -76,41 +76,16 @@ def plaintext_subject(section: str, where: str, *, field: str = "token") -> str:
     return f"support for a plain-text {section}.{field} in {where}"
 
 
-@dataclass(frozen=True)
-class _Sources:
-    """Where one secret field comes from once it is unset: its command setting, its variables."""
+def _legacy_env(model: type[BaseModel]) -> tuple[str, ...] | None:
+    """The variables of an 11.0 section's ``token`` (``token_sources``), or ``None`` for none.
 
-    field: str
-    command: str
-    env: tuple[str, ...]
-
-
-def _secret_sources(model: type[BaseModel], field: str) -> _Sources:
-    """The sources of ``model``'s ``field``: its ``Secret`` mark's, else the unmarked way.
-
-    An unmarked model's ``token`` reads ``token_command`` and ``token_sources``;
-    any other field has none (an empty ``command``).
+    ``None`` for a model whose plugin declares credentials, or with no
+    ``token`` setting.
     """
-    marks = declared_marks(model)
-    if marks is not None:
-        marked = next((each for each in marks.secrets if each.path == (field,)), None)
-        if marked is not None and marked.secret is not None and marked.command is not None:
-            return _Sources(field, marked.command, marked.secret.env)
-    elif field == "token":
-        sources = getattr(model, "token_sources", None)
-        env = tuple(sources.env) if isinstance(sources, TokenSources) else ()
-        return _Sources(field, "token_command", env)
-    return _Sources(field, "", ())
-
-
-def _resolved_fields(model: type[BaseModel]) -> tuple[_Sources, ...]:
-    """The secrets :func:`resolve_token` fills: each ``Secret``, else a ``token_sources`` token."""
-    marks = declared_marks(model)
-    if marks is not None:
-        return tuple(_secret_sources(model, each.path[0]) for each in marks.secrets)
-    if isinstance(getattr(model, "token_sources", None), TokenSources):
-        return (_secret_sources(model, "token"),)
-    return ()
+    if "token" not in model.model_fields:
+        return None
+    sources = getattr(model, "token_sources", None)
+    return tuple(sources.env) if isinstance(sources, TokenSources) else ()
 
 
 class CommandToken(SecretStr):
@@ -129,94 +104,147 @@ class CommandToken(SecretStr):
 
     def get_secret_value(self) -> str:
         """Run the command once per process and return its stripped stdout."""
-        cached = _cache.get(self._argv)
-        if cached is None:
-            cached = _run_token_command(self._argv, setting=f"{self._section}.{self._command}")
-            _cache[self._argv] = cached
-        return cached
+        return read_command(self._argv, setting=f"{self._section}.{self._command}")
+
+
+def read_command(argv: Sequence[str], *, setting: str) -> str:
+    """Run a token command once per process and return its stripped stdout.
+
+    ``setting`` names where the command came from in errors (``awx.token_command``,
+    ``the stored awx token``). A relative ``argv[0]`` with a ``/`` is refused
+    (exit 4): it would be read from the config file's folder, which a
+    command written for another folder never meant.
+    """
+    key = tuple(argv)
+    cached = _cache.get(key)
+    if cached is None:
+        check_program(argv, setting=setting)
+        cached = _run_token_command(key, setting=setting)
+        _cache[key] = cached
+    return cached
+
+
+def check_program(argv: Sequence[str], *, setting: str, category: str = "config") -> None:
+    """Refuse a command whose program is a relative path (``./get-token``, ``bin/x``).
+
+    A bare name is found on ``PATH`` (:func:`find_program`'s rule) and an
+    absolute path is itself; anything else depends on the folder it runs in.
+    """
+    program = argv[0] if argv else ""
+    if "/" in program and not Path(program).expanduser().is_absolute():
+        raise ConfigError(
+            f"{setting}: the program {program!r} is a relative path; give a bare name found "
+            "on PATH or an absolute path",
+            category=category,
+        )
 
 
 def resolve_token[T: BaseModel](settings: T, *, section: str) -> T:
-    """Return ``settings`` with each secret filled from its fallback sources.
+    """Return ``settings`` with its secret settings filled where they are unset.
 
-    Each ``Secret`` field of a marked model; an unmarked model's ``token``
-    only when it declares ``token_sources``. A field already set is left as
-    it is; a model with neither is returned unchanged. A command is not run
+    For a plugin that declares credentials: each one whose name is still a
+    setting of the section (an 11.0 model kept as is, such as github's
+    ``token``) is filled from :meth:`~untaped.credentials.Credential.get`,
+    or left ``None`` when nothing answers. For an 11.0 section with
+    ``token_sources``: its ``token`` from ``token_command``, then its
+    variables. A field already set is left as it is. A command is not run
     here; it runs when the secret is first read.
     """
-    for sources in _resolved_fields(type(settings)):
-        settings = _resolve_one(settings, sources, section=section)
+    from untaped.credentials import declared_credentials  # noqa: PLC0415 - imports this
+
+    declared = declared_credentials(section)
+    if declared:
+        return _fill_declared(settings, declared)
+    if isinstance(getattr(type(settings), "token_sources", None), TokenSources):
+        return _resolve_legacy(settings, section=section)
     return settings
 
 
-def _resolve_one[T: BaseModel](settings: T, sources: _Sources, *, section: str) -> T:
-    field = sources.field
-    if _explicit_token(settings, field):
-        _warn_plaintext(settings, section=section, field=field)
+def _fill_declared[T: BaseModel](settings: T, declared: Sequence[Any]) -> T:
+    from untaped.credentials import NoCredential, credential_key  # noqa: PLC0415
+
+    update: dict[str, SecretStr | None] = {}
+    for credential in declared:
+        if credential.name not in type(settings).model_fields:
+            continue
+        key = credential_key(credential, settings)
+        try:
+            update[credential.name] = None if key is None else credential.get(key)
+        except NoCredential:
+            update[credential.name] = None
+    return settings.model_copy(update=update) if update else settings
+
+
+def _resolve_legacy[T: BaseModel](settings: T, *, section: str) -> T:
+    from untaped.credentials import legacy_section_refused  # noqa: PLC0415
+
+    refused = legacy_section_refused(section)
+    if _explicit_token(settings):
+        if refused:
+            return settings.model_copy(update={"token": None})
+        _warn_plaintext(settings, section=section)
         return settings
-    argv = getattr(settings, sources.command, None) if sources.command else None
+    argv = getattr(settings, "token_command", None)
+    if refused:
+        return settings
     if argv:
-        token: SecretStr = CommandToken(argv, section=section, command=sources.command)
+        token: SecretStr = CommandToken(argv, section=section)
     else:
-        env_name = _env_source(sources.env)
+        env_name = _env_source(_legacy_env(type(settings)) or ())
         if env_name is None:
             return settings
-        _LOG.debug("%s.%s: using $%s", section, field, env_name)
+        _LOG.debug("%s.token: using $%s", section, env_name)
         token = SecretStr(os.environ[env_name].strip())
-    return settings.model_copy(update={field: token})
+    return settings.model_copy(update={"token": token})
 
 
 def describe_token_source(
     settings: BaseModel, *, section: str, ambient: bool = True, field: str = "token"
 ) -> str | None:
-    """Name where the secret ``field`` would come from, without running anything.
+    """Name where an 11.0 section's ``token`` would come from, without running anything.
 
     ``ambient=False`` leaves out the conventional environment variables:
     they are not tied to a profile, so alone they do not make a section
-    configured. Returns ``None`` when no source is configured. For doctor
-    checks.
+    configured. Returns ``None`` when no source is configured, or for any
+    other ``field``. For doctor checks.
     """
-    sources = _secret_sources(type(settings), field)
+    if field != "token":
+        return None
     if _explicit_token(settings, field):
         return f"{section}.{field}"
-    if sources.command and getattr(settings, sources.command, None):
-        return f"{section}.{sources.command}"
-    env_name = _env_source(sources.env) if ambient else None
+    if getattr(settings, "token_command", None):
+        return f"{section}.token_command"
+    env_name = _env_source(_legacy_env(type(settings)) or ()) if ambient else None
     return None if env_name is None else f"${env_name}"
 
 
-def secret_source(settings: BaseModel, *, section: str, field: str) -> str | None:
-    """Which source the secret ``field`` would come from, named without reading or running it.
+def secret_source(settings: BaseModel, *, section: str, field: str = "token") -> str | None:
+    """Which source an 11.0 section's ``token`` comes from, named without reading it.
 
-    The variable's name when one supplies it (``UNTAPED_AWX__TOKEN``, ``GH_TOKEN``),
-    ``<section>.<field>`` for a value in the config file, ``stored`` for its
-    command; ``None`` when no source is configured. ``settings`` is the section
-    as loaded, before :func:`resolve_token`. For the settings digest
-    (:mod:`untaped.settings_digest`): a run on another source never shares
-    data kept for this one.
+    The variable's name when one supplies it (``UNTAPED_ACME__TOKEN``,
+    ``ACME_TOKEN``), ``<section>.token`` for a value in the config file,
+    ``stored`` for its command; ``None`` when none is configured. For the
+    settings digest (:mod:`untaped.settings_digest`).
     """
     if _explicit_token(settings, field):
         return env_var_setting((section, field)) or f"{section}.{field}"
-    sources = _secret_sources(type(settings), field)
-    if sources.command and getattr(settings, sources.command, None):
+    if getattr(settings, "token_command", None):
         return "stored"
-    return _env_source(sources.env)
+    return _env_source(_legacy_env(type(settings)) or ())
 
 
 def token_env_names(settings: BaseModel, *, field: str = "token") -> tuple[str, ...]:
-    """The conventional variables ``settings``' model declares for ``field``, in order."""
-    return _secret_sources(type(settings), field).env
+    """The conventional variables an 11.0 ``settings`` model declares for its ``token``."""
+    return (_legacy_env(type(settings)) or ()) if field == "token" else ()
 
 
 def token_alternatives(settings: BaseModel, *, section: str, field: str = "token") -> str:
-    """Name the sources that keep the secret ``field`` out of the config file.
+    """Name the sources that keep an 11.0 section's token out of the config file.
 
-    Its command setting (``<section>.token_command``, when the model takes
-    one) and its first conventional variable, joined with ``or``; empty when
-    the model has neither.
+    Its ``<section>.token_command`` (when the model takes one) and its first
+    conventional variable, joined with ``or``; empty when it has neither.
     """
-    command = auth_command(type(settings), field)
-    names = [f"{section}.{command}"] if command is not None else []
+    names = [f"{section}.token_command"] if takes_token_command(type(settings)) else []
     names.extend(f"${name}" for name in token_env_names(settings, field=field)[:1])
     return " or ".join(names)
 
@@ -231,46 +259,9 @@ def token_instead(settings: BaseModel, *, section: str, field: str = "token") ->
     return alternatives or f"${token_override_name(section, field=field)}"
 
 
-def auth_command(model: type[BaseModel], field: str = "token") -> str | None:
-    """The command setting ``auth set`` writes for the secret ``field`` of ``model``, if any.
-
-    ``token_command`` for an unmarked model's ``token`` (when it declares
-    it); each :class:`~untaped.setting_marks.Secret`'s own command setting
-    for a marked one, even narrowed to the plugin's own class (the composed
-    section carries it).
-    """
-    marks = declared_marks(model)
-    if marks is None:
-        declared = field == "token" and "token_command" in model.model_fields
-        return "token_command" if declared else None
-    return next((each.command for each in marks.secrets if each.path == (field,)), None)
-
-
-def auth_target(model: type[BaseModel], section: str, field: str = "token") -> str | None:
-    """What ``auth set`` takes to store ``field`` of ``section``; ``None`` when it can't.
-
-    ``<section>`` for the secret ``auth set <section>`` means (the one named
-    ``token``, else the only one), else ``<section>.<field>``.
-    """
-    if auth_command(model, field) is None:
-        return None
-    marks = declared_marks(model)
-    default = "token" if marks is None else _default_field(marks)
-    return section if field == default else f"{section}.{field}"
-
-
-def _default_field(marks: SetupMarks) -> str | None:
-    secret = marks.default_secret
-    return None if secret is None else secret.key
-
-
 def takes_token_command(model: type[BaseModel]) -> bool:
-    """Whether ``model`` takes ``token_command`` (so ``auth set`` serves its ``token``).
-
-    A model that marks ``token`` :class:`~untaped.setting_marks.Secret` does,
-    even narrowed to the plugin's own class: the composed section carries it.
-    """
-    return auth_command(model) is not None
+    """Whether an 11.0 ``model`` declares ``token`` beside ``token_command``."""
+    return {"token", "token_command"} <= model.model_fields.keys()
 
 
 def token_override_name(section: str, *, field: str = "token") -> str:
@@ -481,8 +472,8 @@ def clear_token_cache() -> None:
     _cache.clear()
 
 
-def _warn_plaintext(settings: BaseModel, *, section: str, field: str) -> None:
-    """Warn once that ``<section>.<field>`` comes from the config file in plain text.
+def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
+    """Warn once that an 11.0 ``<section>.token`` comes from the config file in plain text.
 
     A secret from the environment (:func:`token_override_env`) is not a
     file, so it never warns; nor does one ``auth set`` cannot store, since
@@ -492,19 +483,16 @@ def _warn_plaintext(settings: BaseModel, *, section: str, field: str) -> None:
 
     # ``setup`` checks a candidate token that is not written yet, possibly on a
     # worker thread over its screen: nothing to warn about, nowhere to print it.
-    if active_overlay() is not None:
+    if active_overlay() is not None or token_override_env(section) is not None:
         return
-    if (
-        auth_command(type(settings), field) is None
-        or token_override_env(section, field=field) is not None
-    ):
+    if not takes_token_command(type(settings)):
         return
     from untaped.messages import run_hint  # noqa: PLC0415 - keep auth imports light
 
     config_name = resolve_config_path().name
     PLAINTEXT_TOKEN.notify(
-        plaintext_subject(section, config_name, field=field),
-        key=section if field == "token" else f"{section}.{field}",
+        plaintext_subject(section, config_name),
+        key=section,
         hint=f"{run_hint('auth migrate')} to move it out of {config_name}",
     )
 
@@ -591,6 +579,7 @@ __all__ = [
     "CommandToken",
     "TokenCommand",
     "TokenSources",
+    "check_program",
     "clear_token_cache",
     "command_failure",
     "command_folder",
@@ -604,6 +593,7 @@ __all__ = [
     "pass_gpg_env",
     "pass_gpg_options",
     "plaintext_subject",
+    "read_command",
     "resolve_token",
     "run_command",
     "takes_token_command",

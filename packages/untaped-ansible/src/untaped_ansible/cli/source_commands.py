@@ -353,7 +353,7 @@ def source_remove_command(
             )
         settings = get_config_section("ansible", AnsibleSettings)
         index = open_index(settings)
-        host = github_web_host(github_settings().base_url)
+        host = github_web_host(github_settings().api_url)
         others = {
             _saved_source_key(source.name): source.name
             for source in source_repo.entries()

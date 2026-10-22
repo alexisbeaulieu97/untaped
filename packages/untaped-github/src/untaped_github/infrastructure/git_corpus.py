@@ -74,7 +74,7 @@ type GitProtocol = Literal["https", "ssh"]
 class GitCorpusCache:
     """Sync, list and search github's repos in the repo store.
 
-    ``web_host`` is the Git host of ``github.base_url``; with ``protocol``
+    ``web_host`` is the Git host of ``github.server.url``; with ``protocol``
     ``ssh`` a repo on it is fetched over ``git@<web_host>:<owner>/<name>.git``
     (the store keeps one repo for both spellings). ``warn`` hears a corrupt
     metadata file that listing skips.

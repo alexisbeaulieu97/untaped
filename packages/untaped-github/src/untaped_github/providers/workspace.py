@@ -48,7 +48,7 @@ class GithubRepos(RepoSource[GithubRepo], Configured[GithubSettings]):
         return None
 
     def to_repo(self, item: GithubRepo) -> Repo:
-        host = github_web_host(self.settings.base_url) or "github.com"
+        host = github_web_host(self.settings.api_url) or "github.com"
         if self.settings.git_protocol == "ssh":
             url = item.ssh_url or f"git@{host}:{item.full_name}.git"
         else:
@@ -56,7 +56,7 @@ class GithubRepos(RepoSource[GithubRepo], Configured[GithubSettings]):
         if store_key(url) != store_key(f"https://{host}/{item.full_name}.git"):
             raise UsageError(
                 f"github.repo {item.full_name}: its URL {url} is not {item.full_name} on {host}",
-                hint="pipe rows from the github profile whose github.base_url lists this repo",
+                hint="pipe rows from the github profile whose github.server.url lists this repo",
             )
         return Repo(
             name=item.full_name,

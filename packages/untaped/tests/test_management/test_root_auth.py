@@ -72,6 +72,11 @@ def _auth(*args: str, input: str | None = None, backend: Any = None) -> CliResul
     )
 
 
+def _records(stderr: str) -> list[dict[str, Any]]:
+    """The JSON lines on ``stderr``: a deprecated command's own warning prints before them."""
+    return [json.loads(line) for line in stderr.splitlines() if line.startswith("{")]
+
+
 def _config(path: Path) -> dict[str, Any]:
     return read_config_dict(path)
 
@@ -723,7 +728,7 @@ def test_unset_leaves_an_inherited_command_alone(
     result = _auth("unset", "svc", "--yes", "--format", "json")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["action"] == "unchanged"
-    lines = [json.loads(line) for line in result.stderr.splitlines()]
+    lines = _records(result.stderr)
     assert [(line["level"], line["message"]) for line in lines] == [
         ("info", "svc.token_command is inherited from profile default; profile work is unchanged"),
         ("hint", "run `untaped --profile default auth unset svc`"),
@@ -778,7 +783,7 @@ def test_status_names_every_source_without_running_commands(
         "profile": "default",
         "section": "other",
         "source": "config.yml (plain text)",
-        "field": "token",
+        "name": "token",
     }
     assert rows["work", "svc"]["source"] == "token_command"
     assert ("work", "other") not in rows  # inherited from default, not a separate entry
@@ -876,7 +881,7 @@ def test_migrate_exits_with_the_failure_category_and_names_it_per_row(
 
 
 def _stderr_lines(result: CliResult) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in result.stderr.splitlines()]
+    return _records(result.stderr)
 
 
 def test_migrate_with_a_pass_that_cannot_decrypt_does_not_flood(
@@ -1005,7 +1010,7 @@ def test_config_set_of_a_token_is_deprecated(_isolated_config: Path) -> None:
     )
     forget_notices()  # once per process, and this test runs two commands in one
     as_json = invoke_cli(root.meta, ["config", "set", "svc.token", "tok", "--format", "json"])
-    lines = [json.loads(line) for line in as_json.stderr.splitlines()]
+    lines = _records(as_json.stderr)
     [line] = [line for line in lines if line["level"] == "warning"]
     assert line["kind"] == "untaped.deprecation"
     assert line["id"] == "behaviour untaped.plaintext-token"

@@ -6,9 +6,18 @@ from collections.abc import Mapping
 from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from untaped.sdk import Cache, NeedsSetup, Secret, code_version, experimental
+from untaped.sdk import (
+    Cache,
+    Credential,
+    CredentialKey,
+    NeedsSetup,
+    Renamed,
+    TlsVerify,
+    code_version,
+    experimental,
+)
 
 if TYPE_CHECKING:
     from untaped_awx.domain.lint.resources import AwxResources
@@ -17,21 +26,34 @@ if TYPE_CHECKING:
 _TOKEN_ENV = ("CONTROLLER_OAUTH_TOKEN", "TOWER_OAUTH_TOKEN", "AAP_TOKEN")
 
 
+class AwxServer(CredentialKey):
+    """The controller a token is for: its URL, and how its certificate is checked."""
+
+    url: HttpUrl = Field(description="AWX/AAP URL, for example `https://aap.example.com`.")
+    verify_tls: TlsVerify = Field(
+        default=True,
+        description=(
+            "Check the controller's certificate: `true` (untaped's trust), `false`, "
+            "or a CA file for this server alone."
+        ),
+    )
+
+
 class AwxSettings(BaseModel):
     """Connection + behaviour configuration for a single AWX/AAP target."""
 
     retired_keys: ClassVar[Mapping[str, str]] = {"test_timeout": "test_timeout_seconds"}
+    renamed_keys: ClassVar[Mapping[str, Renamed]] = {
+        "base_url": Renamed("server.url", removed_in=12)
+    }
 
     model_config = ConfigDict(frozen=True)
 
-    base_url: Annotated[str | None, NeedsSetup] = Field(
-        default=None, description="AWX/AAP URL, for example `https://aap.example.com`."
-    )
-    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=_TOKEN_ENV)] = Field(
+    server: Annotated[AwxServer | None, NeedsSetup] = Field(
         default=None,
         description=(
-            "AWX/AAP API token. Falls back to `token_command`, then "
-            "`CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`."
+            "The controller: its `url` and `verify_tls`. Its token is stored with "
+            "`untaped auth login awx`."
         ),
     )
     api_prefix: str = Field(
@@ -112,4 +134,9 @@ RESOURCES = Cache(
 )
 
 
-__all__ = ["RESOURCES", "AwxSettings"]
+#: The controller's API token, filed per server by ``untaped auth login awx``;
+#: the collection's variables are tried last.
+TOKEN = Credential("awx", "token", key=AwxServer, env=_TOKEN_ENV)
+
+
+__all__ = ["RESOURCES", "TOKEN", "AwxServer", "AwxSettings"]

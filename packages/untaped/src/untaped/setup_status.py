@@ -3,11 +3,11 @@
 One reading of "set" for every front (``setup``, ``setup plan``, doctor's
 ``setup`` row, the online checks): the value core's settings resolution
 returns for this run is not ``None`` and, for a string, not blank (``[]``
-counts as set). A :class:`~untaped.setting_marks.Secret` is set when
-:func:`~untaped.auth.describe_token_source` names a source; its command is
-never run to find out. Its conventional variables (``Secret(env=...)``) are
-ambient, not tied to a profile: they count once every other marked field is
-set, so at once for a plugin whose only mark is the secret.
+counts as set). A declared :class:`~untaped.credentials.Credential` is set
+when :meth:`~untaped.credentials.Credential.answer` names a source for the
+run's key; nothing is read or run to find out. Its conventional variables
+(``env=``) are ambient, not tied to a profile: they count once every other
+marked field is set, so at once for a plugin whose only mark is the secret.
 
 :func:`setup_result` is core's doctor ``setup`` row for a plugin that marks
 its fields. A plugin read through the legacy fallback keeps its own
@@ -21,6 +21,13 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.auth import PLAINTEXT_TOKEN, describe_token_source, plaintext_subject
 from untaped.config_file import read_config_dict
+from untaped.credentials import (
+    CredentialKey,
+    credential_key,
+    describe_key,
+    legacy_setting,
+    override_variable,
+)
 from untaped.errors import ConfigError
 from untaped.plugins.registry import DoctorResult, PluginSpec
 from untaped.setting_marks import (
@@ -28,6 +35,7 @@ from untaped.setting_marks import (
     MarkedField,
     SetupMarks,
     is_set,
+    section_marks,
     setup_marks,
     unmarked_subject,
 )
@@ -38,8 +46,10 @@ SETUP_CHECK = "setup"
 
 
 def plugin_marks(spec: PluginSpec) -> SetupMarks | None:
-    """What ``spec``'s settings need set up (marks or the legacy fallback); ``None`` for none."""
-    return None if spec.settings is None else setup_marks(spec.settings)
+    """What ``spec`` needs set up (marks, credentials, or the legacy fallback); else ``None``."""
+    if spec.settings is None:
+        return section_marks(spec.name, None) if spec.credentials else None
+    return setup_marks(spec.settings, spec.credentials)
 
 
 def notify_unmarked(plugin: str, marks: SetupMarks | None) -> None:
@@ -68,7 +78,7 @@ def unset_fields(
     missing: list[MarkedField] = []
     for field in required:
         others_set = all(own[other] for other in required if other is not field)
-        ambient = field.secret is not None and others_set
+        ambient = field.is_secret and others_set
         if not own[field] and not (
             ambient and _is_set(settings, field, section=section, ambient=True)
         ):
@@ -77,28 +87,55 @@ def unset_fields(
 
 
 def _is_set(settings: BaseModel, field: MarkedField, *, section: str, ambient: bool) -> bool:
-    if field.secret is None:
+    if not field.is_secret:
         return is_set(field_value(settings, field))
-    source = describe_token_source(settings, section=section, ambient=ambient, field=field.key)
-    return source is not None
+    return secret_source(settings, field, section=section, ambient=ambient) is not None
 
 
-def secret_source(settings: BaseModel, field: MarkedField, *, section: str) -> str | None:
-    """Where secret ``field`` comes from (``awx.token_command``, ``$GH_TOKEN``), if anywhere."""
-    return describe_token_source(settings, section=section, field=field.key)
+def secret_source(
+    settings: BaseModel, field: MarkedField, *, section: str, ambient: bool = True
+) -> str | None:
+    """Where secret ``field`` comes from (``stored 9b07e4``, ``GH_TOKEN``), if anywhere.
+
+    ``ambient=False`` leaves out its conventional variables. A credential
+    whose key is unset has none. Nothing is read or run.
+    """
+    credential = field.credential
+    if credential is None:
+        return describe_token_source(settings, section=section, ambient=ambient)
+    key = credential_key(credential, settings)
+    if key is None:
+        # No server yet, so no stored login; a variable or an old setting still counts.
+        variable = override_variable(credential.plugin, credential.name)
+        legacy = None if variable is not None else legacy_setting(credential)
+        return variable or (None if legacy is None else legacy[0])
+    answer = credential.answer(key)
+    if answer is None or (answer.step == "env" and not ambient):
+        return None
+    return answer.source
 
 
 def set_command(field: MarkedField, marks: SetupMarks, *, section: str) -> list[str]:
     """The command (after ``untaped``) that sets ``field``; a ``<NAME>`` is the user's value.
 
-    ``auth set <section>`` for the secret a bare section names (``token``,
-    else the only one), ``auth set <section>.<field>`` for another;
-    ``config set`` for any other field.
+    ``auth login <section>`` for a credential (``auth login <section>
+    <name>`` for one not named ``token``), ``auth set <section>`` for the
+    legacy fallback's ``token``, ``config set`` for any other field.
     """
-    if field.secret is not None:
-        default = marks.default_secret
-        target = section if default is not None and default.path == field.path else None
-        return ["auth", "set", target or f"{section}.{field.key}"]
+    del marks
+    credential = field.credential
+    if credential is not None:
+        tail = [] if credential.name == "token" else [credential.name]
+        return ["auth", "login", section, *tail]
+    if field.is_secret:
+        return ["auth", "set", section]
+    if field.key_model is not None:
+        leaf = next(
+            (name for name, each in field.key_model.model_fields.items() if each.is_required()),
+            None,
+        )
+        if leaf is not None:
+            return ["config", "set", f"{section}.{field.key}.{leaf}", f"<{leaf.upper()}>"]
     return ["config", "set", f"{section}.{field.key}", field.value_name]
 
 
@@ -108,8 +145,9 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
     Nothing set passes as "not set up" (an unused plugin never fails doctor);
     some set warns, naming what is missing, with that field's command or
     ``setup plan --only <section>`` as the fix; all set passes, or warns
-    with the automatic ``auth migrate`` when a secret is plain text in the
-    config file.
+    with the automatic ``auth migrate`` when a legacy token is plain text in
+    the config file, or with ``config migrate`` when a credential still
+    comes from its deprecated setting.
     """
     if settings is None:
         return DoctorResult(id=SETUP_CHECK, ok=True, detail="skipped: settings are invalid")
@@ -128,7 +166,12 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
         return DoctorResult(id=SETUP_CHECK, ok=True, warn=True, detail=detail, fix=fix)
     detail = summary(settings, marks, section=section)
     plain = next(
-        (field for field in marks.secrets if stored_plaintext(section, field=field.key)), None
+        (
+            field
+            for field in marks.secrets
+            if field.credential is None and stored_plaintext(section, field=field.key)
+        ),
+        None,
     )
     if plain is not None:
         subject = plaintext_subject(section, resolve_config_path().name, field=plain.key)
@@ -142,6 +185,24 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
             fix="auth migrate",
             automatic=True,
         )
+    old = next(
+        (
+            source
+            for field in marks.secrets
+            if field.credential is not None
+            and (source := secret_source(settings, field, section=section)) is not None
+            and source.startswith(f"{section}.")
+        ),
+        None,
+    )
+    if old is not None:
+        return DoctorResult(
+            id=SETUP_CHECK,
+            ok=True,
+            warn=True,
+            detail=f"{detail}; {old} is deprecated",
+            fix="config migrate",
+        )
     return DoctorResult(id=SETUP_CHECK, ok=True, detail=detail or "set up")
 
 
@@ -153,13 +214,22 @@ def summary(settings: BaseModel, marks: SetupMarks, *, section: str) -> str:
     """
     parts: list[str] = []
     for field in marks.required:
-        if field.secret is not None:
+        if field.is_secret:
             source = secret_source(settings, field, section=section)
             parts.append(f"{field.key} from {source}")
             continue
-        value = field_value(settings, field)
-        parts.append(f"{field.key} set" if isinstance(value, SecretStr) else str(value))
+        parts.append(shown_value(settings, field))
     return "; ".join(parts)
+
+
+def shown_value(settings: BaseModel, field: MarkedField) -> str:
+    """A set marked field as a row shows it: a key described, a secret setting only as set."""
+    value = field_value(settings, field)
+    if isinstance(value, SecretStr) or field.masked:
+        return f"{field.key} set"
+    if isinstance(value, CredentialKey):
+        return describe_key(value)
+    return str(value)
 
 
 def stored_plaintext(section: str, *, field: str = "token") -> bool:

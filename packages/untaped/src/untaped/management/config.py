@@ -23,7 +23,7 @@ from typing import Annotated
 from cyclopts import App, Parameter
 from pydantic import BaseModel
 
-from untaped.auth import PLAINTEXT_TOKEN, auth_target, plaintext_subject
+from untaped.auth import PLAINTEXT_TOKEN, plaintext_subject, takes_token_command
 from untaped.cli import (
     ColumnsOption,
     DryRunOption,
@@ -427,18 +427,19 @@ def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
 
 
 def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
-    """Deprecate ``config set <section>.<secret>`` where ``auth set`` can store it instead."""
+    """Deprecate ``config set <section>.token`` of an 11.0 section that ``auth set`` serves."""
     section, rest = _split_first(key)
     scope = ctx.sections.get(section)
     if rest is None or scope is None or scope.model is None:
         return
-    target = auth_target(scope.model, section, rest)
-    if target is not None:
-        PLAINTEXT_TOKEN.notify(
-            plaintext_subject(section, resolve_config_path().name, field=rest),
-            key=section if rest == "token" else key,
-            replacement=f"untaped auth set {target}",
-        )
+    # A declared credential's old setting is a deprecated setting, which warns as one.
+    if rest != "token" or not takes_token_command(scope.model):
+        return
+    PLAINTEXT_TOKEN.notify(
+        plaintext_subject(section, resolve_config_path().name, field=rest),
+        key=section,
+        replacement=f"untaped auth set {section}",
+    )
 
 
 def _unset(

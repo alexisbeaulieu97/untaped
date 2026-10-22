@@ -41,13 +41,14 @@ from untaped.deprecated_keys import KeyUse, Renamed, key_mappings, notify_use, r
 from untaped.errors import ConfigError, first_validation_error
 from untaped.messages import run_hint
 from untaped.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
-from untaped.setting_marks import TokenCommand, command_collisions, injected_commands
+from untaped.setting_marks import TokenCommand
 from untaped.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
-from untaped.stability import Stability
+from untaped.stability import Stability, deprecated
 from untaped.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 
 if TYPE_CHECKING:
     from untaped.cache import Cache
+    from untaped.credentials import Credential
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 STATE_FILE_NAME = "state.yml"
@@ -242,18 +243,15 @@ def reserved_section_keys(
     a key the SDK actually ``injected`` into this section, so a plugin can
     still move its own ``extensions`` setting away under a new name.
 
-    A :class:`~untaped.setting_marks.Secret`'s command setting
-    (``<field>_command``) is injected too, unless the model declares it
-    itself typed ``TokenCommand`` (the behaviour
-    :data:`~untaped.setting_marks.SELF_DECLARED_COMMAND` dates); declared
-    with another type, it collides.
+    A credential's deprecated ``<name>``/``<name>_command`` settings are
+    injected unless the model declares them, so they never collide.
     """
     keys = set(model.model_fields)
     for field in model.model_fields.values():
         keys.update(
             alias for alias in (field.alias, field.validation_alias) if isinstance(alias, str)
         )
-    taken = (RESERVED_SECTION_KEYS & keys) | set(command_collisions(model))
+    taken = RESERVED_SECTION_KEYS & keys
     for name in ("renamed_keys", "retired_keys"):
         declared = getattr(model, name, None)
         if isinstance(declared, Mapping):
@@ -273,7 +271,12 @@ class CacheSettings(BaseModel):
 
 @cache
 def section_model(
-    model: type[BaseModel], *, extensions: bool, caches: tuple[Cache[Any], ...], section: str = ""
+    model: type[BaseModel],
+    *,
+    extensions: bool,
+    caches: tuple[Cache[Any], ...],
+    section: str = "",
+    credentials: tuple[Credential[Any], ...] = (),
 ) -> type[BaseModel]:
     """``model`` with the keys the SDK injects into a plugin's section.
 
@@ -285,10 +288,10 @@ def section_model(
     age; an unknown cache name loads (doctor names it), so a cache a plugin
     drops never breaks a config. Each cache's ``renamed_from`` joins
     ``model``'s ``renamed_keys`` here, on the composed class only: the
-    owner's own declarations never point at an injected key. Each
-    :class:`~untaped.setting_marks.Secret` gets its ``<field>_command``
-    (:func:`~untaped.setting_marks.injected_commands`), described for
-    ``section``.
+    owner's own declarations never point at an injected key. Each declared
+    :class:`~untaped.credentials.Credential` gets the 11.0 settings that
+    still supply it until 12.0 (:func:`legacy_credential_fields`), both
+    deprecated, unless the model declares them itself.
     """
     renamed = _cache_renames(model, caches)
     if renamed:
@@ -317,23 +320,44 @@ def section_model(
             held,
             Field(default_factory=held, description="Max ages of the caches this plugin keeps."),
         )
-    for command in injected_commands(model):
-        injected[command] = (
-            TokenCommand,
-            Field(default=None, description=_command_text(section, command)),
-        )
+    injected.update(legacy_credential_fields(model, credentials, section=section))
     return cast(
         "type[BaseModel]",
         create_model(model.__name__, __base__=model, __module__=model.__module__, **injected),
     )
 
 
-def _command_text(section: str, command: str) -> str:
-    """The description core writes for a ``Secret``'s injected command setting."""
-    field = command.removesuffix("_command")
-    key = f"`{section}.{field}`" if section else f"`{field}`"
-    what = "the token" if field == "token" else f"the value of {key}"
-    return f"Command (argv list, no shell) that prints {what}; used when {key} is unset."
+def legacy_credential_fields(
+    model: type[BaseModel], credentials: tuple[Credential[Any], ...], *, section: str
+) -> dict[str, Any]:
+    """The deprecated ``<name>`` and ``<name>_command`` settings each credential still reads.
+
+    In 11.x a credential's old plain-text setting and its command setting
+    are read after the stored login (``Credential.get``'s third step); both
+    are deprecated, removed in 12. A field the plugin's model declares
+    itself (an 11.0 model kept as is) is left to it.
+    """
+    fields: dict[str, Any] = {}
+    for credential in credentials:
+        login = f"untaped auth login {section or credential.plugin}"
+        if credential.name != "token":
+            login += f" {credential.name}"
+        mark = deprecated(removed_in=12, replacement=login)
+        name, command = credential.name, f"{credential.name}_command"
+        if name not in model.model_fields:
+            fields[name] = (
+                Annotated[SecretStr | None, mark],
+                Field(default=None, description=f"The {credential.label} in plain text."),
+            )
+        if command not in model.model_fields:
+            fields[command] = (
+                Annotated[TokenCommand, mark],
+                Field(
+                    default=None,
+                    description=f"Command (argv list, no shell) printing the {credential.label}.",
+                ),
+            )
+    return fields
 
 
 def _cache_renames(

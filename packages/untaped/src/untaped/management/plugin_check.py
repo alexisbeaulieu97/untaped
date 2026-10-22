@@ -51,14 +51,7 @@ from untaped.plugins.registry import (
     PluginSpec,
     owns_contracts,
 )
-from untaped.setting_marks import (
-    SELF_DECLARED_COMMAND,
-    UNMARKED_SERVICE,
-    self_declared_commands,
-    self_declared_subject,
-    setup_marks,
-    unmarked_subject,
-)
+from untaped.setting_marks import UNMARKED_SERVICE, setup_marks, unmarked_subject
 from untaped.settings import get_settings
 from untaped.theme import OutputFormat
 
@@ -167,13 +160,10 @@ def _setup_marks(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
     if model is None:
         return []
     rows: list[PluginCheckRow] = []
-    marks = setup_marks(model)
+    marks = setup_marks(model, spec.credentials)
     if marks is not None and marks.legacy:
         detail = UNMARKED_SERVICE.sentence(unmarked_subject(spec.name))
         rows.append(row("unmarked-service", model.__name__, "warn", detail))
-    for command in self_declared_commands(model):
-        detail = SELF_DECLARED_COMMAND.sentence(self_declared_subject(spec.name, command))
-        rows.append(row("self-declared-command", model.__name__, "warn", detail))
     return rows
 
 

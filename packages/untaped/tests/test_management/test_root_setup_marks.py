@@ -17,16 +17,18 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, HttpUrl, SecretStr
 
 from test_management.stores import install_fake_stores
 from test_management.support import (
     FAIL,
     PROBES,
+    WIZ_TOKEN,
     ExtProfile,
     LegacyProfile,
     UnmarkedWizProfile,
     WizProfile,
+    WizServer,
     make_spec,
     wiz_api_check,
     write_config,
@@ -34,10 +36,11 @@ from test_management.support import (
 from untaped import bootstrap
 from untaped.plugins.registry import PluginSpec
 from untaped.sdk import (
+    Credential,
+    CredentialKey,
     HttpError,
     HttpTransportError,
     NeedsSetup,
-    Secret,
     connection_check,
     online_check,
 )
@@ -59,10 +62,17 @@ class CrewProfile(BaseModel):
     teams: Annotated[list[str] | None, NeedsSetup] = None
 
 
-class SoloProfile(BaseModel):
-    """A plugin whose one marked field is its secret (section ``solo``)."""
+class SoloKey(CredentialKey):
+    """A fixed endpoint: the key has no fields."""
 
-    token: Annotated[SecretStr | None, NeedsSetup, Secret(env=("SOLO_TOKEN",))] = None
+    origin = HttpUrl("https://solo.example.com")
+
+
+class SoloProfile(BaseModel):
+    """A plugin whose one need is its credential (section ``solo``)."""
+
+
+SOLO_TOKEN = Credential("solo", "token", key=SoloKey, env=("SOLO_TOKEN",))
 
 
 @pytest.fixture(autouse=True)
@@ -74,6 +84,15 @@ def _clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     install_fake_stores(tmp_path, monkeypatch)
     for name in ("WIZ_TOKEN", "UNTAPED_PROFILE", "UNTAPED_WIZ", "UNTAPED_WIZ__BASE_URL"):
         monkeypatch.delenv(name, raising=False)
+
+
+#: ``wiz``'s server, as a config line under a profile.
+_SERVER = "wiz: {server: {url: https://wiz}}"
+
+
+def _login(token: str = "t") -> None:
+    """Store a ``wiz`` token for ``https://wiz``, as ``auth login wiz`` would."""
+    WIZ_TOKEN.store(WizServer(url=HttpUrl("https://wiz")), token=token)
 
 
 def _wiz() -> PluginSpec:
@@ -106,58 +125,49 @@ def test_an_unused_plugin_passes_as_not_set_up() -> None:
 
 
 def test_half_set_warns_naming_what_is_missing_with_its_fix(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {base_url: https://wiz}\n")
+    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
     row = _setup()
     assert row["status"] == "warn"
     assert row["detail"] == "1 of 2 set; missing wiz.token"
-    assert row["fix"][-3:] == ["auth", "set", "wiz"]
+    assert row["fix"][-3:] == ["auth", "login", "wiz"]
 
 
-def test_a_missing_plain_field_names_config_set_with_its_placeholder(
-    _isolated_config: Path,
-) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {token_command: [x]}\n")
+def test_a_missing_key_names_config_set_with_its_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_WIZ__TOKEN", "t")
     row = _setup()
-    assert row["detail"] == "1 of 2 set; missing wiz.base_url"
-    assert row["fix"][-4:] == ["config", "set", "wiz.base_url", "<BASE_URL>"]
+    assert row["detail"] == "1 of 2 set; missing wiz.server"
+    assert row["fix"][-4:] == ["config", "set", "wiz.server.url", "<URL>"]
 
 
-def test_a_plaintext_token_warns_with_the_automatic_auth_migrate(_isolated_config: Path) -> None:
+@pytest.mark.parametrize("setting", ["token: t", "token_command: [x]"])
+def test_a_token_from_an_old_setting_warns_with_config_migrate(
+    _isolated_config: Path, setting: str
+) -> None:
     write_config(
-        _isolated_config, "profiles:\n  default:\n    wiz: {base_url: https://wiz, token: t}\n"
+        _isolated_config,
+        f"profiles:\n  default:\n    wiz: {{server: {{url: https://wiz}}, {setting}}}\n",
     )
     row = _setup()
+    old = f"wiz.{setting.partition(':')[0]}"
     assert row["status"] == "warn"
-    assert row["detail"].startswith("https://wiz; token from wiz.token; ")
-    assert row["fix"][-2:] == ["auth", "migrate"]
-    assert row["automatic"] is True
+    assert row["detail"] == f"url=https://wiz; token from {old}; {old} is deprecated"
+    assert row["fix"][-2:] == ["config", "migrate"]
+    assert row["automatic"] is False
 
 
 @pytest.mark.parametrize(
     ("config", "env", "profile"),
     [
+        pytest.param(f"  default:\n    {_SERVER}\n", {}, None, id="profile"),
         pytest.param(
-            "  default:\n    wiz: {base_url: https://wiz, token_command: [x]}\n",
-            {},
-            None,
-            id="profile",
+            f"  default:\n    {_SERVER}\n  work: {{}}\n", {}, "work", id="default-profile"
         ),
         pytest.param(
-            "  default:\n    wiz: {base_url: https://wiz}\n"
-            "  work:\n    wiz: {token_command: [x]}\n",
-            {},
-            "work",
-            id="default-profile",
+            "  default: {}\n", {"UNTAPED_WIZ__SERVER__URL": "https://wiz"}, None, id="leaf-variable"
         ),
         pytest.param(
             "  default: {}\n",
-            {"UNTAPED_WIZ__BASE_URL": "https://wiz", "UNTAPED_WIZ__TOKEN_COMMAND": '["x"]'},
-            None,
-            id="leaf-variable",
-        ),
-        pytest.param(
-            "  default: {}\n",
-            {"UNTAPED_WIZ": '{"base_url": "https://wiz", "token_command": ["x"]}'},
+            {"UNTAPED_WIZ": '{"server": {"url": "https://wiz"}}'},
             None,
             id="json-object-variable",
         ),
@@ -173,18 +183,24 @@ def test_a_value_counts_wherever_settings_resolve_it(
     write_config(_isolated_config, f"profiles:\n{config}")
     for name, value in env.items():
         monkeypatch.setenv(name, value)
+    _login()
     args = ("--profile", profile) if profile else ()
     result = _cli(*args, "doctor", "--format", "json")
     row = next(r for r in json.loads(result.stdout) if r["check"] == "setup")
-    assert (row["status"], row["detail"]) == ("pass", "https://wiz; token from wiz.token_command")
+    assert row["status"] == "pass"
+    assert row["detail"].startswith("url=https://wiz; token from stored ")
+
+
+class NamedProfile(BaseModel):
+    """A plugin whose one marked field is a string (section ``named``)."""
+
+    name: Annotated[str | None, NeedsSetup] = None
 
 
 def test_a_blank_string_is_not_set(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz: {base_url: '  ', token_command: [x]}\n",
-    )
-    assert _setup()["detail"] == "1 of 2 set; missing wiz.base_url"
+    named = make_spec("named", settings=NamedProfile)
+    write_config(_isolated_config, "profiles:\n  default:\n    named: {name: '  '}\n")
+    assert _setup(specs=(named,), plugin="named")["detail"] == "not set up"
 
 
 def test_an_empty_list_is_set(_isolated_config: Path) -> None:
@@ -199,49 +215,44 @@ def test_an_ambient_variable_alone_does_not_set_up_a_plugin_with_other_marks(
 ) -> None:
     monkeypatch.setenv("WIZ_TOKEN", "ambient")
     assert _setup()["detail"] == "not set up"
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {base_url: https://wiz}\n")
+    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
     row = _setup()
-    assert (row["status"], row["detail"]) == ("pass", "https://wiz; token from $WIZ_TOKEN")
+    assert (row["status"], row["detail"]) == ("pass", "url=https://wiz; token from $WIZ_TOKEN")
 
 
 def test_a_token_command_counts_without_running(_isolated_config: Path, tmp_path: Path) -> None:
     ran = tmp_path / "ran"
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n"
-        f"      token_command: [sh, -c, 'touch {ran}; exit 1']\n",
+    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    WIZ_TOKEN.store(
+        WizServer(url=HttpUrl("https://wiz")), command=["sh", "-c", f"touch {ran}; exit 1"]
     )
     assert _setup()["status"] == "pass"
     assert not ran.exists()
 
 
 def test_every_marked_field_set_runs_the_online_check(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz: {base_url: https://wiz, token_command: [echo, t]}\n",
-    )
+    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    _login()
     rows = _doctor("--online")
     assert rows["wiz.api:wiz"]["status"] == "pass"
     assert PROBES == ["probed"]
 
 
 def test_the_online_check_waits_for_every_marked_field(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {base_url: https://wiz}\n")
+    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
     rows = _doctor("--online")
     assert rows["wiz.api:wiz"]["detail"] == "skipped: not set up"
     assert PROBES == []
 
 
-def test_a_rejected_token_names_auth_set(_isolated_config: Path) -> None:
+def test_a_rejected_token_names_auth_login(_isolated_config: Path) -> None:
     FAIL.append(True)
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz: {base_url: https://wiz, token_command: [echo, t]}\n",
-    )
+    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    _login()
     row = _doctor("--online", exit_code=1)["wiz.api:wiz"]
     assert row["status"] == "fail"
-    assert row["fix"][-3:] == ["auth", "set", "wiz"]
-    assert "the token can also come from" in row["detail"]
+    assert row["fix"][-3:] == ["auth", "login", "wiz"]
+    assert "the token can also come from $WIZ_TOKEN" in row["detail"]
 
 
 def _legacy() -> PluginSpec:
@@ -304,13 +315,13 @@ def _untrusted() -> Exception:
         ),
         (
             HttpTransportError("cannot connect to https://wiz"),
-            "cannot connect to https://wiz (wiz.base_url is https://wiz)",
-            ["config", "set", "wiz.base_url", "<BASE_URL>"],
+            "cannot connect to https://wiz (wiz.server is url=https://wiz)",
+            ["config", "set", "wiz.server.url", "<URL>"],
         ),
         (
             ValueError("unexpected shape"),
-            "ValueError: unexpected shape (wiz.base_url is https://wiz)",
-            ["config", "set", "wiz.base_url", "<BASE_URL>"],
+            "ValueError: unexpected shape (wiz.server is url=https://wiz)",
+            ["config", "set", "wiz.server.url", "<URL>"],
         ),
     ],
 )
@@ -319,10 +330,8 @@ def test_any_other_failure_names_the_first_marked_setting(
 ) -> None:
     check = online_check("wiz.api", section="wiz", probe=_raising(error))
     spec = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz: {base_url: https://wiz, token_command: [echo, t]}\n",
-    )
+    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    _login()
     row = _doctor("--online", specs=(spec,), exit_code=1)["wiz.api:wiz"]
     assert (row["detail"], row["fix"][-len(fix) :]) == (detail, fix)
 
@@ -332,27 +341,42 @@ def test_a_failure_of_a_plugin_marking_only_its_secret_has_no_fix(
 ) -> None:
     monkeypatch.setenv("SOLO_TOKEN", "t")
     check = online_check("solo.api", section="solo", probe=_raising(HttpTransportError("down")))
-    spec = make_spec("solo", settings=SoloProfile, doctor_checks=(check,))
+    spec = make_spec(
+        "solo", settings=SoloProfile, doctor_checks=(check,), credentials=(SOLO_TOKEN,)
+    )
     rows = _doctor("--online", specs=(spec,), exit_code=1)
     assert rows["setup:solo"]["detail"] == "token from $SOLO_TOKEN"
     assert (rows["solo.api:solo"]["detail"], rows["solo.api:solo"]["fix"]) == ("down", None)
 
 
+class HookServer(CredentialKey):
+    """The server a ``hook`` signing key is for."""
+
+    url: HttpUrl
+
+
 class HookProfile(BaseModel):
-    """A plugin whose one secret is not named ``token`` (section ``hook``)."""
+    """A plugin whose one credential is not named ``token`` (section ``hook``)."""
 
-    url: Annotated[str | None, NeedsSetup] = None
-    signing_key: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
+    server: Annotated[HookServer | None, NeedsSetup] = None
 
 
-def test_the_only_secret_not_named_token_is_set_by_a_bare_auth_set(
+SIGNING_KEY = Credential("hook", "signing_key", key=HookServer)
+
+
+def _hook(*checks: Any) -> PluginSpec:
+    return make_spec("hook", settings=HookProfile, doctor_checks=checks, credentials=(SIGNING_KEY,))
+
+
+def test_a_credential_not_named_token_is_set_by_auth_login_with_its_name(
     _isolated_config: Path,
 ) -> None:
-    hook = make_spec("hook", settings=HookProfile)
-    write_config(_isolated_config, "profiles:\n  default:\n    hook: {url: https://hook}\n")
-    row = _setup(specs=(hook,), plugin="hook")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    hook: {server: {url: https://hook}}\n"
+    )
+    row = _setup(specs=(_hook(),), plugin="hook")
     assert row["detail"] == "1 of 2 set; missing hook.signing_key"
-    assert row["fix"][-3:] == ["auth", "set", "hook"]
+    assert row["fix"][-4:] == ["auth", "login", "hook", "signing_key"]
 
 
 def test_auth_set_calls_an_unmarked_plugin_without_a_command_unknown() -> None:
@@ -372,15 +396,15 @@ def _plan_rows(*specs: PluginSpec) -> dict[str, dict[str, Any]]:
 @pytest.mark.parametrize(
     ("hook", "source"),
     [
-        ("{url: https://hook, signing_key: plain}", "hook.signing_key"),
-        ("{url: https://hook, signing_key_command: [x]}", "hook.signing_key_command"),
+        ("{server: {url: https://hook}, signing_key: plain}", "hook.signing_key"),
+        ("{server: {url: https://hook}, signing_key_command: [x]}", "hook.signing_key_command"),
     ],
 )
-def test_a_set_secret_names_where_it_comes_from(
+def test_a_credential_from_an_old_setting_names_it(
     _isolated_config: Path, hook: str, source: str
 ) -> None:
     write_config(_isolated_config, f"profiles:\n  default:\n    hook: {hook}\n")
-    row = _plan_rows(make_spec("hook", settings=HookProfile))["hook.signing_key"]
+    row = _plan_rows(_hook())["hook.signing_key"]
     assert (row["state"], row["detail"]) == ("done", f"set by {source}")
 
 
@@ -433,37 +457,14 @@ def test_an_unmarked_plugin_keeps_its_screen_status(
     assert row.status == status
 
 
-def test_a_plaintext_secret_not_named_token_warns_with_auth_migrate(
-    _isolated_config: Path,
+def test_a_rejected_credential_not_named_token_names_its_own_auth_login(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    rejected = HttpError("HTTP 401", status_code=401, url="https://hook/me", system="hook")
+    check = online_check("hook.api", section="hook", probe=_raising(rejected))
     write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    hook: {url: https://hook, signing_key: plain}\n",
+        _isolated_config, "profiles:\n  default:\n    hook: {server: {url: https://hook}}\n"
     )
-    row = _doctor(specs=(make_spec("hook", settings=HookProfile),))["setup:hook"]
-    assert row["status"] == "warn"
-    assert "plain-text hook.signing_key" in row["detail"]
-    assert (row["fix"][-2:], row["automatic"]) == (["auth", "migrate"], True)
-
-
-class PairProfile(BaseModel):
-    """Two secrets, neither named ``token`` (section ``pair``)."""
-
-    url: Annotated[str | None, NeedsSetup] = None
-    api_key: Annotated[SecretStr | None, NeedsSetup, Secret(env=("PAIR_KEY",))] = None
-    signing_key: Annotated[SecretStr | None, Secret()] = None
-
-
-def test_a_rejected_secret_not_named_token_names_its_own_auth_set(
-    _isolated_config: Path,
-) -> None:
-    rejected = HttpError("HTTP 401", status_code=401, url="https://pair/me", system="pair")
-    check = online_check("pair.api", section="pair", probe=_raising(rejected))
-    spec = make_spec("pair", settings=PairProfile, doctor_checks=(check,))
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    pair: {url: https://pair, api_key_command: [echo, k]}\n",
-    )
-    row = _doctor("--online", specs=(spec,), exit_code=1)["pair.api:pair"]
-    assert row["fix"][-3:] == ["auth", "set", "pair.api_key"]
-    assert "(the secret can also come from pair.api_key_command or $PAIR_KEY)" in row["detail"]
+    monkeypatch.setenv("UNTAPED_HOOK__SIGNING_KEY", "k")
+    row = _doctor("--online", specs=(_hook(check),), exit_code=1)["hook.api:hook"]
+    assert row["fix"][-4:] == ["auth", "login", "hook", "signing_key"]

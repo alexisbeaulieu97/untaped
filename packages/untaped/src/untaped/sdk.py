@@ -20,7 +20,7 @@ import importlib as _importlib
 import typing as _typing
 
 from untaped.app_context import AppContext, app_context
-from untaped.auth import TokenCommand, TokenSources, find_program
+from untaped.auth import TokenCommand, TokenSources, find_program  # type: ignore[deprecated]
 from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.cache import (
     Cache,
@@ -61,6 +61,14 @@ from untaped.cli import (  # type: ignore[deprecated]
     writes,
 )
 from untaped.concurrency import bounded_map
+from untaped.credentials import (
+    BoundSecret,
+    Credential,
+    CredentialKey,
+    NoCredential,
+    TlsVerify,
+    TokenUrl,
+)
 from untaped.deprecated_keys import Renamed, Retired, retired_values
 from untaped.diff import unified_diff_text
 from untaped.doctor_checks import connection_check, executable_check, online_check
@@ -169,7 +177,7 @@ from untaped.records import (
     record_model,
 )
 from untaped.refs import RefHolder, RefTarget, holders
-from untaped.setting_marks import NeedsSetup, Secret, Suggest
+from untaped.setting_marks import NeedsSetup, Suggest
 from untaped.settings import HttpSettings, get_config_section
 from untaped.skills import (  # type: ignore[deprecated]
     checkout_root,
@@ -412,17 +420,22 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "bounded_map",
     "clamp_parallel",
     # http
+    "BoundSecret",
+    "Credential",
+    "CredentialKey",
     "HttpClient",
     "HttpError",
     "HttpSettings",
     "HttpStatusError",
     "HttpTransportError",
     "NeedsSetup",
+    "NoCredential",
     "RetryPolicy",
-    "Secret",
     "Suggest",
+    "TlsVerify",
     "TokenCommand",
     "TokenSources",
+    "TokenUrl",
     "connected_client",
     "paginate_link",
     "paginate_offset",

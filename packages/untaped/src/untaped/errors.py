@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from enum import IntEnum, StrEnum
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from untaped.redaction import redact_url_password
 
@@ -89,6 +89,10 @@ def most_severe[E: BaseException](errors: Iterable[E]) -> E:
     return candidates[codes.index(combine_exit_codes(*codes))]
 
 
+FixBy = Literal["user"]
+"""Who must take an error's hint step when an agent may not: only ``"user"`` exists."""
+
+
 class ErrorCategory(StrEnum):
     """What kind of failure an error is; it selects the exit code and retryability."""
 
@@ -160,6 +164,9 @@ class UntapedError(Exception):
     """A follow-up for the user, such as ``run `untaped …```, without a ``hint:`` prefix."""
     details: Mapping[str, object] = _NO_DETAILS
     """Machine-readable context: ``status``, ``url``, related ids."""
+    fix_by: FixBy | None = None
+    """``"user"`` when only the person can take the hint's step (a login, a secret
+    variable): an agent reports it and does not run it."""
 
     def __init__(
         self,
@@ -168,6 +175,7 @@ class UntapedError(Exception):
         system: str | None = None,
         hint: str | None = None,
         details: Mapping[str, object] | None = None,
+        fix_by: FixBy | None = None,
     ) -> None:
         super().__init__(*args)
         if category is not None:
@@ -178,6 +186,8 @@ class UntapedError(Exception):
             self.hint = hint
         if details:
             self.details = dict(details)
+        if fix_by is not None:
+            self.fix_by = fix_by
 
     @property
     def exit_code(self) -> int:
@@ -191,11 +201,11 @@ class UntapedError(Exception):
 
 
 def attribution(error: BaseException) -> dict[str, Any]:
-    """The ``category``/``system``/``hint``/``details`` keyword arguments of ``error``.
+    """The ``category``/``system``/``hint``/``details``/``fix_by`` keyword arguments of ``error``.
 
     Pass them on when a new error replaces a caught one, so the replacement
     keeps its attribution: ``raise AwxApiError(msg, **attribution(exc))``.
-    ``hint`` and ``details`` are included only when set. Anything but an
+    ``hint``, ``details`` and ``fix_by`` are included only when set. Anything but an
     :class:`UntapedError` has none (``{}``).
     """
     if not isinstance(error, UntapedError):
@@ -205,6 +215,8 @@ def attribution(error: BaseException) -> dict[str, Any]:
         fields["hint"] = error.hint
     if error.details:
         fields["details"] = dict(error.details)
+    if error.fix_by:
+        fields["fix_by"] = error.fix_by
     return fields
 
 

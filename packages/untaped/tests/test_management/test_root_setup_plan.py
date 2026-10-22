@@ -13,14 +13,17 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from pydantic import BaseModel, SecretStr
+import yaml
+from pydantic import BaseModel, HttpUrl, SecretStr
 
 from test_management.stores import install_fake_stores
 from test_management.support import (
     FAIL,
     PROBES,
     LegacyProfile,
+    WIZ_TOKEN,
     WizProfile,
+    WizServer,
     make_spec,
     wiz_api_check,
     wiz_probe,
@@ -34,7 +37,14 @@ from untaped.plugins.registry import (
     PluginContext,
     PluginSpec,
 )
-from untaped.sdk import NeedsSetup, Secret, Suggest, connection_check, online_check
+from untaped.sdk import (
+    Credential,
+    CredentialKey,
+    NeedsSetup,
+    Suggest,
+    connection_check,
+    online_check,
+)
 from untaped.testing import (
     CliResult,
     ScreenKeys,
@@ -46,18 +56,25 @@ from untaped.testing import (
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
+class HubServer(CredentialKey):
+    """The API a ``hub`` token is for."""
+
+    url: HttpUrl = HttpUrl("https://hub.example")
+
+
 class HubProfile(BaseModel):
     """GitHub-like double: a default URL, ``GH_TOKEN`` and a ``gh`` suggestion (section ``hub``)."""
 
-    base_url: str = "https://hub.example"
-    token: Annotated[
-        SecretStr | None,
-        NeedsSetup,
-        Secret(
-            env=("GH_TOKEN",),
-            suggest=Suggest(("gh", "auth", "token"), note="after `gh auth login`"),
-        ),
-    ] = None
+    server: HubServer = HubServer()
+
+
+HUB_TOKEN = Credential(
+    "hub",
+    "token",
+    key=HubServer,
+    env=("GH_TOKEN",),
+    suggest=Suggest(("gh", "auth", "token"), note="after `gh auth login`"),
+)
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +120,12 @@ def _step(rows: list[dict[str, Any]], step: str) -> dict[str, Any]:
 
 
 def _configure(path: Path, wiz: str, profile: str = "default") -> None:
-    write_config(path, f"profiles:\n  {profile}:\n    wiz: {wiz}\nactive: {profile}\n")
+    """Write ``wiz``'s settings to ``profile``; a ``token_command`` becomes a stored login."""
+    data = yaml.safe_load(wiz)
+    command = data.pop("token_command", None)
+    write_config(path, f"profiles:\n  {profile}:\n    wiz: {json.dumps(data)}\nactive: {profile}\n")
+    if command:
+        WIZ_TOKEN.store(WizServer(url=HttpUrl(data["server"]["url"])), command=command)
 
 
 def test_an_empty_config_lists_every_step_with_its_command() -> None:
@@ -175,7 +197,7 @@ def test_a_plaintext_token_fails_and_moves_with_auth_migrate(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
-    _configure(_isolated_config, "{base_url: https://wiz, token: s3cret}")
+    _configure(_isolated_config, "{server: {url: https://wiz}, token: s3cret}")
     result = _cli("setup", "plan", "--format", "json")
     token = _step(json.loads(result.stdout), "wiz.token")
     # `auth migrate` moves the token inside its own process: no secret reaches the agent.
@@ -190,7 +212,7 @@ def test_a_plaintext_token_fails_and_moves_with_auth_migrate(
 
 
 def test_a_plaintext_token_without_a_store_goes_back_to_setup(_isolated_config: Path) -> None:
-    _configure(_isolated_config, "{base_url: https://wiz, token: s3cret}")
+    _configure(_isolated_config, "{server: {url: https://wiz}, token: s3cret}")
     token = _step(_plan(), "wiz.token")
     assert (token["state"], token["by"]) == ("failed", "user")
     assert token["run"] == ["--profile", "default", "setup", "--only", "wiz"]
@@ -199,8 +221,8 @@ def test_a_plaintext_token_without_a_store_goes_back_to_setup(_isolated_config: 
 @pytest.mark.parametrize(
     ("wiz", "env", "detail"),
     [
-        ("{base_url: https://wiz, token_command: [x]}", {}, "token from wiz.token_command"),
-        ("{base_url: https://wiz}", {"WIZ_TOKEN": "e"}, "token from $WIZ_TOKEN"),
+        ("{server: {url: https://wiz}, token_command: [x]}", {}, "token from wiz.token_command"),
+        ("{server: {url: https://wiz}}", {"WIZ_TOKEN": "e"}, "token from $WIZ_TOKEN"),
     ],
 )
 def test_a_token_outside_the_config_is_done(
@@ -247,8 +269,8 @@ def test_a_missing_profile_is_created_first_and_every_step_targets_it() -> None:
 
 
 def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> None:
-    hub = make_spec("hub", settings=HubProfile)
-    _configure(_isolated_config, "{base_url: https://wiz, token_command: []}")
+    hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: []}")
     rows = _plan(specs=(_wiz(), hub))
     settings = _step(rows, "wiz.settings")
     assert settings["state"] == "failed"
@@ -258,7 +280,7 @@ def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> Non
 
 
 def test_only_narrows_and_orders_the_services() -> None:
-    hub = make_spec("hub", settings=HubProfile)
+    hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
     rows = _plan("--only", "hub,wiz", specs=(_wiz(), hub))
     # hub marks only its token (its URL has a default), so it has one row
     assert [row["plugin"] for row in rows[2:]] == ["hub", "wiz", "wiz", "wiz"]
@@ -275,7 +297,7 @@ def test_an_unknown_only_name_is_a_usage_error() -> None:
 
 
 def test_online_runs_the_services_own_online_check(_isolated_config: Path) -> None:
-    _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online"), "wiz.online.api")
     assert (online["state"], online["detail"], online["run"]) == (
         "done",
@@ -286,7 +308,7 @@ def test_online_runs_the_services_own_online_check(_isolated_config: Path) -> No
 
 
 def test_a_failed_online_check_carries_its_fix(_isolated_config: Path) -> None:
-    _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     FAIL.append(True)
     online = _step(_plan("--online"), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", "user")
@@ -301,7 +323,7 @@ def test_online_skips_services_that_are_not_ready() -> None:
 
 def test_check_exits_3_while_a_step_is_pending(_isolated_config: Path) -> None:
     assert _cli("setup", "plan", "--check", "--format", "json").exit_code == 3
-    _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     # an unregistered install is advice, not a pending step: --check answers as before
     assert _step(_plan(), "install")["state"] == "todo"
     assert _cli("setup", "plan", "--check", "--format", "json").exit_code == 0
@@ -330,9 +352,9 @@ def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
     ("wiz", "env", "configured", "rejected"),
     [
         ("{}", {}, False, False),
-        ("{base_url: https://wiz}", {}, True, False),
-        ("{base_url: https://wiz, token_command: [x]}", {}, True, False),
-        ("{base_url: https://wiz, token_command: [x]}", {}, True, True),
+        ("{server: {url: https://wiz}}", {}, True, False),
+        ("{server: {url: https://wiz}, token_command: [x]}", {}, True, False),
+        ("{server: {url: https://wiz}, token_command: [x]}", {}, True, True),
         (
             "{}",
             {"UNTAPED_WIZ__BASE_URL": "https://wiz", "UNTAPED_WIZ__TOKEN_COMMAND": '["x"]'},
@@ -394,7 +416,7 @@ def test_a_plaintext_token_in_default_fails_the_profile_that_inherits_it(
     write_config(
         _isolated_config,
         "profiles:\n  default:\n    wiz: {token: s3cret}\n"
-        "  work:\n    wiz: {base_url: https://wiz, token_command: [x]}\n",
+        "  work:\n    wiz: {server: {url: https://wiz}, token_command: [x]}\n",
     )
     token = _step(_plan(profile="work"), "wiz.token")
     assert (token["state"], token["by"]) == ("failed", "user")
@@ -444,12 +466,16 @@ def test_who_runs_a_manual_fix_depends_on_its_command(run: list[str], by: str) -
     assert setup_plan._by(_wiz(), run, automatic=False) == by
 
 
-def test_who_runs_a_fix_comes_from_the_secret_mark_not_the_key_name() -> None:
+class KeyedKey(CredentialKey):
+    origin = HttpUrl("https://keyed.example")
+
+
+def test_who_runs_a_fix_comes_from_the_declared_credential_not_the_key_name() -> None:
     class Keyed(BaseModel):
-        api_key: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
         token_hint: Annotated[str | None, NeedsSetup] = None
 
-    keyed = make_spec("keyed", settings=Keyed)
+    api_key = Credential("keyed", "api_key", key=KeyedKey)
+    keyed = make_spec("keyed", settings=Keyed, credentials=(api_key,))
     for key, by in (("keyed.api_key", "user"), ("keyed.api_key_command", "user")):
         assert setup_plan._by(keyed, ["config", "set", key, "<X>"], automatic=False) == by
     assert setup_plan._by(keyed, ["config", "set", "keyed.token_hint", "x"], automatic=False) == (
@@ -468,7 +494,7 @@ def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
 
     check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
     wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
-    _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", by)
     assert online["run"] == ["--profile", "default", "auth", "migrate"]
@@ -485,7 +511,7 @@ def test_a_fix_that_sets_a_token_is_the_users_however_it_names_the_profile(
 
     check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
     wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
-    _configure(_isolated_config, "{base_url: https://wiz, token_command: [x]}")
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", "user")
 
@@ -552,7 +578,7 @@ def test_a_github_style_service_suggests_gh_without_running_it(
     gh = tmp_path / "fake-bin" / "gh"
     gh.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'w').close()\n", encoding="utf-8")
     gh.chmod(0o755)
-    hub = make_spec("hub", settings=HubProfile)
+    hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
     token = _step(_plan(specs=(hub,)), "hub.token")
     assert "after `gh auth login`, let `gh auth token` print it" in token["detail"]
     assert """config set hub.token_command '["gh", "auth", "token"]'""" in token["detail"]
@@ -560,7 +586,7 @@ def test_a_github_style_service_suggests_gh_without_running_it(
 
 
 def test_without_gh_there_is_no_suggestion() -> None:
-    hub = make_spec("hub", settings=HubProfile)
+    hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
     assert "gh auth" not in _step(_plan(specs=(hub,)), "hub.token")["detail"]
 
 

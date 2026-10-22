@@ -37,6 +37,7 @@ from untaped.cli import (
     report_errors,
     run_cyclopts_app,
 )
+from untaped.credentials import bind_credentials
 from untaped.errors import ConfigError
 from untaped.git import forward_signals
 from untaped.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
@@ -111,12 +112,9 @@ def _shell_app() -> App:
 def _shell_deprecations() -> Sequence[DeprecatedBehaviour]:
     from untaped.auth import PLAINTEXT_TOKEN  # noqa: PLC0415 - off the composition path
     from untaped.http import CONNECTED_BY_NAME  # noqa: PLC0415
-    from untaped.setting_marks import (  # noqa: PLC0415
-        SELF_DECLARED_COMMAND,
-        UNMARKED_SERVICE,
-    )
+    from untaped.setting_marks import UNMARKED_SERVICE  # noqa: PLC0415
 
-    return (CONNECTED_BY_NAME, PLAINTEXT_TOKEN, SELF_DECLARED_COMMAND, UNMARKED_SERVICE)
+    return (CONNECTED_BY_NAME, PLAINTEXT_TOKEN, UNMARKED_SERVICE)
 
 
 #: The root application. A singleton so repeated
@@ -158,6 +156,7 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
     """
     bind_owners({plugin.spec.name: plugin.plugin_ref.distribution for plugin in result.plugins})
     bind_behaviours({plugin.spec.name: plugin.spec.deprecations for plugin in result.plugins})
+    bind_credentials({plugin.spec.name: plugin.spec.credentials for plugin in result.plugins})
     register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
     if SHELL_SPEC.state is not None:
         register_state_settings(SHELL_SPEC.section, SHELL_SPEC.state)

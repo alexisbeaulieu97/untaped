@@ -29,6 +29,12 @@ clocks are independent.
 :func:`release_ask`, :func:`move_ask` and :func:`plan_release` let a plugin
 unit-test its item store's ``release`` and ``moved`` without core's holder
 kinds.
+
+A :class:`MemoryStore` stands in for this machine's password store:
+``untaped.testing.plugin`` installs a fresh one for every test, so
+``untaped auth login`` and ``Credential.store`` file secrets in memory and
+``Credential.get`` reads them back; :func:`memory_store` returns it, and
+installs one around a block of a suite that doesn't load the plugin.
 """
 
 from __future__ import annotations
@@ -95,6 +101,7 @@ __all__ = [
     "CacheClock",
     "CliInvoker",
     "CliResult",
+    "MemoryStore",
     "PluginCandidate",
     "PluginCheckRow",
     "ProgressClock",
@@ -113,6 +120,7 @@ __all__ = [
     "check_conventions",
     "check_plugin",
     "compose_with",
+    "current_memory_store",
     "damage",
     "drive_screen",
     "import_targets",
@@ -120,6 +128,7 @@ __all__ = [
     "invoke_root",
     "keep_value",
     "make_project",
+    "memory_store",
     "move_ask",
     "plan_release",
     "plugin_candidate",
@@ -129,6 +138,67 @@ __all__ = [
     "write_reference",
     "write_rows",
 ]
+
+
+class MemoryStore:
+    """A password store in memory, for tests: what ``auth login`` saves, by entry.
+
+    ``entries`` maps each entry to its secret and ``labels`` to how a real
+    store would list it, so a test can check both.
+    """
+
+    name = "memory"
+
+    def __init__(self) -> None:
+        self.entries: dict[str, str] = {}
+        self.labels: dict[str, str | None] = {}
+
+    def preflight(self) -> None:
+        """A memory store always works."""
+
+    def save(self, entry: str, token: str, *, label: str | None = None) -> None:
+        self.entries[entry] = token
+        self.labels[entry] = label
+
+    def read(self, entry: str) -> str:
+        if entry not in self.entries:
+            raise ConfigError(f"the in-memory store has no entry {entry}")
+        return self.entries[entry]
+
+    def delete(self, entry: str) -> None:
+        if entry not in self.entries:
+            raise ConfigError(f"the in-memory store has no entry {entry}")
+        del self.entries[entry]
+        self.labels.pop(entry, None)
+
+    def gone(self, entry: str) -> bool:
+        return entry not in self.entries
+
+    def describe(self, entry: str) -> str:
+        return f"memory ({entry})"
+
+
+@contextmanager
+def memory_store(store: MemoryStore | None = None) -> Iterator[MemoryStore]:
+    """Use ``store`` (a fresh one by default) as the password store for the block."""
+    from untaped.credential_store import reset_test_store, set_test_store  # noqa: PLC0415
+
+    chosen = MemoryStore() if store is None else store
+    token = set_test_store(chosen)
+    try:
+        yield chosen
+    finally:
+        reset_test_store(token)
+
+
+def current_memory_store() -> MemoryStore:
+    """The memory store this test runs with (``untaped.testing.plugin`` installs one)."""
+    from untaped.credential_store import _TEST_STORE  # noqa: PLC0415
+
+    store = _TEST_STORE.get()
+    if not isinstance(store, MemoryStore):
+        raise RuntimeError("no memory store is installed; use untaped.testing.memory_store()")
+    return store
 
 
 class ProgressClock:

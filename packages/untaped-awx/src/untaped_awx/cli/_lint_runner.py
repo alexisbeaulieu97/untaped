@@ -35,7 +35,7 @@ from untaped_awx.domain.lint.resources import AwxResources, subject_of
 from untaped_awx.infrastructure.lint.documents import documents_of, file_texts
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.resources.spec import awx_api_path
-from untaped_awx.settings import RESOURCES
+from untaped_awx.settings import RESOURCES, TOKEN
 from untaped_lint.api import lint, lint_config
 
 
@@ -149,8 +149,9 @@ def _snapshot(ctx: AwxContext, *, refresh: bool | None) -> AwxResources:
     A profile with no token reads what the controller shows anyone, which
     is its own partition, ``""``.
     """
-    base_url = str(ctx.settings.base_url)
-    token = ctx.settings.token
+    server = ctx.settings.server
+    base_url = "" if server is None else str(server.url)
+    token = TOKEN.find(server)
     served = RESOURCES.serve(
         {base_url: urlparse(base_url).netloc or base_url},
         refresh=refresh,

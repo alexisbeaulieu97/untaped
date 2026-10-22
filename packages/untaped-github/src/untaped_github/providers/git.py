@@ -1,8 +1,9 @@
 """``GithubHost``: GitHub fills the git plugin's ``GitHost`` contract for its own host.
 
 The repo store asks it, never github's code: a fetch of a URL on the Git host
-of ``github.base_url`` (``github.com``, or the GitHub Enterprise host) gets
-the GitHub token as an ``x-access-token`` credential, and the profile's
+of ``github.server.url`` (``github.com``, or the GitHub Enterprise host) gets
+the GitHub token as an ``x-access-token`` credential with the server's TLS
+setting, and the profile's
 ``http.proxy`` when one is set, so one setting proxies both GitHub's API and
 its Git fetches. A URL on any other host gets nothing from GitHub.
 """
@@ -23,7 +24,7 @@ TOKEN_USERNAME = "x-access-token"
 
 
 class GithubHost(GitHost):
-    """GitHub's credentials and proxy for URLs on the Git host of ``github.base_url``."""
+    """GitHub's credentials and proxy for URLs on the Git host of ``github.server.url``."""
 
     def home(self) -> str | None:
         return github_web_host(_settings().base_url)

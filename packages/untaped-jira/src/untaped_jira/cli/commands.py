@@ -173,7 +173,7 @@ def whoami_command(
 ) -> None:
     """Show the authenticated Jira user.
 
-    It checks ``jira.base_url`` and the token.
+    It checks ``jira.server`` and the token.
     """
 
     from untaped_jira.application import WhoAmI  # noqa: PLC0415
@@ -521,7 +521,7 @@ def issue_create_command(
         _send(
             "create",
             [("POST", f"{settings.api_prefix}/issue", payload_changes(payload))],
-            lambda client: CreateIssue(client, base_url=settings.base_url)(payload),
+            lambda client: CreateIssue(client, base_url=settings.url)(payload),
             destructive=False,
             planned=IssueOutcome(action="planned"),
             progress="Creating issue",
@@ -619,11 +619,9 @@ def issue_patch_command(
         _send(
             "patch",
             preview,
-            lambda client: PatchIssue(client, base_url=settings.base_url)(
-                key, edit, assignee=assign
-            ),
+            lambda client: PatchIssue(client, base_url=settings.url)(key, edit, assignee=assign),
             destructive=is_destructive_patch(edit, assigns=assign is not None),
-            planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
+            planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.url, key)),
             progress="Updating issue",
             yes=yes,
             dry_run=dry_run,
@@ -676,9 +674,9 @@ def issue_comment_command(
                     comment_lines(resolved_body),
                 )
             ],
-            lambda client: AddComment(client, base_url=settings.base_url)(key, resolved_body),
+            lambda client: AddComment(client, base_url=settings.url)(key, resolved_body),
             destructive=False,
-            planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.base_url, key)),
+            planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.url, key)),
             progress="Adding comment",
             yes=yes,
             dry_run=dry_run,
@@ -777,7 +775,7 @@ def issue_transition_command(
         single = not stdin and len(resolved) == 1
         with open_client() as client:
             ui = app_context().ui(strict=False)
-            transition = TransitionIssue(client, base_url=settings.base_url)
+            transition = TransitionIssue(client, base_url=settings.url)
             with _diag.progress("Resolving transitions"):
                 plans, resolve_failed = resolve_each(
                     resolved,
@@ -824,7 +822,7 @@ def issue_transition_command(
                 IssueOutcome(
                     action="planned",
                     key=key,
-                    url=browse_url(settings.base_url, key),
+                    url=browse_url(settings.url, key),
                     transition_id=plan["id"],
                 )
                 for key, plan in plans
@@ -875,12 +873,12 @@ def link_create_command(
         _send(
             "link",
             [("POST", f"{settings.api_prefix}/issueLink", [reads_as])],
-            lambda client: LinkIssues(client, base_url=settings.base_url)(key, link_type, other),
+            lambda client: LinkIssues(client, base_url=settings.url)(key, link_type, other),
             destructive=False,
             planned=IssueOutcome(
                 action="planned",
                 key=key,
-                url=browse_url(settings.base_url, key),
+                url=browse_url(settings.url, key),
                 link_type=link_type,
                 linked_key=other,
             ),
